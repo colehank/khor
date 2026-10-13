@@ -89,6 +89,7 @@ fn console_args(args: &[String], start_web: fn(&std::path::Path)) -> Result<i32,
 }
 
 pub fn run_cli(start_web: fn(&std::path::Path), write: fn(bool, &str)) -> i32 {
+    khor_node::codex_launch::main_if_shim(&command_root());
     START_WEB.with(|slot| slot.set(Some(start_web)));
     execution::NATIVE_OUTPUT.with(|slot| slot.set(Some(write)));
     // ssh asking for a kept password (`khor_node::secret`): answered
@@ -1345,14 +1346,14 @@ fn avatar_verb(rest: &[String]) -> Result<(), String> {
     let who = machine.as_deref();
     let style = match (&colors, &variant, &shape) {
         (None, None, None) => match who {
-            None => n.avatar_style(),
+            None => n.checked_avatar_style_of(n.device_str())?.unwrap_or_default(),
             // Refused by name for a machine khor does not have, rather
             // than falling through to this one — a face printed for the
             // wrong machine reads exactly like a face printed for the
             // right one.
-            Some(name) => n.avatar_style_of(&n.device_by_name(name)?),
+            Some(name) => n.checked_avatar_style_of(&n.device_by_name(name)?)?.unwrap_or_default(),
         },
-        _ => n.restyle_machine(who, colors.as_deref(), variant.as_deref(), shape.as_deref())?,
+        _ => n.restyle_machine_from(who, colors.as_deref(), variant.as_deref(), shape.as_deref(), khor_node::AvatarChangeOrigin::Cli)?,
     };
     print_face(&style);
     Ok(())

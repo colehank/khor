@@ -14,7 +14,8 @@
 //! by its start, cwd and originator, only when both sides are unique.
 //! Subagent sources can inherit the same TUI originator and cwd; they
 //! remain discoverable but never participate in terminal ownership.
-//! Ambiguous, resumed and daemon-only threads remain PID-less. Homes
+//! Native terminal thread-id metadata identifies the selected thread, including
+//! resumes and switches. Without that signal ambiguous/resumed threads stay PID-less. Homes
 //! without the lock directory retain the older process/start-time join, whose
 //! limitations include daemon threads and resumes.
 //!
@@ -452,7 +453,7 @@ impl Adaptor for Codex {
         // none of its business, and counting it would report "khor
         // cannot read this vendor" when the truth is "khor is not
         // looking at it".
-        if !self.root.join("sessions").is_dir() {
+        if !self.root.join("sessions").is_dir() && !self.root.join("thread-writer-locks").is_dir() {
             return sweep;
         }
         let locks = self.root.join("thread-writer-locks");
@@ -518,6 +519,7 @@ impl Codex {
             sweep.unmapped += 1;
             return sweep;
         }
+        let mut rollout_ids = std::collections::BTreeSet::new();
         for rollout in self.rollouts() {
             let Some(id) = rollout
                 .path
@@ -527,6 +529,7 @@ impl Codex {
             else {
                 continue;
             };
+            rollout_ids.insert(id.to_owned());
             match writer_owned(&locks.join(format!("{id}.lock"))) {
                 Ok(false) => continue,
                 Err(_) => {
@@ -541,17 +544,32 @@ impl Codex {
             };
             let (word, at_ms) =
                 last_word(&rollout.path).unwrap_or((State::Idle, rollout.started_ms));
+            if !meta.is_subagent { sweep.terminal_threads.push(meta.session_id.clone()); }
             if meta.originator.as_deref() == Some("codex-tui") && !meta.is_subagent {
                 tui_cwds.insert(meta.session_id.clone(), meta.cwd.clone());
             }
             sweep.rows.push(Sighting {
-                vendor_session_id: meta.session_id,
+                vendor_session_id: meta.session_id.clone(),
                 title: title_of(meta.cwd.as_deref()),
                 word,
                 at_ms,
                 pids: Vec::new(),
                 cwd: meta.cwd,
             });
+        }
+        // A new TUI thread can own its writer before its first rollout is
+        // materialized. Do not invent a row yet; native selection must name it.
+        if let Ok(entries) = std::fs::read_dir(locks) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Some(id) = path.file_stem().and_then(|s| s.to_str()).filter(|id| id.len() == 36 && crate::codex_terminal::metadata_title(id)) else { continue; };
+                if path.extension().and_then(|s| s.to_str()) != Some("lock") || rollout_ids.contains(id) { continue; }
+                match writer_owned(&path) {
+                    Ok(true) => sweep.pending_threads.push(id.to_owned()),
+                    Ok(false) => {},
+                    Err(_) => sweep.unmapped += 1,
+                }
+            }
         }
         // Writer ownership and terminal ownership are separate questions.
         // A shared daemon is not a descendant of the terminal's shell.
@@ -1014,6 +1032,22 @@ mod current {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(self.0.parent().unwrap());
         }
+    }
+
+    #[test]
+    fn an_owned_writer_without_rollout_is_only_a_pending_selection_candidate() {
+        let home = Home::new("pending-native-selection");
+        let _writer = home.writer(THREAD);
+        let codex = Codex::at(home.0.clone());
+        let found = codex.sweep(&Procs::of([]));
+        assert!(found.rows.is_empty());
+        assert_eq!(found.pending_threads, vec![THREAD.to_owned()]);
+        let bad = home.rollout(THREAD, "", "");
+        std::fs::write(&bad, "not valid metadata\n").unwrap();
+        let found = codex.sweep(&Procs::of([]));
+        assert!(found.rows.is_empty());
+        assert!(found.pending_threads.is_empty(), "an unreadable existing rollout is not a new idle conversation");
+        assert_eq!(found.unmapped, 1);
     }
 
     #[test]

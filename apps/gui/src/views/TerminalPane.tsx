@@ -116,6 +116,7 @@ import { kittyFlags, kittyKey, kittyNamed, kittyProtocol, kittyTyped } from "@/l
 import { afterKey, typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
+import { wheelsToPages } from "@/lib/term-scroll-target";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { followsShellTmux, wheelsToShellTmux } from "@/lib/term-shell-tmux";
 import { countsGain } from "@/lib/term-gain";
@@ -2498,6 +2499,11 @@ export function TerminalPane({
     // **A shell with the person's own tmux in front** (item 58) is a tmux
     // row while it is there: its prompts are tmux's, and on a Mac the
     // wheel goes to tmux's copy mode (`lib/term-shell-tmux`).
+    const unpage = wheelsToPages(box, term, () => {
+      const history = tmuxHistoryRef.current;
+      history?.approached();
+      return history?.pane() ?? null;
+    });
     const shellTmux = SHELL_ROW(id) ? followsShellTmux(term, (rows) => termScroll(id, rows)) : null;
     const unwheel =
       shellTmux && !window.matchMedia("(pointer: coarse)").matches ? wheelsToShellTmux(box, term, shellTmux, (rows) => termScroll(id, rows)) : () => {};
@@ -2679,10 +2685,11 @@ export function TerminalPane({
     // **A shell row too** (item 58): its history is tmux's only while a
     // tmux client the person typed is in front, which the holder follows.
     const probe = SHELL_ROW(id) && !muxRef.current;
-    if ((tmuxRow || muxRef.current || probe) && window.matchMedia("(pointer: coarse)").matches) {
+    if (tmuxRow || muxRef.current || probe) {
       tmuxHistory = holdsTmuxHistory({
         known: tmuxRow,
         probe,
+        observeOnly: !fingers,
         live: term,
         seat: historyRef.current!,
         scroller: scrollerRef.current!,
@@ -2852,6 +2859,7 @@ export function TerminalPane({
       tmuxHistoryRef.current = null;
       shellTmux?.stop();
       unwheel();
+      unpage();
       firstTouch.stop();
       firstTouchRef.current = null;
       native.stop();

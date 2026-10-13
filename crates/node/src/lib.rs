@@ -19,6 +19,8 @@ pub mod carry;
 pub mod chat;
 pub mod code;
 pub mod codexagent;
+pub mod codex_launch;
+pub mod codex_terminal;
 pub mod config;
 pub mod cwd;
 pub mod day;
@@ -342,6 +344,17 @@ pub(crate) type PipeMap<K> = Arc<
 /// The digest of the session rows last sent one asker, and the rows
 /// (`Node::rows_sent`).
 pub(crate) type RowsSent = (Vec<u8>, Vec<khor_core::Session>);
+
+/// The entry point that deliberately changed a machine's face. Stored
+/// with the style in one LWW value, so provenance cannot describe a
+/// different winning style after sync.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AvatarChangeOrigin {
+    Api,
+    Cli,
+    Gui,
+}
 
 pub struct Node {
     root: PathBuf,
@@ -1229,33 +1242,65 @@ impl Node {
         self.avatar_style_of(&self.device_str)
     }
 
-    /// Any machine's avatar style, by device id — the same read
-    /// [`Node::face_of`] does, exposed because the editor now opens on
-    /// machines that are not this one.
-    ///
-    /// A store that will not open answers the factory default rather
-    /// than an error: a face is style, never identity, so a fallback
-    /// here cannot make anyone misread *which* machine they are looking
-    /// at.
+    /// Presentation-only fallback for callers that cannot show a read
+    /// error. Editors and mutations must use `checked_avatar_style_of`:
+    /// a failed read is never permission to write factory defaults.
     pub fn avatar_style_of(&self, device: &str) -> AvatarStyle {
         self.devices_loaded()
             .ok()
-            .and_then(|l| l.doc.get(device))
-            .and_then(|d| d.style)
-            .and_then(|t| AvatarStyle::from_json(&t))
+            .and_then(|loaded| loaded.doc.get(device))
+            .and_then(|row| row.style)
+            .and_then(|text| AvatarStyle::from_json(&text))
             .unwrap_or_default()
     }
 
-    /// Sets a machine's avatar style, in the one place it lives.
-    ///
-    /// **Any machine, and the write is the whole of it.** 「头像设置这,
-    /// 要支持对每台机器的修改」 (the user, 2026-09-20) — so this takes
-    /// the device it is about rather than assuming this one, and it
-    /// travels the way a rename travels (`DeviceDoc::set_label`):
-    /// one register, whole-value, last writer wins.
+    /// Read the sole persisted style. `None` means the device exists
+    /// and has never chosen a style; errors mean its choice is unknown,
+    /// including a partial device document with unreadable blocks.
+    pub fn checked_avatar_style_of(&self, device: &str) -> Result<Option<AvatarStyle>, String> {
+        let loaded = self.devices_loaded()?;
+        Self::avatar_style_in(&loaded, device)
+    }
+
+    fn avatar_style_in(loaded: &Loaded<DeviceDoc>, device: &str) -> Result<Option<AvatarStyle>, String> {
+        if !loaded.broken.is_empty() {
+            return Err(format!("Cannot read avatar style: {} unreadable device block(s)", loaded.broken.len()));
+        }
+        let row = loaded.doc.get(device).ok_or_else(|| msg::no_such_machine(device, String::new()))?;
+        row.style.as_deref().map(|text| {
+            serde_json::from_str::<AvatarStyle>(text)
+                .map_err(|e| format!("Cannot read avatar style for {device}: {e}"))
+        }).transpose()
+    }
+
+    /// Sets a complete style in its sole register. The audit stamp is
+    /// part of the same JSON value, understood by new readers and
+    /// ignored by older AvatarStyle readers. An unchanged choice does
+    /// not mint a write or replace the last real change's attribution.
     pub fn set_avatar_style_of(&self, device: &str, style: &AvatarStyle) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
-        loaded.doc.set_style(device, &style.to_json()?)?;
+        let previous = Self::avatar_style_in(&loaded, device)?;
+        self.write_avatar_style(loaded, device, previous.as_ref(), style, AvatarChangeOrigin::Api)
+    }
+
+    fn write_avatar_style(
+        &self,
+        loaded: Loaded<DeviceDoc>,
+        device: &str,
+        previous: Option<&AvatarStyle>,
+        style: &AvatarStyle,
+        origin: AvatarChangeOrigin,
+    ) -> Result<(), String> {
+        if previous == Some(style) {
+            return Ok(());
+        }
+        let mut value = serde_json::to_value(style).map_err(|e| e.to_string())?;
+        value["change"] = serde_json::json!({
+            "writer": self.device_str(),
+            "at_ms": now_ms(),
+            "origin": origin,
+        });
+        loaded.doc.set_style(device, &value.to_string())?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(())
@@ -1472,11 +1517,22 @@ impl Node {
         variant: Option<&str>,
         shape: Option<&str>,
     ) -> Result<AvatarStyle, String> {
+        self.restyle_machine_from(machine, colors, variant, shape, AvatarChangeOrigin::Api)
+    }
+
+    pub fn restyle_machine_from(
+        &self,
+        machine: Option<&str>,
+        colors: Option<&[String]>,
+        variant: Option<&str>,
+        shape: Option<&str>,
+        origin: AvatarChangeOrigin,
+    ) -> Result<AvatarStyle, String> {
         let device = match machine {
             None => self.device_str.clone(),
             Some(name) => self.device_by_name(name)?,
         };
-        self.restyle_device(&device, colors, variant, shape)
+        self.restyle_device_from(&device, colors, variant, shape, origin)
     }
 
     /// The act itself, on a device **id** — what the faces call once
@@ -1494,7 +1550,25 @@ impl Node {
         variant: Option<&str>,
         shape: Option<&str>,
     ) -> Result<AvatarStyle, String> {
-        let mut style = self.avatar_style_of(device);
+        self.restyle_device_from(device, colors, variant, shape, AvatarChangeOrigin::Api)
+    }
+
+    pub fn restyle_device_from(
+        &self,
+        device: &str,
+        colors: Option<&[String]>,
+        variant: Option<&str>,
+        shape: Option<&str>,
+        origin: AvatarChangeOrigin,
+    ) -> Result<AvatarStyle, String> {
+        // Keep the same loaded document through read, validation and
+        // write. Never reload with a default in between the two halves.
+        let loaded = self.devices_loaded()?;
+        let previous = Self::avatar_style_in(&loaded, device)?;
+        let mut style = previous.clone().unwrap_or_default();
+        if colors.is_none() && variant.is_none() && shape.is_none() {
+            return Ok(style);
+        }
         if let Some(colors) = colors {
             style.palette = Palette::parse(colors).ok_or_else(|| {
                 msg::not_a_palette(colors.join(khor_catalog::cli::name_separator()))
@@ -1512,7 +1586,7 @@ impl Node {
                 msg::not_a_face_shape(key, all.join(khor_catalog::cli::name_separator()))
             })?;
         }
-        self.set_avatar_style_of(device, &style)?;
+        self.write_avatar_style(loaded, device, previous.as_ref(), &style, origin)?;
         Ok(style)
     }
 

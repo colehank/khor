@@ -29,6 +29,22 @@
 
 ## 二、守门不止两道——能跑的清单在 package.json,判据在这儿
 
+新增会话运行时回归：
+
+| 入口 | 验证 |
+|---|---|
+| `npm run session-cwd` | cd、活动 pane、旧附栏恢复、默认跟随与主动固定目录 |
+| `npm run scroll-target` | 真 xterm 的内层 mouse 能力、分页累计/反向/停歇、触摸与滚轮不重复输入 |
+
+可选实际 Codex 验收：`python3 apps/gui/scripts/check-codex-paging.py`。
+依赖本机 Codex 与 tmux，用临时 home、虚构历史和不可达模型端点；不发送输入，
+验证分页到顶到底及草稿保留。它不属于默认门。
+
+`python3 apps/gui/scripts/check-codex-selection.py` 则通过真实 CLI 导入隔离 tmux
+中的 Codex，验证同一行在 resume → `/new` → resume 后保持 Codex 类别，原生
+标题随当前线程改变。只发送本地 slash 命令，不提交模型输入；预览归属由 Rust
+回归验证。两项实机验收已在 macOS、Codex 0.162.1 通过；Linux/Windows 未实机复验。
+
 **这一节的标题从 2026-08-27 傍晚起改了口,而改口的理由本身值一条判据。**
 上一版叫「两道守门,各守半边」,底下就列了 `type` 和 `face` 两条。那不是
 省略,是**这份文档在造假绿**:照它办事的人跑完两条,会理直气壮地在提交

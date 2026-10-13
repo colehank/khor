@@ -154,6 +154,8 @@ export type SidePlace = {
       the directory it was pointed at, the file it was asked to open, and
       where it stood inside. */
   files: {
+    /** Defaults follow the live session; explicit navigation stays pinned. */
+    follow?: boolean;
     machine: string;
     here: boolean;
     dir: string | null;

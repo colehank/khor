@@ -92,6 +92,8 @@ export function holdsTmuxHistory(o: {
       away; a failed read (vim, htop: not tmux) says nothing and waits for
       the next switch. */
   probe?: boolean;
+  /** Desktop reads inner-pane capabilities, while tmux keeps its history. */
+  observeOnly?: boolean;
   live: Terminal;
   /** Where the history xterm is drawn, over the live screen. */
   seat: HTMLElement;
@@ -127,6 +129,8 @@ export function holdsTmuxHistory(o: {
   /** Reads now, whether or not the history is behind: for the notes'
       look at the window size after a touch (item 45). */
   reread: () => Promise<void>;
+  /** A gesture is beginning: refresh stale inner-pane capabilities. */
+  approached: () => void;
   stop: () => void;
 } {
   const { live, seat } = o;
@@ -231,11 +235,14 @@ export function holdsTmuxHistory(o: {
   const apply = (h: PaneHistory) => {
     failed = false;
     held = { pane: h.pane, mouse: h.mouse, alternate: h.alternate, window: h.window };
-    // **A program that scrolls itself keeps the drag** (item 36): on its
-    // alternate screen, or holding the mouse — Claude Code does, and then
-    // tmux's history of the pane is its frames drawn again and again, not
-    // a transcript; the drag stays the wheel to it. Read again each time,
-    // since the program may leave (Claude exits, the shell is back).
+    if (o.observeOnly) {
+      anchor = h.anchor;
+      give(false);
+      return;
+    }
+    // An alternate buffer has no ordinary history. Its scroll target is
+    // resolved separately: mouse when requested, standard page keys when
+    // not. Alternate alone never promises mouse support (term-scroll-target).
     give(!(h.alternate || h.mouse));
     if (!on) {
       // Nothing of this read was written: the anchor stays where the
@@ -372,6 +379,7 @@ export function holdsTmuxHistory(o: {
     if (already || behind) void read().then((ok) => ok || already || o.outOfReach());
   };
   o.scroller.addEventListener("touchstart", landed, { passive: true, capture: true });
+  o.scroller.addEventListener("wheel", landed, { passive: true, capture: true });
   return {
     active: () => on,
     over: () => (up() ? history : null),
@@ -391,6 +399,7 @@ export function holdsTmuxHistory(o: {
     decided: () => firstAnswer,
     pane: () => held,
     reread: () => read().then(() => {}),
+    approached: landed,
     stop: () => {
       stopped = true;
       drop();
@@ -399,6 +408,7 @@ export function holdsTmuxHistory(o: {
       titled.dispose();
       resized.dispose();
       o.scroller.removeEventListener("touchstart", landed, true);
+      o.scroller.removeEventListener("wheel", landed, true);
     },
   };
 }

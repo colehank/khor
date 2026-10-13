@@ -80,7 +80,7 @@ export function wheelsToShellTmux(
       });
   };
   const wheel = (e: WheelEvent) => {
-    if (!tmux.front() || term.modes.mouseTrackingMode !== "none" || e.ctrlKey || e.metaKey) return;
+    if (e.defaultPrevented || !tmux.front() || term.modes.mouseTrackingMode !== "none" || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     e.stopPropagation();
     const cell = (term.element?.clientHeight ?? 0) / Math.max(1, term.rows) || 16;

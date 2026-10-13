@@ -1,3 +1,4 @@
+import { sessionCwdOnScreen, workspaceCwd, followsSessionCwd } from "@/lib/session-cwd";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { hereActs, ProgressLine, termName } from "@/components/DoingLine";
@@ -1256,13 +1257,13 @@ export default function App() {
   // inside a workspace only, because that is where the two things it
   // needs were: a root for a relative path to be relative to, and a
   // middle column to open a file in. **A session row carries the
-  // first** — `place` is its own working directory — and the second is
+  // first** — its live cwd, with birthplace as fallback — and the second is
   // one landing away, which is the whole of this ruling.
   //
   // **The machine is the session's own**, so an answer about a file is
   // an answer from the disk the conversation is happening on.
   const sessionMachine = selectedRow?.home ?? "";
-  const sessionRoot = selectedRow?.place ?? "";
+  const sessionRoot = sessionCwdOnScreen(selectedRow) ?? "";
   /** That machine's id. **The id and not the name**, because what it
       is compared against is a workspace row's `device` — and a name is
       a thing the user retypes (2026-09-17 改名也进命令行). */
@@ -1277,7 +1278,7 @@ export default function App() {
     at: number;
   } | null>(null);
   const sessionHome = useMemo<LinkHome | null>(() => {
-    // **No place, no links** — a conversation nobody recorded a
+    // **No directory, no links** — a conversation nobody recorded a
     // directory for has no root, and a relative path in it is relative
     // to nothing. The context is null and the prose stays prose, which
     // is `linkHome`'s own default outside a workspace.
@@ -1897,7 +1898,7 @@ export default function App() {
                   : msg.drop_into(dropping.name)
                 : undefined,
               face: r.face,
-              path: r.doing?.cwd ?? r.place ?? "",
+              path: sessionCwdOnScreen(r) ?? "",
               // **One line, the title** (UX-20, the owner 2026-10-05): where
               // the shell stands is the row's left-bottom (UX-15) and the
               // pill's 「目录」 (UX-17), never a tab. ⚠️ 墓碑: `sub`, the
@@ -1908,7 +1909,7 @@ export default function App() {
               // and 关闭 (UX-33: the pill has no ×; the menu, ⌘W and the
               // tabs sheet close).
               menu: [
-                ...(r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : []),
+                ...(sessionCwdOnScreen(r) ? hereActs(r.home, sessionCwdOnScreen(r)!) : []),
                 { key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) },
               ],
               session: { word: r.word, kind: r.kind, category: r.category },
@@ -1993,13 +1994,14 @@ export default function App() {
     setScreen("detail");
   };
   /** **Where the column's 工作区 seat stands** (UX-30 §2, §4): the
-      session's directory (OSC 7, else its place) when the column opens
+      session's live directory, else its birthplace, when the column opens
       on it; a directory or a file a session printed, opened in place. */
   const [sideFiles, setSideFiles] = useState<{
     session: string;
     machine: string;
     dir: string | null;
     start: { path: string; at: number } | null;
+    follow?: boolean;
   } | null>(null);
   /** **Where the 工作区 tree stands inside** (UX-47): said by the mounted
       tree as it moves (`SideWorkspace`'s `onSpot`), kept with the place. */
@@ -2404,20 +2406,18 @@ export default function App() {
   };
 
   /** **Where the session is**, for the column's 工作区 seat (UX-30 §2:
-      the OSC 7 cwd, else where the session started) — read off the
+      the current pane/shell cwd, else where the session started) — read off the
       terminal on screen, as the pill's tap reads it (`placeSheet`), when
       the column opens on it or the session changes. */
   useEffect(() => {
     if (narrow || !side.open || !selectedRow) return;
-    // Pointed once per session (and the column's opening): a file opened
-    // in place since (`sideShow`) is not thrown away by a re-render.
-    if (sideFilesRef.current?.session === selectedRow.id) return;
-    const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
-      | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
-      | null;
-    setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir: box?.__marks?.cwd() ?? selectedRow.place ?? null, start: null });
+    // The default slice follows cd/pane changes. Explicitly opened files
+    // and directories (`sideShow`) remain pinned until the seat is pressed.
+    const prior = sideFilesRef.current;
+    if (prior?.session === selectedRow.id && (!prior.follow || prior.dir === sessionRoot)) return;
+    setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir: sessionCwdOnScreen(selectedRow), start: null, follow: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [narrow, side.open, selectedRow?.id]);
+  }, [narrow, side.open, selectedRow?.id, sessionRoot]);
   // **One page per seat, on this session's slice, and nothing goes back
   // to a whole** (UX-39 §3, the owner 2026-10-06 21:05: 「都不可返回，全
   // 都和 额度 一样」): 最近 and 浏览器 on what this session opened, 工作区
@@ -2438,8 +2438,8 @@ export default function App() {
       path or a row of 最近 asked for, else the session's own. */
   const sideWs = selectedRow
     ? sideFiles?.session === selectedRow.id
-      ? sideFiles
-      : { session: selectedRow.id, machine: selectedRow.home, dir: selectedRow.place ?? null, start: null }
+      ? { ...sideFiles, dir: workspaceCwd(selectedRow, sideFiles, sessionRoot) }
+      : { session: selectedRow.id, machine: selectedRow.home, dir: sessionCwdOnScreen(selectedRow), start: null, follow: true }
     : null;
   /** **The workspace that holds that directory: the tree's ceiling**
       (UX-39 §5) — on a seat press the shell's directory, so the session's
@@ -2481,10 +2481,7 @@ export default function App() {
     if (!selectedRow) return;
     toSlices();
     if (seat === "workspace") {
-      const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
-        | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
-        | null;
-      setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir: box?.__marks?.cwd() ?? selectedRow.place ?? null, start: null });
+      setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir: sessionCwdOnScreen(selectedRow), start: null, follow: true });
     }
     setSessionSide(selectedRow.id, { seat });
   };
@@ -2547,8 +2544,9 @@ export default function App() {
     setSideFrom(p.fromRecent ? "recent" : null);
     setSideBrowse({ page: p.seat === "browser" && p.page !== null });
     setSideQuota(p.quota);
-    if (p.files) setSideFiles({ session, machine: p.files.machine, dir: p.files.dir, start: p.files.start });
-    setSideResume(p.seat === "workspace" && p.files ? { session, spot: p.files.spot } : null);
+    const follow = p.files ? followsSessionCwd(selectedRow, p.files) : false;
+    if (p.files) setSideFiles({ session, machine: p.files.machine, dir: follow ? sessionCwdOnScreen(selectedRow) : p.files.dir, start: p.files.start, follow });
+    setSideResume(p.seat === "workspace" && p.files && !follow ? { session, spot: p.files.spot } : null);
     setSideStoreResume(p.seat === "store" ? { session, spot: p.store } : null);
     if (p.seat === "browser" && p.page !== null && p.page !== pageTabs.current.id) pageTabs.focus(p.page);
     setSessionSide(session, { seat: p.seat });
@@ -2644,6 +2642,7 @@ export default function App() {
       fromRecent: sideFrom === "recent",
       files: files && {
         machine: files.machine,
+        follow: files.follow,
         here: devices.find((d) => d.name === files.machine)?.me ?? !selectedRow.source,
         dir: files.dir,
         start: files.start,
@@ -2712,7 +2711,10 @@ export default function App() {
               start={f.start}
               // Where it was left (UX-47), and where it is as it moves.
               spot={sideResume?.session === selectedRow.id ? sideResume.spot : null}
-              onSpot={(spot) => setSideSpot({ session: selectedRow.id, spot })}
+              onSpot={(spot) => {
+                setSideSpot({ session: selectedRow.id, spot });
+                if (spot.file) setSideFiles((f) => f?.session === selectedRow.id && f.follow ? { ...f, follow: false } : f);
+              }}
               onLeave={sideFrom === "recent" ? backToRecent : undefined}
               onRead={(path) => touched("file", f.machine, path)}
               fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
@@ -3307,16 +3309,13 @@ export default function App() {
       onTitle={
         terminalPill
           ? () => {
-              const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
-                | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
-                | null;
-              const dir = box?.__marks?.cwd() ?? selectedRow?.place ?? null;
+              const dir = sessionCwdOnScreen(selectedRow);
               if (!selectedRow) return;
               // **Where it was left** (UX-47, `resumeSide`); with nothing
               // to come back to, 最近, and the 工作区 seat where the shell
               // is at the tap (UX-17's rule). ⚠️ 墓碑 (UX-40 §3): each
               // opening on 最近, the tree pointed afresh each time.
-              if (!resumeSide(selectedRow.id)) setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null });
+              if (!resumeSide(selectedRow.id)) setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null, follow: true });
               setPlaceSheet({ dir, session: selectedRow.id });
             }
           : undefined

@@ -618,13 +618,23 @@ impl LiveKind {
         Ok(read_pair(&dir)?.1.at_ms)
     }
 
+    fn discover_registered(&self, registered: &[RegistryRow]) -> crate::adaptor::Findings {
+        let mut found = self.discovery.sweep();
+        let terminals: Vec<_> = registered.iter().filter_map(|r| Some((r.host_child?, r.row.doing.as_ref().and_then(|d| d.title.clone())))).collect();
+        crate::codex_terminal::select(&mut found, &terminals);
+        found
+    }
+
+    fn discover(&self) -> crate::adaptor::Findings {
+        self.discover_registered(&self.registry_rows(&|_| 0))
+    }
+
     /// The live sighting behind an id, for the takeover: the title the
     /// vendor gave it and the processes to end. `None` when nothing is
     /// running behind it — then there is nothing to kill, only a record
     /// to resume.
     pub fn sighting_of(&self, id: &SessionId) -> Option<(String, Vec<u32>)> {
-        self.discovery
-            .sweep()
+        self.discover()
             .rows
             .into_iter()
             .find(|f| f.id() == *id)
@@ -654,13 +664,14 @@ impl LiveKind {
     /// the fact [`khor_core::Session::mux`] carries, asked afresh at
     /// the moment a terminal is being opened (one sweep, ~13 ms).
     fn held_in_mux(&self, id: &SessionId) -> bool {
-        let sweep = self.discovery.sweep();
+        let sweep = self.discover();
         let pids: Vec<u32> = if let Some(found) = sweep.rows.iter().find(|f| f.id() == *id) {
             found.sighting.pids.clone()
         } else if let Ok(dir) = self.existing_dir(id) {
             read_meta(&dir)
                 .ok()
                 .and_then(|m| m.pid)
+                .filter(|pid| !crate::codex_terminal::scoped(&sweep.procs, *pid))
                 .into_iter()
                 .collect()
         } else {
@@ -731,7 +742,7 @@ impl LiveKind {
         // session on a restarted server does not impersonate the clicked
         // one — and an agent row's route exists only while the sweep can
         // still see its process inside a session.
-        let sweep = self.discovery.sweep();
+        let sweep = self.discover();
         // Every attach below turns the mouse on for khor's own client
         // (`Tmux::grouped_attach_argv`, so the wheel scrolls tmux's
         // history). A tmux with no `mouse` option attaches all the same
@@ -838,7 +849,7 @@ impl LiveKind {
                 )
             } else if let Ok(dir) = self.existing_dir(id) {
                 let meta = read_meta(&dir)?;
-                let pid = meta.pid.ok_or_else(|| msg::no_terminal_here(&id.0))?;
+                let pid = meta.pid.filter(|pid| !crate::codex_terminal::scoped(&sweep.procs, *pid)).ok_or_else(|| msg::no_terminal_here(&id.0))?;
                 (vec![pid], meta.title, None, None)
             } else {
                 return Err(msg::no_terminal_here(&id.0));
@@ -1221,7 +1232,13 @@ impl LiveKind {
                 seat_of_pid.insert(pid, i);
             }
         }
-        let sweep = self.discovery.sweep();
+        let sweep = self.discover_registered(&registered);
+        // Imported rows may have recorded this client's PID before an in-TUI
+        // thread switch. Native selection, not that old pin, owns it now.
+        seat_of_pid.retain(|pid, _| !crate::codex_terminal::scoped(&sweep.procs, *pid));
+        let selection_hosts: std::collections::BTreeSet<_> = registered.iter().filter(|r| {
+            r.host_child.is_some_and(|pid| sweep.procs.held_by(&[pid]).iter().any(|p| crate::codex_terminal::scoped(&sweep.procs, *p)))
+        }).map(|r| r.row.id.0.clone()).collect();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
         // Vendor leaves learned this poll, for the preview post-pass:
         // `registered` was read before they were written.
@@ -1692,6 +1709,10 @@ impl LiveKind {
                 .or_else(|| newest(&agents).map(Holder::Row))
                 .or_else(|| inside.is_empty().then_some(own_seat));
             let wear = newest(&agents);
+            // Runtime workspace location follows the pane currently in view,
+            // even when its command marks still describe the previous pane.
+            let runtime_cwd = host.client.as_ref().and_then(|c| c.cwd.clone())
+                .or_else(|| host.panes.iter().find(|p| p.active).and_then(|p| p.cwd.clone()));
             let holder_row = match holder {
                 // An agent inside holds: it wears its own form, as it
                 // always did.
@@ -1788,6 +1809,9 @@ impl LiveKind {
                 }
                 None => None,
             };
+            if let (Some(k), Some(cwd)) = (holder_row, runtime_cwd) {
+                out[k].doing.get_or_insert_with(Default::default).cwd = Some(cwd);
+            }
             // Only a holder that is not itself one of the agents wears
             // one; an agent that holds keeps its own form, and the other
             // agents in the same session stay rows of their own.
@@ -2059,7 +2083,7 @@ impl LiveKind {
                     let own = r.doing.take().unwrap_or_default();
                     let front = match own_pane {
                         Some(d) => khor_core::Doing {
-                            cwd: d.cwd.or(cwd).or(own.cwd),
+                            cwd: cwd.or(d.cwd).or(own.cwd),
                             ..d
                         },
                         None => khor_core::Doing {
@@ -2099,6 +2123,17 @@ impl LiveKind {
                 };
                 r.unread = 0;
                 r.dead = false;
+            }
+        }
+        // Native selection metadata is transport state, never a display name.
+        // Keep the raw ledger untouched so the next discovery can read it.
+        for row in &mut out {
+            if selection_hosts.contains(&row.id.0)
+                && let Some(doing) = row.doing.as_mut()
+                && doing.title.as_deref().is_some_and(crate::codex_terminal::metadata_title)
+            {
+                if row.last == doing.title { row.last = doing.cwd.as_deref().map(tilde); }
+                doing.title = None;
             }
         }
         out.retain(|r| !folded.contains(&r.id));
@@ -2180,7 +2215,7 @@ impl LiveKind {
                 .filter(|hf| crate::link::pid_running(hf.host_pid));
             let lens = crate::host::read_view_file(&e.path())
                 .is_ok_and(|vf| crate::link::pid_running(vf.host_pid));
-            let doing = crate::commands::read_doing(&e.path());
+            let mut doing = crate::commands::read_doing(&e.path());
             // **A hosted shell's row never shows its prompt** (item 26;
             // roadmap 2.1's rule, broken for shells whose host predates
             // the shim and so has no ledger: the owner's row read a
@@ -2197,6 +2232,15 @@ impl LiveKind {
                 }
                 _ => crate::host::read_last(&e.path()),
             };
+            // Shells without integration still expose their live directory.
+            // Never rewrite Meta.place: it records where the session began.
+            if doing.as_ref().and_then(|d| d.cwd.as_ref()).is_none()
+                && meta.kind == khor_core::kind::SHELL
+                && !id.0.strip_prefix("shell/").is_some_and(crate::adaptor::tmux::is_tmux_leaf)
+                && let Some(cwd) = host.as_ref().and_then(|hf| cwd_of(hf.child_pid))
+            {
+                doing.get_or_insert_with(Default::default).cwd = Some(cwd.to_string_lossy().into_owned());
+            }
             out.push(RegistryRow {
                 word_outranks_disk: state.word_outranks_disk(),
                 vendor_leaf: meta.vendor_leaf.clone(),
@@ -4136,6 +4180,17 @@ mod tests {
         }
         assert_eq!(k.rows(|_| i64::MAX)[0].state.state, State::Idle);
         drop(writer);
+        // Parallel process spawns can briefly inherit the writer descriptor
+        // until exec closes it. Wait for observed lock release, not a sleep.
+        let released = fs::File::open(locks.join(format!("{uuid}.lock"))).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            match released.try_lock_shared() {
+                Ok(()) => break,
+                Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(1)),
+                Err(error) => panic!("fixture writer did not release: {error:?}"),
+            }
+        }
         let rows = k.rows(|_| 0);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].kind.0, khor_core::kind::SHELL);
@@ -4294,6 +4349,7 @@ mod tests {
         fs::write(dir.join("last.txt"), "╭─ ◖ /Library ◗ ✔ 20:58").unwrap();
         let row = || k.rows(|_| 0).into_iter().find(|r| r.id == id).expect("the row");
         let here = std::env::current_dir().unwrap().to_string_lossy().into_owned();
+        assert_eq!(row().doing.and_then(|d| d.cwd).as_deref(), Some(here.as_str()), "workspace receives the live shell cwd without OSC marks");
         let last = row().last.expect("a line");
         assert!(!last.contains('◖'), "the prompt's glyphs: {last:?}");
         assert_eq!(last, tilde(&here));
@@ -4352,6 +4408,112 @@ mod tests {
         ended(0, true);
         assert_eq!(row(0).0, State::Idle, "the next command running: the failure is over");
         drop(host);
+    }
+
+    #[test]
+    fn native_codex_selection_title_is_hidden_from_unnamed_shell_rows() {
+        use crate::adaptor::{Discovery, Proc, Procs};
+        let root = tmp("codex-title-hidden");
+        let host = FakeHost::up();
+        let process = |name: &str, ppid| Proc { name:name.into(), started_ms:100, cwd:None, ppid };
+        let procs = Procs::of([(3001, process("zsh", None)), (501, process("codex", Some(3001)))])
+            .with_commands([(501, ["codex", "-c", "tui.terminal_title=[\"thread-id\"]"].into_iter().map(str::to_owned).collect())]);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(Discovery::empty().with_procs(procs)));
+        let id = sid("shell/titlemetadata");
+        k.register(&id, "shell", "shell", Some(host.pid()), None).unwrap();
+        let dir = k.dir_of(&id).unwrap(); host.serve(&dir, 3001);
+        let title = "019fd755-e464-7aaa-8aaa-aaaaa...";
+        let write = |title: &str| crate::commands::write_saved(&dir, &crate::commands::Saved { doing:khor_core::Doing {title:Some(title.into()), ..Default::default()}, ..Default::default() });
+        write(title);
+        let row = || k.rows(|_|0).into_iter().find(|r| r.id == id).unwrap();
+        assert!(row().doing.unwrap().title.is_none(), "an unnamed session must not display the native UUID");
+        assert_ne!(row().last.as_deref(), Some(title));
+        assert_eq!(crate::commands::read_doing(&dir).unwrap().title.as_deref(), Some(title), "raw selection metadata survives for discovery");
+        write("my useful title");
+        assert_eq!(row().doing.unwrap().title.as_deref(), Some("my useful title"));
+    }
+
+    #[test]
+    fn native_codex_title_switches_identity_and_reopen_routes_with_old_writer_loaded() {
+        use crate::adaptor::{Discovery, Proc, Procs, tmux::Tmux};
+        let root = tmp("codex-title-switch");
+        let a = "019fd755-e464-7aaa-8aaa-aaaaaaaaaaaa";
+        let b = "019fd755-e465-7aaa-8aaa-bbbbbbbbbbbb";
+        let c = "019fd755-e466-7aaa-8aaa-cccccccccccc";
+        let sessions = root.join(".codex/sessions/2026/08/06");
+        let locks = root.join(".codex/thread-writer-locks");
+        fs::create_dir_all(&sessions).unwrap(); fs::create_dir_all(&locks).unwrap();
+        fs::write(locks.join(".coordination.lock"), "").unwrap();
+        let writers: Vec<_> = [a, b].into_iter().map(|id| {
+            let metadata = serde_json::json!({"type":"session_meta","payload":{"id":id,"cwd":"/same","originator":"codex_cli_rs","source":"cli"}});
+            let latest = serde_json::json!({"timestamp":"2026-08-06T21:49:20Z","type":"event_msg","payload":{"type":"agent_message","message":if id == a { "LATEST_A" } else { "LATEST_B" }}});
+            let done = serde_json::json!({"timestamp":"2026-08-06T21:49:21Z","type":"event_msg","payload":{"type":"task_complete"}});
+            fs::write(sessions.join(format!("rollout-2026-08-06T21-49-18-{id}.jsonl")), format!("{metadata}\n{latest}\n{done}\n")).unwrap();
+            let f = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(locks.join(format!("{id}.lock"))).unwrap(); f.try_lock().unwrap(); f
+        }).collect();
+        let pending = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(locks.join(format!("{c}.lock"))).unwrap(); pending.try_lock().unwrap();
+        let tmux = crate::adaptor::tmux::fake_tmux("codex-title-switch", "");
+        let proc = |name: &str, parent| Proc { name:name.into(), started_ms:100, cwd:Some("/same".into()), ppid:parent };
+        let procs = Procs::of([(3001, proc("zsh", None)), (501, proc("codex", Some(3001)))])
+            .with_commands([(501, ["codex", "--no-daemon", "-c", "tui.terminal_title=[\"thread-id\"]", "resume", a].into_iter().map(str::to_owned).collect())]);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(Discovery::at(&root).with_procs(procs).with_tmux(Tmux::at_binary(&tmux))));
+        let aid = crate::adaptor::id_for(a); let bid = crate::adaptor::id_for(b);
+        k.register(&aid, "tui", "old", Some(501), Some("codex")).unwrap();
+        let select = |id: &str| {
+            let title = format!("{}...", &id[..29]);
+            let output = format!("$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fcodex\x1f/same\x1f%1\x1fwork\x1f1\x1f1\x1f{title}\n");
+            fs::write(&*tmux, format!("#!/bin/sh\ncat <<'END'\n{output}END\n")).unwrap();
+        };
+        select(a);
+        assert_eq!(k.sighting_of(&aid).unwrap().1, vec![501]); assert!(k.held_in_mux(&aid));
+        assert_eq!(k.rows(|_|0).iter().find(|r|r.id==aid).unwrap().last.as_deref(), Some("LATEST_A"));
+        select(b);
+        assert!(k.sighting_of(&aid).unwrap().1.is_empty()); assert!(!k.held_in_mux(&aid));
+        assert_eq!(k.sighting_of(&bid).unwrap().1, vec![501]); assert!(k.held_in_mux(&bid));
+        assert!(k.attach_multiplexed(&aid).is_err(), "old loaded thread cannot reopen the current thread's terminal");
+        let rows = k.rows(|_|0);
+        let current = rows.iter().find(|r|r.id==bid).unwrap();
+        assert_eq!(current.category.as_deref(), Some("codex"));
+        assert_eq!(current.last.as_deref(), Some("LATEST_B"));
+        select(c);
+        let cid = crate::adaptor::id_for(c);
+        let rows = k.rows(|_|0);
+        let current = rows.iter().find(|r|r.id==cid).unwrap();
+        assert_eq!(current.category.as_deref(), Some("codex"));
+        assert_eq!(current.state.state, State::Idle);
+        assert!(current.last.is_none(), "a selected new thread has no invented preview");
+        assert!(k.held_in_mux(&cid));
+        assert!(k.sighting_of(&bid).unwrap().1.is_empty());
+        select(a);
+        assert_eq!(k.sighting_of(&aid).unwrap().1, vec![501]); assert!(k.held_in_mux(&aid));
+        assert_eq!(k.rows(|_|0).iter().find(|r|r.id==aid).unwrap().last.as_deref(), Some("LATEST_A"));
+        drop(pending);
+        drop(writers);
+    }
+
+    #[test]
+    fn workspace_directory_follows_active_tmux_pane_even_with_old_marks() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+        let root = tmp("workspace-active-pane");
+        let tmux = crate::adaptor::tmux::fake_tmux("workspace-active-pane", "");
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::empty().with_procs(Procs::of([proc_under(3001, "zsh", 1), proc_under(3002, "zsh", 1)]))
+                .with_tmux(Tmux::at_binary(&tmux))));
+        let id = sid(T_ID);
+        k.register(&id, "shell", "work", None, None).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        crate::commands::write_saved(&dir, &crate::commands::Saved {
+            doing: khor_core::Doing { cwd: Some("/birth".into()), ..Default::default() },
+            pane: Some("%1".into()), ..Default::default()
+        });
+        let read = |first: &str, second: &str, active: usize| {
+            let output = format!("$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f{first}\x1f%1\x1fwork\x1f{}\x1f1\n$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fzsh\x1f{second}\x1f%2\x1fwork\x1f{}\x1f1\n", usize::from(active == 1), usize::from(active == 2));
+            fs::write(&*tmux, format!("#!/bin/sh\ncat <<'END'\n{output}END\n")).unwrap();
+            k.rows_listed(|_| 0, |s| s == T_ID).into_iter().find(|r| r.id == id).unwrap().doing.unwrap().cwd
+        };
+        assert_eq!(read("/after-cd", "/second", 1).as_deref(), Some("/after-cd"));
+        assert_eq!(read("/after-cd", "/second", 2).as_deref(), Some("/second"));
+        assert_eq!(read("/returned-and-cd", "/second", 1).as_deref(), Some("/returned-and-cd"));
     }
 
     /// **A tmux row khor is attached to, whose pane in front sent no
@@ -4931,7 +5093,7 @@ mod tests {
         assert_eq!(doing.command.as_deref(), Some("make -j8 test"));
         assert!(!doing.running);
         assert_eq!((doing.ended_ms, doing.exit), (Some(9), Some(2)), "how it ended");
-        assert_eq!(doing.cwd.as_deref(), Some("/w/three"), "where the pane said it stands");
+        assert_eq!(doing.cwd.as_deref(), Some("/w/one"), "live pane cwd outranks an earlier command mark");
         assert!(!doing.pane_unmarked);
 
         let editing = khor_core::Doing {

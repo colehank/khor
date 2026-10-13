@@ -951,7 +951,7 @@ pub fn face_choices(root: &Path, machine: &str) -> Result<FaceChoices, String> {
     } else {
         machine.to_owned()
     };
-    let now = n.avatar_style_of(&device);
+    let now = n.checked_avatar_style_of(&device)?.unwrap_or_default();
     // An id with no seed has no face to paint, and a chooser drawing the
     // factory default for it would be inviting somebody to restyle a
     // machine khor cannot render.
@@ -1026,11 +1026,12 @@ pub fn restyle(
     // The same call the CLI makes, so an axis left out stays where it is
     // and a value outside its ladder is refused by name rather than
     // defaulted — one judgment, not one per face.
-    n.restyle_device(
+    n.restyle_device_from(
         &device,
         colors.as_deref(),
         variant.as_deref(),
         shape.as_deref(),
+        khor_node::AvatarChangeOrigin::Gui,
     )
     .map(|_| ())
 }

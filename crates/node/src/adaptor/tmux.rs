@@ -176,7 +176,7 @@ const CALL_DEADLINE: Duration = Duration::from_millis(1000);
 const SEP: char = '\x1f';
 const FORMAT: &str = "#{session_id}\x1f#{session_created}\x1f#{session_activity}\
 \x1f#{pane_pid}\x1f#{?pane_start_command,1,0}\x1f#{pane_current_command}\
-\x1f#{pane_current_path}\x1f#{pane_id}\x1f#{session_name}";
+\x1f#{pane_current_path}\x1f#{pane_id}\x1f#{session_name}\x1f#{pane_active}\x1f#{window_active}\x1f#{pane_title}";
 
 /// What one look at a multiplexer found.
 #[derive(Debug, Default, Clone)]
@@ -527,23 +527,29 @@ impl Tmux {
     /// off. Nothing of theirs is written — no option, no `-g`, no file —
     /// only the pane state a wheel would have set: up enters copy mode
     /// (`-e`, which leaves again at the bottom) and scrolls; down scrolls
-    /// while in it. A pane whose program is on the alternate screen or
-    /// holds the mouse gets the arrow keys a terminal sends for a wheel
-    /// there, as before. `rows` up when positive; `row` names the session
+    /// while in it. An alternate-screen program that did not request the
+    /// mouse gets standard PageUp/PageDown, never composer history arrows.
+    /// Mouse-aware programs retain their existing path. `rows` up when
+    /// positive; `row` names the session
     /// in errors.
     pub fn wheel_in(&self, id: &str, row: &str, rows: i32) -> Result<(), String> {
         let at = |args: &[&str]| self.ask(args).ok_or_else(|| khor_catalog::msg::tmux_session_gone(row));
-        let state = at(&["display-message", "-p", "-t", id, "#{pane_in_mode} #{alternate_on} #{mouse_any_flag}"])?;
+        let state = at(&["display-message", "-p", "-t", id, "#{pane_in_mode} #{alternate_on} #{mouse_any_flag} #{pane_height}"])?;
         if rows == 0 {
             return Ok(());
         }
         let mut flags = state.split_whitespace();
         let in_mode = flags.next() == Some("1");
-        let program = flags.any(|f| f == "1");
+        let alternate = flags.next() == Some("1");
+        let mouse = flags.next() == Some("1");
+        let height = flags.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(24).saturating_sub(1).max(1);
         let n = rows.unsigned_abs().to_string();
         if in_mode {
             at(&["send-keys", "-X", "-N", &n, "-t", id, if rows > 0 { "scroll-up" } else { "scroll-down" }])?;
-        } else if program {
+        } else if alternate && !mouse {
+            let pages = rows.unsigned_abs().div_ceil(height).to_string();
+            at(&["send-keys", "-N", &pages, "-t", id, if rows > 0 { "PageUp" } else { "PageDown" }])?;
+        } else if mouse {
             at(&["send-keys", "-N", &n, "-t", id, if rows > 0 { "Up" } else { "Down" }])?;
         } else if rows > 0 {
             at(&["copy-mode", "-e", "-t", id, ";", "send-keys", "-X", "-N", &n, "-t", id, "scroll-up"])?;
@@ -667,10 +673,22 @@ impl Tmux {
                 server_env(k)
             }
         })?;
+        // An existing tmux server does not inherit a new client's PATH.
+        // Pass the launcher only to this grouped session's future shells;
+        // never mutate the server's global environment or existing panes.
+        let codex = crate::codex_launch::install(
+            scripts.parent()?,
+            std::ffi::OsStr::new(&server_env("PATH").unwrap_or_else(|| crate::Node::user_path().to_owned())),
+        ).ok();
         let quote = |s: &str| (!s.contains(['\'', '\\'])).then(|| format!("'{s}'"));
         let mut out = String::from("exec env");
         for (k, v) in &plan.env {
             out.push_str(&format!(" {k}={}", quote(v)?));
+        }
+        if let Some(scope) = codex {
+            out.push_str(&format!(" PATH={} {}={} KHOR_HOME={}",
+                quote(&scope.path.to_string_lossy())?, crate::codex_launch::SHIM_ENV,
+                quote(&scope.dir.to_string_lossy())?, quote(&scope.root.to_string_lossy())?));
         }
         out.push_str(&format!(" {}", quote(&shell)?));
         for a in &plan.args {
@@ -968,24 +986,32 @@ struct Pane {
     current_path: String,
     /// tmux's own name for it (`%3`), the one khor's marks carry.
     pane_id: String,
+    active: bool,
+    title: Option<String>,
 }
 
 impl Pane {
     fn parse(line: &str) -> Option<Pane> {
         let f: Vec<&str> = line.split(SEP).collect();
-        let [id, created, activity, pid, started, current, path, pane_id, name] = f[..] else {
-            return None;
+        let (fields, active, title) = match f.as_slice() {
+            [base @ .., pane_active, window_active, title] if base.len() == 9 => (base, *pane_active == "1" && *window_active == "1", Some(title.to_string())),
+            [base @ .., pane_active, window_active] if base.len() == 9 => (base, *pane_active == "1" && *window_active == "1", None),
+            base if base.len() == 9 => (base, false, None), // Older saved discovery fixtures.
+            _ => return None,
         };
+        let [id, created, activity, pid, started, current, path, pane_id, name] = fields else { return None; };
         Some(Pane {
-            session_id: id.to_owned(),
-            session_name: name.to_owned(),
-            current_path: path.to_owned(),
+            session_id: id.to_string(),
+            session_name: name.to_string(),
+            current_path: path.to_string(),
             created_secs: created.parse().ok()?,
             activity_secs: activity.parse().ok()?,
             pid: pid.parse().ok()?,
-            started_with_command: started == "1",
-            current_command: current.to_owned(),
-            pane_id: pane_id.to_owned(),
+            started_with_command: *started == "1",
+            current_command: current.to_string(),
+            pane_id: pane_id.to_string(),
+            active,
+            title,
         })
     }
 }
@@ -1016,11 +1042,8 @@ impl Gathering {
             activity_secs: first.activity_secs,
             pane_pids: Vec::new(),
             word: None,
-            // **The first pane's**, which is where the session was
-            // made. Later panes may have wandered, and it does not
-            // matter: the row's place is folded up to a project root,
-            // so a `cd` inside the checkout lands in the same workspace
-            // (`khor_node::place`).
+            // Fallback only; absorb replaces it with the active pane of
+            // the current window, independent of list order.
             cwd: first.current_path.clone(),
             running: None,
             panes: Vec::new(),
@@ -1029,6 +1052,7 @@ impl Gathering {
 
     fn absorb(&mut self, pane: &Pane, procs: &Procs) {
         self.pane_pids.push(pane.pid);
+        if pane.active { self.cwd = pane.current_path.clone(); }
         self.activity_secs = self.activity_secs.max(pane.activity_secs);
         // 忙碌 wins: a session with one pane at a prompt and one running
         // a build is a session with something running in it. Reducing
@@ -1038,6 +1062,9 @@ impl Gathering {
             self.running = Some(pane.current_command.clone());
         }
         self.panes.push(super::PaneReading {
+            pid: pane.pid,
+            title: pane.title.clone(),
+            active: pane.active,
             id: pane.pane_id.clone(),
             running: (word == Some(State::Busy) && !pane.current_command.is_empty()).then(|| pane.current_command.clone()),
             cwd: (!pane.current_path.is_empty()).then(|| pane.current_path.clone()),
@@ -1824,6 +1851,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn wheel_in_alternate_without_mouse_sends_pages_not_composer_arrows() {
+        if !have_tmux() {
+            return;
+        }
+        for (rows, byte) in [(1, "35"), (-1, "36")] {
+            let s = Server::start(if rows > 0 { "page-up" } else { "page-down" });
+            // A real raw-input alternate-screen application. Read the first
+            // three bytes: PageUp/Down are ESC [ 5/6 ~, arrows ESC [ A/B.
+            let program = r"stty raw -echo; printf '\033[?1049hREADY\r\n'; dd bs=1 count=3 2>/dev/null | od -An -tx1; printf '\r\nDONE\r\n'; sleep 30";
+            s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "60", "-y", "20", program]);
+            until_shown(&s, "one", "READY");
+            assert_eq!(s.tmux(&["display-message", "-p", "-t", "one", "#{alternate_on} #{mouse_any_flag}"]).unwrap().trim(), "1 0");
+            s.at().wheel_in("one", "fixture", rows).unwrap();
+            until_shown(&s, "one", "DONE");
+            let screen = s.tmux(&["capture-pane", "-p", "-t", "one"]).unwrap();
+            assert!(screen.split_whitespace().collect::<Vec<_>>().join(" ").contains(&format!("1b 5b {byte}")), "a wheel must page, not alter the input draft: {screen}");
+        }
+    }
+
     fn numbers(lines: &[String]) -> Vec<u32> {
         lines.iter().filter_map(|l| plain(l).trim().parse().ok()).collect()
     }
@@ -2202,6 +2249,20 @@ mod tests {
         }
     }
 
+    #[test]
+    fn workspace_cwd_follows_cd_and_the_active_pane_in_the_current_window() {
+        let pane = |id: &str, path: &str, active: bool, window: bool| {
+            Pane::parse(&format!("$1\x1f1\x1f2\x1f3001\x1f0\x1fzsh\x1f{path}\x1f{id}\x1fwork\x1f{}\x1f{}", u8::from(active), u8::from(window))).unwrap()
+        };
+        let read = |panes: &[Pane]| {
+            let mut group = Gathering::new(&panes[0]);
+            for p in panes { group.absorb(p, &Procs::of([])); }
+            group.into_row(State::Idle, &Procs::of([])).found.sighting.cwd
+        };
+        assert_eq!(read(&[pane("%1", "/birth", false, true), pane("%2", "/current", true, true), pane("%3", "/other-window", true, false)]).as_deref(), Some("/current"));
+        assert_eq!(read(&[pane("%1", "/after-cd", true, true), pane("%2", "/current", false, true)]).as_deref(), Some("/after-cd"));
+    }
+
     /// A session holds its panes **and everything under them** — which
     /// is the only reason the duplicate rule can work, because an agent
     /// is a grandchild of the pane, not the pane.
@@ -2271,6 +2332,8 @@ mod tests {
             current_command: current.into(),
             current_path: "/somewhere".into(),
             pane_id: "%1".into(),
+            active: true,
+            title: None,
         };
         let procs = Procs::of([
             // Both spellings of the same shell. `zsh` is what sysinfo
@@ -2324,6 +2387,8 @@ mod tests {
             current_command: current.into(),
             current_path: "/somewhere".into(),
             pane_id: "%1".into(),
+            active: true,
+            title: None,
         };
         let shells = ["bash", "zsh", "fish", "sh", "dash", "ksh", "-zsh", "-bash", "/bin/zsh"];
         let procs = Procs::of(

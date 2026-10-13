@@ -18,6 +18,11 @@ if [ -r "$HOME/.bashrc" ]; then
   . "$HOME/.bashrc"
 fi
 
+# Restore khor's scoped launcher after the user's .bashrc computed PATH.
+if [ -n "$KHOR_CODEX_SHIM_DIR" ] && [ "${PATH%%:*}" != "$KHOR_CODEX_SHIM_DIR" ]; then
+  export PATH="$KHOR_CODEX_SHIM_DIR:$PATH"
+fi
+
 if [ -z "$_khor_loaded" ] && [ -n "$BASH_VERSION" ]; then
 _khor_loaded=1
 _khor_ran=0

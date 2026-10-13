@@ -1,3 +1,4 @@
+import { sessionCwdOnScreen } from "@/lib/session-cwd";
 import { useMemo, useState } from "react";
 
 import { BellMark } from "@/components/BellMark";
@@ -259,7 +260,7 @@ export function SessionsList({
     },
     ...turnInto(r),
     // Where the shell stands (roadmap 2.5).
-    ...(r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : []),
+    ...(sessionCwdOnScreen(r) ? hereActs(r.home, sessionCwdOnScreen(r)!) : []),
     {
       // The id is paste material, not reading material. The menu
       // closing is the success face; a clipboard refusal rejects, so

@@ -537,3 +537,92 @@ fn a_face_another_machine_gave_this_one_survives_a_restart() {
          the only source and `.khor/avatar.json` is dead"
     );
 }
+
+/// A failed read is not an instruction to replace the other axes with
+/// factory defaults. Preserve the exact stored value on refusal.
+#[test]
+fn avatar_partial_edit_refuses_invalid_saved_style() {
+    let r = root("invalid-edit");
+    let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
+    let loaded = khor_sync::store::load::<khor_sync::devices::DeviceDoc>(
+        &r.join(".khor/devices"), 73,
+    ).unwrap();
+    let invalid = r##"{"variant":"future-style","palette":["#123456"]}"##;
+    loaded.doc.set_style(n.device_str(), invalid).unwrap();
+    let mut store = loaded.store;
+    store.flush(&loaded.doc).unwrap();
+    drop(store);
+    assert!(n.restyle(None, None, Some("rounded")).is_err(),
+        "an unreadable chosen face must not be replaced by defaults plus one edited axis");
+    assert_eq!(n.devices().unwrap().into_iter().find(|d| d.id == n.device_str()).unwrap().style.as_deref(), Some(invalid));
+}
+
+#[test]
+fn avatar_partial_edit_refuses_a_damaged_device_block() {
+    let r = root("damaged-edit");
+    let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
+    n.set_avatar_style(&a_chosen_style()).unwrap();
+    std::fs::write(r.join(".khor/devices/u-broken.loro"), b"not a loro block").unwrap();
+    assert!(n.restyle(None, None, Some("rounded")).is_err(),
+        "a partial document must not be used as the base for an avatar edit");
+    assert_eq!(n.avatar_style(), a_chosen_style());
+}
+
+#[test]
+fn avatar_edit_refuses_a_missing_machine() {
+    let r = root("missing-edit");
+    let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
+    assert!(n.restyle_device(&"a".repeat(64), None, Some("beam"), None).is_err(),
+        "an unknown device must not acquire a default style row through editing");
+    assert_eq!(n.devices().unwrap().len(), 1);
+}
+
+#[test]
+fn avatar_checked_read_distinguishes_unset_from_failure() {
+    let r = root("checked-read");
+    let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
+    assert!(n.checked_avatar_style_of(n.device_str()).unwrap().is_none());
+    assert_eq!(n.restyle(None, None, None).unwrap(), AvatarStyle::default());
+    assert!(n.checked_avatar_style_of(n.device_str()).unwrap().is_none(), "an edit with no axes must not invent a persisted choice");
+    let chosen = n.restyle(None, Some("beam"), None).unwrap();
+    assert_eq!(chosen.variant.key(), "beam");
+    let path = r.join(".khor/devices");
+    let held = r.join(".khor/devices-held");
+    std::fs::rename(&path, &held).unwrap();
+    std::fs::write(&path, b"not a directory").unwrap();
+    assert!(n.checked_avatar_style_of(n.device_str()).is_err());
+    assert!(n.restyle(None, None, Some("rounded")).is_err());
+    std::fs::remove_file(&path).unwrap();
+    std::fs::rename(&held, &path).unwrap();
+    assert_eq!(n.checked_avatar_style_of(n.device_str()).unwrap(), Some(chosen));
+}
+
+#[test]
+fn avatar_change_provenance_stays_with_the_choice_and_noop_keeps_it() {
+    let r = root("provenance");
+    let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
+    let before = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+    let chosen = n.restyle_device_from(n.device_str(), None, Some("beam"), None, khor_node::AvatarChangeOrigin::Gui).unwrap();
+    let raw = || n.devices().unwrap().into_iter().find(|d| d.id == n.device_str()).unwrap().style.unwrap();
+    let initial = raw();
+    let value: serde_json::Value = serde_json::from_str(&initial).unwrap();
+    assert_eq!(value["change"]["writer"], n.device_str());
+    assert_eq!(value["change"]["origin"], "gui");
+    assert!(value["change"]["at_ms"].as_u64().unwrap() >= before);
+    // Old readers still consume exactly the same style fields.
+    assert_eq!(AvatarStyle::from_json(&initial), Some(chosen.clone()));
+    let directory_state = || {
+        let mut files: Vec<_> = std::fs::read_dir(r.join(".khor/devices")).unwrap().flatten()
+            .map(|e| e.path()).filter(|p| p.extension().is_some_and(|ext| ext == "loro")).collect();
+        files.sort();
+        files.into_iter().map(|p| (p.file_name().unwrap().to_owned(), std::fs::read(&p).unwrap())).collect::<Vec<_>>()
+    };
+    let blocks_before = directory_state();
+    n.restyle_device_from(n.device_str(), None, Some("beam"), None, khor_node::AvatarChangeOrigin::Cli).unwrap();
+    assert_eq!(raw(), initial, "a no-op must not pretend the CLI changed the GUI's choice");
+    assert_eq!(directory_state(), blocks_before, "a no-op must not append sync blocks");
+    let restarted = Node::open_as(r.to_path_buf(), "solo").unwrap();
+    assert_eq!(restarted.checked_avatar_style_of(n.device_str()).unwrap(), Some(chosen));
+    let after_restart = restarted.devices().unwrap().into_iter().find(|d| d.id == n.device_str()).unwrap().style.unwrap();
+    assert_eq!(after_restart, initial, "restart must preserve both choice and provenance");
+}

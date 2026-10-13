@@ -122,6 +122,10 @@ pub struct Sighting {
 /// What one sweep of one vendor found.
 #[derive(Debug, Default, Clone)]
 pub struct Sweep {
+    /// Writer-owned root threads eligible for native terminal selection.
+    pub terminal_threads: Vec<String>,
+    /// Owned writer ids with no rollout file yet; require native selection.
+    pub pending_threads: Vec<String>,
     pub rows: Vec<Sighting>,
     /// Live sessions this adaptor saw but could not read: an unknown
     /// status word, a file layout from a version it does not understand,
@@ -196,6 +200,11 @@ pub struct Multiplexed {
 /// shell, and where it stands.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PaneReading {
+    /// Pane shell pid and native OSC title, sampled together by tmux.
+    pub pid: u32,
+    pub title: Option<String>,
+    /// Active pane of the session's current window, from live tmux state.
+    pub active: bool,
     /// `%3`.
     pub id: String,
     pub running: Option<String>,
@@ -205,6 +214,9 @@ pub struct PaneReading {
 /// What one sweep of every vendor found, each row already attributed.
 #[derive(Debug, Default, Clone)]
 pub struct Findings {
+    /// Codex writer-owned root thread ids; subagents are excluded.
+    pub codex_threads: Vec<String>,
+    pub codex_pending: Vec<String>,
     pub rows: Vec<Found>,
     /// Multiplexer sessions, still to be checked against what else is
     /// listed. See [`Multiplexed`].
@@ -222,6 +234,7 @@ pub struct Findings {
 
 impl Findings {
     fn absorb(&mut self, vendor: &'static str, other: Sweep) {
+        if vendor == codex::VENDOR { self.codex_threads.extend(other.terminal_threads); self.codex_pending.extend(other.pending_threads); }
         self.rows
             .extend(other.rows.into_iter().map(|sighting| Found {
                 category: vendor,

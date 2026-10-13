@@ -7,8 +7,9 @@ import type { Terminal } from "@xterm/xterm";
  * Whether the program, not the history, gets the scroll: it took the
  * mouse (khor turns tmux's on for its own grouped session,
  * `Tmux::grouped_attach_argv`), or it is on the alternate screen, which
- * keeps no history. A wheel then goes to xterm, which encodes it as a
- * report or as arrow keys; the native scroller below is inert.
+ * keeps no history. This only selects the program-owned travel range;
+ * `term-scroll-target` separately decides mouse reports or standard page
+ * keys from the inner program’s capabilities.
  */
 export function programScrolls(term: Terminal): boolean {
   return term.modes.mouseTrackingMode !== "none" || term.buffer.active.type === "alternate";

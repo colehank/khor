@@ -41,6 +41,40 @@ use serde::{Deserialize, Serialize};
 use crate::live::LiveKind;
 use crate::proto;
 
+/// Every new PTY describes khor's terminal, regardless of which CLI, GUI,
+/// daemon or automation environment happened to create its host. Application
+/// identity never changes this contract. User shell startup files and an
+/// explicit `env NO_COLOR=1 command` can still choose a different preference.
+struct TerminalContext;
+
+impl TerminalContext {
+    fn apply(builder: &mut CommandBuilder) {
+        builder.env("TERM", "xterm-256color");
+        builder.env("TERM_PROGRAM", "khor");
+        builder.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+        builder.env("COLORTERM", "truecolor");
+        // Color switches in the opener describe its output, not this new
+        // interactive terminal. NO_COLOR from an automation launcher used
+        // to suppress color inside every shell/TUI and tmux it created.
+        for name in [
+            "NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE",
+            "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION",
+            "TERM_SESSION_ID", "TERM_FEATURES", "TMUX", "TMUX_PANE",
+        ] {
+            builder.env_remove(name);
+        }
+        for (name, _) in std::env::vars_os() {
+            if let Some(name) = name.to_str()
+                && (name.starts_with("LC_TERMINAL") || name.starts_with("ITERM_"))
+            {
+                builder.env_remove(name);
+            }
+        }
+        // TMUX_TMPDIR and TERMINFO paths belong to the user's installation,
+        // unlike parent-client identity, and must remain available.
+    }
+}
+
 /// Where attachers find the host, beside meta/state in the session dir.
 /// Owner-only: the cookie is the capability, the port gates nothing.
 #[derive(Serialize, Deserialize)]
@@ -421,6 +455,7 @@ pub fn read_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> R
 /// found live: a host spawned from it was another bridge, and the
 /// terminal waited on a host.json nobody would ever write.
 pub fn main_if_host(root: std::path::PathBuf) {
+    crate::codex_launch::main_if_shim(&root);
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
         Some("_host") => host_args(&root, &args[1..]),
@@ -1606,6 +1641,8 @@ fn host_serving(
     // a shell opened here with launchd's four directories is not the
     // shell the person would have got from their own terminal.
     let path = crate::spawn_path(&cmd[0]);
+    let codex_scope = crate::codex_launch::install(khor, std::ffi::OsStr::new(&path)).ok();
+    let path = codex_scope.as_ref().map(|scope| scope.path.to_string_lossy().into_owned()).unwrap_or(path);
     let found = crate::find_program(&cmd[0], &path)
         .ok_or_else(|| msg::command_not_found(&cmd[0], &path))?;
     let mut builder = CommandBuilder::new(&found);
@@ -1630,6 +1667,10 @@ fn host_serving(
         None => builder.args(&cmd[1..]),
     }
     builder.env("PATH", &path);
+    if let Some(scope) = codex_scope {
+        builder.env(crate::codex_launch::SHIM_ENV, scope.dir);
+        builder.env("KHOR_HOME", scope.root);
+    }
     // **The person's own locale, when this process has none.**
     // launchd's environment has no `LANG`, and a tmux client without a
     // UTF-8 locale falls back to the DEC line-drawing set and writes
@@ -1642,63 +1683,7 @@ fn host_serving(
         builder.env(name, value);
     }
     builder.env("KHOR_SESSION", &id.0);
-    // **The host is the terminal, so the host says what it is.**
-    // Inheriting `TERM` names whatever shell happened to start khor,
-    // and for a 持久 session that is not even a coherent question: the
-    // host outlives its opener and several people with different
-    // terminals attach to the same screen. tmux settles this the same
-    // way — a pane gets a fixed `TERM`, never the client's.
-    //
-    // Measured on turing, where it is not cosmetic: `khor serve` was
-    // started by the installer with no tty, so `TERM` was `unknown`,
-    // and every tmux bridge stood up there died at birth with
-    // `open terminal failed: missing or unsuitable terminal: unknown`.
-    // What reached the person clicking the row was 读不到帧:
-    // Connection reset — a sentence about a socket, for a terminfo
-    // entry. **Any machine that installed itself and runs serve as a
-    // daemon had this**, which is every machine the install story is
-    // written for.
-    //
-    // `xterm-256color` because that is what khor's own screen model
-    // (`vt100`, the same engine the detector reads) actually emulates,
-    // and it is the entry ncurses has shipped everywhere for twenty
-    // years.
-    builder.env("TERM", "xterm-256color");
-    // A hosted session is nobody's nested session, whatever process
-    // tree the host was spawned from. The markers are claude's, but
-    // clearing them costs a shell nothing — and inheriting them costs a
-    // claude its transcript (`CLAUDE_CODE_CHILD_SESSION` turns saving
-    // off; found live through a dev bridge started inside a claude).
-    for marker in [
-        "CLAUDECODE",
-        "CLAUDE_CODE_ENTRYPOINT",
-        "CLAUDE_CODE_CHILD_SESSION",
-    ] {
-        builder.env_remove(marker);
-    }
-    // **And the terminal's own name is khor's** (T-26, the terminal
-    // audit: a hosted shell got `TERM_PROGRAM=tmux`, `TERM_SESSION_ID`,
-    // `LC_TERMINAL=iTerm2` and `TERM_FEATURES` from whatever launched
-    // khor, and no `COLORTERM` under launchd). Programs branch on these —
-    // Claude Code and neovim on `TERM_PROGRAM` — and the terminal they
-    // talk to is khor's xterm, not the opener's. `COLORTERM=truecolor`
-    // is what xterm.js draws (its 24-bit SGR), as iTerm2, kitty and
-    // WezTerm set it.
-    builder.env("TERM_PROGRAM", "khor");
-    builder.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
-    builder.env("COLORTERM", "truecolor");
-    for (name, _) in std::env::vars_os() {
-        let Some(name) = name.to_str() else { continue };
-        // `TMUX` and `TMUX_PANE` say "you are inside that tmux"; the
-        // person's own `TMUX_TMPDIR` says where their tmux lives, and
-        // stays.
-        if matches!(name, "TERM_SESSION_ID" | "TERM_FEATURES" | "TMUX" | "TMUX_PANE")
-            || name.starts_with("LC_TERMINAL")
-            || name.starts_with("ITERM_")
-        {
-            builder.env_remove(name);
-        }
-    }
+    TerminalContext::apply(&mut builder);
     // Where the person was standing when they started this process, not
     // where the process stands now — opening a node pins that to a
     // directory nothing can delete (第十四轮 第 4 条), and a shell born

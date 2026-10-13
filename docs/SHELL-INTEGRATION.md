@@ -39,6 +39,25 @@ The scripts are in `crates/node/shell/`. The host writes them under `<khor home>
 
 **Turning it off.** Set `KHOR_SHELL_INTEGRATION=0` in the environment khor runs in.
 
+## Terminal runtime
+
+Every new khor PTY declares `TERM=xterm-256color` and `COLORTERM=truecolor`.
+It removes inherited color overrides such as `NO_COLOR`: those describe the
+launcher, not the new interactive terminal. A person's shell startup files or
+an explicit `env NO_COLOR=1 command` still control that command. Existing
+processes and existing tmux servers keep their original environment.
+
+The workspace uses the current shell or current window's active pane directory.
+`Meta.place` remains the birthplace. Default workspace views follow `cd` and
+pane changes; opening a particular file or directory pins that view until the
+workspace seat is pressed again.
+
+Full-screen scrolling follows the inner program's capabilities: an application
+that requests mouse events keeps receiving them; one on the alternate screen
+without mouse support receives PageUp/PageDown. Ordinary shell history retains
+its existing scrolling path. The paging gesture accumulates travel by viewport
+and never sends Up/Down into a draft's input history.
+
 ## tmux
 
 Inside tmux (`$TMUX` set), every mark is wrapped in tmux's passthrough (`ESC P tmux; … ESC \`, with the inner ESC doubled), led by `OSC 633 ; P ; KhorPane=$TMUX_PANE` in the same wrap so the ledger can tell the panes of a split window apart. tmux forwards a wrap only while the pane is visible and its `allow-passthrough` is on. The zsh script turns that on for its own pane at the first prompt (`tmux set-option -p -q allow-passthrough on`), and khor's grouped attach turns it on for the window it attaches to (`Tmux::grouped_attach_argv`). Passthrough lets a program in that pane write to the outer terminal past tmux; that is tmux's reason for leaving it off by default.

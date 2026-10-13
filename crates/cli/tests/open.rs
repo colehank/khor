@@ -13,6 +13,10 @@ use std::time::{Duration, Instant};
 use khor_node::host::{self, ClientOp, HostFile};
 
 fn khor(home: &Path) -> Command {
+    // The subprocess resolves its CLI language from the environment. This
+    // test process otherwise keeps the catalog's unresolved Chinese default,
+    // so an English Idle/Interrupted row looked like a lifecycle timeout.
+    khor_catalog::lang::set(khor_catalog::lang::from_env());
     let mut c = Command::new(env!("CARGO_BIN_EXE_khor"));
     c.env("KHOR_HOME", home)
         .env("KHOR_NAME", "box")
@@ -137,13 +141,17 @@ fn the_child_is_told_what_terminal_it_is_in_not_what_the_opener_had() {
     let home = std::env::temp_dir().join(format!("khor-term-{}", std::process::id()));
     let out = khor(&home)
         .env("TERM", "khor-not-a-real-terminfo-entry")
+        .env("NO_COLOR", "1")
+        .env("FORCE_COLOR", "0")
+        .env("CLICOLOR", "0")
+        .env("CLICOLOR_FORCE", "0")
         .args([
             "open",
             "-d",
             "--",
             "sh",
             "-c",
-            "printf 'TERM=[%s]\\n' \"$TERM\"; sleep 30",
+            "printf 'TERM=[%s] COLORTERM=[%s] NO_COLOR=[%s] FORCE_COLOR=[%s] CLICOLOR=[%s] CLICOLOR_FORCE=[%s] END\\n' \"$TERM\" \"$COLORTERM\" \"${NO_COLOR-unset}\" \"${FORCE_COLOR-unset}\" \"${CLICOLOR-unset}\" \"${CLICOLOR_FORCE-unset}\"; sleep 30",
         ])
         .output()
         .unwrap();
@@ -164,11 +172,14 @@ fn the_child_is_told_what_terminal_it_is_in_not_what_the_opener_had() {
     let _reap = Reaper(hf.child_pid);
 
     let mut s = host::connect(&dir, 100, 30).unwrap();
-    let seen = read_until(&mut s, "TERM=[", 10);
+    let seen = read_until(&mut s, " END", 10);
     assert!(
         seen.contains("TERM=[xterm-256color]"),
         "the child must be told khor's own screen model, not the opener's: {seen}"
     );
+    for field in ["COLORTERM=[truecolor]", "NO_COLOR=[unset]", "FORCE_COLOR=[unset]", "CLICOLOR=[unset]", "CLICOLOR_FORCE=[unset]"] {
+        assert!(seen.contains(field), "PTY must own its color capability, missing {field}: {seen}");
+    }
     assert!(
         khor(&home)
             .args(["close", &sid])
