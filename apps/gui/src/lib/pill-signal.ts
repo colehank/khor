@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { PillNotice } from "@/lib/pill-notices";
+import { interactionSignal, type InteractionSignal, type SessionInteraction } from "@/lib/session-interaction";
 import { YIELD_MS } from "@/lib/tempo";
-
-type Signal = "rejoin" | "upload" | "failed" | "settling";
 
 /** The current pill's perimeter, from the same facts as its words.
  * Progress/seconds do not restart it; changing tabs never signals completion.
  * A transfer ending only fades the activity light: cancellation is not success.
  */
-export function usePillSignal(id: string, face?: { notices?: PillNotice[]; drop?: unknown } | null) {
-  const now = face?.notices?.[0]?.kind ?? (face?.drop ? "upload" : undefined);
+export function usePillSignal(id: string, interaction?: SessionInteraction | null): InteractionSignal | undefined {
+  const now = interactionSignal(interaction);
   const previous = useRef({ id, kind: now });
   const [tail, setTail] = useState<string | null>(null);
   useEffect(() => {
@@ -23,5 +21,5 @@ export function usePillSignal(id: string, face?: { notices?: PillNotice[]; drop?
     }
     setTail(null);
   }, [id, now]);
-  return (now ?? (tail === id ? "settling" : undefined)) as Signal | undefined;
+  return now ?? (tail === id ? "settling" : undefined);
 }

@@ -233,8 +233,8 @@ export function SessionScreen({
   /** **The pill grows while something stops this session** (NOTICE-BRIEF):
       a press on it opens the grown view instead of the 底栏; a transfer
       under way and a plain pill open the 底栏 as before. */
-  const stops = face?.notices ?? [];
-  const signal = usePillSignal(active, face);
+  const stops = face?.interaction?.notices ?? [];
+  const signal = usePillSignal(active, face?.interaction);
   const grown = useGrownPill(stops.length);
   /** Grown and something to grow into: the island stands, the pill hides. */
   const island = grown.growth.mounted && stops.length > 0;
@@ -892,22 +892,22 @@ export function DeckBand({
     // **What stops this session takes the pill's look** (NOTICE-BRIEF):
     // the kind's mark in the face's seat, the short line in the name's
     // room — each tab its own, so a swipe works the same with one showing.
-    f.notices?.length ? (
+    f.interaction?.notices?.length ? (
       role === "cur" && onTitle ? (
         <button
           type="button"
           data-deck-title
-          data-deck-notice={f.notices[0].kind}
+          data-deck-notice={f.interaction?.notices[0].kind}
           onClick={(e) => {
             if (e.detail === 0) onTitle();
           }}
           className="flex h-full min-h-touch min-w-0 flex-1 items-center gap-in text-left text-body"
         >
-          <NoticeLook list={f.notices} seat="size-glass-item-h" />
+          <NoticeLook list={f.interaction?.notices} seat="size-glass-item-h" />
         </button>
       ) : (
-        <span data-deck-notice={f.notices[0].kind} className="flex h-full min-w-0 flex-1 items-center gap-in text-body">
-          <NoticeLook list={f.notices} seat="size-glass-item-h" />
+        <span data-deck-notice={f.interaction?.notices[0].kind} className="flex h-full min-w-0 flex-1 items-center gap-in text-body">
+          <NoticeLook list={f.interaction?.notices} seat="size-glass-item-h" />
         </span>
       )
     ) : (
@@ -925,13 +925,13 @@ export function DeckBand({
           }}
           // The finger's floor on the title (the 44 touch rule): the band
           // row is 36 tall, so the button wears it and the row clips it.
-          className={cn("flex min-h-touch items-center text-left text-body", f.drop && "min-w-0 flex-1")}
+          className={cn("flex min-h-touch items-center text-left text-body", f.interaction?.drop && "min-w-0 flex-1")}
         >
-          {f.drop ? <MidName text={f.drop.name} even /> : f.label}
+          {f.interaction?.drop ? <MidName text={f.interaction?.drop.name} even /> : f.label}
         </button>
       ) : (
-        <span data-deck-title={role === "cur" ? "" : undefined} className={cn("text-body", f.drop && "flex min-w-0 flex-1")}>
-          {f.drop ? <MidName text={f.drop.name} even /> : f.label}
+        <span data-deck-title={role === "cur" ? "" : undefined} className={cn("text-body", f.interaction?.drop && "flex min-w-0 flex-1")}>
+          {f.interaction?.drop ? <MidName text={f.interaction?.drop.name} even /> : f.label}
         </span>
       )}
     </>
@@ -948,7 +948,7 @@ export function DeckBand({
       aria-hidden="true"
       className={cn("absolute inset-y-0 hidden items-center overflow-hidden text-foreground", role === "prev" ? "left-0" : "right-0")}
     >
-      <div className={cn("flex h-full flex-none items-center gap-in whitespace-nowrap pe-row", (f.drop || f.notices?.length) && "w-[var(--band-w)]")}>{body(f, role)}</div>
+      <div className={cn("flex h-full flex-none items-center gap-in whitespace-nowrap pe-row", (f.interaction?.drop || f.interaction?.notices?.length) && "w-[var(--band-w)]")}>{body(f, role)}</div>
     </div>
   );
   return (

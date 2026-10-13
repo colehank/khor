@@ -386,16 +386,11 @@ input[type="search"]::-webkit-search-decoration {
    where it marks a state the eye must find — the rail's open glyph, an
    open switch, the focus ring, a dialog's one act.
 
-   Every list in the app is `SideList`, its row says `data-selected`, and
-   this is the one place that paints it: `--fill-strong` in front and
-   behind, and **every line in `--foreground`** — the second line's
-   `--muted-foreground` on `--fill-strong` over `--side` is 4.37 and 忙碌
-   3.71 (light), under the 4.5 `check-palette` holds a selected row to.
-   The state stays said by the face's halo. In front the title steps up
-   to `headline`'s weight, which is how the window's being in front shows.
-
-   **Everything but the face** (`[data-side-face]`) keeps its own inks: a
-   quota row's ring and a session's kind mark and halo are drawn there. */
+   Every list is `SideList`, selected by `data-selected`. Its grey block
+   and ordinary text stay full-value. State words and their dots retain
+   their hue (2026-10-13): the quiet light-theme inks have selected-row
+   variants that clear 4.5 on fill-strong. The avatar keeps its own halo.
+   Unread badges keep their badge ink and belong beside the name. */
 /* (The redesign: wide only — a narrow list has no picked state.)
    **The narrow posture is an ancestor's, not the window's** (UX-30): the
    shell stamps `data-narrow` on the root for a narrow window, and a
@@ -411,8 +406,11 @@ input[type="search"]::-webkit-search-decoration {
   --muted-foreground: var(--foreground);
   --tertiary: var(--foreground);
 }
-[data-side-row][data-selected="true"]:not([data-narrow] *) [data-word-text] {
-  color: var(--foreground) !important;
+[data-status-word] {
+  color: var(--status-ink);
+}
+[data-side-row][data-selected="true"]:not([data-narrow] *) [data-status-word] {
+  color: var(--status-selected-ink);
 }
 /* **The hairlines touching a selected or pressed row are not drawn**
    (UX-24, the owner 2026-10-05, UITableView's rule): its own foot and the

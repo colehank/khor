@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { BellMark } from "@/components/BellMark";
 import { StatusWord } from "@/components/StatusWord";
+import { SessionUnread } from "@/components/SessionUnread";
 import { takeover, takeoverTerm, type DeviceRow, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionKind } from "@/components/SessionFace";
@@ -310,16 +311,19 @@ export function SessionsList({
     // detail header wears, so the two cannot drift. `nested`: it sits
     // inside the button that opens the row.
     title: (
-      <EditableName
-        id={r.id}
-        title={r.title}
-        className="block"
-        inputClassName="w-full font-title"
-        nested
-        // Opened from the row's menu; otherwise the double-click's.
-        open={renaming === r.id ? true : undefined}
-        onClose={() => setRenaming(null)}
-      />
+      <span className="flex min-w-0 items-center gap-xxs">
+        <EditableName
+          id={r.id}
+          title={r.title}
+          className="block min-w-0 truncate"
+          inputClassName="w-full font-title"
+          nested
+          // Opened from the row's menu; otherwise the double-click's.
+          open={renaming === r.id ? true : undefined}
+          onClose={() => setRenaming(null)}
+        />
+        <SessionUnread count={r.unread} />
+      </span>
     ),
     name: r.title,
     // The preview line: the newest thing said or shown, and the machine
@@ -354,10 +358,10 @@ export function SessionsList({
     //
     // **The word ends the line, so it and the age share one right edge
     // down the whole list** (2026-09-28 audit 第 7 条). The machine chip
-    // and the unread count used to come after it, and a row that carried
+    // used to come after it, and a row that carried
     // one had its word 22px left of the rows that did not — a column of
     // words that did not line up. Whatever else rides this line stands
-    // to the word's left.
+    // to the word's left. Unread belongs beside the title (2026-10-13).
     trailing: (
       <span className="flex flex-none flex-col items-end gap-xxs text-caption tabular-nums text-muted-foreground">
         <span className="flex items-center gap-xxs">
@@ -378,14 +382,6 @@ export function SessionsList({
               ) : (
                 <IconDevices className="size-kind-mark-glyph" />
               )}
-            </span>
-          )}
-          {r.unread > 0 && (
-            <span
-              data-unread
-              className="min-w-4 rounded-full bg-badge px-1 text-center leading-4 text-badge-foreground"
-            >
-              {r.unread}
             </span>
           )}
           {r.unread === 0 && rung?.has(r.id) && <BellMark />}

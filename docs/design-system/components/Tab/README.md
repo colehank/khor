@@ -99,3 +99,8 @@
 新增动效 token（两主题同值）：`pill-breathe` 2400ms、`pill-upload` 1400ms、`pill-glow-blur` 12px、`pill-glow-spread` 2px、`pill-arrow-lift` −2px。沿用现有状态墨、`ring-w`、`dur-420`、`ease-out` 和 `time-yield`。
 
 点击行为不变：普通状态与上传中打开贴底附栏并隐藏甲板；重连与失败由 `NoticeIsland` 从原药丸的框向上与两侧长开，下沿不变、盖住圆钮。终端的键盘、键行位置与按钮全部保留。广播和 GUI 对话的输入框由独立的 `above` 槽放在甲板上方；原来的 `under` 槽仍给终端键行，宽窗口两个槽都原位渲染。
+
+
+## 两层状态（2026-10-13）
+
+头像光环描述会话的工作状态；药丸外周描述操作者与会话之间的交互状态。`TabFace.session` 与 `TabFace.interaction: SessionInteraction` 在类型中分开：`SessionFace` 只读前者，`usePillSignal` 只收后者；重连或上传失败不改会话状态。标题旁的未读点是第三个维度，来自节点的已读记录，不数药丸通知。会话忙碌时可以同时重连或上传。

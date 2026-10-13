@@ -65,7 +65,7 @@ import { FaceMark, type KindMark } from "@/components/FaceMark";
 import { IconBack, IconCheck, IconClose, IconPlus, IconReload, IconUpload } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { NoticeLook, NoticePanel, NoticeScrim, useGrownPill } from "@/components/PillNotice";
-import type { PillNotice } from "@/lib/pill-notices";
+import type { SessionInteraction } from "@/lib/session-interaction";
 import { PaneBar } from "@/components/PaneBar";
 import { RegionLead } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
@@ -205,18 +205,9 @@ export type TabFace = {
   /** **How far a drop onto this tab has landed** (item 60), 0 to 1: the
       same line, filled this far rather than running. `loading` wins. */
   share?: number;
-  /** **A file going into this session** (the owner 2026-10-07 13:05,
-      13:15): an upload mark stands in the face's seat, and the name is
-      the file's without its extension, cut evenly in the middle; no
-      count (the line is the whole drop's). ⚠️ 墓碑 (13:05 → 13:15):
-      `count`, 「（1/3）」 kept whole after the name. */
-  drop?: { name: string };
-  /** **What stops this session, the most urgent first** (NOTICE-BRIEF,
-      `lib/pill-notices`): a transfer that did not get there, the session
-      reconnecting. The pill wears the first's mark and short line, with
-      the count when there are several, and a press grows it into the
-      list (`components/PillNotice`). A session's tab only. */
-  notices?: PillNotice[];
+  /** Operator ↔ session activity, independent of `session.word`.
+      Avatar halo reads `session`; pill perimeter reads `interaction`. */
+  interaction?: SessionInteraction;
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -229,7 +220,7 @@ export function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "
   // **A file going in** (item 71): the upload mark in the face's seat,
   // the seat's whole size as the face was; in full ink whatever the
   // tab's, as a face is never dimmed.
-  if (f.drop)
+  if (f.interaction?.drop)
     return (
       <span data-tab-dropping className={cn(bare, "grid flex-none place-items-center text-foreground")}>
         <IconUpload className="size-full" />
@@ -603,8 +594,8 @@ export function TabStrip({
       press on it while something stops its session opens the panel below
       it, across the capsule's width; the tab is its own self again while
       the panel says the notice. */
-  const stops = faces.find((f) => f.id === active)?.notices ?? [];
-  const signal = usePillSignal(active, faces.find((f) => f.id === active));
+  const stops = faces.find((f) => f.id === active)?.interaction?.notices ?? [];
+  const signal = usePillSignal(active, faces.find((f) => f.id === active)?.interaction);
   const grown = useGrownPill(stops.length);
   const capsule = useRef<HTMLDivElement>(null);
   const [front, setFront] = useState<HTMLElement | null>(null);
@@ -747,7 +738,7 @@ export function TabStrip({
           const on = f.id === active;
           const again = on ? f.again : undefined;
           // The front tab's notice, unless its panel is out (it says it).
-          const notices = f.notices?.length && !(on && grown.growth.mounted) ? f.notices : undefined;
+          const notices = f.interaction?.notices?.length && !(on && grown.growth.mounted) ? f.interaction?.notices : undefined;
           // **Every pill sheds as it shrinks, the front one too** (UX-45,
           // Chrome's strip; the owner 「等宽先看看」): its own width
           // decides (`@container/tab`, tokens.css `--container-tab-*`) —
@@ -828,7 +819,7 @@ export function TabStrip({
                 onClick={(e) => {
                   onFocus(f.id);
                   // The front tab whose session is stopped grows instead.
-                  if (on && f.notices?.length) {
+                  if (on && f.interaction?.notices?.length) {
                     if (grown.open) grown.fold();
                     else grown.grow();
                     return;
@@ -924,7 +915,7 @@ export function TabStrip({
                           of the slope — the one italic in the app. */}
                       {f.rang && <BellMark />}
                       {f.preview && <PreviewMark />}
-                      {f.drop ? <MidName text={f.drop.name} even /> : <MidName text={f.label} />}
+                      {f.interaction?.drop ? <MidName text={f.interaction?.drop.name} even /> : <MidName text={f.label} />}
                     </span>
                     {/* **Both lines start on one edge**, which is the
                         glyph's right side: the icon is beside the pair
@@ -946,7 +937,7 @@ export function TabStrip({
                   >
                     {f.rang && <BellMark />}
                     {f.preview && <PreviewMark />}
-                    {f.drop ? <MidName text={f.drop.name} even /> : <MidName text={f.label} />}
+                    {f.interaction?.drop ? <MidName text={f.interaction?.drop.name} even /> : <MidName text={f.label} />}
                   </span>
                 )}
               </button>
@@ -958,7 +949,7 @@ export function TabStrip({
                       已完成）」, the owner 2026-10-07 13:15) is what the
                       front tab's float says: the drop is on the tab in
                       front, and its hint is back once they are in. */}
-                  {f.drop && f.title ? (
+                  {f.interaction?.drop && f.title ? (
                     f.title
                   ) : (
                     // The name first (UX-45): the front pill may be the

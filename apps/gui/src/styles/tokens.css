@@ -501,6 +501,11 @@
    * theme already has; past it this would be introducing a new loudest
    * colour rather than joining the ones there. */
   --state-busy: #5560c7;
+  /* Selected rows keep the six hues (2026-10-13). Only the two quiet
+     inks need more contrast on fill-strong: busy lowers OKLCH L .03
+     with C/H held; idle raises its neutral ink coverage. */
+  --state-selected-busy: #4d57bd;
+  --state-selected-idle: rgba(26, 26, 20, 0.66);
   --state-blocked: #005a6c;              /* the only cold color */
   --state-done: #425b00;                 /* green = go collect */
   --state-errored: #754f00;
@@ -2146,6 +2151,8 @@
      **What .02 of chroma is not**: a rank. Lightness carries whether
      a word wants you, and this one's lightness did not move. */
   --state-busy: #8a9cfb;
+  --state-selected-busy: var(--state-busy);
+  --state-selected-idle: var(--state-idle);
   --state-blocked: #4fd4f0;
   --state-done: #b6c671;
   --state-errored: #d7b55f;

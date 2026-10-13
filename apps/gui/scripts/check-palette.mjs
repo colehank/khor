@@ -771,10 +771,10 @@ try {
     const sRow = (n, word) => ({
       id: `tui/palette-gate-${n}`,
       kind: "tui",
-      title: `palette-gate-${n}`,
+      title: n === 4 ? "a long session title that must truncate before its unread mark" : `palette-gate-${n}`,
       word,
       at_ms: now,
-      unread: 0,
+      unread: n === 0 ? 0 : n === 2 ? 3 : 1,
       source: null,
       pinned: false,
       stale: false,
@@ -791,7 +791,7 @@ try {
       mux: false,
     });
     await page.route("**/sessions", (r) =>
-      r.fulfill({ contentType: "application/json", body: JSON.stringify([sRow(0, "busy"), sRow(1, "idle")]) }),
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(WORDS.map((w, n) => sRow(n, w))) }),
     );
     // **Motion off**: 忙碌 breathes (its opacity walks while the machine
     // works), and a breath is motion, not a fade that ranks one line
@@ -826,9 +826,16 @@ try {
           .map((el) => {
             let fade = 1;
             for (let e = el; e && e !== row.parentElement; e = e.parentElement) fade *= Number(getComputedStyle(e).opacity);
-            return { text: el.textContent.trim().slice(0, 24), color: getComputedStyle(el).color, fade };
+            return { text: el.textContent.trim().slice(0, 24), color: getComputedStyle(el).color, grounds: bgOf(el), fade };
           });
-        return { grounds: bgOf(row), texts, key: document.documentElement.getAttribute("data-window-key") };
+        const status = row.querySelector('[data-status-word]');
+        const word = status?.getAttribute('data-status-word');
+        const root = getComputedStyle(document.documentElement);
+        return {
+          grounds: bgOf(row), texts, key: document.documentElement.getAttribute("data-window-key"),
+          word, status: status && getComputedStyle(status).color,
+          stateInk: root.getPropertyValue(`--state-${word}`).trim(),
+        };
       });
 
     /** One reading of the selected row, judged. */
@@ -841,7 +848,13 @@ try {
       // over the page's own ground.
       let ground = rgb(base);
       for (const c of [...got.grounds].reverse()) ground = flatten(parse(c), ground);
-      const worst = got.texts.map((t) => ({ ...t, ratio: contrast(flatten(parse(t.color), ground), ground) }));
+      const worst = got.texts.map((t) => {
+        // A numeric unread mark has its own badge background. Measure
+        // each text against its painted ground, not just the row's.
+        let under = rgb(base);
+        for (const c of [...t.grounds].reverse()) under = flatten(parse(c), under);
+        return { ...t, ratio: contrast(flatten(parse(t.color), under), under) };
+      });
       const low = worst.filter((t) => t.ratio < TEXT_FLOOR);
       const faded = worst.filter((t) => t.fade < 1);
       console.log(
@@ -851,6 +864,15 @@ try {
       if (worst.length < 2) fail(`${scheme} · ${state}: the selected row shows ${worst.length} piece(s) of text — a title and a second line were routed in`);
       for (const t of low) fail(`${scheme} · selected row · ${state}: ${JSON.stringify(t.text)} reads ${say(t.ratio)} on its row, under ${TEXT_FLOOR}`);
       for (const t of faded) fail(`${scheme} · selected row · ${state}: ${JSON.stringify(t.text)} is faded to ${t.fade} — every line on a selected row is full-value, no opacity`);
+      // The selected word keeps its state's hue, including its dot.
+      // Contrast alone let the old white-word override pass this gate.
+      if (got.word !== "idle") {
+        const ink = oklch(rgb(got.status));
+        const source = oklch(rgb(got.stateInk));
+        const distance = Math.abs(ink.h - source.h);
+        if (ink.c < 0.04 || Math.min(distance, 360 - distance) > 5)
+          fail(`${scheme} · selected ${got.word}: state hue lost (${got.status})`);
+      }
       // Never the brand, in front or behind (2026-09-27: the owner found
       // the solid 「太亮」, and 额度's rings vanished on it). A grey block,
       // as the Finder draws a sidebar's selection.
@@ -869,6 +891,31 @@ try {
       await flipTheme(page, scheme);
       await wait(400);
       const base = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--background").trim());
+      for (let n = 0; n < WORDS.length; n++) {
+        const row = page.locator(`[data-side-row="tui/palette-gate-${n}"]`);
+        await row.locator('[data-row-open]').click();
+        await wait(100);
+        judgeRow(scheme, WORDS[n], "each state", await read(), base);
+        const badge = row.locator('[data-unread]');
+        if (n === 0) {
+          if (await badge.count()) fail(`${scheme}: read session still has an unread mark`);
+        } else {
+          const text = (await badge.textContent())?.trim();
+          if (text !== (n === 2 ? "3" : "")) fail(`${scheme}: unread ${n === 2 ? 3 : 1} rendered ${JSON.stringify(text)}`);
+          if (!(await badge.getAttribute('aria-label'))) fail(`${scheme}: unread mark lost its accessible count`);
+          if (!(await row.locator('[data-side-title] [data-unread]').count())) fail(`${scheme}: unread mark is not beside the title`);
+          const mark = await badge.boundingBox();
+          const title = await row.locator('[data-side-title]').boundingBox();
+          if (!mark || !title || mark.x < title.x || mark.x + mark.width > title.x + title.width + 1)
+            fail(`${scheme}: unread mark clipped by its title (${JSON.stringify({ mark, title })})`);
+        }
+      }
+      await opener.click();
+      if (process.env.PALETTE_SHOTS) {
+        const { mkdirSync } = await import('node:fs');
+        mkdirSync(process.env.PALETTE_SHOTS, { recursive: true });
+        await page.locator('[data-list]').screenshot({ path: `${process.env.PALETTE_SHOTS}/session-indicators-${scheme}.png` });
+      }
       for (const state of ["front", "behind"]) {
         // **Behind, by the road the app itself takes**: the page loses
         // focus to another tab of the same browser, and `lib/window-key.ts`
