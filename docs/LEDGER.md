@@ -15,6 +15,7 @@
 |---|---|
 | 树的目录点 6 px 还是 8 px（lab 看过 6，现在是 8） | audit/ws-lab.md；cd94a69a |
 | `apps/site` 官网走 GitHub Pages、镜像留境内？ | apps/site/README.md |
+| ship 走 CI：要推远端（本地 main 比 origin 多近 1900 个提交，推前扫敏感内容）、Mac 公证要 Developer ID + App 专用密码、iOS 要 App Store Connect API key；没有就按 docs/SHIP.md 手工 | 10-13 讨论 |
 | 导入：ACP `session/list` 只问本机；没进程的 claude/codex 记录不给导入 | 10-12 讨论；ACP 可能取消，暂定 |
 
 ## 机 — 等真机或人工
