@@ -10,9 +10,10 @@
 //!
 //! A writer lock establishes a loaded thread, NOT an attached terminal.
 //! Codex can retain idle threads after a frontend disconnects. The lock
-//! contains no PID, so these sightings cannot claim a terminal process
-//! or take part in PID-based terminal deduplication. Homes without the
-//! lock directory retain the older process/start-time join, whose
+//! contains no frontend PID. A fresh, bare TUI can separately be joined
+//! by its start, cwd and originator, only when both sides are unique.
+//! Ambiguous, resumed and daemon-only threads remain PID-less. Homes
+//! without the lock directory retain the older process/start-time join, whose
 //! limitations include daemon threads and resumes.
 //!
 //! The rollout's `session_meta.id` identifies the thread; `session_id`
@@ -41,6 +42,11 @@ pub(super) const PROCESS_NAME: &str = "codex";
 /// put the file first).
 const JOIN_EARLIEST_MS: i64 = -5_000;
 const JOIN_LATEST_MS: i64 = 60_000;
+
+/// TUI bootstrap can include login and daemon connection before thread
+/// creation (66 seconds on the affected CLI). This bounded fallback is
+/// used only for an unambiguous bare TUI in the recorded directory.
+const TUI_BOOTSTRAP_MS: i64 = 120_000;
 
 /// How many rollouts back [`Codex::places`] reads. One head read each
 /// (93 on the machine this was written on); the bound is what keeps
@@ -446,7 +452,7 @@ impl Adaptor for Codex {
         }
         let locks = self.root.join("thread-writer-locks");
         match std::fs::metadata(&locks) {
-            Ok(meta) if meta.is_dir() => return self.sweep_writers(&locks),
+            Ok(meta) if meta.is_dir() => return self.sweep_writers(&locks, procs),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             _ => {
                 sweep.unmapped += 1;
@@ -499,8 +505,9 @@ impl Adaptor for Codex {
 }
 
 impl Codex {
-    fn sweep_writers(&self, locks: &Path) -> Sweep {
+    fn sweep_writers(&self, locks: &Path, procs: &Procs) -> Sweep {
         let mut sweep = Sweep::default();
+        let mut tui_cwds = std::collections::BTreeMap::new();
         // Surface access failures instead of silently showing an idle machine.
         if std::fs::read_dir(locks).is_err() {
             sweep.unmapped += 1;
@@ -529,6 +536,9 @@ impl Codex {
             };
             let (word, at_ms) =
                 last_word(&rollout.path).unwrap_or((State::Idle, rollout.started_ms));
+            if meta.originator.as_deref() == Some("codex-tui") {
+                tui_cwds.insert(meta.session_id.clone(), meta.cwd.clone());
+            }
             sweep.rows.push(Sighting {
                 vendor_session_id: meta.session_id,
                 title: title_of(meta.cwd.as_deref()),
@@ -537,6 +547,48 @@ impl Codex {
                 pids: Vec::new(),
                 cwd: meta.cwd,
             });
+        }
+        // Writer ownership and terminal ownership are separate questions.
+        // A shared daemon is not a descendant of the terminal's shell.
+        // For a fresh bare TUI, retain the old start/cwd join, with room
+        // for bootstrap (66 s measured on the affected CLI). Require a
+        // known matching cwd and a one-to-one client/thread pair there;
+        // never choose the nearest of several threads or assign daemon PIDs.
+        // A resume/switch cannot be proved by birth time, so it is excluded.
+        let clients: Vec<_> = procs
+            .named(PROCESS_NAME)
+            .into_iter()
+            .filter(|(pid, _)| procs.command(*pid).is_some_and(|argv| argv.len() == 1))
+            .collect();
+        for row in &mut sweep.rows {
+            if !tui_cwds.contains_key(&row.vendor_session_id) {
+                continue;
+            }
+            let Some(cwd) = row.cwd.as_deref() else {
+                continue;
+            };
+            // An older resumed thread in this cwd makes the join ambiguous too.
+            if tui_cwds
+                .values()
+                .filter(|p| p.as_deref() == Some(cwd))
+                .count()
+                != 1
+            {
+                continue;
+            }
+            let here: Vec<_> = clients
+                .iter()
+                .filter(|(_, p)| p.cwd.as_deref() == Some(Path::new(cwd)))
+                .collect();
+            let [(pid, proc)] = here.as_slice() else {
+                continue;
+            };
+            let Some(started) = uuid_v7_ms(&row.vendor_session_id) else {
+                continue;
+            };
+            if (JOIN_EARLIEST_MS..=TUI_BOOTSTRAP_MS).contains(&(started - proc.started_ms)) {
+                row.pids.push(*pid);
+            }
         }
         sweep
     }
@@ -573,6 +625,7 @@ fn writer_owned(path: &Path) -> std::io::Result<bool> {
 struct Meta {
     session_id: String,
     cwd: Option<String>,
+    originator: Option<String>,
 }
 
 fn read_meta(path: &Path) -> Option<Meta> {
@@ -593,6 +646,7 @@ fn read_meta(path: &Path) -> Option<Meta> {
             .or_else(|| p["session_id"].as_str())?
             .to_owned(),
         cwd: p["cwd"].as_str().map(str::to_owned),
+        originator: p["originator"].as_str().map(str::to_owned),
     })
 }
 
@@ -920,7 +974,7 @@ mod current {
                 .join(format!("rollout-2026-08-06T21-49-18-{id}{suffix}.jsonl"));
             let meta = serde_json::json!({"type":"session_meta","payload":{
                 "id": id, "session_id": "shared-parent-session", "cwd":"/project",
-                "history_mode":"paginated"
+                "history_mode":"paginated", "originator":"codex-tui"
             }});
             std::fs::write(&path, format!("{meta}\n{events}")).unwrap();
             path
@@ -951,6 +1005,56 @@ mod current {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(self.0.parent().unwrap());
         }
+    }
+
+    #[test]
+    fn a_fresh_tui_writer_keeps_its_terminal_client_pid() {
+        let home = Home::new("tui-client");
+        home.rollout(THREAD, "", &(item("AgentMessage", "latest answer") + "\n"));
+        let _writer = home.writer(THREAD);
+        // A shared daemon owns the writer, but the interactive client is
+        // inside khor's terminal. Bootstrap took 66 seconds on the real TUI.
+        for name in ["codex", "codex.exe", "CODEX.EXE"] {
+            let procs = Procs::of([(700, Proc {
+                name: name.into(), started_ms: uuid_v7_ms(THREAD).unwrap() - 66_000,
+                cwd: Some("/project".into()), ppid: Some(500),
+            })]).with_commands([(700, vec![name.into()])]);
+            let found = Codex::at(home.0.clone()).sweep(&procs);
+            assert_eq!(found.rows.len(), 1);
+            assert_eq!(found.rows[0].pids, vec![700], "the shell needs the client PID to wear Codex: {name}");
+        }
+    }
+
+    #[test]
+    fn a_writer_is_not_assigned_to_an_ambiguous_or_noninteractive_client() {
+        let home = Home::new("tui-client-refusals");
+        let path = home.rollout(THREAD, "", "");
+        let _writer = home.writer(THREAD);
+        let proc = Proc { name: "codex".into(), started_ms: uuid_v7_ms(THREAD).unwrap() - 66_000,
+            cwd: Some("/project".into()), ppid: None };
+        let base = Procs::of([(700, proc.clone())]).with_commands([(700, vec!["codex".into()])]);
+        let codex = Codex::at(home.0.clone());
+        for argv in [vec!["codex", "app-server"], vec!["codex", "exec"], vec!["codex", "resume", THREAD]] {
+            let table = base.clone().with_commands([(700, argv.into_iter().map(str::to_owned).collect())]);
+            assert!(codex.sweep(&table).rows[0].pids.is_empty());
+        }
+        assert!(codex.sweep(&Procs::of([(700, proc.clone())])).rows[0].pids.is_empty(), "unknown command line");
+        for changed in [Proc { cwd: None, ..proc.clone() }, Proc { cwd: Some("/other".into()), ..proc.clone() },
+            Proc { started_ms: uuid_v7_ms(THREAD).unwrap() + 60_000, ..proc.clone() }] {
+            let table = Procs::of([(700, changed)]).with_commands([(700, vec!["codex".into()])]);
+            assert!(codex.sweep(&table).rows[0].pids.is_empty());
+        }
+        let two = Procs::of([(700, proc.clone()), (701, proc)])
+            .with_commands([(700, vec!["codex".into()]), (701, vec!["codex".into()])]);
+        assert!(codex.sweep(&two).rows[0].pids.is_empty(), "two clients in one directory");
+        // A daemon can have several TUI-originated threads loaded in one cwd.
+        home.rollout(OTHER, "", "");
+        let other_writer = home.writer(OTHER);
+        assert!(codex.sweep(&base).rows.iter().all(|r| r.pids.is_empty()), "two loaded threads in one directory");
+        drop(other_writer);
+        let body = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(path, body.replace("codex-tui", "Codex Desktop")).unwrap();
+        assert!(codex.sweep(&base).rows[0].pids.is_empty(), "a desktop thread is not the terminal's");
     }
 
     #[test]
@@ -1006,13 +1110,19 @@ mod current {
         let root = std::env::var_os("KHOR_CODEX_PROBE_HOME").expect("explicit probe home required");
         let codex = Codex::at(root.into());
         let start = std::time::Instant::now();
-        let found = codex.sweep(&Procs::default());
+        let found = codex.sweep(&Procs::snapshot());
         assert_eq!(found.unmapped, 0);
         assert!(
             !found.rows.is_empty(),
             "start a Codex thread before running the probe"
         );
         let busy = found.rows.iter().filter(|r| r.word == State::Busy).count();
+        if let Ok(pid) = std::env::var("KHOR_CODEX_PROBE_PID") {
+            let pid: u32 = pid.parse().unwrap();
+            let thread = std::env::var("KHOR_CODEX_PROBE_THREAD").expect("explicit expected thread");
+            assert!(found.rows.iter().any(|r| r.vendor_session_id == thread && r.pids.contains(&pid)),
+                "the running TUI must be associated with its actual thread");
+        }
         let mut conversations = 0;
         for row in &found.rows {
             let said = codex.transcript(&row.vendor_session_id).unwrap();

@@ -317,6 +317,7 @@ pub struct Proc {
 pub struct Procs {
     by_pid: BTreeMap<u32, Proc>,
     sessions: Sessions,
+    commands: BTreeMap<u32, Vec<String>>,
 }
 
 /// Where a process's POSIX session id comes from (see [`Procs::held_by`]).
@@ -439,21 +440,32 @@ impl Procs {
             .filter(|(_, p)| process_name_matches(&p.name, codex::PROCESS_NAME))
             .map(|(pid, _)| Pid::from_u32(*pid))
             .collect();
+        let mut commands = BTreeMap::new();
         if !wanted.is_empty() {
             sys.refresh_processes_specifics(
                 ProcessesToUpdate::Some(&wanted),
                 true,
-                ProcessRefreshKind::nothing().with_cwd(UpdateKind::Always),
+                ProcessRefreshKind::nothing()
+                    .with_cwd(UpdateKind::Always)
+                    .with_cmd(UpdateKind::Always),
             );
             for pid in wanted {
                 if let (Some(p), Some(slot)) = (sys.process(pid), by_pid.get_mut(&pid.as_u32())) {
                     slot.cwd = p.cwd().map(Path::to_path_buf);
+                    commands.insert(
+                        pid.as_u32(),
+                        p.cmd()
+                            .iter()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .collect(),
+                    );
                 }
             }
         }
         Procs {
             by_pid,
             sessions: Sessions::Os,
+            commands,
         }
     }
 
@@ -462,7 +474,19 @@ impl Procs {
         Procs {
             by_pid: procs.into_iter().collect(),
             sessions: Sessions::Unknown,
+            commands: BTreeMap::new(),
         }
+    }
+
+    /// The command line of an agent candidate, when the OS exposed it.
+    pub fn command(&self, pid: u32) -> Option<&[String]> {
+        self.commands.get(&pid).map(Vec::as_slice)
+    }
+
+    #[cfg(test)]
+    pub fn with_commands(mut self, commands: impl IntoIterator<Item = (u32, Vec<String>)>) -> Self {
+        self.commands.extend(commands);
+        self
     }
 
     /// The same table with the POSIX session id of some of its pids, for

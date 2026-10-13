@@ -4079,6 +4079,69 @@ mod tests {
         assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)));
     }
 
+    #[test]
+    #[cfg(unix)]
+    fn a_shell_running_a_daemon_backed_codex_tui_wears_its_messages_and_state() {
+        use crate::adaptor::{Discovery, Proc, Procs};
+        use std::io::Write;
+
+        let root = tmp("shell-codex-daemon");
+        let vendors = root.to_path_buf();
+        let codex_home = vendors.join(".codex");
+        let day = codex_home.join("sessions/2026/08/06");
+        let locks = codex_home.join("thread-writer-locks");
+        fs::create_dir_all(&day).unwrap();
+        fs::create_dir_all(&locks).unwrap();
+        let uuid = "019fd755-e464-7aaa-8aaa-aaaaaaaaaaaa";
+        let path = day.join(format!("rollout-2026-08-06T21-49-18-{uuid}.jsonl"));
+        fs::write(&path, format!("{}\n{}\n{}\n",
+            serde_json::json!({"type":"session_meta","payload":{"id":uuid,"cwd":"/project","originator":"codex-tui"}}),
+            serde_json::json!({"type":"event_msg","payload":{"type":"user_message","message":"latest question"}}),
+            serde_json::json!({"timestamp":"2026-08-06T13:49:19Z","type":"event_msg","payload":{"type":"task_started"}}),
+        )).unwrap();
+        fs::File::create(locks.join(".coordination.lock")).unwrap();
+        let writer = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true)
+            .open(locks.join(format!("{uuid}.lock"))).unwrap();
+        writer.try_lock().unwrap();
+        let host = FakeHost::up();
+        let shell = proc_under(5001, "zsh", host.pid());
+        let codex = (700, Proc { name: "codex".into(), started_ms: 1_786_024_158_308 - 66_000,
+            cwd: Some("/project".into()), ppid: Some(5001) });
+        let procs = Procs::of([shell, codex]).with_commands([(700, vec!["codex".into()])]);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&vendors).with_procs(procs),
+        ));
+        let id = sid("shell/codex-terminal");
+        k.register(&id, "shell", "khor-codex", Some(host.pid()), Some("shell")).unwrap();
+        host.serve(&k.dir_of(&id).unwrap(), 5001);
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1, "the discovered agent folds into the existing shell");
+        assert_eq!(rows[0].id, id);
+        assert_eq!(rows[0].kind.0, khor_core::kind::TUI);
+        assert_eq!(rows[0].category.as_deref(), Some("codex"));
+        assert_eq!(rows[0].state.state, State::Busy);
+        assert_eq!(rows[0].last.as_deref(), Some("latest question"));
+        let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
+        writeln!(file, "{}\n{}",
+            serde_json::json!({"type":"event_msg","payload":{"type":"agent_message","message":"latest answer"}}),
+            serde_json::json!({"timestamp":"2026-08-06T13:49:20Z","type":"event_msg","payload":{"type":"task_complete"}}),
+        ).unwrap();
+        drop(file);
+        for _ in 0..2 {
+            let rows = k.rows(|_| 0);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].id, id);
+            assert_eq!(rows[0].last.as_deref(), Some("latest answer"));
+            assert_eq!((rows[0].state.state, rows[0].unread), (State::Done, 1));
+        }
+        assert_eq!(k.rows(|_| i64::MAX)[0].state.state, State::Idle);
+        drop(writer);
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].kind.0, khor_core::kind::SHELL);
+        assert!(!rows[0].dead, "losing the writer does not end the shell");
+    }
+
     /// The same rule against the **registry**: `khor run` started inside
     /// a tmux pane is already a row, so the pane is not a second one.
     ///
