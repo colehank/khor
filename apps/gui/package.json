@@ -48,6 +48,7 @@
     "console": "node scripts/check-console.mjs",
     "connectivity": "node scripts/check-connectivity.mjs",
     "file-face": "node scripts/check-file-face.mjs",
+    "merge-face": "node scripts/check-merge-face.mjs",
     "session-cwd": "node scripts/check-session-cwd.mjs",
     "scroll-target": "node scripts/check-scroll-target.mjs"
   },

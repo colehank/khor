@@ -67,6 +67,7 @@ shell 后同一导入 ID 仍能重新接上 tmux 终端。只发送本地 slash 
 |---|---|---|
 | `npm run connectivity` | `check-connectivity.mjs`：真实地图/矩阵/机器详情，5 机夹具，宽屏与 390/375 窄屏；方向切换、失联来源旧路、不通字样、relay 单线头像、矩阵选择与反向、详情浮层与完整日志（不碰真实 store） | 不拿 |
 | `npm run file-face` | 文件各入口默认源码、手动预览、路径/历史版本切换重置、附件只读源码，1200/390 宽度 | 不拿 |
+| `npm run merge-face` | `check-merge-face.mjs`，工作区合并里每一处的「保留 / 放弃」按钮的**面**（2026-10-14）：两个主题下按钮自己的底色 alpha 是 1 且等于 `--popover`、被删的代码确实压在按钮下面（否则前一条是空的）、按钮内部画出来覆盖最多的那个像素就是面本身（底色半透时它会是底下那行代码的颜色）、标签的墨在面上仍 ≥ 4.5。改前先红：`--fill-strong` 是 0.1 / 0.15 的半透明灰，实测按钮内部覆盖最多的颜色是 `[200, 151, 148]`——红线代码透过来了 | 不拿 |
 | `npm run console` | `check-console.mjs`，真实 Composer 的斜杠、机器与路径补全、命令幂等重试、结构化记录更新与会话跳转；已读仅覆盖前台且在底部实际渲染的消息 id 与版本快照，同毫秒后来消息不被误清，历史、后台和隐藏页保留未读（系统 Chrome，API fixture，不拿 cargo 锁） | 不拿 |
 | `npm run test` | `pretest` → `gen` + `check-shim` + `check-px` + `check-icons` + `tsc --noEmit` | **拿**(`pretest` 是两条 `cargo run`) |
 | `npm run type` | `check-type.mjs`,静态 | 不拿 |

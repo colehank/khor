@@ -63,7 +63,18 @@ export const diffTheme = EditorView.theme({
     fontSize: "var(--text-caption)",
     lineHeight: "var(--text-mono--line-height)",
     color: "var(--foreground)",
-    backgroundColor: "var(--fill-strong)",
+    // **A face, not a wash** (2026-10-14). The buttons float at the
+    // end of a deleted chunk, over the very lines they are about, and
+    // `--fill-strong` is a *translucent* grey (0.1 light, 0.15 dark):
+    // the code underneath showed through and mixed with 保留 / 放弃,
+    // which is the one thing a button's own label can never survive.
+    // The measure that caught it is the pixel probe in
+    // `scripts/check-merge-buttons.mjs`: with the deleted lines hidden
+    // and shown again, 71% of the buttons' pixels moved by up to 153 —
+    // the face was a window. `--popover` is opaque and is the app's one
+    // floating face (the file column's own notice is painted with it),
+    // so the buttons read as what they are: a control above the text.
+    backgroundColor: "var(--popover)",
     cursor: "default",
   },
   // The bar a folded run is: the neutral fill, the muted ink, pressed to
