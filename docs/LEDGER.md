@@ -22,8 +22,14 @@
 
 | 项 | 出处 |
 |---|---|
-| 默认 shared daemon 的 TUI PID → 当前线程仍无协议映射；设置 → 终端可显式配置原生 thread-id 标题，下一次启动后用标题和活写入锁关联；未配置或证据不足仍显示识别受限，不以 cwd/启动时间猜消息 | 10-14；本地 Codex 0.162.1 协议 schema；docs/HOOKS.md |
+| 默认 shared daemon 的 TUI PID → 当前线程仍无协议映射；设置 → 终端可显式配置原生 thread-id 标题，下一次启动后用标题和活写入锁关联；已验证客户端的运行时标题契约按 PID/启动时间保留；未配置或证据不足回退普通 shell，不以 cwd/启动时间猜消息 | 10-14；本地 Codex 0.162.1 协议 schema；docs/HOOKS.md |
 | tmux 原 session 的 mouse=off 时，Codex 启动会禁用鼠标捕获；khor grouped attach 的 mouse=on 必须在 Codex 进入 TUI 前生效。已运行客户端需用户退出/resume，不能靠查询节流补回 native mouse | 10-14；真实 Codex/tmux 隔离验证 |
+
+## 定 — Claude hook 入口
+
+| 项 | 出处 |
+|---|---|
+| 从 GUI 安装 Claude hook 写入 GUI executable 的 `state --hook`，但 GUI 入口只分流 `_console`，没有处理状态上报；需要独立补齐无窗口入口。用户已撤销 Claude hook，Codex 原生标题识别与其无关 | 10-14 hook 排查；`adaptor/claude.rs::hook_command`、GUI `run` |
 
 ## 机 — 等真机或人工
 

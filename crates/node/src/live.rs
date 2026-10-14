@@ -2142,23 +2142,19 @@ impl LiveKind {
                 r.dead = false;
             }
         }
-        // Category is process evidence; conversation state needs a separate
-        // binding. Never leave an old vendor preview on this terminal.
+        // Only a bound conversation wears the agent's form. Without one,
+        // keep a usable shell and its own command reading, never another
+        // thread's state, preview or unread.
         for k in unbound_rows {
             let row = &mut out[k];
-            row.kind = Kind(khor_core::kind::TUI.into());
-            row.category = Some("codex".into());
-            row.last = None;
-            row.unread = 0;
-            row.unbacked = true;
-            row.dead = false;
             row.term = true;
-            // The wire keeps the six state enum values for compatibility;
-            // thread_unbound makes this placeholder unavailable to readers.
-            row.state.state = State::Idle;
             let doing = row.doing.get_or_insert_with(Default::default);
-            *doing = khor_core::Doing { cwd: doing.cwd.take(), title: doing.title.take(),
-                thread_unbound: true, ..Default::default() };
+            // The scoped interactive process is live; this is shell-command
+            // activity, not a claim about the agent's current turn.
+            doing.running = true;
+            doing.command.get_or_insert_with(|| "codex".to_owned());
+            doing.thread_unbound = true;
+            row.fallback_unbound_terminal();
         }
         // Native selection metadata is transport state, never a display name.
         // Keep the raw ledger untouched so the next discovery can read it.
@@ -4519,7 +4515,7 @@ mod tests {
             std::time::UNIX_EPOCH + std::time::Duration::from_millis(changed_at as u64),
         ).unwrap();
         let reopened = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(
-            Discovery::at(&root).with_procs(procs).with_tmux(Tmux::at_binary(&tmux))));
+            Discovery::at(&root).with_procs(procs.clone()).with_tmux(Tmux::at_binary(&tmux))));
         for app in [&k, &reopened] {
             let rows = app.rows(|_|0);
             let current = rows.iter().find(|r|r.id==aid).unwrap();
@@ -4548,18 +4544,38 @@ mod tests {
         select(a);
         assert_eq!(k.sighting_of(&aid).unwrap().1, vec![501]); assert!(k.held_in_mux(&aid));
         assert_eq!(k.rows(|_|0).iter().find(|r|r.id==aid).unwrap().last.as_deref(), Some("LATEST_A"));
-        // Default shared-daemon clients expose no selected-thread contract.
-        // Even a stale UUID title and registered PID must not bind old A.
+        // Disk settings govern future clients. This exact client already
+        // published a verified title from its own runtime settings.
         fs::remove_file(root.join(".codex/config.toml")).unwrap();
-        let defaults = Procs::of([(3001, proc("zsh", None)), (501, proc("codex", Some(3001)))])
+        for app in [&k, &reopened] {
+            let rows = app.rows(|_| 0);
+            let current = rows.iter().find(|r| r.id == aid).unwrap();
+            assert_eq!(current.category.as_deref(), Some("codex"));
+            assert_eq!(current.last.as_deref(), Some("LATEST_A"));
+        }
+        select(b);
+        assert_eq!(reopened.sighting_of(&bid).unwrap().1, vec![501]);
+        assert!(reopened.sighting_of(&aid).unwrap().1.is_empty());
+        let row = reopened.rows(|_| 0).into_iter().find(|r| r.id == bid).unwrap();
+        assert_eq!(row.last.as_deref(), Some("LATEST_B"));
+        // A replacement process cannot inherit the old client's title contract,
+        // even when the OS reuses its PID and the terminal retains its UUID.
+        select(a);
+        let mut replacement = proc("codex", Some(3001));
+        replacement.started_ms = procs.get(501).unwrap().started_ms + 30_000;
+        let defaults = Procs::of([(3001, proc("zsh", None)), (501, replacement)])
             .with_commands([(501, vec!["codex".into()])]);
         let limited = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(
             Discovery::at(&root).with_procs(defaults).with_tmux(Tmux::at_binary(&tmux))));
         let rows = limited.rows(|_|0);
-        let terminal = rows.iter().find(|r| r.term && r.doing.as_ref().is_some_and(|d| d.thread_unbound))
+        let terminal = rows.iter().find(|r| r.term && r.mux && r.id != aid && r.id != bid && r.id != cid)
             .expect("unbound default client must retain an attachable terminal row");
-        assert_eq!(terminal.category.as_deref(), Some("codex"));
-        assert!(!terminal.state_known());
+        assert_eq!(terminal.kind.0, khor_core::kind::SHELL);
+        assert_eq!(terminal.category.as_deref(), Some("shell"));
+        assert!(terminal.state_known());
+        assert_eq!(terminal.state.state, State::Busy);
+        assert_eq!(terminal.doing.as_ref().unwrap().command.as_deref(), Some("codex"));
+        assert_eq!(terminal.current_cwd(), Some("/same"));
         assert!(terminal.last.is_none());
         assert_eq!(terminal.unread, 0);
         assert!(limited.sighting_of(&aid).unwrap().1.is_empty());

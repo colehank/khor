@@ -2,6 +2,46 @@
 //! It is selection metadata, never transcript/screen text or a process-start guess.
 use crate::adaptor::{Findings, Procs};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+
+/// A title contract already verified for this exact running TUI client.
+/// Disk configuration governs future starts; the TUI renders titles from its
+/// own local settings. Never reuse this evidence for a recycled PID.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct TitleClients {
+    home: PathBuf,
+    clients: BTreeMap<u32, i64>,
+}
+
+fn client_contracts(root: &Path, home: &Path, procs: &Procs) -> TitleClients {
+    let home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    let mut known: TitleClients = std::fs::read(root.join(".khor/codex-title-clients.json"))
+        .ok().and_then(|s| serde_json::from_slice(&s).ok())
+        .filter(|k: &TitleClients| k.home == home).unwrap_or_default();
+    known.home = home;
+    known.clients.retain(|pid, since| *since > 0 && scoped(procs, *pid)
+        && procs.get(*pid).is_some_and(|p| p.started_ms == *since));
+    known
+}
+
+fn remember_clients(root: &Path, known: &TitleClients, procs: &Procs) {
+    let dir = root.join(".khor");
+    if std::fs::create_dir_all(&dir).is_err() { return; }
+    let Ok(lock) = std::fs::OpenOptions::new().create(true).truncate(false)
+        .read(true).write(true).open(dir.join("codex-title-clients.lock")) else { return };
+    if lock.try_lock().is_err() { return; }
+    // Merge concurrently verified clients, but prune all dead/recycled ones.
+    let mut merged = client_contracts(root, &known.home, procs);
+    merged.clients.extend(known.clients.iter().map(|(p, s)| (*p, *s)));
+    let Ok(bytes) = serde_json::to_vec(&merged) else { return };
+    let path = dir.join("codex-title-clients.json");
+    if std::fs::read(&path).ok().as_deref() == Some(bytes.as_slice()) { return; }
+    let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
+    if crate::link::write_private(&tmp, &bytes).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+    let _ = std::fs::remove_file(tmp);
+}
 
 fn uuid_part(value: &str) -> bool {
     value.bytes().enumerate().all(|(i, c)| {
@@ -56,6 +96,8 @@ pub(crate) fn scoped(procs: &Procs, pid: u32) -> bool {
 /// Assign live scoped TUI clients before LiveKind seats vendor rows in hosts.
 /// tmux pane metadata outranks the enclosing host's possibly stale OSC title.
 pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
+    let location = found.codex_title_root.clone().zip(found.codex_title_home.clone());
+    let mut known = location.as_ref().map(|(root, home)| client_contracts(root, home, &found.procs));
     let clients: BTreeSet<_> = found
         .procs
         .named("codex")
@@ -85,7 +127,7 @@ pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
         let pid = *here.next()?;
         if here.next().is_some() { return None; }
         let args: Vec<_> = found.procs.command(pid)?.iter().skip(1).map(std::ffi::OsString::from).collect();
-        let configured = found.codex_title_home.as_deref().zip(found.codex_title_root.as_deref()).is_some_and(|(home, root)| {
+        let configured = known.as_ref().is_some_and(|k| k.clients.contains_key(&pid)) || found.codex_title_home.as_deref().zip(found.codex_title_root.as_deref()).is_some_and(|(home, root)| {
             found.procs.get(pid).is_some_and(|p| crate::recognition::native_title_for(root, home, p.cwd.as_deref(), p.started_ms, &args))
         });
         crate::codex_process::selection_title_or(&args, configured).then_some(pid)
@@ -146,6 +188,17 @@ pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
                     }),
                 },
             });
+        } else {
+            continue;
+        }
+        if let Some(known) = &mut known {
+            let started_ms = found.procs.get(pid).unwrap().started_ms;
+            if started_ms > 0 { known.clients.insert(pid, started_ms); }
+        }
+    }
+    if let (Some((root, _)), Some(known)) = (location, known) {
+        if !known.clients.is_empty() || root.join(".khor/codex-title-clients.json").exists() {
+            remember_clients(&root, &known, &found.procs);
         }
     }
 }
@@ -195,6 +248,40 @@ mod tests {
                 .with_commands([(11, args.into_iter().map(str::to_owned).collect())]),
             ..Default::default()
         }
+    }
+    #[test]
+    fn verified_title_contract_survives_readers_but_not_pid_reuse_or_another_home() {
+        let root = std::env::temp_dir().join(format!("khor-title-clients-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let reading = || {
+            let mut found = fixture();
+            found.codex_title_root = Some(root.clone());
+            found.codex_title_home = Some(root.clone());
+            found
+        };
+        let mut first = reading();
+        select(&mut first, &[(10, Some(title(A)))]);
+        assert_eq!(first.rows[0].sighting.pids, vec![11]);
+        let mut next = reading();
+        // Remove the configuration evidence in the next reader; the verified
+        // exact client still needs the CURRENT title, not remembered thread A.
+        next.procs = next.procs.with_commands([(11, vec!["codex".into()])]);
+        select(&mut next, &[(10, Some(title(B)))]);
+        assert!(next.rows[0].sighting.pids.is_empty());
+        assert_eq!(next.rows[1].sighting.pids, vec![11]);
+        let mut replacement = reading();
+        replacement.procs = Procs::of([
+            (10, Proc { name: "zsh".into(), started_ms: 100, cwd: None, ppid: None }),
+            (11, Proc { name: "codex".into(), started_ms: 200, cwd: None, ppid: Some(10) }),
+        ]).with_commands([(11, vec!["codex".into()])]);
+        select(&mut replacement, &[(10, Some(title(A)))]);
+        assert!(replacement.rows.iter().all(|r| r.sighting.pids.is_empty()));
+        let mut wrong_home = reading();
+        wrong_home.procs = wrong_home.procs.with_commands([(11, vec!["codex".into()])]);
+        wrong_home.codex_title_home = Some(root.join("other"));
+        select(&mut wrong_home, &[(10, Some(title(A)))]);
+        assert!(wrong_home.rows.iter().all(|r| r.sighting.pids.is_empty()));
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn strict_unique_uuid_metadata_rejects_malformed_unicode_and_collisions() {

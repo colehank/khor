@@ -5,7 +5,7 @@ python3 apps/gui/scripts/check-codex-selection.py [--khor PATH] [--codex PATH]
 
 Uses scratch HOME/CODEX_HOME/KHOR_HOME and a uniquely named tmux server. Resumes
 fixture history, imports its tmux row, then runs /new and /resume. Checks the
-same CLI row's Codex category and the native title's active UUID at each step.
+same CLI row's shell fallback or Codex binding and the native title's active UUID.
 The CLI does not expose message previews; preview assertions live in Rust tests.
 No hooks are installed and no hook approval dialog is accepted.
 """
@@ -155,7 +155,7 @@ trust_level="trusted"
             time.sleep(0.3)  # Let Codex parse the slash before its Enter arrives.
             tmux("send-keys", "-t", name, "Enter")
 
-        def row_in_codex_group(listing, wanted):
+        def row_in_group(listing, wanted, category):
             group = ""
             matches = []
             for line in ANSI.sub("", listing).splitlines():
@@ -165,12 +165,13 @@ trust_level="trusted"
                 elif fields[0] == wanted:
                     matches.append(group)
             # Check the exact imported row, not a separate archived Codex row.
-            return len(matches) == 1 and re.search(r"\bcodex\b", matches[0], re.I) is not None
+            return len(matches) == 1 and re.search(r"\b" + category + r"\b", matches[0], re.I) is not None
 
-        def expect_category(imported, phase):
+        def expect_category(imported, phase, category=None):
+            category = category or ("codex" if args.native_title else "shell")
             wait_for(lambda: cli("sessions", "--all", "--by", "category"),
-                     lambda value: row_in_codex_group(value, imported),
-                     f"{phase}: imported row {imported} lost its Codex category")
+                     lambda value: row_in_group(value, imported, category),
+                     f"{phase}: imported row {imported} has the wrong terminal form")
 
         def expect_bound(imported, phase):
             def bound(listing):
@@ -208,10 +209,29 @@ trust_level="trusted"
                     "[tui]", '[tui]\nstatus_line=["model-with-reasoning"]'))
                 expect_category(imported, "status-line edit")
                 expect_bound(imported, "status-line edit")
+                # The running TUI retains its local title selection. Removing
+                # the disk preference must not discard a verified client.
+                config.write_text(config.read_text().replace('terminal_title=["thread-id"]\n', ""))
+                expect_category(imported, "title preference removed")
+                expect_bound(imported, "title preference removed")
+                # /new reloads disk settings in real 0.162.1. Without the ID
+                # title it must become a shell, not retain the previous thread.
+                send_slash("/new")
+                wait_for(screen, lambda value: "ANSWER_060" not in value, "disabled-title /new kept old content")
+                expect_category(imported, "disabled-title /new", "shell")
+                assert native_id() is None, "disabled-title /new invented a UUID title"
+                # Re-enable and resume in this SAME process. Its verified client
+                # evidence must survive, while thread selection is read afresh.
+                time.sleep(1.1)
+                config.write_text(config.read_text().replace("[tui]", '[tui]\nterminal_title=["thread-id"]'))
+                send_slash(f"/resume {session}")
+                wait_for(native_id, lambda value: value == session, "re-enabled /resume did not restore its UUID")
+                expect_category(imported, "re-enabled /resume")
+                expect_bound(imported, "re-enabled /resume")
             if not args.native_title:
                 listing = cli("sessions", "--all")
                 line = next(line for line in listing.splitlines() if line.startswith(imported + "\t"))
-                assert "识别受限" in line or "Thread unavailable" in line, line
+                assert "识别受限" not in line and "Thread unavailable" not in line, line
 
             send_slash("/new")
             new_id = None
@@ -230,7 +250,7 @@ trust_level="trusted"
             expect_category(imported, "second resume")
             if args.native_title:
                 expect_bound(imported, "second resume after config edit")
-            print(f"PASS {version}: default shared daemon, same row {imported} stays Codex; native title opt-in={args.native_title}; no model prompt submitted")
+            print(f"PASS {version}: default shared daemon, same row {imported} stays {'Codex' if args.native_title else 'shell'}; native title opt-in={args.native_title}; no model prompt submitted")
             print("CLI exposes category/title, not preview; message-preview mapping is covered by the Rust selection tests.")
         finally:
             subprocess.run([str(codex), "app-server", "daemon", "stop"], env=env, capture_output=True, timeout=20)

@@ -2656,6 +2656,7 @@ impl Node {
         // carried on the row for the pin's reason: the document
         // replicates, so every device answers from its own copy.
         for v in &mut views {
+            v.session.fallback_unbound_terminal();
             if let Some(t) = titles.doc.title_of(&v.session.id.0) {
                 v.session.title = t;
             }

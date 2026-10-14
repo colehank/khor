@@ -3056,6 +3056,22 @@ pub struct Doing {
 }
 
 impl Session {
+    /// An unbound agent cannot supply a conversation, but its terminal remains
+    /// usable. Also normalizes snapshots from peers using the old limited form.
+    /// Keep the terminal's command, directory, notifications and attachment ID.
+    pub fn fallback_unbound_terminal(&mut self) {
+        if !self.term || !self.doing.as_ref().is_some_and(|d| d.thread_unbound) { return; }
+        let doing = self.doing.as_mut().unwrap();
+        self.kind = Kind(kind::SHELL.to_owned());
+        self.category = Some(category::SHELL.to_owned());
+        self.state.state = if doing.running { State::Busy } else { State::Idle };
+        doing.thread_unbound = false;
+        self.last = None;
+        self.unread = 0;
+        self.dead = false;
+        self.unbacked = false;
+    }
+
     /// Current shell/pane directory, falling back to the recorded directory.
     /// Matches the GUI's `sessionCwd`; blank readings carry no location.
     pub fn current_cwd(&self) -> Option<&str> {
@@ -3182,6 +3198,30 @@ mod tests {
             dead: false,
             unbacked: false,
         }
+    }
+
+    #[test]
+    fn old_peer_unbound_terminal_falls_back_without_losing_shell_activity() {
+        let mut row = a_session(kind::TUI);
+        row.category = Some("codex".into());
+        row.doing = Some(Doing { thread_unbound: true, running: true,
+            command: Some("codex resume".into()), cwd: Some("/current".into()),
+            notice: Some("upload finished".into()), notice_ms: 20, bell_ms: 30,
+            ..Default::default() });
+        let mut row: Session = rmp_serde::from_slice(&rmp_serde::to_vec(&row).unwrap()).unwrap();
+        row.fallback_unbound_terminal();
+        assert_eq!(row.id.0, "dev0/demo/1");
+        assert_eq!(row.kind.0, kind::SHELL);
+        assert_eq!(row.category.as_deref(), Some(category::SHELL));
+        assert!(row.term && row.state_known());
+        assert_eq!(row.state.state, State::Busy);
+        assert_eq!(row.unread, 0);
+        assert!(row.last.is_none());
+        assert_eq!(row.current_cwd(), Some("/current"));
+        let doing = row.doing.unwrap();
+        assert_eq!(doing.command.as_deref(), Some("codex resume"));
+        assert_eq!(doing.notice.as_deref(), Some("upload finished"));
+        assert_eq!(doing.bell_ms, 30);
     }
 
     #[test]
