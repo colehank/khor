@@ -107,6 +107,7 @@ import { useStoredSettings } from "@/hooks/use-settings";
 import { SettingsProvider, SettingsRereadProvider } from "@/settings";
 import { speakLang, type LangPref } from "@/lang";
 import { wearTheme, type ThemePref } from "@/theme";
+import { wearWindowChoice, windowChoice } from "@/lib/window-surface";
 import { NARROW_QUERY, useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
 import {
@@ -398,6 +399,10 @@ export default function App() {
   speakLang((settings.rows?.find((r) => r.name === "lang")?.value ?? null) as LangPref | null);
 
   const themePref = settings.rows?.find((r) => r.name === "theme")?.value ?? null;
+  const windowPref = windowChoice(settings.rows);
+  useEffect(() => {
+    if (windowPref) wearWindowChoice(windowPref);
+  }, [windowPref?.material, windowPref?.opacity]);
   useEffect(() => {
     if (themePref !== null) wearTheme(themePref as ThemePref);
   }, [themePref]);

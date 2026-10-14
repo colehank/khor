@@ -2,6 +2,9 @@
 //! is one call into khor-node — CLI and GUI stay equivalent because they
 //! are the same functions (docs/KHOR.md 三条地基).
 
+#[cfg(desktop)]
+mod window_surface;
+
 use khor_gui_core::{DeviceRow, FaceChoices, SessionRow};
 use khor_node::Node;
 
@@ -1962,7 +1965,9 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         .title("Khor")
         .inner_size(1080.0, 720.0)
         .min_inner_size(400.0, 500.0)
-        .background_color(ground(chosen_dark(desktop_is_dark)));
+        .transparent(true)
+        .initialization_script(window_surface::initial_script())
+        .background_color(window_surface::background(chosen_dark(desktop_is_dark)));
     #[cfg(target_os = "macos")]
     {
         win = win
@@ -2008,6 +2013,7 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         }
     });
     let _built = win.build()?;
+    window_surface::apply(app, window_surface::material());
     // The kept numbers against the window they built (`traffic::check`):
     // its own buttons, read, no window of its own.
     #[cfg(target_os = "macos")]
@@ -2139,7 +2145,10 @@ fn repaint_the_ground(app: &tauri::AppHandle) {
         return;
     };
     let dark = chosen_dark(|| matches!(w.theme(), Ok(Theme::Dark)));
-    let _ = w.set_background_color(Some(ground(dark)));
+    let _ = w.set_background_color(Some(window_surface::background(dark)));
+    if let Some(view) = app.get_webview("main") {
+        let _ = view.set_background_color(Some(window_surface::background(dark)));
+    }
 }
 
 /// Back, forward and reload for one tab's page.
@@ -3487,8 +3496,65 @@ fn about() -> khor_gui_core::About {
 
 // ── 设置 (docs/MORE.md) ─────────────────────────────────────────────
 
-/// Every setting and its value (`khor_gui_core::config_rows`). No node
-/// is opened, so this answers before anything has been drawn.
+/// Saves the palette locally through the OS file panel, without opening a node.
+#[tauri::command]
+async fn save_terminal_palette(app: tauri::AppHandle, text: String) -> Result<bool, String> {
+    if text.len() > 100_000 || serde_json::from_str::<serde_json::Value>(&text).is_err() {
+        return Err(khor_catalog::gui::term_theme_bad_json().to_owned());
+    }
+    #[cfg(desktop)]
+    return tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let Some(file) = app
+            .dialog()
+            .file()
+            .add_filter("JSON", &["json"])
+            .set_file_name("khor-terminal-theme.json")
+            .blocking_save_file()
+        else {
+            return Ok(false);
+        };
+        let path = file.into_path().map_err(|e| e.to_string())?;
+        std::fs::write(&path, text).map_err(|e| e.to_string())?;
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn window_appearance_support() -> serde_json::Value {
+    serde_json::json!({
+        "supported": cfg!(desktop),
+        "blur": cfg!(all(desktop, any(target_os = "macos", target_os = "windows")))
+    })
+}
+
+#[tauri::command]
+fn set_window_appearance(app: tauri::AppHandle, material: String) -> Result<(), String> {
+    if !["solid", "clear", "frost"].contains(&material.as_str()) {
+        return Err(khor_catalog::msg::config_no_such_value(
+            "window-material",
+            &material,
+            "solid, clear, frost",
+        ));
+    }
+    #[cfg(desktop)]
+    {
+        let handle = app.clone();
+        app.run_on_main_thread(move || window_surface::apply(&handle, &material))
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(desktop))]
+    let _ = (app, material);
+    Ok(())
+}
+
 /// The theme the face has resolved, worn by **the window** — which is
 /// not the page (批 D2, `src/theme.ts`).
 ///
@@ -3803,6 +3869,8 @@ fn follow_the_app(win: *mut std::ffi::c_void) {
     }
 }
 
+/// Every setting and its value (`khor_gui_core::config_rows`). No node
+/// is opened, so this answers before anything has been drawn.
 #[tauri::command]
 fn config() -> Vec<khor_gui_core::ConfigRow> {
     khor_gui_core::config_rows(&Node::root_from_env())
@@ -4993,6 +5061,9 @@ pub fn run() {
             doctor_fix,
             about,
             set_window_theme,
+            window_appearance_support,
+            save_terminal_palette,
+            set_window_appearance,
             config,
             set_config,
             menu_state,

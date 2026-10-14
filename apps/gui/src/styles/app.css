@@ -2789,3 +2789,31 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 [data-session-bar]:has(> [data-session-bar-above]:not(:empty)) [data-session-deck]:has([data-notice-island]) {
   z-index: 50;
 }
+
+/* One background plane with terminal-shaped cutouts (window-surface).
+   All foreground surfaces retain their own ink and fill. */
+:root[data-window-transparent] body { background: transparent; }
+:root[data-window-transparent] #root { isolation: isolate; }
+:root[data-window-transparent] #root:not(:empty)::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--canvas-solid) var(--window-opacity), transparent);
+  clip-path: var(--window-ground-clip, none);
+}
+:root[data-window-transparent] :is([data-terminal], [data-term-ended-screen]) {
+  background: color-mix(in srgb, var(--term-bg) var(--window-opacity), transparent);
+}
+
+/* Palette values are data; UI geometry stays in design tokens. */
+.term-theme-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap-in) var(--gap-base); }
+:root[data-narrow] .term-theme-grid { grid-template-columns: minmax(0, 1fr); }
+.term-theme-well { width: var(--theme-well); height: var(--theme-well); flex: none; border: 0; padding: 0; background: transparent; }
+.term-theme-hex { width: var(--theme-hex-w); flex: none; }
+@media (pointer: coarse) {
+  .term-theme-well { width: var(--touch); height: var(--touch); }
+}
+.term-theme-editor { top: var(--gap-pane) !important; max-height: calc(var(--app-h, 100dvh) - 2 * var(--gap-pane)); }
+:root[data-narrow] .term-theme-editor { top: auto !important; }

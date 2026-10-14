@@ -1,0 +1,91 @@
+/** One desktop background plane. Terminal surfaces cut out their own
+ * rectangle and paint their chosen palette once, so 85% never becomes
+ * 97.75% by stacking two backgrounds. Output/scroll does not remeasure it. */
+import { useEffect, useState } from "react";
+import { inApp, isMenuFace, settingsFace, windowAppearanceSupport, setWindowAppearance, type ConfigRow } from "@/api";
+
+declare global { interface Window { __KHOR_WINDOW_SURFACE__?: boolean; __KHOR_WINDOW_PREF__?: WindowChoice } }
+export type WindowMaterial = "solid" | "clear" | "frost";
+export type WindowChoice = { material: WindowMaterial; opacity: number };
+export const WINDOW_MIRROR = "khor.window-surface";
+let choice: WindowChoice = { material: "solid", opacity: 100 };
+let nativeMaterial: WindowMaterial | null = null;
+const main = () => inApp && window.__KHOR_WINDOW_SURFACE__ === true && !settingsFace && !isMenuFace;
+export function windowChoice(rows: ConfigRow[] | null): WindowChoice | null {
+  const m = rows?.find(r => r.name === "window-material")?.value;
+  const o = rows?.find(r => r.name === "window-opacity")?.value;
+  return m === "solid" || m === "clear" || m === "frost" ? { material: m, opacity: Math.max(75, Math.min(100, Number(o) || 100)) } : null;
+}
+export function windowOpacity(): number { return main() && choice.material !== "solid" ? choice.opacity / 100 : 1; }
+export function wearWindowChoice(next: WindowChoice, native = true): void {
+  choice = next;
+  if (!main()) return;
+  const root = document.documentElement;
+  root.toggleAttribute("data-window-transparent", next.material !== "solid");
+  root.style.setProperty("--window-opacity", `${windowOpacity() * 100}%`);
+  try { window.localStorage.setItem(WINDOW_MIRROR, JSON.stringify(next)); } catch { /* Only the next launch's mirror is lost. */ }
+  if (native && nativeMaterial !== next.material) {
+    nativeMaterial = next.material;
+    void setWindowAppearance(next.material).catch(() => { nativeMaterial = null; });
+  }
+  queueGround();
+  window.dispatchEvent(new Event("khor:window-surface"));
+}
+export function onWindowSurface(run: () => void): () => void {
+  window.addEventListener("khor:window-surface", run);
+  return () => window.removeEventListener("khor:window-surface", run);
+}
+export function useWindowSupport(): { supported: boolean; blur: boolean } {
+  const [support, setSupport] = useState({ supported: false, blur: false });
+  useEffect(() => {
+    let alive = true;
+    if (inApp) void windowAppearanceSupport().then(s => { if (alive) setSupport(s); }, () => {});
+    return () => { alive = false; };
+  }, []);
+  return support;
+}
+let frame = 0;
+let armed = false;
+const surfaceSelector = "[data-terminal], [data-term-ended-screen]";
+function queueGround() {
+  if (!main() || frame) return;
+  frame = requestAnimationFrame(() => { frame = 0; measureGround(); });
+}
+let resize: ResizeObserver | null = null;
+const watched = new Set<Element>();
+function measureGround() {
+  const root = document.getElementById("root");
+  if (!root) return;
+  const surfaces = [...root.querySelectorAll<HTMLElement>(surfaceSelector)];
+  for (const el of watched) if (!surfaces.includes(el as HTMLElement)) { resize?.unobserve(el); watched.delete(el); }
+  if (windowOpacity() === 1) { root.style.removeProperty("--window-ground-clip"); return; }
+  const rect = root.getBoundingClientRect();
+  let path = `M0 0H${rect.width}V${rect.height}H0Z`;
+  for (const el of surfaces) {
+    if (!watched.has(el)) { watched.add(el); resize?.observe(el); }
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height || r.right <= rect.left || r.left >= rect.right || r.bottom <= rect.top || r.top >= rect.bottom) continue;
+    const x = Math.max(0, r.left - rect.left), y = Math.max(0, r.top - rect.top);
+    const right = Math.min(rect.width, r.right - rect.left), bottom = Math.min(rect.height, r.bottom - rect.top);
+    path += `M${x} ${y}H${right}V${bottom}H${x}Z`;
+  }
+  root.style.setProperty("--window-ground-clip", `path(evenodd, "${path}")`);
+}
+export function followWindowSurface(): void {
+  if (!main() || armed) return;
+  armed = true;
+  try {
+    const v = window.__KHOR_WINDOW_PREF__ ?? JSON.parse(window.localStorage.getItem(WINDOW_MIRROR) ?? "null") as WindowChoice | null;
+    if (v && ["solid", "clear", "frost"].includes(v.material)) wearWindowChoice({ material: v.material, opacity: Math.max(75, Math.min(100, Number(v.opacity) || 100)) }, false);
+  } catch { /* A missing mirror remains solid. */ }
+  resize = new ResizeObserver(queueGround);
+  const root = document.getElementById("root");
+  if (!root) return;
+  resize.observe(root);
+  // Ignore xterm's cell output. Only insertion/removal of a terminal
+  // surface changes which part of the desktop background it replaces.
+  new MutationObserver(records => {
+    if (records.some(r => !(r.target instanceof Element && r.target.closest(surfaceSelector)) && [...r.addedNodes, ...r.removedNodes].some(n => n instanceof Element && (n.matches(surfaceSelector) || n.querySelector(surfaceSelector))))) queueGround();
+  }).observe(root, { childList: true, subtree: true });
+  queueGround();
+}

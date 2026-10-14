@@ -21,8 +21,8 @@ const css = readFileSync(join(here, "..", "src", "styles", "tokens.css"), "utf8"
 
 /** The value a token has, in the light block and in the dark one. */
 function token(name) {
-  const all = [...css.matchAll(new RegExp(`--${name}:\\s*([^;]+);`, "g"))].map((m) =>
-    m[1].trim(),
+  const all = [...css.matchAll(new RegExp(`--${name}:\\s*([^;]+);`, "g"))].map((m, i) =>
+    m[1].trim().replace(/var\(--canvas-solid\)/g, () => token("canvas-solid")[i === 0 ? "light" : "dark"]),
   );
   if (all.length < 2) {
     fail(`tokens.css should declare --${name} twice (light, then dark); found ${all.length}`);
@@ -56,7 +56,7 @@ const want = { background: token("background"), card: token("card"), side: token
 // column ends — the hairline is `--border`, a translucent ink, not a
 // ground, and is not read here. `--side` must resolve to `--background`
 // in both themes, or the column would arrive on a second colour.
-const found = [...html.matchAll(/background:\s*(#[0-9a-fA-F]{3,8})/g)].map((m) => m[1]);
+const found = [...html.matchAll(/--boot-ground:\s*(#[0-9a-fA-F]{3,8})/g)].map((m) => m[1]);
 if (found.length !== 2) {
   fail(`expected 2 colours in the boot frame (the one ground, light then dark), found ${found.length}: ${found.join(", ")}`);
 } else {
@@ -207,39 +207,14 @@ const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"),
   }
 }
 
-// ── one ground on every face, the Mac window included (the redesign) ──
-//
-// ⚠️ This section guarded the opposite rule until 2026-10-02 (docs/
-// SHELL.md round 15 item 7, D4): a transparent macOS window over AppKit's
-// sidebar material, and the left block's ground cleared to show it. The
-// redesign decided one ground (memory `khor-one-ground-redesign`), so what
-// is held now is that nothing of the material is left to come back:
-//
-//   - the macOS half of `build_the_window` builds no transparent window
-//     and no effect;
-//   - the window is given the ground on its builder, for every desktop
-//     platform (`background_color(ground(…))`), so its first frame is the
-//     page's colour rather than the platform's default;
-//   - the page sets no `data-material` stamp and app.css has no rule
-//     keyed on one.
+// Desktop material is opt-in; default remains the same opaque ground.
 {
-  const before = bad;
-  const appCss = readFileSync(join(here, "..", "src", "styles", "app.css"), "utf8");
-  const appTsx = readFileSync(join(here, "..", "src", "App.tsx"), "utf8");
-  const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  const build = rust.match(/fn build_the_window[\s\S]*?\n}\n/)?.[0] ?? "";
-  if (!build) fail("cannot find build_the_window in src-tauri/src/lib.rs — this check is now blind");
-  const live = code(build);
-  if (/\.transparent\(true\)/.test(live) || /\.effects\(/.test(live)) {
-    fail("build_the_window builds a transparent window or a window effect — the redesign has one ground and no material");
-  }
-  if (!/\.background_color\(ground\(/.test(live.split('#[cfg(target_os = "macos")]')[0])) {
-    fail("build_the_window does not give every desktop window the ground on its builder (before the macOS-only half) — the first frame is the platform's default");
-  }
-  if (/data-material/.test(code(appCss)) || /setAttribute\("data-material"/.test(code(appTsx))) {
-    fail("the page still stamps or keys on data-material — the material's clear ground would come back");
-  }
-  if (bad === before) console.log("one ground: the Mac window opaque with no material, every desktop window built on the ground, no data-material stamp");
+  const surface = readFileSync(join(here, "..", "src-tauri", "src", "window_surface.rs"), "utf8");
+  if (!/default: "solid"/.test(readFileSync(join(here, "..", "..", "..", "crates", "node", "src", "config.rs"), "utf8"))) fail("window material default is no longer solid");
+  if (!/window_surface::background/.test(rust) || !/super::ground\(dark\)/.test(surface)) fail("native solid background does not share the theme ground");
+  if (!/window_surface::initial_script/.test(rust) || !html.includes("__KHOR_WINDOW_PREF__")) fail("window surface is not available to the first HTML frame");
+  if (!html.includes("khor.window-surface")) fail("window surface mirror missing from boot frame");
+  console.log("desktop surface: default solid, native first-frame choice, background-only transparency");
 }
 
 const painted = [...rust.matchAll(/Color\(0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0xff\)/g)].map(

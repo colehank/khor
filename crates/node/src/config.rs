@@ -70,6 +70,10 @@ pub const SECTIONS: &[Section] = &[
         name: "appearance",
         page: "appearance",
     },
+    Section {
+        name: "window",
+        page: "appearance",
+    },
     // 头像, under 外观 (UX-32): how every row's and tab's identity seat
     // is assembled — whose face is the base, what the mark says.
     Section {
@@ -164,6 +168,23 @@ pub const KEYS: &[Key] = &[
         section: "appearance",
         values: &["auto", "light", "dark"],
         default: "auto",
+    },
+    // Main desktop window's background. The viewer paints alpha;
+    // native startup reads the same keys before a webview exists.
+    Key {
+        name: "window-material",
+        section: "window",
+        values: &["solid", "clear", "frost"],
+        default: "solid",
+    },
+    Key {
+        name: "window-opacity",
+        section: "window",
+        values: &[
+            "75", "76", "77", "78", "79", "80", "81", "82", "83", "84", "85", "86", "87", "88",
+            "89", "90", "91", "92", "93", "94", "95", "96", "97", "98", "99", "100",
+        ],
+        default: "90",
     },
     // 类型标记 (the owner, 2026-10-02:「我们在外观里可以设置，对象类型的
     // 绘制形式，角标、浮现这样」): how every avatar that says *what kind of

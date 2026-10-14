@@ -125,6 +125,7 @@ export function ConfigSections({
   previews,
   after,
   shownWhen,
+  omit = [],
 }: {
   /** Which 「…」 page is asking. Which sections that is, and in what
       order, is the node's answer — the rows arrive grouped and each one
@@ -145,6 +146,8 @@ export function ConfigSections({
       不画, the owner): 角标是 under 类型标记 = 角标 (UX-32). The key
       still stores and lists as itself; only the drawing waits. */
   shownWhen?: Record<string, { key: string; value: string }>;
+  /** Settings with a dedicated, platform-aware control. */
+  omit?: string[];
 }) {
   const rows = useSettings();
   const reread = useSettingsReread();
@@ -170,6 +173,7 @@ export function ConfigSections({
 
   const mine = rows
     .filter((r) => r.page === page)
+    .filter((r) => !omit.includes(r.name))
     .filter((r) => {
       const when = shownWhen?.[r.name];
       return !when || rows.some((o) => o.name === when.key && o.value === when.value);
