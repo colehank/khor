@@ -2824,3 +2824,18 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
    The terminal surface already owns the tint; both scroll layers let it
    through. This also covers a lost-WebGL DOM fallback and ended screens. */
 :root[data-window-transparent] :is([data-terminal], [data-term-ended-screen]) .xterm-viewport { background-color: transparent; }
+
+/* Cell backgrounds replace the pane tint inside the screen. Padding still
+   follows the selected terminal palette, with no overlapping tint layers. */
+:root[data-window-transparent] [data-term-glass] { background: transparent; isolation: isolate; }
+:root[data-window-transparent] [data-term-glass]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--term-bg) var(--window-opacity), transparent);
+  clip-path: var(--term-ground-clip, none);
+}
+:root[data-window-transparent] [data-term-glass] .xterm-viewport,
+:root[data-window-transparent] [data-term-glass] .xterm-scrollable-element { background-color: transparent !important; }

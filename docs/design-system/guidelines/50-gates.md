@@ -481,3 +481,5 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 `--text-*`/`--font-weight-*` 命名空间自动生成 utility,字型那两道不用改
 (它们读 token 不背数值)。
 
+
+`npm run appearance` 的终端透明检查还覆盖程序 RGB/ANSI/反色背景、文字与 0% 选区可见性、1x/2x、实际上下文丢失的 DOM 备用、GPU 恢复及结束快照。它量每块区域一次的背景合成，不依赖整终端 opacity。
