@@ -25,16 +25,16 @@ import {TooltipProvider} from '../src/components/ui/tooltip';
 import {SettingsProvider,SettingsRereadProvider} from '../src/settings';
 import {TerminalThemeSection} from '../src/views/more/TerminalThemeSection';
 import {WindowAppearanceSection} from '../src/views/more/WindowAppearanceSection';
-import {TerminalPane} from '../src/views/TerminalPane';
+import {TerminalPane,EndedPane} from '../src/views/TerminalPane';
 import {FaceMark} from '../src/components/FaceMark';
 import * as palette from '../src/lib/term-theme';
 import {followWindowSurface,wearWindowChoice,windowChoice} from '../src/lib/window-surface';
 import {fetchConfig} from '../src/api';
 import {speakLang} from '../src/lang';
 import '../src/styles/tokens.css';import '../src/styles/app.css';
-speakLang('zh');palette.wearTermPalette();followWindowSurface();window.palette=palette;window.windowChoice=windowChoice;
-function Lab(){const [rows,setRows]=useState([]);const read=()=>fetchConfig().then(setRows);useEffect(()=>{read()},[]);const surface=windowChoice(rows);useEffect(()=>{if(surface)wearWindowChoice(surface)},[surface?.material,surface?.opacity]);
-return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column'}}><TerminalPane id='shell/appearance-test' active /></div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><div data-halo-lab style={{display:'flex',gap:40,padding:32}}><FaceMark face={{machine:null}} halo="done"/><div data-tab-bar><FaceMark face={{machine:null}} halo="done" size="tab"/></div></div><WindowAppearanceSection/><TerminalThemeSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
+speakLang('zh');palette.wearTermPalette();followWindowSurface();window.palette=palette;window.windowChoice=windowChoice;window.wearWindowChoice=wearWindowChoice;
+function Lab(){const [ended,setEnded]=useState(false);window.showEnded=()=>setEnded(true);const [rows,setRows]=useState([]);const read=()=>fetchConfig().then(setRows);useEffect(()=>{read()},[]);const surface=windowChoice(rows);useEffect(()=>{if(surface)wearWindowChoice(surface)},[surface?.material,surface?.opacity]);
+return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column'}}>{ended?<EndedPane id='shell/appearance-test' at={1}/>:<TerminalPane id='shell/appearance-test' active />}</div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><div data-halo-lab style={{display:'flex',gap:40,padding:32}}><FaceMark face={{machine:null}} halo="done"/><div data-tab-bar><FaceMark face={{machine:null}} halo="done" size="tab"/></div></div><WindowAppearanceSection/><TerminalThemeSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
 createRoot(document.getElementById('root')).render(<Lab/>);
 `);
   vite = spawn("node_modules/.bin/vite", ["--port", String(port), "--strictPort"], { cwd: gui, stdio: ["ignore", "pipe", "pipe"] });
@@ -57,6 +57,7 @@ createRoot(document.getElementById('root')).render(<Lab/>);
     if (cmd === "set_config") { rows = rows.map(r => r.name === args.name ? { ...r, value: args.value } : r); result = rows; }
     if (cmd === "term_attach") result = { bytes: Buffer.from(Array.from({ length: 140 }, (_, i) => `row ${i} 中文\r\n`).join("") + "\x1b[31mred\x1b[0m\r\n\x1b[38;2;12;34;56mtruecolor\x1b[0m").toString("base64"), seq: 1 };
     if (["term_wait", "term_stream"].includes(cmd)) { await pause(120); result = { bytes: "", seq: 1, gone: false, reset: false, stall: null }; }
+    if (cmd === "term_ended") result = {ended:{exit:0},recent:[],screen:{cols:80,rows:24,at_ms:1,bytes:Buffer.from('              \r\n\x1b[40m              \x1b[0m\r\n\x1b[48;2;64;64;96m              \x1b[0m\r\n\x1b[44m              \x1b[0m\r\n\x1b[7m              \x1b[0m\r\n\x1b[38;2;255;255;255m██████████████\x1b[0m').toString('base64')}};
     if (cmd === "save_terminal_palette") result = true;
     await route.fulfill({ contentType: "application/json", body: JSON.stringify(result) });
   });
@@ -84,7 +85,7 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await page.locator('[data-setting-select="window-material"]').selectOption("clear");
   await page.getByRole("slider", { name: "背景不透明度" }).fill("85");
   await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--window-opacity") === "85%");
-  await page.waitForFunction(() => document.querySelector("[data-terminal]").__xterm.options.theme.background === "#00000000" && document.getElementById("root").style.getPropertyValue("--window-ground-clip").includes("M"));
+  await page.waitForFunction(() => document.getElementById("root").style.getPropertyValue("--window-ground-clip").includes("M"));
   assert(await page.evaluate(() => document.querySelector("[data-terminal]").__xterm === window.originalTerm));
   assert.equal(calls.filter(c => c.cmd === "term_open").length, opens);
   const halos = await page.evaluate(() => [...document.querySelectorAll('[data-halo-lab] [data-halo]')].map(el => {const r=el.getBoundingClientRect();const s=getComputedStyle(el);return {right:r.right,y:r.top+r.height/2,gap:parseFloat(s.getPropertyValue('--halo-gap')),width:parseFloat(s.getPropertyValue('--halo-w')),ink:s.getPropertyValue('--halo-color').trim()};}));
@@ -168,6 +169,82 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await page.evaluate(() => { Storage.prototype.setItem = window.originalSetItem; });
   await page.locator("[data-term-theme-save]").click();
   await page.locator("[data-term-theme-editor]").waitFor({ state: "hidden" });
+
+  await page.setViewportSize({width:1400,height:900});
+  // Same ANSI bytes in WebGL and its actual lost-context DOM fallback.
+  // Blank cells detect double tinting; a white block detects faded text.
+  await page.evaluate(async () => {
+    window.wearWindowChoice({material:'clear',opacity:50},false);
+    const t=document.querySelector('[data-terminal]').__xterm;
+    t.options.cursorInactiveStyle='none';
+    await new Promise(done=>t.write('\x1b[?25l\x1b[2J\x1b[H' +
+      '              \r\n\x1b[40m              \x1b[0m\r\n'+
+      '\x1b[48;2;64;64;96m              \x1b[0m\r\n'+
+      '\x1b[44m              \x1b[0m\r\n'+
+      '\x1b[7m              \x1b[0m\r\n'+
+      '\x1b[38;2;255;255;255m██████████████\x1b[0m',done));
+    t.scrollToBottom();
+  });
+  const sampleBackgrounds = async () => {
+    await pause(150);
+    const image=await page.screenshot();
+    return page.evaluate(async b64=>{
+      const t=document.querySelector('[data-terminal], [data-term-ended-screen]').__xterm;
+      const s=t.element.querySelector('.xterm-screen').getBoundingClientRect();
+      const d=t._core._renderService.dimensions.css.cell;
+      const img=new Image();img.src='data:image/png;base64,'+b64;await img.decode();
+      const c=document.createElement('canvas');c.width=img.width;c.height=img.height;
+      const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
+      return Array.from({length:6},(_,i)=>[...ctx.getImageData(Math.floor((s.left+5.5*d.width)*img.width/innerWidth),Math.floor((s.top+(i+0.5)*d.height)*img.width/innerWidth),1,1).data]);
+    },image.toString('base64'));
+  };
+  const checkBackgrounds = async renderer => {
+    for (const alpha of [0.5,0,0.85,1,0.5]) {
+      await page.evaluate(alpha=>window.wearWindowChoice({material:'clear',opacity:alpha*100},false),alpha);
+      const samples=await sampleBackgrounds();
+      const colors=await page.evaluate(()=>{
+        const c=document.querySelector('[data-terminal], [data-term-ended-screen]').__xterm._core._themeService.colors;
+        return [c.background.rgba>>>8, c.ansi[0].rgba>>>8, 0x404060, c.ansi[4].rgba>>>8, c.foreground.rgba>>>8];
+      });
+      for (let i=0;i<5;i++) {
+        const rgb=[colors[i]>>>16,(colors[i]>>>8)&255,colors[i]&255];
+        const expected=rgb.map((v,k)=>Math.round(v*alpha+[51,102,153][k]*(1-alpha)));
+        samples[i].slice(0,3).forEach((v,k)=>assert(Math.abs(v-expected[k])<=3,`${renderer} row ${i} at ${alpha}: ${samples[i]}, expected ${expected}`));
+      }
+      assert(samples[5].slice(0,3).every(v=>v>245),`${renderer}: truecolor foreground remains opaque: ${samples[5]}`);
+    }
+    await page.evaluate(()=>{
+      window.wearWindowChoice({material:'clear',opacity:0},false);
+      const t=document.querySelector('[data-terminal], [data-term-ended-screen]').__xterm;
+      t.select(2,t.buffer.active.viewportY,7);
+    });
+    const selected=(await sampleBackgrounds())[0];
+    assert(selected.slice(0,3).some((v,k)=>Math.abs(v-[51,102,153][k])>10),`${renderer}: selection must remain visible at zero background opacity`);
+    await page.evaluate(()=>document.querySelector('[data-terminal], [data-term-ended-screen]').__xterm.clearSelection());
+
+  };
+  await checkBackgrounds('WebGL');
+  const cdp=await context.newCDPSession(page);
+  await cdp.send('Emulation.setDeviceMetricsOverride',{width:1400,height:900,deviceScaleFactor:2,mobile:false});
+  await checkBackgrounds('WebGL retina');
+  await page.evaluate(()=>{
+    const gl=document.querySelector('[data-terminal]').__xterm._core._renderService._renderer.value._gl;
+    if(!gl)throw Error('WebGL fixture was not loaded');
+    gl.getExtension('WEBGL_lose_context').loseContext();
+  });
+  await page.locator('[data-terminal] .xterm-rows').waitFor();
+  await checkBackgrounds('DOM fallback retina');
+  await cdp.send('Emulation.setDeviceMetricsOverride',{width:1400,height:900,deviceScaleFactor:1,mobile:false});
+  await checkBackgrounds('DOM fallback');
+  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForFunction(()=>!!document.querySelector('[data-terminal]').__xterm._core._renderService._renderer.value._gl);
+  await checkBackgrounds('WebGL recovered');
+  await page.evaluate(()=>window.showEnded());
+  await page.locator('[data-term-ended-drawn]').waitFor();
+  await checkBackgrounds('ended snapshot');
+  await page.evaluate(()=>window.wearWindowChoice({material:'frost',opacity:0},false));
+  assert.equal(await page.locator('html').evaluate(el=>el.style.getPropertyValue('--window-opacity')),'0%','frost tint also reaches zero');
+  if(process.env.APPEARANCE_SHOT) await page.screenshot({path:process.env.APPEARANCE_SHOT.replace(/\.png$/, '-ansi.png')});
   assert.deepEqual(errors, []);
-  console.log("appearance: presets/DIY/JSON, cross-window sync, same PTY/buffer/scroll, background-only single-layer alpha, unsupported blur, parser bounds and narrow editor passed");
+  console.log("appearance: presets/DIY/JSON, cross-window sync, same PTY/buffer/scroll, background-only single-layer alpha in WebGL/DOM/recovery at 1x/2x, unsupported blur, parser bounds and narrow editor passed");
 } finally { if (browser) await browser.close(); if (vite) vite.kill(); rmSync(entry, { force: true }); }

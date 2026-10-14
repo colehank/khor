@@ -91,6 +91,7 @@ import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermOptionMeta, termOptionMeta } from "@/lib/term-option-meta";
 import { keepWebgl } from "@/lib/term-atlas";
+import { keepTerminalGlass } from "@/lib/term-glass";
 import { onTermBlockLines, termBlockLines } from "@/lib/term-block-lines";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Cursor, type Marks } from "@/lib/term-marks";
@@ -333,11 +334,7 @@ function b64bytes(b64: string): Uint8Array {
  */
 function themeOf(el: HTMLElement) {
   const theme = terminalTheme(el);
-  // The pane already paints the background plane. xterm is clear only
-  // when the desktop background has alpha; program-set colors stay intact.
-  // xterm parses transparent HEX directly. The CSS keyword "transparent"
-  // is rejected by its color parser and falls back to opaque black.
-  return { ...theme, background: windowOpacity() < 1 ? "#00000000" : theme.background };
+  return theme;
 }
 
 /** The pane's font, resolved the same way for the same reason — xterm
@@ -1540,6 +1537,7 @@ export function TerminalPane({
     // latter (0.4.0), so no `activeVersion` is set here.
     term.loadAddon(new UnicodeGraphemesAddon());
     term.open(mount);
+    const stopGlass = keepTerminalGlass(term, box);
     // The grid's last row is where the folded capsule measures from
     // (item 72, `lib/fold-seat`): xterm's screen is exactly its rows tall.
     term.element?.querySelector(".xterm-screen")?.setAttribute("data-fold-foot", "");
@@ -2894,6 +2892,7 @@ export function TerminalPane({
       osc52.dispose();
       cursor();
       unWebgl();
+      stopGlass();
       term.dispose();
       termRef.current = null;
       searchRef.current = null;
@@ -3739,6 +3738,7 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
     term.loadAddon(new UnicodeGraphemesAddon());
     term.loadAddon(new ImageAddon());
     term.open(mount);
+    const stopGlass = keepTerminalGlass(term, box);
     (box as HTMLDivElement & { __xterm?: Terminal }).__xterm = term;
     // Fitted only while it stands: a write's callback or the observer
     // can land after the pane went away.
@@ -3765,6 +3765,7 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
       alive = false;
       seen.disconnect();
       themeObserver.disconnect(); stopTheme(); stopSurface();
+      stopGlass();
       term.dispose();
     };
   }, [screen]);
