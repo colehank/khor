@@ -8,13 +8,18 @@ declare global { interface Window { __KHOR_WINDOW_SURFACE__?: boolean; __KHOR_WI
 export type WindowMaterial = "solid" | "clear" | "frost";
 export type WindowChoice = { material: WindowMaterial; opacity: number };
 export const WINDOW_MIRROR = "khor.window-surface";
+/** Zero is a valid saved preference; absent/non-finite values stay solid. */
+export function normalizeWindowOpacity(value: unknown): number {
+  const n = typeof value === "number" || typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
+}
 let choice: WindowChoice = { material: "solid", opacity: 100 };
 let nativeMaterial: WindowMaterial | null = null;
 const main = () => inApp && window.__KHOR_WINDOW_SURFACE__ === true && !settingsFace && !isMenuFace;
 export function windowChoice(rows: ConfigRow[] | null): WindowChoice | null {
   const m = rows?.find(r => r.name === "window-material")?.value;
   const o = rows?.find(r => r.name === "window-opacity")?.value;
-  return m === "solid" || m === "clear" || m === "frost" ? { material: m, opacity: Math.max(75, Math.min(100, Number(o) || 100)) } : null;
+  return m === "solid" || m === "clear" || m === "frost" ? { material: m, opacity: normalizeWindowOpacity(o) } : null;
 }
 export function windowOpacity(): number { return main() && choice.material !== "solid" ? choice.opacity / 100 : 1; }
 export function wearWindowChoice(next: WindowChoice, native = true): void {
@@ -76,7 +81,7 @@ export function followWindowSurface(): void {
   armed = true;
   try {
     const v = window.__KHOR_WINDOW_PREF__ ?? JSON.parse(window.localStorage.getItem(WINDOW_MIRROR) ?? "null") as WindowChoice | null;
-    if (v && ["solid", "clear", "frost"].includes(v.material)) wearWindowChoice({ material: v.material, opacity: Math.max(75, Math.min(100, Number(v.opacity) || 100)) }, false);
+    if (v && ["solid", "clear", "frost"].includes(v.material)) wearWindowChoice({ material: v.material, opacity: normalizeWindowOpacity(v.opacity) }, false);
   } catch { /* A missing mirror remains solid. */ }
   resize = new ResizeObserver(queueGround);
   const root = document.getElementById("root");

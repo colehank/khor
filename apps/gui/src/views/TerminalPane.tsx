@@ -335,7 +335,9 @@ function themeOf(el: HTMLElement) {
   const theme = terminalTheme(el);
   // The pane already paints the background plane. xterm is clear only
   // when the desktop background has alpha; program-set colors stay intact.
-  return { ...theme, background: windowOpacity() < 1 ? "transparent" : theme.background };
+  // xterm parses transparent HEX directly. The CSS keyword "transparent"
+  // is rejected by its color parser and falls back to opaque black.
+  return { ...theme, background: windowOpacity() < 1 ? "#00000000" : theme.background };
 }
 
 /** The pane's font, resolved the same way for the same reason — xterm

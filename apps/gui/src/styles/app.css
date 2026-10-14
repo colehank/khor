@@ -2817,3 +2817,9 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 }
 .term-theme-editor { top: var(--gap-pane) !important; max-height: calc(var(--app-h, 100dvh) - 2 * var(--gap-pane)); }
 :root[data-narrow] .term-theme-editor { top: auto !important; }
+
+/* xterm 6 themes its inner scrollable element, but the enclosing
+   .xterm-viewport still has the package stylesheet's hard-coded black.
+   The terminal surface already owns the tint; both scroll layers let it
+   through. This also covers a lost-WebGL DOM fallback and ended screens. */
+:root[data-window-transparent] :is([data-terminal], [data-term-ended-screen]) .xterm-viewport { background-color: transparent; }

@@ -6,7 +6,7 @@
 
 导入接受原生 xterm 颜色对象或 `{ "name": "我的配色", "theme": { ... } }`；未填写的字段从当前配色补齐。导出生成同一结构：桌面 app 使用系统保存面板，网页下载 JSON，手机复制 JSON。文件上限 100 KB，自定义配色最多 50 个。删除当前配色后回到跟随 khor。
 
-窗口设置在原生桌面 app 的设置 → 外观。`khor config set window-material solid|clear|frost` 与 `khor config set window-opacity 75` 使用同一设备配置，回到 app 时重读。默认实色；首次选择半透明或毛玻璃时为 90%，背景不透明度可调 75%–100%。只改主窗口背景；字、头像、状态、菜单和设置窗口仍清晰。macOS 与 Windows 使用支持的系统材质，Linux 使用桌面合成器透明背景，不提供原生毛玻璃入口。
+窗口设置在原生桌面 app 的设置 → 外观。`khor config set window-material solid|clear|frost` 与 `khor config set window-opacity 0` 使用同一设备配置，回到 app 时重读。默认实色；首次选择半透明或毛玻璃时为 90%，背景不透明度可调 0%–100%。只改主窗口背景；字、头像、状态、菜单和设置窗口仍清晰。macOS 与 Windows 使用支持的系统材质，Linux 使用桌面合成器透明背景，不提供原生毛玻璃入口。
 
 ## 代码边界
 

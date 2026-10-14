@@ -44,7 +44,7 @@ export function WindowAppearanceSection() {
       <PopupRow name="window-material" label={gui.window_surface_material} value={effective} choices={choices.filter(c => c.value !== "frost" || support.blur)} onPick={v => change("window-material", v)} />
       {effective !== "solid" && <div data-setting-row="slider" data-setting-row-name="window-opacity" className="flex flex-col gap-in px-row py-in">
         <div className="flex items-center justify-between text-body"><span>{gui.window_surface_opacity}</span><output className="text-callout tabular-nums text-muted-foreground">{opacity}%</output></div>
-        <Slider label={gui.window_surface_opacity} min={75} max={100} value={opacity} ticks={6} small={<span className="text-caption">75%</span>} large={<span className="text-caption">100%</span>} onChange={v => { desired.current = v; setOpacity(v); change("window-opacity", String(v)); }} />
+        <Slider label={gui.window_surface_opacity} min={0} max={100} value={opacity} ticks={6} small={<span className="text-caption">0%</span>} large={<span className="text-caption">100%</span>} onChange={v => { desired.current = v; setOpacity(v); change("window-opacity", String(v)); }} />
       </div>}
     </MoreSection>
     {error && <p role="status" className="mb-group text-callout text-destructive">{error}</p>}
