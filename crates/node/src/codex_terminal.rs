@@ -85,8 +85,8 @@ pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
         let pid = *here.next()?;
         if here.next().is_some() { return None; }
         let args: Vec<_> = found.procs.command(pid)?.iter().skip(1).map(std::ffi::OsString::from).collect();
-        let configured = found.codex_title_home.as_deref().is_some_and(|home| {
-            found.procs.get(pid).is_some_and(|p| crate::recognition::native_title_for(home, p.cwd.as_deref(), p.started_ms, &args))
+        let configured = found.codex_title_home.as_deref().zip(found.codex_title_root.as_deref()).is_some_and(|(home, root)| {
+            found.procs.get(pid).is_some_and(|p| crate::recognition::native_title_for(root, home, p.cwd.as_deref(), p.started_ms, &args))
         });
         crate::codex_process::selection_title_or(&args, configured).then_some(pid)
     };

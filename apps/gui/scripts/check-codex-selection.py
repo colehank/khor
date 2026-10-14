@@ -172,6 +172,13 @@ trust_level="trusted"
                      lambda value: row_in_codex_group(value, imported),
                      f"{phase}: imported row {imported} lost its Codex category")
 
+        def expect_bound(imported, phase):
+            def bound(listing):
+                line = next((line for line in listing.splitlines() if line.startswith(imported + "\t")), "")
+                return bool(line) and "识别受限" not in line and "Thread unavailable" not in line
+            wait_for(lambda: cli("sessions", "--all"), bound,
+                     f"{phase}: native selection became unavailable")
+
         try:
             if args.native_title:
                 config = home / "config.toml"
@@ -192,6 +199,15 @@ trust_level="trusted"
             imported = cli("import", choices[0][-1]).strip()
             assert imported and "\n" not in imported and "\t" not in imported, f"unexpected import ID: {imported!r}"
             expect_category(imported, "initial resume")
+            if args.native_title:
+                expect_bound(imported, "initial resume")
+                # Each CLI invocation starts a fresh reader. A later unrelated
+                # config rewrite must preserve activation even across restarts.
+                time.sleep(1.1)  # Process start clocks can have second precision.
+                config.write_text(config.read_text().replace(
+                    "[tui]", '[tui]\nstatus_line=["model-with-reasoning"]'))
+                expect_category(imported, "status-line edit")
+                expect_bound(imported, "status-line edit")
             if not args.native_title:
                 listing = cli("sessions", "--all")
                 line = next(line for line in listing.splitlines() if line.startswith(imported + "\t"))
@@ -204,12 +220,16 @@ trust_level="trusted"
                 assert uuid.UUID(new_id).version == 7, f"/new supplied a non-v7 UUID: {new_id}"
             wait_for(screen, lambda value: "ANSWER_060" not in value, "/new retained the old transcript on screen")
             expect_category(imported, "/new")
+            if args.native_title:
+                expect_bound(imported, "/new after config edit")
 
             send_slash(f"/resume {session}")
             if args.native_title:
                 wait_for(native_id, lambda value: value == session, "/resume did not restore the old native UUID")
             wait_for(screen, lambda value: "ANSWER_060" in value, "/resume did not restore the fixture transcript")
             expect_category(imported, "second resume")
+            if args.native_title:
+                expect_bound(imported, "second resume after config edit")
             print(f"PASS {version}: default shared daemon, same row {imported} stays Codex; native title opt-in={args.native_title}; no model prompt submitted")
             print("CLI exposes category/title, not preview; message-preview mapping is covered by the Rust selection tests.")
         finally:

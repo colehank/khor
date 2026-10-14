@@ -215,6 +215,8 @@ pub struct PaneReading {
 #[derive(Debug, Default, Clone)]
 pub struct Findings {
     pub codex_title_home: Option<PathBuf>,
+    /// Integration evidence belongs to khor, even with a separate vendor home.
+    pub codex_title_root: Option<PathBuf>,
     /// Codex writer-owned root thread ids; subagents are excluded.
     pub codex_threads: Vec<String>,
     pub codex_pending: Vec<String>,
@@ -627,6 +629,7 @@ pub(crate) fn process_name_matches(actual: &str, wanted: &str) -> bool {
 /// Every vendor khor can read, rooted at one pretend-home.
 pub struct Discovery {
     vendor_home: Option<PathBuf>,
+    title_root: Option<PathBuf>,
     adaptors: Vec<Box<dyn Adaptor>>,
     /// The terminal multiplexer, when this node is allowed to ask one.
     /// `None` everywhere a root path is the whole world — see
@@ -647,6 +650,7 @@ impl Discovery {
     pub fn empty() -> Discovery {
         Discovery {
             vendor_home: None,
+            title_root: None,
             adaptors: Vec::new(),
             tmux: None,
             procs: None,
@@ -728,6 +732,7 @@ impl Discovery {
     pub fn at(home: &Path) -> Discovery {
         Discovery {
             vendor_home: Some(home.to_path_buf()),
+            title_root: Some(home.to_path_buf()),
             adaptors: vec![
                 Box::new(claude::Claude::at(home.join(".claude"))),
                 Box::new(codex::Codex::at(home.join(".codex"))),
@@ -764,7 +769,8 @@ impl Discovery {
     /// real user's terminals".
     pub fn for_root(root: &Path) -> Discovery {
         let home = vendor_home(root);
-        let discovery = Discovery::at(&home);
+        let mut discovery = Discovery::at(&home);
+        discovery.title_root = Some(root.to_path_buf());
         // The test door, KHOR_NAME's precedent: a scratch home never
         // watches the user's real tmux server, but a test (the smoke)
         // needs a server of its own to be watched — naming a socket here
@@ -802,7 +808,7 @@ impl Discovery {
     /// This is the one place a row's category is decided, and it is
     /// decided by which adaptor produced the row — see [`Found`].
     pub fn sweep_with(&self, procs: &Procs) -> Findings {
-        let mut all = Findings { codex_title_home: self.vendor_home.clone(), ..Findings::default() };
+        let mut all = Findings { codex_title_home: self.vendor_home.clone(), codex_title_root: self.title_root.clone(), ..Findings::default() };
         for a in &self.adaptors {
             all.absorb(a.vendor(), a.sweep(procs));
         }

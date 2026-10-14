@@ -4496,9 +4496,11 @@ mod tests {
         let proc = |name: &str, parent| Proc { name:name.into(), started_ms:std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64, cwd:Some("/same".into()), ppid:parent };
         let procs = Procs::of([(3001, proc("zsh", None)), (501, proc("codex", Some(3001)))])
             .with_commands([(501, ["codex", "resume", a].into_iter().map(str::to_owned).collect())]);
-        let k = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(Discovery::at(&root).with_procs(procs).with_tmux(Tmux::at_binary(&tmux))));
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(Discovery::at(&root).with_procs(procs.clone()).with_tmux(Tmux::at_binary(&tmux))));
         let aid = crate::adaptor::id_for(a); let bid = crate::adaptor::id_for(b);
         k.register(&aid, "tui", "old", Some(501), Some("codex")).unwrap();
+        // A guessed screen state must yield to the rollout's explicit turn state.
+        k.write_state(&k.dir_of(&aid).unwrap(), State::Idle, None, Source::Screen).unwrap();
         let select = |id: &str| {
             let title = format!("{}...", &id[..29]);
             let output = format!("$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fcodex\x1f/same\x1f%1\x1fwork\x1f1\x1f1\x1f{title}\n");
@@ -4507,6 +4509,25 @@ mod tests {
         select(a);
         assert_eq!(k.sighting_of(&aid).unwrap().1, vec![501]); assert!(k.held_in_mux(&aid));
         assert_eq!(k.rows(|_|0).iter().find(|r|r.id==aid).unwrap().last.as_deref(), Some("LATEST_A"));
+        // Model/status-line edits rewrite the config after this client started.
+        // Both this observer and a fresh app must retain the selected identity,
+        // its actual state and preview, including when other writers remain live.
+        let config = root.join(".codex/config.toml");
+        fs::write(&config, "model='changed'\n[tui]\nterminal_title=['thread-id']\nstatus_line=['model-with-reasoning']\n").unwrap();
+        let changed_at = procs.get(501).unwrap().started_ms + 10_000;
+        fs::File::options().write(true).open(&config).unwrap().set_modified(
+            std::time::UNIX_EPOCH + std::time::Duration::from_millis(changed_at as u64),
+        ).unwrap();
+        let reopened = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(
+            Discovery::at(&root).with_procs(procs).with_tmux(Tmux::at_binary(&tmux))));
+        for app in [&k, &reopened] {
+            let rows = app.rows(|_|0);
+            let current = rows.iter().find(|r|r.id==aid).unwrap();
+            assert_eq!(current.category.as_deref(), Some("codex"));
+            assert!(current.state_known());
+            assert_eq!(current.state.state, State::Done);
+            assert_eq!(current.last.as_deref(), Some("LATEST_A"));
+        }
         select(b);
         assert!(k.sighting_of(&aid).unwrap().1.is_empty()); assert!(!k.held_in_mux(&aid));
         assert_eq!(k.sighting_of(&bid).unwrap().1, vec![501]); assert!(k.held_in_mux(&bid));
