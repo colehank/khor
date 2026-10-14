@@ -35,6 +35,7 @@
 | 手机发出的推送撑过锁屏宽限、超时写「发送中断：手机已挂起」，真机九条 | audit/p5-at.md「Phone checklist」 |
 | 手机编辑文件大小上限（现在和桌面共用 64 MB） | audit/cm-b.md §3 |
 | 文件编辑器的光标改由 CM6 画（`drawSelection`）：真 WKWebView 里已量到只剩 CM 那根（`caret-color: transparent` 藏住了系统光标），Mac app 上还要看光标高度、拼音组合时光标与候选条、选区的灰；iPhone 上 CM 画的两个手柄能不能拖、放大镜、候选条、主选区仍是系统的 | 10-13 cm-caret |
+| iPhone 文件页点屏幕靠下的行：键盘升起后这一行要停在甲板上方（不在键或甲板下），升起过程不来回跳；点靠上的行不动；打字时一直在甲板上方；带拼音候选条再看一次（候选条算不算进 visualViewport）；键盘收起不跳。无头里只用替身 visualViewport 量过（`npm run file-face`），WebKit 自己的「露出焦点」和真动画只有真机有 | 10-14 键盘顶行 |
 
 ## 记 — 不急
 

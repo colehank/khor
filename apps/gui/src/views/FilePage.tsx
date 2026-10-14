@@ -32,7 +32,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 
 import { launchOn, pullTemp, renamePath, reveal } from "@/api";
 import type { CodeWindow } from "@/components/CodeWindow";
-import { editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/lib/code/place";
+import { caretCoveredAt, editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/lib/code/place";
 import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
@@ -599,14 +599,20 @@ export function FilePage({
       the focused editor as the keyboard rises, and the editor is the
       whole file, so it scrolled; for a moment after a tap puts the caret
       in, every jump and every resize of the visible area put the scroller
-      back where it was. */
+      back where it was. **Not a line the keys took** (2026-10-14: a tap
+      low on the screen stayed under the keyboard): there the editor lifts
+      the caret clear (`lib/code/keyboard`), and putting the scroller back
+      would hand the line to the keys again. */
   const hold = (e: React.FocusEvent) => {
     if (!coarse || !(e.target as HTMLElement).matches("[data-edit]")) return;
     const s = box.current?.querySelector<HTMLElement>("[data-file-scroll]");
     if (!s) return;
     const at = s.scrollTop;
     const put = () => {
-      if (Math.abs(s.scrollTop - at) > 1) s.scrollTop = at;
+      if (Math.abs(s.scrollTop - at) <= 1) return;
+      const v = editorIn(box.current);
+      if (v && caretCoveredAt(v, at)) return;
+      s.scrollTop = at;
     };
     const vv = window.visualViewport;
     s.addEventListener("scroll", put);

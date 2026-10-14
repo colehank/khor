@@ -5,13 +5,16 @@
 //
 // 2. **Tap → reveal, riding the keyboard's animation.** When `.cm-scroller`
 //    shrinks (the visual viewport shrank around it), reveal the caret head
-//    with `nearest` and one line of bottom margin so it lands above the
-//    floor.  One reveal per animation frame (`revealCaretAfterResize`), called
-//    from the `ResizeObserver` set up by `observeScroller` in `CodeEditor`.
+//    with `nearest`, clear of the floor by rule 3's margin.  One reveal per
+//    animation frame (`revealCaretAfterResize`), called from the
+//    `ResizeObserver` set up by `observeScroller` in `CodeEditor`.
 //
-// 3. **While typing, a comfort band.** `EditorView.scrollMargins` adds one
-//    line of bottom margin while `footCovered()` is true; desktops see no
-//    extra margin.
+// 3. **While typing, a comfort band.** `EditorView.scrollMargins` keeps
+//    the caret one line above the floor while the keyboard is up or
+//    rising. **The floor is the deck's top, not the keys'** (2026-10-14:
+//    the line came to rest behind the phone's deck, which stands on the
+//    keys): what floats over the scroller's foot (`footRoom`) is added.
+//    Desktops see no extra margin.
 //
 // 4. **Keyboard going down moves nothing.** When the scroller grows, the
 //    `ResizeObserver` pins `scrollTop` for one frame so WebKit's layout
@@ -22,6 +25,7 @@
 import { type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
+import { footRoom } from "@/lib/code/place";
 import { footCovered } from "@/lib/viewport";
 
 /** One rAF token: only one reveal per animation frame. */
@@ -39,22 +43,22 @@ export function revealCaretAfterResize(view: EditorView): void {
     revealFrame = 0;
     if (!view.hasFocus) return;
     const head = view.state.selection.main.head;
-    const lineHeight = view.defaultLineHeight;
     const View = view.constructor as typeof EditorView;
-    view.dispatch({
-      effects: View.scrollIntoView(head, { y: "nearest", yMargin: lineHeight }),
-    });
+    // The bottom clearance is `keyboardCaret`'s, which every reveal reads.
+    view.dispatch({ effects: View.scrollIntoView(head, { y: "nearest" }) });
   });
 }
 
 /**
- * **The scroll-margins extension** (rule 3): one line of bottom clearance
- * while the foot is covered, nothing on desktop.
+ * **The scroll-margins extension** (rule 3): the foot's floating room
+ * and one line of clearance while the keyboard covers the foot — settled
+ * (`footCovered`) or still rising (the root's `data-keyboard`, stamped at
+ * every step) — nothing on desktop.
  */
 export function keyboardCaret(): Extension {
   return EditorView.scrollMargins.of((view) => {
-    if (!footCovered()) return null;
-    return { bottom: view.defaultLineHeight };
+    if (!footCovered() && !document.documentElement.hasAttribute("data-keyboard")) return null;
+    return { bottom: footRoom(view) + view.defaultLineHeight };
   });
 }
 

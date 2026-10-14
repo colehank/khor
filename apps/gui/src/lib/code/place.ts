@@ -44,6 +44,24 @@ export function placeLine(view: EditorView, line: number): void {
   view.dispatch({ effects: View.scrollIntoView(view.state.doc.line(n).from, { y: "start", yMargin: 0 }) });
 }
 
+/** **What floats over the foot of the editor** (KB-CARET): the phone's
+    file page keeps its deck there, and sizes the scroller's own bottom
+    padding to it so the last line can rest clear (app.css
+    `[data-file-page]`). That padding, read; 0 where nothing floats. */
+export function footRoom(view: EditorView): number {
+  return Number.parseFloat(getComputedStyle(view.scrollDOM).paddingBottom) || 0;
+}
+
+/** Whether the caret's line would be out of sight — under the keyboard
+    (the scroller ends where the keys begin, `lib/viewport`) or under the
+    deck (`footRoom`) — with the scroller at `scrollTop`. */
+export function caretCoveredAt(view: EditorView, scrollTop: number): boolean {
+  const c = view.coordsAtPos(view.state.selection.main.head);
+  if (!c) return false;
+  const s = view.scrollDOM;
+  return c.bottom + s.scrollTop - scrollTop > s.getBoundingClientRect().bottom - footRoom(view);
+}
+
 /** Into the text, where the reader was (P1, 2026-10-03): the caret at the
     start of the first line shown, without moving anything. Called inside
     a press — WebKit raises the soft keyboard only for a focus a touch
