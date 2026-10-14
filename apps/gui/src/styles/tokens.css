@@ -114,7 +114,8 @@
      **The paper is pure white** because white is the extreme: at L 1.0
      there is no chroma left to hold, so this palette's warmth (h 106.6,
      C .007–.008) lives in the frame and the left block. */
-  --background: #f4f4ef;
+  --canvas-solid: #f4f4ef;
+  --background: var(--canvas-solid);
   --foreground: rgba(26, 26, 20, 0.94);
   --card: var(--background);
   /* **A settings group's card** (UX-11, the owner's ruling on ux-9's
@@ -1998,7 +1999,8 @@
      value as the popover: ink 12.39, secondary 5.72, 空闲 5.05,
      destructive 5.53 with its new value. Lighter than this, the
      popover above it runs out of room: see there. */
-  --background: #000000;
+  --canvas-solid: #000000;
+  --background: var(--canvas-solid);
   --foreground: rgba(238, 238, 231, 0.96);
   --card: var(--background);
   /* A settings group on black: iOS's secondary grouped background,
@@ -3178,3 +3180,7 @@
   background: var(--card);
   color: var(--foreground);
 }
+
+/* Desktop surface preferences change the background plane, never foreground opacity. */
+:root { --window-opacity: 100%; --term-bg: var(--term-palette-bg, var(--canvas-solid)); --term-fg: var(--term-palette-fg, var(--card-foreground)); --theme-editor-w: 44rem; --theme-well: 24px; --theme-hex-w: 11ch; --theme-preview-h: 7rem; }
+:root[data-window-transparent] { --background: transparent; }

@@ -38,6 +38,7 @@ import { TERM_MAX, TERM_MIN, UI_STEPS, setTypeSize, useTypeSize } from "@/lib/ty
 import { cn } from "@/lib/utils";
 import { MoreSection } from "@/views/more/MorePage";
 import { KeyRowEditor } from "@/views/TermKeys";
+import { TerminalThemeSection } from "@/views/more/TerminalThemeSection";
 
 const ROW = "flex items-center gap-row px-row py-in";
 
@@ -128,6 +129,7 @@ export function TerminalSection() {
   );
   return (
     <>
+      <TerminalThemeSection />
       <MoreSection name="term-font">
         <div data-setting-row="popup" data-setting-row-name="term-font" className={ROW}>
           <span className="min-w-0 flex-1 text-body">{gui.term_font}</span>

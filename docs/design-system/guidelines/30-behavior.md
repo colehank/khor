@@ -693,3 +693,11 @@
 - 验证：`npm run dial` 的失联来源与 relay 识别用例先红后绿；`npm run connectivity` 验证宽窄屏交互与浮层范围。真 app 清单：手机背景回来、peer relay 变化、长名字的矩阵、详情日志滚动与关闭。
 
 - 可切换源码/预览的文件（Markdown、HTML、CSV、TSV）各入口打开默认源码；切换机器、文件或历史版本恢复源码。预览由用户主动开启，图片/PDF 等专用查看器沿用各自展示。
+
+
+## 2026-10-14 桌面外观
+
+- `npm run appearance` 用真实设置与 TerminalPane 验证：预设/DIY 保存、取消、文件输入、JSON 输出；原生保存面板请求；跨窗口 storage；扩展色、非法/超量输入边界、存储失败后的重复保存。
+- 同一终端对象、PTY 连接次数、缓冲长度、视口行号在配色/透明度变化后不变；真彩色保持原来的 RGB。背景按设定只合成一次，不降低 foreground opacity。
+- `npm run boot` 核对默认实色、原生初始设置注入和启动 HTML 的透明背景；`NATIVE_ONLY=theme npm run native` 核对实色默认的首帧、浅深切换与三颗窗口按钮。
+- 真 app：macOS 实色、半透明、系统毛玻璃的启动与热切换；拖动窗口/改变尺寸；独立设置窗口修改配色和透明度；Codex/Claude/tmux 持续输出与历史滚动。Linux/Windows 的原生材质按各自系统另验。

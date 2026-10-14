@@ -122,6 +122,8 @@ import { followsShellTmux, wheelsToShellTmux } from "@/lib/term-shell-tmux";
 import { countsGain } from "@/lib/term-gain";
 import { notesFirstTouch } from "@/lib/term-first-touch";
 import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
+import { KHOR_ANSI, terminalTheme, onTermTheme } from "@/lib/term-theme";
+import { windowOpacity, onWindowSurface } from "@/lib/window-surface";
 import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
@@ -132,10 +134,7 @@ import { pastedFrom, pastedImage, pasteInto } from "@/lib/term-paste";
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
     the cube (16–231) and the grey ramp it computes itself. */
-const ANSI16 = [
-  "#000000", "#cc0000", "#4e9a06", "#c4a000", "#3465a4", "#75507b", "#06989a", "#d3d7cf",
-  "#555753", "#ef2929", "#8ae234", "#fce94f", "#729fcf", "#ad7fa8", "#34e2e2", "#eeeeec",
-];
+const ANSI16 = KHOR_ANSI;
 
 /** How often a visible terminal asks for new bytes. Fast: this is the
     one surface where a person is watching characters appear — and a
@@ -333,20 +332,10 @@ function b64bytes(b64: string): Uint8Array {
  * wash that works on both grounds.
  */
 function themeOf(el: HTMLElement) {
-  const cs = getComputedStyle(el);
-  const bg = cs.backgroundColor;
-  const fg = cs.color;
-  return {
-    background: bg,
-    foreground: fg,
-    cursor: fg,
-    cursorAccent: bg,
-    black: ANSI16[0], red: ANSI16[1], green: ANSI16[2], yellow: ANSI16[3],
-    blue: ANSI16[4], magenta: ANSI16[5], cyan: ANSI16[6], white: ANSI16[7],
-    brightBlack: ANSI16[8], brightRed: ANSI16[9], brightGreen: ANSI16[10],
-    brightYellow: ANSI16[11], brightBlue: ANSI16[12], brightMagenta: ANSI16[13],
-    brightCyan: ANSI16[14], brightWhite: ANSI16[15],
-  };
+  const theme = terminalTheme(el);
+  // The pane already paints the background plane. xterm is clear only
+  // when the desktop background has alpha; program-set colors stay intact.
+  return { ...theme, background: windowOpacity() < 1 ? "transparent" : theme.background };
 }
 
 /** The pane's font, resolved the same way for the same reason — xterm
@@ -1474,6 +1463,7 @@ export function TerminalPane({
     const term = new Terminal({
       // The unicode addon is a proposed API; without this flag it throws.
       allowProposedApi: true,
+      allowTransparency: windowOpacity() < 1,
       // **OSC 8 links go where every other link goes** (T-24, the
       // terminal audit: they went to xterm's default `confirm()` and
       // `window.open`, around `open_link`'s whitelist; OscLinkProvider.ts
@@ -2940,13 +2930,21 @@ export function TerminalPane({
     if (!box) return;
     const apply = () => {
       const term = termRef.current;
-      if (term) term.options.theme = themeOf(box);
+      if (term) {
+        term.options.allowTransparency = windowOpacity() < 1;
+        term.options.theme = themeOf(box);
+        term.refresh(0, term.rows - 1);
+      }
     };
+    const stopTheme = onTermTheme(apply);
+    const stopSurface = onWindowSurface(apply);
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     media.addEventListener("change", apply);
     const observer = new MutationObserver(apply);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class"] });
     return () => {
+      stopTheme();
+      stopSurface();
       media.removeEventListener("change", apply);
       observer.disconnect();
     };
@@ -3307,9 +3305,9 @@ export function TerminalPane({
       )}
       style={
         {
-          "--term-bg": "var(--card)",
-          "--term-fg": "var(--card-foreground)",
-          "--term-bell": ANSI16[3],
+          "--term-bg": "var(--term-palette-bg, var(--canvas-solid))",
+          "--term-fg": "var(--term-palette-fg, var(--card-foreground))",
+          "--term-bell": terminalTheme(document.documentElement).yellow ?? ANSI16[3],
           fontFamily: "var(--font-term)",
           fontSize: "var(--text-term)",
           lineHeight: "var(--text-term--line-height)",
@@ -3723,16 +3721,16 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
       cols: screen.cols,
       rows: screen.rows,
       disableStdin: true,
+      allowTransparency: windowOpacity() < 1,
       cursorBlink: false,
       cursorInactiveStyle: "none",
       scrollback: termHistory(),
       fontFamily: font.family,
       fontSize: font.size,
       lineHeight: 1,
-      // **The muted ground, opaque**: `--muted` is a wash over the card,
-      // and xterm paints its own background (a translucent one came out
-      // black), so it is handed the wash already laid on the card.
-      theme: { ...themeOf(box), background: laidOn(getComputedStyle(box).backgroundColor, getComputedStyle(box.parentElement ?? box).backgroundColor) },
+      // Snapshots use the same selected palette as live terminals;
+      // the read-only state is conveyed by their header and input mode.
+      theme: themeOf(box),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -3755,11 +3753,16 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
       term.scrollToBottom();
       box.setAttribute("data-term-ended-drawn", "");
     });
+    const repaint = () => { term.options.allowTransparency = windowOpacity() < 1; term.options.theme = themeOf(box); };
+    const stopTheme = onTermTheme(repaint), stopSurface = onWindowSurface(repaint);
+    const themeObserver = new MutationObserver(repaint);
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     const seen = new ResizeObserver(refit);
     seen.observe(box);
     return () => {
       alive = false;
       seen.disconnect();
+      themeObserver.disconnect(); stopTheme(); stopSurface();
       term.dispose();
     };
   }, [screen]);
@@ -3767,10 +3770,10 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
     <div
       data-term-ended-screen
       ref={boxRef}
-      className="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-muted p-1 text-[var(--term-fg)]"
+      className="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-[var(--term-bg)] p-1 text-[var(--term-fg)]"
       style={
         {
-          "--term-fg": "var(--card-foreground)",
+          "--term-fg": "var(--term-palette-fg, var(--card-foreground))",
           fontFamily: "var(--font-term)",
           fontSize: "var(--text-term)",
           lineHeight: "var(--text-term--line-height)",
@@ -3780,17 +3783,6 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
       <div ref={mountRef} className="h-full w-max min-w-full" />
     </div>
   );
-}
-
-/** A CSS colour `over` (possibly translucent) laid on an opaque `under`,
-    as `rgb(…)`. */
-function laidOn(over: string, under: string): string {
-  const parts = (c: string) => (c.match(/[\d.]+/g) ?? []).map(Number);
-  const [r, g, b, a = 1] = parts(over);
-  const [R = 255, G = 255, B = 255] = parts(under);
-  if (r === undefined || g === undefined || b === undefined) return under;
-  const mix = (x: number, y: number) => Math.round(x * a + y * (1 - a));
-  return `rgb(${mix(r, R)}, ${mix(g, G)}, ${mix(b, B)})`;
 }
 
 /** The cursor hidden and every mouse report off, after the last screen. */

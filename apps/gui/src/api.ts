@@ -1203,6 +1203,10 @@ export const fetchAbout = () => call<About>("about");
  */
 export const setWindowTheme = (theme: "light" | "dark" | "auto") =>
   inApp ? call<null>("set_window_theme", { theme }) : Promise.resolve(null);
+/** Only the desktop main window can show the desktop behind the page. */
+export const saveTerminalPalette = (text: string) => call<boolean>("save_terminal_palette", { text });
+export const windowAppearanceSupport = () => call<{ supported: boolean; blur: boolean }>("window_appearance_support");
+export const setWindowAppearance = (material: "solid" | "clear" | "frost") => call<null>("set_window_appearance", { material });
 /** 诊断 (docs/MORE.md): twelve checks, each with a three-second budget
     of its own, so the whole call is bounded at that — a relay that
     swallows packets costs one row, never the page. */

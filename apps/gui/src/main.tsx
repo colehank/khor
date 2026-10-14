@@ -15,6 +15,8 @@ import { wearTermFont } from "./lib/term-font";
 import { followModality } from "./lib/modality";
 import { followScrollEdge } from "./lib/scroll-edge";
 import { followFieldSwipe } from "./lib/field-swipe";
+import { wearTermPalette } from "./lib/term-theme";
+import { followWindowSurface } from "./lib/window-surface";
 
 // **The theme is stamped before React is asked for a frame** (批 D2).
 //
@@ -55,6 +57,8 @@ followVisualViewport();
 // 外观's two text sizes, before the first frame (`lib/type-size`).
 wearTypeSize();
 wearTermFont();
+wearTermPalette();
+followWindowSurface();
 
 // The focus ring is the keyboard's (`lib/modality`).
 followModality();

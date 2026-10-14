@@ -63,6 +63,15 @@
           t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         }
         document.documentElement.setAttribute("data-theme", t);
+        if (window.__KHOR_WINDOW_SURFACE__) {
+          try {
+            var surface = window.__KHOR_WINDOW_PREF__ || JSON.parse(localStorage.getItem("khor.window-surface"));
+            if (surface && (surface.material === "clear" || surface.material === "frost")) {
+              document.documentElement.setAttribute("data-window-transparent", "");
+              document.documentElement.style.setProperty("--window-opacity", Math.max(75, Math.min(100, Number(surface.opacity) || 100)) + "%");
+            }
+          } catch (e) { /* An unreadable preference stays solid. */ }
+        }
       })();
     </script>
   </head>
@@ -97,9 +106,10 @@
       bare hex.
     -->
     <style>
+      :root { --boot-ground: #f4f4ef; }
       body {
         margin: 0;
-        background: #f4f4ef;
+        background: var(--boot-ground);
       }
       #boot {
         position: fixed;
@@ -116,8 +126,12 @@
       #root:not(:empty) ~ #boot {
         display: none;
       }
-      :root[data-theme="dark"] body {
-        background: #000000;
+      :root[data-theme="dark"] { --boot-ground: #000000; }
+      :root[data-window-transparent] body {
+        background: transparent;
+      }
+      :root[data-window-transparent] #boot {
+        background: color-mix(in srgb, var(--boot-ground) var(--window-opacity), transparent);
       }
       :root[data-theme="dark"] #boot i:first-child {
         border-right-color: rgba(238, 238, 231, 0.14);

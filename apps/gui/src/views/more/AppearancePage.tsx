@@ -13,6 +13,7 @@ import { MachineFace } from "@/components/SessionFace";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { MoreFrame } from "@/views/more/MorePage";
 import { NavOrderSection, TypeSizeSection } from "@/views/more/AppearanceRows";
+import { WindowAppearanceSection } from "@/views/more/WindowAppearanceSection";
 
 export function AppearancePage({
   onClose,
@@ -31,6 +32,7 @@ export function AppearancePage({
     <MoreFrame page="appearance" onClose={onClose}>
       <ConfigSections
         page="appearance"
+        omit={["window-material", "window-opacity"]}
         onChanged={onSettingChanged}
         // 头像's two rows (UX-32) both show this machine's face with its
         // system's mark, assembled the way the two rows together say.
@@ -45,6 +47,7 @@ export function AppearancePage({
         // 角标是 is a question only under 角标 (用不上的控件不画).
         shownWhen={{ "corner-is": { key: "kind-mark", value: "corner" } }}
       />
+      <WindowAppearanceSection />
       <TypeSizeSection />
       <NavOrderSection />
     </MoreFrame>
