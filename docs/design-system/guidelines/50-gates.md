@@ -48,7 +48,8 @@ shell → 连接已存在的 tmux server → 启动 Codex 的完整流程。
 `python3 apps/gui/scripts/check-codex-selection.py` 则通过真实 CLI 导入隔离 tmux
 中的默认 shared-daemon Codex，验证同一行在 resume → `/new` → resume 后保持
 普通 shell 形态。加 `--native-title` 显式设置 fixture 的标题配置，
-另验原生标题随当前线程改变、已验证客户端在盘上撤销标题设置后仍正确绑定。只发送本地 slash 命令，不提交模型输入；预览归属由 Rust
+另验原生标题随当前线程改变、撤销／重启用配置后同一客户端正确绑定，以及回退为
+shell 后同一导入 ID 仍能重新接上 tmux 终端。只发送本地 slash 命令，不提交模型输入；预览归属由 Rust
 回归验证。两项实机验收已在 macOS、Codex 0.162.1 通过；Linux/Windows 未实机复验。
 
 **这一节的标题从 2026-08-27 傍晚起改了口,而改口的理由本身值一条判据。**

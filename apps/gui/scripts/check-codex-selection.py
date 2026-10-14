@@ -180,6 +180,28 @@ trust_level="trusted"
             wait_for(lambda: cli("sessions", "--all"), bound,
                      f"{phase}: native selection became unavailable")
 
+        def expect_terminal_reopens(imported):
+            import pty
+            master, slave = pty.openpty()
+            child = subprocess.Popen([str(khor), "attach", imported], env=env,
+                                     stdin=slave, stdout=slave, stderr=subprocess.PIPE)
+            os.close(slave)
+            target = root / ".khor" / "sessions" / imported.replace("/", "-") / "view.json"
+            try:
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline and not target.exists() and child.poll() is None:
+                    time.sleep(0.1)
+                assert target.exists(), f"shell fallback lost terminal attachment: {child.poll()}, {child.stderr.read().decode() if child.poll() is not None else 'no viewer'}"
+            finally:
+                if child.poll() is None:
+                    child.terminate()
+                    try:
+                        child.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        child.kill(); child.wait(timeout=5)
+                child.stderr.close()
+                os.close(master)
+
         try:
             if args.native_title:
                 config = home / "config.toml"
@@ -220,6 +242,7 @@ trust_level="trusted"
                 wait_for(screen, lambda value: "ANSWER_060" not in value, "disabled-title /new kept old content")
                 expect_category(imported, "disabled-title /new", "shell")
                 assert native_id() is None, "disabled-title /new invented a UUID title"
+                expect_terminal_reopens(imported)
                 # Re-enable and resume in this SAME process. Its verified client
                 # evidence must survive, while thread selection is read afresh.
                 time.sleep(1.1)

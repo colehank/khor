@@ -681,6 +681,13 @@ impl LiveKind {
             .any(|p| sweep.multiplexed.iter().any(|h| h.holds.contains(p)))
     }
 
+    /// A clicked imported agent ID may now hold its original tmux terminal
+    /// in shell form. This permits terminal access, never an agent-thread join.
+    fn holds_terminal_form(&self, id: &SessionId) -> bool {
+        self.seated(&|_| 0, &|sid| sid == id.0).rows.iter().any(|row|
+            row.id == *id && row.kind.0 == khor_core::kind::SHELL && row.term && row.mux)
+    }
+
     /// Stands a host up for a discovered multiplexer session, so the
     /// terminal can attach to it like any hosted row (docs/handoff tmux
     /// 接桥). The host runs a **grouped** tmux client
@@ -802,7 +809,7 @@ impl LiveKind {
         // taken away with the lens, after which the note seats the row
         // again exactly as before.
         let noted = (!self.claims(id)).then(|| self.seat_note(id)).flatten();
-        if !sweep.rows.iter().any(|f| f.id() == *id)
+        if (!sweep.rows.iter().any(|f| f.id() == *id) || self.holds_terminal_form(id))
             && let Some(dir) = self.dir_of(id)
             && let Some(seat) = read_seat(&dir).or_else(|| noted.as_ref().map(|n| n.seat.clone()))
             && sweep.multiplexed.iter().any(|h| h.found.id().0 == seat)
@@ -4528,6 +4535,7 @@ mod tests {
         assert!(k.sighting_of(&aid).unwrap().1.is_empty()); assert!(!k.held_in_mux(&aid));
         assert_eq!(k.sighting_of(&bid).unwrap().1, vec![501]); assert!(k.held_in_mux(&bid));
         assert!(k.attach_multiplexed(&aid).is_err(), "old loaded thread cannot reopen the current thread's terminal");
+        assert!(!k.holds_terminal_form(&aid), "a different bound agent is not a shell alias");
         let rows = k.rows(|_|0);
         let current = rows.iter().find(|r|r.id==bid).unwrap();
         assert_eq!(current.category.as_deref(), Some("codex"));
@@ -4579,6 +4587,7 @@ mod tests {
         assert!(terminal.last.is_none());
         assert_eq!(terminal.unread, 0);
         assert!(limited.sighting_of(&aid).unwrap().1.is_empty());
+        assert!(limited.holds_terminal_form(&aid), "an imported agent ID in shell form still reaches its original tmux seat");
         drop(pending);
         drop(writers);
     }
