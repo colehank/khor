@@ -1294,7 +1294,8 @@ try {
               return {
                 halo: el.getAttribute("data-halo"),
                 animation: s.animationName,
-                shadow: s.boxShadow,
+                stroke: getComputedStyle(el, "::before").backgroundColor,
+                strokeWidth: parseFloat(getComputedStyle(el, "::before").paddingTop),
                 opacity: s.opacity,
               };
             }, muteAt)
@@ -1306,7 +1307,7 @@ try {
           fail(`a tab on a site that never answers drew no ring (${stilled}) — it has to breathe too`);
         } else if (stilled.animation !== "none") {
           fail(`reduced motion left the ring breathing (${JSON.stringify(stilled)}) — 「不动」`);
-        } else if (!stilled.shadow || stilled.shadow === "none" || Number(stilled.opacity) !== 1) {
+        } else if (!stilled.stroke || stilled.stroke === "rgba(0, 0, 0, 0)" || stilled.strokeWidth <= 0 || Number(stilled.opacity) !== 1) {
           fail(`reduced motion took the ring away instead of stopping it (${JSON.stringify(stilled)})`);
         } else ok("reduced motion stops the breath and keeps the ring");
         const titleWhileLit = await titleOf();

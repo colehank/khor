@@ -982,34 +982,35 @@ aside[data-side] {
  *
  * Its own element rather than a shadow on the face's box, because the
  * halo has to be able to breathe on its own — see below — and opacity is
- * the only channel a box-shadow cannot animate by itself. */
+ * applied to that one element, without fading the face beneath it. */
 /* **The ring is outside the face** (the owner, 2026-10-02): the face's
    box stands on the left line like every other face, and the state ring
    reaches out past it the way a chosen block does. ⚠️ 墓碑 (F2.7, one
    commit): the ring drawn inside the box to put its ink on the line —
    on a tab's face it left 8 of face, and the owner could not read it. */
-[data-halo] {
-  box-shadow:
-    0 0 0 var(--halo-gap) var(--halo-under, var(--card)),
-    0 0 0 calc(var(--halo-gap) + var(--halo-w)) var(--halo-color);
+[data-halo]::before {
+  /* A real annulus: the inner mask is a hole, not background-coloured
+     paint. Unlike CSS outline/border, the mask also keeps a tab's 1.5px
+     stroke at 1x rather than rounding it down to one device pixel. */
+  content: "";
+  position: absolute;
+  inset: calc(-1 * (var(--halo-gap) + var(--halo-w)));
+  padding: var(--halo-w);
+  border-radius: inherit;
+  background: var(--halo-color);
+  -webkit-mask: linear-gradient(var(--canvas-solid) 0 0) content-box, linear-gradient(var(--canvas-solid) 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(var(--canvas-solid) 0 0) content-box, linear-gradient(var(--canvas-solid) 0 0);
+  mask-composite: exclude;
 }
 
-/* **The gap ring is the ground the face stands on.** It was `--card`
-   everywhere, a shade off the tab strip's ground and close enough not to
-   bother (`SessionFace`). Since 2026-09-30 the strip is the frame and the
-   paper is white / black: a tab that is not in front stands on
-   `--background`, 7.1 / 9.8 L* from the paper, and a paper-coloured ring
-   there reads as a second ring. The one in front is the paper. */
+/* Small tab faces keep their original 1.5px stroke and clear gap. */
 [data-tab-bar] {
-  --halo-under: var(--background);
   /* A tab's face is small: its ring and the gap inside it are 1.5 each,
      so the face stays readable and the state still shows (the owner's
      choice, 2026-10-02: 「我都要」). */
   --halo-gap: var(--halo-tab);
   --halo-w: var(--halo-tab);
-}
-[data-tab-bar] [data-tab][data-on="true"] {
-  --halo-under: var(--card);
 }
 
 /* The breath, and why it outlived the argument that put it here.

@@ -26,6 +26,7 @@ import {SettingsProvider,SettingsRereadProvider} from '../src/settings';
 import {TerminalThemeSection} from '../src/views/more/TerminalThemeSection';
 import {WindowAppearanceSection} from '../src/views/more/WindowAppearanceSection';
 import {TerminalPane} from '../src/views/TerminalPane';
+import {FaceMark} from '../src/components/FaceMark';
 import * as palette from '../src/lib/term-theme';
 import {followWindowSurface,wearWindowChoice,windowChoice} from '../src/lib/window-surface';
 import {fetchConfig} from '../src/api';
@@ -33,7 +34,7 @@ import {speakLang} from '../src/lang';
 import '../src/styles/tokens.css';import '../src/styles/app.css';
 speakLang('zh');palette.wearTermPalette();followWindowSurface();window.palette=palette;window.windowChoice=windowChoice;
 function Lab(){const [rows,setRows]=useState([]);const read=()=>fetchConfig().then(setRows);useEffect(()=>{read()},[]);const surface=windowChoice(rows);useEffect(()=>{if(surface)wearWindowChoice(surface)},[surface?.material,surface?.opacity]);
-return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column'}}><TerminalPane id='shell/appearance-test' active /></div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><WindowAppearanceSection/><TerminalThemeSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
+return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column'}}><TerminalPane id='shell/appearance-test' active /></div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><div data-halo-lab style={{display:'flex',gap:40,padding:32}}><FaceMark face={{machine:null}} halo="done"/><div data-tab-bar><FaceMark face={{machine:null}} halo="done" size="tab"/></div></div><WindowAppearanceSection/><TerminalThemeSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
 createRoot(document.getElementById('root')).render(<Lab/>);
 `);
   vite = spawn("node_modules/.bin/vite", ["--port", String(port), "--strictPort"], { cwd: gui, stdio: ["ignore", "pipe", "pipe"] });
@@ -86,7 +87,9 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await page.waitForFunction(() => document.querySelector("[data-terminal]").__xterm.options.theme.background === "#00000000" && document.getElementById("root").style.getPropertyValue("--window-ground-clip").includes("M"));
   assert(await page.evaluate(() => document.querySelector("[data-terminal]").__xterm === window.originalTerm));
   assert.equal(calls.filter(c => c.cmd === "term_open").length, opens);
+  const halos = await page.evaluate(() => [...document.querySelectorAll('[data-halo-lab] [data-halo]')].map(el => {const r=el.getBoundingClientRect();const s=getComputedStyle(el);return {right:r.right,y:r.top+r.height/2,gap:parseFloat(s.getPropertyValue('--halo-gap')),width:parseFloat(s.getPropertyValue('--halo-w')),ink:s.getPropertyValue('--halo-color').trim()};}));
   const image = await page.screenshot();
+  if (process.env.APPEARANCE_SHOT) { writeFileSync(process.env.APPEARANCE_SHOT, image); await page.locator("[data-halo-lab]").screenshot({path:process.env.APPEARANCE_SHOT.replace(/\.png$/, "-rings.png")}); }
   const pixel = await page.evaluate(async base64 => {
     const img = new Image(); img.src = "data:image/png;base64," + base64; await img.decode();
     const canvas = document.createElement("canvas"); canvas.width = img.width; canvas.height = img.height;
@@ -95,6 +98,8 @@ createRoot(document.getElementById('root')).render(<Lab/>);
     const screen = document.querySelector("[data-terminal] .xterm-screen").getBoundingClientRect();
     return { edge: [...ctx.getImageData(Math.floor(r.left + 2), Math.floor(r.bottom - 2), 1, 1).data], canvas: [...ctx.getImageData(Math.floor(screen.right - 20), Math.floor(screen.top + 10), 1, 1).data] };
   }, image.toString("base64"));
+  const haloPixels = await page.evaluate(async ({base64,halos}) => {const img=new Image();img.src='data:image/png;base64,'+base64;await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);return halos.map(h=>{const sample=x=>[...ctx.getImageData(Math.floor(x),Math.floor(h.y),1,1).data];return {gap:sample(h.right+0.5),outside:sample(h.right+h.gap+h.width+3),stroke:sample(h.right+h.gap+h.width-0.5)};});},{base64:image.toString('base64'),halos});
+  for (const [i,h] of haloPixels.entries()) {assert.deepEqual(h.gap,h.outside,`halo ${i}: transparent gap must reveal the same background as outside the ring`);assert(h.stroke.slice(0,3).some((c,k)=>Math.abs(c-h.outside[k])>10),`halo ${i}: ring stroke must remain visible`);}
   const expected = [33, 41, 62];
   for (const [where, rgba] of Object.entries(pixel)) rgba.slice(0, 3).forEach((c, i) => assert(Math.abs(c - expected[i]) <= 3, `single background plane ${where}: got ${rgba}, expected ${expected}`));
   assert.deepEqual(await page.evaluate(() => { const t = document.querySelector("[data-terminal]").__xterm; const b = t.buffer.active; const c = b.getLine(b.baseY + b.cursorY).getCell(0); return { color: c.getFgColor(), rgb: c.isFgRGB() }; }), rgb, "theme must not recolor program RGB");

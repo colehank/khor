@@ -87,14 +87,9 @@ export function providerKind(provider: string): KindMark {
  *
  * The halo paints entirely outside the face's box (`app.css`
  * `[data-halo]` — colour, the busy breath, and the reduced-motion
- * guard all live there, never here). Its gap ring is `--halo-under`,
- * `--card` unless the ground says otherwise: the tab strip does
- * (2026-09-30) — a tab not in front stands on the frame, 7.1 / 9.8 L*
- * off the paper since 板是纸底是框, and a paper ring there read as a
- * second ring. The list rows' `--side` is still a shade off it (3.9 /
- * 4.4 L*), and on the macOS app the block is the system's material,
- * which no colour matches — said here so the mismatch has its cause
- * written down.
+ * guard all live there, never here). The gap is genuinely transparent:
+ * the same 2px stroke stays separated from the face on paper, selected
+ * rows and native window material, without a background-colour cover.
  */
 export function SessionFace({
   face,

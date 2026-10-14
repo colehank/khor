@@ -1687,7 +1687,8 @@ for line in sys.stdin:
         wants: getComputedStyle(document.documentElement)
           .getPropertyValue(`--state-${el.getAttribute("data-word")}`)
           .trim(),
-        shadow: halo ? getComputedStyle(halo).boxShadow : null,
+        stroke: halo ? getComputedStyle(halo, "::before").backgroundColor : null,
+        strokeWidth: halo ? parseFloat(getComputedStyle(halo, "::before").paddingTop) : 0,
         markColor: mark ? getComputedStyle(mark).color : null,
         muted: getComputedStyle(document.documentElement).getPropertyValue("--muted-foreground").trim(),
       };
@@ -1702,7 +1703,7 @@ for line in sys.stdin:
     if (c.from !== c.wants) {
       throw new Error(`the ${c.word} row's halo paints ${c.from}, but its own word is ${c.wants}`);
     }
-    if (!c.shadow || c.shadow === "none") throw new Error(`the ${c.word} row's halo paints nothing`);
+    if (!c.stroke || c.stroke === "rgba(0, 0, 0, 0)" || c.strokeWidth <= 0) throw new Error(`the ${c.word} row's halo paints nothing`);
     // Neutral, and measured rather than assumed absent: the mark carried
     // an inline state colour until the halo landed, and a mark that went
     // back to it would still pass every count in this file.
@@ -1713,7 +1714,7 @@ for line in sys.stdin:
   //     And the rings really are different where the words are: the
   //     check above would still pass if every `--state-*` resolved to
   //     one colour.
-  const byWord = new Map(channels.map((c) => [c.word, c.shadow]));
+  const byWord = new Map(channels.map((c) => [c.word, c.stroke]));
   if (byWord.size > 1 && new Set(byWord.values()).size === 1) {
     throw new Error(`${byWord.size} different words all wear the same ring`);
   }
