@@ -15,7 +15,8 @@ import { type DeviceRow, type SessionRow } from "@/api";
 import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
 import { gui } from "@/gen/catalog";
-import { listAxes, listOptions } from "@/lib/list-filter";
+import { sessionCwd } from "@/lib/session-cwd";
+import { sieve, listAxes, listOptions } from "@/lib/list-filter";
 import { AXES, type Axis, axisOf, groupLabel, placeLabels, valueOf, word } from "@/words";
 
 /**
@@ -140,7 +141,7 @@ const pick: Record<Axis, (r: SessionRow) => string> = {
   "state:": (r) => r.word,
   "dev:": (r) => r.home,
   "cat:": (r) => r.category ?? "",
-  "at:": (r) => r.place ?? "",
+  "at:": (r) => sessionCwd(r) ?? "",
 };
 
 /** The four axes as the sieve reads them — every one, whatever a pane
@@ -171,7 +172,7 @@ export function sessionOptions(
   // The place chips, told apart where two checkouts share a name — the
   // same reader the list's headings use, so a chip and the heading it
   // filters to always print the same words.
-  const placeNames = placeLabels(rows.map((r) => `at:${r.place ?? ""}`));
+  const placeNames = placeLabels(rows.map((r) => `at:${sessionCwd(r) ?? ""}`));
   const label: Record<Axis, (v: string) => string> = {
     "state:": word,
     "dev:": (v) => v,
@@ -205,5 +206,17 @@ export function sessionOptions(
 export function sessionAxes(options: FilterOption[], devices: DeviceRow[] = []): OmniAxis[] {
   return listAxes(options, AXES, (key) =>
     axisOf(key) === "dev:" ? (devices.find((d) => d.name === valueOf(key))?.face ?? null) : undefined,
+  );
+}
+
+/** The searchable location follows the same current directory as the filter. */
+export function sessionSearchText(row: SessionRow): string {
+  return `${row.title} ${row.id} ${row.source?.device ?? ""} ${sessionCwd(row) ?? ""}`;
+}
+
+export function visibleSessions(rows: SessionRow[], query: string, ticked: string[]) {
+  const q = query.trim().toLowerCase();
+  return sieve(rows, ticked, SESSION_SIEVE, AXES).filter(
+    (row) => !q || sessionSearchText(row).toLowerCase().includes(q),
   );
 }

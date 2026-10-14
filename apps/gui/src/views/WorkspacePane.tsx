@@ -16,6 +16,7 @@
 // whole landing of their own on the rail; the tree and the file have no
 // second address. So when the workspace list is open, this opens with
 // the sessions folded, and opening them is one press away.
+import { sessionInWorkspace } from "@/lib/session-cwd";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
@@ -810,9 +811,8 @@ export function WorkspacePane({
   // `place` — a session started in `~/w/paper/data` reported
   // `~/w/paper`, so a workspace at `~/w/paper/data` never saw it; and a
   // workspace at a checkout root did collect everything under it, by
-  // the accident of the fold having stopped exactly there. `place` is
-  // the raw cwd now precisely so this question can be asked
-  // (`khor_node::live::place_of`). The separator is what keeps
+  // the accident of the fold having stopped exactly there. Read the
+  // current raw cwd, falling back to the recorded place. The separator keeps
   // `/home/peer/workshop` out of `/home/peer/work`: a bare `startsWith`
   // is the classic prefix collision, and sibling directories share
   // prefixes all the time.
@@ -829,14 +829,8 @@ export function WorkspacePane({
   // draws a heading only where a row declares one.
   const mine = useMemo(() => {
     if (root === "" || channel === null) return [];
-    const under = root.endsWith("/") ? root : `${root}/`;
     return rows
-      .filter(
-        (r) =>
-          r.home === channel &&
-          r.place !== null &&
-          (r.place === root || r.place.startsWith(under)),
-      )
+      .filter((r) => sessionInWorkspace(r, channel, root))
       .map((r) => ({ ...r, group: "" }));
   }, [root, rows, channel]);
   const marks = useMemo(() => folded(root, git), [root, git]);

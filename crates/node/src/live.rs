@@ -66,8 +66,8 @@ pub struct Meta {
     /// unchanged (`place_of`). Written at birth by whichever opener
     /// chose the directory, because that is
     /// the only moment anybody knows: a shell that has `cd`ed away
-    /// cannot be asked where it began, and its project has not changed
-    /// anyway.
+    /// cannot be asked where it began. Runtime location is `doing.cwd`;
+    /// readers use `Session::current_cwd` for the current directory.
     ///
     /// `None` for an entry from before this field, and for a session
     /// nobody could place — the same thing it means for a fresh one.

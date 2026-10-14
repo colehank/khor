@@ -187,7 +187,7 @@ fn place_of(
                 (1 + word.rank(), String::new()),
             )
         }
-        Arrange::Place => match view.session.place.as_deref() {
+        Arrange::Place => match view.session.current_cwd() {
             Some(path) if !path.is_empty() => {
                 (format!("{GROUP_PLACE}{path}"), (1, path.to_owned()))
             }
@@ -257,6 +257,26 @@ mod tests {
 
     fn ids(rows: &[Arranged]) -> Vec<String> {
         rows.iter().map(|r| r.view.session.id.0.clone()).collect()
+    }
+
+    #[test]
+    fn place_groups_follow_cd_and_pane_changes() {
+        let mut row = view("moving", 10, State::Busy, Some("codex"), 1);
+        row.session.place = Some("/birth".into());
+        for cwd in [Some("/work/ACL2027"), Some("/other-pane"), Some("  "), None] {
+            row.session.doing = Some(khor_core::Doing {
+                cwd: cwd.map(str::to_owned), ..Default::default()
+            });
+            let expected = cwd.filter(|s| !s.trim().is_empty()).unwrap_or("/birth");
+            let rows = arrange(vec![row.clone()], Arrange::Place, &names);
+            assert_eq!(rows[0].group, format!("at:{expected}"));
+            assert_eq!(rows[0].view.session.place.as_deref(), Some("/birth"), "birth record stays intact");
+        }
+        row.session.place = None;
+        row.session.doing = Some(khor_core::Doing { cwd: Some("/runtime-only".into()), ..Default::default() });
+        assert_eq!(arrange(vec![row.clone()], Arrange::Place, &names)[0].group, "at:/runtime-only");
+        row.session.doing = None;
+        assert_eq!(arrange(vec![row], Arrange::Place, &names)[0].group, "at:");
     }
 
     /// **By place**, the 地点 axis. Enumerated rather than asserted as

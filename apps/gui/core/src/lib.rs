@@ -139,19 +139,11 @@ pub struct SessionRow {
     /// is: the id→name table is the node's, and a screen that resolved
     /// it itself would be a second copy that can disagree.
     pub home: String,
-    /// Where this session lives (`khor_core::Session::place`) — the
-    /// project root, absolute, exactly as the group key spells it.
-    ///
-    /// **Absolute and unshortened**, though every screen prints it
-    /// shortened: this is the value the `at:` filter compares against
-    /// the group key, and a display string in that slot would be a
-    /// second spelling of one fact. It is also what makes a row findable
-    /// by the tree it is in.
-    ///
-    /// `None` for a row with no place — a conversation with another
-    /// machine, or a session nobody recorded a directory for. The two
-    /// are not distinguished here for the same reason the node does not
-    /// distinguish them: the next move is the same.
+    /// The session's recorded directory, absolute and unfolded. Birthplace
+    /// is a fallback, not a live location: the GUI's `sessionCwd` prefers
+    /// `doing.cwd`, just as the node's location grouping does. Keep this
+    /// field unchanged so restoring an old default workspace can still
+    /// distinguish it from a manually chosen directory.
     pub place: Option<String>,
     /// The session's process sits in a tmux session on its home
     /// machine (`khor_core::Session::mux`). **What the detail routes its

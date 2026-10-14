@@ -15,10 +15,9 @@ import { IconDevices } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
 import { closeWarning } from "@/views/DetailPane";
-import { sieve } from "@/lib/list-filter";
 import { isDown } from "@/lib/topology";
-import { SESSION_SIEVE } from "@/lib/session-filter";
-import { AXES, agoOf, groupLabel, lasting, placeLabels, quietFor } from "@/words";
+import { sessionSearchText, visibleSessions } from "@/lib/session-filter";
+import { agoOf, groupLabel, lasting, placeLabels, quietFor } from "@/words";
 
 /**
  * Which rows the pane bar's search and filter leave standing.
@@ -40,19 +39,7 @@ import { AXES, agoOf, groupLabel, lasting, placeLabels, quietFor } from "@/words
  * so a local row is not findable by this machine's name, because the row
  * never says it.
  */
-export function visibleSessions(rows: SessionRow[], query: string, ticked: string[]) {
-  const q = query.trim().toLowerCase();
-  // **AND across axes, OR within one** — every list's rule, in one place
-  // (`lib/list-filter`'s `sieve`), against what each row answers on the
-  // four axes (`SESSION_SIEVE`: the node's keys, never the words drawn).
-  return sieve(rows, ticked, SESSION_SIEVE, AXES).filter(
-    (r) =>
-      q === "" ||
-      `${r.title} ${r.id} ${r.source?.device ?? ""} ${r.place ?? ""}`
-        .toLowerCase()
-        .includes(q),
-  );
-}
+export { visibleSessions } from "@/lib/session-filter";
 
 // Order and words come from the node untouched: the list never
 // re-derives a judgment the backend already made (docs/UX.md). That
@@ -398,7 +385,7 @@ export function SessionsList({
           ))}
       </span>
     ),
-    find: `${r.title} ${r.id} ${r.source?.device ?? ""} ${r.place ?? ""}`,
+    find: sessionSearchText(r),
     selected: r.id === selected,
     dim: r.quiet || away !== null,
     old: r.stale,

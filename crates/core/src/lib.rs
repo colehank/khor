@@ -2949,36 +2949,13 @@ pub struct Session {
     /// damage.
     #[serde(default)]
     pub unbacked: bool,
-    /// **Where this session lives** — its working directory taken up to
-    /// the project it belongs to (`khor_node::place`). The list's
-    /// 工作区 grouping is the whole of what it is for: people walk into
-    /// a directory and start something there, and "which of these are
-    /// in tokens" is a question no other field on this row can answer.
-    ///
-    /// **Only the home device can say**, like [`Session::category`] and
-    /// for the same reason: the fact is on that disk — a vendor's own
-    /// record of where its conversation ran, or khor's note of where it
-    /// started a host. A reader that tried to derive it would be
-    /// deriving it from nothing.
-    ///
-    /// `None` is an honest gap and stays one (docs/SESSION.md
-    /// 认不出就不落词): a row whose place nobody recorded is not filed
-    /// under a neighbour's project. Rows that legitimately have no
-    /// place at all — a conversation with another machine, a transfer —
-    /// carry `None` for the same reason and are grouped as such.
-    ///
-    /// **The working directory itself**, decided at the source
-    /// (`khor_node::live::place_of`). It was the enclosing checkout
-    /// until 工作区批③ (2026-09-15); a workspace is any directory a
-    /// person named now, and the pane that lists a project's sessions
-    /// asks 「which of these is running *under* this directory」 — a
-    /// question a folded answer cannot be asked. Whoever wants
-    /// something coarser folds it: a raw directory can always be
-    /// folded, a folded one cannot be unfolded.
-    ///
-    /// Wire: appended at the tail with a serde default, so an older
-    /// peer's twelve-field frame still decodes — and its rows read as
-    /// placeless, which is exactly what that peer knows.
+    /// Recorded directory (usually the session's birthplace), absolute and
+    /// unfolded. Kept as history and as the fallback when runtime cwd is
+    /// unknown. Use [`Session::current_cwd`] for location grouping; a shell
+    /// can cd elsewhere or switch tmux panes after this was recorded.
+    /// Only the home device supplies directory facts. Readers of remote
+    /// snapshots apply the same precedence without inspecting local paths.
+    /// Wire layout unchanged; absent on older records means unknown.
     #[serde(default)]
     pub place: Option<String>,
     /// **The session's process sits inside a terminal multiplexer on
@@ -3079,6 +3056,16 @@ pub struct Doing {
 }
 
 impl Session {
+    /// Current shell/pane directory, falling back to the recorded directory.
+    /// Matches the GUI's `sessionCwd`; blank readings carry no location.
+    pub fn current_cwd(&self) -> Option<&str> {
+        self.doing
+            .as_ref()
+            .and_then(|d| d.cwd.as_deref())
+            .filter(|p| !p.trim().is_empty())
+            .or_else(|| self.place.as_deref().filter(|p| !p.trim().is_empty()))
+    }
+
     /// Whether the stored state has evidence for this terminal’s current thread.
     pub fn state_known(&self) -> bool {
         !self.doing.as_ref().is_some_and(|d| d.thread_unbound)

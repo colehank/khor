@@ -33,7 +33,7 @@
 
 | 入口 | 验证 |
 |---|---|
-| `npm run session-cwd` | cd、活动 pane、旧附栏恢复、默认跟随与主动固定目录 |
+| `npm run session-cwd` | cd、活动 pane、地点筛选/搜索、工作区归属、旧附栏恢复、默认跟随与主动固定目录 |
 | `npm run scroll-target` | 真 xterm 的内层 mouse 能力、分页累计/反向/停歇、触摸与滚轮不重复输入；连续输出期间每次手势只刷新一次 tmux |
 
 可选实际 Codex 验收：`python3 apps/gui/scripts/check-codex-paging.py`。

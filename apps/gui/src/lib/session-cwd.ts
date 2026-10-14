@@ -32,3 +32,13 @@ export function workspaceCwd(row: SessionDirectory | null | undefined, target: {
 export function followsSessionCwd(row: SessionDirectory | null | undefined, target: { dir: string | null; follow?: boolean; start?: unknown; spot?: { file: string | null } | null }): boolean {
   return target.follow ?? (!target.start && !target.spot?.file && target.dir === row?.place);
 }
+
+/** Workspace membership follows cwd, with an exact machine and path boundary. */
+export function sessionInWorkspace(row: SessionDirectory & { home: string }, machine: string | null, root: string): boolean {
+  if (!root || machine === null || row.home !== machine) return false;
+  const cwd = sessionCwd(row);
+  if (!cwd) return false;
+  const separator = /^(?:[A-Za-z]:\\|\\\\)/.test(root) ? "\\" : "/";
+  const under = root.endsWith(separator) ? root : `${root}${separator}`;
+  return cwd === root || cwd.startsWith(under);
+}
