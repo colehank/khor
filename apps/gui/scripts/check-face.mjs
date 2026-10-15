@@ -97,6 +97,7 @@ let browser = null;
 try {
   vite = spawn("node_modules/.bin/vite", ["--port", String(PORT), "--strictPort"], {
     cwd: gui,
+    env: { ...process.env, KHOR_FACE_GATE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let gone = null;
@@ -32189,6 +32190,8 @@ try {
     /** The tabs circle's count. */
     const tabsSaid = async () => Number(((await page.locator("[data-session-deck] [data-deck-tabs]").innerText().catch(() => "")) || "").trim());
 
+    const kTouch = await page.context().newCDPSession(page);
+    if (!process.env.FACE_BAND) {
     // ── a. a mouse, 390 wide ──
     await fresh(390, 844);
     if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
@@ -32779,7 +32782,6 @@ try {
     });
     // **Under a finger**: a soft keyboard is a phone's, and the deck's
     // key row is a finger's (UX-12) — with a mouse there is none of it.
-    const kTouch = await page.context().newCDPSession(page);
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
     await fresh(390, 844);
     if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
@@ -34524,6 +34526,8 @@ try {
       if (down.offered !== null) fail(`bar t · the phone's share sheet is the offer; the line says nothing more, read ${shown(down.offered)}`);
     }
 
+    }
+    await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
     // ── u. the deck pill is a band (UX-33 §3 → UX-49): at rest one tab; a
     //       finger pulls one neighbour in, the tabs a ring (one tab gives
     //       a little and springs back); the incoming tab hugs the edge it
@@ -34815,6 +34819,80 @@ try {
           if (!was?.past || !atRest(held, t1.title)) fail(`bar u · a tab ending under the finger left the band ${shown(held)} — one tab at rest at once (UX-49 §4)`);
           if (!atRest(done, t1.title)) fail(`bar u · the lift after the list changed reads ${shown(done)} — nothing switched, ${t1.title} at rest (UX-49 §4)`);
         }
+      }
+
+      // Real CDP touches still end when the Pointer Events ending is
+      // withheld, as during an interrupted native gesture.
+      if (await openOnly([t0.id, t1.id])) {
+        await page.evaluate(() => {
+          window.__dropBandEnd = (e) => e.stopImmediatePropagation();
+          for (const kind of ["pointerup", "lostpointercapture"])
+            window.addEventListener(kind, window.__dropBandEnd, true);
+        });
+        for (const [share, title] of [[0.25, t1.title], [0.7, t0.title]]) {
+          const g = await finger();
+          await g.to(-share * g.w);
+          await g.lift();
+          const done = await readBand();
+          console.log(`bar u · touch-only end at ${share}: ${shown(done)}`);
+          if (!atRest(done, title)) fail(`bar u · touch ended without pointerup at ${share}: ${shown(done)} — one tab at rest on ${title}`);
+        }
+        // A different finger ending must leave the owned drag alone.
+        const g = await finger();
+        await g.to(0.7 * g.w);
+        await page.evaluate(() => {
+          window.dispatchEvent(new TouchEvent("touchend", {
+            changedTouches: [new Touch({ identifier: 99999, target: document.body, clientX: 0, clientY: 0 })],
+          }));
+        });
+        const held = await readBand();
+        if (!held?.past || Math.abs(seg(held, "cur")?.x ?? 0) < 10) fail("bar u · unrelated touch ending cancelled the owned drag");
+        await page.evaluate(() => window.addEventListener("pointercancel", window.__dropBandEnd, true));
+        await g.cancel();
+        const cancelled = await readBand();
+        if (!atRest(cancelled, t0.title)) fail(`bar u · touchcancel without pointercancel left ${shown(cancelled)}`);
+        await page.evaluate(() => window.removeEventListener("pointercancel", window.__dropBandEnd, true));
+        console.log(`bar u · unrelated touch ignored; touch-only cancel at rest ${atRest(cancelled, t0.title)}`);
+        await page.evaluate(() => {
+          for (const kind of ["pointerup", "lostpointercapture"])
+            window.removeEventListener(kind, window.__dropBandEnd, true);
+          delete window.__dropBandEnd;
+        });
+      }
+      // Backgrounding cancels a drag, never commits it on the late lift.
+      if (await openOnly([t0.id, t1.id])) {
+        const g = await finger();
+        await g.to(0.7 * g.w);
+        await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+        await wait(300);
+        const blurred = await readBand();
+        await g.lift();
+        const done = await readBand();
+        console.log(`bar u · blur mid-drag: ${shown({ blurred, done })}`);
+        if (!atRest(blurred, t1.title) || !atRest(done, t1.title)) fail("bar u · blur mid-drag must cancel and remain at rest after lift");
+      }
+
+      if (await openOnly([t0.id, t1.id])) {
+        const g = await finger();
+        await g.to(-0.7 * g.w);
+        await page.evaluate(() => {
+          Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        const hidden = await readBand();
+        await page.evaluate(() => { delete document.visibilityState; });
+        await g.lift();
+        if (!atRest(hidden, t1.title) || !atRest(await readBand(), t1.title)) fail("bar u · backgrounded drag must cancel without a later switch");
+        // A second press during the glide lands it once, without leaving
+        // the new band displaced or firing the title action.
+        const h = await finger();
+        await h.to(-0.7 * h.w);
+        await touch("touchEnd");
+        const second = await finger();
+        await second.lift();
+        const landed = await readBand();
+        console.log(`bar u · hidden drag cancelled; press during glide at rest ${atRest(landed, t0.title)}`);
+        if (!atRest(landed, t0.title)) fail(`bar u · press during glide left ${shown(landed)}`);
       }
 
       // 4. A long name stopped halfway (the owner's bug, UX-49 §4): the
