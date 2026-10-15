@@ -29,6 +29,12 @@ mod assets {
     include!(concat!(env!("OUT_DIR"), "/assets.rs"));
 }
 
+/// The embedded frontend's receipt, so a running app and a served page can
+/// be compared with the archive before installation.
+pub fn ui_revision() -> &'static str {
+    assets::UI_REVISION
+}
+
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -184,6 +190,7 @@ impl Reply {
         // paints links an agent wrote — would otherwise carry the key
         // to a stranger's access log in the `Referer`.
         r.add_header(header("Referrer-Policy: no-referrer"));
+        r.add_header(header(&format!("X-Khor-UI: {}", ui_revision())));
         if let Some(key) = &self.remember {
             // HttpOnly: the page's own scripts keep their existing
             // channels (localStorage + Authorization) and never need to
@@ -472,6 +479,8 @@ mod tests {
     /// empty set.
     #[test]
     fn the_frontend_really_got_embedded() {
+        assert!(super::ui_revision().starts_with("khor-ui-assets:/assets/index-"));
+        assert!(assets::ASSETS.iter().any(|(p, _)| p.ends_with(".js") && super::ui_revision().contains(*p)));
         assert!(
             assets::ASSETS.iter().any(|(p, _)| *p == "/index.html"),
             "no /index.html in the embedded table: {:?}",

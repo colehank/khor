@@ -151,6 +151,7 @@ export function SessionScreen({
   foldOver = true,
   ink,
   away = false,
+  contentMode = false,
   children,
 }: {
   /** **The deck steps away while the 附栏's sheet is up** (UX-37 §4,
@@ -158,6 +159,8 @@ export function SessionScreen({
       was. Hidden in place, not taken out: the content keeps its height,
       so the terminal under the sheet's half does not refit. */
   away?: boolean;
+  /** Expanded session content keeps the terminal's measured deck room. */
+  contentMode?: boolean;
   /** **The folded capsule sits in the home indicator's band** (item 62,
       the owner 2026-10-07: half of it covered the terminal's last rows):
       the fold frees the deck's whole height to the content, which ends at
@@ -237,7 +240,7 @@ export function SessionScreen({
   const signal = usePillSignal(active, face?.interaction);
   const grown = useGrownPill(stops.length);
   /** Grown and something to grow into: the island stands, the pill hides. */
-  const island = grown.growth.mounted && stops.length > 0;
+  const island = !contentMode && grown.growth.mounted && stops.length > 0;
   const [deckPill, setDeckPill] = useState<HTMLElement | null>(null);
   const foldGrown = grown.fold;
   useEffect(() => foldGrown(), [active, foldGrown]);
@@ -247,9 +250,16 @@ export function SessionScreen({
   const [keys, setKeys] = useState(footCovered);
   const asked = foldedAsked !== undefined;
   // Nothing folds with the keyboard up, the browser's page included.
-  const folded = !keys && (foldedAsked ?? own);
+  const folded = !contentMode && !keys && (foldedAsked ?? own);
   const content = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = bar.current;
+    if (!el || contentMode) return;
+    const read = () => el.style.setProperty('--content-deck-reserve', el.getBoundingClientRect().height + 'px');
+    const observer = new ResizeObserver(read); observer.observe(el); read();
+    return () => observer.disconnect();
+  }, [contentMode]);
   /** **The capsule's ink from what is behind it** (UX-29): the content
       under the capsule's centre, sampled as the fold happens and as the
       content scrolls on, a few times a second. */
@@ -372,7 +382,7 @@ export function SessionScreen({
   // rule is now the terminal's swipe, on its own scroller
   // (`TerminalPane`'s `swipeLowers`).
   return (
-    <div data-session-screen data-deck-folded={folded || undefined} className="relative flex h-full min-h-0 flex-col bg-card">
+    <div data-session-screen data-content-mode={contentMode || undefined} data-deck-folded={folded || undefined} className="relative flex h-full min-h-0 flex-col bg-card">
       {/* The top of the glass is the platform's: a phone's status bar
           (`--safe-top`), or on a Mac window dragged narrow the corner its
           three buttons stand in (`app.css`, `[data-session-top]` under

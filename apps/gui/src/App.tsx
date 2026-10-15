@@ -79,6 +79,8 @@ import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { Tabs } from "@/browse/Tabs";
 import { useSessionContent, type ContentView } from "@/hooks/use-session-content";
 import { ContentTabs, SessionContentPane } from "@/views/SessionContent";
+import { useContentNavigation } from "@/hooks/use-content-navigation";
+import { MobileContentBar, MobileContentSheet } from "@/views/MobileSessionContent";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui, msg } from "@/gen/catalog";
 import { lasting } from "@/words";
@@ -697,7 +699,8 @@ export default function App() {
   // 附栏's state is.
   const [sideBrowsing, setSideBrowsing] = useState(false);
   const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser" || sideBrowsing);
-  const content = useSessionContent(!narrow && landing === "sessions");
+  const content = useSessionContent(landing === "sessions");
+  const contentNavigation = useContentNavigation(content);
   // One portal container keeps editors mounted when the slot moves between
   // sessions/landings. React owns its children; the shell only seats the box.
   const [contentHost] = useState(() => { const el = document.createElement("div"); el.className = "session-content-host"; return el; });
@@ -1850,10 +1853,8 @@ export default function App() {
               return;
             }
             if (side.open) return setSessionSide(id, { open: false });
-            // **Opened again, it is where it was left** (UX-47,
-            // `resumeSide`); ⚠️ 墓碑 (UX-40 §3): each opening on 最近.
-            resumeSideRef.current(id);
-            setSessionSide(id, { open: true });
+            contentNavigation.resume(id);
+            setSessionSide(id, { open: true, seat: "workspace" });
           },
         };
         // ⚠️ 墓碑 (UX-36 → UX-39 §4, the owner 2026-10-06 22:10: 「药丸下面就
@@ -2044,17 +2045,19 @@ export default function App() {
     const session = selectedRow.id;
     const device = devices.find(d => machine ? d.name === machine || d.id === machine : d.me);
     if (!device) return content.fail(gui.content_machine_gone);
+    if (narrow) {
+      (document.activeElement as HTMLElement | null)?.blur();
+      if (view === "workspace") contentNavigation.update(session, { scope: path ? { device: device.id, root: path } : null, source: "workspace", scene: "picker" });
+      else contentNavigation.document(content.peek(session, device.id, path, view, line));
+      setSessionSide(session, { open: true, seat: "workspace" });
+      return;
+    }
     const existing = content.tabs.find(t => t.session === session && t.device === device.id && t.url === path && t.view === view);
     const request = existing ? content.focus(existing.id).then(() => line == null ? undefined : content.point(existing.id, device.id, path, view, existing.title, line)) : content.add(session, device.id, path, view, undefined, line);
     void request.then(() => setSessionSide(session, { open: true, seat: "workspace" })).catch(() => {});
   };
-  const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) => {
-    if (!selectedRow) return;
-    if (!narrow) return openContent(start ? "file" : "workspace", machine, start?.path ?? dir ?? "");
-    setSideFiles({ session: selectedRow.id, machine, dir, start });
-    setSideResume(null);
-    sideTo("workspace");
-  };
+  const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) =>
+    openContent(start ? "file" : "workspace", machine, start?.path ?? dir ?? "");
   /** **The session a thing was opened from** (UX-37 §1): the one in
       front of the sessions landing — its terminal printed the path or
       the URL, or its 附栏 opened it. Written into the record, which puts
@@ -2111,9 +2114,7 @@ export default function App() {
     touched(dir ? "dir" : "file", machine || (devices.find((x) => x.me)?.name ?? ""), path);
     if (inColumn()) {
       const name = machine || (devices.find((x) => x.me)?.name ?? "");
-      if (!narrow) return openContent(dir ? "workspace" : "file", name, path, line);
-      if (dir) return sideShow(name, path, null);
-      return sideShow(name, path.slice(0, path.lastIndexOf("/")) || "/", { path, at: Date.now() });
+      return openContent(dir ? "workspace" : "file", name, path, line);
     }
     openPathMain(machine, path, dir, line);
   };
@@ -2127,7 +2128,7 @@ export default function App() {
       this one — so a page here opened with no machine and the pill asked
       for one and an address. */
   const openUrlMain = (machine: string, url: string, column: boolean, device?: string) => {
-    if (column && !narrow && selectedRow) return openContent("page", device || machine || selectedRow.home, url);
+    if (column && selectedRow) return openContent("page", device || machine || selectedRow.home, url);
     const d = devices.find((x) => device !== undefined && x.id === device) ?? (machine === "" ? null : devices.find((x) => x.name === machine));
     void openTab("page", d?.id ?? device ?? "", url, fromSession())
       .then((id) => {
@@ -3294,20 +3295,12 @@ export default function App() {
     <SessionScreen
       faces={tabFaces}
       active={selected ?? ""}
-      onTitle={
-        terminalPill
-          ? () => {
-              const dir = sessionCwdOnScreen(selectedRow);
-              if (!selectedRow) return;
-              // **Where it was left** (UX-47, `resumeSide`); with nothing
-              // to come back to, 最近, and the 工作区 seat where the shell
-              // is at the tap (UX-17's rule). ⚠️ 墓碑 (UX-40 §3): each
-              // opening on 最近, the tree pointed afresh each time.
-              if (!resumeSide(selectedRow.id)) setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null, follow: true });
-              setPlaceSheet({ dir, session: selectedRow.id });
-            }
-          : undefined
-      }
+      contentMode={narrow && side.open && selectedRow !== null}
+      onTitle={terminalPill && selectedRow ? () => {
+        (document.activeElement as HTMLElement | null)?.blur();
+        if (!side.open) contentNavigation.resume(selectedRow.id);
+        setSessionSide(selectedRow.id, { open: !side.open, seat: "workspace" });
+      } : undefined}
       onFocus={(id) => {
         sessionTabs.focus(id);
         setScreen("detail");
@@ -3331,6 +3324,11 @@ export default function App() {
       away={placeSheet !== null && selectedRow !== null}
     >
       {detail}
+      {narrow && side.open && selectedRow && tabFaces.find(f => f.id === selectedRow.id) && <>
+        <MobileContentBar session={selectedRow.id} face={tabFaces.find(f => f.id === selectedRow.id)!} content={content} navigation={contentNavigation} onClose={() => { (document.activeElement as HTMLElement | null)?.blur(); setSessionSide(selectedRow.id, { open: false }); }} />
+        <MobileContentSheet key={selectedRow.id} onClose={() => { (document.activeElement as HTMLElement | null)?.blur(); setSessionSide(selectedRow.id, { open: false }); }}><div ref={seatContent} className="flex min-h-0 min-w-0 flex-1 flex-col" /></MobileContentSheet>
+      </>}
+
       {placeSheet && selectedRow && (
         <SessionPlaceSheet
           key={selectedRow.id}
@@ -4271,7 +4269,8 @@ export default function App() {
       )}
       <div hidden ref={el => { contentParking.current = el; if (el && !contentHost.parentElement) el.appendChild(contentHost); }} />
       <SessionContentPane container={contentHost} content={content} session={selectedRow?.id ?? null} devices={devices} rows={rows}
-        visible={!narrow && sessions && sideShown && side.open && !hidden && morePage === null && !switchingTabs}
+        mobile={narrow} navigation={contentNavigation}
+        visible={sessions && side.open && (narrow ? inSession : sideShown) && !hidden && morePage === null && !switchingTabs}
         onClose={() => { if (selected) { content.setMaximized(null); setSessionSide(selected, { open: false }); } }}
         onReveal={(machine, path) => openContent("workspace", machine, path)} />
     </TooltipProvider>

@@ -4657,6 +4657,7 @@ pub fn run() {
             Err(error) => eprintln!("{error}"),
         }
     }) { std::process::exit(code); }
+    eprintln!("khor app ui: {}", khor_web::ui_revision());
     // **Stand somewhere that cannot be deleted, before anything else**
     // (docs/SHELL.md 第十四轮 第 4 条). The install script starts this
     // binary with `nohup` from inside the export directory and then

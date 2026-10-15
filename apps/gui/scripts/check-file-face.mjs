@@ -106,6 +106,9 @@ window.showFile('/notes.md');`);
         return {label,line:v.state.doc.lineAt(v.state.selection.main.head).number,top:Math.round(c.top),bottom:Math.round(c.bottom),from:Math.round(s.top),floor:Math.round(floor),shown:c.top>=s.top&&c.bottom<=floor};
       },label);
       await page.touchscreen.tap(120,700);
+      // A touch's synthesized mouse selection commits after touchend.
+      // Wait for that transaction before measuring the caret, not a timer.
+      await page.waitForFunction(()=>{const v=document.querySelector('[data-code-view]')?.__view;return v&&v.state.doc.lineAt(v.state.selection.main.head).number>20;},null,{timeout:2500});
       const tapped=await seen('tapped');
       assert(tapped.shown&&tapped.line>20,`keyboard · the tap did not put a low line under the caret: ${JSON.stringify(tapped)}`);
       for(const k of [80,180,280,336]) {await page.evaluate(k=>window.__keyboard(k),k); await pause(75);}

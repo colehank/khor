@@ -86,6 +86,8 @@ export function SideWorkspace({
   query,
   onQuery,
   onSearchEnter,
+  makeRequest,
+  treeHead,
 }: {
   /** A content-tab host may own file navigation and the search field's scope. */
   onOpenContent?: (path: string, line: number | null) => void;
@@ -93,6 +95,8 @@ export function SideWorkspace({
   query?: string;
   onQuery?: (query: string) => void;
   onSearchEnter?: () => void;
+  makeRequest?: { kind: "file" | "dir"; at: number };
+  treeHead?: (openHistory: () => void) => ReactNode;
   /** **Where the seat was left** (UX-47), read once at mount: the file
       open over the tree. Absent, the seat starts at the tree (or at
       `start`). */
@@ -207,6 +211,7 @@ export function SideWorkspace({
       back (the name box takes it next), the box cleared so the tree is
       there to take it. */
   const [make, setMake] = useState<{ kind: "file" | "dir"; at: number } | null>(null);
+  useEffect(() => { if (makeRequest) { setHunt(""); setMake(makeRequest); } }, [makeRequest]);
   const madeFromMenu = useRef<"file" | "dir" | null>(null);
   const plus = (
     <DropdownMenu>
@@ -271,7 +276,7 @@ export function SideWorkspace({
             }}
           />
         ) : (
-          <FileTree
+          <>{treeHead?.(() => setHistoryOpen(true))}<FileTree
             key={`${machine} ${root}`}
             machine={machine}
             root={root}
@@ -290,9 +295,9 @@ export function SideWorkspace({
             onMade={() => setGitAt((n) => n + 1)}
             make={make}
             onMakeSeen={() => setMake(null)}
-            headCommit={headCommit}
+            headCommit={treeHead ? null : headCommit}
             onCommitLine={() => setHistoryOpen(true)}
-          />
+          /></>
         )}
       </div>
       {commit !== null && (

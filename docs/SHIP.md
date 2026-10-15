@@ -8,7 +8,7 @@
 
 - 在主树 `~/Desktop/working/khor`、分支 `main`、`git status` 干净。worktree 车道都合完再打。
 - `target` 链到 `/Volumes/disk0/khor-target`（系统盘不放 target）。
-- 先定一个**本次新加的 Rust 侧字符串**当指纹，比如新命令名、新文件名（`ring.bin`）、新目录句。`gui.*` 词条只在 TS 里、手机包里压缩了，`strings` 找不到，不算。
+- 指纹采用 Rust 构建时生成的 `khor-ui-assets:/assets/index-<hash>.js`：`khor-web` 从本次 dist 生成，桌面和 iOS 启动日志打印同一收据，网页响应的 `X-Khor-UI` 也带它。先从新 dist 确定本次 hash，再在所有二进制与归档中核对完整收据。它会随前端内容变化，纯前端版本也能识别旧 Rust 库。`gui.*` 文案在手机包里压缩，不能代替这个 Rust 侧收据。
 
 ## 1. Mac 本机：关旧开新
 

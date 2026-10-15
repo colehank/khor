@@ -2863,6 +2863,24 @@ content-restore = "Restore split view"
 content-machine-gone = "This machine is no longer in the device list"
 content-no-directory = "This session has no directory. Enter a path or switch to the browser"
 
+# Session content browsing (mobile and temporary documents)
+content-find = "Find content"
+content-keep = "Keep tab"
+content-temporary = "Temporary view"
+content-tabs = "Tabs"
+content-tabs-count = "{0} tabs in this session"
+content-tabs-search = "Find tabs"
+content-empty = "No kept tabs yet"
+content-no-match = "No matching tabs"
+content-previous = "Previous file"
+content-next = "Next file"
+content-return = "Back to browsing"
+content-workspace-actions = "Workspace actions"
+content-return-session = "Return to {0}"
+content-current = "View all tabs, current {0}"
+content-expand-sheet = "Expand content panel"
+content-collapse-sheet = "Reduce content panel"
+
 # The macOS menu bar (2026-09-28).
 [menu]
 about = "About khor"

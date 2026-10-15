@@ -55,7 +55,8 @@
     "appearance": "node scripts/check-appearance.mjs",
     "ime": "node scripts/check-ime.mjs",
     "attachments": "node scripts/check-attachments-model.mjs",
-    "session-content": "node scripts/check-session-content.mjs"
+    "session-content": "node scripts/check-session-content.mjs",
+    "cm-measure": "node scripts/cm-measure.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

@@ -430,6 +430,7 @@ export function FilePage({
   tabs,
   moreActs,
   embedded = false,
+  embeddedContext,
 }: {
   /* **Inside the session's 附栏 this is the same page, with the main
      area's deck** (UX-40 §4, the owner 2026-10-07 02:10: 「打开一个文件或
@@ -447,6 +448,8 @@ export function FilePage({
   moreActs?: { key: string; label: string; run: () => void }[];
   /** Desktop content tabs own navigation; reuse the file and its verbs without a second deck. */
   embedded?: boolean;
+  /** The grouped host can show the machine and a workspace-relative folder. */
+  embeddedContext?: string;
   /** The file is in a checkout: git 历史 is offered (round UX-4). */
   history?: boolean;
   /** **The workspace's open files, as the session page's tabs** (UX-25,
@@ -643,7 +646,7 @@ export function FilePage({
       {embedded && (
         <div data-file-embedded-tools className="flex h-pane-head flex-none items-center gap-in border-b px-row">
           {rev !== null && <Button size="icon" variant="ghost" data-file-back aria-label={gui.file_rev_back} onClick={() => { setRev(null); setCompare(false); setFace(DEFAULT_FILE_FACE); }}><IconBack /></Button>}
-          <button type="button" onClick={onBack} title={directoryOf(path)} className="flex min-w-0 flex-1 items-center gap-in text-caption text-muted-foreground"><IconFiles className="size-4 flex-none" /><span className="truncate">{directoryOf(path)}</span></button>
+          <button type="button" onClick={onBack} title={directoryOf(path)} className="flex min-w-0 flex-1 items-center gap-in text-caption text-muted-foreground"><IconFiles className="size-4 flex-none" /><span className="truncate">{embeddedContext ?? directoryOf(path)}</span></button>
           {(rev === null ? previewable : !compare && rendererOf(path) === "md") && <Button size="sm" variant="ghost" aria-label={gui.file_face_preview} aria-pressed={face === "preview"} data-file-face-toggle={face} onClick={turn}><IconEye /></Button>}
           {rev !== null ? <Button size="icon" variant="ghost" data-file-rev-compare aria-label={compare ? gui.file_rev_alone : gui.file_rev_compare} aria-pressed={compare} onClick={() => setCompare(!compare)}><IconBranch /></Button> : <Button size="icon" variant="ghost" aria-label={dirty ? gui.watch_save : gui.file_reread} onClick={dirty ? save : () => setReads((n) => n + 1)}>{dirty ? <IconCheck /> : <IconReload />}</Button>}
           {verbs.moreCircle}

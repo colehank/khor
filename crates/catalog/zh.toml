@@ -5451,6 +5451,24 @@ content-restore = "恢复并排"
 content-machine-gone = "这台机器已不在设备列表中"
 content-no-directory = "当前会话没有目录，可输入路径或切换到浏览器"
 
+# Session content browsing (mobile and temporary documents)
+content-find = "找内容"
+content-keep = "保留标签"
+content-temporary = "临时查看"
+content-tabs = "标签页"
+content-tabs-count = "此会话的 {0} 个标签"
+content-tabs-search = "查找标签页"
+content-empty = "还没有保留的标签"
+content-no-match = "没有匹配的标签"
+content-previous = "上一个文件"
+content-next = "下一个文件"
+content-return = "返回浏览"
+content-workspace-actions = "工作区操作"
+content-return-session = "回到 {0}"
+content-current = "查看全部标签，当前 {0}"
+content-expand-sheet = "展开内容面板"
+content-collapse-sheet = "缩小内容面板"
+
 [menu]
 about = "关于 khor"
 # UX-16 ruling (2026-10-05): on a Mac the settings window holds settings

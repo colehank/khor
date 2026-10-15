@@ -59,6 +59,14 @@ fn main() {
     files.sort();
 
     let mut rs = String::from("// Generated from apps/gui/dist by build.rs - do not edit.\n");
+    // A Rust-side receipt for the exact frontend, shared by app startup,
+    // the web response and archive verification (including iOS libapp.a).
+    let html = std::fs::read_to_string(dist.join("index.html")).expect("reading index.html");
+    let entry = html.split("src=\"").filter_map(|part| part.split('"').next())
+        .find(|p| p.starts_with("/assets/index-") && p.ends_with(".js"))
+        .expect("the web face has no index script");
+    assert!(files.iter().any(|(p, _)| p == entry), "the index script is missing");
+    writeln!(rs, "pub const UI_REVISION: &str = {:?};", format!("khor-ui-assets:{entry}")).unwrap();
     rs.push_str("pub static ASSETS: &[(&str, &[u8])] = &[\n");
     for (web_path, disk) in &files {
         writeln!(

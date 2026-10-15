@@ -60,6 +60,7 @@ function share(detent: PlaceDetent): number {
 /** How fast a release has to be moving, in px per ms, to count as a
     throw rather than a placement — the form sheet's own (`ui/dialog`). */
 const THROW = 0.5;
+const THROW_MS = 80;
 /** Under this share of the half detent a release puts the sheet away
     (the prototype's `HALF * 0.55`): a pull that ends a little under half
     springs back, one that has gone most of the way down is a dismissal. */
@@ -76,12 +77,12 @@ const AWAY = 0.55;
  * back first. At the full detent a move up is the page's scroll. A
  * slider or anything marked `data-sheet-hold` keeps its touches.
  */
-function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => void, onClose: () => void) {
+export function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => void, onClose: () => void, bounds?: () => { height: number; foot: number }) {
   // Read through a ref: the shell hands a fresh `onOpenChange` on every
   // render (a poll lands every two seconds), and re-binding the listeners
   // mid-drag would drop the pull under the finger.
-  const told = useRef({ onDetent, onClose });
-  told.current = { onDetent, onClose };
+  const told = useRef({ onDetent, onClose, bounds });
+  told.current = { onDetent, onClose, bounds };
   useEffect(() => {
     if (!el) return;
     const close = () => told.current.onClose();
@@ -108,7 +109,10 @@ function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => voi
       if (e.touches.length !== 1) return;
       const t = e.target instanceof Element ? e.target : null;
       const band = !!t?.closest("[data-place-grab]");
+      // Content editors keep their own selection and scroll gestures.
+      if (told.current.bounds && !band) return;
       if (!band && (t?.closest('[data-sheet-hold], input[type="range"]') || scrolled(t))) return;
+      el.removeAttribute("data-sheet-dragged");
       from = e.touches[0].clientY;
       fromX = e.touches[0].clientX;
       fromH = el.getBoundingClientRect().height;
@@ -123,6 +127,7 @@ function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => voi
       if (from === null) return;
       const y = e.touches[0].clientY;
       const dy = y - from;
+      if (Math.abs(dy) > 6) el.setAttribute("data-sheet-dragged", "");
       if (!pulling) {
         const dx = Math.abs(e.touches[0].clientX - fromX);
         if (Math.max(Math.abs(dy), dx) < 6) return;
@@ -133,22 +138,25 @@ function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => voi
         grip();
       }
       e.preventDefault();
-      live = Math.max(0, Math.min(fromH - dy, share("full") * window.innerHeight));
+      const box = told.current.bounds?.() ?? { height: window.innerHeight, foot: 0 };
+      live = Math.max(0, Math.min(fromH - dy, share("full") * box.height - box.foot));
       el.style.height = `${live}px`;
       const dt = e.timeStamp - lastT;
       if (dt > 0) speed = (y - lastY) / dt;
       lastY = y;
       lastT = e.timeStamp;
     };
-    const up = () => {
+    const up = (e: TouchEvent) => {
       if (from === null) return;
       from = null;
       if (!pulling) return;
       pulling = false;
       el.removeAttribute("data-sheet-pulling");
       el.style.removeProperty("height");
-      const half = share("half") * window.innerHeight;
-      const full = share("full") * window.innerHeight;
+      const box = told.current.bounds?.() ?? { height: window.innerHeight, foot: 0 };
+      const half = share("half") * box.height - box.foot;
+      const full = share("full") * box.height - box.foot;
+      if (e.timeStamp - lastT > THROW_MS) speed = 0;
       // A throw goes one detent its way: up to full, down to half from
       // above it, away from half or under; a placement takes the nearer.
       if (live < half * AWAY || (speed > THROW && live <= half)) return close();
@@ -156,15 +164,21 @@ function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => voi
       if (speed > THROW) return detent("half");
       detent(live > (half + full) / 2 ? "full" : "half");
     };
+    const cancel = () => { from = null; pulling = false; el.removeAttribute("data-sheet-pulling"); el.style.removeProperty("height"); };
     el.addEventListener("touchstart", down, { passive: true });
     el.addEventListener("touchmove", move, { passive: false });
     el.addEventListener("touchend", up);
-    el.addEventListener("touchcancel", up);
+    el.addEventListener("touchcancel", cancel);
+    window.addEventListener("blur", cancel);
+    document.addEventListener("visibilitychange", cancel);
     return () => {
       el.removeEventListener("touchstart", down);
       el.removeEventListener("touchmove", move);
       el.removeEventListener("touchend", up);
-      el.removeEventListener("touchcancel", up);
+      el.removeEventListener("touchcancel", cancel);
+      window.removeEventListener("blur", cancel);
+      document.removeEventListener("visibilitychange", cancel);
+      cancel();
     };
   }, [el]);
 }
