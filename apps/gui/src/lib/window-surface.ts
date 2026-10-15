@@ -68,6 +68,10 @@ function measureGround() {
   let path = `M0 0H${rect.width}V${rect.height}H0Z`;
   for (const el of surfaces) {
     if (!watched.has(el)) { watched.add(el); resize?.observe(el); }
+    // DetailPane parks other tabs at full size using visibility:hidden.
+    // An even-odd path counts every rectangle: including those invisible
+    // twins would fill the active terminal's hole again and double its tint.
+    if (getComputedStyle(el).visibility !== "visible") continue;
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height || r.right <= rect.left || r.left >= rect.right || r.bottom <= rect.top || r.top >= rect.bottom) continue;
     const x = Math.max(0, r.left - rect.left), y = Math.max(0, r.top - rect.top);
@@ -87,10 +91,17 @@ export function followWindowSurface(): void {
   const root = document.getElementById("root");
   if (!root) return;
   resize.observe(root);
-  // Ignore xterm's cell output. Only insertion/removal of a terminal
-  // surface changes which part of the desktop background it replaces.
+  // Ignore xterm's cell output. A retained tab can become visible without
+  // inserting/removing a node or changing size, so watch its ancestors too.
+  // Root styles include our own clip path; observing that write would loop.
   new MutationObserver(records => {
-    if (records.some(r => !(r.target instanceof Element && r.target.closest(surfaceSelector)) && [...r.addedNodes, ...r.removedNodes].some(n => n instanceof Element && (n.matches(surfaceSelector) || n.querySelector(surfaceSelector))))) queueGround();
-  }).observe(root, { childList: true, subtree: true });
+    if (records.some(r => {
+      const target = r.target;
+      if (!(target instanceof Element)) return false;
+      if (r.type === "attributes") return target !== root && (target.matches(surfaceSelector)
+        || !target.closest(surfaceSelector) && !!target.querySelector(surfaceSelector));
+      return !target.closest(surfaceSelector) && [...r.addedNodes, ...r.removedNodes].some(n => n instanceof Element && (n.matches(surfaceSelector) || n.querySelector(surfaceSelector)));
+    })) queueGround();
+  }).observe(root, { childList: true, attributes: true, attributeFilter: ["class", "style", "hidden", "aria-hidden"], subtree: true });
   queueGround();
 }

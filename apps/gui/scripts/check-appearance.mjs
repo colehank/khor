@@ -33,8 +33,8 @@ import {fetchConfig} from '../src/api';
 import {speakLang} from '../src/lang';
 import '../src/styles/tokens.css';import '../src/styles/app.css';
 speakLang('zh');palette.wearTermPalette();followWindowSurface();window.palette=palette;window.windowChoice=windowChoice;window.wearWindowChoice=wearWindowChoice;
-function Lab(){const [ended,setEnded]=useState(false);window.showEnded=()=>setEnded(true);const [rows,setRows]=useState([]);const read=()=>fetchConfig().then(setRows);useEffect(()=>{read()},[]);const surface=windowChoice(rows);useEffect(()=>{if(surface)wearWindowChoice(surface)},[surface?.material,surface?.opacity]);
-return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column'}}>{ended?<EndedPane id='shell/appearance-test' at={1}/>:<TerminalPane id='shell/appearance-test' active />}</div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><div data-halo-lab style={{display:'flex',gap:40,padding:32}}><FaceMark face={{machine:null}} halo="done"/><div data-tab-bar><FaceMark face={{machine:null}} halo="done" size="tab"/></div></div><WindowAppearanceSection/><TerminalThemeSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
+function Lab(){const [kept,setKept]=useState(false),[front,setFront]=useState(false),[concealed,setConcealed]=useState(false);window.hideTerminals=setConcealed;window.keepTerminal=()=>setKept(true);window.closeKept=()=>setKept(false);window.frontKept=setFront;const [ended,setEnded]=useState(false);window.showEnded=()=>setEnded(true);const [rows,setRows]=useState([]);const read=()=>fetchConfig().then(setRows);useEffect(()=>{read()},[]);const surface=windowChoice(rows);useEffect(()=>{if(surface)wearWindowChoice(surface)},[surface?.material,surface?.opacity]);
+return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative'}}><div data-retained-front className={front||concealed?'pointer-events-none invisible absolute inset-0 flex flex-col':'contents'}>{ended?<EndedPane id='shell/appearance-test' at={1}/>:<TerminalPane id='shell/appearance-test' active={!front} />}</div>{kept&&<div data-retained-back className={front&&!concealed?'contents':'pointer-events-none invisible absolute inset-0 flex flex-col'} aria-hidden={!front||undefined}><TerminalPane id='shell/appearance-kept' active={front}/></div>}</div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><div data-halo-lab style={{display:'flex',gap:40,padding:32}}><FaceMark face={{machine:null}} halo="done"/><div data-tab-bar><FaceMark face={{machine:null}} halo="done" size="tab"/></div></div><WindowAppearanceSection/><TerminalThemeSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
 createRoot(document.getElementById('root')).render(<Lab/>);
 `);
   vite = spawn("node_modules/.bin/vite", ["--port", String(port), "--strictPort"], { cwd: gui, stdio: ["ignore", "pipe", "pipe"] });
@@ -103,6 +103,43 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   for (const [i,h] of haloPixels.entries()) {assert.deepEqual(h.gap,h.outside,`halo ${i}: transparent gap must reveal the same background as outside the ring`);assert(h.stroke.slice(0,3).some((c,k)=>Math.abs(c-h.outside[k])>10),`halo ${i}: ring stroke must remain visible`);}
   const expected = [33, 41, 62];
   for (const [where, rgba] of Object.entries(pixel)) rgba.slice(0, 3).forEach((c, i) => assert(Math.abs(c - expected[i]) <= 3, `single background plane ${where}: got ${rgba}, expected ${expected}`));
+  // DetailPane retains inactive terminals at full size under visibility:hidden.
+  // Their rectangles must not toggle the shared background hole back to filled.
+  await page.evaluate(() => window.keepTerminal());
+  await page.waitForFunction(() => document.querySelector('[data-retained-back] [data-terminal]')?.__xterm);
+  async function retainedPixel(front) {
+    await page.evaluate(front => window.frontKept(front), front);
+    await page.waitForFunction(front => getComputedStyle(document.querySelector(front ? '[data-retained-back] [data-terminal]' : '[data-retained-front] [data-terminal]')).visibility === 'visible', front);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const shot = await page.screenshot();
+    return page.evaluate(async ({base64,front}) => {
+      const img=new Image();img.src='data:image/png;base64,'+base64;await img.decode();
+      const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
+      const r=document.querySelector((front?'[data-retained-back]':'[data-retained-front]')+' .xterm-screen').getBoundingClientRect();
+      return [...ctx.getImageData(Math.floor(r.right-20),Math.floor(r.top+10),1,1).data];
+    },{base64:shot.toString('base64'),front});
+  }
+  for (const front of [false,true,false]) {
+    const rgba=await retainedPixel(front);
+    rgba.slice(0,3).forEach((c,i)=>assert(Math.abs(c-expected[i])<=3,`retained terminal ${front}: got ${rgba}, expected ${expected}; inactive terminals cannot add a second background`));
+  }
+  // Changing to a GUI tab hides both terminals but does not resize or
+  // remove them. Visibility changes alone must restore the app ground.
+  await page.evaluate(() => window.hideTerminals(true));
+  await page.waitForFunction(() => (document.getElementById('root').style.getPropertyValue('--window-ground-clip').match(/M/g) ?? []).length === 1);
+  const hiddenImage = await page.screenshot();
+  const hiddenPixel = await page.evaluate(async base64 => {
+    const img=new Image();img.src='data:image/png;base64,'+base64;await img.decode();
+    const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
+    const r=document.querySelector('[data-retained-front] .xterm-screen').getBoundingClientRect();
+    return [...ctx.getImageData(Math.floor(r.right-20),Math.floor(r.top+10),1,1).data];
+  },hiddenImage.toString('base64'));
+  hiddenPixel.slice(0,3).forEach((c,i)=>assert(Math.abs(c-[8,15,23][i])<=3,`hidden terminals leave app ground: ${hiddenPixel}`));
+  await page.evaluate(() => window.hideTerminals(false));
+  const restored = await retainedPixel(false);
+  restored.slice(0,3).forEach((c,i)=>assert(Math.abs(c-expected[i])<=3,`terminal ground restores after GUI tab: ${restored}`));
+  await page.evaluate(() => window.closeKept());
+  await page.waitForFunction(() => document.querySelectorAll('[data-terminal]').length === 1);
   assert.deepEqual(await page.evaluate(() => { const t = document.querySelector("[data-terminal]").__xterm; const b = t.buffer.active; const c = b.getLine(b.baseY + b.cursorY).getCell(0); return { color: c.getFgColor(), rgb: c.isFgRGB() }; }), rgb, "theme must not recolor program RGB");
   assert.equal(await page.evaluate(() => window.windowChoice([{name:'window-material',value:'clear'},{name:'window-opacity',value:'0'}]).opacity), 0, "zero is an opacity, not a missing preference");
   await page.getByRole("slider", { name: "背景不透明度" }).fill("0");
@@ -246,5 +283,5 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   assert.equal(await page.locator('html').evaluate(el=>el.style.getPropertyValue('--window-opacity')),'0%','frost tint also reaches zero');
   if(process.env.APPEARANCE_SHOT) await page.screenshot({path:process.env.APPEARANCE_SHOT.replace(/\.png$/, '-ansi.png')});
   assert.deepEqual(errors, []);
-  console.log("appearance: presets/DIY/JSON, cross-window sync, same PTY/buffer/scroll, background-only single-layer alpha in WebGL/DOM/recovery at 1x/2x, unsupported blur, parser bounds and narrow editor passed");
+  console.log("appearance: presets/DIY/JSON, cross-window sync, same PTY/buffer/scroll, retained/hidden tab backgrounds, background-only single-layer alpha in WebGL/DOM/recovery at 1x/2x, unsupported blur, parser bounds and narrow editor passed");
 } finally { if (browser) await browser.close(); if (vite) vite.kill(); rmSync(entry, { force: true }); }

@@ -725,3 +725,5 @@
 文件点击打开只读原文，预览显式切换；目录点击浏览；勾选独立，跨来源选择在终端持有。先核对、再发送，完成才一次粘贴路径，不发送 Enter。父目录包含子项，取消保留选择，重试清理上一轮失败提示。入口继续使用现有键盘面板，不移动甲板与键行。
 
 门：`npm run attachments` 与 `FACE_ONLY=term npm run face`；位置回归 `FACE_ONLY=bar npm run face`。真 app 清单：浅深主题、窄屏键盘开关、目录多选、只读预览开关、iOS 原生文件夹与 iCloud 授权、取消与切后台后重试。协议边界和平台限制见 `docs/TERMINAL-ATTACHMENTS.md`。
+
+- 2026-10-15：透明底只为可见终端挖空；后台保留且 `visibility:hidden` 的终端即便尺寸未变，也不参与背景路径。切换标签后重新测量；`npm run appearance` 用两个真实 TerminalPane 的保留、切换、切回量像素，防止 even-odd 重叠重新填底。旧实现从单终端 `[33,41,62]` 变为双终端 `[27,28,42]`，先红后绿。
