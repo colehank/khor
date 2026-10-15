@@ -485,3 +485,5 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 `npm run appearance` 的终端透明检查还覆盖程序 RGB/ANSI/反色背景、文字与 0% 选区可见性、1x/2x、实际上下文丢失的 DOM 备用、GPU 恢复及结束快照。它量每块区域一次的背景合成，不依赖整终端 opacity。
 
 `npm run ime` 在系统 Chrome 中重放真实 TerminalPane 的输入事件链，并检查发往 `term_key` 的字节：未提交的拼音不发送、原生组字编辑保持生效、候选提交一次；覆盖软删除、Kitty、Option、迟到标点和收键盘取消。它不启动真实会话、不拿 cargo 锁；iPhone 原生输入法的事件来源与键盘行为仍需真机确认。
+
+药丸手势的单独回归：`FACE_ONLY=bar FACE_BAND=1 npm run face`，运行 bar u 的真实触摸拖动、阈值、连续换页、取消、重渲染和中断收尾检查；完整甲板与键行仍运行 `FACE_ONLY=bar npm run face`。真 iPhone 验收包括键盘弹出时连续滑动、滑动中切后台再回来、系统中断后再次滑动。

@@ -810,6 +810,8 @@ export function DeckBand({
     if (drag.current) return;
     drag.current = {
       pointer: e.pointerId,
+      touch: e.pointerType === "touch",
+      touchId: null,
       x0: e.clientX,
       y0: e.clientY,
       moved: false,
@@ -848,10 +850,11 @@ export function DeckBand({
     }
     pull(d.dx, past);
   };
-  const onPointerUp = (e: PointerEvent) => {
+  const onPointerUp = (e: Pick<PointerEvent, "pointerId" | "clientX" | "timeStamp">) => {
     const d = drag.current;
     if (!d || e.pointerId !== d.pointer) return;
     drag.current = null;
+    if (band.current?.hasPointerCapture(d.pointer)) band.current.releasePointerCapture(d.pointer);
     // **A press that did not move is the title's** (the address editor,
     // the 目录 sheet), wherever on the current segment it began: with the
     // pointer captured by the band the click lands here, not on the
@@ -888,6 +891,48 @@ export function DeckBand({
     drag.current = null;
     if (d.moved) springBack();
   };
+  // Native touch endings can survive an interrupted Pointer Events
+  // stream. They share the same finish path: whichever arrives first
+  // consumes the drag, so a normal lift cannot focus twice. Keep the
+  // finger's identifier; another finger ending must not finish this one.
+  const endings = useRef({ up: onPointerUp, cancel: () => { stop(); rest(); } });
+  useLayoutEffect(() => {
+    endings.current = { up: onPointerUp, cancel: () => { stop(); rest(); } };
+  });
+  useEffect(() => {
+    const start = (e: TouchEvent) => {
+      const d = drag.current;
+      if (!d?.touch || d.touchId !== null) return;
+      const t = Array.from(e.changedTouches).find((t) => t.target instanceof Node && band.current?.contains(t.target));
+      if (t) d.touchId = t.identifier;
+    };
+    const end = (e: TouchEvent) => {
+      const d = drag.current;
+      if (!d?.touch) return;
+      const t = Array.from(e.changedTouches).find((t) => t.identifier === d.touchId);
+      if (!t) return;
+      if (e.type === "touchcancel") endings.current.cancel();
+      else endings.current.up({ pointerId: d.pointer, clientX: t.clientX, timeStamp: e.timeStamp });
+    };
+    const cancel = () => endings.current.cancel();
+    const hidden = () => {
+      if (document.visibilityState !== "visible") cancel();
+    };
+    window.addEventListener("touchstart", start, { capture: true, passive: true });
+    window.addEventListener("touchend", end, { capture: true, passive: true });
+    window.addEventListener("touchcancel", end, { capture: true, passive: true });
+    window.addEventListener("blur", cancel);
+    window.addEventListener("pagehide", cancel);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("touchstart", start, true);
+      window.removeEventListener("touchend", end, true);
+      window.removeEventListener("touchcancel", end, true);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("pagehide", cancel);
+      document.removeEventListener("visibilitychange", hidden);
+    };
+  }, []);
   const body = (f: TabFace, role: "prev" | "cur" | "next") =>
     // **What stops this session takes the pill's look** (NOTICE-BRIEF):
     // the kind's mark in the face's seat, the short line in the name's
@@ -981,6 +1026,8 @@ export function DeckBand({
 /** The band's drag (`DeckBand`). */
 type BandDrag = {
   pointer: number;
+  touch: boolean;
+  touchId: number | null;
   x0: number;
   y0: number;
   moved: boolean;

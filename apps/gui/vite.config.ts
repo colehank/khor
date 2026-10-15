@@ -9,5 +9,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
   server: { port: 1430, strictPort: true },
+  // Browser gates exercise the app. Experimental lab entry points may
+  // reference retired APIs and must not restart that app mid-gesture.
+  optimizeDeps: process.env.KHOR_FACE_GATE ? { entries: ["index.html"] } : undefined,
   clearScreen: false,
 });
