@@ -28,7 +28,7 @@
  * head at its top. ⚠️ 墓碑 (UX-37 §1): `MachineFiles` here, climbing to
  * the root and on to every workspace.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { fetchGitLog, fetchGitStatus, searchIn, type Found, type GitLog } from "@/api";
 import { GlassCircle } from "@/components/Glass";
@@ -81,7 +81,18 @@ export function SideWorkspace({
   backLabel = gui.group_recent,
   spot,
   onSpot,
+  onOpenContent,
+  findLeading,
+  query,
+  onQuery,
+  onSearchEnter,
 }: {
+  /** A content-tab host may own file navigation and the search field's scope. */
+  onOpenContent?: (path: string, line: number | null) => void;
+  findLeading?: ReactNode;
+  query?: string;
+  onQuery?: (query: string) => void;
+  onSearchEnter?: () => void;
   /** **Where the seat was left** (UX-47), read once at mount: the file
       open over the tree. Absent, the seat starts at the tree (or at
       `start`). */
@@ -159,7 +170,12 @@ export function SideWorkspace({
   const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map());
   // The hunt: asked 300 ms after the typing stops, a late answer to an
   // old question thrown away (`WorkspacePane`'s, the same rule).
-  const [hunt, setHunt] = useState("");
+  const [localHunt, setLocalHunt] = useState("");
+  const hunt = query ?? localHunt;
+  const setHunt = (value: string) => {
+    if (onQuery) onQuery(value);
+    else setLocalHunt(value);
+  };
   const [found, setFound] = useState<Found | null>(null);
   const [huntError, setHuntError] = useState<string | null>(null);
   const huntAsked = useRef(0);
@@ -241,7 +257,7 @@ export function SideWorkspace({
           it was scrolled. */}
       <div className={file !== null || commit !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
         {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={backLabel} />}
-        <SideFind label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />
+        <SideFind onEnter={onSearchEnter} leading={findLeading} label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />
         {hunt.trim() !== "" ? (
           <Hits
             found={found}
@@ -249,6 +265,7 @@ export function SideWorkspace({
             query={hunt.trim()}
             dir={root}
             onOpen={(path, line) => {
+              if (onOpenContent) return onOpenContent(path, line);
               setFile(path);
               setGoLine(line === null ? null : { path, line, at: Date.now() });
             }}
@@ -261,7 +278,7 @@ export function SideWorkspace({
             here={here}
             marks={folded(root, git)}
             open={file}
-            onOpen={(path) => setFile(path)}
+            onOpen={(path) => onOpenContent ? onOpenContent(path, null) : setFile(path)}
             onGone={(path) => {
               if (file === path) setFile(null);
               setGitAt((n) => n + 1);

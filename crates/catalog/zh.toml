@@ -293,7 +293,7 @@ usage = """
                         连不上互联网的 khor 主机，经本机到它的 SSH 登录转连；
                         别的机器经本机连到它。登录方式同 add：密码和口令从
                         标准输入读取，只存进本机的系统钥匙串
-  tabs [ls] | open [-m 机器] <网址> | close|focus|pin|unpin <序号|id>
+  tabs [--session 会话id] [ls] | open [-m 机器] [--view workspace|file|page] <地址> | close|focus|pin|unpin <序号|id>
                         浏览器这块屏幕上开着的标签页。**本机的，不同步**：
                         开着什么是这块屏幕的事，别的机器不看（常去的地方才跟着人走）。
                         ls 每行是当前/置顶标记、序号、id、标题、网址。pin 置顶一个
@@ -5441,6 +5441,16 @@ usage-scatter-off = "{0} 个模型缺少这两项读数，未绘制"
 # 五个落地页的名字不在这里:菜单里就是竖栏上那五个词(`gui.sessions-tab` 等)。
 # 「新建…」只在当前落地页没有「+」时出现;有的时候菜单项换成那颗「+」自己
 # 的名字(「新会话…」「新标签页」),菜单说的就是 ⌘N 真会做的事。
+
+# Session-owned desktop content tabs
+session-content = "会话内容"
+content-new = "新建内容标签页"
+content-scope = "选择工作区或浏览器"
+content-expand = "放大内容"
+content-restore = "恢复并排"
+content-machine-gone = "这台机器已不在设备列表中"
+content-no-directory = "当前会话没有目录，可输入路径或切换到浏览器"
+
 [menu]
 about = "关于 khor"
 # UX-16 ruling (2026-10-05): on a Mac the settings window holds settings

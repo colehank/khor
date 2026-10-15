@@ -1159,14 +1159,23 @@ fn tabs(rest: &[String]) -> Result<(), String> {
     if let Ok(n) = node() {
         let _ = n.migrate_place_pins();
     }
-    // One kind today (`page`), and the store is keyed by it so the
-    // editor tab can land beside rather than inside
-    // (`khor_node::tabs`). Not a flag: a word nobody can use yet is a
-    // thing to explain in a usage line that is already long.
-    const KIND: &str = "page";
+    // A session's mixed content shares the same local table and verbs.
+    let (kind, session, rest) = match rest {
+        [flag, session, tail @ ..] if flag == "--session" => ("content", session.as_str(), tail),
+        _ => ("page", "", rest),
+    };
+    let named = |which: &str| -> Result<String, String> {
+        if session.is_empty() { return tab_named(&root, kind, which); }
+        let tabs = khor_node::tabs::list(&root, kind).tabs.into_iter().filter(|t| t.session == session).collect::<Vec<_>>();
+        let id = match which.parse::<usize>() {
+            Ok(n) => tabs.get(n.wrapping_sub(1)).filter(|_| n >= 1).map(|t| t.id.clone()),
+            Err(_) => tabs.iter().find(|t| t.id == which).map(|t| t.id.clone()),
+        };
+        id.ok_or_else(|| khor_catalog::msg::no_such_tab(which))
+    };
     let list = || {
-        let open = khor_node::tabs::list(&root, KIND);
-        for (n, t) in (1..).zip(&open.tabs) {
+        let open = khor_node::tabs::list(&root, kind);
+        for (n, t) in (1..).zip(open.tabs.iter().filter(|t| session.is_empty() || t.session == session)) {
             // **`in-use`, not `pinned-mark`.** The first draft borrowed
             // the workspace table's 「(置顶)」 and a real `khor tabs ls`
             // read 「置顶 https://…」, which says a person put that tab
@@ -1210,27 +1219,37 @@ fn tabs(rest: &[String]) -> Result<(), String> {
         // Echoes the id it minted, for `lock`'s reason: 「开好了」 with
         // nothing after it is a claim that needs a second command to
         // check, and this one is what `close` takes.
-        [word, flag, machine, url] if word == "open" && (flag == "-m" || flag == "--machine") => {
-            let id = khor_node::tabs::open(&root, KIND, &node()?.machine_id(machine)?, url)?;
-            println!("{id}");
-            Ok(())
-        }
-        [word, url] if word == "open" => {
-            let id = khor_node::tabs::open(&root, KIND, &node()?.machine_id("")?, url)?;
+        [word, args @ ..] if word == "open" => {
+            let mut machine = "";
+            let mut view = None;
+            let mut address = None;
+            let mut i = 0;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "-m" | "--machine" if i + 1 < args.len() => { i += 1; machine = &args[i]; }
+                    "--view" if i + 1 < args.len() => { i += 1; view = Some(args[i].as_str()); }
+                    value if !value.starts_with('-') && address.is_none() => address = Some(value),
+                    _ => return Err(usage_text().into()),
+                }
+                i += 1;
+            }
+            let url = address.ok_or_else(|| usage_text().to_string())?;
+            let view = if kind == "content" { view.or(Some("workspace")) } else { view };
+            let id = khor_node::tabs::open_with_view(&root, kind, &node()?.machine_id(machine)?, url, session, "", view)?;
             println!("{id}");
             Ok(())
         }
         [word, which] if word == "close" => {
-            khor_node::tabs::close(&root, KIND, &tab_named(&root, KIND, which)?)
+            khor_node::tabs::close(&root, kind, &named(which)?)
         }
         [word, which] if word == "focus" => {
-            khor_node::tabs::focus(&root, KIND, &tab_named(&root, KIND, which)?)
+            khor_node::tabs::focus(&root, kind, &named(which)?)
         }
         // 置顶 / 取消置顶, the window's row menu said in the terminal
         // (CLI 与 GUI 等价). A pinned tab refuses `close` until it is
         // unpinned — the node says so, for both callers.
         [word, which] if word == "pin" || word == "unpin" => {
-            khor_node::tabs::pin(&root, KIND, &tab_named(&root, KIND, which)?, word == "pin")
+            khor_node::tabs::pin(&root, kind, &named(which)?, word == "pin")
         }
         _ => Err(usage_text().into()),
     }

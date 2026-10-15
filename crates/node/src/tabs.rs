@@ -93,6 +93,10 @@ pub struct Tab {
     /// by an older build looks the same as before.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub session: String,
+    /// Session content's renderer, independent of its address. Missing on
+    /// existing browsing tabs; workspace/file/page on kind `content`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
 }
 
 /// One kind's tabs, and which of them is in front.
@@ -324,6 +328,11 @@ pub fn open_from(root: &Path, kind: &str, device: &str, url: &str, session: &str
 /// puts that tab beside the one it came from. An `after` naming no row
 /// (or none) is the end, as [`open`].
 pub fn open_beside(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str) -> Result<String, String> {
+    open_with_view(root, kind, device, url, session, after, None)
+}
+
+pub fn open_with_view(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str, view: Option<&str>) -> Result<String, String> {
+    let view = checked_view(kind, view)?;
     let limit = crate::config::tabs_limit(root);
     change(root, kind, |open| {
         let id = mint();
@@ -336,6 +345,7 @@ pub fn open_beside(root: &Path, kind: &str, device: &str, url: &str, session: &s
             pinned: false,
             touched: now_ms(),
             session: session.to_string(),
+            view: view.clone(),
         });
         open.active = id.clone();
         if let Some(limit) = limit
@@ -379,6 +389,7 @@ pub fn adopt_pinned(root: &Path, kind: &str, device: &str, url: &str) -> Result<
             pinned: true,
             touched: 0,
             session: String::new(),
+            view: None,
         });
         Ok(id)
     })
@@ -397,6 +408,19 @@ pub fn go(
     url: &str,
     title: &str,
 ) -> Result<(), String> {
+    go_with_view(root, kind, id, device, url, title, None)
+}
+
+fn checked_view(kind: &str, view: Option<&str>) -> Result<Option<String>, String> {
+    match view {
+        Some("workspace" | "file" | "page") if kind == "content" => Ok(view.map(str::to_owned)),
+        None => Ok(None),
+        _ => Err("invalid content view".to_string()),
+    }
+}
+
+pub fn go_with_view(root: &Path, kind: &str, id: &str, device: &str, url: &str, title: &str, view: Option<&str>) -> Result<(), String> {
+    let view = checked_view(kind, view)?;
     change(root, kind, |open| {
         let tab = open
             .tabs
@@ -406,6 +430,7 @@ pub fn go(
         tab.device = device.to_string();
         tab.url = url.to_string();
         tab.title = title.to_string();
+        if view.is_some() { tab.view = view; }
         tab.touched = now_ms();
         Ok(())
     })
@@ -505,6 +530,7 @@ pub fn save_all(root: &Path, kind: &str, want: &Open) -> Result<(), String> {
                 pinned: was.pinned,
                 touched: was.touched,
                 session: was.session.clone(),
+                view: was.view.clone(),
                 ..t.clone()
             });
         }
@@ -719,6 +745,7 @@ mod tests {
             pinned: false,
             touched: 0,
             session: String::new(),
+            view: None,
         });
         let said = save_all(&r.0, "page", &forged).unwrap_err();
         assert!(said.contains("mine"), "the refusal names the id: {said}");
@@ -1022,4 +1049,30 @@ mod tests {
         let text = fs::read_to_string(path_for_tests(&r.0)).unwrap();
         assert_eq!(text.matches("\"session\"").count(), 1, "only the tab with one writes the key: {text}");
     }
+    #[test]
+    fn session_content_keeps_its_handle_and_renderer_across_restart_and_bulk_save() {
+        let r = root("content");
+        let id = open_with_view(&r.0, "content", "device-a", "/repo", "session-a", "", Some("workspace")).unwrap();
+        go_with_view(&r.0, "content", &id, "device-a", "/repo/readme.md", "readme.md", Some("file")).unwrap();
+        let mut from_old_face = list(&r.0, "content");
+        assert_eq!(from_old_face.tabs[0].view.as_deref(), Some("file"));
+        assert_eq!(from_old_face.tabs[0].session, "session-a");
+        from_old_face.tabs[0].view = None;
+        save_all(&r.0, "content", &from_old_face).unwrap();
+        let restored = list(&r.0, "content");
+        assert_eq!(restored.tabs[0].id, id);
+        assert_eq!(restored.tabs[0].view.as_deref(), Some("file"));
+        assert!(list(&r.0, "page").tabs.is_empty());
+    }
+
+    #[test]
+    fn invalid_content_view_does_not_change_the_table() {
+        let r = root("bad-content");
+        let id = open_with_view(&r.0, "content", "device-a", "/repo", "s", "", Some("workspace")).unwrap();
+        let before = list(&r.0, "content");
+        assert!(go_with_view(&r.0, "content", &id, "device-a", "https://example.com", "", Some("unknown")).is_err());
+        assert_eq!(before, list(&r.0, "content"));
+        assert!(open_with_view(&r.0, "page", "device-a", "/repo", "s", "", Some("file")).is_err());
+    }
+
 }

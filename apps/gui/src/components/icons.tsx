@@ -1029,6 +1029,20 @@ export function IconKeyRow({ className }: IconProps) {
   );
 }
 
+/** Companion content: enlarge into the available pane, or restore the
+    terminal/content split. The same 16-canvas line weight as nearby verbs. */
+export function IconPaneSize({ className, expanded = false }: IconProps & { expanded?: boolean }) {
+  return (
+    <Mark className={className} live={LIVE.move}>
+      {expanded ? <>
+        <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+        <path d="M8 2.5v11" />
+        <path data-body d="M8 2.5h4a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H8z" fill="currentColor" stroke="none" />
+      </> : <path d="M9.5 2.5h4v4M13.5 2.5 9 7M2.5 9.5v4h4M2.5 13.5 7 9" />}
+    </Mark>
+  );
+}
+
 /** The cursor key at rest (2026-10-03, `views/TermKeys`): four arrows
     from one centre — it moves the cursor any way it is dragged. */
 export function IconMove({ className }: IconProps) {

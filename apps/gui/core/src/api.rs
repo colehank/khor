@@ -108,6 +108,7 @@ pub fn answer(
             &opt_str("url")?.unwrap_or_default(),
             &opt_str("session")?.unwrap_or_default(),
             &opt_str("after")?.unwrap_or_default(),
+            opt_str("view")?.as_deref(),
         )?),
         "tabs_go" => to_json(&crate::tabs::go(
             root,
@@ -116,6 +117,7 @@ pub fn answer(
             &opt_str("device")?.unwrap_or_default(),
             &opt_str("url")?.unwrap_or_default(),
             &opt_str("title")?.unwrap_or_default(),
+            opt_str("view")?.as_deref(),
         )?),
         "tabs_focus" => to_json(&crate::tabs::focus(root, &arg("kind")?, &arg("id")?)?),
         "tabs_close" => to_json(&crate::tabs::close(root, &arg("kind")?, &arg("id")?)?),

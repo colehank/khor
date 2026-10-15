@@ -22,6 +22,7 @@ export function SideFind({
   query,
   onQuery,
   plus,
+  leading,
   onEnter,
   className,
 }: {
@@ -31,12 +32,15 @@ export function SideFind({
   onQuery: (q: string) => void;
   /** The seat's ＋, when it has one. */
   plus?: ReactNode;
+  /** Optional scope control; the existing field keeps its keyboard and IME behavior. */
+  leading?: ReactNode;
   /** The return key, when it does more than end the box. */
   onEnter?: () => void;
   className?: string;
 }) {
   return (
     <div data-side-find data-search-glass className={cn("flex min-h-pane-head flex-none items-center gap-in px-(--page-inset)", className)}>
+      {leading}
       <div data-search-wrap className="relative min-w-0 flex-1">
         <IconSearch className="pointer-events-none absolute top-1/2 left-2 z-10 -translate-y-1/2 text-tertiary" />
         <Input

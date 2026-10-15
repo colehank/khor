@@ -82,6 +82,8 @@ import { cn } from "@/lib/utils";
     on, and where. Derived by the shell (it holds the device table and
     the kind); this file paints and decides nothing. */
 export type TabFace = {
+  /** Optional content owned by this tab, inside the same group capsule. */
+  group?: ReactNode;
   id: string;
   label: string;
   /** The tab's long name, where `label` is the short one: a page's own
@@ -403,6 +405,7 @@ export function TabStrip({
   tail,
   frontAct = false,
   seek = 0,
+  grouped = false,
 }: {
   /** **A count of picks, the tab in front included** (fix-a): each new
       value brings the front tab into view, like a change of `active`.
@@ -410,6 +413,8 @@ export function TabStrip({
       picks that same tab from the list asked to see it; `active` alone
       cannot say so, as it does not change. Absent, only `active` does. */
   seek?: number;
+  /** Group heads retain identity while their supplied content scrolls. */
+  grouped?: boolean;
   /** **The front tab's act at the capsule's end, and none on the pills**
       (UX-39, the owner 2026-10-06 22:35: a ↻ on every pill and one more
       at the strip's end was 「有点奇怪」). On the wide face a tab is a
@@ -445,13 +450,15 @@ export function TabStrip({
       (`RegionLead`): the capsule follows the block, a gap after it. */
   const led = useContext(RegionLead) !== null;
   const strip = useRef<HTMLDivElement>(null);
+  const spread = grouped && faces.some(f => f.id === active && f.again?.expanded);
+  const heldWidths = useRef(new Map<string, number>());
   // The front tab's piece slides to the tab brought forward, in the glass
   // capsule (F7.2, `lib/travel`).
   useTravel("tabs", () => strip.current, active);
   /** How many times a held row has let go (`held`): the re-balance runs
       on each. */
   const [released, setReleased] = useState(0);
-  const widths = useRebalance(() => strip.current, active, released);
+  const widths = useRebalance(() => spread ? null : strip.current, active, released);
   /** Which ends have a tab cut off behind them, for the fade on that
       side (docs/SHELL.md 第三轮 第 2 条). No fade where nothing is cut:
       a fade over a whole tab would be a mark that says 「more this
@@ -747,11 +754,13 @@ export function TabStrip({
             <div
               key={f.id}
               data-tab={f.id}
+              data-tab-group={grouped ? "" : undefined}
+              data-group-open={grouped && on && again?.expanded || undefined}
               data-on={on}
               data-tab-notice={notices?.[0].kind}
               data-pill-signal={on ? signal : undefined}
               style={{
-                ...(held !== null ? { width: held, flexShrink: 0 } : undefined),
+                ...(held !== null ? { width: grouped ? heldWidths.current.get(f.id) ?? held : held, ...(grouped ? { flexBasis: heldWidths.current.get(f.id) ?? held } : {}), flexShrink: 0 } : undefined),
                 // Grown, its lower corners give way to the panel below.
                 ...(on && grown.growth.mounted ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : undefined),
               }}
@@ -778,7 +787,7 @@ export function TabStrip({
                       .join(" · ") || undefined
               }
               className={cn(
-                "@container/tab group relative flex h-glass-tab items-center self-center rounded-full",
+                grouped ? "group relative flex h-glass-tab items-center self-center rounded-full" : "@container/tab group relative flex h-glass-tab items-center self-center rounded-full",
                 // **One width, front or not** (UX-45, the owner 2026-10-07
                 // 「等宽先看看」, Chrome's): every pill is `--tab-w-even`
                 // and they shrink together, down to `--tab-w-floor` — the
@@ -790,10 +799,11 @@ export function TabStrip({
                 // (UX-25): `--tab-w-min` as the floor and the count after
                 // it. A width, not a basis: the pill is a size container,
                 // so only a stated width gives the row its length.
-                "w-tab-even min-w-tab-floor shrink grow-0",
+                !grouped && "w-tab-even min-w-tab-floor shrink grow-0",
                 on ? "glass-sel text-foreground" : "text-muted-foreground hover:bg-fill",
               )}
             >
+              <div data-tab-head={grouped ? "" : undefined} className={grouped ? "@container/tab" : "contents"}>
               {/* **Every tab sits in a Tooltip, and only the front one's
                   can open** (`again`): kept on all of them so that a tab
                   coming to the front does not remount its button — and
@@ -1002,6 +1012,7 @@ export function TabStrip({
                       const pill = e.currentTarget.closest<HTMLElement>("[data-tab]");
                       if (pill) setHeld(pill.getBoundingClientRect().width);
                       const el = strip.current;
+                      if (grouped && el) heldWidths.current = new Map([...el.querySelectorAll<HTMLElement>("[data-tab]")].map(t => [t.dataset.tab || "", t.getBoundingClientRect().width]));
                       kept.current = el && { left: el.scrollLeft, width: el.clientWidth };
                     }
                     onClose(f.id);
@@ -1023,6 +1034,8 @@ export function TabStrip({
                   </span>
                 )
               )}
+              </div>
+              {grouped && f.group}
             </div>
           );
         })}

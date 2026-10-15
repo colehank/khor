@@ -255,7 +255,7 @@ usage: khor <verb>
                         this machine. Logs in as add does: a password or
                         passphrase is read from standard input and kept
                         only in this machine's system keychain
-  tabs [ls] | open [-m machine] <url> | close|focus|pin|unpin <n|id>
+  tabs [--session id] [ls] | open [-m machine] [--view workspace|file|page] <address> | close|focus|pin|unpin <n|id>
                         the browsing tabs this screen has open. **Local,
                         never replicated**: what is open belongs to this
                         screen, not to the person (places you keep do
@@ -2854,8 +2854,16 @@ usage-window-empty = "No spend in this window"
 usage-no-cache = "This provider doesn't report cache"
 usage-scatter-off = "{0} models unreadable on both values — not plotted"
 
-# The macOS menu bar (2026-09-28); zh.toml's [menu] head says why it is a
-# section of its own.
+# Session-owned desktop content tabs
+session-content = "Session content"
+content-new = "New content tab"
+content-scope = "Choose workspace or browser"
+content-expand = "Expand"
+content-restore = "Restore split view"
+content-machine-gone = "This machine is no longer in the device list"
+content-no-directory = "This session has no directory. Enter a path or switch to the browser"
+
+# The macOS menu bar (2026-09-28).
 [menu]
 about = "About khor"
 my-khor = "My khor"

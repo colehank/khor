@@ -53,7 +53,8 @@
     "scroll-target": "node scripts/check-scroll-target.mjs",
     "appearance": "node scripts/check-appearance.mjs",
     "ime": "node scripts/check-ime.mjs",
-    "attachments": "node scripts/check-attachments-model.mjs"
+    "attachments": "node scripts/check-attachments-model.mjs",
+    "session-content": "node scripts/check-session-content.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

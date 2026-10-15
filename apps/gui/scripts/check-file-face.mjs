@@ -24,7 +24,7 @@ import '../src/styles/tokens.css'; import '../src/styles/app.css';
 followVisualViewport();
 const root=createRoot(document.getElementById('root')), no=()=>{};
 const posture=()=>document.documentElement.toggleAttribute('data-narrow',matchMedia(NARROW_QUERY).matches); posture(); addEventListener('resize',posture);
-window.showFile=(path)=>flushSync(()=>root.render(<TooltipProvider><FilePage machine='fixture' path={path} here={false} onBack={no} onGone={no} onMoved={no} history /></TooltipProvider>));
+window.showFile=(path,embedded=false)=>flushSync(()=>root.render(<TooltipProvider><FilePage embedded={embedded} machine='fixture' path={path} here={false} onBack={no} onGone={no} onMoved={no} history /></TooltipProvider>));
 window.showBare=(path)=>flushSync(()=>root.render(<TooltipProvider><FileView key={path} machine='fixture' path={path} git={false} reading /></TooltipProvider>));
 window.showFile('/notes.md');`);
   vite = spawn('node_modules/.bin/vite', ['--port', String(port), '--strictPort'], {cwd:gui,stdio:['ignore','pipe','pipe']});
@@ -117,6 +117,16 @@ window.showFile('/notes.md');`);
       assert(typed.shown,`keyboard · the line typed on is under the keyboard or the deck: ${JSON.stringify(typed)}`);
       await page.evaluate(()=>window.__keyboard(0)); await pause(300);
       console.log(`file face · ${width}px: keyboard over a low line — ${JSON.stringify([tapped,risen,typed])}`);
+    }
+    if(width===1200) {
+      await page.evaluate(()=>window.showFile('/notes.md',true)); await source();
+      assert.equal(await page.locator('[data-file-deck]').count(),0,'embedded file drew a second deck');
+      await revision(0);
+      await page.locator('[data-file-rev-compare]').click();
+      assert.equal(await page.locator('[data-file-rev-compare]').getAttribute('aria-pressed'),'true');
+      await page.locator('[data-file-back]').click();await source();
+      assert.equal(await page.locator('[data-file-rev]').count(),0,'embedded history could not return to current file');
+      console.log('file face · embedded: source, history comparison, back to current file, no second deck');
     }
     await context.close(); console.log(`file face · ${width}px: source default, explicit preview, path change, historical version reset, read-only attachment`);
   }

@@ -374,12 +374,12 @@ export const fetchTabs = (kind: string) => call<TabsOpen>("tabs_list", { kind })
     the fresh tab the 「+」 mints — a real state, not a half-made row.
     **The id is minted by the node**, because the terminal opens tabs
     too and two minters is two id shapes. */
-export const openTab = (kind: string, device: string, url: string, session?: string, after?: string) =>
-  call<string>("tabs_open", { kind, device, url, ...(session ? { session } : {}), ...(after ? { after } : {}) });
+export const openTab = (kind: string, device: string, url: string, session?: string, after?: string, view?: "workspace" | "file" | "page") =>
+  call<string>("tabs_open", { kind, device, url, ...(session ? { session } : {}), ...(after ? { after } : {}), ...(view ? { view } : {}) });
 /** Points an open tab somewhere and names it. Refused by name for a tab
     that is not there, rather than quietly adding one. */
-export const goTab = (kind: string, id: string, device: string, url: string, title: string) =>
-  call<TabsOpen>("tabs_go", { kind, id, device, url, title });
+export const goTab = (kind: string, id: string, device: string, url: string, title: string, view?: "workspace" | "file" | "page") =>
+  call<TabsOpen>("tabs_go", { kind, id, device, url, title, ...(view ? { view } : {}) });
 export const focusTab = (kind: string, id: string) =>
   call<TabsOpen>("tabs_focus", { kind, id });
 export const closeTab = (kind: string, id: string) =>

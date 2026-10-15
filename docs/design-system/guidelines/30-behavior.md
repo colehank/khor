@@ -727,3 +727,9 @@
 门：`npm run attachments` 与 `FACE_ONLY=term npm run face`；位置回归 `FACE_ONLY=bar npm run face`。真 app 清单：浅深主题、窄屏键盘开关、目录多选、只读预览开关、iOS 原生文件夹与 iCloud 授权、取消与切后台后重试。协议边界和平台限制见 `docs/TERMINAL-ATTACHMENTS.md`。
 
 - 2026-10-15：透明底只为可见终端挖空；后台保留且 `visibility:hidden` 的终端即便尺寸未变，也不参与背景路径。切换标签后重新测量；`npm run appearance` 用两个真实 TerminalPane 的保留、切换、切回量像素，防止 even-odd 重叠重新填底。旧实现从单终端 `[33,41,62]` 变为双终端 `[27,28,42]`，先红后绿。
+
+## 桌面 session 内容组（2026-10-16）
+
+桌面旧附栏的位子条、最近、机器与额度由 session 内容标签组替代，规则见 `components/Tab/README.md`「桌面会话内容分组」。上文 UX-30～UX-47 的附栏头与位子条布局继续约束手机；桌面保留会话终端、拖动分隔线与窗口扩展的既有行为。
+
+验证入口 `npm run session-content`：真实节点的标签表和文件落盘、CLI→GUI、恢复后 ID 不变、跨 session 不串内容、子标签拥挤时身份与新建入口保持可见、关闭最后一个放大的内容后终端可见、390 宽仍为原甲板布局。网页资源由浏览与 session 两处共同保有，关闭其中一处不释放另一处仍持有的借网与 WebView。

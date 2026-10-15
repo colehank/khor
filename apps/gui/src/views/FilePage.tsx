@@ -37,7 +37,7 @@ import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
-import { IconBack, IconBranch, IconCheck, IconEye, IconMore, IconReload, IconShare } from "@/components/icons";
+import { IconBack, IconBranch, IconCheck, IconEye, IconFiles, IconMore, IconReload, IconShare } from "@/components/icons";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -59,7 +59,7 @@ import { keyboardShown } from "@/lib/viewport";
 import { useBlameShown } from "@/lib/blame";
 import { FILE_STEPS, fileSizeStyle, useFileSize } from "@/lib/file-size";
 import { groundAttr, GROUNDS, usePreviewGround } from "@/lib/preview-ground";
-import { baseName } from "@/lib/paths";
+import { baseName, directoryOf } from "@/lib/paths";
 import { treeChanged } from "@/lib/tree-changed";
 import { useRoad } from "@/lib/save-road";
 import { cn } from "@/lib/utils";
@@ -429,6 +429,7 @@ export function FilePage({
   history = false,
   tabs,
   moreActs,
+  embedded = false,
 }: {
   /* **Inside the session's 附栏 this is the same page, with the main
      area's deck** (UX-40 §4, the owner 2026-10-07 02:10: 「打开一个文件或
@@ -444,6 +445,8 @@ export function FilePage({
   /** Acts the page's host adds at the head of 「…」 (UX-30 §4: the
       session's 附栏 offers 「在主区打开」, the one way out of the column). */
   moreActs?: { key: string; label: string; run: () => void }[];
+  /** Desktop content tabs own navigation; reuse the file and its verbs without a second deck. */
+  embedded?: boolean;
   /** The file is in a checkout: git 历史 is offered (round UX-4). */
   history?: boolean;
   /** **The workspace's open files, as the session page's tabs** (UX-25,
@@ -628,7 +631,7 @@ export function FilePage({
   return (
     <div
       data-file-page
-      data-folded={folded || undefined}
+      data-folded={!embedded && folded || undefined}
       // **预览背景 covers the page, not only the text** (round UX-4): the
       // deck floats over the document, so it wears the ground it is read
       // on, or it would be the app's ink on a ground that is not the
@@ -637,6 +640,15 @@ export function FilePage({
       className="relative flex min-h-0 flex-1 flex-col bg-card"
       style={fileSizeStyle(verbs.size.step)}
     >
+      {embedded && (
+        <div data-file-embedded-tools className="flex h-pane-head flex-none items-center gap-in border-b px-row">
+          {rev !== null && <Button size="icon" variant="ghost" data-file-back aria-label={gui.file_rev_back} onClick={() => { setRev(null); setCompare(false); setFace(DEFAULT_FILE_FACE); }}><IconBack /></Button>}
+          <button type="button" onClick={onBack} title={directoryOf(path)} className="flex min-w-0 flex-1 items-center gap-in text-caption text-muted-foreground"><IconFiles className="size-4 flex-none" /><span className="truncate">{directoryOf(path)}</span></button>
+          {(rev === null ? previewable : !compare && rendererOf(path) === "md") && <Button size="sm" variant="ghost" aria-label={gui.file_face_preview} aria-pressed={face === "preview"} data-file-face-toggle={face} onClick={turn}><IconEye /></Button>}
+          {rev !== null ? <Button size="icon" variant="ghost" data-file-rev-compare aria-label={compare ? gui.file_rev_alone : gui.file_rev_compare} aria-pressed={compare} onClick={() => setCompare(!compare)}><IconBranch /></Button> : <Button size="icon" variant="ghost" aria-label={dirty ? gui.watch_save : gui.file_reread} onClick={dirty ? save : () => setReads((n) => n + 1)}>{dirty ? <IconCheck /> : <IconReload />}</Button>}
+          {verbs.moreCircle}
+        </div>
+      )}
       <div
         ref={box}
         className="flex min-h-0 flex-1 flex-col"
@@ -667,7 +679,7 @@ export function FilePage({
           preview eye where the file renders; ✓ while it differs from the
           disk) · 分享 · 「…」. Nothing at the top of the page. Folded, the
           strip with the name; a tap brings the deck back. */}
-      <div
+      {!embedded && <div
         ref={deck}
         data-file-deck
         className="pointer-events-none absolute inset-x-0 bottom-[var(--safe-bottom)] flex flex-col items-stretch"
@@ -776,8 +788,8 @@ export function FilePage({
             )}
           </div>
         )}
-      </div>
-      {tabs && (
+      </div>}
+      {tabs && !embedded && (
         <TabSheet
           open={sheet}
           onOpenChange={setSheet}

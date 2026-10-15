@@ -87,8 +87,12 @@ export function SessionSide({
   who,
   boxRef,
   children,
+  embedded = false,
+  maximized = false,
 }: {
   session: string;
+  embedded?: boolean;
+  maximized?: boolean;
   /** The box the day's band is measured in (`useStripWidth`): its row
       is 最近's first (UX-39 §4), in this column. */
   boxRef?: (el: HTMLDivElement | null) => void;
@@ -199,10 +203,14 @@ export function SessionSide({
       data-col-seat-on={seat}
       aria-label={gui.session_side}
       className="relative flex h-full min-h-0 flex-col border-l bg-card [--side-ground:var(--card)]"
-      style={{ flex: `0 1 ${width === null ? "var(--session-side-w)" : `${width}px`}`, minWidth: "var(--session-side-min)" }}
+      // Keep the main pane's shrink factor at one. A fractional factor
+      // leaves overflow after this column reaches its minimum; weighting
+      // this column instead still makes it give way first.
+      style={{ flex: maximized ? "1 1 100%" : `0 ${embedded ? 1000 : 1} ${width === null ? "var(--session-side-w)" : `${width}px`}`, minWidth: embedded ? "min(var(--session-side-min), 50%)" : "min(var(--session-side-min), 100%)" }}
     >
       {/* The seam: a hit margin overhanging the border, taking no room. */}
       <div
+        hidden={maximized}
         role="separator"
         aria-orientation="vertical"
         aria-label={gui.side_seam}
@@ -215,9 +223,9 @@ export function SessionSide({
         onKeyDown={onKeyDown}
         className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize outline-none transition-colors hover:bg-border focus-visible:bg-ring"
       />
-      <SideBody seat={seat} onSeat={onSeat} who={who}>
+      {embedded ? children : <SideBody seat={seat} onSeat={onSeat} who={who}>
         {children}
-      </SideBody>
+      </SideBody>}
     </NarrowBox>
   );
 }

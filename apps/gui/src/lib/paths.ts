@@ -85,3 +85,10 @@ export function filesFolderIn(text: string): string | null {
   const handed = splitAttachments(text).paths.find((p) => p.startsWith("/"));
   return handed ? handed.slice(0, handed.lastIndexOf("/")) || "/" : null;
 }
+
+/** Parent of a filesystem path, preserving POSIX and Windows drive roots. */
+export function directoryOf(path: string): string {
+  const at = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  if (at === 2 && /^[a-z]:/i.test(path)) return path.slice(0, at + 1);
+  return path.slice(0, Math.max(0, at)) || (path.startsWith("\\") ? "\\" : "/");
+}

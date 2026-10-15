@@ -42,8 +42,10 @@ export function Tabs({
   frontAct = false,
   seek,
   children,
+  grouped,
 }: {
   /** The front tab's act at the capsule's end (`TabStrip` `frontAct`). */
+  grouped?: boolean;
   frontAct?: boolean;
   /** A count of picks, the tab in front included (`TabStrip` `seek`). */
   seek?: number;
@@ -76,6 +78,7 @@ export function Tabs({
   const strip = (
     <div {...stripData} className="flex min-w-0 flex-1 flex-col">
       <TabStrip
+        grouped={grouped}
         frontAct={frontAct}
         seek={seek}
         faces={faces}

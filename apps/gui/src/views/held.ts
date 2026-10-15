@@ -59,8 +59,11 @@ export function holdBorrow(device: string, session: string): void {
  * taken deliberately (docs/NET.md 可达性) — a row that exists only so
  * something can reap it is a session in the list that is not a session.
  */
-export function releaseBorrows(keep: readonly string[]): void {
-  const wanted = new Set(keep);
+const borrowOwners = new Map<string, readonly string[]>();
+const pageOwners = new Map<string, readonly string[]>();
+export function releaseBorrows(keep: readonly string[], owner = "page"): void {
+  borrowOwners.set(owner, keep);
+  const wanted = new Set([...borrowOwners.values()].flat());
   for (const [device, session] of [...open]) {
     if (wanted.has(device)) continue;
     open.delete(device);
@@ -139,8 +142,9 @@ export function holdPage(tab: string): void {
  * takes the whole set of machines: a caller that computed the difference
  * would need to know what this ledger holds.
  */
-export function releasePages(keep: readonly string[]): void {
-  const wanted = new Set(keep);
+export function releasePages(keep: readonly string[], owner = "page"): void {
+  pageOwners.set(owner, keep);
+  const wanted = new Set([...pageOwners.values()].flat());
   // **Two reasons a page goes, and the order matters.** First the tabs
   // that are not open any more — those are gone for good and must not
   // count against the cap. What is left is every live page whose tab is
