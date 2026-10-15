@@ -68,19 +68,25 @@ export const codeTheme = EditorView.theme({
   // a CJK character's ink (11–12) by two or three above and below. The
   // element keeps that box and draws nothing; its `::before` is the
   // caret: 0.88 of the type size — the ideograph's ink, a little over a
-  // capital's or a digit's — centred in the box, where both inks centre,
-  // in the element's own border width so the stroke is unchanged.
-  ".cm-cursor": { borderLeftColor: "transparent" },
+  // capital's or a digit's — centred in the box, where both inks centre.
+  // **As wide as VS Code's** (2026-10-16, `--caret-w`), the element
+  // itself that wide and centred on the glyphs' edge in place of
+  // CodeMirror's 1.2 border, and the bar filling it: drawn inside its
+  // own box, not hung off its left side (`right: 100%`, before).
+  ".cm-cursor": {
+    borderLeft: "none",
+    width: "var(--caret-w)",
+    marginLeft: "calc(var(--caret-w) / -2)",
+  },
   ".cm-cursor::before": {
     content: '""',
     position: "absolute",
-    right: "100%",
+    left: "0",
+    right: "0",
     top: "50%",
     height: "calc(var(--text-mono) * 0.88)",
     transform: "translateY(-50%)",
-    borderLeftStyle: "inherit",
-    borderLeftWidth: "inherit",
-    borderLeftColor: "var(--foreground)",
+    backgroundColor: "var(--foreground)",
   },
   ".cm-selectionBackground": { backgroundColor: "var(--fill)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "var(--fill-strong)" },

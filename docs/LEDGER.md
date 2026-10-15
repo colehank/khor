@@ -17,6 +17,7 @@
 | `apps/site` 官网走 GitHub Pages、镜像留境内？ | apps/site/README.md |
 | ship 走 CI：要推远端（本地 main 比 origin 多近 1900 个提交，推前扫敏感内容）、Mac 公证要 Developer ID + App 专用密码、iOS 要 App Store Connect API key；没有就按 docs/SHIP.md 手工 | 10-13 讨论 |
 | 导入：ACP `session/list` 只问本机；没进程的 claude/codex 记录不给导入 | 10-12 讨论；ACP 可能取消，暂定 |
+| 文件编辑器光标的高：现在是汉字墨迹的高（0.88 字号，13 号字约 11.4，10-13 定）；VS Code 默认是整行高（`editor.cursorHeight` 默认 0 = 行高，`viewCursor.ts` 里 `lineCursorHeight`），13 号字行高 20 就是 20。10-16 只改了粗细和闪烁，高没动 | 10-16 caret-vs |
 
 ## 定 — Codex 终端适配边界
 
@@ -43,6 +44,7 @@
 | 文件编辑器的光标改由 CM6 画（`drawSelection`）：真 WKWebView 里已量到只剩 CM 那根（`caret-color: transparent` 藏住了系统光标），Mac app 上还要看光标高度、拼音组合时光标与候选条、选区的灰；iPhone 上 CM 画的两个手柄能不能拖、放大镜、候选条、主选区仍是系统的 | 10-13 cm-caret |
 | iPhone 文件页点屏幕靠下的行：键盘升起后这一行要停在甲板上方（不在键或甲板下），升起过程不来回跳；点靠上的行不动；打字时一直在甲板上方；带拼音候选条再看一次（候选条算不算进 visualViewport）；键盘收起不跳。无头里只用替身 visualViewport 量过（`npm run file-face`），WebKit 自己的「露出焦点」和真动画只有真机有 | 10-14 键盘顶行 |
 | 合并冲突里「保留 / 放弃」的两颗按钮，在**真 app 的窄窗口**上再看一眼：现在它们是不透明的 `popover` 面，压在删除行的文字上；无头里两个主题都量过（`npm run merge-face`），但「这两颗摆在这里读起来顺不顺、遮不遮住它压着的那行字」是布局判断，机器量不出——机器只守了底不半透、面等于 `--popover`、标签在面上 ≥ 4.5。真 app 里要看的是：长行伸到按钮底下的那几个文件、以及窄到 900 以下时按钮是否会盖住行尾的字 | 10-14 merge-face |
+| 文件编辑器光标照 VS Code（2 宽、亮 500 灭 500、打字时常亮）在 Mac app 和 iPhone 上看一眼显不显眼、浅深两个主题、字号 ×1 / ×1.5；**「行末光标偶发消失」无头里没复现**（WebKit / Chrome、带不带水印、760 / 390 宽、1x / 2x，几百个行末位置都画着），真 app 里接着用，再碰到记下文件、是点的还是方向键到的、那一行有没有水印、窗口是不是透明材质；点行末 commit 水印光标到行末、之后打字落在行末；悬停水印仍出 commit 全文、iPhone 长按水印仍出卡片、轻点水印光标到行末不弹卡片 | 10-16 caret-vs；`npm run caret` |
 
 ## 记 — 不急
 

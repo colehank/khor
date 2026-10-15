@@ -10,7 +10,7 @@
 // Carried over from `FileView`'s `InlineBlame`, which measured a marker
 // span in a painted `<pre>` to find the line's end; here the widget *is*
 // at the line's end, and only the room after it is measured.
-import { StateEffect, StateField, type Extension } from "@codemirror/state";
+import { EditorSelection, StateEffect, StateField, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 
 import type { GitCommit } from "@/gen/bindings/GitCommit";
@@ -22,11 +22,19 @@ import { ago } from "@/words";
 export const setBlamed = StateEffect.define<(GitCommit | null)[] | null>();
 
 class Blame extends WidgetType {
-  constructor(readonly commit: GitCommit | null) {
+  /** `line` too, not the commit alone (2026-10-16): the room after the
+      line is measured once, in `toDOM`, and a widget equal to the last
+      one is kept — so the caret moving to another line of the same
+      commit kept the first line's room, and the annotation ran past the
+      column's edge (`npm run caret` 4). */
+  constructor(
+    readonly commit: GitCommit | null,
+    readonly line: number,
+  ) {
     super();
   }
   eq(o: Blame) {
-    return o.commit === this.commit;
+    return o.commit === this.commit && o.line === this.line;
   }
   toDOM(view: EditorView) {
     const c = this.commit;
@@ -69,6 +77,24 @@ class Blame extends WidgetType {
           label.style.borderRadius = "var(--radius-xs)";
         } else label.style.maxWidth = `${room}px`;
       },
+    });
+    // **A press on the annotation is a press on the blank after the
+    // line** (the owner 2026-10-16): the caret to the line's end, as
+    // CodeMirror puts it for a click past the last glyph. The widget
+    // keeps its events from CodeMirror (`ignoreEvent`) and the label
+    // takes no selection, so before this the press did nothing — and in
+    // WebKit it put the DOM selection inside the label's text, where the
+    // next key was lost (`npm run caret` 3). A finger's tap arrives here
+    // too, as the mouse event that follows it; the long press is below.
+    label.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const end = view.posAtDOM(anchor);
+      view.focus();
+      view.dispatch({
+        selection: e.shiftKey ? EditorSelection.range(view.state.selection.main.anchor, end) : EditorSelection.cursor(end, -1),
+        userEvent: "select.pointer",
+      });
     });
     if (c !== null) {
       let press: ReturnType<typeof setTimeout> | null = null;
@@ -115,7 +141,7 @@ type State = { blamed: (GitCommit | null)[] | null; line: number | null; deco: D
 function decoOf(s: { blamed: (GitCommit | null)[] | null; line: number | null }, doc: { lines: number; line: (n: number) => { to: number } }): DecorationSet {
   if (s.blamed === null || s.line === null || s.line > s.blamed.length || s.line > doc.lines) return Decoration.none;
   const commit = s.blamed[s.line - 1] ?? null;
-  return Decoration.set([Decoration.widget({ widget: new Blame(commit), side: 1 }).range(doc.line(s.line).to)]);
+  return Decoration.set([Decoration.widget({ widget: new Blame(commit, s.line), side: 1 }).range(doc.line(s.line).to)]);
 }
 
 /** **Said only once a person has put the caret somewhere** — a file that

@@ -49,6 +49,7 @@
     "connectivity": "node scripts/check-connectivity.mjs",
     "file-face": "node scripts/check-file-face.mjs",
     "merge-face": "node scripts/check-merge-face.mjs",
+    "caret": "node scripts/check-caret.mjs",
     "session-cwd": "node scripts/check-session-cwd.mjs",
     "scroll-target": "node scripts/check-scroll-target.mjs",
     "appearance": "node scripts/check-appearance.mjs",

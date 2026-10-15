@@ -54,6 +54,7 @@ import { keyboardCaret, observeScroller } from "@/lib/code/keyboard";
 import { languageOfName, loadLanguage } from "@/lib/code/lang";
 import { hasSymbols, symbolsOfView } from "@/lib/code/symbols";
 import { codeHighlight, codeTheme } from "@/lib/code/theme";
+import { BLINK_MS } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 
 /** A change that came from the host (a merge, a newer read), which is
@@ -116,8 +117,9 @@ function base(): Extension {
     codeFolding({ placeholderText: "…" }),
     foldGutter({ markerDOM: foldMarker }),
     history(),
-    // The caret and the selection, drawn (the file's head comment).
-    drawSelection(),
+    // The caret and the selection, drawn (the file's head comment); the
+    // caret blinks as VS Code's does (`lib/tempo`).
+    drawSelection({ cursorBlinkRate: BLINK_MS }),
     // The line the caret is on, reading or writing (cm-d item 3).
     highlightActiveLine(),
     highlightActiveLineGutter(),
