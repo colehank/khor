@@ -62,13 +62,17 @@ export const codeTheme = EditorView.theme({
   // are a chain of five classes under `.cm-focused`; the same chain here
   // is what outranks them. On iOS the main selection stays the platform's
   // and only the handles are drawn, in the caret's ink.
-  // **The caret as tall as a Chinese character's ink** (the owner
-  // 2026-10-13). CodeMirror sizes `.cm-cursor` to the glyph's box with an
-  // inline top and height (16 on 13 in the app's WebKit), which overhangs
-  // a CJK character's ink (11–12) by two or three above and below. The
-  // element keeps that box and draws nothing; its `::before` is the
-  // caret: 0.88 of the type size — the ideograph's ink, a little over a
-  // capital's or a digit's — centred in the box, where both inks centre.
+  // **The caret as tall as its line, as VS Code's** (the owner
+  // 2026-10-16, in place of 10-13's ideograph ink, 0.88 of the type
+  // size): VS Code's line caret is the row's height (`editor.cursorHeight`
+  // 0). CodeMirror sizes `.cm-cursor` to the glyph's box with an inline
+  // top and height (15.3 on 13 in the app's WebKit), and on an empty line
+  // or after a newline to the line's own box. Either box is centred in its
+  // row — the half-leading falls equally above and below — so the
+  // element keeps it and draws nothing; its `::before` is the caret, one
+  // `--text-mono--line-height` tall, centred on the box: the row's top to
+  // its bottom, on a wrapped line's every row and at every type size
+  // (`npm run caret` 5, WebKit and Chrome).
   // **As wide as VS Code's** (2026-10-16, `--caret-w`), the element
   // itself that wide and centred on the glyphs' edge in place of
   // CodeMirror's 1.2 border, and the bar filling it: drawn inside its
@@ -83,9 +87,8 @@ export const codeTheme = EditorView.theme({
     position: "absolute",
     left: "0",
     right: "0",
-    top: "50%",
-    height: "calc(var(--text-mono) * 0.88)",
-    transform: "translateY(-50%)",
+    top: "calc(50% - var(--text-mono--line-height) / 2)",
+    height: "var(--text-mono--line-height)",
     backgroundColor: "var(--foreground)",
   },
   ".cm-selectionBackground": { backgroundColor: "var(--fill)" },

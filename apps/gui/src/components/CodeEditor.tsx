@@ -15,13 +15,13 @@
 // letters, CJK the worst). The engine's own caret is whatever height the
 // platform paints, and no stylesheet sets it — headless WebKit and
 // Chrome happen to paint it at the glyph's 15, which is why no gate saw
-// the app's. CodeMirror's is laid at the glyph's own box (`coordsAtPos`),
-// so it is as tall as the letters it sits between on every engine. The
-// IME's marked text and the loupe stay the platform's. On iOS the main
-// selection's ground stays native too (the platform's cannot be hidden,
-// so CodeMirror leaves it) and CodeMirror draws the two handles;
-// elsewhere the selection is drawn as well, in the theme's grey
-// (`lib/code/theme`).
+// the app's. CodeMirror's is laid at the glyph's own box (`coordsAtPos`)
+// on every engine, and drawn the row's height from it, as VS Code's is
+// (`lib/code/theme`, 2026-10-16). The IME's marked text and the loupe
+// stay the platform's. On iOS the main selection's ground stays native
+// too (the platform's cannot be hidden, so CodeMirror leaves it) and
+// CodeMirror draws the two handles; elsewhere the selection is drawn as
+// well, in the theme's grey (`lib/code/theme`).
 import { history, defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { getChunks, unifiedMergeView } from "@codemirror/merge";
 import { codeFolding, foldGutter, foldKeymap, indentUnit } from "@codemirror/language";

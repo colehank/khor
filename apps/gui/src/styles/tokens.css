@@ -1491,7 +1491,8 @@
   --hair: 1px;
   /* The file editor's caret stroke: VS Code's line caret, 2 wide (the
      owner 2026-10-16:「光标不够显眼」「按 VS Code 来」). Its height is
-     the ideograph's ink (`lib/code/theme`), not the line's. */
+     the line's, `--text-mono--line-height`, as VS Code's (the owner
+     2026-10-16, `lib/code/theme`). */
   --caret-w: 2px;
   --cw-pid: 7ch;
   /* ⚠️ **Tombstone: `--cw-name-max` and `--cw-cmd-arg-min` are gone,

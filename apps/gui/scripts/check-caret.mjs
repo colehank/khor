@@ -6,8 +6,9 @@
 // CodeEditor's head comment). VS Code's default line caret
 // (`viewCursor.ts`, `viewCursors.ts`): 2 wide, shown for 500 ms after
 // every move and then toggled every 500 ms — so it holds still while
-// keys are pressed and blinks once they stop. The height stays the
-// owner's 2026-10-13 call (the ideograph's ink, `lib/code/theme`).
+// keys are pressed and blinks once they stop; as tall as the row
+// (`editor.cursorHeight` 0, the owner's call 2026-10-16 in place of
+// 10-13's ideograph ink, `lib/code/theme`).
 //
 // Claims (each red on the code before 2026-10-16, numbers below):
 //   1. **the painted bar is `--caret-w` wide, where the glyphs end, and
@@ -32,6 +33,16 @@
 //      moves between two lines of one commit. Before: CodeMirror kept
 //      the first line's widget (`eq` by commit alone) with the first
 //      line's measured room, and it ran past the column's edge.
+//   5. **the painted bar is its line box, top to bottom** — read back
+//      from pixels as 1 is, against the caret's row: its line block cut
+//      into rows of the line's height, which is `--text-mono--line-
+//      height` resolved where the editor stands. Every line end of 1,
+//      and an empty line, a line's start, inside and at the start of a
+//      CJK line, every row of a wrapped line (Home, End, ↓) and the line
+//      a newline after it opens; at ×1, `--ui-scale` 23/17 and the file
+//      sizes ×1.15 and ×1.5, with the annotation and without. Before:
+//      the ideograph's ink, 12 (WebKit) / 11.5 (Chrome) high on a row
+//      of 20, 16 / 15.5 on 27, 13 on 23, 17 / 17.5 on 30.
 //
 // What it does not judge: whether the caret reads well against a
 // particular file, or the long-press card on a phone — the real-app
@@ -106,15 +117,20 @@ function png(buf) {
   }
   return { w, h, bpp, px };
 }
-/** The device columns where two shots differ (by more than antialiasing). */
+/** The device columns and rows where two shots differ (by more than
+    antialiasing). */
 function differing(a, b) {
-  const cols = new Set();
+  const cols = new Set(), rows = new Set();
   for (let y = 0; y < a.h; y++)
     for (let x = 0; x < a.w; x++) {
       const i = (y * a.w + x) * a.bpp;
-      if (Math.abs(a.px[i] - b.px[i]) + Math.abs(a.px[i + 1] - b.px[i + 1]) + Math.abs(a.px[i + 2] - b.px[i + 2]) > 90) cols.add(x);
+      if (Math.abs(a.px[i] - b.px[i]) + Math.abs(a.px[i + 1] - b.px[i + 1]) + Math.abs(a.px[i + 2] - b.px[i + 2]) > 90) {
+        cols.add(x);
+        rows.add(y);
+      }
     }
-  return [...cols].sort((p, q) => p - q);
+  const up = (s) => [...s].sort((p, q) => p - q);
+  return { cols: up(cols), rows: up(rows) };
 }
 
 const bad = [];
@@ -182,9 +198,22 @@ createRoot(document.getElementById('root')).render(<App/>);`,
           const r = c?.getBoundingClientRect();
           const g = head > line.from ? v.coordsAtPos(head, -1) : v.coordsAtPos(head, 1);
           const before = c && getComputedStyle(c, "::before");
+          // The caret's line box: its block cut into rows of the line's
+          // height, and the row the drawn element's middle falls in — a
+          // wrapped line is one block of several rows.
+          const block = v.lineBlockAt(head), top = v.documentTop + block.top;
+          const lh = parseFloat(getComputedStyle(v.contentDOM.querySelector(".cm-line")).lineHeight);
+          const k = r ? Math.floor((r.top + r.height / 2 - top) / lh) : 0;
+          // The token itself, resolved where the editor stands.
+          const probe = document.createElement("div");
+          probe.style.height = "var(--text-mono--line-height)";
+          v.dom.parentElement.appendChild(probe);
+          const token = probe.getBoundingClientRect().height;
+          probe.remove();
           return {
             line: line.number, col: head - line.from, len: line.length, n: cs.length,
             box: r && { l: r.left, r: r.right, t: r.top, h: r.height },
+            row: { t: top + k * lh, b: top + (k + 1) * lh, k, rows: block.height / lh, lh, token },
             end: g && (head > line.from ? g.right : g.left),
             beforeW: before && parseFloat(before.width),
             caretW: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--caret-w")),
@@ -207,6 +236,7 @@ createRoot(document.getElementById('root')).render(<App/>);`,
         });
         return differing(a, b);
       };
+      const heights = [];
       const widths = [];
       const step = async (label) => {
         await pause(80);
@@ -216,13 +246,35 @@ createRoot(document.getElementById('root')).render(<App/>);`,
           return;
         }
         const clip = { x: s.end - 4, y: s.box.t, width: 8, height: Math.max(1, s.box.h) };
-        const cols = await shot(clip);
+        const { cols } = await shot(clip);
         const w = cols.length / DPR;
         const mid = cols.length ? clip.x + (cols[0] + cols[cols.length - 1] + 1) / 2 / DPR : NaN;
         widths.push(w);
         claim(Math.abs(w - s.caretW) <= 0.5, `${at} · 1 · ${label}: line ${s.line}:${s.col}/${s.len} painted ${w} wide, --caret-w is ${s.caretW}`);
         claim(Math.abs(mid - s.end) <= 1, `${at} · 1 · ${label}: line ${s.line}:${s.col}/${s.len} painted at ${mid?.toFixed(2)}, the glyphs end at ${s.end.toFixed(2)}`);
         claim(s.beforeW === s.caretW && s.box.l <= s.end && s.box.r >= s.end, `${at} · 1 · ${label}: the bar (${s.beforeW} wide) is not inside its element [${s.box.l.toFixed(2)}, ${s.box.r.toFixed(2)}] at ${s.end.toFixed(2)}`);
+        await tall(label, s);
+      };
+      // ---- 5. the bar as tall as its line box ----
+      const tall = async (label, s) => {
+        if (!s) {
+          await pause(80);
+          s = await read();
+        }
+        if (s.n !== 1 || !s.box) {
+          claim(false, `${at} · 5 · ${label}: line ${s.line}:${s.col} — ${s.n} carets drawn`);
+          return;
+        }
+        const { row } = s;
+        // Whole pixels: WebKit's screenshot rounds a clip's origin.
+        const y = Math.max(0, Math.floor(row.t - row.lh / 2));
+        const clip = { x: s.box.l - 2, y, width: s.box.r - s.box.l + 4, height: Math.min(page.viewportSize().height, row.b + row.lh / 2) - y };
+        const { rows } = await shot(clip);
+        const t = rows.length ? clip.y + rows[0] / DPR : NaN, b = rows.length ? clip.y + (rows[rows.length - 1] + 1) / DPR : NaN;
+        heights.push(b - t);
+        const where = `${at} · 5 · ${label}: line ${s.line}:${s.col}/${s.len}${row.rows > 1 ? ` (row ${row.k + 1} of ${row.rows})` : ""}`;
+        claim(Math.abs(row.lh - row.token) <= 0.5 && Math.abs(row.rows - Math.round(row.rows)) < 0.01, `${where}: rows ${row.lh} high over ${row.rows}, --text-mono--line-height is ${row.token}`);
+        claim(Math.abs(t - row.t) <= 0.5 && Math.abs(b - row.b) <= 0.5, `${where}: painted ${t.toFixed(2)}–${b.toFixed(2)} (${(b - t).toFixed(2)} high), the line box is ${row.t.toFixed(2)}–${row.b.toFixed(2)} (${row.token})`);
       };
       const endOf = (n) =>
         page.evaluate((n) => {
@@ -328,8 +380,75 @@ createRoot(document.getElementById('root')).render(<App/>);`,
         });
         for (const f of fits) claim(f.right <= f.edge + 0.5, `${at} · 4: line ${f.n}'s annotation 「${f.text}」 ends at ${f.right.toFixed(1)}, past the column's edge ${f.edge.toFixed(1)}`);
       }
+      // ---- 5. the rest of the places a caret stands, then larger type ----
+      // Last: it adds a wrapped line to the end, which 4 counts back from.
+      const put = (n, col) =>
+        page.evaluate(([n, col]) => {
+          const v = document.querySelector("[data-code-view]").__view;
+          v.focus();
+          v.dispatch({ selection: { anchor: v.state.doc.line(n).from + col }, userEvent: "select", scrollIntoView: true });
+        }, [n, col]);
+      const sizes = [
+        ["×1", null],
+        ["--ui-scale 23/17", () => document.documentElement.style.setProperty("--ui-scale", String(23 / 17))],
+        ["file ×1.15", () => {
+          document.documentElement.style.removeProperty("--ui-scale");
+          const r = document.getElementById("root").style;
+          r.setProperty("--text-mono", "calc(var(--fs-mono) * 1.15)");
+          r.setProperty("--text-mono--line-height", "round(calc(var(--lh-mono) * 1.15), var(--pixel))");
+        }],
+        ["file ×1.5", () => {
+          const r = document.getElementById("root").style;
+          r.setProperty("--text-mono", "calc(var(--fs-mono) * 1.5)");
+          r.setProperty("--text-mono--line-height", "round(calc(var(--lh-mono) * 1.5), var(--pixel))");
+        }],
+      ];
+      const WRAP = "const road = save(path, draft); // 写回缓冲区，钉在读到的那个摘要上。".repeat(4);
+      for (const [size, set] of sizes) {
+        if (set) {
+          await page.evaluate(set);
+          await page.evaluate(() => document.querySelector("[data-code-view]").__view.requestMeasure());
+          await pause(300);
+        }
+        await put(3, 0);
+        await tall(`${size} · empty line`);
+        await put(6, 0);
+        await tall(`${size} · line start`);
+        await put(14, 3);
+        await tall(`${size} · inside CJK`);
+        await put(14, 0);
+        await tall(`${size} · CJK line start`);
+        await put(2, 0);
+        await pause(80);
+        const p = await endOf(2);
+        await page.mouse.click(p.x, p.y);
+        await step(`${size} · click after line 2`);
+        if (!set) {
+          await page.evaluate((w) => {
+            const v = document.querySelector("[data-code-view]").__view;
+            v.dispatch({ changes: { from: v.state.doc.length, insert: `\n${w}` } });
+          }, WRAP);
+          await pause(80);
+        }
+        const last = await page.evaluate(() => document.querySelector("[data-code-view]").__view.state.doc.lines);
+        await put(last, 0);
+        await pause(80);
+        const w = await read();
+        claim(w.row.rows >= 3, `${at} · 5 · ${size}: the long line did not wrap (${w.row.rows} rows)`);
+        await tall(`${size} · wrapped, row 1 start`, w);
+        for (let i = 0; i < 2; i++) {
+          await page.keyboard.press("End");
+          await tall(`${size} · wrapped, End`);
+          await page.keyboard.press("ArrowDown");
+          await tall(`${size} · wrapped, ↓`);
+        }
+        await page.keyboard.press("Home");
+        await tall(`${size} · wrapped, Home`);
+      }
+      await page.keyboard.press("Enter");
+      await tall("⏎ after the wrapped line");
       claim(errors.length === 0, `${at}: page errors ${JSON.stringify(errors)}`);
-      console.log(`caret gate · ${at}: bar ${[...new Set(widths)].join("/")} wide over ${widths.length} line ends`);
+      console.log(`caret gate · ${at}: bar ${[...new Set(widths)].join("/")} wide over ${widths.length} line ends; ${[...new Set(heights.map((h) => h.toFixed(1)))].join("/")} high over ${heights.length} places`);
       await ctx.close();
     }
     await browser.close();
