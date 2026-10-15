@@ -70,6 +70,7 @@ pub mod tabs;
 pub(crate) mod testdir;
 pub mod top;
 pub mod transfer;
+pub mod tree;
 pub mod trust;
 pub mod tunnel;
 pub mod usage;

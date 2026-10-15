@@ -29129,440 +29129,162 @@ try {
         fail(`term v · a row dragged from far's listing asked term_drop ${JSON.stringify(drops)}, not once with from "far"`);
       }
     }
-    // **The files panel, under a finger (item 60 part 3)**: 📎 in the
-    // key row raises it where the keyboard stands (`views/TermFiles`).
-    //
-    //  vi. its machine list: the session's machine first, marked as the
-    //      session's — a far row's machine, a local row's this one — and
-    //      a machine that hosts nothing (a phone) not listed;
-    // vii. a file pressed in a machine's listing is one `term_drop` of
-    //      the pane, with its path and that machine (`null` for this
-    //      one) — the road decides whether anything moves;
-    // viii. 照片's hidden input changed with a picked File: its bytes are
-    //      staged (`term_drop_stage`, counted here, its name and size),
-    //      then one `term_drop` of the staged path from this machine; the
-    //      pill's line stands while it runs; a file over the drop's cap is
-    //      refused in the pane's corner before anything is staged.
+    // Attachment browser: actual TermKeys → TermFiles → TerminalPane,
+    // routed byte transport only. A tap reads; explicit Send pastes once.
     {
       const cdp = await page.context().newCDPSession(page);
       await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
-      // The far shell stands in /srv/w (its `cwd` mark): 「放到当前目录」's
-      // place (xii).
+      const check = (ok, why) => { if (!ok) throw new Error(`attachments · ${why}`); };
       const farDoing = { command: null, running: false, started_ms: 0, ended_ms: null, exit: null, cwd: "/srv/w", title: null, full_screen: false, progress: null, progress_failed: false, notice: null, notice_ms: 0, pane_unmarked: false };
       const farRow = { ...termRow, id: "tui/face-far", title: "face-far", home: "peer", source: { device: "peer", age_ms: 1200 }, doing: farDoing };
       await page.unroute("**/sessions");
       await page.route("**/sessions", json([termRow, farRow]));
-      const pocket = { ...devs.find((d) => d.name === "peer"), id: "f".repeat(64), name: "pocket", shown: "pocket", hosts: false };
-      const meshDevices = json([...devs, pocket]);
+      const meshDevices = json([...devs, { ...devs[0], id: "f".repeat(64), name: "pocket", shown: "pocket", hosts: false }]);
       await page.route("**/devices", meshDevices);
+      const entry = (name, dir = false) => ({ name, dir, size: dir ? 0 : 7, at_ms: 0, from: null, received_ms: null });
       const meshLs = (r) => {
         const { machine, path: asked } = r.request().postDataJSON() ?? {};
         const path = asked || `/home/${machine}`;
-        return r.fulfill({
-          contentType: "application/json",
-          body: JSON.stringify({ path, entries: [{ name: "x y.txt", dir: false, size: 3, at_ms: 0 }], truncated: false }),
-        });
+        return r.fulfill({ json: { path, entries: path.endsWith("/data") ? [entry("inside.md")] : [entry("data", true), entry("notes.md")], truncated: false } });
       };
       await page.route("**/ls", meshLs);
-      /** In the panel up: a machine opened, its one file pressed; the
-          `term_drop` that asked, if one did. */
-      const pressFile = async (name) => {
-        drops.length = 0;
-        if ((await page.locator(`[data-files-machine="${name}"]`).count()) === 0) {
-          return `no machine ${name} (panel ${await page.locator("[data-files-panel]").count()}, up ${await page.locator("[data-files-up]").count()}, ` +
-            `listing ${await page.locator("[data-files-entry]").count()})`;
-        }
-        await page.locator(`[data-files-machine="${name}"]`).click();
-        const file = page.locator('[data-files-entry="file"]');
-        if (!(await until(3_000, async () => (await file.count()) > 0))) return `no listing for ${name}`;
-        await file.first().click();
-        await until(3_000, async () => drops.length > 0);
-        await wait(200);
-        // Back up to the machines for the next.
-        for (let i = 0; i < 6 && (await page.locator("[data-files-machine]").count()) === 0; i++) {
-          await page.locator("[data-files-up]").click({ timeout: 3_000 }).catch(() => {});
-          await wait(200);
-        }
-        return drops.slice();
-      };
+      await page.route("**/read_text", json({ total: 7, at_ms: 0, text: "# notes", cut: false, binary: false, digest: "abc" }));
+      await page.route("**/stat_text", json({ total: 7, at_ms: 0, digest: "abc" }));
       await page.route("**/term_resize", json(null));
       await page.route("**/term_leave", json(null));
+      const batches = [], forgotten = [], staged = [], folders = [], children = [], cancels = [];
+      let unstage, stageHold = null;
+      const stage = async (r) => {
+        const name = new URL(r.request().url()).searchParams.get("name");
+        staged.push({ name, bytes: r.request().postDataBuffer()?.length });
+        if (stageHold) await stageHold;
+        await r.fulfill({ json: `/stage/${staged.length}/${name}` });
+      };
+      const batch = async (r) => {
+        const args = r.request().postDataJSON(); batches.push(args);
+        await r.fulfill({ json: { landed: args.items.map((x) => `/receive/${x.path.split("/").at(-1)}`), miss: null } });
+      };
+      const forget = (r) => { forgotten.push(...r.request().postDataJSON().paths); return r.fulfill({ json: null }); };
+      const folder = (r) => { const args = r.request().postDataJSON(); folders.push(args); return r.fulfill({ json: `/stage/folder/${args.name}` }); };
+      const child = (r) => { const url = new URL(r.request().url()); children.push({ path: url.searchParams.get("path"), bytes: r.request().postDataBuffer()?.length }); return r.fulfill({ json: "/stage/child" }); };
+      const cancel = (r) => { cancels.push(r.request().postDataJSON()); return r.fulfill({ json: null }); };
+      await page.route(/\/term_drop_stage\?/, stage);
+      await page.route("**/term_drop_items", batch);
+      await page.route("**/term_drop_forget", forget);
+      await page.route("**/term_drop_folder", folder);
+      await page.route(/\/term_drop_stage_into\?/, child);
+      await page.route("**/term_drop_cancel", cancel);
       await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
       await page.setViewportSize({ width: 390, height: 844 });
       await page.reload({ waitUntil: "load" });
       await wait(900);
-      /** The row opened on the phone, 📎 pressed: the panel's machines. */
-      const panelFor = async (rowId) => {
+      const panelFor = async (id) => {
         await open("sessions");
-        const o = page.locator(`[data-list] [data-row="${rowId}"] [data-row-open]`).first();
-        if (!(await until(3_000, async () => (await o.count()) > 0))) return "no row";
-        await o.click();
-        // The key row stands under the deck once its circle is pressed.
-        const rowSwitch = page.locator("[data-key-row-switch]").filter({ visible: true }).first();
-        if (await until(5_000, async () => (await rowSwitch.count()) > 0)) {
-          if ((await rowSwitch.getAttribute("aria-expanded")) !== "true") await rowSwitch.click();
-        }
-        const attach = page.locator('[data-term-key="attach"]').filter({ visible: true }).first();
-        if (!(await until(5_000, async () => (await attach.count()) > 0))) {
-          return `no 📎 (keys ${await page.locator("[data-term-key]").count()}, terminal ${await page.locator("[data-terminal]").count()})`;
-        }
-        await attach.click();
-        if (!(await until(3_000, async () => (await page.locator("[data-files-machine]").count()) > 0))) {
-          return `no machines (panel ${await page.locator("[data-files-panel]").count()})`;
-        }
-        return page.evaluate(() =>
-          [...document.querySelectorAll("[data-files-machine]")].map((b) => ({
-            name: b.getAttribute("data-files-machine"),
-            session: b.hasAttribute("data-files-session"),
-          })),
-        );
+        await openRow(id);
+        const row = page.locator("[data-key-row-switch]").filter({ visible: true }).first();
+        await row.waitFor();
+        if (await row.getAttribute("aria-expanded") !== "true") await row.click();
+        await page.locator('[data-term-key="attach"]').filter({ visible: true }).first().click();
+        await page.locator("[data-files-machine]").first().waitFor();
       };
-      const machinesFar = await panelFor("tui/face-far");
-      console.log(`term vi · 📎 on a far row (peer): ${JSON.stringify(machinesFar)}`);
-      if (!Array.isArray(machinesFar)) {
-        fail(`probe dead: term vi · the far row on a phone: ${machinesFar}`);
-      } else if (
-        machinesFar[0]?.name !== "peer" ||
-        !machinesFar[0].session ||
-        machinesFar.slice(1).some((m) => m.session) ||
-        machinesFar.some((m) => m.name === "pocket")
-      ) {
-        fail(
-          `term vi · the files panel on peer's session listed ${JSON.stringify(machinesFar)} — the session's machine first and ` +
-            "marked as the session's, no other marked, and no phone (item 60 part 3, the owner 2026-10-07)",
-        );
-      }
-      // viii, on peer's session.
-      if (Array.isArray(machinesFar)) {
-        const staged = [];
-        // Held while set (xiv: a cancel while a file is being staged).
-        let stageHold = null;
-        const stage = async (r) => {
-          const url = new URL(r.request().url());
-          staged.push({ name: url.searchParams.get("name"), bytes: r.request().postDataBuffer()?.length ?? 0 });
-          const n = staged.length;
-          if (stageHold) await stageHold;
-          await r.fulfill({ contentType: "application/json", body: JSON.stringify(`/stage/${n}/${url.searchParams.get("name")}`) });
-        };
-        await page.route(/\/term_drop_stage\?/, stage);
-        /** Picked files, as the system's picker hands them to the page. */
-        const pickAll = (files) =>
-          page.evaluate((files) => {
-            const input = document.querySelector('[data-files-pick="device"] input[type="file"]');
-            if (!input) return false;
-            const dt = new DataTransfer();
-            for (const [name, size] of files) dt.items.add(new File([new Uint8Array(size)], name, { type: "image/png" }));
-            input.files = dt.files;
-            input.dispatchEvent(new Event("change", { bubbles: true }));
-            return true;
-          }, files);
-        const pick = (name, size) => pickAll([[name, size]]);
-        drops.length = 0;
-        let release;
-        dropHold = new Promise((r) => (release = r));
-        share = 0.5;
-        const picked = await pick("x y.png", 5);
-        await until(3_000, async () => drops.length > 0);
-        const line = await until(3_000, async () => (await page.locator('[data-tab-progress="0.5"], [data-pill-progress="0.5"]').count()) > 0);
-        share = null;
-        release();
-        dropHold = null;
-        await wait(300);
-        console.log(`term viii · 照片 picked: input ${picked}, staged ${JSON.stringify(staged)}, term_drop ${JSON.stringify(drops)}, pill's line ${line}`);
-        if (
-          !picked ||
-          staged.length !== 1 ||
-          staged[0].name !== "x y.png" ||
-          staged[0].bytes !== 5 ||
-          drops.length !== 1 ||
-          drops[0].id !== "tui/face-far" ||
-          JSON.stringify(drops[0].paths) !== '["/stage/1/x y.png"]' ||
-          drops[0].from !== null ||
-          !line
-        ) {
-          fail(
-            "term viii · a photo picked on the phone should stage its bytes once, then drop the staged path from this machine " +
-              "with the pill's line standing (item 60 part 3)",
-          );
-        }
-        staged.length = 0;
-        drops.length = 0;
-        await pick("big.mov", 200 * 2 ** 20 + 1);
-        // On the pill (NOTICE-BRIEF), with only 取消: trying again
-        // cannot help a file over the cap.
-        const why = page.locator('[data-deck-pill] [data-deck-notice="failed"]');
-        await until(5_000, async () => (await why.count()) > 0);
-        await page.locator("[data-deck-pill] [data-deck-title]").click().catch(() => {});
-        await until(2_000, async () => (await page.locator('[data-notice-island="open"]').count()) > 0);
-        const said = await page.locator("[data-notice-island] [data-notice-how]").textContent().catch(() => null);
-        const acts = await page.locator("[data-notice-island] [data-notice-act]").evaluateAll((els) => els.map((e) => e.getAttribute("data-notice-act")));
-        console.log(`term viii · over the cap: ${JSON.stringify(said)}, acts ${JSON.stringify(acts)}, staged ${staged.length}, term_drop ${drops.length}`);
-        if (!said?.includes("200") || JSON.stringify(acts) !== '["cancel"]' || staged.length !== 0 || drops.length !== 0) {
-          fail("term viii · a picked file over 200 MB is on the pill with the cap, 取消 alone, nothing staged or dropped");
-        }
-        await page.locator('[data-notice-island] [data-notice-act="cancel"]').click().catch(() => {});
-        await until(2_000, async () => (await why.count()) === 0);
-        // **The pill while files go in, and its ×** (item 71, the owner
-        // 2026-10-07 12:45–13:20), on the phone's deck band:
-        //
-        // xiii. a drop under way: the face seat wears the upload mark
-        //       (`data-tab-dropping`), the title is the file's name with
-        //       no extension, cut evenly in the middle when it does not
-        //       fit, and the third seat is × (`data-term-drop-stop`);
-        //       × asks `term_drop_cancel` for the session, and at once
-        //       the pill is the session's again — its name, its ↻ — and
-        //       when the held `term_drop` then answers the cancel, the
-        //       corner says nothing and nothing was typed;
-        //  xiv. × while files are being staged: the one going up
-        //       finishes, no more are staged, nothing is dropped, and
-        //       the cancel takes what was staged.
-        const cancels = [];
-        const cancelRoute = (r) => {
-          cancels.push(JSON.parse(r.request().postData() || "{}"));
-          return r.fulfill({ contentType: "application/json", body: "null" });
-        };
-        await page.route("**/term_drop_cancel", cancelRoute);
-        const stopSeat = page.locator("[data-term-drop-stop]").filter({ visible: true });
-        /** What the deck band's current segment shows. */
-        const band = () =>
-          page.evaluate(() => {
-            const seg = document.querySelector('[data-band-seg="cur"]');
-            const mid = seg?.querySelector("[data-mid-name]");
-            return {
-              dropping: !!seg?.querySelector("[data-tab-dropping]"),
-              mark: seg?.querySelector("[data-tab-dropping] svg")?.getAttribute("data-icon") ?? null,
-              shown: mid ? (mid.children[1]?.textContent ?? null) : (seg?.querySelector("[data-deck-title]")?.textContent ?? null),
-              whole: mid ? (mid.querySelector(".sr-only")?.textContent ?? null) : null,
-              stop: [...document.querySelectorAll("[data-term-drop-stop]")].some((b) => b.offsetParent),
-              reload: [...document.querySelectorAll("[data-term-reload]")].some((b) => b.offsetParent),
-            };
-          });
-        const rest = await band();
-        // xiii.
-        const long = "IMG_2041 the harbour at dusk from the ferry on the way back home.HEIC";
-        const stem = long.slice(0, long.lastIndexOf("."));
-        staged.length = 0;
-        drops.length = 0;
-        sentKeys.length = 0;
-        dropHold = new Promise((r) => (release = r));
-        share = 0.25;
-        await pick(long, 5);
-        await until(3_000, async () => drops.length > 0);
-        await until(3_000, async () => (await band()).dropping);
-        const going = await band();
-        const arrow = page.locator('[data-band-seg="cur"] [data-upload-arrow]');
-        const moving = await arrow.evaluate((el) => getComputedStyle(el).animationName);
-        if (moving !== "pill-upload-arrow") fail(`term signal · upload arrow is not animated: ${moving}`);
-        await page.emulateMedia({ reducedMotion: "reduce" });
-        const still = await arrow.evaluate((el) => getComputedStyle(el).animationName);
-        if (still !== "none") fail(`term signal · reduced motion still moves upload arrow: ${still}`);
-        await page.emulateMedia({ reducedMotion: "no-preference" });
-
-        // The report's shots (FACE_SHOTS): the phone, and its pill close.
-        if (process.env.FACE_SHOTS) {
-          await page.screenshot({ path: join(process.env.FACE_SHOTS, "term71-phone.png") }).catch(() => {});
-          await page.locator("[data-deck-band]").first().screenshot({ path: join(process.env.FACE_SHOTS, "term71-phone-pill.png") }).catch(() => {});
-        }
-        const [head, tail] = (going.shown ?? "").split("…");
-        const even =
-          tail !== undefined && head.length >= 3 && stem.startsWith(head) && stem.endsWith(tail) && Math.abs(head.length - tail.length) <= 1;
-        console.log(`term xiii · the pill while ${JSON.stringify(long)} goes in: ${JSON.stringify(going)}; at rest ${JSON.stringify(rest)}`);
-        if (
-          !going.dropping ||
-          going.mark !== "upload" ||
-          going.whole !== stem ||
-          !even ||
-          !going.stop ||
-          going.reload
-        ) {
-          fail(
-            `term xiii · the pill while a file goes in showed ${JSON.stringify(going)} — wanted the upload mark in the face seat, ` +
-              `the name without its extension (${JSON.stringify(stem)}) cut evenly in the middle, and × in ↻'s seat (item 71)`,
-          );
-        }
-        cancels.length = 0;
-        if ((await stopSeat.count()) > 0) await stopSeat.first().click();
-        const back = await until(2_000, async () => !(await band()).dropping);
-        const after = await band();
-        dropAnswer = () => ({ status: 400, body: JSON.stringify("传入已取消，没有粘贴") });
-        share = null;
-        release();
-        dropHold = null;
-        await wait(500);
-        const saidAfter = (await why.count()) ? await why.innerText() : null;
-        dropAnswer = () => ({ status: 200, body: "null" });
-        console.log(
-          `term xiii · × pressed: cancels ${JSON.stringify(cancels)}, pill back ${back} ${JSON.stringify(after)}, corner ${JSON.stringify(saidAfter)}, typed ${JSON.stringify(sentKeys.join(""))}`,
-        );
-        if (
-          cancels.length !== 1 ||
-          cancels[0].id !== "tui/face-far" ||
-          !back ||
-          after.shown !== rest.shown ||
-          after.stop ||
-          !after.reload ||
-          saidAfter !== null ||
-          sentKeys.join("") !== ""
-        ) {
-          fail(
-            "term xiii · × on the pill while a file went in should ask term_drop_cancel once for the session and give the pill back " +
-              "at once — its name, its ↻ — with no word in the corner and nothing typed when the drop then answers the cancel (item 71)",
-          );
-        }
-        // xiv.
-        staged.length = 0;
-        drops.length = 0;
-        cancels.length = 0;
-        let unstage;
-        stageHold = new Promise((r) => (unstage = r));
-        await pickAll([["one.png", 3], ["two.png", 3], ["three.png", 3]]);
-        await until(3_000, async () => staged.length > 0);
-        await until(3_000, async () => (await stopSeat.count()) > 0);
-        if ((await stopSeat.count()) > 0) await stopSeat.first().click();
-        const backStaging = await until(2_000, async () => !(await band()).dropping);
-        unstage();
-        stageHold = null;
-        await until(3_000, async () => cancels.some((c) => (c.staged ?? []).length > 0));
-        await wait(400);
-        console.log(`term xiv · × while staging: staged ${JSON.stringify(staged)}, term_drop ${drops.length}, cancels ${JSON.stringify(cancels)}, pill back ${backStaging}`);
-        if (
-          staged.length !== 1 ||
-          drops.length !== 0 ||
-          !backStaging ||
-          !cancels.some((c) => c.id === "tui/face-far" && JSON.stringify(c.staged) === '["/stage/1/one.png"]')
-        ) {
-          fail(
-            "term xiv · × while picked files were being staged should let the one going up finish, stage no more, drop nothing, " +
-              "and hand what was staged to term_drop_cancel to go (item 71)",
-          );
-        }
-        await page.unroute("**/term_drop_cancel", cancelRoute);
-        await page.unroute(/\/term_drop_stage\?/, stage);
-      }
-      // vii, on peer's session: peer's own file, and elder's.
-      if (Array.isArray(machinesFar)) {
-        const own = await pressFile("peer");
-        const other = await pressFile("elder");
-        console.log(`term vii · on peer's session, peer's file: ${JSON.stringify(own)}; elder's: ${JSON.stringify(other)}`);
-        const one = (got, from) =>
-          Array.isArray(got) &&
-          got.length === 1 &&
-          got[0].id === "tui/face-far" &&
-          JSON.stringify(got[0].paths) === `["/home/${from}/x y.txt"]` &&
-          got[0].from === from;
-        if (!one(own, "peer") || !one(other, "elder")) {
-          fail(
-            `term vii · files pressed in the panel asked ${JSON.stringify(own)} and ${JSON.stringify(other)} — wanted one term_drop ` +
-              "each on the far session, with the file's path and its machine (item 60 part 3: the panel rides the drop's road)",
-          );
-        }
-      }
-      // xii. a file row's menu (a long press; a secondary click here):
-      //      放到终端 and, while the shell's directory is known, 放到当前
-      //      目录, which is one `term_drop` with `into` that directory.
-      /** The menu of `name`'s first file, then the item `pick` pressed. */
-      const fileMenu = async (name, pick) => {
-        drops.length = 0;
-        if ((await page.locator(`[data-files-machine="${name}"]`).count()) === 0) return `no machine ${name}`;
-        await page.locator(`[data-files-machine="${name}"]`).click();
-        const file = page.locator('[data-files-entry="file"]');
-        if (!(await until(3_000, async () => (await file.count()) > 0))) return `no listing for ${name}`;
-        await file.first().click({ button: "right" });
-        const items = page.locator("[data-row-menu] [data-menu-item]");
-        await until(3_000, async () => (await items.count()) > 0);
-        const offered = await items.evaluateAll((els) => els.map((e) => e.getAttribute("data-menu-item")));
-        if (pick && offered.includes(pick)) {
-          await page.locator(`[data-row-menu] [data-menu-item="${pick}"]`).click();
-          await until(3_000, async () => drops.length > 0);
-        } else await page.keyboard.press("Escape");
-        await wait(200);
-        for (let i = 0; i < 6 && (await page.locator("[data-files-machine]").count()) === 0; i++) {
-          await page.locator("[data-files-up]").click({ timeout: 3_000 }).catch(() => {});
-          await wait(200);
-        }
-        return { offered, drops: drops.slice() };
+      const home = async () => {
+        for (let i = 0; i < 8 && !(await page.locator("[data-files-machine]").count()); i++) await page.locator("[data-files-up]").click();
+        check(await page.locator("[data-files-machine]").count(), "returned to machine sources");
       };
-      if (Array.isArray(machinesFar)) {
-        const into = await fileMenu("elder", "to-cwd");
-        console.log(`term xii · a file's menu on peer's session (cwd /srv/w): ${JSON.stringify(into)}`);
-        if (
-          JSON.stringify(into?.offered) !== '["to-term","to-cwd"]' ||
-          into.drops.length !== 1 ||
-          into.drops[0].from !== "elder" ||
-          into.drops[0].into !== "/srv/w" ||
-          JSON.stringify(into.drops[0].paths) !== '["/home/elder/x y.txt"]'
-        ) {
-          fail(
-            `term xii · the file row's menu on a shell standing in /srv/w gave ${JSON.stringify(into)} — wanted 放到终端 and 放到当前目录, ` +
-              "and the second one term_drop with into /srv/w (item 60 part 5)",
-          );
-        }
-      }
-      // 📎 is the row's own seat at its left end, on while its panel is
-      // up, and pressed again it puts the panel away (the owner
-      // 2026-10-07 12:30: it never lit, and the way back was a 「键盘」
-      // key by the home indicator).
-      const seat = await page.evaluate(() => {
-        const a = [...document.querySelectorAll('[data-term-key="attach"]')].find((b) => b.offsetParent);
-        const row = a?.closest("[data-term-keys]");
-        const scroll = row?.querySelector("[data-term-keys-scroll]");
-        const pad = row?.querySelector('[data-term-key="cursor"]');
-        const mark = pad?.querySelector("svg")?.getBoundingClientRect();
-        return {
-          on: a?.getAttribute("data-on") ?? null,
-          first: row?.firstElementChild === a,
-          inScroll: !!a?.closest("[data-term-keys-scroll]"),
-          foot: document.querySelectorAll("[data-key-panel-keyboard]").length,
-          moreLast: scroll?.lastElementChild?.getAttribute("data-term-key") ?? null,
-          padLast: row?.lastElementChild === pad,
-          padMark: mark ? [Math.round(mark.width), Math.round(mark.height)].join("x") : null,
-        };
-      });
+      await panelFor("tui/face-far");
+      const machines = await page.locator("[data-files-machine]").evaluateAll((els) => els.map((e) => [e.dataset.filesMachine, e.hasAttribute("data-files-session")]));
+      check(machines[0][0] === "peer" && machines[0][1] && !machines.some(([name]) => name === "pocket"), "session source first; phone uses system picker");
+      drops.length = 0;
+      await page.locator('[data-files-machine="elder"]').click();
+      await page.locator('[data-files-name="notes.md"] > button').first().click();
+      await page.locator("[data-file-preview] [data-file-view]").waitFor();
+      check(drops.length === 0 && batches.length === 0, "file tap reads without sending");
+      check(await page.locator('[data-file-preview] [role="radio"][aria-checked="true"]').textContent() === "原文", "default source view");
+      check(await page.locator('[data-file-preview] [contenteditable="true"]').count() === 0, "preview is read-only");
+      await page.locator("[data-file-preview-close]").click();
+      await page.locator('[data-files-select="notes.md"]').click();
+      await page.locator('[data-files-select="data"]').click();
+      await page.locator('[data-files-name="data"] > button').first().click();
+      check(await page.locator('[data-files-select="inside.md"]').isDisabled(), "selected parent includes children");
+      await home();
+      await page.locator('[data-files-machine="peer"]').click();
+      await page.locator('[data-files-select="notes.md"]').click();
+      await page.locator("[data-files-review]").click();
+      check(await page.locator("[data-files-selected]").count() === 3, "selection spans machines");
+      await page.locator("[data-files-destination]").selectOption("cwd");
+      await page.locator("[data-files-send]").click();
+      check(await until(3000, async () => batches.length === 1), "one mixed-source operation");
+      check(batches[0].into === "/srv/w" && batches[0].items.length === 3 && batches[0].items[0].from === "elder" && batches[0].items[2].from === "peer", "each source and chosen destination preserved");
+      await until(3000, async () => await page.locator("[data-files-send]").isDisabled());
+      await home();
+      const pick = async (names, directory = false) => {
+        check(await page.evaluate(({ names, directory }) => {
+          const input = document.querySelector(directory ? '[data-files-panel] input[webkitdirectory]' : '[data-files-panel] input[type="file"]:not([webkitdirectory])');
+          if (!input) return false;
+          const dt = new DataTransfer();
+          for (const name of names) {
+            const f = new File(["abc"], name.split("/").at(-1));
+            if (directory) Object.defineProperty(f, "webkitRelativePath", { value: name });
+            dt.items.add(f);
+          }
+          input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true })); return true;
+        }, { names, directory }), "system input exists");
+      };
+      drops.length = 0;
+      await pick(["data/nested/a.txt", "data/b.txt"], true);
+      check(folders.length === 0 && drops.length === 0, "choosing device folder does not send");
+      await page.locator("[data-files-destination]").selectOption("receive");
+      await page.locator("[data-files-send]").click();
+      check(await until(3000, async () => drops.length > 0), "folder sent");
+      check(folders.length === 1 && JSON.stringify(folders[0].dirs) === '["nested"]' && children.length === 2 && children[0].path === "nested/a.txt", "browser staging preserves paths");
+      await until(3000, async () => await page.locator("[data-files-send]").isDisabled());
+      await home();
+      staged.length = 0; drops.length = 0;
+      stageHold = new Promise((r) => { unstage = r; });
+      await pick(["one.txt", "two.txt"]);
+      await page.locator("[data-files-send]").click();
+      check(await until(3000, async () => staged.length === 1), "staging started");
+      await page.locator("[data-term-drop-stop]").filter({ visible: true }).first().click();
+      unstage(); stageHold = null;
+      check(await until(3000, async () => forgotten.includes("/stage/1/one.txt")), "cancel cleans only staged upload");
+      check(drops.length === 0 && staged.length === 1 && cancels.length === 1, "cancel stops remaining files and paste");
+      check(await page.locator("[data-files-selected]").count() === 2, "cancel keeps retry selection");
+      await page.locator("[data-files-send]").click();
+      check(await until(3000, async () => drops.length === 1), "cancelled selection retries");
+      check(drops[0].paths.length === 2 && drops[0].from === null, "retried device files paste together");
+      await until(3000, async () => await page.locator("[data-files-send]").isDisabled());
+      // A failure retried from the panel supersedes its pill notice
+      // and releases that attempt's staged bytes.
+      await home();
+      await pick(["retry.txt"]);
+      dropAnswer = () => ({ status: 200, body: JSON.stringify({ landed: [], miss: { kind: "other", machine: null, raw: "fixture failure" } }) });
+      const beforeRetry = drops.length;
+      await page.locator("[data-files-send]").click();
+      check(await until(3000, async () => drops.length > beforeRetry && await page.locator('[data-deck-notice="failed"]').count() > 0), "failed send keeps selection and pill notice");
+      check(await page.locator('[data-files-selected="retry.txt"]').count() === 1, "failed selection stays available");
+      const abandoned = drops.at(-1).paths[0];
+      dropAnswer = () => ({ status: 200, body: "null" });
+      await page.locator("[data-files-send]").click();
+      check(await until(3000, async () => drops.length === beforeRetry + 2 && await page.locator('[data-deck-notice="failed"]').count() === 0), "panel retry clears stale pill retry");
+      check(forgotten.includes(abandoned), "superseded upload released without cancelling new transfer");
+      await until(3000, async () => await page.locator("[data-files-send]").isDisabled());
       await page.locator('[data-term-key="attach"]').filter({ visible: true }).first().click();
-      const away = await until(2_000, async () => (await page.locator("[data-key-panel]").count()) === 0);
-      const offAfter = await page.evaluate(() => {
-        const keys = [...document.querySelectorAll('[data-term-key="attach"]')];
-        return keys.length ? (keys.find((b) => b.offsetParent) ?? keys[0]).getAttribute("data-on") : "no key";
-      });
-      console.log(`term vi · 📎 seat ${JSON.stringify(seat)}; pressed again, panel away ${away}, on ${offAfter}`);
-      if (seat.on !== "true" || !seat.first || seat.inScroll || seat.foot !== 0 || !away || offAfter !== null) {
-        fail(
-          `term vi · 📎 ${JSON.stringify(seat)}, pressed again away ${away} on ${offAfter} — wanted it first in the row outside the scroll, ` +
-            "on while its panel is up, the panel with no 「键盘」 key, and a second press putting the panel away and the key off",
-        );
-      }
-      // 「…」 is the scrolled caps' last and the cursor pad alone is
-      // pinned at the right end; the pad's mark is `--key-pad-glyph`, 26
-      // (item 72, the owner 2026-10-07).
-      if (seat.moreLast !== "more" || !seat.padLast || seat.padMark !== "26x26") {
-        fail(
-          `term vi · the row's right end: last of the scroll ${seat.moreLast}, the pad last in the row ${seat.padLast}, its mark ${seat.padMark} — ` +
-            "wanted 「…」 last of the scrolled caps, the cursor pad alone outside them at the right end, its mark 26×26 (item 72)",
-        );
-      }
-      const machinesHere = await panelFor("tui/face-term");
-      console.log(`term vi · 📎 on a local row: ${JSON.stringify(machinesHere)}`);
-      if (!Array.isArray(machinesHere)) {
-        fail(`probe dead: term vi · the local row on a phone: ${machinesHere}`);
-      } else if (machinesHere[0]?.name !== "gate" || !machinesHere[0].session || machinesHere.slice(1).some((m) => m.session)) {
-        fail(`term vi · the files panel on this machine's session listed ${JSON.stringify(machinesHere)} — this machine first and marked`);
-      }
-      // vii, on this machine's session: its own file goes as itself.
-      if (Array.isArray(machinesHere)) {
-        const own = await pressFile("gate");
-        console.log(`term vii · on this machine's session, its own file: ${JSON.stringify(own)}`);
-        if (!Array.isArray(own) || own.length !== 1 || own[0].id !== "tui/face-term" || own[0].from !== null) {
-          fail(`term vii · this machine's file pressed on its own session asked ${JSON.stringify(own)}, not one term_drop from null`);
-        }
-        // xii, a shell whose directory nobody knows: 放到终端 alone.
-        const bare = await fileMenu("gate", null);
-        console.log(`term xii · a file's menu on a shell with no cwd: ${JSON.stringify(bare)}`);
-        if (JSON.stringify(bare?.offered) !== '["to-term"]') {
-          fail(`term xii · with the shell's directory unknown the file's menu offered ${JSON.stringify(bare?.offered)}, not 放到终端 alone (progressive disclosure)`);
-        }
-      }
-      await page.unroute("**/ls", meshLs);
-      await page.unroute("**/devices", meshDevices);
+      check(await until(3000, async () => await page.locator("[data-files-panel]").count() === 0), "attachment button closes panel");
+      await panelFor("tui/face-term");
+      check(await page.locator("[data-files-machine]").first().getAttribute("data-files-machine") === "gate", "local session machine first");
+      await page.locator('[data-files-machine="gate"]').click();
+      await page.locator('[data-files-select="notes.md"]').click();
+      check((await page.locator("[data-files-send]").textContent()).includes("插入路径"), "same-machine source inserts path");
+      drops.length = 0;
+      await page.locator("[data-files-send]").click();
+      check(await until(3000, async () => drops.length === 1), "local path sent once");
+      check(drops[0].from === null && drops[0].paths[0] === "/home/gate/notes.md", "same-machine path unchanged");
+      console.log("attachments · read-only source, selection/parent inclusion, mixed sources, destination, browser folder, cancel/retry, local path: checked");
+      await page.unroute("**/ls", meshLs); await page.unroute("**/devices", meshDevices);
+      await page.unroute("**/read_text"); await page.unroute("**/stat_text");
+      await page.unroute(/\/term_drop_stage\?/, stage); await page.unroute("**/term_drop_items", batch);
+      await page.unroute("**/term_drop_forget", forget); await page.unroute("**/term_drop_folder", folder);
+      await page.unroute(/\/term_drop_stage_into\?/, child); await page.unroute("**/term_drop_cancel", cancel);
       await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
       await page.setViewportSize({ width: 1400, height: 900 });
     }

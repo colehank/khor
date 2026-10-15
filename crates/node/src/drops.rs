@@ -120,6 +120,9 @@ pub fn copy_into(src: &Path, dir: &Path, job: &Job) -> Result<PathBuf, String> {
     if src.parent().is_some_and(|p| same(p, dir)) {
         return Ok(src.to_path_buf());
     }
+    if src.is_dir() {
+        return crate::tree::copy_into(src, dir, job);
+    }
     let size = std::fs::metadata(src).map_err(|e| e.to_string())?.len();
     let name = name_of(&src.display().to_string())?;
     if size > CAP {
@@ -150,6 +153,20 @@ pub fn dir_for(root: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_directory_drop_preserves_nested_files_empty_directories_and_taken_names() {
+        let root=crate::testdir::TempTree::fresh("drop-tree");
+        let source=root.join("data"); let dest=root.join("receive");
+        std::fs::create_dir_all(source.join("nested/empty")).unwrap();
+        std::fs::write(source.join("nested/a.txt"),b"abc").unwrap();
+        std::fs::create_dir_all(dest.join("data")).unwrap();
+        std::fs::write(dest.join("data/original"),b"keep").unwrap();
+        let landed=super::copy_into(&source,&dest,&super::Job::default()).unwrap();
+        assert_eq!(landed,dest.join("data-2"));
+        assert!(landed.join("nested/empty").is_dir());
+        assert_eq!(std::fs::read(landed.join("nested/a.txt")).unwrap(),b"abc");
+        assert_eq!(std::fs::read(dest.join("data/original")).unwrap(),b"keep");
+    }
     use super::*;
 
     #[test]

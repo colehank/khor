@@ -31,6 +31,10 @@
 //! cashed — the near half. Cross-attachment history is still the
 //! host's ring and dies with the host, exactly as before.
 
+#[path = "term_upload.rs"]
+mod upload;
+pub use upload::{term_drop_folder, term_drop_stage_into, term_drop_stage_native};
+
 use std::collections::{HashMap, VecDeque};
 use std::net::TcpStream;
 use std::path::Path;
@@ -1030,12 +1034,40 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String], int
 /// the kind, the machine, and the raw words for 详情 alone. ⚠️ 墓碑
 /// (NOTICE-BRIEF): the failure was one sentence with the dial's English
 /// inside it, shown whole in red over the terminal (IMG_5413).
-pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>) -> DropEnd {
-    // Held from the first line, before anything that takes time: a
-    // cancel finds the drop as soon as the face has asked for it.
+pub fn term_drop(
+    root: &Path,
+    id: &str,
+    paths: &[String],
+    from: Option<&str>,
+    into: Option<&str>,
+) -> DropEnd {
+    let items = paths
+        .iter()
+        .map(|path| DropItem {
+            path: path.clone(),
+            from: from.map(str::to_owned),
+            keep: false,
+        })
+        .collect::<Vec<_>>();
+    term_drop_items(root, id, &items, into)
+}
+
+/// One source per item: a selection may span this device and several peers.
+#[derive(Debug, Clone, serde::Deserialize, Serialize, TS)]
+pub struct DropItem {
+    pub path: String,
+    pub from: Option<String>,
+    /// App-owned native picks stay available if the operator cancels or retries.
+    #[serde(default)]
+    pub keep: bool,
+}
+
+pub fn term_drop_items(root: &Path, id: &str, items: &[DropItem], into: Option<&str>) -> DropEnd {
     let held = Held::begin(id);
-    let ended = drop_text(root, id, paths, from, into, &held).and_then(|(landed, text)| {
-        term_paste(id, &text)?;
+    let ended = drop_items_text(root, id, items, into, &held).and_then(|(landed, text)| {
+        if !text.is_empty() {
+            term_paste(id, &text)?;
+        }
         Ok(landed)
     });
     match ended {
@@ -1045,7 +1077,6 @@ pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, in
                 .ok()
                 .and_then(|n| n.far_machine(&SessionId(id.to_owned())).ok().flatten());
             let mut miss = crate::miss::read(&why, far.as_deref());
-            // A cancel is the person's own act, not a failure to show.
             if miss.kind == MissKind::Cancelled {
                 miss.raw.clear();
             }
@@ -1063,34 +1094,72 @@ pub struct DropEnd {
 
 /// [`term_drop`] up to its paste: the files put where the session reads
 /// them, and their paths quoted as one paste — or the cancel, if one came.
-fn drop_text(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>, held: &Held) -> Result<(Vec<String>, String), String> {
+#[cfg(test)]
+fn drop_text(
+    root: &Path,
+    id: &str,
+    paths: &[String],
+    from: Option<&str>,
+    into: Option<&str>,
+    held: &Held,
+) -> Result<(Vec<String>, String), String> {
+    let items = paths
+        .iter()
+        .map(|path| DropItem {
+            path: path.clone(),
+            from: from.map(str::to_owned),
+            keep: false,
+        })
+        .collect::<Vec<_>>();
+    drop_items_text(root, id, &items, into, held)
+}
+
+fn drop_items_text(
+    root: &Path,
+    id: &str,
+    items: &[DropItem],
+    into: Option<&str>,
+    held: &Held,
+) -> Result<(Vec<String>, String), String> {
     let n = Node::open(root.to_path_buf())?;
-    let to = n.far_machine(&SessionId(id.to_owned()))?.unwrap_or_default();
-    let from = from.unwrap_or_default();
-    let here = if from.is_empty() && to.is_empty() && into.is_none() {
-        paths
+    let to = n
+        .far_machine(&SessionId(id.to_owned()))?
+        .unwrap_or_default();
+    let here = if to.is_empty()
+        && into.is_none()
+        && items
             .iter()
-            .map(|p| match staged_dir(root, p) {
+            .all(|i| i.from.as_deref().unwrap_or("").is_empty())
+    {
+        items
+            .iter()
+            .map(|item| match staged_dir(root, &item.path) {
                 _ if held.stopped() => Err(khor_node::drops::cancelled()),
-                Some(_) => land_staged(root, p),
-                None => Ok(p.clone()),
+                Some(_) => {
+                    let mut job = khor_node::drops::Job::default();
+                    job.stopped = held.stopped.clone();
+                    khor_node::drops::copy_into(Path::new(&item.path), &n.receive_dir()?, &job)
+                        .map(|p| p.display().to_string())
+                }
+                None => Ok(item.path.clone()),
             })
             .collect::<Result<Vec<_>, _>>()
     } else {
-        drop_blocking(root, id, from, &to, into, paths, &held.stopped)
+        drop_items_blocking(root, id, &to, into, items, &held.stopped)
     };
-    // **A failure keeps what was staged** (the pill's 重试 drops it
-    // again); a landing and a cancel let it go.
     if let Err(why) = &here
         && !held.stopped()
     {
         return Err(why.clone());
     }
-    for p in paths {
-        if let Some(dir) = staged_dir(root, p) {
-            let _ = std::fs::remove_dir_all(dir);
-        }
-    }
+    term_drop_forget(
+        root,
+        &items
+            .iter()
+            .filter(|i| !i.keep && i.from.as_deref().unwrap_or("").is_empty())
+            .map(|i| i.path.clone())
+            .collect::<Vec<_>>(),
+    );
     let here = here?;
     if held.stopped() {
         return Err(khor_node::drops::cancelled());
@@ -1188,12 +1257,14 @@ pub fn term_drop_stage(root: &Path, name: &str, body: &mut dyn std::io::Read) ->
 /// A staged file for a session on this machine: moved into its receive
 /// directory (`Node::receive_dir`) under the drop's naming (a taken name
 /// suffixed).
+#[cfg(test)]
 fn land_staged(root: &Path, staged: &str) -> Result<String, String> {
-    let name = khor_node::drops::name_of(staged)?;
-    let at = khor_node::drops::landing(&Node::open(root.to_path_buf())?.receive_dir()?, &name)?;
-    let moved = std::fs::rename(staged, &at.dest).map_err(|e| e.to_string());
-    let _ = std::fs::remove_file(&at.part);
-    moved.map(|()| at.dest.display().to_string())
+    khor_node::drops::copy_into(
+        Path::new(staged),
+        &Node::open(root.to_path_buf())?.receive_dir()?,
+        &khor_node::drops::Job::default(),
+    )
+    .map(|p| p.display().to_string())
 }
 
 /// One terminal's drop under way: the share of it landed (0 to 1), and
@@ -1269,8 +1340,12 @@ pub fn term_drop_cancel(root: &Path, id: &str, staged: &[String]) {
     if let Some(d) = plock(dropping()).get(id) {
         d.stopped.store(true, Ordering::Relaxed);
     }
-    for p in staged {
-        if let Some(dir) = staged_dir(root, p) {
+    term_drop_forget(root, staged);
+}
+
+pub fn term_drop_forget(root: &Path, staged: &[String]) {
+    for path in staged {
+        if let Some(dir) = staged_dir(root, path) {
             let _ = std::fs::remove_dir_all(dir);
         }
     }
@@ -1280,16 +1355,20 @@ pub fn term_drop_cancel(root: &Path, id: &str, staged: &[String]) {
 /// another, answering where each landed over there; `stopped` ends it
 /// before the next file and the pull under way at its next slice. Its
 /// own thread and runtime, for [`reach_blocking`]'s reason.
-fn drop_blocking(
+fn drop_items_blocking(
     root: &Path,
     id: &str,
-    from: &str,
     to: &str,
     into: Option<&str>,
-    paths: &[String],
+    items: &[DropItem],
     stopped: &Arc<AtomicBool>,
 ) -> Result<Vec<String>, String> {
-    let (root, id, from, to, paths) = (root.to_path_buf(), id.to_owned(), from.to_owned(), to.to_owned(), paths.to_vec());
+    let (root, id, to, items) = (
+        root.to_path_buf(),
+        id.to_owned(),
+        to.to_owned(),
+        items.to_vec(),
+    );
     let into = into.map(str::to_owned);
     let stopped = stopped.clone();
     std::thread::spawn(move || -> Result<Vec<String>, String> {
@@ -1298,19 +1377,25 @@ fn drop_blocking(
             .build()
             .map_err(khor_catalog::msg::runtime_wont_start)?;
         let n = Node::open(root)?;
-        let count = paths.len().max(1) as f32;
-        let mut landed = Vec::with_capacity(paths.len());
-        for (i, p) in paths.iter().enumerate() {
+        let count = items.len().max(1) as f32;
+        let mut landed = Vec::with_capacity(items.len());
+        for (i, item) in items.iter().enumerate() {
             if stopped.load(Ordering::Relaxed) {
                 return Err(khor_node::drops::cancelled());
             }
             let at = rt.block_on(n.drop_file_until(
-                &from,
-                p,
+                item.from.as_deref().unwrap_or(""),
+                &item.path,
                 &to,
                 into.as_deref(),
-                |s| {
-                    let part = if s.total > 0 { s.moved as f32 / s.total as f32 } else { 0.0 };
+                |state| {
+                    let part = if state.total > 0 {
+                        state.moved as f32 / state.total as f32
+                    } else if state.done {
+                        1.0
+                    } else {
+                        0.0
+                    };
                     if let Some(d) = plock(dropping()).get_mut(&id)
                         && Arc::ptr_eq(&d.stopped, &stopped)
                     {
@@ -2106,6 +2191,68 @@ mod stage_tests {
         assert_eq!(text, at);
         // Where it landed, for the face's trees (UX-43 §1).
         assert_eq!(landed, vec![at]);
+    }
+
+    #[test]
+    fn native_folder_selection_survives_cancel_and_retry() {
+        let root = fresh("native-folder-retry");
+        let folder = term_drop_folder(&root, "data", &["nested/empty".into()]).unwrap();
+        term_drop_stage_into(&root, &folder, "nested/a.txt", &mut &b"abc"[..]).unwrap();
+        let items = [DropItem {
+            path: folder.clone(),
+            from: None,
+            keep: true,
+        }];
+        let held = Held::begin("stage-test/native-retry");
+        term_drop_cancel(&root, "stage-test/native-retry", &[]);
+        assert!(drop_items_text(&root, "stage-test/native-retry", &items, None, &held).is_err());
+        assert!(Path::new(&folder).join("nested/a.txt").is_file());
+        drop(held);
+        let held = Held::begin("stage-test/native-retry");
+        let (landed, text) =
+            drop_items_text(&root, "stage-test/native-retry", &items, None, &held).unwrap();
+        assert_eq!(text, shell_quote(&landed[0]));
+        assert!(Path::new(&landed[0]).join("nested/empty").is_dir());
+        assert_eq!(
+            std::fs::read(Path::new(&landed[0]).join("nested/a.txt")).unwrap(),
+            b"abc"
+        );
+        assert!(
+            Path::new(&folder).is_dir(),
+            "selection owns native token until completion is acknowledged"
+        );
+        term_drop_forget(&root, &[folder]);
+        assert!(
+            Path::new(&landed[0]).is_dir(),
+            "releasing selection cannot delete its landed directory"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn failed_batch_keeps_earlier_staged_sources_for_retry() {
+        let root = fresh("batch-retry");
+        let a = term_drop_stage(&root, "a.txt", &mut &b"abc"[..]).unwrap();
+        let b = term_drop_stage(&root, "missing.txt", &mut &b"def"[..]).unwrap();
+        std::fs::remove_file(&b).unwrap();
+        let held = Held::begin("stage-test/batch-retry");
+        assert!(
+            drop_text(
+                &root,
+                "stage-test/batch-retry",
+                &[a.clone(), b],
+                None,
+                None,
+                &held
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read(a).unwrap(),
+            b"abc",
+            "an earlier landed file does not consume retry input"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// **A cancel with no drop does nothing** — it does not wait for

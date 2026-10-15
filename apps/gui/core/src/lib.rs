@@ -2515,8 +2515,13 @@ pub fn drop_stage_args(query: &str) -> Option<String> {
         .filter(|n| !n.is_empty())
 }
 
-/// The upload route's one argument off its query string: the file's
-/// name, percent-decoded. `None` without one — a name is never invented.
+/// A directory upload's token and child path, percent-decoded.
+pub fn drop_stage_into_args(query: &str) -> Option<(String, String)> {
+    let arg = |name: &str| query.split('&').filter_map(|p| p.split_once('=')).find(|(k, _)| *k == name).and_then(|(_, v)| percent_decode(v)).filter(|v| !v.is_empty());
+    Some((arg("folder")?, arg("path")?))
+}
+
+/// The upload route's file name; absent names are never invented.
 pub fn upload_args(query: &str) -> Option<String> {
     drop_stage_args(query)
 }

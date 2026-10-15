@@ -223,6 +223,36 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         "a refused pull leaves no dot-name"
     );
 
+    // Attachment directories use a snapshot plus the existing byte
+    // slices. This is a real paired pull, not a local-copy substitute.
+    let tree = browse.join("experiment");
+    fs::create_dir_all(tree.join("nested/empty")).unwrap();
+    fs::write(tree.join("nested/data.bin"), &big).unwrap();
+    fs::write(tree.join("notes.txt"), b"notes").unwrap();
+    fs::create_dir_all(dl.join("experiment")).unwrap();
+    fs::write(dl.join("experiment/original"), b"keep").unwrap();
+    let landed = timeout(
+        Duration::from_secs(60),
+        b.drop_file(
+            "alpha",
+            tree.to_str().unwrap(),
+            "beta",
+            Some(dl.to_str().unwrap()),
+            |_| {},
+        ),
+    )
+    .await
+    .expect("directory transfer must not hang")
+    .unwrap();
+    assert_eq!(Path::new(&landed).file_name().unwrap(), "experiment-2");
+    assert!(Path::new(&landed).join("nested/empty").is_dir());
+    assert_eq!(
+        fs::read(Path::new(&landed).join("nested/data.bin")).unwrap(),
+        big
+    );
+    assert_eq!(fs::read(dl.join("experiment/original")).unwrap(), b"keep");
+    assert!(!dl.join(".khor-pull-experiment-2").exists());
+
     // The control: an unpaired key, same op, same wire. Proved against
     // a live gate first — the paired listing above used this very
     // serve — so a refusal here is the gate and not a dead endpoint.
@@ -268,6 +298,25 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     match resp {
         Response::Refused { why } => assert_eq!(why, khor_catalog::msg::not_paired()),
         other => panic!("an unpaired fetch-path must be refused, got {other:?}"),
+    }
+
+    let resp = timeout(
+        Duration::from_secs(60),
+        raw_request(
+            iroh::SecretKey::generate(),
+            &alpha_info.id,
+            &alpha_info.addrs,
+            &Request::FetchTree {
+                path: tree.to_str().unwrap().to_owned(),
+            },
+        ),
+    )
+    .await
+    .expect("tree control must not hang")
+    .unwrap();
+    match resp {
+        Response::Refused { why } => assert_eq!(why, khor_catalog::msg::not_paired()),
+        other => panic!("an unpaired tree read must be refused, got {other:?}"),
     }
 
     // ⚠️ 墓碑 (2026-09-22, docs/SHELL.md 浏览的置顶那一节): a directory

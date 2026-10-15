@@ -749,6 +749,19 @@ pub fn answer(
             crate::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
             Ok("null".to_owned())
         }
+        "term_drop_items" => {
+            let items: Vec<crate::term::DropItem> = serde_json::from_value(args.get("items").cloned().unwrap_or(serde_json::Value::Null)).map_err(|e| e.to_string())?;
+            to_json(&crate::term::term_drop_items(root, &arg("id")?, &items, args.get("into").and_then(|v| v.as_str())))
+        }
+        "term_drop_folder" => {
+            let dirs: Vec<String> = serde_json::from_value(args.get("dirs").cloned().unwrap_or_else(||serde_json::json!([]))).map_err(|e| e.to_string())?;
+            to_json(&crate::term::term_drop_folder(root, &arg("name")?, &dirs)?)
+        }
+        "term_drop_forget" => {
+            let paths: Vec<String> = serde_json::from_value(args.get("paths").cloned().unwrap_or_else(||serde_json::json!([]))).map_err(|e| e.to_string())?;
+            crate::term::term_drop_forget(root, &paths);
+            to_json(&())
+        }
         "term_drop" => {
             let paths: Vec<String> = args
                 .get("paths")

@@ -141,6 +141,7 @@ fn main() {
     // A failure in parts (NOTICE-BRIEF): `TermChunk` and `ChatBatch` walk
     // into it, `DropEnd` too; named so the face can hold one alone.
     khor_gui_core::term::DropEnd::export_all_to(&dir).expect("export DropEnd");
+    khor_gui_core::term::DropItem::export_all_to(&dir).expect("export DropItem");
     khor_gui_core::miss::Miss::export_all_to(&dir).expect("export Miss");
     khor_gui_core::term::PaneHistory::export_all_to(&dir).expect("export PaneHistory");
     khor_gui_core::term::HistoryRow::export_all_to(&dir).expect("export HistoryRow");

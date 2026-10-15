@@ -29,13 +29,14 @@
 // sentences for what it will not draw — read only, with the three things
 // a person does next: open it where it lives, copy its path, and hand it
 // on (Finder on the Mac, the system's share sheet on a phone).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { chatPut, chatPutPaths, fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
 import { DirPicker } from "@/components/DirPicker";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { PathCut } from "@/components/PathCut";
 import { PathField } from "@/components/PathField";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
@@ -365,6 +366,8 @@ export function FilePreview({
   path,
   here,
   onClose,
+  footer,
+  initialFace = "source",
 }: {
   /** The API's spelling of the conversation's machine. */
   machine: string;
@@ -375,7 +378,11 @@ export function FilePreview({
   /** Absolute on that machine; `null` is closed. */
   path: string | null;
   onClose: () => void;
+  footer?: ReactNode;
+  initialFace?: "source" | "preview";
 }) {
+  const [face, setFace] = useState(initialFace);
+  useEffect(() => setFace(initialFace), [machine, path, initialFace]);
   const narrow = useNarrow();
   const show = useShowFile();
   const [finder, setFinder] = useState(false);
@@ -442,6 +449,11 @@ export function FilePreview({
                 {shown && <span className="flex-none">{shown}&nbsp;·&nbsp;</span>}
                 <PathCut text={path} className="min-w-0 flex-1" />
               </div>
+              <div className="flex items-center justify-between gap-in">
+                <SegmentedControl label={gui.file_face_preview} value={face} onChange={setFace}
+                  options={[{ key: "source", label: gui.files_original }, { key: "preview", label: gui.file_face_preview }]} />
+                <span className="text-caption text-muted-foreground">{gui.file_read_only}</span>
+              </div>
               <div className="flex flex-wrap items-center gap-in">
                 {show && (
                   <Button
@@ -483,9 +495,11 @@ export function FilePreview({
                 machine={machine}
                 path={path}
                 git={false}
+                face={face}
                 reading
               />
             </div>
+            {footer && <div className="flex flex-none items-center justify-between gap-row border-t px-pane py-in">{footer}</div>}
           </>
         )}
       </DialogContent>

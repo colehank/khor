@@ -1586,6 +1586,108 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// through — measured, `no matches found: ..?*` where a listing should
 /// have been. `wc -c` per file costs a fork each, tolerable under the
 /// same entry cap the local listing keeps.
+/// A bounded directory snapshot over the same SSH source as SatLs.
+/// NUL-delimited records preserve spaces and newlines in names. No link
+/// is followed, and the shared manifest validator applies the same caps.
+pub fn tree(host: &Dest, path: &str) -> Result<Option<crate::tree::Manifest>, String> {
+    if !std::path::Path::new(path).is_absolute() {
+        return Err(msg::path_not_absolute(path));
+    }
+    let target = sh_quote(path);
+    let script = format!(
+        r#"if [ -f {target} ]; then printf 'F\000'; exit 0; fi
+if [ -L {target} ]; then printf 'L\000'; exit 0; fi
+cd {target} || exit 1
+printf 'D\000'
+case $(uname -s) in Darwin) style=bsd;; *) style=gnu;; esac
+export style
+find . -mindepth 1 -exec sh -c '
+for f do
+  p=${{f#./}}
+  if [ -L "$f" ]; then k=L; z=0; t=0; m=0
+  elif [ -d "$f" ]; then k=D; z=0
+  elif [ -f "$f" ]; then k=F; z=0
+  else k=L; z=0; t=0; m=0; fi
+  if [ "$k" != L ]; then
+    if [ "$style" = bsd ]; then
+      z=$(stat -f %z "$f") || exit 1; t=$(stat -f %m "$f") || exit 1; m=$(stat -f %Lp "$f") || exit 1
+    else
+      z=$(stat -c %s "$f") || exit 1; t=$(stat -c %Y "$f") || exit 1; m=$(stat -c %a "$f") || exit 1
+    fi
+  fi
+  if [ "$k" = D ]; then z=0; fi
+  printf "%s\000%s\000%s\000%s\000%s\000" "$k" "$p" "$z" "$t" "$m"
+done' sh {{}} +"#
+    );
+    let out = ssh_base(host)
+        .arg(script)
+        .output()
+        .map_err(msg::ssh_wont_run)?;
+    if !out.status.success() {
+        return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr)));
+    }
+    tree_reply(&out.stdout)
+}
+
+fn tree_reply(bytes: &[u8]) -> Result<Option<crate::tree::Manifest>, String> {
+    if bytes == b"F\0" {
+        return Ok(None);
+    }
+    let Some(bytes) = bytes.strip_prefix(b"D\0") else {
+        return Err(msg::tree_entry_unsupported("SSH"));
+    };
+    let parts = bytes.split(|b| *b == 0).collect::<Vec<_>>();
+    if parts.len() % 5 != 1 || parts.last() != Some(&b"".as_slice()) {
+        return Err(msg::tree_changed().into());
+    }
+    let mut entries = Vec::new();
+    for p in parts[..parts.len() - 1].chunks_exact(5) {
+        let text = |i: usize| std::str::from_utf8(p[i]).map_err(|e| e.to_string());
+        let path = text(1)?.to_owned();
+        let dir = match p[0] {
+            b"D" => true,
+            b"F" => false,
+            _ => return Err(msg::tree_entry_unsupported(&path)),
+        };
+        entries.push(crate::tree::Entry {
+            path,
+            dir,
+            size: text(2)?.parse::<u64>().map_err(|e| e.to_string())?,
+            at_ms: text(3)?
+                .parse::<u64>()
+                .map_err(|e| e.to_string())?
+                .saturating_mul(1000),
+            mode: u32::from_str_radix(text(4)?, 8).map_err(|e| e.to_string())?,
+        });
+    }
+    crate::tree::Manifest::checked(entries).map(Some)
+}
+
+#[cfg(test)]
+mod tree_tests {
+    use super::*;
+    #[test]
+    fn nul_records_keep_names_and_refuse_links_traversal_and_partial_answers() {
+        assert!(tree_reply(b"F\0").unwrap().is_none());
+        let mut bytes = Vec::new();
+        for field in ["D", "D", "nested", "0", "1", "755", "F", "nested/a\nb.txt", "3", "2", "644"] {
+            bytes.extend_from_slice(field.as_bytes());
+            bytes.push(0);
+        }
+        let tree = tree_reply(&bytes).unwrap().unwrap();
+        assert_eq!(tree.entries[1].path, "nested/a\nb.txt");
+        assert_eq!(tree.total, 3);
+        for bad in [
+            b"D\0L\0link\x000\x000\x000\0".as_slice(),
+            b"D\0F\0../a\x000\x000\x00644\0",
+            b"D\0F\0incomplete\0",
+        ] {
+            assert!(tree_reply(bad).is_err());
+        }
+        assert_eq!(tree_reply(b"D\0").unwrap().unwrap().entries.len(), 0);
+    }
+}
+
 pub fn ls(host: &Dest, path: &str) -> Result<(String, Vec<crate::proto::DirEntry>, bool), String> {
     let target = if path.is_empty() {
         "\"$HOME\"".to_owned()

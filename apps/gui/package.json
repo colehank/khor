@@ -52,7 +52,8 @@
     "session-cwd": "node scripts/check-session-cwd.mjs",
     "scroll-target": "node scripts/check-scroll-target.mjs",
     "appearance": "node scripts/check-appearance.mjs",
-    "ime": "node scripts/check-ime.mjs"
+    "ime": "node scripts/check-ime.mjs",
+    "attachments": "node scripts/check-attachments-model.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

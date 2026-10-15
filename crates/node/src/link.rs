@@ -16,6 +16,8 @@ use khor_sync::{chat, wire};
 
 use crate::proto::{self, MAX_FRAME, Request, Response};
 use crate::{Node, ipc, wires};
+#[path = "link_tree.rs"]
+mod tree;
 
 /// **Every synced document by its wire name**, loaded, bound to
 /// `$loaded` (a `&mut khor_sync::store::Loaded<_>`) for `$body` — one
@@ -3846,6 +3848,15 @@ impl Node {
                     }
                     other => Err(msg::unknown_action(other)),
                 }
+            }
+            Request::FetchTree { path } => {
+                let manifest = tokio::task::spawn_blocking(move || crate::tree::scan(std::path::Path::new(&path))).await.map_err(|e|e.to_string())??;
+                Ok(Response::Tree {manifest})
+            }
+            Request::SatFetchTree {sat,path} => {
+                let host = self.my_satellite_host(&sat)?;
+                let manifest = tokio::task::spawn_blocking(move || crate::satellite::tree(&host,&path)).await.map_err(|e|e.to_string())??;
+                Ok(Response::Tree {manifest})
             }
             Request::Ls { path } => {
                 // Off the reactor for the standing reason ("how long
@@ -8132,8 +8143,18 @@ impl Node {
             cap: Some(crate::drops::CAP),
             resume: false,
         };
-        let landed = self.land(ep, &parcel, Some(job)).await;
-        job.finish(landed.map(|l| l.path.display().to_string()));
+        let landed = match self.tree_snapshot(ep, channel, path).await {
+            Ok(Some(manifest)) => {
+                self.land_tree(ep, channel, path, &parcel.into, manifest, job)
+                    .await
+            }
+            Ok(None) => self
+                .land(ep, &parcel, Some(job))
+                .await
+                .map(|l| l.path.display().to_string()),
+            Err(why) => Err(why),
+        };
+        job.finish(landed);
     }
 
     /// **The file road's one landing** (`crate::road`, STORE-BRIEF
