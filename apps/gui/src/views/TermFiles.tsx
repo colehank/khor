@@ -1,193 +1,150 @@
-/**
- * **The files panel: 📎 in the key row** (UX-41; TERM-BRIEF item 60 part
- * 3, the owner 2026-10-06 18:20, asked for now 2026-10-07 02:50: 「可不
- * 可以现在做文件面板」). It stands where the keyboard stands, in the band
- * 「…」's keys use (`lib/key-panel`), and puts files into the terminal as
- * paths, the way a file dragged into iTerm becomes its path:
- *
- * - **照片 / 文件**: the system's own pickers (the photo library; Files
- *   and the rest). What is picked arrives as bytes, is staged where this
- *   device's node serves it by path (`term_drop_stage`), and the session's
- *   machine pulls it into its `~/khor-drop/` (`FilesRoad.dropFiles`): the
- *   phone answers `FetchPath` like any machine.
- * - **网内机器**: a machine of the mesh, then its directories; a file
- *   pressed goes the same way — on the session's machine, the path as it
- *   is; on another, the session's machine pulls it (item 60's road).
- *   **The session's machine comes first, marked as the session's** (the
- *   owner, 2026-10-07 03:10): it is where a file goes in as itself. A
- *   machine that hosts nothing (a phone) is not listed: its files are
- *   the pickers' above.
- *
- * Nothing takes the focus: the terminal keeps it, as under the keys.
- *
- * A machine's file rides the pane's drop (`FilesRoad.drop`, item 60's
- * road): on the session's machine the path goes in as it is; on another,
- * the session's machine pulls it into its `~/khor-drop/` and the path
- * there goes in when the copy is done.
- */
-import { useEffect, useRef, useState, type ReactNode } from "react";
-
-import { fetchDevices, fetchLs, type DeviceRow } from "@/api";
+/** Attachment browser in the existing key-panel band. Browsing never
+ * sends: files open read-only; selection is sent through the pane. */
+import { useEffect, useRef, useState } from "react";
+import { fetchDevices, fetchLs, nativeFolders, said, termDropForget, termPickFolders, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu } from "@/components/RowMenu";
-import { IconBack, IconFile, IconFiles } from "@/components/icons";
+import { IconBack, IconCheck, IconClose, IconFile, IconFiles } from "@/components/icons";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { gui } from "@/gen/catalog";
+import { Button } from "@/components/ui/button";
+import { PopupButton } from "@/components/ui/popup-button";
+import { gui, cli } from "@/gen/catalog";
 import type { DirListing } from "@/gen/bindings/DirListing";
+import { deviceAttachments, includesAttachment, joinAttachmentPath, parentAttachmentPath, pathAttachment, type Attachment } from "@/lib/term-attachments";
+import { cn } from "@/lib/utils";
+import { sizeWord } from "@/views/FilesPane";
+import { FilePreview } from "@/views/chat-files";
 
-const ROW = "flex min-h-touch w-full items-center gap-row border-t text-left text-body";
-
-/** What the panel needs of the terminal it puts files into. */
 export type FilesRoad = {
-  /** The session's machine by its table name (`DeviceRow.name`);
-      `null` for a session hosted on this one. */
-  machine: string | null;
-  /** Paths on `from` (a machine's table name; `null`: this one) put
-      where the session's machine reads them, and pasted when they are
-      there: the pane's own drop (item 60's road, `term_drop`), its
-      progress on the pill's line and a failure in its corner. */
-  drop: (paths: string[], from: string | null, into?: string | null) => void;
-  /** The shell's current directory on the session's machine (its `cwd`
-      mark), where 「放到当前目录」 lands a file; `null` while unknown,
-      and then the menu does not offer it. */
-  cwd: string | null;
-  /** Files picked on this device (照片与文件): staged where its node
-      serves them, then the same drop from here. */
+  machine: string | null; cwd: string | null;
+  selected: Attachment[];
+  add: (entries: Attachment[]) => void;
+  remove: (entry: Attachment) => void;
+  send: (entries: Attachment[], into?: string | null) => Promise<boolean>;
   dropFiles: (files: File[]) => void;
+  busy: boolean; progress: number | null; cancel: () => void;
 };
-
-/** The mesh's machines for the panel: the session's first, then the
-    rest as the table has them; a machine that hosts nothing left out. */
 export function machinesFor(devices: DeviceRow[], machine: string | null): DeviceRow[] {
   const ours = (d: DeviceRow) => (machine === null ? d.me : d.name === machine);
   const hosting = devices.filter((d) => d.hosts);
   return [...hosting.filter(ours), ...hosting.filter((d) => !ours(d))];
 }
-
+type Place = { machine: DeviceRow; path: string; listing: DirListing | null; error?: string };
+type Look = { entry: Attachment; machine: DeviceRow; face: "source" | "preview" };
 export function TermFiles({ road }: { road: FilesRoad }) {
-  const picker = useRef<HTMLInputElement>(null);
-  const [devices, setDevices] = useState<DeviceRow[] | null>(null);
+  const picker = useRef<HTMLInputElement>(null), folders = useRef<HTMLInputElement>(null);
+  const [devices, setDevices] = useState<DeviceRow[]>([]);
+  const [at, setAt] = useState<Place | null>(null);
+  const [queue, setQueue] = useState(false), [query, setQuery] = useState("");
+  const [into, setInto] = useState("receive");
+  const [look, setLook] = useState<Look | null>(null);
+  const [error, setError] = useState<string | null>(null), [result, setResult] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const generation = useRef(0), mounted = useRef(false);
   useEffect(() => {
-    void fetchDevices()
-      .then(setDevices)
-      .catch(() => setDevices([]));
+    mounted.current = true;
+    void fetchDevices().then((d) => { if (mounted.current) setDevices(d); }).catch((e: unknown) => { if (mounted.current) setError(said(e)); });
+    return () => { mounted.current = false; generation.current++; };
   }, []);
-  const [at, setAt] = useState<{ machine: DeviceRow; listing: DirListing | null } | null>(null);
   const open = (machine: DeviceRow, path: string) => {
-    setAt({ machine, listing: null });
-    void fetchLs(machine.name, path)
-      .then((listing) => setAt({ machine, listing }))
-      .catch(() => setAt(null));
+    const mark = ++generation.current;
+    setQuery(""); setAt({ machine, path, listing: null });
+    void fetchLs(machine.name, path).then((listing) => {
+      if (mark === generation.current) setAt({ machine, path: listing.path, listing });
+    }).catch((e: unknown) => { if (mark === generation.current) setAt({ machine, path, listing: null, error: said(e) }); });
   };
-  const up = (path: string) => path.replace(/\/[^/]+\/?$/, "") || "/";
-
-  // **One picker** (the owner 2026-10-07, on the iPhone: 照片 and 文件
-  // opened the same system menu — choose a photo, take one, choose a
-  // file): every kind, several at once. ⚠️ 墓碑: two buttons, 照片 with
-  // an image filter and 文件 without.
-  const pickers = (
-    <button
-      type="button"
-      data-files-pick="device"
-      onClick={() => picker.current?.click()}
-      className="flex h-16 w-full flex-none items-center justify-center gap-in rounded-lg bg-fill text-callout font-label"
-    >
-      <FileKindIcon name="x.png" className="size-6" />
-      <IconFile className="size-6" />
-      {gui.files_device}
-      <input
-        ref={picker}
-        type="file"
-        multiple
-        hidden
-        onChange={(e) => {
-          road.dropFiles([...(e.target.files ?? [])]);
-          // The same file picked again is a change again.
-          e.target.value = "";
-        }}
-      />
-    </button>
-  );
-
-  // **No › at a row's end** (item 72, the owner 2026-10-07: 「list 不要有
-  // 右侧的 >」): a machine or a directory still opens on a tap; its mark
-  // (a face, the folder) says it is one to open. ⚠️ 墓碑: a tertiary
-  // chevron at the end of the machine and directory rows.
-  let mesh: ReactNode;
-  if (at === null) {
-    mesh = machinesFor(devices ?? [], road.machine).map((d, i) => {
-      const session = i === 0 && (road.machine === null ? d.me : d.name === road.machine);
-      return (
-        <button
-          key={d.id}
-          type="button"
-          data-files-machine={d.name}
-          data-files-session={session || undefined}
-          onClick={() => open(d, "")}
-          className={ROW}
-        >
-          <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
-          <span className="min-w-0 flex-1 truncate">{d.shown}</span>
-          {session && <span className="flex-none text-footnote text-muted-foreground">{gui.files_session}</span>}
-        </button>
-      );
-    });
-  } else {
-    const { machine, listing } = at;
-    mesh = (
-      <>
-        <button
-          type="button"
-          data-files-up
-          onClick={() => (listing && listing.path !== "/" ? open(machine, up(listing.path)) : setAt(null))}
-          className={ROW}
-        >
-          <IconBack className="size-4 flex-none text-muted-foreground" />
-          <MachineAvatar face={machine.face} className="size-kind-mark flex-none" />
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">{listing?.path ?? machine.shown}</span>
-        </button>
-        {listing?.entries.map((e) => {
-          const path = `${listing.path.replace(/\/$/, "")}/${e.name}`;
-          const from = machine.me ? null : machine.name;
-          const row = (
-            <button
-              key={e.name}
-              type="button"
-              data-files-entry={e.dir ? "dir" : "file"}
-              onClick={() => (e.dir ? open(machine, path) : road.drop([path], from))}
-              className={ROW}
-            >
-              {e.dir ? <IconFiles className="size-kind-mark flex-none text-muted-foreground" /> : <FileKindIcon name={e.name} className="size-kind-mark flex-none" />}
-              <span className="min-w-0 flex-1 truncate">{e.name}</span>
-            </button>
-          );
-          // A file's menu (long press, or a secondary click): where it
-          // lands — the press's own ~/khor-drop/, or the shell's current
-          // directory, offered only while that is known (part 5).
-          if (e.dir) return row;
-          const acts = [{ key: "to-term", label: gui.files_to_term, run: () => road.drop([path], from) }];
-          const cwd = road.cwd;
-          if (cwd) acts.push({ key: "to-cwd", label: gui.files_to_cwd, run: () => road.drop([path], from, cwd) });
-          return (
-            <RowMenu key={e.name} items={acts}>
-              {row}
-            </RowMenu>
-          );
-        })}
-      </>
-    );
-  }
-
-  return (
-    <div data-key-panel-scroll data-files-panel className="flex min-h-0 flex-1 touch-pan-y flex-col gap-base overflow-y-auto overscroll-contain px-row pt-in">
-      {pickers}
-      <section data-files-mesh className="flex flex-col">
-        <h3 className="pb-in text-group text-muted-foreground">{gui.devices_tab}</h3>
-        {mesh}
-      </section>
-      <p data-files-land className="pb-in text-footnote text-muted-foreground">
-        {gui.files_land}
-      </p>
+  const selected = (e: Attachment) => road.selected.some((x) => x.key === e.key);
+  const included = (e: Attachment) => road.selected.some((x) => includesAttachment(x, e));
+  const toggle = (e: Attachment) => {
+    if (road.busy || included(e)) return;
+    if (selected(e)) road.remove(e); else road.add([e]);
+    setResult(null);
+  };
+  const addDevice = (files: File[], dirs: boolean) => {
+    try { road.add(deviceAttachments(files, dirs, gui.machine_here)); setQueue(true); setError(null); setResult(null); }
+    catch (e) { setError(said(e)); }
+  };
+  const pickFolders = async () => {
+    setError(null);
+    if (!nativeFolders()) {
+      if (folders.current && "webkitdirectory" in folders.current) folders.current.click();
+      else setError(gui.files_browser_dir);
+      return;
+    }
+    setPicking(true);
+    try {
+      const paths = await termPickFolders();
+      if (!mounted.current) { void termDropForget(paths).catch(() => {}); return; }
+      road.add(paths.map((p) => pathAttachment(p, null, gui.machine_here, true, null, true)));
+      if (paths.length) { setQueue(true); setResult(null); }
+    } catch (e) { if (mounted.current) setError(said(e)); }
+    finally { if (mounted.current) setPicking(false); }
+  };
+  const destination = into === "cwd" && road.cwd ? road.cwd : null;
+  const direct = (entries: Attachment[]) => entries.length > 0 && !destination && entries.every((e) => !e.device && e.from === road.machine);
+  const send = async (entries: Attachment[]) => {
+    setError(null); setLook(null);
+    const ok = await road.send(entries, destination);
+    if (!mounted.current) return;
+    setResult(ok ? gui.files_sent(entries.length) : gui.files_retry_ready);
+    if (ok) setQueue(false);
+  };
+  const back = () => {
+    if (queue) setQueue(false);
+    else if (at?.listing && parentAttachmentPath(at.listing.path)) open(at.machine, parentAttachmentPath(at.listing.path)!);
+    else { generation.current++; setAt(null); }
+    setQuery("");
+  };
+  const entries = at?.listing?.entries.filter((e) => e.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? [];
+  return <div data-files-panel className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-touch flex-none items-center gap-in border-b px-row">
+      {at || queue ? <button type="button" data-files-up aria-label={gui.back} onClick={back} className="grid min-h-touch min-w-touch place-items-center"><IconBack className="size-5" /></button> : <IconFile className="size-5 flex-none" />}
+      <div className="min-w-0 flex-1"><h3 className="truncate text-body font-label">{queue ? gui.files_selected : at ? at.machine.shown : gui.files_add}</h3>{at && !queue && <p className="truncate font-mono text-caption text-muted-foreground" title={at.path}>{at.path}</p>}</div>
+      {at && !queue && <input data-files-filter aria-label={gui.filter} placeholder={gui.filter} value={query} onChange={(e) => setQuery(e.target.value)} onMouseDown={(e) => e.stopPropagation()} className="h-ctl-md min-h-touch w-20 rounded-sm bg-fill px-in text-callout outline-none focus-visible:ring-2 focus-visible:ring-ring" />}
     </div>
-  );
+    <div data-key-panel-scroll className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-row">
+      {queue ? road.selected.length ? road.selected.map((e) => <div data-files-selected={e.name} key={e.key} className="flex min-h-touch items-center gap-row border-b py-in">
+        <Mark entry={e} /><div className="min-w-0 flex-1"><p className="truncate text-body">{e.name}</p><p className="truncate text-caption text-muted-foreground" title={e.path}>{e.shown} · {e.path}</p></div>
+        {e.size !== null && <span className="flex-none text-caption tabular-nums text-muted-foreground">{sizeWord(e.size)}</span>}
+        <button type="button" disabled={road.busy} aria-label={`${gui.files_deselect} ${e.name}`} onClick={() => road.remove(e)} className="grid min-h-touch min-w-touch place-items-center disabled:opacity-40"><IconClose className="size-4" /></button>
+      </div>) : <p className="py-pane text-center text-callout text-muted-foreground">{gui.files_empty_selection}</p> : !at ? <>
+        <h3 className="pb-in pt-in text-group text-muted-foreground">{gui.machine_here}</h3>
+        <div className="flex gap-in pb-row"><Button data-files-pick="device" disabled={road.busy} className="min-h-touch flex-1" onClick={() => picker.current?.click()}><IconFile className="size-4" />{gui.files_local_file}</Button><Button data-files-pick="folder" disabled={road.busy || picking} className="min-h-touch flex-1" onClick={() => void pickFolders()}><IconFiles className="size-4" />{picking ? gui.files_reading_folder : gui.ws_kind_folder}</Button></div>
+        <section data-files-mesh><h3 className="pb-in text-group text-muted-foreground">{gui.devices_tab}</h3>
+          {machinesFor(devices, road.machine).map((d) => <button key={d.id} type="button" data-files-machine={d.name} data-files-session={(road.machine === null ? d.me : d.name === road.machine) || undefined} onClick={() => open(d, "")} className="flex min-h-touch w-full items-center gap-row border-t text-left text-body"><MachineAvatar face={d.face} className="size-kind-mark flex-none" /><span className="min-w-0 flex-1 truncate">{d.shown}</span>{(road.machine === null ? d.me : d.name === road.machine) && <span className="text-caption text-muted-foreground">{gui.files_session}</span>}</button>)}
+        </section>
+      </> : at.error ? <div className="py-row text-callout"><p role="alert">{gui.files_failed_list(at.error)}</p><Button onClick={() => open(at.machine, at.path)}>{gui.region_retry}</Button></div> : !at.listing ? <p role="status" className="py-pane text-center text-callout text-muted-foreground">{gui.files_reading_folder}</p> : <>
+        {entries.length === 0 && <p className="py-pane text-center text-callout text-muted-foreground">{query ? gui.files_no_matches : gui.empty_dir}</p>}
+        {entries.map((row) => {
+          const entry = pathAttachment(joinAttachmentPath(at.listing!.path, row.name), at.machine.me ? null : at.machine.name, at.machine.shown, row.dir, row.dir ? null : row.size);
+          const own = selected(entry), inherited = included(entry);
+          const view = (face: "source" | "preview" = "source") => setLook({ entry, machine: at.machine, face });
+          return <RowMenu key={entry.key} items={[
+            ...(entry.dir ? [] : [{ key: "preview", label: gui.file_face_preview, run: () => view("preview") }]),
+            ...(!inherited && !road.busy ? [{ key: "select", label: own ? gui.files_deselect : gui.files_select, run: () => toggle(entry) }] : []),
+            { key: "copy", label: gui.tab_copy_path, run: () => { void navigator.clipboard.writeText(entry.path).catch((e: unknown) => setError(said(e))); } },
+          ]}>
+            <div data-files-entry={entry.dir ? "dir" : "file"} data-files-name={entry.name} className={cn("flex min-h-touch items-center border-b", own && "bg-fill-strong")}>
+              <button type="button" onClick={() => entry.dir ? open(at.machine, entry.path) : view()} className="flex min-h-touch min-w-0 flex-1 items-center gap-row py-in text-left"><Mark entry={entry} /><span className="min-w-0 flex-1 truncate text-body">{entry.name}</span>{entry.size !== null && <span className="text-caption tabular-nums text-muted-foreground">{sizeWord(entry.size)}</span>}</button>
+              <button type="button" data-files-select={entry.name} aria-label={`${own ? gui.files_deselect : gui.files_select} ${entry.name}`} aria-pressed={own || inherited} disabled={inherited || road.busy} title={inherited ? gui.files_included : undefined} onClick={() => toggle(entry)} className="grid min-h-touch min-w-touch place-items-center disabled:opacity-40"><span className={cn("grid size-5 place-items-center rounded-full border", (own || inherited) && "bg-fill-strong")}>{(own || inherited) && <IconCheck className="size-3.5" />}</span></button>
+            </div>
+          </RowMenu>;
+        })}
+        {at.listing.truncated && <p role="status" className="py-in text-callout text-muted-foreground">{cli.dir_truncated(at.listing.entries.length)}</p>}
+      </>}
+    </div>
+    <input ref={picker} type="file" multiple hidden onChange={(e) => { addDevice([...(e.target.files ?? [])], false); e.target.value = ""; }} />
+    <input ref={folders} type="file" multiple hidden {...{ webkitdirectory: "" }} onChange={(e) => { addDevice([...(e.target.files ?? [])], true); e.target.value = ""; }} />
+    <div className="flex flex-none flex-col gap-in border-t px-row py-in">
+      {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
+      {road.busy ? <div className="flex min-h-touch items-center gap-row"><span role="status" className="min-w-0 flex-1 truncate text-callout">{gui.files_sending(road.selected.map((x) => x.name).join(", "))}</span><span className="text-caption tabular-nums">{Math.round((road.progress ?? 0) * 100)}%</span><Button size="sm" onClick={road.cancel}>{gui.term_drop_stop}</Button></div> : <>
+        {road.selected.length > 0 && road.cwd && <PopupButton value={into} onPick={setInto} label={gui.send_into} mark={{ "data-files-destination": true }} look="field" choices={[{ value: "receive", label: gui.files_receive }, { value: "cwd", label: gui.files_current_dir, note: road.cwd }]} />}
+        <div className="flex items-center gap-row"><button type="button" data-files-review disabled={!road.selected.length} onClick={() => setQueue(!queue)} className="min-h-touch min-w-0 flex-1 truncate text-left text-callout disabled:text-muted-foreground">{road.selected.length ? gui.files_selected_count(road.selected.length) : result || gui.files_select_hint}</button><Button data-files-send disabled={!road.selected.length || picking} className="min-h-touch" onClick={() => void send(road.selected)}>{direct(road.selected) ? gui.files_insert_count(road.selected.length) : gui.files_send_count(road.selected.length)}</Button></div>
+      </>}
+    </div>
+    <FilePreview machine={look?.machine.name ?? ""} shown={look?.machine.shown ?? ""} here={look?.machine.me ?? false} path={look?.entry.path ?? null} initialFace={look?.face} onClose={() => setLook(null)} footer={look && <><Button disabled={road.busy || included(look.entry)} onClick={() => toggle(look.entry)}>{selected(look.entry) ? gui.files_deselect : gui.files_select}</Button><Button disabled={road.busy} onClick={() => void send([look.entry])}>{direct([look.entry]) ? gui.files_insert_path : gui.files_send_session}</Button></>} />
+  </div>;
+}
+function Mark({ entry }: { entry: Attachment }) {
+  return entry.dir ? <IconFiles className="size-kind-mark flex-none text-muted-foreground" /> : <FileKindIcon name={entry.name} className="size-kind-mark flex-none" />;
 }

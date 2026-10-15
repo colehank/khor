@@ -15,6 +15,7 @@ import type { Connections } from "./gen/bindings/Connections";
 import type { ReachReport } from "./gen/bindings/ReachReport";
 import type { ProxyLine } from "./gen/bindings/ProxyLine";
 import type { JournalLine } from "./gen/bindings/JournalLine";
+import type { DropItem } from "./gen/bindings/DropItem";
 import type { DropEnd } from "./gen/bindings/DropEnd";
 import type { Miss } from "./gen/bindings/Miss";
 import type { AddAsk } from "./gen/bindings/AddAsk";
@@ -1999,15 +2000,17 @@ export const termDropCancel = (id: string, staged: string[] = []) => call<null>(
     3), put where this machine's node serves it by path, for `termDrop`
     with `from` null. Answers its path here. The bytes ride raw, as
     `chatPut`'s do. */
-export const termDropStage = async (file: File): Promise<string> => {
+export const termDropStage = (file: File): Promise<string> => stageBytes("term_drop_stage", { name: file.name }, file);
+export const termDropStageInto = (folder: string, path: string, file: File): Promise<string> => stageBytes("term_drop_stage_into", { folder, path }, file);
+async function stageBytes(command: string, fields: Record<string, string>, file: File): Promise<string> {
   if (inApp && !bridge) {
     const { invoke } = await import("@tauri-apps/api/core");
-    return invoke<string>("term_drop_stage", new Uint8Array(await file.arrayBuffer()), {
-      headers: { "x-khor-name": encodeURIComponent(file.name) },
+    return invoke<string>(command, new Uint8Array(await file.arrayBuffer()), {
+      headers: Object.fromEntries(Object.entries(fields).map(([k, v]) => [`x-khor-${k}`, encodeURIComponent(v)])),
     });
   }
-  const q = `name=${encodeURIComponent(file.name)}`;
-  const url = bridge ? `http://127.0.0.1:${bridge}/term_drop_stage?${q}` : `/api/term_drop_stage?${q}`;
+  const q = new URLSearchParams(fields);
+  const url = bridge ? `http://127.0.0.1:${bridge}/${command}?${q}` : `/api/${command}?${q}`;
   const r = await reach(url, {
     method: "POST",
     headers: bridge || webKey === null ? {} : { authorization: `Bearer ${webKey}` },
@@ -2015,7 +2018,13 @@ export const termDropStage = async (file: File): Promise<string> => {
   });
   if (!r.ok) throw new Error(unwrap(await r.text()));
   return answer<string>(r);
-};
+}
+export const termDropItems = (id: string, items: DropItem[], into: string | null) => call<DropEnd>("term_drop_items", { id, items, into });
+export const termDropFolder = (name: string, dirs: string[]) => call<string>("term_drop_folder", { name, dirs });
+/** Releases only app-owned selection tokens, without cancelling a different transfer. */
+export const termDropForget = (paths: string[]) => call<null>("term_drop_forget", { paths });
+export const nativeFolders = () => inApp && !bridge && !/Android/i.test(navigator.userAgent);
+export const termPickFolders = () => call<string[]>("term_pick_folders");
 /** How far this terminal's drop has got, 0 to 1, or `null` when none is
     under way (item 60): what its pill's line draws. */
 export const termDropProgress = (id: string) => call<number | null>("term_drop_progress", { id });

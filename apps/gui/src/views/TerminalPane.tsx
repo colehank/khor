@@ -63,7 +63,8 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, rejoinNow, said, termAttach, termDrop, termDropCancel, termDropProgress, termDropStage, termEnded, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait, type Miss } from "@/api";
+import { bellHaptic, faceNote, inApp, rejoinNow, said, termAttach, termDrop, termDropCancel, termDropProgress, termDropItems, termDropForget, termEnded, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait, type Miss } from "@/api";
+import { addAttachments, deviceAttachments, droppedAttachments, prepareAttachments, type Attachment, type PreparedDrop } from "@/lib/term-attachments";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { offerTabAct } from "@/lib/tab-acts";
@@ -2964,7 +2965,24 @@ export function TerminalPane({
   const activeRef = useRef(active);
   activeRef.current = active;
   const dropping = useRef(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const changeAttachments = useCallback((next: Attachment[]) => {
+    const removed = attachmentsRef.current.filter((x) => x.native && !next.some((n) => n.key === x.key));
+    attachmentsRef.current = next;
+    setAttachments(next);
+    if (removed.length) void termDropForget(removed.map((x) => x.path)).catch(() => {});
+  }, []);
+  useEffect(() => () => {
+    // A transfer already running owns its sources until it settles. A
+    // successful send releases them through its completion callback.
+    const paths = attachmentsRef.current.filter((x) => x.native).map((x) => x.path);
+    if (!dropping.current && paths.length) void termDropForget(paths).catch(() => {});
+  }, []);
   const missedSeq = useRef(0);
+  const failedDropClean = useRef<(() => void) | null>(null);
+  useEffect(() => () => { failedDropClean.current?.(); }, []);
   /** A drop that did not get there, onto the pill: `again` drops the same
       files again, `clean` lets go of what was staged for it. */
   const fail = useCallback(
@@ -2980,140 +2998,111 @@ export function TerminalPane({
         capMb: DROP_CAP / 2 ** 20,
         retry: () => {
           off();
+          failedDropClean.current = null;
           again();
         },
         cancel: () => {
           off();
+          failedDropClean.current = null;
           clean();
         },
       });
-      setMissed((l) => [...l, n]);
+      failedDropClean.current?.();
+      failedDropClean.current = clean;
+      setMissed((l) => [...l.filter((item) => !item.id.startsWith("drop-")), n]);
     },
     [machine],
   );
-  /** `paths` may first have to be made: files picked on a phone are
-      staged here before the drop (`dropFiles`), under the same line,
-      and the maker is told whether the drop was cancelled meanwhile
-      (`null`: nothing to drop). `names` are what the pill says, in the
-      order they go in. */
+  /** One sender for selected sources, paste and OS/browser drops. The
+      registry quotes and pastes once, only after every item is landed. */
   const dropFrom = useCallback(
-    (
-      paths: string[] | ((gone: () => boolean) => Promise<string[] | null>),
+    async (
+      paths: string[] | PreparedDrop | ((gone: () => boolean) => Promise<PreparedDrop | null>),
       names: string[],
       from: string | null,
       into: string | null = null,
-    ) => {
-      if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return;
+      onLanded?: () => void,
+    ): Promise<boolean> => {
+      if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return false;
+      // A fresh send supersedes the previous failed attempt. Its
+      // staged bytes and retry affordance must not linger after a
+      // successful retry from the selection panel.
+      failedDropClean.current?.();
+      failedDropClean.current = null;
+      setMissed((l) => l.filter((item) => !item.id.startsWith("drop-")));
       dropping.current = true;
-      // The pill turns to the files at once, the line at its start.
       setDropShare(0);
       setDropNames(names);
       let cancelled = false;
-      // How far it got, read while it runs: memory in the registry, so
-      // the ask is cheap at the pill's own pace (nothing to read yet
-      // while files are staged).
+      let made: PreparedDrop | null = null;
       const watch = window.setInterval(() => {
-        termDropProgress(id).then(
-          (p) => p !== null && !cancelled && setDropShare(p),
-          () => {},
-        );
+        termDropProgress(id).then((p) => p !== null && !cancelled && setDropShare(p), () => {});
       }, DROP_LOOK_MS);
       const settle = () => {
         window.clearInterval(watch);
         setDropShare(null);
         setDropNames(null);
       };
-      // **Cancelled** (the pill's ×, item 71): the pill is the session's
-      // again at once, with no word in the corner; a pull under way stops
-      // and `term_drop` pastes nothing; files being staged stop after the
-      // one going up, and what was staged goes (`dropFiles`). A new drop
-      // waits for this one to settle.
       dropCancel.current = () => {
         cancelled = true;
         settle();
         void termDropCancel(id).catch(() => {});
       };
-      Promise.resolve(Array.isArray(paths) ? paths : paths(() => cancelled))
-        .then((made) => (cancelled || made === null ? null : termDrop(id, made, from, into).then((end) => ({ made, end }))))
-        .then((done) => {
-          if (!done) return;
-          const { made, end } = done;
-          if (end?.miss) {
-            // **A failed drop keeps what was staged for it** (`term_drop`):
-            // 重试 drops the same paths again; 取消 lets them go — unless
-            // another drop runs by then, which a cancel would stop too.
-            const staged = !Array.isArray(paths);
-            if (!cancelled)
-              fail(
-                end.miss,
-                names,
-                () => dropFromRef.current(made, names, from, into),
-                () => {
-                  if (staged && !dropping.current) void termDropCancel(id, made).catch(() => {});
-                },
-              );
-            return;
-          }
-          // **The session's machine's trees are told** (UX-43 §1): each
-          // level a file landed in — its `~/khor-drop`, or the shell's
-          // directory — reads again wherever a tree holds it.
-          for (const dir of new Set((end?.landed ?? []).map(levelOf))) treeChanged({ machine: machine ?? "", here: machine == null, dir });
-          pollNow.current();
-        })
-        .catch((err: unknown) => {
-          // The call itself failed (staging a picked file, the bridge):
-          // its words are the raw ones; 重试 starts the drop over.
-          if (!cancelled) fail({ kind: "other", machine: null, raw: said(err) }, names, () => dropFromRef.current(paths, names, from, into), () => {});
-        })
-        .finally(() => {
-          if (!cancelled) settle();
-          dropCancel.current = () => {};
-          dropping.current = false;
-        });
-    },
-    [id, machine, fail],
+      try {
+        made = typeof paths === "function" ? await paths(() => cancelled) : Array.isArray(paths)
+          ? { items: paths.map((path) => ({ path, from, keep: false })), staged: [] } : paths;
+        if (!made || cancelled) {
+          if (made) await termDropForget(made.staged).catch(() => {});
+          return false;
+        }
+        // Keep the original file operation for a homogeneous source;
+        // no existing wire frame changes for single-file transfers.
+        const first = made.items[0]?.from ?? null;
+        const simple = made.items.every((x) => x.from === first && !x.keep);
+        const end = await (simple ? termDrop(id, made.items.map((x) => x.path), first, into) : termDropItems(id, made.items, into));
+        if (end?.miss) {
+          const retry = made;
+          if (!cancelled) fail(end.miss, names,
+            () => { void dropFromRef.current(retry, names, null, into, onLanded); },
+            () => { void termDropForget(retry.staged).catch(() => {}); });
+          else await termDropForget(made.staged).catch(() => {});
+          return false;
+        }
+        if (cancelled) return false;
+        for (const dir of new Set((end?.landed ?? []).map(levelOf))) treeChanged({ machine: machine ?? "", here: machine == null, dir });
+        onLanded?.();
+        pollNow.current();
+        return true;
+      } catch (err: unknown) {
+        // A transport failure may leave the result unknown. Keep the
+        // selection and retry inputs; never submit a terminal command.
+        const retry = made ?? paths;
+        if (!cancelled) fail({ kind: "other", machine: null, raw: said(err) }, names,
+          () => { void dropFromRef.current(retry, names, from, into, onLanded); },
+          () => { if (made) void termDropForget(made.staged).catch(() => {}); });
+        else if (made) await termDropForget(made.staged).catch(() => {});
+        return false;
+      } finally {
+        settle();
+        dropCancel.current = () => {};
+        dropping.current = false;
+      }
+    }, [id, machine, fail],
   );
   const dropFromRef = useRef(dropFrom);
   dropFromRef.current = dropFrom;
-  // `into`: the shell's current directory (「放到当前目录」, part 5).
   const drop = useCallback(
-    (paths: string[], from: string | null, into?: string | null) => dropFrom(paths, paths.map(baseName), from, into ?? null),
-    [dropFrom],
+    (paths: string[], from: string | null, into?: string | null) => { void dropFrom(paths, paths.map(baseName), from, into ?? null); }, [dropFrom],
   );
-  // **Files picked on the phone** (item 60 part 3): bytes in the web
-  // view, staged where this machine's node serves them by path, then the
-  // same drop from this machine — the session's machine pulls them.
-  // Over the drop's cap, said before a byte is read.
-  const dropFiles = useCallback(
-    (files: File[]) => {
-      if (files.length === 0 || dropping.current) return;
-      const big = files.find((f) => f.size > DROP_CAP);
-      if (big) {
-        fail({ kind: "too-big", machine: null, raw: "" }, [big.name], () => {}, () => {});
-        return;
-      }
-      dropFrom(
-        async (gone) => {
-          const staged: string[] = [];
-          for (const f of files) {
-            if (gone()) break;
-            staged.push(await termDropStage(f));
-          }
-          // **Cancelled while staging** (item 71): stopped after the file
-          // that was going up, and what was staged is not dropped — it
-          // goes now, not an hour later with the stale ones.
-          if (gone()) {
-            void termDropCancel(id, staged).catch(() => {});
-            return null;
-          }
-          return staged;
-        },
-        files.map((f) => f.name),
-        null,
-      );
-    },
-    [dropFrom, id, fail],
-  );
+  const sendAttachments = useCallback((entries: Attachment[], into: string | null = null) =>
+    dropFrom((gone) => prepareAttachments(entries, gone), entries.map((x) => x.name), null, into, () => {
+      changeAttachments(attachmentsRef.current.filter((x) => !entries.some((e) => e.key === x.key)));
+    }), [dropFrom, changeAttachments]);
+  const dropFiles = useCallback((files: File[]) => {
+    if (!files.length || dropping.current) return;
+    try { void sendAttachments(deviceAttachments(files, false, gui.machine_here)); }
+    catch (e) { fail({ kind: "other", machine: null, raw: said(e) }, files.map((x) => x.name), () => {}, () => {}); }
+  }, [sendAttachments, fail]);
   const dropRef = useRef(drop);
   dropRef.current = drop;
   // A pasted picture (item 60 part 4), from the pane's own handlers.
@@ -3277,15 +3266,20 @@ export function TerminalPane({
       // **A row out of khor's own listings** (item 60, `lib/path-drag`):
       // its machine and path, put where this session's machine reads it.
       onDragOver={(e) => {
-        if (!carriesPath(e)) return;
+        if (!carriesPath(e) && (inApp || !e.dataTransfer.types.includes("Files"))) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "copy";
       }}
       onDrop={(e) => {
         const dragged = droppedPath(e);
-        if (!dragged) return;
+        // Native OS files belong to onWindowDrop. Handling the HTML
+        // event as well could paste the same drop twice after enumeration.
+        if (!dragged && (inApp || !e.dataTransfer.types.includes("Files"))) return;
         e.preventDefault();
-        drop([dragged.path], dragged.machine);
+        if (dragged) drop([dragged.path], dragged.machine);
+        else void droppedAttachments(e.dataTransfer, gui.machine_here).then((items) => sendAttachments(items)).catch((err: unknown) => {
+          fail({ kind: "other", machine: null, raw: said(err) }, [], () => {}, () => {});
+        });
       }}
       // The terminal owns its own two colours; they follow the theme so
       // a plain shell is the app's paper, not a black box. **The paper is
@@ -3624,7 +3618,10 @@ export function TerminalPane({
             mode (this pane's own, `terminalKeyboard`). The mode is
             `lib/term-tap`'s (`useTermWake`). */}
         <KeyRowSeats field={keysRef} keyboard={wake === "button" && <KeyboardSwitch field={keysRef} />}>
-          <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, cwd: doing?.cwd ?? null, drop, dropFiles }} />
+          <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, cwd: doing?.cwd ?? null, selected: attachments,
+            add: (items) => changeAttachments(addAttachments(attachmentsRef.current, items)),
+            remove: (item) => changeAttachments(attachmentsRef.current.filter((x) => x.key !== item.key)),
+            send: sendAttachments, dropFiles, busy: dropShare !== null, progress: dropShare, cancel: () => dropCancel.current() }} />
         </KeyRowSeats>
       </>
     )}

@@ -772,6 +772,10 @@ pub enum Request {
     Offer { path: String },
     /// Per-machine agent configuration; mutations never ride early data.
     Recognition { action: crate::recognition::Action },
+    /// Bounded directory snapshot; a regular file answers `None`.
+    FetchTree { path: String },
+    /// The same snapshot on an SSH satellite through its sponsor.
+    SatFetchTree { sat: String, path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1129,8 +1133,18 @@ pub enum Response {
     Journal { lines: Vec<String> },
     /// [`Request::Offer`]'s answer: the file's name, size and digest; its
     /// bytes are served by digest (`Request::Fetch`) from now on.
-    Offered { name: String, size: u64, digest: String },
-    Recognition { report: crate::recognition::Report },
+    Offered {
+        name: String,
+        size: u64,
+        digest: String,
+    },
+    Recognition {
+        report: crate::recognition::Report,
+    },
+    /// Only sent in answer to the new directory reading words.
+    Tree {
+        manifest: Option<crate::tree::Manifest>,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1211,6 +1225,8 @@ impl Request {
                 | Request::Vitals
                 | Request::Ls { .. }
                 | Request::FetchPath { .. }
+                | Request::FetchTree { .. }
+                | Request::SatFetchTree { .. }
                 | Request::Reach { .. }
                 | Request::SatVitals { .. }
                 | Request::SatLs { .. }
@@ -1321,6 +1337,7 @@ impl Request {
         use std::time::Duration;
         match self {
             Request::Act { action, .. } if action == "take" => Duration::from_secs(3600),
+            Request::FetchTree { .. } | Request::SatFetchTree { .. } => Duration::from_secs(60),
             Request::CodeServe { .. } => Duration::from_secs(280),
             // A digest is a read of the whole file.
             Request::Offer { .. } => Duration::from_secs(280),

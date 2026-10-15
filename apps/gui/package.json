@@ -51,7 +51,8 @@
     "merge-face": "node scripts/check-merge-face.mjs",
     "session-cwd": "node scripts/check-session-cwd.mjs",
     "scroll-target": "node scripts/check-scroll-target.mjs",
-    "appearance": "node scripts/check-appearance.mjs"
+    "appearance": "node scripts/check-appearance.mjs",
+    "attachments": "node scripts/check-attachments-model.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

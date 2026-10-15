@@ -3258,6 +3258,100 @@ async fn term_drop_stage(request: tauri::ipc::Request<'_>) -> Result<String, Str
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+async fn term_drop_items(
+    id: String,
+    items: Vec<khor_gui_core::term::DropItem>,
+    into: Option<String>,
+) -> Result<khor_gui_core::term::DropEnd, String> {
+    off_main(move || {
+        Ok(khor_gui_core::term::term_drop_items(
+            &Node::root_from_env(),
+            &id,
+            &items,
+            into.as_deref(),
+        ))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn term_drop_folder(name: String, dirs: Vec<String>) -> Result<String, String> {
+    off_main(move || khor_gui_core::term::term_drop_folder(&Node::root_from_env(), &name, &dirs))
+        .await
+}
+
+#[tauri::command]
+async fn term_drop_forget(paths: Vec<String>) -> Result<(), String> {
+    off_main(move || {
+        khor_gui_core::term::term_drop_forget(&Node::root_from_env(), &paths);
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn term_drop_stage_into(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("term_drop_stage_into takes raw bytes".to_owned());
+    };
+    let field = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .and_then(khor_gui_core::percent_decoded)
+            .ok_or_else(|| format!("term_drop_stage_into needs {name}"))
+    };
+    let folder = field("x-khor-folder")?;
+    let path = field("x-khor-path")?;
+    let bytes = bytes.clone();
+    off_main(move || {
+        khor_gui_core::term::term_drop_stage_into(
+            &Node::root_from_env(),
+            &folder,
+            &path,
+            &mut bytes.as_slice(),
+        )
+    })
+    .await
+}
+
+/// Native folder choice. iOS copies while the security scope is held;
+/// desktops keep their real paths and do not stage or copy on selection.
+#[tauri::command]
+async fn term_pick_folders(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<String>, String> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        let _ = window;
+        return app
+            .dialog()
+            .file()
+            .blocking_pick_folders()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| {
+                p.into_path()
+                    .map(|p| p.display().to_string())
+                    .map_err(|e| e.to_string())
+            })
+            .collect();
+    }
+    #[cfg(target_os = "ios")]
+    {
+        phone_files::pick(app, window).await
+    }
+    #[cfg(not(any(desktop, target_os = "ios")))]
+    {
+        let _ = (app, window);
+        Err(khor_catalog::msg::folder_picker_unavailable().to_owned())
+    }
+}
+
 /// Files this machine already has (a drop, a picker's paths), put where
 /// the agent conversation's machine keeps files (round CHAT).
 #[tauri::command]
@@ -5032,6 +5126,11 @@ pub fn run() {
             chat_put,
             chat_put_paths,
             term_drop_stage,
+            term_drop_stage_into,
+            term_drop_folder,
+            term_drop_items,
+            term_drop_forget,
+            term_pick_folders,
             agents,
             agents_known,
             agents_known_taken,
@@ -5212,6 +5311,8 @@ mod page_fail;
 mod page_trust;
 #[cfg(target_os = "ios")]
 mod phone_page;
+#[cfg(target_os = "ios")]
+mod phone_files;
 #[cfg(desktop)]
 mod traffic;
 #[cfg(desktop)]

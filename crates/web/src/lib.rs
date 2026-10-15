@@ -264,6 +264,13 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             // A picked file waiting here for a terminal's drop (item 60
             // part 3): the same raw body, staged where this machine's
             // node serves it.
+            if cmd == "term_drop_stage_into" {
+                let Some((folder,path))=khor_gui_core::drop_stage_into_args(query) else { return Reply::refused(400,"term_drop_stage_into needs folder and path".to_owned()); };
+                return match khor_gui_core::term::term_drop_stage_into(root,&folder,&path,req.as_reader()) {
+                    Ok(path)=>Reply {code:200,kind:"application/json",body:serde_json::to_vec(&path).unwrap_or_default(),remember:None},
+                    Err(why)=>Reply::refused(400,why),
+                };
+            }
             if cmd == "term_drop_stage" {
                 let Some(name) = khor_gui_core::drop_stage_args(query) else {
                     return Reply::refused(400, "term_drop_stage needs a name query arg".to_owned());
