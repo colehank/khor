@@ -92,6 +92,7 @@ import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermOptionMeta, termOptionMeta } from "@/lib/term-option-meta";
 import { keepWebgl } from "@/lib/term-atlas";
 import { keepTerminalGlass } from "@/lib/term-glass";
+import { keepTerminalIme } from "@/lib/term-ime";
 import { onTermBlockLines, termBlockLines } from "@/lib/term-block-lines";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Cursor, type Marks } from "@/lib/term-marks";
@@ -1364,9 +1365,9 @@ export function TerminalPane({
   const pollNow = useRef<() => void>(() => {});
   // xterm's own textarea, once the terminal is open — the element an
   // input method composes in, and where `useKeysTo` sends focus and
-  // stray first keystrokes. The IME handling behind it is xterm's now;
-  // the hand-rolled composition guards this file used to carry
-  // (keyCode 229, compositionend, the parked caret) live there.
+  // stray first keystrokes. xterm owns the composition and commit;
+  // term-ime keeps preedit keys/edits away from terminal encoders and
+  // the non-composition input workarounds until that commit is ready.
   const keysRef = useRef<HTMLTextAreaElement | null>(null);
   useKeysTo(keysRef, active);
   // Whether the reader is up in history, and whether output arrived
@@ -1538,6 +1539,7 @@ export function TerminalPane({
     term.loadAddon(new UnicodeGraphemesAddon());
     term.open(mount);
     const stopGlass = keepTerminalGlass(term, box);
+    const ime = keepTerminalIme(term, box);
     // The grid's last row is where the folded capsule measures from
     // (item 72, `lib/fold-seat`): xterm's screen is exactly its rows tall.
     term.element?.querySelector(".xterm-screen")?.setAttribute("data-fold-foot", "");
@@ -1690,6 +1692,7 @@ export function TerminalPane({
     // ⌘F is caught before xterm sees it, so it neither reaches the pty
     // nor falls through to the page's own find. Everything else passes.
     term.attachCustomKeyEventHandler((ev) => {
+      if (ime.key(ev)) return false;
       if (softDelete?.key(ev) === false) return false;
       // A character held for an Option key behind it goes out before any
       // other key, so nothing overtakes it (`metaEcho`).
@@ -1984,6 +1987,7 @@ export function TerminalPane({
       keyboardUp: () => keyboardUp(term.textarea ?? null),
       onKeyboardChange,
       dropped: () => {
+        ime.cancel();
         composingNow = false;
         setComposingText(null);
       },
@@ -2892,6 +2896,7 @@ export function TerminalPane({
       osc52.dispose();
       cursor();
       unWebgl();
+      ime.stop();
       stopGlass();
       term.dispose();
       termRef.current = null;
