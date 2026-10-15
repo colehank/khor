@@ -91,7 +91,7 @@ export function useSessionContent(watch: boolean) {
     const saved = current.current.tabs.find(t => t.session === session && t.device === device && t.url === path && (t as ContentTab).view === view) as ContentTab | undefined;
     const previous = previews.current[session];
     const tab: ContentTab = saved ?? (previous?.device === device && previous.url === path && previous.view === view ? previous : {
-      id: `preview:${crypto.randomUUID()}`, session, device, url: path, title: "", view, pinned: false, touched: Date.now(),
+      id: `preview:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`}`, session, device, url: path, title: "", view, pinned: false, touched: Date.now(),
     });
     if (!saved) {
       chosen.current.set(session, tab.id);

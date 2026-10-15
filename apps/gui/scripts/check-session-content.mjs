@@ -51,12 +51,15 @@ try{
   await until(()=>fetch(`http://localhost:${port}/`).then(r=>r.ok));
   browser=await chromium.launch({channel:'chrome',headless:true,args:['--no-proxy-server']});
   const context=await browser.newContext({viewport:{width:1600,height:1000},reducedMotion:'reduce'});
+  // The LAN HTTP face has no secure-context randomUUID API.
+  await context.addInitScript(()=>Object.defineProperty(globalThis.crypto,'randomUUID',{configurable:true,value:undefined}));
   await context.addInitScript(ids=>{
     localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:ids,active:ids[0]}));localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'detail'}));localStorage.setItem('khor.lang','zh');
   },sessions);
   page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGEERROR',e.message);});
   const url=`http://localhost:${port}/?bridge=${bridgePort}`;
   await page.goto(url);
+  assert(await page.evaluate(()=>typeof globalThis.crypto.randomUUID==='undefined'),'LAN compatibility probe did not run');
   const head=id=>page.locator(`[data-tab-open="${id}"]`);
   const side=id=>page.locator(`[data-session-side="${id}"]`);
   const shown=()=>page.locator('[data-session-content][data-content-visible=true]');
