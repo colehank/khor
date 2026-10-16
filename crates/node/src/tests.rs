@@ -334,7 +334,7 @@ fn plant_discovered_claude(r: &Path, vendor_session: &str, vendor_name: &str) {
     fs::write(
         dir.join("4242.json"),
         format!(
-            r#"{{"pid":{},"sessionId":"{vendor_session}","name":"{vendor_name}","status":"busy","statusUpdatedAt":{now}}}"#,
+            r#"{{"pid":{},"sessionId":"{vendor_session}","name":"{vendor_name}","cwd":"/work/project","status":"busy","statusUpdatedAt":{now}}}"#,
             u32::MAX - 1
         ),
     )
@@ -480,8 +480,8 @@ fn a_users_rename_outlives_the_vendors_sweep() {
     };
     let before = row_of(&n);
     assert_eq!(
-        before.session.title, "vendor-name",
-        "control: the vendor names it first"
+        before.session.title, "project",
+        "control: unnamed session follows its directory"
     );
 
     n.rename_session(&before.session.id, "the rent job")
@@ -499,11 +499,11 @@ fn a_users_rename_outlives_the_vendors_sweep() {
 }
 
 /// The other half of the pair above: with no rename on record the
-/// vendor's own title shows. An implementation that ignored the overlay
+/// current directory names it. An implementation that ignored the overlay
 /// entirely passes this one alone — together they pin the overlay to
 /// "applied exactly when set".
 #[test]
-fn an_unnamed_discovered_row_keeps_the_vendors_title() {
+fn an_unnamed_discovered_row_uses_the_directory_not_vendor_title() {
     let r = root("rename-none");
     let n = Node::open(r.to_path_buf()).unwrap();
     plant_discovered_claude(&r, "unnamed0001", "vendor-name");
@@ -516,8 +516,8 @@ fn an_unnamed_discovered_row_keeps_the_vendors_title() {
             .find(|v| v.session.id.0.starts_with("tui/"))
             .expect("the planted status file must surface as a row");
         assert_eq!(
-            row.session.title, "vendor-name",
-            "no override on record: the vendor's title stands"
+            row.session.title, "project",
+            "an automatic vendor title does not override the directory"
         );
     }
 }

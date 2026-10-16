@@ -1953,21 +1953,8 @@ impl LiveKind {
                 if let Some(said) = claude.last_said(&l) {
                     r.last = Some(said);
                 }
-                // claude's own name for the conversation, when it has
-                // made one, in place of `tokens-50`.
-                //
-                // **The mechanical name was kept for uniqueness** (this
-                // machine runs three claude sessions in one repo, and
-                // the directory name would print the same title three
-                // times), and the title does that job better rather
-                // than worse: it describes what the session is *about*,
-                // and two sessions in one repo are about different
-                // things. Where there is none — measured, 49 of 93
-                // transcripts — the row keeps exactly what it printed
-                // before.
-                if let Some(title) = claude.ai_title(&l) {
-                    r.title = title;
-                }
+                // Conversation-generated names belong to the vendor UI.
+                // The row keeps its own identity; user renames overlay it later.
             }
         }
         // The forms go on last, after the preview pass has given every
@@ -2172,6 +2159,18 @@ impl LiveKind {
             {
                 if row.last == doing.title { row.last = doing.cwd.as_deref().map(tilde); }
                 doing.title = None;
+            }
+        }
+        // Compute unnamed terminal identity from its latest directory. The
+        // synced user-name overlay is applied by Node after this reading.
+        for row in &mut out {
+            if matches!(row.title.trim(), "" | "shell" | "sh" | "bash" | "zsh" | "fish" | "pwsh" | "cmd" | "-sh" | "-bash" | "-zsh" | "-fish")
+                && let Some(cwd) = row.doing.as_ref()
+                    .and_then(|d| d.cwd.as_deref())
+                    .filter(|s| !s.trim().is_empty())
+                    .or(row.place.as_deref())
+            {
+                row.title = cwd.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or(cwd).to_owned();
             }
         }
         out.retain(|r| !folded.contains(&r.id));
@@ -4400,6 +4399,9 @@ mod tests {
         };
         saved(khor_core::Doing { cwd: Some("/w/proj".into()), ..Default::default() });
         assert_eq!(row().last.as_deref(), Some("/w/proj"));
+        assert_eq!(row().title, "proj", "unnamed identity follows current directory");
+        saved(khor_core::Doing { cwd: Some("/w/ACL2027".into()), title: Some("✳ vendor task".into()), ..Default::default() });
+        assert_eq!(row().title, "ACL2027", "OSC status must not become the name");
         saved(khor_core::Doing { title: Some("vim notes.md".into()), ..Default::default() });
         assert_eq!(row().last.as_deref(), Some("vim notes.md"));
         saved(khor_core::Doing { command: Some("make".into()), exit: Some(0), cwd: Some("/w/proj".into()), ..Default::default() });

@@ -4,8 +4,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } fro
 import { createPortal } from "react-dom";
 import { recentVisit, type DeviceRow, type SessionRow } from "@/api";
 import { MidName, TabDivider, type TabFace } from "@/browse/TabStrip";
-import { Button } from "@/components/ui/button";
-import { GlassCircle } from "@/components/Glass";
 import { RowMenu } from "@/components/RowMenu";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconBrowser, IconClose, IconPlus } from "@/components/icons";
@@ -24,10 +22,8 @@ import "@/styles/session-content.css";
 import { contentView, contentName } from '@/lib/content';
 export { contentView, contentName } from '@/lib/content';
 import type { ContentNavigation } from '@/hooks/use-content-navigation';
-import { ContentPicker, ContentOverview, contentFileDeck, useContentNeighbors } from '@/views/MobileSessionContent';
+import { ContentPicker, ContentOverview, ContentSessionOverview, contentFileDeck, useContentNeighbors } from '@/views/MobileSessionContent';
 import { MobileContentPage } from '@/views/MobileContentPage';
-import { TabSheetRows, TabsGlyph } from '@/components/SessionBar';
-import { IconBack } from '@/components/icons';
 const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
 const glyph = (tab: ContentTab) => contentView(tab) === "workspace" ? null : contentView(tab) === "page" ? <IconBrowser /> : <FileKindIcon name={tab.url} />;
 
@@ -48,10 +44,10 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
   const [cut, setCut] = useState({ left: false, right: false });
   const state=navigation.get(session);
   const browsing:ContentTab={id:'browse:'+session,session,device:'',url:'',title:gui.borrow_web,view:'workspace',pinned:false,touched:0};
-  const tabs=[...content.allTabs.filter(t=>t.session===session),...(state.scene==='picker'?[browsing]:[])];
+  const tabs=[...content.allTabs.filter(t=>t.session===session&&(t.view==='file'||t.view==='page')),...(state.scene==='picker'?[browsing]:[])];
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===state.key);
   const active=state.scene==='picker'?browsing.id:current?.id;
-  const pick=(tab:ContentTab)=>{onFocus();if(tab.id===browsing.id)navigation.browse(session);else{navigation.document(tab);if(!content.isPreview(tab))quiet(content.focus(tab.id));}};
+  const pick=(tab:ContentTab)=>{onFocus();if(tab.id===browsing.id)navigation.browse(session);else{navigation.document(tab);quiet(content.focus(tab.id));}};
   const close=(tab:ContentTab)=>{if(tab.id===browsing.id){if(!navigation.back(session))onHide();}else quiet(content.close(tab.id));};
   const seek = () => {
     const box = scroller.current, tab = measure.current?.querySelector<HTMLElement>('[data-content-on="true"]');
@@ -110,8 +106,8 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
     <TabDivider />
     <div ref={scroller} onScroll={edges} className="session-content-scroll" style={cut.left || cut.right ? { maskImage: `linear-gradient(to right, ${cut.left ? 'transparent, black var(--fade-tabs)' : 'black, black'}, ${cut.right ? 'black calc(100% - var(--fade-tabs)), transparent' : 'black, black'})` } : undefined}>
       <div ref={measure} className="session-content-tabs" role="tablist" aria-label={gui.session_content}>
-        {tabs.map(tab => <div key={tab.id} data-content-tab={tab.id} data-content-on={tab.id === active} data-content-preview={content.isPreview(tab) || undefined} data-content-browse={tab.id===browsing.id||undefined} data-content-icon={glyph(tab)!==null||undefined} className="session-content-tab @container/content-tab" style={held?.[tab.id]!=null?{width:held[tab.id],flexBasis:held[tab.id],flexShrink:0}:undefined}>
-          <RowMenu items={tab.id===browsing.id?[{key:"close",label:gui.close_tab,run:()=>close(tab)}]:[content.isPreview(tab) ? { key: "keep", label: gui.content_keep, run: () => content.keep(tab.id).then(() => {}) } : { key: "pin", label: tab.pinned ? gui.unpin : gui.pin, run: () => content.pin(tab.id, !tab.pinned) }, { key: "close", label: gui.close_tab, run: () => content.close(tab.id) }]}><button role="tab" aria-selected={open && tab.id === active} tabIndex={tab.id === active ? 0 : -1} title={tab.url} className="session-content-open" onClick={()=>pick(tab)} onDoubleClick={()=>{if(content.isPreview(tab))quiet(content.keep(tab.id));}} onKeyDown={e => {
+        {tabs.map(tab => <div key={tab.id} data-content-tab={tab.id} data-content-on={tab.id === active} data-content-browse={tab.id===browsing.id||undefined} data-content-icon={glyph(tab)!==null||undefined} className="session-content-tab @container/content-tab" style={held?.[tab.id]!=null?{width:held[tab.id],flexBasis:held[tab.id],flexShrink:0}:undefined}>
+          <RowMenu items={tab.id===browsing.id?[{key:"close",label:gui.close_tab,run:()=>close(tab)}]:[{ key: "pin", label: tab.pinned ? gui.unpin : gui.pin, run: () => content.pin(tab.id, !tab.pinned) }, { key: "close", label: gui.close_tab, run: () => content.close(tab.id) }]}><button role="tab" aria-selected={open && tab.id === active} tabIndex={tab.id === active ? 0 : -1} title={tab.url} className="session-content-open" onClick={()=>pick(tab)} onKeyDown={e => {
             if(e.key===' '&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();if(!e.repeat)e.currentTarget.click();return;}
             const at = tabs.findIndex(t => t.id === tab.id);
             const to = e.key === 'ArrowRight' ? (at + 1) % tabs.length : e.key === 'ArrowLeft' ? (at + tabs.length - 1) % tabs.length : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
@@ -128,15 +124,50 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
   </div>;
 }
 
+/** Stable scroller names survive remounts and the wide/narrow portal move.
+ * Native webpage views retain their own history/scroll under the tab handle. */
+const CONTENT_SCROLLERS=['[data-file-preview]','[data-file-scroll]','.cm-scroller','[data-side-workspace] > div','[data-new-tab]','[data-files-list]','.mobile-content-overview-list'];
+function ContentPosition({session,position,show,mobile,navigation,children,...props}: ComponentProps<'section'> & {
+  session:string;position:string;show:boolean;mobile:boolean;navigation:ContentNavigation;
+}) {
+  const root=useRef<HTMLElement>(null),latest=useRef(navigation);latest.current=navigation;
+  useLayoutEffect(()=>{
+    const box=root.current;if(!show||!box)return;
+    const done=new WeakSet<HTMLElement>();let stopped=false;
+    const name=(selector:string,index:number)=>position+' '+selector+' '+index;
+    const restore=()=>{
+      if(stopped)return;
+      for(const selector of CONTENT_SCROLLERS)[...box.querySelectorAll<HTMLElement>(selector)].forEach((el,index)=>{
+        if(done.has(el)||!el.getClientRects().length)return;
+        const saved=latest.current.scrollOf(session,name(selector,index));
+        if(!saved){done.add(el);return;}
+        if(saved.top>0&&el.scrollHeight<=el.clientHeight||saved.left>0&&el.scrollWidth<=el.clientWidth)return;
+        el.scrollTop=saved.top;el.scrollLeft=saved.left;done.add(el);
+      });
+    };
+    const capture=(event:Event)=>{
+      const el=event.target;if(!(el instanceof HTMLElement)||!box.contains(el)||!el.getClientRects().length)return;
+      const selector=CONTENT_SCROLLERS.find(selector=>el.matches(selector));if(!selector)return;
+      const index=[...box.querySelectorAll(selector)].indexOf(el);
+      latest.current.scroll(session,name(selector,index),{top:el.scrollTop,left:el.scrollLeft});
+    };
+    const interact=()=>{stopped=true;};
+    const observer=new MutationObserver(restore);observer.observe(box,{childList:true,subtree:true});
+    const resize=new ResizeObserver(restore);resize.observe(box);
+    restore();box.addEventListener('scroll',capture,true);box.addEventListener('wheel',interact,{passive:true});box.addEventListener('pointerdown',interact,{passive:true});
+    return()=>{observer.disconnect();resize.disconnect();box.removeEventListener('scroll',capture,true);box.removeEventListener('wheel',interact);box.removeEventListener('pointerdown',interact);};
+  },[session,position,show,mobile]);
+  return <section {...props} ref={root}>{children}</section>;
+}
+
 /** Both sizes use the workspace file page's actual deck. Session-only
  * actions live in its existing menu, leaving the file's navigation,
  * source/preview, saving and folding in one implementation. */
-function SessionContentFile({tab,temporary,onKeep,onOpen,onBrowse,...props}: ComponentProps<typeof FilePage> & {
-  tab:ContentTab;temporary:boolean; onKeep:()=>void; onOpen:(path:string)=>void;onBrowse:()=>void;
+function SessionContentFile({tab,onOpen,onBrowse,...props}: ComponentProps<typeof FilePage> & {
+  tab:ContentTab; onOpen:(path:string)=>void;onBrowse:()=>void;
 }) {
   const {files,at}=useContentNeighbors(tab,props.machine);
   const acts=[
-    ...(temporary?[{key:'content-keep',label:gui.content_keep,run:onKeep}]:[]),
     {key:'content-browse',label:gui.content_find,run:onBrowse},
     ...(at>0?[{key:'content-previous',label:gui.content_previous,run:()=>onOpen(files[at-1])}]:[]),
     ...(at>=0&&at<files.length-1?[{key:'content-next',label:gui.content_next,run:()=>onOpen(files[at+1])}]:[]),
@@ -159,7 +190,6 @@ export function SessionContentPane({ container, content, session, devices, rows,
   if (visible && active) visited.current.add(active);
   if (visible && session && state?.scene === 'picker') pickers.current.add(session);
   useEffect(()=>{if(visible&&session&&content.ready&&!navigation.has(session))navigation.resume(session);},[visible,session,content.ready]);
-  useEffect(()=>{if(!mobile&&visible&&session&&(state?.scene==='overview'||state?.scene==='sessions'))navigation.resume(session);},[mobile,visible,session,state?.scene]);
   const fromNode = useRef(new Map<string, string>());
   useEffect(() => {
     if (!session || !selected) return;
@@ -168,8 +198,8 @@ export function SessionContentPane({ container, content, session, devices, rows,
     if(before&&before!==key&&state?.scene!=='overview'&&(state?.scene!=='document'||content.allTabs.some(t=>content.handle(t)===state.key)))navigation.document(selected);
   }, [session, selected?.id, mobile, visible]);
   useEffect(() => {
-    if (visible && session && state?.scene === 'document' && !content.allTabs.some(t => t.session === session && content.handle(t) === state.key)) navigation.back(session)||navigation.browse(session);
-  }, [mobile, visible, session, active, content.allTabs.map(t=>t.id).join(',')]);
+    if (content.ready && visible && session && state?.scene === 'document' && !content.allTabs.some(t => t.session === session && content.handle(t) === state.key)) navigation.back(session)||navigation.browse(session);
+  }, [mobile, visible, session, active, content.ready, content.allTabs.map(t=>t.id).join(',')]);
   useEffect(() => {
     const locate = (event: Event) => {
       if (event.target instanceof Element) setFocused(!!event.target.closest('[data-content-visible="true"], [data-content-picker], [data-content-tabs], [data-content-panel]'));
@@ -181,11 +211,11 @@ export function SessionContentPane({ container, content, session, devices, rows,
   const current = peers.find(t => content.handle(t) === active);
   const pick = (tab: ContentTab) => {
     navigation.document(tab);
-    if (!content.isPreview(tab)) quiet(content.focus(tab.id));
+    quiet(content.focus(tab.id));
   };
-  const preview = (owner: string, device: DeviceRow, path: string, view: 'file'|'page', line?: number|null) => {
+  const openDocument = (owner: string, device: DeviceRow, path: string, view: 'file'|'page', line?: number|null) => {
     (document.activeElement as HTMLElement|null)?.blur();
-    navigation.document(content.peek(owner, device.id, path, view, line));
+    navigation.document(content.open(owner, device.id, path, view, line));
   };
   useTabHost(visible && focused ? {
     count:peers.length,front:!!current||state?.scene==='picker',
@@ -211,28 +241,27 @@ export function SessionContentPane({ container, content, session, devices, rows,
     {content.error && <div role="alert" className="session-content-error">{content.error}</div>}
     {rows.filter(row => pickers.current.has(row.id)).map(row => {
       const show=visible&&row.id===session&&state?.scene==='picker';
-      return <section key={'picker:'+row.id} data-content-picker={row.id} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}><ContentPicker desktop={!mobile} face={faceFor(row.id)!} content={content} onClose={onClose} row={row} devices={devices} navigation={navigation} onOpen={(device,path,view,line)=>preview(row.id,device,path,view,line)}/></section>;
+      const p=navigation.get(row.id);
+      return <ContentPosition session={row.id} position={JSON.stringify(['picker',p.source,p.scope,p.query])} show={show} mobile={mobile} navigation={navigation} key={'picker:'+row.id} data-content-picker={row.id} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}><ContentPicker desktop={!mobile} face={faceFor(row.id)!} content={content} onClose={onClose} row={row} devices={devices} navigation={navigation} onOpen={(device,path,view,line)=>openDocument(row.id,device,path,view,line)}/></ContentPosition>;
     })}
     {content.allTabs.map(tab => {
       const key = content.handle(tab), show = visible && tab.session === session && key === active;
       const device = devices.find(d => d.id === tab.device);
-      const temporary = content.isPreview(tab);
       const browse = () => {
         navigation.update(tab.session, { source: contentView(tab)==='page'?'browser':'workspace' });
         navigation.browse(tab.session);
       };
-      const browser=(onBusy?: (busy:boolean)=>void)=><BrowserPane onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});releasePages(pageIds?pageIds.split(','):[],'content');}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>quiet(content.add(tab.session,device!.id,url,'page',temporary?undefined:tab.id).then(id=>navigation.update(tab.session,{scene:'document',key:id})))}/>;
-      return <section key={key} data-session-content={tab.id} data-content-handle={key} data-content-visible={show} data-content-preview={temporary || undefined} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}>
+      const browser=(onBusy?: (busy:boolean)=>void)=><BrowserPane onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});releasePages(pageIds?pageIds.split(','):[],'content');}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>navigation.document(content.open(tab.session,device!.id,url,'page',undefined,tab.id))}/>;
+      return <ContentPosition session={tab.session} position={JSON.stringify(['document',key,tab.url])} show={show} mobile={mobile} navigation={navigation} key={key} data-session-content={tab.id} data-content-handle={key} data-content-visible={show} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}>
         {!device ? <div className="session-content-unknown">{gui.content_machine_gone}</div> : <>
 
-          {contentView(tab) === 'file' ? (show || visited.current.has(key)) && <SessionContentFile tab={tab} temporary={temporary} onKeep={()=>quiet(content.keep(tab.id))} onBrowse={browse} onOpen={path=>preview(tab.session,device,path,'file')} machine={device.name} path={tab.url} here={device.me} git draft={drafts[key]} onDraft={draft => {
+          {contentView(tab) === 'file' ? (show || visited.current.has(key)) && <SessionContentFile tab={tab} onBrowse={browse} onOpen={path=>openDocument(tab.session,device,path,'file')} machine={device.name} path={tab.url} here={device.me} git draft={drafts[key]} onDraft={draft => {
             setDrafts(all => all[key] === (draft || undefined) ? all : { ...all, [key]: draft || undefined });
-            if (draft && temporary) quiet(content.keep(tab.id));
-          }} goLine={content.lines[key] || content.lines[tab.id]} contentDeck={mobile&&faceFor(tab.session)?contentFileDeck({session:tab.session,face:faceFor(tab.session)!,content,navigation,onClose,title:contentName(tab)}):undefined} onBack={()=>{if(!navigation.back(tab.session))onClose();}} onGone={() => quiet(content.close(tab.id))} onMoved={(_from,to) => point(tab,device,to)} /> : contentView(tab) === 'page' ? show && (faceFor(tab.session)?<MobileContentPage desktop={!mobile} tab={tab} handle={key} device={device} devices={devices} face={faceFor(tab.session)!} content={content} navigation={navigation} onClose={onClose} onPoint={(d,url)=>point(tab,d,url)} onKeep={()=>quiet(content.keep(tab.id))}>{onBusy=>browser(onBusy)}</MobileContentPage>:null) : null}
+          }} goLine={content.lines[key] || content.lines[tab.id]} contentDeck={mobile&&faceFor(tab.session)?contentFileDeck({session:tab.session,face:faceFor(tab.session)!,content,navigation,onClose,title:contentName(tab)}):undefined} onBack={()=>{if(!navigation.back(tab.session))onClose();}} onGone={() => quiet(content.close(tab.id))} onMoved={(_from,to) => point(tab,device,to)} /> : contentView(tab) === 'page' ? show && (faceFor(tab.session)?<MobileContentPage desktop={!mobile} tab={tab} handle={key} device={device} devices={devices} face={faceFor(tab.session)!} content={content} navigation={navigation} onClose={onClose} onPoint={(d,url)=>point(tab,d,url)}>{onBusy=>browser(onBusy)}</MobileContentPage>:null) : null}
         </>}
-      </section>;
+      </ContentPosition>;
     })}
-    {mobile&&session&&state?.scene==='sessions'&&<section data-content-sessions className="session-content-view mobile-content-overview"><div className="mobile-content-overview-head"><h2>{gui.session_tabs}</h2><Button variant="ghost" size="sm" onClick={onClose}>{gui.edit_done}</Button></div><div className="mobile-content-overview-list"><TabSheetRows faces={sessionFaces} active={session} onFocus={onInspect} onClose={onCloseSession} onNew={onNewSession} newLabel={gui.new_session}/></div><div className="mobile-content-deck"><GlassCircle aria-label={gui.back} onClick={onClose}><IconBack/></GlassCircle><div className="glass mobile-content-pill"><span className="px-row text-body">{gui.session_tabs}</span></div><GlassCircle aria-label={gui.switch_tabs(sessionFaces.length)} onClick={onClose}><TabsGlyph n={sessionFaces.length}/></GlassCircle></div></section>}
-    {mobile && session && <section data-content-overview className={cn('session-content-view', !(visible && state?.scene==='overview') && 'session-content-retained')} aria-hidden={state?.scene!=='overview'} inert={state?.scene!=='overview'}><ContentOverview face={face!} onClose={onClose} session={session} row={owner} devices={devices} content={content} navigation={navigation} onPick={pick}/></section>}
+    {session&&state?.scene==='sessions'&&<ContentPosition session={session} position="sessions" show={visible} mobile={mobile} navigation={navigation} data-content-sessions className="session-content-view mobile-content-overview"><ContentSessionOverview faces={sessionFaces} active={session} onFocus={onInspect} onCloseSession={onCloseSession} onNew={onNewSession} onClose={onClose} query={state.filter} onQuery={filter=>navigation.update(session,{filter})}/></ContentPosition>}
+    {session && <ContentPosition session={session} position="overview" show={visible&&state?.scene==='overview'} mobile={mobile} navigation={navigation} data-content-overview className={cn('session-content-view', !(visible && state?.scene==='overview') && 'session-content-retained')} aria-hidden={state?.scene!=='overview'} inert={state?.scene!=='overview'}><ContentOverview face={face!} onClose={onClose} session={session} row={owner} devices={devices} content={content} navigation={navigation} onPick={pick}/></ContentPosition>}
   </NarrowBox>, container);
 }

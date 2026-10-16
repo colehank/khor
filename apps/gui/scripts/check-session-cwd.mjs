@@ -31,10 +31,10 @@ console.log("session cwd: passed");
 // Exercise the real filter options and matching table, not a duplicate policy.
 const { build } = await import("esbuild");
 const bundle = await build({
-  stdin: { contents: 'export { SESSION_SIEVE, sessionOptions, visibleSessions, sessionSearchText } from "./src/lib/session-filter";', resolveDir: new URL("..", import.meta.url).pathname, loader: "ts" },
+  stdin: { contents: 'export { SESSION_SIEVE, sessionOptions, visibleSessions, sessionSearchText } from "./src/lib/session-filter"; export { sessionName } from "./src/lib/session-name";', resolveDir: new URL("..", import.meta.url).pathname, loader: "ts" },
   bundle: true, write: false, format: "esm", platform: "node",
 });
-const { SESSION_SIEVE, sessionOptions, visibleSessions, sessionSearchText } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+const { SESSION_SIEVE, sessionOptions, visibleSessions, sessionSearchText, sessionName } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 const moving = { id: "moving", title: "shell", home: "MacLab", word: "busy", category: "codex", place: "/birth", doing: { cwd: "/work/ACL2027" } };
 const axis = SESSION_SIEVE.find((a) => a.key === "at:");
 assert.equal(axis.pick(moving), "/work/ACL2027", "location filter follows cd");
@@ -69,3 +69,14 @@ moving.doing.cwd = String.raw`C:\work\project`;
 assert(sessionInWorkspace(moving, "MacLab", String.raw`C:\work`));
 assert(!sessionInWorkspace(moving, "MacLab", String.raw`C:\wor`));
 console.log("session location filter, search and workspace membership: passed");
+
+const namedRow = {title:'shell',place:'/birth',doing:{cwd:'/work/ACL2027',title:'✳ Claude generated title',command:'claude'}};
+assert.equal(sessionName(namedRow),'ACL2027','automatic OSC titles do not name sessions');
+namedRow.doing.cwd=String.raw`C:\work\project`;
+assert.equal(sessionName(namedRow),'project','Windows current directory names match Unix');
+assert.equal(sessionName({...namedRow,title:'My session'}),'My session','explicit user name wins');
+assert.equal(sessionName({...namedRow,title:'✳ My session'}),'✳ My session','user emoji names remain literal');
+assert.equal(sessionName({title:'shell',place:'/birth'}),'birth','birthplace is only a fallback');
+assert.equal(sessionName({title:'shell',doing:{cwd:'/',title:'automatic'}}),'/');
+assert.equal(sessionName({title:'shell',doing:{title:'automatic'}}),'shell','missing cwd never restores an agent title');
+console.log('stable session names: passed');

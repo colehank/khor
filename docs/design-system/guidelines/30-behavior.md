@@ -773,3 +773,10 @@
 | session 标题按实际空间截断，当前保留头像与常驻 × 的最低宽度，未选中缩到头像；悬停关闭替换头像不挤动布局。内外层连续鼠标关闭冻结宽度，离开、新建与 resize 释放 | `CONTENT_DESKTOP_ICONS_ONLY=1 npm run session-content`：90 宽标题、当前与非当前最低宽度／关闭位、关闭不改选中与专注、连续关闭和释放。旧 96 阈值在 90 宽直接隐藏全部标题 |
 
 Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印字符把焦点转进终端。红探针实际记录 keydown 在标签、keyup 在 xterm 且没有 click；修复后与 Enter 一起验证专注开关。
+
+
+| 规矩（2026-10-17） | 门 |
+|---|---|
+| 未命名 session 跟随当前目录；用户名称优先，OSC 与 agent 自动标题不覆盖身份 | `npm run session-cwd`（Unix／Windows、目录变化、用户 emoji、缺少 cwd）；node rename／unnamed_discovered／hosted_shell 单元测试 |
+| 打开即标签、去重与句柄稳定；慢写不抢新焦点；导航最新位置与标签集合独立恢复 | `npm run content-model`，以及 `npm run session-content` 的真实节点／文件／网页操作 |
+| 两种来源默认不弹键盘；编辑／组合输入不触发横滑，横向切页与纵向高度手势互斥 | `npm run content-ui`、`npm run session-content`；原生键盘与系统中断在真机验收 |

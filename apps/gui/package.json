@@ -57,6 +57,7 @@
     "attachments": "node scripts/check-attachments-model.mjs",
     "session-content": "node scripts/check-session-content.mjs",
     "content-ui": "node scripts/check-content-ui.mjs",
+    "content-model": "node scripts/check-content-model.mjs",
     "attachment-ui": "node scripts/check-attachment-ui.mjs",
     "content-sheet": "node scripts/check-content-sheet-bounds.mjs",
     "cm-measure": "node scripts/cm-measure.mjs"

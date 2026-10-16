@@ -655,11 +655,14 @@ export function DeckBand({
   active,
   onFocus,
   onTitle,
+  renderFace,
 }: {
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
   onTitle?: () => void;
+  /** Reuse the same drag for nested documents and browsing sources. */
+  renderFace?: (face: TabFace, role: "prev" | "cur" | "next") => ReactNode;
 }) {
   const band = useRef<HTMLDivElement>(null);
   const curSeg = useRef<HTMLDivElement>(null);
@@ -820,7 +823,7 @@ export function DeckBand({
       arrive();
       return;
     }
-    if (drag.current) return;
+    if (drag.current || (e.target instanceof Element && e.target.closest("input,textarea,[contenteditable=true],[data-band-control]")) || window.getSelection()?.isCollapsed === false) return;
     drag.current = {
       pointer: e.pointerId,
       touch: e.pointerType === "touch",
@@ -828,6 +831,7 @@ export function DeckBand({
       x0: e.clientX,
       y0: e.clientY,
       moved: false,
+      axis: null,
       // Anywhere on the current segment, its face included (UX-35 §1):
       // a short name left most of the pill deaf to a tap.
       onTitle: e.target instanceof Element && e.target.closest('[data-band-seg="cur"]') !== null,
@@ -835,7 +839,7 @@ export function DeckBand({
       past: false,
       trail: [{ t: e.timeStamp, x: e.clientX }],
     };
-    band.current?.setPointerCapture(e.pointerId);
+    if (!renderFace) band.current?.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: PointerEvent) => {
     const d = drag.current;
@@ -845,6 +849,14 @@ export function DeckBand({
     // A press that travels, in any direction, is not a tap; only its
     // sideways part moves the band.
     if (!d.moved && Math.hypot(raw, e.clientY - d.y0) < TAP_SLOP) return;
+    if (d.axis === null) d.axis = Math.abs(raw) > Math.abs(e.clientY - d.y0) ? "x" : "y";
+    if (d.axis === "y") {
+      drag.current = null;
+      if (b.hasPointerCapture(d.pointer)) b.releasePointerCapture(d.pointer);
+      springBack();
+      return;
+    }
+    if (renderFace && !b.hasPointerCapture(e.pointerId)) b.setPointerCapture(e.pointerId);
     if (!d.moved && springing.current !== null) rest();
     d.moved = true;
     d.trail = [...d.trail, { t: e.timeStamp, x: e.clientX }].filter((p) => e.timeStamp - p.t <= 2 * FLICK_MS);
@@ -878,6 +890,7 @@ export function DeckBand({
       if (d.onTitle) onTitle?.();
       return;
     }
+    if (d.axis === "y") { springBack(); return; }
     const way = Math.sign(d.dx);
     if (!prev || !next || way === 0) {
       springBack();
@@ -899,6 +912,10 @@ export function DeckBand({
   /** The touch taken away (the system's gesture, a cancel, the capture
       lost): never a switch, always back to rest. */
   const onLost = (e: PointerEvent) => {
+    // Touch buttons hold an implicit capture. Transferring it to the
+    // band emits a bubbling child loss before the band gains capture;
+    // that transfer is not the system cancelling this drag.
+    if (e.type === "lostpointercapture" && e.target !== e.currentTarget && band.current?.hasPointerCapture(e.pointerId)) return;
     const d = drag.current;
     if (!d || e.pointerId !== d.pointer) return;
     drag.current = null;
@@ -950,7 +967,7 @@ export function DeckBand({
     // **What stops this session takes the pill's look** (NOTICE-BRIEF):
     // the kind's mark in the face's seat, the short line in the name's
     // room — each tab its own, so a swipe works the same with one showing.
-    f.interaction?.notices?.length ? (
+    renderFace ? (role === "cur" && onTitle ? <button type="button" data-deck-title className="flex h-full min-h-touch min-w-0 flex-1 items-center text-left" onClick={e=>{if(e.detail===0)onTitle();}}>{renderFace(f,role)}</button> : renderFace(f,role)) : f.interaction?.notices?.length ? (
       role === "cur" && onTitle ? (
         <button
           type="button"
@@ -1013,7 +1030,8 @@ export function DeckBand({
     <div
       ref={band}
       data-deck-band
-      className="relative h-full min-w-0 flex-1 touch-none overflow-hidden"
+      className="relative h-full min-w-0 flex-1 overflow-hidden"
+      style={{ touchAction: renderFace ? "pan-y" : "none" }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -1044,6 +1062,7 @@ type BandDrag = {
   x0: number;
   y0: number;
   moved: boolean;
+  axis: "x" | "y" | null;
   onTitle: boolean;
   /** How far the current tab stands from its rest. */
   dx: number;

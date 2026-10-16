@@ -126,14 +126,15 @@ try{ checks:{
   await scope().click();await page.locator('[data-content-source=browser]').click();await address().focus();assert.equal(await address().inputValue(),'http://localhost:'+port+'/kept-draft');
   await scope().click();await page.locator('[data-content-source=workspace]').click();assert.equal(await search().inputValue(),'notes');
   await desktopPicker().getByText('notes.md',{exact:true}).click();await shown().locator('.cm-content').waitFor();
-  assert.equal((await table()).tabs.length,0,'reading a file persisted it');
+  await until(async()=>(await table()).tabs.length===1);
+  assert.equal((await table()).tabs[0].url,join(projects[0],'notes.md'),'opening the file did not persist it immediately');
   assert.equal(await shown().locator('[data-file-embedded-tools]').count(),0,'desktop content added an alternate file toolbar');await shown().locator('[data-file-deck]').waitFor();
-  const preview=await shown().getAttribute('data-session-content'),stable=await shown().getAttribute('data-content-handle');
+  const stable=await shown().getAttribute('data-content-handle');
   await shown().locator('.cm-content').evaluate(el=>window.__desktopContentEditor=el);
-  await page.locator(`[data-content-tab="${preview}"] [role=tab]`).dblclick();
+  await desktopAdd().click();await search().fill('notes');await desktopPicker().getByText('notes.md',{exact:true}).click();
   await until(async()=>(await table()).tabs.length===1);
   const first=(await table()).tabs[0];assert.equal(first.view,'file');assert.equal(first.url,join(projects[0],'notes.md'));
-  assert.equal(await shown().getAttribute('data-content-handle'),stable);assert(await shown().locator('.cm-content').evaluate(el=>el===window.__desktopContentEditor),'keeping rebuilt the editor');
+  assert.equal(await shown().getAttribute('data-content-handle'),stable);assert(await shown().locator('.cm-content').evaluate(el=>el===window.__desktopContentEditor),'reopening rebuilt the editor');
   await shown().locator('[data-file-face-toggle]').click();await shown().locator('[data-file-preview]').waitFor();
   const beforeToggle=await page.locator('[data-session-panes]').evaluate(el=>({box:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()}));
   await head(sessions[0]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===2);
@@ -150,7 +151,7 @@ try{ checks:{
   await shown().locator('.cm-content').click();await page.keyboard.press('ControlOrMeta+End');await page.keyboard.type('\nSaved from desktop content');
   await until(()=>readFileSync(join(projects[0],'only-0.txt'),'utf8').includes('Saved from desktop content'));
   await until(async()=>(await table()).tabs.length===2);
-  console.log('PASS: aligned source seats and menu icons; iconless browser draft; no persistent empty tabs; real file deck; stable double-click/edit promotion; autosave, return query and session resume');
+  console.log('PASS: aligned source seats and menu icons; iconless browser draft; no persistent empty tabs; real file deck; immediate durable opens and duplicate activation; autosave, return query and session resume');
   // CLI writes reach the same content scene without changing session scope.
   const opened=cli('tabs','--session',sessions[0],'open','--view','file',join(projects[0],'extra-01.txt'));
   await shown().locator('.cm-content').filter({hasText:'Neighbor 1'}).waitFor();await page.locator(`[data-content-tab="${opened}"]`).waitFor();
@@ -160,13 +161,15 @@ try{ checks:{
   const keyButton=page.locator(`[data-content-tab="${keyTab}"] [role=tab]`);await keyButton.waitFor();await keyButton.focus();await page.keyboard.press('ControlOrMeta+w');await page.locator(`[data-content-tab="${keyTab}"]`).waitFor({state:'detached'});
   assert.equal(await page.locator('[data-session-tabs] [data-tab]').count(),1,'content close changed focused session');
   await desktopAdd().click();await search().waitFor();await scope().click();await page.locator('[data-content-source=browser]').click();
-  await address().focus();await address().fill('http://localhost:'+port);assert.equal(await address().inputValue(),'http://localhost:'+port,'draft replacement changed before submission');await address().press('Enter');await shown().locator('[data-content-page-bar]').waitFor();await shown().locator('[data-page-address]').focus();assert.equal(await shown().locator('[data-page-address]').inputValue(),'http://localhost:'+port,'submitted address changed');await shown().locator('[data-page-address]').blur();assert.equal((await table()).tabs.length,2,'opening a page persisted it');
-  const desktopPageHandle=await shown().getAttribute('data-content-handle');await shown().locator('[data-content-page-more]').click();await page.getByRole('menuitem',{name:word('content-keep'),exact:true}).click();await until(async()=>(await table()).tabs.length===3);assert.equal(await shown().getAttribute('data-content-handle'),desktopPageHandle);
+  await address().focus();await address().fill('http://localhost:'+port);assert.equal(await address().inputValue(),'http://localhost:'+port,'draft replacement changed before submission');await address().press('Enter');await shown().locator('[data-content-page-bar]').waitFor();await shown().locator('[data-page-address]').focus();assert.equal(await shown().locator('[data-page-address]').inputValue(),'http://localhost:'+port,'submitted address changed');await shown().locator('[data-page-address]').blur();await until(async()=>(await table()).tabs.length===3);
+  writeFileSync(join(scratch,'page-before-reopen.json'),JSON.stringify(await table(),null,2));
+  const desktopPageHandle=await shown().getAttribute('data-content-handle');await desktopAdd().click();await scope().click();await page.locator('[data-content-source=browser]').click();await address().focus();await address().fill('http://localhost:'+port);assert.equal(await address().inputValue(),'http://localhost:'+port,'reopened draft replacement changed before submission');await address().press('Enter');await shown().locator('[data-content-page-bar]').waitFor();writeFileSync(join(scratch,'page-after-reopen.json'),JSON.stringify(await table(),null,2));assert.equal((await table()).tabs.length,3,'reopening the webpage created a duplicate');assert.equal(await shown().getAttribute('data-content-handle'),desktopPageHandle);
+  if(process.env.CONTENT_STOP_AFTER==='page-dedup'){assert.deepEqual(errors,[]);console.log('PASS: exact webpage draft, durable duplicate reuse and stable handle');break checks;}
   await page.locator(`[data-content-tab="${first.id}"] [role=tab]`).click();await shown().locator('[data-file-preview]').waitFor();
   await max().click();assert.equal(await page.locator('[data-session-panes]').evaluate(el=>getComputedStyle(el.firstElementChild).display),'none');await max().click();
   await page.screenshot({path:join(scratch,'desktop.png')});
   await page.reload();await head(sessions[0]).waitFor();await head(sessions[0]).click();await page.locator(`[data-content-tabs="${sessions[0]}"] [data-content-tab="${first.id}"] [role=tab]`).click();await shown().locator('.cm-content').waitFor();assert.equal((await table()).tabs.length,3);assert.equal(await shown().getAttribute('data-session-content'),first.id);
-  console.log('PASS: CLI synchronization and scoped shortcuts; temporary page keep; persisted ids after reload; maximize/restore');
+  console.log('PASS: CLI synchronization and scoped shortcuts; immediate page tabs and duplicate activation; persisted ids after reload; maximize/restore');
   // Both add controls and the session identity remain under content pressure.
   for(let i=3;i<9;i++)cli('tabs','--session',sessions[0],'open','--view','file',join(projects[0],'extra-0'+i+'.txt'));
   await until(async()=>await page.locator(`[data-content-tabs="${sessions[0]}"] [data-content-tab]`).count()>=9);
@@ -274,11 +277,12 @@ try{ checks:{
   const total=n=>page.getByRole('button',{name:word('content-tabs-count').replace('{0}',String(n)),exact:true});
   await page.waitForFunction(()=>document.querySelector('[data-terminal]')?.__xterm);
   await page.evaluate(()=>{const t=document.querySelector('[data-terminal]').__xterm;window.__contentTerm=t;window.__contentSize=[t.cols,t.rows];});
-  await page.locator('[data-deck-title]').click();await picker().locator('[data-file-tree]').waitFor();await total(0).waitFor();
+  await page.locator('[data-deck-title]:visible').click();await picker().waitFor({state:'visible'});if(!await picker().locator('[data-file-tree]').isVisible())await source(page,picker(),'workspace');const resumedFind=await field(page,picker(),'[data-content-deck] input[type=search]:visible');assert.equal(await resumedFind.inputValue(),'only-0','narrow picker lost its latest workspace query');await resumedFind.fill('');await resumedFind.blur();await picker().locator('[data-file-tree]').waitFor();await total(0).waitFor();
   assert.equal((await mobileTable()).length,0,'picker created a persistent tab');await browse(page);assert.equal((await mobileTable()).length,0,'+ created an empty tab');
   assert.equal(await page.locator('[data-content-panel] .session-content-tools').count(),0);
   assert(await page.evaluate(()=>document.querySelector('[data-terminal]').__xterm===window.__contentTerm));
   assert.deepEqual(await page.evaluate(()=>{const t=document.querySelector('[data-terminal]').__xterm;return [t.cols,t.rows];}),await page.evaluate(()=>window.__contentSize),'content refit terminal');
+  assert.equal(await page.locator('[data-content-panel]').getAttribute('data-detent'),'full','picker editing did not expand sheet');await page.locator('[data-place-grab]').click();await page.locator('[data-content-panel][data-detent=half]').waitFor();
   const mouseGrip=await page.locator('[data-place-grab]').boundingBox();
   const mousePanel=()=>page.locator('[data-content-panel]');
   const mouseHeight=await mousePanel().evaluate(el=>el.getBoundingClientRect().height);
@@ -289,46 +293,58 @@ try{ checks:{
   }
   await page.mouse.up();await mousePanel().locator('[data-place-grab]').waitFor();
   await page.screenshot({path:join(scratch,'mobile-picker.png')});
-  const find=()=>picker().locator('[data-content-search]');
+  const find=()=>picker().locator('[data-content-deck] input[type=search]:visible');
+  async function field(host,where,selector){
+    const input=where.locator(selector);
+    if(!await input.isVisible())await where.locator('[data-content-deck] [data-deck-band]:visible').click();
+    await input.waitFor({state:'visible'});return input;
+  }
+  const fillFind=async(host,where,value)=>{const input=await field(host,where,'[data-content-deck] input[type=search]:visible');await input.fill(value);};
+  const findValue=async(host,where)=>(await field(host,where,'[data-content-deck] input[type=search]:visible')).inputValue();
+  async function source(host,where,value){
+    const end=where.locator('[data-content-edit-end]:visible');if(await end.isVisible())await end.click();
+    await where.locator('[data-content-scope]:visible').click();await host.locator('[data-content-source='+value+']').click();
+    assert(!await host.evaluate(()=>document.activeElement?.matches('input,textarea')),'source switch focused an input');
+  }
   const fileAction=async(host,document,name)=>{if(await document.locator('[data-deck-strip]').isVisible())await document.locator('[data-deck-strip]').click();await document.locator('[data-file-more]').click();await host.getByRole('menuitem',{name,exact:true}).click();};
-  const keep=async(host,document)=>{if(await document.locator('[data-file-page]').count())await fileAction(host,document,word('content-keep'));else{await document.locator('[data-content-page-more]').click();await host.getByRole('menuitem',{name:word('content-keep'),exact:true}).click();}};
   async function browse(host){const document=host.locator('[data-session-content][data-content-visible=true]');if(await document.locator('[data-deck-strip]').isVisible())await document.locator('[data-deck-strip]').click();const overview=host.locator('[data-content-overview]:not(.session-content-retained)');if(!await overview.isVisible())await host.locator('[data-content-overview-button]:visible').click();await overview.getByRole('button',{name:word('content-find'),exact:true}).click();};
-  await find().fill('only-0');await picker().getByText('only-0.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();await total(0).waitFor();
+  await fillFind(page,picker(),'only-0');await picker().getByText('only-0.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();await total(1).waitFor();
   await shown().locator('[data-file-deck]').waitFor();
   assert.equal(await page.locator('[data-session-bar]:visible').count(),0,'terminal deck remained visible behind the file');
   assert.equal(await page.locator('[data-content-overview-button]:visible').count(),1,'content has duplicate tab buttons');
-  assert.equal(await shown().locator('.content-owner-face [data-side-face]').count(),1,'file deck lost the session identity');
+  assert.equal(await shown().locator('[data-band-seg=cur] .content-owner-face [data-side-face]').count(),1,'file deck lost the session identity');
   assert.equal(await shown().locator('[data-file-embedded-tools]').count(),0,'phone used desktop embedded tools instead of the file deck');
   assert.equal(await shown().locator('.mobile-content-document-head').count(),0,'file still has a second top toolbar');
   const fileBox=await shown().locator('[data-file-page]').boundingBox(),fileDeck=await shown().locator('[data-file-deck]').boundingBox();
   assert(Math.abs(fileBox.y+fileBox.height-fileDeck.y-fileDeck.height)<2,'file deck is not on its page bottom');
   await shown().locator('.mobile-file-identity').click({trial:true});await shown().locator('[data-file-more]').click({trial:true});
   await page.screenshot({path:join(scratch,'mobile-file-deck.png')});
-  await shown().locator('[data-file-back]').click();assert.equal(await find().inputValue(),'only-0');
-  await find().fill('notes.md');await picker().getByText('notes.md',{exact:true}).click();await shown().locator('.cm-content').waitFor();
-  const handle=await shown().getAttribute('data-content-handle');await page.evaluate(()=>window.__keptEditor=document.querySelector('[data-content-visible=true] .cm-content'));assert.equal((await mobileTable()).length,0);
-  await keep(page,shown());await total(1).waitFor();
-  assert.equal(await shown().getAttribute('data-content-handle'),handle);assert(await page.evaluate(()=>document.querySelector('[data-content-visible=true] .cm-content')===window.__keptEditor),'keep remounted editor');
-  assert.equal((await mobileTable())[0].view,'file');assert.notEqual((await mobileTable())[0].id,handle);
-  await browse(page);await find().fill('only-0');await picker().getByText('only-0.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();
+  await shown().locator('[data-file-back]').click();assert.equal(await findValue(page,picker()),'only-0');
+  await fillFind(page,picker(),'notes.md');await picker().getByText('notes.md',{exact:true}).click();await shown().locator('.cm-content').waitFor();
+  const handle=await shown().getAttribute('data-content-handle');await page.evaluate(()=>window.__keptEditor=document.querySelector('[data-content-visible=true] .cm-content'));await until(async()=>(await mobileTable()).length===2);
+  await total(2).waitFor();
+  assert.equal(await shown().getAttribute('data-content-handle'),handle);assert(await page.evaluate(()=>document.querySelector('[data-content-visible=true] .cm-content')===window.__keptEditor),'tab acknowledgement remounted editor');
+  assert((await mobileTable()).every(t=>t.view==='file'));assert.notEqual((await mobileTable()).find(t=>t.url.endsWith('notes.md')).id,handle);
+  await browse(page);await fillFind(page,picker(),'only-0');await picker().getByText('only-0.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();
   await page.evaluate(()=>window.__editingPreview=document.querySelector('[data-content-visible=true] .cm-content'));
-  await shown().locator('.cm-content').click();await page.keyboard.press('ControlOrMeta+End');await page.keyboard.type('\nMobile preview edit');if(await shown().locator('[data-deck-strip]').isVisible())await shown().locator('[data-deck-strip]').click();await total(2).waitFor();
-  await until(()=>readFileSync(join(projects[0],'only-0.txt'),'utf8').includes('Mobile preview edit'));
-  assert(await page.evaluate(()=>document.querySelector('[data-content-visible=true] .cm-content')===window.__editingPreview),'edit promotion remounted editor');
+  await shown().locator('.cm-content').click();await page.keyboard.press('ControlOrMeta+End');await page.keyboard.type('\nMobile document edit');if(await shown().locator('[data-deck-strip]').isVisible())await shown().locator('[data-deck-strip]').click();await total(2).waitFor();
+  await until(()=>readFileSync(join(projects[0],'only-0.txt'),'utf8').includes('Mobile document edit'));
+  assert(await page.evaluate(()=>document.querySelector('[data-content-visible=true] .cm-content')===window.__editingPreview),'editing remounted editor');
   await fileAction(page,shown(),word('content-previous'));await until(async()=> (await shown().innerText()).includes('# Alpha'));
   await fileAction(page,shown(),word('content-previous'));await until(async()=> (await shown().innerText()).includes('Neighbor'));
-  assert.equal((await mobileTable()).length,2,'neighbor browsing created tabs');
-  await total(2).click();const overview=()=>page.locator('[data-content-overview]:not(.session-content-retained)');
-  await overview().locator('[data-temporary=true]').waitFor();
+  await until(async()=>(await mobileTable()).length===3);
+  assert.equal((await mobileTable()).filter(t=>t.url.endsWith('notes.md')).length,1,'neighbor browsing duplicated a tab');
+  await total(3).click();const overview=()=>page.locator('[data-content-overview]:not(.session-content-retained)');
+  assert.equal(await overview().locator('[data-temporary=true]').count(),0);
   assert.equal(await overview().locator('[data-tab-sheet-new]').innerText(),word('content-find'));
   assert(await overview().locator('[data-tab-sheet-new]').evaluate(el=>el===el.parentElement.lastElementChild),'open action is not the last row');
   assert.equal(await overview().locator('[data-tab-sheet-close] svg').first().evaluate(el=>el.getBoundingClientRect().width),16,'content close icon differs from TabSheet');
   assert.equal(await overview().locator('[data-tab-sheet-row][data-on=true] button:first-child>svg').count(),0,'current tab has a redundant check');assert.equal(await overview().locator('[data-content-overview-tab]').count(),3);
-  await overview().getByRole('searchbox',{name:word('content-tabs-search'),exact:true}).fill('notes.md');assert.equal(await overview().locator('[data-content-overview-tab]').count(),1);
-  await overview().locator('[data-tab-sheet-close]').click();await total(1).waitFor();
-  await browse(page);await find().fill('');await picker().locator('[data-file-tree]').waitFor();
+  await overview().locator('[data-content-overview-search]').click();await overview().getByRole('searchbox',{name:word('content-tabs-search'),exact:true}).fill('notes.md');assert.equal(await overview().locator('[data-content-overview-tab]').count(),1);
+  await overview().locator('[data-tab-sheet-close]').click();await until(async()=>(await mobileTable()).length===2);
+  await browse(page);await fillFind(page,picker(),'');await picker().locator('[data-file-tree]').waitFor();
   if(await page.locator('[data-content-panel]').getAttribute('data-detent')==='full')await page.locator('[data-place-grab]').click();
-  const tree=picker().locator('[data-files-list]');await picker().locator('[data-file="extra-15.txt"]').scrollIntoViewIfNeeded();
+  const tree=picker().locator('[data-side-workspace] > div:first-child');await picker().locator('[data-file="extra-15.txt"]').scrollIntoViewIfNeeded();
   const scroll=await tree.evaluate(el=>{window.__originalTree=el;return el.scrollTop;});assert(scroll>0);
   await picker().locator('[data-file="extra-15.txt"]').click();await shown().locator('.cm-content').waitFor();
   await shown().locator('[data-file-scroll]').evaluate(el=>{el.scrollTop=el.scrollHeight;el.dispatchEvent(new Event('scroll',{bubbles:true}));});
@@ -343,21 +359,21 @@ try{ checks:{
   await picker().getByRole('button',{name:word('content-workspace-actions'),exact:true}).click();await page.getByRole('menuitem',{name:word('file-new'),exact:true}).click();
   await picker().locator('[data-new-name=file] input').fill('mobile-created.txt');await picker().locator('[data-new-name=file] input').press('Enter');await picker().locator('[data-file="mobile-created.txt"]').waitFor();
   assert.equal(readFileSync(join(projects[0],'mobile-created.txt'),'utf8'),'');
-  await picker().getByRole('radio',{name:word('browser-tab'),exact:true}).click();const addr=()=>picker().locator('[data-page-address]');
-  await addr().fill('https://example.com');await picker().getByRole('radio',{name:word('workspaces-tab'),exact:true}).click();await picker().getByRole('radio',{name:word('browser-tab'),exact:true}).click();
-  await addr().focus();assert.equal(await addr().inputValue(),'https://example.com');await addr().press('Enter');await shown().locator('[data-content-page-more]').waitFor();await total(1).waitFor();
-  const pageHandle=await shown().getAttribute('data-content-handle');await keep(page,shown());await total(2).waitFor();assert.equal(await shown().getAttribute('data-content-handle'),pageHandle);
+  await source(page,picker(),'browser');const addr=()=>picker().locator('[data-page-address]');
+  await (await field(page,picker(),'[data-page-address]')).fill('https://example.com');await source(page,picker(),'workspace');await source(page,picker(),'browser');await field(page,picker(),'[data-page-address]');
+  await addr().focus();assert.equal(await addr().inputValue(),'https://example.com');await addr().press('Enter');await shown().locator('[data-content-page-more]').waitFor();await until(async()=>(await mobileTable()).length===4);
+  const pageHandle=await shown().getAttribute('data-content-handle');await total(4).waitFor();assert.equal(await shown().getAttribute('data-content-handle'),pageHandle);
   await page.setViewportSize({width:1200,height:900});await side(sessions[0]).waitFor();assert.equal(await shown().getAttribute('data-content-handle'),pageHandle);
-  await page.setViewportSize({width:320,height:740});await total(2).waitFor();assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth));const deck=await total(2).boundingBox();assert(deck.x>=0&&deck.x+deck.width<=320);
-  await total(2).click();await page.screenshot({path:join(scratch,'mobile-overview.png')});
-  await page.setViewportSize({width:1200,height:900});await shown().locator('[data-content-page-bar]').waitFor();assert.equal(await shown().getAttribute('data-content-handle'),pageHandle,'mobile overview left the desktop blank');
-  await page.setViewportSize({width:320,height:740});await total(2).click();await overview().waitFor();
-  await page.locator('.mobile-content-scrim').click({position:{x:12,y:12}});await page.locator('[data-deck-title]').click();await shown().locator('[data-content-page-more]').waitFor();
-  await page.reload();await page.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();await page.locator('[data-deck-title]').click();await total(2).waitFor();assert.equal((await mobileTable()).length,2);assert.equal(await page.locator('[data-content-preview]').count(),0);
+  await page.setViewportSize({width:320,height:740});await total(4).waitFor();assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth));const deck=await total(4).boundingBox();assert(deck.x>=0&&deck.x+deck.width<=320);
+  await total(4).click();await page.screenshot({path:join(scratch,'mobile-overview.png')});
+  await page.setViewportSize({width:1200,height:900});await overview().waitFor();assert.equal(await shown().count(),0,'resizing replaced the latest overview with a document');
+  await page.setViewportSize({width:320,height:740});await overview().waitFor();
+  await page.locator('.mobile-content-scrim').click({position:{x:12,y:12}});await page.locator('[data-deck-title]:visible').click();await overview().waitFor();
+  await page.reload();await page.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();await page.locator('[data-deck-title]:visible').click();await overview().waitFor();assert.equal((await mobileTable()).length,4);assert.equal(await page.locator('[data-content-preview]').count(),0);
   const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce'});
   await phoneContext.addInitScript(ids=>{localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:ids,active:ids[0]}));localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'detail'}));localStorage.setItem('khor.lang','zh');},sessions);
   const phone=await phoneContext.newPage();phone.setDefaultTimeout(12000);phone.on('pageerror',e=>errors.push(e.message));await phone.goto(url);
-  await phone.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();await phone.locator('[data-deck-title]').click();await phone.locator('[data-content-panel]').waitFor();
+  await phone.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();await phone.locator('[data-deck-title]:visible').click();await phone.locator('[data-content-panel]').waitFor();
   assert.equal(await phone.getByRole('button',{name:word('content-expand'),exact:true}).count(),0);
   // Raw CDP touch input needs the painted hit region, not just a DOM box.
   await phone.locator('[data-place-grab]').click({trial:true});
@@ -381,40 +397,42 @@ try{ checks:{
   const afterPill=await phone.locator('[data-content-panel]').evaluate(el=>el.getBoundingClientRect().height);
   assert(Math.abs(beforePill-afterPill-95)<2,'sheet did not track the expanded bottom pill');
   await touch.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
-  await browse(phone);await phone.locator('[data-place-grab]').click();
+  await browse(phone);await source(phone,phone.locator(`[data-content-picker="${sessions[0]}"]`),'workspace');await phone.locator('[data-place-grab]').click();
   // A pan in the workspace body, away from the grabber and deck, owns
   // the sheet until its full detent. Exercise the painted touch surface.
-  const bodyTree=phone.locator(`[data-content-picker="${sessions[0]}"] [data-file-tree]`);
+  const bodyTree=phone.locator(`[data-content-picker="${sessions[0]}"] [data-side-workspace] > div:first-child`);
   await bodyTree.evaluate(el=>{el.scrollTop=0;window.getSelection()?.removeAllRanges();});
   const bodyBox=await bodyTree.boundingBox(),bx=bodyBox.x+bodyBox.width/2,by=bodyBox.y+bodyBox.height-40;
   const bodyHeight=await phone.locator('[data-content-panel]').evaluate(el=>el.getBoundingClientRect().height);
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:bx,y:by}]});
   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:bx,y:by-95}]});
-  assert(Math.abs((await phone.locator('[data-content-panel]').evaluate(el=>el.getBoundingClientRect().height))-bodyHeight-95)<2,'content body did not resize its sheet');
+  const bodyAfter=await phone.locator('[data-content-panel]').evaluate(el=>el.getBoundingClientRect().height);assert(Math.abs(bodyAfter-bodyHeight-95)<2,'content body did not resize its sheet: '+JSON.stringify({bodyBox,bx,by,bodyHeight,bodyAfter}));
   await touch.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
   await phone.screenshot({path:join(scratch,'phone-content.png')});
   await phone.locator('.mobile-content-scrim').click({position:{x:12,y:12}});await phone.locator('[data-deck-tabs]').click();await phone.locator('[data-content-sessions]').getByText('Content Beta',{exact:true}).click();await phone.locator('[data-content-overview]:not(.session-content-retained)').getByRole('button',{name:word('content-find'),exact:true}).click();
-  await phone.locator(`[data-content-picker="${sessions[1]}"] [data-file-tree]`).waitFor();assert.equal(await phone.locator(`[data-content-picker="${sessions[1]}"] [data-content-search]`).inputValue(),'');
-  // A slow promotion must not take focus back from a newer viewing slot.
+  await phone.locator(`[data-content-picker="${sessions[1]}"] [data-file-tree]`).waitFor();assert.equal(await findValue(phone,phone.locator(`[data-content-picker="${sessions[1]}"]`)),'');
+  // A delayed first open must not take focus from a newer document.
   const beta=()=>phone.locator(`[data-content-picker="${sessions[1]}"]`),betaDoc=()=>phone.locator('[data-content-visible=true]');
-  await beta().locator('[data-content-search]').fill('notes.md');await beta().getByText('notes.md',{exact:true}).click();await betaDoc().locator('.cm-content').waitFor();
-  let releaseKeep;const delayedKeep=new Promise(resolve=>releaseKeep=resolve);
-  await phone.route('**/tabs_open',async route=>{await delayedKeep;await route.continue();},{times:1});
-  await keep(phone,betaDoc());
-  await betaDoc().locator('[data-file-back]').click();await beta().locator('[data-content-search]').fill('only-1');await beta().getByText('only-1.txt',{exact:true}).click();await betaDoc().locator('.cm-content').waitFor();
-  releaseKeep();await until(async()=> (await table()).tabs.filter(t=>t.session===sessions[1]).length===1);
-  assert((await betaDoc().locator('.cm-content').innerText()).includes('This file belongs to 1'),'slow keep stole focus from newer preview');
-  // Closing during promotion waits for the node id, then closes that id.
+  let releaseOpen;const delayedOpen=new Promise(resolve=>releaseOpen=resolve);
+  await phone.route('**/tabs_open',async route=>{await delayedOpen;await route.continue();},{times:1});
+  await fillFind(phone,beta(),'notes.md');await beta().getByText('notes.md',{exact:true}).click();await betaDoc().locator('.cm-content').waitFor();
+  await betaDoc().locator('[data-file-back]').click();await fillFind(phone,beta(),'only-1');await beta().getByText('only-1.txt',{exact:true}).click();await betaDoc().locator('.cm-content').waitFor();
+  releaseOpen();await until(async()=>(await table()).tabs.filter(t=>t.session===sessions[1]).length===2);
+  assert((await betaDoc().locator('.cm-content').innerText()).includes('This file belongs to 1'),'slow open stole focus from the newer document');
+  // Closing during the initial open waits for the node id, then closes it.
+  await betaDoc().locator('[data-file-back]').click();await fillFind(phone,beta(),'extra-03');
   let releaseClose;const delayedClose=new Promise(resolve=>releaseClose=resolve);
   await phone.route('**/tabs_open',async route=>{await delayedClose;await route.continue();},{times:1});
-  await keep(phone,betaDoc());await phone.getByRole('button',{name:word('content-tabs-count').replace('{0}','1'),exact:true}).click();
-  await phone.getByRole('searchbox',{name:word('content-tabs-search'),exact:true}).fill('only-1.txt');
+  await beta().getByText('extra-03.txt',{exact:true}).click();await betaDoc().locator('.cm-content').waitFor();
+  await phone.locator('[data-content-overview-button]:visible').click();
+  const pendingOverview=phone.locator('[data-content-overview]:not(.session-content-retained)');
+  await pendingOverview.locator('[data-content-overview-search]').click();await pendingOverview.getByRole('searchbox').fill('extra-03.txt');
   const closed=phone.waitForResponse(r=>r.url().endsWith('/tabs_close')&&r.request().method()==='POST');
-  await phone.locator('[data-content-overview-tab]').locator('[data-tab-sheet-close]').click();releaseClose();await closed;
-  await until(async()=>!(await table()).tabs.some(t=>t.session===sessions[1]&&t.url.endsWith('only-1.txt')));
+  await pendingOverview.locator('[data-content-overview-tab] [data-tab-sheet-close]').click();releaseClose();await closed;
+  await until(async()=>!(await table()).tabs.some(t=>t.session===sessions[1]&&t.url.endsWith('extra-03.txt')));
   await phoneContext.close();
   assert.deepEqual(errors,[]);
-  console.log('PASS: delayed promotion focus and pending close; mobile picker and neighbor browsing; stable editors and PTY size; explicit/edit promotion; autosave; overview search/close; directory scroll; new-file menu; URL drafts; width changes and reload');
+  console.log('PASS: delayed open focus and pending close; mobile picker and neighbor browsing; stable editors and PTY size; immediate tabs and duplicate reuse; autosave; overview search/close; directory scroll; new-file menu; URL drafts; width changes and reload');
   console.log('session content gate: clean');
 }}catch(e){await page?.screenshot({path:join(scratch,'failed.png')}).catch(()=>{});console.error(e);throw e;}
 finally{

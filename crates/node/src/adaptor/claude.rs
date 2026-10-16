@@ -61,12 +61,6 @@ struct StatusFile {
     /// `Procs::alive_since` tolerates.
     #[serde(default)]
     started_at: i64,
-    /// Claude's own name for the session ("tokens-50"). Better than the
-    /// directory name because it is unique per session: this machine has
-    /// three claude sessions in one repo, and the directory name would
-    /// print the same title three times.
-    #[serde(default)]
-    name: Option<String>,
     #[serde(default)]
     status: Option<String>,
     #[serde(default)]
@@ -86,9 +80,6 @@ impl StatusFile {
     }
 
     fn title(&self) -> String {
-        if let Some(name) = self.name.as_deref().filter(|n| !n.is_empty()) {
-            return name.to_owned();
-        }
         self.cwd
             .as_deref()
             .and_then(|c| Path::new(c).file_name())
@@ -2705,7 +2696,7 @@ mod tests {
         ]);
         let sweep = resumed.sweep(&procs);
         assert_eq!(sweep.rows.len(), 1, "one session id, one row");
-        assert_eq!(sweep.rows[0].title, "resumed-now", "the freshest file wins");
+        assert_eq!(sweep.rows[0].title, "resumed", "directory identity ignores the vendor's generated name");
         assert_eq!(sweep.rows[0].word, State::Busy);
         assert_eq!(sweep.unmapped, 0);
         // **Both processes, not just the winner's.** Found on this

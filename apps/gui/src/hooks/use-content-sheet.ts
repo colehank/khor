@@ -108,7 +108,7 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       // horizontal controls retain their gestures.
       if(!band && window.getSelection()?.isCollapsed===false)return;
       scroll=band?null:scroller(t);
-      if (!band && (t?.closest('[data-sheet-hold], input[type="range"]') || scrolled(t))) return;
+      if (!band && (t?.closest('[data-sheet-hold],input,textarea,[contenteditable=true]') || scrolled(t))) return;
       begin(e.touches[0].clientX,e.touches[0].clientY,e.timeStamp,band);
     };
     const drag = (x: number, y: number, time: number, prevent: () => void) => {

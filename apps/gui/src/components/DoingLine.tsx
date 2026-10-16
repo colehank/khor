@@ -10,6 +10,7 @@ import type { RowEnding } from "@/gen/bindings/RowEnding";
 import type { RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
 import { askNewSession, askOpenDir } from "@/lib/composer-handoff";
+import { sessionName } from "@/lib/session-name";
 
 // **Once it has finished, what it said** (the terminal row, the
 // owner 2026-10-08: 「a finished command still showing its command line
@@ -101,20 +102,9 @@ export function programOf(command: string): string {
   return lastSegment(first);
 }
 
-/** A name nobody gave: empty, or the shell's own. */
-const UNNAMED = /^(-?(zsh|bash|fish|sh|pwsh|cmd)|shell)?$/;
-
-/**
- * **What a terminal tab is called** (roadmap 2.5): a name the person gave
- * stays; an unnamed shell's tab follows it — the title a program set
- * (OSC 0/2), else the last command's program, else the directory's last
- * segment. The same order as iTerm2's and Terminal.app's default tab
- * titles (the job's name, then the directory).
- */
-export function termName(r: { title: string; doing: Doing | null }): string {
-  const d = r.doing;
-  if (!d || !UNNAMED.test(r.title.trim())) return r.title;
-  return d.title || (d.command ? programOf(d.command) : "") || (d.cwd ? lastSegment(d.cwd) : "") || r.title;
+/** The same stable name in rows, desktop tabs and mobile capsules. */
+export function termName(r: { title: string; doing: Doing | null; place?: string | null }): string {
+  return sessionName(r);
 }
 
 /** A directory for a narrow line: its last two segments. */

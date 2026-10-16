@@ -905,6 +905,30 @@ pub fn invite_window_minutes() -> u32 {
     (INVITE_WINDOW_MS / 60_000) as u32
 }
 
+/// Only a proved dead local listener warrants replacing it. A timeout or
+/// other transient error must not discard queued operations on a live port.
+async fn handoff_replacement(
+    probe: std::io::Result<()>,
+) -> std::io::Result<Option<tokio::net::TcpListener>> {
+    match probe {
+        Ok(()) => Ok(None),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionRefused
+                    | std::io::ErrorKind::NotConnected
+                    | std::io::ErrorKind::AddrNotAvailable
+                    | std::io::ErrorKind::InvalidInput
+            ) =>
+        {
+            tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .map(Some)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// What one-shot CLI verbs need to know about the live endpoint. The
 /// cookie makes it a key to the hand-off port — owner-only on disk.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1163,6 +1187,41 @@ impl Node {
             &self.root().join(".khor").join("endpoint.json"),
             &serde_json::to_vec(&file).map_err(|e| e.to_string())?,
         )
+    }
+
+    /// A foreground return mends the local TCP door as well as QUIC.
+    /// An in-process wake is not proof that a suspended listener still
+    /// accepts connects. Publish the replacement before dropping the old
+    /// listener; callers can then safely reread it after a refused connect.
+    async fn mend_handoffs(
+        &self,
+        ep: &iroh::Endpoint,
+        handoffs: &mut tokio::net::TcpListener,
+        cookie: &str,
+    ) -> Result<(), String> {
+        let probe = match handoffs.local_addr() {
+            Ok(addr) => match tokio::time::timeout(
+                Duration::from_millis(250),
+                tokio::net::TcpStream::connect(addr),
+            )
+            .await
+            {
+                Ok(result) => result.map(drop),
+                Err(_) => Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "local handoff listener probe timed out",
+                )),
+            },
+            Err(error) => Err(error),
+        };
+        if let Some(fresh) = handoff_replacement(probe)
+            .await
+            .map_err(msg::cant_open_handoff_port)?
+        {
+            self.write_endpoint_file(ep, &fresh, cookie)?;
+            *handoffs = fresh;
+        }
+        Ok(())
     }
 
     /// **Fresh ears**: a new endpoint on the same key, and everything
@@ -1596,6 +1655,17 @@ impl Node {
                         );
                     }
                     Wake::Resume { ears, synced, each } => {
+                        if ears.is_some() {
+                            if let Err(why) = node.mend_handoffs(&ep, &mut handoffs, &cookie).await {
+                                if let Some(ears) = ears { let _ = ears.send(Err(why)); }
+                                // No sync round ran. `ears` is the error channel;
+                                // dropping these closes the round, never fabricating
+                                // an empty successful set of peer answers.
+                                drop(synced);
+                                drop(each);
+                                continue;
+                            }
+                        }
                         resting.store(false, std::sync::atomic::Ordering::Relaxed);
                         // **Off this loop**: binding waits on the network,
                         // and the arms above — the app's own status
@@ -3190,9 +3260,12 @@ impl Node {
             return Some(Err(msg::serve_no_handoff_port(f.pid)));
         }
         Some(
-            ipc::call(f.ipc_port, &f.ipc_cookie, op)
-                .await
-                .map_err(|e| msg::serve_handoff_failed(f.pid, e)),
+            ipc::call_refreshing(f.ipc_port, &f.ipc_cookie, op, || {
+                let latest = self.endpoint_file().ok().flatten()?;
+                Some((latest.ipc_port, latest.ipc_cookie))
+            })
+            .await
+            .map_err(|e| msg::serve_handoff_failed(f.pid, e)),
         )
     }
 
@@ -11453,5 +11526,45 @@ mod rows_by_change {
         assert!(rows_since(&was, &[row("a", "x"), row("a", "y")]).is_none());
         assert!(rows_since(&was, &[]).is_none(), "every row gone is sent whole");
         assert!(rows_rebuilt(&was, &["e".to_owned()], vec![]).is_none(), "an id in neither");
+    }
+}
+
+#[cfg(test)]
+mod handoff_recovery {
+    use super::handoff_replacement;
+    use std::io::{Error, ErrorKind};
+
+    #[tokio::test]
+    async fn a_refused_foreground_listener_gets_a_new_accepting_port() {
+        let old = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let old_port = old.local_addr().unwrap().port();
+        // Inject the result of the resumed listener's loopback probe. No
+        // raw-fd close is needed, which could close an unrelated test's fd.
+        let fresh = handoff_replacement(Err(Error::from(ErrorKind::ConnectionRefused)))
+            .await
+            .unwrap()
+            .expect("a refused listener must be repaired");
+        let new_addr = fresh.local_addr().unwrap();
+        assert_ne!(new_addr.port(), old_port);
+        let connected = tokio::net::TcpStream::connect(new_addr).await.unwrap();
+        let accepted = fresh.accept().await.unwrap();
+        drop((connected, accepted));
+    }
+
+    #[tokio::test]
+    async fn healthy_or_unproven_listeners_are_never_discarded() {
+        assert!(handoff_replacement(Ok(())).await.unwrap().is_none());
+        for kind in [
+            ErrorKind::TimedOut,
+            ErrorKind::PermissionDenied,
+            ErrorKind::Interrupted,
+        ] {
+            let error = handoff_replacement(Err(Error::from(kind)))
+                .await
+                .unwrap_err();
+            assert_eq!(error.kind(), kind);
+        }
     }
 }

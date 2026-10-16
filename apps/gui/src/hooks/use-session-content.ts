@@ -1,6 +1,5 @@
-/** Session-owned content uses the node's tab table, including CLI writes.
- * Open/collapse and maximization remain viewer layout; addresses and handles
- * belong to the same persistent table the browsing landing uses. */
+/** Session-owned documents are tabs as soon as they are opened. The small
+ * optimistic queue is transport state, never a separate preview collection. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { closeTab, fetchTabs, focusTab, goTab, openTab, pinTab, type TabsOpen } from "@/api";
 
@@ -8,56 +7,55 @@ export type ContentView = "workspace" | "file" | "page";
 export type ContentTab = TabsOpen["tabs"][number] & { view: ContentView | null };
 export const CONTENT_KIND = "content";
 const EMPTY: TabsOpen = { tabs: [], active: "" };
-type Promotion = { preview: string; saved: string };
-type ContentState = { open: TabsOpen; previews: Record<string, ContentTab>; handles: Record<string, string> };
+const HANDLE_KEY = "khor.content.handles";
+type State = { open: TabsOpen; opening: ContentTab[]; handles: Record<string, string> };
+function readHandles(): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(HANDLE_KEY) || '{}');
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string,string] => typeof entry[1] === 'string')) : {};
+  } catch { return {}; }
+}
+// Browser observations normalize host casing/default ports and the empty path.
+// Keep draft spelling separate; files and page query/hash remain distinct.
+const pageIdentity = (url: string) => {
+  try { return new URL(url).href; } catch { return url; }
+};
+const same = (tab: ContentTab, session: string, device: string, url: string, view: ContentView) =>
+  tab.session === session && tab.device === device && (view === 'page' ? pageIdentity(tab.url) === pageIdentity(url) : tab.url === url) && (tab.view || 'workspace') === view;
 export function useSessionContent(watch: boolean) {
-  const [state, setState] = useState<ContentState>({ open: EMPTY, previews: {}, handles: {} });
-  const { open } = state;
+  const [state, setState] = useState<State>(() => ({ open: EMPTY, opening: [], handles: readHandles() }));
   const [lines, setLines] = useState<Record<string, { line: number; at: number }>>({});
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false), [error, setError] = useState<string | null>(null);
   const [maximized, setMaximized] = useState<string | null>(null);
-  const current = useRef(open);
-  const mounted = useRef(true);
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const writing = useRef(0);
-  const epoch = useRef(0);
-  const actionFailed = useRef(false);
-  const chosen = useRef(new Map<string, string>());
-  const previews = useRef(state.previews);
-  previews.current = state.previews;
-  const promotions = useRef(new Map<string, Promise<string>>());
-  const savedIds = useRef(new Map<string, string>());
-  const take = useCallback((value: TabsOpen, wrote = false, promotion?: Promotion) => {
+  const current = useRef(state.open), opening = useRef(state.opening), handles = useRef(state.handles);
+  const mounted = useRef(true), queue = useRef<Promise<unknown>>(Promise.resolve());
+  const writing = useRef(0), epoch = useRef(0), actionFailed = useRef(false);
+  const chosen = useRef(new Map<string, string>()), jobs = useRef(new Map<string, Promise<string>>());
+  const aliases = useRef(new Map(Object.entries(state.handles).map(([id, handle]) => [handle, id])));
+  const publish = () => setState({ open: current.current, opening: opening.current, handles: handles.current });
+  const resolve = (id: string) => aliases.current.get(id) || id;
+  const handle = (tab: ContentTab) => handles.current[tab.id] || tab.id;
+  const take = useCallback((value: TabsOpen, wrote = false) => {
     if (!mounted.current) return;
-    const before = current.current;
-    current.current = value;
-    const active = value.tabs.find(t => t.id === value.active);
+    const before = current.current, active = value.tabs.find(t => t.id === value.active);
     const changed = before.active !== value.active || before.tabs.find(t => t.id === before.active)?.touched !== active?.touched;
-    const watchingPreview = !!active?.session && chosen.current.get(active.session) === previews.current[active.session]?.id;
-    const preservePreview = watchingPreview && (promotion ? chosen.current.get(active!.session) !== promotion.preview : !wrote && !changed);
-    if (active?.session && !preservePreview) chosen.current.set(active.session, active.id);
-    if (promotion) {
-      savedIds.current.set(promotion.preview, promotion.saved);
-      const next = { ...previews.current };
-      for (const [session, tab] of Object.entries(next)) if (tab.id === promotion.preview) delete next[session];
-      previews.current = next;
+    current.current = value;
+    if (active?.session) {
+      const selection = chosen.current.get(active.session);
+      const awaiting = opening.current.some(t => t.id === selection);
+      // A queued acknowledgement must never take focus from a newer action.
+      if (!selection || !wrote && changed && !awaiting) chosen.current.set(active.session, active.id);
     }
-    for (const [key, id] of savedIds.current) if (!value.tabs.some(t => t.id === id)) savedIds.current.delete(key);
-    setState(was => {
-      const next = { ...was.previews };
-      if (promotion) for (const [session, tab] of Object.entries(next)) if (tab.id === promotion.preview) delete next[session];
-      const handles = Object.fromEntries(Object.entries(was.handles).filter(([id]) => value.tabs.some(t => t.id === id)));
-      if (promotion) handles[promotion.saved] = promotion.preview;
-      return { open: value, previews: next, handles };
-    });
+    handles.current = Object.fromEntries(Object.entries(handles.current).filter(([id]) => value.tabs.some(t => t.id === id)));
+    try { localStorage.setItem(HANDLE_KEY, JSON.stringify(handles.current)); } catch { /* device storage may be full */ }
+    setState({ open: value, opening: opening.current, handles: handles.current });
     setReady(true);
     if (wrote) actionFailed.current = false;
     if (!actionFailed.current) setError(null);
   }, []);
   useEffect(() => {
-    mounted.current = true;
-    let live = true;
+    mounted.current = true; let live = true;
     const read = () => {
       if (writing.current) return;
       const turn = epoch.current;
@@ -65,141 +63,106 @@ export function useSessionContent(watch: boolean) {
         if (live && !writing.current && turn === epoch.current) take(value);
       }, e => { if (live && !actionFailed.current) setError(String(e)); });
     };
-    read();
-    const timer = watch ? window.setInterval(read, 2000) : undefined;
+    read(); const timer = watch ? window.setInterval(read, 2000) : undefined;
     return () => { live = false; mounted.current = false; clearInterval(timer); };
   }, [watch, take]);
-  const send = useCallback(<T,>(run: () => Promise<{ value: TabsOpen; result: T; promotion?: Promotion }>): Promise<T> => {
-    writing.current++;
-    epoch.current++;
-    const task = queue.current.then(run).then(({ value, result, promotion }) => { take(value, true, promotion); return result; });
+  const send = useCallback(<T,>(run: () => Promise<{ value: TabsOpen; result: T }>): Promise<T> => {
+    writing.current++; epoch.current++;
+    const task = queue.current.then(run).then(({ value, result }) => { take(value, true); return result; });
     queue.current = task.catch(() => {});
-    return task.catch(e => { if (mounted.current) { actionFailed.current = true; setError(String(e instanceof Error ? e.message : e)); } throw e; }).finally(() => { writing.current--; });
+    return task.catch(e => {
+      if (mounted.current) { actionFailed.current = true; setError(String(e instanceof Error ? e.message : e)); }
+      throw e;
+    }).finally(() => { writing.current--; });
   }, [take]);
   const fail = (message: string) => { actionFailed.current = true; setError(message); };
-  const findPreview = (id: string) => Object.values(previews.current).find(t => t.id === id);
-  const patchPreview = (id: string, patch: Partial<ContentTab>) => {
-    setState(was => {
-      const tab = Object.values(was.previews).find(t => t.id === id);
-      return tab ? { ...was, previews: { ...was.previews, [tab.session]: { ...tab, ...patch } } } : was;
-    });
-    const tab = findPreview(id);
-    if (tab) previews.current = { ...previews.current, [tab.session]: { ...tab, ...patch } };
-  };
-  /** A glance is viewer state. It never calls tabs_open or appears in CLI ls. */
-  const peek = (session: string, device: string, path: string, view: ContentView, line?: number | null): ContentTab => {
-    const saved = current.current.tabs.find(t => t.session === session && t.device === device && t.url === path && (t as ContentTab).view === view) as ContentTab | undefined;
-    const previous = previews.current[session];
-    const tab: ContentTab = saved ?? (previous?.device === device && previous.url === path && previous.view === view ? previous : {
-      id: `preview:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`}`, session, device, url: path, title: "", view, pinned: false, touched: Date.now(),
-    });
-    if (!saved) {
-      chosen.current.set(session, tab.id);
-      previews.current = { ...previews.current, [session]: tab };
-      setState(was => ({ ...was, previews: { ...was.previews, [session]: tab } }));
-    } else void focus(saved.id).catch(() => {});
-    if (line != null) setLines(all => ({ ...all, [tab.id]: { line, at: Date.now() } }));
-    return tab;
-  };
-  /** Promote atomically with a stable render/native-page handle. Editing and
-   * selection survive the node assigning its persistent id. */
-  const keep = (id: string): Promise<string> => {
-    const saved = savedIds.current.get(id);
-    if (saved) return Promise.resolve(saved);
-    const pending = promotions.current.get(id);
-    if (pending) return pending;
-    const tab = findPreview(id);
-    if (!tab) return Promise.resolve(id);
+  const persist = (id: string, after?: string): Promise<string> => {
+    const pending = jobs.current.get(id); if (pending) return pending;
+    const tab = opening.current.find(t => t.id === id);
+    if (!tab) return Promise.resolve(resolve(id));
     const task = send(async () => {
       const value = await fetchTabs(CONTENT_KIND);
-      const existing = value.tabs.find(t => t.session === tab.session && t.device === tab.device && t.url === tab.url && (t as ContentTab).view === tab.view);
-      const saved = existing?.id ?? await openTab(CONTENT_KIND, tab.device, tab.url, tab.session, undefined, tab.view || 'file');
-      return { result: saved, value: await focusTab(CONTENT_KIND, saved), promotion: { preview: id, saved } };
-    }).finally(() => promotions.current.delete(id));
-    promotions.current.set(id, task);
-    return task;
+      const existing = (value.tabs as ContentTab[]).find(t => same(t, tab.session, tab.device, tab.url, tab.view || 'file'));
+      const saved = existing?.id ?? await openTab(CONTENT_KIND, tab.device, tab.url, tab.session, after ? resolve(after) : undefined, tab.view || 'file');
+      const focused = await focusTab(CONTENT_KIND, saved);
+      aliases.current.set(id, saved);
+      handles.current = { ...handles.current, [saved]: id };
+      opening.current = opening.current.filter(t => t.id !== id);
+      return { result: saved, value: focused };
+    }).finally(() => jobs.current.delete(id));
+    jobs.current.set(id, task); return task;
   };
-  const ensure = (session: string, device: string) => send(async () => {
-    const value = await fetchTabs(CONTENT_KIND);
-    const peers = value.tabs.filter(t => t.session === session);
-    const existing = peers.reduce<typeof peers[number] | undefined>((a, b) => !a || b.touched > a.touched ? b : a, undefined);
-    if (existing) return { result: existing.id, value: await focusTab(CONTENT_KIND, existing.id) };
-    const result = await openTab(CONTENT_KIND, device, "", session, undefined, "workspace");
-    return { result, value: await fetchTabs(CONTENT_KIND) };
-  });
-  const add = (session: string, device: string, path: string, view: ContentView = "workspace", after?: string, line?: number | null) => send(async () => {
-    const result = await openTab(CONTENT_KIND, device, path, session, after, view);
-    if (line != null) setLines(all => ({ ...all, [result]: { line, at: Date.now() } }));
-    return { result, value: await fetchTabs(CONTENT_KIND) };
-  });
-  const point = (id: string, device: string, path: string, view: ContentView, title = "", line?: number | null) => {
-    id = savedIds.current.get(id) || id;
-    if (findPreview(id)) {
-      patchPreview(id, { device, url: path, view, title });
-      if (line != null) setLines(all => ({ ...all, [id]: { line, at: Date.now() } }));
-      return Promise.resolve();
-    }
-    return send(async () => {
-      const value = await goTab(CONTENT_KIND, id, device, path, title, view);
-      if (line != null) setLines(all => ({ ...all, [id]: { line, at: Date.now() } }));
-      return { result: undefined, value };
-    });
+  const focus = (id: string): Promise<void> => {
+    const tab = opening.current.find(t => t.id === id) || current.current.tabs.find(t => t.id === resolve(id));
+    if (tab) { chosen.current.set(tab.session, handle(tab as ContentTab)); publish(); }
+    if (opening.current.some(t => t.id === id)) return persist(id).then(() => {});
+    return send(async () => ({ result: undefined, value: await focusTab(CONTENT_KIND, resolve(id)) }));
   };
-  const rename = (id: string, title: string) => {
-    id = savedIds.current.get(id) || id;
-    if (findPreview(id)) { patchPreview(id, { title }); return Promise.resolve(); }
-    return send(async () => {
-      const tab = current.current.tabs.find(t => t.id === id);
-      if (!tab) return { result: undefined, value: current.current };
-      return { result: undefined, value: await goTab(CONTENT_KIND, id, tab.device, tab.url, title) };
-    });
+  const open = (session: string, device: string, path: string, view: ContentView, line?: number | null, after?: string): ContentTab => {
+    // The picker itself is navigation and must never allocate an empty tab.
+    if (view === 'workspace') throw new Error('Workspace browsing is navigation, not a document tab');
+    const known = [...current.current.tabs as ContentTab[], ...opening.current].find(t => same(t, session, device, path, view));
+    const tab = known || { id: `opening:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`}`, session, device, url: path, title: '', view, pinned: false, touched: Date.now() };
+    chosen.current.set(session, handle(tab));
+    if (!known) opening.current = [...opening.current, tab];
+    publish();
+    if (opening.current.some(t => t.id === tab.id)) void persist(tab.id, after).catch(() => {});
+    else void focus(tab.id).catch(() => {});
+    if (line != null) setLines(all => ({ ...all, [handle(tab)]: { line, at: Date.now() } }));
+    return tab;
   };
-  const follow = (id: string, path: string) => {
-    id = savedIds.current.get(id) || id;
-    if (findPreview(id)) { patchPreview(id, { url: path }); return Promise.resolve(); }
-    return send(async () => {
-      const tab = current.current.tabs.find(t => t.id === id);
-      return { result: undefined, value: tab ? await goTab(CONTENT_KIND, id, tab.device, path, tab.title) : current.current };
-    });
+  const add = (session: string, device: string, path: string, view: ContentView = 'file', after?: string, line?: number | null) => {
+    const tab = open(session, device, path, view, line, after); return persist(tab.id, after);
   };
-  const focus = (id: string) => {
-    id = savedIds.current.get(id) || id;
-    const preview = findPreview(id);
-    if (preview) { chosen.current.set(preview.session, id); setState(was => ({ ...was })); return Promise.resolve(); }
-    return send(async () => ({ result: undefined, value: await focusTab(CONTENT_KIND, id) }));
-  };
-  const pin = (id: string, on: boolean) => send(async () => ({ result: undefined, value: await pinTab(CONTENT_KIND, id, on) }));
+  const point = (id: string, device: string, path: string, view: ContentView, title = '', line?: number | null) => persist(id).then(saved => send(async () => {
+    if (line != null) setLines(all => ({ ...all, [handles.current[saved] || saved]: { line, at: Date.now() } }));
+    return { result: undefined, value: await goTab(CONTENT_KIND, saved, device, path, title, view) };
+  }));
+  const rename = (id: string, title: string) => persist(id).then(saved => send(async () => {
+    const tab = current.current.tabs.find(t => t.id === saved);
+    return { result: undefined, value: tab ? await goTab(CONTENT_KIND, saved, tab.device, tab.url, title) : current.current };
+  }));
+  const follow = (id: string, path: string) => persist(id).then(saved => send(async () => {
+    const tab = current.current.tabs.find(t => t.id === saved);
+    return { result: undefined, value: tab ? await goTab(CONTENT_KIND, saved, tab.device, path, tab.title) : current.current };
+  }));
+  const pin = (id: string, on: boolean) => persist(id).then(saved => send(async () => ({ result: undefined, value: await pinTab(CONTENT_KIND, saved, on) })));
   const close = (id: string): Promise<void> => {
-    const pending = promotions.current.get(id);
-    if (pending) return pending.then(saved => close(saved));
-    id = savedIds.current.get(id) || id;
-    const preview = findPreview(id);
-    if (preview) {
-      const next = { ...previews.current }; delete next[preview.session]; previews.current = next;
-      setState(was => { const next = { ...was.previews }; if (next[preview.session]?.id === id) delete next[preview.session]; return { ...was, previews: next }; });
-      return Promise.resolve();
+    // Closing during the first write closes the assigned node id afterwards.
+    const failed = opening.current.find(t => t.id === id);
+    if (failed && !jobs.current.has(id)) {
+      // The node may have accepted open even if its response/focus failed.
+      // Reconcile before removing the optimistic row; never leave an orphan.
+      return send(async () => {
+        const value=await fetchTabs(CONTENT_KIND);
+        const saved=(value.tabs as ContentTab[]).find(t=>same(t,failed.session,failed.device,failed.url,failed.view||'file'));
+        const next=saved?await closeTab(CONTENT_KIND,saved.id):value;
+        opening.current=opening.current.filter(t=>t.id!==id);
+        if(chosen.current.get(failed.session)===id)chosen.current.delete(failed.session);
+        return {result:undefined,value:next};
+      });
     }
-    return send(async () => {
-      const tab = current.current.tabs.find(t => t.id === id);
+    return persist(id).then(saved => send(async () => {
+      const tab = current.current.tabs.find(t => t.id === saved);
       const peers = current.current.tabs.filter(t => t.session === tab?.session);
-      const at = peers.findIndex(t => t.id === id);
-      let value = await closeTab(CONTENT_KIND, id);
-      if (tab?.session && chosen.current.get(tab.session) === id) {
-        const next = peers.filter(t => t.id !== id)[Math.min(at, peers.length - 2)];
-        if (next && value.tabs.some(t => t.id === next.id)) value = await focusTab(CONTENT_KIND, next.id);
-        else chosen.current.delete(tab.session);
+      const at = peers.findIndex(t => t.id === saved);
+      let value = await closeTab(CONTENT_KIND, saved);
+      if (tab?.session && [saved, handles.current[saved]].includes(chosen.current.get(tab.session) || '')) {
+        const next = peers.filter(t => t.id !== saved)[Math.min(at, peers.length - 2)];
+        if (next && value.tabs.some(t => t.id === next.id)) {
+          chosen.current.set(tab.session, handles.current[next.id] || next.id);
+          value = await focusTab(CONTENT_KIND, next.id);
+        } else chosen.current.delete(tab.session);
       }
       return { result: undefined, value };
-    });
+    }));
   };
-  const tabs = open.tabs as ContentTab[];
+  const tabs = [...state.open.tabs as ContentTab[], ...state.opening].filter(t => t.view === 'file' || t.view === 'page');
   const active = (session: string | null) => {
-    const peers = [...tabs, ...Object.values(state.previews)].filter(t => t.session === session);
-    return peers.find(t => t.id === chosen.current.get(session || "")) ?? peers.reduce<ContentTab | undefined>((a, b) => !a || b.touched > a.touched ? b : a, undefined);
+    const peers = tabs.filter(t => t.session === session), selected = chosen.current.get(session || '');
+    return peers.find(t => t.id === selected || handle(t) === selected) ?? peers.reduce<ContentTab | undefined>((a, b) => !a || b.touched > a.touched ? b : a, undefined);
   };
-  const allTabs = [...tabs, ...Object.values(state.previews)];
-  const handle = (tab: ContentTab) => state.handles[tab.id] || tab.id;
-  const isPreview = (tab: ContentTab) => state.previews[tab.session]?.id === tab.id;
-  return { tabs, allTabs, handle, isPreview, previews: state.previews, peek, keep, lines, ready, error, fail, ensure, add, point, rename, follow, focus, pin, close, active, maximized, setMaximized };
+  const ensure = (session: string, _device: string) => { const tab = active(session); return tab ? focus(tab.id).then(() => resolve(tab.id)) : Promise.resolve(undefined); };
+  return { tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, add, point, rename, follow, focus, pin, close, active, maximized, setMaximized };
 }
 export type SessionContent = ReturnType<typeof useSessionContent>;

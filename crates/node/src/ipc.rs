@@ -759,17 +759,61 @@ pub enum Reply {
 /// (`link::run_handoff_within`); this side is the asker's guarantee,
 /// which does not depend on the serve being well.
 pub async fn call(port: u16, cookie: &str, op: Op) -> Result<Reply, String> {
+    call_refreshing(port, cookie, op, || None).await
+}
+
+/// An endpoint file can be replaced between reading its port and connecting
+/// (notably when a suspended phone repairs its loopback listener). Retry only
+/// a refused TCP connect: no operation bytes have been sent at that point.
+/// Once connected, neither a lost reply nor a write failure is replayed.
+pub(crate) async fn call_refreshing(
+    port: u16,
+    cookie: &str,
+    op: Op,
+    mut refresh: impl FnMut() -> Option<(u16, String)>,
+) -> Result<Reply, String> {
     let (name, deadline) = (op.name(), op.deadline());
-    match tokio::time::timeout(deadline, call_unbounded(port, cookie, op)).await {
+    let attempt = async {
+        let until = tokio::time::Instant::now() + std::time::Duration::from_millis(500);
+        let (mut port, mut cookie) = (port, cookie.to_owned());
+        let stream = loop {
+            match tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+                Ok(stream) => break stream,
+                Err(error) => {
+                    if error.kind() != std::io::ErrorKind::ConnectionRefused
+                        || tokio::time::Instant::now() >= until
+                    {
+                        return Err(msg::serve_unreachable(error));
+                    }
+                    let Some((next_port, next_cookie)) = refresh() else {
+                        return Err(msg::serve_unreachable(error));
+                    };
+                    if next_port == 0 {
+                        return Err(msg::serve_unreachable(error));
+                    }
+                    if next_port == port && next_cookie == cookie {
+                        tokio::time::sleep_until(until.min(
+                            tokio::time::Instant::now() + std::time::Duration::from_millis(50),
+                        ))
+                        .await;
+                    }
+                    (port, cookie) = (next_port, next_cookie);
+                }
+            }
+        };
+        exchange(stream, &cookie, op).await
+    };
+    match tokio::time::timeout(deadline, attempt).await {
         Ok(r) => r,
         Err(_) => Err(msg::serve_op_timed_out(name, deadline.as_secs())),
     }
 }
 
-async fn call_unbounded(port: u16, cookie: &str, op: Op) -> Result<Reply, String> {
-    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
-        .await
-        .map_err(msg::serve_unreachable)?;
+async fn exchange(
+    mut stream: tokio::net::TcpStream,
+    cookie: &str,
+    op: Op,
+) -> Result<Reply, String> {
     let frame = proto::encode(&Handoff {
         cookie: cookie.to_owned(),
         op,
@@ -871,6 +915,97 @@ mod tests {
             matches!(next, Ok(Reply::Hops { .. })),
             "the next call is not held by the stuck one: {next:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_refused_old_port_refreshes_before_sending_exactly_once() {
+        let live = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let live_port = live.local_addr().unwrap().port();
+        let old = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let old_port = old.local_addr().unwrap().port();
+        drop(old); // Fault injection: endpoint.json still names the closed listener.
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = live.accept().await.unwrap();
+            let mut bytes = Vec::new();
+            socket.read_to_end(&mut bytes).await.unwrap();
+            let request: Handoff = proto::decode(&bytes).unwrap();
+            assert_eq!(request.cookie, "fresh-cookie");
+            assert!(matches!(request.op, Op::Hops));
+            socket
+                .write_all(&proto::encode(&Reply::Hops { by_device: vec![] }).unwrap())
+                .await
+                .unwrap();
+            socket.shutdown().await.unwrap();
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(80), live.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        let mut refreshes = 0;
+        let reply = call_refreshing(old_port, "old-cookie", Op::Hops, || {
+            refreshes += 1;
+            Some((live_port, "fresh-cookie".into()))
+        })
+        .await;
+        assert!(matches!(reply, Ok(Reply::Hops { .. })), "{reply:?}");
+        assert_eq!(refreshes, 1);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_lost_reply_never_replays_an_operation() {
+        let live = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = live.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = live.accept().await.unwrap();
+            let mut bytes = Vec::new();
+            socket.read_to_end(&mut bytes).await.unwrap();
+            let request: Handoff = proto::decode(&bytes).unwrap();
+            assert!(matches!(request.op, Op::Hops));
+            drop(socket); // The operation ran, but its answer disappeared.
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(80), live.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        let mut refreshes = 0;
+        let reply = call_refreshing(port, "cookie", Op::Hops, || {
+            refreshes += 1;
+            Some((port, "cookie".into()))
+        })
+        .await;
+        assert!(reply.is_err());
+        assert_eq!(
+            refreshes, 0,
+            "no endpoint refresh after any request bytes went out"
+        );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_refused_live_pid_has_a_bounded_connect_retry() {
+        let dead = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = dead.local_addr().unwrap().port();
+        drop(dead);
+        let began = tokio::time::Instant::now();
+        let reply = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            call_refreshing(port, "cookie", Op::Hops, || Some((port, "cookie".into()))),
+        )
+        .await
+        .expect("connect retry escaped its budget");
+        assert!(reply.is_err());
+        assert!(began.elapsed() < std::time::Duration::from_secs(2));
     }
 
     /// Every tier is a real deadline and the in-process one is the
