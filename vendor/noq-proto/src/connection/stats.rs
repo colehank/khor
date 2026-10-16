@@ -2,7 +2,7 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::Duration;
+use crate::{Duration, Instant};
 use crate::FrameType;
 
 use super::PathId;
@@ -252,6 +252,10 @@ pub struct PathStats {
     /// this path with nothing acknowledged since, RFC 9002's `pto_count`.
     /// Read like [`Self::rtt`], at the moment of the call.
     pub pto_count: u32,
+    /// khor patch 3: when a packet last arrived on this path, if one has.  With
+    /// [`Self::pto_count`] it says how long the path has been silent: probe timeouts alone
+    /// come within ~75 ms on a 1 ms path, a stall of the machine rather than of the path.
+    pub last_received: Option<Instant>,
 }
 
 /// Connection statistics.
@@ -301,6 +305,7 @@ impl std::ops::Add<PathStats> for ConnectionStats {
             black_holes_detected: _,
             current_mtu: _,
             pto_count: _,
+            last_received: _,
         } = rhs;
         Self {
             udp_tx: self.udp_tx + udp_tx,
@@ -335,6 +340,7 @@ impl std::ops::AddAssign<PathStats> for ConnectionStats {
             black_holes_detected: _,
             current_mtu: _,
             pto_count: _,
+            last_received: _,
         } = rhs;
         let Self {
             udp_tx,

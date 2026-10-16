@@ -9,7 +9,17 @@
 
 ## 补丁
 
-五处。
+六处。
+
+### 6. `src/connection/mod.rs`：连接级的保活只 ping 没有自己保活的路径（2026-10-17，path-fix 第三棒）
+
+上游连接级保活（`ConnTimer::KeepAlive`，iroh 设的 5 秒）一到时就 `ping()` **每一条**路径（源码里的 TODO 自己也说太粗）。
+iroh 给每条路径都设了路径级的保活（`default_path_keep_alive_interval`，备用直连、排在直连后面的中继是 15 秒，vendor/iroh
+补丁 18），可连接级和选中那条路径的 5 秒是同一刻复位的，谁先到看运气：先到的那次把备用、中继也一起 ping 了，它们自己的
+15 秒形同虚设（netlab p4 打点：备用直连和中继实际约 9 秒一个 PING，两边都发，每个再一个 ACK）。
+补丁：连接级保活只给没有自己保活的路径置 `pending_ping`；有的由它自己的定时器管（`PathTimer::PathKeepAlive`）。
+iroh 的路径都有，所以连接级保活在 khor 里等于不发包；连接本身的空闲超时由选中那条 5 秒的保活顶着。改动 10 行。
+noq-proto 自己的 427 个单元测试打上后全过。上游可以提（要点：`ping()` 的 TODO；路径级保活应当盖过连接级的）。升级时要重打。
 
 ### 5. `src/connection/mod.rs`：最大确认号不是新确认的，不取 RTT 样本（2026-10-17，path-fix）
 
@@ -31,17 +41,30 @@ netlab 里测到 7 次，全是这种：1 ms 的路上 4.67 秒、17.6 秒的样
 不管它是不是 `Available`；不能自己发的（放弃了、没验证的）照旧由最适合发数据的那条代带（`acks_go_on`）。
 三处：`space_can_send` 的 `acks` 只算这条路径会带的；`poll_transmit` 里自己的 ACK 到时（`pending_acks.can_send()`）
 备用路径也发一个包；`populate_packet` 的 ACK 段按 `acks_go_on` 挑。握手中、没协商多路径时 `acks_on_own_path` 是假，
-和上游一字不差。代价：备用路径保活 PING 的 ACK 在它自己上回，原来也多半是单独一个只带 ACK 的包，包数不变。
+和上游一字不差。
+代价（10-17 第三棒用 PATHDBG 量的，第二棒原来写的「包数不变」不对）：一条没被选中的路径收到 PING，回的 ACK 现在是这条
+路径上单独一个包，原来它和别的路径的 ACK 挤在选中那条的同一个包里；在中继路径上它还走 TCP，中继那头回一个 TCP 的 ACK。
+netlab p4（双栈，两条连接，各有一条中继、一条备用直连）300 秒：只关补丁 4 时 QUIC 包 3.05 个/秒，开着 5.74 个/秒
+（同时还多了一条中继路径，两次不完全可比），线上（alpha 网卡）1713 对 3269 个包。
+为什么不只对直连生效：noq-proto 看不出哪条是中继——iroh 把中继映射成 `fd15:…:12345` 这样的普通 UDP 地址，
+要分就得经 `noq::Path` 加一个按路径的开关，而 noq 没有 vendor。改为从源头少发：iroh 补丁 18 让排在直连后面的中继
+和备用直连一样 15 秒一个保活，补丁 6 让连接级保活不再顺带 ping 它们；之后 p4 是 3.64 个/秒（同一窗口），
+线上 1816 个包对改前 1498 个（300 秒，多出来的主要是双栈下留着的备用直连，见 iroh 补丁 18）。
 noq-proto 自己的 427 个单元测试（其中 44 个多路径）打上补丁后全过（拷到 disk0 上跑的，`cargo test --lib`）。
 上游可以提（要点：多路径草案允许 PATH_ACK 走任何路径，但 RTT 和丢包判断都按路径算，ACK 走别的路会让一条路径的
 存活和 RTT 掺进别的路径；建议能发的路径带自己的 ACK）。升级时要重打。
 
-### 3. `src/connection/stats.rs`、`src/connection/mod.rs`：`PathStats` 带上 `pto_count`（2026-10-16，path-fix）
+### 3. `src/connection/stats.rs`、`src/connection/paths.rs`、`src/connection/mod.rs`：`PathStats` 带上 `pto_count`、`last_received`（2026-10-16、10-17，path-fix）
 
 一条路径黑洞了，它的 RTT 估计不会变（只有确认才更新），从 `PathStats` 上看不出它已经不答；只有 PTO 计数在涨。
 iroh 的选路器要据此离开它（vendor/iroh 补丁 17，`PathSelectionData::answering`）。补丁：`PathStats` 加 `pto_count: u32`，
 `Connection::path_stats` 读时填上（同 `rtt`、`cwnd`），两处把 `PathStats` 解构的地方补上这个字段。改动约 10 行。
 `PathStats` 是 `#[non_exhaustive]`，加字段不破坏外面的用法。上游可以提。升级时要重新打。
+
+**10-17 补 `last_received`**（path-fix 第三棒）：这条路径最后一次收到包的时刻（`PathData::last_received`，
+`on_packet_authenticated` 里记下，`path_stats` 读时填上）。两次 PTO 在 1 ms 的路上只要约 75 ms，比机器卡一下还短：
+netlab 二十个场景一起跑时（turing 负载 40–110），两条路都好好的，PTO 计数也到过 2、3。iroh 补丁 17 据此要求
+「两次 PTO，且这条路至少 300 ms 什么也没收到」才算不答。改动 6 行。上游可以和 `pto_count` 一起提。
 
 ### 2. `src/connection/mod.rs`：OBSERVED_ADDRESS 不进 0-RTT（2026-10-09，NET-DIRECT，net-g）
 

@@ -2493,7 +2493,16 @@ impl Connection {
                         self.kill(ConnectionError::TimedOut);
                     }
                     ConnTimer::KeepAlive => {
-                        self.ping();
+                        // khor patch 6 (vendor/noq-proto/KHOR.md): only the paths without a
+                        // keepalive of their own; those are pinged by it, at their own pace.
+                        let paths = &self.paths;
+                        for (path_id, pns) in
+                            self.spaces[self.highest_space].number_spaces.iter_mut()
+                        {
+                            if paths.get(path_id).is_none_or(|p| p.data.keep_alive.is_none()) {
+                                pns.pending_ping = true;
+                            }
+                        }
                     }
                     ConnTimer::KeyDiscard => {
                         self.crypto_state.discard_temporary_keys();
@@ -2714,6 +2723,7 @@ impl Connection {
         stats.current_mtu = path.data.mtud.current_mtu();
         // khor patch 3: the path's run of probe timeouts.
         stats.pto_count = path.data.pto_count;
+        stats.last_received = path.data.last_received;
         Some(stats)
     }
 
@@ -3833,6 +3843,8 @@ impl Connection {
         self.reset_keep_alive(path_id, now);
         self.reset_idle_timeout(now, space_id, path_id);
         self.path_data_mut(path_id).permit_idle_reset = true;
+        // khor patch 3: how long the path has been silent, for `PathStats`.
+        self.path_data_mut(path_id).last_received = Some(now);
 
         // Do not process ECN for off-path packets. If this is a migration we'll get ECN
         // back once we've migrated.
