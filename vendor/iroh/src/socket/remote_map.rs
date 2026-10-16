@@ -16,7 +16,7 @@ use tracing::{Span, error, trace};
 
 pub(crate) use self::remote_state::PathStateReceiver;
 use self::remote_state::RemoteStateActor;
-pub(crate) use self::remote_state::{PEER_OBSERVED_FOR, PeerObserved};
+pub(crate) use self::remote_state::{PEER_OBSERVED_FOR, PeerObserved, UNANSWERED_PTOS};
 pub(super) use self::remote_state::RemoteStateMessage;
 pub use self::remote_state::{
     HolepunchRound, Path, PathEvent, PathEventStream, PathList, PathListIter, PathListStream,

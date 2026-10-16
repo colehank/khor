@@ -2696,6 +2696,8 @@ impl Connection {
         stats.rtt = path.data.rtt.get();
         stats.cwnd = path.data.congestion.window();
         stats.current_mtu = path.data.mtud.current_mtu();
+        // khor patch 3: the path's run of probe timeouts.
+        stats.pto_count = path.data.pto_count;
         Some(stats)
     }
 

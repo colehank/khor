@@ -9,7 +9,14 @@
 
 ## 补丁
 
-两处。
+三处。
+
+### 3. `src/connection/stats.rs`、`src/connection/mod.rs`：`PathStats` 带上 `pto_count`（2026-10-16，path-fix）
+
+一条路径黑洞了，它的 RTT 估计不会变（只有确认才更新），从 `PathStats` 上看不出它已经不答；只有 PTO 计数在涨。
+iroh 的选路器要据此离开它（vendor/iroh 补丁 17，`PathSelectionData::answering`）。补丁：`PathStats` 加 `pto_count: u32`，
+`Connection::path_stats` 读时填上（同 `rtt`、`cwnd`），两处把 `PathStats` 解构的地方补上这个字段。改动约 10 行。
+`PathStats` 是 `#[non_exhaustive]`，加字段不破坏外面的用法。上游可以提。升级时要重新打。
 
 ### 2. `src/connection/mod.rs`：OBSERVED_ADDRESS 不进 0-RTT（2026-10-09，NET-DIRECT，net-g）
 

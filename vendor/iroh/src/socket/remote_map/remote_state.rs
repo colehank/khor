@@ -72,6 +72,32 @@ const UPGRADE_INTERVAL: Duration = Duration::from_secs(60);
 /// in a high frequency, and to keep data about previous path around for subsequent connections.
 const ACTOR_MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// khor patch 17 (vendor/iroh/KHOR.md): how often, while a connection is open, the selector
+/// is run again on what the paths measure now.
+///
+/// Upstream selects only when a path opens or is abandoned, so a path that slows down or goes
+/// silent keeps carrying the connection until noq abandons it at its idle timeout (15 s).  The
+/// tick sends nothing: it reads each path's stats and moves the selection when they say so.
+const RESELECT_INTERVAL: Duration = Duration::from_millis(250);
+
+/// khor patch 17: probe timeouts in a row, with nothing acknowledged since, after which a path
+/// counts as not answering ([`PathSelectionData::answering`]).  Two is RFC 9002's tail-loss
+/// probe and its retry: about three probe timeouts, ~90 ms on a 1 ms path.
+pub(crate) const UNANSWERED_PTOS: u32 = 2;
+
+/// khor patch 19: how much the selected direct path's round trip has to rise over the lowest it
+/// read since it was selected before a hole-punching round is started at once, rather than at
+/// the next [`UPGRADE_INTERVAL`] check (the floor's half, at least this).
+const DEGRADED_BY: Duration = Duration::from_millis(5);
+
+/// khor patch 18: the keepalive of a direct path that carries nothing, a spare (selected paths
+/// keep [`crate::socket::HEARTBEAT_INTERVAL`]): a third of the packets, and still well inside
+/// a home router's 30 s UDP mapping.
+const SPARE_KEEP_ALIVE: Duration = Duration::from_secs(15);
+
+/// khor patch 18: the idle timeout that goes with [`SPARE_KEEP_ALIVE`], three of them.
+const SPARE_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
+
 /// How long to wait before retrying the addresses in [`State::pending_open_paths`].
 const OPEN_PATH_RETRY_DELAY: Duration = Duration::from_millis(333);
 
@@ -188,6 +214,18 @@ struct State {
     ///
     /// We only select a path once the path is functional in Noq.
     selected_path: Option<transports::FourTuple>,
+    /// khor patch 18: the direct path the selector keeps open beside the selected one, so a
+    /// failing selected path has somewhere to go at once.  `None`: none is kept, and every
+    /// unselected direct path is closed as upstream does.
+    backup_path: Option<transports::FourTuple>,
+    /// khor patch 19: the lowest round trip the selected path read since it was selected, and
+    /// whether a hole-punching round was already started for its rising past it.
+    selected_floor: Option<Duration>,
+    degraded: bool,
+    /// khor patch 20: the candidates last given to the connections.  A change of the direct
+    /// addresses' sources alone (an address both on an interface and learnt by QAD) is no new
+    /// candidate and starts no round.
+    last_local_candidates: Option<BTreeSet<SocketAddr>>,
     /// Time at which we should schedule the next holepunch attempt.
     scheduled_holepunch: Option<Instant>,
     /// When to next attempt opening paths in [`Self::pending_open_paths`].
@@ -240,6 +278,10 @@ impl RemoteStateActor {
                 paths: RemotePathState::new(metrics),
                 last_holepunch: None,
                 selected_path: Default::default(),
+                backup_path: None,
+                selected_floor: None,
+                degraded: false,
+                last_local_candidates: None,
                 scheduled_holepunch: None,
                 scheduled_open_path: None,
                 pending_open_paths: VecDeque::new(),
@@ -298,6 +340,10 @@ impl RemoteStateActor {
         let check_connections = time::interval(UPGRADE_INTERVAL);
         n0_future::pin!(check_connections);
 
+        // khor patch 17: the selection again, on measurement.
+        let reselect = time::interval(RESELECT_INTERVAL);
+        n0_future::pin!(reselect);
+
         loop {
             let scheduled_path_open = match self.state.scheduled_open_path {
                 Some(when) => MaybeFuture::Some(time::sleep_until(when)),
@@ -343,9 +389,11 @@ impl RemoteStateActor {
                         trace!("direct address watcher disconnected, shutting down");
                         break;
                     }
-                    self.update_local_direct_address();
-                    trace!("local addrs updated, triggering holepunching");
-                    self.trigger_holepunching();
+                    // khor patch 20: only new candidates are worth a round.
+                    if self.update_local_direct_address() {
+                        trace!("local addrs updated, triggering holepunching");
+                        self.trigger_holepunching();
+                    }
                 }
                 _ = &mut scheduled_path_open => {
                     trace!("triggering scheduled path_open");
@@ -365,6 +413,9 @@ impl RemoteStateActor {
                 }
                 _ = check_connections.tick() => {
                     self.check_connections();
+                }
+                _ = reselect.tick(), if !self.connections.is_empty() => {
+                    self.reselect();
                 }
                 _ = &mut idle_timeout => {
                     if self.is_idle(&inbox) {
@@ -586,12 +637,22 @@ impl RemoteStateActor {
     ///
     /// Each connection needs to have the local direct addresses to use as QNT address
     /// candidates.
-    fn update_local_direct_address(&mut self) {
+    ///
+    /// khor patch 20: answers whether the candidates changed.  The watcher fires on any change
+    /// of the direct addresses, their sources included; an address that is an interface's and
+    /// also what QAD reports read as one in one report and the other in the next (2026-10-16,
+    /// a machine whose global IPv6 is its interface's), and every such flip was a round of
+    /// hole punching on every connection.
+    fn update_local_direct_address(&mut self) -> bool {
         let local_addrs = self.state.local_candidates();
+        if self.state.last_local_candidates.as_ref() == Some(&local_addrs) {
+            return false;
+        }
         for conn in self.connections.values().filter_map(|s| s.handle.upgrade()) {
             update_qnt_candidates(&conn, &local_addrs);
         }
-        // todo: trace
+        self.state.last_local_candidates = Some(local_addrs);
+        true
     }
 
     /// Triggers holepunching to the remote endpoint.
@@ -756,16 +817,32 @@ impl RemoteStateActor {
     /// direct paths are closed for all connections.
     #[instrument(skip_all)]
     fn select_path(&mut self) {
+        self.select_path_on(false);
+    }
+
+    /// [`Self::select_path`]; on a measurement `tick` (khor patch 17) the selection is only
+    /// applied when it, or the backup, changed.
+    fn select_path_on(&mut self, tick: bool) {
         let current_path = self.state.selected_path.as_ref();
-        let selected_addr = {
-            let ctx = PathSelectionContext::new(current_path, &self.connections);
-            self.state.path_selector.select(&ctx).selected().cloned()
+        let (selected_addr, backup) = {
+            let ctx = PathSelectionContext::new(
+                current_path,
+                self.state.backup_path.as_ref(),
+                &self.connections,
+            );
+            let selection = self.state.path_selector.select(&ctx);
+            (selection.selected().cloned(), selection.backup().cloned())
         };
 
+        let mut changed = false;
         if let Some(addr) = selected_addr
             && self.state.selected_path.as_ref() != Some(&addr)
         {
             let prev_remote = self.state.selected_path.replace(addr.clone());
+            // khor patch 19: a new selection is measured from its own floor.
+            self.state.selected_floor = None;
+            self.state.degraded = false;
+            changed = true;
             event!(
                 target: "iroh::_events::path::selected",
                 Level::DEBUG,
@@ -776,8 +853,70 @@ impl RemoteStateActor {
         } else {
             trace!(?current_path, "keeping current path");
         }
+        // khor patch 18: the backup is whatever the selector names, none included; it is
+        // never the selected path.
+        let backup = backup.filter(|b| Some(b) != self.state.selected_path.as_ref());
+        if backup != self.state.backup_path {
+            self.state.backup_path = backup;
+            changed = true;
+        }
 
+        if tick && !changed {
+            return;
+        }
         self.apply_selected_path();
+    }
+
+    /// khor patch 17: one measurement tick.  Watches the selected direct path for going
+    /// silent or slowing down, then runs the selector on the paths' stats as they are now.
+    fn reselect(&mut self) {
+        self.watch_selected();
+        self.select_path_on(true);
+    }
+
+    /// khor patch 19: a selected direct path that stopped answering, or whose round trip
+    /// rose well past the lowest it read since it was selected, starts a hole-punching round
+    /// now: the other direct roads may have been closed (only one direct path is kept per
+    /// connection without a backup) and only a round opens them again.  Upstream checks every
+    /// [`UPGRADE_INTERVAL`] (60 s), and only whether some direct path is under 10 ms.  One
+    /// round per episode; the round's own spacing ([`HOLEPUNCH_ATTEMPTS_INTERVAL`]) holds.
+    fn watch_selected(&mut self) {
+        let Some(selected) = self.state.selected_path.clone() else {
+            return;
+        };
+        if !selected.is_ip() {
+            return;
+        }
+        let mut rtt: Option<Duration> = None;
+        let mut silent = false;
+        for conn_state in self.connections.values() {
+            let Some(conn) = conn_state.handle.upgrade() else {
+                continue;
+            };
+            for (path_id, tuple) in conn_state.paths.iter() {
+                if tuple != &selected {
+                    continue;
+                }
+                if let Some(stats) = conn.path_stats(*path_id) {
+                    rtt = Some(rtt.map_or(stats.rtt, |r| r.min(stats.rtt)));
+                    silent |= stats.pto_count >= UNANSWERED_PTOS;
+                }
+            }
+        }
+        let Some(rtt) = rtt else {
+            return;
+        };
+        let floor = self.state.selected_floor.map_or(rtt, |f| f.min(rtt));
+        self.state.selected_floor = Some(floor);
+        let by = DEGRADED_BY.max(floor / 2);
+        let worse = silent || (rtt > GOOD_ENOUGH_LATENCY && rtt >= floor + by);
+        if worse && !self.state.degraded {
+            self.state.degraded = true;
+            debug!(?rtt, ?floor, silent, "selected path degraded, triggering holepunching");
+            self.trigger_holepunching();
+        } else if !silent && rtt < floor + by / 2 {
+            self.state.degraded = false;
+        }
     }
 
     /// Propagates a change of [`State::selected_path`] to noq.
@@ -788,6 +927,7 @@ impl RemoteStateActor {
     /// - Opens the selected path if it does not exist on the connection
     /// - Sets the selected path to [`PathStatus::Available`]
     fn apply_selected_path(&mut self) {
+        let backup = self.state.backup_path.clone();
         let Some(selected) = self.state.selected_path.clone() else {
             // We can't open the selected path on all paths if we don't have one yet.  And
             // we can't close all "unselected" paths either, because we don't know which one
@@ -817,9 +957,13 @@ impl RemoteStateActor {
                 // Relay and custom paths are kept open. Only the client closes paths,
                 // to avoid the client and server independently closing different paths
                 // and racing to abandon the last one.
+                //
+                // khor patch 18: and the backup the selector named is kept too, so at most
+                // two remain.  Still only the client closes.
                 if conn.side().is_client()
                     && path_fourtuple.is_ip()
                     && path_fourtuple != &selected
+                    && Some(path_fourtuple) != backup.as_ref()
                     && conn_state.paths.values().filter(|a| a.is_ip()).count() > 1
                 {
                     trace!(?path_fourtuple, %conn_id, %path_id, "closing direct path");
@@ -1124,6 +1268,9 @@ impl State {
             %network_path,
         );
         conn_state.add_open_path(network_path.clone(), path.id(), &self.metrics);
+        // khor patch 18: a direct path opened as a backup gets the spare's pulse; one whose
+        // status then changes is set again in `set_path_status`.
+        pulse(path, &network_path, self.path_status_for_addr(&network_path));
         if network_path.is_relay()
             && let Err(e) = path.set_max_idle_timeout(Some(RELAY_PATH_MAX_IDLE_TIMEOUT))
         {
@@ -1146,6 +1293,7 @@ impl State {
         match path.set_status(status) {
             Err(error) => warn!(?error, ?network_path, ?status, "set_status failed"),
             Ok(prev_status) if prev_status != status => {
+                pulse(path, network_path, status);
                 event!(
                     target: "iroh::_events::path::set_status",
                     Level::DEBUG,
@@ -1294,6 +1442,25 @@ impl State {
             seen.remove(&oldest);
         }
     }
+}
+
+/// khor patch 18: the keepalive and idle timeout of a direct path for its status.  The
+/// selected path keeps iroh's own (5 s, 15 s); an unselected one, a spare that carries
+/// nothing, is pinged every [`SPARE_KEEP_ALIVE`].  Relay and custom paths are left as
+/// configured.  Set only when the status changes: setting the idle timeout rearms its timer.
+fn pulse(path: &noq::Path, network_path: &transports::FourTuple, status: PathStatus) {
+    if !network_path.is_ip() {
+        return;
+    }
+    let (keep, idle) = match status {
+        PathStatus::Available => (
+            crate::socket::HEARTBEAT_INTERVAL,
+            crate::socket::PATH_MAX_IDLE_TIMEOUT,
+        ),
+        PathStatus::Backup => (SPARE_KEEP_ALIVE, SPARE_IDLE_TIMEOUT),
+    };
+    let _ = path.set_keep_alive_interval(Some(keep));
+    let _ = path.set_max_idle_timeout(Some(idle));
 }
 
 /// Updates QNT's candidate addresses to be the current set of direct addresses.
@@ -1505,6 +1672,8 @@ impl ConnectionState {
 #[cfg_attr(not(feature = "unstable-custom-transports"), allow(unreachable_pub))]
 pub struct PathSelectionContext<'a> {
     current: Option<&'a transports::FourTuple>,
+    /// khor patch 18: the backup kept beside `current`, if any.
+    backup: Option<&'a transports::FourTuple>,
     source: PathsSource<'a>,
 }
 
@@ -1521,10 +1690,12 @@ enum PathsSource<'a> {
 impl<'a> PathSelectionContext<'a> {
     fn new(
         current: Option<&'a transports::FourTuple>,
+        backup: Option<&'a transports::FourTuple>,
         connections: &'a FxHashMap<ConnId, ConnectionState>,
     ) -> Self {
         Self {
             current,
+            backup,
             source: PathsSource::Live(connections),
         }
     }
@@ -1537,6 +1708,7 @@ impl<'a> PathSelectionContext<'a> {
     ) -> Self {
         Self {
             current,
+            backup: None,
             source: PathsSource::Test(paths),
         }
     }
@@ -1544,6 +1716,12 @@ impl<'a> PathSelectionContext<'a> {
     /// The path currently considered the preferred path to the remote endpoint, if any.
     pub fn current(&self) -> Option<&transports::FourTuple> {
         self.current
+    }
+
+    /// khor patch 18: the direct path currently kept open as the backup, if any
+    /// ([`PathSelection::set_backup`]).
+    pub fn backup(&self) -> Option<&transports::FourTuple> {
+        self.backup
     }
 
     /// Iterator over candidate paths.
@@ -1634,6 +1812,14 @@ impl<'a> PathSelectionData<'a> {
             StatsSource::Test(stats) => stats.as_deref().copied(),
         }
     }
+
+    /// khor patch 17: whether the path answers: fewer than [`UNANSWERED_PTOS`] probe
+    /// timeouts in a row.  A path that sent and heard nothing back keeps the round trip it
+    /// last measured, so its RTT alone never says it is gone; noq abandons it only at its
+    /// idle timeout.
+    pub fn answering(&self) -> bool {
+        self.stats().is_none_or(|s| s.pto_count < UNANSWERED_PTOS)
+    }
 }
 
 /// Trait to configure path selection.
@@ -1659,13 +1845,37 @@ pub trait PathSelector: Send + Sync + std::fmt::Debug + 'static {
 #[cfg_attr(not(feature = "unstable-custom-transports"), allow(unreachable_pub))]
 pub struct PathSelection {
     selection: Option<transports::FourTuple>,
+    /// khor patch 18.
+    backup: Option<transports::FourTuple>,
 }
 
 #[cfg_attr(not(feature = "unstable-custom-transports"), allow(unreachable_pub))]
 impl PathSelection {
     /// An empty selection.
     pub fn none() -> Self {
-        Self { selection: None }
+        Self {
+            selection: None,
+            backup: None,
+        }
+    }
+
+    /// khor patch 18: keeps this direct path open beside the selected one, as a backup.
+    ///
+    /// Upstream closes every unselected direct path on the client (one direct path per
+    /// connection), so when the selected path fails the connection falls back to the relay
+    /// until a hole-punching round opens a direct one again.  A backup stays open, as a
+    /// [`PathStatus::Backup`] path with a slower keepalive, and the selector can move to it
+    /// on the next measurement tick.  Not naming one (the default) is upstream's behaviour.
+    /// Only direct paths are kept this way; relay and custom paths are never closed anyway.
+    pub fn set_backup(&mut self, path: &PathSelectionData<'_>) {
+        if path.network_path.is_ip() {
+            self.backup = Some(path.network_path.clone());
+        }
+    }
+
+    /// khor patch 18: the backup named, if any.
+    pub(crate) fn backup(&self) -> Option<&transports::FourTuple> {
+        self.backup.as_ref()
     }
 
     /// Sets the path as the selected path.

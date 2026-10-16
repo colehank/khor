@@ -150,6 +150,11 @@ impl PathSelector for BiasedRttPathSelector {
             let Some(stats) = psd.stats() else {
                 continue;
             };
+            // khor patch 17 (vendor/iroh/KHOR.md): a path that stopped answering is no
+            // candidate, the selected one included; its RTT is the last it measured.
+            if stats.pto_count >= crate::socket::remote_map::UNANSWERED_PTOS {
+                continue;
+            }
             let rtt = stats.rtt;
             trace!(%network_path, ?rtt);
             let key = self.sort_key(network_path, rtt);

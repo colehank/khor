@@ -12,7 +12,69 @@
 
 ## 补丁
 
-十六处。
+二十一处。
+
+### 21. `src/socket/remote_map/remote_state/path_watcher.rs`：路径事件的缓冲放大，路径可以单独 ping（2026-10-16，path-fix）
+
+两件观测上的小事。一、每条连接的路径事件广播缓冲 8 条（`BROADCAST_CAPACITY`），一轮打洞在有几个候选的连接上就是一串
+「打通、选中、关掉」，读得慢一点就丢；丢了只给一个 `PathEvent::Lagged`，khor 原来连这个也不看（`roads.rs`），连接记录里
+那几次改走就没了。改为 64；khor 这边收到 `Lagged` 记一行「漏记了 N 条路径变化」，再把当时选中的那条记下。
+二、`Path::ping()`：在这条路径上马上发一个 PING。khor 判一条线死之前先 ping 每条路径（`wires::ask_every_path`），
+有一条答了就不算死（见下面补丁 17 的「判死和换路对齐」）。noq 的 `Path::ping` 本来就有，iroh 的 `Path` 没露出来。
+改动约 15 行。上游可以提：缓冲大小那一处是纯参数，`ping` 是 noq 已有能力的转出。升级到 1.3.0 时两处都要重打。
+
+### 20. `src/socket.rs`、`src/socket/remote_map/remote_state.rs`：直接地址只看地址、不看来源（2026-10-16，path-fix）
+
+turing 的公网 IPv6 就是它网卡上的地址，前面没有 NAT。`update_direct_addresses` 先放 QAD 学到的地址、再放网卡地址，
+都用 `or_insert`，于是这个地址在带 QAD v6 回答的那一轮报告里是 `Qad`，在不带的那一轮里是 `Local`，每 20–26 秒换一次。
+`DirectAddr` 连来源一起比，集合就算变了：每变一次，iroh 重发布一次地址（`store_direct_addresses`），每个远端的 actor
+都被 `local_direct_addrs.updated()` 叫醒、打一轮洞（上一轮在 5 秒以前就当场打）；khor 只数 `Local` 的地址，把它当成
+「本机网卡地址变化」，每 40–60 秒一次全网同步（`link.rs` 的 `Change::Addrs`），连接跟着反复开关路径。
+改三处：一、网卡上的地址一律是 `Local`（`collect_local_addresses` 里 `or_insert` 改成 `insert`），QAD、端口映射先报了也一样；
+二、`store_direct_addresses` 只在地址集合变了时重发布；三、actor 只在给连接的候选地址集合变了时才更新候选、打洞
+（`update_local_direct_address` 返回变没变，`State::last_local_candidates`）。来源照旧随 `watch_direct_addrs` 给出去。
+khor 这边 `journal::interface_addrs` 也改成按地址集合判断：告诉过的网卡地址只要还在 iroh 的直接地址里，换了来源也不算变。
+改动约 30 行。测试：`crates/cli/tests/netlab/paths.rs` 的 p4；`crates/node/src/journal.rs` 的
+`an_address_that_changes_only_its_source_is_no_change`。**可以起草上游**（要点：一个地址既在网卡上又被 QAD 报出时来源
+在两种报告之间来回变；来源变了不应重发布、不应打洞；网卡地址的来源应固定为 Local）。上游 1.3.0 的 changelog 没有这类改动，
+升级时要重打。
+
+### 19. `src/socket/remote_map/remote_state.rs`：选中的直连变差了当场打洞（2026-10-16，path-fix）
+
+上游只在三种时候打洞：新连接、任一方候选变化、每 60 秒检查一次且没有一条 10 ms 以内的直连。没有备份（补丁 18 不保留，
+或 iOS 上默认不保留）时，client 已经把别的直连都关了；选中的那条慢下来或不答了，另一条直连要等下一次 60 秒检查才会重新打开。
+改为：每个测量 tick（补丁 17）看选中的直连：两次 PTO 没有回音，或者平滑 RTT 超过 10 ms、且比它被选中以来的最低值高出
+max(5 ms, 最低值的一半)，就当场 `trigger_holepunching()`。每次变差只打一轮（`State::degraded`，回落到一半门槛以下才复位），
+两轮之间至少 5 秒的老规矩不变。平时不多打：只在变差的那一刻多一轮。改动约 45 行（`watch_selected`）。
+测试：`crates/cli/tests/netlab/paths.rs` 的 p2（局域网那条已被关掉，第二条直连变慢到约 21 ms）。上游可以提，和补丁 17 一起。
+升级时要重打。
+
+### 18. `src/socket/remote_map/remote_state.rs`：选路器可以留一条备用直连（2026-10-16，path-fix）
+
+上游 client 端每次选路都把没选中的直连全关掉，每条连接只留一条（注释里的理由：只让 client 关路，免得两边各关一条、
+竞相放弃最后一条）。于是选中的那条一出事，就只剩中继，等下一轮打洞。改为：`PathSelection::set_backup(&path)` 让选路器
+点名一条直连作备用，`apply_selected_path` 不关它（仍然只有 client 关路，最多留两条直连，不变式不变），
+`PathSelectionContext::backup()` 告诉选路器现在留的是哪条。不点名就和上游一样。
+没选中的直连（备用、以及 server 端还没被 client 关掉的那些）换成慢一点的保活：15 秒一个 PING、45 秒空闲超时
+（`SPARE_KEEP_ALIVE`、`SPARE_IDLE_TIMEOUT`；选中的仍是 5 秒、15 秒），只在路径状态变了时设（设空闲超时会重排定时器）。
+留不留、留哪条是 khor 的 `carry::RoadOrder` 定的（`carry::Spare`：`KHOR_SPARE_ROAD=off|near|on`，默认 near，iOS 默认 off；
+near 只留比当前慢不超过 10 ms 的那条）。改动约 60 行。测试：p3（当前路黑洞，备用直连当场接上）。
+上游可以提（要点：`PathSelection` 本来就写着「将来可以选多条」，backup 是最小的一步）。升级时要重打。
+
+### 17. `src/socket/remote_map/remote_state.rs`、`src/socket/biased_rtt_path_selector.rs`：按测量持续选路，不答的路不算（2026-10-16，path-fix）
+
+负责人 10-16：「为什么明明有最优路径却没有走」。上游的 `select_path` 只在三处调用：连接加入、路径打通、路径放弃。
+一条直连变慢了，没有人再问选路器；一条直连黑洞了，它的 RTT 还是最后量到的那个，照样被选着，直到 noq 在最后一个包之后
+15 秒（`PATH_MAX_IDLE_TIMEOUT`）放弃它——而 khor 判死只要 4 秒，结果总是收回连接、重拨，而不是换路。
+改两处：一、actor 主循环加一个 250 ms 的测量 tick（只在有连接时跑，`RESELECT_INTERVAL`），每次按各路径此刻的 stats
+重跑选路器；选择或备份变了才 apply，没变什么也不做。tick 不发任何包。二、`PathSelectionData::answering()`：
+连续 `UNANSWERED_PTOS`（2）次 PTO 没有任何确认的路径不再是候选，当前那条也一样（noq-proto 补丁 3 把 `pto_count` 放进
+`PathStats`）。1 ms 的路上两次 PTO 约 90 ms。上游自己的 `BiasedRttPathSelector` 也跳过不答的路；khor 的 `RoadOrder` 同样。
+比较仍用 noq 的平滑 RTT（RFC 6298 的 7/8 + 1/8）和原来的迟滞（直连之间快 5 ms 才换），同速时不换。
+改动约 70 行。测试：`crates/cli/tests/netlab/paths.rs` 的 p1、p1j（同速不动）、p2（变慢 10 秒内换回）、p3（黑洞时
+回显没有一次等过 1 秒、两边的线都不收回）。**可以起草上游**（要点：选路只在开关事件时跑，测量变化不触发；不答的路
+RTT 不变，选路器看不出来；建议在 actor 里按 path stats 周期重选，并在 `PathSelectionData` 上给出「是否在答」）。
+上游 1.3.0 没有对应改动，升级时要重打。
 
 ### 16. `src/socket.rs`、`src/endpoint.rs`：公开「大的网络变化」（2026-10-09，net-r）
 

@@ -248,6 +248,10 @@ pub struct PathStats {
     pub black_holes_detected: u64,
     /// Largest UDP payload size the path currently supports.
     pub current_mtu: u16,
+    /// khor patch 3 (vendor/noq-proto/KHOR.md): probe timeouts in a row on
+    /// this path with nothing acknowledged since, RFC 9002's `pto_count`.
+    /// Read like [`Self::rtt`], at the moment of the call.
+    pub pto_count: u32,
 }
 
 /// Connection statistics.
@@ -296,6 +300,7 @@ impl std::ops::Add<PathStats> for ConnectionStats {
             lost_plpmtud_probes: _,
             black_holes_detected: _,
             current_mtu: _,
+            pto_count: _,
         } = rhs;
         Self {
             udp_tx: self.udp_tx + udp_tx,
@@ -329,6 +334,7 @@ impl std::ops::AddAssign<PathStats> for ConnectionStats {
             lost_plpmtud_probes: _,
             black_holes_detected: _,
             current_mtu: _,
+            pto_count: _,
         } = rhs;
         let Self {
             udp_tx,

@@ -527,8 +527,11 @@ impl Socket {
     /// If the direct addresses have changed from the previous set, they are published to
     /// the address lookup system.
     fn store_direct_addresses(&self, addrs: BTreeSet<DirectAddr>) {
+        // khor patch 20 (vendor/iroh/KHOR.md): what is published is the addresses, not their
+        // sources, so only a change of the addresses publishes again.
+        let before: BTreeSet<SocketAddr> = self.direct_addrs.sockaddrs().collect();
         let updated = self.direct_addrs.update(addrs);
-        if updated {
+        if updated && self.direct_addrs.sockaddrs().collect::<BTreeSet<_>>() != before {
             self.publish_my_addr();
         }
     }
@@ -1990,7 +1993,11 @@ impl Actor {
                 if let Some(port) = port_if_unspecified {
                     let addr = SocketAddr::new(ip, port);
                     let flags = find_flags(&netmon_state, ip);
-                    addrs.entry(addr).or_insert((DirectAddrType::Local, flags));
+                    // khor patch 20: an interface's own address is `Local` even when QAD
+                    // or the port mapper reported it first (a global IPv6 with no NAT in
+                    // front).  With `or_insert` it was `Qad` in a report that had a QAD v6
+                    // answer and `Local` in one that had not, every 20-26 s.
+                    addrs.insert(addr, (DirectAddrType::Local, flags));
                 }
             }
         }
@@ -1999,7 +2006,8 @@ impl Actor {
         for (bound, local) in local_addrs {
             if !bound.ip().is_unspecified() {
                 let flags = find_flags(&netmon_state, local.ip());
-                addrs.entry(local).or_insert((DirectAddrType::Local, flags));
+                // khor patch 20: as above.
+                addrs.insert(local, (DirectAddrType::Local, flags));
             }
         }
     }

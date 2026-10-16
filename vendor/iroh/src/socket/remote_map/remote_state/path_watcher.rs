@@ -47,7 +47,11 @@ use crate::{
 };
 
 /// Per-connection broadcast channel capacity for path events.
-const BROADCAST_CAPACITY: usize = 8;
+///
+/// khor patch 21 (vendor/iroh/KHOR.md): 64, up from 8.  A hole-punching round on a connection
+/// with several candidates is an opened, a selected and a closed event per path in a burst;
+/// eight dropped the selections a slow reader most wanted.
+const BROADCAST_CAPACITY: usize = 64;
 
 /// Lifecycle notifications for a transmission paths in a connection.
 #[derive(Clone, Debug)]
@@ -493,6 +497,13 @@ impl<'conn> Path<'conn> {
     /// Returns the path's round-trip time estimate.
     pub fn rtt(&self) -> Duration {
         self.stats().rtt
+    }
+
+    /// khor patch 21 (vendor/iroh/KHOR.md): sends a PING on this path now, so whether the
+    /// path answers is known within its round trip rather than at its next keepalive.
+    /// `false` when the path closed meanwhile.
+    pub fn ping(&self) -> bool {
+        self.data.upgrade(self.conn).ping().is_ok()
     }
 }
 
