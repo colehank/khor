@@ -377,6 +377,50 @@ const DIRECT_MARGIN: Duration = Duration::from_millis(5);
 /// nothing.
 pub const SWITCH_MARGIN: Duration = Duration::from_millis(10);
 
+/// **Whether a second direct path is kept open beside the one in use**
+/// (vendor/iroh/KHOR.md patch 18), as a spare to move to the moment the
+/// one in use stops answering. Without one, a direct path that fails falls
+/// back to the relay, and iroh punches again at once (patch 17) to find
+/// the other direct road.
+///
+/// A spare costs its keepalive: a PING and its ACK every 15 s (patch 18's
+/// `SPARE_KEEP_ALIVE`, a third of a selected path's 5 s). noq's per-path
+/// keepalive timers are independent, so on a phone those wake the radio on
+/// their own.
+///
+/// `KHOR_SPARE_ROAD`: `off`, `near` or `on`. Default `near`; `off` on iOS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Spare {
+    /// Never: one direct path per connection, as upstream iroh keeps.
+    Off,
+    /// Only a direct path within [`SPARE_NEAR`] of the one in use — two
+    /// roads of about one speed (a LAN and a second network), where losing
+    /// one should not mean the relay.
+    Near,
+    /// The fastest other direct path, whatever its speed.
+    On,
+}
+
+/// How much slower than the path in use a direct path may be and still be
+/// kept as the spare under [`Spare::Near`].
+pub const SPARE_NEAR: Duration = Duration::from_millis(10);
+
+/// `KHOR_SPARE_ROAD` (see [`Spare`]).
+pub const SPARE_ENV: &str = "KHOR_SPARE_ROAD";
+
+impl Spare {
+    /// The platform's default, unless [`SPARE_ENV`] says otherwise.
+    pub fn from_env() -> Spare {
+        match std::env::var(SPARE_ENV).ok().as_deref().map(str::trim) {
+            Some("off") => Spare::Off,
+            Some("near") => Spare::Near,
+            Some("on") => Spare::On,
+            _ if cfg!(target_os = "ios") => Spare::Off,
+            _ => Spare::Near,
+        }
+    }
+}
+
 /// **khor's path selector** (round ROAD-2, rule of NET-DIRECT step 4):
 /// direct whenever a direct path is open (iroh's hole punch keeps going
 /// under every other road); otherwise the carried road or the relay,
@@ -384,12 +428,31 @@ pub const SWITCH_MARGIN: Duration = Duration::from_millis(10);
 /// other beats the one in use by [`SWITCH_MARGIN`]. A carried road through
 /// a middle machine is measured end to end — its two legs and the middle.
 ///
+/// **A path that stopped answering is no candidate** (vendor/iroh patch
+/// 17, `PathSelectionData::answering`): two probe timeouts in a row with
+/// nothing acknowledged. Its round trip is the last one it measured, so by
+/// RTT alone a dead path looks as good as ever; iroh runs this selector
+/// every 250 ms on what the paths measure, so the connection leaves it
+/// within one tick of noq's second probe timeout.
+///
 /// ⚠️ 墓碑: until 2026-10-09 the carried road always beat the relay in the
 /// first 3 s of a connection and the two never traded places after
 /// (「只在断的时候换路」): a hop slower than the relay kept carrying, and a
 /// connection that had settled on the relay never took a faster hop.
-#[derive(Debug, Default)]
-pub struct RoadOrder;
+/// ⚠️ 墓碑 (2026-10-16): the selector ran only when a path opened or was
+/// abandoned. A direct path that slowed kept the connection until noq
+/// abandoned it 15 s after its last packet, and one that went black kept
+/// it all that time: khor judged the wire dead first (4 s) and redialled.
+#[derive(Debug)]
+pub struct RoadOrder {
+    pub spare: Spare,
+}
+
+impl Default for RoadOrder {
+    fn default() -> Self {
+        RoadOrder { spare: Spare::from_env() }
+    }
+}
 
 impl PathSelector for RoadOrder {
     fn select(&self, ctx: &PathSelectionContext<'_>) -> PathSelection {
@@ -397,6 +460,9 @@ impl PathSelector for RoadOrder {
         let mut current = None;
         for p in ctx.paths() {
             let Some(stats) = p.stats() else { continue };
+            if !p.answering() {
+                continue;
+            }
             let tier = Tier::of(p.network_path());
             if Some(p.network_path()) == ctx.current() {
                 current = Some(match current {
@@ -408,10 +474,53 @@ impl PathSelector for RoadOrder {
         }
         let ranked: Vec<(Tier, Duration)> = candidates.iter().map(|(_, t, r)| (*t, *r)).collect();
         let mut selection = PathSelection::none();
-        if let Some(i) = choose(current, &ranked) {
+        let chosen = choose(current, &ranked);
+        if let Some(i) = chosen {
             selection.set(&candidates[i].0);
         }
+        // The path that will carry the connection: the new choice, or the
+        // one in use staying.
+        let carrying = match chosen {
+            Some(i) => Some((candidates[i].0.network_path().clone(), candidates[i].1, candidates[i].2)),
+            None => current.and_then(|(t, r)| ctx.current().map(|c| (c.clone(), t, r))),
+        };
+        if let Some((path, tier, rtt)) = carrying
+            && tier == Tier::Direct
+        {
+            let others: Vec<(bool, Duration)> = candidates
+                .iter()
+                .map(|(p, t, r)| (*t == Tier::Direct && *p.network_path() != path, *r))
+                .collect();
+            let held = candidates.iter().position(|(p, _, _)| Some(p.network_path()) == ctx.backup());
+            if let Some(i) = spare(self.spare, rtt, &others, held) {
+                selection.set_backup(&candidates[i].0);
+            }
+        }
         selection
+    }
+}
+
+/// **Which direct path to keep as the spare** beside one of round trip
+/// `rtt` in use: `others` are the candidates, each whether it is another
+/// direct path and its round trip; `held` the spare kept now, if it is
+/// among them. The one held stays while it qualifies and is no more than
+/// [`DIRECT_MARGIN`] behind the fastest that does (no trading places on
+/// noise); otherwise the fastest that qualifies.
+pub fn spare(policy: Spare, rtt: Duration, others: &[(bool, Duration)], held: Option<usize>) -> Option<usize> {
+    let ok = |r: Duration| match policy {
+        Spare::Off => false,
+        Spare::Near => r <= rtt + SPARE_NEAR,
+        Spare::On => true,
+    };
+    let best = others
+        .iter()
+        .enumerate()
+        .filter(|(_, (direct, r))| *direct && ok(*r))
+        .min_by_key(|(_, (_, r))| *r)
+        .map(|(i, _)| i)?;
+    match held {
+        Some(h) if others[h].0 && ok(others[h].1) && others[h].1 <= others[best].1 + DIRECT_MARGIN => Some(h),
+        _ => Some(best),
     }
 }
 
@@ -483,6 +592,22 @@ mod tests {
         assert_eq!(choose(Some((Tier::Direct, MS(60))), &two), None, "within the margin");
         let two = [(Tier::Direct, MS(60)), (Tier::Direct, MS(20))];
         assert_eq!(choose(Some((Tier::Direct, MS(60))), &two), Some(1));
+    }
+
+    /// vendor/iroh patch 18: the spare beside a direct path in use.
+    #[test]
+    fn a_spare_is_a_direct_road_of_about_one_speed_and_stays() {
+        // (another direct path?, rtt): the relay, a second network, a far one.
+        let others = [(false, MS(20)), (true, MS(3)), (true, MS(40))];
+        assert_eq!(spare(Spare::Off, MS(1), &others, None), None, "off keeps none");
+        assert_eq!(spare(Spare::Near, MS(1), &others, None), Some(1), "the second network, 2 ms behind");
+        assert_eq!(spare(Spare::Near, MS(1), &others[..1], None), None, "the relay is never the spare");
+        assert_eq!(spare(Spare::Near, MS(1), &[(true, MS(40))], None), None, "39 ms behind is no spare");
+        assert_eq!(spare(Spare::On, MS(1), &[(true, MS(40))], None), Some(0), "unless asked for any");
+        let two = [(true, MS(4)), (true, MS(2))];
+        assert_eq!(spare(Spare::Near, MS(1), &two, Some(0)), Some(0), "the one held stays within the margin");
+        let two = [(true, MS(9)), (true, MS(2))];
+        assert_eq!(spare(Spare::Near, MS(1), &two, Some(0)), Some(1), "and gives way past it");
     }
 
     #[test]
