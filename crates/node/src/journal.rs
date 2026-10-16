@@ -230,6 +230,10 @@ pub enum What {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rtt_ms: Option<u64>,
     },
+    /// Path changes of a connection to the peer that iroh's event buffer
+    /// dropped before they were read (vendor/iroh patch 21). The next
+    /// `path` line is the selection as it stood then.
+    PathsMissed { missed: u64 },
     /// Hole punching toward the peer (vendor/iroh patch 8): the
     /// candidates of the latest round, and how many rounds were started
     /// since the last such line — written when the candidates change, and
@@ -504,7 +508,9 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             s
         }
         What::Retired { why, quiet_ms, age_ms, .. } => {
-            msg::journal_retired(why_word(why), secs(*quiet_ms), secs(*age_ms))
+            // How long it was quiet in ms: 367 ms read 「1 秒」 rounded up
+            // (2026-10-16), which said the opposite of what happened.
+            msg::journal_retired(why_word(why), quiet_ms, secs(*age_ms))
         }
         What::Departed => msg::journal_departed().to_owned(),
         What::Inbound => msg::journal_inbound().to_owned(),
@@ -563,6 +569,7 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             }
             s
         }
+        What::PathsMissed { missed } => msg::journal_paths_missed(missed),
         What::Round { local, remote, rounds } => {
             let none = || msg::journal_round_none().to_owned();
             let list = |v: &[String]| if v.is_empty() { none() } else { v.join("，") };
@@ -669,7 +676,7 @@ pub(crate) fn watch_ears(
         // Since when the home relay has been down; `None` while it is up
         // or has never been.
         let mut down_at: Option<std::time::Instant> = None;
-        let mut interfaces = Interfaces::new(interface_addrs(&direct.get()));
+        let mut interfaces = Interfaces::new(interface_addrs(&direct.get(), &[]));
         let mut learnt = Learnt::default();
         let mut punching = Punching::default();
         let mut tun = tun_source();
@@ -690,7 +697,8 @@ pub(crate) fn watch_ears(
                 () = &mut closed => return,
                 got = direct.updated() => {
                     let Ok(now) = got else { return };
-                    interfaces.saw(interface_addrs(&now), std::time::Instant::now());
+                    let set = interface_addrs(&now, &interfaces.told);
+                    interfaces.saw(set, std::time::Instant::now());
                 }
                 () = tokio::time::sleep_until(tokio::time::Instant::from_std(due.unwrap_or_else(std::time::Instant::now))), if due.is_some() => {
                     if interfaces.settled() {
@@ -903,11 +911,26 @@ const ADDRS_SETTLE: Duration = Duration::from_secs(1);
 /// This machine's interface addresses among iroh's direct ones: bound
 /// locally, loopback left out — iroh lists loopback only when there is
 /// nothing else, which is no network rather than a new one.
-fn interface_addrs(all: &std::collections::BTreeSet<iroh::endpoint::DirectAddr>) -> Vec<std::net::SocketAddr> {
-    all.iter()
-        .filter(|d| d.typ == iroh::endpoint::DirectAddrType::Local && !d.addr.ip().is_loopback())
+///
+/// **Judged by the addresses, not by their source**: an address told as an
+/// interface's stays one for as long as it is among iroh's direct
+/// addresses at all, whatever source iroh gives it now. A global IPv6 with
+/// no NAT in front is both an interface's and what QAD reports, and iroh
+/// listed it as one or the other report by report (vendor/iroh patch 20
+/// fixes the listing); every flip was told as a network change, every
+/// 40–60 s on turing (2026-10-16), and each was a round with every machine.
+fn interface_addrs(
+    all: &std::collections::BTreeSet<iroh::endpoint::DirectAddr>,
+    told: &[std::net::SocketAddr],
+) -> Vec<std::net::SocketAddr> {
+    let mut v: Vec<std::net::SocketAddr> = all
+        .iter()
+        .filter(|d| (d.typ == iroh::endpoint::DirectAddrType::Local || told.contains(&d.addr)) && !d.addr.ip().is_loopback())
         .map(|d| d.addr)
-        .collect()
+        .collect();
+    v.sort();
+    v.dedup();
+    v
 }
 
 /// **The interface addresses the resident was last told about, and a
@@ -1312,6 +1335,22 @@ mod tests {
         i.saw(vec![b], ms(9000));
         assert!(i.due.is_some());
         assert!(i.settled(), "the network back on the same address is told");
+    }
+
+    /// An interface's address that iroh lists as learnt by QAD in one
+    /// report and as an interface's in the next is no network change.
+    #[test]
+    fn an_address_that_changes_only_its_source_is_no_change() {
+        use iroh::endpoint::{DirectAddr, DirectAddrType};
+        let v6: std::net::SocketAddr = "[2001:db8::5]:7000".parse().unwrap();
+        let v4: std::net::SocketAddr = "192.168.1.5:7000".parse().unwrap();
+        let set = |typ| std::collections::BTreeSet::from([DirectAddr { addr: v4, typ: DirectAddrType::Local }, DirectAddr { addr: v6, typ }]);
+        let told = interface_addrs(&set(DirectAddrType::Local), &[]);
+        assert_eq!(told, vec![v4, v6]);
+        assert_eq!(interface_addrs(&set(DirectAddrType::Qad), &told), told, "the source moved, the set did not");
+        assert_eq!(interface_addrs(&set(DirectAddrType::Qad), &[]), vec![v4], "learnt only by QAD is no interface");
+        let gone = std::collections::BTreeSet::from([DirectAddr { addr: v4, typ: DirectAddrType::Local }]);
+        assert_eq!(interface_addrs(&gone, &told), vec![v4], "gone from the list is gone");
     }
 
     #[test]

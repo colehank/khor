@@ -144,6 +144,22 @@ pub(crate) fn watch(
     });
 }
 
+/// **A connection another machine opened to this one, followed too**
+/// ([`follow`]): it rides the same paths as this machine's own (iroh keeps
+/// one selection per machine), and a move made while only it was open —
+/// a phone dialling in, a wire of this side's retired — was written
+/// nowhere. The same lines, deduplicated across the two.
+pub(crate) fn follow_inbound(
+    id: &str,
+    conn: &iroh::endpoint::Connection,
+    journal: Option<Arc<crate::journal::Journal>>,
+    carry: &khor_net::carry::Links,
+) {
+    if let Some(j) = journal {
+        follow(id, conn.path_events(), conn.weak_handle(), j, carry.clone());
+    }
+}
+
 /// Every machine's tally, in no particular order.
 /// The last path written per machine and kind of change ([`follow`]): a
 /// machine's two connections (one each way) report the same selection, and
@@ -213,17 +229,42 @@ fn follow(
         tokio::pin!(events);
         // This connection's open direct paths, handed back when it ends.
         let mut mine: HashMap<iroh::endpoint::PathId, String> = HashMap::new();
-        while let Some(event) = events.next().await {
-            let (change, path_id, remote) = match event {
-                PathEvent::Opened { id: pid, remote_addr, .. } if remote_addr.is_ip() => ("opened", pid, remote_addr),
-                PathEvent::Selected { id: pid, remote_addr, .. } => ("selected", pid, remote_addr),
-                PathEvent::Closed { id: pid, .. } => {
-                    if let Some(addr) = mine.remove(&pid) {
-                        closed(&id, &addr);
+        // The selected path as it stands, read off the connection.
+        let selected_now = || {
+            let conn = weak.upgrade()?;
+            let paths = conn.paths();
+            let p = paths.iter().find(|p| p.is_selected())?;
+            Some(("selected", p.id(), p.remote_addr().clone()))
+        };
+        // **The road it is on when the watch begins**: iroh selects the
+        // first path while the connection is being added, before anyone can
+        // subscribe, so a connection that never moved wrote no road at all
+        // (2026-10-16).
+        let mut first = selected_now();
+        loop {
+            let (change, path_id, remote) = if let Some(now) = first.take() {
+                now
+            } else {
+                let Some(event) = events.next().await else { break };
+                match event {
+                    // **Dropped events leave a trace** (vendor/iroh patch
+                    // 21): how many, then the selection as it stands, so the
+                    // road it moved to is not lost with them.
+                    PathEvent::Lagged { missed, .. } => {
+                        journal.note(Some(&id), crate::journal::What::PathsMissed { missed });
+                        let Some(now) = selected_now() else { continue };
+                        now
                     }
-                    continue;
+                    PathEvent::Opened { id: pid, remote_addr, .. } if remote_addr.is_ip() => ("opened", pid, remote_addr),
+                    PathEvent::Selected { id: pid, remote_addr, .. } => ("selected", pid, remote_addr),
+                    PathEvent::Closed { id: pid, .. } => {
+                        if let Some(addr) = mine.remove(&pid) {
+                            closed(&id, &addr);
+                        }
+                        continue;
+                    }
+                    _ => continue,
                 }
-                _ => continue,
             };
             let (road, addr) = match &remote {
                 iroh::TransportAddr::Ip(sa) => ("direct", sa.to_string()),

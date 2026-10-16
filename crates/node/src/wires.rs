@@ -147,6 +147,29 @@ pub(crate) fn rtt_of(conn: &Connection) -> Duration {
     longest
 }
 
+/// **Asks every path of `conn` whether it is there** (vendor/iroh patch
+/// 21: a PING on each), before a wire is judged dead; answers how long to
+/// give the answers: three of the slowest open path's round trips, at
+/// least a second.
+///
+/// A wire is judged on the connection's datagrams, every path's together,
+/// but a path that carries nothing is heard only at its keepalive (5 s, a
+/// spare 15 s). So when the path in use went black, the others were quiet
+/// by design, not dead, and the wire was retired at its ack limit (4 s)
+/// while iroh still had a road: 2026-10-16 23:13:42, turing judged its wire
+/// to the Mac dead and the Mac's wire to it had been heard 367 ms before.
+/// An answer on any path moves the count, and iroh's selector leaves the
+/// path that stopped answering (patch 17).
+pub(crate) fn ask_every_path(conn: &Connection) -> Duration {
+    let mut slowest = Duration::ZERO;
+    for p in conn.paths().iter() {
+        if p.ping() {
+            slowest = slowest.max(p.rtt());
+        }
+    }
+    Duration::from_secs(1).max(slowest.saturating_mul(3)).min(Duration::from_secs(30))
+}
+
 /// How long a far session's open is given on top of the request's own
 /// budget for the road it travels: the same nine RTTs.
 pub(crate) fn budget_for(base: Duration, conn: &Connection) -> Duration {
@@ -862,10 +885,20 @@ impl Wires {
             .insert(id.to_owned(), Instant::now());
     }
 
+    /// **Except one still talking**: a connection that far machine opened
+    /// here and that was heard within its keepalive is alive, whatever this
+    /// machine's own wire to it found — the two ride different paths when
+    /// the two sides selected differently. 2026-10-16 23:13:42: turing's
+    /// wire to the Mac was judged dead and the Mac's wire to turing, heard
+    /// 367 ms before, was closed with it.
     fn let_go_served_by(&self, id: &str, why: Retired) {
+        let now = Instant::now();
         let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
         served.retain(|w| {
             if w.id != id {
+                return true;
+            }
+            if now.saturating_duration_since(w.heard) < Patience::for_rtt(w.rtt).keepalive_missed {
                 return true;
             }
             if let Some(conn) = w.conn.upgrade() {

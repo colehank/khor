@@ -1497,6 +1497,12 @@ impl Node {
                         };
                         let once_done = move |n: std::sync::Arc<Node>, e: std::sync::Arc<iroh::Endpoint>, conn: &iroh::endpoint::Connection| {
                             n.wires.serving(conn);
+                            crate::roads::follow_inbound(
+                                &conn.remote_id().to_string(),
+                                conn,
+                                n.wires.journal.get().cloned(),
+                                &n.carry,
+                            );
                             if resting.load(std::sync::atomic::Ordering::Relaxed) {
                                 return;
                             }
@@ -10786,6 +10792,9 @@ async fn exchange(
     let sent = tokio::time::Instant::now();
     let mut count = wires::heard_count(conn);
     let mut heard: Option<tokio::time::Instant> = None;
+    // When every path was asked whether it is there, and how long the
+    // answers get (`wires::ask_every_path`).
+    let mut asked: Option<(tokio::time::Instant, Duration)> = None;
     let lost = |e: String| {
         if conn.close_reason().is_some() {
             Miss::Unreached(msg::cant_reach_named(who, e))
@@ -10820,6 +10829,7 @@ async fn exchange(
                 if seen != count {
                     count = seen;
                     heard = Some(now);
+                    asked = None;
                 }
                 // The road's own patience, read each beat: QUIC refines its
                 // round trip as the answers come (`wires::Patience`).
@@ -10828,8 +10838,15 @@ async fn exchange(
                     None => now.duration_since(sent) >= patience.ack,
                     Some(at) => now.duration_since(at) >= patience.silent,
                 };
+                // **Silent on every path, not just the one in use**: each
+                // path is asked first, and only if none answers within its
+                // grace is the wire dead.
                 if quiet {
-                    return Err(Miss::Unreached(msg::machine_silent(who)));
+                    match asked {
+                        None => asked = Some((now, wires::ask_every_path(conn))),
+                        Some((at, grace)) if now.duration_since(at) < grace => {}
+                        Some(_) => return Err(Miss::Unreached(msg::machine_silent(who))),
+                    }
                 }
                 if now.duration_since(sent) >= budget {
                     return Err(Miss::Late(msg::answer_late(who, budget.as_secs())));
