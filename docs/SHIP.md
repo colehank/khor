@@ -108,3 +108,13 @@ khor devices                                                   # 五台都在线
 ## 5. 顺序
 
 1 → 2 → 3，Mac 先装是因为 `khor sessions` 和 `khor devices` 要用新 CLI 看结果。三步加起来约二十五分钟（Mac 编七八分钟、iOS 归档十分钟、集群十分钟，后两步可以并行）。
+
+
+## 6. 磁盘收尾（2026-10-16）
+
+本轮查到独立测试每轮遗留约 417 MiB 的 bridge/CLI 副本、旧 Codex fixture 的后台 updater、Xcode 导出暂存和 Chrome 签名副本。主 target 在外挂盘，也不能保证系统盘不会涨；Rust 并行编译还可能增加系统管理的 swap。
+
+- 打包前后记录 `df -h /System/Volumes/Data /Volumes/disk0`。iOS 构建/导出使用外挂盘临时目录：先 `mkdir -p /Volumes/disk0/khor-tmp`，为构建命令设置 `TMPDIR=/Volumes/disk0/khor-tmp`；`target`、Externals 和 archive 继续沿用外挂盘路径。
+- `content-ui`、`attachment-ui`、`session-content` 在 finally 关闭私有会话/浏览器/服务后删除 scratch 中的 bridge/khor 副本，保留截图、日志和 fixture 状态。手动中断后核对遗留进程及副本。Codex fixture 的 HOME 下 updater 也须退出，不能只关测试前台进程。
+- 上传成功后清理已确认属于 Khor 的 `XcodeDistPipeline.*` 暂存副本，保留本次归档与发布收据。Chrome 的 `code_sign_clone` 是浏览器产生的可重建副本，只有 lsof 确认无引用时才清；不清用户浏览器 profile。
+- 大扫除只处理已识别的测试副本和可重建缓存。没有 cargo/rustc 运行时可清 debug/incremental；保留正在使用的发布二进制、用户会话、测试证据与最新归档，不全量 cargo clean，也不手动删系统 swap。

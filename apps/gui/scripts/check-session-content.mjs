@@ -296,7 +296,9 @@ try{
 }catch(e){await page?.screenshot({path:join(scratch,'failed.png')}).catch(()=>{});console.error(e);throw e;}
 finally{
   for(const id of sessions)await api('close_session',{id}).catch(()=>{});
-  await browser?.close();
+  await browser?.close().catch(()=>{});
   for(const child of children)try{process.kill(-child.pid,'SIGKILL');}catch{}
+  // Keep screenshots and fixture state, not a full binary pair per run.
+  for(const name of ['bridge','khor'])rmSync(join(scratch,name),{force:true});
   await usage?.close();
 }
