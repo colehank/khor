@@ -44,12 +44,12 @@ try{
   const device=(await api('devices')).find(d=>d.me);
   const projects=['alpha','beta'].map(name=>join(scratch,'project-'+name));
   for(const [i,dir] of projects.entries()){
-    mkdirSync(dir,{recursive:true});for(let j=0;j<24;j++)writeFileSync(join(dir,'extra-'+String(j).padStart(2,'0')+'.txt'),'Neighbor '+j+'\n');writeFileSync(join(dir,'notes.md'),`# ${i===0?'Alpha':'Beta'}\n\nSession contents.\n`);writeFileSync(join(dir,'only-'+i+'.txt'),'This file belongs to '+i+'\n');
+    mkdirSync(dir,{recursive:true});for(let j=0;j<24;j++)writeFileSync(join(dir,'extra-'+String(j).padStart(2,'0')+'.txt'),'Neighbor '+j+'\n'+(j===15?Array.from({length:80},(_,k)=>'Line '+k).join('\n'):''));writeFileSync(join(dir,'notes.md'),`# ${i===0?'Alpha':'Beta'}\n\nSession contents.\n`);writeFileSync(join(dir,'only-'+i+'.txt'),'This file belongs to '+i+'\n');
     const id=await api('open_on',{machine:'',title:'Content '+(i===0?'Alpha':'Beta'),cwd:dir,cols:100,rows:35});sessions.push(id);
   }
   run(join(gui,'node_modules/.bin/vite'),['--port',String(port),'--strictPort'],{...process.env,KHOR_FACE_GATE:'1'});
   await until(()=>fetch(`http://localhost:${port}/`).then(r=>r.ok));
-  browser=await chromium.launch({channel:'chrome',headless:true,args:['--no-proxy-server']});
+  browser=await chromium.launch({channel:'chrome',headless:process.env.CONTENT_HEADED!=='1',args:['--no-proxy-server']});
   const context=await browser.newContext({viewport:{width:1600,height:1000},reducedMotion:'reduce'});
   // The LAN HTTP face has no secure-context randomUUID API.
   await context.addInitScript(()=>Object.defineProperty(globalThis.crypto,'randomUUID',{configurable:true,value:undefined}));
@@ -144,7 +144,7 @@ try{
   await page.waitForFunction(()=>document.querySelector('[data-terminal]')?.__xterm);
   await page.evaluate(()=>{const t=document.querySelector('[data-terminal]').__xterm;window.__contentTerm=t;window.__contentSize=[t.cols,t.rows];});
   await page.locator('[data-deck-title]').click();await picker().locator('[data-file-tree]').waitFor();await total(0).waitFor();
-  assert.equal((await mobileTable()).length,0,'picker created a persistent tab');await page.locator('.mobile-content-add').click();assert.equal((await mobileTable()).length,0,'+ created an empty tab');
+  assert.equal((await mobileTable()).length,0,'picker created a persistent tab');await browse(page);assert.equal((await mobileTable()).length,0,'+ created an empty tab');
   assert.equal(await page.locator('[data-content-panel] .session-content-tools').count(),0);
   assert(await page.evaluate(()=>document.querySelector('[data-terminal]').__xterm===window.__contentTerm));
   assert.deepEqual(await page.evaluate(()=>{const t=document.querySelector('[data-terminal]').__xterm;return [t.cols,t.rows];}),await page.evaluate(()=>window.__contentSize),'content refit terminal');
@@ -158,15 +158,20 @@ try{
   }
   await page.mouse.up();await mousePanel().locator('[data-place-grab]').waitFor();
   await page.screenshot({path:join(scratch,'mobile-picker.png')});
-  const find=()=>picker().locator('[data-side-find-field]');
+  const find=()=>picker().locator('[data-content-search]');
   const fileAction=async(host,document,name)=>{if(await document.locator('[data-deck-strip]').isVisible())await document.locator('[data-deck-strip]').click();await document.locator('[data-file-more]').click();await host.getByRole('menuitem',{name,exact:true}).click();};
-  const keep=async(host,document)=>{if(await document.locator('[data-file-page]').count())await fileAction(host,document,word('content-keep'));else await document.getByRole('button',{name:word('content-keep'),exact:true}).click();};
+  const keep=async(host,document)=>{if(await document.locator('[data-file-page]').count())await fileAction(host,document,word('content-keep'));else{await document.locator('[data-content-page-more]').click();await host.getByRole('menuitem',{name:word('content-keep'),exact:true}).click();}};
+  async function browse(host){const document=host.locator('[data-session-content][data-content-visible=true]');if(await document.locator('[data-deck-strip]').isVisible())await document.locator('[data-deck-strip]').click();const overview=host.locator('[data-content-overview]:not(.session-content-retained)');if(!await overview.isVisible())await host.locator('[data-content-overview-button]:visible').click();await overview.getByRole('button',{name:word('content-find'),exact:true}).click();};
   await find().fill('only-0');await picker().getByText('only-0.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();await total(0).waitFor();
   await shown().locator('[data-file-deck]').waitFor();
+  assert.equal(await page.locator('[data-session-bar]:visible').count(),0,'terminal deck remained visible behind the file');
+  assert.equal(await page.locator('[data-content-overview-button]:visible').count(),1,'content has duplicate tab buttons');
+  assert.equal(await shown().locator('.content-owner-face [data-side-face]').count(),1,'file deck lost the session identity');
   assert.equal(await shown().locator('[data-file-embedded-tools]').count(),0,'phone used desktop embedded tools instead of the file deck');
   assert.equal(await shown().locator('.mobile-content-document-head').count(),0,'file still has a second top toolbar');
   const fileBox=await shown().locator('[data-file-page]').boundingBox(),fileDeck=await shown().locator('[data-file-deck]').boundingBox();
   assert(Math.abs(fileBox.y+fileBox.height-fileDeck.y-fileDeck.height)<2,'file deck is not on its page bottom');
+  await shown().locator('.mobile-file-identity').click({trial:true});await shown().locator('[data-file-more]').click({trial:true});
   await page.screenshot({path:join(scratch,'mobile-file-deck.png')});
   await shown().locator('[data-file-back]').click();assert.equal(await find().inputValue(),'only-0');
   await find().fill('notes.md');await picker().getByText('notes.md',{exact:true}).click();await shown().locator('.cm-content').waitFor();
@@ -174,39 +179,49 @@ try{
   await keep(page,shown());await total(1).waitFor();
   assert.equal(await shown().getAttribute('data-content-handle'),handle);assert(await page.evaluate(()=>document.querySelector('[data-content-visible=true] .cm-content')===window.__keptEditor),'keep remounted editor');
   assert.equal((await mobileTable())[0].view,'file');assert.notEqual((await mobileTable())[0].id,handle);
-  await page.locator('.mobile-content-add').click();await find().fill('only-0');await picker().getByText('only-0.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();
+  await browse(page);await find().fill('only-0');await picker().getByText('only-0.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();
   await page.evaluate(()=>window.__editingPreview=document.querySelector('[data-content-visible=true] .cm-content'));
-  await shown().locator('.cm-content').click();await page.keyboard.press('ControlOrMeta+End');await page.keyboard.type('\nMobile preview edit');await total(2).waitFor();
+  await shown().locator('.cm-content').click();await page.keyboard.press('ControlOrMeta+End');await page.keyboard.type('\nMobile preview edit');if(await shown().locator('[data-deck-strip]').isVisible())await shown().locator('[data-deck-strip]').click();await total(2).waitFor();
   await until(()=>readFileSync(join(projects[0],'only-0.txt'),'utf8').includes('Mobile preview edit'));
   assert(await page.evaluate(()=>document.querySelector('[data-content-visible=true] .cm-content')===window.__editingPreview),'edit promotion remounted editor');
   await fileAction(page,shown(),word('content-previous'));await until(async()=> (await shown().innerText()).includes('# Alpha'));
   await fileAction(page,shown(),word('content-previous'));await until(async()=> (await shown().innerText()).includes('Neighbor'));
   assert.equal((await mobileTable()).length,2,'neighbor browsing created tabs');
   await total(2).click();const overview=()=>page.locator('[data-content-overview]:not(.session-content-retained)');
-  await overview().getByText(word('content-temporary'),{exact:true}).waitFor();assert.equal(await overview().locator('[data-content-overview-tab]').count(),3);
+  await overview().locator('[data-temporary=true]').waitFor();
+  assert.equal(await overview().locator('[data-tab-sheet-new]').innerText(),word('content-find'));
+  assert(await overview().locator('[data-tab-sheet-new]').evaluate(el=>el===el.parentElement.lastElementChild),'open action is not the last row');
+  assert.equal(await overview().locator('[data-tab-sheet-close] svg').first().evaluate(el=>el.getBoundingClientRect().width),16,'content close icon differs from TabSheet');
+  assert.equal(await overview().locator('[data-tab-sheet-row][data-on=true] button:first-child>svg').count(),0,'current tab has a redundant check');assert.equal(await overview().locator('[data-content-overview-tab]').count(),3);
   await overview().getByRole('searchbox',{name:word('content-tabs-search'),exact:true}).fill('notes.md');assert.equal(await overview().locator('[data-content-overview-tab]').count(),1);
-  await overview().getByRole('button',{name:word('close-tab'),exact:true}).click();await total(1).waitFor();
-  await page.locator('.mobile-content-add').click();await find().fill('');await picker().locator('[data-file-tree]').waitFor();
+  await overview().locator('[data-tab-sheet-close]').click();await total(1).waitFor();
+  await browse(page);await find().fill('');await picker().locator('[data-file-tree]').waitFor();
   if(await page.locator('[data-content-panel]').getAttribute('data-detent')==='full')await page.locator('[data-place-grab]').click();
   const tree=picker().locator('[data-files-list]');await picker().locator('[data-file="extra-15.txt"]').scrollIntoViewIfNeeded();
   const scroll=await tree.evaluate(el=>{window.__originalTree=el;return el.scrollTop;});assert(scroll>0);
-  await picker().locator('[data-file="extra-15.txt"]').click();await shown().locator('.cm-content').waitFor();await shown().locator('[data-file-back]').click();
+  await picker().locator('[data-file="extra-15.txt"]').click();await shown().locator('.cm-content').waitFor();
+  await shown().locator('[data-file-scroll]').evaluate(el=>{el.scrollTop=el.scrollHeight;el.dispatchEvent(new Event('scroll',{bubbles:true}));});
+  await shown().locator('[data-deck-strip]').waitFor();
+  const foldedFace=await shown().locator('[data-deck-strip]').evaluate(el=>{const f=el.querySelector('[data-side-face]'),halo=f.querySelector('[data-halo]'),r=f.getBoundingClientRect(),box=el.getBoundingClientRect(),scale=new DOMMatrix(getComputedStyle(f).transform).a,out=-parseFloat(getComputedStyle(halo,'::before').top)*scale;return {top:r.top-out-box.top,bottom:box.bottom-r.bottom-out};});
+  assert(foldedFace.top>=3.9&&foldedFace.bottom>=3.9,'folded avatar touches capsule edge: '+JSON.stringify(foldedFace));
+  await shown().locator('[data-deck-strip]').click();await shown().locator('[data-file-back]').click();
   assert.equal(await tree.evaluate(el=>el.scrollTop),scroll);assert(await tree.evaluate(el=>el===window.__originalTree));
   await picker().getByRole('button',{name:word('content-workspace-actions'),exact:true}).click();await page.getByRole('menuitem',{name:word('file-new'),exact:true}).click();
   await picker().locator('[data-new-name=file] input').fill('mobile-created.txt');await picker().locator('[data-new-name=file] input').press('Enter');await picker().locator('[data-file="mobile-created.txt"]').waitFor();
   assert.equal(readFileSync(join(projects[0],'mobile-created.txt'),'utf8'),'');
   await picker().getByRole('radio',{name:word('browser-tab'),exact:true}).click();const addr=()=>picker().locator('[data-page-address]');
   await addr().fill('https://example.com');await picker().getByRole('radio',{name:word('workspaces-tab'),exact:true}).click();await picker().getByRole('radio',{name:word('browser-tab'),exact:true}).click();
-  await addr().focus();assert.equal(await addr().inputValue(),'https://example.com');await addr().press('Enter');await shown().locator('[data-page-field]').waitFor();await total(1).waitFor();
+  await addr().focus();assert.equal(await addr().inputValue(),'https://example.com');await addr().press('Enter');await shown().locator('[data-content-page-more]').waitFor();await total(1).waitFor();
   const pageHandle=await shown().getAttribute('data-content-handle');await keep(page,shown());await total(2).waitFor();assert.equal(await shown().getAttribute('data-content-handle'),pageHandle);
   await page.setViewportSize({width:1200,height:900});await side(sessions[0]).waitFor();assert.equal(await shown().getAttribute('data-content-handle'),pageHandle);
   await page.setViewportSize({width:320,height:740});await total(2).waitFor();assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth));const deck=await total(2).boundingBox();assert(deck.x>=0&&deck.x+deck.width<=320);
   await total(2).click();await page.screenshot({path:join(scratch,'mobile-overview.png')});
-  await page.reload();await page.getByText('Content Alpha',{exact:true}).click();await page.locator('[data-deck-title]').click();await total(2).waitFor();assert.equal((await mobileTable()).length,2);assert.equal(await page.locator('[data-content-preview]').count(),0);
+  await page.locator('.mobile-content-scrim').click({position:{x:12,y:12}});await page.locator('[data-deck-title]').click();await shown().locator('[data-content-page-more]').waitFor();
+  await page.reload();await page.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();await page.locator('[data-deck-title]').click();await total(2).waitFor();assert.equal((await mobileTable()).length,2);assert.equal(await page.locator('[data-content-preview]').count(),0);
   const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce'});
   await phoneContext.addInitScript(ids=>{localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:ids,active:ids[0]}));localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'detail'}));localStorage.setItem('khor.lang','zh');},sessions);
   const phone=await phoneContext.newPage();phone.setDefaultTimeout(12000);phone.on('pageerror',e=>errors.push(e.message));await phone.goto(url);
-  await phone.getByText('Content Alpha',{exact:true}).click();await phone.locator('[data-deck-title]').click();await phone.locator('[data-content-panel]').waitFor();
+  await phone.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();await phone.locator('[data-deck-title]').click();await phone.locator('[data-content-panel]').waitFor();
   assert.equal(await phone.getByRole('button',{name:word('content-expand'),exact:true}).count(),0);
   // Raw CDP touch input needs the painted hit region, not just a DOM box.
   await phone.locator('[data-place-grab]').click({trial:true});
@@ -223,23 +238,34 @@ try{
   const fullGrip=await phone.locator('[data-place-grab]').boundingBox(),fy=fullGrip.y+fullGrip.height/2;
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:fy}]});await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:fy+110}]});await touch.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
   assert.equal(await phone.locator('[data-content-panel]').getAttribute('data-sheet-pulling'),null);assert.equal(await phone.locator('[data-content-panel]').evaluate(el=>el.style.height),'');
-  const pillBox=await phone.locator('.mobile-content-current').boundingBox(),px=pillBox.x+pillBox.width/2,py=pillBox.y+pillBox.height/2;
+  const pillBox=await phone.locator('[data-content-deck] .mobile-content-pill:visible').boundingBox(),px=pillBox.x+pillBox.width/2,py=pillBox.y+pillBox.height/2;
   const beforePill=await phone.locator('[data-content-panel]').evaluate(el=>el.getBoundingClientRect().height);
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:px,y:py}]});
   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:px,y:py+95}]});
   const afterPill=await phone.locator('[data-content-panel]').evaluate(el=>el.getBoundingClientRect().height);
   assert(Math.abs(beforePill-afterPill-95)<2,'sheet did not track the expanded bottom pill');
   await touch.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
-  await phone.locator('.mobile-content-add').click();await phone.locator('[data-place-grab]').click();await phone.screenshot({path:join(scratch,'phone-content.png')});
-  await phone.locator('.mobile-content-parent').click();await phone.locator('[data-deck-tabs]').click();await phone.getByRole('dialog').getByText('Content Beta',{exact:true}).click();await phone.locator('[data-deck-title]').click();
-  await phone.locator(`[data-content-picker="${sessions[1]}"] [data-file-tree]`).waitFor();assert.equal(await phone.locator(`[data-content-picker="${sessions[1]}"] [data-side-find-field]`).inputValue(),'');
+  await browse(phone);await phone.locator('[data-place-grab]').click();
+  // A pan in the workspace body, away from the grabber and deck, owns
+  // the sheet until its full detent. Exercise the painted touch surface.
+  const bodyTree=phone.locator(`[data-content-picker="${sessions[0]}"] [data-file-tree]`);
+  await bodyTree.evaluate(el=>{el.scrollTop=0;window.getSelection()?.removeAllRanges();});
+  const bodyBox=await bodyTree.boundingBox(),bx=bodyBox.x+bodyBox.width/2,by=bodyBox.y+bodyBox.height-40;
+  const bodyHeight=await phone.locator('[data-content-panel]').evaluate(el=>el.getBoundingClientRect().height);
+  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:bx,y:by}]});
+  await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:bx,y:by-95}]});
+  assert(Math.abs((await phone.locator('[data-content-panel]').evaluate(el=>el.getBoundingClientRect().height))-bodyHeight-95)<2,'content body did not resize its sheet');
+  await touch.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
+  await phone.screenshot({path:join(scratch,'phone-content.png')});
+  await phone.locator('.mobile-content-scrim').click({position:{x:12,y:12}});await phone.locator('[data-deck-tabs]').click();await phone.locator('[data-content-sessions]').getByText('Content Beta',{exact:true}).click();await phone.locator('[data-content-overview]:not(.session-content-retained)').getByRole('button',{name:word('content-find'),exact:true}).click();
+  await phone.locator(`[data-content-picker="${sessions[1]}"] [data-file-tree]`).waitFor();assert.equal(await phone.locator(`[data-content-picker="${sessions[1]}"] [data-content-search]`).inputValue(),'');
   // A slow promotion must not take focus back from a newer viewing slot.
   const beta=()=>phone.locator(`[data-content-picker="${sessions[1]}"]`),betaDoc=()=>phone.locator('[data-content-visible=true]');
-  await beta().locator('[data-side-find-field]').fill('notes.md');await beta().getByText('notes.md',{exact:true}).click();await betaDoc().locator('.cm-content').waitFor();
+  await beta().locator('[data-content-search]').fill('notes.md');await beta().getByText('notes.md',{exact:true}).click();await betaDoc().locator('.cm-content').waitFor();
   let releaseKeep;const delayedKeep=new Promise(resolve=>releaseKeep=resolve);
   await phone.route('**/tabs_open',async route=>{await delayedKeep;await route.continue();},{times:1});
   await keep(phone,betaDoc());
-  await betaDoc().locator('[data-file-back]').click();await beta().locator('[data-side-find-field]').fill('only-1');await beta().getByText('only-1.txt',{exact:true}).click();await betaDoc().locator('.cm-content').waitFor();
+  await betaDoc().locator('[data-file-back]').click();await beta().locator('[data-content-search]').fill('only-1');await beta().getByText('only-1.txt',{exact:true}).click();await betaDoc().locator('.cm-content').waitFor();
   releaseKeep();await until(async()=> (await table()).tabs.filter(t=>t.session===sessions[1]).length===2);
   assert((await betaDoc().locator('.cm-content').innerText()).includes('This file belongs to 1'),'slow keep stole focus from newer preview');
   // Closing during promotion waits for the node id, then closes that id.
@@ -248,7 +274,7 @@ try{
   await keep(phone,betaDoc());await phone.getByRole('button',{name:word('content-tabs-count').replace('{0}','2'),exact:true}).click();
   await phone.getByRole('searchbox',{name:word('content-tabs-search'),exact:true}).fill('only-1.txt');
   const closed=phone.waitForResponse(r=>r.url().endsWith('/tabs_close')&&r.request().method()==='POST');
-  await phone.locator('[data-content-overview-tab]').getByRole('button',{name:word('close-tab'),exact:true}).click();releaseClose();await closed;
+  await phone.locator('[data-content-overview-tab]').locator('[data-tab-sheet-close]').click();releaseClose();await closed;
   await until(async()=>!(await table()).tabs.some(t=>t.session===sessions[1]&&t.url.endsWith('only-1.txt')));
   await phoneContext.close();
   assert.deepEqual(errors,[]);

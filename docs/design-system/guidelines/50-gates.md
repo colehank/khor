@@ -33,7 +33,7 @@
 
 | 入口 | 验证 |
 |---|---|
-| `npm run session-content` | 正式 App + 独立节点/PTY：内容原地转换、自动保存、预览保持、会话隔离、CLI 同步与持久化、放大/恢复、拥挤时头像与两个 ＋、手机临时查看与原地保留、总览、目录滚动、真实触控取消与会话隔离；需先构建 CLI 与 bridge，可用 `CARGO_TARGET_DIR`、`CONTENT_CHECK_DIR` 指定外置盘 |
+| `npm run session-content` | 正式 App + 独立节点/PTY：内容原地转换、自动保存、预览保持、会话隔离、CLI 同步与持久化、放大/恢复、拥挤时头像与两个 ＋、手机单甲板与 PTY 位置保留、首次／最近文档恢复、逐级返回、两层标签入口和末尾新建行、临时查看与原地保留、目录滚动、真实触控取消与会话隔离；需先构建 CLI 与 bridge，可用 `CARGO_TARGET_DIR`、`CONTENT_CHECK_DIR` 指定外置盘 |
 | `npm run session-cwd` | cd、活动 pane、地点筛选/搜索、工作区归属、旧附栏恢复、默认跟随与主动固定目录 |
 | `npm run appearance` | 真实终端与设置的预设、DIY、JSON、跨窗口同步；缓冲/滚动/PTY 不重建；背景只合成一次；能力与输入边界 |
 | `npm run scroll-target` | 真 xterm 的内层 mouse 能力、分页累计/反向/停歇、触摸与滚轮不重复输入；连续输出期间每次手势只刷新一次 tmux |

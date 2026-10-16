@@ -152,6 +152,7 @@ export function SessionScreen({
   ink,
   away = false,
   contentMode = false,
+  onTabs,
   children,
 }: {
   /** **The deck steps away while the 附栏's sheet is up** (UX-37 §4,
@@ -161,6 +162,8 @@ export function SessionScreen({
   away?: boolean;
   /** Expanded session content keeps the terminal's measured deck room. */
   contentMode?: boolean;
+  /** A host can present the same tab rows in its existing content sheet. */
+  onTabs?: () => void;
   /** **The folded capsule sits in the home indicator's band** (item 62,
       the owner 2026-10-07: half of it covered the terminal's last rows):
       the fold frees the deck's whole height to the content, which ends at
@@ -532,7 +535,7 @@ export function SessionScreen({
                 data-tab-count
                 aria-label={gui.switch_tabs(faces.length)}
                 aria-expanded={sheet}
-                onClick={() => setSheet(true)}
+                onClick={() => onTabs ? onTabs() : setSheet(true)}
               >
                 <TabsGlyph n={faces.length} />
               </GlassCircle>
@@ -1105,33 +1108,21 @@ export function TabsGlyph({ n }: { n: number }) {
 /** **The tabs, as a sheet from the bottom** (round UX-3): each open tab
     with its face, its name, where it is, and × — the switcher's rows —
     and ＋ at the end, the one place a new tab is opened from the deck. */
-export function TabSheet({
-  open,
-  onOpenChange,
-  faces,
-  active,
-  onFocus,
-  onClose,
-  onNew,
-  newLabel,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  faces: TabFace[];
-  active: string;
-  onFocus: (id: string) => void;
-  onClose: (id: string) => void;
-  onNew?: () => void;
-  /** What ＋ opens, where it is not a page (a session). */
-  newLabel?: string;
-}) {
+export type TabSheetRowsProps = {
+  faces: TabFace[]; active: string; onFocus: (id: string) => void; onClose: (id: string) => void;
+  onNew?: () => void; newLabel?: string;
+  canClose?: (face: TabFace) => boolean;
+  actions?: (face: TabFace) => ReactNode;
+  rowData?: (face: TabFace) => Record<string,string|boolean|undefined>;
+};
+/** The same rows in the terminal tab sheet and the session's content
+ * overview. Both own navigation; the row owns face, name and close geometry. */
+export function TabSheetRows({faces,active,onFocus,onClose,onNew,newLabel,canClose,actions,rowData}: TabSheetRowsProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form data-tab-sheet className="max-h-[70dvh] !gap-0 overflow-y-auto">
-        <DialogTitle className="sr-only">{gui.session_tabs}</DialogTitle>
         <div className="flex min-w-0 flex-col">
           {faces.map((f) => (
             <div
+              {...rowData?.(f)}
               key={f.id}
               data-tab-sheet-row={f.id}
               data-on={f.id === active || undefined}
@@ -1150,7 +1141,8 @@ export function TabSheet({
                   {f.title ?? f.label}
                 </span>
               </button>
-              <button
+              {actions?.(f)}
+              {(!canClose || canClose(f)) && <button
                 type="button"
                 data-tab-sheet-close={f.id}
                 aria-label={gui.close}
@@ -1158,7 +1150,7 @@ export function TabSheet({
                 className="grid min-h-touch min-w-touch flex-none place-items-center text-muted-foreground"
               >
                 <IconClose />
-              </button>
+              </button>}
             </div>
           ))}
           {onNew && (
@@ -1175,7 +1167,18 @@ export function TabSheet({
             </button>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
   );
+}
+export function TabSheet({open,onOpenChange,...rows}: TabSheetRowsProps & {open:boolean;onOpenChange:(open:boolean)=>void}) {
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent form data-tab-sheet className="max-h-[70dvh] !gap-0 overflow-y-auto">
+      <DialogTitle className="sr-only">{gui.session_tabs}</DialogTitle>
+      <TabSheetRows {...rows}/>
+    </DialogContent>
+  </Dialog>;
+}
+/** Aligned horizontal content cards; the session switcher keeps its
+ * diagonal squares. The count stays in the front card in both cases. */
+export function ContentTabsGlyph({n}: {n:number}) {
+  return <span data-content-tabs-glyph className="content-tabs-glyph"><TabsGlyph n={n}/></span>;
 }

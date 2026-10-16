@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { fetchLs, recentVisit, searchIn, type DeviceRow, type SessionRow } from "@/api";
-import { MidName } from "@/browse/TabStrip";
+import { MidName, type TabFace } from "@/browse/TabStrip";
 import { PageField } from "@/browse/PageField";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -29,7 +29,10 @@ import "@/styles/session-content.css";
 import { contentView, contentName } from '@/lib/content';
 export { contentView, contentName } from '@/lib/content';
 import type { ContentNavigation } from '@/hooks/use-content-navigation';
-import { ContentPicker, ContentOverview, ContentDocumentNavigation, useContentNeighbors } from '@/views/MobileSessionContent';
+import { ContentPicker, ContentOverview, ContentDocumentNavigation, contentFileDeck, useContentNeighbors } from '@/views/MobileSessionContent';
+import { MobileContentPage } from '@/views/MobileContentPage';
+import { TabSheetRows, TabsGlyph } from '@/components/SessionBar';
+import { IconBack } from '@/components/icons';
 const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
 const glyph = (tab: ContentTab) => contentView(tab) === "workspace" ? <IconFiles /> : contentView(tab) === "page" ? <IconBrowser /> : <FileKindIcon name={tab.url} />;
 
@@ -135,21 +138,23 @@ function Workspace({ tab, device, devices, content, show, cwd }: { tab: ContentT
 /** The phone uses the workspace file page's actual deck. Session-only
  * actions live in its existing menu, leaving the file's navigation,
  * source/preview, saving and folding in one implementation. */
-function SessionContentFile({tab,mobile,temporary,onKeep,onOpen,...props}: ComponentProps<typeof FilePage> & {
-  tab:ContentTab; mobile:boolean; temporary:boolean; onKeep:()=>void; onOpen:(path:string)=>void;
+function SessionContentFile({tab,mobile,temporary,onKeep,onOpen,onBrowse,...props}: ComponentProps<typeof FilePage> & {
+  tab:ContentTab; mobile:boolean; temporary:boolean; onKeep:()=>void; onOpen:(path:string)=>void;onBrowse:()=>void;
 }) {
   const {files,at}=useContentNeighbors(tab,props.machine,mobile);
   const acts=mobile ? [
     ...(temporary?[{key:'content-keep',label:gui.content_keep,run:onKeep}]:[]),
+    {key:'content-browse',label:gui.content_find,run:onBrowse},
     ...(at>0?[{key:'content-previous',label:gui.content_previous,run:()=>onOpen(files[at-1])}]:[]),
     ...(at>=0&&at<files.length-1?[{key:'content-next',label:gui.content_next,run:()=>onOpen(files[at+1])}]:[]),
   ]:undefined;
   return <FilePage {...props} embedded={!mobile} moreActs={acts}/>;
 }
 
-export function SessionContentPane({ container, content, session, devices, rows, visible, onClose, onReveal, mobile = false, navigation }: {
+export function SessionContentPane({ container, content, session, devices, rows, visible, onClose, onReveal, mobile = false, navigation, sessionFaces, onInspect, onCloseSession, onNewSession }: {
   container: HTMLElement; content: SessionContent; session: string | null;
   devices: DeviceRow[]; rows: SessionRow[]; visible: boolean; mobile?: boolean;
+  sessionFaces: TabFace[];onInspect:(id:string)=>void;onCloseSession:(id:string)=>void;onNewSession:()=>void;
   navigation: ContentNavigation; onClose: () => void; onReveal: (machine: string, path: string) => void;
 }) {
   const visited = useRef(new Set<string>()), pickers = useRef(new Set<string>());
@@ -168,7 +173,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
     if (mobile && visible && before && before !== key && state?.scene !== 'overview') navigation.document(selected);
   }, [session, selected?.id, mobile, visible]);
   useEffect(() => {
-    if (mobile && visible && session && state?.scene === 'document' && !content.allTabs.some(t => t.session === session && content.handle(t) === state.key)) navigation.browse(session);
+    if (mobile && visible && session && state?.scene === 'document' && !content.allTabs.some(t => t.session === session && content.handle(t) === state.key)) navigation.back(session)||navigation.browse(session);
   }, [mobile, visible, session, active, content.allTabs.map(t=>t.id).join(',')]);
   useEffect(() => {
     const locate = (event: Event) => {
@@ -192,6 +197,11 @@ export function SessionContentPane({ container, content, session, devices, rows,
     close: () => { if (current) quiet(content.close(current.id)); },
     step: by => { const at = peers.findIndex(t => content.handle(t) === active); const next = peers[(at + by + peers.length) % peers.length]; if (next) pick(next); },
   } : null);
+  const faceFor=(id:string):TabFace|undefined=>{
+    const opened=sessionFaces.find(f=>f.id===id);if(opened)return opened;
+    const row=rows.find(r=>r.id===id);return row?{id:row.id,label:row.title,path:sessionCwdOnScreen(row)||'',face:row.face,session:{word:row.word,kind:row.kind,category:row.category}}:undefined;
+  };
+  const face=session?faceFor(session):undefined;
   const owner = rows.find(r => r.id === session), home = devices.find(d => d.name === owner?.home);
   useNewAct(visible && focused && session && home ? { label: mobile ? gui.content_find : gui.content_new, tab: true, run: () => { if (mobile) navigation.browse(session); else quiet(content.add(session, home.id, "")); } } : null);
   const pages = content.allTabs.filter(t => contentView(t) === 'page');
@@ -206,7 +216,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
     {content.error && <div role="alert" className="session-content-error">{content.error}</div>}
     {rows.filter(row => pickers.current.has(row.id)).map(row => {
       const show = visible && mobile && row.id === session && state?.scene === 'picker';
-      return <section key={'picker:'+row.id} data-content-picker={row.id} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}><ContentPicker row={row} devices={devices} navigation={navigation} onOpen={(device,path,view,line)=>preview(row.id,device,path,view,line)}/></section>;
+      return <section key={'picker:'+row.id} data-content-picker={row.id} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}><ContentPicker face={faceFor(row.id)!} content={content} onClose={onClose} row={row} devices={devices} navigation={navigation} onOpen={(device,path,view,line)=>preview(row.id,device,path,view,line)}/></section>;
     })}
     {content.allTabs.map(tab => {
       const key = content.handle(tab), show = visible && tab.session === session && key === active;
@@ -216,19 +226,18 @@ export function SessionContentPane({ container, content, session, devices, rows,
         navigation.update(tab.session, { source: contentView(tab)==='page'?'browser':'workspace' });
         navigation.browse(tab.session);
       };
+      const browser=(onBusy?: (busy:boolean)=>void)=><BrowserPane onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});releasePages(pageIds?pageIds.split(','):[],'content');}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>quiet(content.add(tab.session,device!.id,url,'page',temporary?undefined:tab.id).then(id=>{if(mobile)navigation.update(tab.session,{scene:'document',key:id});}))}/>;
       return <section key={key} data-session-content={tab.id} data-content-handle={key} data-content-visible={show} data-content-preview={temporary || undefined} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}>
         {!device ? <div className="session-content-unknown">{gui.content_machine_gone}</div> : <>
-          {((mobile && contentView(tab)!=='file') || (!mobile && temporary)) && <ContentDocumentNavigation tab={tab} machine={device.name} temporary={temporary} onBrowse={mobile ? browse : () => onReveal(device.name, directoryOf(tab.url))} onKeep={() => quiet(content.keep(tab.id))} onOpen={path => preview(tab.session,device,path,'file')}/>}
-          {contentView(tab) === 'file' ? (show || visited.current.has(key)) && <SessionContentFile tab={tab} mobile={mobile} temporary={temporary} onKeep={()=>quiet(content.keep(tab.id))} onOpen={path=>preview(tab.session,device,path,'file')} machine={device.name} path={tab.url} here={device.me} git draft={drafts[key]} onDraft={draft => {
+          {(!mobile && temporary) && <ContentDocumentNavigation tab={tab} machine={device.name} temporary={temporary} onBrowse={mobile ? browse : () => onReveal(device.name, directoryOf(tab.url))} onKeep={() => quiet(content.keep(tab.id))} onOpen={path => preview(tab.session,device,path,'file')}/>}
+          {contentView(tab) === 'file' ? (show || visited.current.has(key)) && <SessionContentFile tab={tab} mobile={mobile} temporary={temporary} onKeep={()=>quiet(content.keep(tab.id))} onBrowse={browse} onOpen={path=>preview(tab.session,device,path,'file')} machine={device.name} path={tab.url} here={device.me} git draft={drafts[key]} onDraft={draft => {
             setDrafts(all => all[key] === (draft || undefined) ? all : { ...all, [key]: draft || undefined });
             if (draft && temporary) quiet(content.keep(tab.id));
-          }} goLine={content.lines[key] || content.lines[tab.id]} onBack={mobile ? browse : () => onReveal(device.name, directoryOf(tab.url))} onGone={() => quiet(content.close(tab.id))} onMoved={(_from,to) => point(tab,device,to)} /> : contentView(tab) === 'page' ? show && <>
-            <div className="session-content-address"><PageField tab={key} machine={device} devices={devices} at={tab.url} first={device.id} onMachine={d=>point(tab,d,tab.url)} onGo={(url,d)=>point(tab,d,url)}/></div>
-            <div className="session-content-web"><BrowserPane tab={key} device={device.id} machine={device.name} here={device.me} url={tab.url} onOpened={url=>{void recentVisit('page',device.name,url,tab.session).catch(()=>{});releasePages(pageIds?pageIds.split(','):[],'content');}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>quiet(content.add(tab.session,device.id,url,'page',temporary?undefined:tab.id).then(id=>{if(mobile)navigation.update(tab.session,{scene:'document',key:id});}))}/></div>
-          </> : <Workspace tab={tab} device={device} devices={devices} content={content} show={show} cwd={sessionCwdOnScreen(row)}/>}
+          }} goLine={content.lines[key] || content.lines[tab.id]} contentDeck={mobile&&faceFor(tab.session)?contentFileDeck({session:tab.session,face:faceFor(tab.session)!,content,navigation,onClose,title:contentName(tab)}):undefined} onBack={mobile ? ()=>{if(!navigation.back(tab.session))onClose();} : () => onReveal(device.name, directoryOf(tab.url))} onGone={() => quiet(content.close(tab.id))} onMoved={(_from,to) => point(tab,device,to)} /> : contentView(tab) === 'page' ? show && (mobile&&faceFor(tab.session)?<MobileContentPage tab={tab} handle={key} device={device} devices={devices} face={faceFor(tab.session)!} content={content} navigation={navigation} onClose={onClose} onPoint={(d,url)=>point(tab,d,url)} onKeep={()=>quiet(content.keep(tab.id))}>{onBusy=>browser(onBusy)}</MobileContentPage>:<><div className="session-content-address"><PageField tab={key} machine={device} devices={devices} at={tab.url} first={device.id} onMachine={d=>point(tab,d,tab.url)} onGo={(url,d)=>point(tab,d,url)}/></div><div className="session-content-web">{browser()}</div></>) : <Workspace tab={tab} device={device} devices={devices} content={content} show={show} cwd={sessionCwdOnScreen(row)}/>}
         </>}
       </section>;
     })}
-    {mobile && session && <section data-content-overview className={cn('session-content-view', !(visible && state?.scene==='overview') && 'session-content-retained')} aria-hidden={state?.scene!=='overview'} inert={state?.scene!=='overview'}><ContentOverview session={session} row={owner} devices={devices} content={content} navigation={navigation} onPick={pick}/></section>}
+    {mobile&&session&&state?.scene==='sessions'&&<section data-content-sessions className="session-content-view mobile-content-overview"><div className="mobile-content-overview-head"><h2>{gui.session_tabs}</h2><Button variant="ghost" size="sm" onClick={onClose}>{gui.edit_done}</Button></div><div className="mobile-content-overview-list"><TabSheetRows faces={sessionFaces} active={session} onFocus={onInspect} onClose={onCloseSession} onNew={onNewSession} newLabel={gui.new_session}/></div><div className="mobile-content-deck"><GlassCircle aria-label={gui.back} onClick={onClose}><IconBack/></GlassCircle><div className="glass mobile-content-pill"><span className="px-row text-body">{gui.session_tabs}</span></div><GlassCircle aria-label={gui.switch_tabs(sessionFaces.length)} onClick={onClose}><TabsGlyph n={sessionFaces.length}/></GlassCircle></div></section>}
+    {mobile && session && <section data-content-overview className={cn('session-content-view', !(visible && state?.scene==='overview') && 'session-content-retained')} aria-hidden={state?.scene!=='overview'} inert={state?.scene!=='overview'}><ContentOverview face={face!} onClose={onClose} session={session} row={owner} devices={devices} content={content} navigation={navigation} onPick={pick}/></section>}
   </NarrowBox>, container);
 }

@@ -431,6 +431,7 @@ export function FilePage({
   moreActs,
   embedded = false,
   embeddedContext,
+  contentDeck,
 }: {
   /* **Inside the session's 附栏 this is the same page, with the main
      area's deck** (UX-40 §4, the owner 2026-10-07 02:10: 「打开一个文件或
@@ -450,6 +451,8 @@ export function FilePage({
   embedded?: boolean;
   /** The grouped host can show the machine and a workspace-relative folder. */
   embeddedContext?: string;
+  /** Session identity and content overview in this page’s original deck. */
+  contentDeck?: { identity: ReactNode; folded: ReactNode; trail: ReactNode };
   /** The file is in a checkout: git 历史 is offered (round UX-4). */
   history?: boolean;
   /** **The workspace's open files, as the session page's tabs** (UX-25,
@@ -703,7 +706,7 @@ export function FilePage({
             onClick={() => setFolded(false)}
             className="glass pointer-events-auto mx-auto mb-in flex h-deck-strip max-w-[calc(100%-2*var(--page-inset))] flex-none animate-in items-center justify-center overflow-hidden rounded-full px-row text-callout fade-in"
           >
-            <span className="min-w-0 truncate">{name}</span>
+            <span className="min-w-0 truncate">{contentDeck?.folded ?? name}</span>
           </button>
         ) : (
           <div className="pointer-events-auto flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row">
@@ -723,7 +726,7 @@ export function FilePage({
                 its compare switch there. ⚠️ 墓碑 (UX-14): name · 预览 eye ·
                 ✓ — 预览 is the circle beside the pill now. */}
             <div data-file-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-1">
-              {tabs && rev === null ? (
+              {contentDeck && rev === null ? contentDeck.identity : tabs && rev === null ? (
                 <DeckBand faces={tabs.faces} active={tabs.active} onFocus={tabs.onFocus} />
               ) : (
                 <span data-file-name className="min-w-0 flex-1 truncate ps-2 text-body">
@@ -777,6 +780,7 @@ export function FilePage({
             )}
             {rev === null && verbs.shareCircle}
             {rev === null && verbs.moreCircle}
+            {rev === null && contentDeck?.trail}
             {rev === null && tabs && (
               <GlassCircle
                 data-deck-tabs

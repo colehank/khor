@@ -80,7 +80,7 @@ import { Tabs } from "@/browse/Tabs";
 import { useSessionContent, type ContentView } from "@/hooks/use-session-content";
 import { ContentTabs, SessionContentPane } from "@/views/SessionContent";
 import { useContentNavigation } from "@/hooks/use-content-navigation";
-import { MobileContentBar, MobileContentSheet } from "@/views/MobileSessionContent";
+import { MobileContentSheet } from "@/views/MobileSessionContent";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui, msg } from "@/gen/catalog";
 import { lasting } from "@/words";
@@ -3296,6 +3296,7 @@ export default function App() {
       faces={tabFaces}
       active={selected ?? ""}
       contentMode={narrow && side.open && selectedRow !== null}
+      onTabs={narrow&&selectedRow?()=>{(document.activeElement as HTMLElement|null)?.blur();contentNavigation.sessions(selectedRow.id);setSessionSide(selectedRow.id,{open:true,seat:"workspace"});}:undefined}
       onTitle={terminalPill && selectedRow ? () => {
         (document.activeElement as HTMLElement | null)?.blur();
         if (!side.open) contentNavigation.resume(selectedRow.id);
@@ -3325,8 +3326,7 @@ export default function App() {
     >
       {detail}
       {narrow && side.open && selectedRow && tabFaces.find(f => f.id === selectedRow.id) && <>
-        <MobileContentBar session={selectedRow.id} face={tabFaces.find(f => f.id === selectedRow.id)!} content={content} navigation={contentNavigation} onClose={() => { (document.activeElement as HTMLElement | null)?.blur(); setSessionSide(selectedRow.id, { open: false }); }} />
-        <MobileContentSheet key={selectedRow.id} onClose={() => { (document.activeElement as HTMLElement | null)?.blur(); setSessionSide(selectedRow.id, { open: false }); }}><div ref={seatContent} className="flex min-h-0 min-w-0 flex-1 flex-col" /></MobileContentSheet>
+        <MobileContentSheet onClose={() => { (document.activeElement as HTMLElement | null)?.blur(); setSessionSide(selectedRow.id, { open: false }); }}><div ref={seatContent} className="flex min-h-0 min-w-0 flex-1 flex-col" /></MobileContentSheet>
       </>}
 
       {placeSheet && selectedRow && (
@@ -4269,7 +4269,10 @@ export default function App() {
       )}
       <div hidden ref={el => { contentParking.current = el; if (el && !contentHost.parentElement) el.appendChild(contentHost); }} />
       <SessionContentPane container={contentHost} content={content} session={selectedRow?.id ?? null} devices={devices} rows={rows}
-        mobile={narrow} navigation={contentNavigation}
+        mobile={narrow} navigation={contentNavigation} sessionFaces={tabFaces}
+        onInspect={id=>{if(isNewTab(id)){sessionTabs.focus(id);return;}contentNavigation.inspect(id);setSessionSide(id,{open:true,seat:"workspace"});sessionTabs.focus(id);setScreen("detail");}}
+        onCloseSession={id=>{if(openTabs.length===1)setScreen("list");sessionTabs.close(id);}}
+        onNewSession={()=>openNewTab()}
         visible={sessions && side.open && (narrow ? inSession : sideShown) && !hidden && morePage === null && !switchingTabs}
         onClose={() => { if (selected) { content.setMaximized(null); setSessionSide(selected, { open: false }); } }}
         onReveal={(machine, path) => openContent("workspace", machine, path)} />

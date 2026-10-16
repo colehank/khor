@@ -2864,10 +2864,11 @@ content-machine-gone = "This machine is no longer in the device list"
 content-no-directory = "This session has no directory. Enter a path or switch to the browser"
 
 # Session content browsing (mobile and temporary documents)
-content-find = "Find content"
+content-find = "Open file or website"
 content-keep = "Keep tab"
 content-temporary = "Temporary view"
 content-tabs = "Tabs"
+content-tabs-for = "Contents of {0}"
 content-tabs-count = "{0} tabs in this session"
 content-tabs-search = "Find tabs"
 content-empty = "No kept tabs yet"

@@ -5452,10 +5452,11 @@ content-machine-gone = "这台机器已不在设备列表中"
 content-no-directory = "当前会话没有目录，可输入路径或切换到浏览器"
 
 # Session content browsing (mobile and temporary documents)
-content-find = "找内容"
+content-find = "打开文件或网页"
 content-keep = "保留标签"
 content-temporary = "临时查看"
 content-tabs = "标签页"
+content-tabs-for = "{0} 的内容"
 content-tabs-count = "此会话的 {0} 个标签"
 content-tabs-search = "查找标签页"
 content-empty = "还没有保留的标签"
