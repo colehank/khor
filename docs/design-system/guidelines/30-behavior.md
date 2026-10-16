@@ -763,3 +763,13 @@
 - 放大、收起、刷新、来源与新建使用同一 GlassCircle；图形尺寸交给 ctl-glyph，布局交给控件本身。来源菜单仍用 nav-glyph。
 - 不用局部 display:block 覆盖 GlassCircle 的 grid。移动端隐藏整条 SideFind，桌面只恢复父行，不另改子按钮的 display；WebKit 中原来的覆盖使“＋”向左偏 7px，Chrome 没有暴露这个偏差。
 - 门：`npm run session-content` 的 desktop 图标实测；`CONTENT_ENGINE=webkit CONTENT_DESKTOP_ICONS_ONLY=1 npm run session-content` 复测 WebKit 桌面。检查 1000/1600/1920、浅深主题、大字、放大/恢复、菜单及内容操作，glyph 的中心与控件中心同位。
+
+### 桌面 session 标签专注展示（2026-10-16）
+
+| 规矩 | 门 |
+|---|---|
+| 再点当前 session 切换单组／所有组展示，恢复原顺序；列表切换时专注跟随；只切展示不改内容区与终端几何 | `npm run session-content`：真实 App 的列表、点击、Enter/Space、恢复顺序与 pane 矩形比较 |
+| 内层起始和 ＋ 前的线复用外层居中短线，首尾留白；头像标题×与内外 ＋ 可用 | `CONTENT_DESKTOP_ICONS_ONLY=1 npm run session-content`：六个长标题 session、1000 宽、三条线的宽高／中心／留白、关闭与新标签页 |
+| session 标题按实际空间截断，当前保留头像与常驻 × 的最低宽度，未选中缩到头像；悬停关闭替换头像不挤动布局。内外层连续鼠标关闭冻结宽度，离开、新建与 resize 释放 | `CONTENT_DESKTOP_ICONS_ONLY=1 npm run session-content`：90 宽标题、当前与非当前最低宽度／关闭位、关闭不改选中与专注、连续关闭和释放。旧 96 阈值在 90 宽直接隐藏全部标题 |
+
+Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印字符把焦点转进终端。红探针实际记录 keydown 在标签、keyup 在 xterm 且没有 click；修复后与 Enter 一起验证专注开关。

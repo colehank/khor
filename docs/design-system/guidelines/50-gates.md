@@ -505,3 +505,6 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 
 
 `npm run session-content` 新增桌面图标盒子与中心坐标回归；`CONTENT_ENGINE=webkit CONTENT_DESKTOP_ICONS_ONLY=1` 运行同一门的 WebKit 桌面段，需设置已有 WebKit 的 `PLAYWRIGHT_BROWSERS_PATH`。`CONTENT_DPR=2` 复测双倍像素。Chrome 默认仍运行完整桌面与手机流程。修复前 WebKit 的新建图形中心比按钮中心偏左 7px，来源切换未使用共同玻璃控件；修复后两种引擎均须居中。
+
+桌面 session 标签专注回归也在 `npm run session-content`：切展示前后 pane 矩形不变、恢复原顺序、列表切换跟随；`CONTENT_DESKTOP_ICONS_ONLY=1` 增加六个长标题 session 在 1000 宽下的 Enter/Space、关闭与外层 ＋，以及三条分隔线同规格、居中并留白的实测。
+桌面段另量 90 宽标题先截断、当前至少保留头像与常驻 ×、非当前可缩到头像；悬停／键盘焦点替换关闭位，关闭非当前标签不改选中或专注，并检查内外层连续鼠标关闭和释放。

@@ -1808,6 +1808,8 @@ export default function App() {
     setMorePage(from.morePage);
     setScreen(from.front || from.landing !== "sessions" ? from.screen : "list");
   };
+  // Desktop tab presentation is independent of each session's content layout.
+  const [sessionTabsFocused, setSessionTabsFocused] = useState(false);
   const tabFaces: TabFace[] = useMemo(
     () =>
       openTabs.map((id) => {
@@ -4190,7 +4192,13 @@ export default function App() {
                 <Tabs
                   grouped
                   bodyClass="flex min-h-0 flex-col"
-                  faces={tabFaces.map(f => ({ ...f, group: !isNewTab(f.id) ? <ContentTabs session={f.id} open={f.id === selected && side.open} content={content} navigation={contentNavigation} onHide={()=>{content.setMaximized(null);setSessionSide(f.id,{open:false});}} onFocus={()=>sessionTabs.focus(f.id)} onAdd={()=>{
+                  faces={tabFaces.filter(f => !sessionTabsFocused || isNewTab(selected ?? "") || f.id === selected).map(f => ({ ...f,
+                    again: !isNewTab(f.id) ? {
+                      hint: sessionTabsFocused ? gui.session_tabs_all : gui.session_tabs_focus,
+                      expanded: sessionTabsFocused,
+                      toggle: () => setSessionTabsFocused(value => !value),
+                    } : undefined,
+                    group: !isNewTab(f.id) ? <ContentTabs session={f.id} open={f.id === selected && sessionTabsFocused} content={content} navigation={contentNavigation} onHide={()=>{content.setMaximized(null);setSessionSide(f.id,{open:false});}} onFocus={()=>{sessionTabs.focus(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});}} onAdd={()=>{
                     contentNavigation.browse(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});
                   }} /> : undefined }))}
                   active={selected ?? ""}

@@ -2797,6 +2797,8 @@ new-session-machine = "目标机器"
 # The strip of open sessions over the pane (aria name): the sessions
 # a person has open, iTerm's arrangement.
 session-tabs = "打开的会话"
+session-tabs-focus = "点击仅显示此会话的标签"
+session-tabs-all = "点击显示所有会话"
 # 窄屏栏放不下的落点折进的那个口(2026-09-02:「最多只显示四个icon,多余的折叠为...」)。
 rail-more = "更多"
 # ── the floating navigation (the redesign, 2026-10-02) ──────────────

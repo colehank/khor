@@ -61,6 +61,7 @@ try{ checks:{
   await page.goto(url);
   assert(await page.evaluate(()=>typeof globalThis.crypto.randomUUID==='undefined'),'LAN compatibility probe did not run');
   const head=id=>page.locator(`[data-tab-open="${id}"]`);
+  const hoverHead=async id=>{const b=await head(id).boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);};
   const side=id=>page.locator(`[data-session-side="${id}"]`);
   const shown=()=>page.locator('[data-session-content][data-content-visible=true]');
   const table=()=>api('tabs_list',{kind:'content'});
@@ -70,7 +71,10 @@ try{ checks:{
   const cli=(...args)=>execFileSync(join(scratch,'khor'),args,{env,encoding:'utf8',timeout:15000}).trim();
   await head(sessions[0]).waitFor();
   assert.equal(await page.locator('[data-session-tabs] [data-tab-new]').count(),1,'outer + missing');
-  await head(sessions[0]).click();await side(sessions[0]).waitFor();
+  await head(sessions[0]).click();
+  await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
+  assert.equal(await side(sessions[0]).count(),0,'focusing tabs opened the content pane');
+  await desktopAdd().click();await side(sessions[0]).waitFor();
   await desktopPicker().locator('[data-file-tree]').waitFor();
   assert.equal((await table()).tabs.length,0,'opening the desktop picker created a persistent empty tab');
   const virtual=page.locator(`[data-content-tabs="${sessions[0]}"] [data-content-browse]`);
@@ -83,6 +87,7 @@ try{ checks:{
     const selectors={maximize:'[data-content-maximize]',hide:'[data-content-hide]',refresh:'[data-session-verbs] [data-glass-circle]',scope:'[data-content-picker]:not(.session-content-retained) [data-content-scope]',plus:'[data-content-picker]:not(.session-content-retained) [data-side-new]',search:'[data-content-picker]:not(.session-content-retained) [data-search-wrap]>svg',reference:'[data-search-open]'};
     return Object.fromEntries(Object.entries(selectors).map(([key,selector])=>{const el=[...document.querySelectorAll(selector)].find(e=>e.getClientRects().length);if(!el)return [key,null];return [key,{button:rect(el),svgs:[...el.querySelectorAll('svg')].map(svg=>({box:rect(svg),viewBox:svg.getAttribute('viewBox'),bbox:(()=>{const r=svg.getBBox();return {x:r.x,y:r.y,w:r.width,h:r.height}})()})),glass:el.hasAttribute('data-glass-circle')}];}));
   });
+  await page.locator('[data-session-verbs] [data-glass-circle]').waitFor({state:'visible'});
   const iconResults=[];
   const checkIcons=async(name)=>{
     const icons=await measureIcons();iconResults.push({name,icons});
@@ -130,9 +135,16 @@ try{ checks:{
   const first=(await table()).tabs[0];assert.equal(first.view,'file');assert.equal(first.url,join(projects[0],'notes.md'));
   assert.equal(await shown().getAttribute('data-content-handle'),stable);assert(await shown().locator('.cm-content').evaluate(el=>el===window.__desktopContentEditor),'keeping rebuilt the editor');
   await shown().locator('[data-file-face-toggle]').click();await shown().locator('[data-file-preview]').waitFor();
-  await head(sessions[0]).click();await side(sessions[0]).waitFor({state:'detached'});await head(sessions[0]).click();await shown().locator('[data-file-preview]').waitFor();
-  await head(sessions[1]).click();await head(sessions[1]).click();await page.locator(`[data-content-picker="${sessions[1]}"]:visible`).getByText('only-1.txt',{exact:true}).waitFor();
-  await head(sessions[0]).click();await shown().locator('[data-file-preview]').waitFor();
+  const beforeToggle=await page.locator('[data-session-panes]').evaluate(el=>({box:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()}));
+  await head(sessions[0]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===2);
+  await shown().locator('[data-file-preview]').waitFor();
+  assert.deepEqual(await page.locator('[data-session-panes]').evaluate(el=>({box:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()})),beforeToggle,'tab presentation changed pane geometry');
+  assert.deepEqual(await page.locator('[data-session-tabs] [data-tab]').evaluateAll(els=>els.map(el=>el.dataset.tab)),sessions,'restoring tabs changed their order');
+  await head(sessions[0]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
+  await page.locator(`[data-row="${sessions[1]}"] [data-row-open]`).click();await head(sessions[1]).waitFor();
+  assert.equal(await page.locator('[data-session-tabs] [data-tab]').count(),1,'focus did not follow list selection');
+  await page.locator(`[data-content-tabs="${sessions[1]}"] .session-content-add>button`).click();await page.locator(`[data-content-picker="${sessions[1]}"]:visible`).getByText('only-1.txt',{exact:true}).waitFor();
+  await page.locator(`[data-row="${sessions[0]}"] [data-row-open]`).click();await shown().locator('[data-file-preview]').waitFor();
   await shown().locator('[data-file-back]').click();await search().waitFor();assert.equal(await search().inputValue(),'notes');
   await search().fill('only-0');await desktopPicker().getByText('only-0.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();
   await shown().locator('.cm-content').click();await page.keyboard.press('ControlOrMeta+End');await page.keyboard.type('\nSaved from desktop content');
@@ -146,14 +158,14 @@ try{ checks:{
   assert(!cli('tabs','--session',sessions[1],'ls').includes(first.id),'session scope leaked');
   const keyTab=cli('tabs','--session',sessions[0],'open','--view','file',join(projects[0],'extra-02.txt'));
   const keyButton=page.locator(`[data-content-tab="${keyTab}"] [role=tab]`);await keyButton.waitFor();await keyButton.focus();await page.keyboard.press('ControlOrMeta+w');await page.locator(`[data-content-tab="${keyTab}"]`).waitFor({state:'detached'});
-  assert.equal(await page.locator('[data-session-tabs] [data-tab]').count(),2,'content close closed a session');
+  assert.equal(await page.locator('[data-session-tabs] [data-tab]').count(),1,'content close changed focused session');
   await desktopAdd().click();await search().waitFor();await scope().click();await page.locator('[data-content-source=browser]').click();
   await address().focus();await address().fill('http://localhost:'+port);assert.equal(await address().inputValue(),'http://localhost:'+port,'draft replacement changed before submission');await address().press('Enter');await shown().locator('[data-content-page-bar]').waitFor();await shown().locator('[data-page-address]').focus();assert.equal(await shown().locator('[data-page-address]').inputValue(),'http://localhost:'+port,'submitted address changed');await shown().locator('[data-page-address]').blur();assert.equal((await table()).tabs.length,2,'opening a page persisted it');
   const desktopPageHandle=await shown().getAttribute('data-content-handle');await shown().locator('[data-content-page-more]').click();await page.getByRole('menuitem',{name:word('content-keep'),exact:true}).click();await until(async()=>(await table()).tabs.length===3);assert.equal(await shown().getAttribute('data-content-handle'),desktopPageHandle);
   await page.locator(`[data-content-tab="${first.id}"] [role=tab]`).click();await shown().locator('[data-file-preview]').waitFor();
   await max().click();assert.equal(await page.locator('[data-session-panes]').evaluate(el=>getComputedStyle(el.firstElementChild).display),'none');await max().click();
   await page.screenshot({path:join(scratch,'desktop.png')});
-  await page.reload();await head(sessions[0]).waitFor();await head(sessions[0]).click();await shown().locator('.cm-content').waitFor();assert.equal((await table()).tabs.length,3);assert.equal(await shown().getAttribute('data-session-content'),first.id);
+  await page.reload();await head(sessions[0]).waitFor();await head(sessions[0]).click();await page.locator(`[data-content-tabs="${sessions[0]}"] [data-content-tab="${first.id}"] [role=tab]`).click();await shown().locator('.cm-content').waitFor();assert.equal((await table()).tabs.length,3);assert.equal(await shown().getAttribute('data-session-content'),first.id);
   console.log('PASS: CLI synchronization and scoped shortcuts; temporary page keep; persisted ids after reload; maximize/restore');
   // Both add controls and the session identity remain under content pressure.
   for(let i=3;i<9;i++)cli('tabs','--session',sessions[0],'open','--view','file',join(projects[0],'extra-0'+i+'.txt'));
@@ -162,12 +174,95 @@ try{ checks:{
   const geometry=await page.locator(`[data-tab="${sessions[0]}"]`).evaluate(el=>{const r=x=>x.getBoundingClientRect().toJSON();return {box:r(el),head:r(el.querySelector('[data-tab-head]')),add:r(el.querySelector('.session-content-add')),outer:r(document.querySelector('[data-session-tabs] [data-tab-new]'))};});
   assert(geometry.head.x>=geometry.box.x-1&&geometry.head.right<=geometry.box.right+1,'session identity scrolled away');
   assert(geometry.add.width>0&&geometry.add.right<=geometry.box.right+1,'content + clipped');assert(geometry.outer.width>0,'session + hidden');
+  // Close successive inactive content tabs with the pointer at one spot.
+  const contentStrip=page.locator(`[data-content-tabs="${sessions[0]}"]`);
+  const pair=await contentStrip.evaluate(el=>{
+    const viewport=el.querySelector('.session-content-scroll').getBoundingClientRect();
+    const tabs=[...el.querySelectorAll('[data-content-tab]')];
+    for(let i=0;i<tabs.length-1;i++){
+      const a=tabs[i],b=tabs[i+1],ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect();
+      if(a.dataset.contentOn!=='true'&&b.dataset.contentOn!=='true'&&ra.left>=viewport.left+1&&rb.right<=viewport.right-1&&Math.abs(ra.width-rb.width)<.2)return [a.dataset.contentTab,b.dataset.contentTab];
+    }
+    return null;
+  });
+  assert(pair,'no adjacent compressed content tabs available');
+  const closeAt=id=>page.locator(`[data-content-tab="${id}"] .session-content-close`);
+  await page.locator(`[data-content-tab="${pair[0]}"]`).hover();
+  const closeBox=await closeAt(pair[0]).boundingBox(),closeX=closeBox.x+closeBox.width/2,closeY=closeBox.y+closeBox.height/2;
+  await page.mouse.click(closeX,closeY);await until(async()=>await closeAt(pair[0]).count()===0);
+  const nextBox=await closeAt(pair[1]).boundingBox();
+  assert(Math.abs(nextBox.x+nextBox.width/2-closeX)<1,'next content close moved away from pointer: '+JSON.stringify({closeBox,nextBox,held:await contentStrip.getAttribute('data-content-held'),tabs:await contentStrip.locator('[data-content-tab]').evaluateAll(els=>els.map(el=>({id:el.dataset.contentTab,w:el.getBoundingClientRect().width,style:el.getAttribute('style')})))}));
+  assert.equal(await contentStrip.getAttribute('data-content-held'),'true');
+  await page.mouse.click(closeX,closeY);await until(async()=>await closeAt(pair[1]).count()===0);
+  await page.setViewportSize({width:1080,height:850});await until(async()=>await contentStrip.getAttribute('data-content-held')===null);
+  await page.setViewportSize({width:1000,height:850});
   const paneBoxes=await page.locator('[data-session-panes]').evaluate(el=>({row:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()}));
   assert(paneBoxes.side.right<=paneBoxes.row.right+1&&paneBoxes.side.width>0,'content pane overflow');await page.screenshot({path:join(scratch,'crowded.png')});
   await page.setViewportSize({width:1600,height:1000});await max().click();
   for(const t of (await table()).tabs.filter(t=>t.session===sessions[0]))cli('tabs','--session',sessions[0],'close',t.id);
   await side(sessions[0]).waitFor({state:'detached'});assert.notEqual(await page.locator('[data-session-panes]').evaluate(el=>getComputedStyle(el.firstElementChild).display),'none','last child kept the terminal hidden');
   console.log('PASS: crowded strip preserves session identity and add controls; closing the last maximized document restores the terminal');
+  if(process.env.CONTENT_DESKTOP_ICONS_ONLY==='1'){
+  // Several long session titles at narrow desktop width. Presentation follows
+  // list picks, and restoring the whole strip preserves its stored order.
+  for(let i=0;i<4;i++){
+    const id=await api('open_on',{machine:'',title:'Long desktop session title '+i+' · 原始顺序与内容布局保持',cwd:projects[0],cols:100,rows:35});sessions.push(id);
+    await page.locator(`[data-row="${id}"] [data-row-open]`).click();await head(id).waitFor();
+  }
+  await page.setViewportSize({width:1000,height:850});
+  const front=sessions.at(-1),wholeOrder=[...sessions];
+  const paneRect=()=>page.locator('[data-session-panes]').evaluate(el=>el.getBoundingClientRect().toJSON());
+  const terminalRect=await paneRect();
+  await head(front).focus();await page.keyboard.press('Enter');
+  await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===sessions.length);
+  assert.deepEqual(await page.locator('[data-session-tabs] [data-tab]').evaluateAll(els=>els.map(el=>el.dataset.tab)),wholeOrder);
+  assert.deepEqual(await paneRect(),terminalRect,'keyboard restore resized terminal');
+  await head(sessions[2]).click();assert.equal(await page.locator('[data-session-tabs] [data-tab]').count(),sessions.length,'switching another session toggled focus');
+  await until(async()=>await head(sessions[2]).getAttribute('aria-expanded')==='false');
+  await head(sessions[2]).focus();await page.keyboard.press('Space');
+  await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
+  await page.locator(`[data-content-tabs="${sessions[2]}"] .session-content-add>button`).click();
+  const dividers=await page.locator('[data-session-tabs] [data-tab-divider]:visible').evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect(),p=el.parentElement.getBoundingClientRect();return {w:r.width,h:r.height,cy:r.y+r.height/2,py:p.y+p.height/2,top:r.y-p.y,bottom:p.bottom-r.bottom};}));
+  assert.equal(dividers.length,3,'missing nested/outer dividers');
+  for(const d of dividers){assert(Math.abs(d.w-dividers[0].w)<.1&&Math.abs(d.h-dividers[0].h)<.1,'nested divider differs from outer');assert(Math.abs(d.cy-d.py)<.1&&d.top>0&&d.bottom>0,'divider is not centered with end space');}
+  await page.screenshot({path:join(scratch,'focus-long-titles.png')});
+  await head(sessions[2]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===sessions.length);
+  await page.locator('[data-session-tabs] [data-tab-group]').evaluateAll(els=>els.forEach(el=>{el.style.flex='0 0 auto';el.style.width='90px';}));
+  const names=await page.locator('[data-session-tabs] [data-tab-head]').evaluateAll(els=>els.map(el=>({w:el.getBoundingClientRect().width,label:el.querySelector('[data-tab-label]').getBoundingClientRect().width,visible:el.querySelector('[data-tab-label]').getClientRects().length>0})));
+  assert(names.every(n=>n.w>=89&&n.w<=91&&n.visible&&n.label>0),'90px session titles disappeared instead of truncating: '+JSON.stringify(names));
+  await page.screenshot({path:join(scratch,'titles-90.png')});
+  await page.locator('[data-session-tabs] [data-tab-group]').evaluateAll(els=>els.forEach(el=>{el.style.width=el.dataset.on==='true'?'64px':'var(--head-ctl)';}));
+  await page.mouse.move(8,800);await page.evaluate(()=>document.activeElement?.blur());
+  const compact=()=>page.locator('[data-session-tabs] [data-tab-head]').evaluateAll(els=>els.map(el=>{const head=el.getBoundingClientRect(),open=el.querySelector('[data-tab-open]'),face=open.firstElementChild.getBoundingClientRect(),close=el.querySelector('[data-tab-close]');return {on:el.parentElement.dataset.on==='true',w:head.width,cx:head.x+head.width/2,fx:face.x+face.width/2,name:el.querySelector('[data-tab-label]').getClientRects().length>0,position:getComputedStyle(close).position,opacity:getComputedStyle(close).opacity,hover:el.parentElement.matches(':hover'),focus:el.parentElement.matches(':focus-within'),active:document.activeElement?.tagName};}));
+  await until(async()=>(await compact()).every(c=>!c.name&&(c.on?Math.abs(c.w-64)<.1&&c.position!=='absolute'&&c.opacity==='1':c.w<64&&c.position==='absolute'&&c.opacity==='0'&&Math.abs(c.cx-c.fx)<.1)));
+  const activeClose=page.locator(`[data-tab="${sessions[2]}"] [data-tab-close]`);
+  await hoverHead(sessions[2]);assert.equal(await activeClose.evaluate(el=>getComputedStyle(el).opacity),'1');
+  await head(sessions[2]).focus();await page.mouse.move(8,800);assert.equal(await activeClose.evaluate(el=>getComputedStyle(el).opacity),'1','keyboard focus did not reveal close');
+  writeFileSync(join(scratch,'tab-density.json'),JSON.stringify({names,narrow:await compact()},null,2));
+  await page.screenshot({path:join(scratch,'avatar-floor-focus.png')});
+  await page.evaluate(()=>document.activeElement?.blur());
+  await hoverHead(sessions[3]);
+  const outerClose=page.locator(`[data-tab="${sessions[3]}"] [data-tab-close]`),outerBox=await outerClose.boundingBox();
+  const outerX=outerBox.x+outerBox.width/2,outerY=outerBox.y+outerBox.height/2;
+  await page.mouse.click(outerX,outerY);await until(async()=>await head(sessions[3]).count()===0);
+  const following=await page.locator(`[data-tab="${sessions[4]}"] [data-tab-close]`).boundingBox();
+  assert(Math.abs(following.x+following.width/2-outerX)<1,'next session close moved away from pointer');
+  await page.mouse.click(outerX,outerY);await until(async()=>await head(sessions[4]).count()===0);
+  assert.equal(await page.locator('[data-session-tabs] [data-tab][data-on=true]').getAttribute('data-tab'),sessions[2],'closing another avatar changed selection');
+  assert.equal(await head(sessions[2]).getAttribute('aria-expanded'),'false','close click toggled focus');
+  await page.locator('[data-session-tabs] [data-tab-group]').evaluateAll(els=>els.forEach(el=>{el.style.removeProperty('width');el.style.removeProperty('flex');}));
+  await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===sessions.length-2);
+  assert.deepEqual(await page.locator('[data-session-tabs] [data-tab]').evaluateAll(els=>els.map(el=>el.dataset.tab)),wholeOrder.filter(id=>id!==sessions[3]&&id!==sessions[4]));
+  await page.locator('[data-session-tabs] [data-tab-new]').click();
+  await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===sessions.length-1);
+  assert.equal(await page.locator('[data-session-tabs] [data-tab-capsule]').getAttribute('data-tabs-held'),null,'new session left close widths frozen');
+  assert((await page.locator('[data-session-tabs] [data-tab]').last().getAttribute('data-tab')).startsWith('new-tab:'));
+  await page.screenshot({path:join(scratch,'all-long-titles.png')});
+  const draftClose=page.locator('[data-session-tabs] [data-tab][data-on=true] [data-tab-close]');
+  await draftClose.focus();await page.keyboard.press('Space');
+  await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===sessions.length-2);
+  console.log('PASS: six sessions, long titles, 1000px, Enter/Space focus, list following, unchanged pane geometry, shared short dividers, original order, close and outer +');
+  }
   if(process.env.CONTENT_DESKTOP_ICONS_ONLY==='1'){assert.deepEqual(errors,[]);console.log('desktop content gate: clean');break checks;}
   // Narrow stays on the existing terminal/deck layout, with no desktop group.
   await page.setViewportSize({width:390,height:844});await page.locator('[data-session-tabs]').waitFor({state:'detached'});await page.locator('[data-terminal]').first().waitFor();

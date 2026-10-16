@@ -3189,3 +3189,22 @@
 /* Desktop surface preferences change the background plane, never foreground opacity. */
 :root { --window-opacity: 100%; --term-bg: var(--term-palette-bg, var(--canvas-solid)); --term-fg: var(--term-palette-fg, var(--card-foreground)); --theme-editor-w: 44rem; --theme-well: 24px; --theme-hex-w: 11ch; --theme-preview-h: 7rem; }
 :root[data-window-transparent] { --background: transparent; }
+
+/* Session heads below the active face+close floor shed their labels.
+ * The selected session keeps that floor and its close; others may shrink
+ * to the avatar and replace it with close on hover/focus. */
+@custom-variant session-tab-floor {
+  @container tab (width <= 64px) { @slot; }
+}
+/* A content file/page needs its glyph, insets and close seat before text
+ * fits. No extra font or control size: this is the sum of existing seats. */
+@container content-tab (width <= 52px) {
+  .session-content-tab[data-content-icon=true]:not([data-content-on=true]) .session-content-name {display:none}
+  .session-content-tab[data-content-icon=true]:not([data-content-on=true]) .session-content-open {justify-content:center;padding-inline:0}
+  .session-content-tab[data-content-icon=true]:not([data-content-on=true]) .session-content-close {right:0;top:0}
+  .session-content-tab[data-content-icon=true]:not([data-content-on=true]):is(:hover,:focus-within) .session-content-glyph {opacity:0}
+}
+
+@container content-tab (width <= 64px) {
+  .session-content-tab[data-content-icon=true][data-content-on=true] .session-content-name {display:none}
+}

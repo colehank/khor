@@ -393,6 +393,11 @@ function useRebalance(host: () => HTMLElement | null, active: string, kick = 0) 
   return { note };
 }
 
+/** Shared short divider for outer and nested tab controls. */
+export function TabDivider() {
+  return <span aria-hidden="true" data-tab-divider className="h-4.5 w-px flex-none bg-border" />;
+}
+
 export function TabStrip({
   faces,
   active,
@@ -592,6 +597,23 @@ export function TabStrip({
   useEffect(() => {
     if (faces.length === 0) setHeld(null);
   }, [faces.length]);
+  const releaseHeld = () => { kept.current = null; setHeld(null); setReleased(n => n + 1); };
+  const priorIds = useRef(new Set(faces.map(f => f.id)));
+  useEffect(() => {
+    if (faces.some(f => !priorIds.current.has(f.id))) releaseHeld();
+    priorIds.current = new Set(faces.map(f => f.id));
+  }, [faces.map(f => f.id).join("\n")]);
+  useEffect(() => {
+    const el = bar.current;
+    if (!el) return;
+    let width = el.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const next = el.getBoundingClientRect().width;
+      if (Math.abs(next - width) > .5) releaseHeld();
+      width = next;
+    });
+    observer.observe(el);return () => observer.disconnect();
+  }, []);
   useEffect(() => setHint(false), [active]);
   /** A press on the front tab, resolved against a double-click on its
       name — which renames, and must not show and hide the day on its
@@ -787,7 +809,7 @@ export function TabStrip({
                       .join(" · ") || undefined
               }
               className={cn(
-                grouped ? "group relative flex h-glass-tab items-center self-center rounded-full" : "@container/tab group relative flex h-glass-tab items-center self-center rounded-full",
+                grouped ? "group group/session-tab relative flex h-glass-tab items-center self-center rounded-full" : "@container/tab group relative flex h-glass-tab items-center self-center rounded-full",
                 // **One width, front or not** (UX-45, the owner 2026-10-07
                 // 「等宽先看看」, Chrome's): every pill is `--tab-w-even`
                 // and they shrink together, down to `--tab-w-floor` — the
@@ -836,6 +858,13 @@ export function TabStrip({
                   }
                   if (again) pressAgain(e);
                 }}
+                onKeyDown={grouped ? e => {
+                  // Space belongs to this button. Consume it before the
+                  // session's type-to-terminal routing can take focus.
+                  if (e.key !== " " || e.metaKey || e.ctrlKey || e.altKey) return;
+                  e.preventDefault();
+                  if (!e.repeat) e.currentTarget.click();
+                } : undefined}
                 aria-expanded={again?.expanded}
                 aria-controls={again?.expanded ? again.controls : undefined}
                 // `self-stretch`: the whole tab opens it, not the line of
@@ -861,7 +890,7 @@ export function TabStrip({
                   // until the pointer comes (the × below). ⚠️ 墓碑
                   // (UX-45): the face centred on the whole pill, stepping
                   // to the start when the × came in under the pointer.
-                  on
+                  grouped ? (on ? "pl-1.5" : "pl-1.5 pr-1.5 session-tab-floor:justify-center session-tab-floor:px-0") : on
                     ? "pl-1.5 @max-tab-face/tab:justify-center @max-tab-face/tab:px-0"
                     : "pl-1.5 pr-1.5 group-hover:pr-0 @min-tab-x/tab:pr-0 @max-tab-face/tab:justify-center @max-tab-face/tab:px-0",
                 )}
@@ -885,14 +914,14 @@ export function TabStrip({
                     <NoticeLook list={notices} seat="size-4" />
                   </span>
                 ) : (
-                <TabAvatar f={f} bare="size-4 flex-none" seat="tab" />
+                <span data-tab-avatar className={cn(grouped ? "flex flex-none" : "contents", grouped && !on && "session-tab-floor:group-hover/session-tab:opacity-0 session-tab-floor:group-focus-within/session-tab:opacity-0")}><TabAvatar f={f} bare="size-4 flex-none" seat="tab" /></span>
                 )}
                 {/* `nested`: the name sits inside the button that opens
                     the tab, so it is not a control here — the same
                     arrangement the list rows keep, and for the same
                     reason (`EditableName`'s head). */}
                 {notices ? null : f.rename ? (
-                  <span className="flex min-w-0 flex-1 flex-col justify-center @max-tab-face/tab:hidden">
+                  <span className={cn("flex min-w-0 flex-1 flex-col justify-center", grouped ? "session-tab-floor:hidden" : "@max-tab-face/tab:hidden")}>
                     <EditableName
                       kind={f.rename.kind}
                       id={f.rename.id}
@@ -943,7 +972,7 @@ export function TabStrip({
                   <span
                     data-tab-label
                     data-tab-name
-                    className="flex min-w-0 flex-1 items-center gap-1 text-tab @max-tab-face/tab:hidden"
+                    className={cn("flex min-w-0 flex-1 items-center gap-1 text-tab", grouped ? "session-tab-floor:hidden" : "@max-tab-face/tab:hidden")}
                   >
                     {f.rang && <BellMark />}
                     {f.preview && <PreviewMark />}
@@ -1001,9 +1030,15 @@ export function TabStrip({
                     // Face alone, its seat is kept (invisible) under a
                     // mouse so the face does not move when it shows
                     // (ux-q); a finger has no hover and no seat.
-                    !on &&
+                    grouped && !on && "session-tab-floor:absolute session-tab-floor:right-0 session-tab-floor:top-0 session-tab-floor:opacity-0 session-tab-floor:pointer-events-none session-tab-floor:group-hover/session-tab:opacity-100 session-tab-floor:group-hover/session-tab:pointer-events-auto session-tab-floor:group-focus-within/session-tab:opacity-100 session-tab-floor:group-focus-within/session-tab:pointer-events-auto",
+                    grouped && !on && "@max-tab-x/tab:opacity-0 @max-tab-x/tab:group-hover/session-tab:opacity-100 @max-tab-x/tab:group-focus-within/session-tab:opacity-100",
+                    !grouped && !on &&
                       "@min-tab-face/tab:@max-tab-x/tab:hidden @min-tab-face/tab:@max-tab-x/tab:group-hover:flex pointer-coarse:@max-tab-face/tab:hidden @max-tab-face/tab:invisible @max-tab-face/tab:group-hover:visible",
                   )}
+                  onKeyDown={grouped ? e => {
+                    if(e.key!==" "||e.metaKey||e.ctrlKey||e.altKey)return;
+                    e.preventDefault();if(!e.repeat)e.currentTarget.click();
+                  } : undefined}
                   onClick={(e) => {
                     e.stopPropagation();
                     // A pointer's press holds the row (`held`); a press
@@ -1050,14 +1085,14 @@ export function TabStrip({
           down to its face, and the strip scrolls past that. */}
       {onNew && (
         <span ref={plus} data-tab-new-seat className={cn("flex flex-none items-center", folded && "hidden")}>
-          <span aria-hidden="true" className="h-4.5 w-px flex-none bg-border" />
+          <TabDivider />
           <Button
             size="icon"
             variant="ghost"
             data-tab-new
             aria-label={gui.new_tab}
             className="min-h-touch min-w-touch flex-none rounded-full"
-            onClick={onNew}
+            onClick={() => { releaseHeld(); onNew(); }}
           >
             <IconPlus />
           </Button>

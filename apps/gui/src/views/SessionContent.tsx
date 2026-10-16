@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { recentVisit, type DeviceRow, type SessionRow } from "@/api";
-import { MidName, type TabFace } from "@/browse/TabStrip";
+import { MidName, TabDivider, type TabFace } from "@/browse/TabStrip";
 import { Button } from "@/components/ui/button";
 import { GlassCircle } from "@/components/Glass";
 import { RowMenu } from "@/components/RowMenu";
@@ -35,7 +35,16 @@ const glyph = (tab: ContentTab) => contentView(tab) === "workspace" ? null : con
  * seats while a measured width animates the capsule's opening and closing. */
 export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHide}:{session:string;open:boolean;content:SessionContent;navigation:ContentNavigation;onAdd:()=>void;onFocus:()=>void;onHide:()=>void}) {
   const measure = useRef<HTMLDivElement>(null), scroller = useRef<HTMLDivElement>(null), action = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
+  const reveal = useRef<HTMLDivElement>(null), room = useRef<HTMLDivElement>(null);
+  const [held, setHeld] = useState<Record<string, number> | null>(null);
+  const kept = useRef<{left:number;width:number} | null>(null);
+  const release = () => { kept.current = null; setHeld(null); };
+  const hold = () => {
+    const el=scroller.current;
+    if(!el)return;
+    kept.current={left:el.scrollLeft,width:el.clientWidth};
+    setHeld(Object.fromEntries([...el.querySelectorAll<HTMLElement>('[data-content-tab]')].map(tab=>[tab.dataset.contentTab!,tab.getBoundingClientRect().width])));
+  };
   const [cut, setCut] = useState({ left: false, right: false });
   const state=navigation.get(session);
   const browsing:ContentTab={id:'browse:'+session,session,device:'',url:'',title:gui.borrow_web,view:'workspace',pinned:false,touched:0};
@@ -55,22 +64,39 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
     const el = scroller.current;
     if (el) { const next = { left: el.scrollLeft > 1, right: el.scrollWidth - el.clientWidth - el.scrollLeft > 1 }; setCut(was => was.left === next.left && was.right === next.right ? was : next); }
   };
+  const ids = tabs.map(t=>t.id).join('\n');
+  const previousIds = useRef(new Set(tabs.map(t=>t.id)));
+  useEffect(()=>{
+    if(tabs.some(t=>!previousIds.current.has(t.id)))release();
+    previousIds.current=new Set(tabs.map(t=>t.id));
+  },[ids]);
+  useEffect(()=>{
+    const el=reveal.current;if(!el)return;
+    let width=el.getBoundingClientRect().width;
+    const observer=new ResizeObserver(()=>{
+      const next=el.getBoundingClientRect().width;
+      if(Math.abs(next-width)>.5)release();
+      width=next;
+    });observer.observe(el);return()=>observer.disconnect();
+  },[]);
+  useLayoutEffect(()=>{
+    const el=scroller.current;if(!held||!el||!room.current||!kept.current)return;
+    room.current.style.width='0';
+    const {left,width}=kept.current;
+    // scrollWidth is at least clientWidth, so it hides unused room after
+    // the last child. Measure the actual tail before filling that room.
+    const tail=room.current.getBoundingClientRect().left-el.getBoundingClientRect().left+el.scrollLeft;
+    room.current.style.width=`${left>0?Math.max(0,left+width-tail):0}px`;
+    el.scrollLeft=left;
+  },[ids,held]);
   useLayoutEffect(() => {
-    const read = () => setWidth((measure.current?.getBoundingClientRect().width || 0) + (action.current?.getBoundingClientRect().width || 0));
-    read();
-    const observer = new ResizeObserver(read);
-    if (measure.current) observer.observe(measure.current);
-    if (action.current) observer.observe(action.current);
-    return () => observer.disconnect();
-  }, []);
-  useLayoutEffect(() => {
-    const frame = requestAnimationFrame(() => { seek(); edges(); });
+    const frame = requestAnimationFrame(() => { if(!held)seek(); edges(); });
     return () => cancelAnimationFrame(frame);
-  }, [active, open, width, tabs.length]);
+  }, [active, open, tabs.length, held]);
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    const observer = new ResizeObserver(() => { seek(); edges(); });
+    const observer = new ResizeObserver(() => { if(!held)seek(); edges(); });
     observer.observe(el);
     const wheel = (e: WheelEvent) => {
       if (el.scrollWidth - el.clientWidth <= 1 || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
@@ -78,23 +104,27 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
     };
     el.addEventListener("wheel", wheel, { passive: false });
     return () => { observer.disconnect(); el.removeEventListener("wheel", wheel); };
-  }, [open]);
-  return <div data-content-tabs={session} data-open={open} aria-hidden={!open} inert={!open} className="session-content-reveal" style={{ width: open ? width : 0 }} onTransitionEnd={seek}>
+  }, [open,held]);
+  const slots=held?Object.keys(held).length:tabs.length;
+  return <div ref={reveal} data-content-tabs={session} data-open={open} aria-hidden={!open} inert={!open} className="session-content-reveal" data-content-held={held?true:undefined} onPointerLeave={held?release:undefined} style={{ width: open ? `calc(${slots} * var(--tab-w-even) + 2 * var(--gap-in) + 3 * var(--hair) + var(--glass-tab))` : 0 }} onTransitionEnd={held?undefined:seek}>
+    <TabDivider />
     <div ref={scroller} onScroll={edges} className="session-content-scroll" style={cut.left || cut.right ? { maskImage: `linear-gradient(to right, ${cut.left ? 'transparent, black var(--fade-tabs)' : 'black, black'}, ${cut.right ? 'black calc(100% - var(--fade-tabs)), transparent' : 'black, black'})` } : undefined}>
       <div ref={measure} className="session-content-tabs" role="tablist" aria-label={gui.session_content}>
-        {tabs.map(tab => <div key={tab.id} data-content-tab={tab.id} data-content-on={tab.id === active} data-content-preview={content.isPreview(tab) || undefined} data-content-browse={tab.id===browsing.id||undefined} className="session-content-tab">
+        {tabs.map(tab => <div key={tab.id} data-content-tab={tab.id} data-content-on={tab.id === active} data-content-preview={content.isPreview(tab) || undefined} data-content-browse={tab.id===browsing.id||undefined} data-content-icon={glyph(tab)!==null||undefined} className="session-content-tab @container/content-tab" style={held?.[tab.id]!=null?{width:held[tab.id],flexBasis:held[tab.id],flexShrink:0}:undefined}>
           <RowMenu items={tab.id===browsing.id?[{key:"close",label:gui.close_tab,run:()=>close(tab)}]:[content.isPreview(tab) ? { key: "keep", label: gui.content_keep, run: () => content.keep(tab.id).then(() => {}) } : { key: "pin", label: tab.pinned ? gui.unpin : gui.pin, run: () => content.pin(tab.id, !tab.pinned) }, { key: "close", label: gui.close_tab, run: () => content.close(tab.id) }]}><button role="tab" aria-selected={open && tab.id === active} tabIndex={tab.id === active ? 0 : -1} title={tab.url} className="session-content-open" onClick={()=>pick(tab)} onDoubleClick={()=>{if(content.isPreview(tab))quiet(content.keep(tab.id));}} onKeyDown={e => {
+            if(e.key===' '&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();if(!e.repeat)e.currentTarget.click();return;}
             const at = tabs.findIndex(t => t.id === tab.id);
             const to = e.key === 'ArrowRight' ? (at + 1) % tabs.length : e.key === 'ArrowLeft' ? (at + tabs.length - 1) % tabs.length : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
             if (to < 0) return;
             e.preventDefault();pick(tabs[to]);
             measure.current?.querySelector<HTMLElement>(`[data-content-tab="${CSS.escape(tabs[to].id)}"] [role="tab"]`)?.focus();
-          }}>{glyph(tab)}<MidName text={contentName(tab)} /></button></RowMenu>
-          {!tab.pinned && <button className="session-content-close" aria-label={gui.close_tab} title={gui.close_tab} onClick={()=>close(tab)}><IconClose /></button>}
+          }}>{glyph(tab)&&<span className="session-content-glyph">{glyph(tab)}</span>}<span className="session-content-name"><MidName text={contentName(tab)} /></span></button></RowMenu>
+          {!tab.pinned && <button className="session-content-close" aria-label={gui.close_tab} title={gui.close_tab} onKeyDown={e=>{if(e.key===' '&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();if(!e.repeat)e.currentTarget.click();}}} onClick={e=>{e.stopPropagation();if(e.detail>0)hold();close(tab);}}><IconClose /></button>}
         </div>)}
+        {held&&<div ref={room} data-content-hold-room className="flex-none self-stretch"/>}
       </div>
     </div>
-    <div ref={action} className="session-content-add"><button aria-label={gui.content_new} onClick={onAdd}><IconPlus /></button></div>
+    <div ref={action} className="session-content-add"><TabDivider /><button aria-label={gui.content_new} onClick={()=>{release();onAdd();}}><IconPlus /></button></div>
   </div>;
 }
 
