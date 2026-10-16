@@ -58,7 +58,8 @@ max(5 ms, 最低值的一半)，就当场 `trigger_holepunching()`。每次变�
 变慢到 21 ms 要五个样本（25 秒）才看得出。于是从平滑 RTT 这一 tick 的跳变反推出刚到的那个样本
 （RFC 6298：跳变 = (样本 − 旧值) / 8），样本超过 10 ms 且高出门槛，就在 2 秒里（`PROBE_FOR`）每个 tick 给选中的路发一个 PING，
 约 8 个样本，平滑 RTT 两秒内就说清是真变慢还是一下抖动。每次变差最多一次，且 30 秒内最多一次（`PROBE_SPACING`），
-Wi-Fi 那种常抖的路最坏也就是半分钟 8 个 PING 加 8 个 ACK。改动约 90 行（`watch_selected`）。
+Wi-Fi 那种常抖的路最坏也就是半分钟 8 个 PING 加 8 个 ACK。只 ping 这条路的一份（10-17 第三棒改；原来每条连接上的那份都
+ping，两条连接就是两倍——机器忙时 p4 里在用的路因此约 2 秒一个 PING）。改动约 90 行（`watch_selected`）。
 测试：`crates/cli/tests/netlab/paths.rs` 的 p2（第二条直连变慢到约 21 ms、同时在打字）和 p2i（同样但闲着）。上游可以提，和补丁 17 一起。
 升级时要重打。
 
@@ -72,6 +73,12 @@ Wi-Fi 那种常抖的路最坏也就是半分钟 8 个 PING 加 8 个 ACK。改�
 （`SPARE_KEEP_ALIVE`、`SPARE_IDLE_TIMEOUT`；选中的仍是 5 秒、15 秒），只在路径状态变了时设（设空闲超时会重排定时器）。
 留不留、留哪条是 khor 的 `carry::RoadOrder` 定的（`carry::Spare`：`KHOR_SPARE_ROAD=off|near|on`，默认 near，iOS 默认 off；
 near 只留比当前慢不超过 10 ms 的那条）。改动约 60 行。测试：p3（当前路黑洞，备用直连当场接上）。
+**中继路径排在直连后面时也 15 秒一个保活**（`pulse`，10-17 第三棒）：上游每条路径 5 秒一个保活，中继也是，两边各 ping，
+noq-proto 补丁 4 之后每个 PING 的 ACK 也走中继（走 TCP，到中继还要一个 TCP 的 ACK）。p4 在 PATHDBG 下量得中继路径占
+QUIC 包的三到六成。中继被选中时照旧 5 秒；空闲超时不动（`RELAY_PATH_MAX_IDLE_TIMEOUT` 30 秒，容得下两个保活）；
+中继本身在不在由中继连接自己的 ping 管（补丁 15），这一处只是 QUIC 路径的保活。备用直连和中继的 15 秒要靠 noq-proto
+补丁 6 才作数（连接级的 5 秒保活原来把它们一起 ping 了）。量得（netlab，alpha 一侧两条连接合计，QUIC 包，PATHDBG）：
+p4 里中继每份从约 0.4 个/秒降到约 0.14 个/秒，备用直连从约 0.3 降到约 0.15。
 上游可以提（要点：`PathSelection` 本来就写着「将来可以选多条」，backup 是最小的一步）。升级时要重打。
 
 ### 17. `src/socket/remote_map/remote_state.rs`、`src/socket/biased_rtt_path_selector.rs`：按测量持续选路，不答的路不算（2026-10-16，path-fix）
@@ -81,8 +88,12 @@ near 只留比当前慢不超过 10 ms 的那条）。改动约 60 行。测试�
 15 秒（`PATH_MAX_IDLE_TIMEOUT`）放弃它——而 khor 判死只要 4 秒，结果总是收回连接、重拨，而不是换路。
 改两处：一、actor 主循环加一个 250 ms 的测量 tick（只在有连接时跑，`RESELECT_INTERVAL`），每次按各路径此刻的 stats
 重跑选路器；选择或备份变了才 apply，没变什么也不做。tick 不发任何包。二、`PathSelectionData::answering()`：
-连续 `UNANSWERED_PTOS`（2）次 PTO 没有任何确认的路径不再是候选，当前那条也一样（noq-proto 补丁 3 把 `pto_count` 放进
-`PathStats`）。1 ms 的路上两次 PTO 约 90 ms。上游自己的 `BiasedRttPathSelector` 也跳过不答的路；khor 的 `RoadOrder` 同样。
+连续 `UNANSWERED_PTOS`（2）次 PTO 没有任何确认、**而且这条路至少 `UNANSWERED_FOR`（300 ms）什么也没收到**的路径
+不再是候选，当前那条也一样（`unanswered`；noq-proto 补丁 3 把 `pto_count`、`last_received` 放进 `PathStats`）。
+两次 PTO 本身就是包发出后约三个 PTO，1 ms 的路上约 75 ms，比机器卡一下还短：二十个场景一起跑时两条路都好好的，
+PTO 计数也到过 2、3（10-17 第三棒，PATHDBG 打点）；300 ms 的下限只管快路，慢路上三个 PTO 早已超过它。
+p3（当前路黑洞）因此多等至多 300 ms，量得最坏一次回显仍在 1 秒以内（见下）。
+上游自己的 `BiasedRttPathSelector` 也跳过不答的路；khor 的 `RoadOrder` 同样。
 **一条路按它的几份连接合起来算**（`RemoteStateActor::read_paths`、`Measured`，10-17 补）：两台机器之间常有两条连接，
 同一条路在每条连接上各是一条 path。一、不答按最差的那份算，而且记住：任何一份连续两次 PTO，这条路就不答，直到某一份
 在那之后又取到一个 RTT 样本（一个往返回来了）才算答——原来按每份各算，闲着的那份 PTO 是 0，把死了的那份盖住了，
@@ -93,9 +104,19 @@ p3 里连接在黑洞的路上停了 15 秒；PTO 过后计数会被下一个探
 对方那条一断，这边每条路连中继都「不答」，没有可换的。
 比较仍用 noq 的平滑 RTT（RFC 6298 的 7/8 + 1/8）和原来的迟滞（直连之间快 5 ms 才换），同速时不换；
 平滑 RTT 里混进过 4.7 秒、17.6 秒的假样本（noq-proto 补丁 5 修的），p1 的来回换路一半是它们。
-改动约 150 行。测试：`crates/cli/tests/netlab/paths.rs` 的 p1、p1j（同速不动）、p2（变慢 10 秒内换回）、p3（黑洞时
+**离开一条还在答的路之前，两边都量过才走**（`confirm_move`、`CONFIRM_FOR`，10-17 第三棒）：一条闲着的路一个保活
+才一个样本，只回 ACK 的那一边（noq-proto 补丁 4 让 ACK 走路自己，回 ACK 的包推迟了它自己的保活）一个样本也没有。
+二十个场景一起跑时（第二棒那一轮 p1 红，alpha 改走 9 次），打点看到的两次改走都不是「不答」，PTO 计数全是 0：
+一次是在用的局域网读到 8.5 ms（负载下 ACK 晚了），第二条路读的是三分钟前的 3.4 ms，差过 5 ms 就走了；
+另一次是机器卡了约 100 ms，一个样本把在用那条的平滑 RTT 抬到 17 ms。拿此刻的测量和几分钟前的比，是这类来回换路的根。
+改为：tick 想从一条还在答的路换走时，先不换，接下来 2 秒每个没读到新样本的 tick 给两条路各 ping 一次，
+2 秒里每个 tick 选路器都还要换、而且两条路在这期间都取到了样本，才换；中途有一个 tick 不想换了就作罢。
+当前那条不答了、没了，或者本来没有选中的路，照旧当场换。代价：只在想换的时候才 ping，每回至多 8 个 tick × 两条路，
+每个 PING 一个 ACK；p2（打字时在用的路变慢）换回局域网从约 0.8 秒变为约 2.5 秒，仍在 10 秒以内。
+改动约 230 行。测试：`crates/cli/tests/netlab/paths.rs` 的 p1、p1j（同速不动）、p2（变慢 10 秒内换回）、p3（黑洞时
 回显没有一次等过 1 秒、两边的线都不收回）。**可以起草上游**（要点：选路只在开关事件时跑，测量变化不触发；不答的路
-RTT 不变，选路器看不出来；建议在 actor 里按 path stats 周期重选，并在 `PathSelectionData` 上给出「是否在答」）。
+RTT 不变，选路器看不出来；建议在 actor 里按 path stats 周期重选，并在 `PathSelectionData` 上给出「是否在答」；
+「不答」要有时间下限，不能只看 PTO 次数；从还在答的路换走前，两条路都要有此刻的样本）。
 上游 1.3.0 没有对应改动，升级时要重打。
 
 ### 16. `src/socket.rs`、`src/endpoint.rs`：公开「大的网络变化」（2026-10-09，net-r）

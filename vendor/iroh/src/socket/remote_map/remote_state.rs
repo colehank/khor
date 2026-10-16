@@ -81,9 +81,25 @@ const ACTOR_MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const RESELECT_INTERVAL: Duration = Duration::from_millis(250);
 
 /// khor patch 17: probe timeouts in a row, with nothing acknowledged since, after which a path
-/// counts as not answering ([`PathSelectionData::answering`]).  Two is RFC 9002's tail-loss
-/// probe and its retry: about three probe timeouts, ~90 ms on a 1 ms path.
+/// counts as not answering ([`unanswered`]).  Two is RFC 9002's tail-loss probe and its
+/// retry: about three probe timeouts since the packet went out, ~75 ms on a 1 ms path.
 pub(crate) const UNANSWERED_PTOS: u32 = 2;
+
+/// khor patch 17: and nothing at all heard on the path for this long.  Three probe timeouts
+/// on a fast path are shorter than the machine stalling: under load (netlab, 20 scenarios side
+/// by side) both ends of a 1 ms path miss two probe timeouts while every path still works.
+pub(crate) const UNANSWERED_FOR: Duration = Duration::from_millis(300);
+
+/// khor patch 17: a path is not answering: [`UNANSWERED_PTOS`] probe timeouts in a row
+/// (three probe timeouts since the packet went out), and nothing heard on it for
+/// [`UNANSWERED_FOR`] — the larger of the two, as the probe timeouts are measured from the
+/// last packet sent and the silence from the last one heard (vendor/noq-proto patch 3).
+fn unanswered(stats: &PathStats) -> bool {
+    stats.pto_count >= UNANSWERED_PTOS
+        && stats
+            .last_received
+            .is_none_or(|at| at.elapsed() >= UNANSWERED_FOR)
+}
 
 /// khor patch 19: how much the selected direct path's round trip has to rise over the lowest it
 /// read since it was selected before a hole-punching round is started at once, rather than at
@@ -99,6 +115,10 @@ const PROBE_FOR: Duration = Duration::from_secs(2);
 /// khor patch 19: at most one such probe per this long, so a path whose samples jump often
 /// (Wi-Fi) costs at most eight PINGs and their ACKs per half minute.
 const PROBE_SPACING: Duration = Duration::from_secs(30);
+
+/// khor patch 17: how long a move off a path that still answers is held while both paths are
+/// measured, on every tick, before it is made ([`RemoteStateActor::confirm_move`]).
+const CONFIRM_FOR: Duration = Duration::from_secs(2);
 
 /// khor patch 18: the keepalive of a direct path that carries nothing, a spare (selected paths
 /// keep [`crate::socket::HEARTBEAT_INTERVAL`]): a third of the packets, and still well inside
@@ -237,6 +257,9 @@ struct State {
     /// `degraded`).
     probed_at: Option<Instant>,
     probed: bool,
+    /// khor patch 17: the path a measurement tick would move to, and since when
+    /// ([`RemoteStateActor::confirm_move`]).
+    moving: Option<(transports::FourTuple, Instant)>,
     /// khor patch 17: what the measurement ticks read.
     measured: Measured,
     /// khor patch 20: the candidates last given to the connections.  A change of the direct
@@ -300,6 +323,7 @@ impl RemoteStateActor {
                 degraded: false,
                 probed_at: None,
                 probed: false,
+                moving: None,
                 measured: Default::default(),
                 last_local_candidates: None,
                 scheduled_holepunch: None,
@@ -843,10 +867,9 @@ impl RemoteStateActor {
     /// [`Self::select_path`]; on a measurement `tick` (khor patch 17) the selection is only
     /// applied when it, or the backup, changed.
     fn select_path_on(&mut self, tick: bool) {
-        let current_path = self.state.selected_path.as_ref();
         let (selected_addr, backup) = {
             let ctx = PathSelectionContext::new(
-                current_path,
+                self.state.selected_path.as_ref(),
                 self.state.backup_path.as_ref(),
                 &self.connections,
                 &self.state.measured,
@@ -854,6 +877,9 @@ impl RemoteStateActor {
             let selection = self.state.path_selector.select(&ctx);
             (selection.selected().cloned(), selection.backup().cloned())
         };
+        if tick && !self.confirm_move(selected_addr.as_ref()) {
+            return;
+        }
 
         let mut changed = false;
         if let Some(addr) = selected_addr
@@ -873,7 +899,7 @@ impl RemoteStateActor {
                 prev_network_path = %prev_remote.map(|p| format!("{p}")).unwrap_or("None".to_string()),
             );
         } else {
-            trace!(?current_path, "keeping current path");
+            trace!(current_path = ?self.state.selected_path, "keeping current path");
         }
         // khor patch 18: the backup is whatever the selector names, none included; it is
         // never the selected path.
@@ -887,6 +913,74 @@ impl RemoteStateActor {
             return;
         }
         self.apply_selected_path();
+    }
+
+    /// khor patch 17: whether a measurement tick may move the selection to `to` now.
+    ///
+    /// The selector compares smoothed RTTs, and a path that carries nothing has one sample per
+    /// keepalive, or none at all on the side that only acknowledges its peer's: under load
+    /// (netlab p1, 20 scenarios side by side) the road in use read 8.5 ms against the other's
+    /// 3.4 ms of three minutes before, and the connection moved between two 1 ms roads; one
+    /// sample from a stalled machine (100 ms) did the same.  So a move off a path that still
+    /// answers is held for [`CONFIRM_FOR`], the two paths are pinged on every tick that read
+    /// no new sample of them, and it is made only if the selector still wants it on every tick
+    /// and both took a sample in that time.  A path that stopped answering is left at once.
+    fn confirm_move(&mut self, to: Option<&transports::FourTuple>) -> bool {
+        let Some(to) = to.filter(|to| self.state.selected_path.as_ref() != Some(*to)) else {
+            self.state.moving = None;
+            return true;
+        };
+        let Some(from) = self.state.selected_path.clone() else {
+            self.state.moving = None;
+            return true;
+        };
+        let open = self
+            .connections
+            .values()
+            .any(|c| c.paths.values().any(|t| *t == from));
+        if !open || self.state.measured.silent.contains_key(&from) {
+            self.state.moving = None;
+            return true;
+        }
+        let now = Instant::now();
+        let since = match &self.state.moving {
+            Some((moving, since)) if moving == to => *since,
+            _ => {
+                self.state.moving = Some((to.clone(), now));
+                now
+            }
+        };
+        let sampled = |road: &transports::FourTuple, after: Instant| {
+            self.state
+                .measured
+                .rtts
+                .iter()
+                .any(|((conn_id, path_id), (_, at))| {
+                    *at > after
+                        && self
+                            .connections
+                            .get(conn_id)
+                            .and_then(|c| c.paths.get(path_id))
+                            == Some(road)
+                })
+        };
+        if now >= since + CONFIRM_FOR && sampled(&from, since) && sampled(to, since) {
+            self.state.moving = None;
+            return true;
+        }
+        for road in [from.clone(), to.clone()] {
+            if now.checked_sub(RESELECT_INTERVAL).is_some_and(|after| sampled(&road, after)) {
+                continue;
+            }
+            let copy = self.connections.values().find_map(|c| {
+                let path_id = c.paths.iter().find(|(_, t)| **t == road)?.0;
+                c.handle.upgrade()?.path(*path_id)
+            });
+            if let Some(path) = copy {
+                let _ = path.ping();
+            }
+        }
+        false
     }
 
     /// khor patch 17: one measurement tick.  Watches the selected direct path for going
@@ -921,7 +1015,7 @@ impl RemoteStateActor {
                 };
                 let key = (*conn_id, *path_id);
                 present.push(key);
-                if stats.pto_count >= UNANSWERED_PTOS {
+                if unanswered(&stats) {
                     silent_now.push(tuple.clone());
                 }
                 match measured.rtts.get(&key) {
@@ -1025,12 +1119,11 @@ impl RemoteStateActor {
             self.state.probed_at = Some(now);
             debug!(?sample, ?floor, "selected path sampled slow, probing it");
         }
-        if self.state.probed_at.is_some_and(|at| now < at + PROBE_FOR) {
-            for (conn, path_id) in &copies {
-                if let Some(path) = conn.path(*path_id) {
-                    let _ = path.ping();
-                }
-            }
+        // One copy is enough: the road's RTT is its freshest copy's.
+        if self.state.probed_at.is_some_and(|at| now < at + PROBE_FOR)
+            && let Some(path) = copies.iter().find_map(|(conn, path_id)| conn.path(*path_id))
+        {
+            let _ = path.ping();
         }
         let worse = silent || (rtt > GOOD_ENOUGH_LATENCY && rtt >= floor + by);
         if worse && !self.state.degraded {
@@ -1575,9 +1668,21 @@ impl State {
 
 /// khor patch 18: the keepalive and idle timeout of a direct path for its status.  The
 /// selected path keeps iroh's own (5 s, 15 s); an unselected one, a spare that carries
-/// nothing, is pinged every [`SPARE_KEEP_ALIVE`].  Relay and custom paths are left as
-/// configured.  Set only when the status changes: setting the idle timeout rearms its timer.
+/// nothing, is pinged every [`SPARE_KEEP_ALIVE`].  A relay path behind a direct one is pinged
+/// as seldom: each of its pings costs an ACK on the relay too (vendor/noq-proto patch 4), and
+/// the relay connection has its own ping.  Custom paths are left as configured.  Set only
+/// when the status changes: setting the idle timeout rearms its timer.
 fn pulse(path: &noq::Path, network_path: &transports::FourTuple, status: PathStatus) {
+    if network_path.is_relay() {
+        // Only the keepalive: the relay path keeps its own idle timeout
+        // (`RELAY_PATH_MAX_IDLE_TIMEOUT`).
+        let keep = match status {
+            PathStatus::Available => crate::socket::HEARTBEAT_INTERVAL,
+            PathStatus::Backup => SPARE_KEEP_ALIVE,
+        };
+        let _ = path.set_keep_alive_interval(Some(keep));
+        return;
+    }
     if !network_path.is_ip() {
         return;
     }
@@ -1851,9 +1956,7 @@ impl<'a> PathSelectionContext<'a> {
                 continue;
             };
             for (path_id, tuple) in state.paths.iter() {
-                if conn
-                    .path_stats(*path_id)
-                    .is_some_and(|s| s.pto_count >= UNANSWERED_PTOS)
+                if conn.path_stats(*path_id).is_some_and(|s| unanswered(&s))
                     && !silent.contains(tuple)
                 {
                     silent.push(tuple.clone());
@@ -2006,12 +2109,13 @@ impl<'a> PathSelectionData<'a> {
     }
 
     /// khor patch 17: whether the path answers: on no connection [`UNANSWERED_PTOS`] probe
-    /// timeouts in a row.  A path that sent and heard nothing back keeps the round trip it
-    /// last measured, so its RTT alone never says it is gone; noq abandons it only at its
-    /// idle timeout.  Each path's ACKs come back on that path (vendor/noq-proto patch 4),
-    /// so its probe timeouts are its own round trip's, not the path the peer sends on.
+    /// timeouts in a row with nothing heard for [`UNANSWERED_FOR`].  A path that sent and
+    /// heard nothing back keeps the round trip it last measured, so its RTT alone never says
+    /// it is gone; noq abandons it only at its idle timeout.  Each path's ACKs come back on
+    /// that path (vendor/noq-proto patch 4), so its probe timeouts are its own round trip's,
+    /// not the path the peer sends on.
     pub fn answering(&self) -> bool {
-        !self.silent && self.stats().is_none_or(|s| s.pto_count < UNANSWERED_PTOS)
+        !self.silent && self.stats().is_none_or(|s| !unanswered(&s))
     }
 
     /// khor patch 17: the road's round trip: the smoothed RTT of whichever connection's copy
