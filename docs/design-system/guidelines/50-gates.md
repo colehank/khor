@@ -493,3 +493,12 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 `npm run ime` 在系统 Chrome 中重放真实 TerminalPane 的输入事件链，并检查发往 `term_key` 的字节：未提交的拼音不发送、原生组字编辑保持生效、候选提交一次；覆盖软删除、Kitty、Option、迟到标点和收键盘取消。它不启动真实会话、不拿 cargo 锁；iPhone 原生输入法的事件来源与键盘行为仍需真机确认。
 
 药丸手势的单独回归：`FACE_ONLY=bar FACE_BAND=1 npm run face`，运行 bar u 的真实触摸拖动、阈值、连续换页、取消、重渲染和中断收尾检查；完整甲板与键行仍运行 `FACE_ONLY=bar npm run face`。真 iPhone 验收包括键盘弹出时连续滑动、滑动中切后台再回来、系统中断后再次滑动。
+
+
+手机内容精修的操作门（独立节点与临时文件，不写真实历史）：
+
+- `npm run content-ui`：正式 App 的附件入口、搜索与 IME 确认、历史实际 API 删除、失联历史选择出口、地址改写、宽窄切换草稿、药丸几何和安全区；截图输出由 `CONTENT_UI_OUTPUT` 指定。
+- `npm run attachment-ui`：只读预览、目录包含与取消勾选、队列与发送、延迟暂存和取消确认、清理后重试、空系统选择。
+- `npm run content-sheet`：生产高度函数在键盘、安全区和极小视口下的范围与单调性；完整触摸行为由 `npm run session-content` 验证。
+
+前两项需已构建 CLI / bridge，接受 `CARGO_TARGET_DIR`、`CONTENT_CHECK_DIR`、`CONTENT_VITE_PORT` 和 `CONTENT_BRIDGE_PORT`；`CONTENT_HEADED=1` 显示测试窗口。原生系统文件选择器及 WebView 另做真 app 验收。

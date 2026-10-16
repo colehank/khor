@@ -3626,6 +3626,14 @@ impl Node {
     /// puts the place back on its own (`khor_sync::recents`).
     pub fn forget_recent(&self, kind: PlaceKind, machine: &str, place: &str) -> Result<(), String> {
         let (_, home) = self.resolve(machine)?;
+        self.forget_recent_by_device(kind, &home.hex(), place)
+    }
+
+    /// Dismisses a ledger entry by its immutable device identity. The
+    /// device need not remain in the device table: this writes a local,
+    /// replicated tombstone and never opens a route to that machine.
+    pub fn forget_recent_by_device(&self, kind: PlaceKind, device: &str, place: &str) -> Result<(), String> {
+        let home = device_id_from_hex(device)?;
         let loaded = self.recents_loaded()?;
         loaded
             .doc

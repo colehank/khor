@@ -212,7 +212,10 @@ try{
   await shown().locator('[data-deck-strip]').waitFor();
   const foldedFace=await shown().locator('[data-deck-strip]').evaluate(el=>{const f=el.querySelector('[data-side-face]'),halo=f.querySelector('[data-halo]'),r=f.getBoundingClientRect(),box=el.getBoundingClientRect(),scale=new DOMMatrix(getComputedStyle(f).transform).a,out=-parseFloat(getComputedStyle(halo,'::before').top)*scale;return {top:r.top-out-box.top,bottom:box.bottom-r.bottom-out};});
   assert(foldedFace.top>=3.9&&foldedFace.bottom>=3.9,'folded avatar touches capsule edge: '+JSON.stringify(foldedFace));
-  await shown().locator('[data-deck-strip]').click();await shown().locator('[data-file-back]').click();
+  // Scrolling a folded deck into view changes the scroll-owned fold.
+  // Hit its already-painted center, as the person's tap does.
+  const fold=await shown().locator('[data-deck-strip]').evaluate(el=>{const r=el.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {x,y,hit:el.contains(document.elementFromPoint(x,y))};});
+  assert(fold.hit,'folded deck is not hittable');await page.mouse.click(fold.x,fold.y);await shown().locator('[data-file-back]').click();
   assert.equal(await tree.evaluate(el=>el.scrollTop),scroll);assert(await tree.evaluate(el=>el===window.__originalTree));
   await picker().getByRole('button',{name:word('content-workspace-actions'),exact:true}).click();await page.getByRole('menuitem',{name:word('file-new'),exact:true}).click();
   await picker().locator('[data-new-name=file] input').fill('mobile-created.txt');await picker().locator('[data-new-name=file] input').press('Enter');await picker().locator('[data-file="mobile-created.txt"]').waitFor();

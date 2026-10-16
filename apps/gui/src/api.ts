@@ -1521,6 +1521,10 @@ export const recentVisit = (kind: string, machine: string, place: string, sessio
     back on its own. */
 export const forgetRecent = (kind: string, machine: string, place: string) =>
   call<null>("forget_recent", { kind, machine, place });
+
+/** A recent row's immutable identity; it can outlive its machine's name or membership. */
+export const forgetRecentByDevice = (kind: string, device: string, place: string) =>
+  call<null>("forget_recent", { kind, device, place });
 /** Every pinned page, exit-machine names already looked up. */
 /**
  * Gives a page's borrow back: the far machine's network stops being

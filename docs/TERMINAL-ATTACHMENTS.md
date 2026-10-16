@@ -38,3 +38,10 @@
 `npm test`、`npm run build`、`npm run attachments`、`FACE_ONLY=term` 和 `FACE_ONLY=bar` 均通过；node 的目录单测、真实 wire 测试和 gui-core 的 27 条 term 测试通过，Mac / iOS 编译检查通过。修复前已见单文件复制函数拒绝目录的失败测试，修复后同一目录复制用例通过。
 
 仓库已有两组独立门失败，在 main 上也能复现：`npm run gates` 缺少 cm-measure 入口以及 indent/revert 的文档登记；`npm run bytes` 扫到既有终端录制 fixture 和 vendor 压缩包中的原始控制字符。本轮不修改这些文件。
+
+
+## 2026-10-16 操作复查
+
+来源页撤去重复标题，文件与目录图形同档；返回恢复实际浏览历史，上一级目录保留独立入口。取消显示「正在取消…」，直到旧操作、暂存清理和取消确认都结束后才开放重试。空系统选择保持当前页面。
+
+新增 `npm run attachment-ui` 重放延迟暂存与延迟取消确认；`npm run content-ui` 核对来源页图形、搜索、历史删除和底部菜单真实命中范围。以上采用私有节点和测试文件，原生 Files / iCloud 授权仍按上面的真机清单验收。

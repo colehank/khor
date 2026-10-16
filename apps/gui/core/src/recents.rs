@@ -14,9 +14,9 @@ use serde::Serialize;
 use ts_rs::TS;
 
 /// One place, with the machine's current name looked up here — the
-/// record is keyed by device id (`khor_sync::recents`), and a machine
-/// that left the table keeps its records under a short hex, so
-/// dismissing one stays possible from everywhere.
+/// record is keyed by device id (`khor_sync::recents`). A machine that
+/// left the table gets a short hex display name; dismissal uses the
+/// full `device` identity, independently of that display name.
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct RecentRow {
     pub device: String,
@@ -72,6 +72,12 @@ pub fn recent_visit(root: &Path, kind: &str, machine: &str, place: &str, session
 /// back there puts it back.
 pub fn forget_recent(root: &Path, kind: &str, machine: &str, place: &str) -> Result<(), String> {
     Node::open(root.to_path_buf())?.forget_recent(kind_of(kind)?, machine, place)
+}
+
+/// Dismisses a row by its stable ledger identity, including orphaned
+/// devices. Only the display name depends on the current device table.
+pub fn forget_recent_by_device(root: &Path, kind: &str, device: &str, place: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.forget_recent_by_device(kind_of(kind)?, device, place)
 }
 
 #[cfg(test)]

@@ -811,7 +811,11 @@ pub fn answer(
             Ok("null".to_owned())
         }
         "forget_recent" => {
-            crate::recents::forget_recent(root, &arg("kind")?, &arg("machine")?, &arg("place")?)?;
+            if let Some(device) = opt_str("device")? {
+                crate::recents::forget_recent_by_device(root, &arg("kind")?, &device, &arg("place")?)?;
+            } else {
+                crate::recents::forget_recent(root, &arg("kind")?, &arg("machine")?, &arg("place")?)?;
+            }
             Ok("null".to_owned())
         }
         // The other half of that: giving the borrow back. Both roads need

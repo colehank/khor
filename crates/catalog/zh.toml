@@ -2650,6 +2650,8 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+files-cancelling = "正在取消…"
+content-choose-exit = "原机器已不在网络，选择出口后打开"
 term-theme-storage-error = "本窗口已应用，无法保存到本机"
 term-theme-soft = "柔和深色"
 term-theme-warm = "暖浅色"
@@ -3731,7 +3733,7 @@ ws-sessions-toggle = "会话栏"
 # (可搜索文件名与内容)」)。**它真的找得到文件**,所以这里可以叫「文件」——
 # 而 `search-devices` 底下那句话说的是另一回事:那两栏列的是机器,一个写着
 # 「搜索文件」的框在那儿会指着一件它做不到的事。
-tree-search = "搜索文件"
+tree-search = "搜索目录文件"
 # 框里有字、两头都没有命中。**说的是「这儿没有」,不是「没找到」**:后者
 # 听起来像 khor 找失败了,而实际情况是这个工作区里确实没有这几个字。
 search-none = "此处无结果"

@@ -120,6 +120,8 @@ export function PageField({
   at,
   onGo,
   onDraft,
+  onEditingChange,
+  machinePrompt,
   onMachine,
   fixed = false,
   steps = true,
@@ -139,6 +141,10 @@ export function PageField({
   onGo: (place: string, machine: DeviceRow) => void;
   /** Preserve a draft without reading input events before the field handles them. */
   onDraft?: (text: string) => void;
+  /** The surrounding pill gives its identity room to the active editor. */
+  onEditingChange?: (editing: boolean) => void;
+  /** A historical page with no exit asks the person to choose one. */
+  machinePrompt?: number;
   /** Another machine chosen for the page that is open: it reloads the
       same address through it. A field with no page yet keeps the face to
       itself until Enter. */
@@ -164,7 +170,7 @@ export function PageField({
 }) {
   const offered = (() => {
     const all = reachable(devices);
-    const lead = (d: DeviceRow) => (d.name === first ? 0 : d.me ? 1 : 2);
+    const lead = (d: DeviceRow) => ((d.id === first || d.name === first) ? 0 : d.me ? 1 : 2);
     return [...all].sort((a, b) => lead(a) - lead(b));
   })();
   /** **One machine to go through is not a choice** (the audit fix plan
@@ -175,12 +181,12 @@ export function PageField({
 
   /** The face in the field: the machine the next address goes through. */
   const [token, setToken] = useState<DeviceRow | null>(machine ?? (only ? (offered[0] ?? null) : null));
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(machinePrompt !== undefined || autoFocus);
   /** What is in the field: a machine's name being typed, or an address. */
   const [text, setText] = useState(at);
   const draft = (value: string) => { setText(value); onDraft?.(value); };
   /** The face was pressed: the list is the machines, the address stays. */
-  const [switching, setSwitching] = useState(false);
+  const [switching, setSwitching] = useState(machinePrompt !== undefined);
   /** The address the face's removal put aside. */
   const [kept, setKept] = useState("");
   /** The row the arrows lit, `-1` for none. */
@@ -188,6 +194,13 @@ export function PageField({
   const [recents, setRecents] = useState<RecentRow[]>([]);
   const input = useRef<HTMLInputElement>(null);
   const inputId = useId();
+  const editingListener = useRef(onEditingChange);
+  editingListener.current = onEditingChange;
+  useEffect(() => { editingListener.current?.(editing); }, [editing]);
+  useEffect(() => {
+    if (machinePrompt === undefined) return;
+    setEditing(true); setSwitching(true); setHi(-1); input.current?.focus(); input.current?.select();
+  }, [machinePrompt]);
   const field = useRef<HTMLLabelElement>(null);
 
   // The page moved (a link, a step, another machine): the field follows
@@ -223,7 +236,10 @@ export function PageField({
     };
   }, [editing]);
   useEffect(() => {
-    if (autoFocus) requestAnimationFrame(() => input.current?.focus());
+    if (autoFocus) {
+      const frame = requestAnimationFrame(() => { input.current?.focus(); if (open) input.current?.select(); });
+      return () => cancelAnimationFrame(frame);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -316,7 +332,7 @@ export function PageField({
     // new machine.
     if (open && switching) {
       setToken(d);
-      if (d.id !== machine?.id) {
+      if (d.id !== machine?.id || machinePrompt !== undefined) {
         rememberPageMachine(d.id);
         onMachine?.(d);
         went.current = true;

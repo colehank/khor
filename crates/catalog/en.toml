@@ -1692,6 +1692,8 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+files-cancelling = "Cancelling…"
+content-choose-exit = "The original machine is no longer in the network. Choose an exit to open this page"
 term-theme-storage-error = "Applied in this window; could not save on this device"
 term-theme-soft = "Soft Dark"
 term-theme-warm = "Warm Light"
@@ -2145,7 +2147,7 @@ tab-copy-rel = "Copy relative path"
 workspace-tree = "File tree"
 workspace-sessions = "Sessions here"
 ws-sessions-toggle = "Sessions sidebar"
-tree-search = "Search files"
+tree-search = "Search files in this folder"
 search-none = "Nothing here"
 search-workspaces = "Search workspaces"
 doc-plain = "Text and structure, not layout"

@@ -1290,6 +1290,7 @@ export function TerminalPane({
   // **A drop under way runs it too, filled to how far it got** (item
   // 60): `null` when nothing is being dropped.
   const [dropShare, setDropShare] = useState<number | null>(null);
+  const [dropStopping, setDropStopping] = useState(false);
   // **What goes in, by name** (the owner 2026-10-07 12:50): the pill
   // says which file and how many are done, and its third seat cancels
   // (`dropCancel`) while they go.
@@ -3037,6 +3038,7 @@ export function TerminalPane({
       setMissed((l) => l.filter((item) => !item.id.startsWith("drop-")));
       dropping.current = true;
       setDropShare(0);
+      setDropStopping(false);
       setDropNames(names);
       let cancelled = false;
       let made: PreparedDrop | null = null;
@@ -3047,11 +3049,15 @@ export function TerminalPane({
         window.clearInterval(watch);
         setDropShare(null);
         setDropNames(null);
+        setDropStopping(false);
       };
+      let cancellation: Promise<unknown> | null = null;
       dropCancel.current = () => {
+        if (cancelled) return;
         cancelled = true;
-        settle();
-        void termDropCancel(id).catch(() => {});
+        window.clearInterval(watch);
+        setDropStopping(true);
+        cancellation = termDropCancel(id).catch(() => {});
       };
       try {
         made = typeof paths === "function" ? await paths(() => cancelled) : Array.isArray(paths)
@@ -3073,7 +3079,10 @@ export function TerminalPane({
           else await termDropForget(made.staged).catch(() => {});
           return false;
         }
-        if (cancelled) return false;
+        if (cancelled) {
+          await termDropForget(made.staged).catch(() => {});
+          return false;
+        }
         for (const dir of new Set((end?.landed ?? []).map(levelOf))) treeChanged({ machine: machine ?? "", here: machine == null, dir });
         onLanded?.();
         pollNow.current();
@@ -3088,9 +3097,12 @@ export function TerminalPane({
         else if (made) await termDropForget(made.staged).catch(() => {});
         return false;
       } finally {
-        settle();
-        dropCancel.current = () => {};
+        // A cancelled operation still owns its staged bytes and selection
+        // until both preparation/transfer and the cancellation acknowledge.
+        await cancellation;
         dropping.current = false;
+        dropCancel.current = () => {};
+        settle();
       }
     }, [id, machine, fail],
   );
@@ -3626,7 +3638,7 @@ export function TerminalPane({
           <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, cwd: doing?.cwd ?? null, selected: attachments,
             add: (items) => changeAttachments(addAttachments(attachmentsRef.current, items)),
             remove: (item) => changeAttachments(attachmentsRef.current.filter((x) => x.key !== item.key)),
-            send: sendAttachments, dropFiles, busy: dropShare !== null, progress: dropShare, cancel: () => dropCancel.current() }} />
+            send: sendAttachments, dropFiles, busy: dropShare !== null, stopping: dropStopping, progress: dropShare, cancel: () => dropCancel.current() }} />
         </KeyRowSeats>
       </>
     )}

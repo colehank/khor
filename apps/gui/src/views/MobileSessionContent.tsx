@@ -1,7 +1,7 @@
 /** The mobile session's current content owns one bottom deck. The
  * terminal's measured deck room is retained behind the sheet. */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { fetchLs, searchIn, forgetRecent, type DeviceRow, type SessionRow } from '@/api';
+import { fetchLs, searchIn, forgetRecentByDevice, said, type DeviceRow, type SessionRow } from '@/api';
 import { PageField } from '@/browse/PageField';
 import { NewTabPage } from '@/browse/NewTabPage';
 import { usePlaces } from '@/browse/use-places';
@@ -22,6 +22,7 @@ import type { ContentNavigation, ContentSource } from '@/hooks/use-content-navig
 import type { ContentTab, SessionContent } from '@/hooks/use-session-content';
 import { useContentSheet } from '@/hooks/use-content-sheet';
 import { directoryOf } from '@/lib/paths';
+import { imeKey } from '@/lib/ime';
 import { sessionCwdOnScreen } from '@/lib/session-cwd';
 import { SideWorkspace } from '@/views/SideWorkspace';
 import type { PlaceDetent } from '@/views/SessionPlaceSheet';
@@ -40,8 +41,8 @@ export function contentContext(tab:ContentTab,row:SessionRow|undefined,devices:D
   return [devices.find(d=>d.id===tab.device)?.name,folder].filter(Boolean).join(' · ');
 }
 export type DeckOwner={face:TabFace;content:SessionContent;navigation:ContentNavigation;onClose:()=>void};
-export function ContentOwnerIdentity({face,title,children}: {face:TabFace;title?:string;children?:ReactNode}) {
-  return <span className="content-owner-identity"><span className="content-owner-face">{face.session&&<SessionFace face={face.face} {...face.session} size="tab"/>}</span><span className="content-owner-name">{face.label}</span><span className="content-owner-slash">/</span>{children||<span className="content-owner-title">{title}</span>}</span>;
+export function ContentOwnerIdentity({face,title,children,editing=false}: {face:TabFace;title?:string;children?:ReactNode;editing?:boolean}) {
+  return <span className="content-owner-identity" data-content-editing={editing||undefined}><span className="content-owner-face">{face.session&&<SessionFace face={face.face} {...face.session} size="tab"/>}</span><span className="content-owner-name">{face.label}</span><span className="content-owner-slash">/</span>{children||<span className="content-owner-title">{title}</span>}</span>;
 }
 export function ContentTabButton({session,content,navigation}: Pick<DeckOwner,'content'|'navigation'> & {session:string}) {
   const count=content.tabs.filter(t=>t.session===session).length;
@@ -71,14 +72,25 @@ function WorkspaceContext({root, device, history, make}: {root: string; device: 
 }
 function BrowserPicker({session, device, devices, show, onOpen,face,content,navigation,onClose,desktop=false}: DeckOwner & {desktop?:boolean;session: string; device: DeviceRow; devices: DeviceRow[]; show: boolean; onOpen: (device: DeviceRow,url: string) => void}) {
   const state=navigation.get(session),seed=state.address,exit=devices.find(d=>d.id===state.exit)||device;
-  const setExit=(d:DeviceRow)=>navigation.update(session,{exit:d.id});
+  const fieldKey='picker:'+session,field=navigation.editor(fieldKey),editing=field.editing??false,machinePrompt=field.exitPrompt;
+  const [listSeat,setListSeat]=useState<HTMLDivElement|null>(null),[error,setError]=useState<string|null>(null);
   const setSeed=(address:string)=>navigation.update(session,{address});
   const places=usePlaces(PAGES);
-  const open=(url: string,d: DeviceRow)=>{navigation.update(session,{address:url,exit:d.id});onOpen(d,url);};
+  const open=(url:string,d:DeviceRow)=>{navigation.edit(fieldKey,{exitPrompt:undefined});setError(null);navigation.update(session,{address:url,exit:d.id});onOpen(d,url);};
+  const setExit=(d:DeviceRow)=>{navigation.update(session,{exit:d.id});if(navigation.editor(fieldKey).exitPrompt!==undefined)open(navigation.get(session).address,d);};
+  const edit=(value:boolean)=>navigation.edit(fieldKey,{editing:value,...(!value?{exitPrompt:undefined}:{})});
+  const revisit=(id:string,url:string)=>{
+    const d=devices.find(d=>d.id===id);
+    if(d){open(url,d);return;}
+    setSeed(url);navigation.edit(fieldKey,{editing:true,exitPrompt:(machinePrompt??0)+1});
+  };
+  const forget=async (device:string,path:string)=>{setError(null);try{await forgetRecentByDevice('page',device,path);places.reload();}catch(e){setError(said(e));}};
   return <div className="mobile-content-browser" hidden={!show}>
-    {desktop&&<div data-content-browser-field className="session-content-picker-bar"><ContentScope value={state.source} onChange={source=>navigation.update(session,{source})}/><PageField tab={'content-picker:'+session} machine={exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} steps={false} autoFocus={false} onMachine={setExit} onGo={open}/></div>}
-    <div className="mobile-content-places"><NewTabPage kind={PAGES} places={places} devices={devices} narrow onOpen={(id,url)=>{const d=devices.find(d=>d.id===id);if(d)open(url,d);}} onForget={p=>quiet(forgetRecent('page',p.name,p.place).then(places.reload))}/></div>
-    {!desktop&&<MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face}><PageField tab={'content-picker:'+session} machine={devices.find(d=>d.id===exit.id)||exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} steps={false} autoFocus={false} inPill onMachine={setExit} onGo={open}/></ContentOwnerIdentity></MobileContentDeck>}
+    {desktop&&<div data-content-browser-field className="session-content-picker-bar"><ContentScope value={state.source} onChange={source=>navigation.update(session,{source})}/><PageField tab={'content-picker:'+session} machine={exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} machinePrompt={machinePrompt} steps={false} autoFocus={false} onEditingChange={edit} onMachine={setExit} onGo={open}/></div>}
+    {machinePrompt!==undefined&&<p role="status" className="px-row py-in text-callout text-muted-foreground">{gui.content_choose_exit}</p>}
+    {error&&<p role="alert" className="px-row py-in text-callout text-destructive">{error}</p>}
+    <div className="mobile-content-places"><NewTabPage kind={PAGES} places={places} devices={devices} narrow onOpen={revisit} onForget={p=>void forget(p.device,p.place)}/></div>
+    {!desktop&&<><div ref={setListSeat} className="mobile-content-page-list"/><MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face} editing={editing}><PageField tab={'content-picker:'+session} machine={exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} machinePrompt={machinePrompt} steps={false} autoFocus={false} inPill listSeat={listSeat} onEditingChange={edit} onMachine={setExit} onGo={open}/></ContentOwnerIdentity></MobileContentDeck></>}
   </div>;
 }
 export function ContentPicker({row, devices, navigation, onOpen, face, content, onClose,desktop=false}: DeckOwner & {
@@ -91,6 +103,7 @@ export function ContentPicker({row, devices, navigation, onOpen, face, content, 
   const root=state.scope?.root || sessionCwdOnScreen(row);
   const query=state.query,setQuery=(query:string)=>navigation.update(row.id,{query});
   const [make,setMake]=useState<{kind:'file'|'dir';at:number}>();
+  const [searching,setSearching]=useState(false);
   if(!device)return <div className="mobile-content-picker"><div className="session-content-unknown">{gui.content_machine_gone}</div>{!desktop&&<MobileContentDeck session={row.id} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face} title={gui.content_machine_gone}/></MobileContentDeck>}</div>;
   const source=(source: ContentSource)=>navigation.update(row.id,{source});
   const enter = async () => {
@@ -106,9 +119,9 @@ export function ContentPicker({row, devices, navigation, onOpen, face, content, 
   return <div className="mobile-content-picker" data-desktop-picker={desktop||undefined}>
     {!desktop&&<div className="mobile-content-picker-head"><SegmentedControl label={gui.content_scope} value={state.source} options={[{key:'workspace',label:gui.workspaces_tab},{key:'browser',label:gui.browser_tab}]} onChange={source}/></div>}
     <div className="mobile-content-workspace" hidden={state.source!=='workspace'}>
-      {root?<SideWorkspace key={device.id+' '+root} machine={device.name} here={device.me} root={root} query={query} onQuery={setQuery} findLeading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} makeRequest={make} onSearchEnter={()=>void enter()} onOpenContent={(path,line)=>onOpen(device,path,'file',line)} treeHead={history=><WorkspaceContext root={root} device={device} history={history} make={kind=>{setQuery('');setMake({kind,at:Date.now()});}}/>}/>:<><SideFind label={gui.search_file} query={query} onQuery={setQuery} leading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} onEnter={()=>void enter()}/><div className="session-content-unknown">{gui.content_no_directory}</div></>}
+      {root?<SideWorkspace key={device.id+' '+root} machine={device.name} here={device.me} root={root} query={query} onQuery={setQuery} findLeading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} makeRequest={make} onSearchEnter={()=>void enter()} onOpenContent={(path,line)=>onOpen(device,path,'file',line)} treeHead={history=><WorkspaceContext root={root} device={device} history={history} make={kind=>{setQuery('');setMake({kind,at:Date.now()});}}/>}/>:<><SideFind label={gui.tree_search} query={query} onQuery={setQuery} leading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} onEnter={()=>void enter()}/><div className="session-content-unknown">{gui.content_no_directory}</div></>}
     </div>
-    {!desktop&&state.source==='workspace'&&<MobileContentDeck session={row.id} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face}><Input data-content-search type="search" aria-label={gui.search_file} placeholder={gui.search_file} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void enter();}}/></ContentOwnerIdentity></MobileContentDeck>}
+    {!desktop&&state.source==='workspace'&&<MobileContentDeck session={row.id} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face} editing={searching}><Input data-content-search type="search" aria-label={gui.tree_search} placeholder={gui.tree_search} onFocus={()=>setSearching(true)} onBlur={()=>setSearching(false)} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!imeKey(e))void enter();}}/></ContentOwnerIdentity></MobileContentDeck>}
     <BrowserPicker desktop={desktop} face={face} content={content} navigation={navigation} onClose={onClose} session={row.id} device={device} devices={devices} show={state.source==='browser'} onOpen={(d,url)=>onOpen(d,url,'page')}/>
   </div>;
 }
@@ -139,6 +152,7 @@ export function ContentDocumentNavigation({tab, machine, temporary, onBrowse, on
 
 export function ContentOverview({session,row,devices,content,navigation,onPick,face,onClose}: DeckOwner & {session:string;row:SessionRow|undefined;devices:DeviceRow[];onPick:(tab:ContentTab)=>void}) {
   const state=navigation.get(session),q=state.filter.toLocaleLowerCase();
+  const [searching,setSearching]=useState(false);
   const tabs=content.allTabs.filter(t=>t.session===session&&(contentName(t)+' '+t.url+' '+contentContext(t,row,devices)).toLocaleLowerCase().includes(q));
   const tabFaces=tabs.map(t=>({id:t.id,label:contentName(t),path:t.url,face:devices.find(d=>d.id===t.device)?.face||null,mark:contentView(t)==='file'?fileKind(t.url):contentView(t)==='workspace'?workspaceKind(false):pageKind(undefined)}));
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===(state.recent||state.key));
@@ -147,7 +161,7 @@ export function ContentOverview({session,row,devices,content,navigation,onPick,f
       {!tabs.length&&<p className="mobile-content-empty">{q?gui.content_no_match:gui.content_empty}</p>}
       <TabSheetRows faces={tabFaces} active={current?.id||''} onFocus={id=>{const tab=tabs.find(t=>t.id===id);if(tab)onPick(tab);}} onClose={id=>quiet(content.close(id))} canClose={f=>!tabs.find(t=>t.id===f.id)?.pinned} actions={f=>{const tab=tabs.find(t=>t.id===f.id);return tab&&content.isPreview(tab)?<Button variant="ghost" size="sm" className="min-h-touch" onClick={()=>quiet(content.keep(tab.id))}>{gui.content_keep}</Button>:null;}} rowData={f=>({'data-content-overview-tab':f.id,'data-temporary':!!content.previews[session]&&content.previews[session].id===f.id})} onNew={()=>navigation.browse(session)} newLabel={gui.content_find}/>
     </div>
-    <MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face}><Input type="search" aria-label={gui.content_tabs_search} placeholder={gui.content_tabs_search} value={state.filter} onChange={e=>navigation.update(session,{filter:e.target.value})}/></ContentOwnerIdentity></MobileContentDeck>
+    <MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face} editing={searching}><Input type="search" onFocus={()=>setSearching(true)} onBlur={()=>setSearching(false)} aria-label={gui.content_tabs_search} placeholder={gui.content_tabs_search} value={state.filter} onChange={e=>navigation.update(session,{filter:e.target.value})}/></ContentOwnerIdentity></MobileContentDeck>
   </div>;
 }
 /** In-place sheet shared by content and session overviews. Its deck is
@@ -156,7 +170,11 @@ export function MobileContentSheet({children,onClose}: {children:ReactNode;onClo
   const [el,setEl]=useState<HTMLDivElement|null>(null),[detent,setDetent]=useState<PlaceDetent>('half');
   const overlay=useRef<HTMLDivElement>(null);
   const screen=()=>overlay.current?.closest<HTMLElement>('[data-session-screen]');
-  useContentSheet(el,setDetent,onClose,()=>({height:screen()?.clientHeight||innerHeight,foot:0}));
+  useContentSheet(el,setDetent,onClose,()=>{
+    const host=screen(),top=host?.querySelector<HTMLElement>('[data-session-top]');
+    const gap=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap-in'))||0;
+    return {height:host?.clientHeight??innerHeight,foot:0,top:(top?.getBoundingClientRect().height||0)+gap};
+  });
   useLayoutEffect(()=>{const host=screen();if(!host)return;const read=()=>overlay.current?.style.setProperty('--mobile-content-height',host.clientHeight+'px');read();const observer=new ResizeObserver(read);observer.observe(host);return()=>observer.disconnect();},[]);
   // Content is portaled into this DOM seat; React events bubble through
   // the portal's owner, so listen on the physical sheet for input focus.

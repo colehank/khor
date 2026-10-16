@@ -18,7 +18,7 @@
 // takes the session from the directory's record.
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchPageIcons, fetchRecents, fetchWorkspaces, forgetRecent } from "@/api";
+import { fetchPageIcons, fetchRecents, fetchWorkspaces, forgetRecentByDevice } from "@/api";
 import type { WorkspaceRow } from "@/gen/bindings/WorkspaceRow";
 import { storedTabs, fileOf } from "@/views/WorkspacePane";
 
@@ -143,7 +143,7 @@ export function useSideRecent(on: boolean): [RecentItem[] | null, (it: RecentIte
   const forget = useCallback(async (it: RecentItem) => {
     setItems((was) => was?.filter((x) => x.key !== it.key) ?? was);
     try {
-      await forgetRecent(RECORD[it.kind], it.machine, it.kind === "page" ? it.url : it.path);
+      await forgetRecentByDevice(RECORD[it.kind], it.device, it.kind === "page" ? it.url : it.path);
     } catch (e) {
       setItems((was) => (was === null || was.some((x) => x.key === it.key) ? was : [...was, it].sort((a, b) => (b.at ?? -1) - (a.at ?? -1))));
       throw e;

@@ -22,7 +22,16 @@ export function enterContent(was: ContentNavigationState, patch: Partial<Content
   if(next.scene==='document') {next.recent=next.key;next.documentTrail=next.trail;}
   return next;
 }
+/** Transient input intent lives above the wide/mobile portal seats. */
+export type ContentEditor = {address?:string;editing?:boolean;exitPrompt?:number};
 export function useContentNavigation(content: SessionContent) {
+  const [editors,setEditors]=useState<Record<string,ContentEditor>>({});
+  const currentEditors=useRef(editors);currentEditors.current=editors;
+  const editor=(key:string)=>currentEditors.current[key]??{};
+  const edit=(key:string,patch:ContentEditor)=>{
+    const next={...currentEditors.current,[key]:{...editor(key),...patch}};
+    currentEditors.current=next;setEditors(next);
+  };
   const [states,setStates]=useState<Record<string,ContentNavigationState>>({});
   const pendingResume=useRef(new Set<string>());
   const current=useRef(states);current.current=states;
@@ -54,6 +63,6 @@ export function useContentNavigation(content: SessionContent) {
   const overview=(session:string)=>get(session).scene==='overview'?back(session):update(session,{scene:'overview',filter:''});
   const sessions=(session:string)=>{pendingResume.current.delete(session);write(session,s=>({...s,scene:'sessions',trail:[],from:'picker'}));};
   const inspect=(session:string)=>{pendingResume.current.delete(session);write(session,s=>({...s,scene:'overview',filter:'',trail:[{...place(s),scene:'sessions'}],from:'sessions'}));};
-  return {get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,resume,browse,overview,back,sessions,inspect};
+  return {editor,edit,get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,resume,browse,overview,back,sessions,inspect};
 }
 export type ContentNavigation = ReturnType<typeof useContentNavigation>;

@@ -1,7 +1,8 @@
 /** Vertical pans belong to the content sheet until its top detent;
  * remaining travel goes to the content scroller. Text selection keeps its gestures. */
-import {useEffect,useRef} from 'react';
+import {useEffect,useLayoutEffect,useRef} from 'react';
 import type {PlaceDetent} from '@/views/SessionPlaceSheet';
+import {contentSheetHeights,type ContentSheetBounds} from '@/lib/content-sheet-bounds';
 
 function share(detent: PlaceDetent): number {
   const name = detent === "half" ? "--place-sheet-half" : "--place-sheet-full";
@@ -34,12 +35,31 @@ const AWAY = 0.55;
  * back first. At the full detent a move up is the page's scroll. A
  * slider or anything marked `data-sheet-hold` keeps its touches.
  */
-export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => void, onClose: () => void, bounds?: () => { height: number; foot: number }, handle?: HTMLElement | null) {
+export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => void, onClose: () => void, bounds?: () => ContentSheetBounds, handle?: HTMLElement | null) {
   // Read through a ref: the shell hands a fresh `onOpenChange` on every
   // render (a poll lands every two seconds), and re-binding the listeners
   // mid-drag would drop the pull under the finger.
   const told = useRef({ onDetent, onClose, bounds });
   told.current = { onDetent, onClose, bounds };
+  const heights = () => contentSheetHeights(told.current.bounds?.() ?? { height: window.innerHeight, foot: 0 }, {half:share('half'),full:share('full')});
+  useLayoutEffect(()=>{
+    if(!el)return;
+    const sync=()=>{
+      const {half,full}=heights();
+      el.style.setProperty('--content-sheet-half-height',half+'px');
+      el.style.setProperty('--content-sheet-full-height',full+'px');
+      // A keyboard transition can shrink the safe range mid-pull.
+      if(el.hasAttribute('data-sheet-pulling')&&parseFloat(el.style.height)>full)el.style.height=full+'px';
+    };
+    sync();
+    const observer=new ResizeObserver(sync);
+    if(el.parentElement)observer.observe(el.parentElement);
+    const top=el.closest('[data-session-screen]')?.querySelector('[data-session-top]');
+    if(top)observer.observe(top);
+    window.addEventListener('resize',sync);
+    window.visualViewport?.addEventListener('resize',sync);
+    return()=>{observer.disconnect();window.removeEventListener('resize',sync);window.visualViewport?.removeEventListener('resize',sync);};
+  },[el]);
   useEffect(() => {
     if (!el) return;
     const close = () => told.current.onClose();
@@ -105,8 +125,8 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
         grip();
       }
       prevent();
-      const box = told.current.bounds?.() ?? { height: window.innerHeight, foot: 0 };
-      const wanted=fromH-dy,full=share("full")*box.height-box.foot;
+      const {full}=heights();
+      const wanted=fromH-dy;
       live = Math.max(0, Math.min(wanted, full));
       if(scroll)scroll.scrollTop=Math.max(0,wanted-full);
       el.style.height = `${live}px`;
@@ -122,9 +142,8 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       pulling = false;
       el.removeAttribute("data-sheet-pulling");
       el.style.removeProperty("height");
-      const box = told.current.bounds?.() ?? { height: window.innerHeight, foot: 0 };
-      const half = share("half") * box.height - box.foot;
-      const full = share("full") * box.height - box.foot;
+      const {half,full}=heights();
+      live=Math.max(0,Math.min(live,full));
       if (time - lastT > THROW_MS) speed = 0;
       // A throw goes one detent its way: up to full, down to half from
       // above it, away from half or under; a placement takes the nearer.
@@ -163,8 +182,8 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       if(Math.abs(e.deltaX)>=Math.abs(e.deltaY))return;
       const target=e.target instanceof Element?e.target:null;
       if(target?.closest('input,textarea,[data-sheet-hold]'))return;
-      const list=scroller(target),box=told.current.bounds?.()??{height:innerHeight,foot:0};
-      const h=el.getBoundingClientRect().height,full=share('full')*box.height-box.foot;
+      const list=scroller(target),{full}=heights();
+      const h=el.getBoundingClientRect().height;
       if((list?.scrollTop||0)>0||(e.deltaY>0&&h>=full-1))return;
       if(from===null){scroll=null;wheelY=0;begin(0,0,e.timeStamp,true);}
       wheelY-=e.deltaY;drag(0,wheelY,e.timeStamp,()=>e.preventDefault());

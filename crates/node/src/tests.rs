@@ -1325,6 +1325,53 @@ mod recents_tests {
         );
     }
 
+    /// A recent belongs to an immutable device id. Forgetting the machine
+    /// must not strand its records, and a name reused by another machine
+    /// must not redirect dismissal to the other ledger entry.
+    #[test]
+    fn orphaned_recents_are_dismissed_by_device_without_resolving_a_machine() {
+        let r = root("recents-orphan");
+        let n = Node::open(r.to_path_buf()).unwrap();
+        let gone = "ab".repeat(32);
+        let sibling = "cd".repeat(32);
+        let kinds = [PlaceKind::Page, PlaceKind::File, PlaceKind::Dir];
+        let places = ["https://example.test/shared", "/project/a.txt", "/project"];
+        let put_devices = |name: &str| {
+            let loaded = n.devices_loaded().unwrap();
+            loaded.doc.upsert(&gone, name, &[]).unwrap();
+            loaded.doc.set_gone(&gone, false).unwrap();
+            loaded.doc.upsert(&sibling, "keeper", &[]).unwrap();
+            let mut store = loaded.store;
+            store.flush(&loaded.doc).unwrap();
+        };
+        put_devices("old-machine");
+        for (&kind, place) in kinds.iter().zip(places) {
+            n.recent_visit(kind, "old-machine", place).unwrap();
+            n.recent_visit(kind, "keeper", place).unwrap();
+        }
+        n.forget_device("old-machine").unwrap();
+        assert!(!n.devices().unwrap().iter().any(|d| d.id == gone));
+        assert!(n.resolve(&gone).is_err(), "remote routing still requires a known machine");
+        assert!(n.forget_recent(PlaceKind::Page, "old-machine", places[0]).is_err(), "old named calls retain their contract");
+        for (&kind, place) in kinds.iter().zip(places) {
+            assert_eq!(n.recents(kind, 10).unwrap().len(), 2, "removing a machine keeps its ledger");
+            n.forget_recent_by_device(kind, &gone.to_uppercase(), place).unwrap();
+            let left = Node::open(r.to_path_buf()).unwrap().recents(kind, 10).unwrap();
+            assert_eq!(left.len(), 1, "dismissal survives reopening the node");
+            assert_eq!(left[0].machine, sibling, "the same place on another device is untouched");
+            n.forget_recent_by_device(kind, &gone, place).unwrap();
+            assert_eq!(n.recents(kind, 10).unwrap().len(), 1, "repeat dismissal is idempotent");
+        }
+        for bad in ["", "old-machine", &gone[..8], &"zz".repeat(32)] {
+            assert!(n.forget_recent_by_device(PlaceKind::Page, bad, places[0]).is_err());
+        }
+        put_devices("returned-machine");
+        for (&kind, place) in kinds.iter().zip(places) {
+            n.recent_visit(kind, "returned-machine", place).unwrap();
+            assert_eq!(n.recents(kind, 10).unwrap().len(), 2, "a fresh visit restores this device's record");
+        }
+    }
+
     /// The record is a document on disk, not process state: a serve
     /// restart, or the CLI running beside the app, comes back to the
     /// same list.

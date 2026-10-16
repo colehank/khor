@@ -122,6 +122,14 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "a picked file's raw bytes: the bridge serves it on its own route ahead of the JSON arms",
     ),
     (
+        "term_drop_stage_into",
+        "folder child bytes use a raw upload route ahead of the JSON arms, like term_drop_stage",
+    ),
+    (
+        "term_pick_folders",
+        "opens the native directory picker; browser faces use their own webkitdirectory file input",
+    ),
+    (
         "edit_menu",
         "the phone's own edit menu over a selection, which a browser tab does not have",
     ),

@@ -1289,8 +1289,14 @@ fn recent_visit(kind: String, machine: String, place: String, session: Option<St
 }
 
 #[tauri::command]
-fn forget_recent(kind: String, machine: String, place: String) -> Result<(), String> {
-    khor_gui_core::recents::forget_recent(&Node::root_from_env(), &kind, &machine, &place)
+fn forget_recent(kind: String, machine: Option<String>, device: Option<String>, place: String) -> Result<(), String> {
+    let root = Node::root_from_env();
+    if let Some(device) = device {
+        khor_gui_core::recents::forget_recent_by_device(&root, &kind, &device, &place)
+    } else {
+        let machine = machine.ok_or_else(|| "missing arg: machine".to_owned())?;
+        khor_gui_core::recents::forget_recent(&root, &kind, &machine, &place)
+    }
 }
 
 /// Gives a page's borrow back.
