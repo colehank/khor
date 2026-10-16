@@ -13,16 +13,19 @@
 //!   about 20 ms with jitter, past iroh's 10 ms "good enough", where it
 //!   punches every 60 s.
 //! - p2 **the road in use slows**: the connection on the second road,
-//!   which then goes to about 21 ms round trip; back on the LAN within
-//!   10 s.
+//!   which then goes to about 21 ms round trip, while alpha types (an
+//!   echo every 200 ms, as a terminal's keystrokes); back on the LAN
+//!   within 10 s. p2i the same with nothing typed, the connection idle
+//!   but for its keepalives: reported, not asserted (the owner's lag is
+//!   typing; an idle connection has a sample every 5 s at best).
 //! - p3 **the road in use goes black**: every packet on it dropped, an
 //!   echo every 200 ms; no echo waits more than 1 s, and neither side's
 //!   wire is retired.
 //! - p4 **a false interface change**: the interfaces never move, but the
-//!   machine's public address is both its interface's and what a QAD
-//!   relay reports (turing's global IPv6; here a v4 with no NAT in front,
-//!   the same two sources for one address). Ten minutes, no
-//!   「本机网卡地址变化」.
+//!   machine's public addresses are both its interface's and what a QAD
+//!   relay reports (turing's global IPv6, no NAT in front; here v4 and v6
+//!   both, on a dual-stack network with a QAD stand-in on each family).
+//!   Ten minutes, no 「本机网卡地址变化」.
 //!
 //! The clocks are real: ten minutes are ten minutes. Shortening iroh's
 //! timers (keepalive, the 60 s upgrade check, the net report's 20–26 s
@@ -35,7 +38,7 @@ use std::time::{Duration, Instant, SystemTime};
 use khor_core::Hop;
 use patchbay::{Device, IpSupport, Lab, LinkCondition, LinkDirection, Nat, Router, RouterPreset};
 
-use crate::lab::{LabNode, mesh, node, qad_relays, relay, result};
+use crate::lab::{LabNode, mesh, node, qad_relays_dual, relay, result};
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64
@@ -257,9 +260,35 @@ async fn p1j_two_jittery_roads_of_one_speed_hold_still() {
     one_speed("p1j", 10, 2).await;
 }
 
+/// A listing of beta's /tmp from alpha: one request and its answer on
+/// the wire, a keystroke's worth. How long it took, or why it failed.
+async fn echo(a: &LabNode) -> (Duration, Option<String>) {
+    let t = Instant::now();
+    let got = tokio::time::timeout(
+        Duration::from_secs(30),
+        a.with(|n| async move { n.ls_of("beta", "/tmp").await.map(|_| ()) }),
+    )
+    .await;
+    let error = match got {
+        Ok(Ok(())) => None,
+        Ok(Err(e)) => Some(e),
+        Err(_) => Some("no answer in 30 s".to_owned()),
+    };
+    (t.elapsed(), error)
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn p2_the_road_in_use_slows_and_the_lan_takes_over() {
-    let s = "p2";
+    slows("p2", true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p2i_the_road_in_use_slows_while_idle() {
+    slows("p2i", false).await;
+}
+
+/// p2 (`typing`: an echo every 200 ms from alpha) and p2i (nothing).
+async fn slows(s: &str, typing: bool) {
     // The LAN slow at first (30 ms), so the connection lands on the
     // second road.
     let p = pair(s, async |da, _| delay(da, "eth0", 15, LinkDirection::Both).await).await;
@@ -277,13 +306,20 @@ async fn p2_the_road_in_use_slows_and_the_lan_takes_over() {
     let slowed = Instant::now();
     delay(&p.a.dev, "eth1", 10, LinkDirection::Both).await;
     delay(&p.b.dev, "eth1", 1, LinkDirection::Egress).await;
-    let mut back = None;
+    let (mut back, mut echoes) = (None, 0);
     while slowed.elapsed() < Duration::from_secs(90) {
         if [current(&p.a, &p.b), current(&p.b, &p.a)].iter().all(|c| c.as_deref() == Some("lan")) {
             back = Some(slowed.elapsed());
             break;
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        if typing {
+            let (_, error) = echo(&p.a).await;
+            assert_eq!(error, None, "every echo answers");
+            echoes += 1;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        } else {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
     }
     let retired = lines(&p.a, Some(&p.b), "retired", since).len() + lines(&p.b, Some(&p.a), "retired", since).len();
     let ok = back.is_some_and(|b| b <= Duration::from_secs(10)) && retired == 0;
@@ -291,14 +327,17 @@ async fn p2_the_road_in_use_slows_and_the_lan_takes_over() {
         s,
         ok,
         format!(
-            "held {held:?} at equal speed; after the slowdown both on the LAN {}; alpha {:?}, beta {:?}; retired {retired}",
+            "held {held:?} at equal speed; {} after the slowdown both on the LAN {}; alpha {:?}, beta {:?}; retired {retired}",
+            if typing { format!("typing ({echoes} echoes),") } else { "idle,".to_owned() },
             back.map_or("not within 90 s".into(), |b| format!("after {b:.1?}")),
             moves(&p.a, &p.b, since),
             moves(&p.b, &p.a, since),
         ),
     );
-    assert!(back.is_some_and(|b| b <= Duration::from_secs(10)), "back on the LAN within 10 s, took {back:?}");
     assert_eq!(retired, 0, "no wire retired");
+    if typing {
+        assert!(back.is_some_and(|b| b <= Duration::from_secs(10)), "back on the LAN within 10 s, took {back:?}");
+    }
 }
 
 /// Drops every packet between `dev` and `ip`, both ways (nft, in `dev`).
@@ -317,32 +356,19 @@ fn blackhole(dev: &Device, ip: &str) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn p3_the_road_in_use_goes_black_and_nothing_waits() {
     let s = "p3";
-    // The second road 2 ms slower, so the LAN is the road in use.
-    let p = pair(s, async |da, _| delay(da, "eth1", 1, LinkDirection::Both).await).await;
+    // The second road 8 ms slower, past the 5 ms it takes to move between
+    // direct roads, so the LAN is the road in use; within the 10 ms a
+    // spare may be behind, so the second road is kept as the spare.
+    let p = pair(s, async |da, _| delay(da, "eth1", 4, LinkDirection::Both).await).await;
     let began = Instant::now();
     while current(&p.a, &p.b).as_deref() != Some("lan") {
         assert!(began.elapsed() < Duration::from_secs(90), "alpha on the LAN: {:?}", current(&p.a, &p.b));
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
     tokio::time::sleep(Duration::from_secs(10)).await;
-    // A listing of beta's /tmp: one request and its answer on the wire.
-    let echo = || async {
-        let t = Instant::now();
-        let got = tokio::time::timeout(
-            Duration::from_secs(30),
-            p.a.with(|n| async move { n.ls_of("beta", "/tmp").await.map(|_| ()) }),
-        )
-        .await;
-        let error = match got {
-            Ok(Ok(())) => None,
-            Ok(Err(e)) => Some(e),
-            Err(_) => Some("no answer in 30 s".to_owned()),
-        };
-        (t.elapsed(), error)
-    };
     let mut before = vec![];
     for _ in 0..10 {
-        let (took, error) = echo().await;
+        let (took, error) = echo(&p.a).await;
         assert_eq!(error, None, "the echo answers before the blackhole");
         before.push(took);
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -353,7 +379,7 @@ async fn p3_the_road_in_use_goes_black_and_nothing_waits() {
     let blacked = Instant::now();
     let (mut waits, mut failed, mut why) = (vec![], 0, None);
     while blacked.elapsed() < Duration::from_secs(60) {
-        let (took, error) = echo().await;
+        let (took, error) = echo(&p.a).await;
         waits.push(took);
         failed += usize::from(error.is_some());
         why = why.or(error);
@@ -388,12 +414,12 @@ async fn p4_an_address_both_interface_and_qad_is_no_network_change() {
     let s = "p4";
     let lab = Lab::new().await.unwrap();
     let r = relay(&lab, s, "relay", None).await;
-    let qad = qad_relays(&lab, s, &["qad"], None).await;
-    // Public routers, no NAT: each machine's public address is its
-    // interface's own, and the QAD stand-in reports that same address.
+    let qad = qad_relays_dual(&lab, s, &["qad"]).await;
+    // Public routers, no NAT: each machine's public addresses are its
+    // interface's own, and the QAD stand-in reports those same addresses.
     let (ra, rb) = (
-        lab.add_router("left").preset(RouterPreset::PublicV4).build().await.unwrap(),
-        lab.add_router("right").preset(RouterPreset::PublicV4).build().await.unwrap(),
+        lab.add_router("left").preset(RouterPreset::Public).build().await.unwrap(),
+        lab.add_router("right").preset(RouterPreset::Public).build().await.unwrap(),
     );
     let da = lab.add_device("a").uplink(ra.id()).build().await.unwrap();
     let db = lab.add_device("b").uplink(rb.id()).build().await.unwrap();
@@ -416,7 +442,7 @@ async fn p4_an_address_both_interface_and_qad_is_no_network_change() {
     let homes: Vec<String> = lines(&a, None, "home", 0).iter().map(|l| format!("{} {}", l["url"], l["state"])).collect();
     let addrs: Vec<String> = lines(&a, None, "addrs", 0).iter().map(|l| format!("{}", l["addrs"])).collect();
     eprintln!("[netlab] p4 alpha homes {homes:?}; addrs {addrs:?}");
-    let v4 = a.dev.ip().map(|ip| ip.to_string()).unwrap_or_default();
+    let v4 = format!("{:?} {:?}", a.dev.ip(), a.dev.ip6());
     let ok = ca_ == 0 && cb_ == 0;
     result(
         s,

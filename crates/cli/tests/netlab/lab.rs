@@ -84,12 +84,23 @@ impl Drop for QadRelays {
 }
 
 pub async fn qad_relays(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Duration>) -> QadRelays {
+    qad_relays_on(lab, tag, names, rtt, RouterPreset::PublicV4).await
+}
+
+/// [`qad_relays`] on a dual-stack network: each stand-in also answers on
+/// its IPv6 address, as a second URL `https://[v6]:443` (iroh asks QAD v6
+/// of a relay whose host is a v6 address).
+pub async fn qad_relays_dual(lab: &Lab, tag: &str, names: &[&str]) -> QadRelays {
+    qad_relays_on(lab, tag, names, None, RouterPreset::Public).await
+}
+
+async fn qad_relays_on(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Duration>, preset: RouterPreset) -> QadRelays {
     use iroh_relay::server::{CertConfig, QuicConfig, RelayConfig, Server, ServerConfig, TlsConfig};
     let mut devs = vec![];
     for name in names {
         let dc = lab
             .add_router(&format!("dc-{name}"))
-            .preset(RouterPreset::PublicV4)
+            .preset(preset)
             .build()
             .await
             .unwrap();
@@ -100,8 +111,11 @@ pub async fn qad_relays(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Durati
         devs.push(dev);
     }
     let ips: Vec<std::net::Ipv4Addr> = devs.iter().map(|d| d.ip().unwrap()).collect();
+    let ip6s: Vec<Option<std::net::Ipv6Addr>> = devs.iter().map(|d| d.ip6()).collect();
     let home = scratch(&format!("{tag}-qad"));
-    let made = rcgen::generate_simple_self_signed(ips.iter().map(|ip| ip.to_string()).collect::<Vec<_>>()).unwrap();
+    let names: Vec<String> =
+        ips.iter().map(|ip| ip.to_string()).chain(ip6s.iter().flatten().map(|ip| ip.to_string())).collect();
+    let made = rcgen::generate_simple_self_signed(names).unwrap();
     let ca = home.0.join("qad-ca.pem");
     std::fs::write(&ca, made.cert.pem()).unwrap();
     let key = rustls::pki_types::PrivateKeyDer::from(rustls::pki_types::PrivatePkcs8KeyDer::from(
@@ -115,16 +129,21 @@ pub async fn qad_relays(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Durati
         .unwrap();
     let mut servers = vec![];
     let mut urls = vec![];
-    for (dev, ip) in devs.iter().zip(&ips) {
-        let (ip, tls) = (std::net::IpAddr::V4(*ip), tls.clone());
+    for ((dev, ip), ip6) in devs.iter().zip(&ips).zip(&ip6s) {
+        // With a v6 address, everything on [::], which takes v4 as well.
+        let bind = match ip6 {
+            Some(_) => std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+            None => std::net::IpAddr::V4(*ip),
+        };
+        let tls = tls.clone();
         let (up_tx, up_rx) = tokio::sync::oneshot::channel();
         let task = dev
             .spawn(move |_| async move {
-                let mut relay = RelayConfig::new((ip, 80));
-                relay.tls = Some(TlsConfig::new((ip, 443), CertConfig::Manual { server_config: tls.clone() }));
+                let mut relay = RelayConfig::new((bind, 80));
+                relay.tls = Some(TlsConfig::new((bind, 443), CertConfig::Manual { server_config: tls.clone() }));
                 let mut cfg = ServerConfig::default();
                 cfg.relay = Some(relay);
-                let mut quic = QuicConfig::new((ip, 7842));
+                let mut quic = QuicConfig::new((bind, 7842));
                 quic.server_config = Some(tls);
                 cfg.quic = Some(quic);
                 let server = Server::spawn(cfg).await.expect("a QAD stand-in spawns");
@@ -136,6 +155,9 @@ pub async fn qad_relays(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Durati
         up_rx.await.expect("the stand-in stands up");
         servers.push(task);
         urls.push(format!("https://{ip}:443"));
+        if let Some(ip6) = ip6 {
+            urls.push(format!("https://[{ip6}]:443"));
+        }
     }
     let env = urls.iter().map(|u| format!("{u}?qad=7842")).collect::<Vec<_>>().join(",");
     eprintln!("[netlab] QAD stand-ins {env}");
