@@ -995,6 +995,9 @@ async fn run_probe_v6(
         .url
         .host_str()
         .ok_or_else(|| e!(QadProbeError::MissingHost))?;
+    // khor patch 22 (vendor/iroh/KHOR.md): an IPv6 literal's host is `[2001:db8::1]` in a
+    // URL, and with the brackets it is no TLS server name: the handshake never started.
+    let host = host.trim_start_matches('[').trim_end_matches(']');
     let conn = quic_client
         .create_conn(relay_addr.into(), host)
         .await

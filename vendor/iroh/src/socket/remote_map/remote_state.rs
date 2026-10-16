@@ -90,6 +90,16 @@ pub(crate) const UNANSWERED_PTOS: u32 = 2;
 /// the next [`UPGRADE_INTERVAL`] check (the floor's half, at least this).
 const DEGRADED_BY: Duration = Duration::from_millis(5);
 
+/// khor patch 19: how long the selected path is pinged on every measurement tick once a
+/// round trip sample came in well over its floor: about eight samples, so the smoothed RTT
+/// says within two seconds whether the path slowed, where an idle connection has one sample
+/// per keepalive (5 s) and the smoothed RTT takes five of them to move half way.
+const PROBE_FOR: Duration = Duration::from_secs(2);
+
+/// khor patch 19: at most one such probe per this long, so a path whose samples jump often
+/// (Wi-Fi) costs at most eight PINGs and their ACKs per half minute.
+const PROBE_SPACING: Duration = Duration::from_secs(30);
+
 /// khor patch 18: the keepalive of a direct path that carries nothing, a spare (selected paths
 /// keep [`crate::socket::HEARTBEAT_INTERVAL`]): a third of the packets, and still well inside
 /// a home router's 30 s UDP mapping.
@@ -222,6 +232,13 @@ struct State {
     /// whether a hole-punching round was already started for its rising past it.
     selected_floor: Option<Duration>,
     degraded: bool,
+    /// khor patch 19: when the selected path was last probed ([`PROBE_FOR`],
+    /// [`PROBE_SPACING`]), and whether it was already for this rise (once per episode, like
+    /// `degraded`).
+    probed_at: Option<Instant>,
+    probed: bool,
+    /// khor patch 17: what the measurement ticks read.
+    measured: Measured,
     /// khor patch 20: the candidates last given to the connections.  A change of the direct
     /// addresses' sources alone (an address both on an interface and learnt by QAD) is no new
     /// candidate and starts no round.
@@ -281,6 +298,9 @@ impl RemoteStateActor {
                 backup_path: None,
                 selected_floor: None,
                 degraded: false,
+                probed_at: None,
+                probed: false,
+                measured: Default::default(),
                 last_local_candidates: None,
                 scheduled_holepunch: None,
                 scheduled_open_path: None,
@@ -829,6 +849,7 @@ impl RemoteStateActor {
                 current_path,
                 self.state.backup_path.as_ref(),
                 &self.connections,
+                &self.state.measured,
             );
             let selection = self.state.path_selector.select(&ctx);
             (selection.selected().cloned(), selection.backup().cloned())
@@ -842,6 +863,7 @@ impl RemoteStateActor {
             // khor patch 19: a new selection is measured from its own floor.
             self.state.selected_floor = None;
             self.state.degraded = false;
+            self.state.probed = false;
             changed = true;
             event!(
                 target: "iroh::_events::path::selected",
@@ -870,8 +892,78 @@ impl RemoteStateActor {
     /// khor patch 17: one measurement tick.  Watches the selected direct path for going
     /// silent or slowing down, then runs the selector on the paths' stats as they are now.
     fn reselect(&mut self) {
-        self.watch_selected();
+        let sample = self.read_paths();
+        self.watch_selected(sample);
         self.select_path_on(true);
+    }
+
+    /// khor patch 17: reads every path's stats on every connection.  Two machines often have
+    /// two connections, and a road is a path on each; the copy that last took an RTT sample
+    /// is the one that says how fast the road is now (a copy that carries nothing keeps the
+    /// RTT of its last keepalive), and any copy that stopped answering makes the road silent
+    /// until a copy of it takes a new sample after that.  Returns the largest RTT sample the
+    /// selected road's copies took since the last read (khor patch 19): the step of the
+    /// smoothed RTT is an eighth of the sample's distance from it (RFC 6298).
+    fn read_paths(&mut self) -> Duration {
+        let now = Instant::now();
+        let selected = self.state.selected_path.as_ref();
+        let measured = &mut self.state.measured;
+        let mut sample = Duration::ZERO;
+        let mut present = Vec::new();
+        let mut silent_now = Vec::new();
+        for (conn_id, conn_state) in self.connections.iter() {
+            let Some(conn) = conn_state.handle.upgrade() else {
+                continue;
+            };
+            for (path_id, tuple) in conn_state.paths.iter() {
+                let Some(stats) = conn.path_stats(*path_id) else {
+                    continue;
+                };
+                let key = (*conn_id, *path_id);
+                present.push(key);
+                if stats.pto_count >= UNANSWERED_PTOS {
+                    silent_now.push(tuple.clone());
+                }
+                match measured.rtts.get(&key) {
+                    Some((prev, _)) if *prev == stats.rtt => {}
+                    prev => {
+                        if let Some((prev, _)) = prev
+                            && Some(tuple) == selected
+                            && stats.rtt > *prev
+                        {
+                            sample = sample.max(*prev + (stats.rtt - *prev) * 8);
+                        }
+                        measured.rtts.insert(key, (stats.rtt, now));
+                    }
+                }
+            }
+        }
+        measured.rtts.retain(|key, _| present.contains(key));
+        for tuple in &silent_now {
+            measured.silent.entry(tuple.clone()).or_insert(now);
+        }
+        let connections = &self.connections;
+        let rtts = &measured.rtts;
+        measured.silent.retain(|tuple, since| {
+            if silent_now.contains(tuple) {
+                return true;
+            }
+            let mut copies = connections
+                .iter()
+                .flat_map(|(conn_id, state)| {
+                    state
+                        .paths
+                        .iter()
+                        .filter(move |(_, t)| *t == tuple)
+                        .map(move |(path_id, _)| (*conn_id, *path_id))
+                })
+                .peekable();
+            // A road no connection has any more is forgotten; one a copy of which took an
+            // RTT sample since it went silent, a round trip, answers again.
+            copies.peek().is_some()
+                && !copies.any(|key| rtts.get(&key).is_some_and(|(_, at)| *at > *since))
+        });
+        sample
     }
 
     /// khor patch 19: a selected direct path that stopped answering, or whose round trip
@@ -880,16 +972,23 @@ impl RemoteStateActor {
     /// connection without a backup) and only a round opens them again.  Upstream checks every
     /// [`UPGRADE_INTERVAL`] (60 s), and only whether some direct path is under 10 ms.  One
     /// round per episode; the round's own spacing ([`HOLEPUNCH_ATTEMPTS_INTERVAL`]) holds.
-    fn watch_selected(&mut self) {
+    ///
+    /// A path that is idle but for its keepalive has one RTT sample every 5 s, and the
+    /// smoothed RTT moves an eighth of the way per sample.  So one sample well over the floor
+    /// (read off the smoothed RTT's step: RFC 6298 moved it by an eighth of the sample's
+    /// distance) has the path pinged every tick for [`PROBE_FOR`], once per episode: the
+    /// smoothed RTT then says within two seconds whether the path slowed or that was noise.
+    fn watch_selected(&mut self, sample: Duration) {
         let Some(selected) = self.state.selected_path.clone() else {
             return;
         };
         if !selected.is_ip() {
             return;
         }
-        let mut rtt: Option<Duration> = None;
-        let mut silent = false;
-        for conn_state in self.connections.values() {
+        let silent = self.state.measured.silent.contains_key(&selected);
+        let mut rtt: Option<(Duration, Instant)> = None;
+        let mut copies = Vec::new();
+        for (conn_id, conn_state) in self.connections.iter() {
             let Some(conn) = conn_state.handle.upgrade() else {
                 continue;
             };
@@ -897,25 +996,55 @@ impl RemoteStateActor {
                 if tuple != &selected {
                     continue;
                 }
-                if let Some(stats) = conn.path_stats(*path_id) {
-                    rtt = Some(rtt.map_or(stats.rtt, |r| r.min(stats.rtt)));
-                    silent |= stats.pto_count >= UNANSWERED_PTOS;
+                if let Some(&(r, at)) = self.state.measured.rtts.get(&(*conn_id, *path_id))
+                    && rtt.is_none_or(|(_, latest)| at > latest)
+                {
+                    rtt = Some((r, at));
                 }
+                copies.push((conn.clone(), *path_id));
             }
         }
-        let Some(rtt) = rtt else {
+        let Some((rtt, _)) = rtt else {
             return;
         };
         let floor = self.state.selected_floor.map_or(rtt, |f| f.min(rtt));
         self.state.selected_floor = Some(floor);
         let by = DEGRADED_BY.max(floor / 2);
+        let now = Instant::now();
+        // Only a sample past "good enough" is worth it: below, nothing would be done.
+        if sample >= floor + by
+            && sample > GOOD_ENOUGH_LATENCY
+            && !self.state.probed
+            && !self.state.degraded
+            && self
+                .state
+                .probed_at
+                .is_none_or(|at| now >= at + PROBE_SPACING)
+        {
+            self.state.probed = true;
+            self.state.probed_at = Some(now);
+            debug!(?sample, ?floor, "selected path sampled slow, probing it");
+        }
+        if self.state.probed_at.is_some_and(|at| now < at + PROBE_FOR) {
+            for (conn, path_id) in &copies {
+                if let Some(path) = conn.path(*path_id) {
+                    let _ = path.ping();
+                }
+            }
+        }
         let worse = silent || (rtt > GOOD_ENOUGH_LATENCY && rtt >= floor + by);
         if worse && !self.state.degraded {
             self.state.degraded = true;
-            debug!(?rtt, ?floor, silent, "selected path degraded, triggering holepunching");
+            debug!(
+                ?rtt,
+                ?floor,
+                silent,
+                "selected path degraded, triggering holepunching"
+            );
             self.trigger_holepunching();
         } else if !silent && rtt < floor + by / 2 {
             self.state.degraded = false;
+            self.state.probed = false;
         }
     }
 
@@ -1674,7 +1803,22 @@ pub struct PathSelectionContext<'a> {
     current: Option<&'a transports::FourTuple>,
     /// khor patch 18: the backup kept beside `current`, if any.
     backup: Option<&'a transports::FourTuple>,
+    /// khor patch 17: the paths that stopped answering on some connection
+    /// ([`PathSelectionData::answering`]).
+    silent: Vec<transports::FourTuple>,
+    /// khor patch 17: each road's RTT as its freshest copy measured it
+    /// ([`PathSelectionData::rtt`]).
+    fresh: Vec<(transports::FourTuple, Duration)>,
     source: PathsSource<'a>,
+}
+
+/// khor patch 17: what the actor's measurement ticks read ([`RemoteStateActor::read_paths`]).
+#[derive(Debug, Default)]
+struct Measured {
+    /// Each path's smoothed RTT on each connection as last read, and when it last changed.
+    rtts: FxHashMap<(ConnId, PathId), (Duration, Instant)>,
+    /// The roads that stopped answering, and since when.
+    silent: FxHashMap<transports::FourTuple, Instant>,
 }
 
 /// Either a reference to live connection state, or a synthesized list of paths
@@ -1692,10 +1836,43 @@ impl<'a> PathSelectionContext<'a> {
         current: Option<&'a transports::FourTuple>,
         backup: Option<&'a transports::FourTuple>,
         connections: &'a FxHashMap<ConnId, ConnectionState>,
+        measured: &Measured,
     ) -> Self {
+        // khor patch 17: a path is as silent as its worst copy, and stays so until a copy
+        // answers again ([`RemoteStateActor::read_paths`]).  The same road on another
+        // connection that has nothing in flight reads as answering, and it hid a dead copy
+        // (2026-10-17, p3: the connection stayed on a blackholed road for 15 s).  Its RTT is
+        // the one its freshest copy measured: a copy that carries nothing keeps the RTT of
+        // its last keepalive, and hid a road slowing under typing for 10 s (p2).
+        let mut silent: Vec<transports::FourTuple> = measured.silent.keys().cloned().collect();
+        let mut fresh: Vec<(transports::FourTuple, Duration, Instant)> = Vec::new();
+        for (conn_id, state) in connections.iter() {
+            let Some(conn) = state.handle.upgrade() else {
+                continue;
+            };
+            for (path_id, tuple) in state.paths.iter() {
+                if conn
+                    .path_stats(*path_id)
+                    .is_some_and(|s| s.pto_count >= UNANSWERED_PTOS)
+                    && !silent.contains(tuple)
+                {
+                    silent.push(tuple.clone());
+                }
+                let Some(&(rtt, at)) = measured.rtts.get(&(*conn_id, *path_id)) else {
+                    continue;
+                };
+                match fresh.iter_mut().find(|(t, _, _)| t == tuple) {
+                    Some(f) if f.2 < at => *f = (tuple.clone(), rtt, at),
+                    Some(_) => {}
+                    None => fresh.push((tuple.clone(), rtt, at)),
+                }
+            }
+        }
         Self {
             current,
             backup,
+            silent,
+            fresh: fresh.into_iter().map(|(t, rtt, _)| (t, rtt)).collect(),
             source: PathsSource::Live(connections),
         }
     }
@@ -1709,6 +1886,8 @@ impl<'a> PathSelectionContext<'a> {
         Self {
             current,
             backup: None,
+            silent: Vec::new(),
+            fresh: Vec::new(),
             source: PathsSource::Test(paths),
         }
     }
@@ -1729,14 +1908,17 @@ impl<'a> PathSelectionContext<'a> {
     /// The same address may appear more than once when it is a path on multiple
     /// connections to the remote.  Selectors that care should aggregate as appropriate.
     pub fn paths(&self) -> Box<dyn Iterator<Item = PathSelectionData<'a>> + '_> {
+        let (silent, fresh) = (&self.silent, &self.fresh);
         match &self.source {
             PathsSource::Live(connections) => Box::new(
                 connections
                     .values()
                     .filter_map(|state| state.handle.upgrade().map(|conn| (state, conn)))
-                    .flat_map(|(state, conn)| {
+                    .flat_map(move |(state, conn)| {
                         state.paths.iter().map(move |(path_id, addr)| {
-                            PathSelectionData::live(addr, *path_id, conn.clone())
+                            let silent = silent.contains(addr);
+                            let rtt = fresh.iter().find(|(t, _)| t == addr).map(|(_, rtt)| *rtt);
+                            PathSelectionData::live(addr, *path_id, conn.clone(), silent, rtt)
                         })
                     }),
             ),
@@ -1755,6 +1937,10 @@ impl<'a> PathSelectionContext<'a> {
 #[derive(derive_more::Debug, Clone)]
 pub struct PathSelectionData<'a> {
     network_path: &'a transports::FourTuple,
+    /// khor patch 17: this path stopped answering on some connection.
+    silent: bool,
+    /// khor patch 17: the road's RTT as its freshest copy measured it, if a tick read it.
+    fresh_rtt: Option<Duration>,
     #[debug(skip)]
     source: StatsSource,
 }
@@ -1777,9 +1963,13 @@ impl<'a> PathSelectionData<'a> {
         network_path: &'a transports::FourTuple,
         path_id: PathId,
         conn: noq::Connection,
+        silent: bool,
+        fresh_rtt: Option<Duration>,
     ) -> Self {
         Self {
             network_path,
+            silent,
+            fresh_rtt,
             source: StatsSource::Live { path_id, conn },
         }
     }
@@ -1795,6 +1985,8 @@ impl<'a> PathSelectionData<'a> {
     ) -> Self {
         Self {
             network_path,
+            silent: false,
+            fresh_rtt: None,
             source: StatsSource::Test(stats.map(Box::new)),
         }
     }
@@ -1813,12 +2005,22 @@ impl<'a> PathSelectionData<'a> {
         }
     }
 
-    /// khor patch 17: whether the path answers: fewer than [`UNANSWERED_PTOS`] probe
+    /// khor patch 17: whether the path answers: on no connection [`UNANSWERED_PTOS`] probe
     /// timeouts in a row.  A path that sent and heard nothing back keeps the round trip it
     /// last measured, so its RTT alone never says it is gone; noq abandons it only at its
-    /// idle timeout.
+    /// idle timeout.  Each path's ACKs come back on that path (vendor/noq-proto patch 4),
+    /// so its probe timeouts are its own round trip's, not the path the peer sends on.
     pub fn answering(&self) -> bool {
-        self.stats().is_none_or(|s| s.pto_count < UNANSWERED_PTOS)
+        !self.silent && self.stats().is_none_or(|s| s.pto_count < UNANSWERED_PTOS)
+    }
+
+    /// khor patch 17: the road's round trip: the smoothed RTT of whichever connection's copy
+    /// of this path took a sample last, else this copy's.  `None` when its stats can't be
+    /// read.  The same road is a path on each connection to the remote, and a copy that
+    /// carries nothing keeps the RTT of its last keepalive, up to 5 s old.
+    pub fn rtt(&self) -> Option<Duration> {
+        let stats = self.stats()?;
+        Some(self.fresh_rtt.unwrap_or(stats.rtt))
     }
 }
 

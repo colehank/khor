@@ -12,7 +12,15 @@
 
 ## 补丁
 
-二十一处。
+二十二处。
+
+### 22. `src/net_report.rs`：主机是 IPv6 字面地址的中继也能问 QAD v6（2026-10-17，path-fix）
+
+`run_probe_v6` 拿 `relay.url.host_str()` 当 TLS 的服务器名。URL 里的 IPv6 字面地址带方括号（`[2001:db8::1]`），
+带着方括号它既不是 IP 也不是域名，握手根本没开始，QAD v6 永远没有回答。一个用 IP 写的 v6 中继（实验里的 QAD 替身，
+或者没有域名的自建中继）因此只能问 v4。改为去掉方括号。改动 3 行。测试：`crates/cli/tests/netlab/paths.rs` 的 p4
+（双栈，v4、v6 各一个 QAD 替身）。上游可以提（要点：`host_str` 对 IPv6 字面地址带方括号，不能直接当 server name）。
+升级到 1.3.0 时要看上游是否已改，没改就重打。
 
 ### 21. `src/socket/remote_map/remote_state/path_watcher.rs`：路径事件的缓冲放大，路径可以单独 ping（2026-10-16，path-fix）
 
@@ -45,8 +53,13 @@ khor 这边 `journal::interface_addrs` 也改成按地址集合判断：告诉�
 或 iOS 上默认不保留）时，client 已经把别的直连都关了；选中的那条慢下来或不答了，另一条直连要等下一次 60 秒检查才会重新打开。
 改为：每个测量 tick（补丁 17）看选中的直连：两次 PTO 没有回音，或者平滑 RTT 超过 10 ms、且比它被选中以来的最低值高出
 max(5 ms, 最低值的一半)，就当场 `trigger_holepunching()`。每次变差只打一轮（`State::degraded`，回落到一半门槛以下才复位），
-两轮之间至少 5 秒的老规矩不变。平时不多打：只在变差的那一刻多一轮。改动约 45 行（`watch_selected`）。
-测试：`crates/cli/tests/netlab/paths.rs` 的 p2（局域网那条已被关掉，第二条直连变慢到约 21 ms）。上游可以提，和补丁 17 一起。
+两轮之间至少 5 秒的老规矩不变。平时不多打：只在变差的那一刻多一轮。
+**闲着的连接按需多量几次**（10-17 补）：只有保活的连接 5 秒才一个 RTT 样本，平滑 RTT 一个样本只走八分之一，
+变慢到 21 ms 要五个样本（25 秒）才看得出。于是从平滑 RTT 这一 tick 的跳变反推出刚到的那个样本
+（RFC 6298：跳变 = (样本 − 旧值) / 8），样本超过 10 ms 且高出门槛，就在 2 秒里（`PROBE_FOR`）每个 tick 给选中的路发一个 PING，
+约 8 个样本，平滑 RTT 两秒内就说清是真变慢还是一下抖动。每次变差最多一次，且 30 秒内最多一次（`PROBE_SPACING`），
+Wi-Fi 那种常抖的路最坏也就是半分钟 8 个 PING 加 8 个 ACK。改动约 90 行（`watch_selected`）。
+测试：`crates/cli/tests/netlab/paths.rs` 的 p2（第二条直连变慢到约 21 ms、同时在打字）和 p2i（同样但闲着）。上游可以提，和补丁 17 一起。
 升级时要重打。
 
 ### 18. `src/socket/remote_map/remote_state.rs`：选路器可以留一条备用直连（2026-10-16，path-fix）
@@ -70,8 +83,17 @@ near 只留比当前慢不超过 10 ms 的那条）。改动约 60 行。测试�
 重跑选路器；选择或备份变了才 apply，没变什么也不做。tick 不发任何包。二、`PathSelectionData::answering()`：
 连续 `UNANSWERED_PTOS`（2）次 PTO 没有任何确认的路径不再是候选，当前那条也一样（noq-proto 补丁 3 把 `pto_count` 放进
 `PathStats`）。1 ms 的路上两次 PTO 约 90 ms。上游自己的 `BiasedRttPathSelector` 也跳过不答的路；khor 的 `RoadOrder` 同样。
-比较仍用 noq 的平滑 RTT（RFC 6298 的 7/8 + 1/8）和原来的迟滞（直连之间快 5 ms 才换），同速时不换。
-改动约 70 行。测试：`crates/cli/tests/netlab/paths.rs` 的 p1、p1j（同速不动）、p2（变慢 10 秒内换回）、p3（黑洞时
+**一条路按它的几份连接合起来算**（`RemoteStateActor::read_paths`、`Measured`，10-17 补）：两台机器之间常有两条连接，
+同一条路在每条连接上各是一条 path。一、不答按最差的那份算，而且记住：任何一份连续两次 PTO，这条路就不答，直到某一份
+在那之后又取到一个 RTT 样本（一个往返回来了）才算答——原来按每份各算，闲着的那份 PTO 是 0，把死了的那份盖住了，
+p3 里连接在黑洞的路上停了 15 秒；PTO 过后计数会被下一个探测清零，不记住就会在两条路之间来回跳。二、RTT 用最近取到样本
+的那一份的（`PathSelectionData::rtt`）：闲着的那份只有 5 秒一次保活，还是变慢以前的值，p2 打字时它把变慢盖住了 10 秒。
+每个 tick 只读 path stats（每条路一次），不发包。
+**PTO 只量这条路自己**，要靠 noq-proto 补丁 4（每条路的 ACK 走它自己）；没有它，ACK 走对方选的那条路回来，
+对方那条一断，这边每条路连中继都「不答」，没有可换的。
+比较仍用 noq 的平滑 RTT（RFC 6298 的 7/8 + 1/8）和原来的迟滞（直连之间快 5 ms 才换），同速时不换；
+平滑 RTT 里混进过 4.7 秒、17.6 秒的假样本（noq-proto 补丁 5 修的），p1 的来回换路一半是它们。
+改动约 150 行。测试：`crates/cli/tests/netlab/paths.rs` 的 p1、p1j（同速不动）、p2（变慢 10 秒内换回）、p3（黑洞时
 回显没有一次等过 1 秒、两边的线都不收回）。**可以起草上游**（要点：选路只在开关事件时跑，测量变化不触发；不答的路
 RTT 不变，选路器看不出来；建议在 actor 里按 path stats 周期重选，并在 `PathSelectionData` 上给出「是否在答」）。
 上游 1.3.0 没有对应改动，升级时要重打。

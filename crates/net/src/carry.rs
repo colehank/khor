@@ -430,10 +430,12 @@ impl Spare {
 ///
 /// **A path that stopped answering is no candidate** (vendor/iroh patch
 /// 17, `PathSelectionData::answering`): two probe timeouts in a row with
-/// nothing acknowledged. Its round trip is the last one it measured, so by
-/// RTT alone a dead path looks as good as ever; iroh runs this selector
-/// every 250 ms on what the paths measure, so the connection leaves it
-/// within one tick of noq's second probe timeout.
+/// nothing acknowledged, on any connection it carries. Each path's ACKs
+/// come back on that path (vendor/noq-proto patch 4), so that is its own
+/// round trip, not the road the peer sends on. Its round trip is the last
+/// one it measured, so by RTT alone a dead path looks as good as ever;
+/// iroh runs this selector every 250 ms on what the paths measure, so the
+/// connection leaves it within one tick of noq's second probe timeout.
 ///
 /// ⚠️ 墓碑: until 2026-10-09 the carried road always beat the relay in the
 /// first 3 s of a connection and the two never traded places after
@@ -459,18 +461,21 @@ impl PathSelector for RoadOrder {
         let mut candidates = Vec::new();
         let mut current = None;
         for p in ctx.paths() {
-            let Some(stats) = p.stats() else { continue };
+            // The road's round trip as its freshest copy measured it
+            // (vendor/iroh patch 17): the same road on the other
+            // connection, idle, still reads its last keepalive's.
+            let Some(rtt) = p.rtt() else { continue };
             if !p.answering() {
                 continue;
             }
             let tier = Tier::of(p.network_path());
             if Some(p.network_path()) == ctx.current() {
                 current = Some(match current {
-                    Some((t, rtt)) if rtt <= stats.rtt => (t, rtt),
-                    _ => (tier, stats.rtt),
+                    Some((t, r)) if r <= rtt => (t, r),
+                    _ => (tier, rtt),
                 });
             }
-            candidates.push((p, tier, stats.rtt));
+            candidates.push((p, tier, rtt));
         }
         let ranked: Vec<(Tier, Duration)> = candidates.iter().map(|(_, t, r)| (*t, *r)).collect();
         let mut selection = PathSelection::none();
