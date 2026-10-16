@@ -502,3 +502,6 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 - `npm run content-sheet`：生产高度函数在键盘、安全区和极小视口下的范围与单调性；完整触摸行为由 `npm run session-content` 验证。
 
 前两项需已构建 CLI / bridge，接受 `CARGO_TARGET_DIR`、`CONTENT_CHECK_DIR`、`CONTENT_VITE_PORT` 和 `CONTENT_BRIDGE_PORT`；`CONTENT_HEADED=1` 显示测试窗口。原生系统文件选择器及 WebView 另做真 app 验收。
+
+
+`npm run session-content` 新增桌面图标盒子与中心坐标回归；`CONTENT_ENGINE=webkit CONTENT_DESKTOP_ICONS_ONLY=1` 运行同一门的 WebKit 桌面段，需设置已有 WebKit 的 `PLAYWRIGHT_BROWSERS_PATH`。`CONTENT_DPR=2` 复测双倍像素。Chrome 默认仍运行完整桌面与手机流程。修复前 WebKit 的新建图形中心比按钮中心偏左 7px，来源切换未使用共同玻璃控件；修复后两种引擎均须居中。

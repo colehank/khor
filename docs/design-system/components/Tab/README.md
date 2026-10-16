@@ -151,3 +151,6 @@
 地址草稿及失联历史待选出口保存在共享内容导航里，宽窄屏 portal 换位不清空；切换来源、选出口或修改地址遵循最新输入。菜单位于底部药丸上方的列表座位，输入和标题不能被其覆盖。sheet 全高服从同一安全区边界，静止与手势计算不能各自定义高度。
 
 验证：`npm run content-ui`、`npm run content-sheet`；iPhone 原生键盘与网页仍按真 app 清单验收。
+
+
+桌面内容组的来源切换与其它工具栏按钮共用 GlassCircle；来源图标本身即可打开菜单，取消独立按钮网格与附加的小箭头。右侧新建保留控件自带的 grid，不由内容区覆盖 display。WebKit 与 Chrome 均检查实际 glyph 中心，不能只检查 SVG 的 width/height。

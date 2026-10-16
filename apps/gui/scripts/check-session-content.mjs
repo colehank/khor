@@ -6,7 +6,7 @@ import {mkdirSync,writeFileSync,readFileSync,copyFileSync,rmSync} from 'node:fs'
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {chromium} from 'playwright-core';
+import {chromium,webkit} from 'playwright-core';
 import {build} from 'esbuild';
 import {directoryOf} from '../src/lib/paths.ts';
 import {fakeHome,fakeUsage} from './fake-home.mjs';
@@ -34,7 +34,7 @@ let browser,usage,page;
 const until=async(fn,ms=20000)=>{const end=Date.now()+ms;let last;do{try{last=await fn();if(last)return last;}catch(e){last=e;}await new Promise(r=>setTimeout(r,100));}while(Date.now()<end);throw Error('Timed out: '+last);};
 const run=(cmd,args,env,cwd=gui)=>{const c=spawn(cmd,args,{env,cwd,detached:true,stdio:['ignore','pipe','pipe']});children.push(c);c.stderr.on('data',d=>process.stderr.write(d));return c;};
 const api=async(cmd,args={})=>{const r=await fetch(`http://127.0.0.1:${bridgePort}/${cmd}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(args)});const value=await r.json();if(!r.ok)throw Error(JSON.stringify(value));return value;};
-try{
+try{ checks:{
   rmSync(scratch,{recursive:true,force:true});mkdirSync(scratch,{recursive:true});
   usage=await fakeUsage();
   const env={...process.env,...fakeHome(join(scratch,'home'),usage.url),KHOR_HOME:join(scratch,'node'),KHOR_NAME:'content-check',KHOR_NO_MDNS:'1',BRIDGE_PORT:String(bridgePort)};delete env.KHOR_SESSION;
@@ -49,8 +49,8 @@ try{
   }
   run(join(gui,'node_modules/.bin/vite'),['--port',String(port),'--strictPort'],{...process.env,KHOR_FACE_GATE:'1'});
   await until(()=>fetch(`http://localhost:${port}/`).then(r=>r.ok));
-  browser=await chromium.launch({channel:'chrome',headless:process.env.CONTENT_HEADED!=='1',args:['--no-proxy-server']});
-  const context=await browser.newContext({viewport:{width:1600,height:1000},reducedMotion:'reduce'});
+  browser=process.env.CONTENT_ENGINE==='webkit'?await webkit.launch({headless:process.env.CONTENT_HEADED!=='1'}):await chromium.launch({channel:'chrome',headless:process.env.CONTENT_HEADED!=='1',args:['--no-proxy-server']});
+  const context=await browser.newContext({viewport:{width:1600,height:1000},deviceScaleFactor:Number(process.env.CONTENT_DPR||1),reducedMotion:'reduce'});
   // The LAN HTTP face has no secure-context randomUUID API.
   await context.addInitScript(()=>Object.defineProperty(globalThis.crypto,'randomUUID',{configurable:true,value:undefined}));
   await context.addInitScript(ids=>{
@@ -77,7 +77,34 @@ try{
   assert.equal(await virtual.locator('svg:not(.session-content-close svg)').count(),0,'unresolved browsing tab has an ambiguous icon');
   await desktopAdd().click();assert.equal((await table()).tabs.length,0,'content + created an empty tab');
   const scope=()=>desktopPicker().locator('[data-content-scope]:visible');
-  const scopeBox=()=>scope().evaluate(el=>({box:el.getBoundingClientRect().toJSON(),glyph:el.querySelector('.content-source-glyph').getBoundingClientRect().toJSON()}));
+  const scopeBox=()=>scope().evaluate(el=>({box:el.getBoundingClientRect().toJSON(),glyph:el.querySelector('svg').getBoundingClientRect().toJSON()}));
+  const measureIcons=()=>page.evaluate(()=>{
+    const rect=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,cx:r.x+r.width/2,cy:r.y+r.height/2};};
+    const selectors={maximize:'[data-content-maximize]',hide:'[data-content-hide]',refresh:'[data-session-verbs] [data-glass-circle]',scope:'[data-content-picker]:not(.session-content-retained) [data-content-scope]',plus:'[data-content-picker]:not(.session-content-retained) [data-side-new]',search:'[data-content-picker]:not(.session-content-retained) [data-search-wrap]>svg',reference:'[data-search-open]'};
+    return Object.fromEntries(Object.entries(selectors).map(([key,selector])=>{const el=[...document.querySelectorAll(selector)].find(e=>e.getClientRects().length);if(!el)return [key,null];return [key,{button:rect(el),svgs:[...el.querySelectorAll('svg')].map(svg=>({box:rect(svg),viewBox:svg.getAttribute('viewBox'),bbox:(()=>{const r=svg.getBBox();return {x:r.x,y:r.y,w:r.width,h:r.height}})()})),glass:el.hasAttribute('data-glass-circle')}];}));
+  });
+  const iconResults=[];
+  const checkIcons=async(name)=>{
+    const icons=await measureIcons();iconResults.push({name,icons});
+    for(const key of ['maximize','hide','refresh','scope','plus']){
+      const control=icons[key];assert(control,'missing '+key);
+      assert(control.glass,key+' uses a separate button family');
+      assert.equal(control.button.w,36,key+' left the glass control family');assert.equal(control.button.h,36);
+      const glyph=control.svgs[0].box;assert.equal(glyph.w,22,key+' glyph size differs');assert.equal(glyph.h,22);
+      assert(Math.abs(glyph.cx-control.button.cx)<.1&&Math.abs(glyph.cy-control.button.cy)<.1,key+' glyph is off-center: '+JSON.stringify(control));
+    }
+    writeFileSync(join(scratch,'desktop-icons.json'),JSON.stringify(iconResults,null,2));
+    await page.screenshot({path:join(scratch,'icons-'+name+'.png'),clip:{x:0,y:0,width:page.viewportSize().width,height:156}});
+  };
+  for(const theme of ['light','dark'])for(const width of [1000,1600,1920]){
+    await page.setViewportSize({width,height:1000});await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    await checkIcons(theme+'-'+width);
+  }
+  await page.setViewportSize({width:1600,height:1000});
+  await max().click();await checkIcons('restore');await max().click();
+  await page.evaluate(()=>document.documentElement.style.setProperty('--ui-scale',String(23/17)));
+  await checkIcons('large-ui');await page.evaluate(()=>document.documentElement.style.removeProperty('--ui-scale'));
+  console.log('PASS: desktop glass controls and centered glyphs at 1000/1600/1920, light/dark, restore and large UI');
   const workspaceScope=await scopeBox();
   await scope().click();
   const choices=await page.locator('[data-content-source]').evaluateAll(els=>els.map(el=>{const r=el.querySelector('.content-source-glyph').getBoundingClientRect();const svg=el.querySelector('svg').getBoundingClientRect();const text=[...el.childNodes].find(n=>n.nodeType===Node.TEXT_NODE&&n.textContent.trim());const range=document.createRange();range.selectNode(text);return {x:r.x,tx:range.getBoundingClientRect().x,w:r.width,h:r.height,sw:svg.width,sh:svg.height};}));
@@ -141,6 +168,7 @@ try{
   for(const t of (await table()).tabs.filter(t=>t.session===sessions[0]))cli('tabs','--session',sessions[0],'close',t.id);
   await side(sessions[0]).waitFor({state:'detached'});assert.notEqual(await page.locator('[data-session-panes]').evaluate(el=>getComputedStyle(el.firstElementChild).display),'none','last child kept the terminal hidden');
   console.log('PASS: crowded strip preserves session identity and add controls; closing the last maximized document restores the terminal');
+  if(process.env.CONTENT_DESKTOP_ICONS_ONLY==='1'){assert.deepEqual(errors,[]);console.log('desktop content gate: clean');break checks;}
   // Narrow stays on the existing terminal/deck layout, with no desktop group.
   await page.setViewportSize({width:390,height:844});await page.locator('[data-session-tabs]').waitFor({state:'detached'});await page.locator('[data-terminal]').first().waitFor();
   assert.equal(await page.locator('[data-session-tabs]').count(),0);
@@ -293,7 +321,7 @@ try{
   assert.deepEqual(errors,[]);
   console.log('PASS: delayed promotion focus and pending close; mobile picker and neighbor browsing; stable editors and PTY size; explicit/edit promotion; autosave; overview search/close; directory scroll; new-file menu; URL drafts; width changes and reload');
   console.log('session content gate: clean');
-}catch(e){await page?.screenshot({path:join(scratch,'failed.png')}).catch(()=>{});console.error(e);throw e;}
+}}catch(e){await page?.screenshot({path:join(scratch,'failed.png')}).catch(()=>{});console.error(e);throw e;}
 finally{
   for(const id of sessions)await api('close_session',{id}).catch(()=>{});
   await browser?.close().catch(()=>{});

@@ -757,3 +757,9 @@
 | 内容 sheet 的静态、拖动、松手与滚轮共用可用高度，键盘缩短屏幕时避开顶部安全区，极小视口不出现负高度 | `npm run content-sheet`、`npm run content-ui`：高度不变量与实际安全区上沿；手势整体回归仍用 `npm run session-content` |
 
 真 app 清单：浅深主题，长 session 名／网页名，工作区查找与文件内查找，编辑中收键盘、横竖屏及切后台；iPhone Files / iCloud 文件与目录授权、取消和重试；原生网页出口菜单、前后历史、刷新与实际加载。浏览器事件回放不等同于这些原生验收。
+
+### 桌面内容控件的图标对齐（2026-10-16）
+
+- 放大、收起、刷新、来源与新建使用同一 GlassCircle；图形尺寸交给 ctl-glyph，布局交给控件本身。来源菜单仍用 nav-glyph。
+- 不用局部 display:block 覆盖 GlassCircle 的 grid。移动端隐藏整条 SideFind，桌面只恢复父行，不另改子按钮的 display；WebKit 中原来的覆盖使“＋”向左偏 7px，Chrome 没有暴露这个偏差。
+- 门：`npm run session-content` 的 desktop 图标实测；`CONTENT_ENGINE=webkit CONTENT_DESKTOP_ICONS_ONLY=1 npm run session-content` 复测 WebKit 桌面。检查 1000/1600/1920、浅深主题、大字、放大/恢复、菜单及内容操作，glyph 的中心与控件中心同位。

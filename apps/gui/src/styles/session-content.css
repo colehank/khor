@@ -55,7 +55,7 @@
 .mobile-content-picker-head>[role=radiogroup]{display:flex;width:100%;height:var(--touch)}
 .mobile-content-picker-head [role=radio]{flex:1;min-height:var(--touch);font-size:var(--text-body)}
 .mobile-content-workspace [data-side-workspace]>div:first-child{overflow:hidden}
-.mobile-content-workspace [data-side-find],.mobile-content-workspace [data-side-new]{display:none}
+.mobile-content-workspace [data-side-find]{display:none}
 .mobile-content-workspace [data-file-tree]{height:auto;min-height:0;flex:1}
 .mobile-content-location{display:flex;align-items:center;gap:var(--gap-in);padding-left:var(--gap-pane);padding-right:var(--gap-row);min-height:var(--touch);flex:none}
 .mobile-content-location>strong{font-weight:var(--font-weight-title);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -111,16 +111,13 @@
 .mobile-content-neighbors svg{height:var(--kind-mark-tab);width:var(--kind-mark-tab)}
 
 /* A source switch is the same leading seat in both browsing headers. */
-.content-source-control{display:grid;grid-template-columns:var(--ctl-glyph) var(--gap-row);column-gap:calc(var(--gap-in) / 2);align-items:center;flex:none;padding-inline:var(--gap-in);height:var(--glass-btn)}
 .content-source-glyph{display:grid;place-items:center;width:var(--ctl-glyph);height:var(--ctl-glyph);flex:none}
 .content-source-glyph>svg{width:100%;height:100%}
-.content-source-control>svg{width:var(--gap-row);height:var(--gap-row)}
 .content-source-choice{gap:var(--gap-row)}
 .session-content-picker-bar,.session-content-page-bar{display:flex;align-items:center;min-width:0;min-height:var(--pane-head);flex:none;gap:var(--gap-in);padding-inline:var(--gap-row);border-bottom:var(--hair) solid var(--border)}
 .session-content-picker-bar>[data-page-field-row],.session-content-page-bar>[data-page-field-row]{min-width:0;flex:1}
 .session-content-page-bar{order:-1}
 [data-desktop-picker] .mobile-content-workspace [data-side-find]{display:flex;padding-inline:var(--gap-row);border-bottom:var(--hair) solid var(--border)}
-[data-desktop-picker] .mobile-content-workspace [data-side-new]{display:block}
 .content-source-choice .content-source-glyph{width:var(--nav-glyph);height:var(--nav-glyph)}
 
 /* Editing owns the pill's width; its input keeps the same DOM and caret. */
