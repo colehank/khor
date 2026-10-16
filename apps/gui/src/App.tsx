@@ -51,6 +51,7 @@ import {
   IconBrowser,
   IconChevronRight,
   IconClose,
+  IconPaneSize,
   IconDevices,
   IconFiles,
   IconGear,
@@ -1843,16 +1844,7 @@ export default function App() {
           expanded: side.open,
           controls: side.open ? SIDE_ID : undefined,
           toggle: () => {
-            if (!narrow) {
-              if (side.open) { content.setMaximized(null); return setSessionSide(id, { open: false }); }
-              const show = () => setSessionSide(id, { open: true, seat: "workspace" });
-              const row = rows.find(r => r.id === id);
-              const device = devices.find(d => d.name === row?.home);
-              if (device) void content.ensure(id, device.id).then(show).catch(() => {});
-              else content.fail(gui.content_machine_gone);
-              return;
-            }
-            if (side.open) return setSessionSide(id, { open: false });
+            if(side.open){content.setMaximized(null);return setSessionSide(id,{open:false});}
             contentNavigation.resume(id);
             setSessionSide(id, { open: true, seat: "workspace" });
           },
@@ -2045,16 +2037,10 @@ export default function App() {
     const session = selectedRow.id;
     const device = devices.find(d => machine ? d.name === machine || d.id === machine : d.me);
     if (!device) return content.fail(gui.content_machine_gone);
-    if (narrow) {
-      (document.activeElement as HTMLElement | null)?.blur();
-      if (view === "workspace") contentNavigation.update(session, { scope: path ? { device: device.id, root: path } : null, source: "workspace", scene: "picker" });
-      else contentNavigation.document(content.peek(session, device.id, path, view, line));
-      setSessionSide(session, { open: true, seat: "workspace" });
-      return;
-    }
-    const existing = content.tabs.find(t => t.session === session && t.device === device.id && t.url === path && t.view === view);
-    const request = existing ? content.focus(existing.id).then(() => line == null ? undefined : content.point(existing.id, device.id, path, view, existing.title, line)) : content.add(session, device.id, path, view, undefined, line);
-    void request.then(() => setSessionSide(session, { open: true, seat: "workspace" })).catch(() => {});
+    (document.activeElement as HTMLElement|null)?.blur();
+    if(view==='workspace')contentNavigation.update(session,{scope:path?{device:device.id,root:path}:null,source:'workspace',scene:'picker'});
+    else contentNavigation.document(content.peek(session,device.id,path,view,line));
+    setSessionSide(session,{open:true,seat:'workspace'});
   };
   const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) =>
     openContent(start ? "file" : "workspace", machine, start?.path ?? dir ?? "");
@@ -4204,11 +4190,8 @@ export default function App() {
                 <Tabs
                   grouped
                   bodyClass="flex min-h-0 flex-col"
-                  faces={tabFaces.map(f => ({ ...f, group: !isNewTab(f.id) ? <ContentTabs session={f.id} open={f.id === selected && side.open} content={content} onFocus={() => sessionTabs.focus(f.id)} onAdd={() => {
-                    const row = rows.find(r => r.id === f.id);
-                    const device = devices.find(d => d.name === row?.home);
-                    if (device) void content.add(f.id, device.id, "").then(() => setSessionSide(f.id, { open: true, seat: "workspace" })).catch(() => {});
-                    else content.fail(gui.content_machine_gone);
+                  faces={tabFaces.map(f => ({ ...f, group: !isNewTab(f.id) ? <ContentTabs session={f.id} open={f.id === selected && side.open} content={content} navigation={contentNavigation} onHide={()=>{content.setMaximized(null);setSessionSide(f.id,{open:false});}} onFocus={()=>sessionTabs.focus(f.id)} onAdd={()=>{
+                    contentNavigation.browse(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});
                   }} /> : undefined }))}
                   active={selected ?? ""}
                   seek={sessionTabs.picks}
@@ -4217,7 +4200,13 @@ export default function App() {
                   onNew={() => openNewTab()}
                   stripData={{ "data-session-tabs": "", "aria-label": gui.session_tabs }}
                   caption={stale ? gui.backend_unreachable : !side.open ? content.error : undefined}
-                  tail={<span ref={setVerbSeat} data-session-verbs className="flex flex-none items-center gap-in empty:hidden" />}
+                  tail={<>
+                    {side.open&&selectedRow&&<span data-session-content-actions className="flex flex-none items-center gap-in">
+                      <GlassCircle data-content-maximize aria-label={content.maximized===selectedRow.id?gui.content_restore:gui.content_expand} onClick={()=>content.setMaximized(content.maximized===selectedRow.id?null:selectedRow.id)}><IconPaneSize expanded={content.maximized===selectedRow.id}/></GlassCircle>
+                      <GlassCircle data-content-hide aria-label={gui.side_hide} onClick={()=>{content.setMaximized(null);setSessionSide(selectedRow.id,{open:false});}}><IconClose/></GlassCircle>
+                    </span>}
+                    <span ref={setVerbSeat} data-session-verbs className="flex flex-none items-center gap-in empty:hidden" />
+                  </>}
                 >
                   <div ref={sideRow} data-session-panes className={cn("flex min-h-0 min-w-0 flex-1 flex-row", sideHold !== null && "overflow-hidden")}>
                     <div ref={sideMain} data-side-held={sideHold !== null ? "" : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col" style={
@@ -4275,7 +4264,7 @@ export default function App() {
         onNewSession={()=>openNewTab()}
         visible={sessions && side.open && (narrow ? inSession : sideShown) && !hidden && morePage === null && !switchingTabs}
         onClose={() => { if (selected) { content.setMaximized(null); setSessionSide(selected, { open: false }); } }}
-        onReveal={(machine, path) => openContent("workspace", machine, path)} />
+        />
     </TooltipProvider>
     </FullScreenProvider>
     </HereHostsProvider>

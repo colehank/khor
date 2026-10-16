@@ -54,6 +54,6 @@ export function useContentNavigation(content: SessionContent) {
   const overview=(session:string)=>get(session).scene==='overview'?back(session):update(session,{scene:'overview',filter:''});
   const sessions=(session:string)=>{pendingResume.current.delete(session);write(session,s=>({...s,scene:'sessions',trail:[],from:'picker'}));};
   const inspect=(session:string)=>{pendingResume.current.delete(session);write(session,s=>({...s,scene:'overview',filter:'',trail:[{...place(s),scene:'sessions'}],from:'sessions'}));};
-  return {get,update,document,resume,browse,overview,back,sessions,inspect};
+  return {get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,resume,browse,overview,back,sessions,inspect};
 }
 export type ContentNavigation = ReturnType<typeof useContentNavigation>;

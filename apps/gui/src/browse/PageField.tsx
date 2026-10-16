@@ -119,6 +119,7 @@ export function PageField({
   devices,
   at,
   onGo,
+  onDraft,
   onMachine,
   fixed = false,
   steps = true,
@@ -136,6 +137,8 @@ export function PageField({
   at: string;
   /** Open this address through this machine. */
   onGo: (place: string, machine: DeviceRow) => void;
+  /** Preserve a draft without reading input events before the field handles them. */
+  onDraft?: (text: string) => void;
   /** Another machine chosen for the page that is open: it reloads the
       same address through it. A field with no page yet keeps the face to
       itself until Enter. */
@@ -175,6 +178,7 @@ export function PageField({
   const [editing, setEditing] = useState(false);
   /** What is in the field: a machine's name being typed, or an address. */
   const [text, setText] = useState(at);
+  const draft = (value: string) => { setText(value); onDraft?.(value); };
   /** The face was pressed: the list is the machines, the address stays. */
   const [switching, setSwitching] = useState(false);
   /** The address the face's removal put aside. */
@@ -322,7 +326,7 @@ export function PageField({
     }
     setToken(d);
     setSwitching(false);
-    setText(bare ? "" : kept);
+    draft(bare ? "" : kept);
     setKept("");
     setHi(-1);
     input.current?.focus();
@@ -456,7 +460,7 @@ export function PageField({
               });
             }}
             onChange={(e) => {
-              setText(e.target.value);
+              draft(e.target.value);
               setSwitching(false);
               setHi(-1);
             }}
@@ -484,7 +488,7 @@ export function PageField({
                 } else if (addressRows.length > 0) {
                   // Tab completes without opening, as a shell's does.
                   e.preventDefault();
-                  setText(addressRows[lit >= 0 ? lit : 0].place);
+                  draft(addressRows[lit >= 0 ? lit : 0].place);
                   setHi(-1);
                 }
               } else if (
@@ -516,7 +520,7 @@ export function PageField({
               onPointerDown={(e) => e.preventDefault()}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                setText("");
+                draft("");
                 setHi(-1);
                 input.current?.focus();
               }}

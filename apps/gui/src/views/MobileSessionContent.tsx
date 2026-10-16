@@ -1,11 +1,12 @@
 /** The mobile session's current content owns one bottom deck. The
  * terminal's measured deck room is retained behind the sheet. */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { fetchLs, forgetRecent, type DeviceRow, type SessionRow } from '@/api';
+import { fetchLs, searchIn, forgetRecent, type DeviceRow, type SessionRow } from '@/api';
 import { PageField } from '@/browse/PageField';
 import { NewTabPage } from '@/browse/NewTabPage';
 import { usePlaces } from '@/browse/use-places';
 import { PAGES } from '@/views/PagesKind';
+import { ContentScope } from '@/components/ContentScope';
 import { ContentTabsGlyph, TabSheetRows } from '@/components/SessionBar';
 import { SessionFace, fileKind, pageKind, workspaceKind } from '@/components/SessionFace';
 import { FileKindIcon } from '@/components/FileKindIcon';
@@ -68,22 +69,20 @@ function WorkspaceContext({root, device, history, make}: {root: string; device: 
     </DropdownMenu>
   </div>;
 }
-function BrowserPicker({session, device, devices, show, onOpen,face,content,navigation,onClose}: DeckOwner & {session: string; device: DeviceRow; devices: DeviceRow[]; show: boolean; onOpen: (device: DeviceRow,url: string) => void}) {
+function BrowserPicker({session, device, devices, show, onOpen,face,content,navigation,onClose,desktop=false}: DeckOwner & {desktop?:boolean;session: string; device: DeviceRow; devices: DeviceRow[]; show: boolean; onOpen: (device: DeviceRow,url: string) => void}) {
   const state=navigation.get(session),seed=state.address,exit=devices.find(d=>d.id===state.exit)||device;
   const setExit=(d:DeviceRow)=>navigation.update(session,{exit:d.id});
   const setSeed=(address:string)=>navigation.update(session,{address});
-  const written=useRef(seed);
-  useEffect(()=>{written.current=seed;},[seed]);
   const places=usePlaces(PAGES);
-  const open=(url: string,d: DeviceRow)=>{written.current=url;navigation.update(session,{address:url,exit:d.id});onOpen(d,url);};
-  return <div className="mobile-content-browser" hidden={!show}
-    onInputCapture={e=>{if(e.target instanceof HTMLInputElement&&e.target.matches('[data-page-address]'))written.current=e.target.value;}}
-    onBlurCapture={e=>{if(e.target instanceof HTMLInputElement&&e.target.matches('[data-page-address]'))setSeed(written.current);}}>
+  const open=(url: string,d: DeviceRow)=>{navigation.update(session,{address:url,exit:d.id});onOpen(d,url);};
+  return <div className="mobile-content-browser" hidden={!show}>
+    {desktop&&<div data-content-browser-field className="session-content-picker-bar"><ContentScope value={state.source} onChange={source=>navigation.update(session,{source})}/><PageField tab={'content-picker:'+session} machine={exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} steps={false} autoFocus={false} onMachine={setExit} onGo={open}/></div>}
     <div className="mobile-content-places"><NewTabPage kind={PAGES} places={places} devices={devices} narrow onOpen={(id,url)=>{const d=devices.find(d=>d.id===id);if(d)open(url,d);}} onForget={p=>quiet(forgetRecent('page',p.name,p.place).then(places.reload))}/></div>
-    <MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face}><PageField tab={'content-picker:'+session} machine={devices.find(d=>d.id===exit.id)||exit} devices={devices} at={seed} first={device.id} steps={false} autoFocus={false} inPill onMachine={setExit} onGo={open}/></ContentOwnerIdentity></MobileContentDeck>
+    {!desktop&&<MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face}><PageField tab={'content-picker:'+session} machine={devices.find(d=>d.id===exit.id)||exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} steps={false} autoFocus={false} inPill onMachine={setExit} onGo={open}/></ContentOwnerIdentity></MobileContentDeck>}
   </div>;
 }
-export function ContentPicker({row, devices, navigation, onOpen, face, content, onClose}: DeckOwner & {
+export function ContentPicker({row, devices, navigation, onOpen, face, content, onClose,desktop=false}: DeckOwner & {
+  desktop?:boolean;
   row: SessionRow; devices: DeviceRow[]; navigation: ContentNavigation;
   onOpen: (device: DeviceRow,path: string,view:'file'|'page',line?: number|null) => void;
 }) {
@@ -92,22 +91,25 @@ export function ContentPicker({row, devices, navigation, onOpen, face, content, 
   const root=state.scope?.root || sessionCwdOnScreen(row);
   const query=state.query,setQuery=(query:string)=>navigation.update(row.id,{query});
   const [make,setMake]=useState<{kind:'file'|'dir';at:number}>();
-  if(!device)return <div className="mobile-content-picker"><div className="session-content-unknown">{gui.content_machine_gone}</div><MobileContentDeck session={row.id} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face} title={gui.content_machine_gone}/></MobileContentDeck></div>;
+  if(!device)return <div className="mobile-content-picker"><div className="session-content-unknown">{gui.content_machine_gone}</div>{!desktop&&<MobileContentDeck session={row.id} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face} title={gui.content_machine_gone}/></MobileContentDeck>}</div>;
   const source=(source: ContentSource)=>navigation.update(row.id,{source});
   const enter = async () => {
     (document.activeElement as HTMLElement|null)?.blur();
-    const path=query.trim();
-    if (!path || root) return;
-    try { const ls=await fetchLs(device.name,path); navigation.update(row.id,{scope:{device:device.id,root:ls.path}});setQuery(''); }
-    catch { onOpen(device,path,'file'); }
+    const raw=query.trim();
+    if(!raw||(!desktop&&root))return;
+    if(desktop&&/^(https?:\/\/|localhost(?::|\/|$))/i.test(raw)){navigation.update(row.id,{source:'browser',address:raw});return;}
+    const absolute=/^(\/|[a-z]:[\\/])/i.test(raw);
+    const path=absolute||!root?raw:root.replace(/[\\/]$/,'')+'/'+raw;
+    try{const ls=await fetchLs(device.name,path);navigation.update(row.id,{scope:{device:device.id,root:ls.path}});setQuery('');}
+    catch{if(!root)onOpen(device,path,'file');else try{const found=await searchIn(device.name,root,raw);if(found.names.length===1)onOpen(device,found.names[0],'file');}catch{/* The search view reports its own failure. */}}
   };
-  return <div className="mobile-content-picker">
-    <div className="mobile-content-picker-head"><SegmentedControl label={gui.content_scope} value={state.source} options={[{key:'workspace',label:gui.workspaces_tab},{key:'browser',label:gui.browser_tab}]} onChange={source}/></div>
+  return <div className="mobile-content-picker" data-desktop-picker={desktop||undefined}>
+    {!desktop&&<div className="mobile-content-picker-head"><SegmentedControl label={gui.content_scope} value={state.source} options={[{key:'workspace',label:gui.workspaces_tab},{key:'browser',label:gui.browser_tab}]} onChange={source}/></div>}
     <div className="mobile-content-workspace" hidden={state.source!=='workspace'}>
-      {root?<SideWorkspace key={device.id+' '+root} machine={device.name} here={device.me} root={root} query={query} onQuery={setQuery} makeRequest={make} onSearchEnter={()=>void enter()} onOpenContent={(path,line)=>onOpen(device,path,'file',line)} treeHead={history=><WorkspaceContext root={root} device={device} history={history} make={kind=>{setQuery('');setMake({kind,at:Date.now()});}}/>}/>:<><SideFind label={gui.search_file} query={query} onQuery={setQuery} onEnter={()=>void enter()}/><div className="session-content-unknown">{gui.content_no_directory}</div></>}
+      {root?<SideWorkspace key={device.id+' '+root} machine={device.name} here={device.me} root={root} query={query} onQuery={setQuery} findLeading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} makeRequest={make} onSearchEnter={()=>void enter()} onOpenContent={(path,line)=>onOpen(device,path,'file',line)} treeHead={history=><WorkspaceContext root={root} device={device} history={history} make={kind=>{setQuery('');setMake({kind,at:Date.now()});}}/>}/>:<><SideFind label={gui.search_file} query={query} onQuery={setQuery} leading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} onEnter={()=>void enter()}/><div className="session-content-unknown">{gui.content_no_directory}</div></>}
     </div>
-    {state.source==='workspace'&&<MobileContentDeck session={row.id} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face}><Input data-content-search type="search" aria-label={gui.search_file} placeholder={gui.search_file} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void enter();}}/></ContentOwnerIdentity></MobileContentDeck>}
-    <BrowserPicker face={face} content={content} navigation={navigation} onClose={onClose} session={row.id} device={device} devices={devices} show={state.source==='browser'} onOpen={(d,url)=>onOpen(d,url,'page')}/>
+    {!desktop&&state.source==='workspace'&&<MobileContentDeck session={row.id} face={face} content={content} navigation={navigation} onClose={onClose}><ContentOwnerIdentity face={face}><Input data-content-search type="search" aria-label={gui.search_file} placeholder={gui.search_file} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void enter();}}/></ContentOwnerIdentity></MobileContentDeck>}
+    <BrowserPicker desktop={desktop} face={face} content={content} navigation={navigation} onClose={onClose} session={row.id} device={device} devices={devices} show={state.source==='browser'} onOpen={(d,url)=>onOpen(d,url,'page')}/>
   </div>;
 }
 

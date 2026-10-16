@@ -10,7 +10,8 @@ import {gui} from '@/gen/catalog';
 import type {ContentTab} from '@/hooks/use-session-content';
 import {ContentOwnerIdentity,ContentTabButton,type DeckOwner} from '@/views/MobileSessionContent';
 
-export function MobileContentPage({tab,handle,device,devices,face,content,navigation,onClose,onPoint,onKeep,children}: DeckOwner & {
+export function MobileContentPage({tab,handle,device,devices,face,content,navigation,onClose,onPoint,onKeep,children,desktop=false}: DeckOwner & {
+  desktop?:boolean;
   tab:ContentTab;handle:string;device:DeviceRow;devices:DeviceRow[];
   onPoint:(device:DeviceRow,path:string)=>void;onKeep:()=>void;children:(onBusy:(busy:boolean)=>void)=>ReactNode;
 }) {
@@ -22,7 +23,14 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
   return <div className="mobile-content-page">
     <div className="session-content-web">{children(setBusy)}</div>
     <div ref={setListSeat} className="mobile-content-page-list"/>
-    <div data-content-deck className="mobile-content-deck">
+    {desktop?<div data-content-page-bar className="session-content-page-bar">
+      <GlassCircle aria-label={gui.back} onClick={()=>{if(!navigation.back(tab.session))onClose();}}><IconBack/></GlassCircle>
+      <PageField tab={handle} machine={device} devices={devices} at={tab.url} first={device.id} onMachine={d=>onPoint(d,tab.url)} onGo={(url,d)=>onPoint(d,url)}/>
+      <DropdownMenu><DropdownMenuTrigger asChild><GlassCircle data-content-page-more aria-label={gui.rail_more}><IconMore/></GlassCircle></DropdownMenuTrigger><DropdownMenuContent className="[&_svg]:size-nav-glyph" align="end">
+        {content.isPreview(tab)&&<DropdownMenuItem onSelect={onKeep}>{gui.content_keep}</DropdownMenuItem>}
+        <DropdownMenuItem onSelect={browse}>{gui.content_find}</DropdownMenuItem>
+      </DropdownMenuContent></DropdownMenu>
+    </div>:<div data-content-deck className="mobile-content-deck">
       <GlassCircle aria-label={gui.back} onClick={()=>{if(!navigation.back(tab.session))onClose();}}><IconBack/></GlassCircle>
       <div className="glass mobile-content-pill">
         {editing?<div className="mobile-content-page-editor"><ContentOwnerIdentity face={face}/><PageField tab={handle} machine={device} devices={devices} at={tab.url} first={device.id} steps={false} autoFocus inPill listSeat={listSeat} onLeave={()=>setEditing(false)} onMachine={d=>onPoint(d,tab.url)} onGo={(url,d)=>{onPoint(d,url);setEditing(false);}}/></div>:<>
@@ -31,13 +39,13 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
           <GlassItem aria-label={gui.page_reload} aria-busy={busy} onClick={()=>step('reload')}><IconReload/></GlassItem>
         </>}
       </div>
-      <DropdownMenu><DropdownMenuTrigger asChild><GlassCircle data-content-page-more aria-label={gui.rail_more}><IconMore/></GlassCircle></DropdownMenuTrigger><DropdownMenuContent side="top" align="end">
+      <DropdownMenu><DropdownMenuTrigger asChild><GlassCircle data-content-page-more aria-label={gui.rail_more}><IconMore/></GlassCircle></DropdownMenuTrigger><DropdownMenuContent className="[&_svg]:size-nav-glyph" side="top" align="end">
         {content.isPreview(tab)&&<DropdownMenuItem onSelect={onKeep}>{gui.content_keep}</DropdownMenuItem>}
         <DropdownMenuItem disabled={steps?.back===false} onSelect={()=>step('back')}><IconBack/>{gui.page_back}</DropdownMenuItem>
         <DropdownMenuItem disabled={steps?.forward===false} onSelect={()=>step('forward')}><IconForward/>{gui.page_forward}</DropdownMenuItem>
         <DropdownMenuSeparator/><DropdownMenuItem onSelect={browse}>{gui.content_find}</DropdownMenuItem>
       </DropdownMenuContent></DropdownMenu>
       <ContentTabButton session={tab.session} content={content} navigation={navigation}/>
-    </div>
+    </div>}
   </div>;
 }
