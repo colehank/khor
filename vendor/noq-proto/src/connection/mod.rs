@@ -1513,6 +1513,15 @@ impl Connection {
                     // We always send a loss probe or space-specific frames if the path is
                     // not abandoned.
                     true
+                } else if space_id == SpaceId::Data
+                    && self.acks_on_own_path(path_id)
+                    && self.spaces[space_id]
+                        .for_path(path_id)
+                        .pending_acks
+                        .can_send()
+                {
+                    // khor patch 4: a path's own ACKs go on it, best path or not.
+                    true
                 } else {
                     // Anything else we only send if we're the best path for SpaceKind::Data
                     // frames.
@@ -2230,6 +2239,13 @@ impl Connection {
                 packet_size.saturating_sub(self.predict_1rtt_overhead(pn, path_id));
             // khor patch 2: a 0-RTT packet (no 1-RTT keys yet) cannot carry OBSERVED_ADDRESS.
             can_send |= self.can_send_1rtt(path_id, frame_space_1rtt, !space_has_crypto);
+            // khor patch 4: only the ACKs this path would carry.
+            can_send.acks = self.spaces[space_id]
+                .number_spaces
+                .iter()
+                .any(|(&acked, pns)| {
+                    pns.pending_acks.can_send() && self.acks_go_on(acked, path_id, true)
+                });
         }
 
         can_send.close = connection_close_pending && space_has_crypto;
@@ -2960,6 +2976,9 @@ impl Connection {
         if ack.largest >= self.spaces[space].for_path(path).next_packet_number {
             return Err(TransportError::PROTOCOL_VIOLATION("unsent packet acked"));
         }
+        // khor patch 5: whether the largest acknowledged packet is newly acknowledged, so that
+        // `largest_acked_packet_send_time` is its send time.
+        let mut largest_newly_acked = false;
         // `Some(pn)` if this ACK raised `largest_acked_packet_pn`.
         let new_largest_pn = {
             let space = &mut self.spaces[space].for_path(path);
@@ -2973,6 +2992,7 @@ impl Connection {
                     // haven't sent. At worst, that will result in us spuriously reducing the
                     // congestion window.
                     space.largest_acked_packet_send_time = info.time_sent;
+                    largest_newly_acked = true;
                 }
                 Some(ack.largest)
             } else {
@@ -3045,7 +3065,11 @@ impl Connection {
             .congestion
             .on_end_acks(now, in_flight, app_limited, largest_ackd);
 
-        if new_largest_pn.is_some() && ack_eliciting_acked {
+        // khor patch 5 (vendor/noq-proto/KHOR.md): an RTT sample only when the largest
+        // acknowledged is newly acknowledged (RFC 9002 §5.1).  When it was not among the sent
+        // packets, the send time below was an older packet's: samples of 4.7 s and 17.6 s on
+        // a 1 ms path (2026-10-17, netlab p1/p2), which moved the selection off a good path.
+        if new_largest_pn.is_some() && largest_newly_acked && ack_eliciting_acked {
             let ack_delay = if space != SpaceId::Data {
                 Duration::from_micros(0)
             } else {
@@ -6098,6 +6122,16 @@ impl Connection {
         let is_multipath_negotiated = self.is_multipath_negotiated();
         let space_has_keys = self.crypto_state.has_keys(space_id.encryption_level());
         let is_0rtt = space_id == SpaceId::Data && !space_has_keys;
+        // khor patch 4: the paths whose ACKs this packet may carry.
+        let ack_paths: Vec<PathId> = self.spaces[space_id]
+            .number_spaces
+            .keys()
+            .copied()
+            .filter(|&acked| {
+                space_id != SpaceId::Data
+                    || self.acks_go_on(acked, path_id, scheduling_info.may_send_data)
+            })
+            .collect();
         let stats = &mut self.path_stats.get_mut(path_id).frame_tx;
         let space = &mut self.spaces[space_id];
         let path = &mut self.paths.get_mut(&path_id).expect("known path").data;
@@ -6135,11 +6169,18 @@ impl Connection {
         }
 
         // ACK
-        if !scheduling_info.is_abandoned && scheduling_info.may_send_data {
+        //
+        // khor patch 4: a path that can carry its own ACKs carries them, best path for data
+        // or not, and no other path does; the best path carries the rest.
+        if !scheduling_info.is_abandoned
+            && (scheduling_info.may_send_data || space_id == SpaceId::Data)
+        {
             for path_id in space
                 .number_spaces
                 .iter_mut()
-                .filter(|(_, pns)| pns.pending_acks.can_send())
+                .filter(|(path_id, pns)| {
+                    pns.pending_acks.can_send() && ack_paths.contains(*path_id)
+                })
                 .map(|(&path_id, _)| path_id)
                 .collect::<Vec<_>>()
             {
@@ -7076,6 +7117,31 @@ impl Connection {
         new_tokens.clear();
         for _ in 0..server_config.validation_token.sent {
             new_tokens.push(network_path);
+        }
+    }
+
+    /// khor patch 4 (vendor/noq-proto/KHOR.md): whether `path_id`'s own ACKs go on it.
+    ///
+    /// Upstream sends every PATH_ACK on the best path for data, so the ACKs of a backup
+    /// path come back on another path: a backup whose return direction is dead still looks
+    /// answered, and when the best path dies every other path looks dead with it (their
+    /// ACKs ride the dead one), with RTT samples that are the other path's too. A path
+    /// that can send carries its own; one that cannot (abandoned, not validated, no CIDs)
+    /// still has its ACKs carried by the best path.
+    fn acks_on_own_path(&self, path_id: PathId) -> bool {
+        self.is_multipath_negotiated()
+            && !self.abandoned_paths.contains(&path_id)
+            && self.remote_cids.contains_key(&path_id)
+            && self.paths.get(&path_id).is_some_and(|p| p.data.validated)
+    }
+
+    /// khor patch 4: whether a Data packet on `on` writes the ACKs of `acked`'s packet number
+    /// space. `may_send_data`: whether `on` is the best path for data.
+    fn acks_go_on(&self, acked: PathId, on: PathId, may_send_data: bool) -> bool {
+        if self.acks_on_own_path(acked) {
+            acked == on
+        } else {
+            may_send_data
         }
     }
 
