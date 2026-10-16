@@ -108,16 +108,21 @@ export function ContentPicker({row, devices, navigation, onOpen}: {
   </div>;
 }
 
-export function ContentDocumentNavigation({tab, machine, temporary, onBrowse, onKeep, onOpen}: {tab: ContentTab; machine: string; temporary: boolean; onBrowse: () => void; onKeep: () => void; onOpen: (path:string) => void}) {
+export function useContentNeighbors(tab:ContentTab,machine:string,enabled=true) {
   const [near,setNear]=useState<{key:string;files:string[]}>({key:'',files:[]});
   const key=tab.device+' '+tab.url;
   useEffect(()=>{
-    let live=true;if(contentView(tab)!=='file')return;
+    let live=true;if(!enabled||contentView(tab)!=='file')return;
     const dir=directoryOf(tab.url),sep=dir.endsWith('/')||dir.endsWith('\\')?'':dir.includes('\\')?'\\':'/';
     fetchLs(machine,dir).then(ls=>{if(live)setNear({key,files:ls.entries.filter(e=>!e.dir).map(e=>dir+sep+e.name)});},()=>{if(live)setNear({key,files:[]});});
     return()=>{live=false;};
-  },[key,machine]);
+  },[key,machine,enabled]);
   const files=near.key===key?near.files:[],at=files.indexOf(tab.url);
+  return {files,at};
+}
+
+export function ContentDocumentNavigation({tab, machine, temporary, onBrowse, onKeep, onOpen}: {tab: ContentTab; machine: string; temporary: boolean; onBrowse: () => void; onKeep: () => void; onOpen: (path:string) => void}) {
+  const {files,at}=useContentNeighbors(tab,machine);
   return <div className="mobile-content-document-head">
     <Button variant="ghost" size="sm" className="min-h-touch" aria-label={gui.content_return} onClick={onBrowse}><IconBack/>{contentView(tab)==='page'?gui.browser_tab:gui.workspaces_tab}</Button>
     <div className="mobile-content-document-actions">{contentView(tab)==='file'&&<div className="mobile-content-neighbors">
@@ -148,14 +153,14 @@ export function ContentOverview({session, row, devices, content, navigation, onP
 /** In-place sibling of the deck; no Dialog focus trap can steal the pill.
  * Native WebViews are bounded to the content body above these DOM controls. */
 export function MobileContentSheet({children,onClose}: {children: ReactNode;onClose:()=>void}) {
-  const [el,setEl]=useState<HTMLDivElement|null>(null),[detent,setDetent]=useState<PlaceDetent>('half');
+  const [el,setEl]=useState<HTMLDivElement|null>(null),[handle,setHandle]=useState<HTMLElement|null>(null),[detent,setDetent]=useState<PlaceDetent>('half');
   const overlay=useRef<HTMLDivElement>(null);
   const screen=()=>overlay.current?.closest<HTMLElement>('[data-session-screen]');
   const bounds=()=>{const host=screen(),deck=host?.querySelector<HTMLElement>('[data-session-deck]');return {height:host?.clientHeight??window.innerHeight,foot:host&&deck?host.getBoundingClientRect().bottom-deck.getBoundingClientRect().top:0};};
-  useDetents(el,setDetent,onClose,bounds);
+  useDetents(el,setDetent,onClose,bounds,handle);
   useLayoutEffect(()=>{
     const host=screen(),deck=host?.querySelector<HTMLElement>('[data-session-deck]');if(!host||!deck||!overlay.current)return;
-    const read=()=>{const box=bounds();overlay.current?.style.setProperty('--mobile-content-height',box.height+'px');overlay.current?.style.setProperty('--mobile-content-foot',box.foot+'px');};
+    const read=()=>{setHandle(deck.querySelector<HTMLElement>('.mobile-content-group'));const box=bounds();overlay.current?.style.setProperty('--mobile-content-height',box.height+'px');overlay.current?.style.setProperty('--mobile-content-foot',box.foot+'px');};
     const observer=new ResizeObserver(read);observer.observe(host);observer.observe(deck);read();return()=>observer.disconnect();
   },[]);
   useEffect(()=>{const back=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!document.querySelector('[role="dialog"], [role="menu"], [data-radix-popper-content-wrapper]')){e.preventDefault();onClose();}};document.addEventListener('keydown',back);return()=>document.removeEventListener('keydown',back);},[onClose]);

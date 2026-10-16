@@ -77,7 +77,7 @@ const AWAY = 0.55;
  * back first. At the full detent a move up is the page's scroll. A
  * slider or anything marked `data-sheet-hold` keeps its touches.
  */
-export function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => void, onClose: () => void, bounds?: () => { height: number; foot: number }) {
+export function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => void, onClose: () => void, bounds?: () => { height: number; foot: number }, handle?: HTMLElement | null) {
   // Read through a ref: the shell hands a fresh `onOpenChange` on every
   // render (a poll lands every two seconds), and re-binding the listeners
   // mid-drag would drop the pull under the finger.
@@ -95,6 +95,7 @@ export function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent)
     let speed = 0;
     let lastY = 0;
     let lastT = 0;
+    let pointer: number | null = null;
     const scrolled = (t: Element | null) => {
       for (let n = t; n && n !== el; n = n.parentElement) {
         if (n instanceof HTMLElement && n.scrollTop > 0) return true;
@@ -105,31 +106,34 @@ export function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent)
       pulling = true;
       el.setAttribute("data-sheet-pulling", "");
     };
-    const down = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      const t = e.target instanceof Element ? e.target : null;
-      const band = !!t?.closest("[data-place-grab]");
-      // Content editors keep their own selection and scroll gestures.
-      if (told.current.bounds && !band) return;
-      if (!band && (t?.closest('[data-sheet-hold], input[type="range"]') || scrolled(t))) return;
+    const begin = (x: number, y: number, time: number, band: boolean) => {
       el.removeAttribute("data-sheet-dragged");
-      from = e.touches[0].clientY;
-      fromX = e.touches[0].clientX;
+      from = y;
+      fromX = x;
       fromH = el.getBoundingClientRect().height;
       live = fromH;
       lastY = from;
-      lastT = e.timeStamp;
+      lastT = time;
       speed = 0;
       pulling = false;
       if (band) grip();
     };
-    const move = (e: TouchEvent) => {
+    const down = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      el.removeAttribute("data-sheet-dragged");
+      const t = e.target instanceof Element ? e.target : null;
+      const band = !!t?.closest("[data-place-grab]") || !!(t && handle?.contains(t));
+      // Content editors keep their own selection and scroll gestures.
+      if (told.current.bounds && !band) return;
+      if (!band && (t?.closest('[data-sheet-hold], input[type="range"]') || scrolled(t))) return;
+      begin(e.touches[0].clientX,e.touches[0].clientY,e.timeStamp,band);
+    };
+    const drag = (x: number, y: number, time: number, prevent: () => void) => {
       if (from === null) return;
-      const y = e.touches[0].clientY;
       const dy = y - from;
       if (Math.abs(dy) > 6) el.setAttribute("data-sheet-dragged", "");
       if (!pulling) {
-        const dx = Math.abs(e.touches[0].clientX - fromX);
+        const dx = Math.abs(x - fromX);
         if (Math.max(Math.abs(dy), dx) < 6) return;
         if (Math.abs(dy) <= dx || (dy < 0 && el.getAttribute("data-detent") === "full")) {
           from = null;
@@ -137,16 +141,16 @@ export function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent)
         }
         grip();
       }
-      e.preventDefault();
+      prevent();
       const box = told.current.bounds?.() ?? { height: window.innerHeight, foot: 0 };
       live = Math.max(0, Math.min(fromH - dy, share("full") * box.height - box.foot));
       el.style.height = `${live}px`;
-      const dt = e.timeStamp - lastT;
+      const dt = time - lastT;
       if (dt > 0) speed = (y - lastY) / dt;
       lastY = y;
-      lastT = e.timeStamp;
+      lastT = time;
     };
-    const up = (e: TouchEvent) => {
+    const release = (time: number) => {
       if (from === null) return;
       from = null;
       if (!pulling) return;
@@ -156,7 +160,7 @@ export function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent)
       const box = told.current.bounds?.() ?? { height: window.innerHeight, foot: 0 };
       const half = share("half") * box.height - box.foot;
       const full = share("full") * box.height - box.foot;
-      if (e.timeStamp - lastT > THROW_MS) speed = 0;
+      if (time - lastT > THROW_MS) speed = 0;
       // A throw goes one detent its way: up to full, down to half from
       // above it, away from half or under; a placement takes the nearer.
       if (live < half * AWAY || (speed > THROW && live <= half)) return close();
@@ -165,22 +169,63 @@ export function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent)
       detent(live > (half + full) / 2 ? "full" : "half");
     };
     const cancel = () => { from = null; pulling = false; el.removeAttribute("data-sheet-pulling"); el.style.removeProperty("height"); };
-    el.addEventListener("touchstart", down, { passive: true });
-    el.addEventListener("touchmove", move, { passive: false });
-    el.addEventListener("touchend", up);
-    el.addEventListener("touchcancel", cancel);
+    const move = (e: TouchEvent) => {
+      if(e.touches.length!==1)return cancel();
+      drag(e.touches[0].clientX,e.touches[0].clientY,e.timeStamp,()=>e.preventDefault());
+    };
+    const up = (e: TouchEvent) => release(e.timeStamp);
+    const pointerDown = (e: PointerEvent) => {
+      if(e.pointerType==='touch'||e.button!==0)return;
+      el.removeAttribute('data-sheet-dragged');
+      const target=e.target instanceof Element?e.target:null;
+      if(!target?.closest('[data-place-grab]') && !(target&&handle?.contains(target)))return;
+      e.preventDefault();begin(e.clientX,e.clientY,e.timeStamp,true);
+      pointer=e.pointerId;
+    };
+    const pointerMove = (e: PointerEvent) => {
+      if(e.pointerId!==pointer||from===null)return;
+      // Capture only after a real pull, so a stationary press remains a
+      // click on the pill's original button rather than on the sheet.
+      if(Math.abs(e.clientY-from)>6&&!el.hasPointerCapture(e.pointerId))el.setPointerCapture(e.pointerId);
+      drag(e.clientX,e.clientY,e.timeStamp,()=>e.preventDefault());
+    };
+    const pointerUp = (e: PointerEvent) => {if(e.pointerId!==pointer)return;pointer=null;release(e.timeStamp);};
+    const pointerCancel = (e: PointerEvent) => {if(e.pointerId!==pointer)return;pointer=null;cancel();};
+    // A pull from the bottom pill is not a click on its child control.
+    const click = (e: MouseEvent) => {if(e.detail>0&&el.hasAttribute('data-sheet-dragged')){el.removeAttribute('data-sheet-dragged');e.preventDefault();e.stopImmediatePropagation();}};
+    const surfaces = handle ? [el,handle] : [el];
+    for(const surface of surfaces){
+      surface.addEventListener('touchstart',down,{passive:true});
+      surface.addEventListener('touchmove',move,{passive:false});
+      surface.addEventListener('touchend',up);
+      surface.addEventListener('touchcancel',cancel);
+      surface.addEventListener('pointerdown',pointerDown);
+      surface.addEventListener('click',click,true);
+    }
+    window.addEventListener('pointermove',pointerMove);
+    window.addEventListener('pointerup',pointerUp);
+    window.addEventListener('pointercancel',pointerCancel);
+    el.addEventListener('lostpointercapture',pointerCancel);
     window.addEventListener("blur", cancel);
     document.addEventListener("visibilitychange", cancel);
     return () => {
-      el.removeEventListener("touchstart", down);
-      el.removeEventListener("touchmove", move);
-      el.removeEventListener("touchend", up);
-      el.removeEventListener("touchcancel", cancel);
+      for(const surface of surfaces){
+        surface.removeEventListener('touchstart',down);
+        surface.removeEventListener('touchmove',move);
+        surface.removeEventListener('touchend',up);
+        surface.removeEventListener('touchcancel',cancel);
+        surface.removeEventListener('pointerdown',pointerDown);
+        surface.removeEventListener('click',click,true);
+      }
+      window.removeEventListener('pointermove',pointerMove);
+      window.removeEventListener('pointerup',pointerUp);
+      window.removeEventListener('pointercancel',pointerCancel);
+      el.removeEventListener('lostpointercapture',pointerCancel);
       window.removeEventListener("blur", cancel);
       document.removeEventListener("visibilitychange", cancel);
       cancel();
     };
-  }, [el]);
+  }, [el,handle]);
 }
 
 export function SessionPlaceSheet({

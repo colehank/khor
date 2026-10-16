@@ -1,6 +1,6 @@
 /** Desktop session content. The session's terminal stays in its own pane;
  * these are its files and pages, using the same node tab handles throughout. */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { fetchLs, recentVisit, searchIn, type DeviceRow, type SessionRow } from "@/api";
 import { MidName } from "@/browse/TabStrip";
@@ -29,7 +29,7 @@ import "@/styles/session-content.css";
 import { contentView, contentName } from '@/lib/content';
 export { contentView, contentName } from '@/lib/content';
 import type { ContentNavigation } from '@/hooks/use-content-navigation';
-import { ContentPicker, ContentOverview, ContentDocumentNavigation, contentContext } from '@/views/MobileSessionContent';
+import { ContentPicker, ContentOverview, ContentDocumentNavigation, useContentNeighbors } from '@/views/MobileSessionContent';
 const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
 const glyph = (tab: ContentTab) => contentView(tab) === "workspace" ? <IconFiles /> : contentView(tab) === "page" ? <IconBrowser /> : <FileKindIcon name={tab.url} />;
 
@@ -132,6 +132,21 @@ function Workspace({ tab, device, devices, content, show, cwd }: { tab: ContentT
   </div>;
 }
 
+/** The phone uses the workspace file page's actual deck. Session-only
+ * actions live in its existing menu, leaving the file's navigation,
+ * source/preview, saving and folding in one implementation. */
+function SessionContentFile({tab,mobile,temporary,onKeep,onOpen,...props}: ComponentProps<typeof FilePage> & {
+  tab:ContentTab; mobile:boolean; temporary:boolean; onKeep:()=>void; onOpen:(path:string)=>void;
+}) {
+  const {files,at}=useContentNeighbors(tab,props.machine,mobile);
+  const acts=mobile ? [
+    ...(temporary?[{key:'content-keep',label:gui.content_keep,run:onKeep}]:[]),
+    ...(at>0?[{key:'content-previous',label:gui.content_previous,run:()=>onOpen(files[at-1])}]:[]),
+    ...(at>=0&&at<files.length-1?[{key:'content-next',label:gui.content_next,run:()=>onOpen(files[at+1])}]:[]),
+  ]:undefined;
+  return <FilePage {...props} embedded={!mobile} moreActs={acts}/>;
+}
+
 export function SessionContentPane({ container, content, session, devices, rows, visible, onClose, onReveal, mobile = false, navigation }: {
   container: HTMLElement; content: SessionContent; session: string | null;
   devices: DeviceRow[]; rows: SessionRow[]; visible: boolean; mobile?: boolean;
@@ -203,8 +218,8 @@ export function SessionContentPane({ container, content, session, devices, rows,
       };
       return <section key={key} data-session-content={tab.id} data-content-handle={key} data-content-visible={show} data-content-preview={temporary || undefined} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}>
         {!device ? <div className="session-content-unknown">{gui.content_machine_gone}</div> : <>
-          {(mobile || temporary) && <ContentDocumentNavigation tab={tab} machine={device.name} temporary={temporary} onBrowse={mobile ? browse : () => onReveal(device.name, directoryOf(tab.url))} onKeep={() => quiet(content.keep(tab.id))} onOpen={path => preview(tab.session,device,path,'file')}/>}
-          {contentView(tab) === 'file' ? (show || visited.current.has(key)) && <FilePage embedded embeddedContext={mobile ? contentContext(tab,row,devices) : undefined} machine={device.name} path={tab.url} here={device.me} git draft={drafts[key]} onDraft={draft => {
+          {((mobile && contentView(tab)!=='file') || (!mobile && temporary)) && <ContentDocumentNavigation tab={tab} machine={device.name} temporary={temporary} onBrowse={mobile ? browse : () => onReveal(device.name, directoryOf(tab.url))} onKeep={() => quiet(content.keep(tab.id))} onOpen={path => preview(tab.session,device,path,'file')}/>}
+          {contentView(tab) === 'file' ? (show || visited.current.has(key)) && <SessionContentFile tab={tab} mobile={mobile} temporary={temporary} onKeep={()=>quiet(content.keep(tab.id))} onOpen={path=>preview(tab.session,device,path,'file')} machine={device.name} path={tab.url} here={device.me} git draft={drafts[key]} onDraft={draft => {
             setDrafts(all => all[key] === (draft || undefined) ? all : { ...all, [key]: draft || undefined });
             if (draft && temporary) quiet(content.keep(tab.id));
           }} goLine={content.lines[key] || content.lines[tab.id]} onBack={mobile ? browse : () => onReveal(device.name, directoryOf(tab.url))} onGone={() => quiet(content.close(tab.id))} onMoved={(_from,to) => point(tab,device,to)} /> : contentView(tab) === 'page' ? show && <>
