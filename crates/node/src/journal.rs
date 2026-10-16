@@ -710,6 +710,7 @@ pub(crate) fn watch_ears(
                 }
                 got = rounds.recv() => match got {
                     Ok(round) => {
+                        wires.counts.punch_rounds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         let peer = round.remote.to_string();
                         if let Some(w) = punching.saw(round, std::time::Instant::now()) {
                             wires.note(Some(&peer), w);

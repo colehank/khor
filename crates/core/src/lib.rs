@@ -496,6 +496,11 @@ pub struct WireCounts {
     /// idle ones since. Tail field.
     #[serde(default)]
     pub read_down: u64,
+    /// Rounds of hole punching iroh started from this side, toward every
+    /// machine (vendor/iroh patch 8): the journal writes a round only when
+    /// its candidates change, so this is the count. Tail field.
+    #[serde(default)]
+    pub punch_rounds: u64,
 }
 
 /// **This machine's connections, as a page shows them** (round NET-2,

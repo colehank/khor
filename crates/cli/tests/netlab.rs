@@ -25,6 +25,8 @@ mod hop;
 mod lab;
 #[path = "netlab/nat.rs"]
 mod nat;
+#[path = "netlab/paths.rs"]
+mod paths;
 #[path = "netlab/relay.rs"]
 mod relay;
 #[path = "netlab/uplink.rs"]

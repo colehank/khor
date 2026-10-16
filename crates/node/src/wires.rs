@@ -380,6 +380,7 @@ pub(crate) struct Counts {
     pub(crate) network_changes: AtomicU64,
     pub(crate) ops_late: AtomicU64,
     pub(crate) pump_rounds: AtomicU64,
+    pub(crate) punch_rounds: AtomicU64,
 }
 
 impl Counts {
@@ -404,6 +405,7 @@ impl Counts {
             received_bytes: 0,
             rounds: self.pump_rounds.load(Relaxed),
             read_down: self.read_down.load(Relaxed),
+            punch_rounds: self.punch_rounds.load(Relaxed),
         }
     }
 

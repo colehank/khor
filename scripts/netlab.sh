@@ -66,9 +66,11 @@ cd "$SRC"
 # khor-web's build wants the face's index.html; the lab never serves the
 # face, so a scratch copy without one gets a placeholder (the rsync
 # above leaves apps/gui/dist alone).
-if [ ! -f apps/gui/dist/index.html ]; then
-    mkdir -p apps/gui/dist
-    echo '<!doctype html><title>netlab: no face</title>' >apps/gui/dist/index.html
+# It names an index script (crates/web/build.rs reads the receipt off it).
+if [ ! -f apps/gui/dist/index.html ] || ! grep -q '/assets/index-' apps/gui/dist/index.html; then
+    mkdir -p apps/gui/dist/assets
+    echo '// netlab: no face' >apps/gui/dist/assets/index-netlab.js
+    echo '<!doctype html><title>netlab: no face</title><script type="module" src="/assets/index-netlab.js"></script>' >apps/gui/dist/index.html
 fi
 echo "netlab: building on $(hostname) (target $CARGO_TARGET_DIR)"
 nice -n 10 cargo test -p khor-cli --test netlab --no-run 2>&1 | grep -E '^(error|warning: unused)|Finished' || true
