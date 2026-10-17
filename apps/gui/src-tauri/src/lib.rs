@@ -150,6 +150,12 @@ fn tabs_pin(kind: String, id: String, on: bool) -> Result<khor_gui_core::tabs::T
     khor_gui_core::tabs::pin(&Node::root_from_env(), &kind, &id, on)
 }
 
+/// Moves only the requested identifiers within this session's live column.
+#[tauri::command]
+fn tabs_reorder(kind: String, session: String, ids: Vec<String>) -> Result<khor_gui_core::tabs::TabsOpen, String> {
+    khor_gui_core::tabs::reorder(&Node::root_from_env(), &kind, &session, &ids)
+}
+
 /// The whole column at once — the one gesture that cannot be spelled as
 /// a close and an open: a drag that reorders.
 #[tauri::command]
@@ -4975,9 +4981,11 @@ pub fn run() {
                     // row's centre, and tao's `drawRect:` inset never ran
                     // to fix it. Queued, so AppKit's own layout is done
                     // first; the same move a theme change makes.
-                    #[cfg(target_os = "macos")]
                     tauri::WindowEvent::Resized(_) => {
+                        window_surface::sync_frame(window.app_handle(), false);
+                        #[cfg(target_os = "macos")]
                         let handle = window.app_handle().clone();
+                        #[cfg(target_os = "macos")]
                         let _ = window.app_handle().run_on_main_thread(move || {
                             if let Some(w) = handle.get_window("main")
                                 && let Ok(win) = w.ns_window()
@@ -5015,6 +5023,7 @@ pub fn run() {
             tabs_focus,
             tabs_close,
             tabs_pin,
+            tabs_reorder,
             tabs_save,
             sessions,
             widen,

@@ -391,6 +391,9 @@ export const pinTab = (kind: string, id: string, on: boolean) =>
 /** The whole column at once — the one gesture that cannot be spelled as
     a close and an open: a drag that reorders. Ids are still the node's
     to mint, and a row carrying one it never minted is refused. */
+/** Reorder a session's known ids without overwriting live rows or focus. */
+export const reorderTabs = (kind: string, session: string, ids: string[]) =>
+  call<TabsOpen>("tabs_reorder", {kind,session,ids});
 export const saveTabs = (kind: string, open: TabsOpen) =>
   call<TabsOpen>("tabs_save", { kind, open });
 

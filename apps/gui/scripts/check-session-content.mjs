@@ -54,7 +54,7 @@ try{ checks:{
   // The LAN HTTP face has no secure-context randomUUID API.
   await context.addInitScript(()=>Object.defineProperty(globalThis.crypto,'randomUUID',{configurable:true,value:undefined}));
   await context.addInitScript(ids=>{
-    localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:ids,active:ids[0]}));localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'detail'}));localStorage.setItem('khor.lang','zh');
+    if(!localStorage.getItem('khor.sessions.tabs'))localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:ids,active:ids[0]}));localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'detail'}));localStorage.setItem('khor.lang','zh');
   },sessions);
   page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGEERROR',e.message);});
   const url=`http://localhost:${port}/?bridge=${bridgePort}`;
@@ -71,9 +71,22 @@ try{ checks:{
   const cli=(...args)=>execFileSync(join(scratch,'khor'),args,{env,encoding:'utf8',timeout:15000}).trim();
   await head(sessions[0]).waitFor();
   assert.equal(await page.locator('[data-session-tabs] [data-tab-new]').count(),1,'outer + missing');
+  const dragTab=async(from,to)=>{
+    const a=await from.boundingBox(),b=await to.boundingBox();assert(a&&b,'drag slots missing');
+    await page.mouse.move(a.x+a.width*.4,a.y+a.height/2);await page.mouse.down();
+    await page.mouse.move(b.x+b.width*(b.x > a.x ? .8 : .2),b.y+b.height/2,{steps:18});await page.mouse.up();
+  };
+  const outerOrder=()=>page.locator('[data-session-tabs] [data-tab]').evaluateAll(els=>els.map(el=>el.dataset.tab));
+  await dragTab(head(sessions[1]),head(sessions[0]));
+  await until(async()=>JSON.stringify(await outerOrder())===JSON.stringify([...sessions].reverse()));
+  assert.equal(await page.locator('[data-tab-group][data-on=true]').getAttribute('data-tab'),sessions[0],'session reorder changed focus');
+  await page.reload();await head(sessions[0]).waitFor();assert.deepEqual(await outerOrder(),[...sessions].reverse(),'session order did not survive reload');
+  await dragTab(head(sessions[1]),head(sessions[0]));await until(async()=>JSON.stringify(await outerOrder())===JSON.stringify(sessions));
+
   await head(sessions[0]).click();
   await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
-  assert.equal(await side(sessions[0]).count(),0,'focusing tabs opened the content pane');
+  await side(sessions[0]).waitFor();
+  assert.equal(await page.locator('[data-session-tabs] [data-tab-new]').count(),0,'focused group still shows the outer session +');
   await desktopAdd().click();await side(sessions[0]).waitFor();
   await desktopPicker().locator('[data-file-tree]').waitFor();
   assert.equal((await table()).tabs.length,0,'opening the desktop picker created a persistent empty tab');
@@ -128,6 +141,11 @@ try{ checks:{
   await desktopPicker().getByText('notes.md',{exact:true}).click();await shown().locator('.cm-content').waitFor();
   await until(async()=>(await table()).tabs.length===1);
   assert.equal((await table()).tabs[0].url,join(projects[0],'notes.md'),'opening the file did not persist it immediately');
+  const sessionPaint=await page.locator('[data-tab-group][data-on=true]').evaluate(el=>({group:getComputedStyle(el).backgroundColor,head:getComputedStyle(el.querySelector('[data-tab-head]')).backgroundColor,chosen:getComputedStyle(el.querySelector('[data-tab-head]')).getPropertyValue('--glass-sel').trim()}));
+  assert.equal(sessionPaint.group,'rgba(0, 0, 0, 0)','expanded group stacks another glass fill');
+  assert.notEqual(sessionPaint.head,'rgba(0, 0, 0, 0)','session lost its original selected glass');
+  assert.equal(await page.locator('[data-content-on=true]').count(),1,'side selection disappeared');
+
   assert.equal(await shown().locator('[data-file-embedded-tools]').count(),0,'desktop content added an alternate file toolbar');await shown().locator('[data-file-deck]').waitFor();
   const stable=await shown().getAttribute('data-content-handle');
   await shown().locator('.cm-content').evaluate(el=>window.__desktopContentEditor=el);
@@ -152,6 +170,25 @@ try{ checks:{
   await until(()=>readFileSync(join(projects[0],'only-0.txt'),'utf8').includes('Saved from desktop content'));
   await until(async()=>(await table()).tabs.length===2);
   console.log('PASS: aligned source seats and menu icons; iconless browser draft; no persistent empty tabs; real file deck; immediate durable opens and duplicate activation; autosave, return query and session resume');
+  const notesPreview=()=>page.locator(`[data-content-handle="${stable}"] [data-file-preview]`);
+  assert.equal(await notesPreview().count(),1,'notes preview lost before drag');
+  const childrenBefore=(await table()).tabs.filter(t=>t.session===sessions[0]).map(t=>t.id),frontBefore=await shown().getAttribute('data-content-handle');
+  const childButton=id=>page.locator(`[data-content-tab="${id}"] [role=tab]`);
+  await dragTab(childButton(childrenBefore[0]),childButton(childrenBefore[1]));
+  await until(async()=>JSON.stringify((await table()).tabs.filter(t=>t.session===sessions[0]).map(t=>t.id))===JSON.stringify([...childrenBefore].reverse()));
+  assert.equal(await shown().getAttribute('data-content-handle'),frontBefore,'drag focused another document');
+  assert.equal(await notesPreview().count(),1,'reorder reset a retained file preview');
+  assert.deepEqual(await outerOrder(),[sessions[0]],'child drag moved or expanded its parent session');
+  await childButton(childrenBefore[0]).hover();
+  const hover=await page.locator(`[data-content-tab="${childrenBefore[0]}"]`).evaluate(el=>({pill:getComputedStyle(el).backgroundColor,opener:getComputedStyle(el.querySelector('.session-content-open')).backgroundColor}));
+  assert.notEqual(hover.pill,'rgba(0, 0, 0, 0)','child hover does not include its close slot');assert.equal(hover.opener,'rgba(0, 0, 0, 0)','child opener paints a separate partial pill');
+  const cancelBefore=(await table()).tabs.map(t=>t.id),a=await childButton(childrenBefore[0]).boundingBox(),b=await childButton(childrenBefore[1]).boundingBox();
+  await page.mouse.move(a.x+a.width*.4,a.y+a.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width*.2,b.y+b.height/2,{steps:12});await page.locator('[data-tab-reordering=true]').waitFor();await page.keyboard.press('Escape');await page.mouse.up();
+  assert.deepEqual((await table()).tabs.map(t=>t.id),cancelBefore,'Escape committed a cancelled drag');
+  assert.equal(await notesPreview().count(),1,'Escape cancel reset a retained file preview: '+JSON.stringify(await page.locator('[data-session-content]').evaluateAll(els=>els.map(el=>({id:el.dataset.sessionContent,key:el.dataset.contentHandle,show:el.dataset.contentVisible,preview:!!el.querySelector('[data-file-preview]'),text:el.textContent.slice(0,60)})))));
+  if(process.env.CONTENT_STOP_AFTER==='drag'){assert.deepEqual(errors,[]);break checks;}
+  console.log('PASS: outer reload order; durable nested order; parent/session and side selection; whole-pill hover; drag click suppression and Escape cancel');
+
   // CLI writes reach the same content scene without changing session scope.
   const opened=cli('tabs','--session',sessions[0],'open','--view','file',join(projects[0],'extra-01.txt'));
   await shown().locator('.cm-content').filter({hasText:'Neighbor 1'}).waitFor();await page.locator(`[data-content-tab="${opened}"]`).waitFor();
@@ -174,9 +211,9 @@ try{ checks:{
   for(let i=3;i<9;i++)cli('tabs','--session',sessions[0],'open','--view','file',join(projects[0],'extra-0'+i+'.txt'));
   await until(async()=>await page.locator(`[data-content-tabs="${sessions[0]}"] [data-content-tab]`).count()>=9);
   await page.setViewportSize({width:1000,height:850});await head(sessions[0]).waitFor();
-  const geometry=await page.locator(`[data-tab="${sessions[0]}"]`).evaluate(el=>{const r=x=>x.getBoundingClientRect().toJSON();return {box:r(el),head:r(el.querySelector('[data-tab-head]')),add:r(el.querySelector('.session-content-add')),outer:r(document.querySelector('[data-session-tabs] [data-tab-new]'))};});
+  const geometry=await page.locator(`[data-tab="${sessions[0]}"]`).evaluate(el=>{const r=x=>x.getBoundingClientRect().toJSON();return {box:r(el),head:r(el.querySelector('[data-tab-head]')),add:r(el.querySelector('.session-content-add')),outer:document.querySelector('[data-session-tabs] [data-tab-new]')};});
   assert(geometry.head.x>=geometry.box.x-1&&geometry.head.right<=geometry.box.right+1,'session identity scrolled away');
-  assert(geometry.add.width>0&&geometry.add.right<=geometry.box.right+1,'content + clipped');assert(geometry.outer.width>0,'session + hidden');
+  assert(geometry.add.width>0&&geometry.add.right<=geometry.box.right+1,'content + clipped');assert.equal(geometry.outer,null,'focused group still shows the outer session +');
   // Close successive inactive content tabs with the pointer at one spot.
   const contentStrip=page.locator(`[data-content-tabs="${sessions[0]}"]`);
   const pair=await contentStrip.evaluate(el=>{
@@ -226,7 +263,8 @@ try{ checks:{
   await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
   await page.locator(`[data-content-tabs="${sessions[2]}"] .session-content-add>button`).click();
   const dividers=await page.locator('[data-session-tabs] [data-tab-divider]:visible').evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect(),p=el.parentElement.getBoundingClientRect();return {w:r.width,h:r.height,cy:r.y+r.height/2,py:p.y+p.height/2,top:r.y-p.y,bottom:p.bottom-r.bottom};}));
-  assert.equal(dividers.length,3,'missing nested/outer dividers');
+  assert.equal(dividers.length,2,'focused group must have only its two inner dividers');
+  assert.equal(await page.locator('[data-session-tabs] [data-tab-new]').count(),0,'focused group still has a session +');
   for(const d of dividers){assert(Math.abs(d.w-dividers[0].w)<.1&&Math.abs(d.h-dividers[0].h)<.1,'nested divider differs from outer');assert(Math.abs(d.cy-d.py)<.1&&d.top>0&&d.bottom>0,'divider is not centered with end space');}
   await page.screenshot({path:join(scratch,'focus-long-titles.png')});
   await head(sessions[2]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===sessions.length);
@@ -371,7 +409,7 @@ try{ checks:{
   await page.locator('.mobile-content-scrim').click({position:{x:12,y:12}});await page.locator('[data-deck-title]:visible').click();await overview().waitFor();
   await page.reload();await page.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();await page.locator('[data-deck-title]:visible').click();await overview().waitFor();assert.equal((await mobileTable()).length,4);assert.equal(await page.locator('[data-content-preview]').count(),0);
   const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce'});
-  await phoneContext.addInitScript(ids=>{localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:ids,active:ids[0]}));localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'detail'}));localStorage.setItem('khor.lang','zh');},sessions);
+  await phoneContext.addInitScript(ids=>{if(!localStorage.getItem('khor.sessions.tabs'))localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:ids,active:ids[0]}));localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'detail'}));localStorage.setItem('khor.lang','zh');},sessions);
   const phone=await phoneContext.newPage();phone.setDefaultTimeout(12000);phone.on('pageerror',e=>errors.push(e.message));await phone.goto(url);
   await phone.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();await phone.locator('[data-deck-title]:visible').click();await phone.locator('[data-content-panel]').waitFor();
   assert.equal(await phone.getByRole('button',{name:word('content-expand'),exact:true}).count(),0);

@@ -16,6 +16,7 @@ const calls = [], errors = [];
 let vite, browser, blur = true;
 let rows = [
   { name: "window-material", value: "solid", choices: ["solid", "clear", "frost"].map(value => ({ value, label: value })), page: "appearance", section: "window" },
+  { name: "window-outline", value: "on", choices: [], page: "appearance", section: "window" },
   { name: "window-opacity", value: "100", choices: [], page: "appearance", section: "window" },
 ];
 try {
@@ -33,7 +34,7 @@ import {fetchConfig} from '../src/api';
 import {speakLang} from '../src/lang';
 import '../src/styles/tokens.css';import '../src/styles/app.css';
 speakLang('zh');palette.wearTermPalette();followWindowSurface();window.palette=palette;window.windowChoice=windowChoice;window.wearWindowChoice=wearWindowChoice;
-function Lab(){const [kept,setKept]=useState(false),[front,setFront]=useState(false),[concealed,setConcealed]=useState(false);window.hideTerminals=setConcealed;window.keepTerminal=()=>setKept(true);window.closeKept=()=>setKept(false);window.frontKept=setFront;const [ended,setEnded]=useState(false);window.showEnded=()=>setEnded(true);const [rows,setRows]=useState([]);const read=()=>fetchConfig().then(setRows);useEffect(()=>{read()},[]);const surface=windowChoice(rows);useEffect(()=>{if(surface)wearWindowChoice(surface)},[surface?.material,surface?.opacity]);
+function Lab(){const [kept,setKept]=useState(false),[front,setFront]=useState(false),[concealed,setConcealed]=useState(false);window.hideTerminals=setConcealed;window.keepTerminal=()=>setKept(true);window.closeKept=()=>setKept(false);window.frontKept=setFront;const [ended,setEnded]=useState(false);window.showEnded=()=>setEnded(true);const [rows,setRows]=useState([]);const read=()=>fetchConfig().then(setRows);useEffect(()=>{read()},[]);const surface=windowChoice(rows);useEffect(()=>{if(surface)wearWindowChoice(surface)},[surface?.material,surface?.opacity,surface?.outline]);
 return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative'}}><div data-retained-front className={front||concealed?'pointer-events-none invisible absolute inset-0 flex flex-col':'contents'}>{ended?<EndedPane id='shell/appearance-test' at={1}/>:<TerminalPane id='shell/appearance-test' active={!front} />}</div>{kept&&<div data-retained-back className={front&&!concealed?'contents':'pointer-events-none invisible absolute inset-0 flex flex-col'} aria-hidden={!front||undefined}><TerminalPane id='shell/appearance-kept' active={front}/></div>}</div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><div data-halo-lab style={{display:'flex',gap:40,padding:32}}><FaceMark face={{machine:null}} halo="done"/><div data-tab-bar><FaceMark face={{machine:null}} halo="done" size="tab"/></div></div><WindowAppearanceSection/><TerminalThemeSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
 createRoot(document.getElementById('root')).render(<Lab/>);
 `);
@@ -85,6 +86,13 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await page.locator('[data-setting-select="window-material"]').selectOption("clear");
   await page.getByRole("slider", { name: "背景不透明度" }).fill("85");
   await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--window-opacity") === "85%");
+  assert(await page.evaluate(()=>document.documentElement.hasAttribute('data-window-outline')),'transparent window lost its default outline');
+  const outline=()=>page.getByRole('switch',{name:'窗口轮廓',exact:true});
+  await outline().click();await page.waitForFunction(()=>!document.documentElement.hasAttribute('data-window-outline'));
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.getElementById('root'),'::after').content),'none');
+  await outline().click();await page.waitForFunction(()=>document.documentElement.hasAttribute('data-window-outline'));
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.getElementById('root'),'::after').pointerEvents),'none');
+
   await page.waitForFunction(() => document.getElementById("root").style.getPropertyValue("--window-ground-clip").includes("M"));
   assert(await page.evaluate(() => document.querySelector("[data-terminal]").__xterm === window.originalTerm));
   assert.equal(calls.filter(c => c.cmd === "term_open").length, opens);

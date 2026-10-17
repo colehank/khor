@@ -1,7 +1,7 @@
 /** Session-owned documents are tabs as soon as they are opened. The small
  * optimistic queue is transport state, never a separate preview collection. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { closeTab, fetchTabs, focusTab, goTab, openTab, pinTab, type TabsOpen } from "@/api";
+import { closeTab, fetchTabs, focusTab, goTab, openTab, pinTab, reorderTabs, type TabsOpen } from "@/api";
 
 export type ContentView = "workspace" | "file" | "page";
 export type ContentTab = TabsOpen["tabs"][number] & { view: ContentView | null };
@@ -162,7 +162,12 @@ export function useSessionContent(watch: boolean) {
     const peers = tabs.filter(t => t.session === session), selected = chosen.current.get(session || '');
     return peers.find(t => t.id === selected || handle(t) === selected) ?? peers.reduce<ContentTab | undefined>((a, b) => !a || b.touched > a.touched ? b : a, undefined);
   };
+  const reorder = async (session: string, ids: string[]) => {
+    // Resolve optimistic handles before entering the serialized mutation queue.
+    const saved = await Promise.all(ids.filter(id => !id.startsWith('browse:')).map(id => persist(id)));
+    return send(async () => ({result:undefined,value:await reorderTabs(CONTENT_KIND,session,saved)}));
+  };
   const ensure = (session: string, _device: string) => { const tab = active(session); return tab ? focus(tab.id).then(() => resolve(tab.id)) : Promise.resolve(undefined); };
-  return { tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, add, point, rename, follow, focus, pin, close, active, maximized, setMaximized };
+  return { tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, rename, follow, focus, pin, close, active, maximized, setMaximized };
 }
 export type SessionContent = ReturnType<typeof useSessionContent>;

@@ -540,6 +540,33 @@ pub fn save_all(root: &Path, kind: &str, want: &Open) -> Result<(), String> {
     })
 }
 
+/// Reorder only the named rows of one session, under the same file lock as
+/// open/close. Concurrent additions, metadata and other sessions stay intact.
+/// Rows closed since the gesture began are ignored; foreign rows are refused.
+pub fn reorder(root: &Path, kind: &str, session: &str, ids: &[String]) -> Result<(), String> {
+    change(root, kind, |open| {
+        let mut rank = std::collections::HashMap::new();
+        for id in ids {
+            if let Some(row) = open.tabs.iter().find(|row| &row.id == id) {
+                if row.session != session {
+                    return Err(msg::no_such_tab(id));
+                }
+                let next = rank.len();
+                rank.entry(id.clone()).or_insert(next);
+            }
+        }
+        let mut rows: Vec<_> = open.tabs.iter().filter(|row| rank.contains_key(&row.id)).cloned().collect();
+        rows.sort_by_key(|row| rank[&row.id]);
+        let mut ordered = rows.into_iter();
+        for row in &mut open.tabs {
+            if rank.contains_key(&row.id) {
+                *row = ordered.next().expect("one replacement per named row");
+            }
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -940,6 +967,28 @@ mod tests {
         let after = list(&r.0, "page");
         assert_eq!(order(&r), ["a", "b"], "the pinned tab still leads");
         assert!(after.tabs[0].pinned, "and it is still pinned");
+    }
+
+    #[test]
+    fn reorder_preserves_concurrent_rows_metadata_and_other_sessions() {
+        let r = root("reorder");
+        let a = open_with_view(&r.0, "content", "m", "a", "A", "", Some("file")).unwrap();
+        let foreign = open_from(&r.0, "content", "m", "foreign", "B").unwrap();
+        let b = open_from(&r.0, "content", "m", "b", "A").unwrap();
+        let closed = open_from(&r.0, "content", "m", "closed", "A").unwrap();
+        close(&r.0, "content", &closed).unwrap();
+        let new = open_from(&r.0, "content", "m", "new", "A").unwrap();
+        let before = list(&r.0, "content");
+        reorder(&r.0, "content", "A", &[b.clone(), closed, a.clone(), b.clone()]).unwrap();
+        let after = list(&r.0, "content");
+        assert_eq!(after.tabs.iter().map(|t| &t.id).collect::<Vec<_>>(), [&b, &foreign, &a, &new]);
+        assert_eq!(after.active, before.active);
+        for row in &after.tabs { assert_eq!(Some(row), before.tabs.iter().find(|old| old.id == row.id)); }
+        assert!(reorder(&r.0, "content", "A", &[foreign]).is_err());
+        assert_eq!(list(&r.0, "content"), after);
+        pin(&r.0, "content", &a, true).unwrap();
+        reorder(&r.0, "content", "A", &[b, a.clone()]).unwrap();
+        assert_eq!(list(&r.0, "content").tabs[0].id, a);
     }
 
     /// 标签页上限 (docs/SHELL.md 第三轮 第 4 条): past the limit, opening

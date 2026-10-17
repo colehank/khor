@@ -32,7 +32,7 @@ export function AppearancePage({
     <MoreFrame page="appearance" onClose={onClose}>
       <ConfigSections
         page="appearance"
-        omit={["window-material", "window-opacity"]}
+        omit={["window-material", "window-opacity", "window-outline"]}
         onChanged={onSettingChanged}
         // 头像's two rows (UX-32) both show this machine's face with its
         // system's mark, assembled the way the two rows together say.

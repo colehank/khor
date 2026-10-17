@@ -130,6 +130,11 @@ pub fn answer(
         // The whole column, for the one gesture that cannot be spelled
         // as a close and an open: a drag that reorders. The ids are
         // still the node's to mint.
+        "tabs_reorder" => {
+            let ids: Vec<String> = serde_json::from_value(args.get("ids").cloned().unwrap_or(serde_json::Value::Null))
+                .map_err(|e| format!("arg is not a tab id list: ids ({e})"))?;
+            to_json(&crate::tabs::reorder(root, &arg("kind")?, &arg("session")?, &ids)?)
+        }
         "tabs_save" => {
             // **Shape-checked by serde rather than field by field**, and
             // a malformed one is refused out loud: this is the only

@@ -43,9 +43,11 @@ export function Tabs({
   seek,
   children,
   grouped,
+  onReorder,
 }: {
   /** The front tab's act at the capsule's end (`TabStrip` `frontAct`). */
   grouped?: boolean;
+  onReorder?: (ids:string[]) => void | Promise<unknown>;
   frontAct?: boolean;
   /** A count of picks, the tab in front included (`TabStrip` `seek`). */
   seek?: number;
@@ -79,6 +81,7 @@ export function Tabs({
     <div {...stripData} className="flex min-w-0 flex-1 flex-col">
       <TabStrip
         grouped={grouped}
+        onReorder={onReorder}
         frontAct={frontAct}
         seek={seek}
         faces={faces}

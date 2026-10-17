@@ -16,7 +16,7 @@ import { useLayoutEffect, useRef } from "react";
 /** The chosen piece inside a host: the first shown `glass-sel`, or an
     item marked on, that is not inside another one. */
 function pieceIn(host: HTMLElement): HTMLElement | null {
-  const all = [...host.querySelectorAll<HTMLElement>('.glass-sel, [data-on="true"], [data-on=""]')];
+  const all = [...host.querySelectorAll<HTMLElement>('.glass-sel, [data-on="true"], [data-on=""]')].filter(e => !e.hasAttribute("data-tab-group"));
   for (const e of all) {
     if (e.closest("[data-sel-ghost]")) continue;
     if (all.some((o) => o !== e && o.contains(e))) continue;

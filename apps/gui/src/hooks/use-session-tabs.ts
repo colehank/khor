@@ -64,6 +64,7 @@ function restore(): Tabs {
 export type SessionTabs = {
   tabs: string[];
   active: string | null;
+  reorder: (ids: string[]) => void;
   /** Open a session in a tab: appends it if it is not open, and brings
       it to the front either way. */
   open: (id: string) => void;
@@ -169,5 +170,14 @@ export function useSessionTabs(
     });
   }, []);
 
-  return { tabs: state.tabs, active: state.active, open, focus, picks, close, drop, become };
+  const reorder = useCallback((ids: string[]) => {
+    setState(was => {
+      const known = [...new Set(ids)].filter(id => was.tabs.includes(id));
+      const requested = new Set(known);
+      let at = 0;
+      return {...was,tabs:was.tabs.map(id => requested.has(id) ? known[at++] : id)};
+    });
+  }, []);
+
+  return { reorder, tabs: state.tabs, active: state.active, open, focus, picks, close, drop, become };
 }

@@ -178,6 +178,12 @@ pub const KEYS: &[Key] = &[
         default: "solid",
     },
     Key {
+        name: "window-outline",
+        section: "window",
+        values: &["on", "off"],
+        default: "on",
+    },
+    Key {
         name: "window-opacity",
         section: "window",
         values: &[

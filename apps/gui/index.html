@@ -64,8 +64,10 @@
         }
         document.documentElement.setAttribute("data-theme", t);
         if (window.__KHOR_WINDOW_SURFACE__) {
+          if(window.__KHOR_WINDOW_PLATFORM__)document.documentElement.setAttribute("data-window-platform",window.__KHOR_WINDOW_PLATFORM__);
           try {
             var surface = window.__KHOR_WINDOW_PREF__ || JSON.parse(localStorage.getItem("khor.window-surface"));
+            document.documentElement.toggleAttribute("data-window-outline", !surface || surface.outline !== false);
             if (surface && (surface.material === "clear" || surface.material === "frost")) {
               document.documentElement.setAttribute("data-window-transparent", "");
               document.documentElement.style.setProperty("--window-opacity", Math.max(0, Math.min(100, Number.isFinite(Number(surface.opacity)) ? Number(surface.opacity) : 100)) + "%");

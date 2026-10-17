@@ -2839,3 +2839,19 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 }
 :root[data-window-transparent] [data-term-glass] .xterm-viewport,
 :root[data-window-transparent] [data-term-glass] .xterm-scrollable-element { background-color: transparent !important; }
+
+/* The tab itself follows the mouse; only neighbouring slots travel. */
+[data-tab-dragging=true]{position:relative;z-index:5;cursor:grabbing;will-change:transform}
+[data-tab-reordering=true],[data-tab-reordering=true] *{cursor:grabbing!important;user-select:none!important}
+
+/* A transparent window retains one quiet edge independently of its tint.
+   System decorations and resize handles stay native on every desktop. This
+   edge does not re-enable alpha-shaped macOS shadows around terminal glyphs. */
+:root[data-window-transparent][data-window-outline] #root:not(:empty)::after {
+  content:"";position:fixed;inset:0;z-index:60;pointer-events:none;
+  border:var(--hair) solid var(--hairline);border-radius:var(--radius-xl);
+}
+
+:root[data-window-platform=windows] #root::after{border-radius:var(--radius-md)}
+:root:is([data-window-platform=linux],[data-window-square]) #root::after{border-radius:0}
+:root[data-window-fullscreen] #root::after{display:none}

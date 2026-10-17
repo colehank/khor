@@ -159,3 +159,9 @@ pub fn save_all(root: &Path, kind: &str, want: &TabsOpen) -> Result<TabsOpen, St
     tabs::save_all(root, kind, &open)?;
     Ok(list(root, kind))
 }
+
+/// Identifier-only reorder never overwrites another process's row or focus.
+pub fn reorder(root: &Path, kind: &str, session: &str, ids: &[String]) -> Result<TabsOpen, String> {
+    tabs::reorder(root, kind, session, ids)?;
+    Ok(list(root, kind))
+}

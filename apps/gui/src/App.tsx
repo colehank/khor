@@ -407,7 +407,7 @@ export default function App() {
   const windowPref = windowChoice(settings.rows);
   useEffect(() => {
     if (windowPref) wearWindowChoice(windowPref);
-  }, [windowPref?.material, windowPref?.opacity]);
+  }, [windowPref?.material, windowPref?.opacity, windowPref?.outline]);
   useEffect(() => {
     if (themePref !== null) wearTheme(themePref as ThemePref);
   }, [themePref]);
@@ -1808,7 +1808,7 @@ export default function App() {
     setMorePage(from.morePage);
     setScreen(from.front || from.landing !== "sessions" ? from.screen : "list");
   };
-  // Desktop tab presentation is independent of each session's content layout.
+  // Group presentation and pane visibility are separate; entering the group reveals its content.
   const [sessionTabsFocused, setSessionTabsFocused] = useState(false);
   const tabFaces: TabFace[] = useMemo(
     () =>
@@ -4196,7 +4196,13 @@ export default function App() {
                     again: !isNewTab(f.id) ? {
                       hint: sessionTabsFocused ? gui.session_tabs_all : gui.session_tabs_focus,
                       expanded: sessionTabsFocused,
-                      toggle: () => setSessionTabsFocused(value => !value),
+                      toggle: () => {
+                        if (!sessionTabsFocused) {
+                          contentNavigation.resume(f.id);
+                          setSessionSide(f.id, {open:true,seat:"workspace"});
+                        }
+                        setSessionTabsFocused(value => !value);
+                      },
                     } : undefined,
                     group: !isNewTab(f.id) ? <ContentTabs session={f.id} open={f.id === selected && sessionTabsFocused} content={content} navigation={contentNavigation} onHide={()=>{content.setMaximized(null);setSessionSide(f.id,{open:false});}} onFocus={()=>{sessionTabs.focus(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});}} onAdd={()=>{
                     contentNavigation.browse(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});
@@ -4205,7 +4211,8 @@ export default function App() {
                   seek={sessionTabs.picks}
                   onFocus={id => { sessionTabs.focus(id); setScreen("detail"); }}
                   onClose={sessionTabs.close}
-                  onNew={() => openNewTab()}
+                  onNew={sessionTabsFocused && !isNewTab(selected) ? undefined : () => openNewTab()}
+                  onReorder={sessionTabs.reorder}
                   stripData={{ "data-session-tabs": "", "aria-label": gui.session_tabs }}
                   caption={stale ? gui.backend_unreachable : !side.open ? content.error : undefined}
                   tail={<>

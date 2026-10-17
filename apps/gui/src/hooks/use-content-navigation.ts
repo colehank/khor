@@ -12,9 +12,10 @@ export type ContentPlace = {
 export type ContentNavigationState = ContentPlace & {
   from: ContentScene; trail: ContentPlace[]; recent: string | null; documentTrail: ContentPlace[];
   scrolls: Record<string, ContentScroll>;
+  browseBefore: string | null;
 };
 export const emptyContentPlace = (): ContentPlace => ({scene:'picker',key:null,source:'workspace',scope:null,filter:'',query:'',address:'',exit:null});
-const empty = (): ContentNavigationState => ({...emptyContentPlace(),from:'picker',trail:[],recent:null,documentTrail:[],scrolls:{}});
+const empty = (): ContentNavigationState => ({...emptyContentPlace(),from:'picker',trail:[],recent:null,documentTrail:[],scrolls:{},browseBefore:null});
 const place = ({scene,key,source,scope,filter,query,address,exit}: ContentPlace): ContentPlace => ({scene,key,source,scope,filter,query,address,exit});
 const NAV_KEY = 'khor.content.navigation.v1', EDITOR_KEY = 'khor.content.editors.v1';
 const scenes: ContentScene[] = ['picker','document','overview','sessions'];
@@ -34,6 +35,7 @@ function readNavigation(): Record<string, ContentNavigationState> {
     const s = value as ContentNavigationState;
     const scrolls = Object.fromEntries(Object.entries(s.scrolls || {}).filter(([,v]) => v && Number.isFinite(v.top) && Number.isFinite(v.left)));
     return [session,{...empty(),...place(s),from:scenes.includes(s.from)?s.from:'picker',recent:typeof s.recent==='string'?s.recent:null,
+      browseBefore:typeof s.browseBefore==='string'?s.browseBefore:null,
       trail:Array.isArray(s.trail)?s.trail.filter(isPlace).slice(-64):[],documentTrail:Array.isArray(s.documentTrail)?s.documentTrail.filter(isPlace).slice(-64):[],scrolls}];
   }));
 }
@@ -94,11 +96,12 @@ export function useContentNavigation(content: SessionContent) {
   const overview=(session:string)=>get(session).scene==='overview'?back(session):update(session,{scene:'overview',filter:''});
   const sessions=(session:string)=>{pendingResume.current.delete(session);write(session,s=>({...s,scene:'sessions',filter:'',trail:[],from:'picker'}));};
   const inspect=(session:string)=>{pendingResume.current.delete(session);write(session,s=>({...s,scene:'overview',filter:'',trail:[{...place(s),scene:'sessions'}],from:'sessions'}));};
+  const browseBefore=(session:string,key:string|null)=>write(session,s=>({...s,browseBefore:key}));
   const scrollOf=(session:string,key:string)=>get(session).scrolls[key];
   const scroll=(session:string,key:string,value:ContentScroll)=>write(session,s=>{
     const before=s.scrolls[key];if(before?.top===value.top&&before?.left===value.left)return s;
     return {...s,scrolls:{...s.scrolls,[key]:{top:Math.max(0,value.top),left:Math.max(0,value.left)}}};
   });
-  return {editor,edit,get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,resume,browse,overview,back,sessions,inspect,scroll,scrollOf};
+  return {editor,edit,get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,resume,browse,overview,back,sessions,inspect,scroll,scrollOf,browseBefore};
 }
 export type ContentNavigation = ReturnType<typeof useContentNavigation>;

@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { recentVisit, type DeviceRow, type SessionRow } from "@/api";
+import { useTabReorder } from "@/browse/use-tab-reorder";
 import { MidName, TabDivider, type TabFace } from "@/browse/TabStrip";
 import { RowMenu } from "@/components/RowMenu";
 import { FileKindIcon } from "@/components/FileKindIcon";
@@ -28,7 +29,7 @@ const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
 const glyph = (tab: ContentTab) => contentView(tab) === "workspace" ? null : contentView(tab) === "page" ? <IconBrowser /> : <FileKindIcon name={tab.url} />;
 
 /** Only the children scroll. The group head and the add button keep their
- * seats while a measured width animates the capsule's opening and closing. */
+ * seats; entering/leaving the group fades the row without shrinking the outer capsule. */
 export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHide}:{session:string;open:boolean;content:SessionContent;navigation:ContentNavigation;onAdd:()=>void;onFocus:()=>void;onHide:()=>void}) {
   const measure = useRef<HTMLDivElement>(null), scroller = useRef<HTMLDivElement>(null), action = useRef<HTMLDivElement>(null);
   const reveal = useRef<HTMLDivElement>(null), room = useRef<HTMLDivElement>(null);
@@ -44,7 +45,18 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
   const [cut, setCut] = useState({ left: false, right: false });
   const state=navigation.get(session);
   const browsing:ContentTab={id:'browse:'+session,session,device:'',url:'',title:gui.borrow_web,view:'workspace',pinned:false,touched:0};
-  const tabs=[...content.allTabs.filter(t=>t.session===session&&(t.view==='file'||t.view==='page')),...(state.scene==='picker'?[browsing]:[])];
+  const documents=content.allTabs.filter(t=>t.session===session&&(t.view==='file'||t.view==='page'));
+  const entries=[...documents];
+  if(state.scene==='picker'){
+    const before=entries.findIndex(t=>content.handle(t)===state.browseBefore);
+    entries.splice(before<0?entries.length:before,0,browsing);
+  }
+  const reorder=useTabReorder({host:()=>scroller.current,selector:"[data-content-tab]",ids:entries.map(t=>content.handle(t)),onReorder:async ids=>{
+    const browseAt=ids.indexOf(browsing.id);
+    if(browseAt>=0)navigation.browseBefore(session,ids[browseAt+1]??null);
+    await content.reorder(session,ids);
+  },onStart:release});
+  const tabs=reorder.order.map(id=>entries.find(t=>content.handle(t)===id)).filter((t):t is ContentTab=>!!t);
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===state.key);
   const active=state.scene==='picker'?browsing.id:current?.id;
   const pick=(tab:ContentTab)=>{onFocus();if(tab.id===browsing.id)navigation.browse(session);else{navigation.document(tab);quiet(content.focus(tab.id));}};
@@ -102,11 +114,11 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
     return () => { observer.disconnect(); el.removeEventListener("wheel", wheel); };
   }, [open,held]);
   const slots=held?Object.keys(held).length:tabs.length;
-  return <div ref={reveal} data-content-tabs={session} data-open={open} aria-hidden={!open} inert={!open} className="session-content-reveal" data-content-held={held?true:undefined} onPointerLeave={held?release:undefined} style={{ width: open ? `calc(${slots} * var(--tab-w-even) + 2 * var(--gap-in) + 3 * var(--hair) + var(--glass-tab))` : 0 }} onTransitionEnd={held?undefined:seek}>
+  return <div ref={reveal} data-content-tabs={session} data-open={open} aria-hidden={!open} inert={!open} className="session-content-reveal" data-content-held={held?true:undefined} onPointerLeave={held?release:undefined} style={{ width: open ? `calc(${slots} * var(--tab-w-even) + 5 * var(--gap-in) + 3 * var(--hair) + var(--glass-tab))` : 0 }} onTransitionEnd={held?undefined:seek}>
     <TabDivider />
-    <div ref={scroller} onScroll={edges} className="session-content-scroll" style={cut.left || cut.right ? { maskImage: `linear-gradient(to right, ${cut.left ? 'transparent, black var(--fade-tabs)' : 'black, black'}, ${cut.right ? 'black calc(100% - var(--fade-tabs)), transparent' : 'black, black'})` } : undefined}>
+    <div ref={scroller} {...reorder.handlers} onScroll={edges} className="session-content-scroll" style={cut.left || cut.right ? { maskImage: `linear-gradient(to right, ${cut.left ? 'transparent, black var(--fade-tabs)' : 'black, black'}, ${cut.right ? 'black calc(100% - var(--fade-tabs)), transparent' : 'black, black'})` } : undefined}>
       <div ref={measure} className="session-content-tabs" role="tablist" aria-label={gui.session_content}>
-        {tabs.map(tab => <div key={tab.id} data-content-tab={tab.id} data-content-on={tab.id === active} data-content-browse={tab.id===browsing.id||undefined} data-content-icon={glyph(tab)!==null||undefined} className="session-content-tab @container/content-tab" style={held?.[tab.id]!=null?{width:held[tab.id],flexBasis:held[tab.id],flexShrink:0}:undefined}>
+        {tabs.map(tab => <div key={content.handle(tab)} data-content-tab={tab.id} data-reorder-id={content.handle(tab)} data-reorder-band={tab.pinned?"pinned":"normal"} data-content-on={tab.id === active} data-content-browse={tab.id===browsing.id||undefined} data-content-icon={glyph(tab)!==null||undefined} className="session-content-tab @container/content-tab" style={held?.[tab.id]!=null?{width:held[tab.id],flexBasis:held[tab.id],flexShrink:0}:undefined}>
           <RowMenu items={tab.id===browsing.id?[{key:"close",label:gui.close_tab,run:()=>close(tab)}]:[{ key: "pin", label: tab.pinned ? gui.unpin : gui.pin, run: () => content.pin(tab.id, !tab.pinned) }, { key: "close", label: gui.close_tab, run: () => content.close(tab.id) }]}><button role="tab" aria-selected={open && tab.id === active} tabIndex={tab.id === active ? 0 : -1} title={tab.url} className="session-content-open" onClick={()=>pick(tab)} onKeyDown={e => {
             if(e.key===' '&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();if(!e.repeat)e.currentTarget.click();return;}
             const at = tabs.findIndex(t => t.id === tab.id);
@@ -182,6 +194,13 @@ export function SessionContentPane({ container, content, session, devices, rows,
   navigation: ContentNavigation; onClose: () => void;
 }) {
   const visited = useRef(new Set<string>()), pickers = useRef(new Set<string>());
+  // Strip order is navigation, not DOM order. Moving retained editor/page
+  // fibers needlessly reconnects effects (including StrictMode replay).
+  const viewOrder=useRef<string[]>([]);
+  const byHandle=new Map(content.allTabs.map(tab=>[content.handle(tab),tab]));
+  viewOrder.current=viewOrder.current.filter(key=>byHandle.has(key));
+  for(const key of byHandle.keys())if(!viewOrder.current.includes(key))viewOrder.current.push(key);
+  const views=viewOrder.current.map(key=>byHandle.get(key)!);
   const [drafts, setDrafts] = useState<Record<string, Draft | undefined>>({});
   const [focused, setFocused] = useState(false);
   const state = session ? navigation.get(session) : null;
@@ -244,7 +263,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
       const p=navigation.get(row.id);
       return <ContentPosition session={row.id} position={JSON.stringify(['picker',p.source,p.scope,p.query])} show={show} mobile={mobile} navigation={navigation} key={'picker:'+row.id} data-content-picker={row.id} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}><ContentPicker desktop={!mobile} face={faceFor(row.id)!} content={content} onClose={onClose} row={row} devices={devices} navigation={navigation} onOpen={(device,path,view,line)=>openDocument(row.id,device,path,view,line)}/></ContentPosition>;
     })}
-    {content.allTabs.map(tab => {
+    {views.map(tab => {
       const key = content.handle(tab), show = visible && tab.session === session && key === active;
       const device = devices.find(d => d.id === tab.device);
       const browse = () => {

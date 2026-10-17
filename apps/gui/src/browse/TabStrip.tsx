@@ -1,3 +1,4 @@
+import { useTabReorder } from "@/browse/use-tab-reorder";
 import { usePillSignal } from "@/lib/pill-signal";
 // A browsing landing's tabs, in the two shapes a browser has.
 //
@@ -395,7 +396,7 @@ function useRebalance(host: () => HTMLElement | null, active: string, kick = 0) 
 
 /** Shared short divider for outer and nested tab controls. */
 export function TabDivider() {
-  return <span aria-hidden="true" data-tab-divider className="h-4.5 w-px flex-none bg-border" />;
+  return <span aria-hidden="true" data-tab-divider className="mx-in h-4.5 w-px flex-none bg-border" />;
 }
 
 export function TabStrip({
@@ -411,6 +412,7 @@ export function TabStrip({
   frontAct = false,
   seek = 0,
   grouped = false,
+  onReorder,
 }: {
   /** **A count of picks, the tab in front included** (fix-a): each new
       value brings the front tab into view, like a change of `active`.
@@ -420,6 +422,7 @@ export function TabStrip({
   seek?: number;
   /** Group heads retain identity while their supplied content scrolls. */
   grouped?: boolean;
+  onReorder?: (ids:string[]) => void | Promise<unknown>;
   /** **The front tab's act at the capsule's end, and none on the pills**
       (UX-39, the owner 2026-10-06 22:35: a ↻ on every pill and one more
       at the strip's end was 「有点奇怪」). On the wide face a tab is a
@@ -457,6 +460,15 @@ export function TabStrip({
   const strip = useRef<HTMLDivElement>(null);
   const spread = grouped && faces.some(f => f.id === active && f.again?.expanded);
   const heldWidths = useRef(new Map<string, number>());
+  const wasSpread = useRef(spread);
+  useLayoutEffect(() => {
+    if (wasSpread.current === spread) return;
+    wasSpread.current = spread;
+    const row = strip.current;
+    if (!row || stillMotion()) return;
+    const duration = parseFloat(getComputedStyle(row).getPropertyValue("--dur-120"));
+    row.animate([{opacity:0},{opacity:1}], {duration,easing:"ease-out"});
+  }, [spread]);
   // The front tab's piece slides to the tab brought forward, in the glass
   // capsule (F7.2, `lib/travel`).
   useTravel("tabs", () => strip.current, active);
@@ -464,6 +476,8 @@ export function TabStrip({
       on each. */
   const [released, setReleased] = useState(0);
   const widths = useRebalance(() => spread ? null : strip.current, active, released);
+  const reorder=useTabReorder({host:()=>strip.current,selector:"[data-tab]",ids:faces.map(f=>f.id),onReorder:spread?undefined:onReorder,exclude:"[data-content-tabs]",onStart:()=>releaseHeld()});
+  const orderedFaces=reorder.order.map(id=>faces.find(f=>f.id===id)).filter((f):f is TabFace=>!!f);
   /** Which ends have a tab cut off behind them, for the fade on that
       side (docs/SHELL.md 第三轮 第 2 条). No fade where nothing is cut:
       a fade over a whole tab would be a mark that says 「more this
@@ -749,6 +763,7 @@ export function TabStrip({
       <div
         ref={strip}
         data-tab-strip
+        {...reorder.handlers}
         // The row is as long as its tabs (they stop at `--tab-w-even`),
         // so ＋ follows the last one (UX-45).
         className="flex min-w-0 flex-initial items-center gap-0.5 self-stretch overflow-x-auto"
@@ -763,7 +778,7 @@ export function TabStrip({
             : undefined
         }
       >
-        {faces.map((f) => {
+        {orderedFaces.map((f) => {
           const on = f.id === active;
           const again = on ? f.again : undefined;
           // The front tab's notice, unless its panel is out (it says it).
@@ -776,6 +791,7 @@ export function TabStrip({
             <div
               key={f.id}
               data-tab={f.id}
+              data-reorder-id={f.id}
               data-tab-group={grouped ? "" : undefined}
               data-group-open={grouped && on && again?.expanded || undefined}
               data-on={on}
@@ -822,10 +838,10 @@ export function TabStrip({
                 // it. A width, not a basis: the pill is a size container,
                 // so only a stated width gives the row its length.
                 !grouped && "w-tab-even min-w-tab-floor shrink grow-0",
-                on ? "glass-sel text-foreground" : "text-muted-foreground hover:bg-fill",
+                on ? (grouped ? "text-foreground" : "glass-sel text-foreground") : "text-muted-foreground hover:bg-fill",
               )}
             >
-              <div data-tab-head={grouped ? "" : undefined} className={grouped ? "@container/tab" : "contents"}>
+              <div data-tab-head={grouped ? "" : undefined} className={grouped ? cn("@container/tab", on && "glass-sel") : "contents"}>
               {/* **Every tab sits in a Tooltip, and only the front one's
                   can open** (`again`): kept on all of them so that a tab
                   coming to the front does not remount its button — and

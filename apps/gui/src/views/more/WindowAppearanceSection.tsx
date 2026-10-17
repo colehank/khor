@@ -4,6 +4,7 @@ import { gui } from "@/gen/catalog";
 import { useSettings, useSettingsReread } from "@/settings";
 import { useWindowSupport, windowChoice } from "@/lib/window-surface";
 import { PopupRow } from "@/components/settings/PopupRow";
+import { SwitchRow } from "@/components/settings/SwitchRow";
 import { Slider } from "@/components/settings/Slider";
 import { MoreSection } from "@/views/more/MorePage";
 
@@ -42,6 +43,7 @@ export function WindowAppearanceSection() {
   return <>
     <MoreSection name="window" label={gui.window_surface_title}>
       <PopupRow name="window-material" label={gui.window_surface_material} value={effective} choices={choices.filter(c => c.value !== "frost" || support.blur)} onPick={v => change("window-material", v)} />
+      <SwitchRow name="window-outline" label={gui.window_surface_outline} hint={gui.window_surface_outline_hint} on={stored.outline !== false} onToggle={()=>change("window-outline",stored.outline === false?"on":"off")} />
       {effective !== "solid" && <div data-setting-row="slider" data-setting-row-name="window-opacity" className="flex flex-col gap-in px-row py-in">
         <div className="flex items-center justify-between text-body"><span>{gui.window_surface_opacity}</span><output className="text-callout tabular-nums text-muted-foreground">{opacity}%</output></div>
         <Slider label={gui.window_surface_opacity} min={0} max={100} value={opacity} ticks={6} small={<span className="text-caption">0%</span>} large={<span className="text-caption">100%</span>} onChange={v => { desired.current = v; setOpacity(v); change("window-opacity", String(v)); }} />

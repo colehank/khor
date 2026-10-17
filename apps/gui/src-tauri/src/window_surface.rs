@@ -61,6 +61,8 @@ pub fn apply(app: &AppHandle, material: &str) {
         });
         let _ = window.set_effects(effects);
     }
+    #[cfg(desktop)]
+    sync_frame(app, true);
     // Linux transparency belongs to the compositor. Native blur is not
     // offered there; an imported frost preference becomes clear tint.
 }
@@ -71,8 +73,9 @@ pub fn initial_script() -> String {
         .and_then(|s| s.parse::<u8>().ok())
         .unwrap_or(100);
     format!(
-        "window.__KHOR_WINDOW_SURFACE__ = true; window.__KHOR_WINDOW_PREF__ = {};",
-        serde_json::json!({"material": material(), "opacity": opacity})
+        "window.__KHOR_WINDOW_SURFACE__ = true; window.__KHOR_WINDOW_PREF__ = {}; window.__KHOR_WINDOW_PLATFORM__ = {};",
+        serde_json::json!({"material": material(), "opacity": opacity, "outline": khor_node::config::get(&Node::root_from_env(), "window-outline").unwrap_or("on") != "off"}),
+        serde_json::json!(std::env::consts::OS)
     )
 }
 
@@ -135,5 +138,22 @@ mod mac_blur {
             }
             (api.blur)(connection, number as i32, if enabled { RADIUS } else { 0 }) == 0
         }
+    }
+}
+
+/// Keep the fallback edge aligned with native full-screen/maximized shapes.
+/// Only state changes cross the webview boundary, not every resize tick.
+#[cfg(desktop)]
+pub fn sync_frame(app: &AppHandle, force: bool) {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    static LAST: AtomicU8 = AtomicU8::new(u8::MAX);
+    let Some(window) = app.get_window("main") else { return; };
+    let full = window.is_fullscreen().unwrap_or(false);
+    let square = full || window.is_maximized().unwrap_or(false);
+    let flags = u8::from(full) | (u8::from(square) << 1);
+    if LAST.swap(flags, Ordering::Relaxed) == flags && !force { return; }
+    if let Some(view) = app.get_webview("main") {
+        let script = format!("document.documentElement.toggleAttribute('data-window-fullscreen',{full});document.documentElement.toggleAttribute('data-window-square',{square});");
+        let _ = view.eval(script);
     }
 }

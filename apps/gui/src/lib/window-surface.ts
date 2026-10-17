@@ -4,9 +4,9 @@
 import { useEffect, useState } from "react";
 import { inApp, isMenuFace, settingsFace, windowAppearanceSupport, setWindowAppearance, type ConfigRow } from "@/api";
 
-declare global { interface Window { __KHOR_WINDOW_SURFACE__?: boolean; __KHOR_WINDOW_PREF__?: WindowChoice } }
+declare global { interface Window { __KHOR_WINDOW_SURFACE__?: boolean; __KHOR_WINDOW_PLATFORM__?: string; __KHOR_WINDOW_PREF__?: WindowChoice } }
 export type WindowMaterial = "solid" | "clear" | "frost";
-export type WindowChoice = { material: WindowMaterial; opacity: number };
+export type WindowChoice = { material: WindowMaterial; opacity: number; outline?: boolean };
 export const WINDOW_MIRROR = "khor.window-surface";
 /** Zero is a valid saved preference; absent/non-finite values stay solid. */
 export function normalizeWindowOpacity(value: unknown): number {
@@ -19,7 +19,7 @@ const main = () => inApp && window.__KHOR_WINDOW_SURFACE__ === true && !settings
 export function windowChoice(rows: ConfigRow[] | null): WindowChoice | null {
   const m = rows?.find(r => r.name === "window-material")?.value;
   const o = rows?.find(r => r.name === "window-opacity")?.value;
-  return m === "solid" || m === "clear" || m === "frost" ? { material: m, opacity: normalizeWindowOpacity(o) } : null;
+  return m === "solid" || m === "clear" || m === "frost" ? { material: m, opacity: normalizeWindowOpacity(o), outline: rows?.find(r => r.name === "window-outline")?.value !== "off" } : null;
 }
 export function windowOpacity(): number { return main() && choice.material !== "solid" ? choice.opacity / 100 : 1; }
 export function wearWindowChoice(next: WindowChoice, native = true): void {
@@ -27,6 +27,8 @@ export function wearWindowChoice(next: WindowChoice, native = true): void {
   if (!main()) return;
   const root = document.documentElement;
   root.toggleAttribute("data-window-transparent", next.material !== "solid");
+  root.toggleAttribute("data-window-outline", next.outline !== false);
+  if(window.__KHOR_WINDOW_PLATFORM__)root.dataset.windowPlatform=window.__KHOR_WINDOW_PLATFORM__;
   root.style.setProperty("--window-opacity", `${windowOpacity() * 100}%`);
   try { window.localStorage.setItem(WINDOW_MIRROR, JSON.stringify(next)); } catch { /* Only the next launch's mirror is lost. */ }
   if (native && nativeMaterial !== next.material) {
@@ -85,7 +87,7 @@ export function followWindowSurface(): void {
   armed = true;
   try {
     const v = window.__KHOR_WINDOW_PREF__ ?? JSON.parse(window.localStorage.getItem(WINDOW_MIRROR) ?? "null") as WindowChoice | null;
-    if (v && ["solid", "clear", "frost"].includes(v.material)) wearWindowChoice({ material: v.material, opacity: normalizeWindowOpacity(v.opacity) }, false);
+    if (v && ["solid", "clear", "frost"].includes(v.material)) wearWindowChoice({ material: v.material, opacity: normalizeWindowOpacity(v.opacity), outline: v.outline !== false }, false);
   } catch { /* A missing mirror remains solid. */ }
   resize = new ResizeObserver(queueGround);
   const root = document.getElementById("root");

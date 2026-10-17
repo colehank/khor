@@ -515,3 +515,6 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 本轮手机真实操作继续由 `npm run content-ui` 与 `npm run session-content` 验证：来源／内容药丸横滑、方向锁定、取消、单枚回弹、来源菜单图标、默认不聚焦、输入选区与中文组合输入、两层标签搜索、原地编辑与最新位置恢复。目录头像标题随内容滚动、无重复机器名及无固定顶部分段列入截图验收。
 
 - `npm run content-pan`：生产 sheet hook 在 Chrome／WebKit 的内容滚动交接与取消、输入保护、原生页进度事件契约；UIKit 实际识别顺序另做 iPhone 验收。
+
+
+桌面标签精修（2026-10-17）：`npm run session-content` 增加真实鼠标排序、session 顺序 reload、节点内容顺序、焦点不变、Esc 取消与保留预览、双层高亮和整颗内部药丸悬停；专注组只保留内层 ＋、分隔线两侧留白。`npm run appearance` 增加窗口轮廓的默认值、独立开关、点击穿透与背景 alpha 不变。原生 macOS 验收轮廓与装饰、设置唯一入口；Windows／Linux 系统合成器另行核对，不以浏览器代替真机验收。

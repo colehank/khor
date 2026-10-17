@@ -1046,7 +1046,7 @@ try {
             box: box ? getComputedStyle(box).backgroundColor : null,
             xterm: box?.__xterm?.options?.theme?.background ?? null,
             board: board ? getComputedStyle(board).backgroundColor : null,
-            tab: tab ? getComputedStyle(tab).backgroundColor : null,
+            tab: tab ? getComputedStyle(tab.querySelector('[data-tab-head]') || tab).backgroundColor : null,
           };
         });
         console.log(`${scheme}: the terminal's ground ${JSON.stringify(got)}`);
