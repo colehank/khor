@@ -966,18 +966,7 @@ impl RemoteStateActor {
             }
         };
         let sampled = |road: &transports::FourTuple, after: Instant| {
-            self.state
-                .measured
-                .rtts
-                .iter()
-                .any(|((conn_id, path_id), (_, at))| {
-                    *at > after
-                        && self
-                            .connections
-                            .get(conn_id)
-                            .and_then(|c| c.paths.get(path_id))
-                            == Some(road)
-                })
+            self.state.measured.road(road).is_some_and(|(_, at)| at > after)
         };
         if now >= since + CONFIRM_FOR && sampled(&from, since) && sampled(to, since) {
             self.state.moving = None;
@@ -1033,21 +1022,36 @@ impl RemoteStateActor {
                 if unanswered(&stats) {
                     silent_now.push(tuple.clone());
                 }
-                match measured.rtts.get(&key) {
-                    Some((prev, _)) if *prev == stats.rtt => {}
-                    prev => {
-                        if let Some((prev, _)) = prev
-                            && Some(tuple) == selected
-                            && stats.rtt > *prev
-                        {
-                            sample = sample.max(*prev + (stats.rtt - *prev) * 8);
+                match measured.rtts.get_mut(&key) {
+                    Some(r) if r.rtt == stats.rtt => {}
+                    Some(r) => {
+                        if Some(tuple) == selected && stats.rtt > r.rtt {
+                            sample = sample.max(r.rtt + (stats.rtt - r.rtt) * 8);
                         }
-                        measured.rtts.insert(key, (stats.rtt, now));
+                        r.rtt = stats.rtt;
+                        r.at = now;
+                        r.changed.push_back(now);
+                    }
+                    None => {
+                        measured.rtts.insert(
+                            key,
+                            Reading {
+                                road: tuple.clone(),
+                                rtt: stats.rtt,
+                                changed: VecDeque::from([now]),
+                                at: now,
+                            },
+                        );
                     }
                 }
             }
         }
-        measured.rtts.retain(|key, _| present.contains(key));
+        measured.rtts.retain(|key, r| {
+            while r.changed.front().is_some_and(|at| now >= *at + CONFIRM_FOR) {
+                r.changed.pop_front();
+            }
+            present.contains(key) || !r.changed.is_empty()
+        });
         for tuple in &silent_now {
             measured.silent.entry(tuple.clone()).or_insert(now);
         }
@@ -1057,20 +1061,10 @@ impl RemoteStateActor {
             if silent_now.contains(tuple) {
                 return true;
             }
-            let mut copies = connections
-                .iter()
-                .flat_map(|(conn_id, state)| {
-                    state
-                        .paths
-                        .iter()
-                        .filter(move |(_, t)| *t == tuple)
-                        .map(move |(path_id, _)| (*conn_id, *path_id))
-                })
-                .peekable();
             // A road no connection has any more is forgotten; one a copy of which took an
             // RTT sample since it went silent, a round trip, answers again.
-            copies.peek().is_some()
-                && !copies.any(|key| rtts.get(&key).is_some_and(|(_, at)| *at > *since))
+            connections.values().any(|c| c.paths.values().any(|t| t == tuple))
+                && !rtts.values().any(|r| r.road == *tuple && r.at > *since)
         });
         sample
     }
@@ -1095,25 +1089,18 @@ impl RemoteStateActor {
             return;
         }
         let silent = self.state.measured.silent.contains_key(&selected);
-        let mut rtt: Option<(Duration, Instant)> = None;
         let mut copies = Vec::new();
-        for (conn_id, conn_state) in self.connections.iter() {
+        for conn_state in self.connections.values() {
             let Some(conn) = conn_state.handle.upgrade() else {
                 continue;
             };
             for (path_id, tuple) in conn_state.paths.iter() {
-                if tuple != &selected {
-                    continue;
+                if tuple == &selected {
+                    copies.push((conn.clone(), *path_id));
                 }
-                if let Some(&(r, at)) = self.state.measured.rtts.get(&(*conn_id, *path_id))
-                    && rtt.is_none_or(|(_, latest)| at > latest)
-                {
-                    rtt = Some((r, at));
-                }
-                copies.push((conn.clone(), *path_id));
             }
         }
-        let Some((rtt, _)) = rtt else {
+        let Some((rtt, _)) = self.state.measured.road(&selected) else {
             return;
         };
         let floor = self.state.selected_floor.map_or(rtt, |f| f.min(rtt));
@@ -1134,7 +1121,7 @@ impl RemoteStateActor {
             self.state.probed_at = Some(now);
             debug!(?sample, ?floor, "selected path sampled slow, probing it");
         }
-        // One copy is enough: the road's RTT is its freshest copy's.
+        // One copy is enough: the road's RTT is the copy's that takes the samples.
         if self.state.probed_at.is_some_and(|at| now < at + PROBE_FOR)
             && let Some(path) = copies.iter().find_map(|(conn, path_id)| conn.path(*path_id))
         {
@@ -1929,8 +1916,8 @@ pub struct PathSelectionContext<'a> {
     /// khor patch 17: the paths that stopped answering on some connection
     /// ([`PathSelectionData::answering`]).
     silent: Vec<transports::FourTuple>,
-    /// khor patch 17: each road's RTT as its freshest copy measured it
-    /// ([`PathSelectionData::rtt`]).
+    /// khor patch 17: each road's RTT as the copy that took the most samples lately measured it
+    /// ([`PathSelectionData::rtt`], `Measured::road`).
     fresh: Vec<(transports::FourTuple, Duration)>,
     source: PathsSource<'a>,
 }
@@ -1939,9 +1926,38 @@ pub struct PathSelectionContext<'a> {
 #[derive(Debug, Default)]
 struct Measured {
     /// Each path's smoothed RTT on each connection as last read, and when it last changed.
-    rtts: FxHashMap<(ConnId, PathId), (Duration, Instant)>,
+    rtts: FxHashMap<(ConnId, PathId), Reading>,
     /// The roads that stopped answering, and since when.
     silent: FxHashMap<transports::FourTuple, Instant>,
+}
+
+/// khor patch 17: one copy of a road as the measurement ticks read it.
+#[derive(Debug)]
+struct Reading {
+    road: transports::FourTuple,
+    rtt: Duration,
+    /// The ticks within the last [`CONFIRM_FOR`] on which its RTT changed, the last one last:
+    /// about how many samples it took.
+    changed: VecDeque<Instant>,
+    /// When its RTT last changed.
+    at: Instant,
+}
+
+impl Measured {
+    /// khor patch 17: a road's round trip and when any copy of it last took a sample.  The
+    /// copy that took the most samples within [`CONFIRM_FOR`] speaks for the road, the freshest
+    /// of those on a tie, and a copy whose path closed still does until that time is up.  A
+    /// copy that carries nothing has a sample per keepalive, which moves its smoothed RTT an
+    /// eighth of the way: when the freshest copy spoke (2026-10-17, p2 under load), one such
+    /// sample had a road that slowed to 21 ms read 5 ms, the selector stopped wanting the move
+    /// for a tick and the confirmation began again, three times; and when the copy that
+    /// carried the road closed, the idle one left read 4 ms.
+    fn road(&self, road: &transports::FourTuple) -> Option<(Duration, Instant)> {
+        let copies = self.rtts.values().filter(|r| r.road == *road);
+        let latest = copies.clone().map(|r| r.at).max()?;
+        let speaks = copies.max_by_key(|r| (r.changed.len(), r.at))?;
+        Some((speaks.rtt, latest))
+    }
 }
 
 /// Either a reference to live connection state, or a synthesized list of paths
@@ -1965,11 +1981,12 @@ impl<'a> PathSelectionContext<'a> {
         // answers again ([`RemoteStateActor::read_paths`]).  The same road on another
         // connection that has nothing in flight reads as answering, and it hid a dead copy
         // (2026-10-17, p3: the connection stayed on a blackholed road for 15 s).  Its RTT is
-        // the one its freshest copy measured: a copy that carries nothing keeps the RTT of
-        // its last keepalive, and hid a road slowing under typing for 10 s (p2).
+        // the one the copy that took the most samples lately measured (`Measured::road`): a
+        // copy that carries nothing keeps the RTT of its last keepalive, and hid a road
+        // slowing under typing for 10 s (p2).
         let mut silent: Vec<transports::FourTuple> = measured.silent.keys().cloned().collect();
-        let mut fresh: Vec<(transports::FourTuple, Duration, Instant)> = Vec::new();
-        for (conn_id, state) in connections.iter() {
+        let mut fresh: Vec<(transports::FourTuple, Duration)> = Vec::new();
+        for state in connections.values() {
             let Some(conn) = state.handle.upgrade() else {
                 continue;
             };
@@ -1979,13 +1996,10 @@ impl<'a> PathSelectionContext<'a> {
                 {
                     silent.push(tuple.clone());
                 }
-                let Some(&(rtt, at)) = measured.rtts.get(&(*conn_id, *path_id)) else {
-                    continue;
-                };
-                match fresh.iter_mut().find(|(t, _, _)| t == tuple) {
-                    Some(f) if f.2 < at => *f = (tuple.clone(), rtt, at),
-                    Some(_) => {}
-                    None => fresh.push((tuple.clone(), rtt, at)),
+                if !fresh.iter().any(|(t, _)| t == tuple)
+                    && let Some((rtt, _)) = measured.road(tuple)
+                {
+                    fresh.push((tuple.clone(), rtt));
                 }
             }
         }
@@ -1993,7 +2007,7 @@ impl<'a> PathSelectionContext<'a> {
             current,
             backup,
             silent,
-            fresh: fresh.into_iter().map(|(t, rtt, _)| (t, rtt)).collect(),
+            fresh,
             source: PathsSource::Live(connections),
         }
     }
@@ -2060,7 +2074,8 @@ pub struct PathSelectionData<'a> {
     network_path: &'a transports::FourTuple,
     /// khor patch 17: this path stopped answering on some connection.
     silent: bool,
-    /// khor patch 17: the road's RTT as its freshest copy measured it, if a tick read it.
+    /// khor patch 17: the road's RTT as the copy that took the most samples lately measured it,
+    /// if a tick read it.
     fresh_rtt: Option<Duration>,
     #[debug(skip)]
     source: StatsSource,
@@ -2137,9 +2152,10 @@ impl<'a> PathSelectionData<'a> {
     }
 
     /// khor patch 17: the road's round trip: the smoothed RTT of whichever connection's copy
-    /// of this path took a sample last, else this copy's.  `None` when its stats can't be
-    /// read.  The same road is a path on each connection to the remote, and a copy that
-    /// carries nothing keeps the RTT of its last keepalive, up to 5 s old.
+    /// of this path took the most samples lately (`Measured::road`), else this copy's.  `None`
+    /// when its stats can't be read.  The same road is a path on each connection to the
+    /// remote, and a copy that carries nothing keeps the RTT of its last keepalive, up to 5 s
+    /// old.
     pub fn rtt(&self) -> Option<Duration> {
         let stats = self.stats()?;
         Some(self.fresh_rtt.unwrap_or(stats.rtt))

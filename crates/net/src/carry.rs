@@ -461,9 +461,9 @@ impl PathSelector for RoadOrder {
         let mut candidates = Vec::new();
         let mut current = None;
         for p in ctx.paths() {
-            // The road's round trip as its freshest copy measured it
-            // (vendor/iroh patch 17): the same road on the other
-            // connection, idle, still reads its last keepalive's.
+            // The road's round trip as the copy that takes its samples
+            // measured it (vendor/iroh patch 17): the same road on the
+            // other connection, idle, still reads its last keepalive's.
             let Some(rtt) = p.rtt() else { continue };
             if !p.answering() {
                 continue;
