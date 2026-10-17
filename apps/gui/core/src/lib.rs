@@ -19,6 +19,7 @@ pub mod console_complete;
 pub mod files;
 pub mod git;
 pub mod import;
+pub mod launch;
 pub mod miss;
 mod landing;
 pub mod qr;
@@ -2666,6 +2667,28 @@ pub async fn open_term_on(
         )
         .await?;
     Ok(id.0)
+}
+
+/// A new shell with literal initial input; reconnect and retry cannot send it twice.
+pub async fn open_shell(
+    root: &Path,
+    machine: &str,
+    cwd: &str,
+    command: &str,
+    title: &str,
+    size: Option<(u16, u16)>,
+    token: &str,
+) -> Result<String, String> {
+    let size = size.unwrap_or((80, 24));
+    let start = khor_node::shell_start::ShellStart {
+        token: token.into(),
+        title: title.into(),
+        cwd: cwd.into(),
+        command: command.into(),
+        cols: size.0,
+        rows: size.1,
+    };
+    Ok(open(root)?.open_shell_on(machine, start).await?.0)
 }
 
 /// Issues a one-time pairing ticket. It carries the live endpoint's

@@ -143,6 +143,33 @@ async fn run() {
         listed - answered
     );
 
+    // A literal startup is part of creation, never of attach. Retrying the
+    // same token keeps one host, one command execution and one shell state.
+    let counter=desk_root.0.join("startup-count");
+    let value=desk_root.0.join("startup-env");
+    let start=khor_node::shell_start::ShellStart {
+        token:"0c42a3e7-cb90-44a1-9ffd-a17e2e1b4a5c".into(),
+        title:"startup".into(),cwd:desk_root.0.display().to_string(),
+        command:format!("printf x >> '{}'\nexport KHOR_TEST_LAUNCH=kept",counter.display()),cols:69,rows:33,
+    };
+    let made=timeout(Duration::from_secs(35),phone().open_shell_on("desk",start.clone())).await.unwrap().unwrap();
+    let again=timeout(Duration::from_secs(35),phone().open_shell_on("desk",start)).await.unwrap().unwrap();
+    assert_eq!(made,again,"retry must answer the same session");
+    let live=khor_node::live::LiveKind::new(desk_root.0.clone(),khor_core::DeviceId([1;32]));
+    let dir=live.dir_of(&made).expect("startup session has a registry row");
+    let mut first=khor_node::host::connect_host_versioned(&dir,69,33).unwrap().stream;
+    use khor_node::host::{write_frame,ClientOp};
+    write_frame(&mut first,&ClientOp::Input(format!("printf '%s' \"$KHOR_TEST_LAUNCH\" > '{}'\r",value.display()).into_bytes())).unwrap();
+    drop(first);
+    let second=khor_node::host::connect_host_versioned(&dir,69,33).unwrap();drop(second);
+    let until=Instant::now()+Duration::from_secs(8);
+    while std::fs::read_to_string(&value).unwrap_or_default()!="kept"&&Instant::now()<until {tokio::time::sleep(Duration::from_millis(50)).await;}
+    let count=std::fs::read_to_string(&counter).unwrap_or_default();
+    let retained=std::fs::read_to_string(&value).unwrap_or_default();
+    let _=desk.close(&made);
+    assert_eq!(count,"x","creation retry and two attaches must not repeat startup");
+    assert_eq!(retained,"kept","startup runs in the interactive shell that remains attached");
+
     let _ = desk.close(&id);
     serve_desk.abort();
     serve_phone.abort();

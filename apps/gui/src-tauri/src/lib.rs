@@ -3224,6 +3224,43 @@ async fn open_session(
     .await
 }
 
+#[tauri::command]
+async fn launch_presets() -> Result<Vec<khor_gui_core::launch::LaunchPreset>, String> {
+    off_main(|| khor_gui_core::launch::list(&Node::root_from_env())).await
+}
+#[tauri::command]
+async fn launch_preset_save(
+    preset: khor_gui_core::launch::LaunchPreset,
+) -> Result<Vec<khor_gui_core::launch::LaunchPreset>, String> {
+    off_main(move || khor_gui_core::launch::save(&Node::root_from_env(), preset)).await
+}
+#[tauri::command]
+async fn launch_preset_delete(
+    id: String,
+) -> Result<Vec<khor_gui_core::launch::LaunchPreset>, String> {
+    off_main(move || khor_gui_core::launch::remove(&Node::root_from_env(), &id)).await
+}
+#[tauri::command]
+async fn open_shell(
+    machine: String,
+    cwd: String,
+    command: String,
+    title: Option<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
+    token: String,
+) -> Result<String, String> {
+    khor_gui_core::open_shell(
+        &Node::root_from_env(),
+        &machine,
+        &cwd,
+        &command,
+        title.as_deref().unwrap_or_default(),
+        cols.zip(rows),
+        &token,
+    )
+    .await
+}
 /// The machine card's 在这台开终端 — `open --on`, through the same
 /// core call the bridge answers with (docs/KHOR.md equivalence).
 #[tauri::command]
@@ -5170,6 +5207,10 @@ pub fn run() {
             menu_rows,
             menu_pick,
             open_session,
+            open_shell,
+            launch_presets,
+            launch_preset_save,
+            launch_preset_delete,
             open_on,
             machine_log,
             retry_transfer,

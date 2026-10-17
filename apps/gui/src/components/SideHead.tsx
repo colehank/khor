@@ -46,6 +46,7 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { cn } from "@/lib/utils";
+import {MenuViewport} from "@/components/ui/menu-viewport";
 import { GlassCircle } from "@/components/Glass";
 
 /**
@@ -365,7 +366,7 @@ export function SideHead({
     onJump(hit);
   };
 
-  const shown = useMemo(() => hits.slice(0, 20), [hits]);
+  const shown = hits;
 
   return (
     <div
@@ -492,13 +493,14 @@ export function SideHead({
               <div
                 id="khor-search-rows"
                 data-search-rows
+                data-menu-frame
                 role="listbox"
                 // Search results float (20-states 浮层): `popover` under
                 // `float`, which on the dark theme is lighter than what
                 // it hangs over — `card` was the board's own colour.
                 // One menu's material (F1.6): the glass, its radius and
                 // inset, the chosen piece for the picked hit.
-                className="glass absolute top-full right-0 z-50 mt-2 flex max-h-80 flex-col overflow-y-auto rounded-menu border-0 bg-glass-menu p-menu-inset shadow-[var(--glass-in),var(--glass-shadow)]"
+                className="glass absolute top-full right-0 z-50 mt-2 flex flex-col overflow-hidden rounded-menu border-0 bg-glass-menu shadow-[var(--glass-in),var(--glass-shadow)]"
                 // From the list column's edge, not the box's: hung
                 // straight down they would lie over the rail's glyphs
                 // (tokens.css `--seat-menu-inset`).
@@ -506,9 +508,11 @@ export function SideHead({
               >
                 {/* A hit that fails to draw takes the hits down with it,
                     never the window (`components/Fault`). */}
+                <MenuViewport active={at}>
                 <Fault name="find" reset={word} className="h-auto flex-none p-row">
                   <Hits shown={shown} at={at} go={go} />
                 </Fault>
+                </MenuViewport>
               </div>
             )}
           </div>

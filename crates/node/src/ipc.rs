@@ -417,6 +417,7 @@ pub enum Op {
     /// Literal console prose; only explicit slash submissions execute.
     Note { text: String, files: Vec<String> },
     RecognitionOn { machine: String, action: crate::recognition::Action },
+    OpenShellOn { machine: String, start: crate::shell_start::ShellStart },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -504,6 +505,7 @@ impl Op {
             Op::LaunchOn { .. } => ("LaunchOn", DEADLINE_FAR),
             Op::WritePathOn { .. } => ("WritePathOn", DEADLINE_FAR),
             Op::OpenOn { .. } => ("OpenOn", DEADLINE_FAR),
+            Op::OpenShellOn { .. } => ("OpenShellOn", DEADLINE_FAR),
             Op::OpenAgentOn { .. } => ("OpenAgentOn", DEADLINE_FAR),
             Op::ReachOn { .. } => ("ReachOn", DEADLINE_FAR),
             Op::Rejoin { .. } => ("Rejoin", DEADLINE_FAR),

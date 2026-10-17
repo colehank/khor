@@ -16,6 +16,7 @@ import * as React from "react";
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 
 import { cn } from "@/lib/utils";
+import {MenuViewport} from "./menu-viewport";
 
 function ContextMenu({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />;
@@ -29,21 +30,23 @@ function ContextMenuTrigger({
 
 function ContextMenuContent({
   className,
+  children,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
+        data-menu-frame
         className={cn(
-          "max-h-(--radix-context-menu-content-available-height) max-w-64 min-w-40 origin-(--radix-context-menu-content-transform-origin) overflow-x-hidden overflow-y-auto",
-          "glass z-50 rounded-menu border-0 bg-glass-menu p-menu-inset text-foreground shadow-[var(--glass-in),var(--glass-shadow)]",
+          "max-w-64 min-w-40 origin-(--radix-context-menu-content-transform-origin) overflow-hidden",
+          "glass z-50 rounded-menu border-0 bg-glass-menu text-foreground shadow-[var(--glass-in),var(--glass-shadow)]",
           "duration-[var(--dur-120)] ease-[var(--ease-out)]",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
         {...props}
-      />
+      ><MenuViewport room="var(--radix-context-menu-content-available-height, 100dvh)">{children}</MenuViewport></ContextMenuPrimitive.Content>
     </ContextMenuPrimitive.Portal>
   );
 }

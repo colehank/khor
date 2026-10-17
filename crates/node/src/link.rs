@@ -2175,6 +2175,10 @@ impl Node {
                     landed: Vec::new(),
                 }
             }
+            ipc::Op::OpenShellOn { machine, start } => match self.open_shell_on_with(ep,&machine,start).await {
+                Ok(id) => ipc::Reply::OpenedOn { session:id.0 },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::OpenOn {
                 machine,
                 kind,
@@ -3953,6 +3957,10 @@ impl Node {
                     truncated,
                 })
             }
+            Request::OpenShellOnce { start } => {
+                let id=self.open_shell_here(start).await?;
+                Ok(Response::Opened {session:id.0})
+            }
             Request::Open {
                 kind,
                 title,
@@ -4946,6 +4954,113 @@ impl Node {
             .await;
         ep.close().await;
         outcome
+    }
+
+    /// Runs the startup exactly once on the target's own shell and home.
+    pub async fn open_shell_on(
+        &self,
+        machine: &str,
+        start: crate::shell_start::ShellStart,
+    ) -> Result<crate::SessionId, String> {
+        start.validate()?;
+        self.refuse_unless_it_hosts(machine)?;
+        if let Some(reply) = self
+            .via_serve(ipc::Op::OpenShellOn {
+                machine: machine.into(),
+                start: start.clone(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::OpenedOn { session } => Ok(crate::SessionId(session)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let out = self.open_shell_on_with(&ep, machine, start).await;
+        ep.close().await;
+        out
+    }
+    async fn open_shell_on_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        start: crate::shell_start::ShellStart,
+    ) -> Result<crate::SessionId, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return self.open_shell_here(start).await;
+        }
+        self.ask_open(ep, &channel, Request::OpenShellOnce { start }, None)
+            .await
+    }
+    async fn open_shell_here(
+        &self,
+        start: crate::shell_start::ShellStart,
+    ) -> Result<crate::SessionId, String> {
+        self.refuse_unless_hosting()?;
+        start.validate()?;
+        let _held = crate::once::lock(&start.token).await;
+        let cwd = crate::shell_start::directory(&start.cwd)?;
+        let id = match crate::once::made(self.root(), &start.token) {
+            Some(id) => crate::SessionId(id),
+            None => {
+                let id = crate::SessionId(format!("shell/{}", fresh_leaf()?));
+                crate::once::note(self.root(), &start.token, &id.0)?;
+                id
+            }
+        };
+        if self
+            .live
+            .dir_of(&id)
+            .is_some_and(|d| d.join("meta.json").exists())
+        {
+            return Ok(id);
+        }
+        let live = self.live.clone();
+        let id = tokio::task::spawn_blocking(move || {
+            let shell = crate::shell_start::default_shell();
+            let title = if start.title.trim().is_empty() {
+                std::path::Path::new(&shell)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            } else {
+                start.title.trim().to_owned()
+            };
+            live.register(
+                &id,
+                crate::kind::SHELL,
+                &title,
+                None,
+                Self::category_of_started(crate::kind::SHELL),
+            )?;
+            live.learn_place(&id, &cwd)?;
+            let dir = live
+                .dir_of(&id)
+                .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+            crate::host::spawn_shell_at(
+                &cwd,
+                &dir,
+                &id,
+                &[shell],
+                (start.cols.clamp(20, 500), start.rows.clamp(5, 200)),
+                &start.command,
+            )?;
+            Ok::<_, String>(id)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        self.roster_new(&id)?;
+        Ok(id)
     }
 
     /// An agent session by name, on any machine — the wizard's four

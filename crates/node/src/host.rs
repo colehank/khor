@@ -500,11 +500,12 @@ fn host_args(root: &Path, rest: &[String]) -> Result<(), String> {
         rows.parse::<u16>()
             .map_err(|_| msg::host_bad_convention().to_string())?,
     );
-    host_main(
+    host_main_with_startup(
         root.to_path_buf(),
         SessionId(sid.clone()),
         size,
         cmd.to_vec(),
+        std::env::var(STARTUP_ENV).ok(),
     )
 }
 
@@ -535,7 +536,7 @@ pub fn spawn_host(
     cmd: &[String],
     size: (u16, u16),
 ) -> Result<(), String> {
-    spawn_host_with(dir, id, cmd, size, None, None)
+    spawn_host_with(dir, id, cmd, size, None, None, None)
 }
 
 /// `spawn_host`, born in a chosen working directory — the wizard names
@@ -547,7 +548,19 @@ pub fn spawn_host_at(
     cmd: &[String],
     size: (u16, u16),
 ) -> Result<(), String> {
-    spawn_host_with(dir, id, cmd, size, None, Some(cwd))
+    spawn_host_with(dir, id, cmd, size, None, Some(cwd), None)
+}
+
+/// A normal shell host with a single initial input. Attach never calls this.
+pub fn spawn_shell_at(
+    cwd: &Path,
+    dir: &Path,
+    id: &SessionId,
+    cmd: &[String],
+    size: (u16, u16),
+    startup: &str,
+) -> Result<(), String> {
+    spawn_host_with(dir, id, cmd, size, None, Some(cwd), Some(startup))
 }
 
 /// A host that is a **lens, not an owner**: it bridges a terminal onto a
@@ -571,12 +584,14 @@ pub fn spawn_viewer_host(
         size,
         Some(if made { "made" } else { "keep" }),
         None,
+        None,
     )
 }
 
 /// How `_host` learns it is a viewer: env rather than argv, so the argv
 /// contract (`host_args`) stays what every existing binary parses.
 const VIEWER_ENV: &str = "KHOR_HOST_VIEWER";
+const STARTUP_ENV: &str = "KHOR_HOST_STARTUP";
 
 fn host_store_root(dir: &Path) -> Result<PathBuf, String> {
     let root = dir.ancestors().nth(3).ok_or_else(|| msg::no_such_dir(dir.display()))?;
@@ -590,6 +605,7 @@ fn spawn_host_with(
     (cols, rows): (u16, u16),
     viewer: Option<&str>,
     cwd: Option<&Path>,
+    startup: Option<&str>,
 ) -> Result<(), String> {
     let exe = crate::self_exe()?;
     let mut c = std::process::Command::new(exe);
@@ -597,6 +613,8 @@ fn spawn_host_with(
     // name a different root from its process environment; only the child gets
     // that root, before it changes directory to the session's working path.
     c.env("KHOR_HOME", host_store_root(dir)?);
+    c.env_remove(STARTUP_ENV);
+    if let Some(text) = startup { c.env(STARTUP_ENV,text); }
     if let Some(cwd) = cwd {
         c.current_dir(cwd);
     }
@@ -1570,6 +1588,11 @@ pub fn host_main(
     size: (u16, u16),
     cmd: Vec<String>,
 ) -> Result<(), String> {
+    host_main_with_startup(root,id,size,cmd,None)
+}
+
+/// Explicit startup input belongs to a newly created host, never a connection.
+pub fn host_main_with_startup(root:PathBuf,id:SessionId,size:(u16,u16),cmd:Vec<String>,startup:Option<String>) -> Result<(),String> {
     let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
         .map_err(|e| e.to_string())?;
     let khor = root.join(".khor");
@@ -1582,7 +1605,7 @@ pub fn host_main(
     // until now every reason it had for dying went nowhere and the
     // opener had one sentence for all of them — a timeout
     // (`HOST_NEVER_READY`). See `host_error_path` for what that cost.
-    let served = host_serving(&live, &dir, &khor, &id, size, &cmd);
+    let served = host_serving(&live, &dir, &khor, &id, size, &cmd, startup.as_deref());
     if let Err(why) = &served {
         let _ = std::fs::write(host_error_path(&dir), why);
     }
@@ -1596,6 +1619,7 @@ fn host_serving(
     id: &SessionId,
     size: (u16, u16),
     cmd: &[String],
+    startup: Option<&str>,
 ) -> Result<(), String> {
     let dir = dir.to_path_buf();
     let id = id.clone();
@@ -1667,6 +1691,7 @@ fn host_serving(
     }
     builder.env("PATH", &path);
     builder.env_remove(crate::legacy_codex::SHIM_ENV);
+    builder.env_remove(STARTUP_ENV);
     // **The person's own locale, when this process has none.**
     // launchd's environment has no `LANG`, and a tmux client without a
     // UTF-8 locale falls back to the DEC line-drawing set and writes
@@ -1706,6 +1731,20 @@ fn host_serving(
             .take_writer()
             .map_err(msg::cant_write_pty)?,
     ));
+
+    if let Some(text) = startup {
+        let input = crate::shell_start::input(text);
+        let startup_writer = writer.clone();
+        let (ready, started) = std::sync::mpsc::sync_channel(0);
+        std::thread::spawn(move || {
+            let mut w = startup_writer.lock().unwrap();
+            // Hold the input lock before publishing the host address. A fast
+            // first attachment cannot put its keys ahead of the startup.
+            let _ = ready.send(());
+            let _ = w.write_all(&input).and_then(|()| w.flush());
+        });
+        let _ = started.recv();
+    }
 
     let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();

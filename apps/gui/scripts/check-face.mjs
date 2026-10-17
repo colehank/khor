@@ -474,6 +474,7 @@ try {
       hosts: true,
     },
   ];
+  await page.route("**/launch_presets", r=>r.fulfill({contentType:"application/json",body:"[]"}));
   await page.route("**/sessions", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify(rows) }),
   );
@@ -6017,7 +6018,7 @@ try {
     }
   }
 
-  // The wizard's box: empty on the 「+」, and completing the same way —
+  // The wizard's box: target home on the 「+」, completing the typed parent —
   // the new tab's page since UX-45.
   await press(rail("sessions"));
   await pressNew("new");
@@ -6027,12 +6028,13 @@ try {
   if (!wizard) {
     fail("probe dead: the new tab's page drew no 目录 box (src/views/NewSessionPage.tsx)");
   } else {
+    await until(5_000, async () => (await page.locator("[data-new-session-dir]").inputValue()) !== "");
     const was = await page.locator("[data-new-session-dir]").inputValue();
-    if (was !== "" || (await page.locator("[data-new-session-pick], [data-new-session-places]").count()) !== 0) {
+    if (was === "" || (await page.locator("[data-new-session-pick], [data-new-session-places]").count()) !== 0) {
       fail(
         `the wizard's 目录 opened on 「${was}」 with its old shortcuts ` +
           `(${await page.locator("[data-new-session-pick], [data-new-session-places]").count()}) — ` +
-          "nothing is offered before typing (src/views/NewSessionPage.tsx)",
+          "the selected machine home is filled without extra shortcut rows (src/views/NewSessionPage.tsx)",
       );
     }
     await page.locator("[data-new-session-dir]").click();
@@ -7212,9 +7214,7 @@ try {
         const filled = await page.evaluate(() => ({
           dir: document.querySelector("[data-new-session-dir]")?.value ?? null,
           on:
-            [...document.querySelectorAll("[data-new-session-machine]")]
-              .filter((e) => e.getAttribute("data-on") === "true")
-              .map((e) => e.getAttribute("data-new-session-machine")),
+            [document.querySelector("[data-new-session-machines]")?.getAttribute("data-machine")],
         }));
         console.log(`ws + : ${JSON.stringify(filled)}`);
         if (filled.dir !== pin.path) {
@@ -13547,8 +13547,8 @@ try {
         return null;
       }
       const lit = await page.evaluate(() => ({
-        chat: document.querySelector("[data-new-session-chat]")?.getAttribute("data-on") ?? null,
-        term: document.querySelector("[data-new-session-term]")?.getAttribute("data-on") ?? null,
+        chat: String(document.querySelector("[data-new-session-launch]")?.getAttribute("data-kind") === "agent"),
+        term: String(document.querySelector("[data-new-session-launch]")?.getAttribute("data-kind") === "shell"),
       }));
       // 取消 on the new tab's page (UX-45; ⚠️ 墓碑: Escape on the dialog).
       await press("[data-new-session-page] [data-new-tab-cancel]");
@@ -29897,21 +29897,25 @@ try {
       if (!(await press("[data-side-head] [data-pane-new]"))) return null;
       if ((await count('[role="menu"]')) > 0 && !(await press('[role="menu"] [data-new-item="new"]'))) return null;
       if (!(await until(3_000, async () => (await count("[data-new-session-page]")) > 0))) return null;
-      const select = page.locator("[data-new-session-machine-select]");
+      const select = page.locator("[data-new-session-machines] input");
       if (!(await until(3_000, async () => (await select.count()) > 0))) return null;
-      const opened = await select.inputValue();
-      const kinds = async () =>
-        page.evaluate(() => {
-          const tiles = [...document.querySelectorAll("[data-new-session-tile]")];
-          const kind = (is) => {
-            const t = tiles.filter((x) => is(x.getAttribute("data-new-session-tile")));
-            return t.length ? { disabled: false, on: t.some((x) => x.getAttribute("data-on") === "true") } : undefined;
-          };
-          return { agent: kind((k) => k.startsWith("agent:")), shell: kind((k) => k === "shell"), tell: kind((k) => k === "tell") };
+      const opened = await page.locator("[data-new-session-machines]").getAttribute("data-machine");
+      const kinds = async () => {
+        const input = page.locator("[data-new-session-launch] [role=combobox]");
+        await input.click();
+        const value = await page.evaluate(() => {
+          const current = document.querySelector("[data-new-session-launch]")?.getAttribute("data-kind");
+          const ids = [...document.querySelectorAll("[data-choice-option]")].map(e=>e.getAttribute("data-choice-option"));
+          const kind = (key, match) => ids.some(match) ? {disabled:false,on:current===key} : undefined;
+          return {agent:kind("agent",id=>id.startsWith("agent:")),shell:kind("shell",id=>id==="shell"),tell:kind("tell",id=>id==="tell")};
         });
+        await input.press("Escape");
+        return value;
+      };
       const atOpen = await kinds();
-      await select.selectOption(pick);
-      await wait(300);
+      await select.click();
+      await select.fill(pick);
+      await page.locator(`[data-choice-option="${pick}"]`).click();
       const picked = await kinds();
       await press("[data-new-session-page] [data-new-tab-cancel]");
       return { opened, atOpen, picked };
@@ -37504,9 +37508,9 @@ try {
       if ((await sessions.count()) && (await sessions.getAttribute("data-on").catch(() => null)) !== "true") await press('[data-main] [data-region-head] [data-verb="sessions"]');
       const went = await press('[data-verb="new-session-on"]');
       const up = went && (await until(3_000, async () => (await count("[data-new-session-page]")) === 1));
-      const select = page.locator("[data-new-session-machine-select]");
+      const select = page.locator("[data-new-session-machines] input");
       await until(3_000, async () => (await select.count()) > 0);
-      const machine = up ? await select.inputValue().catch(() => null) : null;
+      const machine = up ? await page.locator("[data-new-session-machines]").getAttribute("data-machine").catch(() => null) : null;
       await press("[data-new-session-page] [data-new-tab-cancel]");
       await wait(500);
       const at = await page.evaluate(() => ({
@@ -37532,10 +37536,10 @@ try {
         m.askNewSession(dev, "/home/peer/work/sub");
       }, peer.id);
       const up = await until(3_000, async () => (await count("[data-new-session-page]")) === 1);
-      await until(3_000, async () => (await count("[data-new-session-machine-select]")) > 0);
+      await until(3_000, async () => (await count("[data-new-session-machines] input")) > 0);
       await wait(400);
       const filled = await page.evaluate(() => ({
-        machine: document.querySelector("[data-new-session-machine-select]")?.value ?? null,
+        machine: document.querySelector("[data-new-session-machines]")?.getAttribute("data-machine") ?? null,
         dir: document.querySelector("[data-new-session-dir]")?.value ?? null,
         handed: document.querySelector("[data-new-session-handed]")?.textContent ?? null,
       }));

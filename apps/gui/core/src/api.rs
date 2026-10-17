@@ -872,6 +872,11 @@ pub fn answer(
             &opt_str("machine")?.unwrap_or_default(),
             opt_str("token")?.as_deref(),
         ))?),
+        "launch_presets" => to_json(&crate::launch::list(root)?),
+        "launch_preset_save" => to_json(&crate::launch::save(root,serde_json::from_value(args.get("preset").cloned().ok_or("missing preset")?).map_err(|e|e.to_string())?)?),
+        "launch_preset_delete" => to_json(&crate::launch::remove(root,&arg("id")?)?),
+        "open_shell" => to_json(&rt.block_on(crate::open_shell(root,&arg("machine")?,&arg("cwd")?,&arg("command")?,&opt_str("title")?.unwrap_or_default(),
+            args.get("cols").and_then(|v|v.as_u64()).zip(args.get("rows").and_then(|v|v.as_u64())).map(|(c,r)|(c.min(500) as u16,r.min(200) as u16)),&arg("token")?))?),
         "open_on" => to_json(&rt.block_on(crate::open_term_on(
             root,
             &arg("machine")?,

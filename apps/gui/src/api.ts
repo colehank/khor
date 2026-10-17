@@ -76,6 +76,7 @@ import type { EndedPage } from "./gen/bindings/EndedPage";
 import type { TermChunk } from "./gen/bindings/TermChunk";
 import type { PaneAnchor } from "./gen/bindings/PaneAnchor";
 import type { PaneHistory } from "./gen/bindings/PaneHistory";
+import type { LaunchPreset } from "./gen/bindings/LaunchPreset";
 import type { AgentRow } from "./gen/bindings/AgentRow";
 import type { KnownAgent } from "./gen/bindings/KnownAgent";
 import type { AgentSaid } from "./gen/bindings/AgentSaid";
@@ -941,6 +942,13 @@ export const openTermOn = (machine: string, title = "", cwd = "", token?: string
   // the width it will be shown at (`lib/term-size-hint`). `token` as
   // `openSession`'s.
   call<string>("open_on", { machine, title, cwd, ...termSizeHint(), token });
+export type { LaunchPreset } from './gen/bindings/LaunchPreset';
+export const launchPresets = () => call<LaunchPreset[]>('launch_presets');
+export const saveLaunchPreset = (preset: LaunchPreset) => call<LaunchPreset[]>('launch_preset_save', { preset });
+export const deleteLaunchPreset = (id: string) => call<LaunchPreset[]>('launch_preset_delete', { id });
+export const openShell = (machine: string, cwd: string, command: string, title: string, token: string) =>
+  call<string>('open_shell', { machine, cwd, command, title, token, ...termSizeHint() });
+
 /** 接管 (批C): end the session's terminal side; the conversation continues here. */
 export const takeover = (id: string) => call<null>("takeover", { id });
 // `on` is explicit rather than a toggle: the caller already knows the

@@ -10,6 +10,7 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 
 import { IconCheck } from "@/components/icons";
 import { cn } from "@/lib/utils";
+import {MenuViewport} from "./menu-viewport";
 
 function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
   return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -36,43 +37,30 @@ function bottomRoom(): number {
   return safe + 8;
 }
 
-/** A menu cut by its height says so: the cut edge fades (V15). */
-function useCutEdges() {
-  return React.useCallback((el: HTMLDivElement | null) => {
-    if (!el) return;
-    const mark = () => {
-      el.toggleAttribute("data-cut-top", el.scrollTop > 0);
-      el.toggleAttribute("data-cut-bottom", el.scrollHeight - el.clientHeight - el.scrollTop > 1);
-    };
-    requestAnimationFrame(mark);
-    el.addEventListener("scroll", mark, { passive: true });
-  }, []);
-}
-
 function DropdownMenuContent({
   className,
   sideOffset = 4,
   // A menu keeps 8 from the screen's edges (the audit fix plan F4.6; N22).
   collisionPadding,
+  children,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
-  const cut = useCutEdges();
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
-        ref={cut}
         data-slot="dropdown-menu-content"
+        data-menu-frame
         sideOffset={sideOffset}
         collisionPadding={collisionPadding ?? { top: 8, left: 8, right: 8, bottom: bottomRoom() }}
         className={cn(
-          "max-h-(--radix-dropdown-menu-content-available-height) min-w-40 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto",
-          "glass z-50 rounded-menu border-0 bg-glass-menu p-menu-inset text-foreground shadow-[var(--glass-in),var(--glass-shadow)]",
+          "min-w-40 origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden",
+          "glass z-50 rounded-menu border-0 bg-glass-menu text-foreground shadow-[var(--glass-in),var(--glass-shadow)]",
           "duration-[var(--dur-120)] ease-[var(--ease-out)]",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
         {...props}
-      />
+      ><MenuViewport room="var(--radix-dropdown-menu-content-available-height, 100dvh)">{children}</MenuViewport></DropdownMenuPrimitive.Content>
     </DropdownMenuPrimitive.Portal>
   );
 }

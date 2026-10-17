@@ -2148,15 +2148,15 @@ aside[data-side] {
 }
 
 /* A menu cut by its height fades at the cut edge (V15). */
-[data-slot="dropdown-menu-content"][data-cut-bottom] {
+[data-menu-viewport][data-cut-bottom] {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade-menu)), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade-menu)), transparent);
 }
-[data-slot="dropdown-menu-content"][data-cut-top]:not([data-cut-bottom]) {
+[data-menu-viewport][data-cut-top]:not([data-cut-bottom]) {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-menu));
   mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-menu));
 }
-[data-slot="dropdown-menu-content"][data-cut-top][data-cut-bottom] {
+[data-menu-viewport][data-cut-top][data-cut-bottom] {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-menu), #000 calc(100% - var(--fade-menu)), transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-menu), #000 calc(100% - var(--fade-menu)), transparent);
 }
@@ -2853,5 +2853,19 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 }
 
 :root[data-window-platform=windows] #root::after{border-radius:var(--radius-md)}
-:root:is([data-window-platform=linux],[data-window-square]) #root::after{border-radius:0}
+:root:is([data-window-platform=linux],[data-window-square]) #root::after{border-radius:initial}
 :root[data-window-fullscreen] #root::after{display:none}
+
+/* Only rows scroll or fade. The glass rim stays on its fixed frame. */
+[data-menu-frame]{display:flex;flex-direction:column;overflow:hidden;isolation:isolate}
+[data-menu-frame]::before{z-index:2}
+[data-menu-viewport]{flex:1 1 auto;min-height:0;touch-action:pan-y;overscroll-behavior:contain;scrollbar-width:thin}
+
+/* One searchable choice field; avatars and glyphs use the existing row seat. */
+.choice-field{display:flex;min-width:0;flex-direction:column;gap:var(--gap-in)}
+.choice-input{position:relative;min-width:0}
+.choice-icon{position:absolute;z-index:1;inset-inline-start:var(--gap-in);top:50%;transform:translateY(-50%);width:var(--gap-base);height:var(--gap-base);display:grid;place-items:center;pointer-events:none;color:var(--muted-foreground)}
+.choice-icon>svg,.choice-row-icon>svg{width:100%;height:100%}
+.choice-row-icon{display:grid;width:var(--gap-base);height:var(--gap-base);place-items:center;flex:none;color:var(--muted-foreground)}
+.choice-aside{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.choice-textarea{display:block;min-height:var(--ctl-md);max-height:calc(6*var(--ctl-md));resize:none;padding-block:var(--gap-xxs);line-height:var(--leading-normal)}

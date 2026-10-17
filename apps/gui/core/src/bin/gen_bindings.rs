@@ -30,6 +30,7 @@ fn main() {
     khor_gui_core::console::ConsoleCommand::export_all_to(&dir).expect("export ConsoleCommand");
     khor_gui_core::console_complete::Completion::export_all_to(&dir).expect("export Completion");
     khor_gui_core::SeenMessage::export_all_to(&dir).expect("export SeenMessage");
+    khor_gui_core::launch::LaunchPreset::export_all_to(&dir).expect("export LaunchPreset");
     khor_gui_core::SessionRow::export_all_to(&dir).expect("export SessionRow");
     khor_gui_core::term::EndedPage::export_all_to(&dir).expect("export EndedPage");
     khor_gui_core::DeviceRow::export_all_to(&dir).expect("export DeviceRow");

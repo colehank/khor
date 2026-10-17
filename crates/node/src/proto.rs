@@ -776,6 +776,8 @@ pub enum Request {
     FetchTree { path: String },
     /// The same snapshot on an SSH satellite through its sponsor.
     SatFetchTree { sat: String, path: String },
+    /// Atomic shell creation plus initial input; old peers refuse this word.
+    OpenShellOnce { start: crate::shell_start::ShellStart },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1258,6 +1260,7 @@ impl Request {
                 // session the first made — the same as asking once.
                 | Request::OpenOnce { .. }
                 | Request::OpenAgentOnce { .. }
+                | Request::OpenShellOnce { .. }
                 | Request::WorkspaceFacts
                 // A drop names its job by token: asked twice, it answers
                 // the one job's progress (`crate::drops`).
@@ -1362,7 +1365,8 @@ impl Request {
             Request::Open { .. }
             | Request::OpenAgent { .. }
             | Request::OpenOnce { .. }
-            | Request::OpenAgentOnce { .. } => Duration::from_secs(25),
+            | Request::OpenAgentOnce { .. }
+            | Request::OpenShellOnce { .. } => Duration::from_secs(25),
             _ => Duration::from_secs(15),
         }
     }

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { consoleCatalog, consoleComplete, type ConsoleChoice, type ConsoleCommand, type ConsoleCompletion } from "@/api";
+import {MenuViewport} from "@/components/ui/menu-viewport";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -58,9 +59,9 @@ export function useConsoleCompletion(line: string, caret: number) {
 
 export function ConsoleMenu({ choices, pick, onPick }: { choices: ConsoleChoice[]; pick: number; onPick: (choice: ConsoleChoice) => void }) {
   const id = useId();
-  useEffect(() => { document.getElementById(`${id}-${pick}`)?.scrollIntoView({ block: "nearest" }); }, [id, pick]);
   return (
-    <div data-console-menu role="listbox" aria-label={gui.console_title} className="absolute bottom-full left-0 z-20 mb-1 max-h-56 w-full overflow-y-auto rounded-lg border bg-popover p-1 shadow-(--shadow-float)">
+    <div data-console-menu data-menu-frame role="listbox" aria-label={gui.console_title} className="absolute bottom-full left-0 z-20 mb-1 w-full overflow-hidden rounded-lg border bg-popover shadow-(--shadow-float)">
+      <MenuViewport active={pick}>
       {choices.map((choice, n) => (
         <button key={`${choice.value}-${n}`} id={`${id}-${n}`} type="button" role="option" aria-selected={n === pick} data-console-choice={choice.kind} data-on={n === pick} className={cn("flex min-h-touch w-full flex-col items-start justify-center rounded-sm px-2 py-1 text-left text-callout pointer-fine:min-h-ctl-md", n === pick && "bg-fill-strong text-foreground")} onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => onPick(choice)}>
           <span className="w-full truncate font-mono">{choice.label}</span>
@@ -68,6 +69,7 @@ export function ConsoleMenu({ choices, pick, onPick }: { choices: ConsoleChoice[
         </button>
       ))}
       <div className="px-2 py-1 text-caption text-muted-foreground">{gui.console_hint}</div>
+      </MenuViewport>
     </div>
   );
 }

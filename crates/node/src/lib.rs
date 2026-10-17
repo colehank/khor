@@ -37,6 +37,7 @@ pub mod hardware;
 pub mod history;
 pub(crate) mod hop;
 pub mod host;
+pub mod shell_start;
 pub mod ipc;
 pub mod keeper;
 pub mod link;

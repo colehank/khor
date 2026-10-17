@@ -19,6 +19,8 @@ import type { Avatar } from "@/gen/bindings/Avatar";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBrowser, IconCheck } from "@/components/icons";
 import { cn } from "@/lib/utils";
+import {MenuViewport} from "@/components/ui/menu-viewport";
+export {MENU_TALLEST} from "@/components/ui/menu-viewport";
 
 /** One thing the list can be narrowed by. `key` is the node's own group
     key (`dev:turing`); `label` is what a person reads.
@@ -87,16 +89,6 @@ export type OmniAxis = {
     highlight would answer a different key than the one that was hit. */
 export type MenuRows = { groups: OmniAxis[]; at: number };
 
-/**
- * How tall a menu may get before it scrolls inside itself.
- *
- * **A number rather than `max-h-60`, and it has to be one**: the floated
- * menu's window is sized in pixels from what this measures, so a cap
- * written as a class would be a second spelling that the app could not
- * read — and the two would part company the first time either moved.
- */
-export const MENU_TALLEST = 240;
-
 /** How far under the box the menu hangs. */
 const MENU_GAP = 4;
 
@@ -119,10 +111,12 @@ export function OmniMenu({
   return (
     <div
       data-omni-menu
-      style={{ maxHeight: MENU_TALLEST, ...style }}
+      data-menu-frame
+      style={style}
       // The one menu's material (the audit fix plan F1.6 / F3.4).
-      className={cn("glass overflow-y-auto rounded-menu border-0 bg-glass-menu p-menu-inset shadow-[var(--glass-in),var(--glass-shadow)]", className)}
+      className={cn("glass overflow-hidden rounded-menu border-0 bg-glass-menu shadow-[var(--glass-in),var(--glass-shadow)]", className)}
     >
+      <MenuViewport key={flat.map(c=>c.key).join("\0")} active={rows.at} room={style?.maxHeight}>
       {rows.groups.map((a) => (
         <div key={a.key}>
           {/* An axis with no label is a list of one kind — the path
@@ -213,6 +207,7 @@ export function OmniMenu({
           })}
         </div>
       ))}
+      </MenuViewport>
     </div>
   );
 }

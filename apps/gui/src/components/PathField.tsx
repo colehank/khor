@@ -1,11 +1,8 @@
 // A directory box that completes as it is typed in (2026-09-27).
 //
-// **The owner's ruling, whole**: 「"+" 弹出的窗口，涉及到目录的，都不要推荐
-// 任何路径，简单一个输入框，用户可以边写边自动推荐。」 So nothing is offered
-// before a character is typed — no recent places, no home shortcut, no
-// tree to walk — and what is offered after is the one thing a shell's
-// Tab would offer: the directories under what has been typed so far, on
-// the machine the dialog is pointed at.
+// With no caller context, start at the selected machine's actual home (2026-10-18).
+// Explicit paths stay intact; erasing a field does not fight the user's input.
+// Focus offers the typed parent's children, with a bounded scrolling list.
 //
 // **Completion, not validation.** A machine that is slow, unreachable or
 // refuses the listing means no suggestions and nothing else: the box
@@ -24,33 +21,15 @@ import { OmniMenu } from "@/components/OmniMenu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { imeKey } from "@/lib/ime";
+import {directoryPrefix,homeRelative,settledPath,splitPath} from "@/lib/path-input";
+export {settledPath,splitPath} from "@/lib/path-input";
 
-/** How many completions hang under the box. A handful: this is Tab in a
-    shell, not a directory listing, and the next character narrows it. */
-const SHOWN = 8;
 /** How long typing has to pause before a machine is asked. */
 const SETTLE_MS = 150;
 
-/** What has been typed, cut where the last segment starts. `null` is
-    「nothing to complete」: no slash yet, or a relative path — the verbs
-    behind these boxes take absolute paths and `~`, and a listing of a
-    relative one would be relative to nothing. */
-export function splitPath(typed: string): { parent: string; leaf: string } | null {
-  const cut = typed.lastIndexOf("/");
-  if (cut < 0) return null;
-  const parent = typed.slice(0, cut + 1);
-  if (!parent.startsWith("/") && !parent.startsWith("~/")) return null;
-  return { parent, leaf: typed.slice(cut + 1) };
-}
-
-/** The path as the verb should receive it: trimmed, and without the
-    trailing slash a completion leaves behind (`/` alone stays `/`). */
-export function settledPath(typed: string): string {
-  const t = typed.trim();
-  return t.length > 1 && t.endsWith("/") ? t.replace(/\/+$/, "") || "/" : t;
-}
-
 type Offer = {
+  /** Only the exact input this listing was filtered for can offer its rows. */
+  typed: string;
   /** The typed parent these names complete, exactly as typed. */
   parent: string;
   /** The same parent as the machine spells it — for `~`, the real home. */
@@ -58,6 +37,7 @@ type Offer = {
   names: string[];
   /** Which of `names` are directories (a file completes without `/`). */
   dirs: Set<string>;
+  truncated: boolean;
 };
 
 export function PathField({
@@ -89,6 +69,17 @@ export function PathField({
   const [at, setAt] = useState(-1);
   const [shut, setShut] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [home,setHome]=useState<{machine:string;path:string}|null>(null);
+  const edits=useRef({machine,typed:false});
+  if(edits.current.machine!==machine)edits.current={machine,typed:false};
+  useEffect(()=>{
+    let live=true;
+    fetchLs(machine,"").then(got=>{if(live)setHome({machine,path:directoryPrefix(got.path)})},()=>{if(live&&keepHome)setHome({machine,path:"~/"})});
+    return()=>{live=false};
+  },[machine,keepHome]);
+  useEffect(()=>{
+    if(value===""&&!edits.current.typed&&home?.machine===machine)onValueChange(home.path);
+  },[value,machine,home,onValueChange]);
   const list = useId();
 
   // A different machine is a different disk: nothing listed for the
@@ -120,18 +111,18 @@ export function PathField({
     const timer = setTimeout(async () => {
       const { parent, leaf } = cut;
       let real: string;
-      if (parent.startsWith("~/")) {
+      if (/^~[\\/]/.test(parent)) {
         // `""` is how `ls` asks for that machine's home; its answer
         // carries the real path, the only way to learn what that home
         // is called.
         const home = await ls("");
         if (!home) return live && setOffer(null);
-        const under = parent.slice(2).replace(/\/+$/, "");
-        real = under === "" ? home.path : `${home.path.replace(/\/+$/, "")}/${under}`;
+        const under = settledPath(parent.slice(2));
+        real = under === "" ? home.path : homeRelative(home.path,under);
       } else {
-        real = parent === "/" ? "/" : parent.replace(/\/+$/, "") || "/";
+        real = settledPath(parent);
       }
-      const got = await ls(parent === "~/" ? "" : real);
+      const got = await ls(/^~[\\/]$/.test(parent) ? "" : real);
       if (!live) return;
       if (!got) return setOffer(null);
       const low = leaf.toLowerCase();
@@ -146,9 +137,8 @@ export function PathField({
             // `.cache`s out of the first screen.
             (leaf.startsWith(".") || !e.name.startsWith(".")),
         )
-        .slice(0, SHOWN)
         .map((e) => e.name);
-      setOffer({ parent, real: got.path, names, dirs: new Set(got.entries.filter((e) => e.dir).map((e) => e.name)) });
+      setOffer({ typed:value, parent, real: got.path, names, truncated:got.truncated, dirs: new Set(got.entries.filter((e) => e.dir).map((e) => e.name)) });
     }, SETTLE_MS);
     return () => {
       live = false;
@@ -156,16 +146,17 @@ export function PathField({
     };
   }, [value, machine, files]);
 
-  const names = offer?.names ?? [];
-  const open = focused && !shut && names.length > 0;
+  const fresh = offer?.typed === value ? offer : null;
+  const names = fresh?.names ?? [];
+  const open = focused && !shut && (names.length > 0 || fresh?.truncated === true);
 
   const take = (name: string) => {
-    if (!offer) return;
+    if (!fresh) return;
     const base =
-      !keepHome && offer.parent.startsWith("~/")
-        ? `${offer.real.replace(/\/+$/, "")}/`
-        : offer.parent;
-    onValueChange(offer.dirs.has(name) ? `${base}${name}/` : `${base}${name}`);
+      !keepHome && /^~[\\/]/.test(fresh.parent)
+        ? directoryPrefix(fresh.real)
+        : fresh.parent;
+    onValueChange(fresh.dirs.has(name) ? directoryPrefix(`${base}${name}`) : `${base}${name}`);
   };
 
   return (
@@ -180,18 +171,18 @@ export function PathField({
         spellCheck={false}
         placeholder={gui.dir_path_hint}
         value={value}
-        onChange={(e) => onValueChange(e.target.value)}
+        onChange={(e) => {edits.current.typed=true;onValueChange(e.target.value)}}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => {
           if (imeKey(e)) return;
-          if (open && e.key === "ArrowDown") {
+          if (open && names.length > 0 && e.key === "ArrowDown") {
             e.preventDefault();
             setAt((n) => (n + 1) % names.length);
-          } else if (open && e.key === "ArrowUp") {
+          } else if (open && names.length > 0 && e.key === "ArrowUp") {
             e.preventDefault();
             setAt((n) => (n <= 0 ? names.length - 1 : n - 1));
-          } else if (open && e.key === "Tab" && !e.shiftKey) {
+          } else if (open && names.length > 0 && e.key === "Tab" && !e.shiftKey) {
             e.preventDefault();
             take(names[at < 0 ? 0 : at]);
           } else if (e.key === "Enter") {
@@ -219,9 +210,10 @@ export function PathField({
           sheet, held by its foot, grows upward to fit it. */}
       {open && (
         <div id={list} role="listbox" data-path-suggestions>
-          <OmniMenu
+          <OmniMenu key={machine+"\0"+value}
             rows={{
               groups: [
+                ...(fresh?.truncated ? [{key:"cut",label:gui.path_results_cut,role:"text" as const,candidates:[]}] : []),
                 {
                   key: "dirs",
                   label: "",
