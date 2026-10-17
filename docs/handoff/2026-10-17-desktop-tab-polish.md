@@ -28,4 +28,4 @@
 
 ## 交付状态
 
-实现位于外挂盘独立分支 desktop-tab-polish；未合并 main、未 ship。新增构建不替换当前运行 app；私有节点、会话与临时验收 app 已清理。提交前图工具在该 worktree 没有符号覆盖；commit hook 后已增量索引，复查识别 65 个变化符号、风险 0.60、63 项静态覆盖缺口（含测试自身），不能以 0 affected flows 作为通过；已按实际 diff、类型检查、模型与真实操作补做检查。
+实现来自外挂盘独立分支 desktop-tab-polish，已合并 main；未 ship。新增构建不替换当前运行 app；私有节点、会话与临时验收 app 已清理。提交前图工具在该 worktree 没有符号覆盖；commit hook 后已增量索引，复查识别 65 个变化符号、风险 0.60、63 项静态覆盖缺口（含测试自身），不能以 0 affected flows 作为通过；已按实际 diff、类型检查、模型与真实操作补做检查。
