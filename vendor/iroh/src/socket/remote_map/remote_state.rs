@@ -865,7 +865,9 @@ impl RemoteStateActor {
     }
 
     /// [`Self::select_path`]; on a measurement `tick` (khor patch 17) the selection is only
-    /// applied when it, or the backup, changed.
+    /// applied when it, or the backup, changed.  Every move, a tick's or an event's, goes
+    /// through [`Self::confirm_move`]: a move it holds keeps the selection and the backup as
+    /// they are.
     fn select_path_on(&mut self, tick: bool) {
         let (selected_addr, backup) = {
             let ctx = PathSelectionContext::new(
@@ -877,11 +879,16 @@ impl RemoteStateActor {
             let selection = self.state.path_selector.select(&ctx);
             (selection.selected().cloned(), selection.backup().cloned())
         };
-        if tick && !self.confirm_move(selected_addr.as_ref()) {
+        let was_moving = self.state.moving.is_some();
+        if !self.confirm_move(selected_addr.as_ref()) {
+            if !tick {
+                self.apply_selected_path();
+            }
             return;
         }
 
-        let mut changed = false;
+        // A move given up leaves the path it was to open: closed again unless it is the backup.
+        let mut changed = was_moving && self.state.moving.is_none();
         if let Some(addr) = selected_addr
             && self.state.selected_path.as_ref() != Some(&addr)
         {
@@ -915,7 +922,7 @@ impl RemoteStateActor {
         self.apply_selected_path();
     }
 
-    /// khor patch 17: whether a measurement tick may move the selection to `to` now.
+    /// khor patch 17: whether the selection may move to `to` now.
     ///
     /// The selector compares smoothed RTTs, and a path that carries nothing has one sample per
     /// keepalive, or none at all on the side that only acknowledges its peer's: under load
@@ -925,6 +932,14 @@ impl RemoteStateActor {
     /// answers is held for [`CONFIRM_FOR`], the two paths are pinged on every tick that read
     /// no new sample of them, and it is made only if the selector still wants it on every tick
     /// and both took a sample in that time.  A path that stopped answering is left at once.
+    ///
+    /// The moves an event asks for are held the same way (10-17, fourth leg): a hole-punching
+    /// round opens paths on every connection, each opening ran the selector at once on its
+    /// handshake's RTT against the road in use, and under load p1 moved 20 times in ten
+    /// minutes, three in one second.  Only a move onto a direct path from the relay or a
+    /// carried road is made at once: no selector weighs RTT across that line (khor's
+    /// `RoadOrder` and upstream's `BiasedRttPathSelector` both take direct whenever it is open),
+    /// so there is nothing to confirm.
     fn confirm_move(&mut self, to: Option<&transports::FourTuple>) -> bool {
         let Some(to) = to.filter(|to| self.state.selected_path.as_ref() != Some(*to)) else {
             self.state.moving = None;
@@ -938,7 +953,7 @@ impl RemoteStateActor {
             .connections
             .values()
             .any(|c| c.paths.values().any(|t| *t == from));
-        if !open || self.state.measured.silent.contains_key(&from) {
+        if !open || self.state.measured.silent.contains_key(&from) || (!from.is_ip() && to.is_ip()) {
             self.state.moving = None;
             return true;
         }
@@ -1150,6 +1165,8 @@ impl RemoteStateActor {
     /// - Sets the selected path to [`PathStatus::Available`]
     fn apply_selected_path(&mut self) {
         let backup = self.state.backup_path.clone();
+        // khor patch 17: the path a move is being confirmed to stays open too.
+        let moving = self.state.moving.as_ref().map(|(to, _)| to.clone());
         let Some(selected) = self.state.selected_path.clone() else {
             // We can't open the selected path on all paths if we don't have one yet.  And
             // we can't close all "unselected" paths either, because we don't know which one
@@ -1186,6 +1203,7 @@ impl RemoteStateActor {
                     && path_fourtuple.is_ip()
                     && path_fourtuple != &selected
                     && Some(path_fourtuple) != backup.as_ref()
+                    && Some(path_fourtuple) != moving.as_ref()
                     && conn_state.paths.values().filter(|a| a.is_ip()).count() > 1
                 {
                     trace!(?path_fourtuple, %conn_id, %path_id, "closing direct path");
@@ -2289,11 +2307,21 @@ mod tests {
             paths: RemotePathState::new(metrics),
             last_holepunch: None,
             selected_path: None,
+            backup_path: None,
+            selected_floor: None,
+            degraded: false,
+            probed_at: None,
+            probed: false,
+            moving: None,
+            measured: Default::default(),
+            last_local_candidates: None,
             scheduled_holepunch: None,
             scheduled_open_path: None,
             pending_open_paths: VecDeque::new(),
             address_lookup_stream: None,
             path_selector: Arc::new(BiasedRttPathSelector::default()),
+            rounds: tokio::sync::broadcast::channel(1).0,
+            peer_observed: Default::default(),
         };
         (state, watchable)
     }
