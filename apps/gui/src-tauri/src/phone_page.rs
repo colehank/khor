@@ -76,9 +76,11 @@ struct Page {
     /// Where it was last told to be, and when.
     told_y: f64,
     told_at: Option<std::time::Instant>,
+    sheet: Option<SheetPan>,
 }
 
 thread_local! {
+    static SHEET_CONFIG: RefCell<HashMap<String,(f64,f64)>> = RefCell::new(HashMap::new());
     static PAGES: RefCell<HashMap<String, Page>> = RefCell::new(HashMap::new());
     /// The one observer every page's scroll view reports to.
     static WATCH: Retained<ScrollWatch> = unsafe { msg_send![ScrollWatch::class(), new] };
@@ -100,6 +102,12 @@ define_class!(
     struct ScrollWatch;
 
     impl ScrollWatch {
+        // Observe the existing scroll recognizer; do not replace WebKit's delegate.
+        #[unsafe(method(sheetPan:))]
+        fn sheet_pan(&self, rec: *mut AnyObject) {
+            sheet_panned(rec);
+        }
+
         // SAFETY: the signature is NSKeyValueObserving's.
         #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
         fn observe_value(
@@ -596,6 +604,160 @@ fn new_bool(change: *mut AnyObject) -> Option<bool> {
     }
 }
 
+/// UIKit owns webpage touches, so DOM bubbling cannot resize a session sheet.
+struct SheetPan {
+    h: f64,
+    full: f64,
+    last: Option<NSPoint>,
+    owned: bool,
+    locked: bool,
+    offset: f64,
+    start_h: f64,
+    start_y: f64,
+}
+impl SheetPan {
+    fn new(h: f64, full: f64) -> Self {
+        Self {
+            h,
+            full,
+            last: None,
+            owned: false,
+            locked: false,
+            offset: 0.0,
+            start_h: h,
+            start_y: 0.0,
+        }
+    }
+}
+pub fn sheet(tab: &str, geometry: Option<(f64, f64)>) {
+    SHEET_CONFIG.with(|c| {
+        let mut c = c.borrow_mut();
+        if let Some(g) = geometry {
+            c.insert(tab.to_owned(), g);
+        } else {
+            c.remove(tab);
+        }
+    });
+    PAGES.with(|p| {
+        if let Some(page) = p.borrow_mut().get_mut(tab) {
+            if let Some((h, full)) = geometry {
+                if let Some(s) = page.sheet.as_mut() {
+                    s.full = full;
+                    if s.last.is_none() {
+                        s.h = h;
+                    }
+                } else {
+                    page.sheet = Some(SheetPan::new(h, full));
+                }
+            } else {
+                page.sheet = None;
+            }
+        }
+    });
+}
+fn sheet_panned(rec: *mut AnyObject) {
+    let Some(app) = APP.get() else { return };
+    let mut word = None;
+    PAGES.with(|p| {
+        let Ok(mut pages) = p.try_borrow_mut() else {
+            return;
+        };
+        let view: *mut AnyObject = unsafe { msg_send![rec, view] };
+        for (tab, page) in pages.iter_mut() {
+            if Retained::as_ptr(&page.scroll) as *mut AnyObject != view {
+                continue;
+            }
+            let Some(s) = page.sheet.as_mut() else { return };
+            let state: isize = unsafe { msg_send![rec, state] };
+            let point: NSPoint =
+                unsafe { msg_send![rec,translationInView:std::ptr::null_mut::<AnyObject>()] };
+            let at: NSPoint = unsafe { msg_send![view, contentOffset] };
+            if state == 1 {
+                s.last = Some(point);
+                s.owned = false;
+                s.locked = false;
+                s.offset = at.y;
+                s.start_h = s.h;
+                s.start_y = at.y;
+                return;
+            }
+            let Some(last) = s.last else { return };
+            if state == 4 || state == 5 {
+                if s.owned {
+                    word = Some(PageWord {
+                        tab: tab.clone(),
+                        text: "cancel,0,0".into(),
+                    });
+                    s.h = s.start_h;
+                    let _: () =
+                        unsafe { msg_send![view,setContentOffset:NSPoint::new(at.x,s.start_y)] };
+                }
+                s.last = None;
+                s.owned = false;
+                s.locked = false;
+                return;
+            }
+            let velocity: NSPoint =
+                unsafe { msg_send![rec,velocityInView:std::ptr::null_mut::<AnyObject>()] };
+            if state == 3 {
+                if s.owned {
+                    word = Some(PageWord {
+                        tab: tab.clone(),
+                        text: format!("end,{},{:.3}", s.h, velocity.y),
+                    });
+                }
+                s.last = None;
+                s.owned = false;
+                return;
+            }
+            if state != 2 {
+                return;
+            }
+            let inset: Insets = unsafe { msg_send![view, adjustedContentInset] };
+            let top = -inset.top;
+            let delta = point.y - last.y;
+            let began = !s.owned;
+            if !s.owned {
+                if point.y.abs() <= point.x.abs() {
+                    s.last = Some(point);
+                    return;
+                }
+                if !((delta < 0.0 && s.h < s.full - 1.0) || (delta > 0.0 && at.y <= top + 1.0)) {
+                    s.last = Some(point);
+                    return;
+                }
+                s.owned = true;
+                s.locked = true;
+                // UIKit may have already applied this first move; the sheet
+                // begins at the gesture's saved scroll position instead.
+                s.offset = if delta < 0.0 { s.start_y } else { top };
+            }
+            let size: objc2_foundation::NSSize = unsafe { msg_send![view, contentSize] };
+            let bounds: objc2_foundation::NSRect = unsafe { msg_send![view, bounds] };
+            let max = (size.height - bounds.size.height + inset.bottom - top).max(0.0);
+            let (h, y) =
+                crate::page_sheet::travel(s.h, (s.offset - top).max(0.0), -delta, s.full, max);
+            s.h = h;
+            s.offset = y + top;
+            s.last = Some(point);
+            let _: () = unsafe { msg_send![view,setContentOffset:NSPoint::new(at.x,s.offset)] };
+            word = Some(PageWord {
+                tab: tab.clone(),
+                text: format!(
+                    "{},{},{:.3}",
+                    if began { "start" } else { "move" },
+                    h,
+                    velocity.y
+                ),
+            });
+            return;
+        }
+    });
+    if let Some(word) = word {
+        let _ = app.emit_to("main", "page:sheet", word);
+    }
+}
+
 /// **Where the page is scrolled, as it moves** (round UX-4, the deck's
 /// fold): `page:scroll` with `y,down` or `y,up`, at most once a frame and
 /// only for a real move. Observed (KVO on `contentOffset`) rather than
@@ -610,6 +772,17 @@ fn scrolled(view: *mut AnyObject) {
         for (tab, page) in pages.iter_mut() {
             if Retained::as_ptr(&page.scroll) as *mut AnyObject != view {
                 continue;
+            }
+            if let Some(sheet)=page.sheet.as_ref() {
+                let tracking:bool=unsafe{msg_send![&*page.scroll,isTracking]};
+                let decelerating:bool=unsafe{msg_send![&*page.scroll,isDecelerating]};
+                if sheet.owned || (!tracking&&decelerating&&sheet.h<sheet.full-1.0&&sheet.locked) {
+                    let at:NSPoint=unsafe{msg_send![&*page.scroll,contentOffset]};
+                    if (at.y-sheet.offset).abs()>0.1 {
+                        let _:()=unsafe{msg_send![&*page.scroll,setContentOffset:NSPoint::new(at.x,sheet.offset)]};
+                    }
+                    return;
+                }
             }
             // **Only a scroll somebody made** (UX-38 audit): the page's
             // inset set under the deck moves the offset too, and a fresh
@@ -843,6 +1016,8 @@ pub fn open(
         let _: () = msg_send![parent, addSubview: &*view];
         let scroll: Retained<AnyObject> = msg_send![&*view, scrollView];
         WATCH.with(|w| {
+            let pan:*mut AnyObject=msg_send![&*scroll,panGestureRecognizer];
+            let _:()=msg_send![pan,addTarget:&**w,action:objc2::sel!(sheetPan:)];
             let key = NSString::from_str("contentOffset");
             // 1: NSKeyValueObservingOptionNew.
             let _: () = msg_send![&*scroll, addObserver: &**w, forKeyPath: &*key, options: 1usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
@@ -867,6 +1042,7 @@ pub fn open(
                     scroll,
                     told_y: 0.0,
                     told_at: None,
+                    sheet: SHEET_CONFIG.with(|c|c.borrow().get(tab).copied()).map(|(h,f)|SheetPan::new(h,f)),
                 },
             );
         });
@@ -887,13 +1063,30 @@ pub fn place(face: *mut AnyObject, tab: &str, at: PageBox) {
 }
 
 pub fn hide(tab: &str, hidden: bool) {
+    let mut cancelled = false;
     PAGES.with(|pages| {
-        if let Some(page) = pages.borrow().get(tab) {
-            unsafe {
-                let _: () = msg_send![&*page.view, setHidden: hidden];
+        if let Some(page) = pages.borrow_mut().get_mut(tab) {
+            if hidden {
+                if let Some(s) = page.sheet.as_mut() {
+                    cancelled = s.owned;
+                    if s.owned {
+                        s.h = s.start_h;
+                        let at: NSPoint = unsafe { msg_send![&*page.scroll, contentOffset] };
+                        let _: () = unsafe { msg_send![&*page.scroll, setContentOffset: NSPoint::new(at.x, s.start_y)] };
+                    }
+                    s.last = None;
+                    s.owned = false;
+                    s.locked = false;
+                }
             }
+            unsafe { let _: () = msg_send![&*page.view, setHidden: hidden]; }
         }
     });
+    if cancelled {
+        if let Some(app) = APP.get() {
+            let _ = app.emit_to("main", "page:sheet", PageWord { tab: tab.to_owned(), text: "cancel,0,0".into() });
+        }
+    }
     deck_follows(tab);
 }
 
@@ -903,6 +1096,8 @@ fn unwatch(page: &Page) {
         let key = NSString::from_str("contentOffset");
         let load = NSString::from_str("loading");
         unsafe {
+            let pan: *mut AnyObject = msg_send![&*page.scroll, panGestureRecognizer];
+            let _: () = msg_send![pan, removeTarget: &**w, action: objc2::sel!(sheetPan:)];
             let _: () = msg_send![&*page.scroll, removeObserver: &**w, forKeyPath: &*key];
             let _: () = msg_send![&*page.view, removeObserver: &**w, forKeyPath: &*load];
         }

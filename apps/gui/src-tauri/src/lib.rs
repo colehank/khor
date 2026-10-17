@@ -5,6 +5,9 @@
 #[cfg(desktop)]
 mod window_surface;
 
+#[cfg(any(target_os = "ios", test))]
+mod page_sheet;
+
 use khor_gui_core::{DeviceRow, FaceChoices, SessionRow};
 use khor_node::Node;
 
@@ -3087,6 +3090,35 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     Ok(())
 }
 
+/// A session sheet coordinates with the separate native webpage scroll view.
+#[tauri::command]
+fn page_sheet(
+    app: tauri::AppHandle,
+    tab: String,
+    options: Option<serde_json::Value>,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        let geometry = options
+            .map(|v| {
+                let height = v["height"]
+                    .as_f64()
+                    .filter(|n| n.is_finite() && *n >= 0.0)
+                    .ok_or("invalid sheet height")?;
+                let full = v["full"]
+                    .as_f64()
+                    .filter(|n| n.is_finite() && *n >= height)
+                    .ok_or("invalid full sheet height")?;
+                Ok::<_, String>((height, full))
+            })
+            .transpose()?;
+        let _ = app.run_on_main_thread(move || phone_page::sheet(&tab, geometry));
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, tab, options);
+    Ok(())
+}
+
 /// **The browser's deck, drawn natively over the page** (UX-13): the deck
 /// as the face read it from its own DOM deck, or `None` to put it away
 /// (`phone_page::deck`, `lib/native-deck.ts`).
@@ -5121,6 +5153,7 @@ pub fn run() {
             show_page,
             page_step,
             page_deck,
+            page_sheet,
             page_ground,
             show_menu,
             hide_menu,

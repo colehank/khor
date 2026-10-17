@@ -780,3 +780,5 @@ Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印�
 | 未命名 session 跟随当前目录；用户名称优先，OSC 与 agent 自动标题不覆盖身份 | `npm run session-cwd`（Unix／Windows、目录变化、用户 emoji、缺少 cwd）；node rename／unnamed_discovered／hosted_shell 单元测试 |
 | 打开即标签、去重与句柄稳定；慢写不抢新焦点；导航最新位置与标签集合独立恢复 | `npm run content-model`，以及 `npm run session-content` 的真实节点／文件／网页操作 |
 | 两种来源默认不弹键盘；编辑／组合输入不触发横滑，横向切页与纵向高度手势互斥 | `npm run content-ui`、`npm run session-content`；原生键盘与系统中断在真机验收 |
+
+| 内容区滚动与面板高度连续交接；输入保留触摸，文件／网页同两行身份 | content-pan、content-ui；原生网页另做 iPhone 验收 |

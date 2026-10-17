@@ -157,7 +157,7 @@ if (!/#\[cfg_attr\(mobile,\s*tauri::mobile_entry_point\)\]\s*pub fn run\(\)/.tes
 const QUICK = new Set([
   // Lists and documents on this machine's own disk.
   "workspaces", "tabs_list", "tabs_open", "tabs_go", "tabs_focus",
-  "tabs_close", "tabs_pin", "tabs_save", "ws_rm", "ws_pin", "pin_account", "rename_account",
+  "tabs_close", "tabs_pin", "tabs_save", "ws_rm", "ws_pin", "pin_account", "rename_account", "seen_snapshot",
   "update_account", "register_account", "remove_account", "seen", "rename_session",
   "rename_machine", "relays", "set_relays", "pin_session", "pin_device", "forget_device",
   "set_watch", "set_receive_dir", "face_choices", "restyle", "recents", "recent_visit", "forget_recent", "find",
@@ -176,13 +176,14 @@ const QUICK = new Set([
   // the few files a face staged for it.
   "term_drop_cancel",
   // Answers the build knows, or plain memory.
+  "console_catalog", // static command descriptors; no node/network work
   "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",
   "reveal_here",
   // The system's: windows, menus, the theme, a link handed to the OS.
-  "set_window_theme", "menu_state", "open_link", "reveal", "show_menu", "size_menu", "menu_pick",
+  "set_window_theme", "set_window_appearance", "window_appearance_support", "menu_state", "open_link", "reveal", "show_menu", "size_menu", "menu_pick",
   "hide_menu", "widen", "unwiden", "move_page", "hide_page", "show_page", "close_page", "page_step",
   // The phone's native deck over its page, and the ground under its folded capsule (UIKit, queued).
-  "page_deck", "page_ground",
+  "page_deck", "page_sheet", "page_ground",
   "window_minimize", "window_maximize_toggle", "window_close", "name_settings",
   // A line to the app's log; a notification handed to the OS; a haptic
   // handed to UIKit's thread (`bell_haptic` queues it and returns).

@@ -1,6 +1,7 @@
 /** Vertical pans belong to the content sheet until its top detent;
  * remaining travel goes to the content scroller. Text selection keeps its gestures. */
 import {useEffect,useLayoutEffect,useRef} from 'react';
+import {onPageWord,pageSheet} from '@/api';
 import type {PlaceDetent} from '@/views/SessionPlaceSheet';
 import {contentSheetHeights,type ContentSheetBounds} from '@/lib/content-sheet-bounds';
 
@@ -66,7 +67,6 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
     const detent = (d: PlaceDetent) => told.current.onDetent(d);
     let from: number | null = null;
     let fromX = 0;
-    let fromH = 0;
     let pulling = false;
     let live = 0;
     let speed = 0;
@@ -77,12 +77,6 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
     let wheelY=0;
     let wheelEnd: ReturnType<typeof setTimeout> | undefined;
     const scroller=(target:Element|null)=>{for(let n=target;n&&n!==el;n=n.parentElement){if(n instanceof HTMLElement&&/auto|scroll/.test(getComputedStyle(n).overflowY))return n;}return null;};
-    const scrolled = (t: Element | null) => {
-      for (let n = t; n && n !== el; n = n.parentElement) {
-        if (n instanceof HTMLElement && n.scrollTop > 0) return true;
-      }
-      return false;
-    };
     const grip = () => {
       pulling = true;
       el.setAttribute("data-sheet-pulling", "");
@@ -91,8 +85,7 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       el.removeAttribute("data-sheet-dragged");
       from = y;
       fromX = x;
-      fromH = el.getBoundingClientRect().height;
-      live = fromH;
+      live = el.getBoundingClientRect().height;
       lastY = from;
       lastT = time;
       speed = 0;
@@ -108,7 +101,7 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       // horizontal controls retain their gestures.
       if(!band && window.getSelection()?.isCollapsed===false)return;
       scroll=band?null:scroller(t);
-      if (!band && (t?.closest('[data-sheet-hold],input,textarea,[contenteditable=true]') || scrolled(t))) return;
+      if (!band && (t?.closest('[data-sheet-hold],input,textarea,[contenteditable=true]'))) return;
       begin(e.touches[0].clientX,e.touches[0].clientY,e.timeStamp,band);
     };
     const drag = (x: number, y: number, time: number, prevent: () => void) => {
@@ -118,17 +111,29 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       if (!pulling) {
         const dx = Math.abs(x - fromX);
         if (Math.max(Math.abs(dy), dx) < 6) return;
-        if (Math.abs(dy) <= dx || (dy < 0 && el.getAttribute("data-detent") === "full")) {
+        if (Math.abs(dy) <= dx) {
           from = null;
+          return;
+        }
+        const full=heights().full;
+        if ((dy<0&&el.getBoundingClientRect().height>=full-1)||(dy>0&&(scroll?.scrollTop||0)>0)) {
+          // Native content scroll owns this portion; rebase at every move
+          // so reaching its top can hand off without a jump or a new touch.
+          from=y;fromX=x;live=el.getBoundingClientRect().height;lastY=y;lastT=time;
           return;
         }
         grip();
       }
       prevent();
-      const {full}=heights();
-      const wanted=fromH-dy;
-      live = Math.max(0, Math.min(wanted, full));
-      if(scroll)scroll.scrollTop=Math.max(0,wanted-full);
+      const {full}=heights(),up=lastY-y;
+      if(up>=0){
+        const grow=Math.min(up,Math.max(0,full-live));live+=grow;
+        if(scroll)scroll.scrollTop+=up-grow;
+      }else{
+        const back=scroll?Math.min(-up,scroll.scrollTop):0;
+        if(scroll)scroll.scrollTop-=back;
+        live=Math.max(0,live+up+back);
+      }
       el.style.height = `${live}px`;
       const dt = time - lastT;
       if (dt > 0) speed = (y - lastY) / dt;
@@ -184,10 +189,38 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       if(target?.closest('input,textarea,[data-sheet-hold]'))return;
       const list=scroller(target),{full}=heights();
       const h=el.getBoundingClientRect().height;
-      if((list?.scrollTop||0)>0||(e.deltaY>0&&h>=full-1))return;
-      if(from===null){scroll=null;wheelY=0;begin(0,0,e.timeStamp,true);}
+      if((e.deltaY<0&&(list?.scrollTop||0)>0)||(e.deltaY>0&&h>=full-1))return;
+      if(from===null){scroll=list;wheelY=0;begin(0,0,e.timeStamp,true);}
       wheelY-=e.deltaY;drag(0,wheelY,e.timeStamp,()=>e.preventDefault());
       clearTimeout(wheelEnd);wheelEnd=setTimeout(()=>release(lastT+THROW_MS+1),180);
+    };
+    let nativeTab:string|null=null,nativeDrop:(()=>void)|null=null,nativeConfig='';
+    const native=()=>{
+      const tab=el.querySelector<HTMLElement>('[data-native-page-tab]')?.dataset.nativePageTab||null;
+      if(tab!==nativeTab){
+        nativeDrop?.();if(nativeTab)void pageSheet(nativeTab,null).catch(()=>{});
+        nativeTab=tab;nativeConfig='';
+        nativeDrop=tab?onPageWord('page:sheet',tab,text=>{
+          const [phase,h,v]=text.split(','),height=Number(h),velocity=Number(v);
+          if(phase==='cancel'){cancel();return;}
+          if(!Number.isFinite(height)||!Number.isFinite(velocity))return;
+          const time=performance.now();
+          if(phase==='start'){begin(0,0,time,true);}
+          else if(!pulling)return;
+          live=Math.max(0,Math.min(height,heights().full));speed=velocity/1000;lastT=time;
+          el.style.height=live+'px';
+          if(phase==='end')release(time);
+        }):null;
+      }
+      if(nativeTab&&!pulling){const config={height:Math.min(el.getBoundingClientRect().height,heights().full),full:heights().full},key=JSON.stringify(config);if(key!==nativeConfig){nativeConfig=key;void pageSheet(nativeTab,config).catch(()=>{});}}
+    };
+    const nativeResize=new ResizeObserver(native);nativeResize.observe(el);
+    const nativeMount=new MutationObserver(native);nativeMount.observe(el,{childList:true,subtree:true});native();
+    const suspend=()=>{
+      cancel();
+      // UIKit normally cancels the pan too; explicitly drop native ownership
+      // so a lost lifecycle callback cannot leave a page offset locked.
+      if(nativeTab){const tab=nativeTab;nativeConfig='';void pageSheet(tab,null).then(()=>{if(nativeTab===tab)native();}).catch(()=>{});}
     };
     const surfaces = handle ? [el,handle] : [el];
     for(const surface of surfaces){
@@ -203,8 +236,8 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
     window.addEventListener('pointercancel',pointerCancel);
     el.addEventListener('lostpointercapture',pointerCancel);
     el.addEventListener('wheel',wheel,{passive:false});
-    window.addEventListener("blur", cancel);
-    document.addEventListener("visibilitychange", cancel);
+    window.addEventListener("blur", suspend);
+    document.addEventListener("visibilitychange", suspend);
     return () => {
       for(const surface of surfaces){
         surface.removeEventListener('touchstart',down);
@@ -219,8 +252,9 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       window.removeEventListener('pointercancel',pointerCancel);
       el.removeEventListener('lostpointercapture',pointerCancel);
       el.removeEventListener('wheel',wheel);clearTimeout(wheelEnd);
-      window.removeEventListener("blur", cancel);
-      document.removeEventListener("visibilitychange", cancel);
+      window.removeEventListener("blur", suspend);
+      document.removeEventListener("visibilitychange", suspend);
+      nativeDrop?.();nativeResize.disconnect();nativeMount.disconnect();if(nativeTab)void pageSheet(nativeTab,null).catch(()=>{});
       cancel();
     };
   }, [el,handle]);

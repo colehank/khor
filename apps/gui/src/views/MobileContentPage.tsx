@@ -37,7 +37,7 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
       {!editing&&<GlassCircle aria-label={gui.back} onClick={()=>{if(!navigation.back(tab.session))onClose();}}><IconBack/></GlassCircle>}
       <div className="glass mobile-content-pill">
         {editing?<div className="mobile-content-page-editor"><PageField tab={handle} machine={device} devices={devices} at={draft} onDraft={setDraft} first={device.id} steps={false} autoFocus inPill listSeat={listSeat} onLeave={()=>setEditing(false)} onMachine={d=>onPoint(d,draft)} onGo={(url,d)=>go(d,url)}/></div>:<>
-          <div className="mobile-page-identity"><ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={tab.url.replace(/^https?:\/\//,'').replace(/\/$/,'')} onTitle={()=>setEditing(true)}/></div>
+          <div className="mobile-page-identity"><ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={tab.title||tab.url.replace(/^https?:\/\//,'').replace(/\/$/,'')} onTitle={()=>setEditing(true)}/></div>
         </>}
       </div>
       {!editing&&<DropdownMenu><DropdownMenuTrigger asChild><GlassCircle data-content-page-more aria-label={gui.rail_more}><IconMore/></GlassCircle></DropdownMenuTrigger><DropdownMenuContent className="[&_svg]:size-nav-glyph" side="top" align="end">

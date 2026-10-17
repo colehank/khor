@@ -1603,6 +1603,9 @@ export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retr
     `page:ground` (`r,g,b` or a `theme-color`, or nothing). */
 export const pageGround = (tab: string, y: number) => (onWebFace ? Promise.resolve(null) : call<null>("page_ground", { tab, y }));
 
+export const pageSheet = (tab:string, options:{height:number;full:number}|null) =>
+  onWebFace ? Promise.resolve(null) : call<null>("page_sheet",{tab,options});
+
 export const pageDeck = (tab: string, drawing: import("@/lib/native-deck").DeckDrawing | null) =>
   onWebFace ? Promise.resolve(null) : call<null>("page_deck", { tab, drawing });
 
@@ -1614,7 +1617,7 @@ export const pageDeck = (tab: string, drawing: import("@/lib/native-deck").DeckD
  * back a cleanup that undoes nothing rather than pretending to listen.
  */
 export function onPageWord(
-  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail" | "page:ground" | "page:download",
+  event: "page:sheet" | "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail" | "page:ground" | "page:download",
   tab: string,
   said: (text: string) => void,
 ): () => void {

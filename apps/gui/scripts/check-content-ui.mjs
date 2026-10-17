@@ -57,7 +57,7 @@ try{
     if(name==='history-delete')return d.status===200&&d.remains===0;
     if(name==='browser-menu')return d.items.length>=2&&d.menu.bottom<=d.viewport&&d.items.every(x=>x.hit);
     if(name==='browser-picker-geometry')return Math.abs(d.prompt.centerY-d.source.centerY)<1.5&&d.prompt.font===d.bodyFont&&!d.focused;
-    if(name==='browser-document-layout')return !d.twoLine&&d.titleWidth>=40;
+    if(name==='browser-document-layout')return d.twoLine&&d.titleWidth>=40;
     if(name==='safe-area-keyboard')return d.panelTop>=parseFloat(d.safeTop)+7.9;
     if(name==='responsive')return d.inputWidth>=88&&!d.overflow; // Two touch widths after the exit face and clear button at 320.
   };
@@ -141,6 +141,7 @@ try{
     assert.equal(alignment[0].x,alignment[1].x);assert.equal(alignment[0].w,alignment[1].w);
     await page.locator('[data-content-source="workspace"]').click();
     assert.equal(await picker().locator('input:visible').count(),0);
+    assert.equal(await picker().locator('[data-content-scope][data-glass-circle]:visible').count(),0,'source nested another glass button inside the pill');
     await shot('workspace-heading-source');
   });
   await step('workspace-focus',async()=>{
@@ -215,7 +216,7 @@ try{
     let input=await editPicker();await input.fill('http://localhost:'+port+'/audit');await endPicker();
     note('browser-picker-geometry',await picker().evaluate(el=>{const r=e=>{const b=e.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height,centerY:b.y+b.height/2,font:getComputedStyle(e).fontSize};};return {prompt:r(el.querySelector('.mobile-content-browser:not([hidden]) .content-picker-prompt')),source:r(el.querySelector('.mobile-content-browser:not([hidden]) [data-content-scope]')),bodyFont:getComputedStyle(el.querySelector('.mobile-content-browser:not([hidden]) .mobile-content-pill')).fontSize,focused:el.contains(document.activeElement)&&document.activeElement.tagName==='INPUT'};}));await shot('browser-picker-address');
     input=await editPicker();await input.press('Enter');await shown().locator('[data-content-page-more]').waitFor();
-    note('browser-document-layout',await shown().evaluate(el=>{const identity=el.querySelector('.mobile-file-identity .content-owner-identity');return {twoLine:!!identity,title:el.querySelector('[data-band-seg="cur"] .content-owner-title')?.textContent,titleWidth:el.querySelector('[data-band-seg="cur"] .content-owner-title')?.getBoundingClientRect().width};}));await shot('browser-document');
+    note('browser-document-layout',await shown().evaluate(el=>{const identity=el.querySelector('.mobile-page-identity .content-owner-identity');return {twoLine:!!identity&&getComputedStyle(identity).display==='grid',title:el.querySelector('[data-band-seg="cur"] .content-owner-title')?.textContent,titleWidth:el.querySelector('[data-band-seg="cur"] .content-owner-title')?.getBoundingClientRect().width};}));await shot('browser-document');
     assert.equal(await shown().getAttribute('data-content-preview'),null,'webpage still requires keeping');
     await shown().locator('.mobile-page-identity [data-band-seg="cur"] button').click();
     await shown().locator('[data-page-address]').evaluate(el=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));

@@ -168,3 +168,11 @@
 - session 手动名称优先，未命名默认显示当前目录；Claude／Codex 的自动会话标题与 OSC 程序状态不改身份。列表、桌面标签和手机药丸使用同一名称判断。用户手动名称中的 emoji 保留。
 
 验证：`npm run content-model`、`npm run session-cwd`、`npm run session-content`、`npm run content-ui`；原生 iOS 键盘、WebView 与后台恢复另做真机验收。
+
+### 内容区手势与药丸统一（2026-10-17 修正）
+
+- 已滚动的工作区也可上推展开；全高下拉先滚回顶部，同一手势继续收缩面板，不要求重新触摸。网页在独立 WKWebView 中，必须连接原生 UIScrollView 手势，不能用主界面的 DOM 测试代替。
+- 文件和网页药丸共用两行身份：头像跨两行，上行 session 名，下行文件名或网页标题；地址编辑另占满药丸。窄屏仍保留此结构。
+- 来源切换只在药丸中放轻量图标，不嵌套另一颗玻璃圆钮；桌面独立工具栏仍沿用标准玻璃按钮。菜单保持图标＋文字。
+
+验证：`npm run content-pan`、`npm run content-ui` 与 iOS 编译；原生滚动与选字需真机验收。

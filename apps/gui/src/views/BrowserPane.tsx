@@ -484,7 +484,7 @@ export function BrowserPane({
           whether a page is up or not, because it is the rectangle being
           reported and a box that changed size with the status would
           move the page under the person reading it. */}
-      <div ref={host} data-page-host className="relative min-h-0 flex-1" />
+      <div ref={host} data-native-page-tab={tab} data-page-host className="relative min-h-0 flex-1" />
       {/* ⚠️ 墓碑: a 置顶 button stood under the page here — 「the one
           place a page becomes a shortcut」. docs/SHELL.md 第四轮 第 3 条
           took it off (「浏览器底部不要有置顶按钮, 统一到侧边栏去操作」):

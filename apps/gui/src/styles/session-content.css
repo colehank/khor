@@ -80,12 +80,12 @@
 .content-owner-identity>[data-page-field-row]{min-width:0;flex:1}
 .content-owner-identity [data-page-field]{box-shadow:none;background:transparent}
 .mobile-file-identity{min-width:0;flex:1;height:100%;padding:0}
-.mobile-file-identity .content-owner-identity{display:grid;grid-template-columns:var(--glass-item-h) minmax(0,1fr);grid-template-rows:1fr 1fr;column-gap:var(--gap-in);row-gap:0;align-items:center}
-.mobile-file-identity .content-owner-face{grid-column:1;grid-row:1 / span 2}
-.mobile-file-identity .content-owner-name{grid-column:2;grid-row:1;align-self:end;max-width:none;min-width:0;width:100%;font-size:var(--text-caption);line-height:1.1}
-.mobile-file-identity .content-owner-name::after{content:' /';color:var(--tertiary)}
-.mobile-file-identity .content-owner-slash{display:none}
-.mobile-file-identity .content-owner-title{grid-column:2;grid-row:2;align-self:start;font-size:var(--text-callout);line-height:1.2}
+:is(.mobile-file-identity,.mobile-page-identity) .content-owner-identity{display:grid;grid-template-columns:var(--glass-item-h) minmax(0,1fr);grid-template-rows:1fr 1fr;column-gap:var(--gap-in);row-gap:0;align-items:center}
+:is(.mobile-file-identity,.mobile-page-identity) .content-owner-face{grid-column:1;grid-row:1 / span 2}
+:is(.mobile-file-identity,.mobile-page-identity) .content-owner-name{grid-column:2;grid-row:1;align-self:end;max-width:none;min-width:0;width:100%;font-size:var(--text-caption);line-height:1.1}
+:is(.mobile-file-identity,.mobile-page-identity) .content-owner-name::after{content:' /';color:var(--tertiary)}
+:is(.mobile-file-identity,.mobile-page-identity) .content-owner-slash{display:none}
+:is(.mobile-file-identity,.mobile-page-identity) .content-owner-title{grid-column:2;grid-row:2;align-self:start;font-size:var(--text-callout);line-height:1.2}
 [data-mobile] [data-file-deck]{bottom:var(--safe-bottom)}
 .mobile-fold-identity{display:flex;align-items:center;min-width:0;height:100%}
 [data-mobile] [data-deck-strip]>span:has(.mobile-fold-identity){display:flex;align-items:center;height:100%;min-width:0}
@@ -132,12 +132,12 @@
 .content-owner-identity [data-page-field-row]>.relative,.mobile-content-page-editor [data-page-field-row]>.relative{height:100%;min-width:0}
 .content-owner-identity [data-page-field],.mobile-content-page-editor [data-page-field]{height:100%}
 .mobile-page-identity{display:flex;align-items:center;min-width:0;flex:1;height:100%;padding:0}
-.mobile-page-identity .content-owner-name{max-width:var(--touch)}
+
 
 /* A resting picker identifies its session; the exit face belongs to editing. */
 .content-owner-identity:not([data-content-editing]) [data-page-machine-face]{display:none}
 .content-owner-identity:not([data-content-editing]) [data-page-field]{padding-left:0}
-@media(width<24rem){.mobile-page-identity .content-owner-name,.mobile-page-identity .content-owner-slash{display:none}}
+
 
 /* The browsing source and search live together in the one bottom pill. */
 .mobile-content-pill>[data-content-scope]{flex:none;background:none;box-shadow:none}
@@ -162,3 +162,9 @@
    a second fixed header above the mobile content. */
 .mobile-content-picker:not([data-desktop-picker]) .mobile-content-workspace [data-file-tree]{flex:none;height:auto}
 .mobile-content-picker:not([data-desktop-picker]) .mobile-content-workspace [data-files-list]{flex:none;overflow:visible}
+
+/* The pill supplies the material; its source is one quiet inline glyph. */
+.content-source-inline{display:grid;place-items:center;flex:none;width:var(--touch);height:100%;padding:var(--gap-row);color:var(--muted-foreground);border-radius:var(--radius-full);background:transparent;outline-offset:calc(-1 * var(--hair))}
+.content-source-inline>svg{width:var(--nav-glyph);height:var(--nav-glyph)}
+.content-source-inline:hover,.content-source-inline[data-state=open]{color:var(--foreground)}
+.content-source-inline:focus-visible{outline:var(--hair) solid var(--ring)}

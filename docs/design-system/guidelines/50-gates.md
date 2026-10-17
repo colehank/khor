@@ -513,3 +513,5 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 `npm run content-model`（2026-10-17）：实际 useSessionContent / useContentNavigation hooks，在确定的 API／调度边界下验证打开即持久化、重复打开、慢写焦点与稳定句柄、关闭／编辑／重试竞态、reload 后的最后场景／来源／目录／搜索／地址草稿／滚动。无需浏览器、真实节点或 Rust 构建。
 
 本轮手机真实操作继续由 `npm run content-ui` 与 `npm run session-content` 验证：来源／内容药丸横滑、方向锁定、取消、单枚回弹、来源菜单图标、默认不聚焦、输入选区与中文组合输入、两层标签搜索、原地编辑与最新位置恢复。目录头像标题随内容滚动、无重复机器名及无固定顶部分段列入截图验收。
+
+- `npm run content-pan`：生产 sheet hook 在 Chrome／WebKit 的内容滚动交接与取消、输入保护、原生页进度事件契约；UIKit 实际识别顺序另做 iPhone 验收。

@@ -60,6 +60,7 @@
     "content-model": "node scripts/check-content-model.mjs",
     "attachment-ui": "node scripts/check-attachment-ui.mjs",
     "content-sheet": "node scripts/check-content-sheet-bounds.mjs",
+    "content-pan": "node scripts/check-content-pan.mjs",
     "cm-measure": "node scripts/cm-measure.mjs"
   },
   "dependencies": {
