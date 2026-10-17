@@ -1,7 +1,7 @@
 //! The machine's identity key: load and persist.
 //!
 //! This key is the credential other devices' pairing records trust — the
-//! public key is the machine id (docs/NET.md). Two
+//! public key is the machine id(docs/NET.md). Two
 //! consequences: a leak lets anyone impersonate this machine, so the
 //! file must be 0600 and a looser mode refuses to start; regenerating
 //! makes this a *different* machine — every paired device loses it, and
