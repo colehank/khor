@@ -4,10 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } fro
 import { createPortal } from "react-dom";
 import { recentVisit, type DeviceRow, type SessionRow } from "@/api";
 import { useTabReorder } from "@/browse/use-tab-reorder";
-import { MidName, TabDivider, type TabFace } from "@/browse/TabStrip";
+import { MidName, TabAvatar, TabDivider, type TabFace } from "@/browse/TabStrip";
 import { RowMenu } from "@/components/RowMenu";
-import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBrowser, IconClose, IconPlus } from "@/components/icons";
+import { IconClose, IconPlus } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { NarrowBox } from "@/hooks/use-narrow";
 import { type ContentTab, type SessionContent } from "@/hooks/use-session-content";
@@ -23,14 +22,13 @@ import "@/styles/session-content.css";
 import { contentView, contentName } from '@/lib/content';
 export { contentView, contentName } from '@/lib/content';
 import type { ContentNavigation } from '@/hooks/use-content-navigation';
-import { ContentPicker, ContentOverview, ContentSessionOverview, contentFileDeck, useContentNeighbors } from '@/views/MobileSessionContent';
+import { contentTabFace, ContentPicker, ContentOverview, ContentSessionOverview, contentFileDeck, useContentNeighbors } from '@/views/MobileSessionContent';
 import { MobileContentPage } from '@/views/MobileContentPage';
 const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
-const glyph = (tab: ContentTab) => contentView(tab) === "workspace" ? null : contentView(tab) === "page" ? <IconBrowser /> : <FileKindIcon name={tab.url} />;
 
 /** Only the children scroll. The group head and the add button keep their
  * seats; entering/leaving the group fades the row without shrinking the outer capsule. */
-export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHide}:{session:string;open:boolean;content:SessionContent;navigation:ContentNavigation;onAdd:()=>void;onFocus:()=>void;onHide:()=>void}) {
+export function ContentTabs({session,open,devices,content,navigation,onAdd,onFocus,onHide}:{session:string;open:boolean;devices:DeviceRow[];content:SessionContent;navigation:ContentNavigation;onAdd:()=>void;onFocus:()=>void;onHide:()=>void}) {
   const measure = useRef<HTMLDivElement>(null), scroller = useRef<HTMLDivElement>(null), action = useRef<HTMLDivElement>(null);
   const reveal = useRef<HTMLDivElement>(null), room = useRef<HTMLDivElement>(null);
   const [held, setHeld] = useState<Record<string, number> | null>(null);
@@ -118,7 +116,7 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
     <TabDivider />
     <div ref={scroller} {...reorder.handlers} onScroll={edges} className="session-content-scroll" style={cut.left || cut.right ? { maskImage: `linear-gradient(to right, ${cut.left ? 'transparent, black var(--fade-tabs)' : 'black, black'}, ${cut.right ? 'black calc(100% - var(--fade-tabs)), transparent' : 'black, black'})` } : undefined}>
       <div ref={measure} className="session-content-tabs" role="tablist" aria-label={gui.session_content}>
-        {tabs.map(tab => <div key={content.handle(tab)} data-content-tab={tab.id} data-reorder-id={content.handle(tab)} data-reorder-band={tab.pinned?"pinned":"normal"} data-content-on={tab.id === active} data-content-browse={tab.id===browsing.id||undefined} data-content-icon={glyph(tab)!==null||undefined} className="session-content-tab @container/content-tab" style={held?.[tab.id]!=null?{width:held[tab.id],flexBasis:held[tab.id],flexShrink:0}:undefined}>
+        {tabs.map(tab => <div key={content.handle(tab)} data-content-tab={tab.id} data-reorder-id={content.handle(tab)} data-reorder-band={tab.pinned?"pinned":"normal"} data-content-on={tab.id === active} data-content-browse={tab.id===browsing.id||undefined} data-content-icon={contentView(tab)!=='workspace'||undefined} className="session-content-tab @container/content-tab" style={held?.[tab.id]!=null?{width:held[tab.id],flexBasis:held[tab.id],flexShrink:0}:undefined}>
           <RowMenu items={tab.id===browsing.id?[{key:"close",label:gui.close_tab,run:()=>close(tab)}]:[{ key: "pin", label: tab.pinned ? gui.unpin : gui.pin, run: () => content.pin(tab.id, !tab.pinned) }, { key: "close", label: gui.close_tab, run: () => content.close(tab.id) }]}><button role="tab" aria-selected={open && tab.id === active} tabIndex={tab.id === active ? 0 : -1} title={tab.url} className="session-content-open" onClick={()=>pick(tab)} onKeyDown={e => {
             if(e.key===' '&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();if(!e.repeat)e.currentTarget.click();return;}
             const at = tabs.findIndex(t => t.id === tab.id);
@@ -126,7 +124,7 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
             if (to < 0) return;
             e.preventDefault();pick(tabs[to]);
             measure.current?.querySelector<HTMLElement>(`[data-content-tab="${CSS.escape(tabs[to].id)}"] [role="tab"]`)?.focus();
-          }}>{glyph(tab)&&<span className="session-content-glyph">{glyph(tab)}</span>}<span className="session-content-name"><MidName text={contentName(tab)} /></span></button></RowMenu>
+          }}>{contentView(tab)!=='workspace'&&<span className="session-content-glyph"><TabAvatar f={contentTabFace(tab,devices,content.pageIcon)} bare="size-4 flex-none" seat="tab"/></span>}<span className="session-content-name"><MidName text={contentName(tab)} /></span></button></RowMenu>
           {!tab.pinned && <button className="session-content-close" aria-label={gui.close_tab} title={gui.close_tab} onKeyDown={e=>{if(e.key===' '&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();if(!e.repeat)e.currentTarget.click();}}} onClick={e=>{e.stopPropagation();if(e.detail>0)hold();close(tab);}}><IconClose /></button>}
         </div>)}
         {held&&<div ref={room} data-content-hold-room className="flex-none self-stretch"/>}
@@ -272,7 +270,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
         navigation.update(tab.session, { source: contentView(tab)==='page'?'browser':'workspace' });
         navigation.browse(tab.session);
       };
-      const browser=(onBusy?: (busy:boolean)=>void)=><BrowserPane onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});releasePages(pageIds?pageIds.split(','):[],'content');}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>navigation.document(content.open(tab.session,device!.id,url,'page',undefined,tab.id))}/>;
+      const browser=(onBusy?: (busy:boolean)=>void)=><BrowserPane onIcon={content.recordPageIcon} onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});releasePages(pageIds?pageIds.split(','):[],'content');}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>navigation.document(content.open(tab.session,device!.id,url,'page',undefined,tab.id))}/>;
       return <ContentPosition session={tab.session} position={JSON.stringify(['document',key,tab.url])} show={show} mobile={mobile} navigation={navigation} key={key} data-session-content={tab.id} data-content-handle={key} data-content-visible={show} className={cn('session-content-view', !show && 'session-content-retained')} aria-hidden={!show} inert={!show}>
         {!device ? <div className="session-content-unknown">{gui.content_machine_gone}</div> : <>
 

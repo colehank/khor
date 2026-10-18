@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { closeTab, fetchTabs, focusTab, goTab, openTab, pinTab, reorderTabs, type TabsOpen } from "@/api";
 
+import {usePageIcons} from '@/hooks/use-page-icons';
+
 export type ContentView = "workspace" | "file" | "page";
 export type ContentTab = TabsOpen["tabs"][number] & { view: ContentView | null };
 export const CONTENT_KIND = "content";
@@ -24,6 +26,7 @@ const pageIdentity = (url: string) => {
 const same = (tab: ContentTab, session: string, device: string, url: string, view: ContentView) =>
   tab.session === session && tab.device === device && (view === 'page' ? pageIdentity(tab.url) === pageIdentity(url) : tab.url === url) && (tab.view || 'workspace') === view;
 export function useSessionContent(watch: boolean) {
+  const pageIcons = usePageIcons();
   const [state, setState] = useState<State>(() => ({ open: EMPTY, opening: [], handles: readHandles() }));
   const [lines, setLines] = useState<Record<string, { line: number; at: number }>>({});
   const [ready, setReady] = useState(false), [error, setError] = useState<string | null>(null);
@@ -168,6 +171,6 @@ export function useSessionContent(watch: boolean) {
     return send(async () => ({result:undefined,value:await reorderTabs(CONTENT_KIND,session,saved)}));
   };
   const ensure = (session: string, _device: string) => { const tab = active(session); return tab ? focus(tab.id).then(() => resolve(tab.id)) : Promise.resolve(undefined); };
-  return { tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, rename, follow, focus, pin, close, active, maximized, setMaximized };
+  return { pageIcon: pageIcons.iconOf, recordPageIcon: pageIcons.record, tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, rename, follow, focus, pin, close, active, maximized, setMaximized };
 }
 export type SessionContent = ReturnType<typeof useSessionContent>;

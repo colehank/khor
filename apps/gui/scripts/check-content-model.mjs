@@ -12,13 +12,14 @@ globalThis.__hooks={
  useEffect(fn,deps){const h=rendering,i=h.index++,old=h.slots[i];if(!old||!deps||deps.some((d,j)=>d!==old.deps?.[j]))h.effects.push(()=>{old?.cleanup?.();h.slots[i]={deps,cleanup:fn()};});},
 };
 function mount(run){const h={slots:[],effects:[],index:0,value:null,queued:false,closed:false,schedule(){if(h.queued||h.closed)return;h.queued=true;queueMicrotask(()=>{h.queued=false;h.render();});},render(){if(h.closed)return;h.index=0;h.effects=[];rendering=h;h.value=run();rendering=undefined;for(const fn of h.effects)fn();},close(){h.closed=true;for(const s of h.slots)s?.cleanup?.();}};h.render();return h;}
-const bundle=await build({stdin:{contents:'export * from "./src/hooks/use-session-content.ts";export * from "./src/hooks/use-content-navigation.ts";',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'boundaries',setup(b){b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onResolve({filter:/^@\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='react'?'export const {useState,useEffect,useRef,useCallback}=globalThis.__hooks;':['fetchTabs','openTab','focusTab','closeTab','goTab','pinTab','reorderTabs'].map(n=>`export const ${n}=(...a)=>globalThis.__api.${n}(...a);`).join(''),loader:'js'}));}}]});
+const bundle=await build({stdin:{contents:'export * from "./src/hooks/use-session-content.ts";export * from "./src/hooks/use-content-navigation.ts";',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'boundaries',setup(b){b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onResolve({filter:/^@\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='react'?'export const {useState,useEffect,useRef,useCallback}=globalThis.__hooks;':['fetchTabs','openTab','focusTab','closeTab','goTab','pinTab','reorderTabs','fetchPageIcons'].map(n=>`export const ${n}=(...a)=>globalThis.__api.${n}(...a);`).join(''),loader:'js'}));}}]});
 const {useSessionContent,useContentNavigation}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 const tick=()=>new Promise(r=>setImmediate(r));const until=async fn=>{for(let i=0;i<150;i++){if(await fn())return;await tick();}throw Error('Unsettled model');};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 let node={tabs:[],active:''},clock=0,next=0,gate,focusFailure=false;const calls=[],snapshot=()=>structuredClone(node);
 globalThis.__api={
  async fetchTabs(){return snapshot();},
+ async fetchPageIcons(){return {'https://kept.test':'data:image/png;base64,kept','https://disk.test':'data:image/png;base64,disk'};},
  async openTab(kind,device,url,session,after,view){calls.push(['open',session,url]);if(gate){const g=gate;gate=undefined;await g.promise;}const id='tab-'+(++next),t={id,device,url,session,view,title:'',pinned:false,touched:++clock};const at=after?node.tabs.findIndex(t=>t.id===after):-1;if(at>=0)node.tabs.splice(at+1,0,t);else node.tabs.push(t);node.active=id;return id;},
  async focusTab(kind,id){if(focusFailure){focusFailure=false;throw Error('Focus transport failed');}const t=node.tabs.find(t=>t.id===id);assert(t,'missing node id '+id);t.touched=++clock;node.active=id;return snapshot();},
  async closeTab(kind,id){calls.push(['close',id]);node.tabs=node.tabs.filter(t=>t.id!==id);if(node.active===id)node.active=node.tabs.at(-1)?.id||'';return snapshot();},
@@ -26,7 +27,17 @@ globalThis.__api={
  async reorderTabs(kind,session,ids){calls.push(['reorder',session,ids]);const rank=new Map(ids.map((id,i)=>[id,i]));const rows=node.tabs.filter(t=>t.session===session&&rank.has(t.id)).sort((a,b)=>rank.get(a.id)-rank.get(b.id));let i=0;node.tabs=node.tabs.map(t=>t.session===session&&rank.has(t.id)?rows[i++]:t);return snapshot();},
  async pinTab(kind,id,pinned){node.tabs.find(t=>t.id===id).pinned=pinned;return snapshot();},
 };
-let model=mount(()=>useSessionContent(false));await until(()=>model.value.ready);
+let model=mount(()=>useSessionContent(false));
+model.value.recordPageIcon?.('data:image/png;base64,newer','https://kept.test/live');
+await until(()=>model.value.ready);
+assert.equal(typeof model.value.pageIcon,'function','session content must read the same persisted favicon cache as the main browser');
+assert.equal(model.value.pageIcon('https://kept.test/path?q=1'),'data:image/png;base64,newer','late disk cache cannot overwrite a live icon');
+model.value.recordPageIcon('data:image/png;base64,kept','https://kept.test/path');await tick();
+assert.equal(model.value.pageIcon('https://disk.test/path'),'data:image/png;base64,disk','cached icons survive reload without asking the site');
+model.value.recordPageIcon('data:image/png;base64,live','https://redirect.test/final');await tick();
+assert.equal(model.value.pageIcon('https://redirect.test/other'),'data:image/png;base64,live');
+assert.equal(model.value.pageIcon('https://other.test'),undefined);
+assert.equal(model.value.pageIcon('/not-a-site'),undefined);
 assert.equal(await model.value.ensure('empty','machine'),undefined);assert.throws(()=>model.value.open('A','machine','/repo','workspace'));assert.equal(node.tabs.length,0);
 gate=deferred();const slow=gate,a=model.value.open('A','machine','/a.txt','file',27);assert.equal(model.value.open('A','machine','/a.txt','file').id,a.id);const b=model.value.open('A','machine','https://example.test','page');await tick();assert.equal(model.value.tabs.length,2);assert.equal(model.value.active('A').id,b.id);
 slow.resolve();await until(()=>node.tabs.length===2&&model.value.tabs.every(t=>!t.id.startsWith('opening:')));assert.equal(model.value.handle(model.value.tabs[0]),a.id);assert.equal(model.value.handle(model.value.active('A')),b.id);assert.equal(calls.filter(c=>c[0]==='open'&&c[2]==='/a.txt').length,1);assert.equal(model.value.lines[a.id].line,27);assert(!('keep' in model.value)&&!('previews' in model.value)&&!('peek' in model.value));assert(model.value.tabs.every(t=>!('temporary' in t)&&!('preview' in t)));
@@ -85,4 +96,4 @@ assert.equal(nav.value.get('A').scene,'document');assert.equal(nav.value.get('A'
 nav.value.browse('A');
 
 nav.value.sessions('A');nav.value.update('A',{filter:'session search'});nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker','pill must restore workspace/browser, not the session list');assert.equal(nav.value.get('A').query,'needle');assert.equal(nav.value.get('A').address,'https://draft.test/path');assert.equal(nav.value.get('A').filter,'');nav.value.browse('A');nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));nav.value.sessions('A');await model.value.close(savedA.id);nav.render();nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');nav.close();model.close();
-console.log('PASS: pill resumes real content after session/nested lists, reload, legacy migration and deleted files; immediate durable tabs; deduplicated/session-scoped opens; slow write focus and stable handles; edit/close/retry races; reload handles; last scene/source/scope/query/address draft/scroll restoration');
+console.log('PASS: persisted and live favicons, origin isolation and late cache races; pill resumes real content after session/nested lists, reload, legacy migration and deleted files; immediate durable tabs; deduplicated/session-scoped opens; slow write focus and stable handles; edit/close/retry races; reload handles; last scene/source/scope/query/address draft/scroll restoration');

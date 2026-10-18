@@ -90,11 +90,9 @@ export function BrowserPane({
   here: boolean;
   /** What the page calls itself, as it says so. */
   onTitle: (title: string) => void;
-  /** The page's site icon, fetched through the page's own exit. */
-  /** The site's icon, for whoever draws one. **Absent, none is asked**
-      (the redesign, round 14: a page's row wears its machine's face and
-      the browser's mark, not the site's icon). */
-  onIcon?: (src: string) => void;
+  /** The site's icon, fetched through its own exit, and the URL that
+      requested it (which may no longer be the selected page). */
+  onIcon?: (src: string, at: string) => void;
   /**
    * khor has errands out for this tab, or they have all come back
    * (docs/SHELL.md 第十二轮).
@@ -142,7 +140,7 @@ export function BrowserPane({
     (at: string): Promise<void> =>
       icon.current
         ? pageIcon(at, exit.current).then(
-            (src) => icon.current?.(src),
+            (src) => icon.current?.(src, at),
             // No icon is a row wearing the generic page mark — nothing to say.
             () => {},
           )

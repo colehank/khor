@@ -4230,7 +4230,7 @@ export default function App() {
                         setSessionTabsFocused(!sessionTabsFocused);
                       },
                     } : undefined,
-                    group: !isNewTab(f.id) ? <ContentTabs session={f.id} open={f.id === selected && sessionTabsFocused} content={content} navigation={contentNavigation} onHide={()=>hideSessionContent(f.id)} onFocus={()=>{sessionTabs.focus(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});}} onAdd={()=>{
+                    group: !isNewTab(f.id) ? <ContentTabs devices={devices} session={f.id} open={f.id === selected && sessionTabsFocused} content={content} navigation={contentNavigation} onHide={()=>hideSessionContent(f.id)} onFocus={()=>{sessionTabs.focus(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});}} onAdd={()=>{
                     contentNavigation.browse(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});
                   }} /> : undefined }))}
                   active={selected ?? ""}

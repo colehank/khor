@@ -15,7 +15,6 @@
 .session-content-open{display:flex;align-items:center;gap:var(--gap-in);min-width:0;flex:1;height:100%;padding:0 var(--gap-in);font-size:var(--text-callout);border-radius:var(--radius-full)}
 .session-content-glyph{display:flex;flex:none}
 .session-content-name{display:flex;min-width:0;flex:1}
-.session-content-glyph>svg{height:var(--kind-mark-tab);width:var(--kind-mark-tab);flex:none}
 .session-content-close{display:grid;place-items:center;flex:none;height:var(--tab-close);width:var(--tab-close);border-radius:var(--radius-full)}
 .session-content-close>svg{width:var(--affordance);height:var(--affordance)}
 .session-content-tab:not([data-content-on=true]) .session-content-close{opacity:0}
