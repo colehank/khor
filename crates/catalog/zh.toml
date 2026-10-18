@@ -2656,17 +2656,18 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+# 2026-10-18: action labels have no trailing ellipsis, including actions
+# that open dialogs. This supersedes the older conventions recorded below.
 launch-method = "启动方式"
-launch-add = "添加为启动方式…"
-launch-manage = "管理启动方式…"
-launch-attach-agent = "接入智能体…"
-launch-add-title = "添加启动方式"
+launch-add = "保存为启动方式"
+launch-manage = "管理启动方式"
+launch-attach-agent = "接入智能体"
+launch-add-title = "新建启动方式"
 launch-edit-title = "编辑启动方式"
 launch-command = "启动命令"
 launch-shell-hint = "默认 Shell，或输入启动命令"
 launch-command-note = "新建时执行一次，重新连接不会重复执行"
 launch-built-in = "内置"
-launch-custom = "自定义"
 launch-remove = "删除这个启动方式？"
 path-results-cut = "目录列表不完整，可直接输入路径"
 files-cancelling = "正在取消…"
@@ -2680,7 +2681,7 @@ term-theme-palette = "终端配色"
 term-theme-follow = "跟随 khor"
 term-theme-presets = "预设配色"
 term-theme-mine = "我的配色"
-term-theme-customize = "自定义…"
+term-theme-customize = "自定义"
 term-theme-customize-title = "自定义终端配色"
 term-theme-copy-name = "{0} · 我的配色"
 term-theme-basic = "基本颜色"
@@ -2869,13 +2870,11 @@ dial-some-busy = "{0} 个 · {1} 忙碌"
 dial-none = "没有"
 # The card's acts, in the owner's words.
 dial-new-terminal = "新开终端"
-dial-rename = "改名字和头像…"
-dial-forget = "忘记这台机器…"
-dial-repair = "重新配对…"
-dial-relays = "中继…"
-dial-reset = "重置身份…"
-dial-invite = "生成邀请票…"
-dial-pair = "用票配对…"
+dial-rename = "改名字和头像"
+dial-forget = "忘记这台机器"
+dial-repair = "重新配对"
+dial-invite = "生成邀请票"
+dial-pair = "用票配对"
 # The matrix: rows are the reporting machine, columns to whom.
 dial-matrix = "每台机器报的路"
 dial-reported-by = "{0} 报的"
@@ -2906,7 +2905,7 @@ term-size-sample = "\ue0a0 main  \uf07b ~/khor ❯ Il1 O0 {}"
 term-font = "字体"
 term-font-system = "系统默认"
 term-font-added = "添加的字体"
-term-font-add = "添加字体文件…"
+term-font-add = "添加字体文件"
 term-font-bad = "无法读取这个字体文件：{0}"
 term-font-too-big = "字体文件不能超过 {0} MB"
 # Appearance → Terminal, only under a finger (roadmap 2.2): when a tap
@@ -3185,8 +3184,8 @@ accounts-read-from = "{0} 读取于 {1}"
 # **不复用 `forget-machine-confirm`**(2026-09-07 领队裁):离开网络和撤掉一份
 # 登记不是一件事,一句话套两处,其中一处一定读起来不对。
 accounts-remove-confirm = "所有机器都会移除这个账号；密钥需要在保存它的机器上删除"
-# 编辑账户那个窗的标题和它的按钮(右键菜单里那一项是带省略号的 `edit-ask`,
-# 2026-10-01 起)。改名字、地址、预算,以及换一把密钥;**厂商不给改**——
+# 编辑账户窗的标题、按钮与右键菜单共用。改名字、地址、预算,
+# 以及换一把密钥;**厂商不给改**——
 # 它决定这个账户怎么被读,改它等于拿一个旧 id 登记另一个账户。
 accounts-edit = "编辑"
 # 编辑对话框里密钥那个框**下面**的话(2026-09-07)。
@@ -3443,7 +3442,6 @@ new-session-more-agents = "其他智能体用 khor agents add 接入"
 # 随包带的 ACP 注册表快照,就地展开在智能体那一行底下(`khor agents
 # known` 的同一份数据)。**在界面上开这扇门的理由,和上面那句是同一个**:
 # 只用界面的人没有第二条路知道这 40 个的存在。
-new-session-add-agent = "添加…"
 new-session-registry = "khor 支持的智能体"
 # 出处和日期,和 CLI 那份头一样带着——**一张会过期的表必须自己说出它是
 # 什么时候的**,不然它读起来像「现在有这些」。
@@ -3462,9 +3460,10 @@ new-session-byhand = "需自行安装，再用命令行接入"
 # 底下「问一次」和三句回答的键照旧用。
 # 导入(docs/SHELL.md 第八轮):「+」的第二项,和它打开的那个面板。
 # 2026-10-09 起是一次搜索(IMPORT-BRIEF,负责人:「用户可能不期望按目录选,而可以搜索机器上的
-# 会话」):上面一个框、一排机器标签、点一行就导入并打开。
+# 会话」):搜索会话、可搜索的机器多选框，点一行就导入并打开。
 import-sessions = "导入"
 import-title = "导入会话"
+import-machines-count = "已选 {0} 台机器"
 import-search = "搜索可导入的会话"
 import-note = "点一行即导入并打开；从列表删除时，原会话不受影响"
 import-empty = "没有可导入的会话"
@@ -3559,13 +3558,8 @@ workspaces-how = "点击上方的 ＋，选择一台机器上的目录"
 # and the row is not derived any more — what a row says now is where it
 # is, what git says, and when it last changed.
 #
-# 添加工作区:开跨机器的目录选择窗(工作区批②),所以带省略号(components/Button)。
-# 它是 L0 搜索框旁那颗 ＋ 的名字(总览空状态上同名的按钮 2026-10-01 撤了,
-# 见 `ws-now-how`)。⚠️ 墓碑(2026-10-01):＋ 原来另有一个
-# 不带省略号的 `ws-add`(「添加工作区」),理由是 ＋ 是个图标、词只是它的名字;而
-# 额度那颗 ＋ 从 2026-09-30 起就叫「登记…」,会话、机器的 ＋ 菜单里每项都带省略号——
-# 一个 ＋ 开窗就带省略号,一条规矩(负责人派的修 bug 车道,check-face 14 b)。
-ws-add-ask = "添加工作区…"
+# 添加工作区：跨机器目录选择窗；动作名称不加尾部省略号。
+ws-add-ask = "添加工作区"
 # 工作区落地页的总览 (2026-09-28). Its list is 「最近打开」 (`ws-empty-
 # recent`, the same two words the middle column uses) once this face has
 # opened one; before that it is the workspaces by when their tree last
@@ -3992,19 +3986,13 @@ net-pause-note = "其他机器会看到这台机器不通；本机照常使用"
 net-relays = "中继"
 # 离开网络那一行:和安全页「重置身份 · 重置…」同一个形状,确认在窗里。
 net-leave-note = "机器列表只保留本机；用新的配对票可以重新加入"
-net-leave-ask = "离开…"
+net-leave-ask = "离开"
 # 头像页上编辑器那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
 # 它们上面还缺一个「这一节是什么」。
 # **2026-09-21 从「这台机器的脸」改成「头像」**:这棵树里「脸」指的是 khor 的
 # 界面(桌面 app、网页脸),而这一节说的是一张图。一个词不能指两样东西。
 settings-face = "头像"
-# 行右键菜单里的「编辑…」。先是机器行(2026-09-30 负责人:「更改头像的弹窗 UI 有点丑，
-# 能不能右键→编辑，然后这里可以改名称、头像等诸多信息」)。**取代「更改头像…」**
-# (2026-09-28 起那一项):一台机器能改的东西(名字、头像)只有这一扇门、一个窗。
-# 2026-10-01 额度行的「编辑」也换成它(负责人派的修 bug 车道):它也开一个窗,
-# 原来用的是不带省略号的 `accounts-edit`——那个词现在只是窗的标题。
-# 带省略号:后面有窗。标准词「编辑…」。原名 `machine-edit-ask`,两行共用后去掉了「机器」。
-edit-ask = "编辑…"
+# 机器行与额度行的「编辑」共用 `accounts-edit`；名字和头像在同一个窗中编辑。
 # 那个窗的标题:点名编的是哪一台。
 machine-edit-title = "编辑 {0}"
 # 名字那一栏的问题。空着就回到这台机器自己报的名字(框里淡着的那个)。
@@ -4086,10 +4074,9 @@ reset-do = "确认重置"
 # 2026-09-28); this row is about the *list* the user added, not about
 # which road a connection took, so it says whose list it is.
 relays-mine = "自己的中继"
-# The add window's title; the row's button is `relays-add-ask`, because
-# it opens that window (⚠️ 墓碑 2026-09-28: a box and a button in the card).
+# The add window and its opening action share this name.
+# ⚠️ 墓碑 2026-09-28: a box and a button in the card.
 relays-add = "添加中继"
-relays-add-ask = "添加中继…"
 # The placeholder is the answer to「这一格要填什么」, which a label
 # cannot give without becoming an explanation (docs/UX.md 文案).
 relays-hint = "http://地址:端口"
@@ -4211,7 +4198,7 @@ store-empty = "还没有收到的文件"
 store-place = "接收位置"
 # Under the path when nobody set one.
 store-place-default = "默认位置"
-store-place-change = "更改…"
+store-place-change = "更改"
 store-place-reset = "恢复默认"
 # Set from here, not yet seen by that machine: it takes it on as soon as
 # a sync brings it the change.
@@ -4494,24 +4481,7 @@ delete = "删除"
 # 确认窗的标题是一个问句,点名具体哪一个(components/Dialog:「删除 mandala？」)。
 # 按钮仍是动词 `delete`。
 delete-named = "删除 {0}？"
-# 右键菜单里的「删除」,按下去还会弹那个确认窗的时候(`confirm-delete` 开着,
-# 或者文件树里删了找不回来的那一种)。带省略号的规矩见下面 `new-session-ask`
-# 那一段;确认窗一关(不再提醒),菜单上就回到不带省略号的 `delete`
-# (2026-09-28 列表审计 第 16 条)。
-delete-ask = "删除…"
-# 还会再问一次的动作带省略号(components/Button、Menu):R0 的页面按钮、
-# 打开确认窗或表单的设置行。当场做完的那一份(对话框标题、对话框里的
-# 按钮)仍用不带省略号的原词,所以是另一个键,不是改原词。
-new-session-ask = "新会话…"
-import-sessions-ask = "导入…"
-make-a-ticket-ask = "邀请机器…"
-join-with-a-ticket-ask = "加入网络…"
-accounts-register-ask = "登记…"
-identity-leave-ask = "离开网络…"
-reset-ask = "重置…"
-rename-ask = "重命名…"
-lock-set-pin-ask = "设置 PIN…"
-lock-change-pin-ask = "更改 PIN…"
+# 有无确认窗都使用 `delete`；旧省略号动作键已合并（2026-10-18）。
 # 重置身份的确认窗标题:问句,点名哪一台。
 reset-title = "重置 {0} 的身份？"
 # The title's own control: double-click it and it becomes this input.
@@ -4594,9 +4564,9 @@ watch-unsaved = "未保存"
 # **`open-term-on-failed` 撤掉了,没有替代键**(2026-09-06):开会话不再直接
 # 在那台机器上起 shell,而是打开新建会话对话框——打开一个对话框失败不了;
 # 那台机器不在的拒句落在对话框里,四个答案都在那儿,人改得了。
-# 所以它带省略号(2026-10-01,负责人派的修 bug 车道,check-face 14 b):后面有窗。
+# 2026-10-18：开窗动作也使用不带尾部省略号的普通名称。
 # 图标的字是它的名字,和 L0 那颗 ＋ 一条规矩。原名 `open-term-on`。
-open-term-on-ask = "打开会话…"
+open-term-on-ask = "打开会话"
 browse-files = "浏览文件"
 # The third verb, the one the browser landing is for (docs/NET.md 借网):
 # this machine's network, borrowed from where you are standing.
@@ -4655,7 +4625,6 @@ make-a-ticket = "邀请机器"
 join-with-a-ticket = "加入网络"
 # ── 添加机器（round join-d）：＋ 下唯一的入口，khor 主机用邀请码，SSH 主机走 SSH ──
 add-machine = "添加机器"
-add-machine-ask = "添加机器…"
 add-khor-host = "khor 主机"
 add-khor-host-note = "已安装 khor，使用邀请码添加"
 add-ssh-host = "SSH 主机"
@@ -4671,9 +4640,9 @@ add-jump-khor = "通过 khor 主机"
 add-jump-khor-note = "添加在该机器上执行"
 add-jump-ssh = "通过 SSH 跳板机"
 add-jump-other = "其他主机"
-add-copy-config = "复制 SSH 配置…"
+add-copy-config = "复制 SSH 配置"
 add-copy-config-note = "不添加机器，只经 khor 主机用 ssh 连接"
-add-probe = "检测哪些机器可以连接…"
+add-probe = "检测哪些机器可以连接"
 add-auth = "认证方式"
 add-auth-password = "密码"
 add-auth-key-file = "密钥 · {0}"
@@ -4681,7 +4650,7 @@ add-key-files = "密钥文件"
 add-key-files-on = "{0} 上的密钥文件"
 add-key-default = "默认"
 add-key-default-note = "SSH 配置和 ssh-agent 中的密钥"
-add-key-pick = "选择密钥文件…"
+add-key-pick = "选择密钥文件"
 add-key-path-only = "khor 只记录密钥文件的路径，不复制密钥"
 add-key-only-on = "通过 {0} 添加时只能使用密钥。khor 只记录密钥文件的路径"
 add-password-kept = "密码仅保存在本机钥匙串中"
@@ -4719,7 +4688,7 @@ leg-to-jump = "本机无法连接跳板机 {0}"
 leg-jump-to-target = "跳板机无法连接目标主机：{0} 无法连接 {1}"
 leg-ssh = "{0} 无法通过 SSH 连接 {1}"
 leg-auth = "{0} 不接受 {1} 的密钥"
-promote-ask = "安装 khor…"
+promote-ask = "安装 khor"
 # 机器页的「连接记录」一行（NET-STABLE 第一步）：最近一小时到这台机器的拨号和
 # 连接变化，右端「报告」把所有机器的这一段存成一个文件。
 journal-row = "连接记录"
@@ -4739,7 +4708,6 @@ pending-elsewhere = "在持根的机器上批准"
 # 撤了——按「显示…」本身就是那一下,窗只剩「关闭」(`close`)。
 root-words-title = "恢复词"
 root-words-body = "这 24 个词就是网络的根钥匙，它签字决定哪些机器算你的。抄在纸上收好：丢了它就再也加不了、撤不了机器，谁看见它谁就能把自己的机器签进你的网"
-root-words-show-ask = "显示…"
 ticket = "邀请码"
 # 邀请设备的两种写法（2026-09-30，负责人：「邀请设备显示两个内容：现在的
 # token，和一个二维码」）。`ticket-qr` 是那张码的名字，给读屏的人——码里
@@ -4785,8 +4753,7 @@ chat-input = "输入消息…"
 # The ＋ at the left end of the conversation's capsule, and the one
 # item its menu always has when the agent takes files.
 chat-add = "添加到对话"
-chat-attach = "添加文件…"
-chat-attach-machine = "{0} 上的文件…"
+chat-attach = "添加文件"
 chat-attach-machine-title = "{0} 上的文件"
 chat-put-failed = "没能把文件传到那台机器上"
 
@@ -5501,7 +5468,7 @@ about = "关于 khor"
 # only; 我的 khor and 诊断 open in the main window from here.
 my-khor = "我的 khor"
 doctor = "诊断"
-settings = "设置…"
+settings = "设置"
 lock = "锁定"
 services = "服务"
 hide = "隐藏 khor"
@@ -5509,9 +5476,9 @@ hide-others = "隐藏其他"
 show-all = "全部显示"
 quit = "退出 khor"
 file = "文件"
-new = "新建…"
+new = "新建"
 new-tab = "新建标签页"
-import = "导入会话…"
+import = "导入会话"
 close-tab = "关闭标签页"
 close-window = "关闭窗口"
 edit = "编辑"
@@ -5521,13 +5488,13 @@ cut = "剪切"
 copy = "拷贝"
 paste = "粘贴"
 select-all = "全选"
-find-list = "查找…"
+find-list = "查找"
 view = "显示"
 find = "搜索"
 reload-term = "刷新终端"
 prev-command = "跳到上一条命令"
 next-command = "跳到下一条命令"
-command-history = "历史命令…"
+command-history = "历史命令"
 # ⌘+ ⌘− ⌘0 (item 22): Terminal.app's 显示 › 放大 / 缩小 / 默认字体大小, for
 # the terminal's type alone.
 term-bigger = "终端文字放大"

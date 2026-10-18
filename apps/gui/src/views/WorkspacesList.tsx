@@ -556,7 +556,7 @@ export function WorkspacesList({
         // row comes off the list and the directory is not touched (the
         // user, 2026-09-14) — the fact 移出 used to carry in the word.
         label: gui.delete,
-        askLabel: gui.delete_ask,
+        askLabel: gui.delete,
         destructive: true,
         ask: gui.ws_remove_confirm,
         note: refused.get(k),

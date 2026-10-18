@@ -194,6 +194,24 @@ if (codeAsMark.length) fail(`${codeAsMark.join(", ")} hand a provider's currency
 const trimmed = users(/\b(until|ago|agoOf)\([^)]*\)\s*\.(replace|slice|trim)/);
 if (trimmed.length) fail(`${trimmed.join(", ")} cut the direction off what ago / until said — untilBare or lasting`);
 
+// 2026-10-18: action labels do not use an ellipsis. Progress and input
+// prompts keep theirs: these describe an ongoing state or an empty field.
+const ongoing = new Set([
+  "files-cancelling", "new-session-seen-asking", "files-reading-folder",
+  "files-picking", "reach-busy", "join-dialing", "chat-input", "uploading",
+  "web-opening", "web-opening-here", "page-downloading",
+]);
+const appendedEllipsis = users(/(?:\$\{gui\.[a-z_]+\}|gui\.[a-z_]+\s*\+\s*["'])(?:…|\.\.\.)/);
+if (appendedEllipsis.length) fail(`${appendedEllipsis.join(", ")} append an ellipsis to a catalogue label`);
+for (const language of ["zh.toml", "en.toml"]) {
+  for (const [key, text] of table(language)) {
+    const [section, name] = key.split(".");
+    if ((section === "gui" || section === "menu") && /(?:…|\.\.\.)$/.test(text) && !ongoing.has(name)) {
+      fail(`${language} ${key} ends an action label with an ellipsis: ${text}`);
+    }
+  }
+}
+
 for (const [file, what] of PENDING) console.log(`words gate: pending · ${file} · ${what}`);
 if (bad) process.exitCode = 1;
 else console.log("words gate: 前 and 后 in two keys, the ladder at home, every latency in ms, 不通 for a machine out of reach, one derivation for the filter and the row, one money");

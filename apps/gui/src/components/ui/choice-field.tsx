@@ -26,6 +26,9 @@ export function ChoiceField({
   label,
   value,
   selected,
+  checked,
+  keepOpenOnPick = false,
+  leadingIcon,
   options,
   onPick,
   actions = [],
@@ -39,6 +42,9 @@ export function ChoiceField({
   label: string;
   value: string;
   selected?: string;
+  checked?: ReadonlySet<string>;
+  keepOpenOnPick?: boolean;
+  leadingIcon?: ReactNode;
   options: ChoiceOption[];
   onPick: (id: string) => void;
   actions?: FieldAction[];
@@ -60,7 +66,7 @@ export function ChoiceField({
   const filtered = options.filter(o => !edited || `${o.label} ${o.terms || ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const rows = [...filtered, ...actions];
   const enabled = rows.map((row, index) => 'disabled' in row && row.disabled ? -1 : index).filter(index => index >= 0);
-  const icon = edited && !onInput ? <IconSearch /> : chosen?.icon;
+  const icon = edited && !onInput ? <IconSearch /> : leadingIcon ?? chosen?.icon;
   useEffect(() => () => onPendingChange?.(false), [onPendingChange]);
   const reset = () => {
     setEdited(false);
@@ -70,8 +76,10 @@ export function ChoiceField({
   };
   const take = (id: string) => {
     const act = actions.find(a => a.id === id);
-    reset();
-    setOpen(false);
+    if (!keepOpenOnPick || act) {
+      reset();
+      setOpen(false);
+    }
     if (act) {
       if (!act.disabled) act.run();
     } else onPick(id);
@@ -157,11 +165,11 @@ export function ChoiceField({
       }
     }
   };
-  const renderRow = (o: ChoiceOption | FieldAction, n: number) => (<button key={o.id} id={uid + '-' + n} type="button" role="option" aria-selected={o.id === selected} data-choice-option={o.id} data-on={n === at} onMouseDown={e => e.preventDefault()} onClick={() => take(o.id)} disabled={!!('disabled' in o && o.disabled)} className={cn('choice-row disabled:opacity-40 flex min-h-menu-item w-full items-center gap-in rounded-menu-item px-row text-left text-body', n === at && 'glass-sel')}>
+  const renderRow = (o: ChoiceOption | FieldAction, n: number) => (<button key={o.id} id={uid + '-' + n} type="button" role="option" aria-selected={checked ? checked.has(o.id) : o.id === selected} data-choice-option={o.id} data-on={n === at} onMouseDown={e => e.preventDefault()} onClick={() => take(o.id)} disabled={!!('disabled' in o && o.disabled)} className={cn('choice-row disabled:opacity-40 flex min-h-menu-item w-full items-center gap-in rounded-menu-item px-row text-left text-body', n === at && 'glass-sel')}>
      {o.icon && <span className="choice-row-icon" aria-hidden="true">{o.icon}</span>}
      <span className="min-w-0 flex-1 truncate">{o.label}</span>
      {'aside' in o && o.aside && <span className="choice-aside text-caption text-muted-foreground" title={o.aside}>{o.aside}</span>}
-     {o.id === selected && <IconCheck className="size-affordance flex-none" />}
+     {(checked ? checked.has(o.id) : o.id === selected) && <IconCheck className="size-affordance flex-none" />}
     </button>);
   return <PopoverPrimitive.Root open={open} onOpenChange={setOpen}><div data-choice-field className="choice-field">
   <PopoverPrimitive.Anchor asChild><div className="choice-input">
@@ -177,7 +185,7 @@ export function ChoiceField({
         }} style={{
           width: "var(--radix-popover-trigger-width)",
           maxHeight: `min(${MENU_TALLEST}px, var(--radix-popover-content-available-height))`
-        }} id={list} role="listbox" aria-label={label} data-menu-frame className="glass z-50 overflow-hidden rounded-menu border-0 bg-glass-menu shadow-[var(--glass-in),var(--glass-shadow)] outline-none">
+        }} id={list} role="listbox" aria-label={label} aria-multiselectable={checked ? true : undefined} data-menu-frame className="glass z-50 overflow-hidden rounded-menu border-0 bg-glass-menu shadow-[var(--glass-in),var(--glass-shadow)] outline-none">
    <MenuViewport key={filtered.map(r => r.id).join('\0')} active={at} room="var(--radix-popover-content-available-height)">
     {!filtered.length && <div className="px-row py-in text-body text-muted-foreground">{gui.no_matches}</div>}
     {filtered.map(renderRow)}

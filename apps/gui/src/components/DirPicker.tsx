@@ -1,12 +1,9 @@
 // 跨机器目录 (工作区批②): one dialog that answers one question — 哪台机器上
 // 的哪个目录 — and hands back the answer. The workspace 「+」 opens it.
 //
-// **One box, and nothing offered before it is typed in** (2026-09-27:
-// 「"+" 弹出的窗口，涉及到目录的，都不要推荐任何路径，简单一个输入框，用户
-// 可以边写边自动推荐」). It was a tree with a breadcrumb, a list of
-// 常去的地方 and a box under both; the box is all that is left, and it
-// completes from the chosen machine's own listing as it is typed in
-// (`PathField`).
+// The same searchable machine field and live path input as NewSessionPage.
+// With no caller directory, the target's home is filled in; each target keeps
+// its own draft while this picker is open.
 //
 // **It validates nothing.** Whether that directory is really there is
 // the caller's question, asked by the caller's own verb — `ws_add`
@@ -26,10 +23,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PopupButton } from "@/components/ui/popup-button";
+import { MachineField } from "@/components/MachineField";
 import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
-import { connectionWord } from "@/words";
 
 /** What the picker answers with: the machine as the name every verb
     takes (`""` is this machine, the spelling the whole API uses), and
@@ -58,7 +54,11 @@ export function DirPicker({
 }) {
   const [machines, setMachines] = useState<DeviceRow[]>([]);
   const [machine, setMachine] = useState(start);
-  const [typed, setTyped] = useState("");
+  const [paths, setPaths] = useState<Record<string, string>>({});
+  const [pending, setPending] = useState(false);
+  const target = machines.find(d => d.name === machine || d.id === machine || (machine === "" && d.me));
+  const channel = target?.name ?? machine;
+  const typed = paths[channel] ?? "";
   /** What the caller said when it refused the pick. */
   const [refused, setRefused] = useState<string | null>(null);
   const [taking, setTaking] = useState(false);
@@ -69,7 +69,8 @@ export function DirPicker({
   useEffect(() => {
     if (!open) return;
     setMachine(start);
-    setTyped("");
+    setPaths({});
+    setPending(false);
     setRefused(null);
     setTaking(false);
     let live = true;
@@ -86,7 +87,7 @@ export function DirPicker({
 
   const take = () => {
     const path = settledPath(typed);
-    if (taking) return;
+    if (taking || pending) return;
     // **Always pressable** (the owner, 2026-10-02; `components/Why`): with
     // no path yet it says so and puts the caret in the box.
     if (path === "") {
@@ -99,7 +100,7 @@ export function DirPicker({
     setTaking(true);
     setRefused(null);
     Promise.resolve()
-      .then(() => onPick({ machine, path }))
+      .then(() => onPick({ machine: channel, path }))
       .then(
         () => onOpenChange(false),
         (e: unknown) => {
@@ -116,30 +117,17 @@ export function DirPicker({
           <DialogTitle>{gui.dir_picker}</DialogTitle>
         </DialogHeader>
         <FormGrid>
-          {/* 在哪台, first — the directory is a fact about the machine
-              (the wizard's order, and its heading). Satellites are
-              listed: `Ls` routes through the sponsor, so completion
-              reaches them too. **A popup, the wizard's control**: the
-              machines are a list that grows (components/PopupButton). */}
-          {machines.length > 1 && !fixed && (
+          {!fixed && (
             <>
               <FormLabel>{gui.new_session_machine}</FormLabel>
-              <div data-dir-picker-machines className="flex min-w-0">
-                <PopupButton
-                  look="field"
-                  label={gui.new_session_machine}
-                  value={machine === "" ? (machines.find((d) => d.me)?.name ?? "") : machine}
-                  mark={{ "data-dir-picker-machine-select": "" }}
-                  choices={machines.map((d) => ({
-                    value: d.name,
-                    label: connectionWord(d) ? `${d.shown} ${connectionWord(d)}` : d.shown,
-                    mark: { "data-dir-picker-machine": d.name },
-                  }))}
-                  onPick={(name) => {
-                    // A path typed for this disk means nothing on
-                    // that one.
+              <div data-dir-picker-machines data-machine={channel}>
+                <MachineField
+                  devices={machines}
+                  value={channel}
+                  disabled={taking}
+                  onPendingChange={setPending}
+                  onPick={name => {
                     setMachine(name);
-                    setTyped("");
                     setRefused(null);
                   }}
                 />
@@ -153,12 +141,14 @@ export function DirPicker({
           <FormLabel>{gui.new_session_dir}</FormLabel>
           <div className="flex min-w-0 flex-col">
             <PathField
+              key={channel}
               data-dir-picker-path
               aria-label={gui.new_session_dir}
-              machine={machine}
+              machine={channel}
+              disabled={taking}
               value={typed}
               onValueChange={(v) => {
-                setTyped(v);
+                setPaths(was => ({ ...was, [channel]: v }));
                 setRefused(null);
               }}
               onSubmit={take}
@@ -182,7 +172,8 @@ export function DirPicker({
           <Button
             variant="primary"
             data-dir-picker-take
-            disabled={taking}
+            disabled={taking || pending}
+            onMouseDown={e=>e.preventDefault()}
             aria-busy={taking || undefined}
             onClick={take}
             className="min-h-touch"

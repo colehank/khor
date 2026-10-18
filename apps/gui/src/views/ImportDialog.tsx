@@ -13,8 +13,8 @@
 // drawn and approved in the 1458 lab). A field at the top, focused on
 // open, filters at once over the title, the directory, the machine and
 // the running command (a tmux row's title is its session's name); the
-// machines are a row of chips, every reachable one by default; a tap on
-// a row imports it and opens it, so importing several is doing it again.
+// machine filter is a searchable field with avatars, multiple selection and
+// 「全部」 (reachable machines). A tap on a result imports and opens it.
 // One row per tmux session and nothing deeper: once it is open, khor
 // recognises what runs inside, as it does for any terminal. ⚠️ 墓碑: two
 // popups (所有机器 / 所有目录) over a list of check boxes and 「导入 N 个」.
@@ -40,15 +40,17 @@ import {
   type DeviceRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { machineChoice } from "@/components/MachineField";
+import { ChoiceField } from "@/components/ui/choice-field";
 import { sessionMark } from "@/components/BrandIcons";
-import { IconClose, IconSearch } from "@/components/icons";
+import { IconClose, IconSearch, IconDevices } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { imeKey } from "@/lib/ime";
 import { useHereHosts } from "@/lib/here";
 import { cn } from "@/lib/utils";
-import { ago, basename, connectionKey, connectionKeyWord } from "@/words";
+import { ago, basename, connectionKey, connectionKeyWord, connectionWord } from "@/words";
 
 /** What one agent's recorded answer is, as the section's mark. */
 function markOf(answer: AgentSaid | undefined): string {
@@ -61,7 +63,7 @@ function markOf(answer: AgentSaid | undefined): string {
 /** **Why a machine is not in 「全部」**, or `null` for one that is: it
     cannot be reached or is paused — `connectionKey`'s `down` / `paused`
     and their words (不通 / 已暂停), the one derivation every surface
-    reads (WORDS-1008). Its chip stays, with the word; pressed, its
+    reads (WORDS-1008). Its choice stays, with the word; pressed, its
     last-known sessions are listed. A machine the table has not named is
     taken as reachable — what it reported is all there is. */
 function away(d: DeviceRow | undefined): string | null {
@@ -123,7 +125,7 @@ export function ImportDialog({
   const [rows, setRows] = useState<CandidateRow[] | null>(null);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [q, setQ] = useState("");
-  /** The chips pressed, by device id; none is 「全部」. */
+  /** The machines picked, by device id; none is 「全部」. */
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /** The row Enter opens, while something is typed. */
   const [active, setActive] = useState(0);
@@ -199,7 +201,7 @@ export function ImportDialog({
     [q],
   );
   const byId = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
-  // The chips: the machines that have something to import — this one
+  // The choices: the machines that have something to import — this one
   // first, then by name, the ones out of reach last.
   const machines = useMemo(() => {
     const seen = new Map<string, string>();
@@ -213,6 +215,7 @@ export function ImportDialog({
           a.name.localeCompare(b.name),
       );
   }, [rows, byId]);
+  const singleMachine = picked.size === 1 ? machines.find(m => picked.has(m.id)) : undefined;
   const inScope = (r: CandidateRow) => (picked.size === 0 ? away(byId.get(r.device)) === null : picked.has(r.device));
   // Newest first, which is the node's order.
   const shown = (rows ?? []).filter((r) => inScope(r) && matches(r, words));
@@ -321,34 +324,29 @@ export function ImportDialog({
             )}
           </div>
 
-          {/* **The machines as chips** (ruling 2), the browser's machine
-              chips' look (`MachineChips`): 「全部」 is every reachable
-              machine; a machine's chip narrows to it, and several are an
-              or. Not drawn while one machine has everything. */}
-          {machines.length > 1 && (
-            <div
-              data-import-chips
-              role="group"
-              aria-label={gui.devices_tab}
-              className="-mx-pane flex flex-none gap-in overflow-x-auto px-pane py-xxs"
-            >
-              {/* 「全部」: the catalog's one word for it (`sessions-all`). */}
-              <Chip on={picked.size === 0} onClick={() => press(null)} mark={{ "data-import-chip": "" }}>
-                <span className="px-xxs whitespace-nowrap">{gui.sessions_all}</span>
-              </Chip>
-              {machines.map((m) => (
-                <Chip
-                  key={m.id}
-                  on={picked.has(m.id)}
-                  onClick={() => press(m.id)}
-                  face
-                  mark={{ "data-import-chip": m.name, ...(m.away !== null ? { "data-away": "" } : {}) }}
-                >
-                  <MachineAvatar face={m.device?.face ?? null} className="size-tab-face flex-none" />
-                  <span className="whitespace-nowrap">{m.name}</span>
-                  {m.away !== null && <span className="whitespace-nowrap text-caption text-tertiary">{m.away}</span>}
-                </Chip>
-              ))}
+          {machines.length > 0 && (
+            <div data-import-machines className="flex-none">
+              <ChoiceField
+                label={gui.devices_tab}
+                value={picked.size === 0 ? gui.sessions_all : singleMachine
+                  ? (singleMachine.device?.shown ?? singleMachine.name)
+                  : gui.import_machines_count(picked.size)}
+                leadingIcon={singleMachine
+                  ? <MachineAvatar face={singleMachine.device?.face ?? null} className="size-kind-mark" />
+                  : <IconDevices />}
+                checked={picked.size === 0 ? new Set(['all']) : picked}
+                keepOpenOnPick
+                options={[
+                  { id: 'all', label: gui.sessions_all, icon: <IconDevices /> },
+                  ...machines.map(m => machineChoice(
+                    m.device ?? { name: m.name, shown: m.name, face: null },
+                    m.id,
+                    m.device ? connectionWord(m.device) || undefined : m.away ?? undefined,
+                  )),
+                ]}
+                onPick={id => press(id === 'all' ? null : id)}
+                disabled={going !== null}
+              />
             </div>
           )}
 
@@ -435,38 +433,6 @@ export function ImportDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function Chip({
-  on,
-  onClick,
-  face,
-  mark,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  /** It starts with a machine's face, which sits at the round end. */
-  face?: boolean;
-  mark: Record<string, string>;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      {...mark}
-      data-on={on || undefined}
-      aria-pressed={on}
-      onClick={onClick}
-      className={cn(
-        "glass flex h-glass-btn flex-none items-center gap-in rounded-full text-callout",
-        face ? "ps-1 pe-row" : "px-row",
-        on && "glass-sel",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 

@@ -248,10 +248,9 @@ export function useRemoveFlow({
   const actions = (full: string, isDir: boolean): RowAction[] => [
     {
       key: "remove",
-      // 「删除…」 exactly when the sheet will follow, the plain word when
-      // it will not (2026-09-28 audit 第 16 条; the ellipsis rule in
-      // docs/design-system). Last, behind a line (`destructive`).
-      label: asks(isDir) ? gui.delete_ask : gui.delete,
+      // Last, behind a line (`destructive`). The confirmation setting
+      // changes the action, not its plain label (2026-10-18).
+      label: gui.delete,
       destructive: true,
       run: () => {
         setRefused(null);

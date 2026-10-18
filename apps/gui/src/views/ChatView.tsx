@@ -2264,7 +2264,7 @@ export function ChatView({
                 <AddSeat
                   onAttach={canAttach ? () => picker.current?.click() : undefined}
                   onAttachMachine={
-                    canAttach && home ? { label: gui.chat_attach_machine(home), pick: () => setPickOpen(true) } : undefined
+                    canAttach && home ? { label: gui.chat_attach_machine_title(home), pick: () => setPickOpen(true) } : undefined
                   }
                   options={addOptions}
                 />

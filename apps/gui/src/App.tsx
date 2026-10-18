@@ -1433,13 +1433,13 @@ export default function App() {
     // ＋'s 新会话 is a new tab (UX-45, the owner 2026-10-07): in front at
     // once, its page the choices — the strip's ＋, and ⌘N / ⌘T with it.
     // ⚠️ 墓碑: the 新建会话 dialog from here.
-    { key: "new", label: gui.new_session_ask, onSelect: () => openNewTab() },
+    { key: "new", label: gui.new_session, onSelect: () => openNewTab() },
     // What khor found and has not put on the list (docs/SHELL.md 第八轮).
-    { key: "import", label: gui.import_sessions_ask, onSelect: () => setDialog("import") },
+    { key: "import", label: gui.import_sessions, onSelect: () => setDialog("import") },
   ];
   const deviceActions: PaneAction[] = [
     // 添加机器 (round join-d): the one entry, both kinds of machine.
-    { key: "add", label: gui.add_machine_ask, onSelect: () => setDialog("add") },
+    { key: "add", label: gui.add_machine, onSelect: () => setDialog("add") },
   ];
 
   // **The floating navigation** (the redesign, 2026-10-02). Its seats

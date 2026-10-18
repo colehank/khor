@@ -81,7 +81,7 @@ export function AloneNote({ onAdd }: { onAdd: () => void }) {
       <div className="flex flex-col items-start gap-in px-row text-callout text-muted-foreground [[data-narrow]_&]:px-group">
         <span>{gui.alone_how}</span>
         <Button size="sm" data-alone-add className="pointer-coarse:min-h-touch" onClick={onAdd}>
-          {gui.add_machine_ask}
+          {gui.add_machine}
         </Button>
       </div>
     </div>

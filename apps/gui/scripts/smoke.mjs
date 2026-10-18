@@ -1057,8 +1057,8 @@ for line in sys.stdin:
   // browse」, and that is still true of every landing this walks.
   const BROWSE_KIND = { browser: "page" };
   /** An act on the open landing's ＋, its one home (2026-09-30, 「一个
-      动作只有一个家」): 会话's 新会话… / 导入… and 机器's 邀请设备… /
-      加入网络… are two acts each, so ＋ drops a menu and the act is
+      动作只有一个家」): 会话's 新会话 / 导入 and 机器's 邀请设备… /
+      加入网络 are two acts each, so ＋ drops a menu and the act is
       picked off it. */
   const plusAct = async (key) => {
     await page.locator("[data-side-head] [data-pane-new]").click();

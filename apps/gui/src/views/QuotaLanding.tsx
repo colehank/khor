@@ -1101,8 +1101,8 @@ export function QuotaLanding({
   // The landing's one act, and its one home: ＋ in L0, pressed straight
   // through (2026-09-30, the owner: 「订阅页右上角不要有登记按钮，这个功能
   // 属于搜索框旁边的 ＋」; ⚠️ 墓碑: it stood at R0's right end as well).
-  // It opens a dialog, so it wears the ellipsis (components/Button).
-  const quotaActions = [{ key: "register", label: gui.accounts_register_ask, onSelect: () => setRegistering(true) }];
+  // The action keeps its plain name even when it opens a dialog.
+  const quotaActions = [{ key: "register", label: gui.accounts_register, onSelect: () => setRegistering(true) }];
   const [registering, setRegistering] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
       keeps for the machine list, and for its reason: what failed
@@ -1332,7 +1332,7 @@ export function QuotaLanding({
               throw e;
             }),
       },
-      { key: "edit", label: gui.edit_ask, run: () => setEditing(r) },
+      { key: "edit", label: gui.accounts_edit, run: () => setEditing(r) },
       // 删除 last, behind a line — every sidebar's menu opens on 置顶 and
       // closes on 删除 (2026-09-28 audit 第 16 条, Apple HIG). It was the
       // second item from docs/SHELL.md 第二轮 until then, and 撤掉 and
@@ -1340,7 +1340,7 @@ export function QuotaLanding({
       {
         key: "remove",
         label: gui.delete,
-        askLabel: gui.delete_ask,
+        askLabel: gui.delete,
         destructive: true,
         ask: gui.accounts_remove_confirm,
         note: removeRefused.get(id),

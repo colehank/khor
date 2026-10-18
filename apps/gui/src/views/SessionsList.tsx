@@ -265,7 +265,7 @@ export function SessionsList({
       // out again here would be a second source that compiles, runs,
       // and says the wrong thing.
       label: gui.delete,
-      askLabel: gui.delete_ask,
+      askLabel: gui.delete,
       destructive: true,
       ask: closeWarning(r.kind, r.imported, r),
       note: closeRefused.get(r.id),

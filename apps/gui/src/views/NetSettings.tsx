@@ -161,7 +161,7 @@ export function NetSettings() {
           <ActionRow
             name="relays-mine"
             label={gui.relays_mine}
-            actionLabel={gui.relays_add_ask}
+            actionLabel={gui.relays_add}
             onPress={() => openAdd(false)}
             mark={{ "data-relay-add": "" }}
           />
