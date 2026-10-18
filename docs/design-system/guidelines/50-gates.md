@@ -558,3 +558,6 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 `npm run overlay-policy` 不启动浏览器，直接检查生产意图模型：编辑／选择／预览／确认／动作面板的宽窄屏默认值、初始与最大高度独立、关闭策略、键盘与安全区中的停靠点有效且有序。`npm run content-sheet` 回归原有会话容器的宿主边界，两者共用 `overlayHeights`。
 
 `npm run dialogs` 追加任务底栏中档／大档、点抓手切换、主内容上下滑及候选菜单避让的正式监听器探针；输入展开后过滤不跳动，目录从少量匹配恢复长列表。现有 `FACE_ONLY=import npm run face` 同步适配焦点与停靠逻辑。修改共享手势还要走会话文件／网页、旧附栏、键行编辑及窄转宽再转窄；原生 WKWebView 惯性／键盘仍必须真机验收。
+
+
+2026-10-18 独立内容标签：`content-model` 的新能力检查先红（缺少独立 newTab），随后覆盖连续 ＋ 的持久独立身份、原位 point、丢失 open 回执与 focus 失败的重试、独立 picker/query/address、非当前编辑器迟到更新、Back/reload 和旧导航迁移。`session-content` 适配真实持久空标签和共享 TabStrip，检查原 ID、查询隔离、原位网页、鼠标排序、关闭格中心、置顶、宽窄总览、新建与关闭最后一枚。头像环的折叠裁切探针改读实际 SVG 几何与描边。

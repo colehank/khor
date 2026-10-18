@@ -229,7 +229,7 @@ try{
     await page.setViewportSize({width:1100,height:844});await shown().locator('[data-content-page-bar]').waitFor();
     const id=await shown().getAttribute('data-session-content'),redirected='http://localhost:'+port+'/redirected';
     await api('tabs_go',{kind:'content',id,device:device.id,url:redirected,view:'page'});
-    await page.locator(`[data-content-tab="${id}"] [role=tab][title="${redirected}"]`).waitFor({state:'attached'});
+    await until(async()=>(await page.locator(`[data-content-tab="${id}"]`).getAttribute('title')||'').includes(redirected));
     assert.equal(await shown().locator('[data-page-address]').inputValue(),draft,'page navigation overwrote an active address draft');
     await page.setViewportSize({width:390,height:844});await shown().locator('.mobile-content-page-editor').waitFor();
     await shown().locator('[data-page-address]').press('Escape');
@@ -250,9 +250,17 @@ try{
   });
   await step('content-pill-navigation',async()=>{
     await page.setViewportSize({width:390,height:844});
+    // Seed the three gesture subjects explicitly: navigating within one tab
+    // now points that same tab instead of accumulating unrelated documents.
+    const old=(await api('tabs_list',{kind:'content'})).tabs.filter(t=>t.session===sessions[0]);
+    const seeded=[];
+    for(const [url,view] of [[projects[0]+'/notes.md','file'],[projects[0]+'/extra-15.txt','file'],['http://localhost:'+port+'/audit','page']])seeded.push(await api('tabs_open',{kind:'content',session:sessions[0],device:device.id,url,view}));
+    for(const tab of old)await api('tabs_close',{kind:'content',id:tab.id});
+    await api('tabs_focus',{kind:'content',id:seeded[0]});
+    await until(async()=>await shown().getAttribute('data-session-content')===seeded[0]);
     // Opened documents remain tabs without a keep step, in overview order.
     const opened=(await api('tabs_list',{kind:'content'})).tabs.filter(t=>t.session===sessions[0]&&t.view!=='workspace');assert(opened.length>=3);
-    await picker().locator('[data-content-overview-button]:visible').click();
+    await page.locator('[data-content-overview-button]:visible').click();
     const overview=()=>page.locator('[data-content-overview]:not(.session-content-retained)');
     assert.equal(await overview().locator('input:visible').count(),0,'overview forced keyboard');
     await overview().locator('[data-content-overview-search]').click();
@@ -274,7 +282,7 @@ try{
     await drag(shown().locator('[data-deck-band]'),-.65);await resting(shown().locator('[data-deck-band]'));
     assert.equal(await shown().getAttribute('data-session-content'),ids[0],'one document did not spring back');
     await shot('content-pill-single');
-    await shown().locator('[data-file-back]').click();await overview().waitFor();await overview().locator('[data-tab-sheet-new]').click();await chooseSource('browser');
+    await shown().locator('[data-content-overview-button]').click();await overview().waitFor();await overview().locator('[data-tab-sheet-new]').click();await chooseSource('browser');
   });
   await step('latest-position-and-session-search',async()=>{
     const text=await pickerBand().locator('[data-band-seg="cur"]').innerText();

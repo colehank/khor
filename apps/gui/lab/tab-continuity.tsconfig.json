@@ -1,0 +1,1 @@
+{"extends":"../tsconfig.json","include":["../src","./tab-continuity.tsx","./tab-continuity-model.ts"]}

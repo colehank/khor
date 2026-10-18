@@ -3196,15 +3196,3 @@
 @custom-variant session-tab-floor {
   @container tab (width <= 64px) { @slot; }
 }
-/* A content file/page needs its glyph, insets and close seat before text
- * fits. No extra font or control size: this is the sum of existing seats. */
-@container content-tab (width <= 52px) {
-  .session-content-tab[data-content-icon=true]:not([data-content-on=true]) .session-content-name {display:none}
-  .session-content-tab[data-content-icon=true]:not([data-content-on=true]) .session-content-open {justify-content:center;padding-inline:0}
-  .session-content-tab[data-content-icon=true]:not([data-content-on=true]) .session-content-close {right:0;top:0}
-  .session-content-tab[data-content-icon=true]:not([data-content-on=true]):is(:hover,:focus-within) .session-content-glyph {opacity:0}
-}
-
-@container content-tab (width <= 64px) {
-  .session-content-tab[data-content-icon=true][data-content-on=true] .session-content-name {display:none}
-}

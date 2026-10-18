@@ -232,9 +232,13 @@ export function FaceMark({
         <span
           data-halo={halo}
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 rounded-full"
+          className="pointer-events-none absolute inset-0"
           style={{ "--halo-color": `var(--state-${halo})` } as CSSProperties}
-        />
+        >
+          <svg data-halo-ring aria-hidden="true" focusable="false">
+            <circle cx="50%" cy="50%" r="50%" />
+          </svg>
+        </span>
       )}
       {asBase && "machine" in face && (
         // **The machine on the corner**: its face at the badge's size,

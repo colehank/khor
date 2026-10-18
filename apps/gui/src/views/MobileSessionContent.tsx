@@ -36,7 +36,7 @@ export function contentContext(tab:ContentTab,row:SessionRow|undefined,devices:D
 }
 /** One content identity for the desktop strip and mobile tab overview. */
 export function contentTabFace(tab:ContentTab,devices:DeviceRow[],iconOf:(url:string)=>string|undefined):TabFace {
-  return {id:tab.id,label:contentName(tab),path:tab.url,face:devices.find(d=>d.id===tab.device)?.face||null,
+  return {id:tab.id,label:contentName(tab),path:tab.url,...(contentView(tab)==='workspace'?{hideFace:true}:{}),face:devices.find(d=>d.id===tab.device)?.face||null,
     mark:contentView(tab)==='file'?fileKind(tab.url):pageKind(iconOf(tab.url))};
 }
 export type DeckOwner={face:TabFace;content:SessionContent;navigation:ContentNavigation;onClose:()=>void};
@@ -44,15 +44,15 @@ export function ContentOwnerIdentity({face,title,children,editing=false}: {face:
   return <span className="content-owner-identity" data-content-editing={editing||undefined}><span className="content-owner-face">{face.session&&<SessionFace face={face.face} {...face.session} size="tab"/>}</span><span className="content-owner-name">{face.label}</span><span className="content-owner-slash">/</span>{children||<span className="content-owner-title">{title}</span>}</span>;
 }
 export function ContentTabButton({session,content,navigation}: Pick<DeckOwner,'content'|'navigation'> & {session:string}) {
-  const count=content.allTabs.filter(t=>t.session===session&&contentView(t)!=='workspace').length;
+  const count=content.allTabs.filter(t=>t.session===session).length;
   return <GlassCircle data-content-overview-button aria-label={gui.content_tabs_count(count)} aria-expanded={navigation.get(session).scene==='overview'} onClick={()=>navigation.overview(session)}><ContentTabsGlyph n={count}/></GlassCircle>;
 }
 /** The nested pill uses the terminal band's exact threshold, flick and cancellation. */
 export function ContentDocumentBand({session,face,content,navigation,title,onTitle}: Omit<DeckOwner,'onClose'> & {session:string;title:string;onTitle:()=>void}) {
-  const tabs=content.allTabs.filter(t=>t.session===session&&contentView(t)!=='workspace');
+  const tabs=content.allTabs.filter(t=>t.session===session);
   const active=navigation.get(session).key;
-  const faces=tabs.map(t=>({...face,id:content.handle(t),label:contentName(t)}));
-  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=tabs.find(t=>content.handle(t)===key);if(tab){navigation.document(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} renderFace={(item,role)=><ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
+  const faces=tabs.map(t=>({...face,id:content.handle(t),label:navigation.forTab(session,content.handle(t)).get(session).scene==='picker'?gui.content_new:contentName(t)}));
+  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=tabs.find(t=>content.handle(t)===key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} renderFace={(item,role)=><ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
 }
 export function MobileContentDeck({session,content,navigation,onClose,children,editing=false,onEditEnd}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void}) {
   return <div className="mobile-content-deck" data-content-deck data-content-editing={editing||undefined}>
@@ -87,7 +87,7 @@ function WorkspaceContext({root, device, repo, history, make}: {root: string; de
 }
 function BrowserPicker({session, device, devices, show, onOpen,face,content,navigation,onClose,desktop=false}: DeckOwner & {desktop?:boolean;session: string; device: DeviceRow; devices: DeviceRow[]; show: boolean; onOpen: (device: DeviceRow,url: string) => void}) {
   const state=navigation.get(session),seed=state.address,exit=devices.find(d=>d.id===state.exit)||device;
-  const fieldKey='picker:'+session,field=navigation.editor(fieldKey),editing=field.editing??false,machinePrompt=field.exitPrompt;
+  const fieldKey='picker:'+session+':'+(state.key||'legacy'),field=navigation.editor(fieldKey),editing=field.editing??false,machinePrompt=field.exitPrompt;
   const [listSeat,setListSeat]=useState<HTMLDivElement|null>(null),[error,setError]=useState<string|null>(null);
   const setSeed=(address:string)=>navigation.update(session,{address});
   const endEdit=()=>{(document.activeElement as HTMLElement|null)?.blur();edit(false);};
@@ -102,11 +102,11 @@ function BrowserPicker({session, device, devices, show, onOpen,face,content,navi
   };
   const forget=async (device:string,path:string)=>{setError(null);try{await forgetRecentByDevice('page',device,path);places.reload();}catch(e){setError(said(e));}};
   return <div className="mobile-content-browser" hidden={!show}>
-    {desktop&&<div data-content-browser-field className="session-content-picker-bar"><ContentScope value={state.source} onChange={source=>navigation.update(session,{source})}/><PageField tab={'content-picker:'+session} machine={exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} machinePrompt={machinePrompt} steps={false} autoFocus={false} onEditingChange={edit} onMachine={setExit} onGo={open}/></div>}
+    {desktop&&<div data-content-browser-field className="session-content-picker-bar"><ContentScope value={state.source} onChange={source=>navigation.update(session,{source})}/><PageField tab={'content-picker:'+session+':'+(state.key||'legacy')} machine={exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} machinePrompt={machinePrompt} steps={false} autoFocus={false} onEditingChange={edit} onMachine={setExit} onGo={open}/></div>}
     {machinePrompt!==undefined&&<p role="status" className="px-row py-in text-callout text-muted-foreground">{gui.content_choose_exit}</p>}
     {error&&<p role="alert" className="px-row py-in text-callout text-destructive">{error}</p>}
     <div className="mobile-content-places"><NewTabPage kind={PAGES} places={places} devices={devices} narrow onOpen={revisit} onForget={p=>void forget(p.device,p.place)}/></div>
-    {!desktop&&<><div ref={setListSeat} className="mobile-content-page-list"/><MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose} editing={editing} onEditEnd={endEdit}>{editing?<PageField tab={'content-picker:'+session} machine={exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} machinePrompt={machinePrompt} steps={false} autoFocus inPill listSeat={listSeat} onEditingChange={edit} onMachine={setExit} onGo={open}/>:<PickerBand source={state.source} onSource={source=>{endEdit();navigation.update(session,{source});}} onEdit={()=>edit(true)} text={seed}/>}</MobileContentDeck></>}
+    {!desktop&&<><div ref={setListSeat} className="mobile-content-page-list"/><MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose} editing={editing} onEditEnd={endEdit}>{editing?<PageField tab={'content-picker:'+session+':'+(state.key||'legacy')} machine={exit} devices={devices} at={seed} onDraft={setSeed} first={device.id} machinePrompt={machinePrompt} steps={false} autoFocus inPill listSeat={listSeat} onEditingChange={edit} onMachine={setExit} onGo={open}/>:<PickerBand source={state.source} onSource={source=>{endEdit();navigation.update(session,{source});}} onEdit={()=>edit(true)} text={seed}/>}</MobileContentDeck></>}
 
   </div>;
 }
@@ -159,13 +159,13 @@ export function useContentNeighbors(tab:ContentTab,machine:string,enabled=true) 
 export function ContentOverview({session,row,devices,content,navigation,onPick,face,onClose}: DeckOwner & {session:string;row:SessionRow|undefined;devices:DeviceRow[];onPick:(tab:ContentTab)=>void}) {
   const state=navigation.get(session),q=state.filter.toLocaleLowerCase();
   const [searching,setSearching]=useState(false);
-  const tabs=content.allTabs.filter(t=>t.session===session&&contentView(t)!=='workspace'&&(contentName(t)+' '+t.url+' '+contentContext(t,row,devices)).toLocaleLowerCase().includes(q));
-  const tabFaces=tabs.map(t=>contentTabFace(t,devices,content.pageIcon));
+  const tabs=content.allTabs.filter(t=>t.session===session&&(contentName(t)+' '+t.url+' '+contentContext(t,row,devices)).toLocaleLowerCase().includes(q));
+  const tabFaces=tabs.map(t=>({...contentTabFace(t,devices,content.pageIcon),...(navigation.forTab(session,content.handle(t)).get(session).scene==='picker'?{label:gui.content_new,hideFace:true}:{})}));
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===(state.recent||state.key));
   return <div className="mobile-content-overview">
     <div className="mobile-content-overview-list">
       {!tabs.length&&<p className="mobile-content-empty">{q?gui.content_no_match:gui.content_empty}</p>}
-      <TabSheetRows faces={tabFaces} active={current?.id||''} onFocus={id=>{const tab=tabs.find(t=>t.id===id);if(tab)onPick(tab);}} onClose={id=>quiet(content.close(id))} canClose={f=>!tabs.find(t=>t.id===f.id)?.pinned} rowData={f=>({'data-content-overview-tab':f.id})} onNew={()=>navigation.browse(session)} newLabel={gui.content_find}/>
+      <TabSheetRows faces={tabFaces} active={current?.id||''} onFocus={id=>{const tab=tabs.find(t=>t.id===id);if(tab)onPick(tab);}} onClose={id=>quiet(content.close(id))} canClose={f=>!tabs.find(t=>t.id===f.id)?.pinned} rowData={f=>({'data-content-overview-tab':f.id})} onNew={()=>navigation.add(session)} newLabel={gui.content_new}/>
     </div>
     <MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose} editing={searching} onEditEnd={()=>{(document.activeElement as HTMLElement|null)?.blur();setSearching(false);}}>{searching?<ContentSearch label={gui.content_tabs_search} value={state.filter} onChange={filter=>navigation.update(session,{filter})} onEditing={setSearching}/>:<button data-content-overview-search className="content-search-prompt" onClick={()=>setSearching(true)}><IconSearch/>{state.filter||gui.content_tabs_search}</button>}</MobileContentDeck>
   </div>;

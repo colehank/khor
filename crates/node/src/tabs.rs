@@ -97,6 +97,10 @@ pub struct Tab {
     /// existing browsing tabs; workspace/file/page on kind `content`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<String>,
+    /// An opening request may be retried after losing its acknowledgement.
+    /// Kept on the node so distinct blank tabs never deduplicate by address.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub request: String,
 }
 
 /// One kind's tabs, and which of them is in front.
@@ -332,9 +336,20 @@ pub fn open_beside(root: &Path, kind: &str, device: &str, url: &str, session: &s
 }
 
 pub fn open_with_view(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str, view: Option<&str>) -> Result<String, String> {
+    open_requested(root, kind, device, url, session, after, view, "")
+}
+
+pub fn open_requested(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str, view: Option<&str>, request: &str) -> Result<String, String> {
     let view = checked_view(kind, view)?;
     let limit = crate::config::tabs_limit(root);
     change(root, kind, |open| {
+        if !request.is_empty() {
+            if let Some(tab) = open.tabs.iter().find(|t| t.request == request && t.session == session) {
+                let id = tab.id.clone();
+                open.active = id.clone();
+                return Ok(id);
+            }
+        }
         let id = mint();
         let at = open.tabs.iter().position(|t| !after.is_empty() && t.id == after).map_or(open.tabs.len(), |i| i + 1);
         open.tabs.insert(at, Tab {
@@ -346,6 +361,7 @@ pub fn open_with_view(root: &Path, kind: &str, device: &str, url: &str, session:
             touched: now_ms(),
             session: session.to_string(),
             view: view.clone(),
+            request: request.to_owned(),
         });
         open.active = id.clone();
         if let Some(limit) = limit
@@ -390,6 +406,7 @@ pub fn adopt_pinned(root: &Path, kind: &str, device: &str, url: &str) -> Result<
             touched: 0,
             session: String::new(),
             view: None,
+            request: String::new(),
         });
         Ok(id)
     })
@@ -531,6 +548,7 @@ pub fn save_all(root: &Path, kind: &str, want: &Open) -> Result<(), String> {
                 touched: was.touched,
                 session: was.session.clone(),
                 view: was.view.clone(),
+                request: was.request.clone(),
                 ..t.clone()
             });
         }
@@ -773,6 +791,7 @@ mod tests {
             touched: 0,
             session: String::new(),
             view: None,
+            request: String::new(),
         });
         let said = save_all(&r.0, "page", &forged).unwrap_err();
         assert!(said.contains("mine"), "the refusal names the id: {said}");
@@ -1112,6 +1131,21 @@ mod tests {
         assert_eq!(restored.tabs[0].id, id);
         assert_eq!(restored.tabs[0].view.as_deref(), Some("file"));
         assert!(list(&r.0, "page").tabs.is_empty());
+    }
+
+    #[test]
+    fn blank_content_requests_are_distinct_and_retry_without_duplicates() {
+        let r = root("blank-content-retry");
+        let a = open_requested(&r.0, "content", "", "", "session-a", "", Some("workspace"), "open-a").unwrap();
+        let b = open_requested(&r.0, "content", "", "", "session-a", "", Some("workspace"), "open-b").unwrap();
+        assert_ne!(a, b);
+        go_with_view(&r.0, "content", &a, "mac", "/repo/notes.md", "", Some("file")).unwrap();
+        assert_eq!(open_requested(&r.0, "content", "", "", "session-a", "", Some("workspace"), "open-a").unwrap(), a);
+        let opened = list(&r.0, "content");
+        assert_eq!(opened.tabs.len(), 2);
+        assert_eq!(opened.tabs.iter().find(|t| t.id == a).unwrap().url, "/repo/notes.md");
+        let c = open_requested(&r.0, "content", "", "", "session-b", "", Some("workspace"), "open-a").unwrap();
+        assert_ne!(a, c);
     }
 
     #[test]

@@ -16,9 +16,10 @@ export type ContentNavigationState = ContentPlace & {
   browseBefore: string | null;
   /** The pill resumes content; tab/session overviews are separate routes. */
   lastContent: ContentCheckpoint | null;
+  tabPlaces: Record<string, ContentCheckpoint>;
 };
 export const emptyContentPlace = (): ContentPlace => ({scene:'picker',key:null,source:'workspace',scope:null,filter:'',query:'',address:'',exit:null});
-const empty = (): ContentNavigationState => ({...emptyContentPlace(),from:'picker',trail:[],recent:null,documentTrail:[],scrolls:{},browseBefore:null,lastContent:null});
+const empty = (): ContentNavigationState => ({...emptyContentPlace(),from:'picker',trail:[],recent:null,documentTrail:[],scrolls:{},browseBefore:null,lastContent:null,tabPlaces:{}});
 const place = ({scene,key,source,scope,filter,query,address,exit}: ContentPlace): ContentPlace => ({scene,key,source,scope,filter,query,address,exit});
 const NAV_KEY = 'khor.content.navigation.v1', EDITOR_KEY = 'khor.content.editors.v1';
 const scenes: ContentScene[] = ['closed','picker','document','overview','sessions'];
@@ -53,7 +54,7 @@ function readNavigation(): Record<string, ContentNavigationState> {
     const scrolls = Object.fromEntries(Object.entries(s.scrolls || {}).filter(([,v]) => v && Number.isFinite(v.top) && Number.isFinite(v.left)));
     return [session,{...empty(),...place(s),from:scenes.includes(s.from)?s.from:'picker',recent:typeof s.recent==='string'?s.recent:null,
       browseBefore:typeof s.browseBefore==='string'?s.browseBefore:null,
-      lastContent:readCheckpoint(s,trail),trail,documentTrail:Array.isArray(s.documentTrail)?s.documentTrail.filter(isPlace).slice(-64):[],scrolls}];
+      lastContent:readCheckpoint(s,trail),tabPlaces:Object.fromEntries(Object.entries(s.tabPlaces||{}).filter(([,v])=>v&&isPlace(v.place)&&isContent(v.place)).map(([key,v])=>[key,{place:place(v.place),trail:Array.isArray(v.trail)?v.trail.filter(isPlace).slice(-64):[]}])),trail,documentTrail:Array.isArray(s.documentTrail)?s.documentTrail.filter(isPlace).slice(-64):[],scrolls}];
   }));
 }
 export function enterContent(was: ContentNavigationState, patch: Partial<ContentPlace>): ContentNavigationState {
@@ -66,7 +67,18 @@ export function enterContent(was: ContentNavigationState, patch: Partial<Content
 }
 /** Draft text persists; editing/focus and pending machine prompts never do. */
 export type ContentEditor = {address?:string;editing?:boolean;exitPrompt?:number};
-export function useContentNavigation(content: SessionContent) {
+export type ContentNavigation = {
+ editor:(key:string)=>ContentEditor;edit:(key:string,patch:ContentEditor)=>void;
+ get:(session:string)=>ContentNavigationState;has:(session:string)=>boolean;
+ update:(session:string,patch:Partial<ContentPlace>)=>void;document:(tab:ContentTab)=>void;select:(tab:ContentTab)=>void;
+ resume:(session:string)=>void;browse:(session:string,scope?:{device:string;root:string})=>void;
+ add:(session:string,scope?:{device:string;root:string})=>ContentTab;
+ overview:(session:string)=>void;back:(session:string)=>boolean;dismiss:(session:string)=>void;closePicker:(session:string)=>boolean;
+ sessions:(session:string)=>void;inspect:(session:string)=>void;
+ scroll:(session:string,key:string,value:ContentScroll)=>void;scrollOf:(session:string,key:string)=>ContentScroll|undefined;
+ browseBefore:(session:string,key:string|null)=>void;forTab:(session:string,key:string)=>ContentNavigation;
+};
+export function useContentNavigation(content: SessionContent): ContentNavigation {
   const [editors,setEditors] = useState<Record<string,ContentEditor>>(() => Object.fromEntries(Object.entries(read(EDITOR_KEY)).filter(([,v]) => v && typeof v === 'object' && typeof (v as ContentEditor).address === 'string').map(([key,v]) => [key,{address:(v as ContentEditor).address}])));
   const currentEditors=useRef(editors); currentEditors.current=editors;
   const editor=(key:string)=>currentEditors.current[key]??{};
@@ -81,36 +93,67 @@ export function useContentNavigation(content: SessionContent) {
   const write=(session:string,run:(s:ContentNavigationState)=>ContentNavigationState)=>{
     const before=get(session),after=run(before);if(after===before&&current.current[session])return;
     const lastContent=isContent(after)?checkpoint(after):current.current[session]&&isContent(before)?checkpoint(before):after.lastContent;
-    const next={...current.current,[session]:{...after,lastContent}};current.current=next;setStates(next);save(NAV_KEY,next);
+    const tabPlaces={...after.tabPlaces};
+    if(isContent(before)&&before.key)tabPlaces[before.key]=checkpoint(before);
+    if(isContent(after)&&after.key)tabPlaces[after.key]=checkpoint(after);
+    const next={...current.current,[session]:{...after,lastContent,tabPlaces}};current.current=next;setStates(next);save(NAV_KEY,next);
   };
   const update=(session:string,patch:Partial<ContentPlace>)=>{pendingResume.current.delete(session);write(session,s=>enterContent(s,patch));};
-  const document=(tab:ContentTab)=>update(tab.session,(tab.view||'workspace')==='workspace'?{scene:'picker',source:'workspace',scope:tab.url?{device:tab.device,root:tab.url}:null}:{scene:'document',key:content.handle(tab)});
   const valid=(session:string,key:string|null)=>content.allTabs.some(t=>t.session===session&&content.handle(t)===key);
+  const tabState=(session:string,key:string):ContentNavigationState=>{
+    const s=get(session);if(s.key===key&&isContent(s))return s;
+    const kept=s.tabPlaces[key],tab=content.allTabs.find(t=>t.session===session&&content.handle(t)===key);
+    const start={...empty(),...place(s),key,scene:tab?.view==='workspace'?'picker' as const:'document' as const,filter:'',trail:[]};
+    if(tab?.view==='workspace'&&tab.url)Object.assign(start,{source:'workspace',scope:{device:tab.device,root:tab.url}});
+    return kept?{...start,...kept.place,key,trail:kept.trail}:start;
+  };
+  const select=(tab:ContentTab)=>{
+    pendingResume.current.delete(tab.session);
+    const key=content.handle(tab),target=tabState(tab.session,key);
+    write(tab.session,s=>({...s,...place(target),trail:target.trail,from:target.from,recent:key,documentTrail:target.documentTrail}));
+  };
+  const document=(tab:ContentTab)=>{
+    if((tab.view||'workspace')==='workspace'){select(tab);return;}
+    pendingResume.current.delete(tab.session);
+    const key=content.handle(tab),target=tabState(tab.session,key);
+    const next=enterContent(target,{scene:'document',key,source:tab.view==='page'?'browser':target.source});
+    write(tab.session,s=>({...s,...place(next),trail:next.trail,from:next.from,recent:key,documentTrail:next.trail}));
+  };
+  const add=(session:string,scope?:{device:string;root:string})=>{
+    pendingResume.current.delete(session);
+    const before=get(session),tab=content.newTab(session,scope?.device||before.scope?.device||'');
+    write(session,s=>({...s,...emptyContentPlace(),key:content.handle(tab),scope:scope||before.scope,source:scope?'workspace':before.source,exit:before.exit,trail:[],from:'picker',recent:content.handle(tab)}));
+    return tab;
+  };
   const resume=(session:string)=>{
     if(!content.ready){pendingResume.current.add(session);return;}
     pendingResume.current.delete(session);
-    const remembered=current.current[session];
-    if(remembered){
-      const kept=isContent(remembered)?checkpoint(remembered):remembered.lastContent;
-      const usable=(p:ContentPlace)=>isContent(p)&&(p.scene!=='document'||valid(session,p.key));
-      if(isContent(remembered)&&usable(remembered))return;
-      const trail=[...(kept?.trail??remembered.trail)];let previous=kept?.place;
-      if(!previous||!usable(previous)){
-        previous=undefined;
-        while(trail.length){const entry=trail.pop()!;if(usable(entry)){previous=entry;break;}}
-      }
-      const target=previous||{...place(remembered),scene:'picker' as const,key:null,filter:''};
-      write(session,s=>({...s,...target,trail,from:trail.at(-1)?.scene||'picker'}));
-      const tab=target.scene==='document'?content.allTabs.find(t=>t.session===session&&content.handle(t)===target.key):null;
+    const remembered=current.current[session],kept=remembered?.lastContent;
+    const usable=(p:ContentPlace)=>isContent(p)&&valid(session,p.key);
+    if(remembered&&usable(remembered))return;
+    let target=kept?.place,trail=[...(kept?.trail||remembered?.trail||[])];
+    if(!target||!usable(target)){target=undefined;while(trail.length){const p=trail.pop()!;if(usable(p)){target=p;break;}}}
+    if(target){
+      write(session,s=>({...s,...target!,trail,from:trail.at(-1)?.scene||'picker'}));
+      const tab=content.allTabs.find(t=>t.session===session&&content.handle(t)===target!.key);
       if(tab&&content.active(session)?.id!==tab.id)void content.focus(tab.id).catch(()=>{});
       return;
     }
-    const tab=content.active(session);
-    if(tab?.view==='workspace'){document(tab);return;}
-    write(session,s=>tab?enterContent(tab.view==='page'?{...s,source:'browser'}:s,{scene:'document',key:content.handle(tab)}):s);
+    // Migrate the old singleton browsing location into one real starting
+    // tab, retaining its directory, query and address instead of losing it.
+    if(remembered&&(isContent(remembered)?remembered.scene==='picker':kept?.place.scene==='picker')){
+      const old=isContent(remembered)?place(remembered):kept!.place;
+      add(session);update(session,{...old,key:get(session).key,scene:'picker'});return;
+    }
+    const tab=content.active(session);if(tab){select(tab);return;}
+    add(session);
   };
   useEffect(()=>{if(content.ready)for(const session of [...pendingResume.current])resume(session);},[content.ready]);
-  const browse=(session:string,scope?:{device:string;root:string})=>update(session,{scene:'picker',...(scope?{scope,source:'workspace',query:''}:{})});
+  const browse=(session:string,scope?:{device:string;root:string})=>{
+    const s=get(session);let key=s.key;
+    if(!valid(session,key)){const tab=content.active(session);if(tab){select(tab);key=content.handle(tab);}else{add(session,scope);return;}}
+    update(session,{scene:'picker',key,...(scope?{scope,source:'workspace',query:''}:{})});
+  };
   const back=(session:string):boolean=>{
     pendingResume.current.delete(session);
     const s=get(session),trail=[...s.trail];let prev:ContentPlace|undefined;
@@ -125,18 +168,15 @@ export function useContentNavigation(content: SessionContent) {
     pendingResume.current.delete(session);
     write(session,s=>({...s,scene:'closed',key:null,trail:[],from:'picker'}));
   };
-  /** Closing the browsing tab removes it; Back follows navigation history. */
+  /** Closing a starting page closes that actual tab, selecting its neighbour. */
   const closePicker=(session:string):boolean=>{
-    pendingResume.current.delete(session);
-    const s=get(session),trail=[...s.trail];let previous:ContentPlace|undefined;
-    while(trail.length){const entry=trail.pop()!;if(entry.scene==='document'&&valid(session,entry.key)){previous=entry;break;}}
-    const tab=previous?content.allTabs.find(t=>t.session===session&&content.handle(t)===previous.key):content.active(session);
+    const peers=content.allTabs.filter(t=>t.session===session),key=get(session).key;
+    const at=peers.findIndex(t=>content.handle(t)===key),tab=peers[at];
     if(!tab){dismiss(session);return false;}
-    const target=previous||{...place(s),scene:'document' as const,key:content.handle(tab)};
-    const history=previous?trail:s.documentTrail;
-    write(session,s=>({...s,...target,trail:history,from:history.at(-1)?.scene||'picker',recent:target.key,documentTrail:history}));
-    if(content.active(session)?.id!==tab.id)void content.focus(tab.id).catch(()=>{});
-    return true;
+    if(tab.pinned)return true;
+    const next=peers.filter(t=>t.id!==tab.id)[Math.min(at,peers.length-2)];
+    void content.close(tab.id).catch(()=>{});
+    if(next){select(next);return true;}dismiss(session);return false;
   };
   const overview=(session:string)=>get(session).scene==='overview'?back(session):update(session,{scene:'overview',filter:''});
   const sessions=(session:string)=>{pendingResume.current.delete(session);write(session,s=>({...s,scene:'sessions',filter:'',trail:[],from:'picker'}));};
@@ -147,6 +187,13 @@ export function useContentNavigation(content: SessionContent) {
     const before=s.scrolls[key];if(before?.top===value.top&&before?.left===value.left)return s;
     return {...s,scrolls:{...s.scrolls,[key]:{top:Math.max(0,value.top),left:Math.max(0,value.left)}}};
   });
-  return {editor,edit,get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,resume,browse,overview,back,dismiss,closePicker,sessions,inspect,scroll,scrollOf,browseBefore};
+  const forTab=(session:string,key:string):ContentNavigation=>({...api,
+    get:id=>id===session?tabState(session,key):get(id),
+    update:(id,patch)=>{
+      if(id!==session||get(session).key===key&&isContent(get(session))){update(id,patch);return;}
+      write(session,s=>{const next=enterContent(tabState(session,key),patch);return {...s,tabPlaces:{...s.tabPlaces,[key]:checkpoint(next)}};});
+    },
+  });
+  const api:ContentNavigation={editor,edit,get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,select,resume,browse,add,overview,back,dismiss,closePicker,sessions,inspect,scroll,scrollOf,browseBefore,forTab};
+  return api;
 }
-export type ContentNavigation = ReturnType<typeof useContentNavigation>;

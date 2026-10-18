@@ -44,6 +44,10 @@ pub struct TabRow {
     pub session: String,
     #[serde(default)]
     pub view: Option<String>,
+    /// Identifies an acknowledged opening operation, including blank tabs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub request: Option<String>,
     /// When a person last put it in front or pointed it somewhere, ms
     /// since the epoch, 0 when never (`khor_node::tabs::Tab::touched`):
     /// the row's 「how long ago it was opened」 (UX-48). Read only on the
@@ -74,6 +78,7 @@ fn shape(open: tabs::Open) -> TabsOpen {
                 pinned: t.pinned,
                 session: t.session,
                 view: t.view,
+                request: (!t.request.is_empty()).then_some(t.request),
                 touched: t.touched,
             })
             .collect(),
@@ -99,8 +104,8 @@ pub fn list(root: &Path, kind: &str) -> TabsOpen {
 /// be empty — that is the fresh tab the 「+」 mints.
 /// `after`, where given, is the tab it opens beside (a page's new
 /// window, UX-42 §15).
-pub fn open(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str, view: Option<&str>) -> Result<String, String> {
-    tabs::open_with_view(root, kind, device, url, session, after, view)
+pub fn open(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str, view: Option<&str>, request: Option<&str>) -> Result<String, String> {
+    tabs::open_requested(root, kind, device, url, session, after, view, request.unwrap_or(""))
 }
 
 /// Points an open tab somewhere and names it. Refused by name for a tab
@@ -152,6 +157,7 @@ pub fn save_all(root: &Path, kind: &str, want: &TabsOpen) -> Result<TabsOpen, St
                 touched: 0,
                 session: String::new(),
                 view: None,
+                request: String::new(),
             })
             .collect(),
         active: want.active.clone(),

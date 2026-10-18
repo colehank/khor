@@ -1015,20 +1015,22 @@ aside[data-side] {
    reaches out past it the way a chosen block does. ⚠️ 墓碑 (F2.7, one
    commit): the ring drawn inside the box to put its ink on the line —
    on a tab's face it left 8 of face, and the owner could not read it. */
-[data-halo]::before {
-  /* A real annulus: the inner mask is a hole, not background-coloured
-     paint. Unlike CSS outline/border, the mask also keeps a tab's 1.5px
-     stroke at 1x rather than rounding it down to one device pixel. */
-  content: "";
+/* One stroked circle gives both edges the same centre. Two rounded
+   masks rasterized separately can leave an uneven 1.5px ring at tab size.
+   The SVG extends beyond the face; neither the artwork nor the clear gap
+   is repainted, including on a transparent desktop window. */
+[data-halo-ring] {
   position: absolute;
-  inset: calc(-1 * (var(--halo-gap) + var(--halo-w)));
-  padding: var(--halo-w);
-  border-radius: inherit;
-  background: var(--halo-color);
-  -webkit-mask: linear-gradient(var(--canvas-solid) 0 0) content-box, linear-gradient(var(--canvas-solid) 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(var(--canvas-solid) 0 0) content-box, linear-gradient(var(--canvas-solid) 0 0);
-  mask-composite: exclude;
+  overflow: visible;
+  inset: calc(-1 * (var(--halo-gap) + var(--halo-w) / 2));
+  width: calc(100% + 2 * var(--halo-gap) + var(--halo-w));
+  height: calc(100% + 2 * var(--halo-gap) + var(--halo-w));
+  fill: none;
+  stroke: var(--halo-color);
+  stroke-width: var(--halo-w);
+}
+[data-halo-ring] > circle {
+  vector-effect: non-scaling-stroke;
 }
 
 /* Small tab faces keep their original 1.5px stroke and clear gap. */

@@ -98,7 +98,7 @@ fn tabs_list(kind: String) -> khor_gui_core::tabs::TabsOpen {
 /// Opens one and puts it in front; answers its id. Both places absent
 /// is the fresh tab the 「+」 mints.
 #[tauri::command]
-fn tabs_open(kind: String, device: Option<String>, url: Option<String>, session: Option<String>, after: Option<String>, view: Option<String>) -> Result<String, String> {
+fn tabs_open(kind: String, device: Option<String>, url: Option<String>, session: Option<String>, after: Option<String>, view: Option<String>, request: Option<String>) -> Result<String, String> {
     khor_gui_core::tabs::open(
         &Node::root_from_env(),
         &kind,
@@ -110,6 +110,7 @@ fn tabs_open(kind: String, device: Option<String>, url: Option<String>, session:
         // The tab a page's new window opens beside (UX-42 §15).
         after.as_deref().unwrap_or(""),
         view.as_deref(),
+        request.as_deref(),
     )
 }
 

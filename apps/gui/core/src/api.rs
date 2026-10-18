@@ -109,6 +109,7 @@ pub fn answer(
             &opt_str("session")?.unwrap_or_default(),
             &opt_str("after")?.unwrap_or_default(),
             opt_str("view")?.as_deref(),
+            opt_str("request")?.as_deref(),
         )?),
         "tabs_go" => to_json(&crate::tabs::go(
             root,
