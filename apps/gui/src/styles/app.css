@@ -2849,7 +2849,7 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
    edge does not re-enable alpha-shaped macOS shadows around terminal glyphs. */
 :root[data-window-transparent][data-window-outline] #root:not(:empty)::after {
   content:"";position:fixed;inset:0;z-index:60;pointer-events:none;
-  border:var(--hair) solid var(--hairline);border-radius:var(--radius-xl);
+  border:var(--hair) solid var(--border);border-radius:var(--radius-xl);
 }
 
 :root[data-window-platform=windows] #root::after{border-radius:var(--radius-md)}

@@ -71,6 +71,8 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   // This must fail the screenshot assertion rather than silently pass.
   if (process.env.APPEARANCE_BOOT_DOUBLE === "1") await page.addStyleTag({ content: ":root[data-window-transparent] body { background: color-mix(in srgb, var(--boot-ground) var(--window-opacity), transparent) !important; }" });
   await page.waitForFunction(() => document.querySelector("[data-terminal]")?.__xterm?.buffer.active.length > 100);
+  const outline=()=>page.getByRole('switch',{name:'窗口轮廓',exact:true});
+  assert.equal(await outline().count(),0,'solid material must not disclose the outline setting');
   const baseline = await page.evaluate(() => {
     const t = document.querySelector("[data-terminal]").__xterm;
     window.originalTerm = t; t.scrollLines(-40);
@@ -87,11 +89,18 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await page.getByRole("slider", { name: "背景不透明度" }).fill("85");
   await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--window-opacity") === "85%");
   assert(await page.evaluate(()=>document.documentElement.hasAttribute('data-window-outline')),'transparent window lost its default outline');
-  const outline=()=>page.getByRole('switch',{name:'窗口轮廓',exact:true});
+  assert.equal(await outline().count(),1,'transparent material must disclose the outline setting');
   await outline().click();await page.waitForFunction(()=>!document.documentElement.hasAttribute('data-window-outline'));
   assert.equal(await page.evaluate(()=>getComputedStyle(document.getElementById('root'),'::after').content),'none');
   await outline().click();await page.waitForFunction(()=>document.documentElement.hasAttribute('data-window-outline'));
   assert.equal(await page.evaluate(()=>getComputedStyle(document.getElementById('root'),'::after').pointerEvents),'none');
+  for(const theme of ['dark','light']){
+    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    const rim=await page.evaluate(()=>{const s=getComputedStyle(document.getElementById('root'),'::after');return {style:s.borderTopStyle,width:parseFloat(s.borderTopWidth),color:s.borderTopColor};});
+    assert.equal(rim.style,'solid','outline attribute exists but border does not paint: '+theme);
+    assert(rim.width>0&&rim.color!=='transparent'&&rim.color!=='rgba(0, 0, 0, 0)','outline has no visible stroke: '+JSON.stringify(rim));
+  }
+  await page.evaluate(()=>document.documentElement.dataset.theme='dark');
 
   await page.waitForFunction(() => document.getElementById("root").style.getPropertyValue("--window-ground-clip").includes("M"));
   assert(await page.evaluate(() => document.querySelector("[data-terminal]").__xterm === window.originalTerm));
@@ -191,6 +200,7 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   assert.equal(await page.locator('[data-setting-select="term-theme"]').inputValue(), "nord");
   await page.locator('[data-setting-select="window-material"]').selectOption("solid");
   await page.waitForFunction(() => !document.documentElement.hasAttribute("data-window-transparent"));
+  assert.equal(await outline().count(),0,'outline setting must disappear when returning to solid');
   blur = false; await page.reload(); await page.locator('[data-setting-select="window-material"]').waitFor();
   assert.equal(await page.locator('[data-setting-select="window-material"] option[value="frost"]').count(), 0, "Linux does not offer native blur");
   await page.setViewportSize({ width: 760, height: 900 }); await page.locator("[data-term-theme-edit]").click();
