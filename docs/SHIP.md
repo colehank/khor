@@ -141,3 +141,13 @@ khor devices                                                   # 五台都在线
 - iOS：先移除可重建的旧 `libapp.a`，新静态库与归档均验到本次收据。Tauri 遇到文档已记录的 `exportArchive Copy failed`，系统 PATH 的导出上传于 `2026-10-18 16:28:58 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`；App Store Connect 正在处理。工程仅临时增加的两处签名团队配置已恢复。
 - 日志与收据：`/Volumes/disk0/khor-ship-20261018-pill/`。保留最新正式归档；按 bundle ID 和无进程引用核验后清理本轮两个 Khor Xcode 暂存副本（约 203 MiB）及已完成的集群源码导出（约 47 MiB）。系统盘约余 11 GiB，外挂盘约余 104 GiB。
 - 此版未包含后台返回时键盘区域空白的修复。
+
+## 发布记录：2026-10-18（统一弹层、窗口轮廓与会话内容身份）
+
+- 代码合并提交：`a61b8a43`。本次合入 `fix-window-outline`（`144522ec`）、`fix-dialog-bounds`（`287235b8`、`5b5a083d`）与 `fix-content-identity`（`17a724f4`），同时发布此前 main 中的 `618a4d59`／`92743b77`：空浏览标签关闭与重复点击药丸时侧区同步收起。UI 收据：`khor-ui-assets:/assets/index-87SAChJZ.js`。
+- 主干验证：默认前端检查与 TypeScript、`content-model`、`content-sheet`、`overlay-policy`、生产构建、门索引通过。各修复分支已通过隔离生产组件／实际 App 的 CUA 操作检查；本次打包没有声称完成 iPhone 真机惯性、键盘动画或 Windows/Linux 原生合成器验收。
+- Mac：release 构建完成，CLI／GUI 签名与收据通过；旧主窗口 PID 54135 已退出，新 PID 25312。9 个既有会话辅助进程全部保留，装机前后 12 条会话记录未丢失、没有新增失败项。
+- 集群：hinton 构建并安装，turing／lecun 自动换新。三台 5467 监听进程的二进制 SHA-256 均为 `52becc8647fd1f69bff321fd9a0379820a9e6eea66960f8d2e55b29a98f33b1b`，HTTP 收据一致，CLI 确认三台直连。
+- iOS：重建后的 `libapp.a` 与正式归档均验到本次收据及新时间。Tauri 遇到已记录的 `exportArchive Copy failed`，系统 PATH 的导出上传于 `2026-10-18 20:13:12 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，App Store Connect 开始处理。临时增加的两处签名团队配置已恢复。
+- 日志、校验与清理清单：`/Volumes/disk0/khor-ship-20261018-overlays/`。发布后按包身份、构建已结束和 lsof 无引用检查，清理旧 Khor 源码导出、Khor Xcode 导出副本、退役 Codex 工作区夹具、Khor Xcode intermediates 与 npm `_cacache` 下载缓存；保留 `_npx`、node_modules、现有会话、最新正式归档与静态库。VS Code 的暂存版本更新于安装版，保留其待安装更新。
+- 系统盘释放约 1.53 GiB，可用由约 8.6 GiB 增至约 10 GiB；外挂盘另清掉约 47 MiB 的本轮源码导出。未清理系统 swap 或全量 cargo target。
