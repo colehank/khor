@@ -87,6 +87,24 @@ try{ checks:{
   await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
   await side(sessions[0]).waitFor();
   assert.equal(await page.locator('[data-session-tabs] [data-tab-new]').count(),0,'focused group still shows the outer session +');
+  await head(sessions[0]).click();await side(sessions[0]).waitFor({state:'detached'});
+  assert.deepEqual(await outerOrder(),sessions,'collapsing browsing changed session order');
+  assert.equal((await table()).tabs.length,0,'collapsing browsing created a persistent empty tab');
+  await head(sessions[0]).click();await side(sessions[0]).waitFor();
+  await desktopPicker().locator('[data-file-tree]').waitFor();
+  const emptyBrowse=()=>page.locator(`[data-content-tabs="${sessions[0]}"] [data-content-browse]`);
+  await emptyBrowse().locator('.session-content-close').click();
+  await until(async()=>await emptyBrowse().count()===0&&await side(sessions[0]).count()===0);
+  assert.deepEqual(await outerOrder(),sessions,'closing the last content tab did not restore plain session tabs');
+  assert.equal((await table()).tabs.length,0,'closing synthetic browsing wrote a node tab');
+  await head(sessions[0]).click();await side(sessions[0]).waitFor();
+  await desktopPicker().locator('[data-side-find-field]').focus();await page.keyboard.press('ControlOrMeta+w');
+  await until(async()=>await emptyBrowse().count()===0&&await side(sessions[0]).count()===0);
+  assert.deepEqual(await outerOrder(),sessions,'content shortcut closed the session instead of browsing');
+  await page.reload();await head(sessions[0]).waitFor();
+  assert.equal(await emptyBrowse().count(),0,'reload recreated a closed browsing tab');
+  await head(sessions[0]).click();await side(sessions[0]).waitFor();
+  console.log('PASS: closing empty browsing removes tab and pane, restores session strip, survives reload and reopens; keyboard close shares the same action');
   await desktopAdd().click();await side(sessions[0]).waitFor();
   await desktopPicker().locator('[data-file-tree]').waitFor();
   assert.equal((await table()).tabs.length,0,'opening the desktop picker created a persistent empty tab');
@@ -107,9 +125,14 @@ try{ checks:{
     for(const key of ['maximize','hide','refresh','scope','plus']){
       const control=icons[key];assert(control,'missing '+key);
       assert(control.glass,key+' uses a separate button family');
-      assert.equal(control.button.w,36,key+' left the glass control family');assert.equal(control.button.h,36);
+      assert.equal(control.button.w,key==='scope'?52:36,key+' left the glass control family');assert.equal(control.button.h,36);
       const glyph=control.svgs[0].box;assert.equal(glyph.w,22,key+' glyph size differs');assert.equal(glyph.h,22);
-      assert(Math.abs(glyph.cx-control.button.cx)<.1&&Math.abs(glyph.cy-control.button.cy)<.1,key+' glyph is off-center: '+JSON.stringify(control));
+      if(key==='scope'){
+        assert.equal(control.svgs.length,2,'desktop source switch lacks its down chevron');
+        const arrow=control.svgs[1].box;assert.equal(arrow.w,12);assert.equal(arrow.h,12);
+        assert(Math.abs((glyph.x+arrow.x+arrow.w)/2-control.button.cx)<.1,'source group is off-center');
+        assert(Math.abs(glyph.cy-control.button.cy)<.1&&Math.abs(arrow.cy-control.button.cy)<.1,'source glyphs do not share a centerline');
+      }else assert(Math.abs(glyph.cx-control.button.cx)<.1&&Math.abs(glyph.cy-control.button.cy)<.1,key+' glyph is off-center: '+JSON.stringify(control));
     }
     writeFileSync(join(scratch,'desktop-icons.json'),JSON.stringify(iconResults,null,2));
     await page.screenshot({path:join(scratch,'icons-'+name+'.png'),clip:{x:0,y:0,width:page.viewportSize().width,height:156}});
@@ -156,10 +179,13 @@ try{ checks:{
   await shown().locator('[data-file-face-toggle]').click();await shown().locator('[data-file-preview]').waitFor();
   const beforeToggle=await page.locator('[data-session-panes]').evaluate(el=>({box:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()}));
   await head(sessions[0]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===2);
-  await shown().locator('[data-file-preview]').waitFor();
-  assert.deepEqual(await page.locator('[data-session-panes]').evaluate(el=>({box:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()})),beforeToggle,'tab presentation changed pane geometry');
+  await side(sessions[0]).waitFor({state:'detached'});
+  assert.equal((await table()).tabs.length,1,'collapsing session closed its document');
   assert.deepEqual(await page.locator('[data-session-tabs] [data-tab]').evaluateAll(els=>els.map(el=>el.dataset.tab)),sessions,'restoring tabs changed their order');
   await head(sessions[0]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
+  await shown().locator('[data-file-preview]').waitFor();
+  assert.deepEqual(await page.locator('[data-session-panes]').evaluate(el=>({box:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()})),beforeToggle,'reopening session did not restore its pane geometry');
+  assert.equal(await shown().getAttribute('data-content-handle'),stable,'reopening session replaced its document handle');
   await page.locator(`[data-row="${sessions[1]}"] [data-row-open]`).click();await head(sessions[1]).waitFor();
   assert.equal(await page.locator('[data-session-tabs] [data-tab]').count(),1,'focus did not follow list selection');
   await page.locator(`[data-content-tabs="${sessions[1]}"] .session-content-add>button`).click();await page.locator(`[data-content-picker="${sessions[1]}"]:visible`).getByText('only-1.txt',{exact:true}).waitFor();
@@ -241,8 +267,11 @@ try{ checks:{
   await page.setViewportSize({width:1600,height:1000});await max().click();
   for(const t of (await table()).tabs.filter(t=>t.session===sessions[0]))cli('tabs','--session',sessions[0],'close',t.id);
   await side(sessions[0]).waitFor({state:'detached'});assert.notEqual(await page.locator('[data-session-panes]').evaluate(el=>getComputedStyle(el.firstElementChild).display),'none','last child kept the terminal hidden');
+  assert.equal(await emptyBrowse().count(),0,'last document left a synthetic browsing tab');
+  assert.deepEqual(await outerOrder(),sessions,'last document did not restore plain session tabs');
   console.log('PASS: crowded strip preserves session identity and add controls; closing the last maximized document restores the terminal');
   if(process.env.CONTENT_DESKTOP_ICONS_ONLY==='1'){
+  await head(sessions[0]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
   // Several long session titles at narrow desktop width. Presentation follows
   // list picks, and restoring the whole strip preserves its stored order.
   for(let i=0;i<4;i++){
