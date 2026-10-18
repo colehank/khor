@@ -45,7 +45,7 @@ import { ChoiceField } from "@/components/ui/choice-field";
 import { sessionMark } from "@/components/BrandIcons";
 import { IconClose, IconSearch, IconDevices } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { imeKey } from "@/lib/ime";
 import { useHereHosts } from "@/lib/here";
@@ -125,6 +125,7 @@ export function ImportDialog({
   const [rows, setRows] = useState<CandidateRow[] | null>(null);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [q, setQ] = useState("");
+  const [heldHeight, setHeldHeight] = useState<number>();
   /** The machines picked, by device id; none is 「全部」. */
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /** The row Enter opens, while something is typed. */
@@ -155,6 +156,7 @@ export function ImportDialog({
   useEffect(() => {
     if (!open) return;
     setQ("");
+    setHeldHeight(undefined);
     setPicked(new Set());
     setActive(0);
     setGoing(null);
@@ -225,13 +227,26 @@ export function ImportDialog({
     list.current?.querySelector<HTMLElement>("[data-import-row][data-active]")?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
-  const press = (id: string | null) =>
+  const holdHeight = () => {
+    if (heldHeight !== undefined) return;
+    const dialog = list.current?.closest('[data-slot="dialog-content"]');
+    if (dialog) setHeldHeight(dialog.getBoundingClientRect().height);
+  };
+  const query = (value: string) => {
+    if (value !== "") holdHeight();
+    else if (picked.size === 0) setHeldHeight(undefined);
+    setQ(value);
+  };
+  const press = (id: string | null) => {
+    if (q === "" && (id === null || (picked.size === 1 && picked.has(id)))) setHeldHeight(undefined);
+    else holdHeight();
     setPicked((was) => {
       if (id === null) return new Set();
       const next = new Set(was);
       if (!next.delete(id)) next.add(id);
       return next;
     });
+  };
 
   /** **A tap imports it and opens it** (IMPORT-BRIEF ruling 4,「直接打开
       呀」): the shell opens what comes back (`onImported`). */
@@ -252,10 +267,12 @@ export function ImportDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         form
+        scrollable
         data-import-dialog
+        style={heldHeight === undefined ? undefined : {height: heldHeight}}
         onOpenAutoFocus={(e) => {
           e.preventDefault();
-          field.current?.focus();
+          if (!document.documentElement.hasAttribute("data-narrow")) field.current?.focus();
         }}
       >
         <DialogHeader>
@@ -264,7 +281,7 @@ export function ImportDialog({
         {/* `min-w-0` for the new-session wizard's reason: a grid item
             defaults to `min-width: auto`, and one long directory would
             widen the whole dialog past its edge. */}
-        <div data-import-body className="flex min-h-0 min-w-0 flex-col gap-row">
+        <DialogBody data-import-body>
           {/* The search field (components/SearchField): the text box with
               a magnifier, and a clear mark while something is typed. */}
           <div data-import-find className="relative flex-none">
@@ -281,7 +298,7 @@ export function ImportDialog({
               placeholder={gui.import_search}
               aria-label={gui.import_search}
               value={q}
-              onChange={(e) => setQ(e.target.value)}
+              onChange={(e) => query(e.target.value)}
               onKeyDown={(e) => {
                 if (imeKey(e)) return;
                 if (e.key === "ArrowDown") {
@@ -312,7 +329,7 @@ export function ImportDialog({
                 onPointerDown={(e) => e.preventDefault()}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  setQ("");
+                  query("");
                   field.current?.focus();
                 }}
                 className="absolute top-1/2 right-1 grid size-touch -translate-y-1/2 place-items-center"
@@ -350,7 +367,7 @@ export function ImportDialog({
             </div>
           )}
 
-          <div ref={list} data-import-rows className="-mx-in flex min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain px-in">
+          <div ref={list} data-import-rows className="-mx-in flex min-w-0 flex-none flex-col px-in">
             {rows === null ? null : rows.length === 0 ? (
               <Calm sentence={gui.import_empty} hint={gui.import_empty_hint} mark={{ "data-import-empty": "" }} />
             ) : shown.length === 0 ? (
@@ -425,7 +442,7 @@ export function ImportDialog({
               {gui.import_note}
             </p>
           )}
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
             {gui.delete_keep}

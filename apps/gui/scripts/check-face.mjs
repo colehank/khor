@@ -40115,12 +40115,12 @@ try {
       const first = await rowIds();
       const want = CANDS.filter((c) => c.device !== far.id).map((c) => c.id);
       console.log(`${where} a · ${JSON.stringify({ ...a, rows: first.length })}`);
-      if (!a.focused) fail(`${where} a · the search field does not have the focus as 导入 opens`);
+      if (a.focused !== (w >= 760)) fail(`${where} a · desktop search should focus; phone import must wait for a tap`);
       if (a.places || a.boxes || a.go) fail(`${where} a · the old form is still drawn: ${JSON.stringify(a)} — no directory filter, no boxes, no 「导入 N 个」`);
       if (JSON.stringify(first) !== JSON.stringify(want)) fail(`${where} a · the rows are ${JSON.stringify(first)}, wanted the reachable machines' newest first ${JSON.stringify(want)}`);
 
       // b.
-      const listH = () => page.locator("[data-import-rows]").evaluate((e) => Math.round(e.getBoundingClientRect().height));
+      const listH = () => page.locator("[data-import-dialog]").evaluate((e) => Math.round(e.getBoundingClientRect().height));
       const h0 = await listH();
       const b = {};
       for (const [word, ids] of [
@@ -40187,7 +40187,7 @@ try {
       const g = await page.evaluate(() => {
         const box = document.querySelector("[data-import-dialog]").getBoundingClientRect();
         const content = document.querySelector("[data-import-dialog]");
-        const list = document.querySelector("[data-import-rows]");
+        const list = document.querySelector("[data-import-body]");
         const foot = document.querySelector("[data-import-dialog] [data-dialog-cancel]").getBoundingClientRect();
         const was = list.scrollTop;
         list.scrollTop = 120;
@@ -40198,11 +40198,14 @@ try {
           foot: foot.bottom <= innerHeight + 0.5 && foot.top >= 0,
           sheetScrolls: content.scrollHeight > content.clientHeight + 1,
           listScrolls: moved,
+          needsScroll: list.scrollHeight > list.clientHeight + 1,
+          height: box.height,
+          viewport: innerHeight,
         };
       });
       console.log(`${where} g · ${JSON.stringify(g)}`);
       if (!g.inside || !g.foot) fail(`${where} g · the panel or its 取消 is past the window's edge: ${JSON.stringify(g)}`);
-      if (w < 760 && (g.sheetScrolls || !g.listScrolls)) fail(`${where} g · on the phone the sheet scrolls (${g.sheetScrolls}) or the list does not (${g.listScrolls}) — only the list scrolls`);
+      if (w < 760 && (g.height > g.viewport * .71 || g.sheetScrolls || (g.needsScroll && !g.listScrolls))) fail(`${where} g · phone import must be compact, with its long body scrollable: ${JSON.stringify(g)}`);
 
       // e.
       const before = sentI.length;

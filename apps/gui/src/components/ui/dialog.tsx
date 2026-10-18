@@ -5,6 +5,7 @@
 // over the scrim — since the R0 sheet was retired (2026-09-30).
 import * as React from "react";
 import { keyboardCover } from "@/lib/viewport";
+import { sheetGestureReserved } from "@/lib/sheet-gesture";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import { Fault } from "@/components/Fault";
@@ -56,6 +57,7 @@ function DialogContent({
   className,
   children,
   form = false,
+  scrollable = false,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   /** **A dialog that holds a form** — 新会话, 导入, 加入网络, 登记,
@@ -69,6 +71,9 @@ function DialogContent({
       as every sheet that rises from the bottom does. Same place, same
       surface, same scrim (components/Dialog). */
   form?: boolean;
+  /** Long tasks use DialogBody as their one scroller; title and actions
+      remain outside it. Other dialogs still get a bounded fallback. */
+  scrollable?: boolean;
 }) {
   // ⚠️ 墓碑 (2026-09-30): a `sheet` variant stood here from 第十七轮 (D10)
   // — a create form dropped from R0's lower edge, portaled into the right
@@ -99,6 +104,27 @@ function DialogContent({
   // this component did, and the sheet's listeners need that moment.
   const [sheet, setSheet] = React.useState<HTMLDivElement | null>(null);
   const dismiss = React.useCallback(() => close.current?.click(), []);
+  // Every dialog follows the visible viewport, including short alerts that
+  // may open while a keyboard is already up. Never use innerHeight as the
+  // keyboard cover on WKWebView (lib/viewport).
+  React.useLayoutEffect(() => {
+    if (!sheet) return;
+    const viewport = window.visualViewport;
+    const sync = () => {
+      sheet.style.setProperty("--dialog-visible-height", `${viewport?.height ?? window.innerHeight}px`);
+      sheet.style.setProperty("--dialog-visible-top", `${viewport?.offsetTop ?? 0}px`);
+      sheet.style.setProperty("--sheet-kb", `${keyboardCover()}px`);
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    viewport?.addEventListener("resize", sync);
+    viewport?.addEventListener("scroll", sync);
+    return () => {
+      window.removeEventListener("resize", sync);
+      viewport?.removeEventListener("resize", sync);
+      viewport?.removeEventListener("scroll", sync);
+    };
+  }, [sheet]);
   useSheet(form, sheet, dismiss);
   return (
     <DialogPrimitive.Portal data-slot="dialog-portal">
@@ -107,6 +133,7 @@ function DialogContent({
         ref={setSheet}
         data-slot="dialog-content"
         data-form={form ? "" : undefined}
+        data-scrollable={scrollable ? "" : undefined}
         onOpenAutoFocus={(e) => {
           remember();
           onOpenAutoFocus?.(e);
@@ -146,7 +173,7 @@ function DialogContent({
           // it wears what floats**, never the board's `card` (⚠️ 墓碑
           // 2026-09-28: on the dark theme `card` *is* the board, and a form
           // on it sat flush, the same colour — `check-face` 4I).
-          "fixed left-1/2 z-50 grid max-w-[calc(100%-2rem)] -translate-x-1/2 gap-row rounded-lg border bg-popover p-pane shadow-(--shadow-float) outline-none",
+          "fixed left-1/2 z-50 grid overflow-x-hidden overflow-y-auto overscroll-contain max-w-[calc(100%-2rem)] -translate-x-1/2 gap-row rounded-lg border bg-popover p-pane shadow-(--shadow-float) outline-none",
           // **A form does not re-centre as it changes** (the audit fix plan
           // F4.5; N12): its top stays put and it grows downward in a
           // window; on the narrow face it stands on the bottom and grows
@@ -210,16 +237,6 @@ function useSheet(on: boolean, el: HTMLDivElement | null, dismiss: () => void) {
   React.useEffect(() => {
     if (!on || !el) return;
     const narrow = () => document.documentElement.hasAttribute("data-narrow");
-    const vv = window.visualViewport;
-    const ride = () => {
-      if (!vv) return;
-      // The same measure the shell rides on (`lib/viewport`): against
-      // the layout viewport's bottom, never `innerHeight`.
-      el.style.setProperty("--sheet-kb", `${keyboardCover()}px`);
-    };
-    ride();
-    vv?.addEventListener("resize", ride);
-    vv?.addEventListener("scroll", ride);
     // Touch, not pointer, events: a pointer on a scrolling sheet is taken
     // by the browser's pan (`pointercancel`) before it has moved far; a
     // touch move that is prevented is the sheet's.
@@ -243,8 +260,9 @@ function useSheet(on: boolean, el: HTMLDivElement | null, dismiss: () => void) {
       if (!narrow() || e.touches.length !== 1) return;
       const y = e.touches[0].clientY;
       const t = e.target instanceof Element ? e.target : null;
+      if (sheetGestureReserved(t)) return;
       const band = y - el.getBoundingClientRect().top <= 28;
-      if (!band && (t?.closest('[data-sheet-hold], input[type="range"]') || scrolled(t))) return;
+      if (!band && scrolled(t)) return;
       from = y;
       fromX = e.touches[0].clientX;
       pulling = band;
@@ -291,14 +309,18 @@ function useSheet(on: boolean, el: HTMLDivElement | null, dismiss: () => void) {
     el.addEventListener("touchend", up);
     el.addEventListener("touchcancel", up);
     return () => {
-      vv?.removeEventListener("resize", ride);
-      vv?.removeEventListener("scroll", ride);
       el.removeEventListener("touchstart", down);
       el.removeEventListener("touchmove", move);
       el.removeEventListener("touchend", up);
       el.removeEventListener("touchcancel", up);
     };
   }, [on, el, dismiss]);
+}
+
+/** One scrolling content region in a long dialog, between its fixed title
+ * and actions. min-height:0 lets it yield to the keyboard and short windows. */
+function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
+  return <div data-slot="dialog-body" className={cn("flex min-h-0 min-w-0 flex-col gap-row overflow-x-hidden overflow-y-auto overscroll-contain", className)} {...props} />;
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
@@ -317,7 +339,7 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="dialog-footer"
       // The in-content control height, as the fields beside them (W-V17):
       // 28 under a mouse, 44 under a finger (`app.css`).
-      className={cn("mt-xxs flex flex-row justify-end gap-in [&_button]:h-ctl-md", className)}
+      className={cn("mt-xxs flex flex-row flex-wrap justify-end gap-in [&_button]:h-ctl-md", className)}
       {...props}
     />
   );
@@ -350,6 +372,7 @@ export {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogBody,
   DialogDescription,
   DialogFooter,
   DialogHeader,

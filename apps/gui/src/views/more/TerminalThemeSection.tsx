@@ -7,7 +7,7 @@ import { MoreSection } from "@/views/more/MorePage";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogBody, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ANSI_KEYS, BASE_KEYS, PRESETS, colorHex, clonePalette, importPalette, onTermTheme, readPalette, removePalette, savePalette, setTermTheme, termTheme, terminalTheme, useTermTheme, THEME_FILE_MAX, type Palette, type ColorKey } from "@/lib/term-theme";
 import { useWindowSupport } from "@/lib/window-surface";
 
@@ -130,9 +130,10 @@ export function TerminalThemeSection() {
     </MoreSection>
     {(error || notice) && <p role="status" className={`mb-group text-callout ${error ? "text-destructive" : "text-muted-foreground"}`}>{error ?? notice}</p>}
     <Dialog open={editor !== null} onOpenChange={open => { if (!open) setEditor(null); }}>
-      <DialogContent form data-term-theme-editor className="term-theme-editor w-(--theme-editor-w)! overflow-y-auto">
+      <DialogContent form scrollable data-term-theme-editor className="term-theme-editor w-(--theme-editor-w)! overflow-y-auto">
         <DialogTitle>{gui.term_theme_customize_title}</DialogTitle>
         {editor && <>
+          <DialogBody>
           <label className="flex items-center gap-row text-body">{gui.new_session_name}<Input aria-label={gui.new_session_name} value={editor.name} maxLength={48} onChange={e => setEditor({ ...editor, name: e.target.value })} /></label>
           <TerminalThemePreview theme={valid ?? lastPreview.current ?? undefined} />
           <h3 className="text-callout text-muted-foreground">{gui.term_theme_basic}</h3>
@@ -141,6 +142,7 @@ export function TerminalThemeSection() {
           <div className="term-theme-grid">{Array.from({ length: 8 }, (_, i) => [ANSI_KEYS[i], ANSI_KEYS[i + 8]]).flat().map(k => <ColorField key={k} name={k} value={editor.theme[k]} onChange={v => setEditor({ ...editor, theme: { ...editor.theme, [k]: v } })} />)}</div>
           <details className="text-callout"><summary>{gui.term_theme_extended}</summary><p className="my-in text-muted-foreground">{gui.term_theme_extended_note}</p><textarea data-term-theme-extended aria-label={gui.term_theme_extended} value={extra} onChange={e => setExtra(e.target.value)} spellCheck={false} className="h-24 w-full rounded-sm border bg-fill p-in font-mono text-callout" /></details>
           {(invalid || error) && <p role="status" className="text-callout text-destructive">{invalid ?? error}</p>}
+          </DialogBody>
           <DialogFooter><Button onClick={() => setEditor(null)}>{gui.delete_keep}</Button><Button data-term-theme-save variant="primary" disabled={!valid || !editor.name.trim()} onClick={() => { if (!valid) return; try { savePalette(editor.name, valid, editor.id); setEditor(null); setNotice(gui.term_theme_saved); } catch (e) { if (e instanceof Error && e.message === "storage") setEditor({ ...editor, id: termTheme().selected }); setError(colorError(e)); } }}>{gui.term_theme_save}</Button></DialogFooter>
         </>}
       </DialogContent>

@@ -1,5 +1,6 @@
 /** Vertical pans belong to the content sheet until its top detent;
  * remaining travel goes to the content scroller. Text selection keeps its gestures. */
+import {sheetGestureReserved} from "@/lib/sheet-gesture";
 import {useEffect,useLayoutEffect,useRef} from 'react';
 import {onPageWord,pageSheet} from '@/api';
 import type {PlaceDetent} from '@/views/SessionPlaceSheet';
@@ -98,6 +99,7 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       if (e.touches.length !== 1) return;
       el.removeAttribute("data-sheet-dragged");
       const t = e.target instanceof Element ? e.target : null;
+      if (sheetGestureReserved(t)) return;
       const band = !!t?.closest("[data-place-grab]") || !!(t && handle?.contains(t));
       // The content and sheet share vertical pans; selected text and
       // horizontal controls retain their gestures.
@@ -197,7 +199,7 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
     const wheel=(e:WheelEvent)=>{
       if(Math.abs(e.deltaX)>=Math.abs(e.deltaY))return;
       const target=e.target instanceof Element?e.target:null;
-      if(target?.closest('input,textarea,[data-sheet-hold]'))return;
+      if(sheetGestureReserved(target)||target?.closest('input,textarea'))return;
       const list=scroller(target),{full}=heights();
       const h=el.getBoundingClientRect().height;
       if((e.deltaY<0&&(list?.scrollTop||0)>0)||(e.deltaY>0&&h>=full-1))return;

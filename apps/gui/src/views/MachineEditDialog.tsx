@@ -40,7 +40,7 @@ import { useEffect, useState } from "react";
 
 import { renameMachine, type DeviceRow } from "@/api";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
@@ -104,10 +104,11 @@ export function MachineEditDialog({
 
   return (
     <Dialog open={row !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent form data-machine-edit={row?.id}>
+      <DialogContent form scrollable data-machine-edit={row?.id}>
         <DialogHeader>
           <DialogTitle>{row ? gui.machine_edit_title(row.shown) : ""}</DialogTitle>
         </DialogHeader>
+        <DialogBody>
         {row && (
           <FaceSettings machine={row.id} onChanged={onChanged}>
             <FormLabel htmlFor="khor-machine-edit-name">{gui.machine_name}</FormLabel>
@@ -142,8 +143,9 @@ export function MachineEditDialog({
             </form>
           </FaceSettings>
         )}
+        </DialogBody>
         <DialogFooter>
-          <Button variant="primary" data-machine-edit-done className="min-h-touch" disabled={going} aria-busy={going || undefined} onClick={done}>
+          <Button variant="primary" data-machine-edit-done data-footer-trailing className="min-h-touch" disabled={going} aria-busy={going || undefined} onClick={done}>
             {gui.edit_done}
           </Button>
         </DialogFooter>

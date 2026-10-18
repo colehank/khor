@@ -326,24 +326,38 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 
-/* **导入's list keeps one height while it is filtered** (IMPORT-BRIEF):
-   a dialog that shrank and grew with every letter typed would move its
-   rows under the pointer. Wide, the list is a box sized by the window —
-   the dialog stands at 16vh and the rest of it is about 31rem with the
-   ACP section, so the list takes what is left, between ten rows' worth
-   and four. On the phone the sheet stands at its full height and only
-   the list scrolls, under the field and the chips. */
-[data-import-dialog] [data-import-rows] {
-  height: clamp(10rem, calc(84vh - 31rem), 30rem);
+/* Dialog bounds are shared, not a per-page guess. Long forms opt into
+   one shrinking body; the fallback scrolls the whole dialog. The visible
+   viewport matters when a keyboard covers the layout viewport. */
+[data-slot="dialog-content"] {
+  --dialog-visible-height: 100dvh;
+  --dialog-visible-top: 0%;
+  max-height: calc(var(--dialog-visible-height) - 2 * var(--gap-pane));
 }
-[data-narrow] [data-slot="dialog-content"][data-form][data-import-dialog] {
-  height: calc(100dvh - var(--sheet-kb) - 2rem);
+[data-slot="dialog-content"]:not([data-form]):not([data-action-sheet]) {
+  top: calc(var(--dialog-visible-top) + var(--dialog-visible-height) / 2);
+}
+[data-slot="dialog-content"][data-form] {
+  top: calc(var(--dialog-visible-top) + var(--dialog-visible-height) * 0.16);
+  max-height: calc(var(--dialog-visible-height) * 0.84 - var(--gap-pane));
+}
+[data-slot="dialog-content"][data-scrollable] {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  grid-template-rows: auto minmax(0, 1fr);
 }
-[data-narrow] [data-import-dialog] [data-import-rows] {
-  height: auto;
-  flex: 1 1 0;
+[data-slot="dialog-content"][data-scrollable] > :not([data-slot="dialog-body"]):not([hidden]) {
+  flex: none;
+}
+/* Inline completions must contribute their height inside a bounded form;
+   otherwise the absolute menu is clipped by the dialog's scroller. */
+[data-slot="dialog-content"] [data-path-suggestions] > [data-menu-frame] {
+  position: static;
+}
+/* Import is a compact task, not an almost full-screen browser. Few rows
+   take only their own height; large lists scroll inside the same frame. */
+[data-narrow] [data-slot="dialog-content"][data-form][data-import-dialog] {
+  max-height: min(calc(var(--dialog-visible-height) * 0.7), calc(var(--dialog-visible-height) - var(--safe-top) - var(--gap-pane)));
 }
 
 /* **Chrome never pans the screen** (the owner, 2026-10-05, iPhone build
@@ -759,7 +773,7 @@ aside[data-side] {
   bottom: var(--sheet-kb);
   width: 100%;
   max-width: none;
-  max-height: calc(100dvh - var(--sheet-kb) - 2rem);
+  max-height: calc(var(--dialog-visible-height) - var(--safe-top) - var(--gap-pane));
   overflow-y: auto;
   translate: none;
   transform: translateY(var(--sheet-pull));
@@ -829,48 +843,23 @@ aside[data-side] {
   }
 }
 
-/* **A sheet's buttons in its header** (UX-10; ux-9 I6). HIG Sheets on
-   iOS: 「the Cancel button belongs on the leading edge of the top
-   toolbar」, the one act on the trailing edge in the prominent style,
-   the title between them. On the narrow face a form's title and its
-   footer share the sheet's first row — the footer's own order already
-   puts 取消 first and the act last, so spreading it puts each at its
-   edge — and the row stays at the top while the form scrolls under it,
-   above the soft keyboard with the sheet. A wide window keeps the
-   dialog's footer where a Mac puts it. */
-[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"],
-[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
-  grid-row: 1;
+/* Task sheets use the same title → content → actions order as dialogs.
+   Do not stack footer and header into one grid cell: translated actions
+   and long names otherwise overlap. Long tasks keep only the body scrolling. */
+[data-narrow] [data-slot="dialog-content"][data-form] > :is([data-slot="dialog-header"], [data-slot="dialog-footer"]) {
   grid-column: 1;
-  position: sticky;
-  top: 0;
-  align-self: center;
   margin: 0;
+  align-self: stretch;
 }
 [data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
   justify-content: space-between;
-  background: var(--popover);
-  z-index: 1;
 }
-/* A lone act that ends the sheet (完成) keeps the trailing edge, as
-   iOS's Done does; a lone 返回 / 取消 stays leading (round join-d). */
 [data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] > [data-footer-trailing]:only-child {
   margin-inline-start: auto;
-}
-[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] {
-  z-index: 2;
-  /* The title lies over the row the buttons stand in; it takes no
-     press, and it keeps clear of them. */
-  pointer-events: none;
-  text-align: center;
-  padding-inline: calc(2 * var(--touch));
 }
 [data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] [data-slot="dialog-title"] {
   font-size: var(--text-headline);
   line-height: var(--text-headline--line-height);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* **A back swipe** (`hooks/use-edge-swipe`, F7.3; V01): the page —

@@ -37,6 +37,7 @@
     "smoke": "node scripts/smoke.mjs",
     "web-face": "node scripts/web-face.mjs",
     "gates": "node scripts/check-gates.mjs",
+    "dialogs": "node scripts/check-dialogs.mjs",
     "tokens": "node scripts/check-tokens.mjs",
     "boot": "node scripts/check-boot.mjs",
     "native": "node scripts/check-native.mjs",

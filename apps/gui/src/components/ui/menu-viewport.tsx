@@ -49,7 +49,7 @@ export function MenuViewport({
     const chosen = viewport.current?.querySelector<HTMLElement>('[data-on=true]');
     if (chosen) reveal(chosen);
   }, [active]);
-  return <div ref={viewport} data-menu-viewport className={cn('min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain', className)} style={{
+  return <div ref={viewport} data-menu-viewport data-sheet-hold className={cn('min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain', className)} style={{
     maxHeight: room === undefined ? MENU_TALLEST : `min(${MENU_TALLEST}px, ${typeof room === 'number' ? room + 'px' : room})`
   }} onFocusCapture={e => reveal(e.target as HTMLElement)} onWheel={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}><div ref={items} data-menu-items className="min-w-0 p-menu-inset">{children}</div></div>;
 }

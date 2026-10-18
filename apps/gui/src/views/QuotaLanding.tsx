@@ -2137,7 +2137,7 @@ function EditDialog({
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
-      <DialogContent data-quota-edit={acc.reading.account}>
+      <DialogContent form data-quota-edit={acc.reading.account}>
         <DialogHeader>
           <DialogTitle>{gui.accounts_edit}</DialogTitle>
         </DialogHeader>

@@ -34,6 +34,7 @@
  * ⚠️ 墓碑 (UX-17 → UX-30): a 目录 / 日志 segment with its own `keptTab`
  * store per session; the seat replaces the tab.
  */
+import {sheetGestureReserved} from "@/lib/sheet-gesture";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -122,10 +123,11 @@ export function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent)
       if (e.touches.length !== 1) return;
       el.removeAttribute("data-sheet-dragged");
       const t = e.target instanceof Element ? e.target : null;
+      if (sheetGestureReserved(t)) return;
       const band = !!t?.closest("[data-place-grab]") || !!(t && handle?.contains(t));
       // Content editors keep their own selection and scroll gestures.
       if (told.current.bounds && !band) return;
-      if (!band && (t?.closest('[data-sheet-hold], input[type="range"]') || scrolled(t))) return;
+      if (!band && scrolled(t)) return;
       begin(e.touches[0].clientX,e.touches[0].clientY,e.timeStamp,band);
     };
     const drag = (x: number, y: number, time: number, prevent: () => void) => {

@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogBody,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -112,10 +113,11 @@ export function DirPicker({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form data-dir-picker>
+      <DialogContent form scrollable data-dir-picker>
         <DialogHeader>
           <DialogTitle>{gui.dir_picker}</DialogTitle>
         </DialogHeader>
+        <DialogBody>
         <FormGrid>
           {!fixed && (
             <>
@@ -165,6 +167,7 @@ export function DirPicker({
             </div>
           )}
         </FormGrid>
+        </DialogBody>
         <DialogFooter>
           <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
             {gui.delete_keep}
