@@ -1,8 +1,9 @@
 import { cli } from "@/gen/catalog";
 
 /** The operator's unread content, independent of work state and pill
- * interactions. The node supplies the count: agents currently report
- * 0/1, broadcast counts messages. Never infer unread from a state word.
+ * interactions. The node supplies the count, covered locally by the operator's
+ * versioned read receipt: agents report 0/1, broadcast counts messages.
+ * Never infer unread from a state word.
  * The dot always has the same red area; a neutral number adds quantity
  * without making a busier channel look more urgent.
  */

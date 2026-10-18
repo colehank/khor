@@ -1609,8 +1609,13 @@ held a hidden `Node::devices` call, and a caller who already had the
 table had no way to say so. A helper that re-reads what the caller
 just read is a helper that costs more than it saves. */
 
-pub fn seen(root: &Path, id: &str) -> Result<(), String> {
-    open(root)?.seen(&SessionId(id.to_owned()))
+pub fn seen(root: &Path, id: &str, at_ms: Option<i64>) -> Result<(), String> {
+    let node = open(root)?;
+    let id = SessionId(id.to_owned());
+    match at_ms {
+        Some(at) => node.seen_through(&id, at),
+        None => node.seen(&id),
+    }
 }
 
 pub use khor_node::SeenMessage;

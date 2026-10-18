@@ -3371,3 +3371,53 @@ fn an_old_machine_conversation_on_disk_is_not_on_the_list() {
     assert!(!ids.iter().any(|i| i.starts_with("chat/")), "no machine conversation is listed: {ids:?}");
     assert!(n.log(n.name()).is_err(), "and a machine's name is not a board to read");
 }
+
+/// A read is local first, even while the peer keeps reporting the old badge.
+#[test]
+fn a_local_read_clears_a_cached_remote_badge_before_sync() {
+    let r = root("read-remote-local");
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let peer = "ab".repeat(32);
+    let loaded = n.devices_loaded().unwrap();
+    loaded.doc.upsert(&peer, "remote", &[]).unwrap();
+    let mut store = loaded.store;
+    store.flush(&loaded.doc).unwrap();
+    let local = n.open_ephemeral(khor_core::kind::SHELL, "template").unwrap();
+    let mut row = n.sessions().unwrap().into_iter().find(|v| v.session.id == local).unwrap().session;
+    row.kind = khor_core::Kind(khor_core::kind::GUI.to_owned());
+    row.id = SessionId("shell/remote-read".into());
+    row.state.state = State::Done;
+    row.state.at.0 = 100;
+    row.unread = 1;
+    n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
+    let shown = || n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session;
+    assert_eq!(shown().unread, 1);
+    n.seen(&row.id).unwrap();
+    assert_eq!(shown().unread, 0, "do not wait for a network round trip");
+    assert_eq!(shown().state.state, State::Idle);
+    n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
+    assert_eq!(shown().unread, 0, "a stale peer report cannot revive a badge");
+    row.state.at.0 = 200;
+    n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
+    let fresh = n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session;
+    assert_eq!(fresh.unread, 1, "a newer completion is still unread");
+    n.seen_through(&row.id, 100).unwrap();
+    assert_eq!(n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session.unread, 1,
+        "a delayed GUI receipt cannot clear a later completion");
+    n.seen_through(&row.id, 200).unwrap();
+    assert_eq!(n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session.unread, 0);
+    assert!(n.seen_through(&row.id, -1).is_err());
+    row.state.state = State::Busy;
+    row.state.at.0 = 300;
+    row.unread = 0;
+    n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
+    n.seen_through(&row.id, 999).unwrap();
+    assert_eq!(n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session.state.state, State::Busy,
+        "reading must not change a running session's state");
+    row.state.state = State::Done;
+    row.state.at.0 = 400;
+    row.unread = 1;
+    n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
+    assert_eq!(n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session.unread, 1,
+        "future receipts are clamped to the currently known row");
+}

@@ -2620,6 +2620,7 @@ impl Node {
     pub(crate) fn every_session(&self) -> Result<Vec<SessionView>, String> {
         let pins = self.pins_loaded()?;
         let titles = self.titles_loaded()?;
+        let seen = self.seen_loaded()?;
         let now = crate::live::now_ms().max(0) as u64;
         let mut views: Vec<SessionView> = Vec::new();
         for k in self.kinds() {
@@ -2638,8 +2639,16 @@ impl Node {
             views.iter().map(|v| v.session.id.0.clone()).collect();
         let mut reported = self.cached_peer_rows();
         reported.sort_by_key(|(_, age, _)| *age);
-        for (name, age, row) in reported {
+        for (name, age, mut row) in reported {
             if have.insert(row.id.0.clone()) {
+                // Read decisions are local facts already. A peer's stale report
+                // must not wait for a sync round trip to reflect them here.
+                if row.state.state == State::Done
+                    && seen.doc.watermark(&row.id.0) >= row.state.at.0 as i64
+                {
+                    row.unread = 0;
+                    row.state.state = State::Idle;
+                }
                 views.push(SessionView {
                     pinned: pins.doc.pinned(&row.id.0),
                     stale: false,
@@ -4278,12 +4287,26 @@ impl Node {
     /// kind answers the same way: the kind names the watermark, the node
     /// persists it and repaints the row.
     pub fn seen(&self, id: &SessionId) -> Result<(), String> {
+        self.seen_bounded(id, None)
+    }
+
+    /// A GUI receipt covers the row the person saw, not a completion that
+    /// arrived while the receipt was in flight. CLI marks retain broad semantics.
+    pub fn seen_through(&self, id: &SessionId, at_ms: i64) -> Result<(), String> {
+        if at_ms < 0 {
+            return Err("invalid read timestamp".to_owned());
+        }
+        self.seen_bounded(id, Some(at_ms))
+    }
+
+    fn seen_bounded(&self, id: &SessionId, through: Option<i64>) -> Result<(), String> {
+        let bounded = |at: i64| through.map_or(at, |limit| at.min(limit));
         for k in self.kinds() {
             if !k.claims(self, id) {
                 continue;
             }
             let at = k.seen_at(self, id)?;
-            self.mark_seen(id, at)?;
+            self.mark_seen(id, bounded(at))?;
             if let Some(row) = k.rows(self)?.into_iter().find(|r| r.id == *id) {
                 self.emit(NodeEvent::Row(row));
             }
@@ -4292,7 +4315,7 @@ impl Node {
         // A row another device reported: its stamp is the watermark, and
         // the mark replicates — the home's own row clears on next sync.
         if let Some(v) = self.sessions()?.into_iter().find(|v| v.session.id == *id) {
-            return self.mark_seen(id, v.session.state.at.0 as i64);
+            return self.mark_seen(id, bounded(v.session.state.at.0 as i64));
         }
         Err(msg::no_such_session(&id.0))
     }

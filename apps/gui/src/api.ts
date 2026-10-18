@@ -769,7 +769,7 @@ export const fetchUsage = () => call<Usage>("usage");
     can come back empty is a reason the person might act on, so the
     reason rides in the answer. */
 export const fetchQuota = () => call<QuotaAnswer>("quota");
-export const markSeen = (id: string) => call<null>("seen", { id });
+export const markSeen = (id: string, at_ms: number) => call<null>("seen", { id, at_ms });
 export const markSeenSnapshot = (id: string, messages: SeenMessage[]) =>
   call<null>("seen_snapshot", { id, messages });
 export const closeSession = (id: string) => call<null>("close_session", { id });

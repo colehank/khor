@@ -187,3 +187,22 @@ fn persisted_note_succeeds_when_read_acknowledgement_storage_fails() {
         khor_node::MsgBody::Text("accepted note".into())
     );
 }
+
+#[test]
+fn gui_seen_api_preserves_the_observed_row_timestamp() {
+    let scratch = Scratch::new();
+    let node = Node::open_as(scratch.0.clone(), "bounded-row-test").unwrap();
+    node.record_command(&command(&node, "observed-row", 100)).unwrap();
+    node.record_command(&command(&node, "arrived-in-flight", 200)).unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let args = serde_json::json!({"id": khor_node::wide::BROADCAST, "at_ms": 100});
+    khor_gui_core::api::answer(&rt, &scratch.0, "seen", &args).unwrap();
+    assert_eq!(row(&node).session.unread, 1, "HTTP must pass the timestamp through to the node");
+    for at in [serde_json::json!(-1), serde_json::json!("200"), serde_json::json!(1.5)] {
+        let args = serde_json::json!({"id": khor_node::wide::BROADCAST, "at_ms": at});
+        assert!(khor_gui_core::api::answer(&rt, &scratch.0, "seen", &args).is_err());
+    }
+    let old_client = serde_json::json!({"id": khor_node::wide::BROADCAST});
+    khor_gui_core::api::answer(&rt, &scratch.0, "seen", &old_client).unwrap();
+    assert_eq!(row(&node).session.unread, 0, "older clients retain their broad mark semantics");
+}

@@ -458,9 +458,9 @@ async fn quota() -> khor_gui_core::QuotaAnswer {
     khor_gui_core::quota().await
 }
 
-#[tauri::command]
-fn seen(id: String) -> Result<(), String> {
-    khor_gui_core::seen(&Node::root_from_env(), &id)
+#[tauri::command(rename_all = "snake_case")]
+fn seen(id: String, at_ms: Option<i64>) -> Result<(), String> {
+    khor_gui_core::seen(&Node::root_from_env(), &id, at_ms)
 }
 
 #[tauri::command]
