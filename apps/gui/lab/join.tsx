@@ -441,7 +441,7 @@ function JumpPage({ form, set }: { form: Form; set: (f: Partial<Form>) => void }
           {khorMachines.map((m) => (
             <Row key={m} lead={<Face name={m} />} title={m} checked={form.via === `khor:${m}`} onPress={() => pick(`khor:${m}`)} />
           ))}
-          <Row title="复制 SSH 配置…" note="不添加机器，只经 khor 主机用 ssh 连接" chevron onPress={() => go("3e")} />
+          <Row title="复制 SSH 配置" note="不添加机器，只经 khor 主机用 ssh 连接" chevron onPress={() => go("3e")} />
         </Group>
         <Group head="通过 SSH 跳板机">
           {sshHosts
@@ -452,7 +452,7 @@ function JumpPage({ form, set }: { form: Form; set: (f: Partial<Form>) => void }
             ))}
         </Group>
         <Group>
-          <Row title="检测哪些机器可以连接…" chevron onPress={() => go("4")} />
+          <Row title="检测哪些机器可以连接" chevron onPress={() => go("4")} />
         </Group>
       </Body>
       <DialogFooter>
@@ -495,7 +495,7 @@ function AuthPage({ form, set }: { form: Form; set: (f: Partial<Form>) => void }
               <>
                 {picked && <Row title={picked} checked={form.key === picked} onPress={() => pickKey(picked)} />}
                 {/* The file picker of the machine that runs ssh; faked here. */}
-                <Row title="选择密钥文件…" onPress={() => pickKey("~/.ssh/id_lab")} />
+                <Row title="选择密钥文件" onPress={() => pickKey("~/.ssh/id_lab")} />
               </>
             )}
           </Group>
@@ -840,7 +840,7 @@ function Road({ machine, road, hops, jump, broken, said, sat }: {
       <div className="flex min-h-ctl-lg items-center gap-row">
         <Face name={machine} className="size-avatar" />
         <span className="min-w-0 flex-1 truncate text-headline text-foreground">{machine}</span>
-        {sat && <Button>安装 khor…</Button>}
+        {sat && <Button>安装 khor</Button>}
       </div>
       <div className="flex items-baseline gap-row text-body">
         <span className="w-16 flex-none text-muted-foreground">连接</span>

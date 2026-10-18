@@ -233,7 +233,7 @@ export function SecurityPage({
               name="lock-pin"
               label={gui.lock_pin}
               value={lock.has_pin ? gui.lock_pin_is_set : gui.lock_pin_not_set}
-              actionLabel={lock.has_pin ? gui.lock_change_pin_ask : gui.lock_set_pin_ask}
+              actionLabel={lock.has_pin ? gui.lock_change_pin : gui.lock_set_pin}
               onPress={() => {
                 setPin("");
                 setArming(false);

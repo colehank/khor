@@ -121,8 +121,8 @@ export function TerminalThemeSection() {
       </div>
       <div className="px-row pb-in"><TerminalThemePreview /></div>
       <div className="flex flex-wrap items-center justify-end gap-in px-row pb-in">
-        <Button data-term-theme-edit onClick={edit}>{custom ? gui.edit_ask : gui.term_theme_customize}</Button>
-        <Button data-term-theme-import onClick={() => fileRef.current?.click()}>{gui.import_sessions_ask}</Button>
+        <Button data-term-theme-edit onClick={edit}>{custom ? gui.accounts_edit : gui.term_theme_customize}</Button>
+        <Button data-term-theme-import onClick={() => fileRef.current?.click()}>{gui.import_sessions}</Button>
         <Button data-term-theme-export onClick={() => void exportFile()}>{gui.term_theme_export}</Button>
         {custom && <Button data-term-theme-remove onClick={() => setRemoving(true)} className="text-destructive">{gui.remove}</Button>}
       </div>

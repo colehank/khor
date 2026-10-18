@@ -207,7 +207,7 @@ function useFileVerbs({
       label: gui.tab_copy_path,
       run: () => void navigator.clipboard.writeText(path).then(() => setSaid(gui.copied), () => setSaid(gui.copy_failed)),
     },
-    { key: "rename", label: gui.rename_ask, run: () => setRenaming(true) },
+    { key: "rename", label: gui.rename, run: () => setRenaming(true) },
     ...(hasSymbols ? [{ key: "symbols", label: gui.keys_group_symbol, run: () => setSymbolsOpen(true) }] : []),
     ...(history && onRevision ? [{ key: "history", label: gui.file_history, run: () => setHistoryOpen(true) }] : []),
     // Blame is said at the end of the caret's line (UX-23), which a phone

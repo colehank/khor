@@ -2,7 +2,7 @@
 // page sits behind the desktop strip and the narrow screen's bottom deck.
 import { useEffect, useRef, useState } from 'react';
 import { agentAsk, agents as fetchAgents, agentsKnown, agentsKnownTaken, fetchDevices, launchPresets, saveLaunchPreset, deleteLaunchPreset, openShell, openSession, registerKnownAgent, type AgentRow, type DeviceRow, type KnownAgent, type LaunchPreset } from '@/api';
-import { MachineAvatar } from '@/components/Avatar';
+import { MachineField } from '@/components/MachineField';
 import { PathField, settledPath } from '@/components/PathField';
 import { sessionKind } from '@/components/SessionFace';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,6 @@ import { gui } from '@/gen/catalog';
 import { draftFor, dropHandOff, peekHandOff, tellDraft } from '@/lib/composer-handoff';
 import { useHereHosts } from '@/lib/here';
 import { useSetting } from '@/settings';
-import { connectionWord } from '@/words';
 type Launch = {
   kind: 'shell';
   command: string;
@@ -254,13 +253,7 @@ export function NewSessionPage({
   return <>
   <div data-new-session-page className="h-full min-h-0 overflow-y-auto"><div className="mx-auto flex w-full max-w-measure flex-col gap-group px-page pt-pane pb-nav-room">
    <FormGrid data-new-session-form>
-    <FormLabel>{gui.new_session_machine}</FormLabel><div data-new-session-machines data-machine={channel}><ChoiceField label={gui.new_session_machine} value={target?.shown || machine} selected={channel} disabled={opening} placeholder={gui.page_choose_machine} options={devices.filter(d => d.sponsor === null).map(d => ({
-              id: d.name,
-              label: d.shown,
-              terms: d.name + ' ' + d.id,
-              aside: connectionWord(d) || undefined,
-              icon: <MachineAvatar face={d.face} className="size-kind-mark" />
-            }))} onPick={setMachine} onPendingChange={setPending} /></div>
+    <FormLabel>{gui.new_session_machine}</FormLabel><div data-new-session-machines data-machine={channel}><MachineField devices={devices.filter(d=>d.sponsor===null)} value={channel || machine} disabled={opening} onPick={setMachine} onPendingChange={setPending} /></div>
     <FormLabel>{gui.new_session_dir}</FormLabel><PathField key={channel} data-new-session-dir aria-label={gui.new_session_dir} machine={channel} value={dir} disabled={opening || !target} onValueChange={value => setPaths(was => ({
             ...was,
             [channel]: value
@@ -271,13 +264,12 @@ export function NewSessionPage({
             })} onPick={id => {
               const choice = choices.find(c => c.id === id);
               if (choice) setLaunch(choice.launch);
-            }} onSubmit={create} actions={[{
+            }} onSubmit={create} actions={[...(launch.kind === 'shell' && command.trim() ? [{
               id: 'save-command',
               label: gui.launch_add,
               icon: <IconPlus />,
-              disabled: launch.kind !== 'shell' || !command.trim(),
               run: add
-            }, {
+            }] : []), {
               id: 'manage',
               label: gui.launch_manage,
               icon: <IconGear />,
@@ -310,7 +302,7 @@ export function NewSessionPage({
           setEditError(null);
           setRemoving(p);
         }} />
-   <div className="flex flex-wrap gap-in"><Button onClick={()=>{setManage(false);add()}}><IconPlus className="size-kind-mark"/>{gui.launch_add}</Button><Button variant="ghost" onClick={browse}>{gui.launch_attach_agent}</Button></div>
+   <div className="flex flex-wrap gap-in"><Button onClick={()=>{setManage(false);add()}}><IconPlus className="size-kind-mark"/>{gui.launch_add_title}</Button><Button variant="ghost" onClick={browse}>{gui.launch_attach_agent}</Button></div>
    {browsing && <div className="flex min-w-0 flex-col gap-in"><span className="text-caption text-muted-foreground">{taken ? gui.new_session_registry_taken(taken[0], taken[1]) : gui.new_session_registry}</span><Input aria-label={gui.new_session_search} placeholder={gui.new_session_search} value={query} onChange={e => setQuery(e.target.value)} /><div className="max-h-56 overflow-y-auto">{(snapshot || []).filter(k => `${k.id} ${k.name} ${k.about}`.toLowerCase().includes(query.toLowerCase())).map(k => <div key={k.id} className="flex min-w-0 items-center gap-in py-in"><div className="min-w-0 flex-1"><div className="truncate text-body">{k.name}</div><div className="truncate text-caption text-muted-foreground">{k.argv || k.about}</div></div>{known.some(a => a.name === k.id) ? <span className="text-caption text-muted-foreground">{gui.new_session_attached}</span> : k.argv === null ? <span className="text-caption text-muted-foreground">{gui.new_session_byhand}</span> : <Button size="sm" disabled={attaching !== null} onClick={() => attach(k.id)}>{gui.new_session_attach}</Button>}</div>)}</div></div>}
    <DialogFooter><Button onClick={() => setManage(false)}>{gui.edit_done}</Button></DialogFooter></DialogContent></Dialog>
   <Dialog open={!!removing} onOpenChange={on => !on && setRemoving(null)}><DialogContent><DialogTitle>{gui.launch_remove}</DialogTitle><p className="text-body">{removing?.name}</p>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}<DialogFooter><Button disabled={saving} onClick={() => setRemoving(null)}>{gui.delete_keep}</Button><Button disabled={saving} onClick={remove}>{gui.delete}</Button></DialogFooter></DialogContent></Dialog>
@@ -329,6 +321,6 @@ function MenuRows({
 }) {
   return <div className="max-h-[calc(6*var(--pane-head))] overflow-y-auto">{choices.map(c => {
       const preset = presets.find(p => 'custom:' + p.id === c.id);
-      return <div key={c.id} className="flex min-w-0 items-center gap-row border-b py-in last:border-0"><span className="choice-row-icon">{c.icon}</span><div className="min-w-0 flex-1"><div className="truncate text-body">{c.label}</div><div className="truncate text-caption text-muted-foreground">{c.aside || (preset ? gui.launch_custom : gui.launch_built_in)}</div></div>{preset && <><Button variant="ghost" aria-label={gui.accounts_edit + ' ' + preset.name} onClick={() => onEdit(preset)}><IconPencil className="size-kind-mark" /></Button><Button variant="ghost" aria-label={gui.delete + ' ' + preset.name} onClick={() => onRemove(preset)}><IconClose className="size-kind-mark" /></Button></>}</div>;
+      return <div key={c.id} className="flex min-w-0 items-center gap-row border-b py-in last:border-0"><span className="choice-row-icon">{c.icon}</span><div className="min-w-0 flex-1"><div className="truncate text-body">{c.label}</div><div className="truncate text-caption text-muted-foreground">{c.aside || (preset ? gui.launch_command : gui.launch_built_in)}</div></div>{preset && <><Button variant="ghost" aria-label={gui.accounts_edit + ' ' + preset.name} onClick={() => onEdit(preset)}><IconPencil className="size-kind-mark" /></Button><Button variant="ghost" aria-label={gui.delete + ' ' + preset.name} onClick={() => onRemove(preset)}><IconClose className="size-kind-mark" /></Button></>}</div>;
     })}</div>;
 }

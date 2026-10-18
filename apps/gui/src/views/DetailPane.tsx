@@ -592,7 +592,7 @@ export function DetailPane({
               action={
                 onNew && (
                   <Button size="sm" variant="secondary" data-empty-new className="min-h-touch" onClick={onNew}>
-                    {gui.new_session_ask}
+                    {gui.new_session}
                   </Button>
                 )
               }

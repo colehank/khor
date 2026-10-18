@@ -2684,7 +2684,7 @@ try {
   /** An act on the open landing's ＋ — its one home since 2026-09-30
       (「一个动作只有一个家」): pressed straight through where the landing
       has one act, picked off the menu ＋ drops where it has two or more
-      (会话: 新会话… 导入…; 机器: 邀请设备… 加入网络…). True when it got
+      (会话: 新会话 导入; 机器: 邀请设备… 加入网络). True when it got
       there. */
   const pressNew = async (key) => {
     if (!(await press("[data-side-head] [data-pane-new]"))) return false;
@@ -5947,17 +5947,18 @@ try {
       box: document.querySelector("[data-dir-picker-path]")?.value ?? null,
       offered: document.querySelectorAll("[data-dir-picker] button[data-omni-item], [data-dir-picker] [data-place]").length,
     }));
-    if (before.box !== "" || before.offered !== 0) {
+    if (!before.box || before.offered !== 0) {
       fail(
         `the sheet opened on ${JSON.stringify(before)} — a directory box offers nothing before it is ` +
-          "typed in, the owner's ruling of 2026-09-27 (src/components/DirPicker.tsx)",
+          "focused; with no context its input starts at the target home (2026-10-18)",
       );
     }
     // A machine that is not the one it opened on, because the sheet's
     // reason to exist is that the directory may be somewhere else. The
-    // machines are a popup — the system's menu — since 2026-09-28, so
-    // the pick is the `<select>`'s, not a press on a pill.
-    await page.locator("[data-dir-picker-machine-select]").selectOption("peer");
+    // machine field searches names and draws each machine's avatar.
+    await page.locator("[data-dir-picker-machines] input").click();
+    await page.locator("[data-dir-picker-machines] input").fill("peer");
+    await page.locator('[data-choice-option="peer"]').click();
     await wait(200);
     await page.locator("[data-dir-picker-path]").click();
     await page.locator("[data-dir-picker-path]").fill(`${pin.path}/s`);
@@ -11934,7 +11935,7 @@ try {
     // and 编辑… before it (2026-09-30; 更改头像… stood there from 09-28,
     // off the map's retired card — src/views/DevicesList.tsx).
     if (JSON.stringify(peerKeys) !== JSON.stringify(["pin", "pause", "edit", "forget"])) {
-      fail(`another machine's row menu reads ${JSON.stringify(peerKeys)} — 置顶, 暂停 / 恢复, 编辑…, then 删除 last (docs/SHELL.md 第五轮 第 10 条, audit 第 16 条)`);
+      fail(`another machine's row menu reads ${JSON.stringify(peerKeys)} — 置顶, 暂停 / 恢复, 编辑, then 删除 last (docs/SHELL.md 第五轮 第 10 条, audit 第 16 条)`);
     }
     if (JSON.stringify(gateKeys.slice(0, 2)) !== JSON.stringify(["pin", "pause"])) {
       fail(`this machine's row menu reads ${JSON.stringify(gateKeys)} — 置顶, then 暂停 (no 删除 on its own row)`);
@@ -12817,12 +12818,12 @@ try {
         }
         if (net.acts.join(",") !== "0,0" || net.inBody !== 0) {
           fail(
-            `${posture}: 邀请设备… / 加入网络… read ${JSON.stringify(net.acts)} in the page's head and ${net.inBody} ` +
+            `${posture}: 邀请设备… / 加入网络 read ${JSON.stringify(net.acts)} in the page's head and ${net.inBody} ` +
               "in its body — they are the machines landing's ＋ and nowhere else (10-layout, 2026-09-30)",
           );
         }
         if (net.pause !== 1 || net.leave !== 0) {
-          fail(`${posture}: 连接 offers ${net.pause} 暂停同步 switch(es) and ${net.leave} 离开网络… — the switch, and 离开 is 我的 khor's (UX-16)`);
+          fail(`${posture}: 连接 offers ${net.pause} 暂停同步 switch(es) and ${net.leave} 离开网络 — the switch, and 离开 is 我的 khor's (UX-16)`);
         }
         if (!net.me || !net.me.includes("gate") || !net.connected) {
           fail(`${posture}: 状态 reads 本机 ${JSON.stringify(net.me)} / 已连接的机器 ${JSON.stringify(net.connected)} — both are facts khor holds`);
@@ -12833,7 +12834,7 @@ try {
         if (net.fold !== 0 || !net.inUse || net.mine === 0 || net.add !== 1 || net.onlyMine !== 1) {
           fail(
             `${posture}: 中继 reads ${JSON.stringify({ fold: net.fold, inUse: net.inUse, mine: net.mine, add: net.add, onlyMine: net.onlyMine })} — ` +
-              "使用中, 自己的中继 with its entries and 添加中继…, and 只使用自己的中继, open (views/NetSettings)",
+              "使用中, 自己的中继 with its entries and 添加中继, and 只使用自己的中继, open (views/NetSettings)",
           );
         }
         if (relaysAsked.length === relaysBefore) {
@@ -12845,7 +12846,7 @@ try {
         await press("[data-relay-add]");
         const addUp = await until(3_000, async () => (await page.locator("[data-relay-add-url]").count()) > 0);
         if (!addUp) {
-          fail(`${posture}: 添加中继… opened no window with an address box`);
+          fail(`${posture}: 添加中继 opened no window with an address box`);
         } else {
           await page.fill("[data-relay-add-url]", "http://relay.two:4433");
           // The relay's key rides only with the relay being added, and
@@ -12979,7 +12980,7 @@ try {
       await wait(400);
       const theirRow = page.locator('[data-list] [data-side-row][data-side-menu="true"]:not([data-me="true"]) [data-side-open]').first();
       if ((await theirRow.count()) === 0) {
-        fail(`probe dead: ${posture} · no other machine's row to open 编辑… on`);
+        fail(`probe dead: ${posture} · no other machine's row to open 编辑 on`);
       } else {
         await theirRow.click({ button: "right" });
         await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="edit"]').count()) > 0);
@@ -12989,7 +12990,7 @@ try {
           async () => (await page.locator('[data-machine-edit] [data-face-axis="variant"] [data-face-option]').count()) > 0,
         );
         if (!editorUp) {
-          fail(`${posture}: 编辑… on a machine row opened no editor (src/views/DevicesList.tsx)`);
+          fail(`${posture}: 编辑 on a machine row opened no editor (src/views/DevicesList.tsx)`);
         } else {
           const shape = await page.evaluate(() => {
             const el = document.querySelector("[data-machine-edit]");
@@ -13014,10 +13015,10 @@ try {
           const them = devs.find((d) => !d.me);
           await wait(1_500);
           const settled = await page.locator("[data-machine-edit]").count();
-          console.log(`网络 ${posture} · 编辑… · 画法: ${JSON.stringify({ sent: forWhom, open: settled })}`);
+          console.log(`网络 ${posture} · 编辑 · 画法: ${JSON.stringify({ sent: forWhom, open: settled })}`);
           if (forWhom !== them.id) {
             fail(
-              `${posture}: 编辑… restyled ${JSON.stringify(forWhom)} from ${JSON.stringify(them.id)}'s row — ` +
+              `${posture}: 编辑 restyled ${JSON.stringify(forWhom)} from ${JSON.stringify(them.id)}'s row — ` +
                 "a face is 全网一份, so the one it writes is the one you pointed at (docs/MORE.md 第二轮)",
             );
           }
@@ -13103,7 +13104,7 @@ try {
         if (card.editor !== 0) {
           fail(
             `${posture}: the identity card still draws ${card.editor} avatar editor(s) — the face is ` +
-              "edited from the machine's row (右键 → 编辑…), not here (「不要冗余」, 2026-09-30)",
+              "edited from the machine's row (右键 → 编辑), not here (「不要冗余」, 2026-09-30)",
           );
         }
 
@@ -14172,7 +14173,7 @@ try {
       [
         // 编辑… off a machine row (2026-09-30; it was 这台机器's 改名…,
         // which left that page with the face editor).
-        "a dialog (编辑…)",
+        "a dialog (编辑)",
         "[data-machine-edit]",
         async () => {
           if (!(await open("devices"))) return false;
@@ -26314,7 +26315,7 @@ try {
     } else if (mine.editors.length > 0) {
       fail(
         `entity a · 这台机器 still edits: ${mine.editors.join(", ")} — the name and the face are edited from the ` +
-          "machine's row (右键 → 编辑…), and this page only states them (the owner, 2026-09-30: 「不要冗余」)",
+          "machine's row (右键 → 编辑), and this page only states them (the owner, 2026-09-30: 「不要冗余」)",
       );
     }
     await closeMe();
@@ -26343,10 +26344,10 @@ try {
       continue;
     }
     if (keys.includes("avatar")) {
-      fail(`entity b · ${who} row menu still offers 更改头像… (${JSON.stringify(keys)}) — it is 编辑… now`);
+      fail(`entity b · ${who} row menu still offers 更改头像… (${JSON.stringify(keys)}) — it is 编辑 now`);
     }
     if (!keys.includes("edit")) {
-      fail(`entity b · ${who} row menu has no 编辑… (${JSON.stringify(keys)}) — every machine is edited from its row`);
+      fail(`entity b · ${who} row menu has no 编辑 (${JSON.stringify(keys)}) — every machine is edited from its row`);
     }
   }
   if (peerMenu.includes("edit")) {
@@ -26368,14 +26369,14 @@ try {
           };
         })
       : null;
-    console.log(`entity b · 编辑… on peer: ${JSON.stringify(dialog)}`);
+    console.log(`entity b · 编辑 on peer: ${JSON.stringify(dialog)}`);
     const peerId = devs.find((d) => d.name === "peer")?.id;
     if (!dialog) {
-      fail("entity b · 编辑… on a machine row opened no dialog (`data-machine-edit`)");
+      fail("entity b · 编辑 on a machine row opened no dialog (`data-machine-edit`)");
     } else {
-      if (dialog.who !== peerId) fail(`entity b · 编辑… on peer's row opened the dialog for ${JSON.stringify(dialog.who)}`);
+      if (dialog.who !== peerId) fail(`entity b · 编辑 on peer's row opened the dialog for ${JSON.stringify(dialog.who)}`);
       if (dialog.role !== "dialog" || dialog.sheet) {
-        fail(`entity b · 编辑… is ${dialog.sheet ? "a sheet" : `role=${dialog.role}`} — it is a centred dialog`);
+        fail(`entity b · 编辑 is ${dialog.sheet ? "a sheet" : `role=${dialog.role}`} — it is a centred dialog`);
       }
       if (dialog.name !== 1 || dialog.face !== 1) {
         fail(`entity b · the edit dialog holds ${dialog.name} name box(es) and ${dialog.face} face editor(s) — one of each`);
@@ -27316,7 +27317,7 @@ try {
               "on one press — every 删除 of a machine goes through the one window (components/DeleteDialog)",
           );
         } else if (!said.endsWith("…")) {
-          fail(`delete asks · ${where}: 「${said}」 raises a window and does not say so — 「删除…」 (components/Button)`);
+          fail(`delete asks · ${where}: 「${said}」 raises a window and does not say so — 「删除」 (components/Button)`);
         }
         if (await page.locator("[data-delete-keep]").count()) await press("[data-delete-keep]");
         await page.keyboard.press("Escape");
@@ -27507,11 +27508,11 @@ try {
     // but it makes a new tab whose page asks, not a dialog
     // (`FACE_ONLY=tabs` b).
     const forms = [
-      ["sessions", "import", "导入…", "[data-import-dialog]", "menu"],
+      ["sessions", "import", "导入", "[data-import-dialog]", "menu"],
       // 添加机器 (round join-d) is 机器's one act: ＋ is it.
-      ["devices", "add", "添加机器…", "[data-add-machine]", "direct"],
-      ["quota", "register", "登记…", "[data-quota-dialog]", "direct"],
-      ["workspaces", "ws-add", "添加工作区…", "[data-dir-picker]", "direct"],
+      ["devices", "add", "添加机器", "[data-add-machine]", "direct"],
+      ["quota", "register", "登记", "[data-quota-dialog]", "direct"],
+      ["workspaces", "ws-add", "添加工作区", "[data-dir-picker]", "direct"],
     ];
     for (const [landing, key, word, sel, want] of forms) {
       if (!(await open(landing))) {
@@ -28239,13 +28240,10 @@ try {
   //      terminal and stops what runs in it, or closes khor's terminal on
   //      the tmux session and leaves the session running. Red before: all
   //      three forms were asked `close-warn-live`.
-  //   b. **An item that opens a window says so with 「…」.** Every item of
-  //      every sidebar's row menu, every ＋ beside L0's search box, and a
-  //      machine page's R0 verbs, pressed in turn: whatever put a dialog
-  //      up is spelled with a trailing ellipsis (README 文字怎么写: 「带
-  //      省略号表示还会再问一次」). Red before: the 额度 row's 「编辑」, the
-  //      工作区 ＋'s 「添加工作区」, an open workspace's session column ＋
-  //      「新会话」, the machine page's 「打开会话」.
+  //   b. **Action names have no trailing ellipsis** (owner, 2026-10-18).
+  //      Exercise sidebar row menus, L0 creation menus and machine verbs.
+  //      This supersedes the 2026-10-01 convention that opening a dialog
+  //      required an ellipsis. The catalogue gate checks both languages.
   //   c. **恢复词 on demand** (「根钥匙是不是只在共享的时候出现更友好」): a
   //      machine that made the root does not open on 「抄下恢复词」; the
   //      words are one row on 「…」 → 安全 — 「恢复词」 and a 「显示…」 —
@@ -28424,7 +28422,7 @@ try {
         pressed += 1;
         if (await opened()) {
           windows += 1;
-          if (!label.endsWith(ELLIPSIS)) misses.push(`the ${c.landing} row's 「${label}」 (${it.key})`);
+          if (label.endsWith(ELLIPSIS)) misses.push(`the ${c.landing} row's 「${label}」 (${it.key})`);
         }
         await settle();
       }
@@ -28451,7 +28449,7 @@ try {
             pressed += 1;
             if (await opened()) {
               windows += 1;
-              if (!label.endsWith(ELLIPSIS)) misses.push(`${where}'s ＋ menu 「${label}」 (${k})`);
+              if (label.endsWith(ELLIPSIS)) misses.push(`${where}'s ＋ menu 「${label}」 (${k})`);
             }
             await settle();
           }
@@ -28462,7 +28460,7 @@ try {
           pressed += 1;
           if (await opened()) {
             windows += 1;
-            if (!label.endsWith(ELLIPSIS)) misses.push(`${where}'s ＋ 「${label}」`);
+            if (label.endsWith(ELLIPSIS)) misses.push(`${where}'s ＋ 「${label}」`);
           }
           await settle();
         }
@@ -28495,7 +28493,7 @@ try {
         pressed += 1;
         if (await opened()) {
           windows += 1;
-          if (!label.endsWith(ELLIPSIS)) misses.push(`an open workspace's sessions ＋ 「${label}」`);
+          if (label.endsWith(ELLIPSIS)) misses.push(`an open workspace's sessions ＋ 「${label}」`);
         }
         await settle();
       }
@@ -28522,16 +28520,16 @@ try {
           pressed += 1;
           if (await opened()) {
             windows += 1;
-            if (!label.endsWith(ELLIPSIS)) misses.push(`the machine page's 「${label}」 (${k})`);
+            if (label.endsWith(ELLIPSIS)) misses.push(`the machine page's 「${label}」 (${k})`);
           }
           await settle();
         }
       }
     }
-    console.log(`fix b · ${pressed} item(s) pressed, ${windows} opened a window, ${misses.length} without 「…」`);
+    console.log(`fix b · ${pressed} item(s) pressed, ${windows} opened a window, ${misses.length} with a trailing 「…」`);
     if (windows < 8) fail(`probe dead: fix b · only ${windows} press(es) opened a window — the sweep is not reaching the menus`);
     for (const m of misses) {
-      fail(`fix b · ${m} opens a window and its word has no 「…」 — 「带省略号表示还会再问一次」 (README 文字怎么写)`);
+      fail(`fix b · ${m} still ends in 「…」 — action labels use plain verbs (owner, 2026-10-18)`);
     }
     putBack();
     await page.reload({ waitUntil: "load" });
@@ -28602,7 +28600,7 @@ try {
         const row = document.querySelector(sel);
         if (!row) return null;
         // On the dial (UX-26) the row is the card's item, a button itself:
-        // its word is the act (「恢复词…」, a window follows).
+        // Its word is the act, with no trailing ellipsis.
         const act = row.matches("button") ? row : row.querySelector("button");
         return {
           title: (row.matches(".text-body") ? row : row.querySelector(".text-body"))?.textContent?.trim() ?? null,
@@ -28614,13 +28612,13 @@ try {
       if (!look) {
         fail("fix c · 我的 khor has no 恢复词 row on the machine that holds the root — that is where the words are (UX-16)");
       } else {
-        if (!look.act?.endsWith(ELLIPSIS)) fail(`fix c · the 恢复词 row's act reads 「${look.act}」 — it opens a window: 「显示…」`);
-        if (look.words !== 0) fail("fix c · the words are on the page before anybody pressed 「显示…」");
+        if (look.act !== "恢复词") fail(`fix c · the 恢复词 row's act reads 「${look.act}」 — the action uses the plain name 「恢复词」`);
+        if (look.words !== 0) fail("fix c · the words are on the page before anybody pressed 「显示」");
         await page.locator(`${rowSel} button, button${rowSel}`).first().click();
         const up = await until(3_000, async () => (await page.locator("[data-root-words-dialog] [data-root-words] li").count()) > 0);
         const shown = await page.locator("[data-root-words-dialog] [data-root-words] li").count();
-        console.log(`fix c · 「显示…」 → ${shown} word(s) in a dialog`);
-        if (!up || shown !== 24) fail(`fix c · 「显示…」 showed ${shown} word(s), not the root's 24`);
+        console.log(`fix c · 「显示」 → ${shown} word(s) in a dialog`);
+        if (!up || shown !== 24) fail(`fix c · 「显示」 showed ${shown} word(s), not the root's 24`);
         await settle();
       }
       held = false;
@@ -36328,7 +36326,7 @@ try {
       await until(3_000, async () => !((await read(box))?.rows ?? []).includes("old.txt"));
       const after = (await read(box))?.rows ?? [];
       console.log(`store c · menu ${items.join(", ")}, asked ${asking}, removed ${JSON.stringify(asked.removed)}, rows ${after.join(", ")}`);
-      if (items.join(" ") !== "open copy-path reveal remove") fail(`store c · a row's menu is ${items.join(", ")} — 打开, 复制路径, 在文件视图中打开, 删除…`);
+      if (items.join(" ") !== "open copy-path reveal remove") fail(`store c · a row's menu is ${items.join(", ")} — 打开, 复制路径, 在文件视图中打开, 删除`);
       if (!asking) fail("store c · 删除 asked nothing — the file trees' window comes first");
       if (asked.removed.join() !== "/home/gate/khor-drop/old.txt" || after.includes("old.txt")) fail(`store c · removed ${JSON.stringify(asked.removed)}, rows ${after.join(", ")} — that path, and the row gone`);
     }
@@ -36347,7 +36345,7 @@ try {
       await until(5_000, async () => ((await read(box))?.reset ?? 1) === 0);
       const back = await read(box);
       console.log(`store d · picker ${up} (machine popups ${machines}), sent ${JSON.stringify(asked.set)}, set ${JSON.stringify(set)}, back ${JSON.stringify(back)}`);
-      if (!up) fail("store d · 更改… opened no 选择目录");
+      if (!up) fail("store d · 更改 opened no 选择目录");
       if (machines !== 0) fail("store d · 选择目录 offers a machine — the location is the machine on screen's");
       if (asked.set[0]?.machine !== "gate" || asked.set[0]?.dir !== "/srv/inbox") fail(`store d · the picker sent ${JSON.stringify(asked.set[0])} — gate, /srv/inbox`);
       if (set?.dir !== "/srv/inbox" || set.reset !== 1 || set.note !== null) fail(`store d · after the change the page reads ${JSON.stringify(set)} — /srv/inbox, 恢复默认 drawn, nothing else said`);
@@ -36747,7 +36745,7 @@ try {
           reset: line.querySelectorAll("[data-send-into-reset]").length,
         };
       });
-    /** 更改… → 选择目录 → a path → 选择. Answers whether it opened and how
+    /** 更改 → 选择目录 → a path → 选择. Answers whether it opened and how
         many machine popups it offered. */
     const pickDir = async (path) => {
       await press("[data-send-into-change]");
@@ -36968,7 +36966,7 @@ try {
         if (line?.at !== drop.peer || line.reset !== 0) fail(`mchat g · 「存到」 reads ${JSON.stringify(line)} — the conversation's machine's receive_at, no 恢复默认`);
         if (plain.put?.id !== agentRow.id || plain.put.into !== undefined) fail(`mchat g · a file with no choice was put as ${JSON.stringify(plain.put)} — this conversation, no into=`);
         if (plain.path !== `${drop.peer}/a.txt`) fail(`mchat g · the chip's path is ${plain.path} — what the node answered`);
-        if (!pick.up || pick.machines !== 0) fail(`mchat g · 更改… opened ${JSON.stringify(pick)} — 选择目录, no machine popup`);
+        if (!pick.up || pick.machines !== 0) fail(`mchat g · 更改 opened ${JSON.stringify(pick)} — 选择目录, no machine popup`);
         if (picked?.at !== "/srv/agent" || picked.reset !== 1) fail(`mchat g · after the pick the line reads ${JSON.stringify(picked)}`);
         if (there.put?.into !== "/srv/agent" || there.path !== "/srv/agent/b.txt") fail(`mchat g · a file after the pick: put ${JSON.stringify(there.put)}, chip ${there.path} — into=/srv/agent, landed there`);
         if (!told.includes(`@${drop.peer}/a.txt`) || !told.includes("@/srv/agent/b.txt")) fail(`mchat g · the agent was told ${JSON.stringify(told)} — the two landed paths`);
@@ -37769,7 +37767,7 @@ try {
         bar: document.querySelectorAll("[data-session-bar]").length,
       }));
       console.log(`tabs c · phone, the list's ＋: page ${up}; 取消 → ${JSON.stringify(list)}`);
-      if (!up) fail("probe dead: tabs c · the phone list's ＋ → 新会话… opened no new tab");
+      if (!up) fail("probe dead: tabs c · the phone list's ＋ → 新会话 opened no new tab");
       else if (list.page !== 0 || list.rows === 0 || list.bar !== 0) fail(`tabs c · 取消 on the phone left ${JSON.stringify(list)} — back on the list it was asked from`);
       await page.locator(`[data-list] [data-row="${ids[1]}"] [data-row-open]`).click();
       await until(3_000, async () => (await count("[data-session-deck] [data-deck-tabs]")) === 1);
@@ -38342,7 +38340,7 @@ try {
       if (road.broken !== 1 || !road.brokenLast) fail(`join f · ${road.broken} broken leg(s), last ${road.brokenLast} — one, between the jump and the target`);
       if (road.said !== "jump-to-target") fail(`join f · the sentence under the line is for ${JSON.stringify(road.said)}`);
       if (road.words !== "Connection timed out" || !road.under) fail(`join f · ssh's words read ${JSON.stringify(road.words)}, under the sentence ${road.under} — the leg's own, below it`);
-      if (road.promote !== 1) fail("join f · no 安装 khor… on an SSH 主机 this machine sponsors");
+      if (road.promote !== 1) fail("join f · no 安装 khor on an SSH 主机 this machine sponsors");
     } else fail("probe dead: join f · could not open gpu-box's page");
 
     // g.
@@ -40028,7 +40026,7 @@ try {
   //   d. the running command is drawn on a terminal's row only;
   //   e. a tap imports that one row and closes the panel (the shell opens
   //      it): one `import_sessions` with that id alone, no 「导入 N 个」;
-  //   f. nothing to import: one sentence, no chips, no note;
+  //   f. nothing to import: one sentence, no machine field, no note;
   //   g. the panel stays inside the window — wide, its foot (取消) on
   //      screen; narrow, the sheet does not scroll and the list does.
   //
@@ -40153,30 +40151,29 @@ try {
       console.log(`${where} b · ${JSON.stringify({ ...b, hits, h0, h1 })}`);
 
       // c.
-      const chips = await page.evaluate(() =>
-        [...document.querySelectorAll("[data-import-chip]")].map((e) => ({
-          name: e.getAttribute("data-import-chip"),
-          on: e.getAttribute("aria-pressed") === "true",
-          away: e.hasAttribute("data-away"),
-          text: (e.textContent ?? "").trim(),
-        })),
-      );
-      const chip = (n) => chips.find((c) => c.name === n);
-      console.log(`${where} c · ${JSON.stringify(chips)}`);
-      if (!chip("") || !chip("")?.on || chip("")?.text !== "全部") fail(`${where} c · 「全部」 is not the first chip, pressed: ${JSON.stringify(chip(""))}`);
-      if (!chip("gate") || !chip("peer") || chip("gate")?.on || chip("peer")?.on) fail(`${where} c · the reachable machines' chips are not there, unpressed`);
-      if (!chip("lecun")?.away || !chip("lecun")?.text.includes("不通") || chip("lecun")?.on) fail(`${where} c · the machine out of reach is not marked 不通 and off: ${JSON.stringify(chip("lecun"))}`);
-      await tap('[data-import-chip="peer"]');
+      await page.locator('[data-import-machines] input').click();
+      const choices = await page.locator('[role="listbox"] [data-choice-option]').evaluateAll(els => els.map(e => ({
+        id: e.getAttribute('data-choice-option'),
+        on: e.getAttribute('aria-selected') === 'true',
+        text: (e.textContent ?? '').trim(),
+      })));
+      const choice = id => choices.find(c => c.id === id);
+      console.log(`${where} c · ${JSON.stringify(choices)}`);
+      if (!choice('all')?.on || choice('all')?.text !== '全部') fail(`${where} c · 全部 is not selected`);
+      if (!choice(me.id) || !choice(peer.id) || choice(me.id)?.on || choice(peer.id)?.on) fail(`${where} c · reachable machines are missing or selected`);
+      if (!choice(far.id)?.text.includes('不通') || choice(far.id)?.on) fail(`${where} c · unreachable machine is not marked 不通 and unselected`);
+      await tap(`[data-choice-option="${peer.id}"]`);
       const onlyPeer = await rowIds();
-      await tap('[data-import-chip="lecun"]');
+      await tap(`[data-choice-option="${far.id}"]`);
       const peerOrFar = await rowIds();
-      const allOff = await page.locator('[data-import-chip=""]').getAttribute("aria-pressed");
-      await tap('[data-import-chip=""]');
+      const allOff = await page.locator('[data-choice-option="all"]').getAttribute('aria-selected');
+      await tap('[data-choice-option="all"]');
       const back = await rowIds();
-      if (JSON.stringify(onlyPeer) !== JSON.stringify(["tui/imp-agent", "shell/imp-notes"])) fail(`${where} c · peer's chip lists ${JSON.stringify(onlyPeer)}`);
-      if (JSON.stringify(peerOrFar) !== JSON.stringify(["tui/imp-agent", "shell/imp-notes", "shell/imp-far"])) fail(`${where} c · peer's and lecun's chips list ${JSON.stringify(peerOrFar)} — an or`);
-      if (allOff !== "false") fail(`${where} c · 「全部」 stays pressed with two machines picked`);
-      if (back.length !== reachableN) fail(`${where} c · 「全部」 did not put the reachable machines back (${back.length})`);
+      await page.keyboard.press('Escape');
+      if (JSON.stringify(onlyPeer) !== JSON.stringify(['tui/imp-agent', 'shell/imp-notes'])) fail(`${where} c · peer lists ${JSON.stringify(onlyPeer)}`);
+      if (JSON.stringify(peerOrFar) !== JSON.stringify(['tui/imp-agent', 'shell/imp-notes', 'shell/imp-far'])) fail(`${where} c · multiple choices list ${JSON.stringify(peerOrFar)} — an or`);
+      if (allOff !== 'false') fail(`${where} c · 全部 stays selected with two machines picked`);
+      if (back.length !== reachableN) fail(`${where} c · 全部 did not put reachable machines back (${back.length})`);
 
       // d.
       const d = await page.evaluate(() =>
@@ -40225,11 +40222,11 @@ try {
       }
       const f = await page.evaluate(() => ({
         said: [...document.querySelectorAll("[data-import-empty] span")].map((e) => (e.textContent ?? "").trim()),
-        chips: document.querySelectorAll("[data-import-chip]").length,
+        machines: document.querySelectorAll("[data-import-machines]").length,
         note: document.querySelectorAll("[data-import-note]").length,
       }));
       console.log(`${where} f · ${JSON.stringify(f)}`);
-      if (f.said[0] !== "没有可导入的会话" || f.chips || f.note) fail(`${where} f · nothing to import reads ${JSON.stringify(f)} — one sentence, no chips, no note`);
+      if (f.said[0] !== "没有可导入的会话" || f.machines || f.note) fail(`${where} f · nothing to import reads ${JSON.stringify(f)} — one sentence, no machine field, no note`);
       await page.keyboard.press("Escape");
       await wait(200);
     }

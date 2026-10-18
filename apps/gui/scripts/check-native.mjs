@@ -258,7 +258,7 @@ const menuBar = (pid) => {
     binary, names the app and declares both; `menu::speak_at_launch` puts
     khor's own language first for AppKit when the system says another.
 
-    The app menu is the one carrying 设置…; its accessibility title is the
+    The app menu is the one carrying 设置; its accessibility title is the
     name AppKit draws in bold (not the submenu's own title, which AppKit
     ignores — menu.rs says 「khor」 there and the bar said 「khor-gui」).
     「Foreign」 is any Latin letter in a Chinese menu, any Han character in
@@ -477,7 +477,7 @@ async function keysPhase(pid) {
 
   // ── 4. ⌘W with nothing to close leaves the window standing ──
   await press(seat("sessions"), "cmd");
-  const sessions = await until(4000, () => newItem() === said("gui.new-session-ask"));
+  const sessions = await until(4000, () => newItem() === said("gui.new-session"));
   console.log(`keys: ⌘${seat("sessions")} → 「${newItem()}」 first in 「${said("file")}」`);
   if (!sessions) fail(`keys: ⌘${seat("sessions")} did not open 「${said("gui.sessions-tab")}」 (the menu's first item reads 「${newItem()}」)`);
   const closeTab = item(said("file"), said("close-tab"));

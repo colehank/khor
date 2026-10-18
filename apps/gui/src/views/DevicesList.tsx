@@ -222,7 +222,7 @@ export function DevicesList({
       ? [
           {
             key: "edit",
-            label: gui.edit_ask,
+            label: gui.accounts_edit,
             run: () => setEditing(d),
           },
         ]
@@ -246,7 +246,7 @@ export function DevicesList({
             // What the user once called 断开 is 暂停 above (第四轮: 「机器的
             // 断开指的是暂停」), which khor now has for one machine too.
             label: gui.delete,
-            askLabel: gui.delete_ask,
+            askLabel: gui.delete,
             destructive: true,
             ask: gui.forget_machine_confirm,
             note: forgetRefused.get(d.id),

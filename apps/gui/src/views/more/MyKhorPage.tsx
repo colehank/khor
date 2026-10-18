@@ -273,10 +273,10 @@ export function MyKhorPage({
   const addMenu = (Item: typeof ContextMenuItem | typeof DropdownMenuItem, Sep: typeof ContextMenuSeparator | typeof DropdownMenuSeparator) => (
     <>
       <Item data-dial-add="add" onSelect={() => onAdd()}>
-        {gui.add_machine_ask}
+        {gui.add_machine}
       </Item>
       <Item data-dial-add="relay" onSelect={() => setAddingRelay(true)}>
-        {gui.relays_add_ask}
+        {gui.relays_add}
       </Item>
       <Sep />
       <Item
@@ -1253,13 +1253,13 @@ function MeCard({
       <Sep />
       <Item mark={{ "data-dial-act": "edit" }} label={gui.dial_rename} onPress={onEdit} />
       {holdsRoot && (
-        <Item mark={{ "data-dial-act": "root-words", "data-root-words-open": "", "data-setting-row-name": "root-words" }} label={`${gui.root_words_title}…`} onPress={onWords} />
+        <Item mark={{ "data-dial-act": "root-words", "data-root-words-open": "", "data-setting-row-name": "root-words" }} label={gui.root_words_title} onPress={onWords} />
       )}
-      <Item mark={{ "data-dial-act": "relays" }} label={gui.dial_relays} k={relays ? `${gui.dial_some(relays.in_use.length)} ›` : "›"} onPress={onRelays} />
+      <Item mark={{ "data-dial-act": "relays" }} label={gui.net_relays} k={relays ? `${gui.dial_some(relays.in_use.length)} ›` : "›"} onPress={onRelays} />
       <Sep />
       {/* Not on a machine in no network: `Node::leave` refuses there. */}
-      {!alone && <Item mark={{ "data-dial-act": "leave", "data-net-leave": "" }} label={gui.identity_leave_ask} destructive onPress={onLeave} />}
-      <Item mark={{ "data-dial-act": "reset", "data-reset-open": "" }} label={gui.dial_reset} destructive onPress={onReset} />
+      {!alone && <Item mark={{ "data-dial-act": "leave", "data-net-leave": "" }} label={gui.identity_leave_do} destructive onPress={onLeave} />}
+      <Item mark={{ "data-dial-act": "reset", "data-reset-open": "" }} label={gui.reset_section} destructive onPress={onReset} />
     </>
   );
 }
