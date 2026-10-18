@@ -131,3 +131,13 @@ khor devices                                                   # 五台都在线
 - 收尾：保留正式归档与发布日志 `/Volumes/disk0/khor-ship-20261018-read/`；按 bundle identifier 确认归属、`lsof` 确认无引用后，删除 2 个 Khor Xcode 暂存目录（218 MiB）及本次集群导出源码。系统盘可用从约 12 GiB 到约 11 GiB，外挂盘约 105 GiB。
 - `TMPDIR` 并不能保证 Xcode 的所有导出副本都去外挂盘：本轮 `XcodeDistPipeline.*` 仍出现在系统临时目录。上传后同时检查系统临时目录和指定临时目录，按归属与引用核验后清理；不碰正式归档、会话及系统 swap。
 - iPhone 实机的网页手势、选字及跨设备已读手感仍需安装此包后验收；编译和发布成功不代表完成了这些真机操作。
+
+## 发布记录：2026-10-18（药丸恢复内容）
+
+- 合并提交：`455e9c2a`，修复提交：`4e3ce55c`。药丸恢复最近的工作区、浏览器来源页、文件或网页；会话列表与内部标签列表不再覆盖内容恢复位置。UI 收据：`khor-ui-assets:/assets/index-CCOkGSI1.js`。
+- 主干验证：默认前端检查与 TypeScript、`content-model`、生产构建、门索引通过。首轮默认检查与生成并行，读取了未完成的生成文件；生成结束后完整重跑通过。独立节点的实际 App 窄屏操作已在修复分支验过，未进行 iPhone 真机操作。
+- Mac：release 编译完成，CLI／GUI 签名与收据通过；旧主窗口 PID 57858 退出，新 PID 54135。11 个既有会话辅助进程全部保留，发布前后会话行未丢失、没有新增失败项，最终仅一个主窗口进程。
+- 集群：hinton 构建并安装，turing／lecun 自动换新。三台 5467 监听进程的二进制 SHA-256 均为 `61b658b437064fed6f2e7555cb477fc518d547da971a794cd4730dc50f58129e`，HTTP 收据一致，CLI 确认直连。turing 首次核验遇到重启空窗，待就绪后通过，未重复安装。
+- iOS：先移除可重建的旧 `libapp.a`，新静态库与归档均验到本次收据。Tauri 遇到文档已记录的 `exportArchive Copy failed`，系统 PATH 的导出上传于 `2026-10-18 16:28:58 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`；App Store Connect 正在处理。工程仅临时增加的两处签名团队配置已恢复。
+- 日志与收据：`/Volumes/disk0/khor-ship-20261018-pill/`。保留最新正式归档；按 bundle ID 和无进程引用核验后清理本轮两个 Khor Xcode 暂存副本（约 203 MiB）及已完成的集群源码导出（约 47 MiB）。系统盘约余 11 GiB，外挂盘约余 104 GiB。
+- 此版未包含后台返回时键盘区域空白的修复。
