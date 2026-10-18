@@ -180,6 +180,7 @@ export function useSheetPan({element:el,onDetent,onClose,geometry,handle,dismiss
     };
     const pointerMove = (e: PointerEvent) => {
       if(e.pointerId!==pointer||from===null)return;
+      if(e.defaultPrevented)return cancel();
       // Capture only after a real pull, so a stationary press remains a
       // click on the pill's original button rather than on the sheet.
       if(Math.abs(e.clientY-from)>6&&!el.hasPointerCapture(e.pointerId))el.setPointerCapture(e.pointerId);
