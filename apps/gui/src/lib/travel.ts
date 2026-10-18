@@ -72,13 +72,23 @@ function land(t: Trip) {
   });
 }
 
-function fly(h: HTMLElement, to: HTMLElement, from: Box, at: Box): Trip {
+type TravelOptions = {
+  /** A composite strip can resolve its own selectable pieces. */
+  current?: (host: HTMLElement) => HTMLElement | null;
+  pressed?: (host: HTMLElement, target: Element) => HTMLElement | null;
+  /** When supplied, animate selection changes within this same set only. */
+  members?: string;
+  durationToken?: string;
+  ghostClass?: string;
+};
+
+function fly(h: HTMLElement, to: HTMLElement, from: Box, at: Box, options: TravelOptions = {}): Trip {
   if (getComputedStyle(h).position === "static") h.style.position = "relative";
   h.style.isolation = "isolate";
   const ghost = document.createElement("span");
   ghost.dataset.selGhost = "";
   ghost.setAttribute("aria-hidden", "true");
-  ghost.className = "glass-sel";
+  ghost.className = options.ghostClass ?? "glass-sel";
   Object.assign(ghost.style, {
     position: "absolute",
     left: "0",
@@ -92,12 +102,15 @@ function fly(h: HTMLElement, to: HTMLElement, from: Box, at: Box): Trip {
   h.prepend(ghost);
   to.setAttribute("data-sel-arriving", "");
   const ease = getComputedStyle(document.documentElement).getPropertyValue("--ease-move").trim() || "ease";
+  const duration = options.durationToken
+    ? parseFloat(getComputedStyle(h).getPropertyValue(options.durationToken)) || TRIP_MS
+    : TRIP_MS;
   const anim = ghost.animate(
     [
       { transform: `translate(${from.x}px, ${from.y}px)`, width: `${from.w}px`, height: `${from.h}px`, borderRadius: from.r },
       { transform: `translate(${at.x}px, ${at.y}px)`, width: `${at.w}px`, height: `${at.h}px`, borderRadius: at.r },
     ],
-    { duration: TRIP_MS, easing: ease, fill: "forwards" },
+    { duration, easing: ease, fill: "forwards" },
   );
   return { ghost, anim, to, host: h, planned: at };
 }
@@ -109,8 +122,10 @@ export const stillMotion = still;
 export const TRIP_MS = 240;
 const same = (a: Box, b: Box) => Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1 && Math.abs(a.w - b.w) < 1;
 
-export function useTravel(name: string, host: () => HTMLElement | null, key: string | null) {
+export function useTravel(name: string, host: () => HTMLElement | null, key: string | null, options: TravelOptions = {}) {
   const trip = useRef<Trip | null>(null);
+  const latest = useRef(options); latest.current = options;
+  const previous = useRef({key, members: options.members});
 
   // **The slide starts on the press** (V08), before the page's work: a
   // click on an item that is not the chosen one sends the stand-in on
@@ -121,16 +136,19 @@ export function useTravel(name: string, host: () => HTMLElement | null, key: str
     if (!h) return;
     const press = (e: MouseEvent) => {
       if (still()) return;
-      const item = (e.target as Element | null)?.closest<HTMLElement>('button, [data-tab]');
+      const target = e.target as Element | null;
+      if (!target) return;
+      const opts = latest.current;
+      const item = opts.pressed ? opts.pressed(h, target) : target.closest<HTMLElement>('button, [data-tab]');
       if (!item || !h.contains(item) || item.closest("[data-tab-close]")) return;
-      const now = pieceIn(h);
+      const now = opts.current ? opts.current(h) : pieceIn(h);
       if (!now || now === item || now.contains(item)) return;
       const from = trip.current ? ghostBox(trip.current) : boxIn(h, now);
       if (trip.current) {
         trip.current.anim.cancel();
         land(trip.current);
       }
-      const t = fly(h, item, from, boxIn(h, item, getComputedStyle(now).borderRadius));
+      const t = fly(h, item, from, boxIn(h, item, getComputedStyle(now).borderRadius), opts);
       trip.current = t;
       t.anim.onfinish = () => {
         if (trip.current === t) {
@@ -158,13 +176,24 @@ export function useTravel(name: string, host: () => HTMLElement | null, key: str
   useLayoutEffect(() => {
     const h = host();
     if (!h) return;
-    const to = pieceIn(h);
+    const opts = latest.current;
+    const before = previous.current;
+    previous.current = {key, members: opts.members};
+    const to = opts.current ? opts.current(h) : pieceIn(h);
     if (!to) {
       seen.delete(name);
       return;
     }
     const at = boxIn(h, to);
     const running = trip.current;
+    // Adding, closing and disclosing rearrange a strip, but do not move
+    // the user's selection between existing choices. Note the new box
+    // without sending a stand-in towards a +, a close button or empty air.
+    if (opts.members !== undefined && (before.key === key || before.members !== opts.members)) {
+      if (running) { running.anim.cancel(); land(running); trip.current = null; }
+      seen.set(name, at);
+      return;
+    }
     // Already on its way to this very item (started on the press) — and
     // to the box it had at the press. **A box that grew since** (the tab
     // in front takes its whole name, UX-25) is flown to from wherever the
@@ -185,7 +214,7 @@ export function useTravel(name: string, host: () => HTMLElement | null, key: str
     }
     seen.set(name, at);
     if (!from || still() || same(from, at)) return;
-    const t = fly(h, to, from, at);
+    const t = fly(h, to, from, at, opts);
     trip.current = t;
     t.anim.onfinish = () => {
       if (trip.current === t) {
@@ -194,5 +223,5 @@ export function useTravel(name: string, host: () => HTMLElement | null, key: str
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, options.members]);
 }

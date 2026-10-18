@@ -53,7 +53,7 @@ import { usePillSignal } from "@/lib/pill-signal";
 // every strip is the glass one at the top; the phone's band is
 // `SessionBar`'s, and the narrow shell's count (`TabCount`, below) is
 // `DetailPane`'s head's.
-import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { EditableName, useSinglePress } from "@/components/EditableName";
@@ -479,7 +479,25 @@ export function TabStrip({
   }, [spread]);
   // The front tab's piece slides to the tab brought forward, in the glass
   // capsule (F7.2, `lib/travel`).
-  useTravel("tabs", () => motion === "quiet" ? null : strip.current, active);
+  const travelId = useId();
+  const tabPiece = (tab: HTMLElement) => grouped
+    ? tab.querySelector<HTMLElement>(":scope > [data-tab-head]")
+    : tab;
+  useTravel(nested ? `tabs:${travelId}` : "tabs", () => motion === "quiet" ? null : strip.current, active, {
+    current: h => {
+      const tab = h.querySelector<HTMLElement>(':scope > [data-tab][data-on="true"]');
+      return tab ? tabPiece(tab) : null;
+    },
+    pressed: (h, target) => {
+      if (target.closest("[data-tab-close]")) return null;
+      const tab = target.closest<HTMLElement>("[data-tab]");
+      // A nested strip owns its own selections; its buttons cannot send
+      // the outer session's glass towards the content or its + control.
+      return tab?.parentElement === h ? tabPiece(tab) : null;
+    },
+    members: faces.map(f => f.id).sort().join("\n"),
+    durationToken: nested ? "--dur-180" : undefined,
+  });
   /** How many times a held row has let go (`held`): the re-balance runs
       on each. */
   const [released, setReleased] = useState(0);
