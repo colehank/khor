@@ -225,7 +225,7 @@ export function RevisionView({
     <div data-file-rev={rev.id} className="flex min-h-0 flex-1 flex-col">
       {md && face === "preview" ? (
         <div data-file-preview="md" {...groundAttr(ground)} className="min-h-0 flex-1 overflow-auto">
-          <Markdown text={shown.text} className="prose-khor px-6 py-4" />
+          <Markdown text={shown.text} className="prose-khor px-6 py-4" machine={machine} path={path} />
         </div>
       ) : (
         // The revision in the file's own editor, read-only: numbers,

@@ -31,8 +31,8 @@ const POLICY = "default-src 'none'; img-src data:; media-src data:; font-src dat
 
 /** `rel` against the file's own directory, or null for anything that is
     not a path on that machine (a URL with a scheme, a `data:`, `//host`,
-    an anchor). */
-function onDisk(dir: string, rel: string): string | null {
+    an anchor). The Markdown preview reads its pictures the same way. */
+export function onDisk(dir: string, rel: string): string | null {
   const r = rel.trim();
   if (r === "" || r.startsWith("#") || r.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(r)) return null;
   const clean = r.split(/[?#]/)[0];

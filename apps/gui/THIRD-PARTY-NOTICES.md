@@ -22,3 +22,12 @@ Files khor's interface ships that were made by others, with their licences.
 
 - Files: `src/vendor/seti/` (definitions and icons).
 - Licence: MIT — `src/vendor/seti/LICENSE`.
+
+## KaTeX fonts
+
+- Files: the twenty `KaTeX_*.woff2` faces of `katex` 0.19.0
+  (`node_modules/katex/dist/fonts/`), bundled unchanged into the math
+  chunk the first time a text holds a formula; the woff and ttf copies are
+  left out (`vite.config.ts`).
+- Licence: MIT, Copyright (c) 2013-2020 Khan Academy and other
+  contributors — `node_modules/katex/LICENSE`.

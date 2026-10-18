@@ -1017,7 +1017,7 @@ export function FileView({
           className={cn("min-h-0 flex-1 overflow-auto", renders === "html" && "flex flex-col")}
         >
           {renders === "md" ? (
-            <Markdown text={body} className="prose-khor px-6 py-4" lines />
+            <Markdown text={body} className="prose-khor px-6 py-4" lines machine={machine} path={path} />
           ) : renders === "html" ? (
             <HtmlView machine={machine} path={path} text={body} ground={ground.ground} />
           ) : (

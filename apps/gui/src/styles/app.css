@@ -1846,6 +1846,87 @@ aside[data-side] {
 .prose-khor th { font-weight: var(--font-weight-title); background: var(--muted); }
 .prose-khor img { max-width: 100%; }
 
+/* ── what GitHub draws that plain markdown does not (lane md-render) ──
+ *
+ * Both faces: the conversation's `[data-md]` and the file page's. Every
+ * length is the reading size's (`em`) or a token; every colour is a
+ * token, so the preview's own ground (预览背景) re-colours all of it the
+ * way it re-colours the prose. Not github-markdown-css: that sheet is a
+ * second type scale and a second palette.
+ *
+ * An alert (`lib/md/alerts`) is a passage set apart, so it keeps the
+ * quote's rule; it is not a quotation, so its words keep the body ink.
+ * Its kind is the title word, not a colour (colour has its jobs). */
+[data-md] [data-alert] {
+  margin: 0.5em 0;
+  border-left: calc(var(--hair) * 2) solid var(--border);
+  padding-left: 0.8em;
+}
+[data-md] [data-alert-title] {
+  font-weight: var(--font-weight-title);
+}
+[data-md] [data-alert] > :is(p, ul, ol):first-of-type { margin-top: 0.25em; }
+
+/* Footnotes: under a hairline, a step down in size and ink — notes, not
+   text. The number in the line is the link (`Markdown`'s `Link`). */
+[data-md] [data-footnotes] {
+  margin-top: 1.5em;
+  border-top: var(--hair) solid var(--border);
+  padding-top: 0.5em;
+  font-size: var(--text-callout);
+  line-height: var(--text-callout--line-height);
+  color: var(--muted-foreground);
+}
+[data-md] [data-footnotes] ol { list-style: decimal; padding-left: 1.4em; }
+[data-md] sup { line-height: 0; }
+
+/* A task list: the box stands where the bullet would. */
+[data-md] ul.contains-task-list { list-style: none; padding-left: 1.4em; }
+[data-md] .task-list-item > input[type="checkbox"] {
+  margin: 0 0.4em 0 -1.4em;
+  vertical-align: middle;
+}
+
+/* A key, the way the app draws its own key caps: `radius-xs`, a hairline
+   with a heavier foot. */
+[data-md] kbd {
+  font-family: var(--font-sans);
+  font-size: var(--text-callout);
+  line-height: 1;
+  padding: 0.15em 0.4em;
+  border: var(--hair) solid var(--border);
+  border-bottom-width: calc(var(--hair) * 2);
+  border-radius: var(--radius-xs);
+  background: var(--fill);
+}
+
+/* A formula wider than the column scrolls inside itself, like a table.
+   KaTeX draws in `currentColor`, so its ink is the text's. */
+[data-md] .katex-display {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* A drawn diagram leaves the code block's frame: it is a picture now.
+   Its labels are prose, not code. */
+[data-md] pre:has(> [data-mermaid="drawn"]) {
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+}
+[data-md] [data-mermaid="drawn"] {
+  display: flex;
+  justify-content: center;
+  white-space: normal;
+  font-family: var(--font-sans);
+}
+[data-md] [data-mermaid="drawn"] svg { max-width: 100%; height: auto; }
+
+[data-md] img { max-width: 100%; height: auto; }
+[data-md] details { margin: 0.5em 0; }
+[data-md] summary { font-weight: var(--font-weight-title); }
+
 /* 暂停 (docs/MORE.md): the rail's face, dimmed and drained, while this
    machine is not talking to the network. **Not a badge**: the mark is
    this machine's own face and anything laid over it would be a second
