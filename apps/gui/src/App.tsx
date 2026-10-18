@@ -1829,7 +1829,7 @@ export default function App() {
     setMorePage(from.morePage);
     setScreen(from.front || from.landing !== "sessions" ? from.screen : "list");
   };
-  // Group presentation and pane visibility are separate; entering the group reveals its content.
+  // A repeated session press toggles its group and side together, retaining content.
   const [sessionTabsFocused, setSessionTabsFocused] = useState(false);
   const hideSessionContent = (id:string) => {
     content.setMaximized(null);
@@ -4226,8 +4226,8 @@ export default function App() {
                         if (!sessionTabsFocused) {
                           contentNavigation.resume(f.id);
                           setSessionSide(f.id, {open:true,seat:"workspace"});
-                        }
-                        setSessionTabsFocused(value => !value);
+                        } else hideSessionContent(f.id);
+                        setSessionTabsFocused(!sessionTabsFocused);
                       },
                     } : undefined,
                     group: !isNewTab(f.id) ? <ContentTabs session={f.id} open={f.id === selected && sessionTabsFocused} content={content} navigation={contentNavigation} onHide={()=>hideSessionContent(f.id)} onFocus={()=>{sessionTabs.focus(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});}} onAdd={()=>{

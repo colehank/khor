@@ -87,6 +87,11 @@ try{ checks:{
   await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
   await side(sessions[0]).waitFor();
   assert.equal(await page.locator('[data-session-tabs] [data-tab-new]').count(),0,'focused group still shows the outer session +');
+  await head(sessions[0]).click();await side(sessions[0]).waitFor({state:'detached'});
+  assert.deepEqual(await outerOrder(),sessions,'collapsing browsing changed session order');
+  assert.equal((await table()).tabs.length,0,'collapsing browsing created a persistent empty tab');
+  await head(sessions[0]).click();await side(sessions[0]).waitFor();
+  await desktopPicker().locator('[data-file-tree]').waitFor();
   const emptyBrowse=()=>page.locator(`[data-content-tabs="${sessions[0]}"] [data-content-browse]`);
   await emptyBrowse().locator('.session-content-close').click();
   await until(async()=>await emptyBrowse().count()===0&&await side(sessions[0]).count()===0);
@@ -174,10 +179,13 @@ try{ checks:{
   await shown().locator('[data-file-face-toggle]').click();await shown().locator('[data-file-preview]').waitFor();
   const beforeToggle=await page.locator('[data-session-panes]').evaluate(el=>({box:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()}));
   await head(sessions[0]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===2);
-  await shown().locator('[data-file-preview]').waitFor();
-  assert.deepEqual(await page.locator('[data-session-panes]').evaluate(el=>({box:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()})),beforeToggle,'tab presentation changed pane geometry');
+  await side(sessions[0]).waitFor({state:'detached'});
+  assert.equal((await table()).tabs.length,1,'collapsing session closed its document');
   assert.deepEqual(await page.locator('[data-session-tabs] [data-tab]').evaluateAll(els=>els.map(el=>el.dataset.tab)),sessions,'restoring tabs changed their order');
   await head(sessions[0]).click();await until(async()=>await page.locator('[data-session-tabs] [data-tab]').count()===1);
+  await shown().locator('[data-file-preview]').waitFor();
+  assert.deepEqual(await page.locator('[data-session-panes]').evaluate(el=>({box:el.getBoundingClientRect().toJSON(),side:el.querySelector('[data-session-side]').getBoundingClientRect().toJSON()})),beforeToggle,'reopening session did not restore its pane geometry');
+  assert.equal(await shown().getAttribute('data-content-handle'),stable,'reopening session replaced its document handle');
   await page.locator(`[data-row="${sessions[1]}"] [data-row-open]`).click();await head(sessions[1]).waitFor();
   assert.equal(await page.locator('[data-session-tabs] [data-tab]').count(),1,'focus did not follow list selection');
   await page.locator(`[data-content-tabs="${sessions[1]}"] .session-content-add>button`).click();await page.locator(`[data-content-picker="${sessions[1]}"]:visible`).getByText('only-1.txt',{exact:true}).waitFor();

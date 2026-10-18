@@ -768,7 +768,7 @@
 
 | 规矩 | 门 |
 |---|---|
-| 再点当前 session 切换单组／所有组展示，恢复原顺序；列表切换时专注跟随；只切展示不改内容区与终端几何 | `npm run session-content`：真实 App 的列表、点击、Enter/Space、恢复顺序与 pane 矩形比较 |
+| 再点当前 session 同时收起标签组与内容侧区，恢复普通标签条及完整终端；展开恢复原内容、句柄及分栏宽度，不关闭文件或网页（2026-10-18 修正规则）；列表切换时专注跟随 | `npm run session-content`：真实 App 的空浏览／文件、点击、Enter/Space、恢复顺序、文档句柄与重开后的 pane 矩形比较 |
 | 内层起始和 ＋ 前的线复用外层居中短线，首尾留白；头像标题×与内外 ＋ 可用 | `CONTENT_DESKTOP_ICONS_ONLY=1 npm run session-content`：六个长标题 session、1000 宽、三条线的宽高／中心／留白、关闭与新标签页 |
 | session 标题按实际空间截断，当前保留头像与常驻 × 的最低宽度，未选中缩到头像；悬停关闭替换头像不挤动布局。内外层连续鼠标关闭冻结宽度，离开、新建与 resize 释放 | `CONTENT_DESKTOP_ICONS_ONLY=1 npm run session-content`：90 宽标题、当前与非当前最低宽度／关闭位、关闭不改选中与专注、连续关闭和释放。旧 96 阈值在 90 宽直接隐藏全部标题 |
 
