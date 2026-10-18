@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ContentTab, SessionContent } from '@/hooks/use-session-content';
 export type ContentSource = 'workspace' | 'browser';
-export type ContentScene = 'picker' | 'document' | 'overview' | 'sessions';
+export type ContentScene = 'closed' | 'picker' | 'document' | 'overview' | 'sessions';
 export type ContentScroll = { top: number; left: number };
 export type ContentPlace = {
   scene: ContentScene; key: string | null; source: ContentSource;
@@ -21,7 +21,7 @@ export const emptyContentPlace = (): ContentPlace => ({scene:'picker',key:null,s
 const empty = (): ContentNavigationState => ({...emptyContentPlace(),from:'picker',trail:[],recent:null,documentTrail:[],scrolls:{},browseBefore:null,lastContent:null});
 const place = ({scene,key,source,scope,filter,query,address,exit}: ContentPlace): ContentPlace => ({scene,key,source,scope,filter,query,address,exit});
 const NAV_KEY = 'khor.content.navigation.v1', EDITOR_KEY = 'khor.content.editors.v1';
-const scenes: ContentScene[] = ['picker','document','overview','sessions'];
+const scenes: ContentScene[] = ['closed','picker','document','overview','sessions'];
 const isPlace = (value: unknown): value is ContentPlace => {
   if (!value || typeof value !== 'object') return false;
   const p = value as ContentPlace;
@@ -58,7 +58,7 @@ function readNavigation(): Record<string, ContentNavigationState> {
 }
 export function enterContent(was: ContentNavigationState, patch: Partial<ContentPlace>): ContentNavigationState {
   const next = {...was,...patch};
-  if (next.scene !== was.scene || next.scene === 'document' && next.key !== was.key) {
+  if (was.scene !== 'closed' && (next.scene !== was.scene || next.scene === 'document' && next.key !== was.key)) {
     next.trail = [...was.trail,place(was)].slice(-64); next.from = was.scene;
   }
   if (next.scene === 'document') { next.recent=next.key; next.documentTrail=next.trail; }
@@ -114,11 +114,28 @@ export function useContentNavigation(content: SessionContent) {
   const back=(session:string):boolean=>{
     pendingResume.current.delete(session);
     const s=get(session),trail=[...s.trail];let prev:ContentPlace|undefined;
-    while(trail.length){const entry=trail.pop()!;if(entry.scene!=='document'||valid(session,entry.key)){prev=entry;break;}}
+    while(trail.length){const entry=trail.pop()!;if(entry.scene!=='closed'&&(entry.scene!=='document'||valid(session,entry.key))){prev=entry;break;}}
     if(!prev)return false;
     const next=prev;write(session,s=>({...s,...next,trail,from:trail.at(-1)?.scene||'picker',...(next.scene==='document'?{recent:next.key,documentTrail:trail}:{})}));
     const tab=next.scene==='document'?content.allTabs.find(t=>t.session===session&&content.handle(t)===next.key):null;
     if(tab)void content.focus(tab.id).catch(()=>{});
+    return true;
+  };
+  const dismiss=(session:string)=>{
+    pendingResume.current.delete(session);
+    write(session,s=>({...s,scene:'closed',key:null,trail:[],from:'picker'}));
+  };
+  /** Closing the browsing tab removes it; Back follows navigation history. */
+  const closePicker=(session:string):boolean=>{
+    pendingResume.current.delete(session);
+    const s=get(session),trail=[...s.trail];let previous:ContentPlace|undefined;
+    while(trail.length){const entry=trail.pop()!;if(entry.scene==='document'&&valid(session,entry.key)){previous=entry;break;}}
+    const tab=previous?content.allTabs.find(t=>t.session===session&&content.handle(t)===previous.key):content.active(session);
+    if(!tab){dismiss(session);return false;}
+    const target=previous||{...place(s),scene:'document' as const,key:content.handle(tab)};
+    const history=previous?trail:s.documentTrail;
+    write(session,s=>({...s,...target,trail:history,from:history.at(-1)?.scene||'picker',recent:target.key,documentTrail:history}));
+    if(content.active(session)?.id!==tab.id)void content.focus(tab.id).catch(()=>{});
     return true;
   };
   const overview=(session:string)=>get(session).scene==='overview'?back(session):update(session,{scene:'overview',filter:''});
@@ -130,6 +147,6 @@ export function useContentNavigation(content: SessionContent) {
     const before=s.scrolls[key];if(before?.top===value.top&&before?.left===value.left)return s;
     return {...s,scrolls:{...s.scrolls,[key]:{top:Math.max(0,value.top),left:Math.max(0,value.left)}}};
   });
-  return {editor,edit,get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,resume,browse,overview,back,sessions,inspect,scroll,scrollOf,browseBefore};
+  return {editor,edit,get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,resume,browse,overview,back,dismiss,closePicker,sessions,inspect,scroll,scrollOf,browseBefore};
 }
 export type ContentNavigation = ReturnType<typeof useContentNavigation>;

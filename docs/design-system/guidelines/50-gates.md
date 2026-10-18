@@ -532,3 +532,7 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 2026-10-18 药丸恢复回归：`npm run content-model` 先红（恢复得到 overview，期望 document），修复后覆盖两种列表不覆盖内容、reload、旧状态迁移、独立会话、列表内 Back、原文件返回路径和已关闭文件回退。旧测试将列表视作药丸恢复目标的断言已纠正。真实 App 浏览器走查与原生验收范围见 30-behavior「药丸恢复内容与标签列表」。
 
 本轮 `npm test --ignore-scripts`、`npm run content-model` 与 `npm run build --ignore-scripts` 通过；未运行原生构建或发布。隔离节点与 Vite 验收进程已关闭，临时复制的 bridge 已清理。
+
+2026-10-18 空浏览标签关闭：修复前在真实 App 复现 × 关闭后侧区消失、Browse 标签仍在；保存红截图。`content-model` 增加显式关闭状态、重载、重新打开、返回不落空白场景，以及有文档时关闭浏览跳过列表的回归；`session-content` 增加实际 App 的 ×／快捷键关闭、最后文档与来源下 chevron 的组合几何检查。原生运行与各引擎实际执行范围以当轮记录为准。
+
+本轮默认前端检查、`content-model`、生产构建、门索引及 `check-session-content.mjs` 的语法检查通过。Chrome 中使用真实 App、独立节点与临时文件在 1200×800／390×800 操作：空浏览关闭、Meta+W、重载后重开、有文件时关闭浏览、最后文件关闭、桌面两来源菜单和窄屏向上菜单。桌面入口量得 52×36，主图标 22、箭头 12、左右各 7，两来源坐标相同。证据在 `/Volumes/disk0/khor-checks/empty-content-ui/`。完整 `session-content` 脚本、WebKit 及原生 app 本轮未运行；未合并或发布。验证节点、私有会话、Vite 和复制的 bridge 已清理。

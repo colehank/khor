@@ -1831,6 +1831,11 @@ export default function App() {
   };
   // Group presentation and pane visibility are separate; entering the group reveals its content.
   const [sessionTabsFocused, setSessionTabsFocused] = useState(false);
+  const hideSessionContent = (id:string) => {
+    content.setMaximized(null);
+    if(contentNavigation.get(id).scene==='closed')setSessionTabsFocused(false);
+    setSessionSide(id,{open:false});
+  };
   const tabFaces: TabFace[] = useMemo(
     () =>
       openTabs.map((id) => {
@@ -2940,7 +2945,7 @@ export default function App() {
         onSeat={enterSeat}
         onWidth={sideDragged}
         onLive={sideLive}
-        onClose={() => { content.setMaximized(null); setSessionSide(selectedRow.id, { open: false }); }}
+        onClose={() => hideSessionContent(selectedRow.id)}
         boxRef={setDetailBox}
         who={{ face: selectedRow.face, title: termName(selectedRow), word: selectedRow.word, kind: selectedRow.kind, category: selectedRow.category }}
       >
@@ -4225,7 +4230,7 @@ export default function App() {
                         setSessionTabsFocused(value => !value);
                       },
                     } : undefined,
-                    group: !isNewTab(f.id) ? <ContentTabs session={f.id} open={f.id === selected && sessionTabsFocused} content={content} navigation={contentNavigation} onHide={()=>{content.setMaximized(null);setSessionSide(f.id,{open:false});}} onFocus={()=>{sessionTabs.focus(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});}} onAdd={()=>{
+                    group: !isNewTab(f.id) ? <ContentTabs session={f.id} open={f.id === selected && sessionTabsFocused} content={content} navigation={contentNavigation} onHide={()=>hideSessionContent(f.id)} onFocus={()=>{sessionTabs.focus(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});}} onAdd={()=>{
                     contentNavigation.browse(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});
                   }} /> : undefined }))}
                   active={selected ?? ""}
@@ -4299,7 +4304,7 @@ export default function App() {
         onCloseSession={id=>{if(openTabs.length===1)setScreen("list");sessionTabs.close(id);}}
         onNewSession={()=>openNewTab()}
         visible={sessions && side.open && (narrow ? inSession : sideShown) && !hidden && morePage === null && !switchingTabs}
-        onClose={() => { if (selected) { content.setMaximized(null); setSessionSide(selected, { open: false }); } }}
+        onClose={() => { if (selected) hideSessionContent(selected); }}
         />
     </TooltipProvider>
     </FullScreenProvider>

@@ -72,6 +72,17 @@ nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');
 assert.equal(nav.value.get('A').scene,'picker','old saved session list migrates to source browsing');
 assert.equal(nav.value.get('A').source,'browser');assert.equal(nav.value.get('A').query,'needle');assert.equal(nav.value.get('A').address,'https://draft.test/path');
 nav.value.sessions('never-opened');nav.value.resume('never-opened');assert.equal(nav.value.get('never-opened').scene,'picker','first pill opens source browsing');
+assert.equal(nav.value.closePicker('never-opened'),false,'closing an empty picker must return to the session');
+assert.equal(nav.value.get('never-opened').scene,'closed','closing removes the synthetic browsing tab');
+nav.close();nav=mount(()=>useContentNavigation(model.value));
+assert.equal(nav.value.get('never-opened').scene,'closed','reload must not recreate a closed browsing tab');
+nav.value.resume('never-opened');assert.equal(nav.value.get('never-opened').scene,'picker','pill can reopen browsing after closing');
+nav.value.closePicker('never-opened');nav.value.browse('never-opened');
+assert.equal(nav.value.back('never-opened'),false,'closed content is not a blank Back destination');
+nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));nav.value.browse('A');nav.value.overview('A');nav.value.browse('A');
+assert.equal(nav.value.closePicker('A'),true,'closing browsing with an existing file keeps content open');
+assert.equal(nav.value.get('A').scene,'document');assert.equal(nav.value.get('A').key,a.id,'closing browsing selects the last valid file, not a list');
+nav.value.browse('A');
 
 nav.value.sessions('A');nav.value.update('A',{filter:'session search'});nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker','pill must restore workspace/browser, not the session list');assert.equal(nav.value.get('A').query,'needle');assert.equal(nav.value.get('A').address,'https://draft.test/path');assert.equal(nav.value.get('A').filter,'');nav.value.browse('A');nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));nav.value.sessions('A');await model.value.close(savedA.id);nav.render();nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');nav.close();model.close();
 console.log('PASS: pill resumes real content after session/nested lists, reload, legacy migration and deleted files; immediate durable tabs; deduplicated/session-scoped opens; slow write focus and stable handles; edit/close/retry races; reload handles; last scene/source/scope/query/address draft/scroll restoration');

@@ -60,7 +60,7 @@ export function ContentTabs({session,open,content,navigation,onAdd,onFocus,onHid
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===state.key);
   const active=state.scene==='picker'?browsing.id:current?.id;
   const pick=(tab:ContentTab)=>{onFocus();if(tab.id===browsing.id)navigation.browse(session);else{navigation.document(tab);quiet(content.focus(tab.id));}};
-  const close=(tab:ContentTab)=>{if(tab.id===browsing.id){if(!navigation.back(session))onHide();}else quiet(content.close(tab.id));};
+  const close=(tab:ContentTab)=>{if(tab.id===browsing.id){if(!navigation.closePicker(session))onHide();}else quiet(content.close(tab.id));};
   const seek = () => {
     const box = scroller.current, tab = measure.current?.querySelector<HTMLElement>('[data-content-on="true"]');
     if (!box || !tab || !open) return;
@@ -217,7 +217,10 @@ export function SessionContentPane({ container, content, session, devices, rows,
     if(before&&before!==key&&state?.scene!=='overview'&&state?.scene!=='sessions'&&(state?.scene!=='document'||content.allTabs.some(t=>content.handle(t)===state.key)))navigation.document(selected);
   }, [session, selected?.id, mobile, visible]);
   useEffect(() => {
-    if (content.ready && visible && session && state?.scene === 'document' && !content.allTabs.some(t => t.session === session && content.handle(t) === state.key)) navigation.back(session)||navigation.browse(session);
+    if (content.ready && visible && session && state?.scene === 'document' && !content.allTabs.some(t => t.session === session && content.handle(t) === state.key)) {
+      if(!mobile&&!content.allTabs.some(t=>t.session===session)){navigation.dismiss(session);content.setMaximized(null);onClose();}
+      else navigation.back(session)||navigation.browse(session);
+    }
   }, [mobile, visible, session, active, content.ready, content.allTabs.map(t=>t.id).join(',')]);
   useEffect(() => {
     const locate = (event: Event) => {
@@ -238,7 +241,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
   };
   useTabHost(visible && focused ? {
     count:peers.length,front:!!current||state?.scene==='picker',
-    close:()=>{if(state?.scene==='picker'){if(!navigation.back(session!))onClose();}else if(current)quiet(content.close(current.id));},
+    close:()=>{if(state?.scene==='picker'){if(!navigation.closePicker(session!))onClose();}else if(current)quiet(content.close(current.id));},
     step: by => { const at = peers.findIndex(t => content.handle(t) === active); const next = peers[(at + by + peers.length) % peers.length]; if (next) pick(next); },
   } : null);
   const faceFor=(id:string):TabFace|undefined=>{
@@ -253,7 +256,6 @@ export function SessionContentPane({ container, content, session, devices, rows,
   const machines = [...new Set(pages.map(t => t.device))].sort().join(',');
   useEffect(() => { if (content.ready) releasePages(pageIds ? pageIds.split(',') : [], 'content'); }, [content.ready, pageIds]);
   useEffect(() => { if (content.ready) releaseBorrows(machines ? machines.split(',') : [], 'content'); }, [content.ready, machines]);
-  useEffect(()=>{if(!mobile&&visible&&content.ready&&session&&state?.scene==='document'&&!peers.length){content.setMaximized(null);onClose();}},[mobile,visible,content.ready,session,state?.scene,peers.length]);
   const point = (tab: ContentTab, device: DeviceRow, path: string, title = '') => quiet(content.point(tab.id, device.id, path, contentView(tab), title));
   return createPortal(<NarrowBox data-session-content-pane data-mobile={mobile || undefined} className="session-content-pane" aria-hidden={!visible} inert={!visible}>
 

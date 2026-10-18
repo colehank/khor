@@ -155,7 +155,7 @@
 验证：`npm run content-ui`、`npm run content-sheet`；iPhone 原生键盘与网页仍按真 app 清单验收。
 
 
-桌面内容组的来源切换与其它工具栏按钮共用 GlassCircle；来源图标本身即可打开菜单，取消独立按钮网格与附加的小箭头。右侧新建保留控件自带的 grid，不由内容区覆盖 display。WebKit 与 Chrome 均检查实际 glyph 中心，不能只检查 SVG 的 width/height。
+桌面内容组的来源切换与其它工具栏按钮共用 GlassCircle；来源图标旁带向下 chevron（2026-10-18，负责人），两者共用点击区域，组合整体居中并保留两侧留白。手机保持向上 chevron 与向上菜单。右侧新建保留控件自带的 grid，不由内容区覆盖 display。WebKit 与 Chrome 均检查实际 glyph 中心，不能只检查 SVG 的 width/height。
 
 
 ## 内容导航与名称（2026-10-17，负责人确认，覆盖旧临时／保留模型）

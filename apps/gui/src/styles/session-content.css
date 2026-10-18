@@ -169,3 +169,6 @@
 .content-source-inline>.content-source-chevron{width:var(--gap-row);height:var(--gap-row);color:var(--tertiary)}
 .content-source-inline:hover,.content-source-inline[data-state=open]{color:var(--foreground)}
 .content-source-inline:focus-visible{outline:var(--hair) solid var(--ring)}
+.content-source-desktop{display:flex;align-items:center;justify-content:center;width:calc(var(--glass-btn) + var(--gap-row) + var(--gap-in) / 2);gap:calc(var(--gap-in) / 2)}
+.content-source-desktop>svg:first-child{width:var(--ctl-glyph);height:var(--ctl-glyph)}
+.content-source-desktop>.content-source-chevron{width:var(--gap-row);height:var(--gap-row);color:var(--tertiary)}
