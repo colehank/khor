@@ -69,7 +69,7 @@ import { gui } from "@/gen/catalog";
 import { useLinkHome } from "@/views/linkHome";
 import { languageOf, openFenceAt, paint, painted } from "@/lib/highlight";
 import { rehypeAlerts } from "@/lib/md/alerts";
-import { bracketMath, cut, mathOpen, mend, needsOf, type Cut } from "@/lib/md/blocks";
+import { bracketMath, cut, dollarsPandoc, mathOpen, mend, needsOf, type Cut } from "@/lib/md/blocks";
 import { useExtras, type Loaded } from "@/lib/md/extras";
 import { pipeline, render, type Components, type Pipeline, type PluggableList } from "@/lib/md/render";
 import { cn } from "@/lib/utils";
@@ -487,7 +487,7 @@ type Kit = {
  * |---|---|---|
  * | single newline | a line break | a space (GitHub) |
  * | `~one~` | text (「3~5 天」) | struck (GitHub) |
- * | `$x$` | text (「$5 和 $10」) | math (GitHub) |
+ * | `$x$` | math by pandoc's rule (`dollarsPandoc`): 「$5 和 $10」 text | math (GitHub) |
  * | `$$x$$`, ```` ```math ```` | math | math |
  * | `\\( \\)`, `\\[ \\]` | math (`bracketMath`) | text (GitHub) |
  * | raw HTML | text | GitHub's allow-list (`lib/md/file`) |
@@ -511,7 +511,7 @@ function kitOf(doc: boolean, lines: boolean, loaded: Loaded): Kit {
     ? [remarkGfm, ...(math ? [math.remarkMath] : [])]
     : [
         [remarkGfm, { singleTilde: false }],
-        ...(math ? [[math.remarkMath, { singleDollarTextMath: false }] as PluggableList[number]] : []),
+        ...(math ? [math.remarkMath] : []),
         remarkBreaks,
       ];
   if (emoji) remark.push(emoji);
@@ -556,11 +556,13 @@ function grouped(blocks: string[]): string[] {
   for (let i = 0; i < blocks.length - 1; i++) {
     run += blocks[i];
     if (run.length >= RUN) {
-      out.push(run);
+      out.push(dollarsPandoc(run));
       run = "";
     }
   }
-  if (blocks.length > 0) out.push(run + mend(blocks[blocks.length - 1]));
+  // Mended first: a backtick still open is closed, so the dollars inside
+  // it are seen as code and left alone.
+  if (blocks.length > 0) out.push(dollarsPandoc(run + mend(blocks[blocks.length - 1])));
   return out;
 }
 

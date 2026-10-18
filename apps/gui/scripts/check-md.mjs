@@ -14,8 +14,10 @@
 //      machine, inlined as `data:`) do become elements; an `https`
 //      picture is an element with its address, an `http` one is not (no
 //      `img` with an `http:` src, no `srcset`; its alt instead);
-//   3. a conversation does not read a single `$` as math (「$5 和 $10」)
-//      and does read `$$…$$` and `\(…\)`; a file reads `$…$`;
+//   3. a conversation does not read 「$5 和 $10」 as math and does read
+//      `$$…$$` and `\(…\)`; a file reads `$…$`;
+//   3b. a conversation's single `$` follows pandoc's rule (currency,
+//      ranges, `\$`, code stay text; `$x^2$` is math, also mid-stream);
 //   4. a block that has closed is not drawn again: appending to a
 //      finished 50 000-character turn redraws at most two of the runs it
 //      is drawn in, and a whole streamed turn draws at most one run per
@@ -225,6 +227,49 @@ try {
     if (doubled !== 3) fail(`math: $$…$$, \\(…\\) and inline $$…$$ drew ${doubled} formula(s), wanted 3`);
     if (file !== 2) fail(`math: a file's $…$ and \`\`\`math drew ${file}, wanted 2`);
     if (!dollars && !struck && doubled === 3 && file === 2) ok("math: conversation needs $$ or \\( \\); file reads $ — 0 / 3 / 2");
+  }
+
+  // 3b. a conversation's single `$` follows pandoc (tex_math_dollars):
+  // an opening `$` has a non-space on its right, a closing one a
+  // non-space on its left and no digit after it; `\$` is a dollar; code
+  // is code. The owner's ruling, 2026-10-19.
+  {
+    const was = failures;
+    const formulas = () =>
+      page.evaluate(() => [...document.querySelectorAll("[data-md] .katex-mathml annotation")].map((a) => a.textContent));
+    const errors = () => page.evaluate(() => document.querySelectorAll("[data-md] .katex-error").length);
+    const plain = ["$5 和 $10", "$5-$10", "costs $5, $10 and $20", "\\$x\\$", "代码 `$x$` 里", "3~5 天 $100"];
+    for (const t of plain) {
+      await show(t);
+      const f = await formulas();
+      if (f.length) fail(`pandoc: 「${t}」 drew ${JSON.stringify(f)}, wanted text`);
+      // And reads as written: an escape this build added never shows.
+      const seen = await page.evaluate(() => document.querySelector("[data-md]").textContent);
+      const want = t.replace(/\\\$/g, "$").replace(/`/g, "");
+      if (seen !== want) fail(`pandoc: 「${t}」 reads 「${seen}」, wanted 「${want}」`);
+    }
+    const math = [
+      ["$x^2$", ["x^2"]],
+      ["$2x+1$", ["2x+1"]],
+      ["$\\alpha$ 和 $\\beta$", ["\\alpha", "\\beta"]],
+      ["句末 $E=mc^2$。", ["E=mc^2"]],
+    ];
+    for (const [t, want] of math) {
+      await show(t);
+      const f = await formulas();
+      if (JSON.stringify(f) !== JSON.stringify(want)) fail(`pandoc: 「${t}」 drew ${JSON.stringify(f)}, wanted ${JSON.stringify(want)}`);
+    }
+    // Character by character, the way a turn drips: never an error, and
+    // never a formula that is not the one being written.
+    const drip = "$x^2$ 之后";
+    for (let i = 1; i <= drip.length; i++) {
+      await page.evaluate((t) => window.mdShow({ text: t }), drip.slice(0, i));
+      const f = await formulas();
+      const e = await errors();
+      if (e || f.some((x) => x !== "x^2")) fail(`pandoc: streaming 「${drip.slice(0, i)}」 drew ${JSON.stringify(f)} (${e} error(s))`);
+    }
+    if (JSON.stringify(await formulas()) !== JSON.stringify(["x^2"])) fail("pandoc: the dripped 「$x^2$ 之后」 ended without its formula");
+    if (failures === was) ok("pandoc: currency, ranges, \\$ and code stay text; $x^2$ and friends are math, also while dripping");
   }
 
   // 4. a closed block is not drawn again

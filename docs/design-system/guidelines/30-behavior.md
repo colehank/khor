@@ -860,7 +860,7 @@ Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印�
 
 ### Markdown：会话与文件预览同一套渲染（2026-10-19，md-render）
 
-会话（`ChatView`）和文件预览（`FileView`、`FileHistory`）只有一个渲染器 `components/Markdown`，两边的差别只在 `kitOf` 一处：会话里单个换行即换行、`~` 单个不划线、单个 `$` 不是公式（只认 `$$`、`\(…\)`、`\[…\]`）、原始 HTML 是字、图片只显示 alt；文件按 GitHub 读——换行折成空格、`$…$` 是公式、原始 HTML 过 GitHub 白名单（`rehype-sanitize` 默认 schema）、标题有锚点、相对路径图片从文件所在机器读回内联（上限 24 张、8 秒超时，读不到留 alt）；网络图片 https 由本机直接加载、http 不加载留 alt（2026-10-19 负责人裁定，照 VS Code 的 Strict 默认；app 没有 CSP，过滤在清洗的 schema 里做）。mermaid 不带 elk 布局，`layout: elk` 的图显示源码。提示块的种类用标题字说，不用颜色。公式（KaTeX）、emoji 短码、mermaid、文件的 HTML 与锚点各自懒加载。会话边流边切块，已收尾的块不重画；最后一块里半截的行内记号先补上（remend）；上色、公式、mermaid 只在块收尾后做。
+会话（`ChatView`）和文件预览（`FileView`、`FileHistory`）只有一个渲染器 `components/Markdown`，两边的差别只在 `kitOf` 一处：会话里单个换行即换行、`~` 单个不划线、单个 `$` 按 pandoc 规则成公式（开头 `$` 右贴非空白、结尾 `$` 左贴非空白且后面不跟数字，`\$` 是字面量，代码里不算；2026-10-19 负责人裁定），`$$`、`\(…\)`、`\[…\]` 照旧、原始 HTML 是字、图片只显示 alt；文件按 GitHub 读——换行折成空格、`$…$` 是公式、原始 HTML 过 GitHub 白名单（`rehype-sanitize` 默认 schema）、标题有锚点、相对路径图片从文件所在机器读回内联（上限 24 张、8 秒超时，读不到留 alt）；网络图片 https 由本机直接加载、http 不加载留 alt（2026-10-19 负责人裁定，照 VS Code 的 Strict 默认；app 没有 CSP，过滤在清洗的 schema 里做）。mermaid 不带 elk 布局，`layout: elk` 的图显示源码。提示块的种类用标题字说，不用颜色。公式（KaTeX）、emoji 短码、mermaid、文件的 HTML 与锚点各自懒加载。会话边流边切块，已收尾的块不重画；最后一块里半截的行内记号先补上（remend）；上色、公式、mermaid 只在块收尾后做。
 
 | 规矩 | 门 |
 |---|---|
@@ -868,6 +868,7 @@ Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印�
 | 文件预览里 http 图片不成带 src 的 img、`srcset` 不留，https 图片成 img | `npm run md` 2 |
 | `layout: elk` 的 mermaid 图显示源码，之后的图照常画 | `npm run md` 7 |
 | 会话里 `$5 和 $10` 不是公式、`3~5` 不划线；`$$`、`\(…\)` 是公式；文件 `$…$` 是公式 | `npm run md` 3 |
+| 会话里单个 `$` 按 pandoc：`$5-$10`、`costs $5, $10`、`\$x\$`、行内代码里的 `$x$` 是字，`$x^2$`、`$\alpha$ 和 $\beta$` 是公式；逐字流入不出现错误或别的公式 | `npm run md` 3b |
 | 已收尾的块不重画；边长边切与整段切一致 | `npm run md` 4、5 |
 | 半截 `**` `` ` `` `](` `*` 不露记号 | `npm run md` 6 |
 | 未收尾的代码块不上色、mermaid 不画；画出的图没有图片、脚本、`on*` | `npm run md` 7，`npm run read` 9、10 |

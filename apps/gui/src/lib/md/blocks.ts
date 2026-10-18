@@ -136,9 +136,9 @@ export function mend(tail: string): string {
 }
 
 /** Display math written the LaTeX way, `\[ … \]` and `\( … \)`, as the
-    `$$` the parser reads. Agents write both; the conversation does not
-    read a single `$` as math (「$5 和 $10」), so the bracket forms are how
-    inline math reaches it. Code — fenced or inline — is left alone. */
+    `$$` the parser reads. Agents write both, and neither has a price to
+    be mistaken for (`dollarsPandoc` is the single `$`'s rule). Code —
+    fenced or inline — is left alone. */
 export function bracketMath(text: string): string {
   if (!text.includes("\\(") && !text.includes("\\[")) return text;
   const out: string[] = [];
@@ -175,15 +175,115 @@ export function bracketMath(text: string): string {
   return out.join("\n");
 }
 
+/**
+ * A conversation's single `$`, read by pandoc's rule (`tex_math_dollars`,
+ * the owner's ruling 2026-10-19): a `$` opens a formula only with a
+ * non-space on its right, closes one only with a non-space on its left
+ * and no digit after it, and `\$` is a dollar. So 「$5 和 $10」,
+ * 「$5-$10」 and 「costs $5, $10」 are prices and `$x^2$` is a formula.
+ *
+ * The parser (`remark-math`) pairs any two dollars, so every `$` that
+ * this rule leaves unpaired is escaped before it parses; a pair is left
+ * as written. Lines inside a fence and runs inside backticks are code
+ * and are not touched; `$$` is display math's and is left alone. One
+ * line at a time — a formula in a conversation does not span lines.
+ *
+ * Streaming: an opening `$` whose close has not arrived is a dollar for
+ * that frame — `$x^2` shows as text and turns into the formula when its
+ * `$` lands, never into a broken one (`mend` is told not to close it).
+ * A close that is the last character of the text so far counts, so
+ * 「$5-$」 draws as a formula for the one frame before 「10」 arrives;
+ * pandoc's rule cannot know either until the next character.
+ *
+ * (Indented code blocks are not recognised, so a `$` in one would show
+ * its escape; a conversation writes code in fences.)
+ */
+export function dollarsPandoc(text: string): string {
+  if (!text.includes("$")) return text;
+  const out: string[] = [];
+  let fence: string | null = null;
+  for (const line of text.split("\n")) {
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fence !== null) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length && line.slice(f[0].length).trim() === "") fence = null;
+      out.push(line);
+      continue;
+    }
+    if (f) {
+      fence = f[1];
+      out.push(line);
+      continue;
+    }
+    out.push(
+      line
+        .split(/(`+[^`]*`+)/)
+        .map((piece, i) => (i % 2 === 1 ? piece : pairDollars(piece)))
+        .join(""),
+    );
+  }
+  return out.join("\n");
+}
+
+const blank = (c: string | undefined) => c === undefined || /\s/.test(c);
+
+/** One run of prose: pandoc pairs kept, every other single `$` escaped. */
+function pairDollars(s: string): string {
+  if (!s.includes("$")) return s;
+  /** Where each kept dollar is. */
+  const keep = new Set<number>();
+  const single = (i: number) => s[i] === "$" && s[i - 1] !== "$" && s[i + 1] !== "$";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\") {
+      i += 1;
+      continue;
+    }
+    if (s[i] === "$" && s[i + 1] === "$") {
+      // Display math's, and the run of dollars it belongs to.
+      while (s[i + 1] === "$") i += 1;
+      continue;
+    }
+    if (!single(i) || blank(s[i + 1])) continue;
+    for (let j = i + 1; j < s.length; j++) {
+      if (s[j] === "\\") {
+        j += 1;
+        continue;
+      }
+      if (single(j) && !blank(s[j - 1]) && !/[0-9]/.test(s[j + 1] ?? "")) {
+        keep.add(i).add(j);
+        i = j;
+        break;
+      }
+    }
+  }
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\") {
+      out += s.slice(i, i + 2);
+      i += 1;
+    } else if (s[i] === "$" && (s[i + 1] === "$" || s[i - 1] === "$")) {
+      out += "$";
+    } else if (s[i] === "$" && !keep.has(i)) {
+      out += "\\$";
+    } else {
+      out += s[i];
+    }
+  }
+  return out;
+}
+
 /** What a text asks for beyond the parser everyone gets; each is a
     chunk loaded the first time some text needs it (`lib/md/extras`).
     The file page's own chunk (HTML, anchors) is not here: every file
     needs it. */
 export type Needs = { math: boolean; emoji: boolean };
 
+/** Roughly a pandoc pair (`dollarsPandoc`), to decide whether the math
+    chunk is worth fetching; the exact test runs on the blocks. */
+const PANDOC_PAIR = /\$[^\s$](?:[^$\n]*[^\s\\$])?\$(?!\d)/;
+
 export function needsOf(text: string, file: boolean): Needs {
   return {
-    math: (file ? text.includes("$") : text.includes("$$") || /\\[([]/.test(text)) || /^ {0,3}(`{3,}|~{3,})\s*math\b/m.test(text),
+    math: (file ? text.includes("$") : PANDOC_PAIR.test(text) || text.includes("$$") || /\\[([]/.test(text)) || /^ {0,3}(`{3,}|~{3,})\s*math\b/m.test(text),
     // A letter first, so a clock (`10:30:45`) does not fetch the table.
     emoji: /:(?:[a-z][a-z0-9_+-]*|[+-]1):/i.test(text),
   };
