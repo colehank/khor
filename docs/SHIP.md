@@ -120,3 +120,14 @@ khor devices                                                   # 五台都在线
 - `content-ui`、`attachment-ui`、`session-content` 在 finally 关闭私有会话/浏览器/服务后删除 scratch 中的 bridge/khor 副本，保留截图、日志和 fixture 状态。手动中断后核对遗留进程及副本。Codex fixture 的 HOME 下 updater 也须退出，不能只关测试前台进程。
 - 上传成功后清理已确认属于 Khor 的 `XcodeDistPipeline.*` 暂存副本，保留本次归档与发布收据。Chrome 的 `code_sign_clone` 是浏览器产生的可重建副本，只有 lsof 确认无引用时才清；不清用户浏览器 profile。
 - 大扫除只处理已识别的测试副本和可重建缓存。没有 cargo/rustc 运行时可清 debug/incremental；保留正在使用的发布二进制、用户会话、测试证据与最新归档，不全量 cargo clean，也不手动删系统 swap。
+
+## 发布记录：2026-10-18（选择框、底栏手势、即时已读）
+
+- 代码提交：`48abccbd`；合入 `picker-consistency`、`fix-content-pan`、`fix-immediate-read`。本次 UI 收据：`khor-ui-assets:/assets/index-CCoiSSoh.js`。
+- 主干验证：前端默认检查、生产构建、门索引、iOS 编译门通过；GUI core 命令表 2 项及已读快照 6 项通过。`page_sheet` 已按原生专用接口补入带理由的命令表例外。
+- Mac：release 编译、CLI／GUI 收据与签名核对通过；旧主窗口 PID 58629 退出，新 PID 57858；11 个既有会话辅助进程全部保留，装机前后列表没有失败项。
+- 集群：hinton 构建并安装，turing／lecun 的 keeper 自动换新。三台 5467 实际监听进程的 `/proc/<pid>/exe` SHA-256 均为 `601798415bd4501e084011a30759bcc8a0f4ca673840565f53e342082a003892`，HTTP 收据相同，CLI 确认三台直连。首次 rsync 断线，加 SSH 保活后重试成功；自动换新期间监听短暂为空，待进程就绪后核验，不重复安装。
+- iOS：新 `libapp.a` 与归档可执行文件均验到本次收据；Tauri 遇到已知 `exportArchive Copy failed`，系统 PATH 的导出上传在 `2026-10-18 14:18:52 UTC` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，App Store Connect 开始处理。签名团队的临时工程改动已恢复。
+- 收尾：保留正式归档与发布日志 `/Volumes/disk0/khor-ship-20261018-read/`；按 bundle identifier 确认归属、`lsof` 确认无引用后，删除 2 个 Khor Xcode 暂存目录（218 MiB）及本次集群导出源码。系统盘可用从约 12 GiB 到约 11 GiB，外挂盘约 105 GiB。
+- `TMPDIR` 并不能保证 Xcode 的所有导出副本都去外挂盘：本轮 `XcodeDistPipeline.*` 仍出现在系统临时目录。上传后同时检查系统临时目录和指定临时目录，按归属与引用核验后清理；不碰正式归档、会话及系统 swap。
+- iPhone 实机的网页手势、选字及跨设备已读手感仍需安装此包后验收；编译和发布成功不代表完成了这些真机操作。
