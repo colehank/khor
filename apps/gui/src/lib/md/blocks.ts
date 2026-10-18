@@ -30,9 +30,12 @@ import remend from "remend";
 /** A text cut into blocks, kept so the next, longer text can reuse it. */
 export type Cut = { text: string; blocks: string[] };
 
-/** A footnote, or a link definition: both are read from anywhere in the
-    text, so cutting would orphan them. */
-const ACROSS = /\[\^[^\]\s]{1,200}\]|^ {0,3}\[[^\]]+\]:/m;
+/** A footnote's or a link's definition (`[^1]: …`, `[docs]: …`): read
+    from anywhere in the text, so cutting would orphan the references to
+    it. Keyed on the definition, not the reference — `[^a-z]` is far more
+    often a regular expression in a code block than a footnote, and a
+    reference with no definition is plain text anyway. */
+const ACROSS = /^ {0,3}\[[^\]\n]+\]:/m;
 
 /** `$$` pairs in a run of text. */
 function dollars(s: string): number {

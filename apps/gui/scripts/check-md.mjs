@@ -223,6 +223,14 @@ try {
     const s0 = await page.evaluate(() => window.mdMeasured().blocks);
     const run = await page.evaluate((t) => window.mdStream({ text: t, step: 400 }), long);
     const streamed = (await page.evaluate(() => window.mdMeasured().blocks)) - s0;
+    // A regular expression is not a footnote: `[^a-z]` in a code block
+    // must not send the whole turn back to one block.
+    const regex = long + "\n\n```js\nconst re = /[^a-z]/;\n```\n\n";
+    await show("");
+    const r0 = await page.evaluate(() => window.mdMeasured().blocks);
+    await show(regex);
+    const regexRuns = (await page.evaluate(() => window.mdMeasured().blocks)) - r0;
+    if (regexRuns < runs) fail(`redraw: a [^a-z] in code drew the turn as ${regexRuns} block(s), not ${runs}+`);
     const bound = run.chunks + 2 * runs;
     if (appended > 2) fail(`redraw: appending to a finished turn drew ${appended} blocks, wanted ≤ 2`);
     if (streamed > bound) fail(`redraw: streaming drew ${streamed} blocks over ${run.chunks} chunks, wanted ≤ ${bound}`);
