@@ -837,3 +837,8 @@ Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印�
 | 关闭与返回不同：关闭浏览标签跳过列表，返回仍按原导航历史；仅收起侧区保留内容位置。桌面来源图标＋下 chevron 共用菜单入口、组合居中；手机仍向上，工作区／浏览器两种来源的入口同位 | `npm run content-model`；`npm run session-content` 的来源图标、菜单与两种来源坐标检查 |
 
 真实 App 验收：关闭空浏览标签、重新打开、快捷键关闭、重载、关闭浏览切回文件、关闭最后文件；检查普通 session 标签与内容区同时恢复。原生系统快捷键与 WebKit 图标另做原生验收，不以 Chrome 的页面事件操作代替。
+
+
+### 独立会话内标签与有意义的移动（2026-10-18）
+
+每次 ＋ 产生独立持久起始标签，文件／网页原位更新其 ID 和观看句柄；每标签保存自己的导航与草稿。旧单例入口迁移为真实标签；关闭最后一枚回到会话。内外层共用 `TabStrip`；只在原集合的选中项改变时移动玻璃，不以新增、关闭或展开伪造跳转。门：`npm run content-model`、`npm run session-content` 与节点 `tabs::tests::blank_content_requests_are_distinct_and_retry_without_duplicates`。

@@ -1,4 +1,4 @@
-/** Session-owned documents are tabs as soon as they are opened. The small
+/** Session-owned starting pages and documents share one durable collection. The small
  * optimistic queue is transport state, never a separate preview collection. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { closeTab, fetchTabs, focusTab, goTab, openTab, pinTab, reorderTabs, type TabsOpen } from "@/api";
@@ -10,7 +10,7 @@ export type ContentTab = TabsOpen["tabs"][number] & { view: ContentView | null }
 export const CONTENT_KIND = "content";
 const EMPTY: TabsOpen = { tabs: [], active: "" };
 const HANDLE_KEY = "khor.content.handles";
-type State = { open: TabsOpen; opening: ContentTab[]; handles: Record<string, string> };
+type State = { open: TabsOpen; opening: ContentTab[]; handles: Record<string, string>; pointing: Record<string, Partial<ContentTab>> };
 function readHandles(): Record<string, string> {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(HANDLE_KEY) || '{}');
@@ -27,7 +27,7 @@ const same = (tab: ContentTab, session: string, device: string, url: string, vie
   tab.session === session && tab.device === device && (view === 'page' ? pageIdentity(tab.url) === pageIdentity(url) : tab.url === url) && (tab.view || 'workspace') === view;
 export function useSessionContent(watch: boolean) {
   const pageIcons = usePageIcons();
-  const [state, setState] = useState<State>(() => ({ open: EMPTY, opening: [], handles: readHandles() }));
+  const [state, setState] = useState<State>(() => ({ open: EMPTY, opening: [], handles: readHandles(), pointing: {} }));
   const [lines, setLines] = useState<Record<string, { line: number; at: number }>>({});
   const [ready, setReady] = useState(false), [error, setError] = useState<string | null>(null);
   const [maximized, setMaximized] = useState<string | null>(null);
@@ -36,13 +36,22 @@ export function useSessionContent(watch: boolean) {
   const writing = useRef(0), epoch = useRef(0), actionFailed = useRef(false);
   const chosen = useRef(new Map<string, string>()), jobs = useRef(new Map<string, Promise<string>>());
   const aliases = useRef(new Map(Object.entries(state.handles).map(([id, handle]) => [handle, id])));
-  const publish = () => setState({ open: current.current, opening: opening.current, handles: handles.current });
+  const pointing = useRef(state.pointing), versions = useRef(new Map<string, number>());
+  const publish = () => setState({ open: current.current, opening: opening.current, handles: handles.current, pointing: pointing.current });
   const resolve = (id: string) => aliases.current.get(id) || id;
   const handle = (tab: ContentTab) => handles.current[tab.id] || tab.id;
   const take = useCallback((value: TabsOpen, wrote = false) => {
     if (!mounted.current) return;
     const before = current.current, active = value.tabs.find(t => t.id === value.active);
     const changed = before.active !== value.active || before.tabs.find(t => t.id === before.active)?.touched !== active?.touched;
+    // A successful open can arrive through polling or another write after
+    // its direct response was lost. Reconcile by request, never blank URL.
+    for(const tab of value.tabs){
+      if(!tab.request||!opening.current.some(t=>t.id===tab.request))continue;
+      aliases.current.set(tab.request,tab.id);
+      handles.current={...handles.current,[tab.id]:tab.request};
+      opening.current=opening.current.filter(t=>t.id!==tab.request);
+    }
     current.current = value;
     if (active?.session) {
       const selection = chosen.current.get(active.session);
@@ -52,7 +61,7 @@ export function useSessionContent(watch: boolean) {
     }
     handles.current = Object.fromEntries(Object.entries(handles.current).filter(([id]) => value.tabs.some(t => t.id === id)));
     try { localStorage.setItem(HANDLE_KEY, JSON.stringify(handles.current)); } catch { /* device storage may be full */ }
-    setState({ open: value, opening: opening.current, handles: handles.current });
+    setState({ open: value, opening: opening.current, handles: handles.current, pointing: pointing.current });
     setReady(true);
     if (wrote) actionFailed.current = false;
     if (!actionFailed.current) setError(null);
@@ -85,11 +94,12 @@ export function useSessionContent(watch: boolean) {
     if (!tab) return Promise.resolve(resolve(id));
     const task = send(async () => {
       const value = await fetchTabs(CONTENT_KIND);
-      const existing = (value.tabs as ContentTab[]).find(t => same(t, tab.session, tab.device, tab.url, tab.view || 'file'));
-      const saved = existing?.id ?? await openTab(CONTENT_KIND, tab.device, tab.url, tab.session, after ? resolve(after) : undefined, tab.view || 'file');
-      const focused = await focusTab(CONTENT_KIND, saved);
+      const assigned = aliases.current.get(id);
+      const existing = (value.tabs as ContentTab[]).find(t => assigned ? t.id === assigned : tab.view !== 'workspace' && same(t, tab.session, tab.device, tab.url, tab.view || 'file'));
+      const saved = existing?.id ?? await openTab(CONTENT_KIND, tab.device, tab.url, tab.session, after ? resolve(after) : undefined, tab.view || 'file', id);
       aliases.current.set(id, saved);
       handles.current = { ...handles.current, [saved]: id };
+      const focused = await focusTab(CONTENT_KIND, saved);
       opening.current = opening.current.filter(t => t.id !== id);
       return { result: saved, value: focused };
     }).finally(() => jobs.current.delete(id));
@@ -102,9 +112,9 @@ export function useSessionContent(watch: boolean) {
     return send(async () => ({ result: undefined, value: await focusTab(CONTENT_KIND, resolve(id)) }));
   };
   const open = (session: string, device: string, path: string, view: ContentView, line?: number | null, after?: string): ContentTab => {
-    // The picker itself is navigation and must never allocate an empty tab.
-    if (view === 'workspace') throw new Error('Workspace browsing is navigation, not a document tab');
-    const known = [...current.current.tabs as ContentTab[], ...opening.current].find(t => same(t, session, device, path, view));
+    // + always creates a distinct starting tab. Address deduplication is
+    // reserved for links opened from outside an existing content tab.
+    const known = view === 'workspace' ? undefined : [...current.current.tabs as ContentTab[], ...opening.current].map(t=>({...t,...pointing.current[handle(t)]})).find(t => same(t, session, device, path, view));
     const tab = known || { id: `opening:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`}`, session, device, url: path, title: '', view, pinned: false, touched: Date.now() };
     chosen.current.set(session, handle(tab));
     if (!known) opening.current = [...opening.current, tab];
@@ -117,10 +127,17 @@ export function useSessionContent(watch: boolean) {
   const add = (session: string, device: string, path: string, view: ContentView = 'file', after?: string, line?: number | null) => {
     const tab = open(session, device, path, view, line, after); return persist(tab.id, after);
   };
-  const point = (id: string, device: string, path: string, view: ContentView, title = '', line?: number | null) => persist(id).then(saved => send(async () => {
-    if (line != null) setLines(all => ({ ...all, [handles.current[saved] || saved]: { line, at: Date.now() } }));
-    return { result: undefined, value: await goTab(CONTENT_KIND, saved, device, path, title, view) };
-  }));
+  const point = (id: string, device: string, path: string, view: ContentView, title = '', line?: number | null) => {
+    const tab = opening.current.find(t=>t.id===id) || current.current.tabs.find(t=>t.id===resolve(id));
+    if (!tab) return Promise.reject(new Error('Content tab was closed'));
+    const key=handle(tab as ContentTab), version=(versions.current.get(key)||0)+1;
+    versions.current.set(key,version);
+    pointing.current={...pointing.current,[key]:{device,url:path,view,title}};publish();
+    if(line!=null)setLines(all=>({...all,[key]:{line,at:Date.now()}}));
+    return persist(id).then(saved=>send(async()=>({result:undefined,value:await goTab(CONTENT_KIND,saved,device,path,title,view)}))).finally(()=>{
+      if(versions.current.get(key)===version){const next={...pointing.current};delete next[key];pointing.current=next;if(mounted.current)publish();}
+    });
+  };
   const rename = (id: string, title: string) => persist(id).then(saved => send(async () => {
     const tab = current.current.tabs.find(t => t.id === saved);
     return { result: undefined, value: tab ? await goTab(CONTENT_KIND, saved, tab.device, tab.url, title) : current.current };
@@ -132,19 +149,6 @@ export function useSessionContent(watch: boolean) {
   const pin = (id: string, on: boolean) => persist(id).then(saved => send(async () => ({ result: undefined, value: await pinTab(CONTENT_KIND, saved, on) })));
   const close = (id: string): Promise<void> => {
     // Closing during the first write closes the assigned node id afterwards.
-    const failed = opening.current.find(t => t.id === id);
-    if (failed && !jobs.current.has(id)) {
-      // The node may have accepted open even if its response/focus failed.
-      // Reconcile before removing the optimistic row; never leave an orphan.
-      return send(async () => {
-        const value=await fetchTabs(CONTENT_KIND);
-        const saved=(value.tabs as ContentTab[]).find(t=>same(t,failed.session,failed.device,failed.url,failed.view||'file'));
-        const next=saved?await closeTab(CONTENT_KIND,saved.id):value;
-        opening.current=opening.current.filter(t=>t.id!==id);
-        if(chosen.current.get(failed.session)===id)chosen.current.delete(failed.session);
-        return {result:undefined,value:next};
-      });
-    }
     return persist(id).then(saved => send(async () => {
       const tab = current.current.tabs.find(t => t.id === saved);
       const peers = current.current.tabs.filter(t => t.session === tab?.session);
@@ -160,7 +164,7 @@ export function useSessionContent(watch: boolean) {
       return { result: undefined, value };
     }));
   };
-  const tabs = [...state.open.tabs as ContentTab[], ...state.opening].filter(t => t.view === 'file' || t.view === 'page');
+  const tabs = [...state.open.tabs as ContentTab[], ...state.opening].map(t=>({...t,...state.pointing[handle(t)]}));
   const active = (session: string | null) => {
     const peers = tabs.filter(t => t.session === session), selected = chosen.current.get(session || '');
     return peers.find(t => t.id === selected || handle(t) === selected) ?? peers.reduce<ContentTab | undefined>((a, b) => !a || b.touched > a.touched ? b : a, undefined);
@@ -171,6 +175,6 @@ export function useSessionContent(watch: boolean) {
     return send(async () => ({result:undefined,value:await reorderTabs(CONTENT_KIND,session,saved)}));
   };
   const ensure = (session: string, _device: string) => { const tab = active(session); return tab ? focus(tab.id).then(() => resolve(tab.id)) : Promise.resolve(undefined); };
-  return { pageIcon: pageIcons.iconOf, recordPageIcon: pageIcons.record, tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, rename, follow, focus, pin, close, active, maximized, setMaximized };
+  return { newTab:(session:string,device='')=>open(session,device,'','workspace'), pageIcon: pageIcons.iconOf, recordPageIcon: pageIcons.record, tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, rename, follow, focus, pin, close, active, maximized, setMaximized };
 }
 export type SessionContent = ReturnType<typeof useSessionContent>;

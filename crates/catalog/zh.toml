@@ -5436,7 +5436,7 @@ usage-scatter-off = "{0} 个模型缺少这两项读数，未绘制"
 
 # Session-owned desktop content tabs
 session-content = "会话内容"
-content-new = "新建内容标签页"
+content-new = "新会话标签页"
 content-scope = "选择工作区或浏览器"
 content-expand = "放大内容"
 content-restore = "恢复并排"

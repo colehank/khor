@@ -31,8 +31,6 @@ body{background:var(--background);color:var(--foreground);font-family:var(--font
 .lab-main>[data-tab-bar]{flex:none;height:var(--pane-head)}
 .lab-session-row>span[data-side-face]{flex:none}
 
-.lab-nested>[data-tab-bar]{padding:0;gap:0;height:var(--glass-tabs);flex:1;min-width:0}
-.lab-nested [data-tab-head].glass-sel{background:var(--fill);box-shadow:inset 0 0 0 var(--hair) var(--border)}
 
 .lab-side[hidden]{display:none}
 
@@ -41,5 +39,3 @@ body{background:var(--background);color:var(--foreground);font-family:var(--font
 .lab-halo-gallery p{margin-block:var(--gap-pane);color:var(--muted-foreground)}
 .lab-halo-rows{display:flex;flex-wrap:wrap;gap:calc(2 * var(--gap-pane));padding:calc(2 * var(--gap-pane)) var(--gap-pane)}
 .lab-halo-rows>div{display:flex;align-items:center;gap:var(--gap-row)}
-
-.lab-nested [data-sel-ghost]{background:var(--fill);box-shadow:inset 0 0 0 var(--hair) var(--border)}

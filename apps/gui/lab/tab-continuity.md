@@ -36,4 +36,14 @@ cd apps/gui
 动效记录显示在产品画面之外，由真实玻璃替身的创建事件读取层级和时长，方便确认哪些操作触发了移动。
 
 主窗口仍是演示终端；网页内容固定为本地示例，不能用于验证真实网络导航或后端会话识别。
-跨根会话、切换视口和重新载入不是完整的原生生命周期验收；尚未合并到 main 或发布。
+生产实现与本 lab 一并交付；正式 App 的独立节点验收记录见下。尚未发布安装包。
+
+## 正式实现验收（2026-10-18）
+
+- `npm test --ignore-scripts`、`npm run build --ignore-scripts`、`npm run content-model --ignore-scripts`、`npm run gates --ignore-scripts` 通过。
+- `cargo test -p khor-node tabs::tests:: --lib`：27 项通过，包含空白标签独立、丢失回执重试、原位转内容后重试不回滚。
+- `cargo check -p khor-gui --lib` 通过；Rust 构建目录使用外挂盘 `/Volumes/disk0/khor-target`。
+- Chrome 中操作正式 App，连接隔离节点：连续新建、文件与网址原位打开、独立搜索、重载恢复、跨会话切换、宽窄屏切换、总览新增、逐个关闭至纯会话通过。共享关闭按钮实测垂直中心偏移为 0。
+- 草稿按标签、机器、路径隔离；实际编辑 guide.md 后在同一标签改开 notes.md，notes.md 保持原文，guide.md 的离开保存写入正确文件。
+- 更新后的 `check-session-content.mjs` / `check-content-ui.mjs` 已语法检查；本轮未整段执行这两个浏览器脚本。
+- 本轮未在原生 iOS、Windows、Linux 上做运行时验收。Chrome 网页地址与标签转换通过，不替代原生 WebView 导航验收。

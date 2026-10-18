@@ -24,7 +24,7 @@ export function useTabReorder(options:Options) {
   const [preview,setPreview]=useState<string[]|null>(null);
   const shown=useRef(preview),turn=useRef(0);shown.current=preview;
   const idsKey=options.ids.join('\n');
-  const rows=(g:Gesture)=>[...g.host.querySelectorAll<Item>(latest.current.selector)];
+  const rows=(g:Gesture)=>[...g.host.querySelectorAll<Item>(latest.current.selector)].filter(node=>latest.current.ids.includes(node.dataset.reorderId!));
   const id=(node:Item)=>node.dataset.reorderId!;
   const clearPaint=(g:Gesture)=>{
     cancelAnimationFrame(g.frame);g.node.style.removeProperty('transform');

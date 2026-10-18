@@ -16,11 +16,11 @@ const bundle=await build({stdin:{contents:'export * from "./src/hooks/use-sessio
 const {useSessionContent,useContentNavigation}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 const tick=()=>new Promise(r=>setImmediate(r));const until=async fn=>{for(let i=0;i<150;i++){if(await fn())return;await tick();}throw Error('Unsettled model');};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
-let node={tabs:[],active:''},clock=0,next=0,gate,focusFailure=false;const calls=[],snapshot=()=>structuredClone(node);
+let node={tabs:[],active:''},clock=0,next=0,gate,focusFailure=false,openAckFailure=false;const calls=[],snapshot=()=>structuredClone(node);
 globalThis.__api={
  async fetchTabs(){return snapshot();},
  async fetchPageIcons(){return {'https://kept.test':'data:image/png;base64,kept','https://disk.test':'data:image/png;base64,disk'};},
- async openTab(kind,device,url,session,after,view){calls.push(['open',session,url]);if(gate){const g=gate;gate=undefined;await g.promise;}const id='tab-'+(++next),t={id,device,url,session,view,title:'',pinned:false,touched:++clock};const at=after?node.tabs.findIndex(t=>t.id===after):-1;if(at>=0)node.tabs.splice(at+1,0,t);else node.tabs.push(t);node.active=id;return id;},
+ async openTab(kind,device,url,session,after,view,request){const existing=request&&node.tabs.find(t=>t.request===request&&t.session===session);if(existing){node.active=existing.id;return existing.id;}calls.push(['open',session,url]);if(gate){const g=gate;gate=undefined;await g.promise;}const id='tab-'+(++next),t={id,device,url,session,view,request,title:'',pinned:false,touched:++clock};const at=after?node.tabs.findIndex(t=>t.id===after):-1;if(at>=0)node.tabs.splice(at+1,0,t);else node.tabs.push(t);node.active=id;if(openAckFailure){openAckFailure=false;throw Error('Open acknowledgement lost');}return id;},
  async focusTab(kind,id){if(focusFailure){focusFailure=false;throw Error('Focus transport failed');}const t=node.tabs.find(t=>t.id===id);assert(t,'missing node id '+id);t.touched=++clock;node.active=id;return snapshot();},
  async closeTab(kind,id){calls.push(['close',id]);node.tabs=node.tabs.filter(t=>t.id!==id);if(node.active===id)node.active=node.tabs.at(-1)?.id||'';return snapshot();},
  async goTab(kind,id,device,url,title,view){const t=node.tabs.find(t=>t.id===id);assert(t);Object.assign(t,{device,url,title,...(view?{view}:{})});return snapshot();},
@@ -38,7 +38,8 @@ model.value.recordPageIcon('data:image/png;base64,live','https://redirect.test/f
 assert.equal(model.value.pageIcon('https://redirect.test/other'),'data:image/png;base64,live');
 assert.equal(model.value.pageIcon('https://other.test'),undefined);
 assert.equal(model.value.pageIcon('/not-a-site'),undefined);
-assert.equal(await model.value.ensure('empty','machine'),undefined);assert.throws(()=>model.value.open('A','machine','/repo','workspace'));assert.equal(node.tabs.length,0);
+assert.equal(typeof model.value.newTab,'function','each + must create an independent persisted navigation tab');
+assert.equal(await model.value.ensure('empty','machine'),undefined);assert.equal(node.tabs.length,0);
 gate=deferred();const slow=gate,a=model.value.open('A','machine','/a.txt','file',27);assert.equal(model.value.open('A','machine','/a.txt','file').id,a.id);const b=model.value.open('A','machine','https://example.test','page');await tick();assert.equal(model.value.tabs.length,2);assert.equal(model.value.active('A').id,b.id);
 slow.resolve();await until(()=>node.tabs.length===2&&model.value.tabs.every(t=>!t.id.startsWith('opening:')));assert.equal(model.value.handle(model.value.tabs[0]),a.id);assert.equal(model.value.handle(model.value.active('A')),b.id);assert.equal(calls.filter(c=>c[0]==='open'&&c[2]==='/a.txt').length,1);assert.equal(model.value.lines[a.id].line,27);assert(!('keep' in model.value)&&!('previews' in model.value)&&!('peek' in model.value));assert(model.value.tabs.every(t=>!('temporary' in t)&&!('preview' in t)));
 const savedA=model.value.tabs.find(t=>t.url==='/a.txt');model.value.open('A','machine','/a.txt','file');await until(()=>model.value.handle(model.value.active('A'))===a.id);await tick();assert.equal(node.tabs.length,2);
@@ -53,8 +54,22 @@ focusFailure=true;const failedClose=model.value.open('A','machine','/failed-focu
 const pageTab=model.value.tabs.find(t=>t.view==='page');await model.value.follow(pageTab.id,'https://example.test/');const beforeCanonical=node.tabs.length,canonical=model.value.open('A','machine','https://EXAMPLE.test:443','page');assert.equal(canonical.id,pageTab.id);await tick();assert.equal(node.tabs.length,beforeCanonical,'canonical page URL created duplicate');
 for(const url of ['https://example.test/?q=one','https://example.test/#section','https://example.test/other']){model.value.open('A','machine',url,'page');await until(()=>node.tabs.some(t=>t.url===url));}assert.equal(node.tabs.length,beforeCanonical+3,'page query/hash/path lost identity');
 model.value.open('A','machine','https://example.test','file');await until(()=>node.tabs.some(t=>t.view==='file'&&t.url==='https://example.test'));model.value.open('A','machine','https://example.test/','file');await until(()=>node.tabs.some(t=>t.view==='file'&&t.url==='https://example.test/'));assert.equal(node.tabs.length,beforeCanonical+5,'file path was URL normalized');
+// Independent starting tabs are durable and turn into content in place.
+const blanks=Array.from({length:3},()=>model.value.newTab('Blank','machine'));
+assert.equal(new Set(blanks.map(t=>t.id)).size,3);
+await until(()=>model.value.tabs.filter(t=>t.session==='Blank').length===3&&model.value.tabs.filter(t=>t.session==='Blank').every(t=>!t.id.startsWith('opening:')));
+const firstBlank=model.value.tabs.find(t=>model.value.handle(t)===blanks[0].id),savedBlank=firstBlank.id;
+const pointing=model.value.point(blanks[0].id,'machine','/blank-notes.md','file');await tick();
+assert.equal(model.value.tabs.find(t=>model.value.handle(t)===blanks[0].id).url,'/blank-notes.md','new tab must show its target immediately');
+await pointing;assert.equal(node.tabs.find(t=>t.id===savedBlank).view,'file');
+assert.equal(model.value.tabs.filter(t=>t.session==='Blank').length,3,'pointing a starting tab allocated another tab');
+focusFailure=true;const blankRetry=model.value.newTab('RetryBlank');await until(()=>model.value.error?.includes('Focus transport failed'));
+await model.value.focus(blankRetry.id);assert.equal(node.tabs.filter(t=>t.session==='RetryBlank').length,1,'retry duplicated an empty address');
+await model.value.close(blankRetry.id);
+openAckFailure=true;const lostBlank=model.value.newTab('LostBlank');await until(()=>model.value.error?.includes('Open acknowledgement lost'));await model.value.focus(lostBlank.id);assert.equal(node.tabs.filter(t=>t.session==='LostBlank').length,1,'a lost open acknowledgement created a second blank tab');await model.value.close(lostBlank.id);
+openAckFailure=true;const lostThenNext=model.value.newTab('LostThenNext');await until(()=>model.value.error?.includes('Open acknowledgement lost'));const nextAfterLost=model.value.newTab('LostThenNext');await until(()=>model.value.tabs.filter(t=>t.session==='LostThenNext').length===2&&model.value.tabs.filter(t=>t.session==='LostThenNext').every(t=>!t.id.startsWith('opening:')));assert.equal(model.value.handle(model.value.active('LostThenNext')),nextAfterLost.id,'reconciling an older opening stole focus');await model.value.close(lostThenNext.id);await model.value.close(nextAfterLost.id);
 model.close();model=mount(()=>useSessionContent(false));await until(()=>model.value.ready);assert.equal(model.value.handle(model.value.tabs.find(t=>t.id===savedA.id)),a.id);
-let nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');await tick();assert.equal(nav.value.get('A').scene,'document');nav.value.browse('A',{device:'machine',root:'/repo/inside'});nav.value.update('A',{query:'needle',address:'https://draft.test/path',source:'browser',exit:'exit-machine'});nav.value.scroll('A','picker browser',{top:418,left:12});nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));assert(nav.value.back('A'));nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');assert.equal(nav.value.get('A').query,'needle');nav.value.edit(a.id,{address:'https://unsent.test',editing:true,exitPrompt:9});nav.value.resume('B');const bPlace=nav.value.get('B');nav.value.overview('B');nav.value.update('B',{filter:'B only'});nav.value.resume('B');assert.equal(nav.value.get('B').scene,'document','pill must restore content, not the nested tab overview');assert.equal(nav.value.get('B').key,bPlace.key);
+let nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');await tick();assert.equal(nav.value.get('A').scene,'document');nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));nav.value.browse('A',{device:'machine',root:'/repo/inside'});nav.value.update('A',{query:'needle',address:'https://draft.test/path',source:'browser',exit:'exit-machine'});nav.value.scroll('A','picker browser',{top:418,left:12});nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));assert(nav.value.back('A'));nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');assert.equal(nav.value.get('A').query,'needle');nav.value.edit(a.id,{address:'https://unsent.test',editing:true,exitPrompt:9});nav.value.resume('B');const bPlace=nav.value.get('B');nav.value.overview('B');nav.value.update('B',{filter:'B only'});nav.value.resume('B');assert.equal(nav.value.get('B').scene,'document','pill must restore content, not the nested tab overview');assert.equal(nav.value.get('B').key,bPlace.key);
 nav.close();nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');assert.equal(nav.value.get('A').source,'browser');assert.deepEqual(nav.value.get('A').scope,{device:'machine',root:'/repo/inside'});assert.equal(nav.value.get('A').address,'https://draft.test/path');assert.equal(nav.value.get('A').exit,'exit-machine');assert.deepEqual(nav.value.scrollOf('A','picker browser'),{top:418,left:12});assert.deepEqual(nav.value.editor(a.id),{address:'https://unsent.test'});assert.equal(nav.value.get('B').filter,'');
 // Tab/session selectors never replace the pill's last actual content, even
 // across reloads. The explicit back stack inside a selector still works.
@@ -90,10 +105,19 @@ assert.equal(nav.value.get('never-opened').scene,'closed','reload must not recre
 nav.value.resume('never-opened');assert.equal(nav.value.get('never-opened').scene,'picker','pill can reopen browsing after closing');
 nav.value.closePicker('never-opened');nav.value.browse('never-opened');
 assert.equal(nav.value.back('never-opened'),false,'closed content is not a blank Back destination');
-nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));nav.value.browse('A');nav.value.overview('A');nav.value.browse('A');
-assert.equal(nav.value.closePicker('A'),true,'closing browsing with an existing file keeps content open');
-assert.equal(nav.value.get('A').scene,'document');assert.equal(nav.value.get('A').key,a.id,'closing browsing selects the last valid file, not a list');
-nav.value.browse('A');
-
-nav.value.sessions('A');nav.value.update('A',{filter:'session search'});nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker','pill must restore workspace/browser, not the session list');assert.equal(nav.value.get('A').query,'needle');assert.equal(nav.value.get('A').address,'https://draft.test/path');assert.equal(nav.value.get('A').filter,'');nav.value.browse('A');nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));nav.value.sessions('A');await model.value.close(savedA.id);nav.render();nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');nav.close();model.close();
-console.log('PASS: persisted and live favicons, origin isolation and late cache races; pill resumes real content after session/nested lists, reload, legacy migration and deleted files; immediate durable tabs; deduplicated/session-scoped opens; slow write focus and stable handles; edit/close/retry races; reload handles; last scene/source/scope/query/address draft/scroll restoration');
+// Closing a picker now closes that real tab, then selects the neighbour.
+nav.value.add('CloseOnly');await until(()=>model.value.tabs.some(t=>t.session==='CloseOnly'&&!t.id.startsWith('opening:')));
+assert.equal(nav.value.closePicker('CloseOnly'),false);assert.equal(nav.value.get('CloseOnly').scene,'closed');
+await until(()=>!node.tabs.some(t=>t.session==='CloseOnly'));
+// Every content tab owns its own picker, draft and back route.
+const aBlank=model.value.tabs.find(t=>model.value.handle(t)===blanks[0].id),bBlank=model.value.tabs.find(t=>model.value.handle(t)===blanks[1].id);
+nav.value.select(aBlank);nav.value.browse('Blank',{device:'machine',root:'/first'});nav.value.update('Blank',{query:'first query',address:'https://first.test',source:'workspace'});
+nav.value.select(bBlank);nav.value.update('Blank',{scope:{device:'machine',root:'/second'},query:'second query',address:'https://second.test',source:'browser'});
+const scopedA=nav.value.forTab('Blank',blanks[0].id);scopedA.update('Blank',{query:'late first query'});
+assert.equal(nav.value.get('Blank').query,'second query','inactive picker stole active input');
+nav.value.select(aBlank);assert.equal(nav.value.get('Blank').query,'late first query');assert.equal(nav.value.get('Blank').scope.root,'/first');
+nav.value.document(aBlank);assert(nav.value.back('Blank'));assert.equal(nav.value.get('Blank').scene,'picker');
+nav.close();nav=mount(()=>useContentNavigation(model.value));nav.value.resume('Blank');assert.equal(nav.value.get('Blank').key,blanks[0].id);assert.equal(nav.value.get('Blank').query,'late first query');
+nav.value.select(bBlank);assert.equal(nav.value.get('Blank').source,'browser');assert.equal(nav.value.get('Blank').address,'https://second.test');assert.equal(nav.value.get('Blank').scope.root,'/second');
+nav.close();model.close();
+console.log('PASS: durable independent starting tabs; original identity on point; retry without duplicate blank rows; per-tab picker/draft/back/reload isolation; retained favicon, content identity, ordering, transport race and legacy migration coverage');

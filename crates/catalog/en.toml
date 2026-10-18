@@ -2863,7 +2863,7 @@ usage-scatter-off = "{0} models unreadable on both values — not plotted"
 
 # Session-owned desktop content tabs
 session-content = "Session content"
-content-new = "New content tab"
+content-new = "New session tab"
 content-scope = "Choose workspace or browser"
 content-expand = "Expand"
 content-restore = "Restore split view"

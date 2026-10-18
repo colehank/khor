@@ -1830,10 +1830,18 @@ export default function App() {
     setScreen(from.front || from.landing !== "sessions" ? from.screen : "list");
   };
   // A repeated session press toggles its group and side together, retaining content.
-  const [sessionTabsFocused, setSessionTabsFocused] = useState(false);
+  const sessionTabsFocused = !narrow && side.open && side.seat === "workspace";
+  const previousContentGroup=useRef({id:selected,open:sessionTabsFocused});
+  useLayoutEffect(()=>{
+    const before=previousContentGroup.current;
+    previousContentGroup.current={id:selected,open:sessionTabsFocused};
+    if(before.id!==selected&&before.open&&selected&&!isNewTab(selected)&&!narrow){
+      contentNavigation.resume(selected);setSessionSide(selected,{open:true,seat:"workspace"});
+      previousContentGroup.current.open=true;
+    }
+  },[selected,sessionTabsFocused,narrow]);
   const hideSessionContent = (id:string) => {
     content.setMaximized(null);
-    if(contentNavigation.get(id).scene==='closed')setSessionTabsFocused(false);
     setSessionSide(id,{open:false});
   };
   const tabFaces: TabFace[] = useMemo(
@@ -2066,7 +2074,7 @@ export default function App() {
     const device = devices.find(d => machine ? d.name === machine || d.id === machine : d.me);
     if (!device) return content.fail(gui.content_machine_gone);
     (document.activeElement as HTMLElement|null)?.blur();
-    if(view==='workspace')contentNavigation.update(session,{scope:path?{device:device.id,root:path}:null,source:'workspace',scene:'picker'});
+    if(view==='workspace')contentNavigation.browse(session,path?{device:device.id,root:path}:undefined);
     else contentNavigation.document(content.open(session,device.id,path,view,line));
     setSessionSide(session,{open:true,seat:'workspace'});
   };
@@ -4227,11 +4235,10 @@ export default function App() {
                           contentNavigation.resume(f.id);
                           setSessionSide(f.id, {open:true,seat:"workspace"});
                         } else hideSessionContent(f.id);
-                        setSessionTabsFocused(!sessionTabsFocused);
                       },
                     } : undefined,
                     group: !isNewTab(f.id) ? <ContentTabs devices={devices} session={f.id} open={f.id === selected && sessionTabsFocused} content={content} navigation={contentNavigation} onHide={()=>hideSessionContent(f.id)} onFocus={()=>{sessionTabs.focus(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});}} onAdd={()=>{
-                    contentNavigation.browse(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});
+                    contentNavigation.add(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});
                   }} /> : undefined }))}
                   active={selected ?? ""}
                   seek={sessionTabs.picks}
