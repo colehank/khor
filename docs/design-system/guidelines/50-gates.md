@@ -518,3 +518,10 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 
 
 桌面标签精修（2026-10-17）：`npm run session-content` 增加真实鼠标排序、session 顺序 reload、节点内容顺序、焦点不变、Esc 取消与保留预览、双层高亮和整颗内部药丸悬停；专注组只保留内层 ＋、分隔线两侧留白。`npm run appearance` 增加窗口轮廓的默认值、独立开关、点击穿透与背景 alpha 不变。原生 macOS 验收轮廓与装饰、设置唯一入口；Windows／Linux 系统合成器另行核对，不以浏览器代替真机验收。
+
+
+### 会话已读（2026-10-18）
+
+`npm run session-read`：无浏览器、无真实 home；真实 `useSessionReads` 与版本回执，控制未完成请求、失败重试与旧回包，验证立即消点、消息时间上界、新完成仍未读、其他会话互不影响、卸载释放定时器。包含在 `npm test`。节点回归与真 app 清单见 30-behavior「已读反馈与同步」。
+
+本轮记录：`npm test --ignore-scripts`、`npm run build --ignore-scripts`、`npm run gates`、节点定向回归、GUI core `seen_snapshot` 的 6 项测试和 `cargo check -p khor-gui` 通过。额外 `command_tables` 检查在现有 `page_sheet` 命令上失败（主干已有原生 handler，浏览器表未列入；本轮未改该命令或 handler 列表），不得据此声称全套 Rust 检查通过。未进行 iPhone 或跨设备真机操作验收。

@@ -1,3 +1,4 @@
+import { useSessionReads } from "@/hooks/use-session-reads";
 import { sessionCwdOnScreen, workspaceCwd, followsSessionCwd } from "@/lib/session-cwd";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
@@ -24,7 +25,6 @@ import {
   launchOn,
   closeSession,
   forgetDevice,
-  markSeen,
   nameSettings,
   onFullscreen,
   openSettings,
@@ -555,7 +555,10 @@ export default function App() {
   const [landing, setLanding] = useState<Landing>(() =>
     landings().some((l) => l.key === place.landing) ? (place.landing as Landing) : "sessions",
   );
-  const [rows, setRows] = useState<SessionRow[]>([]);
+  const [rawRows, setRows] = useState<SessionRow[]>([]);
+  const { rows, read: readSession } = useSessionReads(rawRows);
+  const sessionRequest = useRef(0);
+  const sessionApplied = useRef(0);
   // **Long commands that finished out of sight** (roadmap 2.4,
   // `lib/finished`), said by the system. On screen = this window shown,
   // the sessions page up, and that session's tab the one in front.
@@ -886,15 +889,17 @@ export default function App() {
     if (lock.locked) return;
     let live = true;
     const tick = () => {
+      const request = ++sessionRequest.current;
       fetchSessions(arrangeBy)
         .then((rows) => {
-          if (!live) return;
+          if (!live || request < sessionApplied.current) return;
+          sessionApplied.current = request;
           setRows(rows);
           announceFinished(rows);
           setRowsRead(true);
           setStale(false);
         })
-        .catch(() => live && setStale(true));
+        .catch(() => live && request >= sessionApplied.current && setStale(true));
     };
     tick();
     const t = setInterval(tick, hidden ? HIDDEN_MS : POLL_MS);
@@ -965,17 +970,29 @@ export default function App() {
     // the machines landing and therefore fast again.
   }, [hidden, woken, landing]);
 
+  // Also covers tab switching, restoration and sessions opened by links. A
+  // later poll alone is not a new look: it must not swallow a new completion.
+  const openedRead = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (hidden || lock.locked || morePage !== null || switchingTabs || !selected || !onScreen.current(selected)) {
+      openedRead.current = null;
+      return;
+    }
+    if (openedRead.current === selected) return;
+    const row = rawRows.find((r) => r.id === selected);
+    if (row) {
+      openedRead.current = selected;
+      readSession(row);
+    }
+  }, [rawRows, selected, hidden, lock.locked, morePage, switchingTabs, landing, screen, narrow, readSession]);
+
   const onSelect = useCallback((row: SessionRow) => {
     sessionTabs.open(row.id);
-    if (row.unread > 0 && row.id !== "wide/all") {
-      // Looking at it is the seen semantics; the watermark replicates,
-      // so this clears the badge on every device.
-      markSeen(row.id).catch(() => {});
-    }
+    readSession(row);
     setScreen("detail");
     // `open` is a stable callback; the object around it is not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionTabs.open]);
+  }, [sessionTabs.open, readSession]);
 
   openNoticed.current = (id) => {
     const row = rows.find((r) => r.id === id);
@@ -1008,8 +1025,12 @@ export default function App() {
   // reads what it brought.
   const refresh = useCallback(async () => {
     await Promise.race([syncNow().catch(() => undefined), new Promise((r) => setTimeout(r, SYNC_WAIT_MS))]);
+    const request = ++sessionRequest.current;
     const [s, d] = await Promise.all([fetchSessions(arrangeBy), fetchDevices()]);
-    setRows(s);
+    if (request >= sessionApplied.current) {
+      sessionApplied.current = request;
+      setRows(s);
+    }
     setDevices(d);
     setRowsRead(true);
     setDevicesRead(true);

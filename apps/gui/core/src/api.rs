@@ -403,7 +403,11 @@ pub fn answer(
             Ok("null".to_owned())
         }
         "seen" => {
-            crate::seen(root, &arg("id")?)?;
+            let at_ms = match args.get("at_ms") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(v) => Some(v.as_i64().ok_or_else(|| "invalid read timestamp".to_owned())?),
+            };
+            crate::seen(root, &arg("id")?, at_ms)?;
             Ok("null".to_owned())
         }
         "close_session" => {
