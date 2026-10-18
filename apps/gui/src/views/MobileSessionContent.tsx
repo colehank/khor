@@ -44,12 +44,12 @@ export function ContentOwnerIdentity({face,title,children,editing=false}: {face:
   return <span className="content-owner-identity" data-content-editing={editing||undefined}><span className="content-owner-face">{face.session&&<SessionFace face={face.face} {...face.session} size="tab"/>}</span><span className="content-owner-name">{face.label}</span><span className="content-owner-slash">/</span>{children||<span className="content-owner-title">{title}</span>}</span>;
 }
 export function ContentTabButton({session,content,navigation}: Pick<DeckOwner,'content'|'navigation'> & {session:string}) {
-  const count=content.allTabs.filter(t=>t.session===session&&contentView(t)!=='workspace').length;
+  const count=content.allTabs.filter(t=>t.session===session).length;
   return <GlassCircle data-content-overview-button aria-label={gui.content_tabs_count(count)} aria-expanded={navigation.get(session).scene==='overview'} onClick={()=>navigation.overview(session)}><ContentTabsGlyph n={count}/></GlassCircle>;
 }
 /** The nested pill uses the terminal band's exact threshold, flick and cancellation. */
 export function ContentDocumentBand({session,face,content,navigation,title,onTitle}: Omit<DeckOwner,'onClose'> & {session:string;title:string;onTitle:()=>void}) {
-  const tabs=content.allTabs.filter(t=>t.session===session&&contentView(t)!=='workspace');
+  const tabs=content.allTabs.filter(t=>t.session===session);
   const active=navigation.get(session).key;
   const faces=tabs.map(t=>({...face,id:content.handle(t),label:contentName(t)}));
   return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=tabs.find(t=>content.handle(t)===key);if(tab){navigation.document(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} renderFace={(item,role)=><ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
@@ -159,7 +159,7 @@ export function useContentNeighbors(tab:ContentTab,machine:string,enabled=true) 
 export function ContentOverview({session,row,devices,content,navigation,onPick,face,onClose}: DeckOwner & {session:string;row:SessionRow|undefined;devices:DeviceRow[];onPick:(tab:ContentTab)=>void}) {
   const state=navigation.get(session),q=state.filter.toLocaleLowerCase();
   const [searching,setSearching]=useState(false);
-  const tabs=content.allTabs.filter(t=>t.session===session&&contentView(t)!=='workspace'&&(contentName(t)+' '+t.url+' '+contentContext(t,row,devices)).toLocaleLowerCase().includes(q));
+  const tabs=content.allTabs.filter(t=>t.session===session&&(contentName(t)+' '+t.url+' '+contentContext(t,row,devices)).toLocaleLowerCase().includes(q));
   const tabFaces=tabs.map(t=>contentTabFace(t,devices,content.pageIcon));
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===(state.recent||state.key));
   return <div className="mobile-content-overview">

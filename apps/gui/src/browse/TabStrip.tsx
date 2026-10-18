@@ -128,6 +128,8 @@ export type TabFace = {
       to the workspace root. Absent on a tab whose name is already the
       whole of what there is to say. */
   sub?: string;
+  /** An untitled content picker has no invented avatar. */
+  hideFace?: boolean;
   /** One more sentence for the hover title, from whatever this tab's
       view has to add — a diff that stopped short of the whole file
       (第十四轮 第 2 条). **Not drawn anywhere on the strip**: it is the
@@ -413,6 +415,8 @@ export function TabStrip({
   seek = 0,
   grouped = false,
   onReorder,
+  nested = false,
+  motion = "travel",
 }: {
   /** **A count of picks, the tab in front included** (fix-a): each new
       value brings the front tab into view, like a change of `active`.
@@ -422,6 +426,10 @@ export function TabStrip({
   seek?: number;
   /** Group heads retain identity while their supplied content scrolls. */
   grouped?: boolean;
+  /** Reuse the same tab and close geometry inside a session capsule. */
+  nested?: boolean;
+  /** Lab comparison: scoped selection feedback without a travelling glass. */
+  motion?: "travel" | "quiet";
   onReorder?: (ids:string[]) => void | Promise<unknown>;
   /** **The front tab's act at the capsule's end, and none on the pills**
       (UX-39, the owner 2026-10-06 22:35: a ↻ on every pill and one more
@@ -465,18 +473,18 @@ export function TabStrip({
     if (wasSpread.current === spread) return;
     wasSpread.current = spread;
     const row = strip.current;
-    if (!row || stillMotion()) return;
+    if (!row || stillMotion() || motion === "quiet") return;
     const duration = parseFloat(getComputedStyle(row).getPropertyValue("--dur-120"));
     row.animate([{opacity:0},{opacity:1}], {duration,easing:"ease-out"});
   }, [spread]);
   // The front tab's piece slides to the tab brought forward, in the glass
   // capsule (F7.2, `lib/travel`).
-  useTravel("tabs", () => strip.current, active);
+  useTravel("tabs", () => motion === "quiet" ? null : strip.current, active);
   /** How many times a held row has let go (`held`): the re-balance runs
       on each. */
   const [released, setReleased] = useState(0);
-  const widths = useRebalance(() => spread ? null : strip.current, active, released);
-  const reorder=useTabReorder({host:()=>strip.current,selector:"[data-tab]",ids:faces.map(f=>f.id),onReorder:spread?undefined:onReorder,exclude:"[data-content-tabs]",onStart:()=>releaseHeld()});
+  const widths = useRebalance(() => spread || motion === "quiet" ? null : strip.current, active, released);
+  const reorder=useTabReorder({host:()=>strip.current,selector:"[data-tab]",ids:faces.map(f=>f.id),onReorder:spread?undefined:onReorder,exclude:nested?undefined:"[data-content-tabs]",onStart:()=>releaseHeld()});
   const orderedFaces=reorder.order.map(id=>faces.find(f=>f.id===id)).filter((f):f is TabFace=>!!f);
   /** Which ends have a tab cut off behind them, for the fade on that
       side (docs/SHELL.md 第三轮 第 2 条). No fade where nothing is cut:
@@ -693,6 +701,7 @@ export function TabStrip({
     <div
       ref={bar}
       data-tab-bar
+      data-tabs-nested={nested || undefined}
       data-tab-bar-folded={folded || undefined}
       // ⚠️ 墓碑 (ux-q, 2026-10-07): the plain strip — the band on the
       // app's ground with the open tab the board's colour, joined to it
@@ -758,11 +767,13 @@ export function TabStrip({
         // 22:55: 「全挤在左边了」): the tabs from the row's start, ＋ after
         // the last one, the act circle at the end. ⚠️ 墓碑 (UX-25): the
         // capsule as long as its tabs, at the left.
-        className="glass relative flex h-glass-tabs min-w-0 flex-1 items-center self-center rounded-full px-glass-pad"
+        className={cn(!nested && "glass", "relative flex h-glass-tabs min-w-0 flex-1 items-center self-center rounded-full px-glass-pad")}
       >
       <div
         ref={strip}
         data-tab-strip
+        role={nested ? "tablist" : undefined}
+        aria-label={nested ? gui.session_content : undefined}
         {...reorder.handlers}
         // The row is as long as its tabs (they stop at `--tab-w-even`),
         // so ＋ follows the last one (UX-45).
@@ -861,6 +872,8 @@ export function TabStrip({
               <button
                 type="button"
                 data-tab-open={f.id}
+                role={nested ? "tab" : undefined}
+                aria-selected={nested ? on : undefined}
                 // A press on the tab in front is `again`'s — after it has
                 // been what every press on a tab is (`onFocus`, a no-op on
                 // the tab already in front).
@@ -930,7 +943,7 @@ export function TabStrip({
                     <NoticeLook list={notices} seat="size-4" />
                   </span>
                 ) : (
-                <span data-tab-avatar className={cn(grouped ? "flex flex-none" : "contents", grouped && !on && "session-tab-floor:group-hover/session-tab:opacity-0 session-tab-floor:group-focus-within/session-tab:opacity-0")}><TabAvatar f={f} bare="size-4 flex-none" seat="tab" /></span>
+                !f.hideFace && <span data-tab-avatar className={cn(grouped ? "flex flex-none" : "contents", grouped && !on && "session-tab-floor:group-hover/session-tab:opacity-0 session-tab-floor:group-focus-within/session-tab:opacity-0")}><TabAvatar f={f} bare="size-4 flex-none" seat="tab" /></span>
                 )}
                 {/* `nested`: the name sits inside the button that opens
                     the tab, so it is not a control here — the same

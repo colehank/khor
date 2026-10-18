@@ -416,7 +416,7 @@ try{ checks:{
   await picker().locator('[data-file="extra-15.txt"]').click();await shown().locator('.cm-content').waitFor();
   await shown().locator('[data-file-scroll]').evaluate(el=>{el.scrollTop=el.scrollHeight;el.dispatchEvent(new Event('scroll',{bubbles:true}));});
   await shown().locator('[data-deck-strip]').waitFor();
-  const foldedFace=await shown().locator('[data-deck-strip]').evaluate(el=>{const f=el.querySelector('[data-side-face]'),halo=f.querySelector('[data-halo]'),r=f.getBoundingClientRect(),box=el.getBoundingClientRect(),scale=new DOMMatrix(getComputedStyle(f).transform).a,out=-parseFloat(getComputedStyle(halo,'::before').top)*scale;return {top:r.top-out-box.top,bottom:box.bottom-r.bottom-out};});
+  const foldedFace=await shown().locator('[data-deck-strip]').evaluate(el=>{const f=el.querySelector('[data-side-face]'),ring=f.querySelector('[data-halo-ring] circle'),r=ring.getBoundingClientRect(),box=el.getBoundingClientRect(),scale=new DOMMatrix(getComputedStyle(f).transform).a,out=parseFloat(getComputedStyle(ring).strokeWidth)*scale/2;return {top:r.top-out-box.top,bottom:box.bottom-r.bottom-out};});
   assert(foldedFace.top>=3.9&&foldedFace.bottom>=3.9,'folded avatar touches capsule edge: '+JSON.stringify(foldedFace));
   // Scrolling a folded deck into view changes the scroll-owned fold.
   // Hit its already-painted center, as the person's tap does.
