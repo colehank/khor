@@ -15,7 +15,7 @@ cd apps/gui
 
 三个终端使用仓库实际安装的 xterm 6、FitAddon 与可选 WebGL addon：
 
-1. 现有 `terminalTheme(..., follow)`，跟随 khor 底色，ANSI 16 色不变。
+1. 原有跟随模式的对照：khor 底色 + 旧 ANSI 16 色表。实现后仍保留此历史基线。
 2. 现有上游预设 Catppuccin Latte / Mocha，或 Tokyo Day / Night，完整色表不改值。
 3. 同一套预设加 xterm 的 `minimumContrastRatio`，可选关闭、3、4.5、7。
 

@@ -842,3 +842,9 @@ Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印�
 ### 独立会话内标签与有意义的移动（2026-10-18）
 
 每次 ＋ 产生独立持久起始标签，文件／网页原位更新其 ID 和观看句柄；每标签保存自己的导航与草稿。旧单例入口迁移为真实标签；关闭最后一枚回到会话。内外层共用 `TabStrip`；只在原集合的选中项改变时移动玻璃，不以新增、关闭或展开伪造跳转。门：`npm run content-model`、`npm run session-content` 与节点 `tabs::tests::blank_content_requests_are_distinct_and_retry_without_duplicates`。
+
+### 终端颜色的观看端策略（2026-10-19）
+
+| 规则 | 门 |
+|---|---|
+| 跟随模式保留 khor 底色并按明暗提供不同 ANSI；自动家族跟明暗，已有固定／DIY 不迁移；标准保护 4.5，明确关闭保留；配色、保护和跨窗口通知走统一解析，不改变程序 RGB 或标准扩展色表 | `npm run terminal-colors`：在旧版缺少 `terminalAppearance` 时先红；浅深、固定与自动、关闭／非法值、重载、跨窗口、自定义、预览隔离。真实 xterm、缓冲／滚动／连接保持由正式组件隔离验收，半透明与原生系统列实机验收 |

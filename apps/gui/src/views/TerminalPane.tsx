@@ -125,7 +125,7 @@ import { followsShellTmux, wheelsToShellTmux } from "@/lib/term-shell-tmux";
 import { countsGain } from "@/lib/term-gain";
 import { notesFirstTouch } from "@/lib/term-first-touch";
 import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
-import { KHOR_ANSI, terminalTheme, onTermTheme } from "@/lib/term-theme";
+import { KHOR_ANSI, terminalTheme, terminalAppearance, onTermTheme } from "@/lib/term-theme";
 import { windowOpacity, onWindowSurface } from "@/lib/window-surface";
 import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
@@ -323,20 +323,6 @@ function b64bytes(b64: string): Uint8Array {
   const out = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
   return out;
-}
-
-/**
- * The app's theme, resolved to the concrete colours xterm takes.
- *
- * Read off the pane's own computed style rather than re-declared: the
- * tokens (`--card`/`--card-foreground` through `--term-bg`/`--term-fg`)
- * are the one place the theme lives, and a hex copied here would be the
- * second copy that drifts. Selection stays xterm's default — a alpha
- * wash that works on both grounds.
- */
-function themeOf(el: HTMLElement) {
-  const theme = terminalTheme(el);
-  return theme;
 }
 
 /** The pane's font, resolved the same way for the same reason — xterm
@@ -1503,7 +1489,7 @@ export function TerminalPane({
       fontFamily: font.family,
       fontSize: font.size,
       lineHeight: 1,
-      theme: themeOf(box),
+      ...terminalAppearance(box),
       // **The cursor is the focus** (2026-10-03): the chosen shape while
       // the terminal has the keys, its hollow or thin form when it does
       // not. The pane draws no ring of its own (`app.css`). The shape and
@@ -2940,21 +2926,15 @@ export function TerminalPane({
       const term = termRef.current;
       if (term) {
         term.options.allowTransparency = windowOpacity() < 1;
-        term.options.theme = themeOf(box);
+        term.options = terminalAppearance(box);
         term.refresh(0, term.rows - 1);
       }
     };
     const stopTheme = onTermTheme(apply);
     const stopSurface = onWindowSurface(apply);
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    media.addEventListener("change", apply);
-    const observer = new MutationObserver(apply);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class"] });
     return () => {
       stopTheme();
       stopSurface();
-      media.removeEventListener("change", apply);
-      observer.disconnect();
     };
   }, []);
 
@@ -3745,7 +3725,7 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
       lineHeight: 1,
       // Snapshots use the same selected palette as live terminals;
       // the read-only state is conveyed by their header and input mode.
-      theme: themeOf(box),
+      ...terminalAppearance(box),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -3769,16 +3749,14 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
       term.scrollToBottom();
       box.setAttribute("data-term-ended-drawn", "");
     });
-    const repaint = () => { term.options.allowTransparency = windowOpacity() < 1; term.options.theme = themeOf(box); };
+    const repaint = () => { term.options.allowTransparency = windowOpacity() < 1; term.options = terminalAppearance(box); };
     const stopTheme = onTermTheme(repaint), stopSurface = onWindowSurface(repaint);
-    const themeObserver = new MutationObserver(repaint);
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     const seen = new ResizeObserver(refit);
     seen.observe(box);
     return () => {
       alive = false;
       seen.disconnect();
-      themeObserver.disconnect(); stopTheme(); stopSurface();
+      stopTheme(); stopSurface();
       stopGlass();
       term.dispose();
     };

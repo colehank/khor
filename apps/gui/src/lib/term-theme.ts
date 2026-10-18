@@ -14,16 +14,27 @@ export const BASE_KEYS = ["background", "foreground", "cursor", "cursorAccent", 
 export type ColorKey = typeof ANSI_KEYS[number] | typeof BASE_KEYS[number];
 export type Palette = Record<ColorKey, string> & { extendedAnsi?: string[] };
 export type UserPalette = { id: string; name: string; theme: Palette };
-export type ThemeChoice = { selected: string; customs: UserPalette[] };
+export type ThemeChoice = { selected: string; customs: UserPalette[]; contrast?: number };
 export type ThemeError = "json" | "colors" | "extended" | "large" | "full";
-export const DEFAULT_THEME: ThemeChoice = { selected: "follow", customs: [] };
+export const DEFAULT_CONTRAST = 4.5;
+export const CONTRAST_LEVELS = [1, 3, 4.5, 7] as const;
+export const DEFAULT_THEME: ThemeChoice = { selected: "follow", customs: [], contrast: DEFAULT_CONTRAST };
 
-/** Existing khor ANSI16, preserved for Follow. This is a terminal color
- * table, not app chrome. 16–255 retain xterm's standard cube and ramp. */
+/** Legacy colour table retained for fallback and baseline comparisons.
+ * Follow now resolves its ANSI accents from the mature light/dark pair. */
 export const KHOR_ANSI = ["#000000", "#cc0000", "#4e9a06", "#c4a000", "#3465a4", "#75507b", "#06989a", "#d3d7cf", "#555753", "#ef2929", "#8ae234", "#fce94f", "#729fcf", "#ad7fa8", "#34e2e2", "#eeeeec"];
 
 export const PRESETS = Object.entries(presets).map(([id, p]) => ({ id, ...p, theme: p.theme as Palette }));
-const validId = (id: string, customs: UserPalette[]) => id === "follow" || PRESETS.some(p => p.id === id) || customs.some(p => p.id === id);
+export const THEME_FAMILIES = [
+  { id: "auto-catppuccin", name: "Catppuccin", light: "latte", dark: "mocha" },
+  { id: "auto-tokyo", name: "Tokyo Night / Day", light: "tokyo-day", dark: "tokyo" },
+] as const;
+const validId = (id: string, customs: UserPalette[]) => id === "follow" || THEME_FAMILIES.some(p => p.id === id) || PRESETS.some(p => p.id === id) || customs.some(p => p.id === id);
+const contrastOf = (choice: ThemeChoice) => CONTRAST_LEVELS.some(v => v === choice.contrast) ? choice.contrast! : DEFAULT_CONTRAST;
+function terminalMode(): "light" | "dark" {
+  const stamped = document.documentElement.dataset.theme;
+  return stamped === "light" || stamped === "dark" ? stamped : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 /** HEX files are portable and need no CSS evaluator. Short hex expands;
  * alpha is allowed on the selection, as in xterm's theme API. */
 export function colorHex(v: unknown, alpha = false): string | null {
@@ -67,7 +78,7 @@ function sanitize(raw: unknown): ThemeChoice {
       if (p && typeof p.id === "string" && p.id.startsWith("custom-") && p.id.length < 100 && typeof p.name === "string" && p.name.trim() && !customs.some(o => o.id === p.id)) customs.push({ id: p.id, name: p.name.trim().slice(0, 48), theme: readPalette(p.theme, PRESETS[0].theme) });
     } catch { /* One broken palette does not hide the others. */ }
   }
-  return { selected: typeof v.selected === "string" && validId(v.selected, customs) ? v.selected : "follow", customs };
+  return { selected: typeof v.selected === "string" && validId(v.selected, customs) ? v.selected : "follow", customs, contrast: contrastOf(v as ThemeChoice) };
 }
 let cached: ThemeChoice | null = null;
 export function termTheme(): ThemeChoice {
@@ -83,6 +94,7 @@ export function setTermTheme(next: ThemeChoice): boolean {
   return persisted;
 }
 export function onTermTheme(run: () => void): () => void {
+  followMode();
   window.addEventListener(CHANGED, run);
   return () => window.removeEventListener(CHANGED, run);
 }
@@ -93,9 +105,23 @@ export function useTermTheme(): ThemeChoice {
   return value;
 }
 export function chosenPalette(choice = termTheme()): Palette | null {
-  return PRESETS.find(p => p.id === choice.selected)?.theme ?? choice.customs.find(p => p.id === choice.selected)?.theme ?? null;
+  const family = THEME_FAMILIES.find(p => p.id === choice.selected);
+  const id = family ? family[terminalMode()] : choice.selected;
+  return PRESETS.find(p => p.id === id)?.theme ?? choice.customs.find(p => p.id === id)?.theme ?? null;
+}
+let following = false;
+/** One appearance notification path for live/retained panes, ended screens
+ * and previews. Automatic palettes update their CSS surface at the same beat. */
+function followMode(): void {
+  if (following) return;
+  following = true;
+  const changed = () => { wearTermPalette(); window.dispatchEvent(new Event(CHANGED)); };
+  const observer = new MutationObserver(changed);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", changed);
 }
 export function wearTermPalette(): void {
+  followMode();
   const p = chosenPalette();
   const root = document.documentElement;
   for (const [key, value] of [["--term-palette-bg", p?.background], ["--term-palette-fg", p?.foreground]] as const) {
@@ -108,7 +134,15 @@ export function terminalTheme(el: HTMLElement, choice = termTheme()): ITheme {
   const css = getComputedStyle(el);
   const background = getComputedStyle(document.documentElement).getPropertyValue("--canvas-solid").trim();
   const foreground = css.color;
-  return { background, foreground, cursor: foreground, cursorAccent: background, ...Object.fromEntries(ANSI_KEYS.map((k, i) => [k, KHOR_ANSI[i]])) };
+  // Follow keeps khor's ground and ink. Its ANSI accents use the existing
+  // upstream light/dark pair; standard indices 16–255 remain untouched.
+  const ansi = presets[terminalMode() === "light" ? "latte" : "mocha"].theme;
+  return { background, foreground, cursor: foreground, cursorAccent: background, ...Object.fromEntries(ANSI_KEYS.map(k => [k, ansi[k]])) };
+}
+/** Rendering policy belongs to this viewer. Updating these options never
+ * rewrites cells, resets the terminal or changes the program's RGB bytes. */
+export function terminalAppearance(el: HTMLElement, choice = termTheme(), preview?: Palette): { theme: ITheme; minimumContrastRatio: number } {
+  return { theme: preview ? { ...preview, extendedAnsi: preview.extendedAnsi?.slice() } : terminalTheme(el, choice), minimumContrastRatio: contrastOf(choice) };
 }
 /** Resolve Follow to an opaque, portable HEX palette for cloning/export. */
 export function clonePalette(el: HTMLElement, choice = termTheme()): Palette {
@@ -121,7 +155,7 @@ export function clonePalette(el: HTMLElement, choice = termTheme()): Palette {
     if (!rgb || rgb.length !== 3) return PRESETS[0].theme.foreground;
     return "#" + rgb.map(n => Math.round(n).toString(16).padStart(2, "0")).join("");
   };
-  const p = Object.fromEntries([...ANSI_KEYS, ...BASE_KEYS].map(k => [k, hex(t[k] ?? (k === "selectionBackground" ? KHOR_ANSI[4] : k === "selectionForeground" ? t.background! : t.foreground!))])) as unknown as Palette;
+  const p = Object.fromEntries([...ANSI_KEYS, ...BASE_KEYS].map(k => [k, hex(t[k] ?? (k === "selectionBackground" ? t.blue! : k === "selectionForeground" ? t.background! : t.foreground!))])) as unknown as Palette;
   if (t.extendedAnsi) p.extendedAnsi = t.extendedAnsi.slice();
   return p;
 }
@@ -137,10 +171,10 @@ export function savePalette(name: string, theme: Palette, id?: string): string {
   if (!choice.customs.some(p => p.id === id) && choice.customs.length >= 50) throw new Error("full" satisfies ThemeError);
   const picked = id && choice.customs.some(p => p.id === id) ? id : `custom-${crypto.randomUUID()}`;
   const next = { id: picked, name: name.trim().slice(0, 48), theme: readPalette(theme, PRESETS[0].theme) };
-  if (!setTermTheme({ selected: picked, customs: [...choice.customs.filter(p => p.id !== picked), next] })) throw new Error("storage");
+  if (!setTermTheme({ ...choice, selected: picked, customs: [...choice.customs.filter(p => p.id !== picked), next] })) throw new Error("storage");
   return picked;
 }
 export function removePalette(id: string): boolean {
   const c = termTheme();
-  return setTermTheme({ selected: c.selected === id ? "follow" : c.selected, customs: c.customs.filter(p => p.id !== id) });
+  return setTermTheme({ ...c, selected: c.selected === id ? "follow" : c.selected, customs: c.customs.filter(p => p.id !== id) });
 }

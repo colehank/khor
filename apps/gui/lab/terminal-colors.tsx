@@ -5,7 +5,7 @@ import {createRoot} from 'react-dom/client';
 import {Terminal,type ITheme} from '@xterm/xterm';
 import {FitAddon} from '@xterm/addon-fit';
 import {WebglAddon} from '@xterm/addon-webgl';
-import {PRESETS,terminalTheme} from '@/lib/term-theme';
+import {PRESETS,KHOR_ANSI,ANSI_KEYS,terminalTheme} from '@/lib/term-theme';
 import '@xterm/xterm/css/xterm.css';
 import '@/styles/tokens.css';
 import './terminal-colors.css';
@@ -86,7 +86,7 @@ function TerminalSample({policy,pair,mode,scene,ratio,engine,epoch}:{policy:Poli
     if(engine==='webgl')try{gl=new WebglAddon();term.loadAddon(gl);renderer='WebGL';}catch{renderer='DOM · WebGL unavailable';}
     const draw=async()=>{
       const run=++serial,options=latest.current;
-      const theme=policy==='follow'?terminalTheme(host,{selected:'follow',customs:[]}):paired(options.pair,options.mode);
+      const theme=policy==='follow'?{...terminalTheme(host,{selected:'follow',customs:[]}),...Object.fromEntries(ANSI_KEYS.map((k,i)=>[k,KHOR_ANSI[i]]))}:paired(options.pair,options.mode);
       term.options.minimumContrastRatio=policy==='protected'?options.ratio:1;
       term.options.theme=theme;
       host.style.backgroundColor=theme.background||'';
@@ -124,7 +124,7 @@ function TerminalSample({policy,pair,mode,scene,ratio,engine,epoch}:{policy:Poli
     return()=>{disposed=true;serial++;resize.disconnect();term.dispose();};
   },[engine,policy]);
   useEffect(()=>paint.current(),[pair,mode,scene,ratio,epoch]);
-  const names={follow:'现有跟随',pair:'成对配色',protected:'配色 + 可读性保护'};
+  const names={follow:'原有跟随',pair:'成对配色',protected:'配色 + 可读性保护'};
   const hints={follow:'同一套 ANSI 色表',pair:pair==='catppuccin'?'Catppuccin Latte / Mocha':'Tokyo Day / Night',protected:`xterm 最低对比度 ${ratio}:1`};
   return <article data-policy={policy}>
     <header><h2>{names[policy]}</h2><p>{hints[policy]}</p></header>

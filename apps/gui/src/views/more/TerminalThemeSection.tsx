@@ -2,16 +2,16 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { inApp, saveTerminalPalette } from "@/api";
-import { gui } from "@/gen/catalog";
+import { config, gui } from "@/gen/catalog";
 import { MoreSection } from "@/views/more/MorePage";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ANSI_KEYS, BASE_KEYS, PRESETS, colorHex, clonePalette, importPalette, onTermTheme, readPalette, removePalette, savePalette, setTermTheme, termTheme, terminalTheme, useTermTheme, THEME_FILE_MAX, type Palette, type ColorKey } from "@/lib/term-theme";
+import { ANSI_KEYS, BASE_KEYS, PRESETS, THEME_FAMILIES, DEFAULT_CONTRAST, colorHex, clonePalette, importPalette, onTermTheme, readPalette, removePalette, savePalette, setTermTheme, termTheme, terminalAppearance, useTermTheme, THEME_FILE_MAX, type Palette, type ColorKey } from "@/lib/term-theme";
 import { useWindowSupport } from "@/lib/window-surface";
 
-const SAMPLE = "\x1b[32mzgh@MacLab\x1b[0m \x1b[34m~/khor\x1b[0m\r\n中文 · English · \x1b[31merror\x1b[0m · \x1b[33mwarning\x1b[0m\r\n\x1b[30m0 \x1b[31m1 \x1b[32m2 \x1b[33m3 \x1b[34m4 \x1b[35m5 \x1b[36m6 \x1b[37m7\x1b[0m    \x1b[90m8 \x1b[91m9 \x1b[92m10 \x1b[93m11 \x1b[94m12 \x1b[95m13 \x1b[96m14 \x1b[97m15\x1b[0m\r\n\x1b[38;5;16m16\x1b[0m · \x1b[38;2;128;160;200mRGB\x1b[0m > ";
+const SAMPLE = "\x1b[32mzgh@MacLab\x1b[0m \x1b[34m~/khor\x1b[0m\r\n中文 · English · \x1b[31merror\x1b[0m · \x1b[33mwarning\x1b[0m\r\n\x1b[30m0 \x1b[31m1 \x1b[32m2 \x1b[33m3 \x1b[34m4 \x1b[35m5 \x1b[36m6 \x1b[37m7\x1b[0m    \x1b[90m8 \x1b[91m9 \x1b[92m10 \x1b[93m11 \x1b[94m12 \x1b[95m13 \x1b[96m14 \x1b[97m15\x1b[0m\r\n\x1b[38;5;16m16\x1b[0m · \x1b[38;2;128;160;200mRGB\x1b[0m \x1b[48;2;31;31;31m RGB background \x1b[0m > ";
 
 /** A real xterm preview; it has no host, input handler or live session. */
 export function TerminalThemePreview({ theme }: { theme?: Palette }) {
@@ -23,19 +23,17 @@ export function TerminalThemePreview({ theme }: { theme?: Palette }) {
     const el = box.current;
     if (!el) return;
     const css = getComputedStyle(el);
-    const term = new Terminal({ cols: 58, rows: 4, disableStdin: true, scrollback: 0, cursorBlink: false, fontFamily: css.fontFamily, fontSize: parseFloat(css.fontSize), theme: theme ?? terminalTheme(el) });
+    const term = new Terminal({ cols: 58, rows: 4, disableStdin: true, scrollback: 0, cursorBlink: false, fontFamily: css.fontFamily, fontSize: parseFloat(css.fontSize), ...terminalAppearance(el, termTheme(), theme) });
     termRef.current = term;
     const fit = new FitAddon(); term.loadAddon(fit); term.open(el); term.write(SAMPLE);
     (el as HTMLDivElement & { __xterm?: Terminal }).__xterm = term;
-    const paint = () => { term.options.theme = themeRef.current ?? terminalTheme(el); };
-    const observer = new MutationObserver(paint);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    const paint = () => { term.options = terminalAppearance(el, termTheme(), themeRef.current); };
     const stop = onTermTheme(paint);
     const resized = new ResizeObserver(() => { if (el.clientWidth) fit.fit(); }); resized.observe(el);
     setReady(true);
-    return () => { observer.disconnect(); resized.disconnect(); stop(); term.dispose(); termRef.current = null; };
+    return () => { resized.disconnect(); stop(); term.dispose(); termRef.current = null; };
   }, []);
-  useEffect(() => { if (ready && termRef.current && box.current) termRef.current.options.theme = theme ?? terminalTheme(box.current); }, [ready, theme]);
+  useEffect(() => { if (ready && termRef.current && box.current) termRef.current.options = terminalAppearance(box.current, termTheme(), theme); }, [ready, theme]);
   return <div ref={box} data-term-theme-preview className="overflow-hidden rounded-md p-in font-term text-term text-foreground" style={{ backgroundColor: theme?.background ?? "var(--term-bg)", color: theme?.foreground ?? "var(--term-fg)", height: "var(--theme-preview-h)", fontFamily: "var(--font-term)", fontSize: "var(--text-term)" }} />;
 }
 
@@ -76,7 +74,7 @@ export function TerminalThemeSection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
   const custom = choice.customs.find(p => p.id === choice.selected);
-  const names = [{ value: "follow", label: gui.term_theme_follow }, ...PRESETS.map(p => ({ value: p.id, label: ({ soft: gui.term_theme_soft, warm: gui.term_theme_warm, contrast: gui.term_theme_contrast } as Record<string, string>)[p.id] ?? p.name, group: gui.term_theme_presets })), ...choice.customs.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_mine }))];
+  const names = [{ value: "follow", label: gui.term_theme_follow }, ...THEME_FAMILIES.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_automatic })), ...PRESETS.map(p => ({ value: p.id, label: ({ soft: gui.term_theme_soft, warm: gui.term_theme_warm, contrast: gui.term_theme_contrast } as Record<string, string>)[p.id] ?? p.name, group: gui.term_theme_presets })), ...choice.customs.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_mine }))];
   const selectedName = names.find(n => n.value === choice.selected)?.label ?? gui.term_theme_follow;
   const clone = () => clonePalette(sectionRef.current ?? document.body);
   const edit = () => { setError(null); const theme = clone(); lastPreview.current = theme; setEditor({ name: custom?.name ?? gui.term_theme_copy_name(selectedName), theme, id: custom?.id }); setExtra(theme.extendedAnsi?.join(" ") ?? ""); };
@@ -119,6 +117,14 @@ export function TerminalThemeSection() {
         <span className="min-w-0 flex-1 text-body">{gui.term_theme_palette}</span>
         <PopupButton label={gui.term_theme_palette} value={choice.selected} choices={names} onPick={selected => { const stored = setTermTheme({ ...choice, selected }); setNotice(null); setError(stored ? null : gui.term_theme_storage_error); }} mark={{ "data-setting-select": "term-theme" }} className="-mr-xxs" />
       </div>
+      <div data-setting-row="popup" data-setting-row-name="term-contrast" className="flex items-center gap-row px-row py-in">
+        <span className="min-w-0 flex-1 text-body">{gui.term_theme_readability}</span>
+        <PopupButton label={gui.term_theme_readability} value={String(choice.contrast ?? DEFAULT_CONTRAST)} choices={[
+          {value:"1",label:config.off}, {value:"3",label:gui.term_theme_protect_light},
+          {value:"4.5",label:gui.term_theme_protect_standard}, {value:"7",label:gui.term_theme_protect_strong},
+        ]} onPick={value => { const stored = setTermTheme({...choice,contrast:Number(value)}); setNotice(null);setError(stored?null:gui.term_theme_storage_error); }} mark={{"data-setting-select":"term-contrast"}} className="-mr-xxs" />
+      </div>
+      <p className="px-row pb-in text-callout text-muted-foreground">{gui.term_theme_readability_note}</p>
       <div className="px-row pb-in"><TerminalThemePreview /></div>
       <div className="flex flex-wrap items-center justify-end gap-in px-row pb-in">
         <Button data-term-theme-edit onClick={edit}>{custom ? gui.accounts_edit : gui.term_theme_customize}</Button>
