@@ -9,9 +9,8 @@ import { PAGES } from '@/views/PagesKind';
 import { ContentScope } from '@/components/ContentScope';
 import { ContentTabsGlyph, DeckBand, TabsGlyph, TabSheetRows } from '@/components/SessionBar';
 import { SessionFace, fileKind, pageKind, workspaceKind } from '@/components/SessionFace';
-import { FileKindIcon } from '@/components/FileKindIcon';
 import { GlassCircle } from '@/components/Glass';
-import { IconBack, IconBrowser, IconClose, IconFiles, IconMore, IconSearch } from '@/components/icons';
+import { IconBack, IconClose, IconMore, IconSearch } from '@/components/icons';
 import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { SideFind } from '@/components/SideFind';
@@ -29,14 +28,16 @@ import { TabAvatar, type TabFace } from '@/browse/TabStrip';
 
 const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
 const leaf = (path: string) => path.replace(/[\\/]$/, '').split(/[\\/]/).pop() || path;
-export function ContentGlyph({tab}: {tab: ContentTab}) {
-  return <span className="mobile-content-glyph">{contentView(tab)==='file'?<FileKindIcon name={leaf(tab.url)}/>:contentView(tab)==='page'?<IconBrowser/>:<IconFiles/>}</span>;
-}
 export function contentContext(tab:ContentTab,row:SessionRow|undefined,devices:DeviceRow[]) {
   if(contentView(tab)==='page')return tab.url.replace(/^https?:\/\//,'').replace(/\/$/,'');
   const root=sessionCwdOnScreen(row),dir=contentView(tab)==='file'?directoryOf(tab.url):tab.url;
   const folder=root&&(dir===root||dir.startsWith(root+'/')||dir.startsWith(root+'\\'))?leaf(root)+dir.slice(root.length):dir;
   return [devices.find(d=>d.id===tab.device)?.name,folder].filter(Boolean).join(' · ');
+}
+/** One content identity for the desktop strip and mobile tab overview. */
+export function contentTabFace(tab:ContentTab,devices:DeviceRow[],iconOf:(url:string)=>string|undefined):TabFace {
+  return {id:tab.id,label:contentName(tab),path:tab.url,face:devices.find(d=>d.id===tab.device)?.face||null,
+    mark:contentView(tab)==='file'?fileKind(tab.url):pageKind(iconOf(tab.url))};
 }
 export type DeckOwner={face:TabFace;content:SessionContent;navigation:ContentNavigation;onClose:()=>void};
 export function ContentOwnerIdentity({face,title,children,editing=false}: {face:TabFace;title?:string;children?:ReactNode;editing?:boolean}) {
@@ -72,9 +73,9 @@ function PickerBand({source,onSource,onEdit,text}: {source:ContentSource;onSourc
   const faces:TabFace[]=[{id:'workspace',label:gui.tree_search,path:'',face:null},{id:'browser',label:gui.page_address,path:'',face:null}];
   return <><ContentScope value={source} onChange={onSource} inPill/><DeckBand faces={faces} active={source} onFocus={id=>onSource(id as ContentSource)} onTitle={onEdit} renderFace={(f,role)=><span className="content-picker-prompt">{role==='cur'?(text||f.label):f.label}</span>}/></>;
 }
-function WorkspaceContext({root, device, history, make}: {root: string; device: DeviceRow; history: () => void; make: (kind:'file'|'dir') => void}) {
+function WorkspaceContext({root, device, repo, history, make}: {root: string; device: DeviceRow; repo:boolean; history: () => void; make: (kind:'file'|'dir') => void}) {
   const pending=useRef<'file'|'dir'|null>(null);
-  return <div className="mobile-content-location"><TabAvatar f={{id:device.id,label:leaf(root),path:root,face:device.face,mark:workspaceKind(false)}} bare="size-list-face" seat="row"/><strong title={root}>{leaf(root)}</strong>
+  return <div className="mobile-content-location"><TabAvatar f={{id:device.id,label:leaf(root),path:root,face:device.face,mark:workspaceKind(repo)}} bare="size-list-face" seat="row"/><strong title={root}>{leaf(root)}</strong>
     <DropdownMenu><DropdownMenuTrigger asChild><button aria-label={gui.content_workspace_actions}><IconMore/></button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" onCloseAutoFocus={e=>{if(!pending.current)return;e.preventDefault();const kind=pending.current;pending.current=null;make(kind);}}>
         <DropdownMenuItem onSelect={()=>{pending.current='file';}}>{gui.file_new}</DropdownMenuItem>
@@ -134,7 +135,7 @@ export function ContentPicker({row, devices, navigation, onOpen, face, content, 
   };
   return <div className="mobile-content-picker" data-desktop-picker={desktop||undefined}>
     <div className="mobile-content-workspace" hidden={state.source!=='workspace'}>
-      {root?<SideWorkspace key={device.id+' '+root} machine={device.name} here={device.me} root={root} query={query} onQuery={setQuery} findLeading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} makeRequest={make} onSearchEnter={()=>void enter()} onOpenContent={(path,line)=>onOpen(device,path,'file',line)} treeHead={history=><WorkspaceContext root={root} device={device} history={history} make={kind=>{setQuery('');setMake({kind,at:Date.now()});}}/>}/>:<><SideFind label={gui.tree_search} query={query} onQuery={setQuery} leading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} onEnter={()=>void enter()}/><div className="session-content-unknown">{gui.content_no_directory}</div></>}
+      {root?<SideWorkspace key={device.id+' '+root} machine={device.name} here={device.me} root={root} query={query} onQuery={setQuery} findLeading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} makeRequest={make} onSearchEnter={()=>void enter()} onOpenContent={(path,line)=>onOpen(device,path,'file',line)} treeHead={(history,repo)=><WorkspaceContext repo={repo} root={root} device={device} history={history} make={kind=>{setQuery('');setMake({kind,at:Date.now()});}}/>}/>:<><SideFind label={gui.tree_search} query={query} onQuery={setQuery} leading={desktop?<ContentScope value={state.source} onChange={source}/>:undefined} onEnter={()=>void enter()}/><div className="session-content-unknown">{gui.content_no_directory}</div></>}
     </div>
     {!desktop&&state.source==='workspace'&&<MobileContentDeck session={row.id} face={face} content={content} navigation={navigation} onClose={onClose} editing={searching} onEditEnd={()=>{(document.activeElement as HTMLElement|null)?.blur();setSearching(false);}}>{searching?<ContentSearch label={gui.tree_search} value={query} onChange={setQuery} onEditing={setSearching} onEnter={()=>void enter()}/>:<PickerBand source={state.source} onSource={source} onEdit={()=>setSearching(true)} text={query}/>}</MobileContentDeck>}
 
@@ -159,7 +160,7 @@ export function ContentOverview({session,row,devices,content,navigation,onPick,f
   const state=navigation.get(session),q=state.filter.toLocaleLowerCase();
   const [searching,setSearching]=useState(false);
   const tabs=content.allTabs.filter(t=>t.session===session&&contentView(t)!=='workspace'&&(contentName(t)+' '+t.url+' '+contentContext(t,row,devices)).toLocaleLowerCase().includes(q));
-  const tabFaces=tabs.map(t=>({id:t.id,label:contentName(t),path:t.url,face:devices.find(d=>d.id===t.device)?.face||null,mark:contentView(t)==='file'?fileKind(t.url):pageKind(undefined)}));
+  const tabFaces=tabs.map(t=>contentTabFace(t,devices,content.pageIcon));
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===(state.recent||state.key));
   return <div className="mobile-content-overview">
     <div className="mobile-content-overview-list">

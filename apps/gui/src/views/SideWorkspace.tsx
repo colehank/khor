@@ -30,7 +30,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { fetchGitLog, fetchGitStatus, searchIn, type Found, type GitLog } from "@/api";
+import { fetchCheckout, fetchGitLog, fetchGitStatus, searchIn, type Found, type GitLog } from "@/api";
 import { GlassCircle } from "@/components/Glass";
 import { IconPlus } from "@/components/icons";
 import { SideFind } from "@/components/SideFind";
@@ -96,7 +96,7 @@ export function SideWorkspace({
   onQuery?: (query: string) => void;
   onSearchEnter?: () => void;
   makeRequest?: { kind: "file" | "dir"; at: number };
-  treeHead?: (openHistory: () => void) => ReactNode;
+  treeHead?: (openHistory: () => void, repo: boolean) => ReactNode;
   /** **Where the seat was left** (UX-47), read once at mount: the file
       open over the tree. Absent, the seat starts at the tree (or at
       `start`). */
@@ -132,10 +132,17 @@ export function SideWorkspace({
     startSeen.current = start;
   }, [start]);
   const [git, setGit] = useState<GitStatus | null>(null);
+  // Repository identity is a cheap independent answer, just as in the
+  // main workspace list. A failed/slow status or a detached HEAD cannot
+  // turn an existing checkout into a folder.
+  const [checkout, setCheckout] = useState<{machine:string;root:string;repo:boolean}|null>(null);
   const [gitAt, setGitAt] = useState(0);
   useEffect(() => {
     let live = true;
     setGit(null);
+    fetchCheckout(machine, root).then(repo => {
+      if(live)setCheckout({machine,root,repo});
+    }, () => {});
     fetchGitStatus(machine, root)
       .then((g) => live && setGit(g))
       .catch(() => live && setGit(null));
@@ -276,7 +283,7 @@ export function SideWorkspace({
             }}
           />
         ) : (
-          <>{treeHead?.(() => setHistoryOpen(true))}<FileTree
+          <>{treeHead?.(() => setHistoryOpen(true), checkout?.machine===machine&&checkout.root===root?checkout.repo:git!==null)}<FileTree
             key={`${machine} ${root}`}
             machine={machine}
             root={root}

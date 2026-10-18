@@ -126,7 +126,7 @@ export type BodyProps = {
   onTitle?: (title: string) => void;
   /** The page's icon, as something an `<img>` can draw, for the corner of
       its row. */
-  onIcon?: (src: string) => void;
+  onIcon?: (src: string, at: string) => void;
   /** khor is fetching something for this tab, or has stopped
       (docs/SHELL.md 第十二轮). **What the body knows and the shell does
       not**: the shell asked for a place, and only the body can say

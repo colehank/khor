@@ -54,7 +54,7 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { fetchPageIcons, onPageWord, openLink, openTab, pageDeck, pageGround, pageStep, recentVisit, reveal, type DeviceRow } from "@/api";
+import { onPageWord, openLink, openTab, pageDeck, pageGround, pageStep, recentVisit, reveal, type DeviceRow } from "@/api";
 import { revealHere } from "@/views/chat-files";
 import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
 import { nativeDeckHere, readDeck, seatControl } from "@/lib/native-deck";
@@ -70,6 +70,7 @@ import { GlassCircle, GlassItem } from "@/components/Glass";
 import { SideFind } from "@/components/SideFind";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
 import { FOLD_AT, foldStep, inkOver, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
+import { usePageIcons } from '@/hooks/use-page-icons';
 import { pageKind } from "@/components/SessionFace";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
@@ -116,18 +117,6 @@ function pillHost(path: string): string {
     (`pageKind`, UX-32). ⚠️ 墓碑 (2026-10-02 → UX-22): the browser's mark
     on every row. */
 const markOf = pageKind;
-
-/** The site a page is on, spelled as the node keys its kept icons
-    (`khor_node::favicon::origin`: `scheme://host[:port]`); `""` for
-    anything that is not an http(s) page. */
-function originOf(path: string): string {
-  try {
-    const u = new URL(path);
-    return u.protocol === "http:" || u.protocol === "https:" ? u.origin : "";
-  } catch {
-    return "";
-  }
-}
 
 /** What a tab calls itself: the way a browser tab wears a page's title
     rather than its URL. A machine with nothing open on it wears its own
@@ -264,24 +253,8 @@ export function BrowseLanding({
       body is only ever mounted for the tab in front and a tab loading
       behind one has to breathe too. */
   const load = useLoading();
-  /** Each tab's site icon, once its page has loaded here in this window. */
-  const [icons, setIcons] = useState<Map<string, string>>(new Map());
-  /** **And every icon fetched before, read off this disk by site**
-      (docs/SHELL.md 第五轮 第 8 条:「favicon 存盘…重开 app 就有」): a read
-      of the node's file that asks no site anything. Once, on mount. */
-  const [kept, setKept] = useState<Record<string, string>>({});
-  useEffect(() => {
-    let live = true;
-    fetchPageIcons().then(
-      (m) => live && setKept(m),
-      // A cache that cannot be read is rows wearing the browser's mark.
-      () => {},
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
-  const iconOf = (t: { id: string; path: string }) => icons.get(t.id) ?? kept[originOf(t.path)];
+  const pageIcons = usePageIcons();
+  const iconOf = (t: {path: string}) => pageIcons.iconOf(t.path);
   // An element, never a call — see `BrowseKind.Body`.
   const Body = kind.Body;
   // What the kind is holding on the machines the tabs name, so it can
@@ -741,10 +714,7 @@ export function BrowseLanding({
           // would leave the row on its bare address until the next word.
           onPlace={(place) => tabs.goTo(machine.id, place, tabs.current.title)}
           onTitle={(title) => tabs.goTo(machine.id, tabs.current.path, title)}
-          onIcon={(src) => {
-            const id = tabs.current.id;
-            setIcons((m) => (m.get(id) === src ? m : new Map(m).set(id, src)));
-          }}
+          onIcon={pageIcons.record}
           // What khor itself has out for this tab. Whether that is what
           // the row breathes on is `use-loading`'s call: in the app the
           // page's own report wins, and this only lights it.
