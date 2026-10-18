@@ -73,6 +73,8 @@ struct Page {
     told_steps: Option<(bool, bool)>,
     /// The view's scroll view, watched for `page:scroll` (round UX-4).
     scroll: Retained<AnyObject>,
+    /// Existing WebKit scroll views: root plus native overflow scrollers.
+    sheet_scrolls: Vec<Retained<AnyObject>>,
     /// Where it was last told to be, and when.
     told_y: f64,
     told_at: Option<std::time::Instant>,
@@ -614,6 +616,8 @@ struct SheetPan {
     offset: f64,
     start_h: f64,
     start_y: f64,
+    vertical: Option<bool>,
+    scroll: Option<Retained<AnyObject>>,
 }
 impl SheetPan {
     fn new(h: f64, full: f64) -> Self {
@@ -626,7 +630,28 @@ impl SheetPan {
             offset: 0.0,
             start_h: h,
             start_y: 0.0,
+            vertical: None,
+            scroll: None,
         }
+    }
+    /// Lifecycle cancellation must restore the same scroll view that drove
+    /// this pan, including a site's inner overflow view.
+    fn cancel(&mut self) -> bool {
+        let owned = self.owned;
+        if owned {
+            self.h = self.start_h;
+            if let Some(scroll) = self.scroll.as_ref() {
+                let at: NSPoint = unsafe { msg_send![&**scroll, contentOffset] };
+                let _: () = unsafe {
+                    msg_send![&**scroll, setContentOffset: NSPoint::new(at.x, self.start_y)]
+                };
+            }
+        }
+        self.last = None;
+        self.owned = false;
+        self.locked = false;
+        self.vertical = None;
+        owned
     }
 }
 pub fn sheet(tab: &str, geometry: Option<(f64, f64)>) {
@@ -650,11 +675,115 @@ pub fn sheet(tab: &str, geometry: Option<(f64, f64)>) {
                     page.sheet = Some(SheetPan::new(h, full));
                 }
             } else {
+                if page.sheet.as_mut().is_some_and(SheetPan::cancel) {
+                    if let Some(app) = APP.get() {
+                        let _ = app.emit_to(
+                            "main",
+                            "page:sheet",
+                            PageWord {
+                                tab: tab.to_owned(),
+                                text: "cancel,0,0".into(),
+                            },
+                        );
+                    }
+                }
                 page.sheet = None;
             }
+            watch_sheet_scrolls(tab, page);
         }
     });
 }
+/// Add targets and KVO to the existing recognizers; WebKit keeps their
+/// delegates, failure relationships, long presses and horizontal gestures.
+fn watch_sheet_scrolls(tab: &str, page: &mut Page) {
+    unsafe fn collect(view: *mut AnyObject, found: &mut Vec<Retained<AnyObject>>) {
+        if unsafe { msg_send![view, isKindOfClass: class!(UIScrollView)] } {
+            found.push(unsafe { Retained::retain(view) }.unwrap());
+        }
+        let subs: Retained<AnyObject> = unsafe { msg_send![view, subviews] };
+        let n: usize = unsafe { msg_send![&*subs, count] };
+        for i in 0..n {
+            let child: *mut AnyObject = unsafe { msg_send![&*subs, objectAtIndex: i] };
+            unsafe { collect(child, found) };
+        }
+    }
+    let mut found = vec![page.scroll.clone()];
+    if page.sheet.is_some() {
+        found.clear();
+        unsafe { collect(Retained::as_ptr(&page.scroll) as *mut AnyObject, &mut found) };
+    }
+    if let Some(s) = page.sheet.as_mut() {
+        if s.scroll.as_ref().is_some_and(|active| {
+            !found
+                .iter()
+                .any(|v| Retained::as_ptr(v) == Retained::as_ptr(active))
+        }) {
+            // A site's navigation can remove the scrolling element during
+            // a pan. End ownership before removing its observation.
+            if s.cancel() {
+                if let Some(app) = APP.get() {
+                    let _ = app.emit_to(
+                        "main",
+                        "page:sheet",
+                        PageWord {
+                            tab: tab.to_owned(),
+                            text: "cancel,0,0".into(),
+                        },
+                    );
+                }
+            }
+            s.scroll = None;
+        }
+    }
+    WATCH.with(|w| {
+        let key = NSString::from_str("contentOffset");
+        for old in &page.sheet_scrolls {
+            if found.iter().any(|v| Retained::as_ptr(v) == Retained::as_ptr(old)) { continue; }
+            unsafe {
+                let pan: *mut AnyObject = msg_send![&**old, panGestureRecognizer];
+                let _: () = msg_send![pan, removeTarget: &**w, action: objc2::sel!(sheetPan:)];
+                let _: () = msg_send![&**old, removeObserver: &**w, forKeyPath: &*key];
+            }
+        }
+        for view in &found {
+            if page.sheet_scrolls.iter().any(|v| Retained::as_ptr(v) == Retained::as_ptr(view)) { continue; }
+            unsafe {
+                let pan: *mut AnyObject = msg_send![&**view, panGestureRecognizer];
+                let _: () = msg_send![pan, addTarget: &**w, action: objc2::sel!(sheetPan:)];
+                let _: () = msg_send![&**view, addObserver: &**w, forKeyPath: &*key, options: 1usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
+            }
+        }
+    });
+    page.sheet_scrolls = found;
+}
+
+/// Pick the innermost vertical scroller under the touch. Ancestors can
+/// recognize simultaneously, but only this source may drive one sheet pan.
+unsafe fn sheet_scroll_at(page: &Page, rec: *mut AnyObject) -> *mut AnyObject {
+    let point: NSPoint = unsafe { msg_send![rec, locationInView: &*page.view] };
+    let mut hit: *mut AnyObject = unsafe {
+        msg_send![&*page.view, hitTest: point, withEvent: std::ptr::null_mut::<AnyObject>()]
+    };
+    while !hit.is_null() && hit != Retained::as_ptr(&page.view) as *mut AnyObject {
+        if page
+            .sheet_scrolls
+            .iter()
+            .any(|v| Retained::as_ptr(v) as *mut AnyObject == hit)
+        {
+            let size: NSSize = unsafe { msg_send![hit, contentSize] };
+            let bounds: NSRect = unsafe { msg_send![hit, bounds] };
+            let enabled: bool = unsafe { msg_send![hit, isScrollEnabled] };
+            let pan: *mut AnyObject = unsafe { msg_send![hit, panGestureRecognizer] };
+            let state: isize = unsafe { msg_send![pan, state] };
+            if enabled && (state == 1 || state == 2) && size.height > bounds.size.height + 1.0 {
+                return hit;
+            }
+        }
+        hit = unsafe { msg_send![hit, superview] };
+    }
+    Retained::as_ptr(&page.scroll) as *mut AnyObject
+}
+
 fn sheet_panned(rec: *mut AnyObject) {
     let Some(app) = APP.get() else { return };
     let mut word = None;
@@ -664,41 +793,53 @@ fn sheet_panned(rec: *mut AnyObject) {
         };
         let view: *mut AnyObject = unsafe { msg_send![rec, view] };
         for (tab, page) in pages.iter_mut() {
-            if Retained::as_ptr(&page.scroll) as *mut AnyObject != view {
+            if !page
+                .sheet_scrolls
+                .iter()
+                .any(|v| Retained::as_ptr(v) as *mut AnyObject == view)
+            {
                 continue;
             }
-            let Some(s) = page.sheet.as_mut() else { return };
             let state: isize = unsafe { msg_send![rec, state] };
+            if state == 1 && unsafe { sheet_scroll_at(page, rec) } != view {
+                return;
+            }
+            let Some(s) = page.sheet.as_mut() else { return };
+            if state != 1
+                && s.scroll
+                    .as_ref()
+                    .is_none_or(|v| Retained::as_ptr(v) as *mut AnyObject != view)
+            {
+                return;
+            }
             let point: NSPoint =
-                unsafe { msg_send![rec,translationInView:std::ptr::null_mut::<AnyObject>()] };
+                unsafe { msg_send![rec, translationInView: std::ptr::null_mut::<AnyObject>()] };
             let at: NSPoint = unsafe { msg_send![view, contentOffset] };
             if state == 1 {
-                s.last = Some(point);
+                // Translation already includes the recognition threshold.
+                // Consume it now instead of throwing away the first movement.
+                s.last = Some(NSPoint::new(0.0, 0.0));
                 s.owned = false;
                 s.locked = false;
+                s.vertical = None;
+                s.scroll = Some(unsafe { Retained::retain(view) }.unwrap());
                 s.offset = at.y;
                 s.start_h = s.h;
                 s.start_y = at.y;
-                return;
             }
             let Some(last) = s.last else { return };
-            if state == 4 || state == 5 {
-                if s.owned {
+            let touches: usize = unsafe { msg_send![rec, numberOfTouches] };
+            if state == 4 || state == 5 || touches > 1 {
+                if s.cancel() {
                     word = Some(PageWord {
                         tab: tab.clone(),
                         text: "cancel,0,0".into(),
                     });
-                    s.h = s.start_h;
-                    let _: () =
-                        unsafe { msg_send![view,setContentOffset:NSPoint::new(at.x,s.start_y)] };
                 }
-                s.last = None;
-                s.owned = false;
-                s.locked = false;
                 return;
             }
             let velocity: NSPoint =
-                unsafe { msg_send![rec,velocityInView:std::ptr::null_mut::<AnyObject>()] };
+                unsafe { msg_send![rec, velocityInView: std::ptr::null_mut::<AnyObject>()] };
             if state == 3 {
                 if s.owned {
                     word = Some(PageWord {
@@ -710,37 +851,47 @@ fn sheet_panned(rec: *mut AnyObject) {
                 s.owned = false;
                 return;
             }
-            if state != 2 {
+            if state != 1 && state != 2 {
                 return;
             }
             let inset: Insets = unsafe { msg_send![view, adjustedContentInset] };
             let top = -inset.top;
-            let delta = point.y - last.y;
+            let mut up = last.y - point.y;
             let began = !s.owned;
             if !s.owned {
-                if point.y.abs() <= point.x.abs() {
-                    s.last = Some(point);
+                if point.x == 0.0 && point.y == 0.0 {
                     return;
                 }
-                if !((delta < 0.0 && s.h < s.full - 1.0) || (delta > 0.0 && at.y <= top + 1.0)) {
-                    s.last = Some(point);
+                let vertical = *s.vertical.get_or_insert(point.y.abs() > point.x.abs());
+                s.last = Some(point);
+                if !vertical {
                     return;
                 }
+                let Some(left) = crate::page_sheet::handoff(
+                    s.h,
+                    s.full,
+                    up,
+                    (s.offset - top).max(0.0),
+                    (at.y - top).max(0.0),
+                ) else {
+                    s.offset = at.y;
+                    return;
+                };
+                up = left;
                 s.owned = true;
                 s.locked = true;
-                // UIKit may have already applied this first move; the sheet
-                // begins at the gesture's saved scroll position instead.
-                s.offset = if delta < 0.0 { s.start_y } else { top };
+                if up < 0.0 {
+                    s.offset = top;
+                }
             }
-            let size: objc2_foundation::NSSize = unsafe { msg_send![view, contentSize] };
-            let bounds: objc2_foundation::NSRect = unsafe { msg_send![view, bounds] };
+            let size: NSSize = unsafe { msg_send![view, contentSize] };
+            let bounds: NSRect = unsafe { msg_send![view, bounds] };
             let max = (size.height - bounds.size.height + inset.bottom - top).max(0.0);
-            let (h, y) =
-                crate::page_sheet::travel(s.h, (s.offset - top).max(0.0), -delta, s.full, max);
+            let (h, y) = crate::page_sheet::travel(s.h, (s.offset - top).max(0.0), up, s.full, max);
             s.h = h;
             s.offset = y + top;
             s.last = Some(point);
-            let _: () = unsafe { msg_send![view,setContentOffset:NSPoint::new(at.x,s.offset)] };
+            let _: () = unsafe { msg_send![view, setContentOffset: NSPoint::new(at.x, s.offset)] };
             word = Some(PageWord {
                 tab: tab.clone(),
                 text: format!(
@@ -768,21 +919,38 @@ fn scrolled(view: *mut AnyObject) {
     PAGES.with(|pages| {
         // A change made while this module holds the pages (a frame set
         // inside `open`) is not a scroll anybody made.
-        let Ok(mut pages) = pages.try_borrow_mut() else { return };
+        let Ok(mut pages) = pages.try_borrow_mut() else {
+            return;
+        };
         for (tab, page) in pages.iter_mut() {
-            if Retained::as_ptr(&page.scroll) as *mut AnyObject != view {
+            if !page
+                .sheet_scrolls
+                .iter()
+                .any(|v| Retained::as_ptr(v) as *mut AnyObject == view)
+            {
                 continue;
             }
-            if let Some(sheet)=page.sheet.as_ref() {
-                let tracking:bool=unsafe{msg_send![&*page.scroll,isTracking]};
-                let decelerating:bool=unsafe{msg_send![&*page.scroll,isDecelerating]};
-                if sheet.owned || (!tracking&&decelerating&&sheet.h<sheet.full-1.0&&sheet.locked) {
-                    let at:NSPoint=unsafe{msg_send![&*page.scroll,contentOffset]};
-                    if (at.y-sheet.offset).abs()>0.1 {
-                        let _:()=unsafe{msg_send![&*page.scroll,setContentOffset:NSPoint::new(at.x,sheet.offset)]};
+            if let Some(sheet) = page.sheet.as_ref().filter(|s| {
+                s.scroll
+                    .as_ref()
+                    .is_some_and(|v| Retained::as_ptr(v) as *mut AnyObject == view)
+            }) {
+                let tracking: bool = unsafe { msg_send![view, isTracking] };
+                let decelerating: bool = unsafe { msg_send![view, isDecelerating] };
+                if sheet.owned
+                    || (!tracking && decelerating && sheet.h < sheet.full - 1.0 && sheet.locked)
+                {
+                    let at: NSPoint = unsafe { msg_send![view, contentOffset] };
+                    if (at.y - sheet.offset).abs() > 0.1 {
+                        let _: () = unsafe {
+                            msg_send![view,setContentOffset:NSPoint::new(at.x,sheet.offset)]
+                        };
                     }
                     return;
                 }
+            }
+            if Retained::as_ptr(&page.scroll) as *mut AnyObject != view {
+                return;
             }
             // **Only a scroll somebody made** (UX-38 audit): the page's
             // inset set under the deck moves the offset too, and a fresh
@@ -802,7 +970,10 @@ fn scrolled(view: *mut AnyObject) {
                 return;
             }
             let now = std::time::Instant::now();
-            if page.told_at.is_some_and(|t| now.duration_since(t).as_millis() < 16) {
+            if page
+                .told_at
+                .is_some_and(|t| now.duration_since(t).as_millis() < 16)
+            {
                 return;
             }
             page.told_y = at.y;
@@ -1039,6 +1210,7 @@ pub fn open(
                     // (`load_heard`, after this insert).
                     loading: false,
                     told_steps: None,
+                    sheet_scrolls: vec![scroll.clone()],
                     scroll,
                     told_y: 0.0,
                     told_at: None,
@@ -1068,15 +1240,7 @@ pub fn hide(tab: &str, hidden: bool) {
         if let Some(page) = pages.borrow_mut().get_mut(tab) {
             if hidden {
                 if let Some(s) = page.sheet.as_mut() {
-                    cancelled = s.owned;
-                    if s.owned {
-                        s.h = s.start_h;
-                        let at: NSPoint = unsafe { msg_send![&*page.scroll, contentOffset] };
-                        let _: () = unsafe { msg_send![&*page.scroll, setContentOffset: NSPoint::new(at.x, s.start_y)] };
-                    }
-                    s.last = None;
-                    s.owned = false;
-                    s.locked = false;
+                    cancelled = s.cancel();
                 }
             }
             unsafe { let _: () = msg_send![&*page.view, setHidden: hidden]; }
@@ -1096,9 +1260,11 @@ fn unwatch(page: &Page) {
         let key = NSString::from_str("contentOffset");
         let load = NSString::from_str("loading");
         unsafe {
-            let pan: *mut AnyObject = msg_send![&*page.scroll, panGestureRecognizer];
-            let _: () = msg_send![pan, removeTarget: &**w, action: objc2::sel!(sheetPan:)];
-            let _: () = msg_send![&*page.scroll, removeObserver: &**w, forKeyPath: &*key];
+            for view in &page.sheet_scrolls {
+                let pan: *mut AnyObject = msg_send![&**view, panGestureRecognizer];
+                let _: () = msg_send![pan, removeTarget: &**w, action: objc2::sel!(sheetPan:)];
+                let _: () = msg_send![&**view, removeObserver: &**w, forKeyPath: &*key];
+            }
             let _: () = msg_send![&*page.view, removeObserver: &**w, forKeyPath: &*load];
         }
     });
@@ -1201,6 +1367,9 @@ fn tell(app: &tauri::AppHandle) {
     let mut words: Vec<(&'static str, PageWord)> = Vec::new();
     PAGES.with(|pages| {
         for (tab, page) in pages.borrow_mut().iter_mut() {
+            if page.sheet.is_some() {
+                watch_sheet_scrolls(tab, page);
+            }
             unsafe {
                 let loading: bool = msg_send![&*page.view, isLoading];
                 if loading != page.loading {

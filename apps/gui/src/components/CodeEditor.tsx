@@ -263,7 +263,7 @@ export function CodeEditor({
           edit.current.of(writable(editable)),
           wrapping.current.of(wrap ? EditorView.lineWrapping : []),
           merge.current.of(merging(against)),
-          EditorView.contentAttributes.of({ "data-file-text": "" }),
+          EditorView.contentAttributes.of({ "data-file-text": "", "data-sheet-scroll": "" }),
           keyboardCaret(),
           // The one shortcut of the textarea, `metaKey` and `ctrlKey`
           // both: a Mac app, a phone's browser and Windows, one build

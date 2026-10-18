@@ -75,15 +75,31 @@ export function observeScroller(
   getView: () => EditorView | null,
 ): () => void {
   let lastHeight = scroller.clientHeight;
+  const sheet = scroller.closest<HTMLElement>('[data-content-panel]');
+  const viewportHeight = () => window.visualViewport?.height ?? window.innerHeight;
+  let lastViewportHeight = viewportHeight();
+  let lastSheetHeight = sheet?.getBoundingClientRect().height;
 
   const ro = new ResizeObserver(() => {
     const h = scroller.clientHeight;
     const grew = h > lastHeight;
     const shrank = h < lastHeight;
     lastHeight = h;
+    const viewport = viewportHeight();
+    const sheetHeight = sheet?.getBoundingClientRect().height;
+    const sheetResized = sheetHeight !== lastSheetHeight;
+    const viewportResized = viewport !== lastViewportHeight;
+    lastSheetHeight = sheetHeight;
+    lastViewportHeight = viewport;
 
     const view = getView();
     if (!view) return;
+    // Resizing the containing sheet is a deliberate pan, not a keyboard
+    // transition. Revealing the caret here would pull the document back
+    // toward an old insertion point underneath the moving finger.
+    // Keep the same protection while the sheet settles to its detent.
+    // A real keyboard/viewport resize still reveals the caret as before.
+    if (sheet && !viewportResized && (sheet.hasAttribute('data-sheet-pulling') || sheetResized)) return;
 
     if (shrank) {
       // Rule 2: keyboard rising — reveal the caret above the new floor.
