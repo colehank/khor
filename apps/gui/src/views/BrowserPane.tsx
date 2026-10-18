@@ -52,7 +52,7 @@ export function normalize(raw: string): string | null {
 const HANGS_FROM_ABOVE = 48;
 
 const OVERLAYS =
-  '[data-radix-popper-content-wrapper],[data-omni-menu],[role="dialog"],[role="tooltip"],[role="menu"]';
+  '[data-deck-selector],[data-radix-popper-content-wrapper],[data-omni-menu],[role="dialog"],[role="tooltip"],[role="menu"]';
 
 /** **Which pane holds each tab's page now**: the open errand of a pane
     that has gone hides the page it arrived with only when no pane has
