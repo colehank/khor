@@ -2836,6 +2836,23 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 :root[data-window-transparent] :is([data-terminal], [data-term-ended-screen]) {
   background: color-mix(in srgb, var(--term-bg) var(--window-opacity), transparent);
 }
+/* A transparent window already has its one background plane. A scrolled
+   band must not add the solid window's fixed-strength tint on top of it.
+   Keep rows below the header in this mode: removing only the tint would
+   let scrolling text collide with the title. The old overlap and padding
+   cancel, so removing both preserves the first row and scroll range. */
+:root[data-window-transparent] [data-band]::before {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:root[data-window-transparent] [data-band-over] > [data-band] + * {
+  margin-top: 0;
+}
+:root[data-window-transparent] [data-band-scroll] {
+  padding-top: var(--band-pad);
+  scroll-padding-top: var(--band-pad);
+}
 
 /* Palette values are data; UI geometry stays in design tokens. */
 .term-theme-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap-in) var(--gap-base); }

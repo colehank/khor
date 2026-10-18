@@ -1,0 +1,12 @@
+/* Fixture dimensions and background deliberately live outside product CSS. */
+html { background:repeating-linear-gradient(35deg,#2d6450 0 140px,#542e46 140px 280px,#31516d 280px 420px); }
+.scroll-proof { padding:24px; color:var(--foreground); }
+.scroll-proof>header { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.scroll-proof>p { margin:16px 0; }
+.scroll-proof-columns { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; }
+[data-scroll-proof] { display:flex; flex-direction:column; height:500px; min-height:0; border:var(--hair) solid var(--border); }
+.scroll-proof-head { flex:none; height:48px; padding:8px 16px; font-size:24px; }
+:where(.scroll-proof-list) { flex:1; min-height:0; overflow:auto; padding:8px; }
+.scroll-proof-list>div { padding:16px; border-bottom:var(--hair) solid var(--border); }
+.scroll-proof output { display:block; white-space:pre-wrap; font:12px monospace; }
+@media(max-width:600px){.scroll-proof-columns{grid-template-columns:1fr;}}

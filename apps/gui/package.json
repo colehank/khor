@@ -10,7 +10,7 @@
     "prebuild": "npm run gen",
     "build": "tsc --noEmit && vite build",
     "pretest": "npm run gen",
-    "test": "node scripts/check-shim.mjs && node scripts/check-boot.mjs && node scripts/check-px.mjs && node scripts/check-icons.mjs && node scripts/check-replies.mjs && node scripts/check-keys.mjs && node scripts/check-dial.mjs && node scripts/check-tokens.mjs && node scripts/check-tap.mjs && node scripts/check-links.mjs && node scripts/check-select.mjs && node scripts/check-snapshot.mjs && node scripts/check-peek.mjs && node scripts/check-iip.mjs && node scripts/check-prompt-sp.mjs && node scripts/check-indent.mjs && node scripts/check-revert.mjs && node scripts/check-type.mjs && node scripts/check-words.mjs && node scripts/check-session-cwd.mjs && node scripts/check-scroll-target.mjs && node scripts/check-launch-paths.mjs && node scripts/check-session-read.mjs && tsc --noEmit",
+    "test": "node scripts/check-shim.mjs && node scripts/check-boot.mjs && node scripts/check-px.mjs && node scripts/check-icons.mjs && node scripts/check-replies.mjs && node scripts/check-keys.mjs && node scripts/check-dial.mjs && node scripts/check-tokens.mjs && node scripts/check-tap.mjs && node scripts/check-links.mjs && node scripts/check-select.mjs && node scripts/check-snapshot.mjs && node scripts/check-peek.mjs && node scripts/check-iip.mjs && node scripts/check-prompt-sp.mjs && node scripts/check-indent.mjs && node scripts/check-revert.mjs && node scripts/check-type.mjs && node scripts/check-words.mjs && node scripts/check-session-cwd.mjs && node scripts/check-scroll-target.mjs && node scripts/check-launch-paths.mjs && node scripts/check-session-read.mjs && node scripts/check-terminal-colors.mjs && node scripts/check-scroll-health.mjs && tsc --noEmit",
     "rail": "node scripts/check-rail.mjs",
     "replies": "node scripts/check-replies.mjs",
     "keys": "node scripts/check-keys.mjs",
@@ -55,6 +55,7 @@
     "session-cwd": "node scripts/check-session-cwd.mjs",
     "scroll-target": "node scripts/check-scroll-target.mjs",
     "appearance": "node scripts/check-appearance.mjs",
+    "terminal-colors": "node scripts/check-terminal-colors.mjs",
     "ime": "node scripts/check-ime.mjs",
     "attachments": "node scripts/check-attachments-model.mjs",
     "session-content": "node scripts/check-session-content.mjs",
@@ -64,7 +65,9 @@
     "content-sheet": "node scripts/check-content-sheet-bounds.mjs",
     "content-pan": "node scripts/check-content-pan.mjs",
     "cm-measure": "node scripts/cm-measure.mjs",
-    "session-read": "node scripts/check-session-read.mjs"
+    "session-read": "node scripts/check-session-read.mjs",
+    "scroll-health": "node scripts/check-scroll-health.mjs",
+    "scroll-surfaces": "node scripts/check-scroll-surfaces.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

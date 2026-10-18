@@ -14,6 +14,8 @@
 // top of `under`, reached through boxes that start there too. A screen
 // whose top is not a scroller (a toolbar, a terminal) is not pulled up
 // and its head simply stays plain — nothing passes under it.
+// Transparent desktop windows keep the rows below the head instead: the
+// shared CSS cancels both overlap and padding, retaining one tint plane.
 //
 // Scrollers with no band over them keep the old fade (`EDGED`, the audit
 // fix plan F4.11): their top edge fades once scrolled.

@@ -17,6 +17,7 @@ import type { PaneAnchor } from "@/gen/bindings/PaneAnchor";
 import type { PaneHistory } from "@/gen/bindings/PaneHistory";
 import { countsGain } from "@/lib/term-gain";
 import { scrollsNatively, SETTLE_MS } from "@/lib/term-scroller";
+import { terminalAppearance, onTermTheme } from "@/lib/term-theme";
 
 /** Output quiet this long, tmux has pushed what it will into the history. */
 const QUIET_MS = 300;
@@ -135,6 +136,12 @@ export function holdsTmuxHistory(o: {
 } {
   const { live, seat } = o;
   let history: Terminal | null = null;
+  const recolor = () => {
+    if (!history) return;
+    history.options = terminalAppearance(seat);
+    seat.style.background = history.options.theme?.background ?? "";
+  };
+  const stopTheme = onTermTheme(recolor);
   let native: { sync: () => void; stop: () => void } | null = null;
   let anchor: PaneAnchor | null = null;
   let on = false;
@@ -202,7 +209,7 @@ export function holdsTmuxHistory(o: {
       fontWeightBold: live.options.fontWeightBold,
       lineHeight: live.options.lineHeight,
       letterSpacing: live.options.letterSpacing,
-      theme: live.options.theme,
+      ...terminalAppearance(seat),
       allowProposedApi: true,
       disableStdin: true,
       cursorBlink: false,
@@ -254,11 +261,11 @@ export function holdsTmuxHistory(o: {
     history ??= make();
     // The live xterm's look, as it is now (a theme, a font or a size
     // changed since).
-    for (const k of ["theme", "fontFamily", "fontSize", "lineHeight", "letterSpacing"] as const) {
+    for (const k of ["fontFamily", "fontSize", "lineHeight", "letterSpacing"] as const) {
       if (history.options[k] !== live.options[k]) (history.options as Record<string, unknown>)[k] = live.options[k];
     }
     // Opaque over the live screen, in the live theme's ground.
-    seat.style.background = live.options.theme?.background ?? "";
+    recolor();
     // A refill under a person up in the history keeps them as far from
     // the bottom as they were: it is mostly the same lines again.
     const b = history.buffer.active;
@@ -413,6 +420,7 @@ export function holdsTmuxHistory(o: {
     approached,
     stop: () => {
       stopped = true;
+      stopTheme();
       drop();
       wrote.dispose();
       switched?.dispose();

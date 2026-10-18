@@ -1,0 +1,1 @@
+{"extends":"../tsconfig.json","include":["../src","./terminal-colors.tsx","./terminal-colors-production.tsx"]}

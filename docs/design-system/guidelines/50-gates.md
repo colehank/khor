@@ -35,6 +35,7 @@
 |---|---|
 | `npm run session-content` | 正式 App + 独立节点/PTY：内容原地转换、自动保存、预览保持、会话隔离、CLI 同步与持久化、放大/恢复、拥挤时头像与两个 ＋、桌面临时浏览与无空记录、来源按钮与菜单尺寸对齐、无图标浏览标签、共享返回与草稿、手机单甲板与 PTY 位置保留、首次／最近文档恢复、逐级返回、两层标签入口和末尾新建行、临时查看与原地保留、目录滚动、真实触控取消与会话隔离；需先构建 CLI 与 bridge，可用 `CARGO_TARGET_DIR`、`CONTENT_CHECK_DIR` 指定外置盘 |
 | `npm run session-cwd` | cd、活动 pane、地点筛选/搜索、工作区归属、旧附栏恢复、默认跟随与主动固定目录 |
+| `npm run terminal-colors` | 统一终端外观解析：浅深 ANSI、自动／固定／DIY、保护默认与关闭迁移、跨窗口、重载、CSS 表面同步、预览隔离和标准扩展色表 |
 | `npm run appearance` | 真实终端与设置的预设、DIY、JSON、跨窗口同步；缓冲/滚动/PTY 不重建；背景只合成一次；能力与输入边界 |
 | `npm run scroll-target` | 真 xterm 的内层 mouse 能力、分页累计/反向/停歇、触摸与滚轮不重复输入；连续输出期间每次手势只刷新一次 tmux |
 
@@ -561,3 +562,10 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 
 
 2026-10-18 独立内容标签：`content-model` 的新能力检查先红（缺少独立 newTab），随后覆盖连续 ＋ 的持久独立身份、原位 point、丢失 open 回执与 focus 失败的重试、独立 picker/query/address、非当前编辑器迟到更新、Back/reload 和旧导航迁移。`session-content` 适配真实持久空标签和共享 TabStrip，检查原 ID、查询隔离、原位网页、鼠标排序、关闭格中心、置顶、宽窄总览、新建与关闭最后一枚。头像环的折叠裁切探针改读实际 SVG 几何与描边。
+
+### 透明列表与触屏间歇滚动（2026-10-19）
+
+- `npm run scroll-surfaces`：共享 band／正式 PaneBar 的滚动材质、首行避让、范围与阅读位置；隔离页为 `lab/scroll-surfaces.html`。本轮通过 CUA 点击同一验收按钮，36 项由透明模式先红到全绿；自动浏览器脚本仅检查语法。Chrome 的图案背景只能验证 CSS 合成，不代替原生透明／毛玻璃。原生 Mac、Windows、Linux 多列表滚动另验。
+- `npm run scroll-health`：不启动浏览器的生产计时模型与被动事件监听生命周期测试，纳入默认前端检查。增加的是下一次卡顿的限频诊断，不是已确认修复；iPhone 上须复现后读取该设备的诊断记录，不能用 Mac 的 face-notes 代替。
+
+本轮验证：默认入口中的静态／模型检查、TypeScript、生产构建与门索引通过；`select`、`scroll-target` 的自动浏览器流程未执行。CUA 在 Chrome 操作共享标题夹具得到 36/36，三列的滚动范围和 180 的阅读位置跨材质相同。慢滚动测试还覆盖未返回发送、后台取消及卸载清理。原生透明合成与 iPhone 卡顿尚未实机验证；未安装、合并或发布。
