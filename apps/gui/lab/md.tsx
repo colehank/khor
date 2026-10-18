@@ -7,6 +7,8 @@
 //   window.mdStream({ text, step })  drip `text` in `step`-sized chunks
 //                                    the way a turn arrives, and answer
 //                                    what each chunk cost
+//   window.mdOnce(text)              one finished text drawn from nothing,
+//                                    the commit in ms
 //   window.mdLong()                  the long reply the measure streams
 //   window.mdMeasured()              blocks drawn, blocks painted so far
 //   window.mdCutAgrees(text, step)   prefixes where cutting tail-first
@@ -82,6 +84,15 @@ w.mdCutAgrees = (text: string, step: number) => {
 w.mdShow = async (s: Shown) => {
   show(s);
   await settle();
+};
+/** One finished text drawn from nothing (a turn read back from
+    history): the synchronous commit, in ms. */
+w.mdOnce = async (text: string) => {
+  show({ text: "" });
+  await settle();
+  const t0 = performance.now();
+  show({ text });
+  return performance.now() - t0;
 };
 w.mdStream = async ({ text, step }: { text: string; step: number }) => {
   show({ text: "" });

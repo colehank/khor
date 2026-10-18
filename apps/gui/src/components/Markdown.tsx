@@ -20,8 +20,9 @@
 //   change that reads as the agent having said something else. A file
 //   folds it, as GitHub does: a README is wrapped at 80 columns by its
 //   author and was never meant to break there.
-// - **No raw HTML in the conversation.** `react-markdown` refuses it by
-//   default and nothing on that face re-enables it: this is a *remote*
+// - **No raw HTML in the conversation.** The pipeline turns it back into
+//   its own text (`lib/md/render`) and nothing on that face parses it:
+//   this is a *remote*
 //   agent's output painted into the app's own window (`_cagent` relays
 //   whatever the model emits). The file page does render it, cleaned
 //   with GitHub's own allow-list, from a chunk the conversation never
@@ -57,7 +58,6 @@
 // `$$`) has not closed, so it is left plain — no syntax colour, no
 // formula, no diagram — and each of those is done once, when it lands.
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
@@ -71,13 +71,14 @@ import { languageOf, openFenceAt, paint, painted } from "@/lib/highlight";
 import { rehypeAlerts } from "@/lib/md/alerts";
 import { bracketMath, cut, mathOpen, mend, needsOf, type Cut } from "@/lib/md/blocks";
 import { useExtras, type Loaded } from "@/lib/md/extras";
+import { pipeline, render, type Components, type Pipeline, type PluggableList } from "@/lib/md/render";
 import { cn } from "@/lib/utils";
 
-/** The shape every component override receives from react-markdown:
+/** The shape every component override receives from the renderer:
     the element's own properties, its children, and the hast node. */
 type Node = { children?: ReactNode; className?: string; node?: unknown };
 
-/** What react-markdown hands down beside the props above. `code` is the
+/** What the renderer hands down beside the props above. `code` is the
     one override here that needs it: `mdast-util-to-hast` patches the
     fenced block's source position onto this element, which is how a
     block that is still arriving is told from one that has closed. */
@@ -105,9 +106,9 @@ function own<P extends { node?: unknown; className?: string; children?: ReactNod
 const parts: Components = {
   // The element `remarkPaths` makes. Not an HTML tag, so it is spelled
   // with a hyphen (the one shape a custom element may have) and the
-  // table's type has to be widened for it — react-markdown's
-  // `Components` is keyed by tag names it knows.
-  ["khor-path" as keyof Components]: PathLink as Components[keyof Components],
+  // table's type has to be widened for it — `Components` is keyed by
+  // the tag names React knows.
+  ["khor-path" as "span"]: PathLink as unknown as Components["span"],
   // **No leading of its own.** It used to carry `leading-relaxed`, which
   // is a ratio and therefore a second opinion about the line height for
   // whatever size the pane happened to hand down — the thing the type
@@ -211,7 +212,7 @@ const parts: Components = {
 const codePart =
   (openAt: number | null): Components["code"] =>
   ({ children, className, node }: Node & Positioned) => {
-    // react-markdown marks a fenced block's code with `language-*`, and
+    // remark marks a fenced block's code with `language-*`, and
     // an indented block with nothing — but an indented block's parent is
     // still `pre`, and there it must not wear the inline box either. The
     // `[pre_&]` variant asks the DOM instead of guessing from the class.
@@ -457,12 +458,10 @@ export const measured = { blocks: 0 };
     loaded chunks, so a block memoised on it stays put while text
     arrives. */
 type Kit = {
-  remark: Options["remarkPlugins"];
   /** For a block that has closed: everything. */
-  rehype: Options["rehypePlugins"];
+  closed: Pipeline;
   /** For the block still arriving: no formula is laid out. */
-  rehypeOpen: Options["rehypePlugins"];
-  bridge: Options["remarkRehypeOptions"];
+  open: Pipeline;
   components: Components;
 };
 
@@ -493,33 +492,61 @@ function kitOf(doc: boolean, lines: boolean, loaded: Loaded): Kit {
     warning: gui.md_warning,
     caution: gui.md_caution,
   });
-  const remark: NonNullable<Options["remarkPlugins"]> = doc
+  const remark: PluggableList = doc
     ? [remarkGfm, ...(math ? [math.remarkMath] : [])]
     : [
         [remarkGfm, { singleTilde: false }],
-        ...(math ? [[math.remarkMath, { singleDollarTextMath: false }] as NonNullable<Options["remarkPlugins"]>[number]] : []),
+        ...(math ? [[math.remarkMath, { singleDollarTextMath: false }] as PluggableList[number]] : []),
         remarkBreaks,
       ];
   if (emoji) remark.push(emoji);
   // **After gfm**, so the addresses it autolinks are already `link`
   // nodes and the path pass leaves them alone.
   remark.push(remarkPaths);
-  const clean: NonNullable<Options["rehypePlugins"]> =
+  const clean: PluggableList =
     doc && file ? [file.rehypeRaw, [file.rehypeSanitize, file.schema], file.rehypeSlug] : [];
   const tail = lines ? [rehypeSourceLines] : [];
+  const bridge = {
+    footnoteLabel: gui.md_footnotes,
+    footnoteBackLabel: gui.md_footnote_back,
+    // The clean prefixes ids itself (GitHub's `user-content-`); the
+    // bridge doing it too would make it twice.
+    ...(doc && file ? { clobberPrefix: "" } : {}),
+  };
   return {
-    remark,
-    rehype: [...clean, alerts, ...(math ? [math.rehypeKatex] : []), ...tail],
-    rehypeOpen: [...clean, alerts, ...tail],
-    bridge: {
-      footnoteLabel: gui.md_footnotes,
-      footnoteBackLabel: gui.md_footnote_back,
-      // The clean prefixes ids itself (GitHub's `user-content-`); the
-      // bridge doing it too would make it twice.
-      ...(doc && file ? { clobberPrefix: "" } : {}),
-    },
+    closed: pipeline(remark, bridge, [...clean, alerts, ...(math ? [math.rehypeKatex] : []), ...tail]),
+    open: pipeline(remark, bridge, [...clean, alerts, ...tail]),
     components: parts,
   };
+}
+
+/** Finished blocks are drawn in runs of about this many characters. */
+const RUN = 2000;
+
+/**
+ * The blocks a turn is drawn as: its finished blocks in runs of about
+ * `RUN` characters, and the run still growing with its tail mended
+ * (`mend`). **Why runs and not single blocks.** Every parse pays a fixed
+ * price before its first character (the parser's state, the tree's
+ * conversion), and a 50 000-character turn is three hundred blocks: drawn
+ * one by one, the finished turn took half as long again to appear as
+ * drawn whole. Runs are cut greedily from the start over finished blocks
+ * only, so a run, once closed, never changes and its memo holds; the
+ * last run is re-parsed per chunk, which is two thousand characters, not
+ * the turn.
+ */
+function grouped(blocks: string[]): string[] {
+  const out: string[] = [];
+  let run = "";
+  for (let i = 0; i < blocks.length - 1; i++) {
+    run += blocks[i];
+    if (run.length >= RUN) {
+      out.push(run);
+      run = "";
+    }
+  }
+  if (blocks.length > 0) out.push(run + mend(blocks[blocks.length - 1]));
+  return out;
 }
 
 /**
@@ -535,16 +562,7 @@ const Block = memo(function Block({ text, kit }: { text: string; kit: Kit }) {
   measured.blocks += 1;
   const openAt = openFenceAt(text);
   const components = useMemo(() => ({ ...kit.components, code: codePart(openAt) }), [kit, openAt]);
-  return (
-    <ReactMarkdown
-      remarkPlugins={kit.remark}
-      rehypePlugins={openAt === null && !mathOpen(text) ? kit.rehype : kit.rehypeOpen}
-      remarkRehypeOptions={kit.bridge}
-      components={components}
-    >
-      {text}
-    </ReactMarkdown>
-  );
+  return render(openAt === null && !mathOpen(text) ? kit.closed : kit.open, text, components);
 });
 
 /**
@@ -597,7 +615,7 @@ export const Markdown = memo(function Markdown({
   const blocks = useMemo(() => {
     if (doc) return [text];
     last.current = cut(bracketMath(text), last.current);
-    return last.current.blocks;
+    return grouped(last.current.blocks);
   }, [text, doc]);
   return (
     <div data-md data-selectable className={cn("min-w-0 break-words", className)}>
@@ -606,7 +624,7 @@ export const Markdown = memo(function Markdown({
       {(!doc || ready) && (
         <FileAt.Provider value={file}>
           {blocks.map((b, i) => (
-            <Block key={i} text={!doc && i === blocks.length - 1 ? mend(b) : b} kit={kit} />
+            <Block key={i} text={b} kit={kit} />
           ))}
         </FileAt.Provider>
       )}

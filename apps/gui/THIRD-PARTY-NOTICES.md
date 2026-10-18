@@ -25,7 +25,7 @@ Files khor's interface ships that were made by others, with their licences.
 
 ## KaTeX fonts
 
-- Files: the twenty `KaTeX_*.woff2` faces of `katex` 0.19.0
+- Files: the `KaTeX_*.woff2` faces of `katex` 0.18.10
   (`node_modules/katex/dist/fonts/`), bundled unchanged into the math
   chunk the first time a text holds a formula; the woff and ttf copies are
   left out (`vite.config.ts`).

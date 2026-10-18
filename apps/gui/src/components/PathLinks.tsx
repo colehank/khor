@@ -3,7 +3,7 @@
 //
 // # Why a remark pass and not a components override
 //
-// `react-markdown` lets a caller replace *elements* — a paragraph, a
+// The renderer lets a caller replace *elements* — a paragraph, a
 // link, a code block. What has to be replaced here is a run of
 // characters in the middle of a text node, which can be anywhere: inside
 // a list item, a table cell, a bolded clause. A pass over the parsed
@@ -48,7 +48,7 @@ type Mdast = {
 };
 
 /** The element a matched run becomes. `hName` is what
-    `mdast-util-to-hast` puts on the wire to react-markdown, and
+    `mdast-util-to-hast` puts on the wire to the renderer, and
     `hProperties` is what reaches the component as props — the documented
     seam for a plugin that wants to draw something of its own. */
 function pathNode(written: string): Mdast {

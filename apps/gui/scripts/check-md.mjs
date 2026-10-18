@@ -16,9 +16,9 @@
 //   3. a conversation does not read a single `$` as math (「$5 和 $10」)
 //      and does read `$$…$$` and `\(…\)`; a file reads `$…$`;
 //   4. a block that has closed is not drawn again: appending to a
-//      finished 50 000-character turn redraws at most two blocks, and a
-//      whole streamed turn draws at most one block per chunk plus two
-//      per block;
+//      finished 50 000-character turn redraws at most two of the runs it
+//      is drawn in, and a whole streamed turn draws at most one run per
+//      chunk plus two per run;
 //   5. cutting the growing text tail-first agrees with cutting it whole,
 //      at every prefix of the long reply;
 //   6. a half-written `**`, `` ` `` or link never shows its markers;
@@ -216,17 +216,18 @@ try {
     const blocks = await page.evaluate(() => document.querySelectorAll("[data-md] > *").length);
     const before = await page.evaluate(() => window.mdMeasured().blocks);
     // Not by vacuum: the counter has to have counted the turn's blocks.
-    if (before - zero < 100) fail(`redraw: probe dead — drawing the long reply counted ${before - zero} blocks`);
+    const runs = before - zero;
+    if (runs < 10) fail(`redraw: probe dead — drawing the long reply counted ${runs} blocks`);
     await show(long + "又一句。");
     const appended = (await page.evaluate(() => window.mdMeasured().blocks)) - before;
     const s0 = await page.evaluate(() => window.mdMeasured().blocks);
     const run = await page.evaluate((t) => window.mdStream({ text: t, step: 400 }), long);
     const streamed = (await page.evaluate(() => window.mdMeasured().blocks)) - s0;
-    const bound = run.chunks + 2 * blocks;
+    const bound = run.chunks + 2 * runs;
     if (appended > 2) fail(`redraw: appending to a finished turn drew ${appended} blocks, wanted ≤ 2`);
     if (streamed > bound) fail(`redraw: streaming drew ${streamed} blocks over ${run.chunks} chunks, wanted ≤ ${bound}`);
-    if (blocks < 100) fail(`redraw: the long reply rendered as ${blocks} top-level elements — is it being cut?`);
-    if (appended <= 2 && streamed <= bound && blocks >= 100)
+    if (blocks < 100) fail(`redraw: the long reply rendered as ${blocks} top-level elements`);
+    if (appended <= 2 && streamed <= bound && blocks >= 100 && runs >= 10)
       ok(`redraw: append redraws ${appended}; ${run.chunks} chunks drew ${streamed} blocks (≤ ${bound})`);
   }
 
