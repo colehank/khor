@@ -105,6 +105,7 @@ fn served_commands() -> BTreeSet<String> {
 /// (`khor-cli`'s `NOT_IN_USAGE`, same judgment). Delete a line here and
 /// that command goes red, which is the point.
 const ONE_SIDED: &[(&str, &str)] = &[
+    ("page_sheet", "coordinates the native iOS webview scroll recognizer with the content sheet; HTTP faces have no separate native webview"),
     ("window_appearance_support", "reports native desktop background capabilities; browser windows belong to the browser"),
     ("set_window_appearance", "sets the main native window background and OS material, which an HTTP face cannot control"),
     ("save_terminal_palette", "opens the native save-file panel for a local palette; browser faces use a download"),

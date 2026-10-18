@@ -525,3 +525,6 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 `npm run session-read`：无浏览器、无真实 home；真实 `useSessionReads` 与版本回执，控制未完成请求、失败重试与旧回包，验证立即消点、消息时间上界、新完成仍未读、其他会话互不影响、卸载释放定时器。包含在 `npm test`。节点回归与真 app 清单见 30-behavior「已读反馈与同步」。
 
 本轮记录：`npm test --ignore-scripts`、`npm run build --ignore-scripts`、`npm run gates`、节点定向回归、GUI core `seen_snapshot` 的 6 项测试和 `cargo check -p khor-gui` 通过。额外 `command_tables` 检查在现有 `page_sheet` 命令上失败（主干已有原生 handler，浏览器表未列入；本轮未改该命令或 handler 列表），不得据此声称全套 Rust 检查通过。未进行 iPhone 或跨设备真机操作验收。
+
+
+2026-10-18 集成验收：`page_sheet` 只协调原生 iOS 网页滚动识别器，HTTP 页面没有对应的独立 WebView。命令表检查应将它与窗口材质等原生专用命令一样，列入带理由的 `ONE_SIDED`，不添加假 HTTP 实现。前一轮该遗漏已红，本轮补记后重跑命令表。
