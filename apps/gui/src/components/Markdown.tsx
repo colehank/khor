@@ -550,19 +550,20 @@ const RUN = 2000;
  * last run is re-parsed per chunk, which is two thousand characters, not
  * the turn.
  */
-function grouped(blocks: string[]): string[] {
+function grouped({ blocks, shown, code }: Cut): string[] {
   const out: string[] = [];
   let run = "";
   for (let i = 0; i < blocks.length - 1; i++) {
-    run += blocks[i];
+    run += shown[i];
     if (run.length >= RUN) {
-      out.push(dollarsPandoc(run));
+      out.push(run);
       run = "";
     }
   }
-  // Mended first: a backtick still open is closed, so the dollars inside
-  // it are seen as code and left alone.
-  if (blocks.length > 0) out.push(dollarsPandoc(run + mend(blocks[blocks.length - 1])));
+  // The tail is mended before its dollars are read, so a backtick still
+  // open is closed and the dollars inside it are seen as code.
+  const last = blocks.length - 1;
+  if (last >= 0) out.push(run + (code[last] ? blocks[last] : dollarsPandoc(mend(blocks[last]))));
   return out;
 }
 
@@ -632,7 +633,7 @@ export const Markdown = memo(function Markdown({
   const blocks = useMemo(() => {
     if (doc) return [text];
     last.current = cut(bracketMath(text), last.current);
-    return grouped(last.current.blocks);
+    return grouped(last.current);
   }, [text, doc]);
   return (
     <div data-md data-selectable className={cn("min-w-0 break-words", className)}>

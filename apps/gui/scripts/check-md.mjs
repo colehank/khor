@@ -17,7 +17,8 @@
 //   3. a conversation does not read 「$5 和 $10」 as math and does read
 //      `$$…$$` and `\(…\)`; a file reads `$…$`;
 //   3b. a conversation's single `$` follows pandoc's rule (currency,
-//      ranges, `\$`, code stay text; `$x^2$` is math, also mid-stream);
+//      ranges, `\$`, inline, fenced and indented code stay text; `$x^2$`
+//      is math, also mid-stream);
 //   4. a block that has closed is not drawn again: appending to a
 //      finished 50 000-character turn redraws at most two of the runs it
 //      is drawn in, and a whole streamed turn draws at most one run per
@@ -259,6 +260,13 @@ try {
       const f = await formulas();
       if (JSON.stringify(f) !== JSON.stringify(want)) fail(`pandoc: 「${t}」 drew ${JSON.stringify(f)}, wanted ${JSON.stringify(want)}`);
     }
+    // Indented code (a pasted log) is code: its dollars print as written.
+    await show("日志：\n\n    echo $x$ $5\n    total $10\n\n之后。");
+    const log = await page.evaluate(() => ({
+      code: document.querySelector("[data-md] pre code")?.textContent ?? null,
+      katex: document.querySelectorAll("[data-md] .katex").length,
+    }));
+    if (log.code !== "echo $x$ $5\ntotal $10\n" || log.katex) fail(`pandoc: indented code reads ${JSON.stringify(log.code)} with ${log.katex} formula(s)`);
     // Character by character, the way a turn drips: never an error, and
     // never a formula that is not the one being written.
     const drip = "$x^2$ 之后";

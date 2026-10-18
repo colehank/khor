@@ -868,7 +868,7 @@ Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印�
 | 文件预览里 http 图片不成带 src 的 img、`srcset` 不留，https 图片成 img | `npm run md` 2 |
 | `layout: elk` 的 mermaid 图显示源码，之后的图照常画 | `npm run md` 7 |
 | 会话里 `$5 和 $10` 不是公式、`3~5` 不划线；`$$`、`\(…\)` 是公式；文件 `$…$` 是公式 | `npm run md` 3 |
-| 会话里单个 `$` 按 pandoc：`$5-$10`、`costs $5, $10`、`\$x\$`、行内代码里的 `$x$` 是字，`$x^2$`、`$\alpha$ 和 $\beta$` 是公式；逐字流入不出现错误或别的公式 | `npm run md` 3b |
+| 会话里单个 `$` 按 pandoc：`$5-$10`、`costs $5, $10`、`\$x\$`、行内代码和缩进代码里的 `$x$` 是字，`$x^2$`、`$\alpha$ 和 $\beta$` 是公式；逐字流入不出现错误或别的公式 | `npm run md` 3b |
 | 已收尾的块不重画；边长边切与整段切一致 | `npm run md` 4、5 |
 | 半截 `**` `` ` `` `](` `*` 不露记号 | `npm run md` 6 |
 | 未收尾的代码块不上色、mermaid 不画；画出的图没有图片、脚本、`on*` | `npm run md` 7，`npm run read` 9、10 |

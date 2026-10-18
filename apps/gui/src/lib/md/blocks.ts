@@ -28,7 +28,16 @@ import { Lexer } from "marked";
 import remend from "remend";
 
 /** A text cut into blocks, kept so the next, longer text can reuse it. */
-export type Cut = { text: string; blocks: string[] };
+export type Cut = {
+  text: string;
+  /** The text's own blocks: they join back into `text` exactly. */
+  blocks: string[];
+  /** Each block as the conversation parses it: its single dollars read
+      by pandoc's rule (`dollarsPandoc`), code left as written. */
+  shown: string[];
+  /** Whether a block is code — fenced or indented — and nothing else. */
+  code: boolean[];
+};
 
 /** A footnote's or a link's definition (`[^1]: …`, `[docs]: …`): read
     from anywhere in the text, so cutting would orphan the references to
@@ -66,30 +75,48 @@ export function mathOpen(text: string): boolean {
   return n % 2 === 1;
 }
 
-function lex(text: string): string[] {
-  const out: string[] = [];
+type Lexed = { blocks: string[]; shown: string[]; code: boolean[] };
+
+function lex(text: string): Lexed {
+  const out: Lexed = { blocks: [], shown: [], code: [] };
   let odd = false;
   for (const t of new Lexer({ gfm: true }).blockTokens(text)) {
-    const last = out.length - 1;
+    const last = out.blocks.length - 1;
+    // **Code is known by the lexer's own word for it**, fenced or
+    // indented: a `$` in a pasted log is a dollar, and an escape added to
+    // it would show — code prints its backslashes.
+    const code = t.type === "code";
+    const shown = code || t.type === "space" ? t.raw : dollarsPandoc(t.raw);
     // Blank lines ride with the block above them, and display math that
     // opened swallows what follows until it closes.
-    if (last >= 0 && (t.type === "space" || odd)) out[last] += t.raw;
-    else out.push(t.raw);
-    if (t.type !== "code" && t.type !== "space" && dollars(t.raw) % 2 === 1) odd = !odd;
+    if (last >= 0 && (t.type === "space" || odd)) {
+      out.blocks[last] += t.raw;
+      out.shown[last] += shown;
+      out.code[last] &&= code || t.type === "space";
+    } else {
+      out.blocks.push(t.raw);
+      out.shown.push(shown);
+      out.code.push(code);
+    }
+    if (!code && t.type !== "space" && dollars(t.raw) % 2 === 1) odd = !odd;
   }
   // The lexer tidies a few raws it was handed (a list whose last item is
   // only its marker, `- `, comes back as `-\n`) — exactly the shape a
   // turn has while it arrives. The blocks are taken as cuts of the text
   // itself: where one stops matching, the rest of the text is one block.
   let at = 0;
-  for (let i = 0; i < out.length; i++) {
-    if (!text.startsWith(out[i], at)) {
-      out.length = i;
+  for (let i = 0; i < out.blocks.length; i++) {
+    if (!text.startsWith(out.blocks[i], at)) {
+      out.blocks.length = out.shown.length = out.code.length = i;
       break;
     }
-    at += out[i].length;
+    at += out.blocks[i].length;
   }
-  if (at < text.length) out.push(text.slice(at));
+  if (at < text.length) {
+    out.blocks.push(text.slice(at));
+    out.shown.push(dollarsPandoc(text.slice(at)));
+    out.code.push(false);
+  }
   return out;
 }
 
@@ -99,7 +126,11 @@ function lex(text: string): string[] {
  * back to one block, which is the old whole-text parse.
  */
 export function cut(text: string, prev: Cut | null): Cut {
-  if (text === "" || ACROSS.test(text)) return { text, blocks: text === "" ? [] : [text] };
+  if (text === "") return { text, blocks: [], shown: [], code: [] };
+  if (ACROSS.test(text)) {
+    const all = lex(text);
+    return { text, blocks: [text], shown: [all.shown.join("")], code: [false] };
+  }
   let keep = 0;
   let kept = 0;
   if (prev !== null && text.startsWith(prev.text)) {
@@ -114,9 +145,14 @@ export function cut(text: string, prev: Cut | null): Cut {
     }
     for (let i = 0; i < keep; i++) kept += prev.blocks[i].length;
   }
-  const blocks = (prev === null ? [] : prev.blocks.slice(0, keep)).concat(lex(text.slice(kept)));
-  if (blocks.join("") !== text) return { text, blocks: [text] };
-  return { text, blocks };
+  const tail = lex(text.slice(kept));
+  const head = (k: "blocks" | "shown" | "code") => (prev === null ? [] : prev[k].slice(0, keep));
+  return {
+    text,
+    blocks: (head("blocks") as string[]).concat(tail.blocks),
+    shown: (head("shown") as string[]).concat(tail.shown),
+    code: (head("code") as boolean[]).concat(tail.code),
+  };
 }
 
 /**
@@ -195,8 +231,9 @@ export function bracketMath(text: string): string {
  * 「$5-$」 draws as a formula for the one frame before 「10」 arrives;
  * pandoc's rule cannot know either until the next character.
  *
- * (Indented code blocks are not recognised, so a `$` in one would show
- * its escape; a conversation writes code in fences.)
+ * A code block — fenced or indented — never reaches here: `cut` asks the
+ * lexer which blocks are code and passes those through untouched. The
+ * fence walk below is for the fences inside other blocks (a list item's).
  */
 export function dollarsPandoc(text: string): string {
   if (!text.includes("$")) return text;
