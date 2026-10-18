@@ -1,0 +1,6 @@
+:root{--place-sheet-half:.5;--place-sheet-full:.92}
+body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
+.pan-lab{padding:var(--gap-base)}.pan-lab header{display:flex;gap:var(--gap-row);align-items:center}.pan-lab button,.pan-sheet input{background:var(--fill);padding:var(--gap-in);border-radius:var(--radius-sm);color:var(--foreground)}
+.pan-lab pre{font-size:var(--text-callout);white-space:pre-wrap}
+.pan-sheet{position:fixed;bottom:0;left:0;right:0;height:var(--content-sheet-half-height);display:flex;flex-direction:column;gap:var(--gap-in);border-top:var(--hair) solid var(--border);background:var(--background);padding:var(--gap-in);box-sizing:border-box}
+.pan-sheet[data-detent=full]{height:var(--content-sheet-full-height)}.pan-grab{width:calc(4*var(--gap-in));height:var(--gap-xxs);background:var(--tertiary);align-self:center;border-radius:var(--radius-full);flex:none}.pan-editor{flex:1;min-height:0;overflow:hidden}.pan-editor>[data-code-view]{height:100%}

@@ -68,6 +68,7 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
     let from: number | null = null;
     let fromX = 0;
     let pulling = false;
+    let vertical = false;
     let live = 0;
     let speed = 0;
     let lastY = 0;
@@ -90,6 +91,7 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       lastT = time;
       speed = 0;
       pulling = false;
+      vertical = band;
       if (band) grip();
     };
     const down = (e: TouchEvent) => {
@@ -101,7 +103,11 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       // horizontal controls retain their gestures.
       if(!band && window.getSelection()?.isCollapsed===false)return;
       scroll=band?null:scroller(t);
-      if (!band && (t?.closest('[data-sheet-hold],input,textarea,[contenteditable=true]'))) return;
+      const control = t?.closest('[data-sheet-hold],input,textarea,[contenteditable=true]');
+      // A document editor is also a vertical scrolling surface. Its text
+      // is editable, but that alone must not reserve every pan for editing.
+      // Real selections and nested input controls still keep their gestures.
+      if (!band && control && !control.matches('[data-sheet-scroll]')) return;
       begin(e.touches[0].clientX,e.touches[0].clientY,e.timeStamp,band);
     };
     const drag = (x: number, y: number, time: number, prevent: () => void) => {
@@ -109,11 +115,16 @@ export function useContentSheet(el: HTMLDivElement | null, onDetent: (d: PlaceDe
       const dy = y - from;
       if (Math.abs(dy) > 6) el.setAttribute("data-sheet-dragged", "");
       if (!pulling) {
-        const dx = Math.abs(x - fromX);
-        if (Math.max(Math.abs(dy), dx) < 6) return;
-        if (Math.abs(dy) <= dx) {
-          from = null;
-          return;
+        if (!vertical) {
+          const dx = Math.abs(x - fromX);
+          if (Math.max(Math.abs(dy), dx) < 6) return;
+          if (Math.abs(dy) <= dx) {
+            from = null;
+            return;
+          }
+          // Direction is decided once, including while the content scrolls.
+          // Reaching its top must not start another slop threshold.
+          vertical = true;
         }
         const full=heights().full;
         if ((dy<0&&el.getBoundingClientRect().height>=full-1)||(dy>0&&(scroll?.scrollTop||0)>0)) {
