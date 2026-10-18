@@ -32,10 +32,9 @@ Files khor's interface ships that were made by others, with their licences.
 - Licence: MIT, Copyright (c) 2013-2020 Khan Academy and other
   contributors — `node_modules/katex/LICENSE`.
 
-## Diagram layout (elkjs) and sanitiser (DOMPurify)
+## Diagram sanitiser (DOMPurify)
 
 - Bundled from npm into the mermaid chunks, which load only when a
-  closed ```` ```mermaid ```` block is drawn: `elkjs` 0.9.3 (mermaid's
-  `elk` layout), licence **EPL-2.0** — source at
-  <https://github.com/kieler/elkjs>, unchanged; `dompurify` 3.4.17,
-  licence MPL-2.0 OR Apache-2.0, used here under Apache-2.0.
+  closed ```` ```mermaid ```` block is drawn: `dompurify` 3.4.17, licence
+  MPL-2.0 OR Apache-2.0, used here under Apache-2.0. (mermaid's `elk`
+  layout and its `elkjs` are not shipped: `vendor/no-elk` stands in.)

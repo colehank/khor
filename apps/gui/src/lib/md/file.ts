@@ -12,8 +12,14 @@
 // (`scripts/check-md.mjs`). The conversation does not load this chunk at
 // all: its text is a remote agent's, and there it stays text.
 //
-// Two additions to the schema, both this app's own elements: the path
-// link `remarkPaths` makes, and nothing else.
+// Two changes to the schema. One addition: the path link `remarkPaths`
+// makes. One narrowing: **a picture's address is `https` or a path, never
+// `http`** (the owner's ruling, 2026-10-19, VS Code's Strict default). The
+// app's window has no content policy to fall back on, so the rule lives
+// here: an `http` picture loses its `src` in the clean and is drawn as its
+// alt, and `<source srcset>` — an address the clean would not otherwise
+// check — is dropped. A path is read from the file's machine
+// (`Markdown`'s `FileImage`), an `https` picture is fetched by this one.
 //
 // **Heading anchors** (`rehype-slug`, GitHub's slugger) come after the
 // clean, so a heading's `id` is the one a `#章节` link in the same file
@@ -27,7 +33,8 @@ import rehypeSlug from "rehype-slug";
 export const schema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), "khor-path"],
-  attributes: { ...defaultSchema.attributes, "khor-path": ["written"] },
+  attributes: { ...defaultSchema.attributes, "khor-path": ["written"], source: [] },
+  protocols: { ...defaultSchema.protocols, src: ["https"] },
 };
 
 export { rehypeRaw, rehypeSanitize, rehypeSlug };

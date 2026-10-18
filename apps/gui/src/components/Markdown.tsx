@@ -393,14 +393,29 @@ function Picture(e: Pic) {
 }
 
 /**
- * A picture in a file, read from the machine the file is on — the way
- * the HTML preview reads its pictures (`HtmlView`): relative to the
- * file, through the file API, inlined as `data:`. A picture on the
- * network is not fetched (a document that phones home on being read
- * would say who read it), and one that cannot be read — too large, not
- * there, too slow — stays its alt.
+ * A picture in a file. **Beside the file**, it is read from the machine
+ * the file is on — the way the HTML preview reads its pictures
+ * (`HtmlView`): relative to the file, through the file API, inlined as
+ * `data:`. **On the network**, it is fetched by this machine if the
+ * address is `https` and not at all if it is `http` (the owner's ruling,
+ * 2026-10-19, VS Code's Strict default: a README's badges show, nothing
+ * goes out in the clear). The clean already took `http` away
+ * (`lib/md/file`); the test here is the same rule again for a file drawn
+ * without the clean, which happens only when its chunk failed to load.
+ * One that cannot be read — too large, not there, too slow — stays its
+ * alt.
  */
-function FileImage({ src, alt, node: _node, ...rest }: Pic) {
+function FileImage(e: Pic) {
+  return /^https:\/\//i.test(e.src ?? "") ? <WebImage {...e} /> : <DiskImage {...e} />;
+}
+
+function WebImage({ src, alt, node: _node, ...rest }: Pic) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return <span className="text-muted-foreground">{alt || ""}</span>;
+  return <img {...rest} src={src} alt={alt ?? ""} referrerPolicy="no-referrer" loading="lazy" onError={() => setBroken(true)} />;
+}
+
+function DiskImage({ src, alt, node: _node, ...rest }: Pic) {
   const file = useContext(FileAt)!;
   const path = src ? onDisk(file.dir, src) : null;
   const key = path === null ? null : `${file.machine}\u0000${path}`;

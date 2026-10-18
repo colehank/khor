@@ -74,7 +74,10 @@ function draw(code: string, at: Element): Promise<string | null> {
   lib ??= import("mermaid").then((m) => m.default);
   const job = queue.then(async () => {
     const mermaid = await lib!;
-    mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base", themeVariables: theme });
+    // `layout` named every time: a diagram's own front matter (`layout:
+    // elk`) stays in mermaid's config after it, and the next diagram would
+    // ask for a layout this build does not have (`vendor/no-elk`).
+    mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base", themeVariables: theme, layout: "dagre" });
     try {
       const svg = scrub((await mermaid.render(`khor-mermaid-${(seq += 1)}`, code)).svg);
       DRAWN.set(key, svg);

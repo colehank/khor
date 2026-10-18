@@ -133,6 +133,7 @@
     "vite": "^7"
   },
   "overrides": {
+    "elkjs": "file:vendor/no-elk",
     "katex": "$katex"
   },
   "allowScripts": {

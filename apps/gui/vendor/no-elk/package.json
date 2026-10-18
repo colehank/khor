@@ -1,0 +1,12 @@
+{
+  "name": "elkjs",
+  "version": "0.0.0-khor",
+  "description": "Stands in for elkjs so mermaid's elk layout is not shipped (lane md-render).",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/elk.bundled.js",
+  "exports": {
+    ".": "./lib/elk.bundled.js",
+    "./lib/elk.bundled.js": "./lib/elk.bundled.js"
+  }
+}

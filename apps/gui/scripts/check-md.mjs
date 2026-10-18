@@ -11,8 +11,9 @@
 //   2. a file's raw HTML goes through GitHub's allow-list: the same
 //      attacks leave nothing, while `<details>`, `<kbd>`, `<sup>`,
 //      `<p align=center>` and a picture beside the file (read from its
-//      machine, inlined as `data:`) do become elements, and a picture on
-//      the network does not;
+//      machine, inlined as `data:`) do become elements; an `https`
+//      picture is an element with its address, an `http` one is not (no
+//      `img` with an `http:` src, no `srcset`; its alt instead);
 //   3. a conversation does not read a single `$` as math (「$5 和 $10」)
 //      and does read `$$…$$` and `\(…\)`; a file reads `$…$`;
 //   4. a block that has closed is not drawn again: appending to a
@@ -24,7 +25,9 @@
 //   6. a half-written `**`, `` ` `` or link never shows its markers;
 //   7. the heavy work waits for the block to close: an open fence is not
 //      coloured and an open mermaid fence is not drawn; closed, both are
-//      — and the drawn diagram has no script and no `on*` attribute;
+//      — and the drawn diagram has no script and no `on*` attribute; a
+//      diagram that asks for the `elk` layout (not shipped) stays its
+//      source;
 //   8. alerts, footnotes, anchors, source lines, table alignment and a
 //      list's start number reach the DOM;
 //   9. zero page errors.
@@ -105,6 +108,11 @@ try {
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
+  // An `https` picture is fetched by the page; answered here, so the
+  // gate never reaches the network.
+  await page.route("https://example.com/**", (route) =>
+    route.fulfill({ contentType: "image/png", body: Buffer.from(PNG, "base64") }),
+  );
   await page.route("**/api/preview", async (route) => {
     const { path } = JSON.parse(route.request().postData() ?? "{}");
     if (String(path).endsWith("/missing.png")) return route.fulfill({ status: 500, body: "not there" });
@@ -118,7 +126,11 @@ try {
   // The first pass through each lazy chunk can make vite re-optimise and
   // reload; touch each once so the measured passes run on a settled page.
   const warm = async () => {
-    await page.evaluate(() => window.mdShow({ text: "$$a$$ :rocket:\n\n```mermaid\ngraph TD; A-->B;\n```\n" }));
+    await page.evaluate(() =>
+      window.mdShow({
+        text: "$$a$$ :rocket:\n\n```mermaid\ngraph TD; A-->B;\n```\n\n```mermaid\n---\nconfig:\n  layout: elk\n---\nflowchart TD\n  A-->B\n```\n",
+      }),
+    );
     await page.evaluate(() => window.mdShow({ text: "<kbd>k</kbd> $x$", file: { machine: "m", path: "/r/README.md" } }));
     await wait(1500);
     await page.waitForFunction(() => typeof window.mdShow === "function", null, { timeout: 60_000 });
@@ -161,7 +173,9 @@ try {
       '<p align="center"><img src="../logo.png" alt="logo" width="32"></p>',
       "按 <kbd>⌘</kbd> 键，x<sup>2</sup>",
       "<details><summary>展开</summary>\n\n里面\n\n</details>",
-      "![远程](https://example.com/badge.svg) ![不在](missing.png)",
+      "![徽章](https://example.com/badge.png) ![明文](http://example.com/plain.png) ![不在](missing.png)",
+      '<img src="http://example.com/raw.png" alt="明文二">',
+      '<picture><source srcset="http://example.com/s.png"><img src="https://example.com/p.png" alt="p"></picture>',
     ].join("\n\n");
     const was = failures;
     await show(doc, FILE);
@@ -175,7 +189,9 @@ try {
         sup: r.querySelectorAll("sup").length,
         center: r.querySelectorAll('p[align="center"]').length,
         local: [...r.querySelectorAll("img")].filter((i) => i.src.startsWith("data:image/png")).length,
-        remote: [...r.querySelectorAll("img")].filter((i) => !i.src.startsWith("data:")).length,
+        https: [...r.querySelectorAll("img")].filter((i) => i.getAttribute("src")?.startsWith("https://example.com/")).length,
+        http: [...r.querySelectorAll("img")].filter((i) => /^http:/i.test(i.getAttribute("src") ?? "")).length,
+        srcset: r.querySelectorAll("[srcset]").length,
         text: r.textContent,
       };
     });
@@ -186,9 +202,12 @@ try {
     for (const [k, want] of [["details", 2], ["kbd", 1], ["sup", 1], ["center", 1], ["local", 1]]) {
       if (good[k] < want) fail(`file: ${k} — wanted ${want}, got ${good[k]}`);
     }
-    if (good.remote !== 0) fail(`file: ${good.remote} picture(s) left pointing off the machine`);
-    if (!good.text.includes("远程") || !good.text.includes("不在")) fail("file: an unreadable picture did not fall back to its alt");
-    if (failures === was) ok("file: GitHub's allow-list — attacks gone, details/kbd/sup/align/local picture kept");
+    if (good.http !== 0) fail(`file: ${good.http} http picture(s) became <img src>`);
+    if (good.srcset !== 0) fail(`file: ${good.srcset} srcset address(es) survived the clean`);
+    if (good.https !== 2) fail(`file: ${good.https} https picture(s) drawn, wanted 2`);
+    if (!good.text.includes("明文") || !good.text.includes("明文二") || !good.text.includes("不在"))
+      fail("file: an http or unreadable picture did not fall back to its alt");
+    if (failures === was) ok("file: GitHub's allow-list — attacks gone, details/kbd/sup/align/local and https pictures kept, http ones alt");
   }
 
   // 3. math
@@ -296,6 +315,16 @@ try {
     if (closedDrawn !== 1) fail(`heavy: a closed mermaid fence drew ${closedDrawn} diagram(s), wanted 1`);
     if (l.on.length || l.js.length) fail(`heavy: the diagram carries on*/javascript: (${[...l.on, ...l.js].join(", ")})`);
     if (await page.evaluate(() => document.querySelectorAll("[data-md] img").length)) fail("heavy: a label's <img> became an element");
+    // `layout: elk` is not in this build: the diagram stays its source.
+    await show("图：\n\n```mermaid\n---\nconfig:\n  layout: elk\n---\nflowchart TD\n  A-->B\n```\n");
+    await wait(2500);
+    const elk = await page.evaluate(() => ({
+      drawn: document.querySelectorAll('[data-md] [data-mermaid="drawn"]').length,
+      source: document.querySelector('[data-md] [data-mermaid="source"]')?.textContent ?? "",
+    }));
+    if (elk.drawn !== 0 || !elk.source.includes("layout: elk")) fail(`heavy: an elk diagram drew ${elk.drawn} / showed 「${elk.source.slice(0, 40)}」, wanted its source`);
+    await show('图：\n\n```mermaid\ngraph TD; A["<img src=x onerror=alert(7)>一<br>二"]-->B;\n```\n');
+    for (let i = 0; i < 40 && (await drawn()) === 0; i++) await wait(250);
     const label = await page.evaluate(() => document.querySelector('[data-md] [data-mermaid="drawn"]')?.textContent ?? "");
     if (closedDrawn && !(label.includes("一") && label.includes("二"))) fail(`heavy: the diagram lost its two-line label (${JSON.stringify(label)})`);
     if (!openSpans && p1 === p0 && closedSpans && !openDrawn && closedDrawn === 1 && !l.on.length)
