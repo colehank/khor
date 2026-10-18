@@ -214,7 +214,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
     if (!session || !selected) return;
     const key = content.handle(selected), before = fromNode.current.get(session);
     fromNode.current.set(session, key);
-    if(before&&before!==key&&state?.scene!=='overview'&&(state?.scene!=='document'||content.allTabs.some(t=>content.handle(t)===state.key)))navigation.document(selected);
+    if(before&&before!==key&&state?.scene!=='overview'&&state?.scene!=='sessions'&&(state?.scene!=='document'||content.allTabs.some(t=>content.handle(t)===state.key)))navigation.document(selected);
   }, [session, selected?.id, mobile, visible]);
   useEffect(() => {
     if (content.ready && visible && session && state?.scene === 'document' && !content.allTabs.some(t => t.session === session && content.handle(t) === state.key)) navigation.back(session)||navigation.browse(session);

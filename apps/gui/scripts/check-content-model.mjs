@@ -43,7 +43,35 @@ const pageTab=model.value.tabs.find(t=>t.view==='page');await model.value.follow
 for(const url of ['https://example.test/?q=one','https://example.test/#section','https://example.test/other']){model.value.open('A','machine',url,'page');await until(()=>node.tabs.some(t=>t.url===url));}assert.equal(node.tabs.length,beforeCanonical+3,'page query/hash/path lost identity');
 model.value.open('A','machine','https://example.test','file');await until(()=>node.tabs.some(t=>t.view==='file'&&t.url==='https://example.test'));model.value.open('A','machine','https://example.test/','file');await until(()=>node.tabs.some(t=>t.view==='file'&&t.url==='https://example.test/'));assert.equal(node.tabs.length,beforeCanonical+5,'file path was URL normalized');
 model.close();model=mount(()=>useSessionContent(false));await until(()=>model.value.ready);assert.equal(model.value.handle(model.value.tabs.find(t=>t.id===savedA.id)),a.id);
-let nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');await tick();assert.equal(nav.value.get('A').scene,'document');nav.value.browse('A',{device:'machine',root:'/repo/inside'});nav.value.update('A',{query:'needle',address:'https://draft.test/path',source:'browser',exit:'exit-machine'});nav.value.scroll('A','picker browser',{top:418,left:12});nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));assert(nav.value.back('A'));nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');assert.equal(nav.value.get('A').query,'needle');nav.value.edit(a.id,{address:'https://unsent.test',editing:true,exitPrompt:9});nav.value.overview('B');nav.value.update('B',{filter:'B only'});nav.value.resume('B');assert.equal(nav.value.get('B').scene,'overview');
-nav.close();nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');assert.equal(nav.value.get('A').source,'browser');assert.deepEqual(nav.value.get('A').scope,{device:'machine',root:'/repo/inside'});assert.equal(nav.value.get('A').address,'https://draft.test/path');assert.equal(nav.value.get('A').exit,'exit-machine');assert.deepEqual(nav.value.scrollOf('A','picker browser'),{top:418,left:12});assert.deepEqual(nav.value.editor(a.id),{address:'https://unsent.test'});assert.equal(nav.value.get('B').filter,'B only');
-nav.value.sessions('A');nav.value.update('A',{filter:'session search'});nav.value.resume('A');assert.equal(nav.value.get('A').scene,'sessions');assert.equal(nav.value.get('A').filter,'session search');nav.value.browse('A');nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));await model.value.close(savedA.id);nav.render();nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');nav.close();model.close();
-console.log('PASS: immediate durable tabs; deduplicated/session-scoped opens; slow write focus and stable handles; edit/close/retry races; reload handles; last scene/source/scope/query/address draft/scroll restoration');
+let nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');await tick();assert.equal(nav.value.get('A').scene,'document');nav.value.browse('A',{device:'machine',root:'/repo/inside'});nav.value.update('A',{query:'needle',address:'https://draft.test/path',source:'browser',exit:'exit-machine'});nav.value.scroll('A','picker browser',{top:418,left:12});nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));assert(nav.value.back('A'));nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');assert.equal(nav.value.get('A').query,'needle');nav.value.edit(a.id,{address:'https://unsent.test',editing:true,exitPrompt:9});nav.value.resume('B');const bPlace=nav.value.get('B');nav.value.overview('B');nav.value.update('B',{filter:'B only'});nav.value.resume('B');assert.equal(nav.value.get('B').scene,'document','pill must restore content, not the nested tab overview');assert.equal(nav.value.get('B').key,bPlace.key);
+nav.close();nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');assert.equal(nav.value.get('A').source,'browser');assert.deepEqual(nav.value.get('A').scope,{device:'machine',root:'/repo/inside'});assert.equal(nav.value.get('A').address,'https://draft.test/path');assert.equal(nav.value.get('A').exit,'exit-machine');assert.deepEqual(nav.value.scrollOf('A','picker browser'),{top:418,left:12});assert.deepEqual(nav.value.editor(a.id),{address:'https://unsent.test'});assert.equal(nav.value.get('B').filter,'');
+// Tab/session selectors never replace the pill's last actual content, even
+// across reloads. The explicit back stack inside a selector still works.
+for(const scene of ['sessions','overview']) {
+  nav.value[scene]('A');nav.value.update('A',{filter:'transient selector'});
+  nav.close();nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');
+  assert.equal(nav.value.get('A').scene,'picker');assert.equal(nav.value.get('A').source,'browser');
+  assert.equal(nav.value.get('A').query,'needle');assert.equal(nav.value.get('A').address,'https://draft.test/path');
+  assert.deepEqual(nav.value.get('A').scope,{device:'machine',root:'/repo/inside'});
+  assert.deepEqual(nav.value.scrollOf('A','picker browser'),{top:418,left:12});
+}
+nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));
+nav.value.sessions('A');nav.value.inspect('A');assert.equal(nav.value.get('A').scene,'overview');
+assert(nav.value.back('A'));assert.equal(nav.value.get('A').scene,'sessions','nested overview Back still returns to session list');
+nav.close();nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');
+assert.equal(nav.value.get('A').scene,'document');assert.equal(nav.value.get('A').key,a.id,'file resumes after dismissing selectors and reloading');
+assert(nav.value.back('A'));assert.equal(nav.value.get('A').scene,'picker','resumed file keeps its real directory/browser Back route');
+nav.value.inspect('B');nav.value.resume('B');assert.equal(nav.value.get('B').key,bPlace.key,'other session keeps its own content checkpoint');
+for(let i=0;i<70;i++)nav.value.sessions('A');nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');
+// Existing installations may contain an old selector with its trail discarded.
+nav.close();
+const legacy=JSON.parse(storage.get('khor.content.navigation.v1'));
+delete legacy.A.lastContent;legacy.A.scene='sessions';legacy.A.trail=[];legacy.A.filter='old session search';
+storage.set('khor.content.navigation.v1',JSON.stringify(legacy));
+nav=mount(()=>useContentNavigation(model.value));nav.value.resume('A');
+assert.equal(nav.value.get('A').scene,'picker','old saved session list migrates to source browsing');
+assert.equal(nav.value.get('A').source,'browser');assert.equal(nav.value.get('A').query,'needle');assert.equal(nav.value.get('A').address,'https://draft.test/path');
+nav.value.sessions('never-opened');nav.value.resume('never-opened');assert.equal(nav.value.get('never-opened').scene,'picker','first pill opens source browsing');
+
+nav.value.sessions('A');nav.value.update('A',{filter:'session search'});nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker','pill must restore workspace/browser, not the session list');assert.equal(nav.value.get('A').query,'needle');assert.equal(nav.value.get('A').address,'https://draft.test/path');assert.equal(nav.value.get('A').filter,'');nav.value.browse('A');nav.value.document(model.value.tabs.find(t=>t.id===savedA.id));nav.value.sessions('A');await model.value.close(savedA.id);nav.render();nav.value.resume('A');assert.equal(nav.value.get('A').scene,'picker');nav.close();model.close();
+console.log('PASS: pill resumes real content after session/nested lists, reload, legacy migration and deleted files; immediate durable tabs; deduplicated/session-scoped opens; slow write focus and stable handles; edit/close/retry races; reload handles; last scene/source/scope/query/address draft/scroll restoration');
