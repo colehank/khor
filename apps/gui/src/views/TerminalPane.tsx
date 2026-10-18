@@ -119,6 +119,7 @@ import { kittyFlags, kittyKey, kittyNamed, kittyProtocol, kittyTyped } from "@/l
 import { afterKey, typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
+import { notesScrollHealth } from "@/lib/term-scroll-health";
 import { wheelsToPages } from "@/lib/term-scroll-target";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { followsShellTmux, wheelsToShellTmux } from "@/lib/term-shell-tmux";
@@ -2290,6 +2291,7 @@ export function TerminalPane({
     // chunks keep their order like everything else here.
     let outbox = "";
     let sending = false;
+    let scrollHealthNotes: ReturnType<typeof notesScrollHealth> | null = null;
     const send = (bytes: string) => {
       outbox += bytes;
       if (sending) return;
@@ -2301,7 +2303,10 @@ export function TerminalPane({
           if (cut < outbox.length && /[\ud800-\udbff]/.test(outbox[cut - 1])) cut -= 1;
           const next = outbox.slice(0, cut);
           outbox = outbox.slice(cut);
+          const started = performance.now(), queued = next.length + outbox.length;
+          scrollHealthNotes?.sending(started, queued);
           await termKey(id, next).catch(() => {});
+          scrollHealthNotes?.sent(started, performance.now(), queued);
         }
         sending = false;
         pollNow.current();
@@ -2705,6 +2710,11 @@ export function TerminalPane({
       note: (line) => void faceNote(line).catch(() => {}),
     });
     firstTouchRef.current = firstTouch;
+    scrollHealthNotes = notesScrollHealth({
+      enabled: fingers, term, scroller: scrollerRef.current!, shown: () => shownRef.current,
+      route: () => historyHas() ? "history" : `${term.buffer.active.type}/mouse ${term.modes.mouseTrackingMode}`,
+      note: line => void faceNote(`term ${id}: ${line}`).catch(() => {}),
+    });
     syncScroller.current = () => {
       native.sync();
       trace("replayed");
@@ -2843,6 +2853,7 @@ export function TerminalPane({
       unwheel();
       unpage();
       firstTouch.stop();
+      scrollHealthNotes?.stop();
       firstTouchRef.current = null;
       native.stop();
       selectsNow?.dispose();
