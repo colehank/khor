@@ -540,3 +540,7 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 2026-10-18 session 药丸再次点击收起：旧规则仅恢复外层标签条，侧区留在原位；在独立节点的真实 App 中先复现并保存红截图。修正规则为标签组与侧区一起收起，保留内容及浏览位置。`session-content` 新增空浏览的展开／收起／重开，文件收起时不关闭标签、重开后恢复预览、原句柄和分栏宽度的检查。Chrome 1200×800 实际操作覆盖空浏览、文件预览、鼠标收起、放大后 Enter 收起、Space 重开；恢复的是同一个文档句柄，终端可见、最大化状态复位。证据在 `/Volumes/disk0/khor-checks/session-collapse-ui/`；完整自动浏览器脚本及原生验收本轮未执行。
 
 本轮默认前端检查、导航模型回归、生产构建、脚本语法与 `git diff --check` 通过。私有会话、验证节点与 Vite 已关闭，复制的 bridge 已删除；未合并或发布。
+
+2026-10-18 窗口轮廓修复：原边框引用未定义的 `--hairline`，开启时 computed border 仍是 `none / 0px`；修复为现有 `--border` 后，生产设置组件与 CSS 的隔离页面量得 `solid / 1px`，浅深颜色分别为现有 0.12／0.14 边线。实际操作验证开关不改变 75% 背景不透明度、实色隐藏轮廓与滑条、半透明／毛玻璃显示并保留开启选择。`appearance` 脚本补实际边框与披露检查，避免只看 data 属性误报通过。证据与日志 `/Volumes/disk0/khor-checks/window-outline/`；完整 appearance 浏览器脚本、原生 Khor 窗口及 Windows/Linux 合成器本轮未运行。
+
+本轮默认前端检查、生产构建、门索引、appearance 脚本语法与 `git diff --check` 通过。使用 CUA 操作生产控件，材质选择使用 Chrome 原生菜单；配置来源为独立内存 fixture，没有修改真实 Khor 偏好。临时源码、验证标签页、服务与 Vite 已清理；未合并或发布。
