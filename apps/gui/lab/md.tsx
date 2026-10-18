@@ -8,6 +8,9 @@
 //                                    the way a turn arrives, and answer
 //                                    what each chunk cost
 //   window.mdLong()                  the long reply the measure streams
+//   window.mdMeasured()              blocks drawn, blocks painted so far
+//   window.mdCutAgrees(text, step)   prefixes where cutting tail-first
+//                                    and cutting whole disagree
 //
 //   #chat / #readme  a turn and a README, painted, for a screenshot
 import { useState } from "react";
@@ -18,6 +21,9 @@ import "@/styles/tokens.css";
 import "@/styles/app.css";
 
 import * as md from "@/components/Markdown";
+
+import { measured as highlighted } from "@/lib/highlight";
+import { cut } from "@/lib/md/blocks";
 
 import { longReply } from "./md-long";
 
@@ -59,7 +65,20 @@ function Lab() {
 
 const w = window as unknown as Record<string, unknown>;
 w.mdLong = longReply;
-w.mdMeasured = () => ({ ...(measured as object) });
+w.mdMeasured = () => ({ ...(measured as object), paints: highlighted.paints });
+/** Whether cutting a growing text tail-first agrees with cutting it
+    whole, at every `step` of `text`: the mismatching prefix lengths. */
+w.mdCutAgrees = (text: string, step: number) => {
+  const bad: number[] = [];
+  let prev = null;
+  for (let at = step; at < text.length + step; at += step) {
+    const t = text.slice(0, at);
+    const c = cut(t, prev);
+    if (JSON.stringify(c.blocks) !== JSON.stringify(cut(t, null).blocks)) bad.push(at);
+    prev = c;
+  }
+  return bad;
+};
 w.mdShow = async (s: Shown) => {
   show(s);
   await settle();

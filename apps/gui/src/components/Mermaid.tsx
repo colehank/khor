@@ -12,11 +12,14 @@
 // diagram on the ground it sits on — the app's, or the preview's own
 // (预览背景) — and redraws it when that changes.
 //
-// **Strict.** `securityLevel: "strict"` encodes every label and refuses
-// click handlers; what comes back is an SVG mermaid has already passed
-// through its own sanitiser, and the gate reads the drawn block back for
-// a script or an `on*` attribute (`scripts/check-md.mjs`). A diagram that
-// will not parse stays its source.
+// **Strict, and scrubbed after.** `securityLevel: "strict"` refuses click
+// handlers and passes labels through mermaid's own sanitiser — which
+// still lets a label's `<img src>` through, and a picture fetched because
+// a diagram was read is the network call the previews never make
+// (`HtmlView`). So what comes back is cleaned once more here (`scrub`):
+// no picture, no script, no `on*`, no address that leaves the drawing.
+// The gate reads the drawn block back for each (`scripts/check-md.mjs`).
+// A diagram that will not parse stays its source.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 type Mermaid = typeof import("mermaid")["default"];
@@ -47,6 +50,23 @@ function vars(at: Element) {
   };
 }
 
+/** The SVG with nothing in it that runs or fetches. */
+function scrub(svg: string): string {
+  // Parsed as HTML, which forgives a label's `<br>` where XML would not;
+  // a parse runs no script and loads nothing.
+  const doc = new DOMParser().parseFromString(svg, "text/html");
+  for (const el of doc.querySelectorAll("script, img, image, iframe, object, embed, audio, video, use[href^='http']")) el.remove();
+  for (const el of doc.querySelectorAll("*")) {
+    for (const a of [...el.attributes]) {
+      const v = a.value.trim();
+      if (/^on/i.test(a.name) || (/(^|:)href$/i.test(a.name) && !v.startsWith("#")) || /^\s*javascript:/i.test(v)) {
+        el.removeAttribute(a.name);
+      }
+    }
+  }
+  return doc.body.innerHTML;
+}
+
 function draw(code: string, at: Element): Promise<string | null> {
   const theme = vars(at);
   const key = `${JSON.stringify(theme)}\n${code}`;
@@ -56,7 +76,7 @@ function draw(code: string, at: Element): Promise<string | null> {
     const mermaid = await lib!;
     mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base", themeVariables: theme });
     try {
-      const { svg } = await mermaid.render(`khor-mermaid-${(seq += 1)}`, code);
+      const svg = scrub((await mermaid.render(`khor-mermaid-${(seq += 1)}`, code)).svg);
       DRAWN.set(key, svg);
       return svg;
     } catch {
