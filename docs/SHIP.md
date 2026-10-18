@@ -151,3 +151,16 @@ khor devices                                                   # 五台都在线
 - iOS：重建后的 `libapp.a` 与正式归档均验到本次收据及新时间。Tauri 遇到已记录的 `exportArchive Copy failed`，系统 PATH 的导出上传于 `2026-10-18 20:13:12 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，App Store Connect 开始处理。临时增加的两处签名团队配置已恢复。
 - 日志、校验与清理清单：`/Volumes/disk0/khor-ship-20261018-overlays/`。发布后按包身份、构建已结束和 lsof 无引用检查，清理旧 Khor 源码导出、Khor Xcode 导出副本、退役 Codex 工作区夹具、Khor Xcode intermediates 与 npm `_cacache` 下载缓存；保留 `_npx`、node_modules、现有会话、最新正式归档与静态库。VS Code 的暂存版本更新于安装版，保留其待安装更新。
 - 系统盘释放约 1.53 GiB，可用由约 8.6 GiB 增至约 10 GiB；外挂盘另清掉约 47 MiB 的本轮源码导出。未清理系统 swap 或全量 cargo target。
+
+## 发布记录：2026-10-19（药丸连续预选）
+
+- 构建提交：`d63e8d43`；功能 `45a38f7c`、原生网页避让 `0c3abeb2`、本地占位依赖锁文件 `8885fe44` 均已合入 main。前端收据：`khor-ui-assets:/assets/index-B7CmfXd0.js`。
+- 根会话与内部内容药丸共用直接横滑／长按预选，按起点偏移调速、逐项停靠、首尾循环，松手只打开最终目标；原生网页为选择带让出底部区域，保留 WebView。
+- 验证：锁定依赖的 `npm ci --ignore-scripts`、默认前端检查、TypeScript、生产构建、content-model、content-sheet、gates 通过。CUA 在正式 DeckBand 上分别检查根层和内部层的 11 个事件／取消／收尾场景；真实 Chrome 鼠标横拖验证末项到首项只提交一次。完整 face 浏览器门、iPhone 原生触摸／键盘／WKWebView 手感未实测。额外 palette 门停在旧未读元素夹具的超时，未声称该门通过；本轮没有配色 token 改动。
+- Mac：最终 CLI／GUI 签名与收据通过，旧主窗口 PID 45358 已退出，新主窗口 PID 10447；8 个既有会话辅助进程全部保留。会话行数 10 → 10，没有新增失败；HTTP 与运行日志均为本次收据。
+- 集群：hinton 负载超过脚本上限，改在 glibc 2.31 的 lecun 编译并安装。lecun／hinton／turing 的 5467 实际监听进程 SHA-256 均为 `1a8e75e2b360478f5a2b2bf62f521860383242a156da16d95bfdd9e952a36a66`，三台 HTTP 收据一致；校验的是 `/proc/<pid>/exe`，不是 keeper 的 PID 文件。
+- iOS：新静态库与归档 App 均验到本次收据；Tauri 遇到已记录的 `exportArchive Copy failed`。系统 PATH 下的导出于 `2026-10-19 04:01:14 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，App Store Connect 正在处理。临时签名团队改动已恢复。
+- 构建环境：初次临时安装绕过不完整的锁文件，带入了 Tauri JS 2.12；随后补齐 elk 本地占位包的锁记录，以冻结安装恢复 API 2.11.1／CLI 2.12.1，与 Rust 2.11.5 配合。最终 Mac、iOS 与集群均重新构建并按同一收据核验；冻结安装未改依赖版本。依赖留在外挂盘的 `/Volumes/disk0/khor-gui-locked-20261019/node_modules`。
+- 收尾：按 bundle identifier 与无进程引用确认后，清理两个 Khor Xcode 导出临时目录，共 243,284,757 字节；清理了未使用的临时依赖缓存与旧静态库备份。保留本次归档、当前 Externals 静态库和发布日志 `/Volumes/disk0/khor-ship-20261019-pill-scrub/`。
+
+前端依赖外置时，物理目录必须保留 `…/node_modules/包名` 层级，不能把包直接放在改名后的目录根，否则 Node 的上级模块解析与 TypeScript 会失效。锁文件缺失本地 `file:` 占位包时，应补齐锁记录后执行 `npm ci`；不以 `--package-lock=false` 绕过锁定版本。
