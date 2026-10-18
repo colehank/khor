@@ -44,7 +44,9 @@ if(process.argv.includes('--serve')){
     const page=await browser.newPage({viewport:{width:1100,height:820}});
     await page.goto(`http://127.0.0.1:${port}/dialog-proof`);
     const frame=page.frameLocator('iframe');
+    const settled=()=>page.waitForFunction(()=>{const el=document.querySelector('iframe').contentDocument.querySelector('[role="dialog"]');return el&&el.getAnimations().every(a=>a.playState!=='running');});
     const bounded=async()=>{
+      await settled();
       const b=await frame.getByRole('dialog').evaluate(el=>{
         const box=el.getBoundingClientRect(),footer=el.querySelector('[data-slot="dialog-footer"]')?.getBoundingClientRect();
         return {top:box.top,bottom:box.bottom,right:box.right,height:innerHeight,width:innerWidth,footer:footer?.bottom};
@@ -70,14 +72,26 @@ if(process.argv.includes('--serve')){
       await bounded();
       if(size.startsWith('手机')){
         const ratio=await frame.getByRole('dialog').evaluate(el=>el.getBoundingClientRect().height/innerHeight);
-        assert(ratio<=.71,'import unexpectedly full-screen');
+        assert(ratio>=.49&&ratio<=.51,'selection did not open at its medium detent');
+        await frame.getByRole('button',{name:'展开内容面板',exact:true}).click();
+        await settled();
+        const expanded=await frame.getByRole('dialog').evaluate(el=>({height:el.getBoundingClientRect().height,top:el.getBoundingClientRect().top,viewport:innerHeight}));
+        assert(expanded.height>ratio*expanded.viewport&&expanded.top>=0&&expanded.top<=30,'large detent did not use available space');
         assert.equal(await frame.locator('[data-import-field]').evaluate(el=>el===document.activeElement),false);
       }
+      await frame.getByRole('searchbox',{name:'搜索可导入的会话'}).click();
+      await settled();
       const fitted=await frame.getByRole('dialog').evaluate(el=>el.getBoundingClientRect().height);
       await frame.getByRole('searchbox',{name:'搜索可导入的会话'}).fill('终端 30');
       assert(Math.abs(await frame.getByRole('dialog').evaluate(el=>el.getBoundingClientRect().height)-fitted)<1,'filter moved the import sheet');
       await frame.getByRole('button',{name:'取消',exact:true}).click();
     }
+    await frame.getByRole('combobox',{name:'启动方式',exact:true}).click();
+    await frame.getByRole('option',{name:'管理启动方式',exact:true}).click();
+    await frame.getByRole('button',{name:'新建启动方式',exact:true}).click();
+    await settled();
+    assert.equal(await frame.locator('#launch-preset-name').evaluate(el=>el===document.activeElement),true,'outgoing task stole edit focus');
+    await frame.getByRole('button',{name:'取消',exact:true}).click();
     await page.getByRole('button',{name:'手机短视口',exact:true}).click();
     await frame.getByRole('button',{name:'目录选择',exact:true}).click();
     const directory=frame.getByRole('combobox',{name:'目录',exact:true});
@@ -103,9 +117,17 @@ if(process.argv.includes('--serve')){
     await frame.locator('[data-path-suggestions]').waitFor();
     await frame.getByRole('button',{name:'下滑推荐菜单',exact:true}).click();
     const held=JSON.parse(await frame.locator('[data-form-pan-result]').textContent());
-    assert.equal(held.prevented,false);assert.equal(held.pull,'');
+    assert.equal(held.prevented,false);assert.equal(held.dragged,false);
     await frame.getByRole('button',{name:'取消',exact:true}).click();
     await frame.locator('[data-pan-form]').waitFor({state:'hidden'});
+    await frame.getByRole('button',{name:'任务手势',exact:true}).click();
+    await frame.getByRole('button',{name:'上滑菜单',exact:true}).click();
+    assert.equal(JSON.parse(await frame.locator('[data-task-pan-result]').textContent()).dragged,false);
+    await frame.getByRole('button',{name:'上滑内容',exact:true}).click();
+    assert.equal(await frame.locator('[data-task-pan]').getAttribute('data-detent'),'full');
+    await page.waitForFunction(()=>{const el=document.querySelector('iframe').contentDocument.querySelector('[data-task-pan]');return Math.abs(el.getBoundingClientRect().height-parseFloat(el.style.getPropertyValue('--task-sheet-height')))<1;});
+    await frame.getByRole('button',{name:'下滑内容',exact:true}).click();
+    assert.equal(await frame.locator('[data-task-pan]').getAttribute('data-detent'),'half');
     console.log('PASS: dialog viewport bounds, fixed actions, compact import, menu pan isolation and main-content handoff');
   }finally{await browser?.close();await server.close();}
 }

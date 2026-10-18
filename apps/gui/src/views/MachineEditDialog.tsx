@@ -40,7 +40,7 @@ import { useEffect, useState } from "react";
 
 import { renameMachine, type DeviceRow } from "@/api";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
@@ -104,7 +104,7 @@ export function MachineEditDialog({
 
   return (
     <Dialog open={row !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent form scrollable data-machine-edit={row?.id}>
+      <TaskOverlay purpose="edit" scrollable data-machine-edit={row?.id}>
         <DialogHeader>
           <DialogTitle>{row ? gui.machine_edit_title(row.shown) : ""}</DialogTitle>
         </DialogHeader>
@@ -149,7 +149,7 @@ export function MachineEditDialog({
             {gui.edit_done}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

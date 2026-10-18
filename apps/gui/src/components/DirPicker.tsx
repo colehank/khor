@@ -18,7 +18,7 @@ import { PathField, settledPath } from "@/components/PathField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
+  TaskOverlay,
   DialogBody,
   DialogFooter,
   DialogHeader,
@@ -113,7 +113,7 @@ export function DirPicker({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form scrollable data-dir-picker>
+      <TaskOverlay purpose="selection" initialHeight="fit" scrollable data-dir-picker>
         <DialogHeader>
           <DialogTitle>{gui.dir_picker}</DialogTitle>
         </DialogHeader>
@@ -184,7 +184,7 @@ export function DirPicker({
             {gui.dir_picker_take}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

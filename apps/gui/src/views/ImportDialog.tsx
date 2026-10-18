@@ -45,7 +45,7 @@ import { ChoiceField } from "@/components/ui/choice-field";
 import { sessionMark } from "@/components/BrandIcons";
 import { IconClose, IconSearch, IconDevices } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { imeKey } from "@/lib/ime";
 import { useHereHosts } from "@/lib/here";
@@ -125,7 +125,6 @@ export function ImportDialog({
   const [rows, setRows] = useState<CandidateRow[] | null>(null);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [q, setQ] = useState("");
-  const [heldHeight, setHeldHeight] = useState<number>();
   /** The machines picked, by device id; none is 「全部」. */
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /** The row Enter opens, while something is typed. */
@@ -156,7 +155,6 @@ export function ImportDialog({
   useEffect(() => {
     if (!open) return;
     setQ("");
-    setHeldHeight(undefined);
     setPicked(new Set());
     setActive(0);
     setGoing(null);
@@ -227,19 +225,7 @@ export function ImportDialog({
     list.current?.querySelector<HTMLElement>("[data-import-row][data-active]")?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
-  const holdHeight = () => {
-    if (heldHeight !== undefined) return;
-    const dialog = list.current?.closest('[data-slot="dialog-content"]');
-    if (dialog) setHeldHeight(dialog.getBoundingClientRect().height);
-  };
-  const query = (value: string) => {
-    if (value !== "") holdHeight();
-    else if (picked.size === 0) setHeldHeight(undefined);
-    setQ(value);
-  };
   const press = (id: string | null) => {
-    if (q === "" && (id === null || (picked.size === 1 && picked.has(id)))) setHeldHeight(undefined);
-    else holdHeight();
     setPicked((was) => {
       if (id === null) return new Set();
       const next = new Set(was);
@@ -265,15 +251,11 @@ export function ImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        form
+      <TaskOverlay
+        purpose="selection"
         scrollable
         data-import-dialog
-        style={heldHeight === undefined ? undefined : {height: heldHeight}}
-        onOpenAutoFocus={(e) => {
-          e.preventDefault();
-          if (!document.documentElement.hasAttribute("data-narrow")) field.current?.focus();
-        }}
+
       >
         <DialogHeader>
           <DialogTitle>{gui.import_title}</DialogTitle>
@@ -298,7 +280,7 @@ export function ImportDialog({
               placeholder={gui.import_search}
               aria-label={gui.import_search}
               value={q}
-              onChange={(e) => query(e.target.value)}
+              onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
                 if (imeKey(e)) return;
                 if (e.key === "ArrowDown") {
@@ -329,7 +311,7 @@ export function ImportDialog({
                 onPointerDown={(e) => e.preventDefault()}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  query("");
+                  setQ("");
                   field.current?.focus();
                 }}
                 className="absolute top-1/2 right-1 grid size-touch -translate-y-1/2 place-items-center"
@@ -448,7 +430,7 @@ export function ImportDialog({
             {gui.delete_keep}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

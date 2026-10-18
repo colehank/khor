@@ -43,14 +43,14 @@
 // out of the terminal, or the keyboard would drop on every press — so a
 // press is answered on `mousedown` with `preventDefault` (WebKit's tap
 // focuses on its synthesized mousedown) and acted on at the click.
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { Terminal } from "@xterm/xterm";
 
 import { IconAttach, IconChevronDown, IconChevronRight, IconChevronUp, IconGrip, IconKeyboard, IconKeyRow, IconMore } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { Switch } from "@/components/settings/Switch";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
 import { afterKey, GROUPS, KEYS, KEY_BY_NAME, pressLatch, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
@@ -404,13 +404,6 @@ function KeyboardMatters({ onEdit }: { onEdit: () => void }) {
   );
 }
 
-/** A press on a sheet's grabber band (its top 28, as `useSheet` reads
-    it) that is not on a control puts the sheet away. */
-function onGrabber(e: PointerEvent<HTMLDivElement>, close: () => void) {
-  const top = e.currentTarget.getBoundingClientRect().top;
-  if (e.clientY - top < 28 && !(e.target instanceof Element && e.target.closest("button"))) close();
-}
-
 /** A key's spoken name in the editor: its own where it has one. */
 const nameOf = (k: KeyDef) => k.label ?? k.cap;
 
@@ -425,11 +418,9 @@ const nameOf = (k: KeyDef) => k.label ?? k.cap;
 export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        form
+      <TaskOverlay
+        purpose="edit" initialHeight="medium" maxHeight="large" dismiss="outside"
         data-key-row-editor
-        onInteractOutside={() => {}}
-        onPointerUp={(e) => onGrabber(e, () => onOpenChange(false))}
       >
         <div className="flex items-center gap-row">
           <DialogTitle className="min-w-0 flex-1">{gui.term_key_row}</DialogTitle>
@@ -443,7 +434,7 @@ export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChan
           </button>
         </div>
         <KeyRowList />
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

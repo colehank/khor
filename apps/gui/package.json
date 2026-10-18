@@ -38,6 +38,7 @@
     "web-face": "node scripts/web-face.mjs",
     "gates": "node scripts/check-gates.mjs",
     "dialogs": "node scripts/check-dialogs.mjs",
+    "overlay-policy": "node scripts/check-overlay-policy.mjs",
     "tokens": "node scripts/check-tokens.mjs",
     "boot": "node scripts/check-boot.mjs",
     "native": "node scripts/check-native.mjs",

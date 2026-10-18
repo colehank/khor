@@ -7,7 +7,7 @@ import { MoreSection } from "@/views/more/MorePage";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogBody, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ANSI_KEYS, BASE_KEYS, PRESETS, colorHex, clonePalette, importPalette, onTermTheme, readPalette, removePalette, savePalette, setTermTheme, termTheme, terminalTheme, useTermTheme, THEME_FILE_MAX, type Palette, type ColorKey } from "@/lib/term-theme";
 import { useWindowSupport } from "@/lib/window-surface";
 
@@ -130,7 +130,7 @@ export function TerminalThemeSection() {
     </MoreSection>
     {(error || notice) && <p role="status" className={`mb-group text-callout ${error ? "text-destructive" : "text-muted-foreground"}`}>{error ?? notice}</p>}
     <Dialog open={editor !== null} onOpenChange={open => { if (!open) setEditor(null); }}>
-      <DialogContent form scrollable data-term-theme-editor className="term-theme-editor w-(--theme-editor-w)! overflow-y-auto">
+      <TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" scrollable data-term-theme-editor className="term-theme-editor w-(--theme-editor-w)! overflow-y-auto">
         <DialogTitle>{gui.term_theme_customize_title}</DialogTitle>
         {editor && <>
           <DialogBody>
@@ -145,7 +145,7 @@ export function TerminalThemeSection() {
           </DialogBody>
           <DialogFooter><Button onClick={() => setEditor(null)}>{gui.delete_keep}</Button><Button data-term-theme-save variant="primary" disabled={!valid || !editor.name.trim()} onClick={() => { if (!valid) return; try { savePalette(editor.name, valid, editor.id); setEditor(null); setNotice(gui.term_theme_saved); } catch (e) { if (e instanceof Error && e.message === "storage") setEditor({ ...editor, id: termTheme().selected }); setError(colorError(e)); } }}>{gui.term_theme_save}</Button></DialogFooter>
         </>}
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
     <Dialog open={removing} onOpenChange={setRemoving}><DialogContent><DialogTitle>{gui.term_theme_remove_name(custom?.name ?? "")}</DialogTitle><DialogFooter><Button onClick={() => setRemoving(false)}>{gui.delete_keep}</Button><Button variant="destructive" onClick={() => { if (custom && !removePalette(custom.id)) setError(gui.term_theme_storage_error); setRemoving(false); }}>{gui.remove}</Button></DialogFooter></DialogContent></Dialog>
   </div>;

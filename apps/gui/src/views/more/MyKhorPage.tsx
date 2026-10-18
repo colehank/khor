@@ -70,7 +70,7 @@ import { WindowControls } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -448,8 +448,8 @@ export function MyKhorPage({
       </section>
       {narrow && (
         <Dialog open={opened !== null && card !== null} onOpenChange={(o) => !o && close()}>
-          <DialogContent
-            form
+          <TaskOverlay
+            purpose="preview" initialHeight="fit"
             data-dial-sheet
             data-dial-card
             // Nothing in the sheet asks for the focus on opening: a sheet
@@ -460,7 +460,7 @@ export function MyKhorPage({
           >
             <DialogTitle className="sr-only">{openedRow?.shown ?? gui.my_khor}</DialogTitle>
             {card}
-          </DialogContent>
+          </TaskOverlay>
         </Dialog>
       )}
       {/* **The phone's deck** (rule 1): ‹ · the pill with the name and the

@@ -6,7 +6,7 @@
 //
 // ⚠️ 墓碑 (2026-09-30): this was `ui/sheet-form` (`SheetForm`) while the
 // forms were sheets hanging from R0. The sheet was retired — every form is
-// a centred dialog now (`DialogContent form`) — and the grid kept its job
+// a centred dialog now (`TaskOverlay purpose="edit"`) — and the grid kept its job
 // under a name that does not say sheet.
 //
 // **`min-w-0` on the grid and `minmax(0,1fr)` on its second column are

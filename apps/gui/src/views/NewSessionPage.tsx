@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ChoiceField, type ChoiceOption } from '@/components/ui/choice-field';
 import { Input } from '@/components/ui/input';
 import { FormGrid, FormLabel } from '@/components/ui/form-grid';
-import { Dialog, DialogContent, DialogBody, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { IconClose, IconGear, IconPencil, IconPlus } from '@/components/icons';
 import { gui } from '@/gen/catalog';
 import { draftFor, dropHandOff, peekHandOff, tellDraft } from '@/lib/composer-handoff';
@@ -283,7 +283,7 @@ export function NewSessionPage({
   </div></div>
   <Dialog open={!!edit} onOpenChange={on => {
       if (!on && !saving) setEdit(null);
-    }}><DialogContent form scrollable><DialogTitle>{presets.some(p => p.id === edit?.id) ? gui.launch_edit_title : gui.launch_add_title}</DialogTitle><DialogBody><FormGrid>
+    }}><TaskOverlay purpose="edit" scrollable><DialogTitle>{presets.some(p => p.id === edit?.id) ? gui.launch_edit_title : gui.launch_add_title}</DialogTitle><DialogBody><FormGrid>
    <FormLabel htmlFor="launch-preset-name">{gui.new_session_name}</FormLabel><Input id="launch-preset-name" autoFocus value={edit?.name || ''} onChange={e => setEdit(was => was && {
             ...was,
             name: e.target.value
@@ -292,9 +292,9 @@ export function NewSessionPage({
             ...was,
             command: e.target.value
           })} />
-  </FormGrid>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}</DialogBody><DialogFooter><Button disabled={saving} onClick={() => setEdit(null)}>{gui.delete_keep}</Button><Button variant="primary" disabled={saving} onClick={save}>{gui.watch_save}</Button></DialogFooter></DialogContent></Dialog>
+  </FormGrid>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}</DialogBody><DialogFooter><Button disabled={saving} onClick={() => setEdit(null)}>{gui.delete_keep}</Button><Button variant="primary" disabled={saving} onClick={save}>{gui.watch_save}</Button></DialogFooter></TaskOverlay></Dialog>
   <Dialog open={manage && !browsing} onOpenChange={setManage}>
-    <DialogContent form scrollable data-launch-manage>
+    <TaskOverlay purpose="selection" scrollable data-launch-manage>
       <DialogTitle>{gui.launch_method}</DialogTitle>
       <DialogBody><MenuRows choices={allChoices} presets={presets} onEdit={p => {
         setManage(false);
@@ -309,13 +309,10 @@ export function NewSessionPage({
         <Button variant="ghost" onClick={browse}>{gui.launch_attach_agent}</Button>
         <Button data-footer-trailing onClick={() => setManage(false)}>{gui.edit_done}</Button>
       </DialogFooter>
-    </DialogContent>
+    </TaskOverlay>
   </Dialog>
   <Dialog open={manage && browsing} onOpenChange={on => {if(!on)setBrowsing(false)}}>
-    <DialogContent form scrollable data-launch-catalog onOpenAutoFocus={e => {
-      // Browsing a catalog does not summon the phone's keyboard until asked.
-      if(document.documentElement.hasAttribute('data-narrow'))e.preventDefault();
-    }}>
+    <TaskOverlay purpose="selection" scrollable data-launch-catalog>
       <DialogTitle>{gui.launch_attach_agent}</DialogTitle>
       <Input aria-label={gui.new_session_search} placeholder={gui.new_session_search} value={query} onChange={e => setQuery(e.target.value)}/>
       <span className="text-caption text-muted-foreground">{taken ? gui.new_session_registry_taken(taken[0], taken[1]) : gui.new_session_registry}</span>
@@ -328,7 +325,7 @@ export function NewSessionPage({
       </DialogBody>
       {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
       <DialogFooter><Button onClick={()=>setBrowsing(false)}>{gui.back}</Button></DialogFooter>
-    </DialogContent>
+    </TaskOverlay>
   </Dialog>
   <Dialog open={!!removing} onOpenChange={on => !on && setRemoving(null)}><DialogContent><DialogTitle>{gui.launch_remove}</DialogTitle><p className="text-body">{removing?.name}</p>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}<DialogFooter><Button disabled={saving} onClick={() => setRemoving(null)}>{gui.delete_keep}</Button><Button disabled={saving} onClick={remove}>{gui.delete}</Button></DialogFooter></DialogContent></Dialog>
  </>;

@@ -39,7 +39,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { IconCheck, IconChevronRight, IconClose, IconDevices, IconSshHost } from "@/components/icons";
 import { Switch } from "@/components/settings/Switch";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { AddRun } from "@/gen/bindings/AddRun";
 import type { AddStep } from "@/gen/bindings/AddStep";
@@ -617,9 +617,9 @@ export function AddMachineDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form data-add-machine={page}>
+      <TaskOverlay purpose="edit" data-add-machine={page}>
         {content}
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

@@ -140,4 +140,4 @@ khor 是一张点对点的设备网，它应该读起来像随 macOS 一起装�
 
 ### 弹窗、底部任务弹层与菜单（2026-10-18）
 
-按任务选容器：短确认／PIN 居中；编辑、选择与长列表在手机从底部出现；候选菜单就近展开且独占自己的滚动；文件／网页沿用会话内容底栏。所有弹窗以可见视口为边界，导入不再强制接近满屏。详见 [Dialog](components/Dialog/README.md#弹层的职责与边界2026-10-18)，门 `npm run dialogs`。
+按任务选容器：短确认／PIN 居中；编辑、选择与长列表在手机从底部出现；候选菜单就近展开且独占自己的滚动；文件／网页沿用会话内容底栏。所有弹窗以可见视口为边界，选择类中档打开、可主动展开到大档；初始高度与最大高度独立声明。公共入口为 `TaskOverlay purpose="edit|selection|preview"`，短确认使用 `DialogContent`。详见 [Dialog](components/Dialog/README.md#弹层的职责与边界2026-10-18)，门 `npm run dialogs`。

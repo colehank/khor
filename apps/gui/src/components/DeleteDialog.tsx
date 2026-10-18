@@ -90,12 +90,7 @@ export function DeleteDialog({ pending, onDone }: { pending: Pending | null; onD
         <DialogContent
           data-delete-dialog
           data-action-sheet
-          // Two groups on the scrim, not one card: the question with its
-          // act, then 取消 apart — iOS's action sheet, the screen's width
-          // less a gap each side. `!` where the dialog's own token sizes
-          // (`w-dialog`, `gap-row`, `p-pane`) are names the class merger
-          // cannot tell apart from these.
-          className="top-auto bottom-[calc(var(--safe-bottom)+var(--gap-in))] w-[calc(100%-2*var(--gap-in))]! max-w-none translate-y-0 gap-in! border-0 bg-transparent p-0! shadow-none"
+          purpose="actions"
         >
           <div className="flex flex-col overflow-hidden rounded-lg bg-popover">
             <DialogHeader className="items-center gap-xxs px-pane pt-base pb-in text-center">

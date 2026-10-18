@@ -193,7 +193,13 @@ export function PathField({
       const css = getComputedStyle(body);
       const foot = parseFloat(css.paddingBottom) || 0;
       const reserve = footer ? footer.getBoundingClientRect().height + (parseFloat(css.rowGap) || 0) : 0;
-      const room = Math.max(0, Math.floor(body.getBoundingClientRect().bottom - foot - reserve - menu.getBoundingClientRect().top));
+      // A fitted task may grow when this menu appears. Measure that budget
+      // from the shared container, so a menu isn't capped to zero by the
+      // small, pre-completion frame and prevented from ever making it grow.
+      const fitted = dialog.dataset.overlayPresentation === 'sheet' && dialog.dataset.overlayInitial === 'fit' && dialog.dataset.detent === 'half';
+      const capacity = parseFloat(getComputedStyle(dialog).getPropertyValue('--task-sheet-room')) || 0;
+      const growth = fitted ? Math.max(0, capacity - dialog.getBoundingClientRect().height) : 0;
+      const room = Math.max(0, Math.floor(body.getBoundingClientRect().bottom - foot - reserve - menu.getBoundingClientRect().top + growth));
       setMenuRoom(was => was?.key === menuKey && was.height === room ? was : {key: menuKey, height: room});
     };
     sync();

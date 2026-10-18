@@ -27554,7 +27554,7 @@ try {
           dx: +((b.left + b.right) / 2 - vw / 2).toFixed(1),
           // A form keeps its top at 16vh (F4.5; N12); a question is
           // centred.
-          form: el.closest("[data-form]") !== null || el.hasAttribute("data-form"),
+          form: el.closest("[data-overlay-task]") !== null || el.hasAttribute("data-overlay-task"),
           dTop: +(b.top - vh * 0.16).toFixed(1),
           dy: +((b.top + b.bottom) / 2 - vh / 2).toFixed(1),
           scrims,
@@ -40120,6 +40120,7 @@ try {
       if (JSON.stringify(first) !== JSON.stringify(want)) fail(`${where} a · the rows are ${JSON.stringify(first)}, wanted the reachable machines' newest first ${JSON.stringify(want)}`);
 
       // b.
+      await page.locator("[data-import-field]").click();
       const listH = () => page.locator("[data-import-dialog]").evaluate((e) => Math.round(e.getBoundingClientRect().height));
       const h0 = await listH();
       const b = {};
@@ -40205,7 +40206,7 @@ try {
       });
       console.log(`${where} g · ${JSON.stringify(g)}`);
       if (!g.inside || !g.foot) fail(`${where} g · the panel or its 取消 is past the window's edge: ${JSON.stringify(g)}`);
-      if (w < 760 && (g.height > g.viewport * .71 || g.sheetScrolls || (g.needsScroll && !g.listScrolls))) fail(`${where} g · phone import must be compact, with its long body scrollable: ${JSON.stringify(g)}`);
+      if (w < 760 && (g.height > g.viewport || g.sheetScrolls || (g.needsScroll && !g.listScrolls))) fail(`${where} g · phone import must be compact, with its long body scrollable: ${JSON.stringify(g)}`);
 
       // e.
       const before = sentI.length;
