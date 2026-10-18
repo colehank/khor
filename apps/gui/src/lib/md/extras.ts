@@ -57,16 +57,22 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 
+/** Starts loading what `needs` names. The file page calls it while the
+    source is still showing, so the first switch to the preview finds its
+    chunks here and draws — and keeps its place (`FilePage`'s `placeAt`)
+    — on the first frame. */
+export function prepare(needs: Needs, file: boolean) {
+  if (needs.math) load("math", () => import("@/lib/md/math"));
+  if (needs.emoji) load("emoji", () => import("remark-emoji").then((m) => m.default));
+  if (file) load("file", () => import("@/lib/md/file"));
+}
+
 /** What is loaded now, as a version that changes when more is; asks for
     what `needs` names and is not loaded yet. `ready` is whether all of
     it is here. */
 export function useExtras(needs: Needs, file: boolean): { loaded: Loaded; version: number; ready: boolean } {
   const v = useSyncExternalStore(subscribe, () => version);
-  useEffect(() => {
-    if (needs.math) load("math", () => import("@/lib/md/math"));
-    if (needs.emoji) load("emoji", () => import("remark-emoji").then((m) => m.default));
-    if (file) load("file", () => import("@/lib/md/file"));
-  }, [needs.math, needs.emoji, file]);
+  useEffect(() => prepare(needs, file), [needs.math, needs.emoji, file]);
   const here = (k: keyof Loaded) => loaded[k] !== undefined || failed.has(k);
   const ready = (!needs.math || here("math")) && (!needs.emoji || here("emoji")) && (!file || here("file"));
   return { loaded, version: v, ready };

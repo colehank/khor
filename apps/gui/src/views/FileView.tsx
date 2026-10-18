@@ -69,6 +69,8 @@ import {
   write,
 } from "@/lib/save-road";
 import { usePinch } from "@/hooks/use-pinch";
+import { needsOf } from "@/lib/md/blocks";
+import { prepare } from "@/lib/md/extras";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
 
@@ -536,6 +538,17 @@ export function FileView({
       **Not named `shown`** — that one is the open hunk's index, and the
       two collided here once already. */
   const body = edit?.text ?? file?.text ?? "";
+  // A Markdown file's preview chunks (HTML, anchors, formulas) start
+  // loading while the source shows, so the first switch draws at once
+  // and lands on the line it was at (`lib/md/extras`).
+  const markdown = rendererOf(path) === "md";
+  const hasText = file !== null;
+  useEffect(() => {
+    if (markdown && hasText) prepare(needsOf(body, true), true);
+    // Once per file: the body only decides which chunks, and a formula
+    // typed later loads when the preview asks for it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markdown, hasText, path]);
   /** Editable exactly when the far machine handed over a digest, which
       it does exactly when the text is the whole file (`files::shape`).
       One fact, one place. */
