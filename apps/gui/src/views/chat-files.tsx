@@ -38,7 +38,7 @@ import { PathCut } from "@/components/PathCut";
 import { PathField } from "@/components/PathField";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { baseName, shownName } from "@/lib/paths";
@@ -311,7 +311,7 @@ export function MachineFilePick({
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form data-chat-machine-pick>
+      <TaskOverlay purpose="selection" initialHeight="fit" data-chat-machine-pick>
         <DialogHeader>
           <DialogTitle>{gui.chat_attach_machine_title(shown)}</DialogTitle>
         </DialogHeader>
@@ -324,7 +324,7 @@ export function MachineFilePick({
             {gui.watch_add}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }
@@ -418,11 +418,11 @@ export function FilePreview({
   };
   return (
     <Dialog open={path !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
+      <TaskOverlay
         data-file-preview={path ?? undefined}
         // The phone's sheet (grabber, pulled down to put away); a window
         // over the scrim elsewhere, closed by a press outside or Esc.
-        form={narrow}
+        purpose="preview"
         // Important: the dialog's own `p-pane`, `gap-row` and `w-dialog`
         // are tokens tailwind-merge cannot tell are a padding, a gap and a
         // width, so it keeps both and theirs wins. The phone's sheet keeps
@@ -430,7 +430,7 @@ export function FilePreview({
         // indicator); only its sides go, the head and the file have theirs.
         className={cn(
           "flex flex-col overflow-hidden !gap-0",
-          narrow ? "h-[calc(100dvh-var(--safe-top)-3rem)] !px-0" : "h-[80vh] !w-[min(56rem,calc(100%-2rem))] !p-0",
+          narrow ? "!px-0" : "!p-0",
         )}
       >
         {path !== null && (
@@ -502,7 +502,7 @@ export function FilePreview({
             {footer && <div className="flex flex-none items-center justify-between gap-row border-t px-pane py-in">{footer}</div>}
           </>
         )}
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

@@ -18,7 +18,7 @@
 import { useMemo, useState } from "react";
 
 import { SideFind } from "@/components/SideFind";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { goLineIn, symbolsIn } from "@/lib/code/place";
 import type { CodeSymbol } from "@/lib/code/symbols";
@@ -42,10 +42,10 @@ export function SymbolsSheet({ open, onOpenChange, path }: { open: boolean; onOp
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        form
+      <TaskOverlay
+        purpose="selection"
         data-file-symbols
-        className="flex max-h-[70dvh] flex-col !gap-0"
+        className="flex flex-col !gap-0"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           if (document.documentElement.hasAttribute("data-narrow") || window.matchMedia("(pointer: coarse)").matches) return;
@@ -86,7 +86,7 @@ export function SymbolsSheet({ open, onOpenChange, path }: { open: boolean; onOp
             ))
           )}
         </div>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

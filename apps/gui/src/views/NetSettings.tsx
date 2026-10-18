@@ -42,7 +42,7 @@ import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { MoreFact, MoreSection } from "@/views/more/MorePage";
@@ -265,7 +265,7 @@ export function RelayAddDialog({
   }, [open]);
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent form data-relay-add-dialog>
+      <TaskOverlay purpose="edit" data-relay-add-dialog>
         <DialogHeader>
           <DialogTitle>{gui.relays_add}</DialogTitle>
         </DialogHeader>
@@ -328,7 +328,7 @@ export function RelayAddDialog({
             {gui.watch_add}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

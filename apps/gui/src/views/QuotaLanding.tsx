@@ -65,7 +65,7 @@ import { DIAL_CARD_RATIO, DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, type Pip } fro
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
+  TaskOverlay,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -2137,7 +2137,7 @@ function EditDialog({
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
-      <DialogContent data-quota-edit={acc.reading.account}>
+      <TaskOverlay purpose="edit" data-quota-edit={acc.reading.account}>
         <DialogHeader>
           <DialogTitle>{gui.accounts_edit}</DialogTitle>
         </DialogHeader>
@@ -2275,7 +2275,7 @@ function EditDialog({
             {gui.accounts_edit}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }
@@ -2343,7 +2343,7 @@ function RegisterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form data-quota-dialog>
+      <TaskOverlay purpose="edit" data-quota-dialog>
         <DialogHeader>
           <DialogTitle>{gui.accounts_register}</DialogTitle>
         </DialogHeader>
@@ -2468,7 +2468,7 @@ function RegisterDialog({
             {gui.accounts_register}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

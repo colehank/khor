@@ -40,7 +40,7 @@ import type { TabFace } from "@/browse/TabStrip";
 import { IconBack, IconBranch, IconCheck, IconEye, IconFiles, IconMore, IconReload, IconShare } from "@/components/icons";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -370,7 +370,7 @@ function RenameDialog({
   };
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent form data-file-rename>
+      <TaskOverlay purpose="edit" data-file-rename>
         <DialogHeader>
           <DialogTitle>{gui.rename}</DialogTitle>
         </DialogHeader>
@@ -390,7 +390,7 @@ function RenameDialog({
             {gui.rename}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchGitLog, fetchGitShow, said, type GitLog, type GitShow } from "@/api";
 import { Markdown } from "@/components/Markdown";
 import { Waiting } from "@/components/RegionState";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
@@ -94,7 +94,7 @@ export function HistorySheet({
   }, [open, machine, path]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form data-file-history className="max-h-[70dvh] !gap-0 overflow-y-auto">
+      <TaskOverlay purpose="selection" data-file-history className="!gap-0 overflow-y-auto">
         <DialogTitle className="px-in pb-in">{repo ? gui.commit_history : gui.file_history}</DialogTitle>
         {refused !== null ? (
           <div data-file-history-refused className="px-in text-callout text-state-failed">
@@ -137,7 +137,7 @@ export function HistorySheet({
             {log.more && <div className="px-in py-in text-callout text-muted-foreground">{gui.file_history_more}</div>}
           </div>
         )}
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

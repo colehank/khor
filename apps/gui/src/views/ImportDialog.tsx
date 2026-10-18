@@ -45,7 +45,7 @@ import { ChoiceField } from "@/components/ui/choice-field";
 import { sessionMark } from "@/components/BrandIcons";
 import { IconClose, IconSearch, IconDevices } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { imeKey } from "@/lib/ime";
 import { useHereHosts } from "@/lib/here";
@@ -225,13 +225,14 @@ export function ImportDialog({
     list.current?.querySelector<HTMLElement>("[data-import-row][data-active]")?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
-  const press = (id: string | null) =>
+  const press = (id: string | null) => {
     setPicked((was) => {
       if (id === null) return new Set();
       const next = new Set(was);
       if (!next.delete(id)) next.add(id);
       return next;
     });
+  };
 
   /** **A tap imports it and opens it** (IMPORT-BRIEF ruling 4,「直接打开
       呀」): the shell opens what comes back (`onImported`). */
@@ -250,13 +251,11 @@ export function ImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        form
+      <TaskOverlay
+        purpose="selection"
+        scrollable
         data-import-dialog
-        onOpenAutoFocus={(e) => {
-          e.preventDefault();
-          field.current?.focus();
-        }}
+
       >
         <DialogHeader>
           <DialogTitle>{gui.import_title}</DialogTitle>
@@ -264,7 +263,7 @@ export function ImportDialog({
         {/* `min-w-0` for the new-session wizard's reason: a grid item
             defaults to `min-width: auto`, and one long directory would
             widen the whole dialog past its edge. */}
-        <div data-import-body className="flex min-h-0 min-w-0 flex-col gap-row">
+        <DialogBody data-import-body>
           {/* The search field (components/SearchField): the text box with
               a magnifier, and a clear mark while something is typed. */}
           <div data-import-find className="relative flex-none">
@@ -350,7 +349,7 @@ export function ImportDialog({
             </div>
           )}
 
-          <div ref={list} data-import-rows className="-mx-in flex min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain px-in">
+          <div ref={list} data-import-rows className="-mx-in flex min-w-0 flex-none flex-col px-in">
             {rows === null ? null : rows.length === 0 ? (
               <Calm sentence={gui.import_empty} hint={gui.import_empty_hint} mark={{ "data-import-empty": "" }} />
             ) : shown.length === 0 ? (
@@ -425,13 +424,13 @@ export function ImportDialog({
               {gui.import_note}
             </p>
           )}
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
             {gui.delete_keep}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </TaskOverlay>
     </Dialog>
   );
 }

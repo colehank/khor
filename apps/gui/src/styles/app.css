@@ -326,24 +326,59 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 
-/* **导入's list keeps one height while it is filtered** (IMPORT-BRIEF):
-   a dialog that shrank and grew with every letter typed would move its
-   rows under the pointer. Wide, the list is a box sized by the window —
-   the dialog stands at 16vh and the rest of it is about 31rem with the
-   ACP section, so the list takes what is left, between ten rows' worth
-   and four. On the phone the sheet stands at its full height and only
-   the list scrolls, under the field and the chips. */
-[data-import-dialog] [data-import-rows] {
-  height: clamp(10rem, calc(84vh - 31rem), 30rem);
+/* Dialog bounds are shared, not a per-page guess. Long forms opt into
+   one shrinking body; the fallback scrolls the whole dialog. The visible
+   viewport matters when a keyboard covers the layout viewport. */
+[data-slot="dialog-content"] {
+  --dialog-visible-height: 100dvh;
+  --dialog-visible-top: 0%;
+  max-height: calc(var(--dialog-visible-height) - 2 * var(--gap-pane));
 }
-[data-narrow] [data-slot="dialog-content"][data-form][data-import-dialog] {
-  height: calc(100dvh - var(--sheet-kb) - 2rem);
+[data-slot="dialog-content"]:not([data-overlay-task]):not([data-action-sheet]) {
+  top: calc(var(--dialog-visible-top) + var(--dialog-visible-height) / 2);
+}
+[data-slot="dialog-content"][data-overlay-task] {
+  align-content: start;
+  top: calc(var(--dialog-visible-top) + var(--dialog-visible-height) * 0.16);
+  max-height: calc(var(--dialog-visible-height) * 0.84 - var(--gap-pane));
+}
+[data-slot="dialog-content"][data-scrollable] {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  grid-template-rows: auto minmax(0, 1fr);
 }
-[data-narrow] [data-import-dialog] [data-import-rows] {
-  height: auto;
-  flex: 1 1 0;
+[data-slot="dialog-content"][data-scrollable] > :not([data-slot="dialog-body"]):not([hidden]) {
+  flex: none;
+}
+/* Inline completions must contribute their height inside a bounded form;
+   otherwise the absolute menu is clipped by the dialog's scroller. */
+[data-slot="dialog-content"] [data-path-suggestions] > [data-menu-frame] {
+  position: static;
+}
+/* Selection tasks keep a stable workspace while filtering. The phone's
+   initial/maximum heights are resolved by useTaskOverlay, not by each page. */
+[data-slot="dialog-content"][data-overlay-presentation="dialog"][data-overlay-task][data-overlay-initial="medium"]:not([data-overlay-max="fit"]) {
+  height: calc(var(--dialog-visible-height) * 0.6);
+}
+[data-slot="dialog-content"][data-overlay-presentation="dialog"][data-overlay-task][data-overlay-initial="large"] {
+  height: calc(var(--dialog-visible-height) * 0.8);
+}
+[data-slot="dialog-content"][data-overlay-presentation="dialog"][data-overlay-purpose="preview"][data-overlay-initial="large"] {
+  top: calc(var(--dialog-visible-top) + var(--dialog-visible-height) * 0.1);
+  height: calc(var(--dialog-visible-height) * 0.8);
+}
+[data-slot="dialog-content"][data-overlay-presentation="actions"] {
+  top: auto;
+  bottom: calc(var(--sheet-kb) + var(--safe-bottom) + var(--gap-in));
+  width: calc(100% - 2 * var(--gap-in));
+  max-width: none;
+  translate: -50% 0;
+  transform: none;
+  gap: var(--gap-in);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
 }
 
 /* **Chrome never pans the screen** (the owner, 2026-10-05, iPhone build
@@ -606,7 +641,7 @@ aside[data-side] {
 [data-pull-host] > :not([data-pull]),
 [data-pull-on] [data-side-l0] {
   transform: translateY(var(--pull));
-  transition: transform var(--dur-240) var(--ease-out);
+  transition: height var(--dur-240) var(--ease-out);
 }
 [data-pull-host][data-pull-drag] > :not([data-pull]),
 [data-pull-drag] [data-side-l0] {
@@ -734,7 +769,7 @@ aside[data-side] {
    (UX-44 §2). A question stays a centred alert, and the wide face's
    dialogs keep `popover` (`ui/dialog`). ⚠️ 墓碑 (UX-37 → UX-44): a form
    sheet wore `popover` grey with a hairline on three sides. */
-:is([data-place-sheet], [data-narrow] [data-slot="dialog-content"][data-form]) {
+:is([data-place-sheet], [data-narrow] [data-slot="dialog-content"][data-overlay-task]) {
   --card: var(--background);
   --side: var(--background);
   --popover: var(--background);
@@ -752,31 +787,48 @@ aside[data-side] {
 [data-sheet-grabber] {
   display: none;
 }
-[data-narrow] [data-slot="dialog-content"][data-form] {
+[data-narrow] [data-slot="dialog-content"][data-overlay-task] {
   top: auto;
   left: 0;
   right: 0;
   bottom: var(--sheet-kb);
   width: 100%;
   max-width: none;
-  max-height: calc(100dvh - var(--sheet-kb) - 2rem);
+  max-height: calc(var(--dialog-visible-height) - var(--safe-top) - var(--gap-pane));
   overflow-y: auto;
   translate: none;
-  transform: translateY(var(--sheet-pull));
+  transform: none;
+  height: var(--task-sheet-height, auto);
   padding-top: calc(var(--gap-row) + var(--grabber-h));
   padding-bottom: calc(var(--page-inset) + var(--safe-bottom));
   transition: transform var(--dur-240) var(--ease-out);
 }
-[data-narrow] [data-slot="dialog-content"][data-form][data-sheet-pulling] {
+[data-narrow] [data-slot="dialog-content"][data-overlay-task][data-scrollable] {
+  overflow: hidden;
+}
+[data-narrow] [data-slot="dialog-content"][data-overlay-task][data-sheet-pulling] {
   transition: none;
 }
-[data-narrow] [data-slot="dialog-content"][data-form][data-state="open"] {
+[data-narrow] [data-slot="dialog-content"][data-overlay-task][data-state="open"] {
   animation: sheet-up var(--dur-240) var(--ease-out);
 }
-[data-narrow] [data-slot="dialog-content"][data-form][data-state="closed"] {
+[data-narrow] [data-slot="dialog-content"][data-overlay-task][data-state="closed"] {
   animation: sheet-down var(--dur-180) var(--ease-out) forwards;
 }
 [data-narrow] [data-sheet-grabber] {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--touch);
+  height: var(--touch);
+  margin-left: calc(var(--touch) / -2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  z-index: 1;
+}
+[data-narrow] [data-sheet-grabber] > span {
   display: block;
   position: absolute;
   top: var(--grabber-top);
@@ -798,7 +850,7 @@ aside[data-side] {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-narrow] [data-slot="dialog-content"][data-form] {
+  [data-narrow] [data-slot="dialog-content"][data-overlay-task] {
     animation: none !important;
     transition: none;
   }
@@ -829,48 +881,23 @@ aside[data-side] {
   }
 }
 
-/* **A sheet's buttons in its header** (UX-10; ux-9 I6). HIG Sheets on
-   iOS: 「the Cancel button belongs on the leading edge of the top
-   toolbar」, the one act on the trailing edge in the prominent style,
-   the title between them. On the narrow face a form's title and its
-   footer share the sheet's first row — the footer's own order already
-   puts 取消 first and the act last, so spreading it puts each at its
-   edge — and the row stays at the top while the form scrolls under it,
-   above the soft keyboard with the sheet. A wide window keeps the
-   dialog's footer where a Mac puts it. */
-[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"],
-[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
-  grid-row: 1;
+/* Task sheets use the same title → content → actions order as dialogs.
+   Do not stack footer and header into one grid cell: translated actions
+   and long names otherwise overlap. Long tasks keep only the body scrolling. */
+[data-narrow] [data-slot="dialog-content"][data-overlay-task] > :is([data-slot="dialog-header"], [data-slot="dialog-footer"]) {
   grid-column: 1;
-  position: sticky;
-  top: 0;
-  align-self: center;
   margin: 0;
+  align-self: stretch;
 }
-[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
+[data-narrow] [data-slot="dialog-content"][data-overlay-task] > [data-slot="dialog-footer"] {
   justify-content: space-between;
-  background: var(--popover);
-  z-index: 1;
 }
-/* A lone act that ends the sheet (完成) keeps the trailing edge, as
-   iOS's Done does; a lone 返回 / 取消 stays leading (round join-d). */
-[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] > [data-footer-trailing]:only-child {
+[data-narrow] [data-slot="dialog-content"][data-overlay-task] > [data-slot="dialog-footer"] > [data-footer-trailing]:only-child {
   margin-inline-start: auto;
 }
-[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] {
-  z-index: 2;
-  /* The title lies over the row the buttons stand in; it takes no
-     press, and it keeps clear of them. */
-  pointer-events: none;
-  text-align: center;
-  padding-inline: calc(2 * var(--touch));
-}
-[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] [data-slot="dialog-title"] {
+[data-narrow] [data-slot="dialog-content"][data-overlay-task] > [data-slot="dialog-header"] [data-slot="dialog-title"] {
   font-size: var(--text-headline);
   line-height: var(--text-headline--line-height);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* **A back swipe** (`hooks/use-edge-swipe`, F7.3; V01): the page —

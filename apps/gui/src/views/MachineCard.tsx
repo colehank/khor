@@ -36,7 +36,7 @@ import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
 import { SeatPick } from "@/components/SeatTitle";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
@@ -635,16 +635,16 @@ function ConnectionFact({ row, rows }: { row: DeviceRow; rows: DeviceRow[] }) {
       {narrow ? (
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>{info}</DialogTrigger>
-          <DialogContent form className="max-h-[80dvh] grid-rows-[auto_minmax(0,1fr)]">
+          <TaskOverlay purpose="preview" initialHeight="fit" className="grid-rows-[auto_minmax(0,1fr)]">
             <DialogHeader><DialogTitle>{gui.map_facts}</DialogTitle></DialogHeader>
             {details}
             <DialogFooter><Button data-footer-trailing onClick={() => setOpen(false)}>{gui.close}</Button></DialogFooter>
-          </DialogContent>
+          </TaskOverlay>
         </Dialog>
       ) : (
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>{info}</PopoverTrigger>
-          <PopoverContent align="start" className="flex max-h-[70dvh] w-dialog max-w-[calc(100vw-var(--gap-pane)*2)] flex-col gap-base p-base" aria-label={gui.map_facts}>
+          <PopoverContent align="start" className="flex w-dialog max-w-[calc(100vw-var(--gap-pane)*2)] flex-col gap-base p-base" aria-label={gui.map_facts}>
             <div className="text-headline">{gui.map_facts}</div>
             {details}
           </PopoverContent>

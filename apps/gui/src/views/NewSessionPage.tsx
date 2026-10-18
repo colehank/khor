@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ChoiceField, type ChoiceOption } from '@/components/ui/choice-field';
 import { Input } from '@/components/ui/input';
 import { FormGrid, FormLabel } from '@/components/ui/form-grid';
-import { Dialog, DialogContent, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { IconClose, IconGear, IconPencil, IconPlus } from '@/components/icons';
 import { gui } from '@/gen/catalog';
 import { draftFor, dropHandOff, peekHandOff, tellDraft } from '@/lib/composer-handoff';
@@ -228,6 +228,7 @@ export function NewSessionPage({
     }).catch(e => setEditError(String(e instanceof Error ? e.message : e))).finally(() => setSaving(false));
   };
   const browse = () => {
+    setError(null);
     setBrowsing(true);
     if (snapshot) return;
     Promise.all([agentsKnown(), agentsKnownTaken()]).then(([rows, when]) => {
@@ -282,7 +283,7 @@ export function NewSessionPage({
   </div></div>
   <Dialog open={!!edit} onOpenChange={on => {
       if (!on && !saving) setEdit(null);
-    }}><DialogContent form><DialogTitle>{presets.some(p => p.id === edit?.id) ? gui.launch_edit_title : gui.launch_add_title}</DialogTitle><FormGrid>
+    }}><TaskOverlay purpose="edit" scrollable><DialogTitle>{presets.some(p => p.id === edit?.id) ? gui.launch_edit_title : gui.launch_add_title}</DialogTitle><DialogBody><FormGrid>
    <FormLabel htmlFor="launch-preset-name">{gui.new_session_name}</FormLabel><Input id="launch-preset-name" autoFocus value={edit?.name || ''} onChange={e => setEdit(was => was && {
             ...was,
             name: e.target.value
@@ -291,20 +292,41 @@ export function NewSessionPage({
             ...was,
             command: e.target.value
           })} />
-  </FormGrid>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}<DialogFooter><Button disabled={saving} onClick={() => setEdit(null)}>{gui.delete_keep}</Button><Button variant="primary" disabled={saving} onClick={save}>{gui.watch_save}</Button></DialogFooter></DialogContent></Dialog>
-  <Dialog open={manage} onOpenChange={setManage}><DialogContent form><DialogTitle>{gui.launch_method}</DialogTitle><MenuRows choices={allChoices} presets={presets} onEdit={p => {
-          setManage(false);
-          setEditError(null);
-          setEdit({
-            ...p
-          });
-        }} onRemove={p => {
-          setEditError(null);
-          setRemoving(p);
-        }} />
-   <div className="flex flex-wrap gap-in"><Button onClick={()=>{setManage(false);add()}}><IconPlus className="size-kind-mark"/>{gui.launch_add_title}</Button><Button variant="ghost" onClick={browse}>{gui.launch_attach_agent}</Button></div>
-   {browsing && <div className="flex min-w-0 flex-col gap-in"><span className="text-caption text-muted-foreground">{taken ? gui.new_session_registry_taken(taken[0], taken[1]) : gui.new_session_registry}</span><Input aria-label={gui.new_session_search} placeholder={gui.new_session_search} value={query} onChange={e => setQuery(e.target.value)} /><div className="max-h-56 overflow-y-auto">{(snapshot || []).filter(k => `${k.id} ${k.name} ${k.about}`.toLowerCase().includes(query.toLowerCase())).map(k => <div key={k.id} className="flex min-w-0 items-center gap-in py-in"><div className="min-w-0 flex-1"><div className="truncate text-body">{k.name}</div><div className="truncate text-caption text-muted-foreground">{k.argv || k.about}</div></div>{known.some(a => a.name === k.id) ? <span className="text-caption text-muted-foreground">{gui.new_session_attached}</span> : k.argv === null ? <span className="text-caption text-muted-foreground">{gui.new_session_byhand}</span> : <Button size="sm" disabled={attaching !== null} onClick={() => attach(k.id)}>{gui.new_session_attach}</Button>}</div>)}</div></div>}
-   <DialogFooter><Button onClick={() => setManage(false)}>{gui.edit_done}</Button></DialogFooter></DialogContent></Dialog>
+  </FormGrid>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}</DialogBody><DialogFooter><Button disabled={saving} onClick={() => setEdit(null)}>{gui.delete_keep}</Button><Button variant="primary" disabled={saving} onClick={save}>{gui.watch_save}</Button></DialogFooter></TaskOverlay></Dialog>
+  <Dialog open={manage && !browsing} onOpenChange={setManage}>
+    <TaskOverlay purpose="selection" scrollable data-launch-manage>
+      <DialogTitle>{gui.launch_method}</DialogTitle>
+      <DialogBody><MenuRows choices={allChoices} presets={presets} onEdit={p => {
+        setManage(false);
+        setEditError(null);
+        setEdit({...p});
+      }} onRemove={p => {
+        setEditError(null);
+        setRemoving(p);
+      }}/></DialogBody>
+      <DialogFooter className="flex-wrap">
+        <Button onClick={()=>{setManage(false);add()}}><IconPlus className="size-kind-mark"/>{gui.launch_add_title}</Button>
+        <Button variant="ghost" onClick={browse}>{gui.launch_attach_agent}</Button>
+        <Button data-footer-trailing onClick={() => setManage(false)}>{gui.edit_done}</Button>
+      </DialogFooter>
+    </TaskOverlay>
+  </Dialog>
+  <Dialog open={manage && browsing} onOpenChange={on => {if(!on)setBrowsing(false)}}>
+    <TaskOverlay purpose="selection" scrollable data-launch-catalog>
+      <DialogTitle>{gui.launch_attach_agent}</DialogTitle>
+      <Input aria-label={gui.new_session_search} placeholder={gui.new_session_search} value={query} onChange={e => setQuery(e.target.value)}/>
+      <span className="text-caption text-muted-foreground">{taken ? gui.new_session_registry_taken(taken[0], taken[1]) : gui.new_session_registry}</span>
+      <DialogBody data-launch-catalog-rows>
+        {(snapshot || []).filter(k => `${k.id} ${k.name} ${k.about}`.toLowerCase().includes(query.toLowerCase())).map(k => <div key={k.id} className="flex min-w-0 flex-none items-center gap-in py-in">
+          <div className="min-w-0 flex-1"><div className="truncate text-body">{k.name}</div><div className="truncate text-caption text-muted-foreground">{k.argv || k.about}</div></div>
+          {known.some(a => a.name === k.id) ? <span className="text-caption text-muted-foreground">{gui.new_session_attached}</span> : k.argv === null ? <span className="text-caption text-muted-foreground">{gui.new_session_byhand}</span> : <Button size="sm" disabled={attaching !== null} onClick={() => attach(k.id)}>{gui.new_session_attach}</Button>}
+        </div>)}
+        {snapshot && !snapshot.some(k=>`${k.id} ${k.name} ${k.about}`.toLowerCase().includes(query.toLowerCase())) && <p className="text-callout text-muted-foreground">{gui.no_matches}</p>}
+      </DialogBody>
+      {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
+      <DialogFooter><Button onClick={()=>setBrowsing(false)}>{gui.back}</Button></DialogFooter>
+    </TaskOverlay>
+  </Dialog>
   <Dialog open={!!removing} onOpenChange={on => !on && setRemoving(null)}><DialogContent><DialogTitle>{gui.launch_remove}</DialogTitle><p className="text-body">{removing?.name}</p>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}<DialogFooter><Button disabled={saving} onClick={() => setRemoving(null)}>{gui.delete_keep}</Button><Button disabled={saving} onClick={remove}>{gui.delete}</Button></DialogFooter></DialogContent></Dialog>
  </>;
 }
@@ -319,7 +341,7 @@ function MenuRows({
   onEdit: (p: LaunchPreset) => void;
   onRemove: (p: LaunchPreset) => void;
 }) {
-  return <div className="max-h-[calc(6*var(--pane-head))] overflow-y-auto">{choices.map(c => {
+  return <div>{choices.map(c => {
       const preset = presets.find(p => 'custom:' + p.id === c.id);
       return <div key={c.id} className="flex min-w-0 items-center gap-row border-b py-in last:border-0"><span className="choice-row-icon">{c.icon}</span><div className="min-w-0 flex-1"><div className="truncate text-body">{c.label}</div><div className="truncate text-caption text-muted-foreground">{c.aside || (preset ? gui.launch_command : gui.launch_built_in)}</div></div>{preset && <><Button variant="ghost" aria-label={gui.accounts_edit + ' ' + preset.name} onClick={() => onEdit(preset)}><IconPencil className="size-kind-mark" /></Button><Button variant="ghost" aria-label={gui.delete + ' ' + preset.name} onClick={() => onRemove(preset)}><IconClose className="size-kind-mark" /></Button></>}</div>;
     })}</div>;

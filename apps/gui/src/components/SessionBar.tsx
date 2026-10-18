@@ -71,7 +71,7 @@ import { createPortal } from "react-dom";
 import { MidName, TabAvatar, type TabFace } from "@/browse/TabStrip";
 import { BellMark } from "@/components/BellMark";
 import { IconBack, IconClose, IconPlus } from "@/components/icons";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
@@ -1190,10 +1190,10 @@ export function TabSheetRows({faces,active,onFocus,onClose,onNew,newLabel,canClo
 }
 export function TabSheet({open,onOpenChange,...rows}: TabSheetRowsProps & {open:boolean;onOpenChange:(open:boolean)=>void}) {
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent form data-tab-sheet className="max-h-[70dvh] !gap-0 overflow-y-auto">
+    <TaskOverlay purpose="selection" data-tab-sheet className="!gap-0 overflow-y-auto">
       <DialogTitle className="sr-only">{gui.session_tabs}</DialogTitle>
       <TabSheetRows {...rows}/>
-    </DialogContent>
+    </TaskOverlay>
   </Dialog>;
 }
 /** Aligned horizontal content cards; the session switcher keeps its

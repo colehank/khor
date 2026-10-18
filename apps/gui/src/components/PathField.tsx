@@ -14,7 +14,7 @@
 // this component, and every dialog that draws it unmounts it on close, so
 // a directory made since the last opening is listed afresh while typing
 // back and forth over one parent asks once.
-import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
+import { useEffect, useLayoutEffect, useId, useRef, useState, type ComponentProps } from "react";
 
 import { fetchLs, type DirListing } from "@/api";
 import { OmniMenu } from "@/components/OmniMenu";
@@ -64,11 +64,38 @@ export function PathField({
       on this machine」 (round CHAT). A file completes without a `/`. */
   files?: boolean;
 }) {
+  const seat = useRef<HTMLDivElement>(null);
+  const [menuRoom, setMenuRoom] = useState<{key: string; height: number}>();
+  const menuKey = machine + "\0" + value;
   const cache = useRef(new Map<string, Promise<DirListing | null>>());
   const [offer, setOffer] = useState<Offer | null>(null);
   const [at, setAt] = useState(-1);
   const [shut, setShut] = useState(false);
   const [focused, setFocused] = useState(false);
+  // Inline suggestions change the form's height. If a pointer blurs the
+  // field on its way to an action, keep the list in place through that
+  // click; otherwise the action moves between pointerdown and click and
+  // the first press merely collapses the list.
+  const pointer = useRef(false), blurPending = useRef(false);
+  useEffect(() => {
+    if (!focused) return;
+    const down = () => { pointer.current = true; };
+    const finish = () => {
+      pointer.current = false;
+      if (blurPending.current) { blurPending.current = false; setFocused(false); }
+    };
+    const clicked = () => { queueMicrotask(finish); };
+    document.addEventListener('pointerdown', down, true);
+    document.addEventListener('click', clicked, true);
+    document.addEventListener('pointercancel', finish, true);
+    return () => {
+      document.removeEventListener('pointerdown', down, true);
+      document.removeEventListener('click', clicked, true);
+      document.removeEventListener('pointercancel', finish, true);
+      pointer.current = false;
+      blurPending.current = false;
+    };
+  }, [focused]);
   const [home,setHome]=useState<{machine:string;path:string}|null>(null);
   const edits=useRef({machine,typed:false});
   if(edits.current.machine!==machine)edits.current={machine,typed:false};
@@ -150,6 +177,43 @@ export function PathField({
   const names = fresh?.names ?? [];
   const open = focused && !shut && (names.length > 0 || fresh?.truncated === true);
 
+  useLayoutEffect(() => {
+    const root = seat.current;
+    if (!open || !root) { setMenuRoom(undefined); return; }
+    const dialog = root.closest<HTMLElement>('[data-slot="dialog-content"]');
+    const body = root.closest<HTMLElement>('[data-slot="dialog-body"]') ?? dialog;
+    if (!body || !dialog) return;
+    // A menu inside a scrolling form must fit *its visible body*, not
+    // merely the screen. Otherwise the body's clip cuts off the menu's
+    // bottom border and last rows, whose gestures belong to that menu.
+    const sync = () => {
+      const menu = root.querySelector('[data-path-suggestions] > [data-menu-frame]');
+      if (!menu) return;
+      const footer = body === dialog ? dialog.querySelector('[data-slot="dialog-footer"]') : null;
+      const css = getComputedStyle(body);
+      const foot = parseFloat(css.paddingBottom) || 0;
+      const reserve = footer ? footer.getBoundingClientRect().height + (parseFloat(css.rowGap) || 0) : 0;
+      // A fitted task may grow when this menu appears. Measure that budget
+      // from the shared container, so a menu isn't capped to zero by the
+      // small, pre-completion frame and prevented from ever making it grow.
+      const fitted = dialog.dataset.overlayPresentation === 'sheet' && dialog.dataset.overlayInitial === 'fit' && dialog.dataset.detent === 'half';
+      const capacity = parseFloat(getComputedStyle(dialog).getPropertyValue('--task-sheet-room')) || 0;
+      const growth = fitted ? Math.max(0, capacity - dialog.getBoundingClientRect().height) : 0;
+      const room = Math.max(0, Math.floor(body.getBoundingClientRect().bottom - foot - reserve - menu.getBoundingClientRect().top + growth));
+      setMenuRoom(was => was?.key === menuKey && was.height === room ? was : {key: menuKey, height: room});
+    };
+    sync();
+    const resize = new ResizeObserver(sync);
+    resize.observe(body);
+    window.addEventListener('resize', sync);
+    window.visualViewport?.addEventListener('resize', sync);
+    return () => {
+      resize.disconnect();
+      window.removeEventListener('resize', sync);
+      window.visualViewport?.removeEventListener('resize', sync);
+    };
+  }, [open, menuKey]);
+
   const take = (name: string) => {
     if (!fresh) return;
     const base =
@@ -160,7 +224,7 @@ export function PathField({
   };
 
   return (
-    <div className="relative min-w-0 flex-1">
+    <div ref={seat} className="relative min-w-0 flex-1">
       <Input
         {...rest}
         role="combobox"
@@ -172,8 +236,8 @@ export function PathField({
         placeholder={gui.dir_path_hint}
         value={value}
         onChange={(e) => {edits.current.typed=true;onValueChange(e.target.value)}}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onFocus={() => { blurPending.current = false; setFocused(true); }}
+        onBlur={() => { if (pointer.current) blurPending.current = true; else setFocused(false); }}
         onKeyDown={(e) => {
           if (imeKey(e)) return;
           if (open && names.length > 0 && e.key === "ArrowDown") {
@@ -211,6 +275,7 @@ export function PathField({
       {open && (
         <div id={list} role="listbox" data-path-suggestions>
           <OmniMenu key={machine+"\0"+value}
+            style={menuRoom?.key === menuKey ? {maxHeight: menuRoom.height} : undefined}
             rows={{
               groups: [
                 ...(fresh?.truncated ? [{key:"cut",label:gui.path_results_cut,role:"text" as const,candidates:[]}] : []),

@@ -25,7 +25,7 @@ export const NARROW_QUERY = "(max-width: 759px)";
 /** `null` = no box above: follow the window. */
 const NarrowContext = createContext<boolean | null>(null);
 
-function useWindowNarrow(): boolean {
+export function useWindowNarrow(): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
   useEffect(() => {
     const m = window.matchMedia(NARROW_QUERY);
