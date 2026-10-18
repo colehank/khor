@@ -9,13 +9,16 @@ export type ContentPlace = {
   scene: ContentScene; key: string | null; source: ContentSource;
   scope: { device: string; root: string } | null; filter: string; query: string; address: string; exit: string | null;
 };
+type ContentCheckpoint = { place: ContentPlace; trail: ContentPlace[] };
 export type ContentNavigationState = ContentPlace & {
   from: ContentScene; trail: ContentPlace[]; recent: string | null; documentTrail: ContentPlace[];
   scrolls: Record<string, ContentScroll>;
   browseBefore: string | null;
+  /** The pill resumes content; tab/session overviews are separate routes. */
+  lastContent: ContentCheckpoint | null;
 };
 export const emptyContentPlace = (): ContentPlace => ({scene:'picker',key:null,source:'workspace',scope:null,filter:'',query:'',address:'',exit:null});
-const empty = (): ContentNavigationState => ({...emptyContentPlace(),from:'picker',trail:[],recent:null,documentTrail:[],scrolls:{},browseBefore:null});
+const empty = (): ContentNavigationState => ({...emptyContentPlace(),from:'picker',trail:[],recent:null,documentTrail:[],scrolls:{},browseBefore:null,lastContent:null});
 const place = ({scene,key,source,scope,filter,query,address,exit}: ContentPlace): ContentPlace => ({scene,key,source,scope,filter,query,address,exit});
 const NAV_KEY = 'khor.content.navigation.v1', EDITOR_KEY = 'khor.content.editors.v1';
 const scenes: ContentScene[] = ['picker','document','overview','sessions'];
@@ -26,6 +29,19 @@ const isPlace = (value: unknown): value is ContentPlace => {
     (p.key === null || typeof p.key === 'string') && ['filter','query','address'].every(k => typeof p[k as keyof ContentPlace] === 'string') &&
     (p.exit === null || typeof p.exit === 'string') && (p.scope === null || typeof p.scope?.device === 'string' && typeof p.scope?.root === 'string');
 };
+const isContent = (p: ContentPlace) => p.scene === 'picker' || p.scene === 'document';
+const checkpoint = (s: ContentNavigationState): ContentCheckpoint => ({place:place(s),trail:s.trail});
+function readCheckpoint(s: ContentNavigationState, trail: ContentPlace[]): ContentCheckpoint {
+  if (isContent(s)) return {place:place(s),trail};
+  const kept=s.lastContent;
+  if (kept && isPlace(kept.place) && isContent(kept.place)) {
+    return {place:place(kept.place),trail:Array.isArray(kept.trail)?kept.trail.filter(isPlace).slice(-64):[]};
+  }
+  // Migrate old selectors without restoring them as content. Old sessions()
+  // discarded the trail, so retain the known source/directory/drafts there.
+  for(let i=trail.length-1;i>=0;i--)if(isContent(trail[i]))return {place:trail[i],trail:trail.slice(0,i)};
+  return {place:{...place(s),scene:'picker',key:null,filter:''},trail:[]};
+}
 const read = (key: string): Record<string, unknown> => {
   try { const value = JSON.parse(localStorage.getItem(key) || '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch { return {}; }
 };
@@ -33,10 +49,11 @@ const save = (key: string, value: unknown) => { try { localStorage.setItem(key, 
 function readNavigation(): Record<string, ContentNavigationState> {
   return Object.fromEntries(Object.entries(read(NAV_KEY)).filter(([,s]) => isPlace(s)).map(([session,value]) => {
     const s = value as ContentNavigationState;
+    const trail=Array.isArray(s.trail)?s.trail.filter(isPlace).slice(-64):[];
     const scrolls = Object.fromEntries(Object.entries(s.scrolls || {}).filter(([,v]) => v && Number.isFinite(v.top) && Number.isFinite(v.left)));
     return [session,{...empty(),...place(s),from:scenes.includes(s.from)?s.from:'picker',recent:typeof s.recent==='string'?s.recent:null,
       browseBefore:typeof s.browseBefore==='string'?s.browseBefore:null,
-      trail:Array.isArray(s.trail)?s.trail.filter(isPlace).slice(-64):[],documentTrail:Array.isArray(s.documentTrail)?s.documentTrail.filter(isPlace).slice(-64):[],scrolls}];
+      lastContent:readCheckpoint(s,trail),trail,documentTrail:Array.isArray(s.documentTrail)?s.documentTrail.filter(isPlace).slice(-64):[],scrolls}];
   }));
 }
 export function enterContent(was: ContentNavigationState, patch: Partial<ContentPlace>): ContentNavigationState {
@@ -63,7 +80,8 @@ export function useContentNavigation(content: SessionContent) {
   const get=(session:string)=>current.current[session]??empty();
   const write=(session:string,run:(s:ContentNavigationState)=>ContentNavigationState)=>{
     const before=get(session),after=run(before);if(after===before&&current.current[session])return;
-    const next={...current.current,[session]:after};current.current=next;setStates(next);save(NAV_KEY,next);
+    const lastContent=isContent(after)?checkpoint(after):current.current[session]&&isContent(before)?checkpoint(before):after.lastContent;
+    const next={...current.current,[session]:{...after,lastContent}};current.current=next;setStates(next);save(NAV_KEY,next);
   };
   const update=(session:string,patch:Partial<ContentPlace>)=>{pendingResume.current.delete(session);write(session,s=>enterContent(s,patch));};
   const document=(tab:ContentTab)=>update(tab.session,(tab.view||'workspace')==='workspace'?{scene:'picker',source:'workspace',scope:tab.url?{device:tab.device,root:tab.url}:null}:{scene:'document',key:content.handle(tab)});
@@ -73,12 +91,22 @@ export function useContentNavigation(content: SessionContent) {
     pendingResume.current.delete(session);
     const remembered=current.current[session];
     if(remembered){
-      if(remembered.scene!=='document'||valid(session,remembered.key))return;
-      const trail=[...remembered.trail];let previous:ContentPlace|undefined;
-      while(trail.length){const entry=trail.pop()!;if(entry.scene!=='document'||valid(session,entry.key)){previous=entry;break;}}
-      write(session,s=>({...s,...(previous||{scene:'picker' as const,key:null}),trail,from:trail.at(-1)?.scene||'picker'}));return;
+      const kept=isContent(remembered)?checkpoint(remembered):remembered.lastContent;
+      const usable=(p:ContentPlace)=>isContent(p)&&(p.scene!=='document'||valid(session,p.key));
+      if(isContent(remembered)&&usable(remembered))return;
+      const trail=[...(kept?.trail??remembered.trail)];let previous=kept?.place;
+      if(!previous||!usable(previous)){
+        previous=undefined;
+        while(trail.length){const entry=trail.pop()!;if(usable(entry)){previous=entry;break;}}
+      }
+      const target=previous||{...place(remembered),scene:'picker' as const,key:null,filter:''};
+      write(session,s=>({...s,...target,trail,from:trail.at(-1)?.scene||'picker'}));
+      const tab=target.scene==='document'?content.allTabs.find(t=>t.session===session&&content.handle(t)===target.key):null;
+      if(tab&&content.active(session)?.id!==tab.id)void content.focus(tab.id).catch(()=>{});
+      return;
     }
     const tab=content.active(session);
+    if(tab?.view==='workspace'){document(tab);return;}
     write(session,s=>tab?enterContent(tab.view==='page'?{...s,source:'browser'}:s,{scene:'document',key:content.handle(tab)}):s);
   };
   useEffect(()=>{if(content.ready)for(const session of [...pendingResume.current])resume(session);},[content.ready]);

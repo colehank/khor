@@ -528,3 +528,7 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 
 
 2026-10-18 集成验收：`page_sheet` 只协调原生 iOS 网页滚动识别器，HTTP 页面没有对应的独立 WebView。命令表检查应将它与窗口材质等原生专用命令一样，列入带理由的 `ONE_SIDED`，不添加假 HTTP 实现。前一轮该遗漏已红，本轮补记后重跑命令表。
+
+2026-10-18 药丸恢复回归：`npm run content-model` 先红（恢复得到 overview，期望 document），修复后覆盖两种列表不覆盖内容、reload、旧状态迁移、独立会话、列表内 Back、原文件返回路径和已关闭文件回退。旧测试将列表视作药丸恢复目标的断言已纠正。真实 App 浏览器走查与原生验收范围见 30-behavior「药丸恢复内容与标签列表」。
+
+本轮 `npm test --ignore-scripts`、`npm run content-model` 与 `npm run build --ignore-scripts` 通过；未运行原生构建或发布。隔离节点与 Vite 验收进程已关闭，临时复制的 bridge 已清理。
