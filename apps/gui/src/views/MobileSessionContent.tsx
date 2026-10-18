@@ -51,7 +51,7 @@ export function ContentTabButton({session,content,navigation}: Pick<DeckOwner,'c
 export function ContentDocumentBand({session,face,content,navigation,title,onTitle}: Omit<DeckOwner,'onClose'> & {session:string;title:string;onTitle:()=>void}) {
   const tabs=content.allTabs.filter(t=>t.session===session);
   const active=navigation.get(session).key;
-  const faces=tabs.map(t=>({...face,id:content.handle(t),label:navigation.forTab(session,content.handle(t)).get(session).scene==='picker'?gui.content_new:contentName(t)}));
+  const faces=tabs.map(t=>({...face,session:undefined,hideFace:contentView(t)==='workspace',mark:contentView(t)==='file'?fileKind(t.url):pageKind(content.pageIcon(t.url)),id:content.handle(t),label:navigation.forTab(session,content.handle(t)).get(session).scene==='picker'?gui.content_new:contentName(t)}));
   return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=tabs.find(t=>content.handle(t)===key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} renderFace={(item,role)=><ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
 }
 export function MobileContentDeck({session,content,navigation,onClose,children,editing=false,onEditEnd}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void}) {
