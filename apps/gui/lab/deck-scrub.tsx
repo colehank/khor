@@ -24,6 +24,7 @@ function Lab(){
  const focus=(id:string)=>{setActive(id);setEvents(old=>[...old,id]);};
  const mode=(value:boolean)=>{setNested(value);setActive('0');setEvents([]);};
  const inspect=async()=>{
+  setReport('运行中');
   const results:string[]=[];
   const check=(pass:boolean,label:string)=>{if(!pass)throw Error(label);results.push(label);};
   // Only capture is stubbed for untrusted test events; handlers and lifecycle
@@ -73,6 +74,6 @@ function Lab(){
  };
  return <TooltipProvider><main className="deck-proof"><aside><h1>正式药丸手势</h1><p>轻推慢翻，推远加速，回中暂停；松手打开。原地长按展开选择带。</p><div className="deck-proof-actions"><Button onClick={()=>mode(false)}>会话</Button><Button onClick={()=>mode(true)}>文件与网页</Button><Button onClick={()=>{document.documentElement.dataset.theme=dark?'light':'dark';setDark(!dark);}}>明暗</Button><Button onClick={()=>{setOrder(v=>v.length===1?faces:[faces[0]]);setActive('0');}}>单个／多个</Button><Button onClick={()=>void inspect()}>运行手势验收</Button></div><p>正在显示：<b data-proof-open>{items.find(f=>f.id===active)?.label}</b></p><p>实际切换：<b data-proof-count>{events.length}</b></p><p>合成事件只替代指针捕获 API；真实 iPhone 触控、原生网页和系统触感另验</p><output data-deck-proof-report>{report}</output></aside>
  <section className="deck-proof-phone"><div className="deck-proof-content"><h2>{items.find(f=>f.id===active)?.label}</h2><p>› 预选期间保持当前内容</p><pre>{'terminal colours       passed\ncontent navigation     passed\n\n✓ ready'}</pre><input placeholder="编辑输入保留自己的手势"/></div>
- <footer className="mobile-content-deck"><GlassCircle aria-label="返回"><IconBack/></GlassCircle><div className="glass mobile-content-pill"><DeckBand faces={items} active={active} onFocus={focus} onTitle={()=>mode(!nested)} renderFace={nested?(f)=><span className="content-owner-identity"><span className="content-owner-face"><TabAvatar f={f} bare="size-tab-face" seat="tab"/></span><span className="content-owner-name">khor-codex</span><span className="content-owner-title">{f.label}</span></span>:undefined}/><IconReload/></div><GlassCircle aria-label="标签"><TabsGlyph n={items.length}/></GlassCircle></footer></section></main></TooltipProvider>;
+ <footer className="mobile-content-deck"><GlassCircle aria-label="返回"><IconBack/></GlassCircle><div className="glass mobile-content-pill"><div className={nested?"mobile-file-identity":"contents"}><DeckBand faces={items} active={active} onFocus={focus} onTitle={()=>mode(!nested)} renderFace={nested?(f)=><span className="content-owner-identity"><span className="content-owner-face"><TabAvatar f={f} bare="size-tab-face" seat="tab"/></span><span className="content-owner-name">khor-codex</span><span className="content-owner-title">{f.label}</span></span>:undefined}/></div><IconReload/></div><GlassCircle aria-label="标签"><TabsGlyph n={items.length}/></GlassCircle></footer></section></main></TooltipProvider>;
 }
 const root=createRoot(document.getElementById('root')!);root.render(<Lab/>);if(import.meta.hot)import.meta.hot.dispose(()=>root.unmount());

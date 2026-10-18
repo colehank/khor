@@ -191,6 +191,7 @@ export function BrowserPane({
     if (!el) return;
     const r = el.getBoundingClientRect();
     let top = r.top;
+    let bottom = Infinity;
     let covered = false;
     for (const o of document.querySelectorAll(OVERLAYS)) {
       // **An overlay the page is inside is its ground, not over it**
@@ -202,6 +203,9 @@ export function BrowserPane({
       if (b.width === 0 || b.height === 0) continue;
       const misses = b.bottom <= r.top || b.top >= r.bottom || b.right <= r.left || b.left >= r.right;
       if (misses) continue;
+      // The pill's selector rises from the deck: keep the current native
+      // page visible above it, with the same WebView and navigation state.
+      if (o.matches('[data-deck-selector]')) { bottom = Math.min(bottom, b.top); continue; }
       // **A hand's width of tolerance, and it is not a fudge**: the
       // completion menu hangs from the address bar with a 4px gap under
       // it, so a test for "starts exactly at the page's top edge" put it
@@ -214,7 +218,7 @@ export function BrowserPane({
     // `lib/native-deck`): the deck is drawn over it and the page keeps a
     // bottom inset of the deck's height, so it scrolls under the glass.
     const native = host.current?.closest("[data-session-screen]")?.querySelector("[data-session-bar][data-native-deck]");
-    const h = (native ? native.getBoundingClientRect().bottom : r.bottom) - top;
+    const h = Math.min(bottom, native ? native.getBoundingClientRect().bottom : r.bottom) - top;
     // What was decided, for the gate (`check-face` bar r: a sheet over
     // the page takes it away).
     document.dispatchEvent(new CustomEvent("khor:page-place", { detail: { tab, covered, top, h } }));

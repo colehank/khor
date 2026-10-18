@@ -190,7 +190,7 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
       <div className="deck-selector-count" aria-hidden="true">{state.preview+1} / {faces.length}</div>
       <div className="deck-selector-window">
         <span className="deck-selector-focus"/>
-        {nearbySlots(state.position,faces.length,3).map(({slot,index})=><div key={slot} role="option"
+        {nearbySlots(state.position,faces.length,Math.min(3,Math.floor(faces.length/2))).map(({slot,index})=><div key={slot} role="option"
           aria-selected={slot===Math.round(state.position)} className="deck-selector-item"
           style={{width:geometry.step,transform:`translate3d(${(slot-state.position)*geometry.step}px,0,0)`,opacity:Math.max(.4,1-Math.abs(slot-state.position)*.25)}}>
           {!faces[index].hideFace&&<TabAvatar f={faces[index]} bare="size-list-face" seat="row"/>}<span>{faces[index].label}</span>
