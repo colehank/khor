@@ -195,3 +195,13 @@ khor devices                                                   # 五台都在线
 - 集群：hinton 编译安装，三台自动换新。hinton／lecun／turing 的实际 5467 监听进程 `/proc/<pid>/exe` SHA-256 均为 `39f0101f42b2e842aaee8a367d23a57af375e76f96ab53601b42a95c9f472ba8`，与安装文件一致，HTTP 收据相同；CLI 检查通过。
 - iOS：先移开旧静态库强制重编，新 `libapp.a` 与归档 App 的时间、完整收据通过。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出上传于 `2026-10-19 17:22:17 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 正在处理。两处临时签名团队配置已按构建前基线恢复。
 - 日志与证据：`/Volumes/disk0/khor-ship-20261019-legibility-response/`；分支证据在 `/Volumes/disk0/khor-terminal-legibility-proof/` 与 `/Volumes/disk0/khor-pill-response-proof/`。按包身份及 lsof 无引用核验后清理两份 Khor Xcode 导出副本、旧静态库备份与本轮集群源码导出，共 820,731,073 字节；未确认身份的临时目录保留。系统盘约余 5.6 GiB，外挂盘约余 92 GiB；保留最新归档、静态库、发布收据与现有会话，未清系统 swap 或全量 target。
+
+
+## 发布记录：2026-10-19（文件操作、候选交互与历史导航）
+
+- 构建提交：`eae80f9c`，`fix/history-deck` 的五个修复提交已快进合入 main。UI 收据：`khor-ui-assets:/assets/index-BcVMfB20.js`。文件预览移入更多菜单，恢复编辑滚动不再误折叠药丸；候选列表内滚动保留键盘并独占手势，点击外部关闭推荐；普通目录不再显示右侧时间；历史详情增加一致的移动端底部返回及安全区，返回列表恢复位置；内容标签手势绑定渲染时的文档目标，修复句柄交接期间图片切 Markdown 停留旧内容的竞态。
+- 主干验证：生成、默认前端检查及 TypeScript、content-model、生产构建、gates（68 scripts / 61 entries）通过。分支已用生产组件在 CUA 检查预览返回、候选点击与滚动、历史返回／安全区／横向 diff 和图片切 Markdown 的红绿回归。未改 Diff 内部横向滚动；未将浏览器操作称为 iPhone 原生验收，实际手机触控及 WKWebView 手感仍待安装后核验。
+- Mac：release CLI／GUI 收据与签名通过；旧主窗口 PID 65708 退出，新 PID 92848，实际 5467 监听进程同为新版主窗口。9 个会话辅助进程全部保留，会话记录 11 → 11，失败 0 → 0；原生日志与 HTTP 收据一致。
+- 集群：hinton 编译安装，三台自动换新。hinton（3763498）／lecun（2196379）／turing（3365642）的实际 5467 监听进程 `/proc/<pid>/exe` SHA-256 均为 `b493550f598936df05feb1d1bd70c0b24e7389a733a74cfc22f5b3b2ac7e9efb`，与安装文件一致，HTTP 收据相同，CLI 确认三台直连。
+- iOS：先移开旧静态库强制重编，新 `libapp.a` 与归档 App 的时间及完整收据通过。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出上传于 `2026-10-19 21:58:35 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 已开始处理。临时两处签名团队配置按构建前基线恢复。
+- 日志与收据：`/Volumes/disk0/khor-ship-20261019-history-content/`；分支交互证据分别保留在 `khor-file-preview-proof`、`khor-suggestion-proof`、`khor-history-proof`。按 bundle ID 和 lsof 无引用核验后清理两份 Khor Xcode 导出副本、旧静态库备份及本轮集群源码导出，共 820,795,073 字节；两份未确认身份的临时目录保留。保留最新正式归档、静态库及现有会话，未清系统 swap 或全量 target。系统盘约余 4.3 GiB，外挂盘约余 91 GiB。
