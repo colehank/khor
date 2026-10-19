@@ -48,6 +48,7 @@ import {
 import { CodeEditor, preloadEditor } from "@/components/CodeEditor.lazy";
 import { editorIn, focusAtTop } from "@/lib/code/place";
 import { HtmlView } from "@/components/HtmlView";
+import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -159,13 +160,16 @@ export function kindOf(path: string): "image" | "svg" | "pdf" | "doc" | "text" {
     change gutter. What this answers is whether there is anything to
     *also* show — and where there is not, no switch is drawn rather
     than a greyed one. */
-export function rendererOf(path: string): "md" | "table" | "html" | null {
+export function rendererOf(path: string): "md" | "table" | "html" | "ipynb" | null {
   const name = path.split("/").pop() ?? "";
   const dot = name.lastIndexOf(".");
   const e = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
   if (e === "md" || e === "markdown") return "md";
   // A page, drawn in a sandbox (CM-BRIEF step 3, `HtmlView`).
   if (e === "html" || e === "htm") return "html";
+  // A notebook, read: cells, code and what it printed, nothing run
+  // (lane nb-view, `Notebook`).
+  if (e === "ipynb") return "ipynb";
   if (e === "csv" || e === "tsv") return "table";
   return null;
 }
@@ -542,13 +546,15 @@ export function FileView({
   // loading while the source shows, so the first switch draws at once
   // and lands on the line it was at (`lib/md/extras`).
   const markdown = rendererOf(path) === "md";
+  const notebook = rendererOf(path) === "ipynb";
   const hasText = file !== null;
   useEffect(() => {
+    if (notebook && hasText) preloadNotebook();
     if (markdown && hasText) prepare(needsOf(body, true), true);
     // Once per file: the body only decides which chunks, and a formula
     // typed later loads when the preview asks for it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markdown, hasText, path]);
+  }, [markdown, notebook, hasText, path]);
   /** Editable exactly when the far machine handed over a digest, which
       it does exactly when the text is the whole file (`files::shape`).
       One fact, one place. */
@@ -1033,6 +1039,10 @@ export function FileView({
             <Markdown text={body} className="prose-khor px-6 py-4" lines machine={machine} path={path} />
           ) : renders === "html" ? (
             <HtmlView machine={machine} path={path} text={body} ground={ground.ground} />
+          ) : renders === "ipynb" ? (
+            // A file cut by the cap is half a JSON document: the cut row
+            // above already says so, and nothing is drawn under it.
+            !file.cut && <Notebook text={body} machine={machine} path={path} />
           ) : (
             <Table text={body} sep={path.toLowerCase().endsWith(".tsv") ? "\t" : ","} />
           )}

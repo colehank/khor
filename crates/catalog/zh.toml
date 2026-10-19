@@ -4810,6 +4810,12 @@ md-warning = "警告"
 md-caution = "小心"
 md-footnotes = "脚注"
 md-footnote-back = "回到正文"
+# ── Notebook 预览（nb-view，2026-10-19）：只读，不运行。只有脚本才能画的输出（Plotly、ipywidgets、
+# Bokeh、application/javascript）没有图片备份时，在它保存的文字下面说一次；读不出或不是 nbformat 4 时
+# 一句话，源码面照常可看。
+nb-needs-script = "这个输出需要运行脚本才能显示"
+nb-unreadable = "无法解析这个 notebook"
+nb-version = "nbformat {0} 不支持预览"
 blame-show = "显示 blame"
 blame-hide = "隐藏 blame"
 blame-uncommitted = "未提交"

@@ -26,9 +26,12 @@
 // was written against; ids the *author* wrote go through the clean and
 // come out prefixed `user-content-`, which is GitHub's rule too. The link
 // handler looks for both (`Markdown`).
+import { fromHtml } from "hast-util-from-html";
+import type { Root } from "hast";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeSlug from "rehype-slug";
+import type { Plugin } from "unified";
 
 export const schema = {
   ...defaultSchema,
@@ -38,3 +41,26 @@ export const schema = {
 };
 
 export { rehypeRaw, rehypeSanitize, rehypeSlug };
+
+/** The clean for a notebook's `text/html` output: the same, except that
+    **nothing in it reaches the network** (lane nb-view) — a README's
+    badges are the reason `https` pictures load there, and an output has
+    no such reason. A path still reads from the notebook's machine. The
+    list has to name *something* (an empty one allows every scheme), so
+    it names a scheme no address has. */
+export const fragmentSchema = {
+  ...schema,
+  protocols: { ...schema.protocols, src: ["khor-none"] },
+  // pandas wraps every table in a `<style scoped>`: the element goes in
+  // the clean either way, and this takes its text with it rather than
+  // leaving the rules on the page as words.
+  strip: [...(schema.strip ?? []), "style"],
+};
+
+/** A parser for HTML that is not markdown: a notebook's `text/html`
+    output (lane nb-view). It goes through the same clean as a README's
+    raw HTML, so a pandas table is a table and a `<script>` is nothing.
+    The parse is parse5's, already in this chunk under `rehype-raw`. */
+export const rehypeParseFragment: Plugin<[], string, Root> = function () {
+  this.parser = (doc: string) => fromHtml(doc, { fragment: true });
+};

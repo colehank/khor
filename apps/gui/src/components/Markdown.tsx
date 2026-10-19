@@ -58,6 +58,7 @@
 // `$$`) has not closed, so it is left plain — no syntax colour, no
 // formula, no diagram — and each of those is done once, when it lands.
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { unified } from "unified";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
@@ -72,6 +73,7 @@ import { rehypeAlerts } from "@/lib/md/alerts";
 import { bracketMath, cut, dollarsPandoc, mathOpen, mend, needsOf, type Cut } from "@/lib/md/blocks";
 import { useExtras, type Loaded } from "@/lib/md/extras";
 import { pipeline, render, type Components, type Pipeline, type PluggableList } from "@/lib/md/render";
+import type * as FileChunk from "@/lib/md/file";
 import { cn } from "@/lib/utils";
 
 /** The shape every component override receives from the renderer:
@@ -387,9 +389,52 @@ const READ_CAP = 64;
 
 type Pic = { src?: string; alt?: string; node?: unknown; [prop: string]: unknown };
 
+/**
+ * **Pictures that travel inside the text** (lane nb-view): a notebook
+ * cell's `attachments` (`![](attachment:plot.png)`) and the `data:`
+ * pictures in a `text/html` output. Neither address survives the clean
+ * — `attachment:` is no scheme at all and `data:` is not `https` — and
+ * neither should be let through it in general, so the text is given a
+ * relative stand-in (`ATTACHED` and a number) before it is parsed and
+ * the picture is looked up here after. The bytes never went anywhere:
+ * they are the file's own.
+ */
+const Attached = createContext<readonly string[] | null>(null);
+export const ATTACHED = "?khor-attached=";
+
 function Picture(e: Pic) {
   const file = useContext(FileAt);
+  const attached = useContext(Attached);
+  if (attached !== null && e.src?.startsWith(ATTACHED)) {
+    const url = attached[Number(e.src.slice(ATTACHED.length))];
+    const { node: _node, src: _src, ...rest } = e;
+    // On the light paper whatever the ground: a plot saved with a clear
+    // ground has black ink (`Notebook`'s image outputs do the same).
+    if (url)
+      return (
+        <span data-ground="light" className="inline-block max-w-full rounded-sm bg-background align-top">
+          <img {...rest} src={url} alt={e.alt ?? ""} decoding="async" className="block" />
+        </span>
+      );
+  }
   return file === null ? <span className="text-muted-foreground">{e.alt || ""}</span> : <FileImage {...e} />;
+}
+
+/** `attachment:name` in a notebook cell's text, for each name it
+    carries, as its stand-in; the pictures in the same order. A name is
+    matched as written and percent-encoded, which is how Jupyter writes
+    one with a space. */
+export function attach(text: string, attachments: Record<string, string>): { text: string; pictures: string[] } {
+  const pictures: string[] = [];
+  let out = text;
+  for (const [name, url] of Object.entries(attachments)) {
+    const at = `${ATTACHED}${pictures.length}`;
+    pictures.push(url);
+    for (const spelled of new Set([name, encodeURI(name), encodeURIComponent(name)])) {
+      out = out.split(`attachment:${spelled}`).join(at);
+    }
+  }
+  return { text: out, pictures };
 }
 
 /**
@@ -607,6 +652,7 @@ export const Markdown = memo(function Markdown({
   lines = false,
   machine,
   path,
+  pictures = null,
 }: {
   text: string;
   className?: string;
@@ -617,6 +663,8 @@ export const Markdown = memo(function Markdown({
       object, so the memo's shallow compare still holds. */
   machine?: string;
   path?: string;
+  /** The pictures `attach` stood in for, by number. */
+  pictures?: readonly string[] | null;
 }) {
   const doc = path !== undefined;
   const needs = useMemo(() => needsOf(text, doc), [text, doc]);
@@ -641,9 +689,65 @@ export const Markdown = memo(function Markdown({
           than drawing the source once and the page a moment later. */}
       {(!doc || ready) && (
         <FileAt.Provider value={file}>
-          {blocks.map((b, i) => (
-            <Block key={i} text={b} kit={kit} />
-          ))}
+          <Attached.Provider value={pictures}>
+            {blocks.map((b, i) => (
+              <Block key={i} text={b} kit={kit} />
+            ))}
+          </Attached.Provider>
+        </FileAt.Provider>
+      )}
+    </div>
+  );
+});
+
+const NO_NEEDS = { math: false, emoji: false };
+const fragments = new WeakMap<typeof FileChunk, Pipeline>();
+
+/**
+ * **HTML that is not markdown, through the same clean and the same parts**
+ * (lane nb-view): a notebook's `text/html` output — a pandas table, a
+ * styled summary. Parsed as a fragment, cleaned with the file face's
+ * schema (GitHub's allow-list: no script, no `on*`, no `style`, no
+ * `iframe`, no form) narrowed to no network picture at all
+ * (`fragmentSchema`), drawn with the component table above, so its
+ * table is the README's table and its links open where this machine
+ * opens links.
+ *
+ * Inline rather than in a sandboxed frame: a frame with an empty
+ * allow-list cannot say how tall its content is (no script inside, no
+ * reach in from here), and hundreds of them would be hundreds of
+ * documents. What a frame would keep and this drops is the output's own
+ * `<style>` — which is GitHub's result too.
+ */
+export const HtmlFragment = memo(function HtmlFragment({
+  html,
+  machine,
+  path,
+  pictures = null,
+}: {
+  html: string;
+  machine: string;
+  path: string;
+  pictures?: readonly string[] | null;
+}) {
+  const { loaded, ready } = useExtras(NO_NEEDS, true);
+  const chunk = loaded.file;
+  const p = useMemo(() => {
+    if (!chunk) return null;
+    let made = fragments.get(chunk);
+    if (!made) {
+      made = unified().use(chunk.rehypeParseFragment).use(chunk.rehypeSanitize, chunk.fragmentSchema).freeze() as unknown as Pipeline;
+      fragments.set(chunk, made);
+    }
+    return made;
+  }, [chunk]);
+  const file = useMemo(() => ({ machine, dir: path.slice(0, path.lastIndexOf("/")) || "/", asked: new Set<string>() }), [machine, path]);
+  const drawn = useMemo(() => (p === null ? null : render(p, html, parts)), [p, html]);
+  return (
+    <div data-md data-nb-html className="min-w-0 break-words">
+      {ready && (
+        <FileAt.Provider value={file}>
+          <Attached.Provider value={pictures}>{drawn}</Attached.Provider>
         </FileAt.Provider>
       )}
     </div>

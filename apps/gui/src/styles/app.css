@@ -1176,7 +1176,7 @@ aside[data-side] {
   color: var(--kind-dark);
 }
 
-[data-md] span[style*="--shiki"] {
+:is([data-md], [data-nb-input]) span[style*="--shiki"] {
   color: var(--shiki-light);
   text-decoration: var(--shiki-light-text-decoration, inherit);
 }
@@ -1187,16 +1187,16 @@ aside[data-side] {
    widens the painted copy where the editor's plain text does not — the
    caret then sits a few glyphs past its letter on every such line.
    Colour costs no width; these two do. */
-[data-md] span[style*="--shiki"] {
+:is([data-md], [data-nb-input]) span[style*="--shiki"] {
   font-style: var(--shiki-light-font-style, inherit);
   font-weight: var(--shiki-light-font-weight, inherit);
 }
 
-:root[data-theme="dark"] [data-md] span[style*="--shiki"] {
+:root[data-theme="dark"] :is([data-md], [data-nb-input]) span[style*="--shiki"] {
   color: var(--shiki-dark);
   text-decoration: var(--shiki-dark-text-decoration, inherit);
 }
-:root[data-theme="dark"] [data-md] span[style*="--shiki"] {
+:root[data-theme="dark"] :is([data-md], [data-nb-input]) span[style*="--shiki"] {
   font-style: var(--shiki-dark-font-style, inherit);
   font-weight: var(--shiki-dark-font-weight, inherit);
 }
@@ -1248,13 +1248,13 @@ aside[data-side] {
 
 /* A preview on a ground of its own (预览背景, round UX-4) paints its code
    in that ground's colours, whatever the app's theme. */
-:root:is([data-theme]) [data-ground="light"] [data-md] span[style*="--shiki"] {
+:root:is([data-theme]) [data-ground="light"] :is([data-md], [data-nb-input]) span[style*="--shiki"] {
   color: var(--shiki-light);
   text-decoration: var(--shiki-light-text-decoration, inherit);
   font-style: var(--shiki-light-font-style, inherit);
   font-weight: var(--shiki-light-font-weight, inherit);
 }
-:root:is([data-theme]) [data-ground="dark"] [data-md] span[style*="--shiki"] {
+:root:is([data-theme]) [data-ground="dark"] :is([data-md], [data-nb-input]) span[style*="--shiki"] {
   color: var(--shiki-dark);
   text-decoration: var(--shiki-dark-text-decoration, inherit);
   font-style: var(--shiki-dark-font-style, inherit);
@@ -1926,6 +1926,86 @@ aside[data-side] {
 [data-md] img { max-width: 100%; height: auto; }
 [data-md] details { margin: 0.5em 0; }
 [data-md] summary { font-weight: var(--font-weight-title); }
+
+/* A notebook, read (lane nb-view, `components/Notebook`). **Every
+   value is one the Markdown face already uses**: the reading size for
+   the prose, the code block's fill and corner for a code cell, the mono
+   size for what a cell printed. What a cell printed has no box of its
+   own — it is the record under the code, as on GitHub — except what
+   went to stderr and a traceback, which sit on the same fill as the
+   code: set apart, not coloured (a state colour is never a ground).
+
+   **The count of a run** (`[3]`) sits in a gutter left of the code when
+   the column is wide enough to spare one, above it when it is not; it
+   is a caption, in the ink the preview ground restates. */
+[data-nb] {
+  container-type: inline-size;
+  font-size: var(--text-read);
+  line-height: var(--text-read--line-height);
+  color: var(--foreground);
+}
+[data-nb] > [data-nb-cell] + [data-nb-cell] { margin-top: var(--gap-base); }
+[data-nb-cell] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--gap-in);
+}
+[data-nb] :is([data-nb-input], [data-nb-raw], [data-nb-outputs] pre) {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  line-height: var(--text-mono--line-height);
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 4;
+}
+[data-nb] :is([data-nb-input], [data-nb-raw]) {
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 0.6em 0.8em;
+}
+[data-nb-prompt] {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  user-select: none;
+}
+[data-nb-outputs] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--gap-in);
+}
+[data-nb-outputs] :is([data-nb-out="stderr"], [data-nb-out="error"]) {
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 0.4em 0.8em;
+}
+@container (min-width: 36em) {
+  [data-nb-cell] { grid-template-columns: 4.5em minmax(0, 1fr); column-gap: var(--gap-in); }
+  [data-nb-cell] > * { grid-column: 2; }
+  [data-nb-cell] > [data-nb-prompt] {
+    grid-column: 1;
+    grid-row: 1;
+    text-align: end;
+    padding-top: 0.6em;
+    line-height: var(--text-mono--line-height);
+  }
+}
+/* ANSI colour in what a cell printed: the terminal's light and dark
+   pair, both carried on the run (`--ansi-l` / `--ansi-d`) the way a
+   painted token carries Shiki's two, and the same switch picks one —
+   the app's theme, or the preview ground when it has one. */
+[data-nb] [data-ansi-fg] { color: var(--ansi-l); }
+[data-nb] [data-ansi-bg] { background: var(--ansi-bl); }
+:root[data-theme="dark"] [data-nb] [data-ansi-fg] { color: var(--ansi-d); }
+:root[data-theme="dark"] [data-nb] [data-ansi-bg] { background: var(--ansi-bd); }
+:root:is([data-theme]) [data-ground="light"] [data-nb] [data-ansi-fg] { color: var(--ansi-l); }
+:root:is([data-theme]) [data-ground="light"] [data-nb] [data-ansi-bg] { background: var(--ansi-bl); }
+:root:is([data-theme]) [data-ground="dark"] [data-nb] [data-ansi-fg] { color: var(--ansi-d); }
+:root:is([data-theme]) [data-ground="dark"] [data-nb] [data-ansi-bg] { background: var(--ansi-bd); }
+[data-nb] [data-ansi-dim] { opacity: 0.6; }
 
 /* 暂停 (docs/MORE.md): the rail's face, dimmed and drained, while this
    machine is not talking to the network. **Not a badge**: the mark is
