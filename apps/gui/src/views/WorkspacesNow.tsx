@@ -9,7 +9,8 @@
 // same nothing on every visit. What khor already knows, and what a
 // person comes to this landing for, is **which project to go back to**:
 // the workspaces this face opened last, each with where it is (机器:路径),
-// what branch it is on and when its tree last changed — pressable.
+// what branch it is on and, for repositories, when its tree last changed
+// — pressable. Plain folders have no time in the right corner.
 //
 // # Nothing is asked again
 //
@@ -104,6 +105,7 @@ export function WorkspacesNow({
           const k = factKey(r);
           const git = facts.marks[k];
           const at = facts.times[k] ?? 0;
+          const repo = facts.repos[k] ?? git !== undefined;
           return (
             <button
               key={k}
@@ -130,9 +132,9 @@ export function WorkspacesNow({
                 </span>
                 <span className="flex min-w-0 items-baseline gap-in text-callout text-muted-foreground">
                   <PathCut className="flex-1" text={r.machine === "" ? r.path : `${r.machine}:${r.path}`} />
-                  <span data-ws-now-touched className="ml-auto flex-none tabular-nums">
-                    {at > 0 ? ago(at) : ""}
-                  </span>
+                  {repo && at > 0 && <span data-ws-now-touched className="ml-auto flex-none tabular-nums">
+                    {ago(at)}
+                  </span>}
                 </span>
               </span>
             </button>

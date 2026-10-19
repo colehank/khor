@@ -894,3 +894,5 @@ Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印�
 - `followFieldSwipe` 与底栏共用 `sheetGestureReserved` 的起点判定：菜单、listbox、候选滚动区与显式保留区域拥有整个手势，滚到边界或手指移出也不交给收键盘与底栏缩放。主正文的下滑收键盘保留，终端继续使用自己的规则。
 - `ChoiceField` 的外点关闭仍由现有 Radix 弹层负责；`PageField`、`PathField`、`Omnibox` 共用 `useFieldDismiss`，不拦默认点击、不强行重新聚焦。原生浮动候选窗口继续走现有焦点／选择协议。
 - 门：`npm run field-interaction` 检查正式全局捕获监听器；`lab/suggestion-interaction.html` 使用真实地址、路径、选择、搜索组件和底栏监听器，覆盖独立候选座位、外点单次激活及菜单／正文手势。合成触摸只验证事件归属，iOS 键盘与原生浮动窗口仍需实机验收。
+
+2026-10-19 工作区普通文件夹没有状态，列表与总览行右侧不显示时间；左下的新建／修改文件信息保留，Git 仓库状态时长保留。现有 `check-face` corners d 与工作区行检查改为要求普通文件夹右侧为空。

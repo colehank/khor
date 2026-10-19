@@ -607,8 +607,8 @@ export function WorkspacesList({
       // clean checkout; bottom-right how long that segment has held. A
       // plain folder has no state: bottom-left its most recently
       // modified file (its name, the path under the folder when nested,
-      // `WorkspaceRow.newest`), bottom-right how long its line has not
-      // changed — a duration, bare, like every row's (WORDS-1008).
+      // `WorkspaceRow.newest`). It has no state, so neither right corner
+      // draws a status or a duration (2026-10-19).
       // Tombstone (UX-15): the machine and path as the name's aside, the
       // change count under it, the branch alone on the right and the
       // tree's last change under it. And (UX-48, the lead 2026-10-07) a
@@ -628,12 +628,8 @@ export function WorkspacesList({
         top: repo && seg && (seg.operation || segmentSymbols(seg).length > 0) ? <GitSegmentWord seg={seg} /> : undefined,
         bottom:
           repo && seg && seg.since_ms > 0 ? (
-            // How long the state has lasted — the segment held, or a plain
-            // folder's line unchanged: a duration, bare (the list standard,
-            // 10-07; WORDS-1008).
+            // How long the git segment has held, bare (WORDS-1008).
             <span data-ws-held>{lasting(Date.now() - seg.since_ms)}</span>
-          ) : !repo && r.newest && r.newest.at_ms > 0 ? (
-            <span data-ws-held>{lasting(Date.now() - r.newest.at_ms)}</span>
           ) : undefined,
       },
       // **What the row says out loud**: its name, its line, its segment —
