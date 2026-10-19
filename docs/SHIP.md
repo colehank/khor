@@ -175,3 +175,13 @@ khor devices                                                   # 五台都在线
 - 集群：hinton 负载符合脚本要求，在其上编译并安装；hinton／lecun／turing 的 5467 实际监听进程 `/proc/<pid>/exe` SHA-256 均为 `5e3729585863d83f53392af6c9b81b66027cde0fe1612e8635467861f0b53b92`，与安装文件相同，HTTP 收据一致；CLI 确认三台直连。
 - iOS：重编后的静态库与归档 App 均通过新时间及完整收据核验。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出上传于 `2026-10-19 09:24:33 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`。App Store Connect 继续处理；临时增加的两处签名团队配置已恢复。
 - 日志与校验：`/Volumes/disk0/khor-ship-20261019-pill-fixes/`；药丸几何证据在 `/Volumes/disk0/khor-pill-geometry-proof/`。构建与临时目录外置；上传后按 bundle ID 与 lsof 无引用核验，清理两份 Khor Xcode 导出副本及已替换的旧静态库备份，共 770,845,250 字节，保留最新归档、静态库和发布收据。收尾系统盘约余 9.8 GiB，外挂盘约余 101 GiB；未清系统 swap 或全量 cargo target。
+
+
+## 发布记录：2026-10-19（长按栏轻玻璃与选中高亮）
+
+- 构建提交：`6d69a497`，已合入 main。UI 收据：`khor-ui-assets:/assets/index-BOhLSlqv.js`。长按选择带移除顶部序号、缩短高度、增加项目间距；中央复用现有 `glass-sel` 高亮与轮廓，头像状态环语义不变。单标签不展开选择带；标题保留单行省略，普通横滑的药丸内序号保留；减少透明度时使用厚底。未采用圆弧轮盘或两行标题布局。
+- 验证：主干生成、默认前端检查与 TypeScript、`content-sheet`、生产构建、`gates` 通过。CUA 对正式 DeckBand 完成根层 9 项几何／11 项手势检查、内部层 9 项几何检查，核对单标签无浮层、材质模糊与中央 `glass-sel`；Lab 深浅主题已查看。完整 face 浏览器门、iPhone 原生触控／键盘／WKWebView 手感未作为本轮通过项。
+- Mac：release CLI／GUI 收据与签名通过；旧主窗口 PID 62879 退出，新 PID 63652，最终仅一个主窗口。8 个会话辅助进程全部保留，既有会话 10 → 10，失败数 0 → 0；原生日志与 HTTP 收据一致。
+- 集群：hinton 编译安装，三台自动换新；hinton／lecun／turing 的实际 5467 监听进程 `/proc/<pid>/exe` SHA-256 均为 `1f1b001ca3146014b511381e61580d1107260cbce48c62cbb7826f973e584b1c`，与安装文件一致，HTTP 收据相同；CLI 确认三台直连。
+- iOS：先移开旧静态库强制重编，新 `libapp.a` 与归档 App 的时间、完整收据通过。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出于 `2026-10-19 11:02:09 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 正在处理。临时两处签名团队配置已按构建前基线恢复。
+- 日志与证据：`/Volumes/disk0/khor-ship-20261019-selector-glass/`。按 bundle ID 与 lsof 无引用核验后清理两份 Khor Xcode 导出暂存及旧静态库备份，逻辑大小合计 770,848,787 字节；保留当前静态库、正式归档和收据。系统盘约余 8.8 GiB、外挂盘约余 100 GiB；未清系统 swap 或全量 target。
