@@ -1,5 +1,5 @@
 /** Shared mobile pill gesture: direct manipulation or long-press rate control. */
-import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactNode,type PointerEvent} from 'react';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactNode,type CSSProperties,type PointerEvent} from 'react';
 import {createPortal} from 'react-dom';
 import {MidName,TabAvatar,type TabFace} from '@/browse/TabStrip';
 import {BellMark} from '@/components/BellMark';
@@ -95,7 +95,7 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
     const deck=b.closest('[data-session-deck], [data-content-deck], .mobile-content-deck')
       ??b.closest('[data-file-pill]')?.parentElement;
     const bounds=deck?.getBoundingClientRect()??r;
-    const step=parseFloat(cs.getPropertyValue('--glass-btn'))+2*parseFloat(cs.getPropertyValue('--gap-pane'));
+    const step=parseFloat(cs.getPropertyValue('--glass-btn'))+3*parseFloat(cs.getPropertyValue('--gap-pane'));
     setGeometry({left:Math.max(0,bounds.left),right:Math.max(0,window.innerWidth-bounds.right),top:r.top,step:Number.isFinite(step)?step:92});
     drag.current={pointer:e.pointerId,touch:e.pointerType==='touch',touchId:null,title:!!(e.target instanceof Element&&e.target.closest('[data-band-seg="cur"]')),rail:false};
     engine.start(e.clientX,e.clientY,b.clientWidth,Number.isFinite(step)?step:92);
@@ -194,16 +194,15 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
       })}
       {selecting&&<span data-band-count className="deck-band-count" aria-hidden="true">{state.preview+1}/{faces.length}</span>}
     </div>
-    {rail&&faces.length>0&&createPortal(<div data-deck-selector data-sheet-hold role="listbox" aria-label={faces[at]?.label}
+    {rail&&faces.length>1&&createPortal(<div data-deck-selector data-sheet-hold role="listbox" aria-label={faces[at]?.label}
       className="glass fixed deck-selector" data-leaving={state.mode==='settling'||undefined}
-      style={{left:geometry.left,right:geometry.right,bottom:window.innerHeight-geometry.top}}>
-      <div className="deck-selector-count" aria-hidden="true">{state.preview+1} / {faces.length}</div>
+      style={{left:geometry.left,right:geometry.right,bottom:window.innerHeight-geometry.top,"--selector-step":`${geometry.step}px`} as CSSProperties}>
       <div className="deck-selector-window">
-        <span className="deck-selector-focus"/>
+        <span className="deck-selector-focus glass-sel"/>
         {nearbySlots(state.position,faces.length,Math.min(3,Math.floor(faces.length/2))).map(({slot,index})=><div key={slot} role="option"
           aria-selected={slot===Math.round(state.position)} className="deck-selector-item"
           style={{width:geometry.step,transform:`translate3d(${(slot-state.position)*geometry.step}px,0,0)`,opacity:Math.max(.4,1-Math.abs(slot-state.position)*.25)}}>
-          {!faces[index].hideFace&&<TabAvatar f={faces[index]} bare="size-list-face" seat="row"/>}<span>{faces[index].label}</span>
+          {!faces[index].hideFace&&<TabAvatar f={faces[index]} bare="size-list-face" seat="row"/>}<span title={faces[index].label}>{faces[index].label}</span>
         </div>)}
       </div>
     </div>,document.body)}
