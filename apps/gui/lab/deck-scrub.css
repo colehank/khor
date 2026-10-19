@@ -3,7 +3,7 @@
 .deck-proof aside{max-width:calc(8 * var(--touch));font-size:var(--text-body);line-height:1.8}
 .deck-proof h1{font-size:var(--text-title-lg);font-weight:var(--font-weight-title)}
 .deck-proof-actions{display:flex;flex-wrap:wrap;gap:var(--gap-in);margin-block:var(--gap-pane)}
-.deck-proof output{white-space:pre-wrap;font-size:var(--text-caption)}
+.deck-proof output{display:block;max-height:calc(5 * var(--touch));overflow:auto;white-space:pre-wrap;font-size:var(--text-caption)}
 .deck-proof-phone{display:flex;flex-direction:column;height:calc(100dvh - 2 * var(--gap-pane));min-height:calc(12 * var(--touch));width:calc(9 * var(--touch));border:var(--hair) solid var(--border);border-radius:var(--radius-xl);overflow:hidden}
 .deck-proof-content{flex:1;min-height:0;padding:var(--gap-pane);font-family:var(--font-mono);line-height:1.8}
 .deck-proof-content pre{margin-block:var(--gap-pane);color:var(--muted-foreground)}

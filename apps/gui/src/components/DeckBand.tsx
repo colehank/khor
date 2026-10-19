@@ -21,11 +21,14 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
   const at=Math.max(0,faces.findIndex(f=>f.id===active));
   const [state,setState]=useState<DeckScrubState>({opened:at,preview:at,position:at,mode:'idle',source:'swipe',direction:0,holding:false,...holdTiming(0,250)});
   const [geometry,setGeometry]=useState<Geometry>({left:0,top:0,right:0,step:92});
-  const alive=useRef(true),prior=useRef(at);
+  const alive=useRef(true),prior=useRef(at),travelDirection=useRef(0);
   const engine=useMemo(()=>deckScrubber(faces.length,at,s=>{
     if(!alive.current)return;
     if(s.preview!==prior.current&&(s.mode==='swipe'||s.mode==='rail'))feel('threshold');
-    prior.current=s.preview;setState(s);
+    prior.current=s.preview;
+    if(s.holding)travelDirection.current=s.direction;
+    else if(s.mode==='idle'||s.mode==='pending')travelDirection.current=0;
+    setState(s);
     if(s.mode==='rail'&&drag.current){
       drag.current.rail=true;
       if(!band.current?.hasPointerCapture(drag.current.pointer))band.current?.setPointerCapture(drag.current.pointer);
@@ -64,16 +67,16 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
       const t=Array.from(e.changedTouches).find(t=>t.identifier===d.touchId);if(!t)return;
       if(e.type==='touchcancel')cancel();else finish(d.pointer);
     };
-    // Once long press owns the gesture, a down-pull cancels it instead of
-    // resizing the sheet. Initial vertical pans still belong to the sheet.
+    // Long press owns this contact until release, including outside the pill.
+    // Initial vertical pans still belong to the sheet.
     const move=(e:TouchEvent)=>{if(drag.current?.rail)e.preventDefault();};
     window.addEventListener('touchstart',start,{capture:true,passive:true});
     window.addEventListener('touchend',end,{capture:true,passive:true});
     window.addEventListener('touchcancel',end,{capture:true,passive:true});
-    b.addEventListener('touchmove',move,{passive:false,capture:true});
+    window.addEventListener('touchmove',move,{passive:false,capture:true});
     window.addEventListener('blur',blur);window.addEventListener('pagehide',blur);
     document.addEventListener('visibilitychange',hidden);window.addEventListener('keydown',key,true);
-    return()=>{resize.disconnect();window.removeEventListener('touchstart',start,true);window.removeEventListener('touchend',end,true);window.removeEventListener('touchcancel',end,true);b.removeEventListener('touchmove',move,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',blur);document.removeEventListener('visibilitychange',hidden);window.removeEventListener('keydown',key,true);};
+    return()=>{resize.disconnect();window.removeEventListener('touchstart',start,true);window.removeEventListener('touchend',end,true);window.removeEventListener('touchcancel',end,true);window.removeEventListener('touchmove',move,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',blur);document.removeEventListener('visibilitychange',hidden);window.removeEventListener('keydown',key,true);};
   },[engine]);
   const finish=(id:number)=>{
     const d=drag.current;if(!d||id!==d.pointer)return;
@@ -89,8 +92,11 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
     if(e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true],[data-band-control]'))return;
     if(window.getSelection()?.isCollapsed===false)return;
     const b=band.current,r=b.getBoundingClientRect(),cs=getComputedStyle(b);
+    const deck=b.closest('[data-session-deck], [data-content-deck], .mobile-content-deck')
+      ??b.closest('[data-file-pill]')?.parentElement;
+    const bounds=deck?.getBoundingClientRect()??r;
     const step=parseFloat(cs.getPropertyValue('--glass-btn'))+2*parseFloat(cs.getPropertyValue('--gap-pane'));
-    setGeometry({left:Math.max(0,r.left-r.width*.15),right:Math.max(0,window.innerWidth-r.right-r.width*.15),top:r.top,step:Number.isFinite(step)?step:92});
+    setGeometry({left:Math.max(0,bounds.left),right:Math.max(0,window.innerWidth-bounds.right),top:r.top,step:Number.isFinite(step)?step:92});
     drag.current={pointer:e.pointerId,touch:e.pointerType==='touch',touchId:null,title:!!(e.target instanceof Element&&e.target.closest('[data-band-seg="cur"]')),rail:false};
     engine.start(e.clientX,e.clientY,b.clientWidth,Number.isFinite(step)?step:92);
     if(!renderFace)b.setPointerCapture(e.pointerId);
@@ -158,7 +164,9 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
 
   const rail=state.mode==='rail'||state.mode==='settling'&&state.source==='rail';
   const position=rail?at:state.position;
-  const movingWay=state.holding?state.direction:Math.sign(position-state.opened);
+  const movingWay=state.holding?state.direction
+    :state.mode==='settling'&&travelDirection.current?travelDirection.current
+    :Math.sign(position-state.opened);
   const anchor=movingWay<0?Math.ceil(position):Math.floor(position);
   const fraction=Math.abs(position-anchor);
   const slots=nearbySlots(anchor,faces.length,1);
@@ -168,7 +176,7 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
   return <>
     <div ref={band} data-deck-band data-band-past={past||undefined} data-band-phase={state.mode} data-band-preview={faces[state.preview]?.id}
       data-sheet-hold={rail||undefined} className="deck-band relative h-full min-w-0 flex-1 overflow-hidden"
-      style={{touchAction:renderFace?'pan-y':'none'}} onPointerDown={down} onPointerMove={moving}
+      style={{touchAction:'none'}} onPointerDown={down} onPointerMove={moving}
       onPointerUp={e=>finish(e.pointerId)} onPointerCancel={lost} onLostPointerCapture={lost}
       onContextMenu={e=>{if(state.mode!=='idle')e.preventDefault();}}>
       {faces.length>0&&slots.map(({slot,index})=>{
@@ -177,9 +185,11 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
         const share=role==='cur'?1:incoming?fraction:0;
         const offset=role==='cur'?anchor-position:role==='next'?1-fraction:0;
         return <div key={slot} data-band-seg={role} aria-hidden={role!=='cur'||undefined}
-          className="deck-band-face absolute inset-0 flex items-center gap-in overflow-hidden whitespace-nowrap pe-row text-foreground will-change-transform"
-          style={{width:`${share*100}%`,transform:`translate3d(calc(${offset} * var(--deck-band-width)),0,0)`,opacity:previewing&&((past&&index===state.opened)||(!past&&index!==state.opened))?.4:1}}>
-          {body(f,f.id===active?'cur':slot<state.opened?'prev':'next')}
+          className="deck-band-face absolute inset-0 flex items-center overflow-hidden text-foreground will-change-transform"
+          style={{display:share===0?'none':undefined,width:`${share*100}%`,transform:`translate3d(calc(${offset} * var(--deck-band-width)),0,0)`,opacity:previewing&&((past&&index===state.opened)||(!past&&index!==state.opened))?.4:1}}>
+          <div data-band-body className="flex h-full flex-none items-center gap-in overflow-hidden whitespace-nowrap pe-row" style={{width:'var(--deck-band-width)'}}>
+            {body(f,f.id===active?'cur':slot<state.opened?'prev':'next')}
+          </div>
         </div>;
       })}
       {selecting&&<span data-band-count className="deck-band-count" aria-hidden="true">{state.preview+1}/{faces.length}</span>}

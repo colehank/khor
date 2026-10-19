@@ -1,8 +1,8 @@
 /* A single selector above the existing pill; geometry comes from its tokens. */
 .deck-band{-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
-.deck-band-face>[data-deck-title]{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.deck-band-face>[data-deck-title]:is(button){flex:1}
-.deck-band[data-band-phase=swipe] .deck-band-face{padding-inline-end:var(--glass-item-h)}
+[data-band-body]>[data-deck-title]{min-width:0;overflow:hidden;text-overflow:ellipsis}
+[data-band-body]>[data-deck-title]:is(button){flex:1}
+.deck-band[data-band-phase=swipe] [data-band-body]{padding-inline-end:var(--glass-item-h)}
 .deck-band-count{position:absolute;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;width:var(--glass-item-h);font-size:var(--text-caption);line-height:1;color:var(--tertiary);font-variant-numeric:tabular-nums;pointer-events:none}
 .deck-selector{z-index:70;margin-bottom:var(--gap-base);border-radius:var(--radius-xl);overflow:hidden;pointer-events:none;box-shadow:var(--glass-in),var(--float);background:var(--glass-menu);transform-origin:center bottom;animation:deck-selector-in var(--dur-180) var(--ease-out)}
 .deck-selector-count{text-align:right;font-size:var(--text-caption);color:var(--tertiary);font-variant-numeric:tabular-nums;padding:var(--gap-in) var(--gap-row) 0}

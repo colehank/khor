@@ -96,7 +96,6 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
         if (Math.abs(dy) >= Math.abs(dx)) { cancel(); return; }
         s.mode = 'swipe'; s.source = 'swipe';
       }
-      if (s.mode === 'rail' && dy > 32) { cancel(); return; }
       const scale = s.mode === 'rail' ? railWidth : width;
       const threshold = width * (s.direction ? .16 : .24);
       const direction = Math.abs(dx) >= threshold ? -Math.sign(dx) : 0;
