@@ -925,3 +925,18 @@ Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印�
 真 app 清单：iPhone 根会话与文件／网页，短长标题、1／2／多项、首尾循环、左右回滑、键盘起落与系统字号、浅深主题、减少动态效果、后台中断。原生网页遮挡时保留原句柄与导航位置；不要以浏览器合成事件代替 UIKit／WKWebView 验收。
 
 2026-10-20 会话内容甲板：轻点确认才挂载位置输入框，横滑与长按只消费切换手势；复用正式 DeckBand／DeckExplore。目录搜索不因获焦升档、候选独占滚动。目录的搜索与新建共用一块玻璃；新标签＋头像、内容总览与页面导航遵循 Tab 文档本轮规则。门为 `npm run content-toolbar` 和 `npm run content-ui`，持久身份与关闭仍由 `npm run content-model`／`npm run session-content` 守。
+
+### Notebook：只读预览（2026-10-19，nb-view）
+
+`.ipynb` 在 `rendererOf` 里是 `ipynb`（`components/Notebook`，懒加载，不进首屏），和 md / html 同一个开关；源码面照旧是 CodeMirror 里的 JSON。只读：不运行、不连 kernel、不跑 notebook 里的任何脚本。只认 nbformat 4。markdown 单元格、`text/markdown`、`text/latex` 输出走 `Markdown` 的文件面（GitHub 规则、KaTeX、清洗）；代码单元格走 Shiki；`text/html` 输出走同一套清洗**内联**（`HtmlFragment`，`fragmentSchema`：文件面白名单再去掉一切网络图片、连 `<style>` 的字一起去）——不用空白名单的 sandbox iframe，因为它量不出内容高度，几百个输出就是几百个文档，而 GitHub 的结果本来也不带输出自己的样式。图片输出、单元格附件、HTML 里内联的 `data:` 图落在浅色纸上（`data-ground="light"`），matplotlib 默认透明底黑墨，深底上会看不见。ANSI 前 16 色取终端「跟随」用的那一对（浅 latte、深 mocha，随预览背景），16–255 取 xterm 表，RGB 原样；不新造颜色。stderr 与 traceback 垫代码块的 `muted`，不用状态色作底。执行序号 `[n]` 是 caption、`muted-foreground`，宽时在左侧栏、窄时在上面。离屏幕两屏以外的单元格先占一块估算的高，靠近时才画。
+
+| 规矩 | 门 |
+|---|---|
+| 每个输出只画一种，按 nbconvert 的顺序；只有脚本才能画的输出用备份，没有就一句 `nb-needs-script` | `npm run nb` 1、4 |
+| `text/html` 输出不执行、不联网：无脚本 / 框架 / 样式 / 表单元素、无 `on*` / `javascript:`、无网络图片、零网络请求 | `npm run nb` 2 |
+| SVG 输出只经 `<img>`，不进 DOM | `npm run nb` 3 |
+| ANSI 颜色是终端调色板在预览背景上的那一套 | `npm run nb` 5 |
+| 附件图、公式、代码颜色、读不出时的一句 | `npm run nb` 6、7、8 |
+| 窄屏不横向撑开；大 notebook 只画屏幕附近 | `npm run nb` 9、10 |
+
+真 app 验收（门量不到的）：Mac 宽窗与 iPhone 上各开几份真 notebook（pandas 表格、matplotlib 图、带颜色的 traceback、公式）；深浅色和「预览背景」三档；源码 / 预览来回切位置保持在同一个单元格附近；几 MB 的 notebook 首次打开（默认源码面）与切到预览的手感。

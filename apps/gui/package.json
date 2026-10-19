@@ -30,6 +30,7 @@
     "face": "node scripts/check-face.mjs",
     "read": "node scripts/check-read.mjs",
     "md": "node scripts/check-md.mjs",
+    "nb": "node scripts/check-nb.mjs",
     "day": "node scripts/check-day.mjs",
     "fast": "node scripts/check-fast.mjs",
     "acp": "node scripts/check-acp.mjs",
