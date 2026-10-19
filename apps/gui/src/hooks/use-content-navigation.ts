@@ -9,6 +9,7 @@ export type ContentPlace = {
   scene: ContentScene; key: string | null; source: ContentSource;
   scope: { device: string; root: string } | null; filter: string; query: string; address: string; exit: string | null;
 };
+export const contentPickerPosition=(key:string|null,p:ContentPlace)=>JSON.stringify(['picker',key,p.source,p.scope,p.query]);
 type ContentCheckpoint = { place: ContentPlace; trail: ContentPlace[] };
 export type ContentNavigationState = ContentPlace & {
   from: ContentScene; trail: ContentPlace[]; recent: string | null; documentTrail: ContentPlace[];
@@ -109,15 +110,27 @@ export function useContentNavigation(content: SessionContent): ContentNavigation
   };
   const select=(tab:ContentTab)=>{
     pendingResume.current.delete(tab.session);
-    const key=content.handle(tab),target=tabState(tab.session,key);
+    const key=content.handle(tab);let target=tabState(tab.session,key);
+    // Browsing the source does not turn an existing file/page back into a
+    // starting tab. Explicit tab selection returns to its document, keeping
+    // the picker in the Back trail and the viewer's latest browse checkpoint.
+    if((tab.view||'workspace')!=='workspace'&&target.scene==='picker')
+      target=enterContent(target,{scene:'document',source:tab.view==='page'?'browser':target.source});
     write(tab.session,s=>({...s,...place(target),trail:target.trail,from:target.from,recent:key,documentTrail:target.documentTrail}));
   };
   const document=(tab:ContentTab)=>{
     if((tab.view||'workspace')==='workspace'){select(tab);return;}
     pendingResume.current.delete(tab.session);
-    const key=content.handle(tab),target=tabState(tab.session,key);
-    const next=enterContent(target,{scene:'document',key,source:tab.view==='page'?'browser':target.source});
-    write(tab.session,s=>({...s,...place(next),trail:next.trail,from:next.from,recent:key,documentTrail:next.trail}));
+    const key=content.handle(tab),target=tabState(tab.session,key),before=get(tab.session);
+    // A new/revisited tab opened from a source list returns to that exact
+    // directory/history location. The source route now belongs to its key.
+    const start=before.scene==='picker'&&before.key!==key
+      ? {...target,...place(before),key,trail:before.trail}:target;
+    const next=enterContent(start,{scene:'document',key,source:tab.view==='page'?'browser':start.source});
+    const from=contentPickerPosition(before.key,before),to=contentPickerPosition(key,before);
+    const scrolls=start===target?{}:Object.fromEntries(Object.entries(before.scrolls)
+      .filter(([name])=>name.startsWith(from+' ')).map(([name,value])=>[to+name.slice(from.length),value]));
+    write(tab.session,s=>({...s,...place(next),trail:next.trail,from:next.from,recent:key,documentTrail:next.trail,scrolls:{...s.scrolls,...scrolls}}));
   };
   const add=(session:string,scope?:{device:string;root:string})=>{
     pendingResume.current.delete(session);

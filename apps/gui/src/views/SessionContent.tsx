@@ -18,7 +18,7 @@ import "@/styles/session-content.css";
 
 import { contentView, contentName } from '@/lib/content';
 export { contentView, contentName } from '@/lib/content';
-import type { ContentNavigation } from '@/hooks/use-content-navigation';
+import { contentPickerPosition, type ContentNavigation } from '@/hooks/use-content-navigation';
 import { contentTabFace, ContentPicker, ContentOverview, ContentSessionOverview, contentFileDeck, useContentNeighbors } from '@/views/MobileSessionContent';
 import { MobileContentPage } from '@/views/MobileContentPage';
 const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
@@ -28,7 +28,7 @@ const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
 export function ContentTabs({session,open,devices,content,navigation,onAdd,onFocus,onHide}:{session:string;open:boolean;devices:DeviceRow[];content:SessionContent;navigation:ContentNavigation;onAdd:()=>void;onFocus:()=>void;onHide:()=>void}) {
   const tabs=content.allTabs.filter(t=>t.session===session),state=navigation.get(session);
   const faces=tabs.map(tab=>{
-    const key=content.handle(tab),p=navigation.forTab(session,key).get(session),picker=p.scene==='picker';
+    const key=content.handle(tab),picker=contentView(tab)==='workspace';
     return {...contentTabFace(tab,devices,content.pageIcon),id:key,...(picker?{label:gui.content_new,hideFace:true}:{}),pinned:tab.pinned,
       attributes:{'data-content-tab':tab.id,'data-content-on':state.key===key,'data-content-browse':picker||undefined,'data-content-icon':!picker},
       menu:[{key:'pin',label:tab.pinned?gui.unpin:gui.pin,run:()=>content.pin(tab.id,!tab.pinned)},{key:'close',label:gui.close_tab,disabled:tab.pinned,run:()=>content.close(tab.id)}]};
@@ -145,9 +145,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
   };
   const openDocument = (owner: string, device: DeviceRow, path: string, view: 'file'|'page', line?: number|null) => {
     (document.activeElement as HTMLElement|null)?.blur();
-    const key=navigation.get(owner).key,tab=content.allTabs.find(t=>t.session===owner&&content.handle(t)===key);
-    if(tab){quiet(content.point(tab.id,device.id,path,view,'',line));navigation.document({...tab,device:device.id,url:path,view,title:''});}
-    else navigation.document(content.open(owner, device.id, path, view, line));
+    navigation.document(content.openFromPicker(owner,navigation.get(owner).key,device.id,path,view,line));
   };
   useTabHost(visible && focused ? {
     count:peers.length,front:!!current||state?.scene==='picker',
@@ -184,7 +182,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
       const browse=()=>{scoped.update(tab.session,{source:contentView(tab)==='page'?'browser':'workspace'});navigation.browse(tab.session);};
       const browser=(onBusy?:(busy:boolean)=>void)=><BrowserPane onIcon={content.recordPageIcon} onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});releasePages(pageIds?pageIds.split(','):[],'content');}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>navigation.document(content.open(tab.session,device!.id,url,'page',undefined,tab.id))}/>;
       return <Fragment key={key}>
-        {row&&face&&pickers.current.has(key)&&<ContentPosition session={tab.session} position={JSON.stringify(['picker',key,p.source,p.scope,p.query])} show={pickerShow} mobile={mobile} navigation={scoped} data-content-picker={tab.session} data-content-picker-handle={key} className={cn('session-content-view',!pickerShow&&'session-content-retained')} aria-hidden={!pickerShow} inert={!pickerShow}><ContentPicker desktop={!mobile} face={face} content={content} onClose={onClose} row={row} devices={devices} navigation={scoped} onOpen={(device,path,view,line)=>openDocument(tab.session,device,path,view,line)}/></ContentPosition>}
+        {row&&face&&pickers.current.has(key)&&<ContentPosition session={tab.session} position={contentPickerPosition(key,p)} show={pickerShow} mobile={mobile} navigation={scoped} data-content-picker={tab.session} data-content-picker-handle={key} className={cn('session-content-view',!pickerShow&&'session-content-retained')} aria-hidden={!pickerShow} inert={!pickerShow}><ContentPicker desktop={!mobile} face={face} content={content} onClose={onClose} row={row} devices={devices} navigation={scoped} onOpen={(device,path,view,line)=>openDocument(tab.session,device,path,view,line)}/></ContentPosition>}
         <ContentPosition session={tab.session} position={JSON.stringify(['document',key,tab.url])} show={show} mobile={mobile} navigation={scoped} data-session-content={tab.id} data-content-handle={key} data-content-visible={show} className={cn('session-content-view',!show&&'session-content-retained')} aria-hidden={!show} inert={!show}>
           {!device ? contentView(tab)!=='workspace'&&<div className="session-content-unknown">{gui.content_machine_gone}</div> : <>
             {contentView(tab)==='file'?(show||visited.current.has(key))&&<SessionContentFile key={draftKey} tab={tab} onBrowse={browse} onOpen={path=>openDocument(tab.session,device,path,'file')} machine={device.name} path={tab.url} here={device.me} git draft={drafts[draftKey]} onDraft={draft=>{setDrafts(all=>all[draftKey]===(draft||undefined)?all:{...all,[draftKey]:draft||undefined});}} goLine={content.lines[key]||content.lines[tab.id]} contentDeck={mobile&&face?contentFileDeck({session:tab.session,face,content,navigation:scoped,onClose,title:contentName(tab)}):undefined} onBack={()=>{if(!navigation.back(tab.session))onClose();}} onGone={()=>quiet(content.close(tab.id))} onMoved={(_from,to)=>point(tab,device,to)}/>:contentView(tab)==='page'?show&&face&&<MobileContentPage desktop={!mobile} tab={tab} handle={key} device={device} devices={devices} face={face} content={content} navigation={scoped} onClose={onClose} onPoint={(d,url)=>point(tab,d,url)}>{onBusy=>browser(onBusy)}</MobileContentPage>:null}
