@@ -185,3 +185,13 @@ khor devices                                                   # 五台都在线
 - 集群：hinton 编译安装，三台自动换新；hinton／lecun／turing 的实际 5467 监听进程 `/proc/<pid>/exe` SHA-256 均为 `1f1b001ca3146014b511381e61580d1107260cbce48c62cbb7826f973e584b1c`，与安装文件一致，HTTP 收据相同；CLI 确认三台直连。
 - iOS：先移开旧静态库强制重编，新 `libapp.a` 与归档 App 的时间、完整收据通过。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出于 `2026-10-19 11:02:09 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 正在处理。临时两处签名团队配置已按构建前基线恢复。
 - 日志与证据：`/Volumes/disk0/khor-ship-20261019-selector-glass/`。按 bundle ID 与 lsof 无引用核验后清理两份 Khor Xcode 导出暂存及旧静态库备份，逻辑大小合计 770,848,787 字节；保留当前静态库、正式归档和收据。系统盘约余 8.8 GiB、外挂盘约余 100 GiB；未清系统 swap 或全量 target。
+
+
+## 发布记录：2026-10-19（终端可读性与长按响应）
+
+- 构建提交：`f27bb64d`；终端修复 `c9388e4d`、药丸响应 `f27bb64d` 均已合入 main。本次 UI 收据：`khor-ui-assets:/assets/index-DZVvR-5R.js`。可读性保护补齐 DIM 完整对比度目标，光标按所在格子背景取色，保持形状与闪烁策略；不改 PTY 字节、原始缓冲或颜色应答。长按唤出 380 → 320 ms，长按后翻选等待 400 → 180 ms；按项目宽度计算响应并容忍轻微抖动，保留标题停顿、首尾循环和松手才进入。
+- 验证：主干生成、默认前端检查与 TypeScript、生产构建、门索引通过。终端分支的真实 xterm DOM／WebGL 对比、关闭保护、光标形状、主题和渲染器切换已验；药丸根层与内部层各 4 项响应／11 项手势／9 项几何检查通过。iPhone 原生触控、系统触感与浅色终端仍待安装后真机验收，未将浏览器合成事件称为真机手感验证。
+- Mac：release CLI／GUI 收据与签名通过；旧主窗口 PID 63652 已退出，新 PID 65708，实际 5467 监听进程也是新版主窗口。9 个会话辅助进程全部保留，会话 11 → 11，失败 0 → 0；原生日志与 HTTP 收据一致。
+- 集群：hinton 编译安装，三台自动换新。hinton／lecun／turing 的实际 5467 监听进程 `/proc/<pid>/exe` SHA-256 均为 `39f0101f42b2e842aaee8a367d23a57af375e76f96ab53601b42a95c9f472ba8`，与安装文件一致，HTTP 收据相同；CLI 检查通过。
+- iOS：先移开旧静态库强制重编，新 `libapp.a` 与归档 App 的时间、完整收据通过。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出上传于 `2026-10-19 17:22:17 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 正在处理。两处临时签名团队配置已按构建前基线恢复。
+- 日志与证据：`/Volumes/disk0/khor-ship-20261019-legibility-response/`；分支证据在 `/Volumes/disk0/khor-terminal-legibility-proof/` 与 `/Volumes/disk0/khor-pill-response-proof/`。按包身份及 lsof 无引用核验后清理两份 Khor Xcode 导出副本、旧静态库备份与本轮集群源码导出，共 820,731,073 字节；未确认身份的临时目录保留。系统盘约余 5.6 GiB，外挂盘约余 92 GiB；保留最新归档、静态库、发布收据与现有会话，未清系统 swap 或全量 target。
