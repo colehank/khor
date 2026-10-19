@@ -100,6 +100,19 @@ function output(o: Json): Out | null {
   return null;
 }
 
+/** Consecutive writes to the same stream as one, the way Jupyter shows
+    them: a progress bar is hundreds of `\r`-led writes, and only joined
+    does its last state replace the ones before it. */
+function merged(outs: Out[]): Out[] {
+  const out: Out[] = [];
+  for (const o of outs) {
+    const last = out[out.length - 1];
+    if (o.kind === "stream" && last?.kind === "stream" && last.name === o.name) out[out.length - 1] = { ...last, text: last.text + o.text };
+    else out.push(o);
+  }
+  return out;
+}
+
 /** A markdown cell's `attachments`, as `name → data:` addresses. Only
     pictures; anything else in a bundle is not something `![](…)` can
     show. */
@@ -142,7 +155,7 @@ export function readNotebook(text: string): Read {
         kind: "code",
         source,
         count: typeof cell.execution_count === "number" ? cell.execution_count : null,
-        outputs: outs.flatMap((o) => (o && typeof o === "object" ? (output(o as Json) ?? []) : [])),
+        outputs: merged(outs.flatMap((o) => (o && typeof o === "object" ? (output(o as Json) ?? []) : []))),
       });
     } else cells.push({ kind: "raw", source });
   }

@@ -132,7 +132,9 @@ export function sample(png: string): string {
   code("1 / 0", 9, [{ output_type: "error", ename: "ZeroDivisionError", evalue: "division by zero", traceback: TRACEBACK }], ["error"]);
   code("import warnings\nwarnings.warn('old')\nfor i in range(3): print(i, end='\\r')", 10, [
     { output_type: "stream", name: "stderr", text: [`${ESC}[33m/tmp/x.py:2: FutureWarning: old${ESC}[0m\n`] },
-    { output_type: "stream", name: "stdout", text: ["10%\r50%\r100%\n"] },
+    { output_type: "stream", name: "stdout", text: ["10%"] },
+    { output_type: "stream", name: "stdout", text: ["\r50%"] },
+    { output_type: "stream", name: "stdout", text: ["\r100%\n"] },
   ], ["stderr", "stdout"]);
   code("display(Markdown('**粗体** 与 $x^2$'), Latex(r'\\begin{equation}a^2+b^2=c^2\\end{equation}'), JSON({'k': [1, 2]}))", 11, [
     { output_type: "display_data", metadata: {}, data: { "text/markdown": ["**粗体** 与 $x^2$"], "text/plain": ["<IPython.core.display.Markdown object>"] } },
