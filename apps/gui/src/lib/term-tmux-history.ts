@@ -13,6 +13,7 @@
 // same way, from `capture-pane`. The live xterm is left exactly as it was:
 // at the bottom it is the one on screen; the Mac is not touched.
 import { Terminal } from "@xterm/xterm";
+import { protectTerminal } from "./term-legibility";
 import type { PaneAnchor } from "@/gen/bindings/PaneAnchor";
 import type { PaneHistory } from "@/gen/bindings/PaneHistory";
 import { countsGain } from "@/lib/term-gain";
@@ -198,6 +199,7 @@ export function holdsTmuxHistory(o: {
     on = to;
     o.changed();
   };
+  let stopLegibility: (() => void) | undefined;
   const make = () => {
     const t = new Terminal({
       cols: live.cols,
@@ -215,6 +217,7 @@ export function holdsTmuxHistory(o: {
       cursorBlink: false,
     });
     t.open(seat);
+    stopLegibility = protectTerminal(t);
     // For the gates, as the live one is.
     (seat as HTMLElement & { __xterm?: Terminal }).__xterm = t;
     t.onScroll(show);
@@ -233,6 +236,8 @@ export function holdsTmuxHistory(o: {
     native = null;
     gain?.stop();
     gain = null;
+    stopLegibility?.();
+    stopLegibility = undefined;
     history?.dispose();
     history = null;
     delete (seat as HTMLElement & { __xterm?: Terminal }).__xterm;

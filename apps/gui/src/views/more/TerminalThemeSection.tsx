@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { protectTerminal } from "@/lib/term-legibility";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { inApp, saveTerminalPalette } from "@/api";
@@ -25,13 +26,13 @@ export function TerminalThemePreview({ theme }: { theme?: Palette }) {
     const css = getComputedStyle(el);
     const term = new Terminal({ cols: 58, rows: 4, disableStdin: true, scrollback: 0, cursorBlink: false, fontFamily: css.fontFamily, fontSize: parseFloat(css.fontSize), ...terminalAppearance(el, termTheme(), theme) });
     termRef.current = term;
-    const fit = new FitAddon(); term.loadAddon(fit); term.open(el); term.write(SAMPLE);
+    const fit = new FitAddon(); term.loadAddon(fit); term.open(el); const stopLegibility = protectTerminal(term); term.write(SAMPLE);
     (el as HTMLDivElement & { __xterm?: Terminal }).__xterm = term;
     const paint = () => { term.options = terminalAppearance(el, termTheme(), themeRef.current); };
     const stop = onTermTheme(paint);
     const resized = new ResizeObserver(() => { if (el.clientWidth) fit.fit(); }); resized.observe(el);
     setReady(true);
-    return () => { resized.disconnect(); stop(); term.dispose(); termRef.current = null; };
+    return () => { resized.disconnect(); stop(); stopLegibility(); term.dispose(); termRef.current = null; };
   }, []);
   useEffect(() => { if (ready && termRef.current && box.current) termRef.current.options = terminalAppearance(box.current, termTheme(), theme); }, [ready, theme]);
   return <div ref={box} data-term-theme-preview className="overflow-hidden rounded-md p-in font-term text-term text-foreground" style={{ backgroundColor: theme?.background ?? "var(--term-bg)", color: theme?.foreground ?? "var(--term-fg)", height: "var(--theme-preview-h)", fontFamily: "var(--font-term)", fontSize: "var(--text-term)" }} />;

@@ -92,6 +92,7 @@ import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermOptionMeta, termOptionMeta } from "@/lib/term-option-meta";
 import { keepWebgl } from "@/lib/term-atlas";
+import { protectTerminal } from "@/lib/term-legibility";
 import { keepTerminalGlass } from "@/lib/term-glass";
 import { keepTerminalIme } from "@/lib/term-ime";
 import { onTermBlockLines, termBlockLines } from "@/lib/term-block-lines";
@@ -1528,6 +1529,7 @@ export function TerminalPane({
     term.loadAddon(new UnicodeGraphemesAddon());
     term.open(mount);
     const stopGlass = keepTerminalGlass(term, box);
+    const stopLegibility = protectTerminal(term);
     const ime = keepTerminalIme(term, box);
     // The grid's last row is where the folded capsule measures from
     // (item 72, `lib/fold-seat`): xterm's screen is exactly its rows tall.
@@ -2896,6 +2898,7 @@ export function TerminalPane({
       cursor();
       unWebgl();
       ime.stop();
+      stopLegibility();
       stopGlass();
       term.dispose();
       termRef.current = null;
@@ -3744,6 +3747,7 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
     term.loadAddon(new ImageAddon());
     term.open(mount);
     const stopGlass = keepTerminalGlass(term, box);
+    const stopLegibility = protectTerminal(term);
     (box as HTMLDivElement & { __xterm?: Terminal }).__xterm = term;
     // Fitted only while it stands: a write's callback or the observer
     // can land after the pane went away.
@@ -3768,6 +3772,7 @@ function EndedScreenView({ screen }: { screen: EndedScreen }) {
       alive = false;
       seen.disconnect();
       stopTheme(); stopSurface();
+      stopLegibility();
       stopGlass();
       term.dispose();
     };

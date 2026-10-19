@@ -1,0 +1,9 @@
+#root:has(.legibility-lab){overflow:auto}
+.legibility-lab{min-height:100dvh;padding:var(--gap-pane);background:var(--canvas-solid);color:var(--foreground)}
+.legibility-lab header{display:flex;align-items:center;flex-wrap:wrap;gap:var(--gap-in);margin-bottom:var(--gap-base)}
+.legibility-lab h1{font-size:var(--text-title-lg);margin-right:auto}
+.legibility-columns{display:flex;flex-wrap:wrap;gap:var(--gap-pane);margin-block:var(--gap-pane)}
+.legibility-columns section{min-width:0;flex:1;border:var(--hair) solid var(--border);border-radius:var(--radius-xl);padding:var(--gap-base);overflow:auto}
+.legibility-columns h2{font-size:var(--text-title-md);margin-bottom:var(--gap-base)}
+.legibility-terminal{color:var(--term-fg);background:var(--term-bg);min-height:calc(5 * var(--touch))}
+.legibility-lab output{display:block;max-height:calc(6 * var(--touch));overflow:auto;white-space:pre-wrap;font-size:var(--text-caption)}
