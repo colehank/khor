@@ -8,7 +8,8 @@
 // had of lowering the keyboard. The bar stays off; iOS's own rule for a
 // scrolling page with a field takes its place (Messages, Notes:
 // `keyboardDismissMode`): **a drag down the page lowers the keyboard**,
-// wherever it starts, the editor included — the field loses the focus.
+// on the main content, the editor included — the field loses the focus.
+// Candidate menus keep their scroll and keyboard for the whole gesture.
 // Measured on the finger as the terminal's swipe measures it (item 49,
 // `lib/term-swipe`): one finger out of the tap's dead zone more down than
 // across; a touch held in the dead zone first is a press (a selection's
@@ -20,6 +21,7 @@
 import type { KeyboardEvent } from "react";
 
 import { PRESS_MS, SLOP } from "@/lib/term-swipe";
+import { sheetGestureReserved } from "@/lib/sheet-gesture";
 
 /** The terminal's field and everything of its box: not this rule's. */
 const TERMINAL = ".xterm, [data-terminal]";
@@ -48,7 +50,10 @@ export function followFieldSwipe(): () => void {
   /** …and has left the dead zone. */
   let away = false;
   const start = (e: TouchEvent) => {
-    one = e.touches.length === 1 && typing() !== null;
+    // Claim at touchstart, before a passive capture listener can blur
+    // the editor. Menus retain the entire pan, even at their edges or
+    // after the finger leaves their bounds; bubbling guards are too late.
+    one = e.touches.length === 1 && !sheetGestureReserved(e.target instanceof Element ? e.target : null) && typing() !== null;
     away = false;
     x0 = e.touches[0]?.clientX ?? 0;
     y0 = e.touches[0]?.clientY ?? 0;

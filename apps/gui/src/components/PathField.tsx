@@ -20,6 +20,7 @@ import { fetchLs, type DirListing } from "@/api";
 import { OmniMenu } from "@/components/OmniMenu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import { useFieldDismiss } from "@/hooks/use-field-dismiss";
 import { imeKey } from "@/lib/ime";
 import {directoryPrefix,homeRelative,settledPath,splitPath} from "@/lib/path-input";
 export {settledPath,splitPath} from "@/lib/path-input";
@@ -72,6 +73,10 @@ export function PathField({
   const [at, setAt] = useState(-1);
   const [shut, setShut] = useState(false);
   const [focused, setFocused] = useState(false);
+  useFieldDismiss(focused, () => [seat.current], () => {
+    seat.current?.querySelector('input')?.blur();
+    setFocused(false);
+  });
   // Inline suggestions change the form's height. If a pointer blurs the
   // field on its way to an action, keep the list in place through that
   // click; otherwise the action moves between pointerdown and click and
@@ -84,11 +89,13 @@ export function PathField({
       pointer.current = false;
       if (blurPending.current) { blurPending.current = false; setFocused(false); }
     };
-    const clicked = () => { queueMicrotask(finish); };
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    const clicked = () => { clearTimeout(pending); pending = setTimeout(finish, 0); };
     document.addEventListener('pointerdown', down, true);
     document.addEventListener('click', clicked, true);
     document.addEventListener('pointercancel', finish, true);
     return () => {
+      clearTimeout(pending);
       document.removeEventListener('pointerdown', down, true);
       document.removeEventListener('click', clicked, true);
       document.removeEventListener('pointercancel', finish, true);

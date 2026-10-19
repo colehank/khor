@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { useCoarse } from "@/hooks/use-coarse";
 import { cn } from "@/lib/utils";
+import { useFieldDismiss } from "@/hooks/use-field-dismiss";
 import { imeKey } from "@/lib/ime";
 
 // **The rows live with the rows.** A menu is drawn in two places now — in
@@ -188,6 +189,10 @@ export function Omnibox({
   // is the control, and a completion list narrower than the box it
   // completes reads as belonging to something else.
   const strip = useRef<HTMLDivElement>(null);
+  useFieldDismiss(open, () => [strip.current], () => {
+    if (document.activeElement === box.current) box.current?.blur();
+    else { setOpen(false); onLeave?.(); }
+  });
 
   // Everything not already on, filtered by what has been typed — matched
   // on the **label**, because that is the string the person is looking

@@ -50,6 +50,7 @@ import { IconBack, IconClose, IconForward, IconReload } from "@/components/icons
 import { OmniMenu, useFloatedMenu, type MenuRows } from "@/components/OmniMenu";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { useFieldDismiss } from "@/hooks/use-field-dismiss";
 import { imeKey } from "@/lib/ime";
 import { ago, reachWord } from "@/words";
 
@@ -202,6 +203,7 @@ export function PageField({
     setEditing(true); setSwitching(true); setHi(-1); input.current?.focus(); input.current?.select();
   }, [machinePrompt]);
   const field = useRef<HTMLLabelElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
 
   // The page moved (a link, a step, another machine): the field follows
   // unless somebody is typing in it.
@@ -318,6 +320,7 @@ export function PageField({
     if (input.current && document.activeElement === input.current) input.current.blur();
     else rest();
   };
+  useFieldDismiss(editing, () => [field.current, menu.current], leave);
   const go = (raw: string) => {
     if (!token || raw.trim() === "") return;
     const place = addressOf(raw);
@@ -368,6 +371,7 @@ export function PageField({
 
   const list = rows && (
     <OmniMenu
+      menuRef={menu}
       rows={rows}
       onPick={press}
       className={listSeat ? "mx-row" : "absolute inset-x-0 top-full z-20 mt-2"}
