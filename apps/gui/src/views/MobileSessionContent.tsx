@@ -51,7 +51,7 @@ export function ContentTabButton({session,content,navigation}: Pick<DeckOwner,'c
 export function ContentDocumentBand({session,face,content,navigation,title,onTitle}: Omit<DeckOwner,'onClose'> & {session:string;title:string;onTitle:()=>void}) {
   const tabs=content.allTabs.filter(t=>t.session===session);
   const active=navigation.get(session).key;
-  const faces=tabs.map(t=>({...face,session:undefined,hideFace:contentView(t)==='workspace',mark:contentView(t)==='file'?fileKind(t.url):pageKind(content.pageIcon(t.url)),id:content.handle(t),label:navigation.forTab(session,content.handle(t)).get(session).scene==='picker'?gui.content_new:contentName(t)}));
+  const faces=tabs.map(t=>({...face,session:undefined,hideFace:contentView(t)==='workspace',mark:contentView(t)==='file'?fileKind(t.url):pageKind(content.pageIcon(t.url)),id:content.handle(t),label:contentView(t)==='workspace'?gui.content_new:contentName(t)}));
   return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=tabs.find(t=>content.handle(t)===key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} renderFace={(item,role)=><ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
 }
 export function MobileContentDeck({session,content,navigation,onClose,children,editing=false,onEditEnd}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void}) {
@@ -160,7 +160,7 @@ export function ContentOverview({session,row,devices,content,navigation,onPick,f
   const state=navigation.get(session),q=state.filter.toLocaleLowerCase();
   const [searching,setSearching]=useState(false);
   const tabs=content.allTabs.filter(t=>t.session===session&&(contentName(t)+' '+t.url+' '+contentContext(t,row,devices)).toLocaleLowerCase().includes(q));
-  const tabFaces=tabs.map(t=>({...contentTabFace(t,devices,content.pageIcon),...(navigation.forTab(session,content.handle(t)).get(session).scene==='picker'?{label:gui.content_new,hideFace:true}:{})}));
+  const tabFaces=tabs.map(t=>({...contentTabFace(t,devices,content.pageIcon),...(contentView(t)==='workspace'?{label:gui.content_new,hideFace:true}:{})}));
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===(state.recent||state.key));
   return <div className="mobile-content-overview">
     <div className="mobile-content-overview-list">

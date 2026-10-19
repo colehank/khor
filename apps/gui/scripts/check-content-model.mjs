@@ -54,6 +54,48 @@ focusFailure=true;const failedClose=model.value.open('A','machine','/failed-focu
 const pageTab=model.value.tabs.find(t=>t.view==='page');await model.value.follow(pageTab.id,'https://example.test/');const beforeCanonical=node.tabs.length,canonical=model.value.open('A','machine','https://EXAMPLE.test:443','page');assert.equal(canonical.id,pageTab.id);await tick();assert.equal(node.tabs.length,beforeCanonical,'canonical page URL created duplicate');
 for(const url of ['https://example.test/?q=one','https://example.test/#section','https://example.test/other']){model.value.open('A','machine',url,'page');await until(()=>node.tabs.some(t=>t.url===url));}assert.equal(node.tabs.length,beforeCanonical+3,'page query/hash/path lost identity');
 model.value.open('A','machine','https://example.test','file');await until(()=>node.tabs.some(t=>t.view==='file'&&t.url==='https://example.test'));model.value.open('A','machine','https://example.test/','file');await until(()=>node.tabs.some(t=>t.view==='file'&&t.url==='https://example.test/'));assert.equal(node.tabs.length,beforeCanonical+5,'file path was URL normalized');
+// Opening from a source picker consumes only a blank tab. Existing documents
+// survive going back to browse, including clicks before a React render/ack.
+assert.equal(typeof model.value.openFromPicker,'function','source selection needs a durable open policy');
+const choose=(key,path,view='file',device='machine')=>model.value.openFromPicker('BrowseFiles',key,device,path,view);
+const sourceBlank=model.value.newTab('BrowseFiles','machine');
+const docA=choose(sourceBlank.id,'/viewed-a.md');
+assert.equal(model.value.handle(docA),sourceBlank.id,'first document fills the blank in place');
+const docB=choose(sourceBlank.id,'/viewed-b.md');
+assert.notEqual(model.value.handle(docB),sourceBlank.id,'rapid second choice must not overwrite the first document');
+await until(()=>model.value.tabs.filter(t=>t.session==='BrowseFiles').length===2&&model.value.tabs.filter(t=>t.session==='BrowseFiles').every(t=>!t.id.startsWith('opening:')));
+assert.deepEqual(node.tabs.filter(t=>t.session==='BrowseFiles').map(t=>t.url),['/viewed-a.md','/viewed-b.md']);
+const revisit=choose(docB.id,'/viewed-a.md');assert.equal(model.value.handle(revisit),sourceBlank.id,'reopening an existing document focuses its tab');
+const docPage=choose(docB.id,'https://selected.test','page');
+await until(()=>node.tabs.some(t=>t.session==='BrowseFiles'&&t.url==='https://selected.test'));
+const anotherPage=choose(docPage.id,'https://other-selected.test','page');
+await until(()=>node.tabs.some(t=>t.session==='BrowseFiles'&&t.url==='https://other-selected.test'));
+assert.equal(node.tabs.filter(t=>t.session==='BrowseFiles').length,4,'choosing another page preserves previously viewed pages and files');
+await model.value.follow(anotherPage.id,'https://other-selected.test/inside');
+assert.equal(node.tabs.filter(t=>t.session==='BrowseFiles').length,4,'navigation inside a page does not create a new tab');
+model.close();model=mount(()=>useSessionContent(false));await until(()=>model.value.ready);
+assert.equal(model.value.tabs.filter(t=>t.session==='BrowseFiles').length,4,'viewed documents survive reload');
+let browseNav=mount(()=>useContentNavigation(model.value));
+const firstDoc=model.value.tabs.find(t=>t.session==='BrowseFiles'&&t.url==='/viewed-a.md');
+browseNav.value.document(firstDoc);browseNav.value.browse('BrowseFiles',{device:'machine',root:'/repo'});
+browseNav.value.update('BrowseFiles',{query:'kept search'});
+browseNav.value.select(firstDoc);
+assert.equal(browseNav.value.get('BrowseFiles').scene,'document','selecting a file tab opens the document, not its saved source picker');
+assert(browseNav.value.back('BrowseFiles'));assert.equal(browseNav.value.get('BrowseFiles').scene,'picker');
+assert.equal(browseNav.value.get('BrowseFiles').query,'kept search','Back still restores the source search');
+const pickerBefore=browseNav.value.get('BrowseFiles');
+const pickerScrollKey=key=>JSON.stringify(['picker',key,pickerBefore.source,pickerBefore.scope,pickerBefore.query])+' [data-side-workspace] > div 0';
+browseNav.value.scroll('BrowseFiles',pickerScrollKey(pickerBefore.key),{top:327,left:0});
+const pickedAfterBack=model.value.openFromPicker('BrowseFiles',browseNav.value.get('BrowseFiles').key,'machine','/after-back.md','file');
+browseNav.value.document(pickedAfterBack);
+assert(browseNav.value.back('BrowseFiles'),'new document keeps the source picker as its Back destination');
+assert.equal(browseNav.value.get('BrowseFiles').scene,'picker');
+assert.equal(browseNav.value.get('BrowseFiles').query,'kept search');
+assert.deepEqual(browseNav.value.get('BrowseFiles').scope,{device:'machine',root:'/repo'});
+assert.deepEqual(browseNav.value.scrollOf('BrowseFiles',pickerScrollKey(model.value.handle(pickedAfterBack))),{top:327,left:0},'Back from a new document retains the source list scroll position');
+await until(()=>node.tabs.some(t=>t.url==='/after-back.md'));
+assert(node.tabs.some(t=>t.url==='/viewed-a.md'),'opening after Back preserves the first viewed file');
+browseNav.close();
 // Independent starting tabs are durable and turn into content in place.
 const blanks=Array.from({length:3},()=>model.value.newTab('Blank','machine'));
 assert.equal(new Set(blanks.map(t=>t.id)).size,3);
@@ -120,4 +162,4 @@ nav.value.document(aBlank);assert(nav.value.back('Blank'));assert.equal(nav.valu
 nav.close();nav=mount(()=>useContentNavigation(model.value));nav.value.resume('Blank');assert.equal(nav.value.get('Blank').key,blanks[0].id);assert.equal(nav.value.get('Blank').query,'late first query');
 nav.value.select(bBlank);assert.equal(nav.value.get('Blank').source,'browser');assert.equal(nav.value.get('Blank').address,'https://second.test');assert.equal(nav.value.get('Blank').scope.root,'/second');
 nav.close();model.close();
-console.log('PASS: durable independent starting tabs; original identity on point; retry without duplicate blank rows; per-tab picker/draft/back/reload isolation; retained favicon, content identity, ordering, transport race and legacy migration coverage');
+console.log('PASS: durable picker opens preserve viewed files/pages and source Back/scroll; independent starting tabs; original identity on point; retry without duplicate blank rows; per-tab picker/draft/back/reload isolation; retained favicon, content identity, ordering, transport race and legacy migration coverage');

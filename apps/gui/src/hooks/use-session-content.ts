@@ -138,6 +138,20 @@ export function useSessionContent(watch: boolean) {
       if(versions.current.get(key)===version){const next={...pointing.current};delete next[key];pointing.current=next;if(mounted.current)publish();}
     });
   };
+  /** Choose a document from workspace/history, preserving already opened tabs. */
+  const openFromPicker = (session: string, key: string | null, device: string, path: string, view: 'file'|'page', line?: number|null): ContentTab => {
+    // Read live optimistic targets: two choices may arrive before React renders
+    // or the node acknowledges the first conversion of a blank starting page.
+    const tab = [...current.current.tabs as ContentTab[], ...opening.current]
+      .map(t=>({...t,...pointing.current[handle(t)]}))
+      .find(t=>t.session===session&&(handle(t)===key||t.id===key));
+    if(tab&&(tab.view||'workspace')==='workspace'){
+      const next={...tab,device,url:path,view,title:''};
+      void point(tab.id,device,path,view,'',line).catch(()=>{});
+      return next;
+    }
+    return open(session,device,path,view,line,tab?.id);
+  };
   const rename = (id: string, title: string) => persist(id).then(saved => send(async () => {
     const tab = current.current.tabs.find(t => t.id === saved);
     return { result: undefined, value: tab ? await goTab(CONTENT_KIND, saved, tab.device, tab.url, title) : current.current };
@@ -175,6 +189,6 @@ export function useSessionContent(watch: boolean) {
     return send(async () => ({result:undefined,value:await reorderTabs(CONTENT_KIND,session,saved)}));
   };
   const ensure = (session: string, _device: string) => { const tab = active(session); return tab ? focus(tab.id).then(() => resolve(tab.id)) : Promise.resolve(undefined); };
-  return { newTab:(session:string,device='')=>open(session,device,'','workspace'), pageIcon: pageIcons.iconOf, recordPageIcon: pageIcons.record, tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, rename, follow, focus, pin, close, active, maximized, setMaximized };
+  return { newTab:(session:string,device='')=>open(session,device,'','workspace'), pageIcon: pageIcons.iconOf, recordPageIcon: pageIcons.record, tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, openFromPicker, rename, follow, focus, pin, close, active, maximized, setMaximized };
 }
 export type SessionContent = ReturnType<typeof useSessionContent>;

@@ -52,7 +52,7 @@ for(const rail of [false,true]) for(const [initial,dx,expected] of [[0,150,7],[7
 }
 {
  const {band,advance,commits,frames}=fixture();
- band.start(0,0);advance(LONG_PRESS_MS+16);band.move(-92,33);assert.equal(band.read().mode,'idle','downward drag cancels rail');
+ band.start(0,0);advance(LONG_PRESS_MS+16);band.move(-92,100);assert.equal(band.read().mode,'rail','long press retains selection outside pill until release');band.cancel();
  band.start(0,0);band.move(1,30);assert.equal(band.release(),'none','vertical drag cannot become a tap');
  band.start(0,0);assert.equal(band.release(),'tap');
  band.start(0,0);advance(16);band.move(20,0);band.release();advance(SETTLE_MS+32);assert.equal(band.read().opened,7,'short flick also wraps');
@@ -99,4 +99,4 @@ for(const rail of [false,true]) for(const [initial,dx,expected] of [[0,150,7],[7
  band.start(0,0);band.move(-150,0);advance(50);band.move(-80,0);band.release(true);
  assert.equal(band.read().opened,1,'a reverse flick lets go of the original drag');
 }
-console.log('dual pill: direct tracking, distance-controlled cadence, minimum item dwell, no rate-change jumps, hysteresis, both held gestures, centre pause/reverse, cyclic seams in both directions, repeated cycles, one final commit, cancellation and cleanup passed');
+console.log('dual pill: direct tracking, distance-controlled cadence, minimum item dwell, no rate-change jumps, hysteresis, both held gestures, long-press ownership beyond pill bounds, centre pause/reverse, cyclic seams in both directions, repeated cycles, one final commit, cancellation and cleanup passed');
