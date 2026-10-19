@@ -5,8 +5,9 @@ export type DeckScrubState = {
   source: 'swipe' | 'rail'; direction: number; holding: boolean;
   travelMs: number; dwellMs: number;
 };
-export const LONG_PRESS_MS = 380, HOLD_MS = 400, SETTLE_MS = 140, RAIL_STEP = 92;
-/** Design trial, not a reaction-time standard. Distances scale with the pill. */
+export const LONG_PRESS_MS = 320, HOLD_MS = 400, RAIL_HOLD_MS = 180, SETTLE_MS = 140, RAIL_STEP = 92;
+/** Design trial, not a reaction-time standard. Ordinary swipe distances scale
+ * with the pill; the long-press picker scales with its visible item width. */
 export function holdTiming(displacement: number, width: number) {
   const distance = Math.abs(displacement) / Math.max(1, width);
   const t = Math.max(0, Math.min(1, (distance - .24) / (.68 - .24)));
@@ -31,7 +32,7 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
   const wrap = (n: number) => wrapIndex(n, Math.max(1, count));
   let s: DeckScrubState = { opened: initial, preview: initial, position: initial, mode: 'idle', source: 'swipe', direction: 0, holding: false, ...holdTiming(0, 250) };
   let frame = 0, down = false, origin = { x: 0, y: 0 }, width = 250, railWidth = RAIL_STEP, base = initial;
-  let began = 0, holdAt = Infinity, lastX = 0, lastMove = 0, speed = 0;
+  let began = 0, holdAt = Infinity, lastX = 0, lastMove = 0, speed = 0, holdX = 0;
   let rateControl = false, dwellAt: number | null = null;
   let travel: { from: number; target: number; at: number; duration: number } | null = null;
   let landing: { from: number; target: number; at: number } | null = null;
@@ -85,7 +86,7 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
       // Finish an already released selection before accepting another touch.
       if (landing) { const target = landing.target; cancel(); finish(target); } else cancel();
       down = true; origin = { x, y }; width = Math.max(1, bandWidth); railWidth = Math.max(1, itemWidth); base = s.opened;
-      began = lastMove = clock.now(); lastX = x; speed = 0; s.mode = 'pending'; s.source = 'swipe'; publish();
+      began = lastMove = clock.now(); lastX = holdX = x; speed = 0; s.mode = 'pending'; s.source = 'swipe'; publish();
       frame = clock.request(tick);
     },
     move(x: number, y: number) {
@@ -96,10 +97,11 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
         if (Math.abs(dy) >= Math.abs(dx)) { cancel(); return; }
         s.mode = 'swipe'; s.source = 'swipe';
       }
-      const scale = s.mode === 'rail' ? railWidth : width;
-      const threshold = width * (s.direction ? .16 : .24);
+      const rail = s.mode === 'rail', scale = rail ? railWidth : width;
+      const holdDelay = rail ? RAIL_HOLD_MS : HOLD_MS;
+      const threshold = scale * (s.direction ? .16 : .24);
       const direction = Math.abs(dx) >= threshold ? -Math.sign(dx) : 0;
-      const timing = holdTiming(dx, width);
+      const timing = holdTiming(dx, scale);
       if (travel) {
         // Change rate without restarting the movement or jumping its progress.
         const progress = Math.min(1, (now - travel.at) / travel.duration);
@@ -109,13 +111,17 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
       if (rateControl) {
         if (direction !== s.direction) {
           s.position = Math.round(s.position); travel = null; dwellAt = null;
-          holdAt = direction ? (s.direction ? now : now + HOLD_MS) : Infinity;
+          holdAt = direction ? (s.direction ? now : now + holdDelay) : Infinity;
         } else if (dwellAt !== null) holdAt = dwellAt + s.dwellMs;
         s.holding = direction !== 0;
       } else {
         s.position = count > 1 ? base - dx / scale
           : -Math.sign(dx) * .1 * (1 - 1 / (Math.abs(dx) * .55 / (width * .1) + 1));
-        if (Math.abs(x - lastX) > 1 || direction !== s.direction) holdAt = now + HOLD_MS;
+        // Rail is already an intentional long press. Ignore small jitter
+        // around the last deliberate position instead of restarting a full
+        // hold on every sample. Ordinary swipes retain their existing delay.
+        const moved = rail ? Math.abs(x - holdX) >= scale * .04 : Math.abs(x - lastX) > 1;
+        if (moved || direction !== s.direction) { holdAt = now + holdDelay; holdX = x; }
       }
       if (Math.abs(x - lastX) > 1) {
         speed = (x - lastX) / Math.max(1, now - lastMove); lastX = x; lastMove = now;

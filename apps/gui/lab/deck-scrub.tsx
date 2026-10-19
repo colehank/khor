@@ -25,6 +25,36 @@ function Lab(){
  const items=nested?order.map((f,i)=>({...f,label:names[i%names.length]})):order;
  const focus=(id:string)=>{setActive(id);setEvents(old=>[...old,id]);};
  const mode=(value:boolean)=>{staged.current?.();setNested(value);setActive('0');setEvents([]);};
+ const responseCheck=async()=>{
+  staged.current?.();setReport('运行中');
+  const b=document.querySelector<HTMLElement>('[data-deck-band]')!;
+  const original={set:b.setPointerCapture,has:b.hasPointerCapture,release:b.releasePointerCapture};let captured=false;
+  b.setPointerCapture=()=>{captured=true;};b.hasPointerCapture=()=>captured;b.releasePointerCapture=()=>{captured=false;};
+  const r=b.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;
+  const pointer=(type:string,dx=0)=>b.dispatchEvent(new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:84,isPrimary:true,pointerType:'touch',button:0,clientX:x+dx,clientY:y}));
+  const results:{label:string;pass:boolean;ms?:number}[]=[];
+  const before=real.current.events.length;
+  try{
+   const began=performance.now();pointer('pointerdown');
+   while(b.dataset.bandPhase!=='rail'&&performance.now()-began<1000)await wait(16);
+   const entry=performance.now()-began;
+   results.push({label:'长按唤出选择带',pass:b.dataset.bandPhase==='rail'&&entry<400,ms:Math.round(entry)});
+   const selector=document.querySelector<HTMLElement>('[data-deck-selector]')!;
+   const step=parseFloat(getComputedStyle(selector).getPropertyValue('--selector-step'));
+   const initial=b.dataset.bandPreview,started=performance.now();pointer('pointermove',-.3*step);
+   let response:number|null=null;
+   for(let i=0;i<10;i++){
+    await wait(30);pointer('pointermove',(-.3+(i%2?.015:-.015))*step);
+    if(response===null&&b.dataset.bandPreview!==initial)response=performance.now()-started;
+   }
+   results.push({label:'小幅滑动与抖动下仍及时翻选',pass:response!==null&&response<400,ms:response===null?undefined:Math.round(response)});
+   results.push({label:'预选期间不打开中间内容',pass:real.current.events.length===before});
+   pointer('pointercancel');await wait(30);
+   results.push({label:'取消恢复原药丸',pass:b.dataset.bandPhase==='idle'&&real.current.events.length===before});
+   setReport(JSON.stringify({pass:results.every(v=>v.pass),results},null,2));
+  }catch(e){setReport(JSON.stringify({pass:false,error:String(e),results},null,2));}
+  finally{pointer('pointercancel');b.setPointerCapture=original.set;b.hasPointerCapture=original.has;b.releasePointerCapture=original.release;}
+ };
  const geometryCheck=async()=>{
   staged.current?.();
   setReport('运行中');const results:{label:string;pass:boolean;detail?:unknown}[]=[];
@@ -125,7 +155,7 @@ function Lab(){
   }catch(e){setReport(JSON.stringify({pass:false,error:String(e),results},null,2));}
   finally{b.setPointerCapture=original.set;b.hasPointerCapture=original.has;b.releasePointerCapture=original.release;}
  };
- return <TooltipProvider><main className="deck-proof"><aside><h1>正式药丸手势</h1><p>轻推慢翻，推远加速，回中暂停；松手打开。原地长按展开选择带。</p><div className="deck-proof-actions"><Button onClick={()=>mode(false)}>会话</Button><Button onClick={()=>mode(true)}>文件与网页</Button><Button onClick={()=>{document.documentElement.dataset.theme=dark?'light':'dark';setDark(!dark);}}>明暗</Button><Button onClick={()=>{setOrder(v=>v.length===1?faces:[faces[0]]);setActive('0');}}>单个／多个</Button><Button onClick={()=>void preview(false)}>右滑预览</Button><Button onClick={()=>void preview(true)}>长按移出预览</Button><Button onClick={()=>staged.current?.()}>结束预览</Button><Button onClick={()=>void geometryCheck()}>运行几何验收</Button><Button onClick={()=>void inspect()}>运行手势验收</Button></div><p>正在显示：<b data-proof-open>{items.find(f=>f.id===active)?.label}</b></p><p>实际切换：<b data-proof-count>{events.length}</b></p><p>合成事件只替代指针捕获 API；真实 iPhone 触控、原生网页和系统触感另验</p><output data-deck-proof-report>{report}</output></aside>
+ return <TooltipProvider><main className="deck-proof"><aside><h1>正式药丸手势</h1><p>轻推慢翻，推远加速，回中暂停；松手打开。原地长按展开选择带。</p><div className="deck-proof-actions"><Button onClick={()=>mode(false)}>会话</Button><Button onClick={()=>mode(true)}>文件与网页</Button><Button onClick={()=>{document.documentElement.dataset.theme=dark?'light':'dark';setDark(!dark);}}>明暗</Button><Button onClick={()=>{setOrder(v=>v.length===1?faces:[faces[0]]);setActive('0');}}>单个／多个</Button><Button onClick={()=>void preview(false)}>右滑预览</Button><Button onClick={()=>void preview(true)}>长按移出预览</Button><Button onClick={()=>staged.current?.()}>结束预览</Button><Button onClick={()=>void responseCheck()}>运行响应验收</Button><Button onClick={()=>void geometryCheck()}>运行几何验收</Button><Button onClick={()=>void inspect()}>运行手势验收</Button></div><p>正在显示：<b data-proof-open>{items.find(f=>f.id===active)?.label}</b></p><p>实际切换：<b data-proof-count>{events.length}</b></p><p>合成事件只替代指针捕获 API；真实 iPhone 触控、原生网页和系统触感另验</p><output data-deck-proof-report>{report}</output></aside>
  <section className="deck-proof-phone"><div className="deck-proof-content"><h2>{items.find(f=>f.id===active)?.label}</h2><p>› 预选期间保持当前内容</p><pre>{'terminal colours       passed\ncontent navigation     passed\n\n✓ ready'}</pre><input placeholder="编辑输入保留自己的手势"/></div>
  <footer data-session-deck className="mobile-content-deck"><GlassCircle aria-label="返回"><IconBack/></GlassCircle><div className="glass mobile-content-pill"><div className={nested?"mobile-file-identity":"contents"}><DeckBand faces={items} active={active} onFocus={focus} onTitle={()=>mode(!nested)} renderFace={nested?(f)=><span className="content-owner-identity"><span className="content-owner-face"><TabAvatar f={f} bare="size-tab-face" seat="tab"/></span><span className="content-owner-name">khor-codex</span><span className="content-owner-title">{f.label}</span></span>:undefined}/></div><IconReload/></div>{!nested&&<GlassCircle aria-label="键盘"><IconKeyboard/></GlassCircle>}<GlassCircle aria-label="标签"><TabsGlyph n={items.length}/></GlassCircle></footer></section></main></TooltipProvider>;
 }

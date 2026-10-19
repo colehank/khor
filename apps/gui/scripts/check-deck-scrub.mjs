@@ -24,8 +24,8 @@ function fixture(count=8,initial=0){
 {
  const {band,advance,commits}=fixture();
  band.start(0,0);advance(LONG_PRESS_MS+16);assert.equal(band.read().mode,'rail');
- band.move(-92,0);assert.equal(band.read().position,1);advance(680);assert.equal(band.read().position,2,'long press supports the same held cadence');
- advance(700);assert.equal(band.read().position,2);assert.deepEqual(commits,[]);
+ band.move(-92,0);assert.equal(band.read().position,1);advance(370);assert.equal(band.read().position,2,'long press responds promptly without a second full hold');
+ advance(400);assert.equal(band.read().position,2,'faster initial response retains a readable full-title dwell');assert.deepEqual(commits,[]);
  band.move(0,0);const stopped=band.read().position;advance(1000);assert.equal(band.read().position,stopped,'returning to centre stops automatic steps');
  band.release();assert.equal(band.read().opened,0);advance(SETTLE_MS+32);assert.equal(band.read().opened,2);assert.deepEqual(commits,[2]);
  band.release();advance(1000);assert.deepEqual(commits,[2],'only final release opens content');
@@ -100,3 +100,40 @@ for(const rail of [false,true]) for(const [initial,dx,expected] of [[0,150,7],[7
  assert.equal(band.read().opened,1,'a reverse flick lets go of the original drag');
 }
 console.log('dual pill: direct tracking, distance-controlled cadence, minimum item dwell, no rate-change jumps, hysteresis, both held gestures, long-press ownership beyond pill bounds, centre pause/reverse, cyclic seams in both directions, repeated cycles, one final commit, cancellation and cleanup passed');
+
+// Tuned interaction budgets, not reaction-time claims. Picker entry and
+// hold response are separate from the time to read a title after landing.
+{
+ const {band,advance}=fixture();band.start(0,0,300,100);advance(340);
+ assert.equal(band.read().mode,'rail','long press exposes the picker within 340ms');band.cancel();
+}
+{
+ const {band,advance,commits}=fixture();band.start(0,0,300,100);advance(LONG_PRESS_MS+16);
+ band.move(-30,0);
+ assert.equal(band.read().direction,1,'long-press threshold uses item width, not entire pill');
+ assert.equal(band.read().position,.3,'rail follows the finger immediately');
+ advance(240);assert(band.read().position>.6,'held rail starts responding within 240ms');
+ assert.deepEqual(commits,[]);band.cancel();
+}
+{
+ const {band,advance,commits}=fixture();band.start(0,0,300,100);advance(LONG_PRESS_MS+16);band.move(-30,0);
+ for(let i=0;i<8;i++){advance(30);band.move(-30+(i%2?1.5:-1.5),0);}
+ assert(band.read().position>.6,'small finger jitter must not indefinitely postpone a held rail');
+ assert.deepEqual(commits,[]);band.cancel();
+}
+{
+ const {band,advance}=fixture();band.start(0,0,300,100);advance(LONG_PRESS_MS+16);band.move(-25,0);
+ assert.equal(band.read().direction,1);band.move(-17,0);assert.equal(band.read().direction,1,'item-scaled hysteresis');
+ band.move(-10,0);assert.equal(band.read().direction,0,'short return toward origin pauses picker');
+ const stopped=band.read().position;advance(1000);assert.equal(band.read().position,stopped);band.cancel();
+}
+{
+ const {band,advance}=fixture();band.start(0,0,300,100);advance(LONG_PRESS_MS+16);band.move(-30,0);advance(120);
+ band.move(-60,0);assert.equal(band.read().position,.6,'deliberate movement tracks directly');
+ advance(120);assert.equal(band.read().position,.6,'deliberate movement restarts hold');band.cancel();
+}
+{
+ const {band,advance}=fixture();band.start(0,0,300,100);band.move(-30,0);advance(1200);
+ assert.equal(band.read().mode,'swipe');assert.equal(band.read().direction,0);assert.equal(band.read().position,.1,'ordinary short swipe retains original threshold');band.cancel();
+}
+console.log('held picker responsiveness: entry, item-scaled threshold/hysteresis, prompt motion, jitter tolerance and ordinary swipe isolation passed');
