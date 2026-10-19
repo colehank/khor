@@ -25,6 +25,8 @@
 // opens on its first screen, not on the whole file.
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
+import "./Notebook.css";
+
 import { attach, ATTACHED, HtmlFragment, Markdown } from "@/components/Markdown";
 import { gui } from "@/gen/catalog";
 import { languageOf, paint, painted } from "@/lib/highlight";
