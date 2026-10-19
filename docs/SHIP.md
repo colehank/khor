@@ -164,3 +164,14 @@ khor devices                                                   # 五台都在线
 - 收尾：按 bundle identifier 与无进程引用确认后，清理两个 Khor Xcode 导出临时目录，共 243,284,757 字节；清理了未使用的临时依赖缓存与旧静态库备份。保留本次归档、当前 Externals 静态库和发布日志 `/Volumes/disk0/khor-ship-20261019-pill-scrub/`。
 
 前端依赖外置时，物理目录必须保留 `…/node_modules/包名` 层级，不能把包直接放在改名后的目录根，否则 Node 的上级模块解析与 TypeScript 会失效。锁文件缺失本地 `file:` 占位包时，应补齐锁记录后执行 `npm ci`；不以 `--package-lock=false` 绕过锁定版本。
+
+## 发布记录：2026-10-19（药丸裁切与文档标签保留）
+
+- 合并／构建提交：`39d05083`，修复提交 `6a6c9ff5`、`e3fe715d`。本次收据：`khor-ui-assets:/assets/index-DPFftrn2.js`。圆弧轮盘仅留在 `lab/pill-arc`，未合入或发布。
+- 药丸：隐藏邻项不再因内边距露出头像；右滑以固定内部排版原地揭露；长按选择带按整条甲板对齐，手指移出药丸或向下移动仍持续选择，松手才确认；连续反向后的收尾保持运动方向。
+- 内容标签：仅空白起始标签首次填入文档；从来源列表再打开其他文件／网页时新增标签，重开已有地址复用已打开文档。返回浏览只改变观看位置，不改文档标签身份；新文档保留来源目录、查询与列表滚动；网页内部跳转、地址编辑和重命名仍更新原标签。
+- 主干验证：生成、默认前端检查与 TypeScript、`content-model`、`content-sheet`、生产构建、`gates` 通过。修复分支的正式 DeckBand 根层／内部层几何检查、长按移出／收尾与真实鼠标拖动已验；完整旧版 face／content-ui 浏览器门及 iPhone 原生触摸、键盘、WKWebView 手感未作为本轮通过项。
+- Mac：release CLI／GUI 的收据与签名通过，旧主窗口 PID 10447 退出、新主窗口 PID 62879 启动，最终仅一枚主窗口。8 个既有辅助进程全部保留，会话快照 11 行 → 11 行（含表头），失败数 0 → 0；原生日志与 HTTP 收据一致。
+- 集群：hinton 负载符合脚本要求，在其上编译并安装；hinton／lecun／turing 的 5467 实际监听进程 `/proc/<pid>/exe` SHA-256 均为 `5e3729585863d83f53392af6c9b81b66027cde0fe1612e8635467861f0b53b92`，与安装文件相同，HTTP 收据一致；CLI 确认三台直连。
+- iOS：重编后的静态库与归档 App 均通过新时间及完整收据核验。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出上传于 `2026-10-19 09:24:33 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`。App Store Connect 继续处理；临时增加的两处签名团队配置已恢复。
+- 日志与校验：`/Volumes/disk0/khor-ship-20261019-pill-fixes/`；药丸几何证据在 `/Volumes/disk0/khor-pill-geometry-proof/`。构建与临时目录外置；上传后按 bundle ID 与 lsof 无引用核验，清理两份 Khor Xcode 导出副本及已替换的旧静态库备份，共 770,845,250 字节，保留最新归档、静态库和发布收据。收尾系统盘约余 9.8 GiB，外挂盘约余 101 GiB；未清系统 swap 或全量 cargo target。
