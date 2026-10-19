@@ -586,3 +586,5 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 - `npm run field-interaction`：候选菜单起始的整段滑动保留输入焦点，不触发页面收键盘；保留正文、横向、多指、终端隔离及监听器清理的原有行为
 
 `npm run content-model` 同时检查仓库历史从详情返回列表、工作区实例隔离与机器／仓库切换清理；历史列表的阅读位置、轻量底栏与安全区在 `lab/history-deck.html` 用正式组件验收。
+
+内容选择补充验收：`lab/content-switch.html` 的「模拟标识交接后滑动」在真实组件上重放异步句柄交接，要求 Markdown 成为唯一前台内容；`npm run content-model` 继续覆盖内容持久化、选择与传输顺序。

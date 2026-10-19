@@ -16,7 +16,7 @@ import { sessionCwdOnScreen } from "@/lib/session-cwd";
 import { cn } from "@/lib/utils";
 import "@/styles/session-content.css";
 
-import { contentView, contentName } from '@/lib/content';
+import { contentView, contentName, contentTabTargets } from '@/lib/content';
 export { contentView, contentName } from '@/lib/content';
 import { contentPickerPosition, type ContentNavigation } from '@/hooks/use-content-navigation';
 import { contentTabFace, ContentPicker, ContentOverview, ContentSessionOverview, contentFileDeck, useContentNeighbors } from '@/views/MobileSessionContent';
@@ -27,14 +27,15 @@ const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
  * seats; entering/leaving the group fades the row without shrinking the outer capsule. */
 export function ContentTabs({session,open,devices,content,navigation,onAdd,onFocus,onHide}:{session:string;open:boolean;devices:DeviceRow[];content:SessionContent;navigation:ContentNavigation;onAdd:()=>void;onFocus:()=>void;onHide:()=>void}) {
   const tabs=content.allTabs.filter(t=>t.session===session),state=navigation.get(session);
-  const faces=tabs.map(tab=>{
-    const key=content.handle(tab),picker=contentView(tab)==='workspace';
+  const targets=contentTabTargets(tabs,content.handle);
+  const faces=[...targets].map(([key,tab])=>{
+    const picker=contentView(tab)==='workspace';
     return {...contentTabFace(tab,devices,content.pageIcon),id:key,...(picker?{label:gui.content_new,hideFace:true}:{}),pinned:tab.pinned,
       attributes:{'data-content-tab':tab.id,'data-content-on':state.key===key,'data-content-browse':picker||undefined,'data-content-icon':!picker},
       menu:[{key:'pin',label:tab.pinned?gui.unpin:gui.pin,run:()=>content.pin(tab.id,!tab.pinned)},{key:'close',label:gui.close_tab,disabled:tab.pinned,run:()=>content.close(tab.id)}]};
   });
-  const pick=(key:string)=>{const tab=tabs.find(t=>content.handle(t)===key);if(tab){onFocus();navigation.select(tab);quiet(content.focus(tab.id));}};
-  const close=(key:string)=>{const tab=tabs.find(t=>content.handle(t)===key);if(!tab)return;
+  const pick=(key:string)=>{const tab=targets.get(key);if(tab){onFocus();navigation.select(tab);quiet(content.focus(tab.id));}};
+  const close=(key:string)=>{const tab=targets.get(key);if(!tab)return;
     if(state.key===key&&tabs.length===1){navigation.dismiss(session);onHide();}quiet(content.close(tab.id));};
   return <div data-content-tabs={session} data-open={open} aria-hidden={!open} inert={!open} className="session-content-reveal" style={{width:open?`calc(${tabs.length} * var(--tab-w-even) + 5 * var(--gap-in) + 3 * var(--hair) + var(--glass-tab))`:0}}>
     <TabDivider/><TabStrip nested grouped faces={faces} active={state.key||''} onFocus={pick} onClose={close} onNew={onAdd} newLabel={gui.content_new} onReorder={ids=>content.reorder(session,ids)}/>

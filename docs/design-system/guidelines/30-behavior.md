@@ -904,3 +904,7 @@ Space 在分组标签按钮上由按钮消费，避免 `useKeysTo` 当作打印�
 - 主工作区的手机详情申请完整内容视口，并自行避开系统顶部安全区；会话内容弹层内的详情不重复增加顶部安全区。底栏在文档流中为自身与底部安全区留位。
 - 文件跳转菜单移到 Diff 的文件改动汇总区，随正文滚动，不再全页悬浮。CodeMirror 的文件内横向滚动、整页纵向滚动与折叠保持原行为。
 - 门：`content-model` 的仓库历史返回、上下文隔离检查；`lab/history-deck.html` 走真实 HistorySheet、CommitPage、CommitDiff 和返回 hook。旧详情的返回按钮顶端 8，侵入模拟 44 的系统区；修复后正文起点及底栏均避开，返回恢复同一列表 scrollTop。原生 iOS 安全区与边缘返回另做真机验收。
+
+### 内容标签的选择目标（2026-10-19）
+
+药丸、桌面内嵌标签的绘制与选择／关闭回调共用同一份 `contentTabTargets` 映射。异步确认可能交接临时句柄，回调不能重新用可变的 handle 解析器查一遍已绘制的候选，否则会出现药丸选中 Markdown 而图片仍在前台。`lab/content-switch.html` 使用真实 SessionContentPane、FilePage、DeckBand 和内容 hooks，在松手前注入句柄交接：旧实现 route/front 仍为 image、药丸 preview 为 markdown；修复后 Markdown 编辑器成为前台，图片退场。原生 iOS 手势事件与合成器仍需真机确认。
