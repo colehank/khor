@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const bundle=await build({stdin:{contents:"export * from './src/lib/file-deck-intent';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false});
+const {FileDeckIntent}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const intent=new FileDeckIntent();
+assert(!intent.allows(),'mount and asynchronous restoration never imply reading');
+intent.start(100,300);assert(!intent.allows(),'tap/focus alone does not fold');intent.end();
+intent.start(100,300);intent.move(104,297);assert(!intent.allows(),'finger jitter does not fold');
+intent.move(180,290);assert(!intent.allows(),'horizontal selection does not fold');intent.end();
+intent.start(100,300);intent.move(100,280);assert(intent.allows(),'vertical reading permits normal fold');intent.end();assert(intent.allows(),'momentum after lift retains intent');
+intent.reset();assert(!intent.allows(),'switching face disarms old gesture before restoration');
+intent.move(100,100);assert(!intent.allows(),'late movement without a new contact cannot rearm');
+intent.wheel(100,0);assert(!intent.allows(),'horizontal wheel is not vertical reading');
+intent.wheel(0,20);assert(intent.allows());intent.reset();
+intent.key('a');intent.key(' ');assert(!intent.allows(),'ordinary typing is not scrolling');intent.key('PageDown');assert(intent.allows());
+intent.reset();assert(!intent.allows(),'explicit unfold holds through residual momentum');
+console.log('file deck: async restoration, taps, jitter, horizontal motion, real reading, inertia, wheel/keys, face changes and manual unfold passed');

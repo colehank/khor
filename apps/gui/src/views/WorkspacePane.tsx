@@ -300,7 +300,7 @@ export function WorkspacePane({
    * is handed the answer.
    *
    * Every newly opened or selected file starts as source (2026-10-13).
-   * Preview is an explicit choice through the existing eye control. */
+   * Preview is an explicit choice in the file’s more menu. */
   const [face, setFace] = useState<"source" | "preview">(DEFAULT_FILE_FACE);
   /** A revision from the file's git 历史, shown where the file is
       (round UX-4); cleared when another file comes to the front. */
@@ -1444,29 +1444,14 @@ export function WorkspacePane({
           }}
           onMoved={moved}
           history={git !== null}
+          previewing={face === "preview"}
+          faceToggle={rendererOf(file) !== null ? { face, run: face === "preview" ? editHere : readHere } : undefined}
           onRevision={(c) => {
             setRev(c);
             setRevCompare(false);
             setFace(DEFAULT_FILE_FACE);
           }}
         />
-        {/* **预览 at the first row's right end** (UX-33 §4, the owner): the
-            file's two faces switched here, beside the page's buttons — on
-            for the rendered face, off for the source, keeping the place
-            (`restore`). The save is the pill's own third seat (✓). ⚠️ 墓碑:
-            the 编辑 / 保存 circle (round UX-3; UX-14's Mac edit-and-save). */}
-        {rendererOf(file) !== null && (
-          <GlassCircle
-            aria-label={gui.file_face_preview}
-            aria-pressed={face === "preview"}
-            tip={gui.file_face_preview}
-            data-file-face-toggle={face}
-            onClick={face === "preview" ? editHere : readHere}
-            className={cn(face === "preview" && "glass-sel text-[var(--rail-on-ink)]")}
-          >
-            <IconEye />
-          </GlassCircle>
-        )}
       </div>
     ) : null;
   const sessionsItem = (

@@ -1,0 +1,4 @@
+import {mergeConfig} from 'vite';
+import base from '../vite.config';
+const text=Array.from({length:100},(_,i)=>`## 第 ${i+1} 节\n\n这是一段足够长的 Markdown。恢复阅读位置时不应该折叠药丸。\n\n`).join('');
+export default mergeConfig(base,{plugins:[{name:'file-preview-fixture',configureServer(server){server.middlewares.use((req,res,next)=>{const path=req.url?.split('?')[0];if(!path?.startsWith('/api/'))return next();let result:unknown=null;if(path==='/api/read_text')result={text,total:text.length,at_ms:Date.now(),cut:false,binary:false,digest:'0'.repeat(64)};else if(path==='/api/file_stat')result={total:text.length,at_ms:Date.now(),digest:'0'.repeat(64)};else if(path==='/api/reveal_here')result=false;else if(path==='/api/about')result={hosts:true,faces:[]};res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));});}}],optimizeDeps:{entries:['lab/file-preview.html']}});

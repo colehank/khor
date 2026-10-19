@@ -58,19 +58,23 @@ window.showFile('/notes.md');`);
     });
     await page.route('**/__file_face_gate?**',route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme="dark"><body><div id="root" class="flex h-screen flex-col"></div><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module" src="/scripts/.file-face-gate-${process.pid}.tsx"></script></body></html>`}));
     await page.goto(`http://localhost:${port}/__file_face_gate?bridge=${port}`);
+    const toggle=async()=>{
+      if(!await page.locator('[data-file-face-toggle]').count())await page.locator('[data-file-more]').click();
+      await page.locator('[data-file-face-toggle]').click();
+    };
     const source=async()=>{
-      await page.locator('[data-file-face-toggle="source"]').waitFor();
+      await page.locator('[data-file-page][data-file-face="source"]').waitFor();
       await page.locator('.cm-editor').waitFor();
       assert.equal(await page.locator('[data-file-preview]').count(),0,'new file/revision opened rendered');
     };
     await source();
-    await page.locator('[data-file-face-toggle]').click();
+    await toggle();
     await page.locator('[data-file-preview="md"] h1').waitFor();
     assert.equal(await page.locator('[data-file-preview="md"] h1').innerText(),'Current file');
     // Same FilePage instance: changing the file must clear preview.
     for(const path of ['/data.csv','/page.html','/notes.md']) {
       await page.evaluate(path=>window.showFile(path),path); await source();
-      await page.locator('[data-file-face-toggle]').click();
+      await toggle();
       await page.locator('[data-file-preview]').waitFor();
     }
     const revision=async index=>{
@@ -82,11 +86,11 @@ window.showFile('/notes.md');`);
     };
     await revision(0);
     assert.equal(await page.locator('.cm-content').getAttribute('contenteditable'),'false','history became editable');
-    await page.locator('[data-file-face-toggle]').click();
+    await toggle();
     assert.equal(await page.locator('[data-file-preview="md"] h1').innerText(),'First revision');
     await page.locator('[data-file-back]').click(); await source();
     await revision(1); // A second version must not inherit the first one's preview.
-    await page.locator('[data-file-face-toggle]').click();
+    await toggle();
     assert.equal(await page.locator('[data-file-preview="md"] h1').innerText(),'Second revision');
     await page.evaluate(()=>window.showBare('/attachment.md'));
     await page.locator('[data-file-text]').waitFor();

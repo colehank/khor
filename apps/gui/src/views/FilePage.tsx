@@ -8,14 +8,14 @@
  * session's 附栏 on both faces (UX-40 §4). Nothing at the top:
  * the file starts under the status bar. At the bottom the content pages'
  * deck (UX-14, the owner 2026-10-05): ‹ · a pill with the name, the
- * preview eye where the file renders, and ✓ while the buffer differs from
+ * preview action in the more menu, and ✓ while the buffer differs from
  * the file · 分享 · 「…」. It folds into the title strip while the file
  * is read (UX-13) and stays over the keyboard with ✓ in reach.
  *
  * **No edit mode** (UX-14): a text file is editable as soon as it is open
  * (Notes) — a tap puts the caret where the finger is, a drag scrolls, the
- * keyboard's rise does not move the text. A file that renders opens
- * rendered and the eye turns it to its source at the same place. The file
+ * keyboard's rise does not move the text. A file opens as source; the more
+ * menu explicitly switches preview, retaining the reading position. The file
  * saves itself a second after the typing stops and on leaving (save-a,
  * 2026-10-08); the ✓ writes at once and says 已保存. A save that does not
  * land keeps the draft (the row carries its dot), and the file says why.
@@ -54,6 +54,7 @@ import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useCoarse } from "@/hooks/use-coarse";
 import { FOLD_AT, foldStep, groundUnder, inkOver, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
+import { FileDeckIntent } from "@/lib/file-deck-intent";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { keyboardShown } from "@/lib/viewport";
 import { useBlameShown } from "@/lib/blame";
@@ -137,6 +138,7 @@ function useFileVerbs({
   history = false,
   onRevision,
   previewing,
+  faceToggle,
   shareInMore = false,
   moreActs = [],
 }: {
@@ -146,8 +148,10 @@ function useFileVerbs({
       while the file is shown rendered. Left out (the Mac's workspace
       strip), they are offered as before. */
   previewing?: boolean;
-  /** **分享 inside 「…」** (UX-33 §4, the phone's deck: ‹ · pill · 预览 ·
-      「…」): the share circle is not drawn and its acts head the menu. */
+  /** Explicit preview/source action in the file’s existing more menu. */
+  faceToggle?: { face: "source" | "preview"; run: () => void };
+  /** **分享 inside 「…」** (UX-33 §4): the share circle is not drawn
+      and its acts are offered in the menu. */
   shareInMore?: boolean;
   machine: string;
   path: string;
@@ -194,6 +198,7 @@ function useFileVerbs({
   const textKind = kind === "text";
   const menu: { key: string; label: string; run: () => void; destructive?: boolean }[] = [
     ...moreActs,
+    ...(faceToggle ? [{ key: "preview", label: faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview, run: faceToggle.run }] : []),
     ...(shareInMore && finder
       ? [
           { key: "open-other", label: gui.file_open_other, run: () => void local().then((p) => launchOn("", p)).catch(fail) },
@@ -250,7 +255,8 @@ function useFileVerbs({
         {menu
           .filter((m) => !m.destructive)
           .map((m) => (
-            <DropdownMenuItem key={m.key} data-file-more-item={m.key} onSelect={m.run}>
+            <DropdownMenuItem key={m.key} data-file-more-item={m.key} data-file-face-toggle={m.key === "preview" ? faceToggle?.face : undefined} onSelect={m.run}>
+              {m.key === "preview" && <IconEye />}
               {m.label}
             </DropdownMenuItem>
           ))}
@@ -508,7 +514,7 @@ export function FilePage({
   /** **No edit mode** (UX-14, the owner 2026-10-05: 「像备忘录」): a text
       file is editable as soon as it is open — a tap puts the caret where
       the finger is, a drag scrolls. Every file opens as source (2026-10-13);
-      the pill's eye explicitly opts into preview and keeps the place. */
+      the more menu explicitly opts into preview and keeps the place. */
   const [face, setFace] = useState<"source" | "preview">(DEFAULT_FILE_FACE);
   const verbs = useFileVerbs({
     machine,
@@ -525,6 +531,7 @@ export function FilePage({
     },
     // 字号 and 预览背景 only while the file is read rendered (UX-14).
     previewing: previewable ? face === "preview" : false,
+    faceToggle: rev === null && previewable ? { face, run: () => turn() } : undefined,
     // The phone's deck: 分享 inside 「…」 (UX-33 §4).
     shareInMore: true,
     moreActs,
@@ -563,11 +570,13 @@ export function FilePage({
   const [folded, setFolded] = useState(false);
   const memo = useRef<FoldMemo>({ turned: null });
   const lastTop = useRef(0);
-  useEffect(() => {
+  const scrollIntent = useRef(new FileDeckIntent());
+  useLayoutEffect(() => {
+    scrollIntent.current.reset();
     setFolded(false);
     memo.current = { turned: null };
     lastTop.current = 0;
-  }, [path, face, rev]);
+  }, [machine, path, face, rev]);
   useEffect(
     () =>
       onKeyboardChange(() => {
@@ -596,7 +605,7 @@ export function FilePage({
     const top = t.scrollTop;
     const leaving = top > lastTop.current;
     lastTop.current = top;
-    if (keyboardShown()) return;
+    if (keyboardShown() || !scrollIntent.current.allows()) { memo.current.turned = null; return; }
     const next = foldStep(memo.current, top, leaving, FOLD_AT);
     if (next !== null) setFolded(next);
     if (folded && e.timeStamp - sampledAt.current > 250) {
@@ -637,6 +646,7 @@ export function FilePage({
   return (
     <div
       data-file-page
+      data-file-face={face}
       data-folded={!embedded && folded || undefined}
       // **预览背景 covers the page, not only the text** (round UX-4): the
       // deck floats over the document, so it wears the ground it is read
@@ -650,7 +660,7 @@ export function FilePage({
         <div data-file-embedded-tools className="flex h-pane-head flex-none items-center gap-in border-b px-row">
           {rev !== null && <Button size="icon" variant="ghost" data-file-back aria-label={gui.file_rev_back} onClick={() => { setRev(null); setCompare(false); setFace(DEFAULT_FILE_FACE); }}><IconBack /></Button>}
           <button type="button" onClick={onBack} title={directoryOf(path)} className="flex min-w-0 flex-1 items-center gap-in text-caption text-muted-foreground"><IconFiles className="size-4 flex-none" /><span className="truncate">{embeddedContext ?? directoryOf(path)}</span></button>
-          {(rev === null ? previewable : !compare && rendererOf(path) === "md") && <Button size="sm" variant="ghost" aria-label={gui.file_face_preview} aria-pressed={face === "preview"} data-file-face-toggle={face} onClick={turn}><IconEye /></Button>}
+          {rev !== null && !compare && rendererOf(path) === "md" && <Button size="sm" variant="ghost" aria-label={gui.file_face_preview} aria-pressed={face === "preview"} data-file-face-toggle={face} onClick={turn}><IconEye /></Button>}
           {rev !== null ? <Button size="icon" variant="ghost" data-file-rev-compare aria-label={compare ? gui.file_rev_alone : gui.file_rev_compare} aria-pressed={compare} onClick={() => setCompare(!compare)}><IconBranch /></Button> : <Button size="icon" variant="ghost" aria-label={dirty ? gui.watch_save : gui.file_reread} onClick={dirty ? save : () => setReads((n) => n + 1)}>{dirty ? <IconCheck /> : <IconReload />}</Button>}
           {verbs.moreCircle}
         </div>
@@ -659,6 +669,16 @@ export function FilePage({
         ref={box}
         className="flex min-h-0 flex-1 flex-col"
         onScrollCapture={scrolled}
+        onTouchStartCapture={e => { if (e.touches.length === 1) scrollIntent.current.start(e.touches[0].clientX, e.touches[0].clientY); else scrollIntent.current.reset(); }}
+        onTouchMoveCapture={e => { if (e.touches.length === 1) scrollIntent.current.move(e.touches[0].clientX, e.touches[0].clientY); }}
+        onTouchEndCapture={() => scrollIntent.current.end()}
+        onTouchCancelCapture={() => scrollIntent.current.end()}
+        onPointerDownCapture={e => { if (e.pointerType !== "touch" && e.isPrimary && e.button === 0) scrollIntent.current.start(e.clientX, e.clientY); }}
+        onPointerMoveCapture={e => { if (e.pointerType !== "touch") scrollIntent.current.move(e.clientX, e.clientY); }}
+        onPointerUpCapture={() => scrollIntent.current.end()}
+        onPointerCancelCapture={() => scrollIntent.current.end()}
+        onWheelCapture={e => scrollIntent.current.wheel(e.deltaX, e.deltaY)}
+        onKeyDownCapture={e => scrollIntent.current.key(e.key)}
         onFocusCapture={hold}
       >
         {rev !== null ? (
@@ -703,7 +723,7 @@ export function FilePage({
             type="button"
             data-deck-strip
             data-deck-ink={ink}
-            onClick={() => setFolded(false)}
+            onClick={() => { scrollIntent.current.reset(); setFolded(false); }}
             className="glass pointer-events-auto mx-auto mb-in flex h-deck-strip max-w-[calc(100%-2*var(--page-inset))] flex-none animate-in items-center justify-center overflow-hidden rounded-full px-row text-callout fade-in"
           >
             <span className="min-w-0 truncate">{contentDeck?.folded ?? name}</span>
@@ -766,7 +786,7 @@ export function FilePage({
                 </GlassItem>
               )}
             </div>
-            {(rev === null ? previewable : !compare && rendererOf(path) === "md") && (
+            {rev !== null && !compare && rendererOf(path) === "md" && (
               <GlassCircle
                 aria-label={gui.file_face_preview}
                 aria-pressed={face === "preview"}

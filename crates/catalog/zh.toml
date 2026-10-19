@@ -3626,6 +3626,7 @@ file-take = "下载到本机"
 # 预览、再按回源码,所以屏幕上要说的只剩这一个名字;是哪一面由 `data-on`
 # 说,和旁边三个切换列的开关同一种写法。
 file-face-preview = "预览"
+file-face-source = "查看原文"
 # Under a PDF whose words are being shown because this platform's
 # browser has no viewer (Linux, Android — `khor_node::preview::
 # PDF_HERE`). **Says what is on screen, not what is missing**: 「这台
