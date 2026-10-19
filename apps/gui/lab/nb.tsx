@@ -1,11 +1,14 @@
 // Lab only (lane nb-view): the notebook preview with nothing of the app
 // around it, for the gate (`scripts/check-nb.mjs`) and for eyes. Nothing
 // here talks to a node. `?dark` / `?light` the theme, `?ground=light|dark`
-// the preview ground, `#sample` / `#big` a notebook drawn for a screenshot.
+// the preview ground, `?nowrap` the source face without wrapping,
+// `#sample` / `#big` a notebook drawn for a screenshot.
 //
 //   window.nbSample()            the sample notebook's text; nbExpected()
 //                                what each cell's outputs should be
 //   window.nbBig(n)              a notebook of `n` cells, every third a plot
+//   window.nbHeavy(n, w, h, d)   the same with w×h plots, d points per
+//                                pixel, for weight
 //   window.nbShow(text)          draw it, resolve when settled
 //   window.nbOpen(text)          draw it from nothing: ms to the first
 //                                commit, and to the first screen painted
@@ -52,7 +55,7 @@ function Lab() {
         <Notebook text={shown.text} machine="m" path="/work/demo/analysis.ipynb" />
       ) : (
         <div className="flex h-full flex-col">
-          <CodeEditor path="/work/demo/analysis.ipynb" text={shown.text} editable onText={() => {}} />
+          <CodeEditor path="/work/demo/analysis.ipynb" text={shown.text} editable wrap={!q.has("nowrap")} onText={() => {}} />
         </div>
       )}
     </div>
@@ -63,6 +66,9 @@ const w = window as unknown as Record<string, unknown>;
 w.nbSample = () => sample(pic());
 w.nbExpected = () => EXPECTED;
 w.nbBig = (n: number) => big(n, pic());
+/** `n` cells whose plots are `w`×`h` with `noise` points per pixel: a
+    notebook that weighs what a real one of that length does. */
+w.nbHeavy = (n: number, wide: number, high: number, noise: number) => big(n, [1, 2, 3, 4].map((seed) => plotPng(wide, high, seed, noise)));
 w.nbV3 = V3;
 w.nbShow = async (text: string) => {
   show({ text: "", face: "preview" });

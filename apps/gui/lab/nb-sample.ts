@@ -5,7 +5,7 @@
 
 /** A small plot on a clear ground with black ink, the way matplotlib's
     inline backend saves one — what the light backing is for. */
-export function plotPng(w = 320, h = 200, seed = 1): string {
+export function plotPng(w = 320, h = 200, seed = 1, noise = 0): string {
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
@@ -24,6 +24,16 @@ export function plotPng(w = 320, h = 200, seed = 1): string {
   }
   g.strokeStyle = "#1f77b4";
   g.stroke();
+  // A scatter of `noise` points per pixel, so the picture weighs what a
+  // real plot does rather than what a clean line compresses to.
+  if (noise > 0) {
+    let r = seed * 9301 + 49297;
+    const next = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+    for (let i = 0; i < w * h * noise; i++) {
+      g.fillStyle = `rgba(${(next() * 255) | 0},${(next() * 255) | 0},${(next() * 255) | 0},0.6)`;
+      g.fillRect(next() * w, next() * h, 2, 2);
+    }
+  }
   return c.toDataURL("image/png").slice("data:image/png;base64,".length);
 }
 
@@ -145,8 +155,10 @@ export function sample(png: string): string {
   );
 }
 
-/** A long notebook for timing: `n` cells, every third a plot. */
-export function big(n: number, png: string): string {
+/** A long notebook for timing: `n` cells, every third a plot (`pngs`
+    rotates through the given pictures). */
+export function big(n: number, png: string | string[]): string {
+  const pngs = Array.isArray(png) ? png : [png];
   const cells: unknown[] = [];
   for (let i = 0; i < n; i++) {
     if (i % 3 === 0) cells.push({ cell_type: "markdown", metadata: {}, source: lines(`## 第 ${i} 节\n\n一段说明，带一个公式 $x_${i}$ 和 **粗体**。`) });
@@ -164,7 +176,7 @@ export function big(n: number, png: string): string {
         execution_count: i,
         metadata: {},
         source: lines(`plt.plot(x, y)\nplt.title('${i}')`),
-        outputs: [{ output_type: "display_data", metadata: {}, data: { "image/png": png, "text/plain": ["<Figure>"] } }],
+        outputs: [{ output_type: "display_data", metadata: {}, data: { "image/png": pngs[i % pngs.length], "text/plain": ["<Figure>"] } }],
       });
   }
   return JSON.stringify({ nbformat: 4, nbformat_minor: 5, metadata: { language_info: { name: "python" } }, cells }, null, 1);
