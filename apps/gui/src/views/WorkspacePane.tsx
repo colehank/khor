@@ -84,6 +84,7 @@ import { heavier, IGNORED } from "@/views/fileRow";
 import { beginEditing, DEFAULT_FILE_FACE, FileView, rendererOf, type Draft } from "@/views/FileView";
 import { DiffView, diffLabel } from "@/views/DiffView";
 import { RevisionView, shortId, HistorySheet } from "@/views/FileHistory";
+import { useRepositoryHistory } from "@/hooks/use-repository-history";
 import { CommitPage } from "@/views/CommitPage";
 import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { FilePage, FileVerbs, placeAt, topLine } from "@/views/FilePage";
@@ -544,12 +545,11 @@ export function WorkspacePane({
   /** Whether the repository history sheet is open (WS-LAB item 1).
       Both the commit line in the tree and the branch chip in R0's aside
       open the same sheet. */
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const {historyOpen,setHistoryOpen,commit,setCommit,backToHistory} = useRepositoryHistory(machine,root);
   /** **The commit a row of 提交历史 opened** (COMMITS-BRIEF item 3): a page
       where the file stands on the wide face, a screen on the phone.
       Opening a file puts it away (`open`). */
-  const [commit, setCommit] = useState<GitCommit | null>(null);
-  useEffect(() => setCommit(null), [machine, root]);
+
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
@@ -1365,7 +1365,7 @@ export function WorkspacePane({
   const onPage = narrow && screen === "file" && file !== null && diffOf(file) === null;
   /** The commit page is up: in the middle column, or the phone's screen. */
   const commitShown = commit !== null && (!narrow || screen === "file");
-  useFullScreen(onPage);
+  useFullScreen(onPage || (narrow && commitShown));
   /** What the view hands back about its unsaved copy, for one file.
       **Nothing is written when nothing changed** (reported from an effect,
       `FileView`); typing pins a preview tab (「在里面打了字,就钉住」). */
@@ -2017,8 +2017,9 @@ export function WorkspacePane({
               machine={machine}
               root={root}
               commit={commit}
+              edgeToEdge={narrow}
               onBack={() => {
-                setCommit(null);
+                backToHistory();
                 if (narrow && file === null) setScreen("tree");
               }}
             />

@@ -37,12 +37,12 @@ import { SideFind } from "@/components/SideFind";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SeatHead } from "@/components/SeatHead";
 import { gui } from "@/gen/catalog";
-import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { GitStatus } from "@/gen/bindings/GitStatus";
 import type { WsSpot } from "@/hooks/use-session-side";
 import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { FilePage } from "@/views/FilePage";
+import { useRepositoryHistory } from "@/hooks/use-repository-history";
 import { CommitPage } from "@/views/CommitPage";
 import { HistorySheet } from "@/views/FileHistory";
 import { FileTree } from "@/views/FileTree";
@@ -165,10 +165,9 @@ export function SideWorkspace({
     };
   }, [machine, root, gitAt]);
   /** The repository's 提交历史 sheet, and the commit a row of it opened —
-      a screen in the file's place, ‹ back to the tree (`CommitPage`). */
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [commit, setCommit] = useState<GitCommit | null>(null);
-  useEffect(() => setCommit(null), [machine, root]);
+      a screen in the file's place, ‹ back to the retained history list (`CommitPage`). */
+  const {historyOpen,setHistoryOpen,commit,setCommit,backToHistory} = useRepositoryHistory(machine,root);
+
   // git's letters move with khor's acts anywhere in this checkout — the
   // main area's tree, a save there (UX-43 §1, `lib/tree-changed`).
   useEffect(
@@ -309,7 +308,7 @@ export function SideWorkspace({
       </div>
       {commit !== null && (
         <div data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
-          <CommitPage key={commit.id} machine={machine} root={root} commit={commit} onBack={() => setCommit(null)} />
+          <CommitPage key={commit.id} machine={machine} root={root} commit={commit} onBack={backToHistory} />
         </div>
       )}
       <HistorySheet

@@ -5,12 +5,16 @@
 //
 // The questions go to the machine holding the file (`git_log`,
 // `git_show`, `khor_node::git`), as the gutter's do.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { fetchGitLog, fetchGitShow, said, type GitLog, type GitShow } from "@/api";
+import { HistoryDeck } from "@/components/HistoryDeck";
+import { useWindowNarrow } from "@/hooks/use-narrow";
+import { basename } from "@/words";
+import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/Markdown";
 import { Waiting } from "@/components/RegionState";
-import { Dialog, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogTitle, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
@@ -75,27 +79,34 @@ export function HistorySheet({
       body's first line, who wrote it. */
   repo?: boolean;
 }) {
-  const [log, setLog] = useState<GitLog | null>(null);
+  const narrow = useWindowNarrow();
+  const key = machine + "\0" + path + "\0" + repo;
+  const [record, setRecord] = useState<{key:string;log:GitLog}|null>(null);
+  const log = record?.key === key ? record.log : null;
+  const scroller = useRef<HTMLDivElement>(null);
+  const position = useRef({key,top:0});
+  if(position.current.key !== key)position.current={key,top:0};
+  useLayoutEffect(()=>{if(open && log && scroller.current)scroller.current.scrollTop=position.current.top;},[open,log,key]);
   const [refused, setRefused] = useState<string | null>(null);
   const [since, setSince] = useState(() => Date.now());
   useEffect(() => {
     if (!open) return;
     let live = true;
-    setLog(null);
     setRefused(null);
     setSince(Date.now());
     fetchGitLog(machine, path).then(
-      (l) => live && setLog(l),
+      (l) => live && setRecord({key,log:l}),
       (e: unknown) => live && setRefused(said(e)),
     );
     return () => {
       live = false;
     };
-  }, [open, machine, path]);
+  }, [open, machine, path, key]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <TaskOverlay purpose="selection" data-file-history className="!gap-0 overflow-y-auto">
-        <DialogTitle className="px-in pb-in">{repo ? gui.commit_history : gui.file_history}</DialogTitle>
+      <TaskOverlay purpose="selection" scrollable data-file-history data-history-overlay className="!gap-0">
+        <DialogTitle className={narrow ? "sr-only" : "px-in pb-in"}>{repo ? gui.commit_history : gui.file_history}</DialogTitle>
+        <DialogBody ref={scroller} data-history-scroll onScroll={e=>{position.current.top=e.currentTarget.scrollTop;}} className="gap-0 px-in">
         {refused !== null ? (
           <div data-file-history-refused className="px-in text-callout text-state-failed">
             {refused}
@@ -137,6 +148,8 @@ export function HistorySheet({
             {log.more && <div className="px-in py-in text-callout text-muted-foreground">{gui.file_history_more}</div>}
           </div>
         )}
+        </DialogBody>
+        {narrow ? <HistoryDeck title={repo ? gui.commit_history : gui.file_history} subtitle={basename(path)} onBack={()=>onOpenChange(false)}/> : <DialogFooter><Button variant="ghost" onClick={()=>onOpenChange(false)}>{gui.back}</Button></DialogFooter>}
       </TaskOverlay>
     </Dialog>
   );

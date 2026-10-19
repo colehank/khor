@@ -12,8 +12,8 @@ globalThis.__hooks={
  useEffect(fn,deps){const h=rendering,i=h.index++,old=h.slots[i];if(!old||!deps||deps.some((d,j)=>d!==old.deps?.[j]))h.effects.push(()=>{old?.cleanup?.();h.slots[i]={deps,cleanup:fn()};});},
 };
 function mount(run){const h={slots:[],effects:[],index:0,value:null,queued:false,closed:false,schedule(){if(h.queued||h.closed)return;h.queued=true;queueMicrotask(()=>{h.queued=false;h.render();});},render(){if(h.closed)return;h.index=0;h.effects=[];rendering=h;h.value=run();rendering=undefined;for(const fn of h.effects)fn();},close(){h.closed=true;for(const s of h.slots)s?.cleanup?.();}};h.render();return h;}
-const bundle=await build({stdin:{contents:'export * from "./src/hooks/use-session-content.ts";export * from "./src/hooks/use-content-navigation.ts";',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'boundaries',setup(b){b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onResolve({filter:/^@\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='react'?'export const {useState,useEffect,useRef,useCallback}=globalThis.__hooks;':['fetchTabs','openTab','focusTab','closeTab','goTab','pinTab','reorderTabs','fetchPageIcons'].map(n=>`export const ${n}=(...a)=>globalThis.__api.${n}(...a);`).join(''),loader:'js'}));}}]});
-const {useSessionContent,useContentNavigation}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const bundle=await build({stdin:{contents:'export * from "./src/hooks/use-session-content.ts";export * from "./src/hooks/use-content-navigation.ts";export * from "./src/hooks/use-repository-history.ts";',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'boundaries',setup(b){b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onResolve({filter:/^@\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='react'?'export const {useState,useEffect,useRef,useCallback}=globalThis.__hooks;':['fetchTabs','openTab','focusTab','closeTab','goTab','pinTab','reorderTabs','fetchPageIcons'].map(n=>`export const ${n}=(...a)=>globalThis.__api.${n}(...a);`).join(''),loader:'js'}));}}]});
+const {useSessionContent,useContentNavigation,useRepositoryHistory}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 const tick=()=>new Promise(r=>setImmediate(r));const until=async fn=>{for(let i=0;i<150;i++){if(await fn())return;await tick();}throw Error('Unsettled model');};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 let node={tabs:[],active:''},clock=0,next=0,gate,focusFailure=false,openAckFailure=false;const calls=[],snapshot=()=>structuredClone(node);
@@ -163,3 +163,19 @@ nav.close();nav=mount(()=>useContentNavigation(model.value));nav.value.resume('B
 nav.value.select(bBlank);assert.equal(nav.value.get('Blank').source,'browser');assert.equal(nav.value.get('Blank').address,'https://second.test');assert.equal(nav.value.get('Blank').scope.root,'/second');
 nav.close();model.close();
 console.log('PASS: durable picker opens preserve viewed files/pages and source Back/scroll; independent starting tabs; original identity on point; retry without duplicate blank rows; per-tab picker/draft/back/reload isolation; retained favicon, content identity, ordering, transport race and legacy migration coverage');
+
+// Repository history returns to its list and keeps machine/root ownership local.
+let historyMachine='one',historyRoot='/repo';
+const historyRoute=mount(()=>useRepositoryHistory(historyMachine,historyRoot));
+const otherHistoryRoute=mount(()=>useRepositoryHistory('two','/elsewhere'));
+await tick();historyRoute.value.setHistoryOpen(true);await tick();
+historyRoute.value.setHistoryOpen(false);historyRoute.value.setCommit({id:'revision'});await tick();
+assert.equal(historyRoute.value.commit.id,'revision');assert.equal(historyRoute.value.historyOpen,false);
+historyRoute.value.backToHistory();await tick();
+assert.equal(historyRoute.value.commit,null);assert.equal(historyRoute.value.historyOpen,true,'Back from detail reopens history rather than falling through to the tree');
+assert.equal(otherHistoryRoute.value.historyOpen,false,'another workspace seat keeps its own route');
+historyRoot='/next';historyRoute.render();await tick();
+assert.equal(historyRoute.value.historyOpen,false);assert.equal(historyRoute.value.commit,null,'repository switch forgets its old detail');
+historyRoute.value.setHistoryOpen(true);await tick();historyMachine='three';historyRoute.render();await tick();assert.equal(historyRoute.value.historyOpen,false,'machine switch forgets the old list');
+historyRoute.close();otherHistoryRoute.close();
+console.log('repository history: detail-to-list Back, separate seats, root and machine changes passed');

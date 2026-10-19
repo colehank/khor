@@ -2996,3 +2996,9 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 .choice-row-icon{display:grid;width:var(--gap-base);height:var(--gap-base);place-items:center;flex:none;color:var(--muted-foreground)}
 .choice-aside{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .choice-textarea{display:block;min-height:var(--ctl-md);max-height:calc(6*var(--ctl-md));resize:none;padding-block:var(--gap-xxs);line-height:var(--leading-normal)}
+
+/* History owns read-only navigation; inset sheets do not repay the window's top inset. */
+[data-commit-page][data-history-edge] { padding-top: var(--safe-top); }
+.history-deck { display:flex; flex:none; align-items:center; gap:var(--gap-in); padding:var(--gap-in) var(--gap-row) calc(var(--gap-in) + var(--safe-bottom)); }
+.history-pill { display:flex; height:var(--glass-btn); min-width:0; flex:1; align-items:center; border-radius:var(--radius-full); padding-inline:var(--gap-row); }
+[data-narrow] [data-history-overlay] { padding-inline:0; padding-bottom:0; }

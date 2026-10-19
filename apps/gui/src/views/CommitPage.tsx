@@ -1,7 +1,7 @@
 // **One commit, as GitHub's commit page says it** (COMMITS-BRIEF,
 // 2026-10-12, the owner: 「提交历史应该如 github，点开后显示这个 commit 的
 // 更改」). Opened from a row of the repository's 提交历史; a page, not a
-// sheet — it scrolls, and its head has ‹. On the wide face it stands where
+// sheet — it scrolls, with a reachable way back. On the wide face it stands where
 // the file does; on the phone it is a screen.
 //
 // Top to bottom: who wrote it and when, the subject, the body; 「已更改 N
@@ -21,17 +21,19 @@
 // after the answer's total of both sides reached 2 MiB (`capped`, cm-f) —
 // its bar still says +a −b.
 //
-// **「跳转到文件」** floats at the foot, GitHub's pill: the changed files
-// as a menu, a press scrolls that file's bar to the top. Drawn only where
-// there is somewhere to jump — two files or more.
+// File navigation belongs to the changed-files summary, in the document.
+// On narrow screens the bottom deck holds Back and the commit identity.
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchGitCommit, said } from "@/api";
 import { CommitDiff, preloadCommitDiff } from "@/components/CommitDiff.lazy";
+import { HistoryDeck } from "@/components/HistoryDeck";
+import { useNarrow } from "@/hooks/use-narrow";
 import { GlassCircle } from "@/components/Glass";
-import { IconBack } from "@/components/icons";
+import { IconBack, IconChevronDown } from "@/components/icons";
 import { Waiting } from "@/components/RegionState";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MenuViewport } from "@/components/ui/menu-viewport";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { GitCommitFile } from "@/gen/bindings/GitCommitFile";
@@ -46,6 +48,7 @@ export function CommitPage({
   root,
   commit,
   onBack,
+  edgeToEdge = false,
 }: {
   machine: string;
   /** The repository, on that machine. */
@@ -54,7 +57,10 @@ export function CommitPage({
       the files arrive. */
   commit: GitCommit;
   onBack: () => void;
+  /** The main workspace owns the full phone viewport; inset sheets do not. */
+  edgeToEdge?: boolean;
 }) {
+  const narrow = useNarrow();
   const [shown, setShown] = useState<GitCommitShow | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
   const [since, setSince] = useState(() => Date.now());
@@ -91,23 +97,20 @@ export function CommitPage({
     [shown],
   );
   return (
-    <div data-commit-page={commit.id} className="relative flex min-h-0 flex-1 flex-col bg-card">
-      <div data-commit-head className="flex flex-none items-center gap-in px-row py-in">
+    <div data-commit-page={commit.id} data-history-edge={narrow && edgeToEdge || undefined} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
+      {!narrow && <div data-commit-head className="flex flex-none items-center gap-in px-row py-in">
         <GlassCircle aria-label={gui.back} tip={gui.back} data-commit-back onClick={onBack}>
           <IconBack />
         </GlassCircle>
         <span className="min-w-0 flex-1" />
         <span className="flex-none font-mono text-callout text-tertiary">{shortId(commit)}</span>
-      </div>
+      </div>}
       <div
         ref={scroller}
         data-commit-scroll
-        className={cn(
-          "min-h-0 flex-1 overflow-y-auto",
-          jumps ? "pb-[calc(var(--safe-bottom)+var(--glass-btn)+2*var(--gap-in))]" : "pb-[var(--safe-bottom)]",
-        )}
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-in"
       >
-        <header data-selectable className="flex flex-col gap-1 px-row pb-in">
+        <header data-selectable className="flex flex-col gap-1 px-row py-in">
           <span data-commit-by className="text-callout text-muted-foreground">
             {authorLine(commit)} · {ago(commit.when_ms)}
           </span>
@@ -128,10 +131,35 @@ export function CommitPage({
           <Waiting since={since} />
         ) : (
           <>
-            <div data-commit-stat className="border-y border-border px-row py-2 text-callout tabular-nums">
+            <div data-commit-stat className="flex flex-wrap items-center justify-between gap-in border-y border-border px-row py-2 text-callout tabular-nums"><span>
               {gui.commit_changed(shown.total)}
               {" · "}
-              <span className="text-git-added">+{sums.added}</span> <span className="text-git-deleted">−{sums.removed}</span>
+              <span className="text-git-added">+{sums.added}</span> <span className="text-git-deleted">−{sums.removed}</span></span>
+              {jumps && (
+                      <div data-commit-file-index>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              data-commit-jump
+                              className="flex min-h-touch items-center gap-xxs rounded-sm px-in text-callout hover:bg-fill"
+                            >
+                              {gui.commit_jump}<IconChevronDown className="size-affordance"/>
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent side="bottom" align="center" sideOffset={8} data-commit-jump-menu className="overflow-hidden">
+                            <MenuViewport>{shown.files.map((f) => (
+                              <DropdownMenuItem key={f.path} data-commit-jump-item={f.path} onSelect={() => jump(f.path)}>
+                                <span className={cn("w-[1ch] flex-none font-mono text-caption", markInk(f.status))}>{f.status}</span>
+                                <span className="min-w-0 truncate" title={f.path}>
+                                  {basename(f.path)}
+                                </span>
+                              </DropdownMenuItem>
+                            ))}</MenuViewport>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+              )}
             </div>
             {shown.files.map((f) => (
               <FileChange key={f.path} f={f} />
@@ -144,31 +172,7 @@ export function CommitPage({
           </>
         )}
       </div>
-      {jumps && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+var(--gap-in))] flex justify-center">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                data-commit-jump
-                className="glass pointer-events-auto flex h-glass-btn items-center rounded-full px-row text-body text-foreground"
-              >
-                {gui.commit_jump}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="center" sideOffset={8} data-commit-jump-menu className="max-h-[50dvh] overflow-y-auto">
-              {shown.files.map((f) => (
-                <DropdownMenuItem key={f.path} data-commit-jump-item={f.path} onSelect={() => jump(f.path)}>
-                  <span className={cn("w-[1ch] flex-none font-mono text-caption", markInk(f.status))}>{f.status}</span>
-                  <span className="min-w-0 truncate" title={f.path}>
-                    {basename(f.path)}
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
+      {narrow && <HistoryDeck title={shortId(commit)} subtitle={commit.subject} onBack={onBack} commit/>}
     </div>
   );
 }
