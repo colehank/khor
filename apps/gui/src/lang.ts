@@ -85,13 +85,17 @@ export function speakLang(next: LangPref | null): "zh" | "en" {
   if (next !== null) pref = next;
   const lang = pref === "auto" ? (browserIsZh() ? "zh" : "en") : pref;
   speak(lang);
+  // **Only when it changes** (2026-10-21): `App` calls this on every
+  // render, and Chromium restyles the whole document for an attribute
+  // set on the root even to the value it already had — a formula-heavy
+  // preview spent ~20 ms per render on it, 21 s of a 30 s scroll.
   try {
-    document.documentElement.lang = lang;
+    if (document.documentElement.lang !== lang) document.documentElement.lang = lang;
   } catch {
     // Nothing to stamp; the words are already right.
   }
   try {
-    window.localStorage.setItem(LANG_MIRROR, pref);
+    if (window.localStorage.getItem(LANG_MIRROR) !== pref) window.localStorage.setItem(LANG_MIRROR, pref);
   } catch {
     // Only the head start on the next launch is lost.
   }

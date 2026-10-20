@@ -45,7 +45,9 @@ export function ContentTabs({session,open,devices,content,navigation,onAdd,onFoc
 /** Stable scroller names survive remounts and the wide/narrow portal move.
  * Native webpage views retain their own history/scroll under the tab handle. */
 const CONTENT_SCROLLERS=['[data-file-preview]','[data-file-scroll]','.cm-scroller','[data-side-workspace] > div','[data-new-tab]','[data-files-list]','.mobile-content-overview-list'];
-function ContentPosition({session,position,show,mobile,navigation,children,...props}: ComponentProps<'section'> & {
+/** A gap in a scroller's events this long ends the gesture (`deck-fold`'s beat). */
+const SCROLL_QUIET_MS=250;
+export function ContentPosition({session,position,show,mobile,navigation,children,...props}: ComponentProps<'section'> & {
   session:string;position:string;show:boolean;mobile:boolean;navigation:ContentNavigation;
 }) {
   const root=useRef<HTMLElement>(null),latest=useRef(navigation);latest.current=navigation;
@@ -63,17 +65,27 @@ function ContentPosition({session,position,show,mobile,navigation,children,...pr
         el.scrollTop=saved.top;el.scrollLeft=saved.left;done.add(el);
       });
     };
+    // **Written down once the scrolling stops, not per scroll event**
+    // (2026-10-21): every save is the shell's state and a localStorage
+    // write, so per event it re-rendered the whole app about sixty times
+    // a second under the reader — 62 FilePage renders and 1.5 s of main
+    // thread for one pass through a 20 KB formula file in WebKit, 30 s
+    // at Chromium's 4× slowdown. The place still lands before the view
+    // is hidden or left (`flush` in the cleanup).
+    const pending=new Map<string,{top:number;left:number}>();let quiet:ReturnType<typeof setTimeout>|undefined;
+    const flush=()=>{clearTimeout(quiet);quiet=undefined;for(const [key,value] of pending)latest.current.scroll(session,key,value);pending.clear();};
     const capture=(event:Event)=>{
       const el=event.target;if(!(el instanceof HTMLElement)||!box.contains(el)||!el.getClientRects().length)return;
       const selector=CONTENT_SCROLLERS.find(selector=>el.matches(selector));if(!selector)return;
       const index=[...box.querySelectorAll(selector)].indexOf(el);
-      latest.current.scroll(session,name(selector,index),{top:el.scrollTop,left:el.scrollLeft});
+      pending.set(name(selector,index),{top:el.scrollTop,left:el.scrollLeft});
+      clearTimeout(quiet);quiet=setTimeout(flush,SCROLL_QUIET_MS);
     };
     const interact=()=>{stopped=true;};
     const observer=new MutationObserver(restore);observer.observe(box,{childList:true,subtree:true});
     const resize=new ResizeObserver(restore);resize.observe(box);
     restore();box.addEventListener('scroll',capture,true);box.addEventListener('wheel',interact,{passive:true});box.addEventListener('pointerdown',interact,{passive:true});
-    return()=>{observer.disconnect();resize.disconnect();box.removeEventListener('scroll',capture,true);box.removeEventListener('wheel',interact);box.removeEventListener('pointerdown',interact);};
+    return()=>{flush();observer.disconnect();resize.disconnect();box.removeEventListener('scroll',capture,true);box.removeEventListener('wheel',interact);box.removeEventListener('pointerdown',interact);};
   },[session,position,show,mobile]);
   return <section {...props} ref={root}>{children}</section>;
 }

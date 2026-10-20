@@ -1970,14 +1970,24 @@ aside[data-side] {
  * `contain`, not `none`: a pane may still bounce on its own — that is
  * WebKit telling a finger it has reached the end of *this* list, which
  * is information. What it may not do is hand the rest to whatever is
- * behind it. */
+ * behind it.
+ *
+ * **A box that scrolls sideways contains only sideways** (2026-10-21).
+ * `overflow-x: auto` computes `overflow-y` to auto too, so a code block,
+ * a wide table or a formula frame is a vertical scroll container of no
+ * height to scroll; contained on both axes it swallowed the wheel, and a
+ * preview stopped dead wherever the pointer rested on a table — 642 of
+ * 6418 px in Chromium, 1092 of 8715 in the content sheet in both
+ * engines. Vertically it hands the wheel to the document it sits in. */
 .overflow-auto,
 .overflow-scroll,
-.overflow-x-auto,
-.overflow-x-scroll,
 .overflow-y-auto,
 .overflow-y-scroll {
   overscroll-behavior: contain;
+}
+.overflow-x-auto,
+.overflow-x-scroll {
+  overscroll-behavior-x: contain;
 }
 
 /* ── settings groups (docs/design-system components/SettingsGroup) ──

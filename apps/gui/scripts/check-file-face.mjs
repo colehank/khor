@@ -16,6 +16,18 @@ const long = Array.from({length:80},(_,i)=>`line ${i+1}: some text on it`).join(
 // wrap`'s `WRAP_LINE_MAX`, 64 KB) beside an ordinary one.
 const notebook = JSON.stringify({nbformat:4,nbformat_minor:5,metadata:{language_info:{name:'python'}},cells:[{cell_type:'markdown',metadata:{},source:['# Notebook heading']},{cell_type:'code',execution_count:1,metadata:{},source:['1 + 1'],outputs:[{output_type:'execute_result',execution_count:1,metadata:{},data:{'text/plain':['2']}}]}]});
 const longLine = `{"image/png": "${'A'.repeat(70*1024)}"}\n`;
+// **A formula-dense paper, made up** (2026-10-21, the owner's real draft
+// stays out of the repo): about the density that made the preview stick —
+// two inline formulas a line, a display formula, a wide table and a code
+// block every section. Every scroll box a preview can hold is in it.
+const formulas = Array.from({length:12},(_,k)=>[
+  `## 第 ${k+1} 节`,'',
+  ...Array.from({length:12},(_,i)=>`记 $x_{${i}}^{(${k})}$ 为第 ${i} 个槽，$\\mathcal{H}_{t}$ 中关于它的陈述满足 $p(v\\mid Y_t)=\\frac{\\alpha_{${i}}}{1+\\beta}$。`),'',
+  '$$','M_{t+1} = E\\big(F(M_t,\\varphi_t)\\big), \\qquad m_t = R(M_t,o_t,Q) + '+Array.from({length:10},(_,i)=>`\\theta_{${i}}`).join(' + '),'$$','',
+  '| 方法 | 依据 | 误差 | 备注 |','|---|---|---|---|',
+  ...Array.from({length:5},(_,i)=>`| 方法 ${i} | $\\hat\\theta_{${i}}$ | $\\epsilon_{${i}}$ | ${'很长的备注'.repeat(12)} |`),'',
+  '```ts',`const wide${k} = [${Array.from({length:30},(_,i)=>i).join(', ')}];`,'```','',
+].join('\n')).join('\n');
 const commits = ['a', 'b'].map((c, i) => ({id:c.repeat(40),author:'Fixture',when_ms:Date.now()-i*60000,subject:`Revision ${i+1}`,body:''}));
 let vite, browser;
 const errors = [];
@@ -24,11 +36,21 @@ try {
 import {FilePage} from '../src/views/FilePage.tsx'; import {FileView} from '../src/views/FileView.tsx';
 import {TooltipProvider} from '../src/components/ui/tooltip.tsx'; import {FilePreview} from '../src/views/chat-files.tsx'; import {NARROW_QUERY} from '../src/hooks/use-narrow.ts';
 import {followVisualViewport} from '../src/lib/viewport.ts';
+import {ContentPosition} from '../src/views/SessionContent.tsx'; import {speakLang} from '../src/lang.ts';
+import {Profiler,useState} from 'react';
 import '../src/styles/tokens.css'; import '../src/styles/app.css';
 followVisualViewport();
 const root=createRoot(document.getElementById('root')), no=()=>{};
 const posture=()=>document.documentElement.toggleAttribute('data-narrow',matchMedia(NARROW_QUERY).matches); posture(); addEventListener('resize',posture);
 window.showFile=(path,embedded=false)=>flushSync(()=>root.render(<TooltipProvider><FilePage embedded={embedded} machine='fixture' path={path} here={false} onBack={no} onGone={no} onMoved={no} history /></TooltipProvider>));
+// The session's content host as the shell gives it: every saved place is
+// shell state, so the stub re-renders the page the way App does.
+window.commits=0; window.saves=[];
+function Hosted({path}){const [,bump]=useState(0);const nav={scrollOf:()=>undefined,scroll:(s,k,v)=>{window.saves.push(v);bump(n=>n+1);}};
+  return <Profiler id='file' onRender={()=>{window.commits++;}}><ContentPosition session='s' position='p' show mobile={false} navigation={nav} className='flex min-h-0 flex-1 flex-col'><FilePage machine='fixture' path={path} here={false} onBack={no} onGone={no} onMoved={no} /></ContentPosition></Profiler>;}
+window.showHosted=(path)=>flushSync(()=>root.render(<TooltipProvider><Hosted path={path} /></TooltipProvider>));
+window.langWrites=()=>{let n=0;const o=new MutationObserver(l=>{n+=l.length;});o.observe(document.documentElement,{attributes:true,attributeFilter:['lang']});speakLang('zh');speakLang('zh');speakLang('zh');return new Promise(r=>setTimeout(()=>{o.disconnect();r(n);},50));};
+speakLang('zh');
 window.showBare=(path)=>flushSync(()=>root.render(<TooltipProvider><FileView key={path} machine='fixture' path={path} git={false} reading /></TooltipProvider>));
 window.showLook=(path)=>flushSync(()=>root.render(<TooltipProvider><FilePreview machine='fixture' shown='' here={false} path={path} onClose={no} /></TooltipProvider>));
 window.showFile('/notes.md');`);
@@ -52,7 +74,7 @@ window.showFile('/notes.md');`);
     await page.route(`http://127.0.0.1:${port}/**`,async route=>{
       const cmd=new URL(route.request().url()).pathname.slice(1), args=route.request().postDataJSON()??{};
       let result=null;
-      const text=args.path?.endsWith('.ipynb')?notebook:args.path?.endsWith('wide.json')?longLine:args.path?.endsWith('.txt')?long:args.path?.endsWith('.csv')?'a,"b,c",d\n':args.path?.endsWith('.html')?'<h1>HTML file</h1>':'# Current file\n\nText\n';
+      const text=args.path==='/formulas.md'?formulas:args.path?.endsWith('.ipynb')?notebook:args.path?.endsWith('wide.json')?longLine:args.path?.endsWith('.txt')?long:args.path?.endsWith('.csv')?'a,"b,c",d\n':args.path?.endsWith('.html')?'<h1>HTML file</h1>':'# Current file\n\nText\n';
       if(cmd==='read_text') result={text,total:text.length,at_ms:Date.now(),cut:false,binary:false,digest:'0'.repeat(64)};
       else if(cmd==='git_log') result={commits,more:false};
       else if(cmd==='git_show') result={text:args.path?.endsWith('.ipynb')?notebook:`# ${args.rev===commits[0].id?'First':'Second'} revision\n`,cut:false,diff:{hunks:[],more:false}};
@@ -137,6 +159,40 @@ window.showFile('/notes.md');`);
       console.log(`file face · ${width}px: keyboard over a low line — ${JSON.stringify([tapped,risen,typed])}`);
     }
     if(width===1200) {
+      // **A formula-dense preview scrolls like its source** (2026-10-21,
+      // the owner: 预览面滚轮卡、拖滚动条不卡). Three things, each red on
+      // the code before: (a) a wheel over a code block, a wide table or a
+      // display formula moves the document — those boxes only scroll
+      // sideways, and contained on both axes they swallowed it (Chromium
+      // stopped at 642 of 6418 px); (b) a pass through the file commits
+      // the hosted page a handful of times, not once per scroll event (the
+      // content host saved the place per event: 62 renders a pass); (c)
+      // the shell's per-render language call writes nothing when nothing
+      // changed (Chromium restyles the document for a same-value root
+      // attribute, ~20 ms a render here).
+      assert.equal(await page.evaluate(()=>window.langWrites()),0,'speakLang rewrote <html lang> to the value it already had');
+      await page.evaluate(()=>window.showHosted('/formulas.md')); await source();
+      await toggle();
+      const prev=page.locator('[data-file-preview="md"]');
+      await prev.locator('.katex-display').first().waitFor();
+      await pause(300);
+      for(const [sel,label] of [['[data-md] td','table cell'],['[data-md] pre','code block'],['[data-md] .katex-display','display formula']]){
+        const at=await prev.evaluate((s,sel)=>{const e=s.querySelector(sel);s.scrollTop+=e.getBoundingClientRect().top-s.getBoundingClientRect().top-200;const r=e.getBoundingClientRect();return {x:r.left+Math.min(40,r.width/2),y:r.top+r.height/2,top:s.scrollTop};},sel);
+        await page.mouse.move(at.x,at.y);
+        for(let i=0;i<3;i++){await page.mouse.wheel(0,200);await pause(120);}
+        const moved=await prev.evaluate(s=>s.scrollTop)-at.top;
+        assert(moved>=300,`a wheel over a ${label} moved the preview ${moved}px of 600 — the box swallowed it`);
+      }
+      await prev.evaluate(s=>{s.scrollTop=0;}); await pause(400);
+      const box=await prev.boundingBox(); await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
+      const before=await page.evaluate(()=>{const c=window.commits;window.saves.length=0;return c;});
+      for(let i=0;i<40;i++){await page.mouse.wheel(0,120);await pause(16);}
+      await pause(500);
+      const pass=await page.evaluate(b=>({commits:window.commits-b,saves:window.saves.length,last:window.saves.at(-1)?.top,top:document.querySelector('[data-file-preview]').scrollTop}),before);
+      assert(pass.top>3000,`the wheel pass did not travel: ${JSON.stringify(pass)}`);
+      assert(pass.commits<=6,`a 40-step wheel pass committed the hosted file page ${pass.commits} times (the place saved per scroll event?): ${JSON.stringify(pass)}`);
+      assert.equal(pass.last,pass.top,`the place saved after the pass is not where the reader stopped: ${JSON.stringify(pass)}`);
+      console.log(`file face · formula preview: wheel crosses code, table and formula boxes; 40-step pass ${JSON.stringify(pass)}`);
       await page.evaluate(()=>window.showFile('/notes.md',true)); await source();
       assert.equal(await page.locator('[data-file-deck]').count(),0,'embedded file drew a second deck');
       await revision(0);
