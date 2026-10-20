@@ -1017,19 +1017,22 @@ aside[data-side] {
    on a tab's face it left 8 of face, and the owner could not read it. */
 /* One stroked circle gives both edges the same centre. Two rounded
    masks rasterized separately can leave an uneven 1.5px ring at tab size.
-   The SVG extends beyond the face; neither the artwork nor the clear gap
-   is repainted, including on a transparent desktop window. */
+   Keep the SVG's viewport aligned with the face: WebKit rasterizes a
+   separately expanded fractional viewport on a different pixel origin,
+   even when both DOM centres agree. Only the circle extends outwards.
+   Neither the artwork nor the clear gap is repainted on a transparent window. */
 [data-halo-ring] {
   position: absolute;
   overflow: visible;
-  inset: calc(-1 * (var(--halo-gap) + var(--halo-w) / 2));
-  width: calc(100% + 2 * var(--halo-gap) + var(--halo-w));
-  height: calc(100% + 2 * var(--halo-gap) + var(--halo-w));
+  inset: 0;
+  width: 100%;
+  height: 100%;
   fill: none;
   stroke: var(--halo-color);
   stroke-width: var(--halo-w);
 }
 [data-halo-ring] > circle {
+  r: calc(50% + var(--halo-gap) + var(--halo-w) / 2);
   vector-effect: non-scaling-stroke;
 }
 
