@@ -30,6 +30,7 @@ globalThis.__hooks = {
   useRef(initial) { const h=rendering,i=h.index++; return h.slots[i]??(h.slots[i]={current:initial}); },
   useCallback(fn,deps) { const h=rendering,i=h.index++,old=h.slots[i];if(!old||deps.some((d,j)=>d!==old.deps[j]))h.slots[i]={fn,deps};return h.slots[i].fn; },
   useMemo(fn,deps) { const h=rendering,i=h.index++,old=h.slots[i];if(!old||deps.some((d,j)=>d!==old.deps[j]))h.slots[i]={value:fn(),deps};return h.slots[i].value; },
+  useLayoutEffect(fn,deps) { return globalThis.__hooks.useEffect(fn,deps); },
   useEffect(fn,deps) { const h=rendering,i=h.index++,old=h.slots[i];if(!old||deps.some((d,j)=>d!==old.deps[j]))h.effects.push(()=>{old?.cleanup?.();h.slots[i]={deps,cleanup:fn()};}); },
 };
 function mount(run) {
@@ -44,7 +45,7 @@ globalThis.window={setInterval(fn){timer=fn;return 1;},clearInterval(){timer=und
 const bundle=await build({stdin:{contents:'export * from "./src/hooks/use-session-reads.ts"',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'boundaries',setup(b){
   b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));
   b.onResolve({filter:/^@\/api$/},()=>({path:'api',namespace:'fixture'}));
-  b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='react'?'export const {useState,useEffect,useRef,useCallback,useMemo}=globalThis.__hooks;':'export const markSeen=(...args)=>globalThis.__markSeen(...args);',loader:'js'}));
+  b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='react'?'export const {useState,useEffect,useLayoutEffect,useRef,useCallback,useMemo}=globalThis.__hooks;':'export const markSeen=(...args)=>globalThis.__markSeen(...args);',loader:'js'}));
 }}]});
 const {useSessionReads}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 const tick=()=>new Promise(r=>setImmediate(r));
@@ -68,3 +69,36 @@ assert.deepEqual(calls.at(-1),{id:'shell/a',at_ms:200},'old acknowledgement did 
 settle.resolve();await tick();timer();await tick();assert.equal(calls.length,3,'confirmed intent stops retrying');
 view.close();assert.equal(timer,undefined,'unmount releases retry timer');
 console.log('session read: immediate feedback, delayed/stale replies, new versions, independent sessions, bounded API, failed-write retry and cleanup passed');
+
+// Selection alone is insufficient: background windows, history and overlaid
+// content do not read. Live surfaces report whether their tail is rendered.
+const events = new Map(); let focused = true;
+globalThis.document = { hasFocus: () => focused };
+window.addEventListener = (name, fn) => events.set(name, fn);
+window.removeEventListener = (name, fn) => { if (events.get(name) === fn) events.delete(name); };
+const attentionBundle = await build({stdin:{contents:'export * from "./src/hooks/use-session-attention.ts"',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'react-boundary',setup(b){
+  b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));
+  b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const {useState,useEffect,useLayoutEffect,useRef,useCallback,useMemo}=globalThis.__hooks;',loader:'js'}));
+}}]});
+const {useSessionAttention,useReadingSession}=await import('data:text/javascript;base64,'+Buffer.from(attentionBundle.outputFiles[0].text).toString('base64'));
+let front=row(), visible=true; const observed=[];
+const take=r=>observed.push({...r});
+const attention=mount(()=>useSessionAttention(front,visible,take));
+assert.equal(observed.length,0,'selected but not loaded does not read');
+let ready=true;
+const surface=mount(()=>useReadingSession('shell/a',ready,attention.value));await tick();
+assert.equal(observed.at(-1).at_ms,100,'loaded visible tail is read');
+front=row('shell/a',200);attention.render();assert.equal(observed.at(-1).at_ms,200,'completion while still watching is read without reopening');
+ready=false;surface.render();await tick();
+front=row('shell/a',300);attention.render();assert.equal(observed.at(-1).at_ms,200,'reading history preserves new completion');
+ready=true;surface.render();await tick();assert.equal(observed.at(-1).at_ms,300,'returning to live tail reads current version');
+focused=false;events.get('blur')();await tick();front=row('shell/a',400);attention.render();assert.equal(observed.at(-1).at_ms,300,'unfocused window preserves unread');
+focused=true;events.get('focus')();await tick();assert.equal(observed.at(-1).at_ms,400,'focus restoration reads visible completion');
+for (const name of ['background','locked','mobile content sheet','session overview','another landing']) {
+ visible=false;attention.render();const count=observed.length;front=row('shell/a',front.at_ms+100);attention.render();assert.equal(observed.length,count,`${name} preserves unread`);
+}
+visible=true;attention.render();assert.equal(observed.at(-1).at_ms,front.at_ms);
+front=row('shell/b',1000);attention.render();assert.notEqual(observed.at(-1).id,'shell/b','a retained terminal cannot read another session');
+surface.close();await tick();front=row('shell/a',1100);attention.render();assert.notEqual(observed.at(-1).at_ms,1100,'unmounted surface cannot read');
+attention.close();assert.equal(events.size,0,'focus listeners released');
+console.log('session attention: live completion, loading, history, background/focus, overlays, selection and cleanup passed');

@@ -1,3 +1,4 @@
+import { useReadingSession, type SessionReading } from "@/hooks/use-session-attention";
 // The conversation face of a GUI session: history above, the live
 // stream below, one input. The frames come through the chat registry
 // (`khor_gui_core::chat`) by polling — the cursor means nothing is lost
@@ -905,8 +906,10 @@ export function ChatView({
   category = null,
   machine = null,
   home = null,
+  onReading,
 }: {
   id: string;
+  onReading?: SessionReading;
   still?: boolean;
   /** **The conversation is over: its host is gone** (UX-4, decided; the
       row's 失败). Not opened — there is nobody to attach to — and read
@@ -927,6 +930,7 @@ export function ChatView({
       ended claude conversation, whose transcript outlives its host. */
   const still = recorded || (ended && category === "claude");
   const [paint, setPaint] = useState<Painting>(BLANK);
+  const [loaded, setLoaded] = useState(false);
   /** The agent's own commands, as of the last frame that carried a set. */
   const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
   const [gone, setGone] = useState(false);
@@ -1052,6 +1056,7 @@ export function ChatView({
   useEffect(() => (unsent ? offerNotice(id, unsent) : undefined), [id, unsent]);
   const [stall, setStall] = useState<Miss | null>(null);
   const [stallSince, setStallSince] = useState(0);
+  useReadingSession(id, loaded && !hidden && !away && !openWhy && !stall, onReading);
   useEffect(() => {
     if (!stall || gone) return;
     return offerNotice(
@@ -1073,6 +1078,7 @@ export function ChatView({
 
   useEffect(() => {
     let stopped = false;
+    setLoaded(false);
     let cursor = 0;
     if (ended && !still) {
       // Over, and no record to read: nothing to open and nothing to retry.
@@ -1103,6 +1109,7 @@ export function ChatView({
         followHistory(id, from)
           .then((batch) => {
             if (stopped) return;
+            setLoaded(true);
             from = batch.at;
             if (batch.frames.length > 0) {
               setPaint((prev) => absorb(prev, batch.frames, true));
@@ -1154,6 +1161,7 @@ export function ChatView({
       (pushed ? chatWait(id, cursor, WAIT_MS) : chatPoll(id, cursor))
         .then((batch) => {
           if (stopped) return;
+          setLoaded(true);
           cursor = batch.next;
           setSending(batch.sending_of > 0 ? [batch.sending, batch.sending_of] : null);
           const held = batch.gone ? null : (batch.stall ?? null);

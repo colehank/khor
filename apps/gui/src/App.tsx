@@ -1,3 +1,4 @@
+import { useSessionAttention } from "@/hooks/use-session-attention";
 import { useSessionReads } from "@/hooks/use-session-reads";
 import { sessionCwdOnScreen, workspaceCwd, followsSessionCwd } from "@/lib/session-cwd";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -970,7 +971,8 @@ export default function App() {
   }, [hidden, woken, landing]);
 
   // Also covers tab switching, restoration and sessions opened by links. A
-  // later poll alone is not a new look: it must not swallow a new completion.
+  // later poll alone is not a new look; useSessionAttention separately confirms
+  // new completions while the renderer is at its visible live tail.
   const openedRead = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (hidden || lock.locked || morePage !== null || switchingTabs || !selected || !onScreen.current(selected)) {
@@ -2501,6 +2503,14 @@ export default function App() {
       UX-30 §6): the same seats, risen from the bottom. The
       sheet's lifetime is this state; the seat is the session's memory. */
   const [placeSheet, setPlaceSheet] = useState<{ dir: string | null; session: string } | null>(null);
+  // A completion in a live, visible tail is already seen. A phone's file/web
+  // sheet covers that tail; a desktop sidebar leaves it on screen.
+  const observeSessionReading = useSessionAttention(
+    rawRows.find((r) => r.id === selected) ?? null,
+    !hidden && !lock.locked && dialog === null && morePage === null && !switchingTabs &&
+      landing === "sessions" && (!narrow || screen === "detail" && !side.open && placeSheet === null),
+    readSession,
+  );
   /** **Each pill remembers its 附栏** (fix-e, the owner 2026-10-08: 「要记
       住每一个药丸的侧边展开情况, 从一个没有展开的到展开的, 要自动展开」):
       a tab in front whose 附栏 was left open opens it again, where it was
@@ -2995,6 +3005,7 @@ export default function App() {
     <ShowFileProvider value={showFile}>
     <DetailPane
       row={selectedRow}
+      onReading={observeSessionReading}
       sessions={rows}
       active={!hidden && morePage === null && !switchingTabs && (!narrow || screen === "detail")}
       onSession={(id) => { setMorePage(null); sessionTabs.open(id); setScreen("detail"); }}

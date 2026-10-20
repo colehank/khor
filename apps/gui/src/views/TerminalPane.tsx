@@ -1,3 +1,4 @@
+import { useReadingSession, type SessionReading } from "@/hooks/use-session-attention";
 // A live terminal for a session khor hosts (docs/handoff 终端画屏) —
 // drawn by xterm.js, fed bytes.
 //
@@ -1231,8 +1232,10 @@ export function TerminalPane({
   active = true,
   doing,
   mux = false,
+  onReading,
 }: {
   id: string;
+  onReading?: SessionReading;
   /** The row's process sits in a tmux pane (`SessionRow.mux`): Claude
       Code in the person's own tmux, reached through khor's grouped
       client like a tmux row (item 33). */
@@ -1368,6 +1371,7 @@ export function TerminalPane({
   // conversation uses.
   const [back, setBack] = useState(false);
   const [freshBelow, setFreshBelow] = useState(false);
+  useReadingSession(id, active && !hidden && !opening && !joining && !why && !stall && !back, onReading);
   // The search: whether the bar is up, what is in it, and where the
   // addon says the matches are (`of` is -1 past the highlight limit).
   const searchRef = useRef<SearchAddon | null>(null);
