@@ -71,9 +71,11 @@ export function ContentPosition({session,position,show,mobile,navigation,childre
     // a second under the reader — 62 FilePage renders and 1.5 s of main
     // thread for one pass through a 20 KB formula file in WebKit, 30 s
     // at Chromium's 4× slowdown. The place still lands before the view
-    // is hidden or left (`flush` in the cleanup).
+    // is hidden or left (`flush` in the cleanup), and before the app goes
+    // to the background, where a phone may end it without another timer.
     const pending=new Map<string,{top:number;left:number}>();let quiet:ReturnType<typeof setTimeout>|undefined;
     const flush=()=>{clearTimeout(quiet);quiet=undefined;for(const [key,value] of pending)latest.current.scroll(session,key,value);pending.clear();};
+    const away=()=>{if(document.visibilityState==='hidden')flush();};
     const capture=(event:Event)=>{
       const el=event.target;if(!(el instanceof HTMLElement)||!box.contains(el)||!el.getClientRects().length)return;
       const selector=CONTENT_SCROLLERS.find(selector=>el.matches(selector));if(!selector)return;
@@ -84,8 +86,8 @@ export function ContentPosition({session,position,show,mobile,navigation,childre
     const interact=()=>{stopped=true;};
     const observer=new MutationObserver(restore);observer.observe(box,{childList:true,subtree:true});
     const resize=new ResizeObserver(restore);resize.observe(box);
-    restore();box.addEventListener('scroll',capture,true);box.addEventListener('wheel',interact,{passive:true});box.addEventListener('pointerdown',interact,{passive:true});
-    return()=>{flush();observer.disconnect();resize.disconnect();box.removeEventListener('scroll',capture,true);box.removeEventListener('wheel',interact);box.removeEventListener('pointerdown',interact);};
+    restore();box.addEventListener('scroll',capture,true);box.addEventListener('wheel',interact,{passive:true});box.addEventListener('pointerdown',interact,{passive:true});document.addEventListener('visibilitychange',away);window.addEventListener('pagehide',flush);
+    return()=>{flush();document.removeEventListener('visibilitychange',away);window.removeEventListener('pagehide',flush);observer.disconnect();resize.disconnect();box.removeEventListener('scroll',capture,true);box.removeEventListener('wheel',interact);box.removeEventListener('pointerdown',interact);};
   },[session,position,show,mobile]);
   return <section {...props} ref={root}>{children}</section>;
 }
