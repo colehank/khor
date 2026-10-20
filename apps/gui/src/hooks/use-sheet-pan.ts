@@ -71,7 +71,12 @@ export function useSheetPan({element:el,onDetent,onClose,geometry,handle,dismiss
     let scroll: HTMLElement | null = null;
     let wheelY=0;
     let wheelEnd: ReturnType<typeof setTimeout> | undefined;
-    const scroller=(target:Element|null)=>{for(let n=target;n;n=n.parentElement){if(n instanceof HTMLElement&&/auto|scroll/.test(getComputedStyle(n).overflowY))return n;if(n===el)break;}return null;};
+    // The box whose top decides the hand-off: the first one up from the
+    // finger that really scrolls vertically. `overflow-x:auto` computes
+    // `overflow-y` to auto as well, so a preview's code block, wide table
+    // or formula frame would answer here with a scrollTop forever 0 and
+    // the sheet would start to close mid-document (2026-10-21).
+    const scroller=(target:Element|null)=>{for(let n=target;n;n=n.parentElement){if(n instanceof HTMLElement&&n.scrollHeight>n.clientHeight&&/auto|scroll/.test(getComputedStyle(n).overflowY))return n;if(n===el)break;}return null;};
     const grip = () => {
       pulling = true;
       el.setAttribute("data-sheet-pulling", "");
@@ -194,9 +199,12 @@ export function useSheetPan({element:el,onDetent,onClose,geometry,handle,dismiss
       if(Math.abs(e.deltaX)>=Math.abs(e.deltaY))return;
       const target=e.target instanceof Element?e.target:null;
       if(sheetGestureReserved(target)||target?.closest('input,textarea'))return;
-      const list=scroller(target),{full}=heights();
-      const h=el.getBoundingClientRect().height;
-      if((e.deltaY<0&&(list?.scrollTop||0)>0)||(e.deltaY>0&&h>=full-1))return;
+      // Reading on down a full sheet is most of the wheel; it is answered
+      // before the walk up the ancestors' computed styles.
+      const {full}=heights(),h=el.getBoundingClientRect().height;
+      if(e.deltaY>0&&h>=full-1)return;
+      const list=scroller(target);
+      if(e.deltaY<0&&(list?.scrollTop||0)>0)return;
       if(from===null){scroll=list;wheelY=0;begin(0,0,e.timeStamp,true);}
       wheelY-=e.deltaY;drag(0,wheelY,e.timeStamp,()=>e.preventDefault());
       clearTimeout(wheelEnd);wheelEnd=setTimeout(()=>release(lastT+THROW_MS+1),180);
