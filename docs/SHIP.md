@@ -215,3 +215,15 @@ khor devices                                                   # 五台都在线
 - 集群：hinton 首次负载略高于脚本阈值，选在 glibc 2.31、负载符合要求的 lecun 编译安装。hinton（685786）／lecun（2424670）／turing（805417）实际监听进程 `/proc/<pid>/exe` 的 SHA-256 均为 `74129abb206e42549c4ae6630be2fe6ca4105911ffaa40312c42e7609fd570ce`，与安装文件一致，HTTP 收据相同。
 - iOS：先移开旧静态库以保证重编；新 `libapp.a` 与归档 App 的时间、收据和签名通过。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出上传于 `2026-10-20 15:07:48 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 已开始处理。临时签名配置按打包前基线恢复。
 - 收尾：日志、校验与最新归档记录在 `/Volumes/disk0/khor-ship-20261020-arc-explore/`。按包身份与 lsof 无引用核验后，清理两份 Khor Xcode 导出副本、旧静态库备份和本轮源码导出，共 820,829,011 字节；未确认归属的空暂存目录保留。系统盘约余 3.8 GiB、外挂盘约余 91 GiB；保留现有会话、最新静态库与正式归档，未清系统 swap 或全量 target。iPhone 的原生手势、键盘与网页叠层仍待安装后核验。
+
+## 发布记录：2026-10-21（目录刷新、终端拖放与状态环）
+
+- 构建提交：`6ea64e37`；目录树 `8ac23f07`、头像环 `8819e36e`、拖放 `4d870622` 均已合入 main。完整收据：`khor-ui-assets:/assets/index-DxN-ja4e.js`。
+- 目录树：修复本机变化监听不可用时永远沿用旧列表的问题。切回窗口、重新展开及慢周期刷新可见层级；折叠祖先下的隐藏层级不做兜底读取；较早的请求晚到不覆盖较新的结果。真实 ACL2027 的 `schemamem/docs/manuscripts/raw` 文件完整，未修改其文件或会话。
+- 拖放：按锁定 Wry 源码修正 AppKit／GTK 的逻辑坐标，Windows 保留物理坐标缩放；原生空 paths 的 Drop 可接回本次工作区 HTML 拖放的来源机器与路径。保留向其他 App 拖出文本路径；取消、离开、新拖、超时及重复渠道分别处理，保留终端共用一次来源解析。
+- 状态环：光环与头像 SVG 共用绘制原点和 viewport，仅扩展 circle 半径，避免 WebKit 单独栅格化分数尺寸造成偏心；颜色、粗细、透明间隙与呼吸不变。
+- 主干验证：生成、默认前端检查及 TypeScript、生产构建、gates（74 scripts / 67 entries）通过。`tree-freshness` 五项实际 App 回归通过；正式前端与私有节点中实际鼠标从侧栏拖入终端仅发一次 `term_drop`，Finder 事件接缝与框外拒绝通过。`avatar-ring` 的 102 个头像几何检查和 51 个原生 WKWebView 像素样本通过，覆盖 18／22／32／72，最大中心误差小于 0.007 px。真正的 Finder／跨 App 拖动、Windows／Linux HiDPI、iPhone 触控仍须对应设备验收，未把事件模拟称为这些原生操作。
+- Mac：release 构建、两枚二进制签名与收据通过；CLI 原子替换。旧 GUI 主进程 58588 退出，新进程 87748 启动并监听 5467，最终仅一枚主窗口。10 个既有辅助进程、10 个会话全部保留，没有新增失败；原生日志和 HTTP 收据一致。未认证 HTTP 返回 403 也携带收据，校验读取该响应头。
+- 集群：hinton 编译安装，lecun／turing 的 keeper 自动换新。实际 5467 监听 PID 为 hinton 2232200、lecun 2606733、turing 67544；三台 `/proc/<pid>/exe` 的 SHA-256 均为 `9028710b41703d979834de15ed79e50120109f031aa4c461951f426af784b613`，exe 内及 HTTP 收据一致，10 个既有会话保留、无新增失败、三台直连。编译前移开远端旧缓存产物，防止脚本管道失败误取旧文件；没有反复安装或手工重启另外两台。
+- iOS：移开旧静态库强制重编，新 `libapp.a`、归档 App 的时间、完整收据和签名通过。Tauri 遇到已记录的 `exportArchive Copy failed`，系统 PATH 导出上传于 `2026-10-21 02:50:29 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 正在处理。两处源工程签名文件已按构建前基线恢复。
+- 日志、签名、会话快照及收据：`/Volumes/disk0/khor-ship-20261021-workspace-terminal/`。清理三条已合并且无进程引用的 worktree；按包身份和无引用核验，清理两份 Khor Xcode 导出暂存、旧静态库备份和本轮集群源码导出，共 821,207,636 字节。保留当前静态库、正式归档与测试证据；系统盘约余 21 GiB、外挂盘约余 96 GiB，未清系统 swap 或全量 target。
