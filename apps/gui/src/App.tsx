@@ -51,7 +51,6 @@ import {
   IconBrowser,
   IconChevronRight,
   IconClose,
-  IconPaneSize,
   IconDevices,
   IconFiles,
   IconGear,
@@ -173,7 +172,7 @@ import { WINDOW_DRAG } from "@/components/shell";
 import { useKeptScroll } from "@/hooks/use-kept-scroll";
 import { useEdgeSwipe } from "@/hooks/use-edge-swipe";
 import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
-import { SessionScreen, VerbSeat } from "@/components/SessionBar";
+import { SessionScreen } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionPage } from "@/views/NewSessionPage";
@@ -1763,8 +1762,6 @@ export default function App() {
   // box by its screen, and a replaced node must re-aim the measurement
   // (`useStripWidth` says what the band looked like when it did not).
   const [detailBox, setDetailBox] = useState<HTMLDivElement | null>(null);
-  /** Where the open session puts its verbs on the wide face (`VerbSeat`). */
-  const [verbSeat, setVerbSeat] = useState<HTMLElement | null>(null);
   const days = useDayStrips(useStripWidth(detailBox, sessions));
   /** One session's day as the pane holds it (`DayStrip` `Day`): `null`
       until the first answer, then its runs. */
@@ -1918,6 +1915,7 @@ export default function App() {
               // tabs sheet close).
               menu: [
                 ...(sessionCwdOnScreen(r) ? hereActs(r.home, sessionCwdOnScreen(r)!) : []),
+                ...(!narrow ? [{key:"reconnect",label:dropping?gui.term_drop_stop:gui.term_reload,run:()=>{sessionTabs.focus(id);tabAct(id)?.run();}}] : []),
                 { key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) },
               ],
               session: { word: r.word, kind: r.kind, category: r.category },
@@ -2945,7 +2943,7 @@ export default function App() {
     sideShown && selectedRow ? (
       <SessionSide
         embedded
-        maximized={content.maximized === selectedRow.id}
+        maximized={false}
         key={selectedRow.id}
         session={selectedRow.id}
         width={sideFit ?? sideKept}
@@ -4222,7 +4220,6 @@ export default function App() {
                   axis was this pane's; it is the column's now
                   (`SessionSide` `boxRef`). */}
               {sessions && openTabs.length > 0 ? (
-                <VerbSeat.Provider value={verbSeat}>
                 <Tabs
                   grouped
                   bodyClass="flex min-h-0 flex-col"
@@ -4248,24 +4245,17 @@ export default function App() {
                   onReorder={sessionTabs.reorder}
                   stripData={{ "data-session-tabs": "", "aria-label": gui.session_tabs }}
                   caption={stale ? gui.backend_unreachable : !side.open ? content.error : undefined}
-                  tail={<>
-                    {side.open&&selectedRow&&<span data-session-content-actions className="flex flex-none items-center gap-in">
-                      <GlassCircle data-content-maximize aria-label={content.maximized===selectedRow.id?gui.content_restore:gui.content_expand} onClick={()=>content.setMaximized(content.maximized===selectedRow.id?null:selectedRow.id)}><IconPaneSize expanded={content.maximized===selectedRow.id}/></GlassCircle>
-                      <GlassCircle data-content-hide aria-label={gui.side_hide} onClick={()=>{content.setMaximized(null);setSessionSide(selectedRow.id,{open:false});}}><IconClose/></GlassCircle>
-                    </span>}
-                    <span ref={setVerbSeat} data-session-verbs className="flex flex-none items-center gap-in empty:hidden" />
-                  </>}
+
                 >
                   <div ref={sideRow} data-session-panes className={cn("flex min-h-0 min-w-0 flex-1 flex-row", sideHold !== null && "overflow-hidden")}>
                     <div ref={sideMain} data-side-held={sideHold !== null ? "" : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col" style={
-                      sideShown && content.maximized === selected ? { display: "none" } : sideHold !== null ? { flex: "none", width: sideHold } : sessionSide && sideBasis !== null ? { flex: `1 1 ${sideBasis}px`, minWidth: "min(var(--session-main-min), 50%)" } : undefined
+                      sideHold !== null ? { flex: "none", width: sideHold } : sessionSide && sideBasis !== null ? { flex: `1 1 ${sideBasis}px`, minWidth: "min(var(--session-main-min), 50%)" } : undefined
                     }>
                       <Fault name="detail" reset={seamAt}>{detail}</Fault>
                     </div>
                     {sessionSide && <Fault name="side" reset={seamAt}>{sessionSide}</Fault>}
                   </div>
                 </Tabs>
-                </VerbSeat.Provider>
               ) : (
                 <div ref={sideMain} className="flex min-h-0 min-w-0 flex-1 flex-col">
                   <Region

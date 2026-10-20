@@ -88,6 +88,7 @@ export function SideWorkspace({
   onSearchEnter,
   makeRequest,
   treeHead,
+  hideFind = false,
 }: {
   /** A content-tab host may own file navigation and the search field's scope. */
   onOpenContent?: (path: string, line: number | null) => void;
@@ -96,6 +97,7 @@ export function SideWorkspace({
   onQuery?: (query: string) => void;
   onSearchEnter?: () => void;
   makeRequest?: { kind: "file" | "dir"; at: number };
+  hideFind?: boolean;
   treeHead?: (openHistory: () => void, repo: boolean) => ReactNode;
   /** **Where the seat was left** (UX-47), read once at mount: the file
       open over the tree. Absent, the seat starts at the tree (or at
@@ -268,7 +270,7 @@ export function SideWorkspace({
           it was scrolled. */}
       <div className={file !== null || commit !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
         {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={backLabel} />}
-        <SideFind onEnter={onSearchEnter} leading={findLeading} label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />
+        {!hideFind && <SideFind onEnter={onSearchEnter} leading={findLeading} label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />}
         {hunt.trim() !== "" ? (
           <Hits
             found={found}

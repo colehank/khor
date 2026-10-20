@@ -603,3 +603,9 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 本轮真机清单：iPhone 根会话与文件／网页药丸、起点靠近两侧、不同标题长度与系统字号、键盘起落、连续纠正与回中暂停、单项／多项／循环、减少动态效果、原生网页叠层与系统取消。浏览器合成输入不替代原生触控与触感验收。
 
 本轮通过：`npm test --ignore-scripts`、`npm run build --ignore-scripts`、`npm run gates`、Lab 参数回归与 `git diff --check`。Chrome 独立窗口中，正式组件使用共享生产模型，根会话与文件／网页各完成响应、松手、边界和探索 8 组操作检查；390×844 检查调参任务底栏和完成按钮不越界。模型覆盖正式 200/1200 默认值，浏览器覆盖真实监听链，仍未进行 iPhone 原生验收、安装或发布。证据：`/Volumes/disk0/khor-deck-pause-proof/production-ui-results.json` 与同目录日志。图谱基于 main，不覆盖本 worktree 的新函数内容；代码评审另按实际 diff 和行为回归完成。
+
+### 会话内容位置甲板（2026-10-20）
+
+`npm run content-toolbar` 使用真实 App、独立节点与私有文件验证：单次触摸轻点进入目录／网页编辑、长按走正式浅 U 组件、手指离开药丸仍持续选择、松手不误编辑、目录搜索保持档位、搜索／新建组合玻璃、机器选择、文件编辑器与页面句柄保留、网页历史和关闭、两来源的新标签及桌面右键重新连接。补充 `npm run session-content` 的持久标签、查询、重载、排序、关闭格、置顶与关闭最后一项；`npm run content-ui` 保留附件、遗失出口、IME、候选、草稿跨宽窄屏、安全区、总览与连续选择回归。
+
+本轮验证：真实 Chrome 触屏事件验证轻点、长按、移出后释放及横滑预选／最终提交；桌面使用独立鼠标上下文。`content-toolbar`、`session-content`、`content-ui`、`content-model`、`field-interaction`、`file-deck`、默认前端测试和门索引通过，前端生产构建通过。截图与私有测试数据保存在 `/Volumes/disk0/khor-toolbar-check/`、`/Volumes/disk0/khor-session-toolbar-regression/`、`/Volumes/disk0/khor-content-toolbar-ui/ui/`。测试结束后关闭私有会话、浏览器、桥接与 Vite，并删除测试复制的二进制；不操作真实会话。原生 iOS 键盘激活和 WKWebView 仍待真机核对。

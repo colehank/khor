@@ -48,6 +48,8 @@ export function PathField({
   onSubmit,
   keepHome = true,
   files = false,
+  placement = "below",
+  onKeyDown,
   ...rest
 }: Omit<ComponentProps<"input">, "value" | "onChange" | "onKeyDown"> & {
   /** Where the directory is; `""` is this machine, the API's spelling. */
@@ -64,6 +66,9 @@ export function PathField({
   /** Offer files too, not only directories — the conversation's 「a file
       on this machine」 (round CHAT). A file completes without a `/`. */
   files?: boolean;
+  /** Bottom-deck completion opens above the field, inside the sheet. */
+  placement?: "above" | "below";
+  onKeyDown?: ComponentProps<"input">["onKeyDown"];
 }) {
   const seat = useRef<HTMLDivElement>(null);
   const [menuRoom, setMenuRoom] = useState<{key: string; height: number}>();
@@ -189,6 +194,11 @@ export function PathField({
     if (!open || !root) { setMenuRoom(undefined); return; }
     const dialog = root.closest<HTMLElement>('[data-slot="dialog-content"]');
     const body = root.closest<HTMLElement>('[data-slot="dialog-body"]') ?? dialog;
+    const panel=root.closest<HTMLElement>('[data-content-panel]');
+    if (placement === "above" && panel) {
+      const sync=()=>{const viewport=window.visualViewport;const top=Math.max(panel.getBoundingClientRect().top,viewport?.offsetTop??0);setMenuRoom({key:menuKey,height:Math.max(0,root.getBoundingClientRect().top-top)});};
+      sync();const resize=new ResizeObserver(sync);resize.observe(panel);window.visualViewport?.addEventListener("resize",sync);return()=>{resize.disconnect();window.visualViewport?.removeEventListener("resize",sync);};
+    }
     if (!body || !dialog) return;
     // A menu inside a scrolling form must fit *its visible body*, not
     // merely the screen. Otherwise the body's clip cuts off the menu's
@@ -219,7 +229,7 @@ export function PathField({
       window.removeEventListener('resize', sync);
       window.visualViewport?.removeEventListener('resize', sync);
     };
-  }, [open, menuKey]);
+  }, [open, menuKey, placement]);
 
   const take = (name: string) => {
     if (!fresh) return;
@@ -243,10 +253,11 @@ export function PathField({
         placeholder={gui.dir_path_hint}
         value={value}
         onChange={(e) => {edits.current.typed=true;onValueChange(e.target.value)}}
-        onFocus={() => { blurPending.current = false; setFocused(true); }}
+        onFocus={(e) => { blurPending.current = false; setFocused(true); rest.onFocus?.(e); }}
         onBlur={() => { if (pointer.current) blurPending.current = true; else setFocused(false); }}
         onKeyDown={(e) => {
           if (imeKey(e)) return;
+          onKeyDown?.(e);if(e.defaultPrevented)return;
           if (open && names.length > 0 && e.key === "ArrowDown") {
             e.preventDefault();
             setAt((n) => (n + 1) % names.length);
@@ -296,7 +307,7 @@ export function PathField({
               at,
             }}
             onPick={take}
-            className="absolute top-full z-20 mt-1 w-full rounded-lg shadow-(--shadow-float) [[data-narrow]_&]:static"
+            className={placement === "above" ? "absolute bottom-full z-20 mb-in w-full rounded-lg shadow-(--shadow-float)" : "absolute top-full z-20 mt-1 w-full rounded-lg shadow-(--shadow-float) [[data-narrow]_&]:static"}
           />
         </div>
       )}

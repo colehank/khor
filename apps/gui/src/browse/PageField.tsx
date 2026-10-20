@@ -40,7 +40,7 @@
  * `fixed`: the machine is the page's and not a choice (a machine's own
  * page, its 浏览 in place) — the face is shown, not offered.
  */
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { fetchRecents, pageStep, type DeviceRow, type RecentRow } from "@/api";
@@ -126,6 +126,7 @@ export function PageField({
   onMachine,
   fixed = false,
   steps = true,
+  suggestAddresses = true,
   autoFocus = false,
   onLeave,
   inPill = false,
@@ -154,6 +155,8 @@ export function PageField({
   /** Draw ← → ↻ beside the field — not on the phone's deck, whose pill
       carries them (round UX-3). */
   steps?: boolean;
+  /** Session browsing already has a recent-visits list in its body. */
+  suggestAddresses?: boolean;
   /** Put the caret in the field at once: the deck opened it to be typed
       in (round UX-3), or a blank tab (UX-45 §2). */
   autoFocus?: boolean;
@@ -227,7 +230,7 @@ export function PageField({
   // The machines' recent addresses, read again each time the field is
   // taken: the list is a glance, one read per visit.
   useEffect(() => {
-    if (!editing) return;
+    if (!editing || !suggestAddresses) return;
     let live = true;
     fetchRecents("page", 60).then(
       (r) => live && setRecents(r),
@@ -236,7 +239,7 @@ export function PageField({
     return () => {
       live = false;
     };
-  }, [editing]);
+  }, [editing,suggestAddresses]);
   useEffect(() => {
     if (autoFocus) {
       const frame = requestAnimationFrame(() => { input.current?.focus(); if (open) input.current?.select(); });
@@ -250,7 +253,7 @@ export function PageField({
   const query = (pickingMachine ? (token === null ? text : "") : open && text === at ? "" : text).trim();
   const machineRows = offered.filter((d) => d.shown.toLowerCase().includes(token === null ? query.toLowerCase() : ""));
   const addressRows = (() => {
-    if (!editing || pickingMachine || !token) return [];
+    if (!suggestAddresses || !editing || pickingMachine || !token) return [];
     const seen = new Set<string>();
     return recents
       .filter((r) => r.device === token.id && !seen.has(r.place) && seen.add(r.place) && bareOf(r.place).toLowerCase().includes(query.toLowerCase()))
@@ -369,9 +372,20 @@ export function PageField({
     }
   })();
 
+  const [menuRoom,setMenuRoom]=useState<number>();
+  useLayoutEffect(()=>{
+    const el=field.current,panel=listSeat?.closest<HTMLElement>('[data-content-panel]');
+    if(!el||!listSeat||!rows||!panel){setMenuRoom(undefined);return;}
+    const sync=()=>{const grab=panel.querySelector('[data-place-grab]');const top=Math.max(grab?.getBoundingClientRect().bottom??panel.getBoundingClientRect().top,window.visualViewport?.offsetTop??0);setMenuRoom(Math.max(0,el.getBoundingClientRect().top-top));};
+    sync();const resize=new ResizeObserver(sync);resize.observe(panel);
+    window.visualViewport?.addEventListener('resize',sync);
+    return()=>{resize.disconnect();window.visualViewport?.removeEventListener('resize',sync);};
+  },[listSeat,!!rows]);
+
   const list = rows && (
     <OmniMenu
       menuRef={menu}
+      style={menuRoom===undefined?undefined:{maxHeight:menuRoom}}
       rows={rows}
       onPick={press}
       className={listSeat ? "mx-row" : "absolute inset-x-0 top-full z-20 mt-2"}

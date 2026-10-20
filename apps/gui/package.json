@@ -71,7 +71,8 @@
     "deck-scrub": "node scripts/check-deck-scrub.mjs",
     "scroll-surfaces": "node scripts/check-scroll-surfaces.mjs",
     "file-deck": "node scripts/check-file-deck.mjs",
-    "field-interaction": "node scripts/check-field-interaction.mjs"
+    "field-interaction": "node scripts/check-field-interaction.mjs",
+    "content-toolbar": "node scripts/check-content-toolbar.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

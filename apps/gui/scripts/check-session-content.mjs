@@ -65,6 +65,7 @@ try{ checks:{
   const child=id=>page.locator(`[data-content-tab="${id}"]`);
   const picker=()=>page.locator('[data-content-picker]:visible');
   const shown=()=>page.locator('[data-session-content][data-content-visible=true]');
+  const searchPicker=async()=>{if(!await picker().getByRole('searchbox').count())await picker().locator('[data-content-directory-search]').click();return picker().getByRole('searchbox');};
   const table=()=>api('tabs_list',{kind:'content'});
   const peers=async session=>(await table()).tabs.filter(t=>t.session===session);
   const add=()=>childrenOf(sessions[0]).locator('[data-tab-new]');
@@ -84,20 +85,20 @@ try{ checks:{
   await add().click();await add().click();await until(async()=>(await peers(sessions[0])).length===3);
   const blanks=await peers(sessions[0]);assert.equal(new Set(blanks.map(t=>t.id)).size,3);
   const activeBlank=blanks[2].id;
-  assert.equal(await childrenOf(sessions[0]).locator('[data-tab-avatar]').count(),0,'starting tabs invent a type avatar');
+  assert.equal(await childrenOf(sessions[0]).locator('[data-side-mark=new-tab]').count(),3,'starting tabs need plus avatars');
   await picker().getByText('notes.md',{exact:true}).click();await shown().locator('.cm-content').waitFor();
   await until(async()=>(await peers(sessions[0])).find(t=>t.id===activeBlank)?.view==='file');
   assert.equal((await peers(sessions[0])).length,3,'opening a file appended another tab');
   const firstHandle=await shown().getAttribute('data-content-handle');
   // A different content tab must have an independent starting page and search.
-  await child(blanks[0].id).getByRole('tab').click();await picker().getByRole('searchbox').fill('notes');
-  await child(blanks[1].id).getByRole('tab').click();assert.equal(await picker().getByRole('searchbox').inputValue(),'');
-  await picker().getByRole('searchbox').fill('guide');
-  await child(blanks[0].id).getByRole('tab').click();assert.equal(await picker().getByRole('searchbox').inputValue(),'notes');
+  await child(blanks[0].id).getByRole('tab').click();await (await searchPicker()).fill('notes');
+  await child(blanks[1].id).getByRole('tab').click();assert.equal(await (await searchPicker()).inputValue(),'');
+  await (await searchPicker()).fill('guide');
+  await child(blanks[0].id).getByRole('tab').click();assert.equal(await (await searchPicker()).inputValue(),'notes');
   await page.reload();await head(sessions[0]).waitFor();await head(sessions[0]).click();await picker().waitFor();
-  assert.equal(await picker().getByRole('searchbox').inputValue(),'notes','reload lost per-tab search');
-  await child(blanks[1].id).getByRole('tab').click();assert.equal(await picker().getByRole('searchbox').inputValue(),'guide');
-  await picker().getByRole('searchbox').fill('');await picker().getByText('extra-03.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();
+  assert.equal(await (await searchPicker()).inputValue(),'notes','reload lost per-tab search');
+  await child(blanks[1].id).getByRole('tab').click();assert.equal(await (await searchPicker()).inputValue(),'guide');
+  await (await searchPicker()).fill('');await picker().getByText('extra-03.txt',{exact:true}).click();await shown().locator('.cm-content').waitFor();
   const secondId=blanks[1].id;
   // Shared tab geometry: whole-pill hover, centred close, and shared mouse reorder.
   const centre=await childrenOf(sessions[0]).locator('[data-tab-close]').evaluateAll(els=>els.map(e=>{const r=e.getBoundingClientRect(),p=e.parentElement.getBoundingClientRect();return Math.abs(r.top+r.height/2-p.top-p.height/2);}));
@@ -107,22 +108,23 @@ try{ checks:{
   await until(async()=>(await peers(sessions[0]))[0].id===activeBlank);
   assert.equal(await child(secondId).getByRole('tab').getAttribute('aria-selected'),'true','reorder changed the active document');
   await child(activeBlank).getByRole('tab').click();assert.equal(await shown().getAttribute('data-content-handle'),firstHandle);
-  // Returning to this tab's picker and pointing it at a website keeps its identity.
-  await shown().locator('[data-file-back]').click();await picker().waitFor();
+  // Browsing from an opened file preserves that file and opens a separate website tab.
+  await shown().locator('[data-file-more]').click();await page.locator('[data-file-more-item=content-browse]').click();await picker().waitFor();
   await picker().locator('[data-content-scope]:visible').click();await page.locator('[data-content-source=browser]').click();
-  const address=()=>picker().locator('[data-content-browser-field] input');
+  const address=()=>picker().locator('[data-page-address]');
   await address().focus();await address().fill('http://localhost:'+port);await address().press('Enter');
   await shown().locator('[data-content-page-bar]').waitFor();
-  await until(async()=>(await peers(sessions[0])).find(t=>t.id===activeBlank)?.view==='page');
-  assert.equal((await peers(sessions[0])).length,3);assert.equal(await shown().getAttribute('data-content-handle'),firstHandle);
+  await until(async()=>(await peers(sessions[0])).some(t=>t.view==='page'));
+  assert.equal((await peers(sessions[0])).length,4);assert.equal((await peers(sessions[0])).find(t=>t.id===activeBlank)?.view,'file');
+  const pageHandle=await shown().getAttribute('data-content-handle');assert.notEqual(pageHandle,firstHandle);
   await page.screenshot({path:join(scratch,'desktop.png')});
   // Native view and borrow lifetime is checked above; the HTTP renderer is not
   // evidence for a UIKit WebView. Here test model/navigation/host boundaries.
   await head(sessions[0]).click();await until(async()=>await shown().count()===0);
   await head(sessions[0]).click();await shown().locator('[data-content-page-bar]').waitFor();
-  assert.equal(await shown().getAttribute('data-content-handle'),firstHandle,'collapse replaced the page handle');
+  assert.equal(await shown().getAttribute('data-content-handle'),pageHandle,'collapse replaced the page handle');
   // Closing a pinned starting tab is refused, and unpin restores the shared ×.
-  await add().click();await picker().waitFor();await until(async()=>(await peers(sessions[0])).length===4);
+  await add().click();await picker().waitFor();await until(async()=>(await peers(sessions[0])).length===5);
   const pin=(await peers(sessions[0])).at(-1);await api('tabs_pin',{kind:'content',id:pin.id,on:true});
   await until(async()=>await child(pin.id).locator('[data-tab-close]').count()===0);
   await api('tabs_pin',{kind:'content',id:pin.id,on:false});await child(pin.id).locator('[data-tab-close]').waitFor();
@@ -130,9 +132,9 @@ try{ checks:{
   await page.setViewportSize({width:390,height:800});await picker().waitFor();
   await page.locator('[data-content-overview-button]:visible').click();
   const overview=()=>page.locator('[data-content-overview]:not(.session-content-retained)');
-  await overview().waitFor();assert.equal(await overview().locator('[data-content-overview-tab]').count(),4);
+  await overview().waitFor();assert.equal(await overview().locator('[data-content-overview-tab]').count(),5);
   await overview().locator('[data-tab-sheet-new]').click();await picker().waitFor();
-  await until(async()=>(await peers(sessions[0])).length===5);
+  await until(async()=>(await peers(sessions[0])).length===6);
   await page.locator('[data-content-overview-button]:visible').click();await overview().waitFor();
   await overview().locator('[data-content-overview-search]').click();await overview().getByRole('searchbox').fill('extra-03');
   assert.equal(await overview().locator('[data-content-overview-tab]').count(),1);

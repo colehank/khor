@@ -730,14 +730,14 @@ export function FilePage({
           </button>
         ) : (
           <div className="pointer-events-auto flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row">
-            <GlassCircle
+            {(!contentDeck || rev !== null) && <GlassCircle
               aria-label={rev === null ? gui.back : gui.file_rev_back}
               data-file-back
               tip={!coarse && (rev === null ? gui.back : gui.file_rev_back)}
               onClick={rev === null ? onBack : () => { setRev(null); setFace(DEFAULT_FILE_FACE); }}
             >
               <IconBack />
-            </GlassCircle>
+            </GlassCircle>}
             {/* **The pill: 头像 · 名称 · 对齐位** (UX-33): the band of the
                 workspace's open files (one at rest, a drag pulls one
                 neighbour in), or the name alone where the page stands

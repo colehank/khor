@@ -52,7 +52,7 @@ try{
     if(d.error)return false;
     if(name==='attachment-icons')return d.heading!==word('files-add')&&d.icons.length===2&&d.icons.every(x=>x.svg.width===16&&x.svg.height===16);
     if(name==='attachment-return')return d.sources>0;
-    if(name==='workspace-focus')return d.placeholder===word('tree-search')&&d.width>=180&&d.leading>=12&&d.identity===0&&d.source===0&&d.tabs===0&&d.end===1;
+    if(name==='workspace-focus')return d.placeholder===word('tree-search')&&d.width>=180&&d.identity===0&&d.source===0;
     if(name==='workspace-back')return d.query==='notes';
     if(name==='history-delete')return d.status===200&&d.remains===0;
     if(name==='browser-menu')return d.items.length>=2&&d.menu.bottom<=d.viewport&&d.items.every(x=>x.hit);
@@ -120,15 +120,13 @@ try{
     }
   };
   const resting=async locator=>{
-    await until(()=>locator.evaluate(el=>[...el.querySelectorAll('[data-band-seg]')].every(s=>!s.style.transform&&!s.style.display&&!s.style.maxWidth)));
+    await until(()=>locator.getAttribute('data-band-phase').then(phase=>phase==='idle'));
     assert.equal(await locator.locator('[data-band-seg="cur"]').count(),1);
   };
   await pickerBand().waitFor();
   await step('workspace-heading-source',async()=>{
-    const head=picker().locator('.mobile-content-location');await head.waitFor();
-    assert.equal(await head.locator('[data-side-face]').count(),1,'workspace header does not use its machine avatar');
-    assert.equal((await head.locator('strong').textContent()).trim(),'project-alpha');
-    assert(!(await head.innerText()).includes(device.name),'workspace header repeats its machine name');
+    assert.equal(await picker().locator('.mobile-content-location').count(),0,'duplicate workspace header remains');
+    assert.equal(await picker().locator('[data-band-seg=cur] [data-side-mark=new-tab]').count(),1);
     assert.equal(await picker().locator('.mobile-content-picker-head').count(),0,'fixed source segment returned');
     await picker().locator('[data-content-scope]:visible').click();
     const menu=page.getByRole('menu');await menu.waitFor();
@@ -145,7 +143,7 @@ try{
     await shot('workspace-heading-source');
   });
   await step('workspace-focus',async()=>{
-    const field=await editPicker();assert.equal(await field.getAttribute('placeholder'),word('tree-search'));
+    await picker().locator('[data-content-directory-search]').click();const field=picker().getByRole('searchbox');assert.equal(await field.getAttribute('placeholder'),word('tree-search'));
     note('workspace-focus',await field.evaluate(input=>{const pill=input.closest('.mobile-content-pill'),deck=input.closest('[data-content-deck]'),b=input.getBoundingClientRect(),p=pill.getBoundingClientRect();return {placeholder:input.placeholder,width:b.width,leading:b.x-p.x,identity:pill.querySelectorAll('.content-owner-identity').length,source:pill.querySelectorAll('[data-content-scope]').length,tabs:deck.querySelectorAll('[data-content-overview-button]').length,end:deck.querySelectorAll('[data-content-edit-end]').length};}));
     await field.fill('中文');
     await field.evaluate(el=>el.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'zhongwen'})));
@@ -162,22 +160,24 @@ try{
     await field.fill('notes');await shot('workspace-editing');
     await picker().getByText('notes.md',{exact:true}).click();await shown().locator('.cm-content').waitFor();
     assert.equal(await shown().getAttribute('data-content-preview'),null,'file still requires keeping');
-    await shown().locator('[data-file-back]').click();
-    note('workspace-back',{query:await pickerBand().locator('[data-band-seg="cur"]').innerText()});
+    await shown().locator('[data-file-more]').click();await page.locator('[data-file-more-item=content-browse]').click();
+    note('workspace-back',{query:await picker().getByRole('searchbox').inputValue()});
+    await picker().getByRole('button',{name:word('back'),exact:true}).click();
   });
   await step('source-pill-swipe',async()=>{
     await endPicker();
     const initial=await pickerBand().locator('[data-band-seg="cur"]').innerText();
     await drag(pickerBand(),-.65,{cancel:true});await resting(pickerBand());
     assert.equal(await pickerBand().locator('[data-band-seg="cur"]').innerText(),initial,'cancel switched the source');
-    await drag(pickerBand(),-.65);
-    await picker().locator('.mobile-content-browser:not([hidden])').waitFor();await resting(pickerBand());
+    // One tab springs back. Sources change via the shared source menu;
+    // the pill now navigates the session's actual tab collection.
+    await drag(pickerBand(),-.65);await resting(pickerBand());await chooseSource('browser');
     assert.equal(await picker().locator('input:visible').count(),0,'source swipe opened the keyboard');
     await chooseSource('workspace');await chooseSource('browser');
     await shot('browser-source-resting');
   });
   await step('orphan-exit',async()=>{
-    await picker().locator('[data-place="https://orphan.example/a"]').click();
+    await picker().locator(`[data-place="https://orphan.example/a"][data-place-device="${orphan.device}"]`).click();
     await page.locator('[data-omni-item^="m:"]').first().waitFor();
     await page.setViewportSize({width:1100,height:844});await picker().locator('[data-desktop-picker]').waitFor();await picker().locator('[data-page-field][data-state=editing]').waitFor();
     await page.setViewportSize({width:390,height:844});await picker().locator('[data-page-address]').waitFor();
@@ -186,17 +186,17 @@ try{
     await page.locator(`[data-omni-item="m:${device.id}"]`).click();
     await shown().locator('[data-content-page-more]').waitFor();
     assert.equal(await visibleTitle().textContent(),'orphan.example/a');
-    await shown().locator('[data-content-page-more]').click();await page.getByRole('menuitem',{name:word('content-find'),exact:true}).click();
-    await picker().locator('[data-place="https://orphan.example/a"]').click();
+    await shown().locator('[data-content-overview-button]').click();await page.locator('[data-tab-sheet-new]').click();await chooseSource('browser');
+    await picker().locator(`[data-place="https://orphan.example/a"][data-place-device="${orphan.device}"]`).click();
     await picker().locator('[data-page-address]').fill('http://localhost:'+port+'/revised');
     await picker().locator('[data-page-machine-face]').tap();
     await page.locator(`[data-omni-item="m:${device.id}"]`).click();
     await shown().locator('[data-content-page-more]').waitFor();
     assert.equal(await visibleTitle().textContent(),'localhost:'+port+'/revised','exit choice opened obsolete historical address');
-    await shown().locator('[data-content-page-more]').click();await page.getByRole('menuitem',{name:word('content-find'),exact:true}).click();
+    await shown().locator('[data-content-overview-button]').click();await page.locator('[data-tab-sheet-new]').click();await chooseSource('browser');
   });
   await step('history-delete',async()=>{
-    await picker().locator('[data-place="https://orphan.example/a"]').click();await shot('orphan-recents');
+    await picker().locator(`[data-place="https://orphan.example/a"][data-place-device="${orphan.device}"]`).click();await shot('orphan-recents');
     for(const place of ['https://known.example/','https://orphan.example/a']){
       const id=place===orphan.place?orphan.device:device.id;
       const button=page.locator(`[data-forget-device="${id}"][data-forget-place="${place}"]:visible`);
@@ -214,7 +214,7 @@ try{
   });
   await step('browser-picker-geometry',async()=>{
     let input=await editPicker();await input.fill('http://localhost:'+port+'/audit');await endPicker();
-    note('browser-picker-geometry',await picker().evaluate(el=>{const r=e=>{const b=e.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height,centerY:b.y+b.height/2,font:getComputedStyle(e).fontSize};};return {prompt:r(el.querySelector('.mobile-content-browser:not([hidden]) .content-picker-prompt')),source:r(el.querySelector('.mobile-content-browser:not([hidden]) [data-content-scope]')),bodyFont:getComputedStyle(el.querySelector('.mobile-content-browser:not([hidden]) .mobile-content-pill')).fontSize,focused:el.contains(document.activeElement)&&document.activeElement.tagName==='INPUT'};}));await shot('browser-picker-address');
+    note('browser-picker-geometry',await picker().evaluate(el=>{const r=e=>{const b=e.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height,centerY:b.y+b.height/2,font:getComputedStyle(e).fontSize};};return {prompt:r(el.querySelector('.content-new-title')),source:r(el.querySelector('[data-content-scope]')),bodyFont:getComputedStyle(el.querySelector('.mobile-content-pill')).fontSize,focused:el.contains(document.activeElement)&&document.activeElement.tagName==='INPUT'};}));await shot('browser-picker-address');
     input=await editPicker();await input.press('Enter');await shown().locator('[data-content-page-more]').waitFor();
     note('browser-document-layout',await shown().evaluate(el=>{const identity=el.querySelector('.mobile-page-identity .content-owner-identity');return {twoLine:!!identity&&getComputedStyle(identity).display==='grid',title:el.querySelector('[data-band-seg="cur"] .content-owner-title')?.textContent,titleWidth:el.querySelector('[data-band-seg="cur"] .content-owner-title')?.getBoundingClientRect().width};}));await shot('browser-document');
     assert.equal(await shown().getAttribute('data-content-preview'),null,'webpage still requires keeping');
@@ -234,7 +234,7 @@ try{
     await page.setViewportSize({width:390,height:844});await shown().locator('.mobile-content-page-editor').waitFor();
     await shown().locator('[data-page-address]').press('Escape');
     assert.equal(await visibleTitle().textContent(),'localhost:'+port+'/redirected','leaving editing did not restore the latest page');
-    await shown().locator('[data-content-page-more]').click();await page.getByRole('menuitem',{name:word('content-find'),exact:true}).click();
+    await shown().locator('[data-content-overview-button]').click();await page.locator('[data-tab-sheet-new]').click();await chooseSource('browser');
   });
   await step('safe-area-keyboard',async()=>{
     await page.setViewportSize({width:390,height:500});await page.evaluate(()=>document.documentElement.style.setProperty('--safe-top','59px'));
@@ -245,7 +245,7 @@ try{
   await step('responsive',async()=>{
     for(const width of [320,390,430]){
       await page.setViewportSize({width,height:844});await editPicker();
-      note('responsive',await picker().evaluate((el,width)=>{const b=el.querySelector('.mobile-content-browser:not([hidden]) [data-page-address]').getBoundingClientRect();return {width,inputWidth:b.width,overflow:document.documentElement.scrollWidth>innerWidth};},width));await shot('browser-width-'+width);await endPicker();
+      note('responsive',await picker().evaluate((el,width)=>{const b=el.querySelector('[data-page-address]').getBoundingClientRect();return {width,inputWidth:b.width,overflow:document.documentElement.scrollWidth>innerWidth};},width));await shot('browser-width-'+width);await endPicker();
     }
   });
   await step('content-pill-navigation',async()=>{
