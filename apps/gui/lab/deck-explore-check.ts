@@ -20,9 +20,10 @@ export async function checkExplore(){
   check(title.font===getComputedStyle(b.querySelector('[data-deck-title]')??b).fontSize,'中央名称使用 body');
   check(title.weight==='400','中央名称使用常规字重');
   p('pointercancel');await wait(30);
-  p('pointerdown');await wait(430);p('pointermove',-80);await wait(620);
-  p('pointermove',-68);await wait(80);check(b.dataset.bandDirection==='-1','左侧回滑即可向右');
-  p('pointermove',-80);await wait(80);check(b.dataset.bandDirection==='1','同侧可以再次反向');
+  p('pointerdown');await wait(430);p('pointermove',-r.width*.3);await wait(1640);
+  const candidate=b.dataset.bandPreview;p('pointermove',-r.width*.3+14);await wait(250);
+  check(b.dataset.bandDirection==='0'&&b.dataset.bandPreview!==candidate,'同侧反向回上一项并停止自动');
+  await wait(1640);check(b.dataset.bandDirection==='-1','停留后沿最新滑动方向自动');
   check(count()===before,'探索期间未切换内容');
   p('pointerup');await wait(165);
   check(!!document.querySelector('[data-deck-selector]')&&count()===before,'停靠后淡出期间尚未确认');

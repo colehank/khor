@@ -592,3 +592,14 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 2026-10-20 浅 U 探索：`npm run deck-scrub` 增加同侧连续反向、当前位置连续性、反向低速与抖动检查；旧模型在「reverse while the finger remains left of touch-down」断言先红。长按回中停止的断言改为显式 pause，普通横滑的回中死区保留。`lab/deck-scrub.html` 直接使用正式 DeckBand / DeckExplore，响应、几何、手势和探索按钮验证覆盖区域、固定标题排版、反向、淡出期间取消、实际药丸恢复和后台取消。独立启动可用 `vite --config lab/deck-scrub.vite.ts`，避免扫描无关的历史 Lab。
 
 本轮通过：确定时钟手势模型、px／tokens／gates、TypeScript、生产前端构建，以及 CUA 在正式组件页面点击的响应／几何／手势／探索断言。会话和内部文件探索均覆盖标题排版、同侧反向、退出阶段取消和后台中断；390×844 无横向溢出，探索层止于药丸上沿。Chrome 鼠标指针使用桌面字号；触屏字号来自原有 pointer:coarse 规则，未用桌面截图声称完成原生 iPhone 验收。未运行整套默认检查、原生构建、安装或发布；UIKit／WKWebView 触控、原生网页遮挡和系统字号列入真机清单。图谱未覆盖新 worktree 的函数变化，评审另按实际 diff 与新组件源码检查。证据位于 `/Volumes/disk0/khor-pill-arc-explore-proof/production-*`。
+
+
+### 停留自动与反向纠正（2026-10-20）
+
+`npm run deck-scrub` 直接验证正式 `deck-scrub.ts` 的 200 ms 停靠触发延迟、完整停靠后 1200 ms 自动启动等待、初始触点持续暂停、渐进反向采样与多次纠正、抖动容差、反向慢速、循环、松手锁定与取消。保留旧普通横滑的节奏、调速、短轻扫和生命周期回归。旧实现先在新的停留行为断言失败，普通 40% 松手的候选回跳也已先红。
+
+`lab/deck-scrub-pause-model.ts` 仅给正式模型注入按接触取快照的参数，不再维护第二份行为代码。`node lab/check-deck-pause.mjs` 另覆盖旧 600/120 试验值、自定义时间／灵敏度、接触中改值延后生效、非法值与快慢顺序。只在 Lab 的独立浏览器键保存设置；正式 App 不读取 Lab 设置。页面验收按钮用正式默认值的内存覆盖，结束后恢复用户参数，不改已保存值。
+
+本轮真机清单：iPhone 根会话与文件／网页药丸、起点靠近两侧、不同标题长度与系统字号、键盘起落、连续纠正与回中暂停、单项／多项／循环、减少动态效果、原生网页叠层与系统取消。浏览器合成输入不替代原生触控与触感验收。
+
+本轮通过：`npm test --ignore-scripts`、`npm run build --ignore-scripts`、`npm run gates`、Lab 参数回归与 `git diff --check`。Chrome 独立窗口中，正式组件使用共享生产模型，根会话与文件／网页各完成响应、松手、边界和探索 8 组操作检查；390×844 检查调参任务底栏和完成按钮不越界。模型覆盖正式 200/1200 默认值，浏览器覆盖真实监听链，仍未进行 iPhone 原生验收、安装或发布。证据：`/Volumes/disk0/khor-deck-pause-proof/production-ui-results.json` 与同目录日志。图谱基于 main，不覆盖本 worktree 的新函数内容；代码评审另按实际 diff 和行为回归完成。

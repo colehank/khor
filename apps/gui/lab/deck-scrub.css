@@ -10,3 +10,13 @@
 .deck-proof-content input{width:100%;border-bottom:var(--hair) solid var(--border);font-size:var(--text-callout)}
 .mobile-content-pill>svg{width:var(--ctl-glyph);height:var(--ctl-glyph);flex:none}
 @media(max-width:760px){.deck-proof{padding:0;flex-direction:column;gap:var(--gap-pane)}.deck-proof-phone{order:-1;width:100%;height:100dvh;min-height:calc(10 * var(--touch));border:0;border-radius:0}.deck-proof aside{padding:var(--gap-pane)}}
+.deck-tuning-fields{display:grid;gap:var(--gap-base);margin-block:var(--gap-base)}
+.deck-tuning-field{display:grid;gap:var(--gap-xxs);font-family:var(--font-sans);font-size:var(--text-body);line-height:var(--text-body--line-height)}
+.deck-tuning-label{display:grid;grid-template-columns:minmax(0,1fr) calc(2 * var(--touch)) var(--touch);align-items:center;gap:var(--gap-in)}
+.deck-tuning-label input{height:var(--ctl-md);min-height:var(--ctl-md);min-width:0;border:var(--hair) solid var(--border);border-radius:var(--radius-sm);padding-inline:var(--gap-in);text-align:right;font-variant-numeric:tabular-nums;background:transparent}
+.deck-tuning-label span,.deck-tuning-field p{font-size:var(--text-caption);color:var(--muted-foreground)}
+.deck-tuning-field input[type=range]{width:100%;min-height:var(--ctl-md);accent-color:var(--brand-strong);touch-action:pan-y}
+.deck-tuning-more>summary{padding-block:var(--gap-row);font-size:var(--text-body)}
+@media(min-width:761px){.deck-proof aside{max-height:calc(100dvh - 2 * var(--gap-pane));overflow-y:auto;overscroll-behavior:contain}}
+
+@media(pointer:coarse){.deck-tuning-label input,.deck-tuning-field input[type=range]{min-height:var(--touch)}}
