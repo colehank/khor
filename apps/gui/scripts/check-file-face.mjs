@@ -85,6 +85,10 @@ window.showFile('/notes.md');`);
     });
     await page.route('**/__file_face_gate?**',route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme="dark"><body><div id="root" class="flex h-screen flex-col"></div><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module" src="/scripts/.file-face-gate-${process.pid}.tsx"></script></body></html>`}));
     await page.goto(`http://localhost:${port}/__file_face_gate?bridge=${port}`);
+    // The formula section's math chunk, asked for once up front: a cold
+    // Vite finds rehype-katex only when a preview asks, then reloads the
+    // page under whatever step is running (seen mid-section, 2026-10-21).
+    if(width===1200){await page.evaluate(()=>import('/src/lib/md/math.ts')).catch(()=>{});await pause(1500);await page.waitForLoadState('load');await page.locator('[data-file-page]').waitFor();}
     // The last press's menu may still be closing, its items still in the
     // page: counted or pressed then, they detach under the press (red on
     // 686fb853, where 预览 moved into 「…」). Every opening waits for it.
