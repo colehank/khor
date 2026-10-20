@@ -3129,11 +3129,11 @@ export function TerminalPane({
   // drag, on the box below.)
   useLayoutEffect(
     () =>
-      onWindowDrop(({ paths, x, y }) => {
+      onWindowDrop(({ paths, from, x, y }) => {
         if (!activeRef.current) return;
         const box = boxRef.current?.getBoundingClientRect();
         if (!box || x < box.left || x > box.right || y < box.top || y > box.bottom) return;
-        dropRef.current(paths, null);
+        dropRef.current(paths, from ?? null);
       }),
     [id],
   );

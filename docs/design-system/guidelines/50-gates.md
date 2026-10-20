@@ -36,8 +36,11 @@
 | `npm run session-content` | 正式 App + 独立节点/PTY：内容原地转换、自动保存、预览保持、会话隔离、CLI 同步与持久化、放大/恢复、拥挤时头像与两个 ＋、桌面临时浏览与无空记录、来源按钮与菜单尺寸对齐、无图标浏览标签、共享返回与草稿、手机单甲板与 PTY 位置保留、首次／最近文档恢复、逐级返回、两层标签入口和末尾新建行、临时查看与原地保留、目录滚动、真实触控取消与会话隔离；需先构建 CLI 与 bridge，可用 `CARGO_TARGET_DIR`、`CONTENT_CHECK_DIR` 指定外置盘 |
 | `npm run session-cwd` | cd、活动 pane、地点筛选/搜索、工作区归属、旧附栏恢复、默认跟随与主动固定目录 |
 | `npm run terminal-colors` | 统一终端外观解析：浅深 ANSI、自动／固定／DIY、保护默认与关闭迁移、跨窗口、重载、CSS 表面同步、预览隔离和标准扩展色表；DIM 完整目标、按格子取色的光标、渲染器回退、缓冲与调色板隔离 |
+| `npm run terminal-drop` | 正式拖放监听：Mac/GTK 逻辑坐标与 Windows 缩放、原生空路径接回内部源机器、dragend/IPC 顺序、取消/离开/新拖清理、DOM/原生去重、保留终端共享分发。真实 Finder 与跨 app 拖动另做原生验收 |
 | `npm run appearance` | 真实终端与设置的预设、DIY、JSON、跨窗口同步；缓冲/滚动/PTY 不重建；背景只合成一次；能力与输入边界 |
 | `npm run scroll-target` | 真 xterm 的内层 mouse 能力、分页累计/反向/停歇、触摸与滚轮不重复输入；连续输出期间每次手势只刷新一次 tmux |
+
+`terminal-drop` 以锁定 Wry 0.55.1 / Tauri runtime 2.11.4 的实际事件形状驱动正式监听；它不等于操作系统拖动验收。另用私有节点的正式 App 前端实际鼠标从 session 工作区拖文件到终端、检查一次 `term_drop`；Finder 的原生路径、跨 app 拖出和 Windows/Linux 真实缩放仍需原生验收。内部来源只属于当前拖放：原生 `Enter` 已确认后，`dragend` 保留 500 ms 的 IPC 尾期，只有原生 `Drop` 能提交；取消、离开、新拖或超时均清理。若整段原生 `Enter` 都晚于 `dragend` 才到，则安全忽略，不能猜一个旧来源去粘贴。
 
 可选实际 Codex 验收：`python3 apps/gui/scripts/check-codex-paging.py`。
 依赖本机 Codex 与 tmux，用临时 home、虚构历史和不可达模型端点；不发送输入，
