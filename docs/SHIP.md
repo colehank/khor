@@ -205,3 +205,13 @@ khor devices                                                   # 五台都在线
 - 集群：hinton 编译安装，三台自动换新。hinton（3763498）／lecun（2196379）／turing（3365642）的实际 5467 监听进程 `/proc/<pid>/exe` SHA-256 均为 `b493550f598936df05feb1d1bd70c0b24e7389a733a74cfc22f5b3b2ac7e9efb`，与安装文件一致，HTTP 收据相同，CLI 确认三台直连。
 - iOS：先移开旧静态库强制重编，新 `libapp.a` 与归档 App 的时间及完整收据通过。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出上传于 `2026-10-19 21:58:35 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 已开始处理。临时两处签名团队配置按构建前基线恢复。
 - 日志与收据：`/Volumes/disk0/khor-ship-20261019-history-content/`；分支交互证据分别保留在 `khor-file-preview-proof`、`khor-suggestion-proof`、`khor-history-proof`。按 bundle ID 和 lsof 无引用核验后清理两份 Khor Xcode 导出副本、旧静态库备份及本轮集群源码导出，共 820,795,073 字节；两份未确认身份的临时目录保留。保留最新正式归档、静态库及现有会话，未清系统 swap 或全量 target。系统盘约余 4.3 GiB，外挂盘约余 91 GiB。
+
+
+## 发布记录：2026-10-20（浅 U 探索与即时转向）
+
+- 合并／构建提交：`5244e07b`，`feat/pill-arc-explore` 已快进合入 main。UI 收据：`khor-ui-assets:/assets/index-8xmO67xe.js`。根会话、文件与网页共用浅 U 长按探索：压暗内容、不加玻璃底板或额外待选圈，保留真实头像状态环；中央名称使用 body 常规字重、固定两行空间，邻项 callout。回滑以最近折返点反向，无需跨过按下点；保留调速、停留连续翻选、首尾循环和松手确认。
+- 验证：主干生成、27 项非浏览器默认检查及 TypeScript、生产构建通过；模型同侧反向先红后绿，分支 px／tokens／gates 通过。正式 DeckBand 的 CUA 响应／几何／手势／探索检查及 390×844 覆盖边界已验，覆盖标题稳定、内部文件、退出阶段取消和后台取消。默认 select／scroll-target 自动浏览器流程未运行；未将 Chrome 合成触摸称为原生 iPhone 验收。
+- Mac：release CLI／GUI 签名与完整收据通过；旧主窗口 PID 92848 退出，新 PID 58588，实际 5467 监听 PID 一致。9 个会话辅助进程全部保留，会话记录 11 → 11，失败 0 → 0；原生日志与 HTTP 收据一致。
+- 集群：hinton 首次负载略高于脚本阈值，选在 glibc 2.31、负载符合要求的 lecun 编译安装。hinton（685786）／lecun（2424670）／turing（805417）实际监听进程 `/proc/<pid>/exe` 的 SHA-256 均为 `74129abb206e42549c4ae6630be2fe6ca4105911ffaa40312c42e7609fd570ce`，与安装文件一致，HTTP 收据相同。
+- iOS：先移开旧静态库以保证重编；新 `libapp.a` 与归档 App 的时间、收据和签名通过。Tauri 遇到已记录的 `exportArchive Copy failed`；系统 PATH 导出上传于 `2026-10-20 15:07:48 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 已开始处理。临时签名配置按打包前基线恢复。
+- 收尾：日志、校验与最新归档记录在 `/Volumes/disk0/khor-ship-20261020-arc-explore/`。按包身份与 lsof 无引用核验后，清理两份 Khor Xcode 导出副本、旧静态库备份和本轮源码导出，共 820,829,011 字节；未确认归属的空暂存目录保留。系统盘约余 3.8 GiB、外挂盘约余 91 GiB；保留现有会话、最新静态库与正式归档，未清系统 swap 或全量 target。iPhone 的原生手势、键盘与网页叠层仍待安装后核验。
