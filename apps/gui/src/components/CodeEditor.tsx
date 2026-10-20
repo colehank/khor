@@ -54,6 +54,7 @@ import { keyboardCaret, observeScroller } from "@/lib/code/keyboard";
 import { languageOfName, loadLanguage } from "@/lib/code/lang";
 import { hasSymbols, symbolsOfView } from "@/lib/code/symbols";
 import { codeHighlight, codeTheme } from "@/lib/code/theme";
+import { wrapsAt } from "@/lib/code/wrap";
 import { BLINK_MS } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 
@@ -217,7 +218,8 @@ export function CodeEditor({
       phone is reading it first. */
   editable: boolean;
   /** Long lines fold into the width (「文件显示,要随屏幕宽度自动换行」, the
-      user 2026-09-15). */
+      user 2026-09-15) — unless the text has a line past `WRAP_LINE_MAX`
+      when it is loaded (`lib/code/wrap`). */
   wrap?: boolean;
   /** The change gutter's hunks, against this text; empty for none. */
   hunks?: GitHunk[];
@@ -246,6 +248,9 @@ export function CodeEditor({
   const lang = useRef(new Compartment());
   const edit = useRef(new Compartment());
   const wrapping = useRef(new Compartment());
+  /** The loaded text's own verdict (`wrapsAt`), kept between loads. */
+  const fits = useRef(wrapsAt(text));
+  const wrapped = () => (wrap && fits.current ? EditorView.lineWrapping : []);
   const merge = useRef(new Compartment());
   const indent = useRef(new Compartment());
 
@@ -261,7 +266,7 @@ export function CodeEditor({
           lang.current.of([]),
           indent.current.of(indenting(text, path)),
           edit.current.of(writable(editable)),
-          wrapping.current.of(wrap ? EditorView.lineWrapping : []),
+          wrapping.current.of(wrapped()),
           merge.current.of(merging(against)),
           EditorView.contentAttributes.of({ "data-file-text": "", "data-sheet-scroll": "" }),
           keyboardCaret(),
@@ -345,7 +350,9 @@ export function CodeEditor({
   }, [editable]);
 
   useLayoutEffect(() => {
-    view.current?.dispatch({ effects: wrapping.current.reconfigure(wrap ? EditorView.lineWrapping : []) });
+    view.current?.dispatch({ effects: wrapping.current.reconfigure(wrapped()) });
+    // `wrapped` reads the ref; only the prop is a change here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wrap]);
 
   useLayoutEffect(() => {
@@ -370,9 +377,12 @@ export function CodeEditor({
     while (a < now.length && a < text.length && now.charCodeAt(a) === text.charCodeAt(a)) a += 1;
     let b = 0;
     while (b < now.length - a && b < text.length - a && now.charCodeAt(now.length - 1 - b) === text.charCodeAt(text.length - 1 - b)) b += 1;
+    // A text that is not the one typed is a load: the wrap is decided
+    // again (`lib/code/wrap`).
+    fits.current = wrapsAt(text);
     v.dispatch({
       changes: { from: a, to: now.length - b, insert: text.slice(a, text.length - b) },
-      effects: indent.current.reconfigure(indenting(text, path)),
+      effects: [indent.current.reconfigure(indenting(text, path)), wrapping.current.reconfigure(wrapped())],
       annotations: [fromHost.of(true), Transaction.addToHistory.of(false)],
     });
     // The path is read where it is now, not as a dependency: a new path

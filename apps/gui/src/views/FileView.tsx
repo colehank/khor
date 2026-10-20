@@ -202,14 +202,28 @@ function Away({
   );
 }
 
-/** Opening a file never opts into its optional rendered face. Shared by
-    full pages, workspace tabs and the read-only attachment viewer. */
-export const DEFAULT_FILE_FACE = "source" as const;
+/** The face a file opens on. **Source, except a notebook** (the owner,
+    2026-10-20). Opening a file never opts into its rendered face
+    (2026-10-13): a Markdown, an HTML page or a table is a text a person
+    opens to work on, and the preview is one press away. A notebook is
+    the one file read far more than it is edited by hand — its JSON is
+    the kernel's record, not prose — and its source is where the editor
+    is slow: a saved plot is one base64 line (`lib/code/wrap`). So it
+    opens as its preview, and source is one press away instead.
+
+    **Asked per file, never carried**: every entry that opens a file —
+    the file page, a workspace tab, a git revision, the attachment
+    viewer, the bare view — asks this again for each new path, so a
+    notebook's preview does not follow into the Markdown opened next,
+    and source chosen on one notebook does not outlive it. */
+export function defaultFaceOf(path: string): "source" | "preview" {
+  return rendererOf(path) === "ipynb" ? "preview" : "source";
+}
 
 export function FileView({
   machine,
   path,
-  face = DEFAULT_FILE_FACE,
+  face,
   onSaved,
   draft,
   onDraft,
@@ -245,9 +259,9 @@ export function FileView({
    * component up, and a face this view kept to itself would be a state
    * the button could not reach.
    *
-   * **Still 源码 on every file and still not remembered** (「打开先是
-   * 源码」, 工作区批⑤) — the pane resets it when the front tab changes,
-   * which is the same rule spelled one level higher. */
+   * **Not remembered** (「打开先是源码」, 工作区批⑤) — the pane resets it
+   * to `defaultFaceOf` when the front tab changes, which is the same rule
+   * spelled one level higher. Left out, it is that default. */
   face?: "source" | "preview";
   /** A save landed. The workspace's marks and branch are stale the
       moment one does, and this view is not the one holding them. */
@@ -1029,7 +1043,7 @@ export function FileView({
           lives inside the editor. Switching back finds the text
           exactly as it was — and typing into a preview is not possible,
           because there is nothing there to focus. */}
-      {face === "preview" && renders !== null ? (
+      {(face ?? defaultFaceOf(path)) === "preview" && renders !== null ? (
         <div
           data-file-preview={renders}
           {...groundAttr(ground.ground)}

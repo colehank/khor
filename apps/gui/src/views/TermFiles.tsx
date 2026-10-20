@@ -32,7 +32,8 @@ export function machinesFor(devices: DeviceRow[], machine: string | null): Devic
   return [...hosting.filter(ours), ...hosting.filter((d) => !ours(d))];
 }
 type Place = { machine: DeviceRow; path: string; listing: DirListing | null; error?: string };
-type Look = { entry: Attachment; machine: DeviceRow; face: "source" | "preview" };
+/** `face` left out: the file's own default (`defaultFaceOf`). */
+type Look = { entry: Attachment; machine: DeviceRow; face?: "source" | "preview" };
 export function TermFiles({ road }: { road: FilesRoad }) {
   const picker = useRef<HTMLInputElement>(null), folders = useRef<HTMLInputElement>(null);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
@@ -144,7 +145,7 @@ export function TermFiles({ road }: { road: FilesRoad }) {
         {entries.map((row) => {
           const entry = pathAttachment(joinAttachmentPath(at.listing!.path, row.name), at.machine.me ? null : at.machine.name, at.machine.shown, row.dir, row.dir ? null : row.size);
           const own = selected(entry), inherited = included(entry);
-          const view = (face: "source" | "preview" = "source") => setLook({ entry, machine: at.machine, face });
+          const view = (face?: "source" | "preview") => setLook({ entry, machine: at.machine, face });
           return <RowMenu key={entry.key} items={[
             ...(entry.dir ? [] : [{ key: "preview", label: gui.file_face_preview, run: () => view("preview") }]),
             ...(!inherited && !road.busy ? [{ key: "select", label: own ? gui.files_deselect : gui.files_select, run: () => toggle(entry) }] : []),

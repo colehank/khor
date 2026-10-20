@@ -13,6 +13,7 @@ import { useWindowNarrow } from "@/hooks/use-narrow";
 import { basename } from "@/words";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/Markdown";
+import { Notebook } from "@/components/Notebook.lazy";
 import { Waiting } from "@/components/RegionState";
 import { Dialog, TaskOverlay, DialogTitle, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
@@ -20,7 +21,7 @@ import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { DiffView } from "@/views/DiffView";
 import { CodeEditor } from "@/components/CodeEditor.lazy";
-import { DEFAULT_FILE_FACE, rendererOf } from "@/views/FileView";
+import { defaultFaceOf, rendererOf } from "@/views/FileView";
 import { ago } from "@/words";
 
 /** A commit as a person names it. */
@@ -188,16 +189,24 @@ function CommitRow({ c, onPress }: { c: GitCommit; onPress: () => void }) {
   );
 }
 
+/** Whether a past version has a rendered face: Markdown and notebooks
+    (`RevisionView`). A page or a table read from git's text alone would
+    be drawn without what sits beside it on disk. */
+export const revisionRenders = (path: string): boolean => {
+  const r = rendererOf(path);
+  return r === "md" || r === "ipynb";
+};
+
 /** The revision where the file was: read-only, rendered the way the file
-    renders (Markdown, or its lines), or compared with the file as it is
-    now. */
+    renders (Markdown, a notebook, or its lines), or compared with the
+    file as it is now. */
 export function RevisionView({
   machine,
   path,
   rev,
   compare,
   narrow,
-  face = DEFAULT_FILE_FACE,
+  face,
 }: {
   machine: string;
   path: string;
@@ -233,12 +242,19 @@ export function RevisionView({
   }
   if (shown === null) return <Waiting since={since} />;
   if (compare) return <DiffView machine={machine} path={path} narrow={narrow} against={against} />;
-  const md = rendererOf(path) === "md";
+  const renders = rendererOf(path);
+  const preview = (face ?? defaultFaceOf(path)) === "preview";
   return (
     <div data-file-rev={rev.id} className="flex min-h-0 flex-1 flex-col">
-      {md && face === "preview" ? (
+      {renders === "md" && preview ? (
         <div data-file-preview="md" {...groundAttr(ground)} className="min-h-0 flex-1 overflow-auto">
           <Markdown text={shown.text} className="prose-khor px-6 py-4" machine={machine} path={path} />
+        </div>
+      ) : renders === "ipynb" && preview && !shown.cut ? (
+        // A notebook's past version reads as the notebook does now: its
+        // preview by default (`defaultFaceOf`).
+        <div data-file-preview="ipynb" {...groundAttr(ground)} className="min-h-0 flex-1 overflow-auto">
+          <Notebook text={shown.text} machine={machine} path={path} />
         </div>
       ) : (
         // The revision in the file's own editor, read-only: numbers,

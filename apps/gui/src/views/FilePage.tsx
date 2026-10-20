@@ -65,10 +65,10 @@ import { treeChanged } from "@/lib/tree-changed";
 import { useRoad } from "@/lib/save-road";
 import { cn } from "@/lib/utils";
 import { bytesOf, revealHere, shares } from "@/views/chat-files";
-import { HistorySheet, RevisionView, shortId } from "@/views/FileHistory";
+import { HistorySheet, revisionRenders, RevisionView, shortId } from "@/views/FileHistory";
 import { SymbolsSheet } from "@/views/FileSymbols";
 import { useRemoveFlow } from "@/views/fileRow";
-import { DEFAULT_FILE_FACE, FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
+import { defaultFaceOf, FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
 
 // ── where the reader is ───────────────────────────────────────────
 
@@ -513,9 +513,10 @@ export function FilePage({
   const previewable = rendererOf(path) !== null;
   /** **No edit mode** (UX-14, the owner 2026-10-05: 「像备忘录」): a text
       file is editable as soon as it is open — a tap puts the caret where
-      the finger is, a drag scrolls. Every file opens as source (2026-10-13);
-      the more menu explicitly opts into preview and keeps the place. */
-  const [face, setFace] = useState<"source" | "preview">(DEFAULT_FILE_FACE);
+      the finger is, a drag scrolls. Every file opens as source (2026-10-13)
+      but a notebook, which opens as its preview (`defaultFaceOf`); the more
+      menu turns between the two and keeps the place. */
+  const [face, setFace] = useState<"source" | "preview">(() => defaultFaceOf(path));
   const verbs = useFileVerbs({
     machine,
     path,
@@ -527,7 +528,7 @@ export function FilePage({
     onRevision: (c) => {
       setRev(c);
       setCompare(false);
-      setFace(DEFAULT_FILE_FACE);
+      setFace(defaultFaceOf(path));
     },
     // 字号 and 预览背景 only while the file is read rendered (UX-14).
     previewing: previewable ? face === "preview" : false,
@@ -541,7 +542,7 @@ export function FilePage({
   const [reads, setReads] = useState(0);
 
   useEffect(() => {
-    setFace(DEFAULT_FILE_FACE);
+    setFace(defaultFaceOf(path));
     setRev(null);
     restore.current = null;
   }, [machine, path]);
@@ -652,15 +653,15 @@ export function FilePage({
       // deck floats over the document, so it wears the ground it is read
       // on, or it would be the app's ink on a ground that is not the
       // app's.
-      {...(face === "preview" && (rev === null || (!compare && rendererOf(path) === "md"))) ? groundAttr(verbs.ground) : {}}
+      {...(face === "preview" && (rev === null || (!compare && revisionRenders(path)))) ? groundAttr(verbs.ground) : {}}
       className="relative flex min-h-0 flex-1 flex-col bg-card"
       style={fileSizeStyle(verbs.size.step)}
     >
       {embedded && (
         <div data-file-embedded-tools className="flex h-pane-head flex-none items-center gap-in border-b px-row">
-          {rev !== null && <Button size="icon" variant="ghost" data-file-back aria-label={gui.file_rev_back} onClick={() => { setRev(null); setCompare(false); setFace(DEFAULT_FILE_FACE); }}><IconBack /></Button>}
+          {rev !== null && <Button size="icon" variant="ghost" data-file-back aria-label={gui.file_rev_back} onClick={() => { setRev(null); setCompare(false); setFace(defaultFaceOf(path)); }}><IconBack /></Button>}
           <button type="button" onClick={onBack} title={directoryOf(path)} className="flex min-w-0 flex-1 items-center gap-in text-caption text-muted-foreground"><IconFiles className="size-4 flex-none" /><span className="truncate">{embeddedContext ?? directoryOf(path)}</span></button>
-          {rev !== null && !compare && rendererOf(path) === "md" && <Button size="sm" variant="ghost" aria-label={gui.file_face_preview} aria-pressed={face === "preview"} data-file-face-toggle={face} onClick={turn}><IconEye /></Button>}
+          {rev !== null && !compare && revisionRenders(path) && <Button size="sm" variant="ghost" aria-label={gui.file_face_preview} aria-pressed={face === "preview"} data-file-face-toggle={face} onClick={turn}><IconEye /></Button>}
           {rev !== null ? <Button size="icon" variant="ghost" data-file-rev-compare aria-label={compare ? gui.file_rev_alone : gui.file_rev_compare} aria-pressed={compare} onClick={() => setCompare(!compare)}><IconBranch /></Button> : <Button size="icon" variant="ghost" aria-label={dirty ? gui.watch_save : gui.file_reread} onClick={dirty ? save : () => setReads((n) => n + 1)}>{dirty ? <IconCheck /> : <IconReload />}</Button>}
           {verbs.moreCircle}
         </div>
@@ -734,7 +735,7 @@ export function FilePage({
               aria-label={rev === null ? gui.back : gui.file_rev_back}
               data-file-back
               tip={!coarse && (rev === null ? gui.back : gui.file_rev_back)}
-              onClick={rev === null ? onBack : () => { setRev(null); setFace(DEFAULT_FILE_FACE); }}
+              onClick={rev === null ? onBack : () => { setRev(null); setFace(defaultFaceOf(path)); }}
             >
               <IconBack />
             </GlassCircle>}
@@ -786,7 +787,7 @@ export function FilePage({
                 </GlassItem>
               )}
             </div>
-            {rev !== null && !compare && rendererOf(path) === "md" && (
+            {rev !== null && !compare && revisionRenders(path) && (
               <GlassCircle
                 aria-label={gui.file_face_preview}
                 aria-pressed={face === "preview"}

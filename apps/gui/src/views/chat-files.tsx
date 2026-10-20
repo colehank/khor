@@ -44,7 +44,7 @@ import { useNarrow } from "@/hooks/use-narrow";
 import { baseName, shownName } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
-import { FileView, kindOf } from "@/views/FileView";
+import { defaultFaceOf, FileView, kindOf } from "@/views/FileView";
 import { useShowFile } from "@/views/linkHome";
 
 /** One file going along with the line being written. */
@@ -367,7 +367,7 @@ export function FilePreview({
   here,
   onClose,
   footer,
-  initialFace = "source",
+  initialFace,
 }: {
   /** The API's spelling of the conversation's machine. */
   machine: string;
@@ -379,10 +379,12 @@ export function FilePreview({
   path: string | null;
   onClose: () => void;
   footer?: ReactNode;
+  /** The face it opens on; left out, the file's own (`defaultFaceOf`). */
   initialFace?: "source" | "preview";
 }) {
-  const [face, setFace] = useState(initialFace);
-  useEffect(() => setFace(initialFace), [machine, path, initialFace]);
+  const opening = initialFace ?? (path === null ? "source" : defaultFaceOf(path));
+  const [face, setFace] = useState(opening);
+  useEffect(() => setFace(opening), [machine, path, opening]);
   const narrow = useNarrow();
   const show = useShowFile();
   const [finder, setFinder] = useState(false);

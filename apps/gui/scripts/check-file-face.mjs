@@ -12,13 +12,17 @@ const pause = ms => new Promise(r => setTimeout(r, ms));
 // Eighty lines: enough that a tap low on a phone's screen is a line the
 // keyboard will cover.
 const long = Array.from({length:80},(_,i)=>`line ${i+1}: some text on it`).join('\n')+'\n';
+// A notebook, and a file with one line past the wrap limit (`lib/code/
+// wrap`'s `WRAP_LINE_MAX`, 64 KB) beside an ordinary one.
+const notebook = JSON.stringify({nbformat:4,nbformat_minor:5,metadata:{language_info:{name:'python'}},cells:[{cell_type:'markdown',metadata:{},source:['# Notebook heading']},{cell_type:'code',execution_count:1,metadata:{},source:['1 + 1'],outputs:[{output_type:'execute_result',execution_count:1,metadata:{},data:{'text/plain':['2']}}]}]});
+const longLine = `{"image/png": "${'A'.repeat(70*1024)}"}\n`;
 const commits = ['a', 'b'].map((c, i) => ({id:c.repeat(40),author:'Fixture',when_ms:Date.now()-i*60000,subject:`Revision ${i+1}`,body:''}));
 let vite, browser;
 const errors = [];
 try {
   writeFileSync(entry, `import React from 'react'; import {createRoot} from 'react-dom/client'; import {flushSync} from 'react-dom';
 import {FilePage} from '../src/views/FilePage.tsx'; import {FileView} from '../src/views/FileView.tsx';
-import {TooltipProvider} from '../src/components/ui/tooltip.tsx'; import {NARROW_QUERY} from '../src/hooks/use-narrow.ts';
+import {TooltipProvider} from '../src/components/ui/tooltip.tsx'; import {FilePreview} from '../src/views/chat-files.tsx'; import {NARROW_QUERY} from '../src/hooks/use-narrow.ts';
 import {followVisualViewport} from '../src/lib/viewport.ts';
 import '../src/styles/tokens.css'; import '../src/styles/app.css';
 followVisualViewport();
@@ -26,6 +30,7 @@ const root=createRoot(document.getElementById('root')), no=()=>{};
 const posture=()=>document.documentElement.toggleAttribute('data-narrow',matchMedia(NARROW_QUERY).matches); posture(); addEventListener('resize',posture);
 window.showFile=(path,embedded=false)=>flushSync(()=>root.render(<TooltipProvider><FilePage embedded={embedded} machine='fixture' path={path} here={false} onBack={no} onGone={no} onMoved={no} history /></TooltipProvider>));
 window.showBare=(path)=>flushSync(()=>root.render(<TooltipProvider><FileView key={path} machine='fixture' path={path} git={false} reading /></TooltipProvider>));
+window.showLook=(path)=>flushSync(()=>root.render(<TooltipProvider><FilePreview machine='fixture' shown='' here={false} path={path} onClose={no} /></TooltipProvider>));
 window.showFile('/notes.md');`);
   vite = spawn('node_modules/.bin/vite', ['--port', String(port), '--strictPort'], {cwd:gui,stdio:['ignore','pipe','pipe']});
   let ready=false; vite.stdout.on('data',d=>{ready ||= String(d).includes(`:${port}`);});
@@ -47,10 +52,10 @@ window.showFile('/notes.md');`);
     await page.route(`http://127.0.0.1:${port}/**`,async route=>{
       const cmd=new URL(route.request().url()).pathname.slice(1), args=route.request().postDataJSON()??{};
       let result=null;
-      const text=args.path?.endsWith('.txt')?long:args.path?.endsWith('.csv')?'a,"b,c",d\n':args.path?.endsWith('.html')?'<h1>HTML file</h1>':'# Current file\n\nText\n';
+      const text=args.path?.endsWith('.ipynb')?notebook:args.path?.endsWith('wide.json')?longLine:args.path?.endsWith('.txt')?long:args.path?.endsWith('.csv')?'a,"b,c",d\n':args.path?.endsWith('.html')?'<h1>HTML file</h1>':'# Current file\n\nText\n';
       if(cmd==='read_text') result={text,total:text.length,at_ms:Date.now(),cut:false,binary:false,digest:'0'.repeat(64)};
       else if(cmd==='git_log') result={commits,more:false};
-      else if(cmd==='git_show') result={text:`# ${args.rev===commits[0].id?'First':'Second'} revision\n`,cut:false,diff:{hunks:[],more:false}};
+      else if(cmd==='git_show') result={text:args.path?.endsWith('.ipynb')?notebook:`# ${args.rev===commits[0].id?'First':'Second'} revision\n`,cut:false,diff:{hunks:[],more:false}};
       else if(cmd==='file_stat') result={total:text.length,at_ms:Date.now(),digest:'0'.repeat(64)};
       else if(cmd==='reveal_here') result=false;
       else if(cmd==='about') result={hosts:true,faces:[]};
@@ -58,8 +63,14 @@ window.showFile('/notes.md');`);
     });
     await page.route('**/__file_face_gate?**',route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme="dark"><body><div id="root" class="flex h-screen flex-col"></div><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module" src="/scripts/.file-face-gate-${process.pid}.tsx"></script></body></html>`}));
     await page.goto(`http://localhost:${port}/__file_face_gate?bridge=${port}`);
+    // The last press's menu may still be closing, its items still in the
+    // page: counted or pressed then, they detach under the press (red on
+    // 686fb853, where 预览 moved into 「…」). Every opening waits for it.
+    const settled=()=>page.locator('[data-file-more-menu]').waitFor({state:'detached'});
+    const more=async()=>{await settled(); await page.locator('[data-file-more]').click(); await page.locator('[data-file-more-menu]').waitFor();};
     const toggle=async()=>{
-      if(!await page.locator('[data-file-face-toggle]').count())await page.locator('[data-file-more]').click();
+      await settled();
+      if(!await page.locator('[data-file-face-toggle]').count())await more();
       await page.locator('[data-file-face-toggle]').click();
     };
     const source=async()=>{
@@ -78,7 +89,7 @@ window.showFile('/notes.md');`);
       await page.locator('[data-file-preview]').waitFor();
     }
     const revision=async index=>{
-      await page.locator('[data-file-more]').click();
+      await more();
       await page.locator('[data-file-more-item="history"]').click();
       await page.locator(`[data-file-history-row="${commits[index].id}"]`).click();
       await page.locator(`[data-file-rev="${commits[index].id}"]`).waitFor();
@@ -134,6 +145,46 @@ window.showFile('/notes.md');`);
       await page.locator('[data-file-back]').click();await source();
       assert.equal(await page.locator('[data-file-rev]').count(),0,'embedded history could not return to current file');
       console.log('file face · embedded: source, history comparison, back to current file, no second deck');
+    }
+    // **A notebook opens as its preview; everything else as source**
+    // (the owner, 2026-10-20). Per file, never carried from the file
+    // before: md → ipynb → md on one page, and source chosen on a
+    // notebook does not outlive it.
+    {
+      const face=()=>page.locator('[data-file-page]').getAttribute('data-file-face');
+      const nb=async()=>{await page.locator('[data-file-page][data-file-face="preview"] [data-file-preview="ipynb"] [data-nb-cell]').first().waitFor({timeout:8000});};
+      await page.evaluate(()=>window.showFile('/analysis.ipynb')); await nb();
+      await toggle(); await source();
+      await page.evaluate(()=>window.showFile('/notes.md')); await source();
+      await toggle(); await page.locator('[data-file-preview="md"] h1').waitFor();
+      await page.evaluate(()=>window.showFile('/again.ipynb')); await nb();
+      await page.evaluate(()=>window.showFile('/notes.md')); await source();
+      assert.equal(await face(),'source','md after a notebook did not open as source');
+      // A notebook's revision: the same rule.
+      await page.evaluate(()=>window.showFile('/analysis.ipynb')); await nb();
+      await more();
+      await page.locator('[data-file-more-item="history"]').click();
+      await page.locator(`[data-file-history-row="${commits[0].id}"]`).click();
+      await page.locator(`[data-file-rev="${commits[0].id}"] [data-file-preview="ipynb"] [data-nb-cell]`).first().waitFor({timeout:8000});
+      // The attachment viewer and the bare view.
+      await page.evaluate(()=>window.showLook('/attached.ipynb'));
+      await page.locator('[data-file-preview-body] [data-file-preview="ipynb"] [data-nb-cell]').first().waitFor({timeout:8000});
+      await page.evaluate(()=>window.showLook('/attached.md'));
+      await page.locator('[data-file-preview-body] [data-file-text]').waitFor();
+      assert.equal(await page.locator('[data-file-preview-body] [data-file-preview]').count(),0,'attachment md opened rendered after a notebook');
+      await page.evaluate(()=>window.showBare('/bare.ipynb'));
+      await page.locator('[data-file-preview="ipynb"] [data-nb-cell]').first().waitFor({timeout:8000});
+      console.log(`file face · ${width}px: notebooks open as preview (page, history, attachment, bare), md still source, not carried across files`);
+    }
+    // **A line past 64 KB turns wrapping off; an ordinary file keeps it**
+    // (the owner, 2026-10-20: a wrapped 1 MB line took 5.7 s to open).
+    {
+      const wraps=()=>page.evaluate(()=>document.querySelector('.cm-content')?.classList.contains('cm-lineWrapping'));
+      await page.evaluate(()=>window.showFile('/wide.json')); await source();
+      assert.equal(await wraps(),false,'a file with a 70 KB line still wraps');
+      await page.evaluate(()=>window.showFile('/notes.md')); await source();
+      assert.equal(await wraps(),true,'an ordinary file stopped wrapping');
+      console.log(`file face · ${width}px: a 70 KB line opens unwrapped, an ordinary file wrapped`);
     }
     await context.close(); console.log(`file face · ${width}px: source default, explicit preview, path change, historical version reset, read-only attachment`);
   }
