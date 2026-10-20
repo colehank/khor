@@ -1,4 +1,4 @@
-/** Preview is local to the pill. Only a completed release changes the open tab. */
+/** Preview stays local until release. Long-press steering follows each turning point. */
 export type DeckScrubState = {
   opened: number; preview: number; position: number;
   mode: 'idle' | 'pending' | 'swipe' | 'rail' | 'settling';
@@ -34,6 +34,8 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
   let frame = 0, down = false, origin = { x: 0, y: 0 }, width = 250, railWidth = RAIL_STEP, base = initial;
   let began = 0, holdAt = Infinity, lastX = 0, lastMove = 0, speed = 0, holdX = 0;
   let rateControl = false, dwellAt: number | null = null;
+  let railX = 0, railAnchor = 0, railExtreme = 0, railSign = 0;
+  const TURN_SLOP = 8; // Logical points; an interaction tuning value, not a platform standard.
   let travel: { from: number; target: number; at: number; duration: number } | null = null;
   let landing: { from: number; target: number; at: number } | null = null;
   const nearest = () => s.mode === 'swipe' && !rateControl && Math.abs(s.position - base) < 1
@@ -62,6 +64,7 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
     }
     if (!down) return;
     if (s.mode === 'pending' && now - began >= LONG_PRESS_MS) {
+      railX = railAnchor = railExtreme = lastX; railSign = 0;
       s.mode = 'rail'; s.source = 'rail'; publish();
     }
     if (travel) {
@@ -98,6 +101,50 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
         s.mode = 'swipe'; s.source = 'swipe';
       }
       const rail = s.mode === 'rail', scale = rail ? railWidth : width;
+      if (rail) {
+        const delta = x - railX, priorDirection = s.direction;
+        railX = x;
+        let turned = false;
+        if (!railSign) {
+          if (Math.abs(x - railAnchor) >= TURN_SLOP) {
+            railSign = Math.sign(x - railAnchor); railExtreme = x;
+          }
+        } else if ((x - railExtreme) * railSign > 0) {
+          railExtreme = x;
+        } else if ((railExtreme - x) * railSign >= TURN_SLOP) {
+          // The latest turning point becomes neutral. Never repay old travel.
+          railAnchor = railExtreme; railSign = -railSign; railExtreme = x; turned = true;
+        }
+        const direction = -railSign;
+        const timing = holdTiming(x - railAnchor, railWidth);
+        if (turned) {
+          // Keep the displayed fractional position and cancel the old beat.
+          travel = null; dwellAt = null;
+          holdAt = rateControl ? now : now + RAIL_HOLD_MS;
+        } else if (travel) {
+          const progress = Math.min(1, (now - travel.at) / travel.duration);
+          travel.at = now - progress * timing.travelMs; travel.duration = timing.travelMs;
+        }
+        s.travelMs = timing.travelMs; s.dwellMs = timing.dwellMs;
+        if (rateControl) {
+          if (!turned && direction !== priorDirection) {
+            travel = null; dwellAt = null; holdAt = direction ? now + RAIL_HOLD_MS : Infinity;
+          } else if (dwellAt !== null) holdAt = dwellAt + s.dwellMs;
+          s.holding = direction !== 0;
+        } else {
+          s.position = count > 1 ? s.position - delta / railWidth
+            : -Math.sign(dx) * .1 * (1 - 1 / (Math.abs(dx) * .55 / (width * .1) + 1));
+          if (Math.abs(x - holdX) >= railWidth * .04 || direction !== priorDirection) {
+            holdAt = now + RAIL_HOLD_MS; holdX = x;
+          }
+        }
+        if (Math.abs(x - lastX) > 1) {
+          speed = (x - lastX) / Math.max(1, now - lastMove); lastX = x; lastMove = now;
+        }
+        s.direction = direction;
+        if (!direction) holdAt = Infinity;
+        publish(); return;
+      }
       const holdDelay = rail ? RAIL_HOLD_MS : HOLD_MS;
       const threshold = scale * (s.direction ? .16 : .24);
       const direction = Math.abs(dx) >= threshold ? -Math.sign(dx) : 0;
@@ -131,6 +178,7 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
       publish();
     },
     pause() {
+      railAnchor = railExtreme = railX; railSign = 0;
       s.position = Math.round(s.position); rateControl = true; dwellAt = null;
       travel = null; holdAt = Infinity; s.direction = 0; s.holding = false; publish();
     },

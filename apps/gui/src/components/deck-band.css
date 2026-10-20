@@ -4,15 +4,22 @@
 [data-band-body]>[data-deck-title]:is(button){flex:1}
 .deck-band[data-band-phase=swipe] [data-band-body]{padding-inline-end:var(--glass-item-h)}
 .deck-band-count{position:absolute;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;width:var(--glass-item-h);font-size:var(--text-caption);line-height:1;color:var(--tertiary);font-variant-numeric:tabular-nums;pointer-events:none}
-.deck-selector{z-index:70;margin-bottom:var(--gap-base);border-radius:var(--radius-2xl);overflow:hidden;pointer-events:none;box-shadow:var(--glass-in),var(--float);background:color-mix(in srgb,var(--glass-menu) 58%,transparent);transform-origin:center bottom;animation:deck-selector-in var(--dur-180) var(--ease-out)}
-.deck-selector-window{height:calc(var(--list-face) + 2 * var(--gap-pane));position:relative;overflow:hidden;mask-image:linear-gradient(to right,transparent,#000 var(--gap-base),#000 calc(100% - var(--gap-base)),transparent)}
-.deck-selector-item{position:absolute;left:50%;top:var(--gap-base);height:calc(var(--list-face) + var(--gap-pane));margin-left:calc(-.5 * var(--selector-step));display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--gap-in);will-change:transform}
-.deck-selector-item>span:last-child{font-size:var(--text-callout);line-height:var(--gap-base);max-width:calc(100% - 2 * var(--gap-in));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted-foreground)}
-.deck-selector-item[aria-selected=true]>span:last-child{color:var(--foreground);font-weight:var(--font-weight-title)}
-.deck-selector-focus{position:absolute;top:var(--gap-in);bottom:var(--gap-in);left:50%;width:calc(var(--selector-step) - var(--gap-in));transform:translateX(-50%);border:0;border-radius:var(--radius-xl);background:var(--glass-sel);box-shadow:var(--glass-sel-shadow)}
+/* Shallow U: dim content, preserve the keyboard and the existing deck. */
+.deck-selector{position:fixed;z-index:70;overflow:hidden;pointer-events:none;animation:deck-selector-in var(--dur-180) var(--ease-out)}
+.deck-selector-dimmer{position:absolute;inset:0;background:color-mix(in srgb,var(--mark-veil-dark) 78%,transparent)}
+.deck-selector-wheel{position:absolute;left:0;right:0;height:calc(4 * var(--touch));color:var(--mark-ink-light);animation:deck-selector-rise var(--dur-180) var(--ease-out)}
+.deck-selector-item{position:absolute;left:50%;top:0;width:calc(var(--touch) + var(--gap-group));margin-left:calc(-.5 * (var(--touch) + var(--gap-group)));height:calc(2 * var(--touch));display:flex;flex-direction:column;align-items:center;gap:var(--gap-base);will-change:transform;transform-origin:center var(--gap-pane)}
+.deck-selector-face{width:var(--glass-btn);height:var(--glass-btn);display:grid;place-items:center}
+.deck-selector-face>*{transform:scale(1.5)}
+.deck-selector-label{flex:none;width:calc(var(--touch) + var(--gap-group));font-size:var(--text-callout);font-weight:var(--text-callout--font-weight);line-height:var(--text-callout--line-height);color:var(--mark-ink-light);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Fixed typography: never morph text width, font size or line count. */
+.deck-selector-title-seat{position:absolute;top:calc(var(--glass-btn) + var(--gap-base));left:var(--gap-pane);right:var(--gap-pane);height:calc(var(--text-body--line-height) * 2);pointer-events:none}
+.deck-selector-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;width:100%;font-size:var(--text-body);font-weight:var(--text-body--font-weight);line-height:var(--text-body--line-height);overflow-wrap:anywhere;overflow:hidden;color:var(--mark-ink-light);text-align:center;animation:deck-selector-title-in var(--dur-120) var(--ease-out)}
 .deck-selector[data-leaving]{animation:deck-selector-out var(--dur-120) var(--ease-out) forwards}
-@keyframes deck-selector-in{from{opacity:0;transform:translateY(var(--gap-in)) scale(.97)}to{opacity:1;transform:none}}
-@keyframes deck-selector-out{from{opacity:1}to{opacity:0}}
-@media(prefers-reduced-motion:reduce){.deck-selector,.deck-selector[data-leaving]{animation:none}}
-
-@media(prefers-reduced-transparency:reduce){.deck-selector{background:var(--popover);-webkit-backdrop-filter:none;backdrop-filter:none}}
+.deck-selector[data-leaving] .deck-selector-wheel{animation:deck-selector-confirm var(--dur-120) var(--ease-out) forwards}
+@keyframes deck-selector-in{from{opacity:0}to{opacity:1}}
+@keyframes deck-selector-rise{from{transform:translateY(var(--gap-in))}to{transform:none}}
+@keyframes deck-selector-out{to{opacity:0}}
+@keyframes deck-selector-confirm{to{transform:translateY(var(--gap-in))}}
+@keyframes deck-selector-title-in{from{opacity:.35}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.deck-selector,.deck-selector-wheel,.deck-selector-title,.deck-selector[data-leaving],.deck-selector[data-leaving] .deck-selector-wheel{animation:none}}

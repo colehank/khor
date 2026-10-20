@@ -26,7 +26,7 @@ function fixture(count=8,initial=0){
  band.start(0,0);advance(LONG_PRESS_MS+16);assert.equal(band.read().mode,'rail');
  band.move(-92,0);assert.equal(band.read().position,1);advance(370);assert.equal(band.read().position,2,'long press responds promptly without a second full hold');
  advance(400);assert.equal(band.read().position,2,'faster initial response retains a readable full-title dwell');assert.deepEqual(commits,[]);
- band.move(0,0);const stopped=band.read().position;advance(1000);assert.equal(band.read().position,stopped,'returning to centre stops automatic steps');
+ band.pause();const stopped=band.read().position;advance(1000);assert.equal(band.read().position,stopped,'explicit pause stops automatic steps');
  band.release();assert.equal(band.read().opened,0);advance(SETTLE_MS+32);assert.equal(band.read().opened,2);assert.deepEqual(commits,[2]);
  band.release();advance(1000);assert.deepEqual(commits,[2],'only final release opens content');
 }
@@ -123,8 +123,8 @@ console.log('dual pill: direct tracking, distance-controlled cadence, minimum it
 }
 {
  const {band,advance}=fixture();band.start(0,0,300,100);advance(LONG_PRESS_MS+16);band.move(-25,0);
- assert.equal(band.read().direction,1);band.move(-17,0);assert.equal(band.read().direction,1,'item-scaled hysteresis');
- band.move(-10,0);assert.equal(band.read().direction,0,'short return toward origin pauses picker');
+ assert.equal(band.read().direction,1);band.move(-22,0);assert.equal(band.read().direction,1,'small reverse jitter is ignored');
+ band.move(-15,0);assert.equal(band.read().direction,-1,'deliberate return reverses without crossing origin');band.pause();
  const stopped=band.read().position;advance(1000);assert.equal(band.read().position,stopped);band.cancel();
 }
 {
@@ -137,3 +137,21 @@ console.log('dual pill: direct tracking, distance-controlled cadence, minimum it
  assert.equal(band.read().mode,'swipe');assert.equal(band.read().direction,0);assert.equal(band.read().position,.1,'ordinary short swipe retains original threshold');band.cancel();
 }
 console.log('held picker responsiveness: entry, item-scaled threshold/hysteresis, prompt motion, jitter tolerance and ordinary swipe isolation passed');
+
+// A turning point is local: reversal must work without crossing touch-down.
+{
+ const {band,advance,commits,frames}=fixture();
+ band.start(200,100,250,92);advance(400);band.move(100,100);advance(500);
+ const left=band.read();assert.equal(left.direction,1);assert(left.holding);
+ band.move(112,100);const right=band.read();
+ assert.equal(right.direction,-1,'reverse while the finger remains left of touch-down');
+ assert.equal(right.position,left.position,'changing direction preserves the displayed position');
+ assert(right.dwellMs>left.dwellMs,'the new direction starts at a readable slow rate');
+ advance(80);assert(band.read().position<right.position,'reverse motion starts without the initial hold delay');
+ const before=band.read().position;band.move(100,100);
+ assert.equal(band.read().direction,1);assert.equal(band.read().position,before,'second same-side reversal does not jump');
+ band.move(103,100);assert.equal(band.read().direction,1,'small jitter does not reverse again');
+ advance(80);assert(band.read().position>before);assert.deepEqual(commits,[]);
+ band.release(true);assert.equal(commits.length,1);assert.equal(frames.size,0);
+}
+console.log('long-press steering: same-side reversals, continuous position, slow restart, jitter filtering and one final commit passed');

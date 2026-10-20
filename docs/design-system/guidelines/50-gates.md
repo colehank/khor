@@ -588,3 +588,7 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 `npm run content-model` 同时检查仓库历史从详情返回列表、工作区实例隔离与机器／仓库切换清理；历史列表的阅读位置、轻量底栏与安全区在 `lab/history-deck.html` 用正式组件验收。
 
 内容选择补充验收：`lab/content-switch.html` 的「模拟标识交接后滑动」在真实组件上重放异步句柄交接，要求 Markdown 成为唯一前台内容；`npm run content-model` 继续覆盖内容持久化、选择与传输顺序。
+
+2026-10-20 浅 U 探索：`npm run deck-scrub` 增加同侧连续反向、当前位置连续性、反向低速与抖动检查；旧模型在「reverse while the finger remains left of touch-down」断言先红。长按回中停止的断言改为显式 pause，普通横滑的回中死区保留。`lab/deck-scrub.html` 直接使用正式 DeckBand / DeckExplore，响应、几何、手势和探索按钮验证覆盖区域、固定标题排版、反向、淡出期间取消、实际药丸恢复和后台取消。独立启动可用 `vite --config lab/deck-scrub.vite.ts`，避免扫描无关的历史 Lab。
+
+本轮通过：确定时钟手势模型、px／tokens／gates、TypeScript、生产前端构建，以及 CUA 在正式组件页面点击的响应／几何／手势／探索断言。会话和内部文件探索均覆盖标题排版、同侧反向、退出阶段取消和后台中断；390×844 无横向溢出，探索层止于药丸上沿。Chrome 鼠标指针使用桌面字号；触屏字号来自原有 pointer:coarse 规则，未用桌面截图声称完成原生 iPhone 验收。未运行整套默认检查、原生构建、安装或发布；UIKit／WKWebView 触控、原生网页遮挡和系统字号列入真机清单。图谱未覆盖新 worktree 的函数变化，评审另按实际 diff 与新组件源码检查。证据位于 `/Volumes/disk0/khor-pill-arc-explore-proof/production-*`。

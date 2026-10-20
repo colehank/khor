@@ -1,6 +1,5 @@
 /** Shared mobile pill gesture: direct manipulation or long-press rate control. */
-import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactNode,type CSSProperties,type PointerEvent} from 'react';
-import {createPortal} from 'react-dom';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactNode,type PointerEvent} from 'react';
 import {MidName,TabAvatar,type TabFace} from '@/browse/TabStrip';
 import {BellMark} from '@/components/BellMark';
 import {NoticeLook} from '@/components/PillNotice';
@@ -8,10 +7,10 @@ import {cn} from '@/lib/utils';
 import {feel} from '@/lib/haptics';
 import {stillMotion} from '@/lib/travel';
 import {deckScrubber,holdTiming,nearbySlots,type DeckScrubState} from '@/lib/deck-scrub';
+import {DeckExplore} from './DeckExplore';
 import './deck-band.css';
 
 type Drag={pointer:number;touch:boolean;touchId:number|null;title:boolean;rail:boolean};
-type Geometry={left:number;top:number;right:number;step:number};
 export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
   faces:TabFace[];active:string;onFocus:(id:string)=>void;onTitle?:()=>void;
   renderFace?:(face:TabFace,role:'prev'|'cur'|'next')=>ReactNode;
@@ -20,7 +19,8 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
   const latest=useRef({faces,active,onFocus,onTitle});
   const at=Math.max(0,faces.findIndex(f=>f.id===active));
   const [state,setState]=useState<DeckScrubState>({opened:at,preview:at,position:at,mode:'idle',source:'swipe',direction:0,holding:false,...holdTiming(0,250)});
-  const [geometry,setGeometry]=useState<Geometry>({left:0,top:0,right:0,step:92});
+  const [closing,setClosing]=useState<{position:number;preview:number}|null>(null);
+  const exitTimer=useRef<ReturnType<typeof setTimeout>|null>(null),releasedRail=useRef(false),engineView=useRef(state);
   const alive=useRef(true),prior=useRef(at),travelDirection=useRef(0);
   const engine=useMemo(()=>deckScrubber(faces.length,at,s=>{
     if(!alive.current)return;
@@ -28,25 +28,34 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
     prior.current=s.preview;
     if(s.holding)travelDirection.current=s.direction;
     else if(s.mode==='idle'||s.mode==='pending')travelDirection.current=0;
+    const before=engineView.current;
+    engineView.current=s;
+    if(s.mode==='idle'&&(before.mode==='settling'||before.mode==='rail')&&before.source==='rail'&&releasedRail.current){
+      releasedRail.current=false;
+      setClosing({position:Math.round(before.position),preview:s.preview});
+      exitTimer.current=setTimeout(()=>{exitTimer.current=null;setClosing(null);const now=latest.current;const target=now.faces[s.preview];if(target&&target.id!==now.active)now.onFocus(target.id);},stillMotion()?0:120);
+    }
     setState(s);
     if(s.mode==='rail'&&drag.current){
       drag.current.rail=true;
       if(!band.current?.hasPointerCapture(drag.current.pointer))band.current?.setPointerCapture(drag.current.pointer);
     }
   },index=>{
+    if(engineView.current.source==='rail')return;
     const now=latest.current;
     if(now.faces[index]&&now.faces[index].id!==now.active)now.onFocus(now.faces[index].id);
   }),[faces.length]);
   const cancel=()=>{
-    const d=drag.current;drag.current=null;engine.cancel();
+    releasedRail.current=false;if(exitTimer.current!==null){clearTimeout(exitTimer.current);exitTimer.current=null;}setClosing(null);
+    const d=drag.current;drag.current=null;engine.select(Math.max(0,latest.current.faces.findIndex(f=>f.id===latest.current.active)));
     if(d&&band.current?.hasPointerCapture(d.pointer))band.current.releasePointerCapture(d.pointer);
   };
   useLayoutEffect(()=>{latest.current={faces,active,onFocus,onTitle};});
   const ids=JSON.stringify(faces.map(f=>f.id));
-  useLayoutEffect(()=>{cancel();engine.select(at);},[engine,active,ids]);
+  useLayoutEffect(()=>{cancel();},[engine,active,ids]);
   useEffect(()=>{
     alive.current=true;
-    return()=>{alive.current=false;engine.cancel();};
+    return()=>{alive.current=false;if(exitTimer.current!==null)clearTimeout(exitTimer.current);engine.cancel();};
   },[engine]);
   useEffect(()=>{
     const b=band.current;if(!b)return;
@@ -54,7 +63,7 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
     const measure=()=>b.style.setProperty('--deck-band-width',`${b.clientWidth}px`);measure();
     const resize=new ResizeObserver(()=>{if(width!==b.clientWidth){if(drag.current)cancel();width=b.clientWidth;measure();}});resize.observe(b);
     const blur=()=>cancel(),hidden=()=>{if(document.visibilityState!=='visible')cancel();};
-    const key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&drag.current){cancel();e.preventDefault();e.stopPropagation();}};
+    const key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&(drag.current||exitTimer.current!==null)){cancel();e.preventDefault();e.stopPropagation();}};
     const start=(e:TouchEvent)=>{
       const d=drag.current;
       if(e.touches.length>1){cancel();return;}
@@ -81,22 +90,20 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
   const finish=(id:number)=>{
     const d=drag.current;if(!d||id!==d.pointer)return;
     drag.current=null;
+    releasedRail.current=engine.read().mode==='rail';
     const result=engine.release(stillMotion());
     if(band.current?.hasPointerCapture(id))band.current.releasePointerCapture(id);
     if(result==='tap'&&d.title)latest.current.onTitle?.();
   };
   const down=(e:PointerEvent)=>{
+    if(exitTimer.current!==null)return;
     if(!e.isPrimary){cancel();return;}
     if(e.button!==0||drag.current||!band.current)return;
     if(engine.read().mode==='settling'){engine.arrive();return;}
     if(e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true],[data-band-control]'))return;
     if(window.getSelection()?.isCollapsed===false)return;
-    const b=band.current,r=b.getBoundingClientRect(),cs=getComputedStyle(b);
-    const deck=b.closest('[data-session-deck], [data-content-deck], .mobile-content-deck')
-      ??b.closest('[data-file-pill]')?.parentElement;
-    const bounds=deck?.getBoundingClientRect()??r;
+    const b=band.current,cs=getComputedStyle(b);
     const step=parseFloat(cs.getPropertyValue('--glass-btn'))+3*parseFloat(cs.getPropertyValue('--gap-pane'));
-    setGeometry({left:Math.max(0,bounds.left),right:Math.max(0,window.innerWidth-bounds.right),top:r.top,step:Number.isFinite(step)?step:92});
     drag.current={pointer:e.pointerId,touch:e.pointerType==='touch',touchId:null,title:!!(e.target instanceof Element&&e.target.closest('[data-band-seg="cur"]')),rail:false};
     engine.start(e.clientX,e.clientY,b.clientWidth,Number.isFinite(step)?step:92);
     if(!renderFace)b.setPointerCapture(e.pointerId);
@@ -163,7 +170,7 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
     );
 
   const rail=state.mode==='rail'||state.mode==='settling'&&state.source==='rail';
-  const position=rail?at:state.position;
+  const position=rail||closing?at:state.position;
   const movingWay=state.holding?state.direction
     :state.mode==='settling'&&travelDirection.current?travelDirection.current
     :Math.sign(position-state.opened);
@@ -174,8 +181,8 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
   const previewing=state.mode==='swipe'&&!state.holding;
   const selecting=state.mode==='swipe';
   return <>
-    <div ref={band} data-deck-band data-band-past={past||undefined} data-band-phase={state.mode} data-band-preview={faces[state.preview]?.id}
-      data-sheet-hold={rail||undefined} className="deck-band relative h-full min-w-0 flex-1 overflow-hidden"
+    <div ref={band} data-deck-band data-band-past={past||undefined} data-band-phase={state.mode} data-band-direction={state.direction} data-band-preview={faces[state.preview]?.id}
+      data-sheet-hold={rail||!!closing||undefined} className="deck-band relative h-full min-w-0 flex-1 overflow-hidden"
       style={{touchAction:'none'}} onPointerDown={down} onPointerMove={moving}
       onPointerUp={e=>finish(e.pointerId)} onPointerCancel={lost} onLostPointerCapture={lost}
       onContextMenu={e=>{if(state.mode!=='idle')e.preventDefault();}}>
@@ -194,17 +201,7 @@ export function DeckBand({faces,active,onFocus,onTitle,renderFace}: {
       })}
       {selecting&&<span data-band-count className="deck-band-count" aria-hidden="true">{state.preview+1}/{faces.length}</span>}
     </div>
-    {rail&&faces.length>1&&createPortal(<div data-deck-selector data-sheet-hold role="listbox" aria-label={faces[at]?.label}
-      className="glass fixed deck-selector" data-leaving={state.mode==='settling'||undefined}
-      style={{left:geometry.left,right:geometry.right,bottom:window.innerHeight-geometry.top,"--selector-step":`${geometry.step}px`} as CSSProperties}>
-      <div className="deck-selector-window">
-        <span className="deck-selector-focus glass-sel"/>
-        {nearbySlots(state.position,faces.length,Math.min(3,Math.floor(faces.length/2))).map(({slot,index})=><div key={slot} role="option"
-          aria-selected={slot===Math.round(state.position)} className="deck-selector-item"
-          style={{width:geometry.step,transform:`translate3d(${(slot-state.position)*geometry.step}px,0,0)`,opacity:Math.max(.4,1-Math.abs(slot-state.position)*.25)}}>
-          {!faces[index].hideFace&&<TabAvatar f={faces[index]} bare="size-list-face" seat="row"/>}<span title={faces[index].label}>{faces[index].label}</span>
-        </div>)}
-      </div>
-    </div>,document.body)}
+    {(rail||closing)&&faces.length>1&&<DeckExplore band={band} faces={faces}
+      position={closing?.position??state.position} preview={closing?.preview??state.preview} leaving={!!closing}/>}
   </>;
 }
