@@ -14,7 +14,10 @@
 // an up row to go. The two share what a row *is* (`views/fileRow`) and
 // nothing else, which is the split the ruling actually drew.
 //
-// **One directory, one `ls`, and only once it is open.** A project is a
+// **Only list directories somebody opens.** A watched directory keeps
+// its answer until the watch reports a change. Without a reliable watch,
+// reopening, window focus and a slow beat refresh the visible levels.
+// A project is a
 // tree somebody opens two or three branches of; listing the whole thing
 // would be a walk of somebody else's disk for rows nobody asked to see.
 // Which branches are open is remembered per workspace in this face's own
@@ -195,7 +198,8 @@ export function FileTree({
       until the first answer, then a fact. Read by the asks after khor's
       own changes — a watched tree is told, not re-asked. */
   const watching = useRef<boolean | null>(null);
-  /** The levels the watch says it cannot fully hear (`unreported`, a
+  /** The levels the watch cannot hear (all levels if unavailable;
+      otherwise `unreported`, a
       network mount another host writes into too — turing and hinton
       share an NFS home): asked again on the window's return and on a
       slow beat, since a quiet answer about them is not a fact. */
@@ -224,6 +228,9 @@ export function FileTree({
       piece of state for that would itself cause the render that starts
       the second one. */
   const asked = useRef(new Set<string>(listings.keys()));
+  /** A refresh may overtake an earlier read of the same level. Only
+      the newest request may replace that level or clear its wait. */
+  const requests = useRef(new Map<string, number>());
   /** When the root was asked for, while it is out — what the wait says
       (`Waiting`, round NET-FIX) — and a counter 重试 turns, so the asking
       effect runs again for a path taken off `asked`. */
@@ -273,9 +280,13 @@ export function FileTree({
     for (const path of want) {
       if (asked.current.has(path)) continue;
       asked.current.add(path);
+      const request = (requests.current.get(path) ?? 0) + 1;
+      requests.current.set(path, request);
+      const latest = () => requests.current.get(path) === request;
       if (path === root) setRootAskedAt(Date.now());
       fetchLs(machine, path)
         .then((l) => {
+          if (!latest()) return;
           setListings((was) => new Map(was).set(path, l));
           // An answer that lands after 停止等待 is still the answer.
           setFailed((was) => {
@@ -285,11 +296,11 @@ export function FileTree({
             return next;
           });
         })
-        .catch((e: unknown) =>
-          setFailed((was) => new Map(was).set(path, String(e instanceof Error ? e.message : e))),
-        )
+        .catch((e: unknown) => {
+          if (latest()) setFailed((was) => new Map(was).set(path, String(e instanceof Error ? e.message : e)));
+        })
         .finally(() => {
-          if (path === root) setRootAskedAt(null);
+          if (latest() && path === root) setRootAskedAt(null);
         });
     }
     // `root` is a constant here (the tree is remounted per workspace);
@@ -405,15 +416,15 @@ export function FileTree({
           const w = await dirsWait(machine, dirs, seq.current, first ? 0 : WATCH_HOLD_MS);
           if (stopped) return;
           if (w.unavailable) {
-            // Cannot be watched: what came from `trees` is asked again
-            // once, and the tree asks as it always did from here.
+            // Cannot be watched: refresh kept answers once, then keep
+            // these levels in the focus/slow fallback as well.
             // **Whatever its counter** (ux-43 finding 3): an unwatched
             // machine never gets one past 0, and its kept tree was shown
             // as it was at the last mount, a change outside khor never
             // seen on the next open.
             if (watching.current === null && fromKept.current) refresh(dirs);
             watching.current = false;
-            unheard.current = new Set();
+            unheard.current = new Set(dirs);
             return;
           }
           watching.current = true;
@@ -437,14 +448,21 @@ export function FileTree({
   }, [machine, hidden, want, listings.size]);
 
   // **What the watch cannot hear** (store-c): while the tree is on
-  // screen, its `unreported` levels are asked again when the window
+  // screen, its unavailable / `unreported` levels are asked again when the window
   // comes back to the front and on a slow beat — only those, and only
   // ones this tree has asked about.
   useEffect(() => {
     if (hidden) return;
     const again = () => {
       if (document.hidden) return;
-      const dirs = [...unheard.current].filter((d) => asked.current.has(d));
+      const visible = (path: string) => {
+        if (path === root) return true;
+        for (let p = path; p !== root; p = p.slice(0, p.lastIndexOf("/")) || "/") {
+          if (!expanded.has(p) || p === "/") return false;
+        }
+        return true;
+      };
+      const dirs = [...unheard.current].filter((d) => asked.current.has(d) && visible(d));
       if (dirs.length > 0) refresh(dirs);
     };
     const slow = window.setInterval(again, UNHEARD_MS);
@@ -455,7 +473,7 @@ export function FileTree({
     };
     // `refresh` only touches refs and a setter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hidden]);
+  }, [hidden, expanded, root]);
 
   /** Ask that directory again. Everything below it goes too: a listing
       for a path under one that just changed is an answer about a tree
@@ -484,6 +502,11 @@ export function FileTree({
   });
 
   const toggle = (full: string) => {
+    // A cached answer is current only where the watch can hear changes.
+    // Keep it on screen while reopening reads the level again.
+    if (!expanded.has(full) && (watching.current !== true || unheard.current.has(full))) {
+      refresh([full]);
+    }
     setExpanded((was) => {
       const now = new Set(was);
       if (now.has(full)) now.delete(full);

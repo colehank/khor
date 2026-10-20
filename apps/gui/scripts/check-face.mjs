@@ -4298,9 +4298,9 @@ try {
           "under it were drawn from what this face already believed (src/views/FileTree.tsx)",
       );
     }
-    // Shutting it and opening it again costs no second question: the
-    // answer is cached per directory, which is the half of 「一个目录
-    // 一次」 that a press cannot show by itself.
+    // Reopening keeps the cached rows. A reliable watch needs no new
+    // question; an unavailable/unreported level needs one refresh.
+    // check-tree-freshness drives both watch modes and external writes.
     await press('[data-dir="src"]');
     await wait(200);
     await press('[data-dir="src"]');
@@ -4308,10 +4308,10 @@ try {
       (await page.locator('[data-file-tree] [data-depth="1"]').count()) > 0,
     );
     const again = askedLs.filter((a) => a.path === into).length;
-    if (again > asked) {
+    if (again > asked + 1) {
       fail(
         `shutting and reopening a directory asked for it ${again - asked} more time(s) — one directory, ` +
-          "one `ls` (src/views/FileTree.tsx)",
+          "at most one freshness read (src/views/FileTree.tsx)",
       );
     }
 

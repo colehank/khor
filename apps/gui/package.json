@@ -68,6 +68,7 @@
     "content-pan": "node scripts/check-content-pan.mjs",
     "cm-measure": "node scripts/cm-measure.mjs",
     "new-session": "node scripts/check-new-session.mjs",
+    "tree-freshness": "node scripts/check-tree-freshness.mjs",
     "session-read": "node scripts/check-session-read.mjs",
     "scroll-health": "node scripts/check-scroll-health.mjs",
     "deck-scrub": "node scripts/check-deck-scrub.mjs",
