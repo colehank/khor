@@ -8,44 +8,64 @@
 // `{ paths, x, y }`, CSS pixels): the face gate's way to drop without
 // an OS drag, which no browser can synthesize with paths in it.
 import { inApp } from "@/api";
+import { clearPathDrag, nativePathEnter, nativePathLeave, takeNativePath } from "./path-drag";
 
-export type WindowDrop = { paths: string[]; x: number; y: number };
+export type WindowDrop = { paths: string[]; x: number; y: number; from?: string | null };
 
 export const WINDOW_DROP_EVENT = "khor:window-drop";
 
-/** Calls `handler` for every drop on the window; returns the undo. */
+/** Wry 0.55 reports AppKit points and GTK widget coordinates despite
+ * Tauri's PhysicalPosition wrapper; only WebView2 sends physical pixels. */
+export function dropPoint(position: { x: number; y: number }, platform: string, scale: number) {
+  const divisor = /Win/i.test(platform) ? scale : 1;
+  return { x: position.x / divisor, y: position.y / divisor };
+}
+
+const handlers = new Set<(d: WindowDrop) => void>();
+let stopListening: (() => void) | undefined;
+const deliver = (drop: WindowDrop) => { for (const handler of handlers) handler(drop); };
+
+/** One native listener resolves the source once, then every pane checks
+ * its active state and bounds. A hidden retained terminal cannot consume
+ * an internal drag before the visible terminal sees it. */
 export function onWindowDrop(handler: (d: WindowDrop) => void): () => void {
-  let undo: (() => void) | undefined;
-  let stopped = false;
-  if (inApp) {
-    void (async () => {
+  handlers.add(handler);
+  if (handlers.size === 1) {
+    let undo: (() => void) | undefined;
+    let stopped = false;
+    if (inApp) void (async () => {
       try {
         const { getCurrentWebview } = await import("@tauri-apps/api/webview");
         const un = await getCurrentWebview().onDragDropEvent((e) => {
-          if (e.payload.type !== "drop" || !e.payload.position) return;
-          // The event's position is in physical pixels (tauri's
-          // `PhysicalPosition`); boxes are in CSS pixels.
-          handler({
-            paths: e.payload.paths,
-            x: e.payload.position.x / devicePixelRatio,
-            y: e.payload.position.y / devicePixelRatio,
-          });
+          const payload = e.payload;
+          if (payload.type === "enter") { nativePathEnter(payload.paths); return; }
+          if (payload.type === "leave") { nativePathLeave(); return; }
+          if (payload.type !== "drop" || !payload.position) return;
+          const source = payload.paths.length ? null : takeNativePath();
+          if (payload.paths.length) nativePathEnter(payload.paths);
+          if (!payload.paths.length && !source) return;
+          deliver({ paths: source ? [source.path] : payload.paths, from: source?.machine ?? null,
+            ...dropPoint(payload.position, navigator.platform, devicePixelRatio) });
         });
-        if (stopped) un();
-        else undo = un;
+        if (stopped) un(); else undo = un;
       } catch {
-        // No tauri here after all: nothing to listen to.
+        // No Tauri here after all.
       }
     })();
+    const seam = (e: Event) => {
+      const d = (e as CustomEvent<WindowDrop>).detail;
+      if (d && Array.isArray(d.paths)) deliver(d);
+    };
+    if (import.meta.env.DEV) window.addEventListener(WINDOW_DROP_EVENT, seam);
+    stopListening = () => {
+      stopped = true;
+      undo?.();
+      clearPathDrag();
+      if (import.meta.env.DEV) window.removeEventListener(WINDOW_DROP_EVENT, seam);
+    };
   }
-  const seam = (e: Event) => {
-    const d = (e as CustomEvent<WindowDrop>).detail;
-    if (d && Array.isArray(d.paths)) handler(d);
-  };
-  if (import.meta.env.DEV) window.addEventListener(WINDOW_DROP_EVENT, seam);
   return () => {
-    stopped = true;
-    undo?.();
-    if (import.meta.env.DEV) window.removeEventListener(WINDOW_DROP_EVENT, seam);
+    handlers.delete(handler);
+    if (!handlers.size) { stopListening?.(); stopListening = undefined; }
   };
 }

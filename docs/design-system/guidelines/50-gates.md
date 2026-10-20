@@ -37,8 +37,11 @@
 | `npm run session-cwd` | cd、活动 pane、地点筛选/搜索、工作区归属、旧附栏恢复、默认跟随与主动固定目录 |
 | `npm run terminal-colors` | 统一终端外观解析：浅深 ANSI、自动／固定／DIY、保护默认与关闭迁移、跨窗口、重载、CSS 表面同步、预览隔离和标准扩展色表；DIM 完整目标、按格子取色的光标、渲染器回退、缓冲与调色板隔离 |
 | `npm run avatar-ring` | 正式 FaceMark / TabStrip 的 102 个列表、18／22 标签与 72 大头像状态环：头像和光环 SVG 共用 viewport；macOS 原生 WKWebView 在四个分数位置的像素质心同心检查，保留截图。其它平台仅验 Chrome 几何，不宣称原生通过 |
+| `npm run terminal-drop` | 正式拖放监听：Mac/GTK 逻辑坐标与 Windows 缩放、原生空路径接回内部源机器、dragend/IPC 顺序、取消/离开/新拖清理、DOM/原生去重、保留终端共享分发。真实 Finder 与跨 app 拖动另做原生验收 |
 | `npm run appearance` | 真实终端与设置的预设、DIY、JSON、跨窗口同步；缓冲/滚动/PTY 不重建；背景只合成一次；能力与输入边界 |
 | `npm run scroll-target` | 真 xterm 的内层 mouse 能力、分页累计/反向/停歇、触摸与滚轮不重复输入；连续输出期间每次手势只刷新一次 tmux |
+
+`terminal-drop` 以锁定 Wry 0.55.1 / Tauri runtime 2.11.4 的实际事件形状驱动正式监听；它不等于操作系统拖动验收。另用私有节点的正式 App 前端实际鼠标从 session 工作区拖文件到终端、检查一次 `term_drop`；Finder 的原生路径、跨 app 拖出和 Windows/Linux 真实缩放仍需原生验收。内部来源只属于当前拖放：原生 `Enter` 已确认后，`dragend` 保留 500 ms 的 IPC 尾期，只有原生 `Drop` 能提交；取消、离开、新拖或超时均清理。若整段原生 `Enter` 都晚于 `dragend` 才到，则安全忽略，不能猜一个旧来源去粘贴。
 
 可选实际 Codex 验收：`python3 apps/gui/scripts/check-codex-paging.py`。
 依赖本机 Codex 与 tmux，用临时 home、虚构历史和不可达模型端点；不发送输入，
