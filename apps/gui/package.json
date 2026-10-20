@@ -67,6 +67,7 @@
     "content-sheet": "node scripts/check-content-sheet-bounds.mjs",
     "content-pan": "node scripts/check-content-pan.mjs",
     "cm-measure": "node scripts/cm-measure.mjs",
+    "new-session": "node scripts/check-new-session.mjs",
     "session-read": "node scripts/check-session-read.mjs",
     "scroll-health": "node scripts/check-scroll-health.mjs",
     "deck-scrub": "node scripts/check-deck-scrub.mjs",
