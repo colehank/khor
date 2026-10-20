@@ -15,6 +15,7 @@ import { gui } from '@/gen/catalog';
 import { draftFor, dropHandOff, peekHandOff, tellDraft } from '@/lib/composer-handoff';
 import { useHereHosts } from '@/lib/here';
 import { useSetting } from '@/settings';
+import { imeKey } from '@/lib/ime';
 type Launch = {
   kind: 'shell';
   command: string;
@@ -64,6 +65,7 @@ export function NewSessionPage({
     kind: 'agent',
     agent: 'claude'
   });
+  const [name, setName] = useState('');
   const [pending, setPending] = useState(false),
     [opening, setOpening] = useState(false),
     [error, setError] = useState<string | null>(null);
@@ -182,12 +184,12 @@ export function NewSessionPage({
       setError(gui.need_path);
       return;
     }
-    const title = launch.kind === 'shell' && launch.preset ? presets.find(p => p.id === launch.preset)?.name || '' : '';
+    const title = name.trim() || (launch.kind === 'shell' && launch.preset ? presets.find(p => p.id === launch.preset)?.name || '' : '');
     const key = JSON.stringify([channel, cwd, launch, title]);
     const token = tokenFor(key);
     setOpening(true);
     setError(null);
-    (launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : openSession(cwd, '', 'chat', launch.agent, channel, token)).then(id => {
+    (launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : openSession(cwd, title, 'chat', launch.agent, channel, token)).then(id => {
       creates.delete(key);
       startedAgent.current = launch.kind === 'agent';
       onOpened(id);
@@ -275,8 +277,10 @@ export function NewSessionPage({
               label: gui.launch_manage,
               icon: <IconGear />,
               run: () => setManage(true)
-            }]} />{launch.kind === 'shell' && <span className="text-caption text-tertiary">{gui.launch_command_note}</span>}</div>
+            }]} /></div>
+    {launch.kind === 'shell' && <span data-new-session-launch-note className="col-start-2 text-caption text-tertiary">{gui.launch_command_note}</span>}
     {handed && launch.kind === 'agent' && <><FormLabel>{gui.new_session_handed}</FormLabel><span data-new-session-handed className="min-w-0 truncate font-mono text-body">{handed}</span></>}
+    {launch.kind !== 'tell' && <><FormLabel htmlFor="new-session-name">{gui.new_session_name}</FormLabel><Input id="new-session-name" data-new-session-name value={name} disabled={opening} placeholder={gui.new_session_name_hint} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !imeKey(e)) { e.preventDefault(); create(); } }} /></>}
    </FormGrid>
    {error && <p data-new-session-error role="alert" className="text-callout text-destructive">{error}</p>}
    <div className="flex justify-end gap-in"><Button data-new-tab-cancel onMouseDown={e => e.preventDefault()} onClick={cancel}>{gui.delete_keep}</Button><Button variant="primary" data-new-session-create disabled={opening || pending || !target || launch.kind !== 'tell' && !dir.trim()} aria-busy={opening || undefined} onMouseDown={e => e.preventDefault()} onClick={create}>{gui.create}</Button></div>

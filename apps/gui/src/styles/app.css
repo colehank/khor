@@ -3002,3 +3002,7 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 .history-deck { display:flex; flex:none; align-items:center; gap:var(--gap-in); padding:var(--gap-in) var(--gap-row) calc(var(--gap-in) + var(--safe-bottom)); }
 .history-pill { display:flex; height:var(--glass-btn); min-width:0; flex:1; align-items:center; border-radius:var(--radius-full); padding-inline:var(--gap-row); }
 [data-narrow] [data-history-overlay] { padding-inline:0; padding-bottom:0; }
+
+/* A field's help belongs below the field, not inside the row whose label
+   aligns with it. The narrow form already seats every child in one column. */
+[data-new-session-launch-note] { margin-top: calc(var(--gap-in) - var(--gap-row)); }

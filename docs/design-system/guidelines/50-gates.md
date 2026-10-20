@@ -609,3 +609,8 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 `npm run content-toolbar` 使用真实 App、独立节点与私有文件验证：单次触摸轻点进入目录／网页编辑、长按走正式浅 U 组件、手指离开药丸仍持续选择、松手不误编辑、目录搜索保持档位、搜索／新建组合玻璃、机器选择、文件编辑器与页面句柄保留、网页历史和关闭、两来源的新标签及桌面右键重新连接。补充 `npm run session-content` 的持久标签、查询、重载、排序、关闭格、置顶与关闭最后一项；`npm run content-ui` 保留附件、遗失出口、IME、候选、草稿跨宽窄屏、安全区、总览与连续选择回归。
 
 本轮验证：真实 Chrome 触屏事件验证轻点、长按、移出后释放及横滑预选／最终提交；桌面使用独立鼠标上下文。`content-toolbar`、`session-content`、`content-ui`、`content-model`、`field-interaction`、`file-deck`、默认前端测试和门索引通过，前端生产构建通过。截图与私有测试数据保存在 `/Volumes/disk0/khor-toolbar-check/`、`/Volumes/disk0/khor-session-toolbar-regression/`、`/Volumes/disk0/khor-content-toolbar-ui/ui/`。测试结束后关闭私有会话、浏览器、桥接与 Vite，并删除测试复制的二进制；不操作真实会话。原生 iOS 键盘激活和 WKWebView 仍待真机核对。
+
+
+### 新建会话的可选名称与对齐（2026-10-20）
+
+`npm run new-session`：真实 App、私有节点与系统 Chrome；拦截创建请求，验证最后一行名称、首尾空白、Shell／对话传参、留空默认、预设名被手动名称覆盖、重试令牌与改名后的新意图、IME 确认不误创建。测启动框标签居中、窄屏输入不溢出。测试只关闭自己的私有会话与服务，不使用真实 home；原生输入法另列真机验收。产物可用 `CONTENT_CHECK_DIR` 放到外部磁盘，端口用 `CONTENT_VITE_PORT`／`CONTENT_BRIDGE_PORT`。
