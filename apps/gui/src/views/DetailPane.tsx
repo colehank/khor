@@ -1,3 +1,4 @@
+import type { SessionReading } from "@/hooks/use-session-attention";
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { programOf, shortDir } from "@/components/DoingLine";
@@ -232,6 +233,7 @@ export function DetailPane({
   active = true,
   onSession,
   sessions,
+  onReading,
 }: {
   row: SessionRow | null;
   narrow: boolean;
@@ -267,6 +269,7 @@ export function DetailPane({
   active?: boolean;
   onSession?: (id: string) => void;
   sessions?: SessionRow[];
+  onReading?: SessionReading;
 }) {
   const shown = useDayShown();
   // Warm the terminal's chunk once the pane has drawn (`loadTerminal`).
@@ -537,6 +540,7 @@ export function DetailPane({
         <ChatView
           key={row.id}
           id={row.id}
+          onReading={onReading}
           category={row.category}
           machine={row.source ? row.home : null}
           home={row.home}
@@ -564,7 +568,7 @@ export function DetailPane({
         // the vendor's own transcript. Claude only, this batch — the
         // other vendors' records are on the ledger, and their rows
         // keep the facts pane below rather than an empty chat.
-        <ChatView key={row.id} id={row.id} still />
+        <ChatView key={row.id} id={row.id} still onReading={onReading} />
       ) : !row && empty ? (
         // The network's now: the biggest canvas in the app stops
         // reading "pick something" and starts showing what there is
@@ -623,7 +627,7 @@ export function DetailPane({
             aria-hidden={on ? undefined : true}
           >
             <Suspense fallback={null}>
-              <TerminalPane id={t.id} machine={t.machine} mux={t.mux} active={on} doing={on ? row?.doing : undefined} />
+              <TerminalPane onReading={onReading} id={t.id} machine={t.machine} mux={t.mux} active={on} doing={on ? row?.doing : undefined} />
             </Suspense>
           </div>
         );
