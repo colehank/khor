@@ -90,6 +90,44 @@ fn was_lost(to: &str, via: &str) -> bool {
         .is_some_and(|t| t.elapsed() < LOST_FOR)
 }
 
+/// Per (this machine, far machine): hops this machine asked for, opening
+/// or up ([`Asking`]).
+static ASKING: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<(String, String), u32>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// **One hop this machine asked for**, held from the ask until the hop
+/// ends. Both ends of a slow relay measure it, so both may ask at once,
+/// through one middle or two; each end would then take the other's hop
+/// in place of its own and end both. Of two hops between the same two
+/// machines, the one the lower id asked for stands, at both ends: the
+/// lower refuses the other's while it asks ([`Node::serve_hop`]), the
+/// higher keeps the other's that came in meanwhile ([`Node::open_hop`]).
+struct Asking((String, String));
+
+impl Asking {
+    fn new(me: &str, to: &str) -> Asking {
+        let key = (me.to_owned(), to.to_owned());
+        *ASKING.lock().unwrap_or_else(|p| p.into_inner()).entry(key.clone()).or_default() += 1;
+        Asking(key)
+    }
+}
+
+impl Drop for Asking {
+    fn drop(&mut self) {
+        let mut asking = ASKING.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(n) = asking.get_mut(&self.0) {
+            *n -= 1;
+            if *n == 0 {
+                asking.remove(&self.0);
+            }
+        }
+    }
+}
+
+fn asking(me: &str, to: &str) -> bool {
+    ASKING.lock().unwrap_or_else(|p| p.into_inner()).contains_key(&(me.to_owned(), to.to_owned()))
+}
+
 /// Whether a hop of `hop_ms` (its legs added) is worth opening against a
 /// relay measured at `relay_ms`: faster by [`khor_net::carry::SWITCH_MARGIN`].
 pub(crate) fn beats(hop_ms: u32, relay_ms: u32) -> bool {
@@ -125,12 +163,11 @@ impl Ask {
 /// **The middles for a hop from `me` to `to`, best first** (pure, for the
 /// roadbook rules): a machine that is not either end, not a satellite and
 /// not paused here, whose own written road to `to` is direct or its ssh
-/// (it carries `to`, round ROAD-2), and that `me` reaches itself.
+/// (it carries `to`, round ROAD-2), and that `me` reaches itself — the
+/// rule before a dial ([`Legs::Dial`]).
 ///
 /// - `me` must reach the middle directly — or through the relay when the
-///   middle carries `to` over ssh: then nothing else reaches `to` at all,
-///   whereas the relay to a middle that reaches `to` directly is no
-///   better than the relay to `to`.
+///   middle carries `to` over ssh: then nothing else reaches `to` at all.
 /// - Neither leg may be a hop itself (`via`): one hop only.
 /// - Order: a direct first leg first, then the two legs' round trips.
 ///
@@ -143,18 +180,37 @@ pub(crate) fn middles(
     mine: impl Fn(&str) -> Option<Road>,
     theirs: impl Fn(&str) -> Option<Road>,
 ) -> Vec<String> {
-    middles_with_cost(me, to, rows, mine, theirs).into_iter().map(|(b, _)| b).collect()
+    middles_with_cost(me, to, rows, mine, theirs, Legs::Dial).into_iter().map(|(b, _)| b).collect()
+}
+
+/// Which legs a middle may stand on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Legs {
+    /// **Before a dial** ([`Node::hop_ahead`]): nothing measures the relay
+    /// to `to` yet, so a relay leg is taken only to a middle that carries
+    /// `to` over ssh. A relay to a middle that reaches `to` directly is
+    /// presumed no better than the relay to `to`: one more try before
+    /// every dial for a guess.
+    Dial,
+    /// **Against the relay in use** ([`Node::compare_roads`]): either leg
+    /// may be the relay — `to`'s home may be a far relay where the
+    /// middle's is near (hinton on aps1, 10-20). The legs' sum is held
+    /// against the relay's measured round trip, and iroh's end to end
+    /// measurement has the last word ([`Node::open_hop`]).
+    Measured,
 }
 
 /// [`middles`] with each one's cost: its two legs' round trips added, in
 /// ms (`u16::MAX` for a leg with none written) — the measure a hop is
-/// held against the relay by ([`Node::compare_roads`]).
+/// held against the relay by ([`worth_a_hop`]). With [`Legs::Measured`]
+/// the order is the cost alone.
 pub(crate) fn middles_with_cost(
     me: &str,
     to: &str,
     rows: &[(String, bool, bool)],
     mine: impl Fn(&str) -> Option<Road>,
     theirs: impl Fn(&str) -> Option<Road>,
+    legs: Legs,
 ) -> Vec<(String, u32)> {
     let mut found: Vec<(bool, u32, String)> = rows
         .iter()
@@ -163,16 +219,37 @@ pub(crate) fn middles_with_cost(
             let second = theirs(b).filter(|r| r.via.is_none())?;
             let first = mine(b).filter(|r| r.via.is_none())?;
             let usable = match (first.road, second.road) {
-                (RoadKind::Direct, RoadKind::Direct | RoadKind::Ssh) => true,
-                (RoadKind::Relay, RoadKind::Ssh) => true,
+                (RoadKind::Direct, RoadKind::Direct | RoadKind::Ssh) | (RoadKind::Relay, RoadKind::Ssh) => true,
+                (RoadKind::Direct | RoadKind::Relay, RoadKind::Direct | RoadKind::Relay) => legs == Legs::Measured,
                 _ => false,
             };
             let ms = u32::from(first.ms.unwrap_or(u16::MAX)) + u32::from(second.ms.unwrap_or(u16::MAX));
-            usable.then(|| (first.road != RoadKind::Direct, ms, b.clone()))
+            usable.then(|| (legs == Legs::Dial && first.road != RoadKind::Direct, ms, b.clone()))
         })
         .collect();
     found.sort();
     found.into_iter().map(|(_, ms, b)| (b, ms)).collect()
+}
+
+/// **The middles worth a hop to `to` against its relay, measured at
+/// `relay_ms`** (pure, for [`Node::compare_roads`]): those of
+/// [`middles_with_cost`] on [`Legs::Measured`] whose two legs beat the
+/// relay ([`beats`]) and
+/// through which no hop to `to` lost lately (`lost`, [`LOST_FOR`]).
+pub(crate) fn worth_a_hop(
+    me: &str,
+    to: &str,
+    relay_ms: u32,
+    rows: &[(String, bool, bool)],
+    mine: impl Fn(&str) -> Option<Road>,
+    theirs: impl Fn(&str) -> Option<Road>,
+    lost: impl Fn(&str) -> bool,
+) -> Vec<String> {
+    middles_with_cost(me, to, rows, mine, theirs, Legs::Measured)
+        .into_iter()
+        .filter(|(b, ms)| beats(*ms, relay_ms) && !lost(b))
+        .map(|(b, _)| b)
+        .collect()
 }
 
 impl Node {
@@ -251,6 +328,8 @@ impl Node {
     /// (`carry::RoadOrder`) found it no faster. `true` when a hop is up.
     async fn open_hop(&self, ep: &iroh::Endpoint, y: &crate::DeviceInfo, all: &[crate::DeviceInfo], picked: &[String]) -> bool {
         let Ok(peer) = y.id.parse::<EndpointId>() else { return false };
+        let me = self.device_str().to_owned();
+        let asked = Asking::new(&me, &y.id);
         let tries = async {
             for b in picked.iter().take(TRIES) {
                 let Some(middle) = all.iter().find(|d| &d.id == b) else { continue };
@@ -276,6 +355,14 @@ impl Node {
             }
             return false;
         };
+        // A link came in while this one opened: ssh, which a hop never
+        // replaces, or the far end's own hop, which stands when the far
+        // end's id is the lower ([`Asking`]).
+        match self.carry.carrier(&peer) {
+            Some(Carrier::Ssh) => return false,
+            Some(Carrier::Hop { .. }) if y.id < me => return false,
+            _ => {}
+        }
         self.wires.note(
             Some(&y.id),
             crate::journal::What::Hop {
@@ -292,7 +379,7 @@ impl Node {
         // hop lives (`wires::HOP_SILENT`): a frozen middle hands back sooner.
         let riding = wires.hop_held(&via.to_string());
         tokio::spawn(async move {
-            let _riding = riding;
+            let _riding = (riding, asked);
             let ended = attached.ended();
             tokio::pin!(ended);
             let mut held = 0u8;
@@ -363,19 +450,15 @@ impl Node {
             let r = self.wires.link(&y.id);
             let (Some(khor_net::path::PathKind::Relay), Some(rtt)) = (r.road, r.rtt) else { continue };
             let relay_ms = u32::try_from(rtt.as_millis()).unwrap_or(u32::MAX);
-            let picked: Vec<String> = middles_with_cost(
+            let picked = worth_a_hop(
                 &me,
                 &y.id,
+                relay_ms,
                 &rows,
                 |b| self.road_for_hop(b, &mine),
                 |b| all.iter().find(|d| d.id == b).and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id)),
-            )
-            .into_iter()
-            .filter(|(b, ms)| {
-                beats(*ms, relay_ms) && !was_lost(&y.id, b)
-            })
-            .map(|(b, _)| b)
-            .collect();
+                |b| was_lost(&y.id, b),
+            );
             if !picked.is_empty() {
                 self.open_hop(ep, y, &all, &picked).await;
             }
@@ -438,6 +521,11 @@ impl Node {
             Ask::From(x) => {
                 let asker = x.to_string();
                 if !member(&asker) || matches!(self.carry.carrier(&x), Some(Carrier::Ssh)) {
+                    return refuse(send, REFUSED).await;
+                }
+                // This end asked for a hop to the asker too, and its id is
+                // the lower: its own stands ([`Asking`]).
+                if me < asker && asking(&me, &asker) {
                     return refuse(send, REFUSED).await;
                 }
                 if send.write_all(&[OK]).await.is_err() {
@@ -515,11 +603,86 @@ mod tests {
             "hinton" => Some(Road::own("iphone", RoadKind::Relay, Some("101.200.80.77:3340".into()), Some(37))),
             _ => None,
         };
-        let found = middles_with_cost("maclab", "iphone", &rows, mine, theirs);
+        let found = middles_with_cost("maclab", "iphone", &rows, mine, theirs, Legs::Dial);
         assert_eq!(found, vec![("turing".to_owned(), 29)], "hinton reaches the iPhone only by relay: no middle");
+        // Against the relay in use, hinton's relay leg is measured too:
+        // 39 ms, behind turing.
+        let found = middles_with_cost("maclab", "iphone", &rows, mine, theirs, Legs::Measured);
+        assert_eq!(found, vec![("turing".to_owned(), 29), ("hinton".to_owned(), 39)]);
         assert!(beats(29, 58));
         assert!(!beats(29, 35), "6 ms is not worth a middle");
         assert!(beats(29, 39));
+    }
+
+    /// The five machines of 10-20.
+    fn the_fleet() -> Vec<(String, bool, bool)> {
+        ["localhost", "maclab", "turing", "hinton", "lecun"].iter().map(|s| (s.to_string(), false, false)).collect()
+    }
+
+    fn beijing() -> Option<String> {
+        Some("101.200.80.77:3340".to_owned())
+    }
+
+    /// hinton's day of 10-20: its v4 reaches nothing outside, so its home
+    /// is n0's aps1 and localhost meets it there at 300–1000 ms
+    /// (hinton's journal: 改走中继：aps1…，往返 374 ms). localhost reaches
+    /// turing on the Beijing relay at 42 ms and turing reaches hinton
+    /// directly at 2 ms: the hop costs 44 ms and is opened, from either
+    /// end — a relay leg is no bar once the relay it would replace is
+    /// measured.
+    #[test]
+    fn a_relay_first_leg_is_a_middle_when_the_relay_it_replaces_is_slower() {
+        let rows = the_fleet();
+        let mine = |b: &str| match b {
+            "turing" => Some(Road::own(b, RoadKind::Relay, beijing(), Some(42))),
+            _ => None,
+        };
+        let theirs = |b: &str| match b {
+            "turing" => Some(Road::own("hinton", RoadKind::Direct, None, Some(2))),
+            _ => None,
+        };
+        assert_eq!(worth_a_hop("localhost", "hinton", 400, &rows, mine, theirs, |_| false), vec!["turing"]);
+
+        // Both legs on the Beijing relay still beat aps1; a forwarded
+        // second leg never does (one hop only).
+        let relayed = |b: &str| (b == "turing").then(|| Road::own("hinton", RoadKind::Relay, beijing(), Some(40)));
+        assert_eq!(worth_a_hop("localhost", "hinton", 400, &rows, mine, relayed, |_| false), vec!["turing"]);
+        let forwarded = |b: &str| (b == "turing").then(|| Road { via: Some("maclab".into()), ..Road::own("hinton", RoadKind::Direct, None, Some(2)) });
+        assert!(worth_a_hop("localhost", "hinton", 400, &rows, mine, forwarded, |_| false).is_empty());
+    }
+
+    /// The same hop seen from hinton.
+    #[test]
+    fn a_relay_second_leg_is_a_middle_when_the_relay_it_replaces_is_slower() {
+        let rows = the_fleet();
+        let none = |_: &str| false;
+        let mine = |b: &str| match b {
+            "turing" => Some(Road::own(b, RoadKind::Direct, None, Some(2))),
+            _ => None,
+        };
+        let theirs = |b: &str| match b {
+            "turing" => Some(Road::own("localhost", RoadKind::Relay, beijing(), Some(42))),
+            _ => None,
+        };
+        assert_eq!(worth_a_hop("hinton", "localhost", 400, &rows, mine, theirs, none), vec!["turing"]);
+        assert!(worth_a_hop("hinton", "localhost", 50, &rows, mine, theirs, none).is_empty(), "6 ms is not worth a middle");
+        assert!(worth_a_hop("hinton", "localhost", 400, &rows, mine, theirs, |b| b == "turing").is_empty(), "lost lately");
+        assert!(middles("hinton", "localhost", &rows, mine, theirs).is_empty(), "before a dial nothing is measured: no relay leg");
+    }
+
+    /// The mark both ends read when they ask at once: held from the ask
+    /// to the hop's end, per pair, counted.
+    #[test]
+    fn an_ask_is_marked_until_its_hop_ends() {
+        assert!(!asking("ask-lo", "ask-hi"));
+        let one = Asking::new("ask-lo", "ask-hi");
+        let two = Asking::new("ask-lo", "ask-hi");
+        assert!(asking("ask-lo", "ask-hi"));
+        assert!(!asking("ask-hi", "ask-lo"), "the other end's ask is its own");
+        drop(one);
+        assert!(asking("ask-lo", "ask-hi"), "two asks, one ended");
+        drop(two);
+        assert!(!asking("ask-lo", "ask-hi"));
     }
 
     #[test]

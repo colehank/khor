@@ -5,6 +5,12 @@
 //! 30 s compare (`hop::compare_roads`) should move the wire there. With
 //! M frozen, the wire goes back to the relay without going down
 //! (`crates/cli/tests/hop.rs` measured 13 s on loopback).
+//!
+//! Scenario f2: a hop with a relay leg (hinton, 2026-10-20). Y's home is
+//! a far relay (its v4 reaches nothing else: n0's aps1, 300–1000 ms); X
+//! reaches B only through the near relay; B and Y share a LAN. Through B
+//! is about a tenth of Y's relay, so either end's compare should move the
+//! wire there, and it should stay there.
 
 use std::time::Duration;
 
@@ -93,4 +99,129 @@ async fn f_two_strict_nats_meet_through_a_public_middle_and_fall_back_when_it_fr
     assert_eq!(settled.hop, Hop::Forwarded, "the hop holds once open");
     assert!(back.is_some_and(|(t, _)| t < Duration::from_secs(16)), "a frozen middle hands back to the relay in under 16 s");
     assert!(after.is_some_and(|l| l.down_ms.is_none()), "the wire never went down");
+}
+
+/// Drops every packet between `dev` and `ip`, both ways, with nft.
+fn cut(dev: &patchbay::Device, ip: std::net::Ipv4Addr) {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let rules = format!(
+        "table inet netlab_cut {{\n chain cut_in {{ type filter hook input priority -10; policy accept;\n  ip saddr {ip} drop\n }}\n chain cut_out {{ type filter hook output priority -10; policy accept;\n  ip daddr {ip} drop\n }}\n}}\n"
+    );
+    let mut cmd = Command::new("nft");
+    cmd.args(["-f", "-"]).stdin(Stdio::piped());
+    let mut child = dev.spawn_command_sync(cmd).unwrap();
+    child.stdin.take().unwrap().write_all(rules.as_bytes()).unwrap();
+    assert!(child.wait().unwrap().success(), "nft took the cut:\n{rules}");
+}
+
+/// How long f2 watches the settled wire for moves.
+const SETTLED: Duration = Duration::from_secs(120);
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 6)]
+async fn f2_a_relay_leg_through_a_middle_beats_a_far_home() {
+    let s = "f2";
+    let lab = Lab::new().await.unwrap();
+    let near = relay(&lab, s, "near", None).await;
+    // 200 ms each way on the relay's own link: X ↔ Y through it is about
+    // 800 ms, aps1 from Beijing on a bad evening.
+    let far = relay(&lab, s, "far", Some(Duration::from_millis(400))).await;
+    let (rx, rl) = (router(&lab, "natx", Net::Strict).await, router(&lab, "lan", Net::Strict).await);
+    let dx = lab.add_device("x").uplink(rx.id()).build().await.unwrap();
+    let db = lab.add_device("b").uplink(rl.id()).build().await.unwrap();
+    let dy = lab.add_device("y").uplink(rl.id()).build().await.unwrap();
+    for d in [&dx, &db, &dy] {
+        slow(d, LEG).await;
+    }
+    // hinton's v4 reaches nothing outside but n0: Y never reaches the
+    // near relay, so X meets it on the far one only.
+    cut(&dy, near.dev.ip().expect("the near relay has IPv4"));
+    let x = node(s, dx, "x", &[&near], &[]).await;
+    let b = node(s, db, "b", &[&near], &[]).await;
+    let y = node(s, dy, "y", &[&far], &[]).await;
+    tokio::time::sleep(Duration::from_secs(8)).await;
+    mesh(&[&b, &x, &y]).await;
+
+    // The legs: X to B on the near relay, B to Y on the LAN.
+    let legs = [
+        x.until(&b, Duration::from_secs(120), |l| l.hop == Hop::Relay && l.rtt_ms.is_some()).await,
+        b.until(&y, Duration::from_secs(120), |l| l.hop == Hop::Direct && l.rtt_ms.is_some()).await,
+    ];
+    let leg_words: Vec<String> = legs
+        .iter()
+        .map(|l| l.as_ref().map_or("never".into(), |(t, l)| format!("{} after {t:.1?}", word(l))))
+        .collect();
+    let relay_first = x.until(&y, Duration::from_secs(120), |l| l.hop == Hop::Relay && l.rtt_ms.is_some()).await;
+    let hopped = x.until(&y, Duration::from_secs(150), |l| l.hop == Hop::Forwarded).await;
+    let Some((took, through)) = hopped else {
+        let now = x.link(&y).await;
+        let back = y.link(&x).await;
+        result(
+            s,
+            false,
+            format!(
+                "legs x–b {}, b–y {}; x→y on the relay {}; never through b in 150 s (x→y now {}, y→x now {})",
+                leg_words[0],
+                leg_words[1],
+                relay_first.as_ref().map_or("never".into(), |(_, l)| word(l)),
+                now.as_ref().map_or("nothing".into(), word),
+                back.as_ref().map_or("nothing".into(), word),
+            ),
+        );
+        panic!("f2: x reaches y through b");
+    };
+
+    // Settled: read both ends every second, count the moves.
+    let began = std::time::Instant::now();
+    let (mut moves, mut last, mut worst) = (0u32, (Hop::Forwarded, through.via.clone()), 0u32);
+    let mut rtts = vec![];
+    while began.elapsed() < SETTLED {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let Some(l) = x.link(&y).await else { continue };
+        if (l.hop, l.via.clone()) != last {
+            moves += 1;
+            last = (l.hop, l.via.clone());
+        }
+        if let Some(ms) = l.rtt_ms {
+            worst = worst.max(ms);
+            rtts.push(ms);
+        }
+    }
+    rtts.sort_unstable();
+    let median = rtts.get(rtts.len() / 2).copied();
+    let there = x.link(&y).await.expect("a link");
+    let back = y.link(&x).await.expect("a link back");
+    // Who asked: both ends compare the same relay, and of two hops
+    // between them the lower id's stands (`hop::Asking`).
+    let asks = |n: &crate::lab::LabNode, peer: &crate::lab::LabNode| {
+        let all: Vec<_> = n.journal(Some(peer)).into_iter().filter(|e| e["e"] == "hop").collect();
+        (all.iter().filter(|e| e["via"].is_string()).count(), all.len())
+    };
+    let (xa, ya) = (asks(&x, &y), asks(&y, &x));
+    let lower = if x.id < y.id { "x" } else { "y" };
+    let ok = through.via.as_deref() == Some(b.id.as_str())
+        && there.hop == Hop::Forwarded
+        && back.hop == Hop::Forwarded
+        && moves == 0;
+    result(
+        s,
+        ok,
+        format!(
+            "legs x–b {}, b–y {}; relay {}; through b after {took:.1?}; over {SETTLED:?} {moves} moves, median {} ms, worst {worst} ms; now x→y {}, y→x {}; hops up/asked x {}/{}, y {}/{} (lower id {lower})",
+            leg_words[0],
+            leg_words[1],
+            relay_first.as_ref().map_or("never".into(), |(_, l)| word(l)),
+            median.map_or("?".into(), |m| m.to_string()),
+            word(&there),
+            word(&back),
+            xa.0,
+            xa.1,
+            ya.0,
+            ya.1,
+        ),
+    );
+    assert_eq!(through.via.as_deref(), Some(b.id.as_str()), "the middle is b");
+    assert_eq!(there.hop, Hop::Forwarded, "x → y holds on the hop");
+    assert_eq!(back.hop, Hop::Forwarded, "y → x rides the same hop");
+    assert_eq!(moves, 0, "no moves once through b");
 }
