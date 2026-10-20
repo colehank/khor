@@ -43,10 +43,9 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
   let frame = 0, down = false, origin = { x: 0, y: 0 }, width = 250, railWidth = RAIL_STEP, base = initial;
   let began = 0, holdAt = Infinity, lastX = 0, lastMove = 0, speed = 0, holdX = 0;
   let rateControl = false, dwellAt: number | null = null;
-  const MOTION_SLOP = 4;
   let tuning={...tuningForContact()};
   const settleMs=()=>SETTLE_MS*tuning.animationScale;
-  let railMotionX = 0, railExtreme = 0, railSign = 0, railStillAt = 0, railLandedAt = 0, railStillX = 0;
+  let railFollowX = 0, railMotionX = 0, railExtreme = 0, railSign = 0, railStillAt = 0, railLandedAt = 0, railStillX = 0;
   let railArmed = false, railAuto = false, railParked = true, railManualStep = false;
   let railCorrectionSign = 0, railCorrectionX = 0, railCorrectionTarget = 0, railCadenceAnchor = 0;
   let travel: { from: number; target: number; at: number; duration: number } | null = null;
@@ -78,7 +77,7 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
     }
     if (!down) return;
     if (s.mode === 'pending' && now - began >= tuning.longPressMs) {
-      railStillX = railCadenceAnchor = railMotionX = origin.x; railExtreme = origin.x; railSign = railCorrectionSign = 0;
+      railFollowX = railStillX = railCadenceAnchor = railMotionX = origin.x; railExtreme = origin.x; railSign = railCorrectionSign = 0;
       railStillAt = railLandedAt = now; railArmed = railAuto = railManualStep = false; railParked = true;
       s.mode = 'rail'; s.source = 'rail'; publish();
     }
@@ -149,14 +148,23 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
             if (!travel) s.position = target;
           }
           railArmed = railAuto = railManualStep = false; railParked = true;
-          railSign = railCorrectionSign = 0; railStillX = railExtreme = railMotionX = x; railCadenceAnchor = origin.x; railStillAt = now;
+          railSign = railCorrectionSign = 0; railFollowX = railStillX = railExtreme = railMotionX = x; railCadenceAnchor = origin.x; railStillAt = now;
           s.direction = 0; s.holding = false; holdAt = Infinity; dwellAt = null;
           publish(); return;
         }
-        if (Math.abs(delta) < (railAuto ? Math.min(tuning.turnSlop,tuning.stillSlop) : MOTION_SLOP)) return;
+        if (!delta || railAuto && Math.abs(delta) < Math.min(tuning.turnSlop,tuning.stillSlop)) return;
         const deliberate = Math.abs(x - railStillX) >= tuning.stillSlop
           || railSign !== 0 && (railExtreme - x) * railSign >= tuning.turnSlop;
         if ((railAuto || railParked || railManualStep) && !deliberate) return;
+        // A spatial tolerance stabilizes the arc itself, not only its timers.
+        // Follow only the excess outside the last displayed finger position;
+        // this absorbs tremor without time-based lag or a threshold-sized jump.
+        const following = railArmed && !railAuto && !railParked && !railManualStep;
+        const followDistance = x - railFollowX;
+        const followDelta = following
+          ? Math.sign(followDistance) * Math.max(0, Math.abs(followDistance) - tuning.stillSlop)
+          : delta;
+        railFollowX = following ? railFollowX + followDelta : x;
         const wasAuto = railAuto;
         if (wasAuto) { railCorrectionSign = railSign; railCorrectionX = x; railCorrectionTarget = Math.round(s.position); }
         let turned = false;
@@ -185,7 +193,7 @@ export function deckScrubber(count: number, initial: number, changed: (s: DeckSc
           travel = { from: s.position, target: railCorrectionTarget - railSign, at: now, duration: settleMs() };
           railManualStep = true; railCorrectionSign = 0;
         } else if (!railManualStep) {
-          s.position = count > 1 ? s.position - delta * tuning.followGain / railWidth : 0;
+          s.position = count > 1 ? s.position - followDelta * tuning.followGain / railWidth : 0;
         }
         if (railCorrectionSign && (x - railCorrectionX) * railCorrectionSign >= tuning.turnSlop) railCorrectionSign = 0;
         rateControl = true; publish(); return;

@@ -77,6 +77,21 @@ for(const rail of [false,true])for(const [initial,dx,expected] of [[0,150,7],[7,
  const {band,move,advance,commits,frames}=fixture(1);move(-180);advance(6000);band.release();advance(SETTLE_MS+32);assert.equal(band.read().opened,0);assert.deepEqual(commits,[]);assert.equal(frames.size,0);
  assert.deepEqual(nearbySlots(0,1,3),[{slot:0,index:0}]);const timing=holdTiming(170,250);assert(timing.dwellMs>=480);assert.deepEqual(timing,holdTiming(-170,250));
 }
+// A resting finger must not visibly shake a manually followed arc before parking.
+for(const sign of [-1,1]){
+ const {band,move,advance}=fixture();move(sign*70);const stable=band.read().position;
+ for(const offset of [3,-3,5,-5,7,-7,0]){
+  move(sign*70+offset);advance(16);
+  assert.equal(band.read().position,stable,'sub-slop tremor does not move the displayed arc');
+ }
+ // Slow intentional movement still follows continuously, without a time filter.
+ for(let distance=8;distance<=24;distance++){
+  move(sign*(70+distance));
+  assert(Math.abs(band.read().position-(stable-sign*(distance-8)/92))<1e-9,'only displacement beyond the tolerance follows, without a catch-up jump');
+ }
+ band.cancel();
+}
+
 // Existing ordinary swipe regressions retained from the previous gate.
 {
  const {band,advance}=fixture();
