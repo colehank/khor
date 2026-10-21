@@ -382,8 +382,10 @@ const GONE_FOR: Duration = Duration::from_secs(120);
 /// word, for a machine whose own first round never arrived.
 const LEFT_ALONE_FOR: Duration = Duration::from_secs(600);
 
-/// The lock that makes one key's dials one at a time.
-type DialLock = Arc<tokio::sync::Mutex<()>>;
+/// The lock that makes one key's dials one at a time, holding how the
+/// last dial under it failed and when — what an asker who waited for that
+/// dial takes as its own answer (`Node::line_to_inner`).
+pub(crate) type DialLock = Arc<tokio::sync::Mutex<Option<(Instant, crate::link::DialFailure)>>>;
 
 /// A connection another machine opened to this one.
 struct Served {
@@ -625,7 +627,7 @@ impl Wires {
     }
 
     /// The lock that makes a key's dials one at a time.
-    pub(crate) fn dial_lock(&self, id: &str, proto: Proto) -> Arc<tokio::sync::Mutex<()>> {
+    pub(crate) fn dial_lock(&self, id: &str, proto: Proto) -> DialLock {
         self.dialing
             .lock()
             .unwrap_or_else(|p| p.into_inner())

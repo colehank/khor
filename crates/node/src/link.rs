@@ -3026,10 +3026,20 @@ impl Node {
         if let Some(conn) = self.wires.live(&d.id, proto) {
             return Ok(line(conn));
         }
+        let waited = std::time::Instant::now();
         let lock = self.wires.dial_lock(&d.id, proto);
-        let _one = lock.lock().await;
+        let mut one = lock.lock().await;
         if let Some(conn) = self.wires.live(&d.id, proto) {
             return Ok(line(conn));
+        }
+        // **The dial this one waited for failed: that is its answer too**
+        // (net-dial). A round and a person's ask meeting on one dead
+        // machine used to dial it one after the other — a whole second
+        // dial right after the first had just said no.
+        if let Some((at, failed)) = one.as_ref()
+            && *at >= waited
+        {
+            return Err(failed.clone());
         }
         // The peer hop (round ROAD-3): a road through a third machine,
         // ready before the dial so it races from the first packet.
@@ -3048,6 +3058,7 @@ impl Node {
                 Ok(line(conn))
             }
             Err(e) => {
+                *one = Some((std::time::Instant::now(), e.clone()));
                 // A middle's dial for another machine is that machine's
                 // miss, not this one's (net-dial B3, `journal::By::Onward`).
                 // A machine that refused is resting, not down: left alone
@@ -3191,10 +3202,16 @@ impl Node {
         {
             return Early::NotTaken;
         }
+        let waited = std::time::Instant::now();
         let lock = self.wires.dial_lock(&d.id, wires::Proto::Main);
-        let _one = lock.lock().await;
+        let mut one = lock.lock().await;
         if self.wires.live(&d.id, wires::Proto::Main).is_some() {
             return Early::NotTaken;
+        }
+        if let Some((at, failed)) = one.as_ref()
+            && *at >= waited
+        {
+            return Early::Failed(failed.clone());
         }
         self.hop_ahead(ep, d).await;
         let Ok(mut addr) = endpoint::dial_addr(&d.id, &d.addrs, &self.published_relays(ep)) else {
@@ -3302,7 +3319,7 @@ impl Node {
                 crate::roads::replied(&self.roads, &d.id, started.elapsed());
                 crate::roads::watch(&self.roads, &d.id, &conn, self.wires.journal.get().cloned(), &self.carry);
                 self.wires.adopt(&d.id, wires::Proto::Main, conn.clone());
-                drop(_one);
+                drop(one);
                 match asked {
                     Some(asked) => match asked.await.ok().flatten() {
                         Some(resp) => {
@@ -3318,6 +3335,7 @@ impl Node {
                 }
             }
             Ok(Err(e)) => {
+                *one = Some((std::time::Instant::now(), e.clone()));
                 match &e {
                     DialFailure::Asleep(_) => self.wires.asleep(&d.id),
                     DialFailure::Refused(why) => self.wires.failed(&d.id, wires::Proto::Main, msg::cant_reach_named(&d.name, why)),
@@ -3326,6 +3344,7 @@ impl Node {
                 Early::Failed(e)
             }
             Err(_) => {
+                *one = Some((std::time::Instant::now(), DialFailure::TimedOut));
                 self.wires.failed(&d.id, wires::Proto::Main, msg::machine_unreachable_timeout(&d.name));
                 Early::Failed(DialFailure::TimedOut)
             }
@@ -11413,6 +11432,7 @@ impl<T> Drop for Aborts<T> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) enum DialFailure {
     TimedOut,
     Refused(String),
