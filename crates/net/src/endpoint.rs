@@ -44,7 +44,11 @@ pub const TUNNEL_ALPN: &[u8] = b"khor-tunnel/0";
 ///
 /// **n0's public relays stay behind these as the fallback** (the owner,
 /// 2026-09-30: 「还是不去 n0 吧，n0 可以兜底」). [`bind_with`] is where
-/// the fallback is added; 「只使用自己的中继」 drops both tiers.
+/// the fallback is added; 「只使用自己的中继」 drops both tiers. Behind
+/// means a machine homes on n0's only in a net report where none of its
+/// other relays answered over HTTPS (vendor/iroh patch 23); until
+/// 2026-10-21 iroh ranked them all by latency, and n0's answer QAD, one
+/// round trip, where ours answer HTTPS alone.
 ///
 /// **What each serves besides relaying is on its entry** ([`Serves`]):
 /// QUIC address discovery on a UDP port, a pkarr registry. A relay whose
@@ -586,15 +590,13 @@ pub async fn bind_pinned(
                 iroh::endpoint::BindOpts::default().set_is_required(false),
             )?;
     }
-    let preferred = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok());
-    let successors = successors(relays);
-    if preferred.is_some() || !successors.is_empty() {
-        // `NetReportConfig` is non-exhaustive: built, then set.
-        let mut config = iroh::endpoint::NetReportConfig::default();
-        config.preferred_relay = preferred;
-        config.successors = successors;
-        b = b.net_report_config(config);
-    }
+    // `NetReportConfig` is non-exhaustive: built, then set.
+    let mut config = iroh::endpoint::NetReportConfig::default();
+    config.preferred_relay = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok());
+    config.successors = successors(relays);
+    config.fallback = fallback_tier(relays, n0).into_iter().map(|r| r.url.clone()).collect();
+    config.home_dwell = HOME_DWELL;
+    b = b.net_report_config(config);
     Ok(b.bind().await?)
 }
 
@@ -775,33 +777,50 @@ pub fn transport() -> iroh::endpoint::QuicTransportConfig {
 }
 
 /// The map a bind hands iroh: the caller's relays ([`relay_map`]), then
-/// n0's public ones when `n0` is on. After the caller's, so a keyed or
+/// the public tier ([`fallback_tier`]). After the caller's, so a keyed or
 /// self-run relay is never shadowed by a public one at the same url;
-/// iroh homes by measured latency, not by position, so order decides
-/// nothing else.
+/// which one is home is not the order's doing but the net report's
+/// (vendor/iroh patch 23: the public tier only when none of the caller's
+/// answered).
 fn full_relay_map(relays: &[Relay], n0: bool) -> iroh::RelayMap {
     let mut map: Vec<std::sync::Arc<iroh::RelayConfig>> = relay_map(relays).relays();
-    // A test's stand-in tier is on whatever `n0` says: a scratch node
-    // keeps 「only mine」 on, so it touches no real relay, and still has a
-    // public tier to home on.
-    let named = std::env::var(PUBLIC_RELAYS_ENV).ok();
-    if n0 || named.is_some() {
-        let public: Vec<std::sync::Arc<iroh::RelayConfig>> = match named {
-            Some(named) => named
-                .split(',')
-                .filter_map(Relay::parse)
-                .filter_map(|r| relay_config(&r))
-                .collect(),
-            None => iroh::defaults::prod::default_relay_map().relays(),
-        };
-        for r in public {
-            if !map.iter().any(|have| have.url == r.url) {
-                map.push(r);
-            }
-        }
-    }
+    map.extend(fallback_tier(relays, n0));
     map.into_iter().collect()
 }
+
+/// **The public tier, behind the caller's relays**: n0's when `n0` is on,
+/// or the stand-ins [`PUBLIC_RELAYS_ENV`] names — each one the caller's
+/// list does not name itself. A test's stand-in tier is on whatever `n0`
+/// says: a scratch node keeps 「only mine」 on, so it touches no real
+/// relay, and still has a public tier to home on.
+fn fallback_tier(relays: &[Relay], n0: bool) -> Vec<std::sync::Arc<iroh::RelayConfig>> {
+    let named = std::env::var(PUBLIC_RELAYS_ENV).ok();
+    if !n0 && named.is_none() {
+        return Vec::new();
+    }
+    let public: Vec<std::sync::Arc<iroh::RelayConfig>> = match named {
+        Some(named) => named.split(',').filter_map(Relay::parse).filter_map(|r| relay_config(&r)).collect(),
+        None => iroh::defaults::prod::default_relay_map().relays(),
+    };
+    let ours = relay_map(relays).relays::<Vec<_>>();
+    let mut out: Vec<std::sync::Arc<iroh::RelayConfig>> = Vec::new();
+    for r in public {
+        if !ours.iter().chain(out.iter()).any(|have| have.url == r.url) {
+            out.push(r);
+        }
+    }
+    out
+}
+
+/// **How long a home that still answers is kept before latency alone may
+/// move it** (vendor/iroh patch 24). Ten minutes: two full net reports
+/// (`FULL_REPORT_INTERVAL`, 5 min) — the latency iroh ranks by is the best
+/// of the last five minutes, so two full reports are two windows that
+/// share no sample. Every move rewrites this machine's row in the device
+/// table and sends its peers to a new relay; hinton, between two of n0's
+/// relays 177-5152 ms away, moved 12 times in a day (2026-10-20). A home
+/// that stops answering is left at once.
+pub const HOME_DWELL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
 /// The pkarr registries the entries name ([`Relay::pkarr`]), each once,
 /// in the entries' order.

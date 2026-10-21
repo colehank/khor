@@ -1,5 +1,9 @@
 //! Scenarios b and c: the relay itself misbehaving.
 //!
+//! b3, b4 (2026-10-21, net-home): two far relays whose round trips keep
+//! jumping, and the home that should not follow every jump; the public
+//! tier behind the machine's own relay.
+//!
 //! b. A far relay (1.5 s round trip, the shape of n0's aps1 through the
 //!    TUN, net-f §f.7) beside a near one (Beijing): the home settles on
 //!    the near one and stays there across a full net report (every 5 min,
@@ -144,6 +148,102 @@ async fn b2_the_home_stays_near_when_far_relays_answer_qad() {
     result(s, ok, format!("homes over {WATCH:?}: {moves:?}; publishes {:?}", published.first()));
     assert_eq!(last, Some("near"), "the home is the near relay");
     assert!(ok, "once near, the home stays near: {moves:?}");
+}
+
+/// b4: n0 is the fallback (the owner, 2026-09-30). The machine's own
+/// relay answers, slower than the two public stand-ins (400 ms against
+/// 100 ms, and they answer QAD, one round trip, where it answers HTTPS
+/// alone): the home is its own all the same (vendor/iroh patch 23).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn b4_the_public_tier_is_home_only_when_ours_does_not_answer() {
+    let s = "b4";
+    let lab = Lab::new().await.unwrap();
+    let ours = relay(&lab, s, "ours", Some(Duration::from_millis(400))).await;
+    let public = crate::lab::qad_relays(&lab, s, &["pub1", "pub2"], Some(Duration::from_millis(100))).await;
+    let rh = router(&lab, "home", Net::Home).await;
+    let dh = lab.add_device("h").uplink(rh.id()).build().await.unwrap();
+    let ca = public.ca.to_string_lossy().into_owned();
+    let n = node(
+        s,
+        dh,
+        "alpha",
+        &[&ours],
+        &[(khor_net::endpoint::PUBLIC_RELAYS_ENV, public.env.as_str()), (khor_net::endpoint::RELAY_CA_ENV, ca.as_str())],
+    )
+    .await;
+    tokio::time::sleep(WATCH).await;
+    let ours_host = ours.url.trim_start_matches("http://").trim_end_matches('/').to_owned();
+    let homes: Vec<(f64, String)> = n
+        .journal(None)
+        .into_iter()
+        .filter(|e| e["e"] == "home" && e["state"] == "connected")
+        .map(|e| {
+            let url = e["url"].as_str().unwrap_or("?");
+            let which = if url.contains(&ours_host) { "ours".to_owned() } else { "public".to_owned() };
+            (e["at"].as_u64().unwrap() as f64 / 1000.0, which)
+        })
+        .collect();
+    let t0 = homes.first().map_or(0.0, |(t, _)| *t);
+    let moves: Vec<String> = homes.iter().map(|(t, w)| format!("{w}@{:.0}s", t - t0)).collect();
+    let last = homes.last().map(|(_, w)| w.as_str());
+    let ok = last == Some("ours") && homes.iter().skip_while(|(_, w)| w != "ours").all(|(_, w)| w == "ours");
+    result(s, ok, format!("homes over {WATCH:?}: {moves:?}"));
+    assert!(ok, "the home is our own relay and stays: {moves:?}");
+}
+
+/// b3: hinton's day (2026-10-20). Its own relays are out of reach (v4,
+/// and it has v6 alone), two far public ones answer QAD, and each one's
+/// round trip keeps jumping: it changed home 12 times that day. Here the
+/// own relay is one nobody runs and the two stand-ins take turns being
+/// nearer, every 30 s a new round trip from hinton's aps1 samples
+/// (177-599 ms; the slower ones are probes that time out, the home not
+/// answering, which is another case), the second out of phase with the
+/// first. The home should move once its dwell (10 min) is over and the
+/// other is a third nearer, not on every jump.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn b3_between_two_far_relays_the_home_rarely_moves() {
+    let s = "b3";
+    const RTT: [u64; 16] = [177, 314, 487, 463, 479, 488, 593, 310, 352, 462, 265, 394, 382, 599, 219, 374];
+    const LONG: Duration = Duration::from_secs(20 * 60);
+    let lab = Lab::new().await.unwrap();
+    let far = crate::lab::qad_relays(&lab, s, &["far1", "far2"], Some(Duration::from_millis(RTT[0]))).await;
+    crate::lab::slow(&far.devs[1], Duration::from_millis(RTT[8])).await;
+    let rh = router(&lab, "home", Net::Home).await;
+    let dh = lab.add_device("h").uplink(rh.id()).build().await.unwrap();
+    let ca = far.ca.to_string_lossy().into_owned();
+    let n = crate::lab::node_on(
+        s,
+        dh,
+        "alpha",
+        vec![serde_json::json!({ "url": "http://127.0.0.1:9" })],
+        &[(khor_net::endpoint::PUBLIC_RELAYS_ENV, far.env.as_str()), (khor_net::endpoint::RELAY_CA_ENV, ca.as_str())],
+    )
+    .await;
+    let began = Instant::now();
+    let mut i = 0;
+    while began.elapsed() < LONG {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        i += 1;
+        crate::lab::slow(&far.devs[0], Duration::from_millis(RTT[i % RTT.len()])).await;
+        crate::lab::slow(&far.devs[1], Duration::from_millis(RTT[(i + 8) % RTT.len()])).await;
+    }
+    let mut homes: Vec<(f64, String)> = Vec::new();
+    for e in n.journal(None).into_iter().filter(|e| e["e"] == "home" && e["state"] == "connected") {
+        let url = e["url"].as_str().unwrap_or("?");
+        let host = |u: &str| u.trim_start_matches("https://").trim_end_matches('/').trim_end_matches(":443").to_owned();
+        let which = far.urls.iter().position(|u| host(url) == host(u)).map_or(url.to_owned(), |i| format!("far{}", i + 1));
+        if homes.last().is_none_or(|(_, w)| *w != which) {
+            homes.push((e["at"].as_u64().unwrap() as f64 / 1000.0, which));
+        }
+    }
+    let t0 = homes.first().map_or(0.0, |(t, _)| *t);
+    let moves: Vec<String> = homes.iter().map(|(t, w)| format!("{w}@{:.0}s", t - t0)).collect();
+    let changes = homes.len().saturating_sub(1);
+    // Two dwells fit in twenty minutes; upstream moved on full reports
+    // (every 5 min) with no hysteresis at all.
+    let ok = changes <= 2;
+    result(s, ok, format!("{changes} changes of home over {LONG:?}: {moves:?}"));
+    assert!(ok, "the home moved {changes} times in {LONG:?}: {moves:?}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

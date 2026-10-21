@@ -117,6 +117,14 @@ pub struct NetReportConfig {
     /// and the one that replaces it. Whenever the home would be `old`
     /// and the current report reached `new`, the home is `new`.
     pub successors: Vec<(RelayUrl, RelayUrl)>,
+    /// khor patch 23 (vendor/iroh/KHOR.md): relays kept behind the rest —
+    /// a home only in a report where no other relay answered its HTTPS
+    /// probe (n0's public tier behind one's own).
+    pub fallback: Vec<RelayUrl>,
+    /// khor patch 24 (vendor/iroh/KHOR.md): how long a home that still
+    /// answers is kept before latency alone may move it. Zero is
+    /// upstream's: any report may move it.
+    pub home_dwell: Duration,
 }
 
 impl NetReportConfig {
@@ -127,6 +135,8 @@ impl NetReportConfig {
             captive_portal_check: false,
             preferred_relay: None,
             successors: Vec::new(),
+            fallback: Vec::new(),
+            home_dwell: Duration::ZERO,
         }
     }
 }
@@ -138,6 +148,8 @@ impl Default for NetReportConfig {
             captive_portal_check: true,
             preferred_relay: None,
             successors: Vec::new(),
+            fallback: Vec::new(),
+            home_dwell: Duration::ZERO,
         }
     }
 }
@@ -163,6 +175,20 @@ pub(crate) struct Client {
     preferred_relay: Option<RelayUrl>,
     /// khor patch 5: relays and the ones that replace them.
     successors: Vec<(RelayUrl, RelayUrl)>,
+    /// khor patch 23: relays that are a home only when no other answered.
+    fallback: Vec<RelayUrl>,
+    /// khor patch 24: how long a home that answers is kept against latency.
+    home_dwell: Duration,
+    /// khor patch 24: the home this client chose last, and since when. Kept
+    /// apart from `reports.last`, which a full report clears before it runs.
+    home: Option<(RelayUrl, Instant)>,
+    /// khor patch 25: when the home connection dropped, per relay
+    /// ([`Client::follow_home`]).
+    home_drops: Arc<std::sync::Mutex<Vec<(RelayUrl, Instant)>>>,
+    /// khor patch 25: until when the successor rule is off for this machine.
+    successors_off_until: Option<Instant>,
+    /// khor patch 25: the task that fills `home_drops`.
+    _follow_home: Option<AbortOnDropHandle<()>>,
     /// A collection of previously generated reports.
     ///
     /// Sometimes it is useful to look at past reports to decide what to do.
@@ -306,7 +332,42 @@ impl Client {
             captive_portal_check: opts.user_config.captive_portal_check,
             preferred_relay: opts.user_config.preferred_relay.clone(),
             successors: opts.user_config.successors.clone(),
+            fallback: opts.user_config.fallback.clone(),
+            home_dwell: opts.user_config.home_dwell,
+            home: None,
+            home_drops: Default::default(),
+            successors_off_until: None,
+            _follow_home: None,
         }
+    }
+
+    /// khor patch 25 (vendor/iroh/KHOR.md): notes every time the home
+    /// connection drops — connected, then not, on the same relay — for the
+    /// successor rule to read ([`Client::add_report_history_and_set_preferred_relay`]).
+    #[cfg(not(wasm_browser))]
+    pub(crate) fn follow_home<W>(&mut self, home: W)
+    where
+        W: Watcher<Value = Vec<crate::endpoint::RelayStatus>> + Unpin + Send + 'static,
+    {
+        let drops = self.home_drops.clone();
+        let task = task::spawn(async move {
+            let mut stream = home.stream();
+            let mut was: Vec<(RelayUrl, bool)> = Vec::new();
+            while let Some(now) = stream.next().await {
+                for s in &now {
+                    let dropped =
+                        !s.is_connected() && was.iter().any(|(u, up)| u == s.url() && *up);
+                    if dropped && let Ok(mut d) = drops.lock() {
+                        d.push((s.url().clone(), Instant::now()));
+                    }
+                }
+                was = now
+                    .iter()
+                    .map(|s| (s.url().clone(), s.is_connected()))
+                    .collect();
+            }
+        });
+        self._follow_home = Some(AbortOnDropHandle::new(task));
     }
 
     /// Generates a [`Report`].
@@ -335,6 +396,10 @@ impl Client {
             && last.captive_portal == Some(true)
         {
             do_full = true;
+        }
+        // khor patch 25: a new network may hold a successor this one reset.
+        if is_major {
+            self.successors_off_until = None;
         }
         if do_full {
             self.reports.last = None; // causes ProbePlan::new below to do a full (initial) plan
@@ -793,10 +858,11 @@ impl Client {
 
     /// Adds `r` to the set of recent Reports and mutates `r.preferred_relay` to contain the best recent one.
     fn add_report_history_and_set_preferred_relay(&mut self, r: &mut Report, full: bool) {
-        let mut prev_relay = None;
+        // khor patch 24: the home is this client's own memory. Upstream read
+        // it off `reports.last`, which a full report clears before it runs,
+        // so every full report chose afresh with no hysteresis at all.
+        let prev_relay = self.home.as_ref().map(|(url, _)| url.clone());
         if let Some(ref last) = self.reports.last {
-            prev_relay.clone_from(&last.preferred_relay);
-
             // If we don't have new information, copy this from the last report
             if r.mapping_varies_by_dest_ipv4.is_none() {
                 r.mapping_varies_by_dest_ipv4 = last.mapping_varies_by_dest_ipv4;
@@ -834,54 +900,123 @@ impl Client {
             self.reports.prev.remove(&t);
         }
 
+        // khor patches 3, 5, 11, 23: a relay is reached when its HTTPS probe
+        // answered. A QAD answer is UDP and a home is held over TCP: from
+        // MacLab, TCP to the Beijing TLS relay is reset in-path
+        // (audit/pk-3341-dump.txt) where UDP may pass.
+        let https = |url: &RelayUrl| {
+            r.relay_latency
+                .iter()
+                .any(|(probe, u, _)| probe == Probe::Https && u == url)
+        };
+
+        // khor patch 25: a successor whose connection dropped twice within
+        // SUCCESSOR_DROPS_WITHIN is not taken again for SUCCESSOR_OFF, or
+        // until the network changes (`get_report`). MacLab, 2026-10-20
+        // 15:32: the TLS relay answered its HTTPS probe, and the home
+        // connection to it was reset every 20 s.
+        const SUCCESSOR_DROPS_WITHIN: Duration = Duration::from_secs(2 * 60);
+        const SUCCESSOR_OFF: Duration = Duration::from_secs(60 * 60);
+        if let Ok(mut drops) = self.home_drops.lock() {
+            drops.retain(|(_, at)| now.duration_since(*at) <= SUCCESSOR_DROPS_WITHIN);
+            let dropping = self
+                .successors
+                .iter()
+                .any(|(_, new)| drops.iter().filter(|(url, _)| url == new).count() >= 2);
+            if dropping {
+                self.successors_off_until = Some(now + SUCCESSOR_OFF);
+                drops.clear();
+            }
+        }
+        let successors_off = self.successors_off_until.is_some_and(|until| now < until);
+        let is_successor = |url: &RelayUrl| self.successors.iter().any(|(_, new)| new == url);
+
+        // khor patch 23: the fallback tier is home only in a report where no
+        // other relay answered its HTTPS probe (the owner, 2026-09-30: 「n0
+        // 可以兜底」). Upstream ranked every relay by latency alone, and n0's
+        // answer QAD — one round trip — where ours answer HTTPS alone.
+        let ours_answered = r.relay_latency.iter().any(|(probe, url, _)| {
+            probe == Probe::Https
+                && !self.fallback.contains(url)
+                && !(successors_off && is_successor(url))
+        });
+        let mut candidates: Vec<RelayUrl> = Vec::new();
+        for (_, url, _) in r.relay_latency.iter() {
+            if !(ours_answered && self.fallback.contains(url)) && !candidates.contains(url) {
+                candidates.push(url.clone());
+            }
+        }
+        if successors_off && candidates.iter().any(|u| !is_successor(u)) {
+            candidates.retain(|u| !is_successor(u));
+        }
+        // khor patch 25: and among those, in a report where any answered
+        // HTTPS, one that did or the home itself (its connection is the
+        // proof). A report with no HTTPS answer at all (an incremental one,
+        // or one cut short by the QAD shortcut) ranks them all, as upstream.
+        if candidates.iter().any(|u| https(u)) {
+            candidates.retain(|u| https(u) || prev_relay.as_ref() == Some(u));
+        }
+
         // Then, pick which currently-alive relay server from the
         // current report has the best latency over the past MAX_AGE.
+        r.preferred_relay = None;
         let mut best_any = Duration::default();
-        let mut old_relay_cur_latency = Duration::default();
-        {
-            for (_, url, duration) in r.relay_latency.iter() {
-                if Some(url) == prev_relay.as_ref() {
-                    old_relay_cur_latency = duration;
-                }
-                if let Some(best) = best_recent.get(url)
-                    && (r.preferred_relay.is_none() || best < best_any)
-                {
-                    best_any = best;
-                    r.preferred_relay.replace(url.clone());
-                }
-            }
-
-            // If we're changing our preferred relay but the old one's still
-            // accessible and the new one's not much better, just stick with
-            // where we are.
-            if prev_relay.is_some()
-                && r.preferred_relay != prev_relay
-                && !old_relay_cur_latency.is_zero()
-                && best_any > old_relay_cur_latency / 3 * 2
+        for url in &candidates {
+            if let Some(best) = best_recent.get(url)
+                && (r.preferred_relay.is_none() || best < best_any)
             {
-                r.preferred_relay = prev_relay.clone();
+                best_any = best;
+                r.preferred_relay.replace(url.clone());
             }
         }
 
-        // khor patch 11: an incremental report that did not measure the
-        // home keeps it. Such a report measures only the relay holding the
-        // QAD connection; ranking that one alone moved MacLab's home from
+        // If we're changing our preferred relay but the old one's still
+        // accessible and the new one's not much better, just stick with
+        // where we are.
+        // khor patch 24: the old one is weighed as the new one is, by its
+        // best in the last MAX_AGE (upstream took its last sample in this
+        // report: one slow probe of the home against the challenger's best
+        // moved hinton between aps1 and euc1 a dozen times a day), and a
+        // home that answers is not moved by latency within `home_dwell`.
+        if let Some(prev) = &prev_relay
+            && r.preferred_relay.as_ref() != Some(prev)
+            && candidates.contains(prev)
+            && let Some(old) = best_recent.get(prev)
+        {
+            let dwelling = self
+                .home
+                .as_ref()
+                .is_some_and(|(_, since)| now.duration_since(*since) < self.home_dwell);
+            if dwelling || best_any > old / 3 * 2 {
+                r.preferred_relay = Some(prev.clone());
+            }
+        }
+
+        // khor patch 11: an incremental report that did not reach the home
+        // keeps it. Such a report measures only the relay holding the QAD
+        // connection; ranking that one alone moved MacLab's home from
         // Beijing to n0's aps1 25 s after every full report, all night
         // (audit/net-d.md §1.4). A report that tried every relay (`full`:
         // a full one, or an incremental one on the initial plan whose
         // probes all ended) may move the home as before, so a home that
         // died is left within two periodic reports (net-h, audit/net-d.md).
+        // Not a home this report has ruled out: a benched successor, or the
+        // fallback tier once ours answered.
         if !full
             && let Some(prev) = &prev_relay
-            && r.relay_latency.get(prev).is_none()
+            && !https(prev)
+            && !(successors_off && is_successor(prev))
+            && !(ours_answered && self.fallback.contains(prev))
         {
             r.preferred_relay = Some(prev.clone());
         }
 
         // khor patch 3: a relay the person chose wins whenever this report
-        // reached it — reachability, not latency, is the only test.
+        // reached it — reachability, not latency, is the only test. Once
+        // home, any answer keeps it: the home connection is the TCP proof.
         if let Some(chosen) = &self.preferred_relay
-            && r.relay_latency.get(chosen).is_some()
+            && (https(chosen)
+                || (prev_relay.as_ref() == Some(chosen) && r.relay_latency.get(chosen).is_some()))
         {
             r.preferred_relay = Some(chosen.clone());
         }
@@ -890,19 +1025,22 @@ impl Client {
         // moves to the successor — the same box over TLS, say, measuring
         // no faster than the plain one it replaces. After patch 3, so a
         // person who chose the old one gets the new one too.
-        // Reached means its HTTPS answered: a QAD answer is UDP, and a home
-        // is held over TCP. From MacLab, TCP to the Beijing TLS relay is
-        // reset in-path (audit/pk-3341-dump.txt) where UDP may pass.
-        if let Some(home) = &r.preferred_relay
+        if !successors_off
+            && let Some(home) = &r.preferred_relay
             && let Some((_, new)) = self.successors.iter().find(|(old, _)| old == home)
-            && r
-                .relay_latency
-                .iter()
-                .any(|(probe, url, _)| probe == Probe::Https && url == new)
+            && https(new)
         {
             r.preferred_relay = Some(new.clone());
         }
 
+        // A report that reached nothing names no home, as upstream's does
+        // (iroh then keeps the relay it is on), and forgets none: the dwell
+        // runs on once the relays answer again.
+        if r.relay_latency.is_empty() {
+            r.preferred_relay = None;
+        } else if r.preferred_relay != prev_relay {
+            self.home = r.preferred_relay.clone().map(|url| (url, now));
+        }
         self.reports.prev.insert(now, r.clone());
         self.reports.last = Some(r.clone());
     }
@@ -1340,5 +1478,270 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    // khor patches 23-25 (vendor/iroh/KHOR.md): which relay is home.
+
+    fn khor_url(name: &str) -> RelayUrl {
+        format!("http://{name}.com").parse().unwrap()
+    }
+
+    fn khor_client(set: impl FnOnce(&mut NetReportConfig)) -> Client {
+        let mut config = NetReportConfig::default();
+        set(&mut config);
+        let tls_config = CaTlsConfig::insecure_skip_verify()
+            .client_config(default_provider())
+            .expect("infallible");
+        let opts = Options::new(tls_config).net_report_config(config);
+        Client::new(
+            DnsResolver::new(),
+            RelayMap::empty(),
+            opts,
+            Default::default(),
+        )
+    }
+
+    /// One report of `(relay, probe, ms)` answers and the home it picks.
+    /// `full` is a report that tried every relay; like `get_report`, it
+    /// starts with no last report.
+    fn khor_step(c: &mut Client, full: bool, answers: &[(&str, Probe, u64)]) -> Option<String> {
+        if full {
+            c.reports.last = None;
+        }
+        let mut r = Report::default();
+        for (name, probe, ms) in answers {
+            r.relay_latency
+                .update_relay(khor_url(name), Duration::from_millis(*ms), *probe);
+        }
+        c.add_report_history_and_set_preferred_relay(&mut r, full);
+        r.preferred_relay
+            .map(|u| u.host_str().unwrap().trim_end_matches(".com").to_owned())
+    }
+
+    const MIN: Duration = Duration::from_secs(60);
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn khor_the_fallback_tier_is_home_only_when_no_other_relay_answered() {
+        use Probe::*;
+        let mut c = khor_client(|c| {
+            c.fallback = vec![khor_url("aps1")];
+            c.home_dwell = 10 * MIN;
+        });
+        // n0's aps1 measures far nearer over QAD than our own over HTTPS.
+        let both = [
+            ("bj", Https, 300),
+            ("aps1", QadIpv4, 20),
+            ("aps1", Https, 80),
+        ];
+        assert_eq!(
+            khor_step(&mut c, true, &both).as_deref(),
+            Some("bj"),
+            "our own answered"
+        );
+        tokio::time::advance(5 * MIN).await;
+        let n0_only = [("aps1", QadIpv4, 20), ("aps1", Https, 80)];
+        assert_eq!(
+            khor_step(&mut c, true, &n0_only).as_deref(),
+            Some("aps1"),
+            "nothing else answered"
+        );
+        tokio::time::advance(MIN).await;
+        // Back the moment ours answers, dwell or not: the tier is not latency.
+        assert_eq!(
+            khor_step(&mut c, true, &both).as_deref(),
+            Some("bj"),
+            "ours answers again"
+        );
+        // Ours reached by UDP alone is not ours answering.
+        let mut c = khor_client(|c| c.fallback = vec![khor_url("aps1")]);
+        let qad_only = [
+            ("bj", QadIpv4, 300),
+            ("aps1", QadIpv4, 20),
+            ("aps1", Https, 80),
+        ];
+        assert_eq!(khor_step(&mut c, true, &qad_only).as_deref(), Some("aps1"));
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn khor_the_home_is_weighed_by_its_best_recent_latency_too() {
+        use Probe::*;
+        let mut c = khor_client(|_| {});
+        let first = [("d1", Https, 400), ("d2", Https, 700)];
+        assert_eq!(khor_step(&mut c, true, &first).as_deref(), Some("d1"));
+        tokio::time::advance(Duration::from_secs(25)).await;
+        // One slow sample of the home against the challenger's best:
+        // upstream weighed the home by this sample alone (350 < 900 * 2/3).
+        let spike = [("d1", Https, 900), ("d2", Https, 350)];
+        assert_eq!(
+            khor_step(&mut c, false, &spike).as_deref(),
+            Some("d1"),
+            "350 is not a third under d1's 400"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn khor_a_home_that_answers_is_kept_for_the_dwell() {
+        use Probe::*;
+        let mut c = khor_client(|c| c.home_dwell = 10 * MIN);
+        assert_eq!(
+            khor_step(&mut c, true, &[("d1", Https, 500), ("d2", Https, 900)]).as_deref(),
+            Some("d1")
+        );
+        let faster = [("d1", Https, 500), ("d2", Https, 10)];
+        for _ in 0..3 {
+            tokio::time::advance(3 * MIN).await;
+            assert_eq!(
+                khor_step(&mut c, true, &faster).as_deref(),
+                Some("d1"),
+                "inside the dwell"
+            );
+        }
+        tokio::time::advance(2 * MIN).await;
+        assert_eq!(
+            khor_step(&mut c, true, &faster).as_deref(),
+            Some("d2"),
+            "past it"
+        );
+        // A home that stops answering is left at once.
+        tokio::time::advance(MIN).await;
+        assert_eq!(
+            khor_step(&mut c, true, &[("d1", Https, 500)]).as_deref(),
+            Some("d1")
+        );
+    }
+
+    /// hinton, 2026-10-20: its own relays are v4 and it reaches only n0's,
+    /// over CERNET's v6; it changed home 12 times that day. Relay round
+    /// trips from its journal (改走中继), in the order measured: aps1
+    /// 177-1216 ms, euc1 428-5152 ms, one over 3 s a probe that timed out.
+    /// Each sample holds for 150 s (aps1) or 75 s (euc1), so the two
+    /// cross. Two hours of reports every 25 s, a full one every 5 min,
+    /// each measuring both (an incremental report re-probed every relay's
+    /// QAD: `QadConn::observer`, patch 26). Upstream: 8 changes.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn khor_hinton_changes_home_rarely_between_two_far_relays() {
+        use Probe::*;
+        const APS1: [u64; 19] = [
+            177, 314, 487, 463, 479, 488, 593, 310, 42101, 352, 462, 265, 394, 1036, 382, 1216,
+            599, 219, 374,
+        ];
+        const EUC1: [u64; 33] = [
+            783, 890, 567, 442, 584, 638, 628, 552, 864, 796, 798, 428, 771, 772, 749, 529, 523,
+            574, 1230, 611, 538, 506, 515, 560, 847, 509, 772, 543, 2610, 2013, 5152, 2100, 3054,
+        ];
+        let mut c = khor_client(|c| {
+            c.fallback = vec![khor_url("aps1"), khor_url("euc1")];
+            c.home_dwell = 10 * MIN;
+        });
+        let mut homes = Vec::new();
+        for i in 0..(2 * 60 * 60 / 25) {
+            let full = i % 12 == 0;
+            let mut answers = Vec::new();
+            for (name, ms) in [
+                ("aps1", APS1[(i / 6) % APS1.len()]),
+                ("euc1", EUC1[(i / 3) % EUC1.len()]),
+            ] {
+                if ms <= 3000 {
+                    answers.push((name, QadIpv6, ms));
+                    if full {
+                        answers.push((name, Https, ms * 2));
+                    }
+                }
+            }
+            let home = khor_step(&mut c, full, &answers);
+            if homes.last() != Some(&home) {
+                homes.push(home);
+            }
+            tokio::time::advance(Duration::from_secs(25)).await;
+        }
+        let changes = homes.len() - 1;
+        println!("hinton, two hours: {changes} changes: {homes:?}");
+        // What is left is aps1 missing a full report (the 42 s sample):
+        // away, and back once the dwell is over.
+        assert!(
+            changes <= 3,
+            "{changes} changes of home in two hours: {homes:?}"
+        );
+    }
+
+    /// MacLab, 2026-10-20 15:32: home moved to the TLS successor, whose
+    /// connection was reset every 20 s; back to plain at 15:35, to TLS
+    /// again at 15:37.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn khor_a_successor_that_keeps_dropping_is_left_for_an_hour() {
+        use Probe::*;
+        let mut c = khor_client(|c| c.successors = vec![(khor_url("plain"), khor_url("pk"))]);
+        let both = [
+            ("plain", QadIpv4, 5),
+            ("plain", Https, 20),
+            ("pk", Https, 25),
+        ];
+        assert_eq!(khor_step(&mut c, true, &both).as_deref(), Some("pk"));
+        for _ in 0..2 {
+            tokio::time::advance(Duration::from_secs(20)).await;
+            c.home_drops
+                .lock()
+                .unwrap()
+                .push((khor_url("pk"), Instant::now()));
+        }
+        tokio::time::advance(Duration::from_secs(5)).await;
+        // The next report, incremental, hears plain over QAD alone.
+        assert_eq!(
+            khor_step(&mut c, false, &[("plain", QadIpv4, 5)]).as_deref(),
+            Some("plain"),
+            "two drops in 40 s"
+        );
+        tokio::time::advance(Duration::from_secs(25)).await;
+        assert_eq!(khor_step(&mut c, true, &both).as_deref(), Some("plain"));
+        for _ in 0..11 {
+            tokio::time::advance(5 * MIN).await;
+            assert_eq!(
+                khor_step(&mut c, true, &both).as_deref(),
+                Some("plain"),
+                "for an hour"
+            );
+        }
+        tokio::time::advance(5 * MIN).await;
+        assert_eq!(
+            khor_step(&mut c, true, &both).as_deref(),
+            Some("pk"),
+            "then tried again"
+        );
+        // One drop is not a pattern.
+        c.home_drops
+            .lock()
+            .unwrap()
+            .push((khor_url("pk"), Instant::now()));
+        tokio::time::advance(Duration::from_secs(25)).await;
+        assert_eq!(khor_step(&mut c, true, &both).as_deref(), Some("pk"));
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn khor_reached_is_an_https_answer() {
+        use Probe::*;
+        // Patch 3: a preferred relay that answered QAD alone is not home.
+        let mut c = khor_client(|c| c.preferred_relay = Some(khor_url("mine")));
+        let udp = [("mine", QadIpv4, 5), ("other", Https, 50)];
+        assert_eq!(khor_step(&mut c, true, &udp).as_deref(), Some("other"));
+        tokio::time::advance(MIN).await;
+        let tcp = [
+            ("mine", QadIpv4, 5),
+            ("mine", Https, 900),
+            ("other", Https, 50),
+        ];
+        assert_eq!(khor_step(&mut c, true, &tcp).as_deref(), Some("mine"));
+        // Home already, it is kept by any answer.
+        tokio::time::advance(MIN).await;
+        assert_eq!(khor_step(&mut c, true, &udp).as_deref(), Some("mine"));
+        // Patch 11: an incremental report that heard the home over QAD
+        // alone keeps it, as one that did not hear it at all.
+        let mut c = khor_client(|_| {});
+        assert_eq!(
+            khor_step(&mut c, true, &[("d1", Https, 100), ("d2", Https, 900)]).as_deref(),
+            Some("d1")
+        );
+        tokio::time::advance(Duration::from_secs(25)).await;
+        let qad = [("d1", QadIpv4, 900), ("d2", QadIpv4, 10)];
+        assert_eq!(khor_step(&mut c, false, &qad).as_deref(), Some("d1"));
     }
 }

@@ -12,7 +12,51 @@
 
 ## 补丁
 
-二十二处。
+二十五处。
+
+### 25. `src/net_report.rs`：「量到」只认 HTTPS；老断的接班者停用一小时（2026-10-21，net-home）
+
+补丁 3、5、11 和 23 判「这一轮量到了它」统一只认它的 HTTPS 回答：QAD 是 UDP，家却握在 TCP 上。补丁 3 的首选中继
+要 HTTPS 答上才当家，已经是家的，任何回答都留住（握着的连接就是 TCP 的证明）；补丁 11 的增量报告没有 HTTPS 量到家就
+不动家；挑家时，这一轮只要有中继答了 HTTPS，就只在答了的（和现在的家）里挑，一个 HTTPS 都没有的报告（增量报告、被
+QAD 捷径截断的）照上游全都排。
+
+接班者（补丁 5）只凭 HTTPS 答上就搬家，可 MacLab 2026-10-20 15:32 搬到 pk 以后家连接每 20 秒被重置一次，15:35 回明文，
+15:37 又去 pk。补丁：`Client::follow_home`（`socket.rs` 绑定时接上 `home_relay_status`）记下家连接每一次从「已连接」掉下来；
+某个接班者两分钟内掉了两次，接班规则对本机停用一小时，这期间它也不当候选（除非没别的可选）；网络大变（`is_major`）时恢复。
+选「断两次就停」而不是「websocket 稳住 60 秒才算量到」：后者要在中继连接上等一分钟才知道能不能搬，每一台每一次搬家都要
+等；前者只罚真断的那一台，而断的样子（TCP 被重置）是那张网的性质，一小时内不会变，换了网才可能变。测试：
+`khor_a_successor_that_keeps_dropping_is_left_for_an_hour`、`khor_reached_is_an_https_answer`（都打补丁前红）。
+
+### 24. `src/net_report.rs`：家的滞回对等、最短驻留（2026-10-21，net-home）
+
+上游的滞回不对等：挑战者取近 5 分钟各次探测里最低的，现任只取这一轮最后遍历到的那一个样本；完整报告在开始时清掉
+`reports.last`，家从那里读，于是每次完整报告都没有现任、按 5 分钟最低重挑。hinton 只连得上 n0 的 aps1、euc1（往返
+177–1216、428–5152 毫秒），2026-10-20 一天换家 12 次，每次都重写设备表那一行。补丁：家记在 `Client::home`（连同
+当上家的时刻），不随 `reports.last` 清掉；现任也取近 5 分钟最低（`best_recent`）；`NetReportConfig::home_dwell`
+之内家还答着就不因延迟换（khor 传 10 分钟，`endpoint::HOME_DWELL`；默认 0 是上游的样子，上游自己的表测试不变）。
+家不答了当场走。一轮什么都没量到时照上游不给家（iroh 于是清掉家，中继回来那一轮报告再把家交给中继，促它当场重连；起初让它留着死了的家，`crates/cli/tests/journal.rs` 的断网测试里两头重连差了几秒，回来后第一次拨号 6–10 秒），但 `Client::home` 不忘，驻留接着算。测试：`khor_the_home_is_weighed_by_its_best_recent_latency_too`、
+`khor_a_home_that_answers_is_kept_for_the_dwell`、`khor_hinton_changes_home_rarely_between_two_far_relays`
+（hinton 的往返按记录顺序，两小时：打补丁前换 8 次，打补丁后 3 次——剩下的是 aps1 那个 42 秒的样本让它一次完整报告
+没答上，走了，驻留满了再回来）。上游没有对应改动，升级 iroh 时要重新打。
+
+### 23. `src/net_report.rs`：兜底的那档只在别的都没答上时当家（2026-10-21，net-home）
+
+负责人 2026-09-30 定「n0 可以兜底」，可 iroh 挑家只比延迟：n0 的中继答 QAD（一个往返），khor 自己的只答 HTTPS
+（TCP 加 TLS 握手，几个往返），一比就是 n0 近。`NetReportConfig` 多一个 `fallback: Vec<RelayUrl>`（照补丁 5 的写法）；
+挑家时这一轮只要有不在名单里的中继 HTTPS 答上了，就只在它们里挑，都没答上才轮到名单里的。在补丁 3（首选）、
+补丁 5（接班）之前：人选的首选中继哪怕在兜底那档也照样当家，接班照旧。khor 这边 `endpoint::bind_pinned` 把
+n0 那档（或测试的 `KHOR_PUBLIC_RELAYS` 替身）传进来，自己名单里写了的不算兜底。hinton 只有 CERNET v6 出得去，
+自家三台只有 v4，它的家仍然只能是 n0，这是对的。测试：`khor_the_fallback_tier_is_home_only_when_no_other_relay_answered`
+（打补丁前红）。上游没有对应改动，升级 iroh 时要重新打。
+
+**跑这几条测试**：vendor 的 iroh 单独编译时用的是 registry 的 noq-proto，补丁 17 要的 `PathStats` 字段没有，
+要把根 `Cargo.toml` 的那条 patch 带上（会改 `vendor/iroh/Cargo.lock`，跑完 `git checkout` 回去）：
+
+```sh
+cargo test --manifest-path vendor/iroh/Cargo.toml \
+  --config 'patch.crates-io.noq-proto.path="<仓库>/vendor/noq-proto"' --lib khor_
+```
 
 ### 22. `src/net_report.rs`：主机是 IPv6 字面地址的中继也能问 QAD v6（2026-10-17，path-fix）
 

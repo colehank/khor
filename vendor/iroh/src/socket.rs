@@ -1086,13 +1086,18 @@ impl EndpointInner {
         #[cfg(wasm_browser)]
         let net_report_config = net_report::Options::default().net_report_config(net_report_config);
 
-        let net_reporter = net_report::Client::new(
+        #[cfg_attr(wasm_browser, allow(unused_mut))]
+        let mut net_reporter = net_report::Client::new(
             #[cfg(not(wasm_browser))]
             dns_resolver,
             relay_map.clone(),
             net_report_config,
             metrics.net_report.clone(),
         );
+        // khor patch 25 (vendor/iroh/KHOR.md): the home's drops, for the
+        // successor rule.
+        #[cfg(not(wasm_browser))]
+        net_reporter.follow_home(sock.home_relay_status());
 
         let (direct_addr_done_tx, direct_addr_done_rx) = mpsc::channel(8);
         let direct_addr_update_state = DirectAddrUpdateState::new(
