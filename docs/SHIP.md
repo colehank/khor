@@ -239,3 +239,16 @@ khor devices                                                   # 五台都在线
 - iOS：首轮构建在发现聚合遗漏后取消，未上传。最终使用验证过且未变的 dist，CLI 临时覆盖 beforeBuildCommand=true，采用 `--archive-only` 重建新 Rust 并归档，避免重复前端构建影响并行编译；新静态库及归档的时间、完整收据和签名通过。系统 PATH 独立导出上传于 `2026-10-21 21:40:15 +08:00` 返回 Upload succeeded／EXPORT SUCCEEDED，App Store Connect 显示正在处理；上传版本为 0.1.14（55）。两处临时签名工程配置按构建前基线恢复。
 - 证据与日志：`/Volumes/disk0/khor-ship-20261021-all/`、`/Volumes/disk0/khor-ship-20261021-all-ui/`。按归属和无引用核验，清理本轮 Khor Xcode 导出副本、旧静态库及两份本机源码 export，共 778,626,738 字节；空且无包身份证据的暂存目录保留。两个远端旧产物 backup 因部分进程 fd 权限限制未能完整排除引用，保留在 hinton /tmp（约 254 MB），不占 Mac 系统盘；target、最新静态库、归档、测试证据及用户数据保留。系统盘约余 18 GiB、外挂盘约余 37 GiB，未清系统 swap 或全量 target。
 - Windows／Linux 文件管理器 GUI、iPhone 系统分享与触控／输入法／原生网页叠层仍待对应实机验收；编译、协议或浏览器替身通过不代表这些操作已验收。
+
+
+## 发布记录：2026-10-22（会话内容甲板、网页历史与返回复用）
+
+- 功能提交：`76a4e9e5`，原生接口登记补正：`0da5bc08`。统一 Desktop 会话内目录／文件／网页的双图标玻璃导航与单层位置药丸；文件刷新／保存进入药丸，窄屏恢复外侧返回，浏览器共用主区的历史箭头与药丸内刷新。前端收据：`khor-ui-assets:/assets/index-Bw92yO2s.js`。
+- 外侧返回将当前文档标签持久重置为「新会话标签页」，再打开文件／网页复用同一枚；其它标签、顺序与固定状态保留。网页内部前进／后退仍遵循独立历史。原生查询读取平台 WebView 的实际能力，未知／不可后退时灰显后退，不可前进时隐藏前进；仅可见网页轮询站内导航变化。
+- 打开网页时采用让出显示：地址编辑、推荐、菜单与任务界面暂时隐藏当前原生网页，完成后恢复同一 WebView。停止使用独立原生候选浮层；工具提示不遮盖网页，也不为提示隐藏网页。补齐冷开请求去重／串行、迟到网页事件不能改写已返回标签，以及文件菜单退出后再定位的焦点修复。
+- 验证：主干生成、默认前端检查与 TypeScript、生产构建、gates（81 scripts / 74 entries）通过。分支 content-model、实际前端／私有节点的 content-toolbar、六种文件动作、browser-yield、page-history 均通过，具体红绿证据保留于 `/Volumes/disk0/khor-content-toolbar-proof/`。真实隔离 Mac App 验证文件／网页返回后同标签复用、其它标签保留、原生历史与冷开网页；原生命令表遗漏先红后绿后补理由登记，两项通过。
+- Mac：release 编译、CLI／GUI 签名与收据通过。旧主窗口 49317 退出，新主窗口 97455，实际 5467 监听 PID 一致，仅一枚主窗口。11 个既有辅助进程与 11 个会话全部保留，无新增失败；HTTP 收据一致。CLI SHA-256 `f0c0fc9b2772a9ef6d7676b75b55818b2e1878e2f07366dfa2c058498e2d70b1`，GUI `45a59fcd4ce0a9fa6aef1507539db9153cf1d0f0536d1d16eb85540ec4d22f3f`。
+- 集群：hinton 编译安装功能提交，lecun／turing keeper 自动换新；实际 5467 监听 PID 分别为 3703100／2969427／1263754，运行 exe 与安装文件 SHA-256 均为 `b6e1da5ffb9628aa62eff67e75cf330cde946289c9da9891b65c9159576ebada`，HTTP 收据一致。三台各 11 个既有会话保留，无新增失败，Mac CLI 确认三台直连。远端四份关键生产源码与 main 逐字节一致；后续接口登记提交只改测试，不改生产代码。
+- iOS：沿用已验证 dist，采用 archive-only 归档，新静态库、归档 App 的时间、完整收据与签名通过。系统 PATH 独立导出上传返回 `Upload succeeded`／`EXPORT SUCCEEDED`；上传版本 0.1.14（56），Apple 正在处理。临时签名工程配置按构建前基线恢复。
+- 收尾：日志、会话快照与发布收据保留于 `/Volumes/disk0/khor-ship-20261022-content-toolbar/`。清理本次有包身份且无引用的 Xcode 导出副本、旧静态库备份及集群源码导出，共 730,101,982 字节；未确认身份的空暂存目录保留。已移除完成并合入的 content-toolbar worktree；保留最新静态库、正式归档与验收证据，没有全量清 target 或删除系统 swap。
+- 平台边界：Mac 原生网页操作已验；iOS 为编译／归档／上传，Windows getter 仅目标平台 metadata 编译，Linux getter未编译或运行。未把这些结果称为 iPhone 原生手势或其它桌面 GUI 验收。
