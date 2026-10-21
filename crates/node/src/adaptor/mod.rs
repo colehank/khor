@@ -334,6 +334,8 @@ pub struct Procs {
     by_pid: BTreeMap<u32, Proc>,
     sessions: Sessions,
     commands: BTreeMap<u32, Vec<String>>,
+    /// Suspended jobs remain alive, but cannot own a terminal selection.
+    suspended: std::collections::BTreeSet<u32>,
 }
 
 /// Where a process's POSIX session id comes from (see [`Procs::held_by`]).
@@ -456,6 +458,17 @@ impl Procs {
             .filter(|(_, p)| process_name_matches(&p.name, codex::PROCESS_NAME))
             .map(|(pid, _)| Pid::from_u32(*pid))
             .collect();
+        let suspended = sys
+            .processes()
+            .iter()
+            .filter_map(|(pid, p)| {
+                matches!(
+                    p.status(),
+                    sysinfo::ProcessStatus::Stop | sysinfo::ProcessStatus::Tracing
+                )
+                .then_some(pid.as_u32())
+            })
+            .collect();
         let mut commands = BTreeMap::new();
         if !wanted.is_empty() {
             sys.refresh_processes_specifics(
@@ -482,6 +495,7 @@ impl Procs {
             by_pid,
             sessions: Sessions::Os,
             commands,
+            suspended,
         }
     }
 
@@ -491,7 +505,19 @@ impl Procs {
             by_pid: procs.into_iter().collect(),
             sessions: Sessions::Unknown,
             commands: BTreeMap::new(),
+            suspended: Default::default(),
         }
+    }
+
+    /// Stopped by job control or a debugger in this process snapshot.
+    pub(crate) fn suspended(&self, pid: u32) -> bool {
+        self.suspended.contains(&pid)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_suspended(mut self, pids: impl IntoIterator<Item = u32>) -> Self {
+        self.suspended = pids.into_iter().collect();
+        self
     }
 
     /// The command line of an agent candidate, when the OS exposed it.

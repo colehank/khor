@@ -123,7 +123,12 @@ pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
     let mut choices = BTreeMap::<u32, BTreeSet<Option<String>>>::new();
     let client_in = |root| {
         let held = found.procs.held_by(&[root]);
-        let mut here = clients.iter().filter(|pid| held.contains(pid));
+        // A Ctrl-Z job is alive and still belongs to this shell, but its
+        // last title must not compete with the current runnable client. Keep
+        // it in `clients` above so any former binding is cleared as well.
+        let mut here = clients
+            .iter()
+            .filter(|pid| held.contains(pid) && !found.procs.suspended(**pid));
         let pid = *here.next()?;
         if here.next().is_some() { return None; }
         let args: Vec<_> = found.procs.command(pid)?.iter().skip(1).map(std::ffi::OsString::from).collect();
@@ -362,6 +367,76 @@ mod tests {
             !found.rows.iter().any(|r| r.sighting.pids.contains(&31)),
             "the shared server is never a terminal client"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_snapshot_distinguishes_stopped_and_resumed_jobs_without_losing_liveness() {
+        struct Child(std::process::Child);
+        impl Drop for Child {
+            fn drop(&mut self) { let _ = self.0.kill(); let _ = self.0.wait(); }
+        }
+        let child = Child(std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap());
+        let pid = child.0.id();
+        // SAFETY: signal only the child owned and reaped by this test.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGSTOP) }, 0);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let snapshot = Procs::snapshot();
+            assert!(snapshot.get(pid).is_some(), "stopped jobs remain alive");
+            if snapshot.suspended(pid) { break; }
+            assert!(std::time::Instant::now() < deadline, "OS snapshot did not see SIGSTOP");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        // SAFETY: same owned child; no user process is signalled.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGCONT) }, 0);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let snapshot = Procs::snapshot();
+            assert!(snapshot.get(pid).is_some());
+            if !snapshot.suspended(pid) { break; }
+            assert!(std::time::Instant::now() < deadline, "OS snapshot did not see SIGCONT");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn suspended_job_does_not_block_the_current_client_or_keep_its_old_binding() {
+        let mut found = fixture();
+        let current = found.procs.get(11).unwrap().clone();
+        let argv = found.procs.command(11).unwrap().to_vec();
+        found.procs = Procs::of([
+            (10, found.procs.get(10).unwrap().clone()),
+            (11, current.clone()),
+            (12, current),
+        ]).with_commands([(11, argv.clone()), (12, argv)]).with_suspended([11]);
+        found.rows[0].sighting.pids.push(11);
+        select(&mut found, &[(10, Some(title(B)))]);
+        assert!(found.rows[0].sighting.pids.is_empty(), "the stopped client's stale seat clears");
+        assert_eq!(found.rows[1].sighting.pids, vec![12]);
+
+        // The same rule applies inside a tmux pane. A stopped job does not
+        // override the active pane title or make the pane look ambiguous.
+        found.multiplexed.push(Multiplexed {
+            found: row("mux"), holds: vec![10, 11, 12], running: None,
+            panes: vec![PaneReading { pid: 10, title: Some(title(A)), ..Default::default() }],
+        });
+        select(&mut found, &[(10, Some(title(B)))]);
+        assert_eq!(found.rows[0].sighting.pids, vec![12]);
+        assert!(found.rows[1].sighting.pids.is_empty());
+
+        // fg restores eligibility on the next snapshot; this is not a
+        // persistent exclusion and does not kill or resume either process.
+        found.procs = found.procs.clone().with_suspended([12]);
+        select(&mut found, &[]);
+        assert_eq!(found.rows[0].sighting.pids, vec![11]);
+
+        found.procs = found.procs.clone().with_suspended([]);
+        select(&mut found, &[]);
+        assert!(found.rows.iter().all(|r| r.sighting.pids.is_empty()), "two runnable clients stay ambiguous");
+        found.procs = found.procs.clone().with_suspended([11, 12]);
+        select(&mut found, &[]);
+        assert!(found.rows.iter().all(|r| r.sighting.pids.is_empty()), "a stopped-only terminal cannot reuse a stale title");
     }
 
     #[test]
