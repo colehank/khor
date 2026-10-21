@@ -44,6 +44,10 @@ use std::sync::Mutex;
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID};
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(target_os = "macos")]
+#[path = "native_edit.rs"]
+mod native_edit;
+
 /// The acts the page runs, by the ids their items carry. The same names
 /// as `Act` in `src/lib/shortcuts.ts`.
 const ACTS: [&str; 25] = [
@@ -220,17 +224,16 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         &[&new, &new_tab, &import, &sep()?, &close_tab, &close_window],
     )?;
 
-    // **The Edit menu is load-bearing, not a courtesy.** WKWebView has no
-    // key binding of its own for ⌘C / ⌘V / ⌘X / ⌘A / ⌘Z: they reach a text
-    // field only as these items' actions (`copy:` and the rest) sent down
-    // the responder chain. Without them a text field cannot paste.
+    // Ordinary fields still use AppKit's responder chain. CodeMirror's
+    // undo stack is not AppKit's, so menu undo/redo first ask the focused
+    // trusted editor, then fall back to the original native responder.
     let edit = Submenu::with_items(
         app,
         m::edit(),
         true,
         &[
-            &PredefinedMenuItem::undo(app, Some(m::undo()))?,
-            &PredefinedMenuItem::redo(app, Some(m::redo()))?,
+            &item("edit-undo", m::undo(), Some("CmdOrCtrl+Z"))?,
+            &item("edit-redo", m::redo(), Some("CmdOrCtrl+Shift+Z"))?,
             &sep()?,
             &PredefinedMenuItem::cut(app, Some(m::cut()))?,
             &PredefinedMenuItem::copy(app, Some(m::copy()))?,
@@ -536,6 +539,11 @@ pub fn follow_lang(_app: &AppHandle) {}
 /// bar went quiet once 浏览器 had been used. The editor windows hold one
 /// webview each and are still found the old way.
 pub fn on_event(app: &AppHandle, id: &str) {
+    #[cfg(target_os = "macos")]
+    if id == "edit-undo" || id == "edit-redo" {
+        native_edit::run(app, id == "edit-redo");
+        return;
+    }
     let editor = app
         .webview_windows()
         .into_iter()

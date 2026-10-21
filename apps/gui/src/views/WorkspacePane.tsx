@@ -17,6 +17,7 @@
 // second address. So when the workspace list is open, this opens with
 // the sessions folded, and opening them is one press away.
 import { sessionInWorkspace } from "@/lib/session-cwd";
+import type { EditorHistorySlot } from "@/lib/code/history";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
@@ -239,6 +240,23 @@ export function WorkspacePane({
       the path alone, because the machine is this pane's and a stored id
       that disagreed with it would be a tab pointing at another disk. */
   const [tabs, setTabs] = useState<string[]>(() => storedTabs(machine, root));
+  // The file view is replaced when tabs or viewport layouts change; its
+  // undo stack belongs to the open tab. Release it with the tab, not at
+  // autosave, and never keep another workspace's history in this map.
+  const historyScope = JSON.stringify([machine, root]);
+  const histories = useRef({ scope: historyScope, files: new Map<string, EditorHistorySlot>() });
+  if (histories.current.scope !== historyScope) histories.current = { scope: historyScope, files: new Map() };
+  const historyFiles = histories.current.files;
+  const historyOf = (path: string): EditorHistorySlot => {
+    let slot = historyFiles.get(path);
+    if (!slot) historyFiles.set(path, slot = {});
+    return slot;
+  };
+  useEffect(() => {
+    const open = new Set(tabs);
+    for (const path of historyFiles.keys()) if (!open.has(path)) historyFiles.delete(path);
+  }, [tabs, historyFiles]);
+
   /** The files this workspace was last opened on, newest first — what
       the middle column offers when nothing is open (ruling 37). Kept in
       state as well as in storage so the list under an empty column
@@ -2034,6 +2052,7 @@ export function WorkspacePane({
               here={here}
               git
               draft={drafts.get(file)}
+              editorHistory={historyOf(file)}
               onDraft={draftOf(file)}
               saveAt={saveAt}
               readAt={readAt}
@@ -2126,6 +2145,7 @@ export function WorkspacePane({
               // 35), only ever for the file it named.
               goLine={goLine !== null && goLine.path === file ? goLine : null}
               draft={drafts.get(file)}
+              editorHistory={historyOf(file)}
               onDraft={draftOf(file)}
             />
           )}

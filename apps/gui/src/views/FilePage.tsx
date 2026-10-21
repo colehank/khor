@@ -33,6 +33,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { launchOn, pullTemp, renamePath, reveal } from "@/api";
 import type { CodeWindow } from "@/components/CodeWindow";
 import { caretCoveredAt, editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/lib/code/place";
+import type { EditorHistorySlot } from "@/lib/code/history";
 import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
@@ -438,7 +439,10 @@ export function FilePage({
   embedded = false,
   embeddedContext,
   contentDeck,
+  editorHistory,
 }: {
+  /** Owned by the open file/tab, not by its temporary source view. */
+  editorHistory?: EditorHistorySlot;
   /* **Inside the session's 附栏 this is the same page, with the main
      area's deck** (UX-40 §4, the owner 2026-10-07 02:10: 「打开一个文件或
      地址，是不是得和主区一样，下方有一个自己的甲板，而不是在左上角点返回和
@@ -493,6 +497,7 @@ export function FilePage({
   code?: CodeWindow | null;
 }) {
   const coarse = useCoarse();
+  const localHistory = useRef<EditorHistorySlot>({});
   const box = useRef<HTMLDivElement>(null);
   const [can, setCan] = useState(false);
   const [saves, setSaves] = useState(0);
@@ -686,6 +691,7 @@ export function FilePage({
           <RevisionView machine={machine} path={path} rev={rev} compare={compare} face={face} narrow />
         ) : (
         <FileView
+          editorHistory={editorHistory ?? localHistory.current}
           key={`${machine} ${path}`}
           machine={machine}
           path={path}

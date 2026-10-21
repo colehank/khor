@@ -47,6 +47,7 @@ import {
 } from "@/api";
 import { CodeEditor, preloadEditor } from "@/components/CodeEditor.lazy";
 import { editorIn, focusAtTop } from "@/lib/code/place";
+import type { EditorHistorySlot } from "@/lib/code/history";
 import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
 import { Markdown } from "@/components/Markdown";
@@ -234,7 +235,10 @@ export function FileView({
   git = true,
   reading = false,
   onCanEdit,
+  editorHistory,
 }: {
+  /** An open-tab owner may retain this across the file view's remount. */
+  editorHistory?: EditorHistorySlot;
   /** **Read first, under a finger** (2026-10-03, the owner's ruling on
       P1: 「像备忘录」). True while a phone shows this file to be read: no
       editor over the text, so a tap selects, scrolls or does nothing and
@@ -325,6 +329,7 @@ export function FileView({
    * link being broken. */
   goLine?: { line: number; at: number } | null;
 }) {
+  const localHistory = useRef<EditorHistorySlot>({});
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
       asking — `text`, which is the road this view already had. */
@@ -1068,6 +1073,8 @@ export function FileView({
         // editor's own extensions (`lib/code`). Writable exactly when the
         // whole file is here and nobody is reading it first.
         <CodeEditor
+          editorHistory={editorHistory ?? localHistory.current}
+          historyKey={JSON.stringify([machine, path])}
           path={path}
           text={body}
           editable={canEdit && !reading}

@@ -22,7 +22,7 @@
 // too (the platform's cannot be hidden, so CodeMirror leaves it) and
 // CodeMirror draws the two handles; elsewhere the selection is drawn as
 // well, in the theme's grey (`lib/code/theme`).
-import { history, defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { history, historyField, defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { getChunks, unifiedMergeView } from "@codemirror/merge";
 import { codeFolding, foldGutter, foldKeymap, indentUnit } from "@codemirror/language";
 import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction, type Extension } from "@codemirror/state";
@@ -42,6 +42,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { IconChevronDown, IconChevronRight } from "@/components/icons";
 import { gui } from "@/gen/catalog";
+import type { EditorHistorySlot } from "@/lib/code/history";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { GitHunk } from "@/gen/bindings/GitHunk";
 import { inlineBlame, setBlamed } from "@/lib/code/blame";
@@ -206,7 +207,13 @@ export function CodeEditor({
   onSave,
   onChunks,
   className,
+  editorHistory,
+  historyKey = path,
 }: {
+  /** The open file's history survives a source/preview or tab remount. */
+  editorHistory?: EditorHistorySlot;
+  /** Full document identity when paths alone can belong to different machines. */
+  historyKey?: string;
   /** Names the language (`lib/code/lang`). */
   path: string;
   /** What the editor holds. Typing hands it out through `onText` and the
@@ -257,12 +264,18 @@ export function CodeEditor({
   useLayoutEffect(() => {
     const svgs = icons.current?.querySelectorAll("svg");
     if (svgs && svgs.length === 2) glyphs = { open: svgs[0], folded: svgs[1] };
+    const saved = editorHistory?.saved;
+    // A file read from elsewhere must not inherit edits against different
+    // bytes. Every other extension is made fresh for the current host.
+    const retained = saved?.key === historyKey && saved.text === text ? saved : undefined;
     const v = new EditorView({
       parent: box.current!,
       state: EditorState.create({
         doc: text,
+        selection: retained?.selection,
         extensions: [
           base(),
+          retained ? historyField.init(() => retained.history) : [],
           lang.current.of([]),
           indent.current.of(indenting(text, path)),
           edit.current.of(writable(editable)),
@@ -321,6 +334,12 @@ export function CodeEditor({
     const teardownObserver = observeScroller(v.scrollDOM, () => view.current);
     return () => {
       teardownObserver();
+      if (editorHistory) editorHistory.saved = {
+        key: historyKey,
+        text: v.state.doc.toString(),
+        selection: v.state.selection,
+        history: v.state.field(historyField),
+      };
       v.destroy();
       view.current = null;
     };

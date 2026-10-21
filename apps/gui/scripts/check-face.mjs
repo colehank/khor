@@ -31603,6 +31603,26 @@ try {
       // The undo is an edit like any other: let it be written.
       await wait(1_800);
 
+      // c2. The open file keeps its history when another tab takes focus.
+      const beforeSwitch = await box();
+      await toEnd();
+      await page.keyboard.type("q");
+      await until(3_000, async () => writes.filter(oneRs).at(-1)?.text.endsWith("q"));
+      await wait(300);
+      await page.locator('[data-file-tree] [data-depth="0"][data-file="debug.log"] > button').first().click();
+      await page.locator('[data-ws-tab-strip] [data-tab]').filter({ hasText: "one.rs" }).first().click();
+      await until(3_000, async () => (await page.locator("[data-edit]").count()) > 0);
+      await toEnd();
+      await page.keyboard.press("ControlOrMeta+z");
+      await wait(300);
+      const afterSwitchUndo = await box();
+      if (afterSwitchUndo !== beforeSwitch) fail(`save c2 · undo after switching tabs kept ${JSON.stringify(afterSwitchUndo?.slice(-4))} — expected ${JSON.stringify(beforeSwitch?.slice(-4))}`);
+      await page.keyboard.press("ControlOrMeta+Shift+z");
+      await wait(300);
+      if ((await box()) !== beforeSwitch + "q") fail("save c2 · redo after switching tabs did not restore the edit");
+      await page.keyboard.press("ControlOrMeta+z");
+      await wait(1_800);
+
       // d. leaving writes.
       await toEnd();
       await page.keyboard.type("i");
@@ -31716,6 +31736,9 @@ try {
       const before = await page.locator("[data-ws-tab-strip] [data-tab]").count();
       await page.locator('[data-ws-tab-strip] [data-tab]').filter({ hasText: "one.rs" }).first().locator("[data-tab-close]").click({ force: true });
       await until(3_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab]").count()) < before);
+      // Removing the tab can paint before the leaving write's effect and
+      // transport reply. Observe that reply rather than racing the paint.
+      await until(3_000, async () => writes.slice(i0).some(w => oneRs(w) && w.done !== null));
       const sheet = await page.locator("[data-close-draft]").count();
       const i = writes.slice(i0).find(oneRs);
       console.log(`save i · × over a pending edit: written ${!!i?.ok}, holding ${JSON.stringify(i?.text.slice(-1))}, the sheet ${sheet}`);
