@@ -2,6 +2,7 @@
  * node's open document collection. Wide and narrow layouts use this state. */
 import { useEffect, useRef, useState } from 'react';
 import type { ContentTab, SessionContent } from '@/hooks/use-session-content';
+import { directoryOf } from '@/lib/paths';
 export type ContentSource = 'workspace' | 'browser';
 export type ContentScene = 'closed' | 'picker' | 'document' | 'overview' | 'sessions';
 export type ContentScroll = { top: number; left: number };
@@ -74,6 +75,7 @@ export type ContentNavigation = {
  update:(session:string,patch:Partial<ContentPlace>)=>void;document:(tab:ContentTab)=>void;select:(tab:ContentTab)=>void;
  resume:(session:string)=>void;browse:(session:string,scope?:{device:string;root:string})=>void;
  add:(session:string,scope?:{device:string;root:string})=>ContentTab;
+ returnToPicker:(session:string)=>void;
  overview:(session:string)=>void;back:(session:string)=>boolean;dismiss:(session:string)=>void;closePicker:(session:string)=>boolean;
  sessions:(session:string)=>void;inspect:(session:string)=>void;
  scroll:(session:string,key:string,value:ContentScroll)=>void;scrollOf:(session:string,key:string)=>ContentScroll|undefined;
@@ -167,12 +169,60 @@ export function useContentNavigation(content: SessionContent): ContentNavigation
     if(!valid(session,key)){const tab=content.active(session);if(tab){select(tab);key=content.handle(tab);}else{add(session,scope);return;}}
     update(session,{scene:'picker',key,...(scope?{scope,source:'workspace',query:''}:{})});
   };
+  /** Outer Back replaces this tab's document with its starting page.
+   * Browser history and selector Back keep their independent meanings. */
+  const returnToPicker=(session:string):void=>{
+    pendingResume.current.delete(session);
+    const s=get(session);
+    const tab=content.allTabs.find(t=>t.session===session&&content.handle(t)===s.key)||content.active(session);
+    if(!tab)return;
+    const key=content.handle(tab),owned=tabState(session,key),kept=s.tabPlaces[key];
+    const source=[place(owned),...[...owned.trail].reverse(),...[...owned.documentTrail].reverse(),
+      ...(kept?[kept.place,...[...kept.trail].reverse()]:[]),
+      ...(s.lastContent?[s.lastContent.place,...[...s.lastContent.trail].reverse()]:[])]
+      .find(p=>p.scene==='picker');
+    const fallback:ContentPlace={...emptyContentPlace(),key,
+      ...(tab.view==='page'?{source:'browser',exit:tab.device}:
+        {scope:{device:tab.device,root:tab.view==='file'?directoryOf(tab.url):tab.url}})};
+    const picker:ContentPlace={...(source||fallback),scene:'picker',key};
+    const device=picker.source==='workspace'?picker.scope?.device||tab.device:picker.exit||tab.device;
+    const root=picker.source==='workspace'?picker.scope?.root||'':'';
+    // point() publishes its optimistic target synchronously and serializes
+    // persistence. A new choice in this same tick therefore fills this same
+    // starting tab, and its write cannot be overtaken by the reset.
+    void content.point(tab.id,device,root,'workspace','').catch(()=>{});
+    const from=contentPickerPosition(source?source.key:key,source||fallback),to=contentPickerPosition(key,picker);
+    write(session,s=>{
+      const tabPlaces={...s.tabPlaces};delete tabPlaces[key];delete tabPlaces[tab.id];
+      const scrolls={...s.scrolls,...Object.fromEntries(Object.entries(s.scrolls)
+        .filter(([name])=>name.startsWith(from+' ')).map(([name,value])=>[to+name.slice(from.length),value]))};
+      return {...s,...picker,tabPlaces,scrolls,trail:[],documentTrail:[],from:'picker',recent:key,browseBefore:null};
+    });
+    if(editor(key).editing||editor(key).exitPrompt!==undefined)edit(key,{editing:false,exitPrompt:undefined});
+  };
   const back=(session:string):boolean=>{
     pendingResume.current.delete(session);
     const s=get(session),trail=[...s.trail];let prev:ContentPlace|undefined;
-    while(trail.length){const entry=trail.pop()!;if(entry.scene!=='closed'&&(entry.scene!=='document'||valid(session,entry.key))){prev=entry;break;}}
+    const active=content.active(session),activeKey=active?content.handle(active):null;
+    const owner=valid(session,s.key)?s.key:valid(session,activeKey)?activeKey:null;
+    let scrolls=s.scrolls;
+    while(trail.length){
+      const entry=trail.pop()!;
+      if(entry.scene==='closed'||entry.scene==='document'&&!valid(session,entry.key))continue;
+      if(entry.scene==='picker'&&!valid(session,entry.key)){
+        // Old singleton source routes had no tab key. The current host
+        // renders only real tabs, so returning to that route must keep
+        // the current tab's identity instead of opening an empty sheet.
+        if(!owner)continue;
+        prev={...entry,key:owner};
+        const from=contentPickerPosition(entry.key,entry),to=contentPickerPosition(owner,entry);
+        scrolls={...scrolls,...Object.fromEntries(Object.entries(scrolls)
+          .filter(([name])=>name.startsWith(from+' ')).map(([name,value])=>[to+name.slice(from.length),value]))};
+      }else prev=entry;
+      break;
+    }
     if(!prev)return false;
-    const next=prev;write(session,s=>({...s,...next,trail,from:trail.at(-1)?.scene||'picker',...(next.scene==='document'?{recent:next.key,documentTrail:trail}:{})}));
+    const next=prev;write(session,s=>({...s,...next,scrolls,trail,from:trail.at(-1)?.scene||'picker',...(next.scene==='document'?{recent:next.key,documentTrail:trail}:{})}));
     const tab=next.scene==='document'?content.allTabs.find(t=>t.session===session&&content.handle(t)===next.key):null;
     if(tab)void content.focus(tab.id).catch(()=>{});
     return true;
@@ -207,6 +257,6 @@ export function useContentNavigation(content: SessionContent): ContentNavigation
       write(session,s=>{const next=enterContent(tabState(session,key),patch);return {...s,tabPlaces:{...s.tabPlaces,[key]:checkpoint(next)}};});
     },
   });
-  const api:ContentNavigation={editor,edit,get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,select,resume,browse,add,overview,back,dismiss,closePicker,sessions,inspect,scroll,scrollOf,browseBefore,forTab};
+  const api:ContentNavigation={editor,edit,get,has:(session:string)=>!!current.current[session]||pendingResume.current.has(session),update,document,select,resume,browse,add,returnToPicker,overview,back,dismiss,closePicker,sessions,inspect,scroll,scrollOf,browseBefore,forTab};
   return api;
 }

@@ -154,7 +154,7 @@ window.showTree();`);
    await page.locator('[data-file-more-item="share"]').click();await page.locator('[data-file-more-menu]').waitFor({state:'detached'});await pause(100);
    assert.deepEqual(await page.evaluate(()=>window.shared),[['notes.md']]);await page.locator('[data-file-more]').click();await page.locator('[data-file-more-menu]').waitFor();
   }
-  const locate=page.locator('[data-file-more-item="locate"]');await locate.click();assert.deepEqual(await page.evaluate(()=>window.located),['/project/notes.md']);
+  const locate=page.locator('[data-file-more-item="locate"]');await locate.click();await page.locator('[data-file-more-menu]').waitFor({state:'detached'});assert.deepEqual(await page.evaluate(()=>window.located),['/project/notes.md']);
   await page.locator('[data-file-more-menu]').waitFor({state:'detached'});
   await page.screenshot({path:join(out,`${scenario.name}.png`)});
   await page.evaluate(here=>{window.toggled=0;window.showVerbs(here)},scenario.here);

@@ -1,23 +1,10 @@
-// One list UI, presented in the DOM or above a native webpage.
-//
-// **One component, because there is one menu.** It hangs under the box on
-// every pane in this app. Browsing uses a desktop menu window or a trusted
-// iOS sibling WK view — a native child webview always paints above this
-// page's DOM, so a menu drawn here would come out underneath whatever site
-// the tab is showing (`show_menu` has the whole account). Two components
-// would be one restyle away from being two different menus for one idea,
-// which is the failure `OmniChip`'s head describes about copying a token.
-//
-// **The keyboard never moves.** Even floated, the caret stays in the box
-// and ↑↓/Tab/Enter belong to the field it is in; what crosses to the other
-// presenter is the list and which row is lit, and what comes back is a
-// lease-scoped press. Native presenters preserve the field's input focus.
+// One shared DOM candidate list. Native webpages yield to this UI; no
+// khor menu is presented over an external webpage. MenuFace remains for
+// the retained platform adapter, but browser fields never open it.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from "react";
 
-import { hear, hideMenu, inApp, menuPick, menuRows, showMenu, sizeMenu, type NativeMenuState } from "@/api";
+import { hear, menuPick, menuRows, sizeMenu, type NativeMenuState } from "@/api";
 import type { Avatar } from "@/gen/bindings/Avatar";
-import { createRoot } from "react-dom/client";
-import { nativeMenuSnapshot } from "@/lib/native-menu-snapshot";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBrowser, IconCheck } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -92,7 +79,6 @@ export type OmniAxis = {
 export type MenuRows = { groups: OmniAxis[]; at: number };
 
 /** How far under the box the menu hangs. */
-const MENU_GAP = 4;
 
 /**
  * The rows themselves. Nothing here knows which of the two places it is
@@ -217,154 +203,18 @@ export function OmniMenu({
   );
 }
 
-/**
- * Draws the shared menu through the available native presenter: a desktop
- * menu window or an iOS sibling WK view above the retained webpage.
- *
- * Answers **whether that took**. `false` is not a failure and the caller
- * must draw the list itself when it comes back. Ordinary browser tabs
- * have no independent native page covering khor's DOM. A native
- * refusal (a presenter that would not build) lands in the same place,
- * which is the one behaviour worth having: 一档接不上不会变成「没有值」,
- * and a menu that quietly became nothing would leave the box unusable.
- */
-/** iPad desktop UA still uses the iOS native presenter. Desktop keeps the
- * live MenuFace; only iOS needs an inert snapshot in its private WK view. */
-const needsSnapshot = () => /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-  (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
-
-function SnapshotMenu({ rows, room, publish }: { rows: MenuRows; room: number; publish: (html: string) => void }) {
-  const box = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const send = () => publish(nativeMenuSnapshot(el));
-    const observer = new ResizeObserver(send);
-    observer.observe(el);
-    send();
-    return () => observer.disconnect();
-  }, [rows, room, publish]);
-  return <OmniMenu menuRef={box} rows={rows} onPick={() => {}} style={{maxHeight: room}} />;
-}
-
+/** Candidates are DOM content. The page owner yields its retained native
+ * webview while these controls need the body; candidates never acquire a
+ * second native presenter. Kept as a compatibility hook for Omnibox's DOM
+ * fallback, so its ordinary path/machine menus share this policy too. */
 export function useFloatedMenu(
-  anchor: React.RefObject<HTMLElement | null>,
-  rows: MenuRows | null,
-  onPick: (key: string) => void,
-  float: boolean,
-  options: { above?: boolean; onDismiss: () => void },
+  _anchor: React.RefObject<HTMLElement | null>,
+  _rows: MenuRows | null,
+  _onPick: (key: string) => void,
+  _float: boolean,
+  _options: { above?: boolean; onDismiss: () => void },
 ): boolean {
-  const [able, setAble] = useState(inApp);
-  const latest = useRef({ rows, onPick, onDismiss: options.onDismiss });
-  latest.current = { rows, onPick, onDismiss: options.onDismiss };
-  const lease = useRef<string | null>(null);
-  const on = float && able;
-  const opened = on && rows !== null;
-  // A lease belongs to one continuous opening, not to a keystroke.
-  // Cleanup can only hide its own lease, never another field's menu.
-  useLayoutEffect(() => {
-    if (!opened) return;
-    const id = crypto.randomUUID();
-    lease.current = id;
-    return () => {
-      if (lease.current === id) lease.current = null;
-      void hideMenu(id).catch(() => {});
-    };
-  }, [opened]);
-  useEffect(() => {
-    const stopPick = hear<{ id: string; key: string }>("menu:pick", ({id, key}) => {
-      if (lease.current !== id) return;
-      if (latest.current.rows?.groups.some(group => group.candidates.some(row => row.key === key))) {
-        latest.current.onPick(key);
-      }
-    });
-    const stopDismiss = hear<{ id: string }>("menu:dismiss", ({id}) => {
-      if (lease.current !== id) return;
-      // Retire immediately, before React commits the owner's close. This
-      // also cancels a queued show and rejects a late pick in this task.
-      lease.current = null;
-      void hideMenu(id).catch(() => {});
-      latest.current.onDismiss();
-    });
-    return () => { stopPick(); stopDismiss(); };
-  }, []);
-
-  const same = rows ? JSON.stringify(rows) : "";
-  const update = useRef<(() => void) | null>(null);
-  const sent = useRef("");
-  useEffect(() => {
-    const id = lease.current;
-    if (!opened || !id) return;
-    let gone = false, sequence = 0;
-    let host: HTMLDivElement | null = null;
-    let renderer: ReturnType<typeof createRoot> | null = null;
-    if (needsSnapshot()) {
-      host = document.createElement("div");
-      host.dataset.nativeMenuMeasure = "";
-      host.inert = true;
-      Object.assign(host.style, {position:"fixed",left:"0",top:"0",transform:"translateX(-200vw)",opacity:"0",pointerEvents:"none"});
-      document.body.append(host);
-      renderer = createRoot(host);
-    }
-    const ship = () => {
-      const el = anchor.current, current = latest.current.rows;
-      if (!el || !current || gone || lease.current !== id) return;
-      const r = el.getBoundingClientRect();
-      const above = options.above === true;
-      const at = {x:r.left, y:above ? r.top - MENU_GAP : r.bottom + MENU_GAP, w:r.width,
-        view:window.innerHeight, across:window.innerWidth, above};
-      const send = (html?: string) => {
-        if (gone || lease.current !== id) return;
-        const request = ++sequence;
-        void showMenu({id, at, rows:current, ...(html ? {html} : {})}).then(took => {
-          if (lease.current !== id) {
-            void hideMenu(id).catch(() => {});
-          } else if (!gone && !took && request === sequence) setAble(false);
-        }, (error: unknown) => {
-          if (gone || lease.current !== id || request !== sequence) return;
-          console.error("khor: native menu refused; drawing the shared menu in the page", error);
-          setAble(false);
-        });
-      };
-      if (renderer && host) {
-        host.style.width = `${r.width}px`;
-        const viewport = window.visualViewport;
-        const room = Math.max(0, above ? at.y - (viewport?.offsetTop ?? 0) :
-          (viewport ? viewport.offsetTop + viewport.height : window.innerHeight) - at.y);
-        renderer.render(<SnapshotMenu rows={current} room={room} publish={send} />);
-      } else send();
-    };
-    update.current = ship;
-    sent.current = same;
-    ship();
-    const observer = new ResizeObserver(ship);
-    if (anchor.current) observer.observe(anchor.current);
-    const theme = new MutationObserver(ship);
-    theme.observe(document.documentElement, {attributes:true,attributeFilter:["data-theme","style","class"]});
-    window.addEventListener("resize", ship);
-    window.visualViewport?.addEventListener("resize", ship);
-    window.visualViewport?.addEventListener("scroll", ship);
-    return () => {
-      gone = true;
-      if (update.current === ship) update.current = null;
-      observer.disconnect();
-      theme.disconnect();
-      window.removeEventListener("resize", ship);
-      window.visualViewport?.removeEventListener("resize", ship);
-      window.visualViewport?.removeEventListener("scroll", ship);
-      // Separate root: defer its unmount beyond this root's commit.
-      if (renderer) { const old = renderer; queueMicrotask(() => { old.unmount(); host?.remove(); }); }
-    };
-  // Keep one measurement root and its SVG IDs for the opening. Only the
-  // rows change on a keystroke; observers and native ownership do not.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, anchor, options.above]);
-  useEffect(() => {
-    if (sent.current === same) return;
-    sent.current = same;
-    update.current?.();
-  }, [same]);
-  return on;
+  return false;
 }
 
 /**

@@ -15,11 +15,13 @@
 // something nobody thinks to close (`api.ts` on `openPage`). So the body
 // is the one that decides when to spend it, and the shell is told only
 // once it worked (`onLanded` → the visit is recorded).
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { hidePage, inApp, movePage, onPageWord, openPage, pageIcon, showPage } from "@/api";
+import { hidePage, inApp, movePage, onPageWord, pageIcon, showPage } from "@/api";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { openNativePage } from "@/lib/native-page-open";
+import { nativePageYielded, visiblePageOwner, watchNativePageYield } from "@/lib/native-page-yield";
 import { holdBorrow, holdPage } from "@/views/held";
 
 /** A page's scheme is optional to type; a bare host means https. */
@@ -29,35 +31,22 @@ export function normalize(raw: string): string | null {
   return /^[a-z]+:\/\//i.test(t) ? t : `https://${t}`;
 }
 
-/** Everything in this app that draws itself over the page. Radix puts
-    its poppers in one wrapper; the address bar's completions and the
-    dialogs are the two that are not Radix's.
-
-    ⚠️ **The completions are usually not in this document any more**
-    (2026-09-09). They are drawn in a small window of the app's own, which
-    is above a child webview by construction — that is what `float` on the
-    address bar's box buys, and it is the only way anything genuinely
-    floats over a page. They land back here when that window cannot be
-    had, so the selector stays; what it no longer describes is the common
-    case. */
-/** How far below the page's top edge an overlay may begin and still
-    count as hanging down from above it rather than floating over it.
-
-    ⚠️ **Written for the completions, and they left** (see above). What is
-    left in this document floats in the middle of the page — dialogs,
-    poppers, tooltips — and none of it hangs from the top edge, so this
-    branch is now the fallback's and only the fallback's. It is kept
-    because the fallback needs it: pushed down is a page you can still
-    read, and taken away is a black rectangle. */
-const HANGS_FROM_ABOVE = 48;
-
+/** Native webpages cannot be covered by DOM. Task UI takes the whole
+ * page out of presentation until it finishes; the same handle stays alive.
+ * Tooltip wrappers are filtered separately: hints never take the page away. */
 const OVERLAYS =
-  '[data-deck-selector],[data-radix-popper-content-wrapper],[data-omni-menu],[role="dialog"],[role="tooltip"],[role="menu"]';
+  '[data-deck-selector],[data-radix-popper-content-wrapper],[data-omni-menu],[data-scrim],[data-slot="dialog-overlay"],[data-slot="popover-content"],[aria-modal="true"],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]';
 
-/** **Which pane holds each tab's page now**: the open errand of a pane
-    that has gone hides the page it arrived with only when no pane has
-    taken the tab up since. */
-const showing = new Map<string, object>();
+/** Presentation belongs to the latest mounted owner of a tab. Async work
+ * may finish after that owner has left, but must not present its page. */
+const showing = new Map<string, { refresh: () => void }>();
+const presentations = new Map<string, Promise<unknown>>();
+function present(tab: string, valid: () => boolean, work: () => Promise<unknown>): void {
+  const previous = presentations.get(tab) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(() => valid() ? work() : undefined).catch(() => {});
+  presentations.set(tab, next);
+  void next.finally(() => { if (presentations.get(tab) === next) presentations.delete(tab); });
+}
 
 /** What the open action is doing or has done, said in place. */
 type Opening = { url: string; state: "opening" | "opened" | "failed"; word: string };
@@ -74,6 +63,7 @@ export function BrowserPane({
   onTitle,
   onIcon,
   onBusy,
+  suspended = false,
 }: {
   /** This tab's handle. The page webview is keyed by it on the app side,
       so every call about that page names it. */
@@ -105,6 +95,9 @@ export function BrowserPane({
    * no page to ask (`browse/use-loading.ts` decides which is which).
    */
   onBusy?: (busy: boolean) => void;
+  /** The shell is editing/choosing in this page's body. Keep its native
+      handle mounted, but yield all of its presentation to DOM content. */
+  suspended?: boolean;
   /** It really opened. Only on success: a borrow that was refused is
       not a place this person has been. */
   onOpened: (url: string) => void;
@@ -156,6 +149,11 @@ export function BrowserPane({
   // about what is drawn in it.
   const host = useRef<HTMLDivElement | null>(null);
   const away = useRef(false);
+  const presented = useRef<boolean | null>(null);
+  const owner = useRef<object | null>(null);
+  const revision = useRef(0);
+  const suspension = useRef(suspended);
+  suspension.current = suspended;
   /** The rectangle the page was last put at, so it is not moved to where
       it already is (`place`). */
   const put = useRef("");
@@ -169,85 +167,65 @@ export function BrowserPane({
     return { x: r.left, y: r.top, w: r.width, h: r.height, view: window.innerHeight };
   }, []);
 
-  /**
-   * Puts the page where it belongs, **around whatever is floating over
-   * it**.
-   *
-   * A native child webview always paints above this page's DOM — it is
-   * not a z-index that can be raised, it is another layer of the window —
-   * so anything that has to be seen over the page has to be made room
-   * for. The first version of this simply took the page away while an
-   * overlay was up, and the address bar's completions therefore blanked
-   * the whole site: measured, and the reason this is not that.
-   *
-   * **An overlay that hangs down from above the page pushes its top
-   * down**; the page stays on screen, shorter. That is the address bar's
-   * completions, which is the one people see constantly. Anything
-   * floating in the middle of the page still takes it away, because
-   * there is no shape of rectangle that leaves a hole.
-   */
+  /** Recompute presentation from the current owner and UI, never from the
+   * overlay which just closed. A stale editor release cannot restore a page.
+   * Overlays never modify the page's rectangle: hide, then restore in place. */
   const place = useCallback(() => {
-    const el = host.current;
-    if (!el) return;
+    const el = host.current, me = owner.current;
+    if (!el || !me || showing.get(tab) !== me) return;
     const r = el.getBoundingClientRect();
-    let top = r.top;
-    let bottom = Infinity;
-    let covered = false;
+    let covered = suspension.current || nativePageYielded(tab) || !visiblePageOwner(el);
     for (const o of document.querySelectorAll(OVERLAYS)) {
-      // **An overlay the page is inside is its ground, not over it**
-      // (UX-37 bug A, the 附栏's browser seat on the phone): the sheet
-      // is a dialog, and the page framed to the sheet's body was taken
-      // for covered and put away — the seat could not open a page.
-      if (o.contains(el)) continue;
+      if (covered) break;
+      if (o.contains(el) || !visiblePageOwner(o)) continue;
+      // Radix wraps a tooltip in the same popper as a menu. The tooltip
+      // itself declines overlapping native pages (ui/tooltip), without
+      // hiding the site just because a pointer paused over a control.
+      if (o.matches('[data-radix-popper-content-wrapper]') && o.querySelector('[role="tooltip"],[data-slot="tooltip-content"]')) continue;
+      // A modal's scrim covers the whole window even when its short
+      // question is beside this page. Its own page-bearing dialog is
+      // ground, though: Radix renders that dialog just after its scrim.
+      const ownDialog = el.closest('[role="dialog"],[role="alertdialog"]');
+      if (o.matches('[data-scrim],[data-slot="dialog-overlay"]') && o.nextElementSibling === ownDialog) continue;
+      if (o.matches('[aria-modal="true"]')) { covered = true; continue; }
       const b = o.getBoundingClientRect();
-      if (b.width === 0 || b.height === 0) continue;
-      const misses = b.bottom <= r.top || b.top >= r.bottom || b.right <= r.left || b.left >= r.right;
-      if (misses) continue;
-      // The pill's selector rises from the deck: keep the current native
-      // page visible above it, with the same WebView and navigation state.
-      if (o.matches('[data-deck-selector]')) { bottom = Math.min(bottom, b.top); continue; }
-      // **A hand's width of tolerance, and it is not a fudge**: the
-      // completion menu hangs from the address bar with a 4px gap under
-      // it, so a test for "starts exactly at the page's top edge" put it
-      // in the other branch and blanked the site — measured 2026-09-09,
-      // and the whole reason this rule was written.
-      if (b.top <= r.top + HANGS_FROM_ABOVE) top = Math.max(top, b.bottom);
-      else covered = true;
+      if (b.width <= 0 || b.height <= 0) continue;
+      covered = b.bottom > r.top && b.top < r.bottom && b.right > r.left && b.left < r.right;
     }
-    // **Under a native deck the page runs to the screen's foot** (UX-13,
-    // `lib/native-deck`): the deck is drawn over it and the page keeps a
-    // bottom inset of the deck's height, so it scrolls under the glass.
-    const native = host.current?.closest("[data-session-screen]")?.querySelector("[data-session-bar][data-native-deck]");
-    const h = Math.min(bottom, native ? native.getBoundingClientRect().bottom : r.bottom) - top;
-    // What was decided, for the gate (`check-face` bar r: a sheet over
-    // the page takes it away).
-    document.dispatchEvent(new CustomEvent("khor:page-place", { detail: { tab, covered, top, h } }));
-    // A page squeezed to nothing is a page nobody can read; below this it
-    // is honest to take it away rather than draw a sliver.
-    if (covered || h < 24) {
-      if (!away.current) {
-        away.current = true;
-        hidePage(tab).catch(() => {});
+    const native = el.closest('[data-session-screen]')?.querySelector('[data-session-bar][data-native-deck]');
+    const at = {x:r.left, y:r.top, w:r.width, h:(native ? native.getBoundingClientRect().bottom : r.bottom)-r.top, view:window.innerHeight};
+    covered ||= at.w <= 0 || at.h < 24;
+    const visible = !covered;
+    if (el.dataset.nativePageVisible !== String(visible)) el.dataset.nativePageVisible = String(visible);
+    document.dispatchEvent(new CustomEvent('khor:page-place', {detail:{tab, covered, top:at.y, h:at.h}}));
+    const same = `${at.x},${at.y},${at.w},${at.h}`;
+    // A redundant native move cancels pointer presses. Only actual host
+    // geometry changes move it; a menu's geometry never does.
+    const moved = visible && same !== put.current;
+    const changed = away.current === visible;
+    if (!moved && !changed && presented.current === visible) return;
+    away.current = !visible;
+    const version = ++revision.current;
+    const current = () => owner.current === me && showing.get(tab) === me && revision.current === version;
+    present(tab, current, async () => {
+      if (!visible) {
+        await hidePage(tab);
+        if (owner.current === me) presented.current = false;
+        return;
       }
-      return;
-    }
-    // **Only when it actually moved, and this is not an optimisation.**
-    // Moving a native webview cancels whatever the mouse is in the middle
-    // of, so a `setFrame` that lands between a press and its release eats
-    // the click. This is watched on the whole document, khor's own face
-    // updates on its own beat, and before this every one of those beats
-    // moved the page by nothing at all — measured 2026-09-09: the page
-    // drew, scrolled, and would not answer a single click.
-    const same = `${r.left},${top},${r.width},${h}`;
-    if (same !== put.current) {
-      put.current = same;
-      movePage(tab, { x: r.left, y: top, w: r.width, h, view: window.innerHeight }).catch(() => {});
-    }
-    if (away.current) {
-      away.current = false;
-      showPage(tab).catch(() => {});
-    }
+      if (same !== put.current) {
+        await movePage(tab, at);
+        if (owner.current === me) put.current = same;
+      }
+      if (current() && presented.current !== true) {
+        await showPage(tab);
+        if (owner.current === me) presented.current = true;
+      }
+    });
   }, [tab]);
+
+  useLayoutEffect(() => { place(); }, [suspended, place]);
+  useLayoutEffect(() => watchNativePageYield(place), [place]);
 
   // **Every address asks, and the machine decides whether that costs a
   // borrow.** The tab arriving pointed at a page is the same act as
@@ -274,8 +252,12 @@ export function BrowserPane({
     const at = boxOf();
     if (!at) return;
     let stopped = false;
-    const me = {};
+    const me = {refresh: () => { presented.current = null; place(); }};
     showing.set(tab, me);
+    owner.current = me;
+    away.current = false;
+    presented.current = null;
+    put.current = "";
     setOpening({
       url: want,
       state: "opening",
@@ -289,7 +271,7 @@ export function BrowserPane({
     // borrow, no proxy — this machine's own network, in khor's own page
     // view. It used to be refused as 「这就是本机的网,不用借」, which was
     // true of the *borrow* and said nothing about opening the page.
-    openPage(tab, here ? "" : machine, want, at).then(
+    openNativePage(tab, here ? "" : machine, want, at).then(
       (borrow) => {
         // **Written down before the unmount check, on purpose.** The
         // borrow is open on the far machine whether or not this pane is
@@ -325,9 +307,15 @@ export function BrowserPane({
         // has taken the tab up since (a tab left and come back to), whose
         // page this would hide.
         if (stopped) {
-          if (!showing.has(tab)) hidePage(tab).catch(() => {});
+          const current = showing.get(tab);
+          if (current) current.refresh();
+          else present(tab, () => !showing.has(tab), () => hidePage(tab));
           return;
         }
+        // open_page can attach/show after an editor already asked it to
+        // hide. Reassert the latest owner's presentation after attachment.
+        presented.current = null;
+        place();
         setOpening({
           url: want,
           state: "opened",
@@ -360,15 +348,20 @@ export function BrowserPane({
         });
       },
     );
+    place();
     return () => {
       stopped = true;
-      if (showing.get(tab) === me) showing.delete(tab);
+      if (owner.current === me) owner.current = null;
+      if (showing.get(tab) !== me) return;
+      showing.delete(tab);
+      ++revision.current;
+      if (host.current) host.current.dataset.nativePageVisible = "false";
       // **Hidden, not closed.** Leaving this tab is not closing it, and
       // a page that was torn down here would lose its scroll, its
       // half-filled form and its live connection every time somebody
       // glanced at another tab. Closing is the ledger's job, when the
       // tab itself is gone (`views/held`).
-      hidePage(tab).catch(() => {});
+      present(tab, () => !showing.has(tab), () => hidePage(tab));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, machine, url, here]);
@@ -398,11 +391,19 @@ export function BrowserPane({
   // nothing has to remember to tell the page it is coming: a control
   // written next month is accounted for the day it exists.
   useEffect(() => {
-    const watch = new MutationObserver(place);
-    // Overlays arrive and leave as elements, so `childList` is the whole
-    // question. `attributes` was in here too and is not: it fires on
-    // every class this app rewrites, which is constantly.
-    watch.observe(document.body, { childList: true, subtree: true });
+    let frame = 0;
+    const track = () => {
+      place();
+      if (document.querySelector(OVERLAYS) && document.getAnimations().some(a => a.playState === "running" && a.effect instanceof KeyframeEffect && a.effect.target instanceof Element && a.effect.target.closest(OVERLAYS))) frame = requestAnimationFrame(track);
+      else frame = 0;
+    };
+    const changed = () => { place(); if (!frame) frame = requestAnimationFrame(track); };
+    const watch = new MutationObserver(changed);
+    // Retained panes may be hidden without unmounting, and a popper can
+    // move into the body after insertion. Re-evaluate those visibility
+    // and geometry changes; unchanged frames still issue no native move.
+    watch.observe(document.body, {childList:true, subtree:true, attributes:true,
+      attributeFilter:['hidden','inert','aria-hidden','aria-modal','data-state','style','class']});
     // **An overlay that rises into place is measured again when it has
     // risen** (UX-28, the owner's phone: the native page covered every
     // sheet). The phone's sheets slide up from under the screen's foot,
@@ -412,11 +413,16 @@ export function BrowserPane({
     const settled = (e: Event) => {
       if (e.target instanceof Element && e.target.closest(OVERLAYS)) place();
     };
+    document.addEventListener("animationstart", changed, true);
+    document.addEventListener("transitionrun", changed, true);
     document.addEventListener("animationend", settled, true);
     document.addEventListener("transitionend", settled, true);
     place();
     return () => {
       watch.disconnect();
+      cancelAnimationFrame(frame);
+      document.removeEventListener("animationstart", changed, true);
+      document.removeEventListener("transitionrun", changed, true);
       document.removeEventListener("animationend", settled, true);
       document.removeEventListener("transitionend", settled, true);
     };

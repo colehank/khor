@@ -1,4 +1,5 @@
-// Real shared OmniMenu and hook, with only the native IPC transport replaced.
+// Retained, dormant native adapter/queue/snapshot checks. Browser fields
+// now use DOM candidates; check-browser-yield covers their active lifecycle.
 // No user session, application settings or production browser is modified.
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -53,26 +54,17 @@ createRoot(document.getElementById('root')).render(<Fixture/>);`);
  vite=spawn('node_modules/.bin/vite',['--config',config,'--port',String(port),'--strictPort'],{cwd:gui,env:{...process.env,KHOR_FACE_GATE:'1'},stdio:['ignore','pipe','pipe']});
  let ready=false,log='';vite.stdout.on('data',b=>ready||=String(b).includes(`:${port}`));vite.stderr.on('data',b=>log+=b);
  for(let i=0;i<100&&!ready;i++)await new Promise(r=>setTimeout(r,100));assert(ready,log||'Vite did not start');
- browser=await chromium.launch({channel:'chrome',headless:false});
+ browser=await chromium.launch({channel:'chrome',headless:process.env.NATIVE_MENU_UI_HEADED!=='1'});
  const url=`http://localhost:${port}/${prefix}.html`;
  const page=await browser.newPage({viewport:{width:1100,height:800}}),errors=[];
  page.on('pageerror',e=>errors.push(e.message));await page.goto(url);await page.waitForFunction(()=>window.fixture);
- await page.evaluate(()=>{nativeFixture.hold(true);fixture.open();});
- await page.waitForFunction(()=>nativeFixture.calls.some(c=>c.cmd==='show'));
- const first=await page.evaluate(()=>nativeFixture.calls.find(c=>c.cmd==='show').request.id);
- await page.evaluate(()=>fixture.update());await page.waitForFunction(()=>nativeFixture.calls.filter(c=>c.cmd==='show').length>=2);
- assert.deepEqual(await page.evaluate(()=>[...new Set(nativeFixture.calls.filter(c=>c.cmd==='show').map(c=>c.request.id))]),[first]);
- await page.evaluate(()=>nativeFixture.settle());
- assert.equal(await page.evaluate(()=>nativeFixture.calls.filter(c=>c.cmd==='hide').length),0,'late update must not hide its own current lease');
- await page.evaluate(id=>{nativeFixture.emit('menu:pick',{id:'stale',key:'m:remote'});nativeFixture.emit('menu:pick',{id,key:'missing'});nativeFixture.emit('menu:pick',{id,key:'m:remote'});},first);
- assert.deepEqual(await page.evaluate(()=>fixture.picks),['m:remote']);
- await page.evaluate(()=>fixture.close());await page.waitForFunction(()=>nativeFixture.calls.some(c=>c.cmd==='hide'));
- await page.evaluate(()=>fixture.open());await page.waitForFunction(id=>nativeFixture.calls.some(c=>c.cmd==='show'&&c.request.id!==id),first);
- const second=await page.evaluate(()=>nativeFixture.calls.filter(c=>c.cmd==='show').at(-1).request.id);assert.notEqual(first,second);
- await page.evaluate(id=>nativeFixture.emit('menu:dismiss',{id}),first);
- assert.equal(await page.evaluate(()=>nativeFixture.calls.filter(c=>c.cmd==='hide').at(-1).id),first,'stale dismiss must not close current opening');
- await page.evaluate(id=>{nativeFixture.emit('menu:dismiss',{id});nativeFixture.emit('menu:pick',{id,key:'m:remote'});},second);await page.waitForFunction(id=>nativeFixture.calls.some(c=>c.cmd==='hide'&&c.id===id),second);
- assert.deepEqual(await page.evaluate(()=>fixture.picks),['m:remote'],'dismissal retires ownership before a late event in the same task');
+ // Compatibility callers must always draw their DOM fallback and must
+ // not acquire a native menu, even in an App or on a phone.
+ await page.evaluate(()=>fixture.open());await page.waitForFunction(()=>document.querySelector('[data-floated]')?.dataset.floated==='false');
+ await page.evaluate(()=>fixture.update());await page.evaluate(()=>fixture.close());
+ assert.equal(await page.evaluate(()=>nativeFixture.calls.filter(c=>c.cmd==='show'||c.cmd==='hide').length),0);
+ // The dormant host still accepts its protocol and measures the actual
+ // shared rows; retaining it does not make it a browser presentation path.
  await page.evaluate(()=>nativeFixture.emit('menu:rows',{id:'measure-long',rows:{groups:[{key:'g',label:'',candidates:Array.from({length:30},(_,i)=>({key:String(i),label:'row '+i}))}],at:0}}));
  await page.waitForFunction(()=>nativeFixture.calls.some(c=>c.cmd==='size'&&c.id==='measure-long'));
  const long=await page.evaluate(()=>nativeFixture.calls.filter(c=>c.cmd==='size'&&c.id==='measure-long').at(-1).h);
@@ -81,21 +73,16 @@ createRoot(document.getElementById('root')).render(<Fixture/>);`);
  const short=await page.evaluate(()=>nativeFixture.calls.filter(c=>c.cmd==='size'&&c.id==='measure-short').at(-1).h);
  assert(short<long&&long<=240,'native MenuFace must shrink with actual rows, independently of document viewport height');
  assert.deepEqual(errors,[]);
-
  const mobile=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15'});
  mobile.on('pageerror',e=>errors.push(e.message));await mobile.goto(url);await mobile.waitForFunction(()=>window.fixture);
- await mobile.evaluate(()=>fixture.open());await mobile.waitForFunction(()=>nativeFixture.calls.some(c=>c.cmd==='show'&&c.request.html));
- const request=await mobile.evaluate(()=>nativeFixture.calls.filter(c=>c.cmd==='show').at(-1).request);
+ await mobile.evaluate(()=>fixture.open());assert.equal(await mobile.locator('[data-floated]').getAttribute('data-floated'),'false');
+ assert.equal(await mobile.evaluate(()=>nativeFixture.calls.filter(c=>c.cmd==='show'||c.cmd==='hide').length),0);
+ const request={html:await mobile.evaluate(()=>fixture.snapshot())};
  const rimProperties=['background-image','background-color','mask-image','mask-clip','mask-origin','mask-composite','-webkit-mask-composite','padding-top','border-radius','pointer-events'];
- const sourceRims=await mobile.locator('[data-native-menu-measure] [data-omni-menu]').evaluate((menu,properties)=>[menu,menu.querySelector('[data-on="true"]')].map(el=>Object.fromEntries(properties.map(key=>[key,getComputedStyle(el,'::before').getPropertyValue(key)]))),rimProperties);
+ const sourceRims=await mobile.locator('[data-test-menu] [data-omni-menu]').evaluate((menu,properties)=>[menu,menu.querySelector('[data-on="true"]')].map(el=>Object.fromEntries(properties.map(key=>[key,getComputedStyle(el,'::before').getPropertyValue(key)]))),rimProperties);
  writeFileSync(join(artifact,'menu.html'),request.html);
  if(process.env.NATIVE_MENU_SNAPSHOT_OUT)writeFileSync(process.env.NATIVE_MENU_SNAPSHOT_OUT,request.html);
- const beforeIds=await mobile.locator('[data-native-menu-measure] [id]').evaluateAll(es=>es.map(el=>el.id));
- await mobile.evaluate(()=>fixture.update());
- await mobile.waitForFunction(()=>nativeFixture.calls.filter(c=>c.cmd==='show').at(-1).request.rows.at===2);
- assert.equal(await mobile.locator('[data-native-menu-measure]').count(),1,'typing retains one measurement root');
- assert.deepEqual(await mobile.locator('[data-native-menu-measure] [id]').evaluateAll(es=>es.map(el=>el.id)),beforeIds,'typing retains actual avatar SVG identities');
- assert.equal(request.at.above,true);assert.equal(request.at.y,376);assert(request.html.length<2_000_000,'snapshot must fit native payload budget');
+ assert(request.html.length<2_000_000,'snapshot must fit native payload budget');
  const snapshot=await browser.newPage({viewport:{width:300,height:400}});
  const outgoing=[];snapshot.on('request',r=>outgoing.push(r.url()));await snapshot.setContent(request.html);
  assert.equal(await snapshot.locator('script,iframe,object,embed,link').count(),0);
@@ -113,5 +100,5 @@ createRoot(document.getElementById('root')).render(<Fixture/>);`);
  const hostile=await mobile.evaluate(()=>{const menu=document.querySelector('[data-test-menu] [data-omni-menu]');const el=document.createElement('img');el.setAttribute('onerror','alert(1)');el.setAttribute('src','https://invalid.example/secret');menu.append(el);return fixture.snapshot();});
  await snapshot.setContent(hostile);assert.equal(await snapshot.locator('[onerror],[src],script').count(),0);assert.deepEqual(outgoing,[]);
  assert.deepEqual(errors,[]);
- console.log('PASS: native menu open/update leases, stale events, same-lease async completion, dismissal; shared mobile SVG/style snapshot, bounded scrolling and inert content.',artifact);
+ console.log('PASS: active callers use DOM; retained native queue and host sizing, shared mobile SVG/style snapshot, bounded scrolling and inert content.',artifact);
 }finally {await browser?.close();vite?.kill('SIGTERM');for(const path of paths)rmSync(path,{force:true});}

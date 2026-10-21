@@ -24,6 +24,9 @@ import { contentView, contentName, contentTabTargets } from '@/lib/content';
 export { contentView, contentName } from '@/lib/content';
 import { contentPickerPosition, type ContentNavigation } from '@/hooks/use-content-navigation';
 import { contentTabFace, ContentPicker, ContentOverview, ContentSessionOverview, contentFileDeck } from '@/views/MobileSessionContent';
+import {ContentToolbar} from '@/components/ContentToolbar';
+import {ContentPathField} from '@/views/ContentPathField';
+import {TabAvatar} from '@/browse/TabStrip';
 import { MobileContentPage } from '@/views/MobileContentPage';
 const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
 
@@ -94,6 +97,21 @@ export function ContentPosition({session,position,show,mobile,navigation,childre
     return()=>{flush();document.removeEventListener('visibilitychange',away);window.removeEventListener('pagehide',flush);observer.disconnect();resize.disconnect();box.removeEventListener('scroll',capture,true);box.removeEventListener('wheel',interact);box.removeEventListener('pointerdown',interact);};
   },[session,position,show,mobile]);
   return <section {...props} ref={root}>{children}</section>;
+}
+
+/** Editing the location never replaces the file editor or its undo history. */
+function ContentFileToolbar({tab,device,devices,navigation,onPoint,onClose,children,locationAction}:{
+  tab:ContentTab;device:DeviceRow;devices:DeviceRow[];navigation:ContentNavigation;
+  onPoint:(device:DeviceRow,path:string)=>void;onClose:()=>void;children:React.ReactNode;locationAction:React.ReactNode;
+}) {
+  const [editing,setEditing]=useState(false);
+  const browse=(source:'workspace'|'browser')=>{setEditing(false);navigation.update(tab.session,{source});navigation.browse(tab.session);};
+  const close=()=>{if(!navigation.closePicker(tab.session))onClose();};
+  const back=()=>{setEditing(false);navigation.returnToPicker(tab.session);};
+  return <ContentToolbar kind="file" source="workspace" onSource={browse} onBack={back} actions={children} pinned={tab.pinned} onClose={close}>
+    {editing?<ContentPathField key={device.id+tab.url} device={device} devices={devices} path={tab.url} base={directoryOf(tab.url)} mobile={false} onLeave={()=>setEditing(false)} onDirectory={(d,path)=>{setEditing(false);navigation.browse(tab.session,{device:d.id,root:path});}} onFile={(d,path)=>{setEditing(false);onPoint(d,path);}}/>:<button data-content-location-edit className="content-location-rest" onClick={()=>setEditing(true)}><span className="content-location-face"><TabAvatar f={{id:device.id,label:device.shown,path:tab.url,face:device.face}} bare="size-tab-face" seat="tab"/></span><span>{tab.url}</span></button>}
+    {locationAction}
+  </ContentToolbar>;
 }
 
 export function SessionContentPane({ container, content, session, devices, rows, visible, onClose, mobile = false, navigation, sessionFaces, onInspect, onCloseSession, onNewSession }: {
@@ -198,12 +216,12 @@ export function SessionContentPane({ container, content, session, devices, rows,
       // to the destination so leaving one file cannot seed another file.
       const draftKey=JSON.stringify([key,tab.device,tab.url]);
       const locateFile=()=>{if(!device)return;requestFileLocation(device.name,tab.url);scoped.update(tab.session,{source:'workspace',query:''});scoped.browse(tab.session,{device:device.id,root:directoryOf(tab.url)});};
-      const browser=(onBusy?:(busy:boolean)=>void)=><BrowserPane onIcon={content.recordPageIcon} onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});releasePages(pageIds?pageIds.split(','):[],'content');}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>navigation.document(content.open(tab.session,device!.id,url,'page',undefined,tab.id))}/>;
+      const browser=(onBusy?:(busy:boolean)=>void,suspended=false)=><BrowserPane suspended={suspended} onIcon={content.recordPageIcon} onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});releasePages(pageIds?pageIds.split(','):[],'content');}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>navigation.document(content.open(tab.session,device!.id,url,'page',undefined,tab.id))}/>;
       return <Fragment key={key}>
         {row&&face&&pickers.current.has(key)&&<ContentPosition session={tab.session} position={contentPickerPosition(key,p)} show={pickerShow} mobile={mobile} navigation={scoped} data-content-picker={tab.session} data-content-picker-handle={key} className={cn('session-content-view',!pickerShow&&'session-content-retained')} aria-hidden={!pickerShow} inert={!pickerShow}><ContentPicker onFilesMoved={filesMoved} onFilesGone={filesGone} desktop={!mobile} face={face} content={content} onClose={onClose} row={row} devices={devices} navigation={scoped} onOpen={(device,path,view,line)=>openDocument(tab.session,device,path,view,line)}/></ContentPosition>}
         <ContentPosition session={tab.session} position={JSON.stringify(['document',key,tab.url])} show={show} mobile={mobile} navigation={scoped} data-session-content={tab.id} data-content-handle={key} data-content-visible={show} className={cn('session-content-view',!show&&'session-content-retained')} aria-hidden={!show} inert={!show}>
           {!device ? contentView(tab)!=='workspace'&&<div className="session-content-unknown">{gui.content_machine_gone}</div> : <>
-            {contentView(tab)==='file'?(show||visited.current.has(key))&&<FilePage key={draftKey} onLocate={locateFile} machine={device.name} path={tab.url} here={device.me} git draft={drafts[draftKey]} onDraft={draft=>{setDrafts(all=>all[draftKey]===(draft||undefined)?all:{...all,[draftKey]:draft||undefined});}} goLine={content.lines[key]||content.lines[tab.id]} contentDeck={mobile&&face?contentFileDeck({session:tab.session,face,content,navigation:scoped,onClose,title:contentName(tab),devices,tab}):undefined} onBack={()=>{if(!navigation.back(tab.session))onClose();}} onGone={()=>quiet(content.close(tab.id))} onMoved={(_from,to)=>point(tab,device,to)}/>:contentView(tab)==='page'?show&&face&&<MobileContentPage desktop={!mobile} tab={tab} handle={key} device={device} devices={devices} face={face} content={content} navigation={scoped} onClose={onClose} onPoint={(d,url)=>point(tab,d,url)}>{onBusy=>browser(onBusy)}</MobileContentPage>:null}
+            {contentView(tab)==='file'?(show||visited.current.has(key))&&<FilePage key={draftKey} embedded={!mobile} embeddedToolbar={!mobile?(actions,locationAction)=><ContentFileToolbar locationAction={locationAction} tab={tab} device={device} devices={devices} navigation={scoped} onPoint={(d,path)=>point(tab,d,path)} onClose={onClose}>{actions}</ContentFileToolbar>:undefined} onLocate={locateFile} machine={device.name} path={tab.url} here={device.me} git draft={drafts[draftKey]} onDraft={draft=>{setDrafts(all=>all[draftKey]===(draft||undefined)?all:{...all,[draftKey]:draft||undefined});}} goLine={content.lines[key]||content.lines[tab.id]} contentDeck={mobile&&face?contentFileDeck({session:tab.session,face,content,navigation:scoped,onClose,title:contentName(tab),devices,tab}):undefined} onBack={()=>scoped.returnToPicker(tab.session)} onGone={()=>quiet(content.close(tab.id))} onMoved={(_from,to)=>point(tab,device,to)}/>:contentView(tab)==='page'?show&&face&&<MobileContentPage desktop={!mobile} tab={tab} handle={key} device={device} devices={devices} face={face} content={content} navigation={scoped} onClose={onClose} onPoint={(d,url)=>point(tab,d,url)}>{(onBusy,suspended)=>browser(onBusy,suspended)}</MobileContentPage>:null}
           </>}
         </ContentPosition>
       </Fragment>;

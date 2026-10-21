@@ -152,14 +152,31 @@ export function useSessionContent(watch: boolean) {
     }
     return open(session,device,path,view,line,tab?.id);
   };
-  const rename = (id: string, title: string) => persist(id).then(saved => send(async () => {
-    const tab = current.current.tabs.find(t => t.id === saved);
-    return { result: undefined, value: tab ? await goTab(CONTENT_KIND, saved, tab.device, tab.url, title) : current.current };
-  }));
-  const follow = (id: string, path: string) => persist(id).then(saved => send(async () => {
-    const tab = current.current.tabs.find(t => t.id === saved);
-    return { result: undefined, value: tab ? await goTab(CONTENT_KIND, saved, tab.device, path, tab.title) : current.current };
-  }));
+  /** Native page observations can arrive after outer Back reset the tab.
+   * Check the optimistic target now and its destination version at write
+   * time so an old page cannot rename a starting tab or undo its reset. */
+  const pageObservation=(id:string)=>{
+    const tab=opening.current.find(t=>t.id===id)||current.current.tabs.find(t=>t.id===resolve(id));
+    if(!tab)return null;
+    const key=handle(tab as ContentTab),live={...tab,...pointing.current[key]};
+    return live.view==='page'?{key,version:versions.current.get(key)||0}:null;
+  };
+  const rename = (id: string, title: string) => {
+    const observation=pageObservation(id);if(!observation)return Promise.resolve();
+    return persist(id).then(saved => send(async () => {
+      const tab = current.current.tabs.find(t => t.id === saved);
+      const currentVersion=versions.current.get(observation.key)||0;
+      return { result: undefined, value: tab?.view==='page'&&currentVersion===observation.version ? await goTab(CONTENT_KIND, saved, tab.device, tab.url, title) : current.current };
+    }));
+  };
+  const follow = (id: string, path: string) => {
+    const observation=pageObservation(id);if(!observation)return Promise.resolve();
+    return persist(id).then(saved => send(async () => {
+      const tab = current.current.tabs.find(t => t.id === saved);
+      const currentVersion=versions.current.get(observation.key)||0;
+      return { result: undefined, value: tab?.view==='page'&&currentVersion===observation.version ? await goTab(CONTENT_KIND, saved, tab.device, path, tab.title) : current.current };
+    }));
+  };
   const pin = (id: string, on: boolean) => persist(id).then(saved => send(async () => ({ result: undefined, value: await pinTab(CONTENT_KIND, saved, on) })));
   const close = (id: string): Promise<void> => {
     // Closing during the first write closes the assigned node id afterwards.

@@ -167,3 +167,8 @@ devtools = ["tauri/devtools"]
 # is decoded exactly as the app decodes what the face sends (round NET-6,
 # the set_relays argument names).
 tauri = { version = "2", features = ["test"] }
+
+# Native history availability uses WebKitGTK's engine-owned back/forward
+# state. This version is already in the graph through Tauri/Wry.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "=2.0.2"

@@ -178,4 +178,10 @@
 [data-content-directory-search-field] .content-search-field{height:100%}
 .session-content-location-bar .content-location-pill>[data-page-field-row]{height:100%}
 .session-content-location-bar .content-location-pill [data-page-field]{background:transparent;box-shadow:none}
-.session-content-location-bar .content-location-pill [data-page-step]{display:none}
+
+/* A source is selected in the same app glass navigation at every desktop destination. */
+[data-content-toolbar]{order:-1}
+[data-content-toolbar] [data-content-scope-nav]{--ctl-glyph:var(--nav-glyph)}
+[data-content-toolbar] .content-location-pill>[data-page-field-row]{height:100%;min-width:0;flex:1}
+.session-content-web[hidden]{display:none}
+[data-content-page-landing]{flex:1;min-height:0;overflow:auto}

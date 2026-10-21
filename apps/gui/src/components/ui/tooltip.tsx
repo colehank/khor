@@ -18,6 +18,7 @@ import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
 import { cn } from "@/lib/utils";
+import { overlapsNativePage } from "@/lib/native-page-yield";
 
 function TooltipProvider({
   delayDuration = 600,
@@ -64,11 +65,41 @@ function TooltipContent({
   className,
   sideOffset = 6,
   children,
+  ref: forwardedRef,
+  style,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  const element = React.useRef<HTMLDivElement | null>(null);
+  const [node, setNode] = React.useState<HTMLDivElement | null>(null);
+  const [suppressed, setSuppressed] = React.useState(true);
+  const attach = React.useCallback((el: HTMLDivElement | null) => {
+    element.current = el; setNode(el);
+    if (typeof forwardedRef === "function") forwardedRef(el);
+    else if (forwardedRef) forwardedRef.current = el;
+  }, [forwardedRef]);
+  const measure = React.useCallback(() => {
+    if (element.current) setSuppressed(overlapsNativePage(element.current));
+  }, []);
+  React.useLayoutEffect(() => {
+    const el = element.current;
+    if (!el) return;
+    measure();
+    const resized = new ResizeObserver(measure);
+    resized.observe(el);
+    const changed = new MutationObserver(measure);
+    // Radix positions the wrapper after its first layout. Native page
+    // restoration can also make a previously safe hint overlap again.
+    changed.observe(document.body, {subtree:true, childList:true, attributes:true,
+      attributeFilter:["style","data-native-page-visible"]});
+    window.addEventListener("resize", measure);
+    document.addEventListener("scroll", measure, true);
+    return () => { resized.disconnect(); changed.disconnect(); window.removeEventListener("resize", measure); document.removeEventListener("scroll", measure, true); };
+  }, [node, measure]);
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
+        ref={attach}
+        style={{...style, ...(suppressed ? {visibility:"hidden" as const} : {})}}
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(

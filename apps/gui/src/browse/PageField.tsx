@@ -25,14 +25,9 @@
  * 4. A set field rests as face and host. Pressing the host edits the
  *    address, selected whole; pressing the face changes the machine.
  *
- * **Where the list is drawn**: in the app, on the wide face, in the app's
- * native presenter (`useFloatedMenu`), because the page's native webview
- * paints over this page's DOM. Desktop uses the shared menu window; iOS
- * hosts an inert snapshot of that same component above the deck. If a
- * presenter is unavailable, `listSeat` remains the in-page fallback. ⚠️ 墓碑 (the redesign 2026-10-02 →
- * sb-a): a menu of machines (`DropdownMenu`) on the face, and on the deck
- * a row of machine chips over it with the face out of the field (UX-42
- * row 13).
+ * Candidates stay in this document. Editing yields the retained native
+ * page before the field's DOM controls use its body; leaving restores the
+ * same page. `listSeat` moves the bounded menu above the mobile deck.
  *
  * Back, forward and reload stand in a glass capsule at the field's left,
  * only while a page is open (unchanged).
@@ -42,12 +37,14 @@
  */
 import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {PageHistory,PageReload,usePageSteps} from '@/browse/PageControls';
+import { useNativePageYield } from "@/lib/native-page-yield";
 
-import { fetchRecents, pageStep, type DeviceRow, type RecentRow } from "@/api";
+import { fetchRecents, type DeviceRow, type RecentRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { GlassCapsule, GlassItem } from "@/components/Glass";
-import { IconBack, IconClose, IconForward, IconReload } from "@/components/icons";
-import { OmniMenu, useFloatedMenu, type MenuRows } from "@/components/OmniMenu";
+import { GlassCapsule } from "@/components/Glass";
+import { IconClose } from "@/components/icons";
+import { OmniMenu, type MenuRows } from "@/components/OmniMenu";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { useFieldDismiss } from "@/hooks/use-field-dismiss";
@@ -207,6 +204,7 @@ export function PageField({
   }, [machinePrompt]);
   const field = useRef<HTMLLabelElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  useNativePageYield(tab, editing, field);
 
   // The page moved (a link, a step, another machine): the field follows
   // unless somebody is typing in it.
@@ -359,7 +357,6 @@ export function PageField({
       if (d) pick(d);
     } else if (key.startsWith("u:")) go(key.slice(2));
   };
-  const floated = useFloatedMenu(field, rows, press, true, {above: listSeat !== undefined, onDismiss: leave});
 
   const host = (() => {
     try {
@@ -391,25 +388,14 @@ export function PageField({
       className={listSeat ? "mx-row" : "absolute inset-x-0 top-full z-20 mt-2"}
     />
   );
+  const history=usePageSteps(tab,open&&steps);
   const shell = inPill
     ? "flex h-full min-w-0 flex-1 items-center rounded-full"
     : "glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full";
   return (
     <div data-page-field-row className="flex min-w-0 flex-1 items-center gap-in">
       {open && steps && (
-        <GlassCapsule>
-          {(
-            [
-              ["back", gui.page_back, IconBack],
-              ["forward", gui.page_forward, IconForward],
-              ["reload", gui.page_reload, IconReload],
-            ] as const
-          ).map(([way, word, Icon]) => (
-            <GlassItem key={way} aria-label={word} data-page-step={way} onClick={() => void pageStep(tab, way).catch(() => {})}>
-              <Icon />
-            </GlassItem>
-          ))}
-        </GlassCapsule>
+        <GlassCapsule><PageHistory tab={tab} steps={history}/><PageReload tab={tab}/></GlassCapsule>
       )}
       <div className="relative flex min-w-0 flex-1">
         <label
@@ -564,9 +550,9 @@ export function PageField({
             </button>
           )}
         </label>
-        {!floated && listSeat === undefined && list}
+        {listSeat === undefined && list}
       </div>
-      {!floated && listSeat && list && createPortal(<div data-page-list>{list}</div>, listSeat)}
+      {listSeat && list && createPortal(<div data-page-list>{list}</div>, listSeat)}
     </div>
   );
 }

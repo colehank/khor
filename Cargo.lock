@@ -4879,6 +4879,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-notification",
  "tokio",
+ "webkit2gtk",
 ]
 
 [[package]]

@@ -1,3 +1,4 @@
+import {PageHistory,PageReload,usePageSteps} from '@/browse/PageControls';
 import { fileManagerLabel } from "@/lib/file-actions";
 // A browsing landing, whole: tabs, an address bar, and whatever the open
 // tab is showing.
@@ -66,8 +67,8 @@ import type { TabFace } from "@/browse/TabStrip";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { useLoading } from "@/browse/use-loading";
-import { IconArrow, IconPlus, IconReload } from "@/components/icons";
-import { GlassCircle, GlassItem } from "@/components/Glass";
+import { IconPlus } from "@/components/icons";
+import { GlassCircle } from "@/components/Glass";
 import { SideFind } from "@/components/SideFind";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
 import { FOLD_AT, foldStep, inkOver, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
@@ -429,14 +430,7 @@ export function BrowseLanding({
     />
   );
 
-  /** Whether the page can step back and forward, as the iOS page says
-      (`page:steps`); `null` where nothing says, and both are then drawn
-      lit as they always were. */
-  const [steps, setSteps] = useState<{ back: boolean; forward: boolean } | null>(null);
-  useEffect(() => {
-    setSteps(null);
-    return onPageWord("page:steps", tabs.current.id, (t) => setSteps({ back: t[0] === "1", forward: t[1] === "1" }));
-  }, [tabs.current.id]);
+  const steps=usePageSteps(tabs.current.id,narrow);
   /** **The row folds while the page is read** (round UX-3 §3): down past
       the fold's threshold folds it, a scroll up by a hand's width or the
       top of the page brings it back — the phone page's `page:scroll`. */
@@ -931,27 +925,10 @@ export function BrowseLanding({
                     somewhere ahead** (round UX-3: the one agreed exception to
                     「不灰显」, so the pair never jumps sideways when the first
                     step back is taken). */}
-                <span data-deck-history className="flex items-center">
-                  <GlassItem
-                    aria-label={gui.page_back}
-                    aria-disabled={steps?.back === false || undefined}
-                    data-page-step="back"
-                    className="aria-disabled:pointer-events-none aria-disabled:text-tertiary"
-                    onClick={() => void pageStep(tabs.current.id, "back").catch(() => {})}
-                  >
-                    <IconArrow to="left" />
-                  </GlassItem>
-                  {steps?.forward !== false && (
-                    <GlassItem aria-label={gui.page_forward} data-page-step="forward" onClick={() => void pageStep(tabs.current.id, "forward").catch(() => {})}>
-                      <IconArrow to="right" />
-                    </GlassItem>
-                  )}
-                </span>
+                <PageHistory tab={tabs.current.id} steps={steps}/>
               </BarSeat>
               <BarSeat at="lead">
-                <GlassItem aria-label={gui.page_reload} data-page-step="reload" onClick={() => void pageStep(tabs.current.id, "reload").catch(() => {})}>
-                  <IconReload />
-                </GlassItem>
+                <PageReload tab={tabs.current.id}/>
               </BarSeat>
             </>
           )}

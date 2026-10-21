@@ -16,14 +16,14 @@ const bundle=await build({stdin:{contents:'export * from "./src/hooks/use-sessio
 const {useSessionContent,useContentNavigation,useRepositoryHistory}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 const tick=()=>new Promise(r=>setImmediate(r));const until=async fn=>{for(let i=0;i<150;i++){if(await fn())return;await tick();}throw Error('Unsettled model');};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
-let node={tabs:[],active:''},clock=0,next=0,gate,focusFailure=false,openAckFailure=false;const calls=[],snapshot=()=>structuredClone(node);
+let node={tabs:[],active:''},clock=0,next=0,gate,focusFailure=false,openAckFailure=false,pointGate;const calls=[],snapshot=()=>structuredClone(node);
 globalThis.__api={
  async fetchTabs(){return snapshot();},
  async fetchPageIcons(){return {'https://kept.test':'data:image/png;base64,kept','https://disk.test':'data:image/png;base64,disk'};},
  async openTab(kind,device,url,session,after,view,request){const existing=request&&node.tabs.find(t=>t.request===request&&t.session===session);if(existing){node.active=existing.id;return existing.id;}calls.push(['open',session,url]);if(gate){const g=gate;gate=undefined;await g.promise;}const id='tab-'+(++next),t={id,device,url,session,view,request,title:'',pinned:false,touched:++clock};const at=after?node.tabs.findIndex(t=>t.id===after):-1;if(at>=0)node.tabs.splice(at+1,0,t);else node.tabs.push(t);node.active=id;if(openAckFailure){openAckFailure=false;throw Error('Open acknowledgement lost');}return id;},
  async focusTab(kind,id){if(focusFailure){focusFailure=false;throw Error('Focus transport failed');}const t=node.tabs.find(t=>t.id===id);assert(t,'missing node id '+id);t.touched=++clock;node.active=id;return snapshot();},
  async closeTab(kind,id){calls.push(['close',id]);node.tabs=node.tabs.filter(t=>t.id!==id);if(node.active===id)node.active=node.tabs.at(-1)?.id||'';return snapshot();},
- async goTab(kind,id,device,url,title,view){const t=node.tabs.find(t=>t.id===id);assert(t);Object.assign(t,{device,url,title,...(view?{view}:{})});return snapshot();},
+ async goTab(kind,id,device,url,title,view){calls.push(['point',id,url,view]);if(pointGate){const g=pointGate;pointGate=undefined;await g.promise;}const t=node.tabs.find(t=>t.id===id);assert(t);Object.assign(t,{device,url,title,...(view?{view}:{})});return snapshot();},
  async reorderTabs(kind,session,ids){calls.push(['reorder',session,ids]);const rank=new Map(ids.map((id,i)=>[id,i]));const rows=node.tabs.filter(t=>t.session===session&&rank.has(t.id)).sort((a,b)=>rank.get(a.id)-rank.get(b.id));let i=0;node.tabs=node.tabs.map(t=>t.session===session&&rank.has(t.id)?rows[i++]:t);return snapshot();},
  async pinTab(kind,id,pinned){node.tabs.find(t=>t.id===id).pinned=pinned;return snapshot();},
 };
@@ -96,6 +96,40 @@ assert.deepEqual(browseNav.value.scrollOf('BrowseFiles',pickerScrollKey(model.va
 await until(()=>node.tabs.some(t=>t.url==='/after-back.md'));
 assert(node.tabs.some(t=>t.url==='/viewed-a.md'),'opening after Back preserves the first viewed file');
 browseNav.close();
+// Older installations saved source checkpoints before browsing belonged
+// to an actual tab. Back must bind that checkpoint to the current file's
+// real handle, or the modern per-tab host renders an empty content sheet.
+const legacyFile=model.value.open('LegacyBack','machine','/legacy-back.md','file');
+await until(()=>model.value.tabs.some(t=>t.session==='LegacyBack'&&!t.id.startsWith('opening:')));
+const legacyKey=model.value.handle(model.value.tabs.find(t=>t.session==='LegacyBack'));
+const legacyPicker={scene:'picker',key:null,source:'workspace',scope:{device:'machine',root:'/legacy/source'},filter:'',query:'legacy query',address:'',exit:null};
+const legacyScroll=key=>JSON.stringify(['picker',key,legacyPicker.source,legacyPicker.scope,legacyPicker.query])+' [data-side-workspace] > div 0';
+const savedRoutes=JSON.parse(storage.get('khor.content.navigation.v1')||'{}');
+savedRoutes.LegacyBack={...legacyPicker,scene:'document',key:legacyKey,trail:[legacyPicker],scrolls:{[legacyScroll(null)]:{top:245,left:9}}};
+storage.set('khor.content.navigation.v1',JSON.stringify(savedRoutes));
+let legacyNav=mount(()=>useContentNavigation(model.value));
+assert(legacyNav.value.back('LegacyBack'),'legacy file keeps its source Back destination');
+assert.equal(legacyNav.value.get('LegacyBack').scene,'picker');
+assert.equal(legacyNav.value.get('LegacyBack').key,legacyKey,'Back must associate a legacy keyless picker with a real current tab');
+assert.deepEqual(legacyNav.value.get('LegacyBack').scope,legacyPicker.scope);
+assert.equal(legacyNav.value.get('LegacyBack').query,'legacy query');
+assert.deepEqual(legacyNav.value.scrollOf('LegacyBack',legacyScroll(legacyKey)),{top:245,left:9},'legacy picker scroll follows its repaired tab handle');
+legacyNav.close();legacyNav=mount(()=>useContentNavigation(model.value));legacyNav.value.resume('LegacyBack');
+assert.equal(legacyNav.value.get('LegacyBack').key,legacyKey,'repaired Back persists across reopen');
+legacyNav.close();
+// A deleted picker key has the same host problem; it can reuse the
+// current live tab. With no live tab, Back must decline instead of
+// inventing an unrenderable picker or silently creating a new tab.
+const brokenRoutes=JSON.parse(storage.get('khor.content.navigation.v1'));
+brokenRoutes.LegacyBack={...brokenRoutes.LegacyBack,scene:'document',key:legacyKey,trail:[{...legacyPicker,key:'deleted-picker'}]};
+brokenRoutes.OrphanBack={...legacyPicker,scene:'document',key:'deleted-document',trail:[legacyPicker]};
+storage.set('khor.content.navigation.v1',JSON.stringify(brokenRoutes));
+legacyNav=mount(()=>useContentNavigation(model.value));
+assert(legacyNav.value.back('LegacyBack'));assert.equal(legacyNav.value.get('LegacyBack').key,legacyKey,'deleted picker binds to the live current tab');
+const beforeOrphan=node.tabs.length;
+assert.equal(legacyNav.value.back('OrphanBack'),false,'no live tab means there is no source host to return to');
+assert.equal(node.tabs.length,beforeOrphan,'Back never allocates a replacement tab');
+legacyNav.close();
 // Independent starting tabs are durable and turn into content in place.
 const blanks=Array.from({length:3},()=>model.value.newTab('Blank','machine'));
 assert.equal(new Set(blanks.map(t=>t.id)).size,3);
@@ -161,7 +195,67 @@ nav.value.select(aBlank);assert.equal(nav.value.get('Blank').query,'late first q
 nav.value.document(aBlank);assert(nav.value.back('Blank'));assert.equal(nav.value.get('Blank').scene,'picker');
 nav.close();nav=mount(()=>useContentNavigation(model.value));nav.value.resume('Blank');assert.equal(nav.value.get('Blank').key,blanks[0].id);assert.equal(nav.value.get('Blank').query,'late first query');
 nav.value.select(bBlank);assert.equal(nav.value.get('Blank').source,'browser');assert.equal(nav.value.get('Blank').address,'https://second.test');assert.equal(nav.value.get('Blank').scope.root,'/second');
-nav.close();model.close();
+nav.close();
+// Outer Back abandons this actual document destination and makes that
+// same durable tab a starting page. Browser history's own Back is separate.
+let returnNav=mount(()=>useContentNavigation(model.value));
+assert.equal(typeof returnNav.value.returnToPicker,'function','outer Back needs a durable same-tab reset policy');
+const resetSession='ReturnFile',resetBlank=returnNav.value.add(resetSession,{device:'machine',root:'/source/root'}),resetKey=model.value.handle(resetBlank);
+await until(()=>model.value.tabs.some(t=>t.session===resetSession&&!t.id.startsWith('opening:')));
+returnNav.value.update(resetSession,{query:'source search',address:'https://draft.test',exit:'exit-device'});
+const resetSource=returnNav.value.get(resetSession),resetScroll=key=>JSON.stringify(['picker',key,resetSource.source,resetSource.scope,resetSource.query])+' [data-side-workspace] > div 0';
+returnNav.value.scroll(resetSession,resetScroll(resetKey),{top:519,left:4});
+let resetDoc=model.value.openFromPicker(resetSession,resetKey,'machine','/source/root/one.md','file');returnNav.value.document(resetDoc);
+await until(()=>node.tabs.some(t=>t.session===resetSession&&t.url==='/source/root/one.md'));
+const resetSaved=node.tabs.find(t=>t.session===resetSession).id;await model.value.pin(resetSaved,true);returnNav.render();
+returnNav.value.edit(resetKey,{editing:true,exitPrompt:9});returnNav.value.returnToPicker(resetSession);
+assert.equal(returnNav.value.get(resetSession).scene,'picker');assert.equal(returnNav.value.get(resetSession).key,resetKey);
+assert.deepEqual(returnNav.value.get(resetSession).scope,{device:'machine',root:'/source/root'});assert.equal(returnNav.value.get(resetSession).query,'source search');assert.equal(returnNav.value.get(resetSession).address,'https://draft.test');assert.equal(returnNav.value.get(resetSession).exit,'exit-device');
+assert.deepEqual(returnNav.value.scrollOf(resetSession,resetScroll(resetKey)),{top:519,left:4});
+assert.equal(returnNav.value.get(resetSession).trail.length,0);assert.equal(returnNav.value.get(resetSession).documentTrail.length,0,'old document history must not restore the abandoned destination');
+assert.equal(returnNav.value.editor(resetKey).editing,false,'abandoned document must not leave the next webpage editor focused');
+await until(()=>node.tabs.find(t=>t.id===resetSaved)?.view==='workspace');
+assert.deepEqual(node.tabs.filter(t=>t.session===resetSession).map(t=>[t.id,t.url,t.title,t.pinned]),[[resetSaved,'/source/root','',true]],'Back preserves id/pin but replaces document title and destination');
+assert.equal(returnNav.value.get(resetSession).tabPlaces[resetKey].place.scene,'picker');
+returnNav.close();model.close();model=mount(()=>useSessionContent(false));await until(()=>model.value.ready);returnNav=mount(()=>useContentNavigation(model.value));returnNav.value.resume(resetSession);
+assert.equal(returnNav.value.get(resetSession).scene,'picker');assert.equal(returnNav.value.get(resetSession).key,resetKey,'same-tab reset survives full reload');
+resetDoc=model.value.openFromPicker(resetSession,resetKey,'machine','/source/root/two.md','file');returnNav.value.document(resetDoc);await until(()=>node.tabs.find(t=>t.id===resetSaved)?.url==='/source/root/two.md');
+assert.equal(node.tabs.filter(t=>t.session===resetSession).length,1,'new choice after Back reuses the current starting page');
+// Page sources retain browser drafts and network; their starting tab has
+// no document URL. A blocked reset write cannot overtake a rapid choice.
+const pageSession='ReturnPage',pageBlank=returnNav.value.add(pageSession),pageKey=model.value.handle(pageBlank);await until(()=>model.value.tabs.some(t=>t.session===pageSession&&!t.id.startsWith('opening:')));
+returnNav.value.update(pageSession,{source:'browser',address:'https://one.test',exit:'web-device'});
+let chosenPage=model.value.openFromPicker(pageSession,pageKey,'web-device','https://one.test','page');returnNav.value.document(chosenPage);await until(()=>node.tabs.some(t=>t.session===pageSession&&t.view==='page'));
+const pageSaved=node.tabs.find(t=>t.session===pageSession).id;
+returnNav.value.returnToPicker(pageSession);
+await Promise.all([model.value.follow(pageSaved,'https://one.test/late'),model.value.rename(pageSaved,'Late old page title')]);
+await until(()=>node.tabs.find(t=>t.id===pageSaved)?.view==='workspace');
+assert.equal(node.tabs.find(t=>t.id===pageSaved).title,'','late native page title cannot rename the reset starting tab');
+assert.equal(node.tabs.find(t=>t.id===pageSaved).url,'');assert.equal(node.tabs.find(t=>t.id===pageSaved).device,'web-device');assert.equal(returnNav.value.get(pageSession).source,'browser');assert.equal(returnNav.value.get(pageSession).address,'https://one.test');assert.equal(returnNav.value.get(pageSession).exit,'web-device');
+chosenPage=model.value.openFromPicker(pageSession,pageKey,'web-device','https://two.test','page');returnNav.value.document(chosenPage);await until(()=>node.tabs.find(t=>t.id===pageSaved)?.url==='https://two.test');
+pointGate=deferred();const blockedReset=pointGate;
+returnNav.value.returnToPicker(pageSession);
+const rapid=model.value.openFromPicker(pageSession,pageKey,'web-device','https://rapid.test','page');returnNav.value.document(rapid);
+assert.equal(model.value.handle(rapid),pageKey,'same-tick Back/choice reads the optimistic workspace reset');
+await tick();blockedReset.resolve();await until(()=>node.tabs.find(t=>t.id===pageSaved)?.url==='https://rapid.test');
+assert.equal(node.tabs.filter(t=>t.session===pageSession).length,1);assert.equal(node.tabs.find(t=>t.id===pageSaved).view,'page');
+assert.deepEqual(calls.filter(c=>c[0]==='point'&&c[1]===pageSaved).slice(-2).map(c=>c.slice(2)),[['','workspace'],['https://rapid.test','page']],'serialized reset must persist before the new same-tab document');
+// Documents opened without a remembered source still have a useful Back.
+for(const [session,path,view,source,root] of [['ExternalFile','C:\\work\\notes.md','file','workspace','C:\\work'],['ExternalPage','https://external.test','page','browser','']]){
+ const doc=model.value.open(session,'external-device',path,view);await until(()=>model.value.tabs.some(t=>t.session===session&&!t.id.startsWith('opening:')));returnNav.render();returnNav.value.select(model.value.tabs.find(t=>t.session===session));returnNav.value.returnToPicker(session);
+ await until(()=>node.tabs.find(t=>t.session===session)?.view==='workspace');assert.equal(returnNav.value.get(session).source,source);assert.equal(node.tabs.find(t=>t.session===session).url,root);if(view==='file')assert.deepEqual(returnNav.value.get(session).scope,{device:'external-device',root});else assert.equal(returnNav.value.get(session).exit,'external-device');
+}
+// The source from an older install can still have key=null. Its scroll
+// checkpoint moves to this actual tab rather than restoring a blank host.
+returnNav.close();
+const resetRoutes=JSON.parse(storage.get('khor.content.navigation.v1'));
+const keylessSource={...resetSource,scene:'picker',key:null};
+resetRoutes[resetSession]={...resetRoutes[resetSession],scene:'document',key:resetKey,trail:[keylessSource],scrolls:{...resetRoutes[resetSession].scrolls,[resetScroll(null)]:{top:777,left:8}}};
+storage.set('khor.content.navigation.v1',JSON.stringify(resetRoutes));
+returnNav=mount(()=>useContentNavigation(model.value));returnNav.value.returnToPicker(resetSession);
+assert.equal(returnNav.value.get(resetSession).key,resetKey);assert.deepEqual(returnNav.value.scrollOf(resetSession,resetScroll(resetKey)),{top:777,left:8});
+await until(()=>node.tabs.find(t=>t.id===resetSaved)?.view==='workspace');
+returnNav.close();model.close();
 console.log('PASS: durable picker opens preserve viewed files/pages and source Back/scroll; independent starting tabs; original identity on point; retry without duplicate blank rows; per-tab picker/draft/back/reload isolation; retained favicon, content identity, ordering, transport race and legacy migration coverage');
 
 // Repository history returns to its list and keeps machine/root ownership local.

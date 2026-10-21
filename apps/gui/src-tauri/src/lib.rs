@@ -3,6 +3,7 @@
 //! are the same functions (docs/KHOR.md 三条地基).
 
 mod menu_overlay;
+mod page_history;
 
 #[cfg(desktop)]
 mod window_surface;
@@ -1642,6 +1643,7 @@ async fn open_page(
             } else {
                 live.hide().map_err(|e| e.to_string())?;
             }
+            tell_page_steps(&live, &tab);
             return Ok(borrow);
         }
         let _ = live.close();
@@ -1748,6 +1750,7 @@ async fn open_page(
                 // from here — a page that redirected, or followed a link,
                 // is somewhere nobody asked it to go.
                 page_went(&page_label(&l_tab), &at);
+                tell_page_steps(&view, &l_tab);
                 let _ = app.emit_to(
                     l_face.clone(),
                     "page:went",
@@ -1915,6 +1918,7 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
         return Ok(());
     };
     view.show().map_err(|e| e.to_string())?;
+    tell_page_steps(&view, &tab);
     Ok(())
 }
 
@@ -2173,14 +2177,46 @@ fn repaint_the_ground(app: &tauri::AppHandle) {
     }
 }
 
-/// Back, forward and reload for one tab's page.
-///
-/// **Two of the three are script, and that is a gap rather than a
-/// choice.** tauri has `reload` and nothing else: there is no `go_back`,
-/// no `go_forward` and — the one that shows — no `can_go_back`, so the
-/// arrows cannot grey out when there is nowhere to go. Pressing one at
-/// the start of a history does nothing and says nothing, which is the
-/// honest state of it until the platform grows the question.
+/// A snapshot of the actual native session history. Null means that this
+/// tab has no page yet; errors are not reported as invented availability.
+#[tauri::command]
+async fn page_steps(app: tauri::AppHandle, tab: String) -> Result<Option<page_history::PageSteps>, String> {
+    #[cfg(desktop)]
+    {
+        use tauri::Manager;
+        let Some(view) = app.get_webview(&page_label(&tab)) else { return Ok(None); };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        view.with_webview(move |native| { let _ = tx.send(page_history::desktop(native).map(Some)); })
+            .map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())?
+    }
+    #[cfg(target_os = "ios")]
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || { let _ = tx.send(phone_page::steps(&tab)); })
+            .map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())
+    }
+    #[cfg(not(any(desktop, target_os = "ios")))]
+    { let _ = (app, tab); Ok(None) }
+}
+
+/// Tell only khor's own containing window, never the external page.
+#[cfg(desktop)]
+fn tell_page_steps(view: &tauri::Webview, tab: &str) {
+    use tauri::{Emitter, Manager};
+    let (app, face, tab) = (view.app_handle().clone(), view.window().label().to_owned(), tab.to_owned());
+    let _ = view.with_webview(move |native| {
+        if let Ok(steps) = page_history::desktop(native) {
+            let _ = app.emit_to(face, "page:steps", PageWord {
+                tab, text: format!("{}{}", u8::from(steps.back), u8::from(steps.forward)),
+            });
+        }
+    });
+}
+
+/// Back, forward and reload for one tab's page. History availability is
+/// queried natively by page_steps; the existing step verbs stay unchanged.
 #[cfg(desktop)]
 #[tauri::command]
 fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
@@ -4940,6 +4976,7 @@ pub fn run() {
             close_page,
             show_page,
             page_step,
+            page_steps,
             page_deck,
             page_sheet,
             page_ground,

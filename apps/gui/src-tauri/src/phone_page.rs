@@ -1319,6 +1319,15 @@ pub fn ground(tab: &str, y: f64) {
     }
 }
 
+/// Main-thread snapshot, including an unchanged history whose last poll
+/// event happened before the current DOM owner subscribed.
+pub fn steps(tab: &str) -> Option<crate::page_history::PageSteps> {
+    PAGES.with(|pages| pages.borrow().get(tab).map(|page| {
+        // SAFETY: PAGES holds the live WKWebView and all callers run on main.
+        unsafe { crate::page_history::webkit(&*page.view as *const AnyObject as *mut AnyObject) }
+    }))
+}
+
 pub fn step(tab: &str, way: &str) {
     PAGES.with(|pages| {
         if let Some(page) = pages.borrow().get(tab) {

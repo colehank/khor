@@ -80,6 +80,8 @@
     "file-deck": "node scripts/check-file-deck.mjs",
     "field-interaction": "node scripts/check-field-interaction.mjs",
     "content-toolbar": "node scripts/check-content-toolbar.mjs",
+    "browser-yield": "node scripts/check-browser-yield.mjs",
+    "page-history": "node scripts/check-page-history.mjs",
     "editor-history": "node scripts/check-editor-history.mjs",
     "editor-history-native": "python3 scripts/editor-history-probe/run.py",
     "file-actions": "node scripts/check-file-actions.mjs",

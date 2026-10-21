@@ -1596,12 +1596,11 @@ export const closePage = (tab: string) =>
 export const showPage = (tab: string) =>
   onWebFace ? Promise.resolve(null) : call<null>("show_page", { tab });
 
-/** Back, forward, reload, and 重试 — the address the last load failed
-    to reach, again (UX-22; a reload would load the page still there);
-    `pass`: 「仍然访问」, the certificate it was shown passed for this run
-    (UX-42 §14). **The two arrows cannot know whether there is anywhere to go** —
-    tauri has no `can_go_back` — so they stay lit and a press with no
-    history behind it quietly does nothing. */
+/** Current native history, also read when a retained tab is shown again. */
+export const pageSteps = (tab: string) =>
+  onWebFace ? Promise.resolve(null) : call<{back:boolean;forward:boolean}|null>("page_steps", { tab });
+
+/** Back, forward, reload, retry, stop and certificate continuation. */
 export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retry" | "stop" | "pass") =>
   onWebFace ? Promise.resolve(null) : call<null>("page_step", { tab, way });
 
@@ -1630,6 +1629,7 @@ export function onPageWord(
   event: "page:sheet" | "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail" | "page:ground" | "page:download",
   tab: string,
   said: (text: string) => void,
+  onReady?: () => void,
 ): () => void {
   if (!inApp) return () => {};
   let drop: (() => void) | null = null;
@@ -1643,7 +1643,7 @@ export function onPageWord(
         // the listener outlives the tab it was speaking for and writes
         // into a component that is gone.
         if (gone) un();
-        else drop = un;
+        else { drop = un; onReady?.(); }
       }),
     )
     // **Loud, and this is the whole reason it says anything.** Listening

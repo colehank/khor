@@ -205,6 +205,9 @@ function useFileVerbs({
       : []),
     ...(code?.offered ? [{ key: "code", label: gui.file_in_code, run: () => code.want() }] : []),
   ];
+  // The menu can still receive pointer-leave while its exit animation runs.
+  // Let its focus scope leave before a navigation action focuses the tree.
+  const locating=useRef<(() => void) | null>(null);
   const MoreButton = faceToggle ? GlassItem : GlassCircle;
   const moreMenu: ReactNode = (
     <DropdownMenu onOpenChange={(o) => o && setHasSymbols(hasSymbolsIn(path))}>
@@ -213,11 +216,11 @@ function useFileVerbs({
           <IconMore />
         </MoreButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" sideOffset={8} data-file-more-menu className="min-w-nav-menu">
+      <DropdownMenuContent onCloseAutoFocus={e=>{const locate=locating.current;if(locate){e.preventDefault();locating.current=null;locate();}}} align="end" side="top" sideOffset={8} data-file-more-menu className="min-w-nav-menu">
         {menu.map((m, i) => (
           <Fragment key={m.key}>
             {i > 0 && ["symbols", "history", "blame", "code"].includes(m.key) && !["symbols", "history", "blame", "code"].includes(menu[i-1].key) && <DropdownMenuSeparator />}
-            <DropdownMenuItem data-file-more-item={m.key} onSelect={m.run}>{m.label}</DropdownMenuItem>
+            <DropdownMenuItem data-file-more-item={m.key} onSelect={()=>{if(m.key==='locate')locating.current=m.run;else m.run();}}>{m.label}</DropdownMenuItem>
           </Fragment>
         ))}
         {/* 字号, for what reads (text, rendered or not); a picture or a
@@ -321,6 +324,7 @@ export function FilePage({
   onLocate,
   embedded = false,
   embeddedContext,
+  embeddedToolbar,
   contentDeck,
   editorHistory,
 }: {
@@ -344,6 +348,8 @@ export function FilePage({
   embedded?: boolean;
   /** The grouped host can show the machine and a workspace-relative folder. */
   embeddedContext?: string;
+  /** The host supplies navigation while the file keeps its own editing actions. */
+  embeddedToolbar?: (actions: ReactNode, locationAction: ReactNode) => ReactNode;
   /** Session identity and content overview in this page’s original deck. */
   contentDeck?: { identity: ReactNode; folded: ReactNode; trail: ReactNode };
   /** The file is in a checkout: git 历史 is offered (round UX-4). */
@@ -546,7 +552,12 @@ export function FilePage({
       className="relative flex min-h-0 flex-1 flex-col bg-card"
       style={fileSizeStyle(verbs.size.step)}
     >
-      {embedded && (
+      {embedded && embeddedToolbar?.(<>
+        {rev !== null && <GlassCircle data-file-back aria-label={gui.file_rev_back} tipSide="top" onClick={() => { setRev(null); setCompare(false); setFace(defaultFaceOf(path)); }}><IconBack/></GlassCircle>}
+        {rev !== null && !compare && revisionRenders(path) && <GlassCircle aria-label={gui.file_face_preview} aria-pressed={face === "preview"} data-file-face-toggle={face} tipSide="top" onClick={turn}><IconEye/></GlassCircle>}
+        {verbs.moreCircle}
+      </>, rev !== null ? <GlassItem data-file-rev-compare aria-label={compare ? gui.file_rev_alone : gui.file_rev_compare} aria-pressed={compare} tipSide="top" onClick={() => setCompare(!compare)}><IconBranch/></GlassItem> : <GlassItem data-file-refresh aria-label={dirty ? gui.watch_save : gui.file_reread} tipSide="top" onClick={dirty ? save : () => setReads(n => n + 1)}>{dirty ? <IconCheck/> : <IconReload/>}</GlassItem>)}
+      {embedded && !embeddedToolbar && (
         <div data-file-embedded-tools className="flex h-pane-head flex-none items-center gap-in border-b px-row">
           {rev !== null && <Button size="icon" variant="ghost" data-file-back aria-label={gui.file_rev_back} onClick={() => { setRev(null); setCompare(false); setFace(defaultFaceOf(path)); }}><IconBack /></Button>}
           <button type="button" onClick={onBack} title={directoryOf(path)} className="flex min-w-0 flex-1 items-center gap-in text-caption text-muted-foreground"><IconFiles className="size-4 flex-none" /><span className="truncate">{embeddedContext ?? directoryOf(path)}</span></button>
@@ -621,7 +632,7 @@ export function FilePage({
           </button>
         ) : (
           <div className="pointer-events-auto flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row">
-            {(!contentDeck || rev !== null) && <GlassCircle
+            {<GlassCircle
               aria-label={rev === null ? gui.back : gui.file_rev_back}
               data-file-back
               tip={!coarse && (rev === null ? gui.back : gui.file_rev_back)}
