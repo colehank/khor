@@ -1249,7 +1249,10 @@ impl LiveKind {
         let bound: std::collections::BTreeSet<_> = sweep.rows.iter()
             .filter(|r| r.category == "codex").flat_map(|r| r.sighting.pids.iter().copied()).collect();
         let unbound: std::collections::BTreeSet<_> = sweep.procs.named("codex").into_iter()
-            .filter(|(pid, _)| crate::codex_terminal::scoped(&sweep.procs, *pid) && !bound.contains(pid))
+            // Selection already excludes suspended jobs. They must not veto a
+            // runnable client's bound host again in the final shell fallback.
+            .filter(|(pid, _)| crate::codex_terminal::scoped(&sweep.procs, *pid)
+                && !sweep.procs.suspended(*pid) && !bound.contains(pid))
             .map(|(pid, _)| pid).collect();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
         // Vendor leaves learned this poll, for the preview post-pass:
@@ -4452,6 +4455,74 @@ mod tests {
         ended(0, true);
         assert_eq!(row(0).0, State::Idle, "the next command running: the failure is over");
         drop(host);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_stopped_codex_does_not_demote_its_hosts_active_selected_thread() {
+        use crate::adaptor::{Discovery, Proc, Procs};
+        let root = tmp("hosted-codex-stopped-job");
+        let a = "019fd755-e464-7aaa-8aaa-aaaaaaaaaaaa";
+        let b = "019fd755-e465-7aaa-8aaa-bbbbbbbbbbbb";
+        let sessions = root.join(".codex/sessions/2026/08/06");
+        let locks = root.join(".codex/thread-writer-locks");
+        fs::create_dir_all(&sessions).unwrap();
+        fs::create_dir_all(&locks).unwrap();
+        fs::write(locks.join(".coordination.lock"), "").unwrap();
+        let _writers: Vec<_> = [(a, "ANSWER_A"), (b, "ANSWER_B")].into_iter().map(|(uuid, answer)| {
+            let meta = serde_json::json!({"type":"session_meta","payload":{"id":uuid,"cwd":"/project","originator":"codex-tui","source":"cli"}});
+            let latest = serde_json::json!({"timestamp":"2026-08-06T21:49:20Z","type":"event_msg","payload":{"type":"agent_message","message":answer}});
+            let done = serde_json::json!({"timestamp":"2026-08-06T21:49:21Z","type":"event_msg","payload":{"type":"task_complete"}});
+            fs::write(sessions.join(format!("rollout-2026-08-06T21-49-18-{uuid}.jsonl")), format!("{meta}\n{latest}\n{done}\n")).unwrap();
+            let file = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true)
+                .open(locks.join(format!("{uuid}.lock"))).unwrap();
+            file.try_lock().unwrap();
+            file
+        }).collect();
+        let host = FakeHost::up();
+        let process = |name: &str, parent| Proc { name:name.into(), started_ms:100, cwd:Some("/project".into()), ppid:parent };
+        let argv: Vec<String> = ["codex", "-c", "tui.terminal_title=[\"thread-id\"]"].into_iter().map(str::to_owned).collect();
+        let procs = Procs::of([
+            (5001, process("zsh", Some(host.pid()))),
+            (700, process("codex", Some(5001))),
+            (701, process("codex", Some(5001))),
+        ]).with_commands([(700, argv.clone()), (701, argv)]);
+        let id = sid("shell/stopped-codex-host");
+        let initial = LiveKind::new(root.to_path_buf(), DeviceId([9; 32]));
+        initial.register(&id, "shell", "SJTWorkshop fixture", Some(host.pid()), Some("shell")).unwrap();
+        let dir = initial.dir_of(&id).unwrap();
+        host.serve(&dir, 5001);
+        for (label, stopped, title, selected) in [
+            ("old suspended, current selected", vec![700], b, Some((b, 701, "ANSWER_B"))),
+            ("old resumed, new suspended", vec![701], a, Some((a, 700, "ANSWER_A"))),
+            ("both runnable stay ambiguous", vec![], b, None),
+            ("all suspended cannot reuse title", vec![700, 701], b, None),
+            ("current resumed after fallback", vec![700], b, Some((b, 701, "ANSWER_B"))),
+        ] {
+            crate::commands::write_saved(&dir, &crate::commands::Saved {
+                doing: khor_core::Doing { title:Some(format!("{}...", &title[..29])), command:Some("codex".into()), running:true, cwd:Some("/project".into()), ..Default::default() },
+                ..Default::default()
+            });
+            let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+                Discovery::at(&root).with_procs(procs.clone().with_suspended(stopped)),
+            ));
+            let rows = k.rows(|_| 0);
+            let terminal = rows.iter().find(|r| r.id == id).expect("the original hosted terminal");
+            if let Some((thread, pid, answer)) = selected {
+                assert_eq!(terminal.category.as_deref(), Some("codex"), "{label}: final host must keep its bound agent");
+                assert_eq!(terminal.kind.0, khor_core::kind::TUI, "{label}");
+                assert!(terminal.state_known(), "{label}");
+                assert_eq!(terminal.state.state, State::Done, "{label}");
+                assert_eq!(terminal.last.as_deref(), Some(answer), "{label}");
+                assert_eq!(terminal.unread, 1, "{label}");
+                assert_eq!(k.sighting_of(&crate::adaptor::id_for(thread)).unwrap().1, vec![pid], "{label}");
+            } else {
+                assert_eq!(terminal.category.as_deref(), Some("shell"), "{label}");
+                assert_eq!(terminal.kind.0, khor_core::kind::SHELL, "{label}");
+                assert!(!matches!(terminal.last.as_deref(), Some("ANSWER_A" | "ANSWER_B")), "{label}: no unrelated transcript");
+                assert_eq!(terminal.unread, 0, "{label}");
+            }
+        }
     }
 
     #[test]
