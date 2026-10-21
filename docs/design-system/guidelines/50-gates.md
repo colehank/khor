@@ -638,3 +638,10 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 网页及手机，系统定位命名与权限、完整／相对路径、预览组合按钮、菜单精简、
 默认应用、下载副本、分享及隐藏／卸载后的定位。`FILE_ACTIONS_OUT` 指定证据目录；
 `FILE_ACTIONS_HEADED=0` 可显式使用无头浏览器。不替代原生系统 GUI 的真机验收。
+
+### 推荐菜单材质
+
+`npm run menu-material`：可见 Chrome 中挂载正式 OmniMenu，以高反差背景检查
+嵌套 backdrop root 与独立窗口的厚底回退；普通浮层保持玻璃。覆盖浅深主题和
+窗口不透明度 0/70/100%。`MENU_MATERIAL_WEBKIT=1` 同时运行可见 WebKit；
+`KHOR_GATE_TMP` 指定证据目录。此门不代替真 App 原生跨窗口材质验收。
