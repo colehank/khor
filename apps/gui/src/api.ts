@@ -10,6 +10,7 @@ import { gui, msg } from "./gen/catalog";
 // different menus for one idea, which is the failure `OmniChip`'s
 // head describes about copying a token.
 import type { MenuRows } from "./components/OmniMenu";
+import { nativeMenuQueue } from "./lib/native-menu-queue";
 import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
 import type { Connections } from "./gen/bindings/Connections";
 import type { ReachReport } from "./gen/bindings/ReachReport";
@@ -1664,28 +1665,34 @@ export function onPageWord(
   };
 }
 
-// ── khor's own overlays, drawn in a window of their own (单元 2, 浮层) ──
+// ── Trusted native menu presenters (desktop window / iOS sibling WK) ──
 
 /** Where an overlay has to appear, in this page's own CSS pixels, with
-    the viewport it was measured in. The app subtracts that viewport from
-    the window frame to find the screen — see `on_screen`, which is the
-    side that has both numbers. */
+    the viewport it was measured in. Desktop converts this to screen
+    coordinates; iOS converts it to sibling UIKit points. */
 export type Spot = { x: number; y: number; w: number; view: number; across: number };
 
 /**
- * Puts a menu on screen in a window of its own, over anything the app has
- * laid over its page.
+ * Presents the shared menu above a native webpage. The command receives
+ * `{request: {id, at, rows, html?}}`; native verifies the sending WebView.
  *
  * **Answers whether the float took it**, and `false` is not a failure: a
- * platform with no second window to hang a menu in draws it in the page,
- * which is where every menu was drawn until a browsing tab started
- * covering them. A refusal lands in the same place (`useFloatedMenu`).
+ * platform with no native presenter draws it in the page. Ordinary web
+ * browsers and Android currently have no independent embedded page layer.
+ * A presenter refusal also uses that DOM fallback (`useFloatedMenu`).
  */
-export const showMenu = (at: Spot, rows: MenuRows): Promise<boolean> =>
-  inApp ? call<boolean>("show_menu", { at, rows }) : Promise.resolve(false);
+export type NativeMenuState = { id: string; rows: MenuRows };
+export type MenuRequest = NativeMenuState & { at: Spot & { above: boolean }; html?: string };
+const nativeMenus = nativeMenuQueue<MenuRequest>({
+  show: request => call<boolean>("show_menu", { request }),
+  hide: id => call<null>("hide_menu", { id }),
+});
+export const showMenu = (request: MenuRequest): Promise<boolean> =>
+  inApp ? nativeMenus.show(request) : Promise.resolve(false);
 
-/** Takes it off the screen. Hidden, not closed — the window is reused. */
-export const hideMenu = () => (inApp ? call<null>("hide_menu", {}) : Promise.resolve(null));
+/** Retires only this lease. Desktop reuses its hidden window; iOS removes
+    its private sibling presenter. Stale owners cannot close a newer menu. */
+export const hideMenu = (id: string) => (inApp ? nativeMenus.hide(id) : Promise.resolve(null));
 
 /** The columns that ask the window for their room: the session's 附栏
     (`App`) and the workspace's sessions (`WorkspacePane`). Each one's
@@ -1759,18 +1766,18 @@ async function roomAsk(cmd: "widen" | "unwiden", args: Record<string, unknown>):
 /** How tall the list came out, said by the window that drew it — the only
     side that can measure a laid-out list. Showing it is the app's answer
     to this call. */
-export const sizeMenu = (h: number) =>
-  inApp ? call<null>("size_menu", { h }) : Promise.resolve(null);
+export const sizeMenu = (id: string, h: number) =>
+  inApp ? call<null>("size_menu", { id, h }) : Promise.resolve(null);
 
 /** What the menu has to show right now. **Pulled on mount** because the
     window and its first rows are decided in the same breath, and a
     webview still loading cannot be listening yet. */
 export const menuRows = () =>
-  inApp ? call<MenuRows | null>("menu_rows", {}) : Promise.resolve(null);
+  inApp ? call<NativeMenuState | null>("menu_rows", {}) : Promise.resolve(null);
 
 /** A row was pressed. Goes back to the face that opened the menu. */
-export const menuPick = (key: string) =>
-  inApp ? call<null>("menu_pick", { key }) : Promise.resolve(null);
+export const menuPick = (id: string, key: string) =>
+  inApp ? call<null>("menu_pick", { id, key }) : Promise.resolve(null);
 
 /**
  * One of the app's own events, for a listener that wants every one of

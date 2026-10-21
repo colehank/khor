@@ -44,6 +44,8 @@
     "tokens": "node scripts/check-tokens.mjs",
     "boot": "node scripts/check-boot.mjs",
     "native": "node scripts/check-native.mjs",
+    "native-menu": "node scripts/check-native-menu.mjs",
+    "native-menu-ui": "node scripts/check-native-menu-ui.mjs",
     "atlas": "node scripts/check-atlas.mjs",
     "scroller": "node scripts/check-scroller.mjs",
     "softdel": "node scripts/check-soft-delete.mjs",

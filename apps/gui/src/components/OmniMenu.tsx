@@ -1,8 +1,8 @@
-// The list a box offers, and the two places it can be drawn.
+// One list UI, presented in the DOM or above a native webpage.
 //
 // **One component, because there is one menu.** It hangs under the box on
-// every pane in this app, and on a browsing tab it hangs in a small window
-// of the app's own — a native child webview always paints above this
+// every pane in this app. Browsing uses a desktop menu window or a trusted
+// iOS sibling WK view — a native child webview always paints above this
 // page's DOM, so a menu drawn here would come out underneath whatever site
 // the tab is showing (`show_menu` has the whole account). Two components
 // would be one restyle away from being two different menus for one idea,
@@ -10,12 +10,14 @@
 //
 // **The keyboard never moves.** Even floated, the caret stays in the box
 // and ↑↓/Tab/Enter belong to the field it is in; what crosses to the other
-// window is the list and which row is lit, and what comes back is a press.
-// That is why the window is built unable to take focus.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from "react";
+// presenter is the list and which row is lit, and what comes back is a
+// lease-scoped press. Native presenters preserve the field's input focus.
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from "react";
 
-import { hear, hideMenu, inApp, menuPick, menuRows, showMenu, sizeMenu } from "@/api";
+import { hear, hideMenu, inApp, menuPick, menuRows, showMenu, sizeMenu, type NativeMenuState } from "@/api";
 import type { Avatar } from "@/gen/bindings/Avatar";
+import { createRoot } from "react-dom/client";
+import { nativeMenuSnapshot } from "@/lib/native-menu-snapshot";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBrowser, IconCheck } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -216,101 +218,152 @@ export function OmniMenu({
 }
 
 /**
- * Draws the menu in a window of the app's own, over anything the app has
- * laid on top of its page.
+ * Draws the shared menu through the available native presenter: a desktop
+ * menu window or an iOS sibling WK view above the retained webpage.
  *
  * Answers **whether that took**. `false` is not a failure and the caller
- * must draw the list itself when it comes back: a browser tab and a phone
- * have no such window, and neither of them has a page webview covering
- * khor's overlays either — the in-page menu is the right one there. A
- * desktop refusal (a window that would not build) lands in the same place,
+ * must draw the list itself when it comes back. Ordinary browser tabs
+ * have no independent native page covering khor's DOM. A native
+ * refusal (a presenter that would not build) lands in the same place,
  * which is the one behaviour worth having: 一档接不上不会变成「没有值」,
  * and a menu that quietly became nothing would leave the box unusable.
  */
+/** iPad desktop UA still uses the iOS native presenter. Desktop keeps the
+ * live MenuFace; only iOS needs an inert snapshot in its private WK view. */
+const needsSnapshot = () => /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
+
+function SnapshotMenu({ rows, room, publish }: { rows: MenuRows; room: number; publish: (html: string) => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const send = () => publish(nativeMenuSnapshot(el));
+    const observer = new ResizeObserver(send);
+    observer.observe(el);
+    send();
+    return () => observer.disconnect();
+  }, [rows, room, publish]);
+  return <OmniMenu menuRef={box} rows={rows} onPick={() => {}} style={{maxHeight: room}} />;
+}
+
 export function useFloatedMenu(
   anchor: React.RefObject<HTMLElement | null>,
   rows: MenuRows | null,
   onPick: (key: string) => void,
   float: boolean,
+  options: { above?: boolean; onDismiss: () => void },
 ): boolean {
-  // **Optimistic, and that is a judgment about flicker.** In the app the
-  // float is the ordinary answer; starting at `false` would draw the
-  // in-page menu for a frame and then take it away under the eyes of the
-  // person who just pressed the box.
   const [able, setAble] = useState(inApp);
-  const said = useRef(onPick);
-  said.current = onPick;
-  /** **A press is this box's only while this box's rows are up**: the
-      window and its `menu:pick` are the app's one, and every box with a
-      floated menu hears it — the browser pill's field and a search box
-      can both be mounted (sb-a, 2026-10-09). */
-  const showing = useRef(false);
-  useEffect(() => hear<string>("menu:pick", (key) => showing.current && said.current(key)), []);
-
+  const latest = useRef({ rows, onPick, onDismiss: options.onDismiss });
+  latest.current = { rows, onPick, onDismiss: options.onDismiss };
+  const lease = useRef<string | null>(null);
   const on = float && able;
-  showing.current = on && rows !== null;
-  // The rows are rebuilt on every render, so the effect below is keyed on
-  // what is *in* them. Keyed on the object it would ask the app to move a
-  // window on every keystroke that changed nothing.
-  const same = rows ? JSON.stringify(rows) : "";
-  const ship = useCallback(() => {
-    if (!on) return;
-    if (!rows) {
-      hideMenu().catch(() => {});
-      return;
-    }
-    const el = anchor.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    showMenu(
-      {
-        x: r.left,
-        y: r.bottom + MENU_GAP,
-        w: r.width,
-        // This viewport is how the app finds the screen: it subtracts it
-        // from the window frame to learn how much of that frame is
-        // chrome (`on_screen`). Nothing here does the arithmetic and
-        // nothing writes down a titlebar.
-        view: window.innerHeight,
-        across: window.innerWidth,
-      },
-      rows,
-    ).then(
-      (took) => {
-        if (!took) setAble(false);
-      },
-      // **Loud, and it earned that on the first try.** This handler was
-      // `() => setAble(false)`, so when the app refused to build the
-      // window the only sign was a menu that went on being drawn in the
-      // page — the exact silence a missing capabilities file hid behind
-      // for a day (`onPageWord`). Falling back is right; falling back
-      // without saying why is not.
-      (e: unknown) => {
-        console.error("khor: the overlay window refused, menu stays in the page", e);
-        setAble(false);
-      },
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [on, same, anchor]);
-
-  useEffect(ship, [ship]);
-
-  // The box moves when the window does, and a menu pinned to where the box
-  // used to be is worse than none.
+  const opened = on && rows !== null;
+  // A lease belongs to one continuous opening, not to a keystroke.
+  // Cleanup can only hide its own lease, never another field's menu.
+  useLayoutEffect(() => {
+    if (!opened) return;
+    const id = crypto.randomUUID();
+    lease.current = id;
+    return () => {
+      if (lease.current === id) lease.current = null;
+      void hideMenu(id).catch(() => {});
+    };
+  }, [opened]);
   useEffect(() => {
+    const stopPick = hear<{ id: string; key: string }>("menu:pick", ({id, key}) => {
+      if (lease.current !== id) return;
+      if (latest.current.rows?.groups.some(group => group.candidates.some(row => row.key === key))) {
+        latest.current.onPick(key);
+      }
+    });
+    const stopDismiss = hear<{ id: string }>("menu:dismiss", ({id}) => {
+      if (lease.current !== id) return;
+      // Retire immediately, before React commits the owner's close. This
+      // also cancels a queued show and rejects a late pick in this task.
+      lease.current = null;
+      void hideMenu(id).catch(() => {});
+      latest.current.onDismiss();
+    });
+    return () => { stopPick(); stopDismiss(); };
+  }, []);
+
+  const same = rows ? JSON.stringify(rows) : "";
+  const update = useRef<(() => void) | null>(null);
+  const sent = useRef("");
+  useEffect(() => {
+    const id = lease.current;
+    if (!opened || !id) return;
+    let gone = false, sequence = 0;
+    let host: HTMLDivElement | null = null;
+    let renderer: ReturnType<typeof createRoot> | null = null;
+    if (needsSnapshot()) {
+      host = document.createElement("div");
+      host.dataset.nativeMenuMeasure = "";
+      host.inert = true;
+      Object.assign(host.style, {position:"fixed",left:"0",top:"0",transform:"translateX(-200vw)",opacity:"0",pointerEvents:"none"});
+      document.body.append(host);
+      renderer = createRoot(host);
+    }
+    const ship = () => {
+      const el = anchor.current, current = latest.current.rows;
+      if (!el || !current || gone || lease.current !== id) return;
+      const r = el.getBoundingClientRect();
+      const above = options.above === true;
+      const at = {x:r.left, y:above ? r.top - MENU_GAP : r.bottom + MENU_GAP, w:r.width,
+        view:window.innerHeight, across:window.innerWidth, above};
+      const send = (html?: string) => {
+        if (gone || lease.current !== id) return;
+        const request = ++sequence;
+        void showMenu({id, at, rows:current, ...(html ? {html} : {})}).then(took => {
+          if (lease.current !== id) {
+            void hideMenu(id).catch(() => {});
+          } else if (!gone && !took && request === sequence) setAble(false);
+        }, (error: unknown) => {
+          if (gone || lease.current !== id || request !== sequence) return;
+          console.error("khor: native menu refused; drawing the shared menu in the page", error);
+          setAble(false);
+        });
+      };
+      if (renderer && host) {
+        host.style.width = `${r.width}px`;
+        const viewport = window.visualViewport;
+        const room = Math.max(0, above ? at.y - (viewport?.offsetTop ?? 0) :
+          (viewport ? viewport.offsetTop + viewport.height : window.innerHeight) - at.y);
+        renderer.render(<SnapshotMenu rows={current} room={room} publish={send} />);
+      } else send();
+    };
+    update.current = ship;
+    sent.current = same;
+    ship();
+    const observer = new ResizeObserver(ship);
+    if (anchor.current) observer.observe(anchor.current);
+    const theme = new MutationObserver(ship);
+    theme.observe(document.documentElement, {attributes:true,attributeFilter:["data-theme","style","class"]});
     window.addEventListener("resize", ship);
-    return () => window.removeEventListener("resize", ship);
-  }, [ship]);
-
-  // Gone from the screen with the menu still up: the window is the app's
-  // and outlives this component, so leaving would leave it hanging there.
-  useEffect(
-    () => () => {
-      hideMenu().catch(() => {});
-    },
-    [],
-  );
-
+    window.visualViewport?.addEventListener("resize", ship);
+    window.visualViewport?.addEventListener("scroll", ship);
+    return () => {
+      gone = true;
+      if (update.current === ship) update.current = null;
+      observer.disconnect();
+      theme.disconnect();
+      window.removeEventListener("resize", ship);
+      window.visualViewport?.removeEventListener("resize", ship);
+      window.visualViewport?.removeEventListener("scroll", ship);
+      // Separate root: defer its unmount beyond this root's commit.
+      if (renderer) { const old = renderer; queueMicrotask(() => { old.unmount(); host?.remove(); }); }
+    };
+  // Keep one measurement root and its SVG IDs for the opening. Only the
+  // rows change on a keystroke; observers and native ownership do not.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened, anchor, options.above]);
+  useEffect(() => {
+    if (sent.current === same) return;
+    sent.current = same;
+    update.current?.();
+  }, [same]);
   return on;
 }
 
@@ -323,13 +376,13 @@ export function useFloatedMenu(
  * first press of the address bar would open an empty menu.
  */
 export function MenuFace() {
-  const [rows, setRows] = useState<MenuRows | null>(null);
+  const [state, setState] = useState<NativeMenuState | null>(null);
+  const rows = state?.rows ?? null;
   useEffect(() => {
-    menuRows().then(
-      (r) => setRows(r ?? null),
-      () => {},
-    );
-    return hear<MenuRows>("menu:rows", setRows);
+    let changed = false, alive = true;
+    const stop = hear<NativeMenuState>("menu:rows", (next) => { changed = true; setState(next); });
+    menuRows().then((r) => { if (alive && !changed) setState(r); }, () => {});
+    return () => { alive = false; stop(); };
   }, []);
 
   // **The window is sized from what was actually laid out.** Working the
@@ -343,13 +396,13 @@ export function MenuFace() {
     const el = box.current;
     if (!el) return;
     const tell = () => {
-      sizeMenu(document.documentElement.scrollHeight).catch(() => {});
+      if (state) sizeMenu(state.id, el.getBoundingClientRect().height).catch(() => {});
     };
     const watch = new ResizeObserver(tell);
     watch.observe(el);
     tell();
     return () => watch.disconnect();
-  }, [rows]);
+  }, [state]);
 
   // Nothing to show is not a state this window sits in — the app hides it
   // — so an empty render is a frame between two lists, and drawing a bare
@@ -360,7 +413,7 @@ export function MenuFace() {
       <OmniMenu
         rows={rows}
         onPick={(key) => {
-          menuPick(key).catch(() => {});
+          if (state) menuPick(state.id, key).catch(() => {});
         }}
       />
     </div>

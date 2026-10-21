@@ -2,6 +2,8 @@
 //! is one call into khor-node — CLI and GUI stay equivalent because they
 //! are the same functions (docs/KHOR.md 三条地基).
 
+mod menu_overlay;
+
 #[cfg(desktop)]
 mod window_surface;
 
@@ -2017,7 +2019,7 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     // while this window's first frame was being made: measured on the
     // Mac in release, launch → first list row went from 565 to 536 ms
     // (medians of twenty and ten cold launches). It is still built during
-    // start-up — `hang_menu_window` says why that matters — just after
+    // start-up — `menu_overlay::desktop::hang` says why that matters — just after
     // the page somebody is looking at has loaded.
     let win = win.on_page_load(|view, payload| {
         static HUNG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -2028,7 +2030,7 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             let app = view.app_handle().clone();
             let _ = view
                 .app_handle()
-                .run_on_main_thread(move || hang_menu_window(&app));
+                .run_on_main_thread(move || menu_overlay::desktop::hang(&app));
         }
     });
     let _built = win.build()?;
@@ -2243,138 +2245,10 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     view.close().map_err(|e| e.to_string())
 }
 
-// ── khor's own overlays, in a window of their own (单元 2, 浮层) ──
-//
-// **A native child webview always paints above the DOM.** That is not a
-// z-index anybody can raise; it is another layer of the window. So the
-// address bar's completions — drawn in khor's own page, one row under the
-// address they complete — came out *underneath* the site the tab is
-// showing. Two answers were tried in front of somebody and both were
-// judged wrong: taking the page away while the menu is up blanked the
-// whole site, and pushing the page's top down shoved the site out from
-// under the eyes of the person reading it. 「不对,应该是浮在页面上的」.
-//
-// **What browsers do is a second window**, and it is the only answer that
-// makes the menu genuinely float: an operating-system window sits above
-// another window's child views by construction. It carries the same React
-// list, rendered by the same component (`components/OmniMenu`), so there
-// is one menu and not two that drift apart.
-//
-// Three properties are what make it read as a menu rather than a window,
-// and each is doing a job:
-//
-// - **`parent`** — the platform then keeps it above the face, moves it
-//   with the face and destroys it with the face. Without a parent the app
-//   would stop exiting when its window is closed (a hidden window is
-//   still a window), and the alternative — `always_on_top` — would have
-//   floated khor's completions over other applications.
-// - **`focusable(false)`** — the caret has to stay in the address box.
-//   This menu is driven from that box's keyboard (↑↓/Tab/Enter all belong
-//   to the field), and a window that took focus would blur the field
-//   mid-completion. On macOS this is `canBecomeKeyWindow` answering no
-//   (tao 0.35, `platform_impl/macos/window.rs`).
-// - **`accept_first_mouse(true)`** — the other half of that one. Every
-//   click into a window that cannot become key is a "first mouse" click,
-//   and a view that does not accept one swallows it. Without this the
-//   rows would be visible and unpressable.
-
-/// Where an overlay has to appear, in the face's own CSS pixels, with the
-/// two viewport measurements that turn them into screen ones.
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-struct Spot {
-    x: f64,
-    y: f64,
-    w: f64,
-    /// The face's viewport height and width. **Both are here to be
-    /// subtracted from the window frame, and neither is decoration** —
-    /// see `on_screen`, which is where the arithmetic and the reason for
-    /// it live. `PageBox.view` carries the same measurement for the same
-    /// kind of reason.
-    view: f64,
-    across: f64,
-}
-
-/// The window khor's own overlays are drawn in. One, reused: building a
-/// webview costs a page load, and a menu that had to load a page every
-/// time somebody pressed the address bar would arrive after they had
-/// finished typing.
-#[cfg(desktop)]
-const MENU: &str = "menu";
-
-/// Where a `Spot` lands on the screen, in physical pixels, and how wide.
-///
-/// **Both offsets are measured rather than written down.** The face
-/// reports the size of its own viewport; this side asks the platform for
-/// the size of the whole window frame; the difference is the chrome,
-/// whatever the platform decided that is — a titlebar on macOS, a
-/// titlebar and three borders on Windows, nothing at all where the window
-/// is undecorated. A constant here would be right on the machine it was
-/// measured on and wrong on the first window that is not that one, which
-/// is the mistake `PageBox.view` exists to have already made once.
-///
-/// The side borders are what let the top be worked out: chrome is
-/// left+right+bottom+top, the sides are half of what the width is short
-/// by, and the bottom border is the same as a side one on every window
-/// style this runs in. What is left over is the titlebar.
-#[cfg(desktop)]
-fn on_screen(window: &tauri::Window, at: Spot) -> Result<(f64, f64, f64), String> {
-    let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let frame = window.outer_size().map_err(|e| e.to_string())?;
-    let origin = window.outer_position().map_err(|e| e.to_string())?;
-    if scale <= 0.0 || at.view <= 0.0 || at.across <= 0.0 {
-        return Err("the face has not measured itself yet".into());
-    }
-    // Never negative: a face that measured a viewport bigger than the
-    // window is a face caught mid-resize, and a menu placed on that would
-    // jump to somewhere the next rectangle undoes.
-    let side = ((frame.width as f64 - at.across * scale) / 2.0).max(0.0);
-    let down = ((frame.height as f64 - at.view * scale) - side).max(0.0);
-    Ok((
-        origin.x as f64 + side + at.x * scale,
-        origin.y as f64 + down + at.y * scale,
-        at.w * scale,
-    ))
-}
-
-/// The rows the menu is showing and the face that asked for them.
-///
-/// **The face's label rides along because a pick has to go home.** The
-/// menu window is one window serving whichever face opened it, and an
-/// event broadcast to every webview would hand khor's traffic to the site
-/// in the browsing tab (`open_page` says why that matters).
-#[cfg(desktop)]
-fn menu_held() -> &'static std::sync::Mutex<Option<(String, serde_json::Value)>> {
-    static HELD: std::sync::OnceLock<std::sync::Mutex<Option<(String, serde_json::Value)>>> =
-        std::sync::OnceLock::new();
-    HELD.get_or_init(Default::default)
-}
-
-/// Whether the menu is meant to be on screen right now.
-///
-/// **It exists because showing is two steps and hiding is one.** The
-/// window is shown by `size_menu`, which arrives after the menu window has
-/// laid its list out — and a `hide_menu` can land in that gap. Without
-/// this, a menu dismissed while its last render was still in flight would
-/// reappear by itself.
-/// How wide the box that owns the menu is, in physical pixels.
-///
-/// **Kept here because the window cannot be asked.** `set_size` goes
-/// through the event loop, so a `size_menu` arriving hard on the heels of
-/// a `show_menu` reads back the width the window had *before* the show —
-/// and writing that back with the new height pinned the menu at one pixel
-/// wide. Measured 2026-09-09: the window server listed it 1x151, in front
-/// and correctly placed, and invisible for all practical purposes.
-#[cfg(desktop)]
-fn menu_wide() -> &'static std::sync::atomic::AtomicU32 {
-    static WIDE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
-    &WIDE
-}
-
-#[cfg(desktop)]
-fn menu_up() -> &'static std::sync::atomic::AtomicBool {
-    static UP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    &UP
-}
+// ── Native overlays ────────────────────────────────────────────
+// Shared protocol and host implementations live in menu_overlay. Desktop
+// uses the prewarmed keyless window; iOS hosts the shared menu's inert DOM
+// above sibling webpages without copying app IPC or changing the page.
 
 /// The settings window's label (UX-10).
 #[cfg(desktop)]
@@ -2458,215 +2332,74 @@ fn name_settings(title: String) {
     let _ = title;
 }
 
-/// Builds the overlay window, once, while the app is starting.
-///
-/// **At startup rather than on the first press, and the reason is that a
-/// failure here has to be visible.** Built lazily, a window that would not
-/// build turned into a refused command, and a refused command turned into
-/// a face quietly drawing its menu the old way — the same silence that hid
-/// a missing capabilities file for a day (`onPageWord`). Here it says so
-/// out loud, and everything downstream reads "no window" as "draw it in
-/// the page", which is a state rather than an error.
-///
-/// It also buys the thing lazy building cost: the first press of the
-/// address bar no longer waits for a page load.
-///
-/// **Once the face's own page has loaded** (UX-8, `build_the_window`):
-/// still start-up, still loud, but not competing with the first frame.
-#[cfg(desktop)]
-fn hang_menu_window(app: &tauri::AppHandle) {
-    // **Not a child window, and that was measured rather than chosen.**
-    // The first shape of this hung the overlay off the face with
-    // `parent`, which reads better — the platform then keeps it above the
-    // face, moves it along and destroys it with the face. Two things
-    // broke:
-    //
-    //   - `orderOut:` **takes a child off its parent** on macOS, so the
-    //     first hide detached it and every show after that put it behind
-    //     the face. From the outside that is 「只有第一次点会弹出」.
-    //   - `addChildWindow:` binds the child's window level to the
-    //     parent's, so `always_on_top` could not fix it: the window
-    //     server listed both at layer 0 with the menu second.
-    //
-    // A level of its own is the shape that survives being hidden. What it
-    // costs is the two things the parent was giving: the app has to close
-    // this window itself (see `run`, or a hidden window keeps it alive
-    // after its face is gone), and the menu no longer follows a window
-    // being dragged — it is repositioned on every show, so what shows is
-    // dragging the window *while a completion list is up*.
-    let built = tauri::WebviewWindowBuilder::new(
-        app,
-        MENU,
-        // **The same page as the face, told which half of itself to be.**
-        // A second HTML entry point would be a second place for the
-        // menu's look to be defined, and the two would drift; the query
-        // is read once at boot (`main.tsx`) and picks a root.
-        tauri::WebviewUrl::App("index.html?face=menu".into()),
-    )
-    .title("")
-    .decorations(false)
-    .resizable(false)
-    .skip_taskbar(true)
-    .focusable(false)
-    .accept_first_mouse(true)
-    .shadow(true)
-    .always_on_top(true)
-    // Built invisible and shown by `size_menu`: a window sized before its
-    // list has been laid out would flash at whatever size it was built.
-    .visible(false)
-    .inner_size(1.0, 1.0)
-    .build();
-    if let Err(e) = built {
-        eprintln!("khor: the overlay window did not build, menus stay in the page: {e}");
+/// Native completion hosting. Only khor's actual trusted WebView may own a
+/// menu: checking its parent Window would accidentally authorize remote pages.
+fn menu_owner(webview: &tauri::Webview) -> Result<String, String> {
+    match webview.label() {
+        "main" | "settings" => Ok(webview.label().to_owned()),
+        _ => Err("this webview cannot own a menu".into()),
     }
 }
 
-/// Puts khor's completions on screen under the box that owns them.
-///
-/// Answers whether the float took it. **Not an error when it did not**:
-/// a platform with no overlay window draws its menus in the page, which
-/// is not a failure but the other half of this control, and the face has
-/// one to fall back to (`useFloatedMenu`).
-#[cfg(desktop)]
 #[tauri::command]
-fn show_menu(window: tauri::Window, at: Spot, rows: serde_json::Value) -> Result<bool, String> {
-    use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize};
-    let app = window.app_handle().clone();
-    let Some(menu) = app.get_webview_window(MENU) else {
-        return Ok(false);
-    };
-    let (x, y, w) = on_screen(&window, at)?;
-    let face = window.label().to_string();
-    if let Ok(mut held) = menu_held().lock() {
-        *held = Some((face, rows.clone()));
+async fn show_menu(webview: tauri::Webview, request: menu_overlay::MenuRequest) -> Result<bool, String> {
+    let owner = menu_owner(&webview)?;
+    #[cfg(desktop)]
+    { let _ = owner; menu_overlay::desktop::show(&webview.window(), &request) }
+    #[cfg(target_os = "ios")]
+    {
+        use tauri::Manager;
+        let app = webview.app_handle().clone();
+        let (tx,rx)=tokio::sync::oneshot::channel();
+        webview.with_webview(move |native| {
+            let _=tx.send(menu_overlay::ios::show(&app,native.inner() as *mut objc2::runtime::AnyObject,&owner,request));
+        }).map_err(|e|e.to_string())?;
+        rx.await.map_err(|e|e.to_string())?
     }
-    menu_up().store(true, std::sync::atomic::Ordering::Relaxed);
-    // The width is this side's to set — it is the box's width, which only
-    // the face can see. The height is the list's, and the list is the one
-    // that knows (`size_menu`).
-    let wide = (w.max(1.0) as u32).max(1);
-    menu_wide().store(wide, std::sync::atomic::Ordering::Relaxed);
-    let tall = menu.inner_size().map_err(|e| e.to_string())?.height.max(1);
-    menu.set_position(PhysicalPosition::new(x, y))
-        .map_err(|e| e.to_string())?;
-    menu.set_size(PhysicalSize::new(wide, tall))
-        .map_err(|e| e.to_string())?;
-    app.emit_to(MENU, "menu:rows", rows)
-        .map_err(|e| e.to_string())?;
-    Ok(true)
+    #[cfg(not(any(desktop,target_os = "ios")))]
+    { let _=(owner,request); Ok(false) }
 }
 
-/// The menu window says how tall its list came out, and is shown at that
-/// height.
-///
-/// **It has to be the one to say it.** The height of a list of rows is a
-/// layout fact, and working one out on this side would mean writing down
-/// a row height — a number that goes wrong the first time somebody changes
-/// the type scale, and goes wrong silently, as a menu with its last row
-/// cut off.
-#[cfg(desktop)]
 #[tauri::command]
-fn size_menu(app: tauri::AppHandle, h: f64) -> Result<(), String> {
-    use tauri::{Manager, PhysicalSize};
-    let Some(menu) = app.get_webview_window(MENU) else {
-        return Ok(());
-    };
-    let scale = menu.scale_factor().map_err(|e| e.to_string())?;
-    // **Not read back off the window** — see `menu_wide`, which is the
-    // account of what reading it back cost.
-    let wide = menu_wide().load(std::sync::atomic::Ordering::Relaxed);
-    menu.set_size(PhysicalSize::new(wide, (h * scale).max(1.0) as u32))
-        .map_err(|e| e.to_string())?;
-    if menu_up().load(std::sync::atomic::Ordering::Relaxed) {
-        menu.show().map_err(|e| e.to_string())?;
+fn hide_menu(webview: tauri::Webview, id: String) -> Result<(), String> {
+    let owner=menu_owner(&webview)?;
+    #[cfg(desktop)]
+    { let _=owner; menu_overlay::desktop::hide(&webview.window(), &id) }
+    #[cfg(target_os = "ios")]
+    {
+        use tauri::Manager;
+        webview.app_handle().run_on_main_thread(move || menu_overlay::ios::hide(&owner,&id)).map_err(|e|e.to_string())
     }
-    Ok(())
+    #[cfg(not(any(desktop,target_os = "ios")))]
+    { let _=(owner,id); Ok(()) }
 }
 
-/// What the menu has to show right now, pulled by the menu window when it
-/// mounts.
-///
-/// **A pull as well as an event, because the two cannot be ordered.** The
-/// window is built and the rows are chosen in the same breath, and a
-/// webview still loading its page cannot be listening yet — an event sent
-/// then reaches nobody, and the first press of the address bar would open
-/// an empty menu.
-#[cfg(desktop)]
-#[tauri::command]
-fn menu_rows() -> Result<serde_json::Value, String> {
-    Ok(menu_held()
-        .lock()
-        .ok()
-        .and_then(|h| h.as_ref().map(|(_, rows)| rows.clone()))
-        .unwrap_or(serde_json::Value::Null))
+fn menu_renderer(webview:&tauri::Webview)->Result<(),String> {
+    if webview.label()=="menu" {Ok(())}else{Err("this webview is not the menu renderer".into())}
 }
-
-/// Somebody pressed a row. It goes back to the face that opened the menu,
-/// and to no other webview.
-#[cfg(desktop)]
 #[tauri::command]
-fn menu_pick(app: tauri::AppHandle, key: String) -> Result<(), String> {
-    use tauri::Emitter;
-    let face = menu_held()
-        .lock()
-        .ok()
-        .and_then(|h| h.as_ref().map(|(f, _)| f.clone()));
-    let Some(face) = face else { return Ok(()) };
-    app.emit_to(face, "menu:pick", key)
-        .map_err(|e| e.to_string())
+fn size_menu(webview:tauri::Webview,id:String,h:f64)->Result<(),String> {
+    menu_renderer(&webview)?;
+    #[cfg(desktop)]
+    {menu_overlay::desktop::size(&webview.window(),&id,h)}
+    #[cfg(not(desktop))]
+    {let _=(id,h);Ok(())}
 }
-
-/// Takes the menu off the screen. **Hidden rather than closed**, for
-/// `open_page`'s reason turned around: the window is reused, and closing
-/// it would cost the next press of the address bar a page load.
-#[cfg(desktop)]
 #[tauri::command]
-fn hide_menu(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri::Manager;
-    menu_up().store(false, std::sync::atomic::Ordering::Relaxed);
-    let Some(menu) = app.get_webview_window(MENU) else {
-        return Ok(());
-    };
-    menu.hide().map_err(|e| e.to_string())
+fn menu_rows(webview:tauri::Webview)->Result<Option<menu_overlay::MenuSnapshot>,String> {
+    menu_renderer(&webview)?;
+    #[cfg(desktop)]
+    {menu_overlay::desktop::rows(&webview.window())}
+    #[cfg(not(desktop))]
+    {Ok(None)}
 }
-
-// **The mobile halves are not refusals, and that is the difference from
-// the page ones below.** A phone has no second window to hang a menu in,
-// and it does not need one: it has no page webview either, so nothing is
-// painting over khor's own overlays and the completions drawn in the page
-// are the right ones. `false` is that answer — "the float did not take
-// it" — and the face renders the list where it always did.
-#[cfg(not(desktop))]
 #[tauri::command]
-fn show_menu(at: Spot, rows: serde_json::Value) -> Result<bool, String> {
-    let _ = (at, rows);
-    Ok(false)
-}
-
-#[cfg(not(desktop))]
-#[tauri::command]
-fn size_menu(h: f64) -> Result<(), String> {
-    let _ = h;
-    Ok(())
-}
-
-#[cfg(not(desktop))]
-#[tauri::command]
-fn menu_rows() -> Result<serde_json::Value, String> {
-    Ok(serde_json::Value::Null)
-}
-
-#[cfg(not(desktop))]
-#[tauri::command]
-fn menu_pick(key: String) -> Result<(), String> {
-    let _ = key;
-    Ok(())
-}
-
-#[cfg(not(desktop))]
-#[tauri::command]
-fn hide_menu() -> Result<(), String> {
-    Ok(())
+fn menu_pick(webview:tauri::Webview,id:String,key:String)->Result<(),String> {
+    menu_renderer(&webview)?;
+    #[cfg(desktop)]
+    {menu_overlay::desktop::pick(&webview.window(),&id,&key)}
+    #[cfg(not(desktop))]
+    {let _=(id,key);Ok(())}
 }
 
 /// Grows the window for a column opening beside the page (`room`, UX-39
@@ -4502,7 +4235,10 @@ fn watch_the_front(app: tauri::AppHandle) {
     // **First, while the notification is still being posted**: a push
     // running now gets the background task before the app can be stopped
     // (`push_grace`); the worker's suspension then waits on it.
-    let pushing = block2::RcBlock::new(|_note: std::ptr::NonNull<NSNotification>| push_grace::begin());
+    let pushing = block2::RcBlock::new(|_note: std::ptr::NonNull<NSNotification>| {
+        menu_overlay::ios::dismiss_current(true);
+        push_grace::begin();
+    });
     // SAFETY: the default centre, for the life of the process; posted on
     // the main thread, which `push_grace::begin` needs.
     unsafe {
@@ -4914,7 +4650,7 @@ pub fn run() {
             Ok(())
         })
         // **The overlay window has to be closed by hand.** It has a level
-        // of its own rather than a parent (`hang_menu_window` says why),
+        // of its own rather than a parent (`menu_overlay::desktop::hang` says why),
         // and tauri leaves an app running while any window is open — so
         // without this, closing khor's window would leave the process
         // alive with nothing on screen.
@@ -4923,22 +4659,33 @@ pub fn run() {
             #[cfg(target_os = "ios")]
             let _ = (window, event);
             #[cfg(desktop)]
+            if matches!(window.label(), "main" | "settings") {
+                match event {
+                    tauri::WindowEvent::Focused(focused) => menu_overlay::desktop::owner_focus(window,*focused),
+                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) |
+                    tauri::WindowEvent::ScaleFactorChanged{..} => menu_overlay::desktop::owner_moved(window),
+                    tauri::WindowEvent::Destroyed => {
+                        if let Some(held)=menu_overlay::held().filter(|h|h.owner==window.label()) {
+                            let _=menu_overlay::desktop::hide(window,&held.request.id);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            #[cfg(desktop)]
             if window.label() == "main" {
                 use tauri::Manager;
-                let menu = || window.app_handle().get_webview_window(MENU);
                 match event {
                     // **The overlay window has to be closed by hand.** It
                     // has a level of its own rather than a parent
-                    // (`hang_menu_window` says why), and tauri leaves an
+                    // (`menu_overlay::desktop::hang` says why), and tauri leaves an
                     // app running while any window is open — so without
                     // this, closing khor's window would leave the process
                     // alive with nothing on screen.
                     tauri::WindowEvent::CloseRequested { .. } => {
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                         eprintln!("[{stamp}] khor app: the main window was closed");
-                        if let Some(menu) = menu() {
-                            let _ = menu.close();
-                        }
+                        menu_overlay::desktop::close(window.app_handle());
                         // **And so does every editor window** (工作区第
                         // 六轮 第 46 条). They are windows of khor's own
                         // with no parent, exactly as the overlay is, so
@@ -4957,10 +4704,8 @@ pub fn run() {
                     // whatever somebody switched to mid-completion. It
                     // goes away with the face and comes back with it.
                     //
-                    // `menu_up` is deliberately not touched: it records
-                    // whether anybody still *wants* a menu, and switching
-                    // apps is not an answer to that question. The face
-                    // asks and unasks; this only draws or stops drawing.
+                    // The shared lease records whether a field still owns
+                    // a menu; native owner lifecycle hides it when unfocused.
                     // **The editor windows change with the desktop.**
                     // Each was built wearing the theme khor had at the
                     // time (`open_code_window`), and a theme set on a
@@ -4994,11 +4739,6 @@ pub fn run() {
                         }
                     }
                     tauri::WindowEvent::Focused(here) => {
-                        if let Some(menu) = menu()
-                            && menu_up().load(std::sync::atomic::Ordering::Relaxed)
-                        {
-                            let _ = if *here { menu.show() } else { menu.hide() };
-                        }
                         // The page re-reads the store when the window is
                         // back in front (`use-settings`): WKWebView gives
                         // it no `focus` of its own for that.

@@ -152,19 +152,17 @@ export function Omnibox({
    */
   onLeave?: () => void;
   /**
-   * Draw the completions in a window of the app's own rather than in this
-   * page.
+   * Draw completions through a trusted native presenter above a webpage,
+   * rather than behind it in this page's DOM.
    *
    * **For the one box that has something painted over it.** A browsing
    * tab's page is a native child webview and those always paint above
    * this page's DOM, so the address bar's completions came out
-   * underneath the site — 「不对,应该是浮在页面上的」. Nowhere else in
-   * this app has that problem, and a window is not free (it is a second
-   * webview, and a click into it is a click into another window), so
-   * every other box goes on drawing its list where it always did.
+   * underneath the site — 「不对,应该是浮在页面上的」. Fields with no
+   * independent webpage above them keep the ordinary DOM menu.
    *
-   * Asking for it is not getting it: a browser tab and a phone answer no
-   * and the list is drawn here (`useFloatedMenu`).
+   * Desktop uses a keyless menu window; iOS uses a private sibling WK view.
+   * Unsupported hosts and presenter failures retain the DOM fallback.
    */
   float?: boolean;
   /**
@@ -278,6 +276,7 @@ export function Omnibox({
     shown ? { groups: offered, at } : null,
     press,
     float === true,
+    {onDismiss: () => { if (document.activeElement === box.current) box.current?.blur(); else { setOpen(false); onLeave?.(); } }},
   );
 
   const chips = chosen
