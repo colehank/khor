@@ -256,6 +256,14 @@ pub struct PathStats {
     /// [`Self::pto_count`] it says how long the path has been silent: probe timeouts alone
     /// come within ~75 ms on a 1 ms path, a stall of the machine rather than of the path.
     pub last_received: Option<Instant>,
+    /// khor patch 3 (10-21): when the oldest ack-eliciting packet still in flight on this
+    /// path went out, if one is.  A path is silent for as long as that packet has waited:
+    /// an idle path's last packet heard can be a keepalive's ACK of 5 s ago while the
+    /// packet unanswered went out a moment ago.
+    pub unacked_since: Option<Instant>,
+    /// khor patch 3 (10-21): the path's probe timeout before backoff, RFC 9002's
+    /// `smoothed_rtt + max(4 * rttvar, kGranularity) + max_ack_delay`.
+    pub pto: Duration,
 }
 
 /// Connection statistics.
@@ -306,6 +314,8 @@ impl std::ops::Add<PathStats> for ConnectionStats {
             current_mtu: _,
             pto_count: _,
             last_received: _,
+            unacked_since: _,
+            pto: _,
         } = rhs;
         Self {
             udp_tx: self.udp_tx + udp_tx,
@@ -341,6 +351,8 @@ impl std::ops::AddAssign<PathStats> for ConnectionStats {
             current_mtu: _,
             pto_count: _,
             last_received: _,
+            unacked_since: _,
+            pto: _,
         } = rhs;
         let Self {
             udp_tx,

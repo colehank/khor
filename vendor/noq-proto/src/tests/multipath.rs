@@ -621,6 +621,55 @@ fn open_path_ensure_after_abandon() -> TestResult {
     Ok(())
 }
 
+/// khor (vendor/noq-proto/KHOR.md, iroh patch 1 revision 2026-10-21): running out of path
+/// ids is not for good.  Each PATH_ABANDON the peer receives raises its limit by one, so a
+/// connection that met `MaxPathIdReached` opens paths again once one of its paths is closed.
+#[test]
+fn max_path_id_reached_lasts_until_a_path_is_abandoned() -> TestResult {
+    let _guard = subscribe();
+    let mut pair = ConnPair::builder().enable_multipath().connect();
+    let routing = pair.routes.as_basic();
+    let mut addrs_client = vec![routing.client_addr];
+    let mut addrs_server = vec![routing.server_addr];
+    for i in 1..5u16 {
+        let mut ca = routing.client_addr;
+        ca.set_port(ca.port() + i);
+        addrs_client.push(ca);
+        let mut sa = routing.server_addr;
+        sa.set_port(sa.port() + i);
+        addrs_server.push(sa);
+    }
+    pair.routes =
+        ManyToManyRouting::simple_symmetric(addrs_client.clone(), addrs_server.clone()).into();
+    let path = |i: usize| FourTuple {
+        local_ip: Some(addrs_client[i].ip()),
+        remote: addrs_server[i],
+    };
+
+    // Three paths at most: 0 and two more.
+    let first = pair.open_path(Client, path(1), PathStatus::Available)?;
+    let _second = pair.open_path(Client, path(2), PathStatus::Available)?;
+    pair.drive();
+    while pair.poll(Client).is_some() {}
+    while pair.poll(Server).is_some() {}
+    assert_matches!(
+        pair.open_path(Client, path(3), PathStatus::Available),
+        Err(crate::PathError::MaxPathIdReached)
+    );
+
+    pair.close_path(Client, first, 0u8.into())?;
+    pair.drive();
+    while pair.poll(Client).is_some() {}
+    while pair.poll(Server).is_some() {}
+    let third = pair.open_path(Client, path(3), PathStatus::Available)?;
+    pair.drive();
+    assert_matches!(
+        pair.poll(Client),
+        Some(Event::Path(PathEvent::Established { id })) if id == third
+    );
+    Ok(())
+}
+
 #[test]
 fn close_path() -> TestResult {
     let _guard = subscribe();

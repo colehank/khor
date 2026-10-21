@@ -2724,6 +2724,13 @@ impl Connection {
         // khor patch 3: the path's run of probe timeouts.
         stats.pto_count = path.data.pto_count;
         stats.last_received = path.data.last_received;
+        // khor patch 3 (10-21): how long the path has kept a packet waiting, and its PTO.
+        stats.pto = path.data.rtt.pto_base() + self.ack_frequency.max_ack_delay_for_pto();
+        stats.unacked_since = SpaceId::iter()
+            .filter_map(|space| self.spaces[space].number_spaces.get(&path_id))
+            .filter_map(|pns| pns.sent_packets.values().find(|p| p.ack_eliciting))
+            .map(|p| p.time_sent)
+            .min();
         Some(stats)
     }
 

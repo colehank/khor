@@ -68,6 +68,15 @@ iroh 的选路器要据此离开它（vendor/iroh 补丁 17，`PathSelectionData
 netlab 二十个场景一起跑时（turing 负载 40–110），两条路都好好的，PTO 计数也到过 2、3。iroh 补丁 17 据此要求
 「两次 PTO，且这条路至少 300 ms 什么也没收到」才算不答。改动 6 行。上游可以和 `pto_count` 一起提。
 
+**10-21 补 `unacked_since`、`pto`**（net-flap）：这条路径上最早还在飞、要回 ACK 的那个包是什么时候发出的（各个包号空间里
+`sent_packets` 中第一个 `ack_eliciting` 的 `time_sent`，取最早），以及它此刻的 PTO（`rtt.pto_base() + max_ack_delay_for_pto()`，
+不带退避），都在 `path_stats` 读时算。「300 ms 什么也没收到」在闲着的路上恒真（5 秒才一个保活的 ACK），实际只剩两次 PTO，
+2 ms 的路上 ACK 晚 0.1 秒就判死（真机一天两百多次「改走中继」又当场改回）；iroh 补丁 17 的 10-21 修订改为从这个包发出算起等
+max(300 ms, 3·PTO)。改动约 15 行（读时扫一遍在飞的包，到第一个要回 ACK 的为止）。上游可以和 `pto_count` 一起提。
+`src/tests/multipath.rs` 另加了一个测试 `max_path_id_reached_lasts_until_a_path_is_abandoned`（三条路径到顶后 `open_path` 报
+`MaxPathIdReached`，关掉一条、对方回了 MAX_PATH_ID 之后第四条开得出来）：证 iroh 补丁 1 的 10-21 修订的前提，不改行为。
+noq-proto 自己的单元测试 428 个（含这个）打上后全过。
+
 ### 2. `src/connection/mod.rs`：OBSERVED_ADDRESS 不进 0-RTT（2026-10-09，NET-DIRECT，net-g）
 
 khor 从 f6d6d7fd 起双向打开地址观察（`endpoint::transport()`）。客户端带着记住的传输参数恢复会话时，
