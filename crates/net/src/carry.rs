@@ -367,8 +367,28 @@ impl Tier {
 }
 
 /// Within the direct tier, the margin a path must beat the one in use by
-/// before the selection moves (iroh's own `RTT_SWITCHING_MIN`).
+/// before the selection moves (iroh's own `RTT_SWITCHING_MIN`), or a
+/// quarter of the one in use's round trip if that is more ([`direct_margin`]).
 const DIRECT_MARGIN: Duration = Duration::from_millis(5);
+
+/// **How long a move between direct paths holds** (2026-10-21, net-flap):
+/// for this long after the selection moved, while the path in use answers,
+/// the other must beat it by twice the margin, or half its round trip
+/// ([`direct_margin`]). The machines' two LAN roads (0–1 ms) traded places
+/// 230–330 times a day, one every 22–60 s, most of them within 5 s of the
+/// 30 s sync: the sync's burst lifts the road in use to 5–8 ms while the
+/// other, idle, reads 1, the burst moves with the connection, and 30 s
+/// later the same again. A road that really slowed (netlab p2: 1 → 21 ms)
+/// still moves at once.
+pub const DIRECT_DWELL: Duration = Duration::from_secs(60);
+
+/// **The margin a direct path must beat the direct one in use by**, whose
+/// round trip is `rtt`: [`DIRECT_MARGIN`] or a quarter of `rtt`, whichever
+/// is more; within [`DIRECT_DWELL`] of the last move (`settling`), twice
+/// that margin or half of `rtt`.
+pub fn direct_margin(rtt: Duration, settling: bool) -> Duration {
+    if settling { (DIRECT_MARGIN * 2).max(rtt / 2) } else { DIRECT_MARGIN.max(rtt / 4) }
+}
 
 /// **Between a carried road and the relay, the margin the faster must
 /// beat the one in use by** (NET-DIRECT step 4, the owner 2026-10-09:
@@ -430,7 +450,13 @@ impl Spare {
 ///
 /// **A path that stopped answering is no candidate** (vendor/iroh patch
 /// 17, `PathSelectionData::answering`): two probe timeouts in a row with
-/// nothing acknowledged, on any connection it carries. Each path's ACKs
+/// nothing acknowledged, on any connection it carries, its oldest packet
+/// unanswered for 300 ms or three probe timeouts. **Unless it is the
+/// direct path in use, and it stalled for less than the fastest other
+/// road's round trip** (2026-10-21, net-flap): a packet sent on that road
+/// now would arrive no sooner than the answer the stalled one still owes.
+/// A 2 ms road whose ACK came 100 ms late went to the 500 ms relay and came
+/// back within a second (MacLab↔hinton, 212 times a day). Each path's ACKs
 /// come back on that path (vendor/noq-proto patch 4), so that is its own
 /// round trip, not the road the peer sends on. Its round trip is the last
 /// one it measured, so by RTT alone a dead path looks as good as ever;
@@ -460,16 +486,21 @@ impl PathSelector for RoadOrder {
     fn select(&self, ctx: &PathSelectionContext<'_>) -> PathSelection {
         let mut candidates = Vec::new();
         let mut current = None;
+        let mut stalled = Vec::new();
         for p in ctx.paths() {
             // The road's round trip as the copy that takes its samples
             // measured it (vendor/iroh patch 17): the same road on the
             // other connection, idle, still reads its last keepalive's.
             let Some(rtt) = p.rtt() else { continue };
-            if !p.answering() {
+            let tier = Tier::of(p.network_path());
+            let in_use = Some(p.network_path()) == ctx.current();
+            if let Some(stall) = p.unanswered_for() {
+                if in_use && tier == Tier::Direct {
+                    stalled.push((p, stall, rtt));
+                }
                 continue;
             }
-            let tier = Tier::of(p.network_path());
-            if Some(p.network_path()) == ctx.current() {
+            if in_use {
                 current = Some(match current {
                     Some((t, r)) if r <= rtt => (t, r),
                     _ => (tier, rtt),
@@ -477,9 +508,24 @@ impl PathSelector for RoadOrder {
             }
             candidates.push((p, tier, rtt));
         }
+        // The direct path in use, stalled: held while the stall is shorter
+        // than any other road's round trip.
+        let fastest = candidates.iter().map(|(_, _, r)| *r).min();
+        if let Some(stall) = stalled.iter().map(|(_, s, _)| *s).max()
+            && rides_out(stall, fastest)
+        {
+            for (p, _, rtt) in stalled {
+                current = Some(match current {
+                    Some((t, r)) if r <= rtt => (t, r),
+                    _ => (Tier::Direct, rtt),
+                });
+                candidates.push((p, Tier::Direct, rtt));
+            }
+        }
         let ranked: Vec<(Tier, Duration)> = candidates.iter().map(|(_, t, r)| (*t, *r)).collect();
         let mut selection = PathSelection::none();
-        let chosen = choose(current, &ranked);
+        let settling = ctx.held_for().is_some_and(|held| held < DIRECT_DWELL);
+        let chosen = choose_settling(current, &ranked, settling);
         if let Some(i) = chosen {
             selection.set(&candidates[i].0);
         }
@@ -503,6 +549,13 @@ impl PathSelector for RoadOrder {
         }
         selection
     }
+}
+
+/// **Whether the direct path in use rides out a stall** of `stall` (how
+/// long its oldest unanswered packet has waited) rather than leave for the
+/// fastest other road, of round trip `fastest`: while the stall is shorter.
+pub fn rides_out(stall: Duration, fastest: Option<Duration>) -> bool {
+    fastest.is_some_and(|fastest| stall < fastest)
 }
 
 /// **Which direct path to keep as the spare** beside one of round trip
@@ -534,6 +587,16 @@ pub fn spare(policy: Spare, rtt: Duration, others: &[(bool, Duration)], held: Op
 /// `None` when nothing is selected or the selected path broke (it is no
 /// longer among the open ones).
 pub fn choose(current: Option<(Tier, Duration)>, candidates: &[(Tier, Duration)]) -> Option<usize> {
+    choose_settling(current, candidates, false)
+}
+
+/// [`choose`], `settling` within [`DIRECT_DWELL`] of the last move: a move
+/// between direct paths then needs the larger margin ([`direct_margin`]).
+pub fn choose_settling(
+    current: Option<(Tier, Duration)>,
+    candidates: &[(Tier, Duration)],
+    settling: bool,
+) -> Option<usize> {
     let best = candidates
         .iter()
         .enumerate()
@@ -545,7 +608,7 @@ pub fn choose(current: Option<(Tier, Duration)>, candidates: &[(Tier, Duration)]
     };
     match (tier, best_tier) {
         // Up to direct at any time; within direct, only past the margin.
-        (Tier::Direct, Tier::Direct) => (best_rtt + DIRECT_MARGIN <= rtt).then_some(best),
+        (Tier::Direct, Tier::Direct) => (best_rtt + direct_margin(rtt, settling) <= rtt).then_some(best),
         (_, Tier::Direct) => Some(best),
         // Off direct only when it broke, and then `current` is `None`.
         (Tier::Direct, _) => None,
@@ -597,6 +660,35 @@ mod tests {
         assert_eq!(choose(Some((Tier::Direct, MS(60))), &two), None, "within the margin");
         let two = [(Tier::Direct, MS(60)), (Tier::Direct, MS(20))];
         assert_eq!(choose(Some((Tier::Direct, MS(60))), &two), Some(1));
+    }
+
+    /// net-flap (2026-10-21): a direct road that stalled for less than the
+    /// relay's round trip is ridden out; past it, or with a direct spare
+    /// faster than the stall, it is left.
+    #[test]
+    fn a_stall_shorter_than_the_other_road_is_ridden_out() {
+        assert!(rides_out(MS(300), Some(MS(500))), "300 ms stalled, the relay 500 ms away: stay");
+        assert!(!rides_out(MS(500), Some(MS(500))), "the relay's round trip: go");
+        assert!(!rides_out(MS(300), Some(MS(9))), "a spare at 9 ms: go");
+        assert!(!rides_out(MS(300), None), "nowhere to go: nothing to hold");
+    }
+
+    /// net-flap (2026-10-21): two LAN roads, the one in use lifted to 8 ms
+    /// by the sync's burst while the other reads 1: within a minute of the
+    /// last move nothing moves; a road that really slowed (p2, 21 ms) moves
+    /// at once.
+    #[test]
+    fn a_move_between_direct_roads_holds_for_a_minute() {
+        let loaded = [(Tier::Direct, MS(8)), (Tier::Direct, MS(1))];
+        assert_eq!(choose_settling(Some((Tier::Direct, MS(8))), &loaded, true), None, "settling: 7 ms is not enough");
+        assert_eq!(choose_settling(Some((Tier::Direct, MS(8))), &loaded, false), Some(1), "settled: it is");
+        let slowed = [(Tier::Direct, MS(21)), (Tier::Direct, MS(1))];
+        assert_eq!(choose_settling(Some((Tier::Direct, MS(21))), &slowed, true), Some(1), "p2: at once");
+        assert_eq!(direct_margin(MS(1), false), MS(5));
+        assert_eq!(direct_margin(MS(60), false), MS(15), "a quarter of a slow road");
+        assert_eq!(direct_margin(MS(60), true), MS(30));
+        let far = [(Tier::Direct, MS(60)), (Tier::Direct, MS(48))];
+        assert_eq!(choose(Some((Tier::Direct, MS(60))), &far), None, "12 ms on 60 is noise");
     }
 
     /// vendor/iroh patch 18: the spare beside a direct path in use.

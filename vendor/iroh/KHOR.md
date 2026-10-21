@@ -133,6 +133,21 @@ ping，两条连接就是两倍——机器忙时 p4 里在用的路因此约 2 
 测试：`crates/cli/tests/netlab/paths.rs` 的 p2（第二条直连变慢到约 21 ms、同时在打字）和 p2i（同样但闲着）。上游可以提，和补丁 17 一起。
 升级时要重打。
 
+**10-21 修订（net-flap）：打洞轮数**。真机 24 小时的连接记录：MacLab→lecun 3555 轮、MacLab→hinton 2530、hinton→lecun 2486
+（每分钟 2.5–3.4 轮；上游的规矩是不够好时每 60 秒一轮），MacLab→lecun 那一对两边候选整天没变、只换过两次路，10 分钟一行的
+「打洞 N 轮」最多 104 轮，差不多每 5 秒（两轮之间的最短间隔）一轮。三个放大处，各改一处：
+一、**一次不答一轮**：「不答」当场打一轮（上面的 `degraded`），闲着的路一个保活的 ACK 晚到 0.1 秒就判了不答（补丁 17 的
+10-21 修订修的就是这个），下个 tick 又答了，`degraded` 复位；每次换路也把它复位。改为：选中的路**卡了 1 秒**（`PUNCH_SILENT_AFTER`，
+从它没答的那个包发出算）才打；更短的卡顿由选路器决定是熬过去还是换到别的路上，从不答的直连换到中继或转连的那一刻打一轮
+（`select_path_on`）；这一处打的轮之间至少 30 秒（`PUNCH_SPACING`，`Watch::punched_at`），换路不复位。
+二、**对方的地址一帧一轮**：每个 ADD_ADDRESS（`addr_events`）都当场 `trigger_holepunching`，候选多了一个就不是旧候选的子集，
+当场打。新连接上对方的每个地址各一帧，记录里常见同一秒「对方候选 无」一轮接着又一轮。改为 100 ms 内的几帧并成一轮（`ADDR_SETTLE`，
+`State::punch_soon`）。
+三、**60 秒的检查要每条连接都够好**（`check_connections` 对所有连接取「与」，各用自己那份的 RTT）：对方拨进来的那条连接只有
+对方能开路，闲着的那份 RTT 是上一个保活的，任一条不够好就每 60 秒一轮。改为任一条连接上有 10 ms 以内的直连就够（RTT 按
+`Measured::road`，即载着流量的那份的读数）。
+逻辑抽成 `Watch`（选中那条的看守）、`good_enough`，单元测试见补丁 17 的修订。改前改后的打洞轮数见 docs/NET.md「选路」一节。
+
 ### 18. `src/socket/remote_map/remote_state.rs`：选路器可以留一条备用直连（2026-10-16，path-fix）
 
 上游 client 端每次选路都把没选中的直连全关掉，每条连接只留一条（注释里的理由：只让 client 关路，免得两边各关一条、
@@ -214,6 +229,40 @@ p3 里连接在黑洞的路上停了 15 秒；PTO 过后计数会被下一个探
 RTT 不变，选路器看不出来；建议在 actor 里按 path stats 周期重选，并在 `PathSelectionData` 上给出「是否在答」；
 「不答」要有时间下限，不能只看 PTO 次数；从还在答的路换走前，两条路都要有此刻的样本）。
 上游 1.3.0 没有对应改动，升级时要重打。
+
+**10-21 修订（net-flap）：不答从没答的那个包算起，卡顿短于别的路就熬过去**。负责人 10-21 同意修网络审查的全部问题；
+真机 24 小时的连接记录（10-20 15:00 部署之后网络代码没变）：MacLab↔hinton「改走中继 aps1」→「改走直连」成对 212 次，
+间隔中位 250 ms；同一对机器两条局域网地址之间 lecun→turing 330 次、turing→hinton 307、hinton→lecun 229、lecun→hinton 227，
+64–81% 落在本机 30 秒同步（`link.rs` 的 `QUIET_PACE`）那 5 秒里；「改走直连」记下的往返在 0–1 ms 的局域网上 p90 30–80 ms、
+最大 2 秒（换去的那条也正卡着）。根在「不答」：
+一、`unanswered` 要「两次 PTO，且这条路 300 ms 什么也没收到」，可闲着的路 5 秒才收到一个保活的 ACK，「300 ms 没收到」
+恒真，实际只剩「两次 PTO」——2 ms 的路上 ACK 晚约 0.1 秒（Wi-Fi 省电、turing 在 NFS 上卡一下）就判死，选路器当场离开
+（离开不答的路不用确认），下一个 tick 有了样本又当场换回（中继→直连也不用确认），补丁 19 每次再打一轮。
+改为：从这条路上**最早还没被确认的那个要回 ACK 的包**发出算起，等了 max(300 ms, 3·PTO) 才算不答（`unanswered_for`；
+noq-proto 补丁 3 的 10-21 补露出这个时刻 `unacked_since` 和 `pto`），仍要两次 PTO、300 ms 没收到东西。
+二、**清「不答」要迟滞**：原来任何一份连接取到一个新样本当场就算答了；改为取到样本、且之后 1 秒（`SILENT_HOLD`）里没有一份
+再不答，才回到候选（`Silence`、`Measured::mark_silent`）；中途又不答就重新算。
+三、**卡顿还没长过别的路的往返，不离开在用的直连**：选路器拿得到这条路卡了多久（`PathSelectionData::unanswered_for`，
+从那个包发出算起；回到答的那一刻停表），khor 的 `RoadOrder` 在它短于其余候选里最快那条的往返时照旧留在这条直连上
+（`carry::rides_out`）——此刻从别的路发出的包，不会比这条欠着的回答更早到。p3（黑洞，备用直连 9 ms）照旧过了 300 ms 就换。
+四、**确认有上限**：确认期 2 秒里两条路没都取到样本，原来就一直确认、每个 tick 都 ping 两条路，没有尽头（这一节上面写的
+「至多 8 个 tick」代码没守）；改为 4 秒（`CONFIRM_MAX`）还没成就作罢，同一次改走 30 秒（`CONFIRM_REST`）内不再试（`Moving`）。
+五、**直连之间刚换过一分钟内要多一倍余量**（khor 的 `RoadOrder`，`carry::direct_margin`、`DIRECT_DWELL`）：余量原来是固定 5 ms；
+改为 max(5 ms, 在用那条往返的四分之一)，换路后 60 秒里（`PathSelectionContext::held_for`，`State::selected_at`）max(10 ms, 一半）。
+真机记录里同步那一阵把在用的局域网抬到 5–8 ms、闲着的那条读 1 ms，差过 5 ms 就换，换过去那一阵跟着过去，30 秒后又一遍；
+p2 那种真变慢（1 → 21 ms）照旧当场换。
+测试：`remote_state.rs` 的单元测试（合成的 `PathStats`、读数）`an_idle_road_whose_ack_is_late_still_answers`（红例：闲着的
+2 ms 路 4 秒前收到上一个 ACK、两次 PTO、没答的那个包才发出 100 ms——改前判不答，改后不判）、`a_slow_road_waits_three_probe_timeouts`、
+`a_road_answers_without_two_ptos_or_while_heard`、`a_silent_road_answers_again_after_the_hold`、`the_watch_punches_on_a_long_stall_once_per_spacing`、
+`the_watch_punches_on_a_slowed_road_and_probes_a_slow_sample`、`a_move_goes_once_both_roads_sampled_for_two_seconds`、
+`a_move_never_confirmed_is_given_up_and_rests`、`one_good_direct_road_is_good_enough`、`rounds_asked_for_together_are_one`；
+同样的测试换回改前的规则（拷一份改回去跑）8 个红，改后 14 个全绿。`crates/net/src/carry.rs` 的
+`a_stall_shorter_than_the_other_road_is_ridden_out`、`a_move_between_direct_roads_holds_for_a_minute`。
+netlab 新场景 p5（直连 + 500 ms 远中继，每 30 秒丢直连 150/300/600 ms、其间一个按键）、p1s（p1 + 每 30 秒 300 ms 的延迟尖峰、
+两个常驻挤在一个 CPU 上）；改前改后的数见 docs/NET.md「选路」一节。
+**跑这些单元测试**：vendor/iroh 单独编译时用的是 crates.io 的 noq-proto，没有补丁 3 的字段，编不过；要把 vendor/iroh 和
+vendor/noq-proto 拷到仓外一个目录，加一个 `[workspace] members = ["iroh", "noq-proto"]`、`[patch.crates-io] noq-proto = { path = "noq-proto" }`
+的 Cargo.toml，再 `cargo test -p iroh --lib remote_state`。
 
 ### 16. `src/socket.rs`、`src/endpoint.rs`：公开「大的网络变化」（2026-10-09，net-r）
 
@@ -414,6 +463,16 @@ cargo 的 feature 合并后这些探测也读 macOS 系统设置里的代理，�
   `MaxPathIdReached` 的连接不再重试（path id 只增不减，那条连接再也开不了新 path），这正是我们遇到的那种情况。
 - 想看补丁本身：`git show` 那个只动了 `vendor/iroh/src/socket/remote_map/remote_state.rs` 的提交，
   它的上一个提交就是原样拷贝。
+- **10-21 修订（net-flap）：`MaxPathIdReached` 不是永久的**。#4522 把它当永久（「path id 只增不减」），一条连接撞一次就
+  再也不开路。可 noq 收到对方的 PATH_ABANDON 时会把自己的上限加一、发 MAX_PATH_ID（noq-proto `connection/mod.rs` 的
+  `Frame::PathAbandon` 分支 `set_max_path_id(self.local_max_path_id.saturating_add(1u8))`；收到 MAX_PATH_ID 时
+  `remote_max_path_id` 跟着涨），noq 自己的打洞也把它当暂时（同文件 `PathError::MaxPathIdReached | PathError::RemoteCidsExhausted`
+  「Temporary error, put back」）。候选多的一对机器一轮打洞就能把一条连接的 path id 占满，之后补丁 12 交来的转连、补丁 13 的
+  ssh 重连、补丁 6 的自定义地址都静默跳过，直到连接关掉。改为：撞上了，地址记在这条连接上（`PathIds`，至多 64 个），这条连接
+  上一条路径被放弃或丢弃（`PathEvent::Abandoned`、`Discarded`）时清掉标记，记着的地址交回 `pending_open_paths` 重试；不当场
+  重试（当场只会再撞上），所以也不回到 #4390 的空转。测试：`path_ids_run_out_until_a_path_is_abandoned`（iroh）、
+  noq-proto 的 `max_path_id_reached_lasts_until_a_path_is_abandoned`（三条路径到顶，关一条，第四条开得出来；改前改后都绿——
+  它证的是前提：上限会涨）。
 
 ## 为什么要 vendor
 
