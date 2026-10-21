@@ -174,39 +174,56 @@ static WRITTEN: std::sync::LazyLock<Mutex<HashMap<(String, &'static str), String
 /// lines an hour): each of a machine's connections opens its own path to
 /// the same address, and every punching round opens more. An opening is
 /// written when the first path to that address opens and none was written
-/// in the last [`REOPEN_QUIET`].
-static OPEN: std::sync::LazyLock<Mutex<HashMap<(String, String), (u32, std::time::Instant)>>> =
-    std::sync::LazyLock::new(Default::default);
+/// in the last [`REOPEN_QUIET`]. An address with no path open is forgotten
+/// once that quiet is up (net-flap, 2026-10-21: every address ever punched
+/// stayed, a machine's whole history of candidates).
+static OPEN: std::sync::LazyLock<Mutex<Openings>> = std::sync::LazyLock::new(Default::default);
 
 /// How long an address that closed and opened again stays unwritten.
 const REOPEN_QUIET: Duration = Duration::from_secs(10 * 60);
 
-/// Counts a direct path to `addr` opening; whether it is news.
-fn opened_is_news(id: &str, addr: &str) -> bool {
-    let mut open = OPEN.lock().unwrap_or_else(|p| p.into_inner());
-    let now = std::time::Instant::now();
-    match open.get_mut(&(id.to_owned(), addr.to_owned())) {
-        Some((count, last)) => {
-            *count += 1;
-            let news = *count == 1 && now.duration_since(*last) >= REOPEN_QUIET;
-            if news {
-                *last = now;
+/// Per machine and address: paths open, and when its opening was last written ([`OPEN`]).
+#[derive(Default)]
+struct Openings(HashMap<(String, String), (u32, std::time::Instant)>);
+
+impl Openings {
+    fn opened(&mut self, id: &str, addr: &str, now: std::time::Instant) -> bool {
+        self.0.retain(|_, (count, last)| *count > 0 || now.duration_since(*last) < REOPEN_QUIET);
+        match self.0.get_mut(&(id.to_owned(), addr.to_owned())) {
+            Some((count, last)) => {
+                *count += 1;
+                let news = *count == 1 && now.duration_since(*last) >= REOPEN_QUIET;
+                if news {
+                    *last = now;
+                }
+                news
             }
-            news
+            None => {
+                self.0.insert((id.to_owned(), addr.to_owned()), (1, now));
+                true
+            }
         }
-        None => {
-            open.insert((id.to_owned(), addr.to_owned()), (1, now));
-            true
+    }
+
+    fn closed(&mut self, id: &str, addr: &str, now: std::time::Instant) {
+        let key = (id.to_owned(), addr.to_owned());
+        if let Some((count, last)) = self.0.get_mut(&key) {
+            *count = count.saturating_sub(1);
+            if *count == 0 && now.duration_since(*last) >= REOPEN_QUIET {
+                self.0.remove(&key);
+            }
         }
     }
 }
 
+/// Counts a direct path to `addr` opening; whether it is news.
+fn opened_is_news(id: &str, addr: &str) -> bool {
+    OPEN.lock().unwrap_or_else(|p| p.into_inner()).opened(id, addr, std::time::Instant::now())
+}
+
 /// Counts a direct path to `addr` closing (or its connection ending).
 fn closed(id: &str, addr: &str) {
-    let mut open = OPEN.lock().unwrap_or_else(|p| p.into_inner());
-    if let Some((count, _)) = open.get_mut(&(id.to_owned(), addr.to_owned())) {
-        *count = count.saturating_sub(1);
-    }
+    OPEN.lock().unwrap_or_else(|p| p.into_inner()).closed(id, addr, std::time::Instant::now());
 }
 
 /// **Every path change of a connection, for its whole life** (NET-DIRECT):
@@ -362,6 +379,23 @@ mod tests {
         closed(id, "10.0.0.1:1");
         assert!(!opened_is_news(id, "10.0.0.1:1"), "closed and opened again at once is not");
         assert!(opened_is_news(id, "[2001:db8::1]:1"), "another address is");
+    }
+
+    /// net-flap: an address with nothing open is forgotten once the quiet
+    /// is up, and its next opening is news as before.
+    #[test]
+    fn an_address_closed_for_the_quiet_is_forgotten() {
+        let mut open = Openings::default();
+        let t0 = std::time::Instant::now();
+        assert!(open.opened("m", "10.0.0.1:1", t0));
+        open.closed("m", "10.0.0.1:1", t0 + Duration::from_secs(1));
+        assert_eq!(open.0.len(), 1, "within the quiet it is kept");
+        let later = t0 + REOPEN_QUIET + Duration::from_secs(1);
+        assert!(open.opened("m", "10.0.0.2:1", later), "another address");
+        assert_eq!(open.0.len(), 1, "the closed one is gone");
+        assert!(open.opened("m", "10.0.0.1:1", later), "and is news again");
+        open.closed("m", "10.0.0.2:1", later + REOPEN_QUIET);
+        assert_eq!(open.0.len(), 1, "a close after the quiet removes it at once");
     }
 
     /// The tally keeps the last [`REMEMBERED`] settled dials, drops the
