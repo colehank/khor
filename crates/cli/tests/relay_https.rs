@@ -309,6 +309,8 @@ fn the_script_admits_by_the_key_khor_carries() {
     let (domain, port) = endpoint::BEIJING_TLS.trim_start_matches("https://").split_once(':').unwrap();
     assert!(script.contains(&format!("KHOR_RH_DOMAIN:-{domain}")), "the script's domain is not khor's");
     assert!(script.contains(&format!("KHOR_RH_PORT:-{port}")), "the script's port is not khor's");
+    let qad = endpoint::khor_tier().into_iter().find(|r| r.url == endpoint::BEIJING_TLS).and_then(|r| r.qad).unwrap();
+    assert!(script.contains(&format!("KHOR_RH_QUIC:-[::]:{qad}")), "the script's QAD port is not khor's");
 }
 
 /// A stand-in `acme.sh`: `--install-cert` copies the certificate it holds
@@ -426,6 +428,7 @@ fn script_round(domain: &str) {
         ("KHOR_RH_PORT", port.to_string()),
         ("KHOR_RH_BIND", "127.0.0.1".to_owned()),
         ("KHOR_RH_CAPTIVE", "127.0.0.1:0".to_owned()),
+        ("KHOR_RH_QUIC", "127.0.0.1:0".to_owned()),
         ("KHOR_RH_USER", user),
         ("KHOR_RH_GROUP", group),
         ("KHOR_RH_KHOR", khor.display().to_string()),
@@ -479,5 +482,8 @@ fn script_round(domain: &str) {
     assert_eq!(std::fs::read_to_string(root.join("relay.pid")).unwrap(), pid, "without a restart");
     let unit = std::fs::read_to_string(root.join("etc/systemd/system/khor-relay-https.service")).unwrap();
     assert!(unit.contains("ExecReload=/bin/kill -HUP $MAINPID"), "{unit}");
+    assert!(unit.contains("--quic 127.0.0.1:0 "), "the unit answers QAD:\n{unit}");
+    let said = std::fs::read_to_string(root.join("relay.out")).unwrap_or_default();
+    assert!(said.contains("UDP 127.0.0.1:"), "and the relay it runs listens for QAD:\n{said}");
     stop();
 }

@@ -270,6 +270,10 @@ iroh 的 `N0` 预设，关就是 `Minimal` 只留 mDNS）；大陆侧查不到�
 
 **计量只存总数**（CONNECT.md「计量只存总数」）：`relay-stats.json` 里只有每个
 endpoint id 的连接次数和在线秒数，加整台中继发出 / 收到的总字节，跨重启累计。
+**最多一万个 endpoint**（2026-10-21）：endpoint id 随手就能造，带密钥的、谁都放行的中继表会
+无限长，而文件每次变化都整个重写。满了就去掉最久没见的（还连着的不去）；「多久没见」只在内存里
+排，不写进文件，所以重启后文件里带来的都算比这一轮见过的旧，其中连接次数最少的先去。读到超过
+一万条的旧文件先裁到一万。文件约 1.3 MB，最多一秒写一次。`--only-mine` 的表只有自家设备，碰不到上限。
 不存「谁连谁」。**字节没法按设备记**：iroh-relay 的 `bytes_sent` / `bytes_recv`
 是整台一对计数（`server/metrics.rs`，在 `server/client.rs` 里累加时不带 endpoint），
 `AccessControl` 和 `Clients` 都看不到包。
@@ -322,11 +326,11 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
 
 **Khor 档现在是两台，都要密钥**（2026-10-01，负责人买的两台阿里云轻量）：
 
-| 中继 | 地址 | 模式 | 给谁 |
-|---|---|---|---|
-| 北京 | `http://101.200.80.77:3340` | 明文 HTTP + 密钥 | 出不了境的机器 |
-| 北京（TLS） | `https://pk.relay.khor.cloud:3341` | TLS（acme.sh 按 DNS 签）+ 另一把密钥 | 同上；答得上时替掉上一行 |
-| 香港 | `https://hk.relay.khor.cloud` | TLS（Let's Encrypt 自动签）+ 密钥 | 能出境的、海外的 |
+| 中继 | 地址 | 模式 | QAD（UDP） | 给谁 |
+|---|---|---|---|---|
+| 北京 | `http://101.200.80.77:3340` | 明文 HTTP + 密钥 | 7842，IP 证书；pkarr 在 TCP 3343 | 出不了境的机器 |
+| 北京（TLS） | `https://pk.relay.khor.cloud:3341` | TLS（acme.sh 按 DNS 签）+ 另一把密钥 | 7843，pk 的域名证书 | 同上；答得上时替掉上一行 |
+| 香港 | `https://hk.relay.khor.cloud` | TLS（Let's Encrypt 自动签）+ 密钥 | 不开 | 能出境的、海外的 |
 
 - **为什么是两台**：先只买了香港，装好后从实验室量：turing、hinton 连不上它（80、443 都
   超时），GitHub 也不通，百度、阿里云官网、北京的旧中继 4 ms——那个网只放国内流量。
@@ -341,6 +345,17 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
   （0600，只有密钥一行）、`khor-relay.service`（`--rate 1048576` 每台设备 1 MB/s，
   `--state /var/lib/khor-relay/state`，开机自启、崩了 3 秒后重启）。香港那台多
   `--acme hk.relay.khor.cloud` 和绑 80/443 的 capability，证书缓存在 state 的 `acme/` 下。
+- **QAD 两个口，不能合成一个**（2026-10-21）：iroh 做 QAD 时拿中继地址的主机名（或 IP）核对
+  证书（`vendor/iroh/src/net_report.rs` 的 `run_probe_v4`），所以明文那条的 7842 用 IP 证书，pk
+  那条要自己的口 7843、用 pk 的域名证书（`scripts/relay-https.sh` 生成的 ExecStart 带
+  `--quic [::]:7843`）。阿里云控制台放行 UDP 7843 之前，外面问 pk 的 QAD 问不到，客户端白等一
+  个口直到超时，不影响中继本身。**iroh 只问地图里前五台的 QAD**（`MAX_RELAYS = 5`，地图按 url
+  排序）：Khor 档加 n0 四台时明文北京排第一、pk 排第五，刚好都在；`KHOR_RELAY` 再加一台 url 排在
+  `https://pk.` 前面的，pk 的 QAD 就被挤出去（`endpoint.rs` 的测试
+  `both_beijing_qad_ports_are_in_the_five_iroh_asks` 守着现状）。
+- **明文北京的密钥 10-21 换过**：旧的那把自 10-01 起在明文 HTTP 上过网。服务器现在两把都收；
+  所有机器都装上带新密钥的 khor 之后，服务器去掉旧的（负责人那一步，记在 LEDGER「机」）。新的
+  这把照样明文过网，作用和以前一样：挡随手白用，不开别的门。
 - **`khor doctor` 的「中继」行**同时量每一台、各用各的钟，走 khor 自己连中继的那条路
   （只认环境变量的代理，不读系统代理）。
 - ⚠️ 墓碑：10-01 之前这里是一笔没还的账——Khor 档只有 `39.97.7.248:3340` 一台，借的是

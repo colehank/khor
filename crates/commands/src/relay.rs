@@ -55,6 +55,25 @@ const TABLE_FRESH: Duration = Duration::from_secs(5);
 /// The meter's file inside `--state`.
 const STATS_FILE: &str = "relay-stats.json";
 
+/// How many endpoints the meter keeps; past it, the one seen longest ago
+/// goes ([`Counted::make_room`]).
+///
+/// **When an endpoint was last seen is never written down**: the file
+/// holds totals and nothing else (CONNECT.md 计量只存总数). The order is
+/// kept in memory only, so after a restart everything the file brought
+/// counts as older than anything this run has seen, and among those the
+/// fewest connections go first.
+///
+/// **Why a cap at all**: an endpoint id costs nothing to make — every
+/// scratch node, every test run, every iroh program holding a key that
+/// crossed the wire in the clear brings a new one — so a relay that
+/// admits by key, or admits everyone, would grow the table, and the file
+/// rewritten whole on every change, without end. **Why ten thousand**: a
+/// network's own devices are tens, so nothing anyone cares about is ever
+/// near it, and the file stays near 1.3 MB (about 130 bytes an entry),
+/// written at most once a second ([`Meter::keep_written`]).
+const DEVICE_CAP: usize = 10_000;
+
 /// How the relay proves who it is.
 enum Mode {
     /// Plain HTTP. The relay still cannot read what it forwards — that
@@ -643,65 +662,147 @@ pub(crate) struct DeviceStats {
     pub online_secs: u64,
 }
 
+/// `C` is the connection's id: iroh-relay's [`ConnectionId`], which only
+/// iroh-relay can make, or a number in the tests.
 #[derive(Debug)]
-struct Meter {
+struct Meter<C = ConnectionId> {
     path: PathBuf,
-    /// What the file said when this relay started.
+    /// What the file said when this relay started, its devices moved
+    /// into [`Counted::devices`].
     base: Stats,
-    now: Mutex<Counted>,
+    now: Mutex<Counted<C>>,
     /// iroh-relay's own counters, once the server exists.
     bytes: OnceLock<Arc<Metrics>>,
     changed: tokio::sync::Notify,
 }
 
-#[derive(Debug, Default)]
-struct Counted {
-    /// Per endpoint: connections admitted, milliseconds of the ones
-    /// that have ended.
-    ended: HashMap<String, (u64, u128)>,
+#[derive(Debug)]
+struct Counted<C> {
+    /// Per endpoint, the file's and this run's together, never more than
+    /// [`DEVICE_CAP`] of them.
+    devices: HashMap<String, Device>,
     /// Connections still open: whose, and since when.
-    open: HashMap<ConnectionId, (String, Instant)>,
+    open: HashMap<C, (String, Instant)>,
+    /// Counts every admission and every end: the order things were seen
+    /// in, and nothing about when.
+    tick: u64,
+}
+
+#[derive(Debug, Default)]
+struct Device {
+    connections: u64,
+    /// Milliseconds of the connections that have ended.
+    ms: u128,
+    /// [`Counted::tick`] when it was last admitted or let go; `0` for an
+    /// entry the file brought.
+    seen: u64,
+}
+
+impl<C> Default for Counted<C> {
+    fn default() -> Self {
+        Counted {
+            devices: HashMap::new(),
+            open: HashMap::new(),
+            tick: 0,
+        }
+    }
+}
+
+impl<C> Counted<C> {
+    /// Lets go of the endpoints seen longest ago until at most `keep`
+    /// are left. One with a connection still open stays whatever its
+    /// age: it is being metered right now. So a table whose every entry
+    /// is open can stand over `keep`, by no more than the connections
+    /// the relay holds anyway.
+    fn make_room(&mut self, keep: usize) {
+        let excess = self.devices.len().saturating_sub(keep);
+        if excess == 0 {
+            return;
+        }
+        let gone: Vec<String> = {
+            let live: HashSet<&str> = self.open.values().map(|(id, _)| id.as_str()).collect();
+            let mut old: Vec<(u64, u64, &str)> = self
+                .devices
+                .iter()
+                .filter(|(id, _)| !live.contains(id.as_str()))
+                .map(|(id, d)| (d.seen, d.connections, id.as_str()))
+                .collect();
+            let n = excess.min(old.len());
+            // The `n` seen longest ago to the front, unsorted: one pass,
+            // not a sort, on every new endpoint once the table is full.
+            if n < old.len() {
+                old.select_nth_unstable(n);
+            }
+            old[..n].iter().map(|(_, _, id)| (*id).to_owned()).collect()
+        };
+        for id in gone {
+            self.devices.remove(&id);
+        }
+    }
 }
 
 fn stamp() -> String {
     jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-impl Meter {
-    /// Picks up where the file left off. A file that does not parse is
-    /// counted from zero rather than refused — a relay that will not
-    /// start over its own bookkeeping is the worse failure — and the
+
+impl<C: std::hash::Hash + Eq> Meter<C> {
+    /// Picks up where the file left off, cut to [`DEVICE_CAP`] if it
+    /// holds more (a file from before the cap). A file that does not
+    /// parse is counted from zero rather than refused — a relay that will
+    /// not start over its own bookkeeping is the worse failure — and the
     /// next write replaces it.
-    fn load(path: PathBuf) -> Meter {
-        let base = std::fs::read(&path)
+    fn load(path: PathBuf) -> Meter<C> {
+        let mut base = std::fs::read(&path)
             .ok()
             .and_then(|b| serde_json::from_slice::<Stats>(&b).ok())
             .unwrap_or_else(|| Stats {
                 since: stamp(),
                 ..Stats::default()
             });
+        let mut now = Counted::default();
+        now.devices = std::mem::take(&mut base.devices)
+            .into_iter()
+            .map(|(id, d)| {
+                let ms = u128::from(d.online_secs) * 1000;
+                (id, Device { connections: d.connections, ms, seen: 0 })
+            })
+            .collect();
+        now.make_room(DEVICE_CAP);
         Meter {
             path,
             base,
-            now: Mutex::default(),
+            now: Mutex::new(now),
             bytes: OnceLock::new(),
             changed: tokio::sync::Notify::new(),
         }
     }
 
-    fn connected(&self, id: String, conn: ConnectionId) {
+    fn connected(&self, id: String, conn: C) {
         if let Ok(mut c) = self.now.lock() {
-            c.ended.entry(id.clone()).or_default().0 += 1;
+            if !c.devices.contains_key(&id) {
+                c.make_room(DEVICE_CAP - 1);
+            }
+            c.tick += 1;
+            let tick = c.tick;
+            let d = c.devices.entry(id.clone()).or_default();
+            d.connections += 1;
+            d.seen = tick;
             c.open.insert(conn, (id, Instant::now()));
         }
         self.changed.notify_one();
     }
 
-    fn disconnected(&self, conn: ConnectionId) {
+    fn disconnected(&self, conn: C) {
         if let Ok(mut c) = self.now.lock()
             && let Some((id, since)) = c.open.remove(&conn)
         {
-            c.ended.entry(id).or_default().1 += since.elapsed().as_millis();
+            c.tick += 1;
+            let tick = c.tick;
+            if let Some(d) = c.devices.get_mut(&id) {
+                d.ms += since.elapsed().as_millis();
+                d.seen = tick;
+            }
         }
         self.changed.notify_one();
     }
@@ -716,17 +817,19 @@ impl Meter {
             out.bytes_recv += m.bytes_recv.get();
         }
         let Ok(c) = self.now.lock() else { return out };
-        let mut ms: HashMap<&str, u128> = HashMap::new();
-        for (id, (conns, ended)) in &c.ended {
-            out.devices.entry(id.clone()).or_default().connections += conns;
-            *ms.entry(id).or_default() += ended;
-        }
+        let mut open: HashMap<&str, u128> = HashMap::new();
         for (id, since) in c.open.values() {
-            *ms.entry(id).or_default() += since.elapsed().as_millis();
+            *open.entry(id).or_default() += since.elapsed().as_millis();
         }
-        for (id, total) in ms {
-            out.devices.entry(id.to_owned()).or_default().online_secs +=
-                u64::try_from(total / 1000).unwrap_or(u64::MAX);
+        for (id, d) in &c.devices {
+            let total = d.ms + open.get(id.as_str()).copied().unwrap_or(0);
+            out.devices.insert(
+                id.clone(),
+                DeviceStats {
+                    connections: d.connections,
+                    online_secs: u64::try_from(total / 1000).unwrap_or(u64::MAX),
+                },
+            );
         }
         out
     }
@@ -821,6 +924,95 @@ mod tests {
             .expect("an ACME relay should spawn and listen");
         assert!(server.https_addr().is_some(), "it listens for TLS");
         let _ = server.shutdown().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn meter_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("khor-relay-meter-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// An endpoint id as iroh prints one: 64 hex digits.
+    fn id(n: usize) -> String {
+        format!("{n:064x}")
+    }
+
+    /// What a full table may weigh on disk: about 130 bytes an entry with
+    /// real numbers, 200 with both at their widest.
+    const FILE_BOUND: usize = DEVICE_CAP * 200 + 1024;
+
+    /// The meter's table had no bound: every new endpoint id a key
+    /// holder (or anyone, without a key) brought stayed in it and in the
+    /// file rewritten whole on each change. One more than the cap, each
+    /// seen after the last: the first is the one let go.
+    #[test]
+    fn a_full_meter_lets_go_of_the_endpoint_seen_longest_ago() {
+        let dir = meter_dir("cap");
+        let meter: Meter<u64> = Meter::load(dir.join(STATS_FILE));
+        for n in 0..=DEVICE_CAP {
+            meter.connected(id(n), n as u64);
+            meter.disconnected(n as u64);
+        }
+        meter.write();
+        let bytes = std::fs::read(dir.join(STATS_FILE)).unwrap();
+        let stats: Stats = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(stats.devices.len(), DEVICE_CAP, "the table stops at the cap");
+        assert!(!stats.devices.contains_key(&id(0)), "the one seen longest ago went");
+        assert!(stats.devices.contains_key(&id(1)) && stats.devices.contains_key(&id(DEVICE_CAP)));
+        assert!(bytes.len() <= FILE_BOUND, "the file is bounded: {} bytes", bytes.len());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An endpoint still connected is being metered right now: it stays
+    /// however long ago it came in, and the oldest of the rest goes.
+    #[test]
+    fn a_full_meter_keeps_an_endpoint_still_connected() {
+        let dir = meter_dir("open");
+        let meter: Meter<u64> = Meter::load(dir.join(STATS_FILE));
+        meter.connected(id(0), 0);
+        for n in 1..=DEVICE_CAP {
+            meter.connected(id(n), n as u64);
+            meter.disconnected(n as u64);
+        }
+        let c = meter.now.lock().unwrap();
+        assert_eq!(c.devices.len(), DEVICE_CAP);
+        assert!(c.devices.contains_key(&id(0)), "the open one stayed");
+        assert!(!c.devices.contains_key(&id(1)), "the oldest closed one went");
+        drop(c);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A file from before the cap, holding more than it: cut on load.
+    /// The file says nothing of when (totals only), so the entries with
+    /// the fewest connections go — and anything seen in this run outranks
+    /// all of them.
+    #[test]
+    fn a_meter_file_over_the_cap_is_cut_on_load() {
+        let dir = meter_dir("load");
+        let mut old = Stats { since: "2026-10-01 00:00:00".into(), ..Stats::default() };
+        for n in 0..DEVICE_CAP + 5 {
+            let connections = if n % 1000 == 7 { 1 } else { 3 };
+            old.devices.insert(id(n), DeviceStats { connections, online_secs: 60 });
+        }
+        std::fs::write(dir.join(STATS_FILE), serde_json::to_vec(&old).unwrap()).unwrap();
+        let meter: Meter<u64> = Meter::load(dir.join(STATS_FILE));
+        assert_eq!(meter.now.lock().unwrap().devices.len(), DEVICE_CAP, "cut to the cap");
+        let fresh = id(DEVICE_CAP + 100);
+        meter.connected(fresh.clone(), 1);
+        meter.disconnected(1);
+        meter.write();
+        let bytes = std::fs::read(dir.join(STATS_FILE)).unwrap();
+        let stats: Stats = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(stats.devices.len(), DEVICE_CAP, "and stays there");
+        let gone: Vec<usize> = (0..DEVICE_CAP + 5).filter(|n| !stats.devices.contains_key(&id(*n))).collect();
+        assert_eq!(gone.len(), 6);
+        assert!(gone.iter().all(|n| n % 1000 == 7), "the fewest connections went first: {gone:?}");
+        assert!(stats.devices.contains_key(&fresh), "the one this run saw stays");
+        assert_eq!(stats.since, "2026-10-01 00:00:00", "the rest of the file carries over");
+        assert_eq!(stats.devices[&id(4)], DeviceStats { connections: 3, online_secs: 60 });
+        assert!(bytes.len() <= FILE_BOUND, "the file is bounded: {} bytes", bytes.len());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

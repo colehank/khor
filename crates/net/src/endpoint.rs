@@ -62,11 +62,23 @@ pub const KHOR_RELAYS: &[(&str, Serves, Option<&str>)] = &[
         // QAD on UDP 7842 with an IP certificate (ruling (b), in-path test
         // audit/net-d.md i.4) and iroh's pkarr server on TCP 3343 (i.5).
         Serves { qad: Some(7842), pkarr: Some("http://101.200.80.77:3343/pkarr") },
-        Some("bbe31ccf721dde188508517840c24673ef9d4a5865af18a3"),
+        // Rotated 2026-10-21: the key before this one had crossed the wire
+        // in the clear since 2026-10-01 (this relay is plain HTTP, and so
+        // is every bearer token sent to it). Until every machine runs a
+        // build with this key the server admits both; once all have
+        // moved, the old one comes off the server (the owner's step,
+        // docs/LEDGER.md 机). This one crosses in the clear too: it stops
+        // casual free-riding, as before, and opens nothing else.
+        Some("ecd2c953cb0e1cea82860a354364e32f8519ef5cdcd3b402"),
     ),
     (
         BEIJING_TLS,
-        Serves::RELAY,
+        // QAD on UDP 7843 with the domain's own certificate (2026-10-21):
+        // iroh checks a QAD server's certificate against the relay url's
+        // host (vendor/iroh/src/net_report.rs `run_probe_v4`), so this
+        // entry cannot borrow 7842's IP certificate. No pkarr: the box's
+        // registry is plain HTTP on 3343, with no TLS front.
+        Serves { qad: Some(7843), pkarr: None },
         Some("19ccb31e891ffa3ab66f95f5b743c7d4b419afe635b97e5e"),
     ),
     (
@@ -1109,6 +1121,54 @@ mod tests {
         assert_eq!(beijing.qad, Some(7842));
         assert_eq!(beijing.pkarr.as_deref(), Some("http://101.200.80.77:3343/pkarr"));
         assert_eq!(registries(&khor_tier()).len(), 1, "one registry in the Khor tier");
+    }
+
+    /// Beijing over TLS answers QAD on its own port, 7843, with the
+    /// domain's certificate — not 7842, whose certificate names the IP
+    /// and would fail iroh's check against `pk.relay.khor.cloud`
+    /// (2026-10-21). Its pkarr stays off: the registry has no TLS front.
+    #[test]
+    fn beijing_tls_serves_qad_on_its_own_port() {
+        let pk = khor_tier().into_iter().find(|r| r.url == BEIJING_TLS).unwrap();
+        assert_eq!(pk.qad, Some(7843));
+        assert_eq!(pk.pkarr, None);
+        let map = relay_map(&khor_tier());
+        let port = map.get(&BEIJING_TLS.parse().unwrap()).and_then(|c| c.quic.as_ref().map(|q| q.port));
+        assert_eq!(port, Some(7843), "the map a bind hands iroh asks pk on 7843");
+    }
+
+    /// A key each, and not the same key ([`KHOR_RELAYS`]): the plain
+    /// relay's crosses the wire in the clear and must open nothing else.
+    #[test]
+    fn no_two_khor_relays_share_a_key() {
+        let keys: Vec<&str> = KHOR_RELAYS.iter().filter_map(|(_, _, k)| *k).collect();
+        let distinct: std::collections::HashSet<&str> = keys.iter().copied().collect();
+        assert_eq!((keys.len(), distinct.len()), (KHOR_RELAYS.len(), KHOR_RELAYS.len()));
+    }
+
+    /// iroh asks QAD of the first five relays of its map only
+    /// (vendor/iroh/src/net_report.rs, `MAX_RELAYS`), and the map is a
+    /// `BTreeMap` by url — so a relay's QAD is asked only if its url sorts
+    /// into the first five. With n0's four behind the Khor tier, both
+    /// Beijing entries do (plain is first, pk fifth); a relay added
+    /// through `KHOR_RELAY` that sorts before `https://pk.` pushes pk's
+    /// QAD out, and this test is what says so.
+    #[test]
+    fn both_beijing_qad_ports_are_in_the_five_iroh_asks() {
+        if std::env::var(PUBLIC_RELAYS_ENV).is_ok() {
+            return;
+        }
+        for n0 in [false, true] {
+            let asked: Vec<String> = full_relay_map(&khor_tier(), n0)
+                .relays::<Vec<_>>()
+                .into_iter()
+                .take(5)
+                .map(|c| c.url.to_string())
+                .collect();
+            for url in ["http://101.200.80.77:3340/", "https://pk.relay.khor.cloud:3341/"] {
+                assert!(asked.iter().any(|u| u == url), "n0 {n0}: {url} not in the first five {asked:?}");
+            }
+        }
     }
 
     /// The map a bind hands iroh: keys on the relays that have them,

@@ -40,6 +40,9 @@
 #   KHOR_RH_KHOR     /usr/local/bin/khor
 #   KHOR_RH_BIND     [::]
 #   KHOR_RH_CAPTIVE  127.0.0.1:3342
+#   KHOR_RH_QUIC     [::]:7843    QUIC address discovery (UDP), with the same
+#                                 certificate — khor's entry for this relay
+#                                 names the port (endpoint.rs, BEIJING_TLS)
 set -euo pipefail
 
 DOMAIN="${KHOR_RH_DOMAIN:-pk.relay.khor.cloud}"
@@ -56,6 +59,11 @@ TOKEN="19ccb31e891ffa3ab66f95f5b743c7d4b419afe635b97e5e"
 # The captive-portal port iroh-relay opens beside a TLS one. On loopback:
 # plain HTTP to a domain on a mainland box is what the ICP rules stop.
 CAPTIVE="${KHOR_RH_CAPTIVE:-127.0.0.1:3342}"
+# QUIC address discovery, answered with this relay's own certificate: iroh
+# checks it against the relay url's host, so it cannot be 7842's, whose
+# certificate names the IP. The port must match khor's entry, and
+# crates/cli/tests/relay_https.rs checks that it does.
+QUIC="${KHOR_RH_QUIC:-[::]:7843}"
 
 TLS_DIR="$ROOT/etc/khor-relay/tls"
 CERT="$TLS_DIR/fullchain.pem"
@@ -84,7 +92,7 @@ Wants=network-online.target
 User=${RELAY_USER}
 EnvironmentFile=${ENV_FILE}
 StateDirectory=khor-relay
-ExecStart=${KHOR} relay --tls-cert ${CERT} --tls-key ${KEY} --bind ${BIND}:${PORT} --http ${CAPTIVE} --token \${KHOR_RELAY_TOKEN} --rate 1048576 --state ${STATE}
+ExecStart=${KHOR} relay --tls-cert ${CERT} --tls-key ${KEY} --bind ${BIND}:${PORT} --http ${CAPTIVE} --quic ${QUIC} --token \${KHOR_RELAY_TOKEN} --rate 1048576 --state ${STATE}
 # A renewed certificate is read again in place: no client is dropped.
 ExecReload=/bin/kill -HUP \$MAINPID
 Restart=always
@@ -251,7 +259,7 @@ elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 
 else
 	said "  本机没有在跑的 ufw / firewalld"
 fi
-said "  阿里云控制台的防火墙要另外放行 TCP ${PORT}（这个脚本碰不到）"
+said "  阿里云控制台的防火墙要另外放行 TCP ${PORT} 和 UDP ${QUIC##*:}（这个脚本碰不到）"
 
 # ── 7. does it answer ─────────────────────────────────────────────────
 said "5. 本机试连"
