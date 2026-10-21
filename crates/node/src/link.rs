@@ -6514,7 +6514,11 @@ impl Node {
     ) -> Result<Vec<String>, String> {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
-            return Ok(crate::journal::lines_since(self.root(), peer.as_deref(), since));
+            // Off the runtime: a read waits for the writer (`journal::read`).
+            let root = self.root().clone();
+            return tokio::task::spawn_blocking(move || crate::journal::lines_since(&root, peer.as_deref(), since))
+                .await
+                .map_err(|e| e.to_string());
         }
         match self.ask(ep, &channel, &Request::Journal { peer, since }).await? {
             Response::Journal { lines } => Ok(lines),

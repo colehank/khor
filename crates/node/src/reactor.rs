@@ -187,11 +187,10 @@ pub fn guard_serve() {
 /// parked in the kernel on a dead NFS server still holds the process
 /// until that call returns; nothing in a process can cut that short.)
 fn leave_stuck(quiet: Duration) {
-    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-    let line = khor_catalog::msg::serve_stuck(&stamp, quiet.as_secs() / 60);
     let (tx, rx) = std::sync::mpsc::channel();
     let _ = std::thread::Builder::new().spawn(move || {
-        eprintln!("{line}");
+        let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+        eprintln!("{}", khor_catalog::msg::serve_stuck(&stamp, quiet.as_secs() / 60));
         let _ = tx.send(());
     });
     let _ = rx.recv_timeout(Duration::from_secs(5));
