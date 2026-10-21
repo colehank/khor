@@ -528,6 +528,19 @@ impl Wires {
         }
     }
 
+    /// Takes and lets go of every lock these wires keep — the serve
+    /// loop's beat (`crate::reactor::beat`) comes after it, so a lock
+    /// somebody never let go of stops the beat (net-dial B1).
+    pub(crate) fn pulse(&self) {
+        drop(self.slots.lock().unwrap_or_else(|p| p.into_inner()));
+        drop(self.dialing.lock().unwrap_or_else(|p| p.into_inner()));
+        drop(self.changed.lock().unwrap_or_else(|p| p.into_inner()));
+        drop(self.served.lock().unwrap_or_else(|p| p.into_inner()));
+        drop(self.gone.lock().unwrap_or_else(|p| p.into_inner()));
+        drop(self.down.lock().unwrap_or_else(|p| p.into_inner()));
+        drop(self.hops.lock().unwrap_or_else(|p| p.into_inner()));
+    }
+
     /// The failure count and the pump's wait that one more failed dial
     /// to this key would leave ([`Self::failed`]) — what the journal
     /// writes beside the dial that is about to be counted.

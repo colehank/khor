@@ -19,14 +19,19 @@
 //! keeper restarts a serve for reasons of its own (`link::serve`'s
 //! orphan and deaf arms both exit on purpose).
 //!
-//! # Read where it matters, never cached
+//! # Read where it matters; in a resident, read by its beat
 //!
-//! Every reader hits the file: the accept arm of [`crate::link`]'s serve
-//! loop, its sync tick, `invite` and `pair`. That is a small read on a
-//! path that is already doing IO, and it buys the rule the ruling asks
-//! for — **a running serve obeys immediately** — with no IPC op, no
-//! shared flag between two processes, and no way for the CLI's answer
-//! and the resident's behaviour to drift apart.
+//! The files are the one truth, and a process with no resident reads
+//! them where it asks (`invite`, `pair`, a one-shot verb's dial). **A
+//! resident reads them on a beat of its own** ([`poll`], every half
+//! second, off the runtime) and every question asked in that process
+//! is answered from that reading: they used to be read by every dial —
+//! three times, plus once per machine a hop considered — and by every
+//! stream answered, and on a home on NFS (turing, net-dial B1) each of
+//! those is a call the server may keep, on a thread that carries the
+//! link. Half a second is the promise the ruling asks for — **a running
+//! serve obeys immediately**, as far as a person can tell — and this
+//! process's own [`set_on`] / [`set_peer`] update the reading at once.
 
 use std::path::{Path, PathBuf};
 
@@ -48,6 +53,13 @@ fn path(root: &Path) -> PathBuf {
 /// like a broken network, and the cure would be deleting a file nobody
 /// knows to look for.
 pub fn is_on(root: &Path) -> bool {
+    if let Some(p) = polled(root) {
+        return p.on.load(std::sync::atomic::Ordering::Relaxed);
+    }
+    read_on(root)
+}
+
+fn read_on(root: &Path) -> bool {
     std::fs::read_to_string(path(root))
         .ok()
         .and_then(|t| serde_json::from_str::<Stored>(&t).ok())
@@ -72,7 +84,53 @@ pub fn set_on(root: &Path, on: bool) -> Result<(), String> {
     let dot = root.join(".khor");
     std::fs::create_dir_all(&dot).map_err(|_| msg::cant_make_dir(dot.display()))?;
     let text = serde_json::to_vec(&Stored { on }).map_err(|e| e.to_string())?;
-    crate::link::write_private(&path(root), &text)
+    crate::link::write_private(&path(root), &text)?;
+    if let Some(p) = polled(root) {
+        p.on.store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+/// A resident's reading of both files ([`poll`]).
+#[derive(Default)]
+struct Polled {
+    on: std::sync::atomic::AtomicBool,
+    ids: std::sync::RwLock<std::collections::BTreeSet<String>>,
+}
+
+/// The homes a resident in this process polls, and their readings.
+static POLLED: std::sync::Mutex<Vec<(PathBuf, std::sync::Arc<Polled>)>> = std::sync::Mutex::new(Vec::new());
+
+fn polled(root: &Path) -> Option<std::sync::Arc<Polled>> {
+    POLLED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .find(|(r, _)| r == root)
+        .map(|(_, p)| p.clone())
+}
+
+/// **The resident's read of both files**, on its beat and never on the
+/// runtime that carries the link (`crate::link`'s serve): from the first
+/// call on, [`is_on`] and [`peer_on`] in this process answer from it.
+/// Answers whether this machine is paused.
+pub(crate) fn poll(root: &Path) -> bool {
+    let on = read_on(root);
+    let ids = read_peers(root);
+    let p = {
+        let mut all = POLLED.lock().unwrap_or_else(|p| p.into_inner());
+        match all.iter().find(|(r, _)| r == root) {
+            Some((_, p)) => p.clone(),
+            None => {
+                let p = std::sync::Arc::new(Polled::default());
+                all.push((root.to_path_buf(), p.clone()));
+                p
+            }
+        }
+    };
+    p.on.store(on, std::sync::atomic::Ordering::Relaxed);
+    *p.ids.write().unwrap_or_else(|p| p.into_inner()) = ids;
+    on
 }
 
 // ── 按机器暂停 (SHELL.md 第五轮 第 3 条) ─────────────────────────────
@@ -100,6 +158,13 @@ fn peers_path(root: &Path) -> PathBuf {
 /// The machines this one has paused, by device id. Unreadable reads as
 /// none, for [`is_on`]'s reason.
 pub fn peers(root: &Path) -> std::collections::BTreeSet<String> {
+    if let Some(p) = polled(root) {
+        return p.ids.read().unwrap_or_else(|p| p.into_inner()).clone();
+    }
+    read_peers(root)
+}
+
+fn read_peers(root: &Path) -> std::collections::BTreeSet<String> {
     std::fs::read_to_string(peers_path(root))
         .ok()
         .and_then(|t| serde_json::from_str::<Peers>(&t).ok())
@@ -109,7 +174,10 @@ pub fn peers(root: &Path) -> std::collections::BTreeSet<String> {
 
 /// Whether this machine has paused the one with this device id.
 pub fn peer_on(root: &Path, id: &str) -> bool {
-    peers(root).contains(id)
+    match polled(root) {
+        Some(p) => p.ids.read().unwrap_or_else(|p| p.into_inner()).contains(id),
+        None => read_peers(root).contains(id),
+    }
 }
 
 /// Pauses or resumes one other machine, refusing the state it is
@@ -130,6 +198,10 @@ pub fn set_peer(root: &Path, id: &str, name: &str, on: bool) -> Result<(), Strin
     }
     let dot = root.join(".khor");
     std::fs::create_dir_all(&dot).map_err(|_| msg::cant_make_dir(dot.display()))?;
-    let text = serde_json::to_vec(&Peers { ids: all }).map_err(|e| e.to_string())?;
-    crate::link::write_private(&peers_path(root), &text)
+    let text = serde_json::to_vec(&Peers { ids: all.clone() }).map_err(|e| e.to_string())?;
+    crate::link::write_private(&peers_path(root), &text)?;
+    if let Some(p) = polled(root) {
+        *p.ids.write().unwrap_or_else(|p| p.into_inner()) = all;
+    }
+    Ok(())
 }

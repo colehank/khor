@@ -1283,6 +1283,15 @@ impl Node {
         // from an ordinary wait). Started here rather than at open:
         // there is no reactor to stall until there is a serve.
         crate::reactor::watch();
+        // **And a kept serve whose loop stops is let go** (net-dial B1):
+        // the loop below beats, a thread outside this runtime watches the
+        // beats, and a loop silent for `reactor::STUCK_AFTER` exits for its
+        // keeper to start again. Kept serves only — an app or a phone has
+        // nobody to start it again, and a foreground serve has a person.
+        if !resumable && crate::keeper::is_inner() {
+            crate::reactor::beat();
+            crate::reactor::guard_serve();
+        }
 
         // This machine's readings, taken in the background from here on
         // (docs/SHELL.md 第十六轮): a peer's ask, the app's device table
@@ -1354,6 +1363,7 @@ impl Node {
         {
             let flag = paused.clone();
             let root = node.root().clone();
+            let n = node.clone();
             tokio::spawn(async move {
                 let mut beat = tokio::time::interval(PAUSE_POLL);
                 // A process that was stopped (a phone in the background:
@@ -1368,8 +1378,16 @@ impl Node {
                     // the loop: it is a file, and this runtime carries
                     // the link.
                     if let Ok(now) =
-                        tokio::task::spawn_blocking(move || crate::pause::is_on(&r)).await
+                        tokio::task::spawn_blocking(move || crate::pause::poll(&r)).await
                     {
+                        // **Paused is 「不收不发」 for what is already open
+                        // too** (docs/MORE.md 暂停; net-dial B2): it used
+                        // to stop only new connections and the pump, and a
+                        // wire held either way kept answering and syncing.
+                        if now && !flag.swap(now, std::sync::atomic::Ordering::Relaxed) {
+                            n.wires.clear(wires::Retired::Paused);
+                            n.wires.let_go_served(wires::Retired::Paused);
+                        }
                         flag.store(now, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
@@ -1802,6 +1820,12 @@ impl Node {
                     });
                 }
                 _ = ticker.tick() => {
+                    // The beat the guard watches (`crate::reactor::guard`),
+                    // taken after every lock the wires keep: a lock that
+                    // was never let go of stops it, as a runtime with
+                    // every worker held does.
+                    node.wires.pulse();
+                    crate::reactor::beat();
                     // A kept serve whose keeper is gone must leave: an
                     // orphan holds the endpoint key, so the guardian's
                     // next serve would knock it off (one live endpoint
@@ -2947,6 +2971,13 @@ impl Node {
             self.wires.retire_peer(&d.id, wires::Retired::Paused);
             return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
         }
+        // **Paused sends nothing either** (「不收不发」, net-dial B2): no
+        // dial, and a wire still held is let go — not a failure, so no
+        // backoff; `khor resume` and the next round ask again.
+        if self.paused() {
+            self.wires.retire_peer(&d.id, wires::Retired::Paused);
+            return Err(DialFailure::Refused(msg::paused_no_dial().to_owned()));
+        }
         // **Resting is quiet both ways** (net-r): a phone in the
         // background refuses the dials to it, so it makes none either. The
         // face's last polls and a far terminal's rejoin used to dial out in
@@ -3101,6 +3132,7 @@ impl Node {
     async fn ask_early(&self, ep: &iroh::Endpoint, d: &DeviceInfo, req: &Request) -> Early {
         // Resting: not taken here, and refused by `line_to_inner` after.
         if !req.rides_early()
+            || self.paused()
             || crate::pause::peer_on(self.root(), &d.id)
             || self.resting.load(std::sync::atomic::Ordering::Relaxed)
             || self.wires.live(&d.id, wires::Proto::Main).is_some()
@@ -3295,6 +3327,13 @@ impl Node {
     ) -> Result<(), String> {
         let remote = conn.remote_id().to_string();
         while let Ok((send, mut recv)) = conn.accept_bi().await {
+            // **Paused takes nothing** (docs/MORE.md 暂停 「不收不发」):
+            // the pause beat closed the connection already; a stream that
+            // slipped in before it did is not answered either.
+            if self.paused() {
+                conn.close(0u32.into(), b"paused");
+                return Ok(());
+            }
             // A machine this one has paused is treated as a stranger
             // here, per stream, so a pause bites on a tunnel already up.
             let paired =
@@ -3344,8 +3383,9 @@ impl Node {
             // paused gets no answer — the connection is closed, the way
             // a machine that is not there closes nothing. Asked per
             // request (a small file, off the accept loop) so a pause
-            // bites on a connection that was already open.
-            if crate::pause::peer_on(self.root(), &remote) {
+            // bites on a connection that was already open. The same for
+            // this whole machine paused (「不收不发」).
+            if self.paused() || crate::pause::peer_on(self.root(), &remote) {
                 conn.close(0u32.into(), b"paused");
                 return Ok(());
             }
@@ -11344,6 +11384,9 @@ impl Node {
         // every verb and every tunnel come through here.
         if crate::pause::peer_on(self.root(), id) {
             return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
+        }
+        if self.paused() {
+            return Err(DialFailure::Refused(msg::paused_no_dial().to_owned()));
         }
         let bare = |e| DialFailure::Refused(format!("{e}"));
         // 首包时间 starts here, before either road is tried: what a

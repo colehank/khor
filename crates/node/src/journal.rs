@@ -270,29 +270,72 @@ pub struct Entry {
 }
 
 /// The writer: the resident's, one per home.
+///
+/// **[`Journal::note`] never touches the disk** (net-dial B1). It used to
+/// append in the caller's thread, and its callers include the wire
+/// watch's `tick` and every retirement, which write while they hold the
+/// wires' `slots` lock. On turing, whose home is on NFS, 2026-10-20
+/// 22:50:15 was the last line it wrote for 87 minutes: requests went
+/// unanswered from that second while iroh still finished handshakes, and
+/// five minutes later iroh went too — the shape of tokio's workers being
+/// taken one by one by tasks parked behind one lock. A write that does
+/// not return holds everything that waits on what it holds.
+///
+/// So a line is handed to a thread of the journal's own, through a
+/// queue of [`QUEUE`] lines; a writer stuck on a file leaves the queue to
+/// fill, and once it is full a line is dropped — a gap in the journal,
+/// which it already promised to be rather than a dial that failed.
 pub struct Journal {
-    dir: PathBuf,
-    /// Lines in each file as far as this writer knows, counted on first
-    /// touch.
-    lines: Mutex<HashMap<String, usize>>,
+    tx: std::sync::mpsc::SyncSender<(String, String)>,
+    /// Lines handed to the writer, and lines it is done with (written or
+    /// not): [`flush`] waits for the second to reach the first.
+    sent: Arc<std::sync::atomic::AtomicU64>,
+    done: Arc<std::sync::atomic::AtomicU64>,
 }
+
+/// Lines the writer may fall behind by before new ones are dropped:
+/// about a megabyte, hours of an ordinary machine's events.
+const QUEUE: usize = 4096;
 
 /// Where a home's journal lives.
 pub fn dir(root: &Path) -> PathBuf {
     root.join(".khor").join("journal")
 }
 
+/// The journals open in this process, by directory, so a reader here
+/// sees what was noted before it asked ([`read`] waits for them).
+static OPEN: Mutex<Vec<(PathBuf, std::sync::Weak<Journal>)>> = Mutex::new(Vec::new());
+
 impl Journal {
     pub fn open(root: &Path) -> Arc<Journal> {
-        Arc::new(Journal {
-            dir: dir(root),
-            lines: Mutex::new(HashMap::new()),
-        })
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(String, String)>(QUEUE);
+        let sent = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let done = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let dir = dir(root);
+        {
+            let (dir, done) = (dir.clone(), done.clone());
+            // Ends when the journal does: the last sender gone.
+            let _ = std::thread::Builder::new()
+                .name("khor-journal".into())
+                .spawn(move || {
+                    let mut lines: HashMap<String, usize> = HashMap::new();
+                    for (key, line) in rx {
+                        append(&dir, &mut lines, key, &line);
+                        done.fetch_add(1, std::sync::atomic::Ordering::Release);
+                    }
+                });
+        }
+        let j = Arc::new(Journal { tx, sent, done });
+        let mut open = OPEN.lock().unwrap_or_else(|p| p.into_inner());
+        open.retain(|(_, w)| w.strong_count() > 0);
+        open.push((dir, Arc::downgrade(&j)));
+        j
     }
 
     /// Appends one event; `peer` `None` is this machine's own. Never
-    /// fails the caller: a journal that cannot be written is a journal
-    /// with a gap, not a dial that failed.
+    /// fails the caller and **never waits on the disk**: a journal that
+    /// cannot be written is a journal with a gap, not a dial that failed,
+    /// and not a lock held for as long as a file takes.
     pub fn note(&self, peer: Option<&str>, what: What) {
         let entry = Entry {
             at: crate::now_ms(),
@@ -306,33 +349,73 @@ impl Journal {
         if !key.chars().all(|c| c.is_ascii_alphanumeric()) {
             return;
         }
-        let path = self.dir.join(format!("{key}.jsonl"));
-        let mut lines = self.lines.lock().unwrap_or_else(|p| p.into_inner());
-        let n = lines.entry(key).or_insert_with(|| {
-            std::fs::read_to_string(&path)
-                .map(|t| t.lines().count())
-                .unwrap_or(0)
-        });
-        let _ = std::fs::create_dir_all(&self.dir);
-        let wrote = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .and_then(|mut f| f.write_all(line.as_bytes()));
-        if wrote.is_err() {
-            return;
+        if self.tx.try_send((key, line)).is_ok() {
+            self.sent.fetch_add(1, std::sync::atomic::Ordering::Release);
         }
-        *n += 1;
-        if *n >= 2 * KEEP {
-            if let Ok(text) = std::fs::read_to_string(&path) {
-                let all: Vec<&str> = text.lines().collect();
-                let kept = all[all.len().saturating_sub(KEEP)..].join("\n") + "\n";
-                let tmp = path.with_extension("jsonl.tmp");
-                if std::fs::write(&tmp, kept).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
-                    *n = KEEP.min(all.len());
-                }
+    }
+
+    /// Waits, up to `within`, for every line noted so far to be written.
+    /// Answers whether they were.
+    pub fn flush(&self, within: Duration) -> bool {
+        let want = self.sent.load(std::sync::atomic::Ordering::Acquire);
+        let until = std::time::Instant::now() + within;
+        loop {
+            if self.done.load(std::sync::atomic::Ordering::Acquire) >= want {
+                return true;
+            }
+            if std::time::Instant::now() >= until {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+}
+
+/// The writer's one step: `line` onto `key`'s file, and the file cut
+/// back to its last [`KEEP`] lines once it holds twice that.
+fn append(dir: &Path, lines: &mut HashMap<String, usize>, key: String, line: &str) {
+    let path = dir.join(format!("{key}.jsonl"));
+    let n = lines.entry(key).or_insert_with(|| {
+        std::fs::read_to_string(&path)
+            .map(|t| t.lines().count())
+            .unwrap_or(0)
+    });
+    let _ = std::fs::create_dir_all(dir);
+    let wrote = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| f.write_all(line.as_bytes()));
+    if wrote.is_err() {
+        return;
+    }
+    *n += 1;
+    if *n >= 2 * KEEP {
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            let all: Vec<&str> = text.lines().collect();
+            let kept = all[all.len().saturating_sub(KEEP)..].join("\n") + "\n";
+            let tmp = path.with_extension("jsonl.tmp");
+            if std::fs::write(&tmp, kept).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
+                *n = KEEP.min(all.len());
             }
         }
+    }
+}
+
+/// The lines this process noted for `root`'s journal, written before a
+/// read of it — at most a second's wait, so a stuck writer costs a reader
+/// a second and not the answer.
+fn flush_open(root: &Path) {
+    let d = dir(root);
+    let open: Vec<Arc<Journal>> = OPEN
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .filter(|(at, _)| *at == d)
+        .filter_map(|(_, w)| w.upgrade())
+        .collect();
+    for j in open {
+        j.flush(Duration::from_secs(1));
     }
 }
 
@@ -341,6 +424,7 @@ impl Journal {
 /// first. Lines that do not parse are skipped: a torn last line after a
 /// crash is not a reason to read nothing.
 pub fn read(root: &Path, peer: Option<&str>, since: u64) -> Vec<Entry> {
+    flush_open(root);
     let d = dir(root);
     let mut files: Vec<PathBuf> = match peer {
         Some(id) => vec![d.join(format!("{id}.jsonl")), d.join(format!("{HERE}.jsonl"))],
@@ -1370,6 +1454,43 @@ mod tests {
             _ => None,
         });
         assert_eq!(last, Some((2 * KEEP + 4) as u32), "the newest line survives the cut");
+    }
+
+    /// **A file that never opens does not hold the one noting** (net-dial
+    /// B1): a FIFO nobody reads is the stand-in for turing's NFS home,
+    /// where an open or a write can stay out for as long as the server
+    /// does. `note` used to append in its caller's thread — the wire
+    /// watch's tick and every retirement among them, under the wires'
+    /// lock — so that caller stayed out with it.
+    #[test]
+    fn a_journal_file_that_never_opens_does_not_hold_the_caller() {
+        use std::os::unix::ffi::OsStrExt;
+        let root = crate::testdir::TempTree::fresh("journal-stuck");
+        let d = dir(&root.path());
+        std::fs::create_dir_all(&d).unwrap();
+        let fifo = std::ffi::CString::new(d.join("stuck.jsonl").as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0, "a FIFO to open");
+        let j = Journal::open(&root.path());
+        let (tx, rx) = std::sync::mpsc::channel();
+        {
+            let j = j.clone();
+            std::thread::spawn(move || {
+                let t = std::time::Instant::now();
+                for _ in 0..3 {
+                    j.note(Some("stuck"), What::Departed);
+                }
+                j.note(None, What::Started);
+                let _ = tx.send(t.elapsed());
+            });
+        }
+        let took = rx.recv_timeout(Duration::from_secs(3));
+        assert!(
+            took.is_ok_and(|t| t < Duration::from_millis(500)),
+            "noting returned at once while the file would not open: {took:?}"
+        );
+        // The writer behind it is stuck on the FIFO's open for good; its
+        // thread is this test's to leak.
+        assert!(!j.flush(Duration::from_millis(50)), "and the line is still waiting, not lost in the caller");
     }
 
     #[test]

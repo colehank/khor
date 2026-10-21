@@ -95,3 +95,135 @@ pub fn worst_stall_ms() -> u64 {
 pub fn forget() {
     WORST_MS.store(0, Ordering::Relaxed);
 }
+
+// ── the kept serve's heartbeat (net-dial B1) ────────────────────────
+//
+// The high-water mark above is a number somebody has to ask for, and
+// on a multi-threaded runtime it only moves when every worker is
+// blocked — by which time nobody can ask. turing, 2026-10-20: 22:50:15
+// to 00:18:02 and again 00:53:42 to 01:44:36 it answered nothing and
+// wrote nothing, and was not dead, so its keeper — which only restarts
+// a serve that exits (`crate::keeper`) — had nothing to do. Its deaf
+// watch could not help either: it runs on the very loop that stopped.
+//
+// So the kept serve's loop beats ([`beat`]) and a plain thread outside
+// the runtime ([`guard`]) watches the beats. A loop that has not beaten
+// for [`STUCK_AFTER`] is stuck, and the serve leaves with [`STUCK_EXIT`]
+// for its keeper to log and start again.
+
+/// When the serve's loop last beat, in ms of [`since_start`]; 0 never.
+static BEAT_MS: AtomicU64 = AtomicU64::new(0);
+
+/// How long a kept serve's loop may go without a beat before it is
+/// taken for stuck: **ten minutes**.
+///
+/// Not shorter, because the slow thing on the machines that showed this
+/// is a home on NFS, and a hard NFS mount does not fail a call, it
+/// retries it: one RPC waits 60 s, then twice more with backoff, a few
+/// minutes before the kernel even says 「server not responding」 — and a
+/// machine whose home came back after such a blip is a machine that
+/// should keep its serve. Ten minutes is more than three of those and
+/// five of [`crate::link`]'s deafness (`DEAF_AFTER`, two minutes).
+/// Not longer, because it is the length of the outage it leaves: turing's
+/// were 87 and 51 minutes.
+pub const STUCK_AFTER: Duration = Duration::from_secs(600);
+
+/// How often the guard looks.
+const LOOK_EVERY: Duration = Duration::from_secs(15);
+
+/// A kept serve's exit code when its loop was stuck: news for the
+/// keeper's log (「serve 死了（退出码 87）」), a restart like any other.
+pub const STUCK_EXIT: i32 = 87;
+
+fn since_start() -> Duration {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    START.get_or_init(Instant::now).elapsed()
+}
+
+/// The loop is alive: called on every beat of the serve's loop, after
+/// it has touched what a stuck serve was found stuck on.
+pub fn beat() {
+    BEAT_MS.store((since_start().as_millis() as u64).max(1), Ordering::Relaxed);
+}
+
+/// How long since the last [`beat`] at `now` (a [`since_start`]
+/// reading); `None` before the first.
+fn quiet_at(now: Duration) -> Option<Duration> {
+    match BEAT_MS.load(Ordering::Relaxed) {
+        0 => None,
+        ms => Some(now.saturating_sub(Duration::from_millis(ms))),
+    }
+}
+
+/// Watches the beats from a thread of its own — not a task: a runtime
+/// whose workers are all held cannot run the thing that would notice.
+/// Calls `stuck` once with the silence when the loop has not beaten for
+/// `after`; the serve passes [`leave_stuck`].
+pub fn guard(after: Duration, every: Duration, stuck: impl FnOnce(Duration) + Send + 'static) {
+    let _ = std::thread::Builder::new()
+        .name("khor-guard".into())
+        .spawn(move || loop {
+            std::thread::sleep(every);
+            if let Some(quiet) = quiet_at(since_start())
+                && quiet >= after
+            {
+                stuck(quiet);
+                return;
+            }
+        });
+}
+
+/// [`guard`] as the kept serve arms it.
+pub fn guard_serve() {
+    guard(STUCK_AFTER, LOOK_EVERY, leave_stuck);
+}
+
+/// Says why, if saying it does not itself get stuck, and leaves.
+///
+/// The sentence goes to stderr, which for a kept serve is `serve.log` —
+/// on turing a file on the same NFS that may be what holds the loop. So
+/// it is written from a thread of its own and given five seconds; then
+/// `_exit`, which runs nothing that could wait on anything. (A thread
+/// parked in the kernel on a dead NFS server still holds the process
+/// until that call returns; nothing in a process can cut that short.)
+fn leave_stuck(quiet: Duration) {
+    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+    let line = khor_catalog::msg::serve_stuck(&stamp, quiet.as_secs() / 60);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let _ = std::thread::Builder::new().spawn(move || {
+        eprintln!("{line}");
+        let _ = tx.send(());
+    });
+    let _ = rx.recv_timeout(Duration::from_secs(5));
+    unsafe { libc::_exit(STUCK_EXIT) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A loop that stops beating is found, one that beats is not**: the
+    /// guard on milliseconds, the same code the serve arms on minutes.
+    /// One test, because the beat is one process-global, as the serve
+    /// has one loop.
+    #[test]
+    fn a_loop_that_stops_beating_is_found_and_one_that_beats_is_not() {
+        beat();
+        let (tx, rx) = std::sync::mpsc::channel();
+        guard(Duration::from_millis(300), Duration::from_millis(20), move |q| {
+            let _ = tx.send(q);
+        });
+        // Beating: nothing for a second, three times the limit.
+        let until = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < until {
+            beat();
+            assert!(rx.try_recv().is_err(), "a loop that beats is never taken for stuck");
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        // Stopped: found within the limit and a look or two.
+        let t = Instant::now();
+        let quiet = rx.recv_timeout(Duration::from_secs(3)).expect("a loop that stopped is found");
+        assert!(quiet >= Duration::from_millis(300), "not before its limit: {quiet:?}");
+        assert!(t.elapsed() < Duration::from_secs(1), "and not long after: {:?}", t.elapsed());
+    }
+}

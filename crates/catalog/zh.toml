@@ -1852,6 +1852,7 @@ peer-already-paused = "和 {0} 的往来已经是暂停的了。要恢复：khor
 peer-not-paused = "和 {0} 的往来本来就没暂停。要暂停：khor pause {0}"
 peer-paused-refusal = "这台机器暂停着（本机这边暂停的），要恢复：khor resume <机器>"
 # 手机在后台歇着时谁也不拨（net-r）：别人拨它被拒，它自己的拨号也等回到前台。
+paused-no-dial = "本机已暂停，不连其他机器。要恢复：khor resume"
 resting-no-dial = "应用在后台，暂不连接其他机器；回到前台后自动连接"
 # 暂停时伸手去配对。两个动词都要收发才成得了,所以不是「失败了」而是
 # 「这台机器现在不干这件事」——按名字拒,并指出解在哪。
@@ -1899,6 +1900,9 @@ quit-hosts = "已停止 {0} 个 session 宿主"
 # Every observed cure was a restart, so it prescribes itself one; the
 # keeper stands it back up with fresh ears.
 serve-gone-deaf = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了，退下换一双（keeper 会再起）"
+# 主循环停住却没死（turing 2026-10-20：87 分钟不答不记，keeper 只管死了的）：
+# 看门狗线程看心跳，过时限就退出让 keeper 再起（reactor::guard）。
+serve-stuck = "[{0}] serve 的主循环已 {1} 分钟没动——卡住了，退下（keeper 会再起）"
 serve-orphaned = "[{0}] keeper 没了——孤儿 serve 占着店只会挡住下一任，退场"
 # 能续上的 serve（手机，docs/IOS.md 第三步）不退出：系统把退出读成闪退，也没有
 # keeper 再起它。端点在底下关了就先聋着；回到前台（`link::resume`）或听不见满

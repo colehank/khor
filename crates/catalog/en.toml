@@ -1264,6 +1264,7 @@ peer-not-paused = "Not paused with {0}. To pause: khor pause {0}"
 peer-paused-refusal = "paused from this side — to resume: khor resume <machine>"
 # A phone resting in the background asks nobody (net-r): its own
 # dials wait for the front, as the dials to it are refused.
+paused-no-dial = "This machine is paused and does not connect to other machines. To resume: khor resume"
 resting-no-dial = "The app is in the background and does not connect to other machines; it connects again when it returns to the front"
 # Reaching for pairing while paused. Both verbs need to send and
 # receive, so this is not 「it failed」 but 「this machine is not doing
@@ -1284,6 +1285,7 @@ quit-no-serve = "serve wasn't running"
 quit-app-resident = "this machine's resident is the khor app (pid {0}) — quit it from the app; khor quit does not stop an app"
 quit-hosts = "collected {0} session hosts"
 serve-gone-deaf = "[{0}] unreachable by anyone for {1}s — its ears are probably broken, stepping down for a new pair (keeper will restart it)"
+serve-stuck = "[{0}] serve's loop has not moved for {1} minutes — stuck, stepping down (keeper will restart it)"
 serve-orphaned = "[{0}] keeper is gone — an orphaned serve just blocks its successor, stepping aside"
 serve-ears-closed = "[{0}] the endpoint closed under serve and it hears nobody — new ears when the app is back in front, or after two minutes of silence"
 serve-fresh-ears = "[{0}] fresh ears in {1} ms — syncing now"
