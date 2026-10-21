@@ -2999,6 +2999,18 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 /* Only rows scroll or fade. The glass rim stays on its fixed frame. */
 [data-menu-frame]{display:flex;flex-direction:column;overflow:hidden;isolation:isolate}
 [data-menu-frame]::before{z-index:2}
+/* An ancestor's backdrop filter is a sampling boundary: a completion
+   outside its field cannot blur the page behind that field. A separate
+   native menu window has the same limitation across WebViews. Use the
+   existing thick popover surface there, independently of window opacity;
+   ordinary portalled menus retain their dense glass and backdrop blur. */
+.glass [data-menu-frame],
+[data-menu-native] [data-menu-frame] {
+  background: var(--popover);
+}
+@supports not ((backdrop-filter: blur(0)) or (-webkit-backdrop-filter: blur(0))) {
+  [data-menu-frame] { background: var(--popover); }
+}
 [data-menu-viewport]{flex:1 1 auto;min-height:0;touch-action:pan-y;overscroll-behavior:contain;scrollbar-width:thin}
 
 /* One searchable choice field; avatars and glyphs use the existing row seat. */

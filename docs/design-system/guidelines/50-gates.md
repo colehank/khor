@@ -625,3 +625,11 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 ### 工作区目录树的刷新（2026-10-21）
 
 `npm run tree-freshness`：真实 App、私有节点与系统 Chrome，先读空目录，再从界面外创建文件；验证无法监听的本机目录切回窗口及重新展开后更新、旧请求后到不覆盖新结果、折叠祖先后不轮询隐藏分支、可靠监听下切回与展开仍复用缓存。旧版先红：外部新增 `raw` 后切回窗口仍空，重新展开也不读取新文件。`CONTENT_CHECK_DIR` 可指定外部盘产物目录；测试只关闭自己的私有会话与服务。Mac 原生 App 仍需更新后核对。
+
+
+### 推荐菜单材质
+
+`npm run menu-material`：可见 Chrome 中挂载正式 OmniMenu，以高反差背景检查
+嵌套 backdrop root 与独立窗口的厚底回退；普通浮层保持玻璃。覆盖浅深主题和
+窗口不透明度 0/70/100%。`MENU_MATERIAL_WEBKIT=1` 同时运行可见 WebKit；
+`KHOR_GATE_TMP` 指定证据目录。此门不代替真 App 原生跨窗口材质验收。

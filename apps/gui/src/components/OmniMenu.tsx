@@ -356,7 +356,7 @@ export function MenuFace() {
   // bordered box for it would flash a white rectangle over the page.
   if (!rows || rows.groups.length === 0) return null;
   return (
-    <div ref={box}>
+    <div ref={box} data-menu-native>
       <OmniMenu
         rows={rows}
         onPick={(key) => {
