@@ -662,6 +662,27 @@ impl Wires {
         at.checked_duration_since(Instant::now())
     }
 
+    /// **Whether this machine has its own reason to think `id` is out of
+    /// reach now** (net-dial B3, a middle asked for a hop to it): a dial to
+    /// it failed and its wait has not run out, on either protocol; its
+    /// relay said it left; or an attempt found it unreachable and nothing
+    /// has been heard from it since.
+    pub(crate) fn out_of_reach(&self, id: &str) -> bool {
+        let now = Instant::now();
+        let waiting = {
+            let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+            [Proto::Main, Proto::Tunnel].iter().any(|p| {
+                slots
+                    .get(&(id.to_owned(), *p))
+                    .and_then(|s| s.retry_at)
+                    .is_some_and(|at| at > now)
+            })
+        };
+        waiting
+            || self.gone_lately(id)
+            || self.down.lock().unwrap_or_else(|p| p.into_inner()).contains_key(id)
+    }
+
     /// The far side was heard just now (an answer came back).
     pub(crate) fn heard(&self, id: &str, proto: Proto, conn: &Connection) {
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
@@ -1358,5 +1379,23 @@ mod tests {
         assert!(w.link("m").down.is_some(), "a new network forgives the wait, not the fact");
         w.back("m");
         assert_eq!(w.link("m").down, None, "heard from");
+    }
+
+    /// **A middle's own word on the far machine** (net-dial B3): a wait
+    /// on either protocol, a relay's word that it left, or an attempt
+    /// that failed — each is out of reach; heard from, none is.
+    #[test]
+    fn out_of_reach_is_a_wait_a_departure_or_a_failure_until_heard() {
+        let w = Wires::default();
+        assert!(!w.out_of_reach("y"), "never dialled");
+        w.failed("y", Proto::Tunnel, "no".into());
+        assert!(w.out_of_reach("y"), "a tunnel dial failed and its wait runs");
+        w.back("y");
+        w.forgive("y");
+        assert!(!w.out_of_reach("y"), "heard, and the wait forgiven");
+        w.departed("y");
+        assert!(w.out_of_reach("y"), "its relay said it left");
+        w.back("y");
+        assert!(!w.out_of_reach("y"), "heard from since");
     }
 }

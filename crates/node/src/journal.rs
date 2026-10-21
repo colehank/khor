@@ -63,6 +63,9 @@ pub enum By {
     Ask,
     /// The wire to a middle machine, for a hop.
     Hop,
+    /// A middle's dial onward, for the machine that asked it for a hop
+    /// (net-dial B3): not this machine's own failure when it fails.
+    Onward,
     /// A pairing dial.
     Pair,
 }
@@ -514,6 +517,7 @@ fn by_word(by: By) -> &'static str {
         By::Forced => msg::journal_by_forced(),
         By::Ask => msg::journal_by_ask(),
         By::Hop => msg::journal_by_hop(),
+        By::Onward => msg::journal_by_onward(),
         By::Pair => msg::journal_by_pair(),
     }
 }

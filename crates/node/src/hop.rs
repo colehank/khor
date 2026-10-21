@@ -55,8 +55,11 @@ const HAND: &str = "hop-in ";
 /// that has to be dialled first, plus its own stream to Y.
 const HOP_WITHIN: Duration = Duration::from_secs(3);
 
-/// How long B gives its own wire to Y.
-const MIDDLE_WITHIN: Duration = Duration::from_secs(5);
+/// How long B gives its own wire to Y: inside X's [`HOP_WITHIN`], so B
+/// stops dialling for X before X stops waiting (net-dial B3: it was 5 s,
+/// and every hop to a machine that was off cost B two seconds of a dial
+/// nobody was waiting for any more).
+const MIDDLE_WITHIN: Duration = HOP_WITHIN.saturating_sub(Duration::from_millis(500));
 
 /// Middles X tries, best first, before it dials without a hop.
 const TRIES: usize = 2;
@@ -74,6 +77,47 @@ const COMPARE_EVERY: std::time::Duration = Duration::from_secs(30);
 const LOST_FOR: Duration = Duration::from_secs(10 * 60);
 
 static LAST_COMPARE: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// How long a hop to a machine that no middle could reach is not asked
+/// for again, after the first such miss: doubling with each miss in a
+/// row up to [`LOST_FOR`], and forgotten when a hop to it opens.
+///
+/// net-dial B3: X asked for a hop before **every** dial to a machine that
+/// was down (`wants_hop`), up to [`TRIES`] middles and [`HOP_WITHIN`] each
+/// time, and each middle dialled the machine again for it — four machines
+/// spent most of a day's failed dials that way on one machine that was
+/// asleep.
+const MISSED_FIRST: Duration = Duration::from_secs(30);
+
+/// Per (this machine, far machine): hops that found no middle in a row,
+/// and when the last did.
+static MISSED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<(String, String), (u32, std::time::Instant)>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// How long after `n` misses in a row a hop is not asked for again.
+fn missed_wait(n: u32) -> Duration {
+    MISSED_FIRST.saturating_mul(1u32 << n.saturating_sub(1).min(8)).min(LOST_FOR)
+}
+
+fn missed(me: &str, to: &str) {
+    let mut all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+    let e = all.entry((me.to_owned(), to.to_owned())).or_insert((0, std::time::Instant::now()));
+    *e = (e.0.saturating_add(1), std::time::Instant::now());
+}
+
+fn made(me: &str, to: &str) {
+    MISSED.lock().unwrap_or_else(|p| p.into_inner()).remove(&(me.to_owned(), to.to_owned()));
+}
+
+/// Whether a hop from `me` to `to` missed lately enough not to be asked
+/// for before this dial.
+fn missed_lately(me: &str, to: &str) -> bool {
+    MISSED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&(me.to_owned(), to.to_owned()))
+        .is_some_and(|(n, at)| at.elapsed() < missed_wait(*n))
+}
 
 /// Per (machine, middle): when a hop through it lost to the relay.
 static LOST: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<(String, String), std::time::Instant>>> =
@@ -303,7 +347,7 @@ impl Node {
         let Ok(all) = self.devices() else { return };
         let me = self.device_str().to_owned();
         let mine = all.iter().find(|d| d.id == me).map(|d| self.roads_of(d)).unwrap_or_default();
-        if !self.wants_hop(y, &mine) {
+        if !self.wants_hop(y, &mine) || missed_lately(&me, &y.id) {
             return;
         }
         let rows: Vec<(String, bool, bool)> = all
@@ -352,9 +396,11 @@ impl Node {
         let Ok(Some((via, send, recv))) = tokio::time::timeout(HOP_WITHIN, tries).await else {
             if tried > 0 {
                 self.wires.note(Some(&y.id), crate::journal::What::Hop { via: None, tried });
+                missed(&me, &y.id);
             }
             return false;
         };
+        made(&me, &y.id);
         // A link came in while this one opened: ssh, which a hop never
         // replaces, or the far end's own hop, which stands when the far
         // end's id is the lower ([`Asking`]).
@@ -503,11 +549,21 @@ impl Node {
                 let Some(d) = self.devices().ok().and_then(|all| all.into_iter().find(|d| d.id == y)) else {
                     return refuse(send, REFUSED).await;
                 };
+                // **B's own word on Y first** (net-dial B3): a machine B is
+                // waiting out a failed dial to, that its relay said left,
+                // or that B found unreachable and has not heard since, is
+                // no road for X either — said at once, not after a dial.
+                if self.wires.live(&y, Proto::Tunnel).is_none() && self.wires.out_of_reach(&y) {
+                    return refuse(send, NO_ROUTE).await;
+                }
                 let by = std::time::Instant::now() + MIDDLE_WITHIN;
-                let onward = async {
+                // A dial for X, not for B (`journal::By::Onward`): written
+                // as such, and its failure is not B's — no backoff, no
+                // 「不通」, no closing what Y opened to B.
+                let onward = crate::journal::BY.scope(crate::journal::By::Onward, async {
                     let line = Box::pin(self.line_to_inner(&ep, &d, Proto::Tunnel, Some(by), false)).await.ok()?;
                     crate::tunnel::dial(&line.conn, &Ask::From(from_id).words()).await.ok()
-                };
+                });
                 let Ok(Some((ys, yr))) = tokio::time::timeout(MIDDLE_WITHIN, onward).await else {
                     return refuse(send, NO_ROUTE).await;
                 };
@@ -570,6 +626,29 @@ mod tests {
 
     fn road(to: &str, k: RoadKind, ms: u16) -> Road {
         Road::own(to, k, None, Some(ms))
+    }
+
+    /// **A hop that found no middle is not asked for before every dial**
+    /// (net-dial B3): 30 s after the first miss, doubling to ten minutes,
+    /// and asked again at once after a hop to it opened.
+    #[test]
+    fn a_hop_that_found_no_middle_waits_before_it_is_asked_again() {
+        let waits: Vec<u64> = (1..=7).map(|n| missed_wait(n).as_secs()).collect();
+        assert_eq!(waits, vec![30, 60, 120, 240, 480, 600, 600]);
+        let (me, to) = ("missed-x", "missed-y");
+        assert!(!missed_lately(me, to), "never missed: asked");
+        missed(me, to);
+        assert!(missed_lately(me, to), "missed just now: not asked before the next dial");
+        assert!(!missed_lately(me, "missed-z"), "another machine is its own question");
+        made(me, to);
+        assert!(!missed_lately(me, to), "a hop to it opened: asked again");
+    }
+
+    /// The middle's leg is inside the asker's wait: the asker never gives
+    /// up on a middle that is still dialling for it.
+    #[test]
+    fn the_middles_dial_ends_inside_the_askers_wait() {
+        assert!(MIDDLE_WITHIN < HOP_WITHIN);
     }
 
     #[test]

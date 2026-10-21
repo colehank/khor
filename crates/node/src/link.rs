@@ -3014,11 +3014,15 @@ impl Node {
                 Ok(line(conn))
             }
             Err(e) => {
-                let words = match &e {
-                    DialFailure::TimedOut => msg::machine_unreachable_timeout(&d.name),
-                    DialFailure::Refused(why) => msg::cant_reach_named(&d.name, why),
-                };
-                self.wires.failed(&d.id, proto, words);
+                // A middle's dial for another machine is that machine's
+                // miss, not this one's (net-dial B3, `journal::By::Onward`).
+                if crate::journal::by_now() != crate::journal::By::Onward {
+                    let words = match &e {
+                        DialFailure::TimedOut => msg::machine_unreachable_timeout(&d.name),
+                        DialFailure::Refused(why) => msg::cant_reach_named(&d.name, why),
+                    };
+                    self.wires.failed(&d.id, proto, words);
+                }
                 Err(e)
             }
         }
@@ -11428,7 +11432,7 @@ impl Node {
             // A failure's backoff is the one its caller is about to count
             // (`Node::line_to_inner`); a pairing dial counts none.
             let (failures, retry_s) = match (won, by) {
-                (None, b) if b != crate::journal::By::Pair => {
+                (None, b) if !matches!(b, crate::journal::By::Pair | crate::journal::By::Onward) => {
                     let (n, wait) = self.wires.next_backoff(id, if tunnel { wires::Proto::Tunnel } else { wires::Proto::Main });
                     (n, Some(wait.as_secs()))
                 }
