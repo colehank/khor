@@ -132,19 +132,20 @@ impl Patience {
 }
 
 /// The round trip QUIC has smoothed for the path carrying this wire's
-/// bytes (`PathStats::rtt` via `Connection::paths`): the selected path's,
-/// or the longest of the open ones while none is selected. Zero when the
-/// connection has no path to say — the floors then apply.
+/// bytes (`PathStats::rtt` via `Connection::paths`): the selected path's.
+/// Zero while none is selected, or when the connection has no path to
+/// say — the floors then apply.
+///
+/// ⚠️ It used to take the longest open path's while none was selected
+/// (net-dial B5): a path that stopped answering keeps backing its probe
+/// timer off, and its estimate with it, so the moment between two
+/// selections wrote a dead path's seconds into the slot, and every next
+/// dial to that machine was given twelve of them.
 pub(crate) fn rtt_of(conn: &Connection) -> Duration {
-    let paths = conn.paths();
-    let mut longest = Duration::ZERO;
-    for p in paths.iter() {
-        if p.is_selected() {
-            return p.rtt();
-        }
-        longest = longest.max(p.rtt());
-    }
-    longest
+    conn.paths()
+        .iter()
+        .find(|p| p.is_selected())
+        .map_or(Duration::ZERO, |p| p.rtt())
 }
 
 /// **Asks every path of `conn` whether it is there** (vendor/iroh patch
@@ -312,6 +313,11 @@ struct Slot {
     /// The last round trip measured on this key's wire, kept after the
     /// wire goes: the next dial to that machine is given time for it.
     rtt: Duration,
+    /// Whether `rtt` may still size a dial ([`Wires::last_rtt`]): measured
+    /// on a wire that is live, or that was let go rather than found dead.
+    /// A wire found dead says nothing about the road the next dial takes
+    /// (net-dial B5); the row keeps the number to draw by, at half ink.
+    rtt_fresh: bool,
     /// The last thing that went wrong with this key, in words, and when.
     last_failure: Option<(String, Instant)>,
     /// UDP bytes sent and received on the wires this slot held before
@@ -644,10 +650,7 @@ impl Wires {
         }
         slot.rx = heard_count(&conn);
         slot.heard = Some(now);
-        let rtt = rtt_of(&conn);
-        if !rtt.is_zero() {
-            slot.rtt = rtt;
-        }
+        slot.measured(rtt_of(&conn));
         slot.word = None;
         slot.leaning = None;
         settle(slot, road_now(&conn));
@@ -796,11 +799,16 @@ impl Wires {
 
     /// The last round trip measured to this machine on any wire, for the
     /// next dial's budget. Zero when none was ever measured.
+    ///
+    /// Only a number still worth trusting ([`Slot::rtt_fresh`]): the
+    /// slowest road the last wire to it found dead is not the road the
+    /// next dial takes.
     pub(crate) fn last_rtt(&self, id: &str) -> Duration {
         let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         [Proto::Main, Proto::Tunnel]
             .iter()
             .filter_map(|p| slots.get(&(id.to_owned(), *p)))
+            .filter(|s| s.rtt_fresh)
             .map(|s| s.rtt)
             .max()
             .unwrap_or_default()
@@ -1155,10 +1163,7 @@ impl Wires {
                 slot.heard = Some(now);
                 heard.push(id.clone());
             }
-            let rtt = rtt_of(&conn);
-            if !rtt.is_zero() {
-                slot.rtt = rtt;
-            }
+            slot.measured(rtt_of(&conn));
             let quiet = slot
                 .heard
                 .map_or(Duration::MAX, |h| now.saturating_duration_since(h));
@@ -1334,6 +1339,20 @@ fn drop_wire(slot: &mut Slot, why: Retired) {
     }
     slot.word = None;
     slot.leaning = None;
+    // Found dead: its round trip sizes no dial (net-dial B5).
+    if matches!(why, Retired::Silent | Retired::Unanswered | Retired::Closed | Retired::Network) {
+        slot.rtt_fresh = false;
+    }
+}
+
+impl Slot {
+    /// One sample of the live wire's round trip; zero is no sample.
+    fn measured(&mut self, rtt: Duration) {
+        if !rtt.is_zero() {
+            self.rtt = rtt;
+            self.rtt_fresh = true;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1469,6 +1488,26 @@ mod tests {
         w.failed("m", Proto::Main, "no".into());
         let wait = w.backing_off("m").expect("a wait");
         assert!(wait <= BACKOFF_FIRST, "heard from since: from five seconds again: {wait:?}");
+    }
+
+    /// **The round trip of a wire found dead sizes no dial** (net-dial
+    /// B5): kept for the row to draw by, not trusted by the next dial. A
+    /// wire let go on purpose keeps it.
+    #[test]
+    fn a_dead_wires_round_trip_does_not_size_the_next_dial() {
+        let w = Wires::default();
+        let measured = |w: &Wires, proto| {
+            let mut slots = w.slots.lock().unwrap();
+            slots.entry(("m".to_owned(), proto)).or_default().measured(Duration::from_secs(5));
+        };
+        measured(&w, Proto::Main);
+        assert_eq!(w.last_rtt("m"), Duration::from_secs(5), "measured: trusted");
+        drop_wire(w.slots.lock().unwrap().get_mut(&("m".to_owned(), Proto::Main)).unwrap(), Retired::Silent);
+        assert_eq!(w.last_rtt("m"), Duration::ZERO, "found dead: not trusted");
+        assert_eq!(w.link("m").last_rtt, Some(Duration::from_secs(5)), "but still the row's number");
+        measured(&w, Proto::Tunnel);
+        drop_wire(w.slots.lock().unwrap().get_mut(&("m".to_owned(), Proto::Tunnel)).unwrap(), Retired::NewEars);
+        assert_eq!(w.last_rtt("m"), Duration::from_secs(5), "let go on purpose: still trusted");
     }
 
     /// **A middle's own word on the far machine** (net-dial B3): a wait

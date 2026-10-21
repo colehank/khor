@@ -798,6 +798,28 @@ pub async fn deafen(root: &std::path::Path) -> bool {
 /// Per-device budget for one sync visit; the far side may simply be off.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// **The longest any dial is given: under QUIC's own idle timeout (30 s)**
+/// (net-dial B5). It was 60 s, so a machine once measured slow (12 × its
+/// round trip) was dialled until QUIC gave up first, and the dial ended
+/// on QUIC's 「timed out」 at 30 s rather than on khor's own words —
+/// every dial to turing while it was stuck, from every machine.
+const DIAL_MOST: Duration = Duration::from_secs(25);
+
+/// How long a dial to a machine is given: [`DIAL_TIMEOUT`], or twelve of
+/// the last round trip measured to it when that is longer, never past
+/// [`DIAL_MOST`]; short for one its relay just said left; and never past
+/// the caller's own deadline `by`.
+fn dial_within(last_rtt: Duration, gone_lately: bool, by: Option<std::time::Instant>) -> Duration {
+    let mut within = DIAL_TIMEOUT.max(last_rtt.saturating_mul(12)).min(DIAL_MOST);
+    if gone_lately {
+        within = within.min(Duration::from_secs(3).max(last_rtt.saturating_mul(6)));
+    }
+    if let Some(by) = by {
+        within = within.min(by.saturating_duration_since(std::time::Instant::now()));
+    }
+    within
+}
+
 /// The same budget in whole seconds, for the one place a person is told
 /// what a wait could cost before it starts (`khor accept` announcing the
 /// round it is about to drive — `Node::accept`).
@@ -3104,7 +3126,7 @@ impl Node {
         // at 600 ms / 5 % loss), so the redial is cut to what is left,
         // and the face reads 「无法连接」 rather than 「未在 30 秒内完成」.
         let by = std::time::Instant::now() + ipc::DEADLINE_FAR - Duration::from_secs(2);
-        match self.ask_early(ep, d, req).await {
+        match self.ask_early(ep, d, req, Some(by)).await {
             Early::Answered(resp) => return Ok(resp),
             Early::Failed(e) => return Err(unreached_words(&d.name, e)),
             Early::NotTaken => {}
@@ -3141,7 +3163,13 @@ impl Node {
     /// since this resident started, or the far side rejected the early
     /// data); the wire this made, if any, is held, and the ask goes on
     /// as usual over it.
-    async fn ask_early(&self, ep: &iroh::Endpoint, d: &DeviceInfo, req: &Request) -> Early {
+    async fn ask_early(
+        &self,
+        ep: &iroh::Endpoint,
+        d: &DeviceInfo,
+        req: &Request,
+        by: Option<std::time::Instant>,
+    ) -> Early {
         // Resting: not taken here, and refused by `line_to_inner` after.
         if !req.rides_early()
             || self.paused()
@@ -3166,15 +3194,10 @@ impl Node {
         let Ok(frame) = proto::encode(req) else {
             return Early::NotTaken;
         };
-        let mut within = DIAL_TIMEOUT
-            .max(self.wires.last_rtt(&d.id).saturating_mul(12))
-            .min(Duration::from_secs(60));
-        // As `dial`: short for a machine its relay just said left.
-        if self.wires.gone_lately(&d.id) {
-            within = within.min(
-                Duration::from_secs(3).max(self.wires.last_rtt(&d.id).saturating_mul(6)),
-            );
-        }
+        // As `dial`, and inside the caller's deadline like any dial
+        // (net-dial B5: an early dial took its own whole budget, past the
+        // face's wait).
+        let within = dial_within(self.wires.last_rtt(&d.id), self.wires.gone_lately(&d.id), by);
         let started = std::time::Instant::now();
         let attempt = async {
             let connecting = ep
@@ -9921,7 +9944,7 @@ impl Node {
         // (`Node::ask_early`): it is a reading, so after a wake or a
         // dropped wire the round's first answer comes a round trip sooner.
         let (kinds, opening) = self.opening(d)?;
-        let early = match self.ask_early(ep, d, &opening).await {
+        let early = match self.ask_early(ep, d, &opening, None).await {
             Early::Answered(resp) => Some(resp),
             Early::Failed(e) => return Err(unreached(e)),
             Early::NotTaken => None,
@@ -11548,24 +11571,34 @@ impl Node {
         // to answer a handshake (`wires::Patience`); one never measured, or
         // a fast one, the budget dials always had — and never past the
         // caller's own deadline, when it has one.
-        let mut within = DIAL_TIMEOUT
-            .max(self.wires.last_rtt(id).saturating_mul(12))
-            .min(Duration::from_secs(60));
         // A machine its relay just said left, and that has not been heard
         // from since: a short dial — long enough for one that came straight
         // back on a new connection, not the full wait on one that is gone.
-        if self.wires.gone_lately(id) {
-            within = within.min(
-                Duration::from_secs(3).max(self.wires.last_rtt(id).saturating_mul(6)),
-            );
-        }
-        if let Some(by) = by {
-            within = within.min(by.saturating_duration_since(std::time::Instant::now()));
-        }
+        let within = dial_within(self.wires.last_rtt(id), self.wires.gone_lately(id), by);
         // This machine's own home among the relays tried (net-f): two
         // machines homed on the same public relay meet there even while
         // each one's row still names only its own list.
         self.dial_with(ep, id, direct, &self.published_relays(ep), alpn, within).await
+    }
+}
+
+#[cfg(test)]
+mod dial_budget {
+    use super::*;
+
+    /// **A dial never outlasts QUIC's own idle timeout** (net-dial B5): a
+    /// machine once measured slow — 2.6 s on a relay, turing 2026-10-20 —
+    /// was given 12 × that, capped at 60 s, so QUIC's 30 s 「timed out」
+    /// ended every dial to it before khor's own deadline could.
+    #[test]
+    fn a_slow_round_trip_once_measured_does_not_outlast_quic() {
+        let quic_idle = Duration::from_secs(30);
+        assert!(dial_within(Duration::from_millis(2600), false, None) < quic_idle);
+        assert_eq!(dial_within(Duration::ZERO, false, None), DIAL_TIMEOUT, "nothing measured: the budget dials always had");
+        assert_eq!(dial_within(Duration::from_millis(1500), false, None), Duration::from_secs(18), "a slow road that answers gets its twelve");
+        assert_eq!(dial_within(Duration::from_millis(100), true, None), Duration::from_secs(3), "its relay said it left: short");
+        let by = std::time::Instant::now() + Duration::from_secs(2);
+        assert!(dial_within(Duration::from_secs(1), false, Some(by)) <= Duration::from_secs(2), "inside the caller's deadline");
     }
 }
 
