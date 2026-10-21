@@ -227,3 +227,15 @@ khor devices                                                   # 五台都在线
 - 集群：hinton 编译安装，lecun／turing 的 keeper 自动换新。实际 5467 监听 PID 为 hinton 2232200、lecun 2606733、turing 67544；三台 `/proc/<pid>/exe` 的 SHA-256 均为 `9028710b41703d979834de15ed79e50120109f031aa4c461951f426af784b613`，exe 内及 HTTP 收据一致，10 个既有会话保留、无新增失败、三台直连。编译前移开远端旧缓存产物，防止脚本管道失败误取旧文件；没有反复安装或手工重启另外两台。
 - iOS：移开旧静态库强制重编，新 `libapp.a`、归档 App 的时间、完整收据和签名通过。Tauri 遇到已记录的 `exportArchive Copy failed`，系统 PATH 导出上传于 `2026-10-21 02:50:29 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，Apple 正在处理。两处源工程签名文件已按构建前基线恢复。
 - 日志、签名、会话快照及收据：`/Volumes/disk0/khor-ship-20261021-workspace-terminal/`。清理三条已合并且无进程引用的 worktree；按包身份和无引用核验，清理两份 Khor Xcode 导出暂存、旧静态库备份和本轮集群源码导出，共 821,207,636 字节。保留当前静态库、正式归档与测试证据；系统盘约余 21 GiB、外挂盘约余 96 GiB，未清系统 swap 或全量 target。
+
+## 发布记录：2026-10-21（文件动作、原生候选、编辑历史与 Codex 宿主识别）
+
+- 最终代码提交：`f57eddef`。合入文件对象动作与预览组合、推荐菜单材质、原生网页候选叠层、Mac 原生撤销／重做与开放标签历史、药丸长按防抖、暂停 Codex 客户端识别。旧 Codex 子代理与药丸暂停参数分支已等价进入 main；旧 Lab 草稿没有覆盖后续正式实现。本次 UI 收据：`khor-ui-assets:/assets/index-BBefLb8C.js`。
+- 文件树、普通目录和搜索结果统一对象菜单；本机桌面使用按系统命名的文件管理器定位。打开文件的菜单保留内容动作，预览与更多合为一块玻璃；目录重命名迁移开放标签及草稿，删除只关闭实际后代。原生候选使用共享 lease 与组件快照；跨 WebView 的材质采样不可用处采用已有厚底。
+- 主干默认前端检查、TypeScript、生产构建、gates（79 scripts / 72 entries）通过；文件动作六种场景、Chrome／WebKit 菜单材质、16 项编辑历史、真实私有 Session 的定位／重命名／删除与前缀相似目录回归通过。内容门改用私有冷 Vite 缓存，避免共享优化缓存和其他 Lab 引起重载；未放宽产品断言。原生菜单协议 3 项、系统定位 6 项通过。Codex 串行相关回归最终 54 项通过、1 项显式忽略；早先并发锁夹具失败与其他首轮日志仍保留。
+- 首次发布后真实核验发现 SJTWorkshop 仍回退成 shell：选择层已排除暂停客户端，最终聚合层却仍把暂停客户端计入 unbound。补完整宿主五状态回归先红后绿，再提交 `f57eddef` 并重建各端。最终真实 CLI 已将 `shell/75187ac565c2415a` 列入 Codex；未修改其进程、终端或识别配置。第一轮发布证据标记为中间版本，不用同一 UI 收据代替后端更新证明。
+- Mac：最终 CLI／GUI 签名与完整 UI 收据通过；主窗口 95611 → 49317，仅一枚主窗口，实际 5467 监听 PID 一致。11 个原有辅助进程及 11 个会话全部保留，新增失败 0。最终 CLI SHA-256 为 `7d064de7352f9040327e8832d6804acce019dd21162eefb1410d0dc23246b4b7`，GUI 为 `ffa72559fd00c7e94df2a650f959907476f3cc63d496ac7914c7800a1af0eed0`。
+- 集群：hinton 最终构建安装 `f57eddef`，lecun／turing 的 keeper 自动换新；实际 5467 监听 PID 分别为 3402313／2880504／1069047。运行 exe、安装文件与新产物 SHA-256 均为 `7bfedaae90b34ff4866c2f9751da3fe505a8d418012336c5a4a859c8d0e7f2c1`，二进制／HTTP 收据一致；远端 live.rs 与指定提交逐字节校验通过。11 个既有会话均保留，新增失败 0；Mac CLI 确认三台直连。没有手动重启另外两台或重复安装同一代码。
+- iOS：首轮构建在发现聚合遗漏后取消，未上传。最终使用验证过且未变的 dist，CLI 临时覆盖 beforeBuildCommand=true，采用 `--archive-only` 重建新 Rust 并归档，避免重复前端构建影响并行编译；新静态库及归档的时间、完整收据和签名通过。系统 PATH 独立导出上传于 `2026-10-21 21:40:15 +08:00` 返回 Upload succeeded／EXPORT SUCCEEDED，App Store Connect 显示正在处理；上传版本为 0.1.14（55）。两处临时签名工程配置按构建前基线恢复。
+- 证据与日志：`/Volumes/disk0/khor-ship-20261021-all/`、`/Volumes/disk0/khor-ship-20261021-all-ui/`。按归属和无引用核验，清理本轮 Khor Xcode 导出副本、旧静态库及两份本机源码 export，共 778,626,738 字节；空且无包身份证据的暂存目录保留。两个远端旧产物 backup 因部分进程 fd 权限限制未能完整排除引用，保留在 hinton /tmp（约 254 MB），不占 Mac 系统盘；target、最新静态库、归档、测试证据及用户数据保留。系统盘约余 18 GiB、外挂盘约余 37 GiB，未清系统 swap 或全量 target。
+- Windows／Linux 文件管理器 GUI、iPhone 系统分享与触控／输入法／原生网页叠层仍待对应实机验收；编译、协议或浏览器替身通过不代表这些操作已验收。
