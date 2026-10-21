@@ -31,7 +31,7 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
     <div ref={setListSeat} className="mobile-content-page-list"/>
     {desktop?<div data-content-page-bar className="session-content-page-bar">
       <ContentScope value="browser" onChange={browse}/>
-      <PageField suggestAddresses={false} steps={false} tab={handle} machine={device} devices={devices} at={draft} onDraft={setDraft} first={device.id} autoFocus={editing} onEditingChange={setEditing} onMachine={d=>onPoint(d,draft)} onGo={(url,d)=>go(d,url)}/>
+      <PageField steps={false} tab={handle} machine={device} devices={devices} at={draft} onDraft={setDraft} first={device.id} autoFocus={editing} onEditingChange={setEditing} onMachine={d=>onPoint(d,draft)} onGo={(url,d)=>go(d,url)}/>
       <DropdownMenu><DropdownMenuTrigger asChild><GlassCircle data-content-page-more aria-label={gui.rail_more}><IconMore/></GlassCircle></DropdownMenuTrigger><DropdownMenuContent className="[&_svg]:size-nav-glyph" align="end">
         <DropdownMenuItem disabled={steps?.back===false} onSelect={()=>step('back')}><IconBack/>{gui.page_back}</DropdownMenuItem>
         <DropdownMenuItem disabled={steps?.forward===false} onSelect={()=>step('forward')}><IconForward/>{gui.page_forward}</DropdownMenuItem>
@@ -40,7 +40,7 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
       <GlassCircle data-content-close disabled={tab.pinned} aria-label={gui.close_tab} onClick={close}><IconClose/></GlassCircle>
     </div>:<div data-content-deck className="mobile-content-deck">
       <div className="glass mobile-content-pill">
-        {editing?<div className="mobile-content-page-editor"><PageField suggestAddresses={false} tab={handle} machine={device} devices={devices} at={draft} onDraft={setDraft} first={device.id} steps={false} autoFocus inPill listSeat={listSeat} onLeave={()=>setEditing(false)} onMachine={d=>onPoint(d,draft)} onGo={(url,d)=>go(d,url)}/></div>:<>
+        {editing?<div className="mobile-content-page-editor"><PageField tab={handle} machine={device} devices={devices} at={draft} onDraft={setDraft} first={device.id} steps={false} autoFocus inPill listSeat={listSeat} onLeave={()=>setEditing(false)} onMachine={d=>onPoint(d,draft)} onGo={(url,d)=>go(d,url)}/></div>:<>
           <div className="mobile-page-identity"><ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={tab.title||tab.url.replace(/^https?:\/\//,'').replace(/\/$/,'')} onTitle={()=>setEditing(true)}/></div>
         </>}
       </div>

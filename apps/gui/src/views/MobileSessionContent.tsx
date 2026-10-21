@@ -91,13 +91,13 @@ export function ContentPicker({row,devices,navigation,onOpen,face,content,onClos
  const [listSeat,setListSeat]=useState<HTMLDivElement|null>(null);
  const places=usePlaces(PAGES);
  const edit=(editing:boolean)=>navigation.edit(fieldKey,{editing});
- const endEdit=()=>{(document.activeElement as HTMLElement|null)?.blur();navigation.edit(fieldKey,{editing:false,exitPrompt:undefined});};
+ const endEdit=()=>{const active=document.activeElement;if(active instanceof HTMLElement&&active.matches('input,textarea,[contenteditable="true"]'))active.blur();navigation.edit(fieldKey,{editing:false,exitPrompt:undefined});};
  const directory=(d:DeviceRow,path:string)=>{navigation.update(session,{scope:{device:d.id,root:path},query:''});endEdit();};
  const open=(d:DeviceRow,path:string,view:'file'|'page',line?:number|null)=>{endEdit();onOpen(d,path,view,line);};
  const source=(source:ContentSource)=>{endEdit();setSearching(false);navigation.update(session,{source});};
  const setQuery=(query:string)=>navigation.update(session,{query});
  const stopSearch=()=>{(document.activeElement as HTMLElement|null)?.blur();setSearching(false);setQuery('');};
- const scope=<ContentScope value={state.source} onChange={source} inPill={!desktop}/>;
+ const scope=<ContentScope value={state.source} onChange={source} inPill={!desktop} segmented={desktop}/>;
  const newAction=<DropdownMenu><DropdownMenuTrigger asChild><GlassItem data-content-directory-new aria-label={gui.new_item}><IconPlus/></GlassItem></DropdownMenuTrigger><DropdownMenuContent side={desktop?'bottom':'top'} align="end" onCloseAutoFocus={e=>{const kind=pending.current;if(!kind)return;e.preventDefault();pending.current=null;setQuery('');setSearching(false);setMake({kind,at:Date.now()});}}><DropdownMenuItem onSelect={()=>{pending.current='file';}}>{gui.file_new}</DropdownMenuItem><DropdownMenuItem onSelect={()=>{pending.current='dir';}}>{gui.dir_new}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
  const directoryActions=state.source==='workspace'&&<GlassCapsule role="group" aria-label={gui.content_workspace_actions}><GlassItem data-content-directory-search aria-label={searching?gui.search_clear:gui.tree_search} onClick={()=>{if(searching)stopSearch();else{edit(false);setSearching(true);}}}>{searching?<IconClose/>:<IconSearch/>}</GlassItem>{newAction}</GlassCapsule>;
  const address=exit&&<PageField suggestAddresses={false} tab={fieldKey} machine={exit} devices={devices} at={state.address} onDraft={address=>navigation.update(session,{address})} first={home?.id} machinePrompt={field.exitPrompt} steps={false} autoFocus={!desktop&&editing} inPill={!desktop} listSeat={desktop?undefined:listSeat} onLeave={()=>edit(false)} onEditingChange={edit} onMachine={d=>{navigation.update(session,{exit:d.id});if(field.exitPrompt!==undefined)open(d,navigation.get(session).address,'page');}} onGo={(url,d)=>{navigation.update(session,{exit:d.id,address:url});open(d,url,'page');}}/>;

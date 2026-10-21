@@ -38,6 +38,8 @@
 | `npm run terminal-colors` | 统一终端外观解析：浅深 ANSI、自动／固定／DIY、保护默认与关闭迁移、跨窗口、重载、CSS 表面同步、预览隔离和标准扩展色表；DIM 完整目标、按格子取色的光标、渲染器回退、缓冲与调色板隔离 |
 | `npm run avatar-ring` | 正式 FaceMark / TabStrip 的 102 个列表、18／22 标签与 72 大头像状态环：头像和光环 SVG 共用 viewport；macOS 原生 WKWebView 在四个分数位置的像素质心同心检查，保留截图。其它平台仅验 Chrome 几何，不宣称原生通过 |
 | `npm run terminal-drop` | 正式拖放监听：Mac/GTK 逻辑坐标与 Windows 缩放、原生空路径接回内部源机器、dragend/IPC 顺序、取消/离开/新拖清理、DOM/原生去重、保留终端共享分发。真实 Finder 与跨 app 拖动另做原生验收 |
+| `npm run native-menu` | 路径导入实际生产 Rust 协议的轻量隔离 Cargo 测试：owner/lease、旧关闭／尺寸／点击、当前候选验证和非法几何；离线、可指定外置临时目录，不链接 Tauri，不纳入默认前端测试 |
+| `npm run native-menu-ui` | 正式候选组件与可信快照：共享行样式、SVG／资源边界、限高内部滚动、lease 更新、迟到回执、选择、关闭和监听清理；原生 API 测试边界不代表真实平台叠层已通过 |
 | `npm run appearance` | 真实终端与设置的预设、DIY、JSON、跨窗口同步；缓冲/滚动/PTY 不重建；背景只合成一次；能力与输入边界 |
 | `npm run scroll-target` | 真 xterm 的内层 mouse 能力、分页累计/反向/停歇、触摸与滚轮不重复输入；连续输出期间每次手势只刷新一次 tmux |
 

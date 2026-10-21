@@ -26,10 +26,10 @@
  *    address, selected whole; pressing the face changes the machine.
  *
  * **Where the list is drawn**: in the app, on the wide face, in the app's
- * small menu window (`useFloatedMenu`), because the page's native webview
- * paints over this page's DOM; on the deck, in the seat over it
- * (`listSeat`), in the flow, so the page gives way rather than covering
- * it; elsewhere under the field. ⚠️ 墓碑 (the redesign 2026-10-02 →
+ * native presenter (`useFloatedMenu`), because the page's native webview
+ * paints over this page's DOM. Desktop uses the shared menu window; iOS
+ * hosts an inert snapshot of that same component above the deck. If a
+ * presenter is unavailable, `listSeat` remains the in-page fallback. ⚠️ 墓碑 (the redesign 2026-10-02 →
  * sb-a): a menu of machines (`DropdownMenu`) on the face, and on the deck
  * a row of machine chips over it with the face out of the field (UX-42
  * row 13).
@@ -359,7 +359,7 @@ export function PageField({
       if (d) pick(d);
     } else if (key.startsWith("u:")) go(key.slice(2));
   };
-  const floated = useFloatedMenu(field, listSeat === undefined ? rows : null, press, listSeat === undefined);
+  const floated = useFloatedMenu(field, rows, press, true, {above: listSeat !== undefined, onDismiss: leave});
 
   const host = (() => {
     try {
@@ -566,7 +566,7 @@ export function PageField({
         </label>
         {!floated && listSeat === undefined && list}
       </div>
-      {listSeat && list && createPortal(<div data-page-list>{list}</div>, listSeat)}
+      {!floated && listSeat && list && createPortal(<div data-page-list>{list}</div>, listSeat)}
     </div>
   );
 }

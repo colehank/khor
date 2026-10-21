@@ -1137,6 +1137,7 @@ pub fn open(
         });
         if reused {
             deck_follows(tab);
+    crate::menu_overlay::ios::raise();
             return Ok(());
         }
         let store = store_for(exit).ok_or_else(|| "no data store".to_string())?;
@@ -1185,6 +1186,7 @@ pub fn open(
         let _: () = msg_send![&*view, setHidden: !crate::page_is_wanted(tab)];
         let parent: *mut AnyObject = msg_send![face, superview];
         let _: () = msg_send![parent, addSubview: &*view];
+            crate::menu_overlay::ios::raise();
         let scroll: Retained<AnyObject> = msg_send![&*view, scrollView];
         WATCH.with(|w| {
             let pan:*mut AnyObject=msg_send![&*scroll,panGestureRecognizer];
@@ -1232,6 +1234,7 @@ pub fn place(face: *mut AnyObject, tab: &str, at: PageBox) {
         }
     });
     deck_follows(tab);
+    crate::menu_overlay::ios::raise();
 }
 
 pub fn hide(tab: &str, hidden: bool) {
@@ -1252,6 +1255,7 @@ pub fn hide(tab: &str, hidden: bool) {
         }
     }
     deck_follows(tab);
+    crate::menu_overlay::ios::raise();
 }
 
 /// Stops watching a page's scroll view and its loading, before the page goes.
@@ -1799,6 +1803,7 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         let parent: *mut AnyObject = msg_send![&*page, superview];
         if !parent.is_null() {
             let _: () = msg_send![parent, addSubview: &*view];
+            crate::menu_overlay::ios::raise();
         }
         // The material builds its layers once it is in a window: its veil
         // is taken off after that (measured: taken before, it stayed).
