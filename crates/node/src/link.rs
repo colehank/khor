@@ -3016,9 +3016,13 @@ impl Node {
             Err(e) => {
                 // A middle's dial for another machine is that machine's
                 // miss, not this one's (net-dial B3, `journal::By::Onward`).
-                if crate::journal::by_now() != crate::journal::By::Onward {
+                // A machine that refused is resting, not down: left alone
+                // until it dials back (net-dial B4).
+                if let DialFailure::Asleep(_) = &e {
+                    self.wires.asleep(&d.id);
+                } else if crate::journal::by_now() != crate::journal::By::Onward {
                     let words = match &e {
-                        DialFailure::TimedOut => msg::machine_unreachable_timeout(&d.name),
+                        DialFailure::TimedOut | DialFailure::Asleep(_) => msg::machine_unreachable_timeout(&d.name),
                         DialFailure::Refused(why) => msg::cant_reach_named(&d.name, why),
                     };
                     self.wires.failed(&d.id, proto, words);
@@ -3057,8 +3061,12 @@ impl Node {
         match &out {
             Ok(_) => self.wires.heard(&line.id, line.proto, &line.conn),
             Err(Miss::Unreached(_)) => {
-                let why = if line.conn.close_reason().is_some() {
-                    wires::Retired::Closed
+                let why = if let Some(end) = line.conn.close_reason() {
+                    if wires::resting_close(&end) {
+                        wires::Retired::Asleep
+                    } else {
+                        wires::Retired::Closed
+                    }
                 } else {
                     wires::Retired::Unanswered
                 };
@@ -3173,14 +3181,16 @@ impl Node {
                 .connect_with_opts(addr, ALPN, Default::default())
                 .await
                 .map_err(|e| DialFailure::Refused(e.to_string()))?;
+            let of_connecting = |e: iroh::endpoint::ConnectingError| match &e {
+                iroh::endpoint::ConnectingError::ConnectionError { source, .. } => DialFailure::of_end(Some(source), &e),
+                _ => DialFailure::Refused(e.to_string()),
+            };
             let early = match connecting.into_0rtt() {
                 Ok(early) => early,
                 // Nothing to resume: an ordinary handshake, then the ask
                 // as usual on the wire it made.
                 Err(connecting) => {
-                    let conn = connecting
-                        .await
-                        .map_err(|e| DialFailure::Refused(e.to_string()))?;
+                    let conn = connecting.await.map_err(of_connecting)?;
                     return Ok((conn, None));
                 }
             };
@@ -3200,11 +3210,7 @@ impl Node {
                     proto::answer(&bytes).ok()
                 })
             };
-            match early
-                .handshake_completed()
-                .await
-                .map_err(|e| DialFailure::Refused(e.to_string()))?
-            {
+            match early.handshake_completed().await.map_err(of_connecting)? {
                 iroh::endpoint::ZeroRttStatus::Accepted(conn) => Ok((conn, Some(asked))),
                 // Rejected: the far side kept nothing of it; asked again
                 // on the wire, which is up.
@@ -3218,10 +3224,12 @@ impl Node {
         {
             let (won, error) = match &outcome {
                 Ok(Ok(_)) => (Some(crate::journal::Won::Early), None),
-                Ok(Err(DialFailure::Refused(why))) => (None, Some(crate::journal::scrub(why))),
+                Ok(Err(DialFailure::Refused(why) | DialFailure::Asleep(why))) => (None, Some(crate::journal::scrub(why))),
                 _ => (None, None),
             };
+            let asleep = matches!(outcome, Ok(Err(DialFailure::Asleep(_))));
             let (failures, retry_s) = match won {
+                None if asleep => (0, None),
                 None => {
                     let (n, wait) = self.wires.next_backoff(&d.id, wires::Proto::Main);
                     (n, Some(wait.as_secs()))
@@ -3241,6 +3249,7 @@ impl Node {
                     error,
                     failures,
                     retry_s,
+                    asleep,
                 },
             );
         }
@@ -3265,10 +3274,11 @@ impl Node {
                 }
             }
             Ok(Err(e)) => {
-                self.wires.failed(&d.id, wires::Proto::Main, msg::cant_reach_named(&d.name, match &e {
-                    DialFailure::Refused(why) => why,
-                    DialFailure::TimedOut => "",
-                }));
+                match &e {
+                    DialFailure::Asleep(_) => self.wires.asleep(&d.id),
+                    DialFailure::Refused(why) => self.wires.failed(&d.id, wires::Proto::Main, msg::cant_reach_named(&d.name, why)),
+                    DialFailure::TimedOut => self.wires.failed(&d.id, wires::Proto::Main, msg::cant_reach_named(&d.name, "")),
+                }
                 Early::Failed(e)
             }
             Err(_) => {
@@ -8782,8 +8792,8 @@ impl Node {
                         tried.push(match (is_origin, e) {
                             (true, DialFailure::TimedOut) => msg::take_sender_down(&d.name),
                             (false, DialFailure::TimedOut) => msg::take_holder_down(&d.name),
-                            (true, DialFailure::Refused(why)) => msg::take_sender_failed(&d.name, why),
-                            (false, DialFailure::Refused(why)) => msg::take_holder_failed(&d.name, why),
+                            (true, DialFailure::Refused(why) | DialFailure::Asleep(why)) => msg::take_sender_failed(&d.name, why),
+                            (false, DialFailure::Refused(why) | DialFailure::Asleep(why)) => msg::take_holder_failed(&d.name, why),
                         });
                         continue;
                     }
@@ -9219,7 +9229,7 @@ impl Node {
                     msg::no_relay_reached().to_string()
                 });
             }
-            Err(DialFailure::Refused(why)) => {
+            Err(DialFailure::Refused(why) | DialFailure::Asleep(why)) => {
                 probe.abort();
                 return Err(msg::inviter_unreachable(why));
             }
@@ -9905,7 +9915,7 @@ impl Node {
     async fn sync_device(&self, ep: &iroh::Endpoint, d: &DeviceInfo) -> Result<String, String> {
         let unreached = |e| match e {
             DialFailure::TimedOut => msg::dial_timed_out().to_string(),
-            DialFailure::Refused(why) => msg::cant_reach_plain(why),
+            DialFailure::Refused(why) | DialFailure::Asleep(why) => msg::cant_reach_plain(why),
         };
         // **The round's opening question rides a redial's handshake**
         // (`Node::ask_early`): it is a reading, so after a wake or a
@@ -11089,7 +11099,7 @@ async fn wait_for(job: &crate::road::Job) -> Result<(u64, Vec<String>), String> 
 fn unreached_words(name: &str, e: DialFailure) -> String {
     match e {
         DialFailure::TimedOut => msg::machine_unreachable_timeout(name),
-        DialFailure::Refused(why) => msg::cant_reach_named(name, why),
+        DialFailure::Refused(why) | DialFailure::Asleep(why) => msg::cant_reach_named(name, why),
     }
 }
 
@@ -11347,6 +11357,32 @@ pub enum RoadsUnread {
 pub(crate) enum DialFailure {
     TimedOut,
     Refused(String),
+    /// The far machine refused the connection: it is paused or in the
+    /// background (`wires::resting_close`; net-dial B4). Its words are
+    /// khor's, not noq's.
+    Asleep(String),
+}
+
+impl DialFailure {
+    /// A connect error as a dial's failure: the far side resting is
+    /// [`DialFailure::Asleep`], anything else refused.
+    fn of_connect(e: &iroh::endpoint::ConnectError) -> DialFailure {
+        use iroh::endpoint::{ConnectError, ConnectingError};
+        let end = match e {
+            ConnectError::Connecting { source: ConnectingError::ConnectionError { source, .. }, .. } => Some(source),
+            ConnectError::Connection { source, .. } => Some(source),
+            _ => None,
+        };
+        DialFailure::of_end(end, e)
+    }
+
+    fn of_end(end: Option<&iroh::endpoint::ConnectionError>, e: &dyn std::fmt::Display) -> DialFailure {
+        if end.is_some_and(wires::resting_close) {
+            DialFailure::Asleep(msg::peer_resting().to_owned())
+        } else {
+            DialFailure::Refused(e.to_string())
+        }
+    }
 }
 
 impl Node {
@@ -11428,11 +11464,12 @@ impl Node {
         }
         let tunnel = alpn == khor_net::endpoint::TUNNEL_ALPN;
         let by = crate::journal::by_now();
-        let note = |won: Option<crate::journal::Won>, error: Option<String>| {
+        let note = |won: Option<crate::journal::Won>, error: Option<String>, asleep: bool| {
             // A failure's backoff is the one its caller is about to count
-            // (`Node::line_to_inner`); a pairing dial counts none.
+            // (`Node::line_to_inner`); a pairing dial counts none, nor a
+            // middle's for another machine, nor one the far side refused.
             let (failures, retry_s) = match (won, by) {
-                (None, b) if !matches!(b, crate::journal::By::Pair | crate::journal::By::Onward) => {
+                (None, b) if !asleep && !matches!(b, crate::journal::By::Pair | crate::journal::By::Onward) => {
                     let (n, wait) = self.wires.next_backoff(id, if tunnel { wires::Proto::Tunnel } else { wires::Proto::Main });
                     (n, Some(wait.as_secs()))
                 }
@@ -11451,6 +11488,7 @@ impl Node {
                     error,
                     failures,
                     retry_s,
+                    asleep,
                 },
             );
         };
@@ -11464,20 +11502,29 @@ impl Node {
         loop {
             tokio::select! {
                 () = &mut deadline => {
-                    note(None, refused.map(|why| crate::journal::scrub(&why)));
+                    note(None, refused.map(|why| crate::journal::scrub(&why)), false);
                     return Err(DialFailure::TimedOut);
                 }
                 joined = roads.join_next() => match joined {
                     Some(Ok((won, Ok(conn)))) => {
-                        note(Some(won), None);
+                        note(Some(won), None, false);
                         crate::roads::replied(&self.roads, id, started.elapsed());
                         crate::roads::watch(&self.roads, id, &conn, self.wires.journal.get().cloned(), &self.carry);
                         return Ok(conn);
                     }
-                    Some(Ok((_, Err(e)))) => refused = Some(e.to_string()),
+                    // **Refused is the far machine's own answer** (net-dial
+                    // B4): whichever road carried it, the machine is there
+                    // and resting, and the other road would hear the same.
+                    Some(Ok((_, Err(e)))) => match DialFailure::of_connect(&e) {
+                        DialFailure::Asleep(why) => {
+                            note(None, Some(why.clone()), true);
+                            return Err(DialFailure::Asleep(why));
+                        }
+                        _ => refused = Some(e.to_string()),
+                    },
                     Some(Err(_)) => {}
                     None => {
-                        note(None, refused.as_deref().map(crate::journal::scrub));
+                        note(None, refused.as_deref().map(crate::journal::scrub), false);
                         return Err(match refused {
                             Some(why) => DialFailure::Refused(why),
                             None => DialFailure::TimedOut,

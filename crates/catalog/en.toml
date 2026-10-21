@@ -1265,6 +1265,7 @@ peer-paused-refusal = "paused from this side — to resume: khor resume <machine
 # A phone resting in the background asks nobody (net-r): its own
 # dials wait for the front, as the dials to it are refused.
 paused-no-dial = "This machine is paused and does not connect to other machines. To resume: khor resume"
+peer-resting = "it is paused or in the background and takes no connections"
 resting-no-dial = "The app is in the background and does not connect to other machines; it connects again when it returns to the front"
 # Reaching for pairing while paused. Both verbs need to send and
 # receive, so this is not 「it failed」 but 「this machine is not doing
@@ -1612,6 +1613,7 @@ journal-by-hop = "to a middle machine, for forwarding"
 journal-by-onward = "forwarding for another machine"
 journal-by-pair = "pairing"
 journal-dial-ok = "Dial succeeded ({0}) in {1} ms, {2}"
+journal-dial-refused = "Dial refused ({0}), {1} ms: it is paused or in the background; not dialled again until it connects"
 journal-dial-failed = "Dial failed ({0}) after {1} ms: {2}"
 journal-won-direct = "the attempt with addresses answered first"
 journal-won-relay = "the relay-only attempt answered first"
@@ -1637,6 +1639,7 @@ journal-why-network = "no answer after a network change"
 journal-why-replaced = "let go on purpose"
 journal-why-paused = "paused"
 journal-why-suspended = "app went to the background"
+journal-why-asleep = "it went to the background or paused"
 journal-why-departed = "its relay said it left"
 journal-departed = "Its relay reported it disconnected"
 journal-inbound = "It connected to this machine"

@@ -231,6 +231,9 @@ pub(crate) enum Retired {
     Suspended,
     /// The relay said the far machine left it (`Wires::departed`).
     Departed,
+    /// The far machine closed it going to the background or pausing
+    /// (`suspended`, `paused`): it is resting, not dead (net-dial B4).
+    Asleep,
 }
 
 impl Retired {
@@ -245,6 +248,7 @@ impl Retired {
             Retired::Paused => "paused",
             Retired::Suspended => "suspended",
             Retired::Departed => "departed",
+            Retired::Asleep => "asleep",
         }
     }
 
@@ -258,7 +262,26 @@ impl Retired {
             Retired::Paused => b"paused",
             Retired::Suspended => b"suspended",
             Retired::Departed => b"departed",
+            Retired::Asleep => b"closed",
         }
+    }
+}
+
+/// **Whether a connection's end says the far machine is resting** (net-dial
+/// B4): it closed the connection going to the background or pausing (the
+/// reasons [`Retired::Suspended`] and [`Retired::Paused`] put on the wire),
+/// or it refused a new one (a dropped noq `Incoming` is CONNECTION_REFUSED,
+/// what a paused or backgrounded machine does with every dial). Either way
+/// it will dial when it is back; dialling it meanwhile only costs the
+/// relay.
+pub(crate) fn resting_close(e: &iroh::endpoint::ConnectionError) -> bool {
+    use iroh::endpoint::ConnectionError;
+    match e {
+        ConnectionError::ApplicationClosed(c) => {
+            c.reason.as_ref() == Retired::Suspended.reason() || c.reason.as_ref() == Retired::Paused.reason()
+        }
+        ConnectionError::ConnectionClosed(c) => c.error_code == iroh::endpoint::TransportErrorCode::CONNECTION_REFUSED,
+        _ => false,
     }
 }
 
@@ -437,7 +460,7 @@ impl Counts {
             Retired::Silent => &self.retired_silent,
             Retired::Unanswered => &self.retired_unanswered,
             // Gone from the relay is the far side gone: closed, from there.
-            Retired::Closed | Retired::Departed => &self.retired_closed,
+            Retired::Closed | Retired::Departed | Retired::Asleep => &self.retired_closed,
             Retired::Network => &self.retired_network,
             // A pause and a suspension are asked for, not failures; they
             // count with the endpoint's own replacement as 「let go on
@@ -550,7 +573,21 @@ impl Wires {
             .get(&(id.to_owned(), proto))
             .map_or(0, |s| s.failures)
             .saturating_add(1);
-        (n, backoff(n))
+        drop(slots);
+        (n, self.wait_after(id, n))
+    }
+
+    /// The pump's wait after the `n`th failed dial in a row to `id`:
+    /// [`backoff`], **or the longest wait for a machine its relay said
+    /// left, or that said it was resting, and that has not been heard
+    /// since** (net-dial B4). Its ten minutes alone ([`LEFT_ALONE_FOR`])
+    /// already were the wait; starting again from five seconds when they
+    /// ran out redialled a sleeping phone six times in its first minute.
+    fn wait_after(&self, id: &str, n: u32) -> Duration {
+        if self.gone.lock().unwrap_or_else(|p| p.into_inner()).contains_key(id) {
+            return BACKOFF_MAX;
+        }
+        backoff(n)
     }
 
     /// [`drop_wire`], written in the journal: why, how long the wire had
@@ -623,12 +660,13 @@ impl Wires {
 
     /// A dial for this key failed: the pump waits before the next one.
     pub(crate) fn failed(&self, id: &str, proto: Proto, why: String) {
+        let (_, wait) = self.next_backoff(id, proto);
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let slot = slots.entry((id.to_owned(), proto)).or_default();
         slot.last_failure = Some((why, Instant::now()));
         slot.failures = slot.failures.saturating_add(1);
         slot.failed_total += 1;
-        slot.retry_at = Some(Instant::now() + backoff(slot.failures));
+        slot.retry_at = Some(Instant::now() + wait);
         self.counts.dial_failed.fetch_add(1, Relaxed);
         drop(slots);
         self.went_down(id);
@@ -722,6 +760,9 @@ impl Wires {
         drop(slots);
         if why == Retired::Unanswered {
             self.went_down(id);
+        }
+        if why == Retired::Asleep {
+            self.asleep(id);
         }
         if matches!(why, Retired::Unanswered | Retired::Silent) {
             self.let_go_served_by(id, why);
@@ -881,16 +922,29 @@ impl Wires {
 
     /// Whether a relay said this machine left, and nothing has been heard
     /// from it since.
+    ///
+    /// The word is kept until the machine is heard ([`Self::back`]), not
+    /// forgotten when [`LEFT_ALONE_FOR`] runs out: the pump's next failure
+    /// to it waits the longest ([`Self::wait_after`]).
     pub(crate) fn gone_lately(&self, id: &str) -> bool {
-        let mut gone = self.gone.lock().unwrap_or_else(|p| p.into_inner());
-        match gone.get(id) {
-            Some(at) if at.elapsed() < GONE_FOR => true,
-            Some(at) if at.elapsed() >= LEFT_ALONE_FOR => {
-                gone.remove(id);
-                false
-            }
-            _ => false,
-        }
+        self.gone
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(id)
+            .is_some_and(|at| at.elapsed() < GONE_FOR)
+    }
+
+    /// **The far machine said it is resting** (net-dial B4): it refused a
+    /// dial, or closed a wire going to the background or pausing
+    /// ([`resting_close`]). Left alone as one its relay said left — not
+    /// down, no backoff counted: it dials when it is back, and that
+    /// connection clears the word ([`Self::serving`]) and is answered with
+    /// a round at once.
+    pub(crate) fn asleep(&self, id: &str) {
+        self.gone
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(id.to_owned(), Instant::now());
     }
 
     /// Whether the pump should leave this machine alone because its relay
@@ -1043,12 +1097,19 @@ impl Wires {
         let mut retired = 0;
         let mut dead: Vec<String> = Vec::new();
         let mut heard: Vec<String> = Vec::new();
+        let mut resting: Vec<String> = Vec::new();
         {
             let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
             served.retain_mut(|w| {
-                let Some(conn) = w.conn.upgrade().filter(|c| c.close_reason().is_none()) else {
+                let Some(conn) = w.conn.upgrade() else {
                     return false;
                 };
+                if let Some(why) = conn.close_reason() {
+                    if resting_close(&why) {
+                        resting.push(w.id.clone());
+                    }
+                    return false;
+                }
                 let rx = heard_count(&conn);
                 if rx != w.rx {
                     w.rx = rx;
@@ -1073,8 +1134,14 @@ impl Wires {
             let Some(conn) = slot.conn.clone() else {
                 continue;
             };
-            if conn.close_reason().is_some() {
-                self.drop_noted(id, *proto, slot, Retired::Closed);
+            if let Some(end) = conn.close_reason() {
+                let why = if resting_close(&end) {
+                    resting.push(id.clone());
+                    Retired::Asleep
+                } else {
+                    Retired::Closed
+                };
+                self.drop_noted(id, *proto, slot, why);
                 slot.conn = None;
                 slot.word = None;
                 slot.leaning = None;
@@ -1129,6 +1196,9 @@ impl Wires {
         drop(slots);
         for id in heard {
             self.back(&id);
+        }
+        for id in resting {
+            self.asleep(&id);
         }
         for id in dead {
             self.let_go_served_by(&id, Retired::Silent);
@@ -1379,6 +1449,26 @@ mod tests {
         assert!(w.link("m").down.is_some(), "a new network forgives the wait, not the fact");
         w.back("m");
         assert_eq!(w.link("m").down, None, "heard from");
+    }
+
+    /// **A machine left alone is not dialled again from five seconds**
+    /// (net-dial B4): its relay said it left, or it said it was resting,
+    /// and nothing was heard since — the pump's next failed dial to it
+    /// waits the longest. Heard from, the backoff starts over.
+    #[test]
+    fn a_failure_after_being_left_alone_waits_the_longest() {
+        let w = Wires::default();
+        w.asleep("m");
+        assert!(w.left_alone("m"), "resting: left alone");
+        assert_eq!(w.link("m").down, None, "and not unreachable");
+        w.failed("m", Proto::Main, "no".into());
+        let wait = w.backing_off("m").expect("a wait");
+        assert!(wait > BACKOFF_MAX - Duration::from_secs(5), "the longest wait, not five seconds: {wait:?}");
+        w.back("m");
+        w.forgive("m");
+        w.failed("m", Proto::Main, "no".into());
+        let wait = w.backing_off("m").expect("a wait");
+        assert!(wait <= BACKOFF_FIRST, "heard from since: from five seconds again: {wait:?}");
     }
 
     /// **A middle's own word on the far machine** (net-dial B3): a wait

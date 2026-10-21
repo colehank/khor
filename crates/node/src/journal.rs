@@ -145,6 +145,10 @@ pub enum What {
         failures: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         retry_s: Option<u64>,
+        /// The far machine refused it: paused or in the background, so it
+        /// is left alone until it dials back, no backoff (net-dial B4).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        asleep: bool,
     },
     /// Where a fresh wire settled, [`crate::roads::SETTLE`] in.
     Settled {
@@ -530,6 +534,7 @@ fn why_word(why: &str) -> &'static str {
         "paused" => msg::journal_why_paused(),
         "suspended" => msg::journal_why_suspended(),
         "departed" => msg::journal_why_departed(),
+        "asleep" => msg::journal_why_asleep(),
         "replaced" => msg::journal_why_replaced(),
         _ => msg::journal_why_closed(),
     }
@@ -550,6 +555,7 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             error,
             failures,
             retry_s,
+            asleep,
             ..
         } => {
             let mut offered = Vec::new();
@@ -572,6 +578,9 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
                     };
                     format!("{}；{tried}", msg::journal_dial_ok(by_word(*by), ms, won))
                 }
+                // **Refused is not unreachable** (net-dial B4): its own
+                // sentence, and no backoff to tell of.
+                None if *asleep => format!("{}；{tried}", msg::journal_dial_refused(by_word(*by), ms)),
                 None => {
                     let why = error.as_deref().map(scrub).unwrap_or_else(|| msg::journal_timed_out().to_owned());
                     let mut s = format!("{}；{tried}", msg::journal_dial_failed(by_word(*by), ms, why));
@@ -673,8 +682,8 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
 /// should land on.
 pub fn is_trouble(e: &Entry) -> bool {
     match &e.what {
-        What::Dial { won, .. } => won.is_none(),
-        What::Retired { why, .. } => !matches!(why.as_str(), "replaced" | "paused" | "suspended"),
+        What::Dial { won, asleep, .. } => won.is_none() && !asleep,
+        What::Retired { why, .. } => !matches!(why.as_str(), "replaced" | "paused" | "suspended" | "asleep"),
         What::Home { state, .. } => state == "disconnected",
         What::Ears { error, .. } => error.is_some(),
         What::Hop { via, .. } => via.is_none(),
