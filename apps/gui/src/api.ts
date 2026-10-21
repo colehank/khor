@@ -1497,19 +1497,16 @@ export const termPaneHistory = (id: string, since: PaneAnchor | null) =>
     rather than read off the browser: the same page is served to a phone
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */
 export const fetchTrashHere = () => call<boolean>("trash_here");
-/** Whether Finder can show a file of this machine with it selected
-    (`khor_gui_core::files::reveal_here`) — **and whether that Finder is
-    in front of the person**: the app, or the dev bridge beside it. A
-    web face may be a phone looking at a desktop's node, and a window
-    opened on that desktop is one nobody is looking at. The face must be
-    a Mac's too (an iPad says `MacIntel` and has touch points): a phone
-    on the dev bridge is a phone. */
-export const fetchRevealHere = async (): Promise<boolean> =>
-  (inApp || bridge !== null) &&
-  navigator.platform.startsWith("Mac") &&
-  navigator.maxTouchPoints === 0 &&
-  (await call<boolean>("reveal_here"));
-/** Finder, with that file of this machine selected. */
+/** Native desktop capability belongs to the viewing app, never to a phone
+    browsing a desktop backend. The dev bridge is the local desktop test seam. */
+export const fetchRevealHere = async (): Promise<boolean> => {
+  const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent + navigator.platform)
+    || (/Mac/i.test(navigator.platform) && navigator.maxTouchPoints > 0);
+  return (inApp || bridge !== null) && !mobile
+    && /Mac|Win|Linux/i.test(navigator.platform)
+    && await call<boolean>("reveal_here");
+};
+/** Locate a local path in this desktop's system file manager. */
 export const reveal = (path: string) => call<null>("reveal", { path });
 /** Every pinned directory, machine names already looked up. */
 /**

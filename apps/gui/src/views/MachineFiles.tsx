@@ -26,6 +26,8 @@ import { useEffect, useState } from "react";
 import { EmptyState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { useFullScreen } from "@/lib/full-screen";
+import { requestFileLocation } from "@/lib/file-location";
+import { directoryOf } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { useNarrow } from "@/hooks/use-narrow";
 import { FilePage } from "@/views/FilePage";
@@ -92,6 +94,11 @@ export function MachineFiles({
       path={file}
       here={here}
       onBack={() => setFile(null)}
+      onLocate={() => {
+        requestFileLocation(machine, file);
+        setAt(directoryOf(file));
+        setFile(null);
+      }}
       onGone={() => {
         setFile(null);
         setReread((n) => n + 1);

@@ -960,16 +960,17 @@ fn trash_here() -> bool {
     khor_gui_core::files::trash_here()
 }
 
-/// Whether this machine shows a file in Finder (`files::reveal_here`).
+/// Whether this backend has a desktop file manager (`files::reveal_here`).
 #[tauri::command]
 fn reveal_here() -> bool {
     khor_gui_core::files::reveal_here()
 }
 
-/// Finder, with that file of this machine selected (`files::reveal`).
+/// Reveal a local path in the desktop file manager. Shell namespace parsing and
+/// a Linux FileManager1 reply can block, so neither runs on the UI event loop.
 #[tauri::command]
-fn reveal(path: String) -> Result<(), String> {
-    khor_gui_core::files::reveal(&path)
+async fn reveal(path: String) -> Result<(), String> {
+    off_main(move || khor_gui_core::files::reveal(&path)).await
 }
 
 /// Whether this browser draws PDFs itself (`files::pdf_here`).

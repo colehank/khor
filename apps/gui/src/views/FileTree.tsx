@@ -30,6 +30,7 @@ import { dirsWait, fetchLs, makeDir, makeFile, renamePath, type DirListing } fro
 import { useHidden } from "@/hooks/use-hidden";
 import { EditableName } from "@/components/EditableName";
 import { RemoveDialog } from "@/components/RemoveDialog";
+import { useFileObjectActions } from "@/lib/file-actions";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconChevronRight } from "@/components/icons";
@@ -37,6 +38,7 @@ import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { pathDrag } from "@/lib/path-drag";
+import { consumeFileLocation, fileLocationAncestors, onFileLocation, pendingFileLocation, sameFileLocation } from "@/lib/file-location";
 import { onTreeChanged, sameMachine, treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
@@ -210,6 +212,7 @@ export function FileTree({
       there may have changed since, watched or not. */
   const fromKept = useRef(trees.has(treeKey(machine, root)));
   const hidden = useHidden();
+  const treeElement = useRef<HTMLElement>(null);
   /** …and the ones that refused, in the node's own sentence. Kept apart
       from the listings for `WorkspacePane`'s reason: 「could not read」
       and 「empty」 are different facts and only one of them is a fact
@@ -569,10 +572,6 @@ export function FileTree({
     return null;
   };
 
-  /** The path whose 复制路径 the clipboard refused, said on that item
-      until a copy takes. */
-  const [copyRefused, setCopyRefused] = useState<string | null>(null);
-
   /** 新建文件 / 新建目录 / 复制路径 / 重命名, on top of 删掉. **A
       directory offers all five and a file three**: there is nothing to
       make inside a file, and a menu item that could only refuse is worse
@@ -583,6 +582,7 @@ export function FileTree({
    * the tab menu already use, on the root's blank too. The menu closing
    * is the success face — it has no line to say 已复制 on — and a refusal
    * rejects, so the menu stays open with the item saying so (`RowMenu`). */
+  const objectActions = useFileObjectActions(here, root);
   const menu = (full: string, isDir: boolean): RowAction[] => [
     ...(isDir
       ? [
@@ -598,19 +598,7 @@ export function FileTree({
           },
         ]
       : []),
-    {
-      key: "copy-path",
-      label: copyRefused === full ? gui.copy_failed : gui.tab_copy_path,
-      failed: copyRefused === full || undefined,
-      run: () =>
-        navigator.clipboard.writeText(full).then(
-          () => setCopyRefused(null),
-          (e: unknown) => {
-            setCopyRefused(full);
-            throw e;
-          },
-        ),
-    },
+    ...objectActions(full),
     {
       key: "rename",
       label: gui.rename,
@@ -676,6 +664,62 @@ export function FileTree({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [make]);
 
+  // Only an explicit locate request moves the tree. Retained, inert trees
+  // must neither take the request nor steal focus from the visible content.
+  useEffect(() => {
+    let frame = 0;
+    const attempt = () => {
+      frame = 0;
+      const request = pendingFileLocation(machine);
+      const tree = treeElement.current;
+      if (!request || !tree || document.hidden || !tree.isConnected ||
+          tree.closest('[inert], [hidden], [aria-hidden="true"]')) return;
+      const box = tree.getBoundingClientRect();
+      if (!box.width || !box.height || getComputedStyle(tree).visibility === "hidden") return;
+      const ancestors = fileLocationAncestors(root, request.path);
+      if (ancestors === null) return;
+      if (ancestors.some(path => !expanded.has(path))) {
+        setExpanded(was => new Set([...was, ...ancestors]));
+      }
+      const levels = [root, ...ancestors];
+      setWant(was => levels.every(path => was.has(path)) ? was : new Set([...was, ...levels]));
+      const target = [...tree.querySelectorAll<HTMLButtonElement>('button[data-file-path]')]
+        .find(row => sameFileLocation(row.dataset.filePath ?? "", request.path));
+      if (!target || !consumeFileLocation(request)) return;
+      const list = tree.querySelector<HTMLElement>('[data-files-list]');
+      if (list) {
+        const viewport = list.getBoundingClientRect();
+        const row = target.getBoundingClientRect();
+        if (row.top < viewport.top) list.scrollTop += row.top - viewport.top;
+        else if (row.bottom > viewport.bottom) list.scrollTop += row.bottom - viewport.bottom;
+      }
+      const row = rows.find(row => sameFileLocation(row.full, request.path));
+      if (row) setPicked({ full: row.full, dir: row.dir });
+      target.focus({ preventScroll: true });
+    };
+    const schedule = () => {
+      if (!frame && pendingFileLocation(machine)) frame = requestAnimationFrame(attempt);
+    };
+    const off = onFileLocation(schedule);
+    // A retained page can become visible without this tree's React props
+    // changing. Observe its visibility owners, not every row mutation.
+    const observer = new MutationObserver(schedule);
+    for (let owner = treeElement.current; owner; owner = owner.parentElement) {
+      observer.observe(owner, { attributes: true, attributeFilter: ["inert", "hidden", "aria-hidden", "class", "style", "data-content-visible", "data-open"] });
+    }
+    const resize = new ResizeObserver(schedule);
+    if (treeElement.current) resize.observe(treeElement.current);
+    document.addEventListener("visibilitychange", schedule);
+    schedule();
+    return () => {
+      off();
+      observer.disconnect();
+      resize.disconnect();
+      document.removeEventListener("visibilitychange", schedule);
+      cancelAnimationFrame(frame);
+    };
+  }, [machine, root, expanded, rows, hidden]);
+
   /** How far in one level sits (tokens.css `--tree-step`). */
   const indent = (depth: number) => ({
     // **The first level's disclosure mark on the page's left line** (the
@@ -690,7 +734,7 @@ export function FileTree({
     // the dot stays 8 (2026-09-16 「太小了,小到现在都看不清是什么颜色」,
     // and check-face holds it there) and the letter stays regular. What
     // the lab kept is the slot: dot and letter in one trailing column.
-    <section data-file-tree data-tree-root={root} className="flex h-full min-w-0 flex-col">
+    <section ref={treeElement} data-file-tree data-tree-root={root} className="flex h-full min-w-0 flex-col">
       {/* **Commit line above the tree** (WS-LAB item 1): subject · short
           id · age — present whenever the root is a repository with a
           HEAD and the first commit has arrived. Re-asked via
@@ -799,6 +843,7 @@ export function FileTree({
                       // Dragged onto a terminal, the path (item 60).
                       {...pathDrag(here ? null : machine, r.full)}
                       data-dir={r.name}
+                      data-file-path={r.full}
                       data-on={on}
                       // The row the head's ＋ reads its place off (`picked`).
                       data-picked={picked?.full === r.full ? "" : undefined}
@@ -893,6 +938,7 @@ export function FileTree({
                       // it**, so an answer that has not arrived is the
                       // default rather than a second copy of it.
                       data-picked={picked?.full === r.full ? "" : undefined}
+                      data-file-path={r.full}
                       {...pathDrag(here ? null : machine, r.full)}
                       onClick={() => {
                         setPicked({ full: r.full, dir: false });

@@ -625,3 +625,12 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 ### 工作区目录树的刷新（2026-10-21）
 
 `npm run tree-freshness`：真实 App、私有节点与系统 Chrome，先读空目录，再从界面外创建文件；验证无法监听的本机目录切回窗口及重新展开后更新、旧请求后到不覆盖新结果、折叠祖先后不轮询隐藏分支、可靠监听下切回与展开仍复用缓存。旧版先红：外部新增 `raw` 后切回窗口仍空，重新展开也不读取新文件。`CONTENT_CHECK_DIR` 可指定外部盘产物目录；测试只关闭自己的私有会话与服务。Mac 原生 App 仍需更新后核对。
+
+
+### 文件操作
+
+`npm run file-actions`：可见 Chrome 挂载生产 FileTree、FilesPane、Hits、FilePage
+和 FileVerbs，仅模拟磁盘／原生边界。覆盖 Mac／Windows／Linux 本机、远端、
+网页及手机，系统定位命名与权限、完整／相对路径、预览组合按钮、菜单精简、
+默认应用、下载副本、分享及隐藏／卸载后的定位。`FILE_ACTIONS_OUT` 指定证据目录；
+`FILE_ACTIONS_HEADED=0` 可显式使用无头浏览器。不替代原生系统 GUI 的真机验收。
