@@ -242,6 +242,14 @@ pub(crate) enum Legs {
     /// against the relay's measured round trip, and iroh's end to end
     /// measurement has the last word ([`Node::open_hop`]).
     Measured,
+    /// **This machine has no relay** (C7, `egress`): the first leg must be
+    /// one it has without one — direct — and the second may be the
+    /// middle's relay, which is the relay this machine cannot reach.
+    NoRelay,
+    /// **The far end says it has no relay** (C7, its row's `no_relay`):
+    /// the second leg must be direct, and the first may be this
+    /// machine's relay — the mirror of [`Legs::NoRelay`].
+    ToNoRelay,
 }
 
 /// [`middles`] with each one's cost: its two legs' round trips added, in
@@ -264,11 +272,13 @@ pub(crate) fn middles_with_cost(
             let first = mine(b).filter(|r| r.via.is_none())?;
             let usable = match (first.road, second.road) {
                 (RoadKind::Direct, RoadKind::Direct | RoadKind::Ssh) | (RoadKind::Relay, RoadKind::Ssh) => true,
+                (RoadKind::Direct, RoadKind::Relay) if legs == Legs::NoRelay => true,
+                (RoadKind::Relay, RoadKind::Direct) if legs == Legs::ToNoRelay => true,
                 (RoadKind::Direct | RoadKind::Relay, RoadKind::Direct | RoadKind::Relay) => legs == Legs::Measured,
                 _ => false,
             };
             let ms = u32::from(first.ms.unwrap_or(u16::MAX)) + u32::from(second.ms.unwrap_or(u16::MAX));
-            usable.then(|| (legs == Legs::Dial && first.road != RoadKind::Direct, ms, b.clone()))
+            usable.then(|| (legs != Legs::Measured && first.road != RoadKind::Direct, ms, b.clone()))
         })
         .collect();
     found.sort();
@@ -324,7 +334,9 @@ impl Node {
             return false;
         }
         let r = self.wires.link(&y.id);
-        if r.down.is_some() {
+        // No relay here, or none there (C7): every road but a direct
+        // one is a hop's.
+        if r.down.is_some() || self.no_relay() || y.no_relay {
             return true;
         }
         let direct = |k: Option<RoadKind>| k == Some(RoadKind::Direct);
@@ -354,13 +366,22 @@ impl Node {
             .iter()
             .map(|d| (d.id.clone(), d.sponsor.is_some(), crate::pause::peer_on(self.root(), &d.id)))
             .collect();
-        let picked = middles(
+        let legs = match (self.no_relay(), y.no_relay) {
+            (true, _) => Legs::NoRelay,
+            (false, true) => Legs::ToNoRelay,
+            (false, false) => Legs::Dial,
+        };
+        let picked: Vec<String> = middles_with_cost(
             &me,
             &y.id,
             &rows,
             |b| self.road_for_hop(b, &mine),
             |b| all.iter().find(|d| d.id == b).and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id)),
-        );
+            legs,
+        )
+        .into_iter()
+        .map(|(b, _)| b)
+        .collect();
         self.open_hop(ep, y, &all, &picked).await;
     }
 
@@ -691,6 +712,53 @@ mod tests {
         assert!(beats(29, 58));
         assert!(!beats(29, 35), "6 ms is not worth a middle");
         assert!(beats(29, 39));
+    }
+
+    /// **lecun's day of 10-20** (C7): its relays never answered; it
+    /// reaches turing and hinton directly, and they reach localhost only
+    /// by the Beijing relay. Before a dial nothing is a middle for it
+    /// (the second legs are relays); with no relay of its own, the
+    /// middle's relay is the one road there is — turing, nearer, first.
+    #[test]
+    fn with_no_relay_a_middle_may_reach_the_far_end_by_its_relay() {
+        let rows = the_fleet();
+        let mine = |b: &str| match b {
+            "turing" => Some(Road::own(b, RoadKind::Direct, None, Some(2))),
+            "hinton" => Some(Road::own(b, RoadKind::Direct, None, Some(3))),
+            "maclab" => Some(Road::own(b, RoadKind::Relay, beijing(), Some(30))),
+            _ => None,
+        };
+        let theirs = |b: &str| match b {
+            "turing" => Some(Road::own("localhost", RoadKind::Relay, beijing(), Some(42))),
+            "hinton" => Some(Road::own("localhost", RoadKind::Relay, beijing(), Some(60))),
+            "maclab" => Some(Road::own("localhost", RoadKind::Relay, beijing(), Some(20))),
+            _ => None,
+        };
+        assert!(middles_with_cost("lecun", "localhost", &rows, mine, theirs, Legs::Dial).is_empty());
+        let found = middles_with_cost("lecun", "localhost", &rows, mine, theirs, Legs::NoRelay);
+        assert_eq!(
+            found,
+            vec![("turing".to_owned(), 44), ("hinton".to_owned(), 63)],
+            "a relay first leg is no leg here"
+        );
+        // The other way: localhost reaches turing and maclab by the relay,
+        // turing and hinton reach lecun directly.
+        let mine = |b: &str| match b {
+            "turing" => Some(Road::own(b, RoadKind::Relay, beijing(), Some(42))),
+            "maclab" => Some(Road::own(b, RoadKind::Relay, beijing(), Some(20))),
+            _ => None,
+        };
+        let theirs = |b: &str| match b {
+            "turing" => Some(Road::own("lecun", RoadKind::Direct, None, Some(2))),
+            "maclab" => Some(Road::own("lecun", RoadKind::Relay, beijing(), Some(20))),
+            _ => None,
+        };
+        assert!(middles_with_cost("localhost", "lecun", &rows, mine, theirs, Legs::Dial).is_empty());
+        assert_eq!(
+            middles_with_cost("localhost", "lecun", &rows, mine, theirs, Legs::ToNoRelay),
+            vec![("turing".to_owned(), 44)],
+            "to a machine with no relay, the middle's leg must be direct"
+        );
     }
 
     /// The five machines of 10-20.

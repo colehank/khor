@@ -432,6 +432,7 @@ mod tests {
             watch: Vec::new(),
             label: label.map(str::to_owned),
             hosts: true,
+            no_relay: false,
             roads: Vec::new(),
             receive_dir: None,
             receive_at: None,

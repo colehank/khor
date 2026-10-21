@@ -420,6 +420,12 @@ fn has_home_relay(ep: &iroh::Endpoint) -> bool {
     ep.addr().addrs.iter().any(|t| matches!(t, iroh::TransportAddr::Relay(_)))
 }
 
+/// **A dial's budget on a machine with no relay** (C7, `egress`): the
+/// roads it has are direct or through a middle, and each answers in
+/// round trips; lecun's failed dials waited the full ten seconds on
+/// relays it never reached.
+const NO_RELAY_DIAL: Duration = Duration::from_secs(4);
+
 /// The shortest and the longest wait between two tries at new ears
 /// (round NET-11): 4, 8, 16 … 30 minutes after the first.
 const DEAF_WAIT_FIRST: Duration = Duration::from_secs(4 * 60);
@@ -1087,6 +1093,8 @@ impl Node {
         *self.ears.lock().unwrap_or_else(|p| p.into_inner()) = Some(ep.clone());
         // New ears have homed nowhere yet (round NET-11, `ears_heard`).
         self.ears_homed.store(false, std::sync::atomic::Ordering::Relaxed);
+        // Nor gone without a relay: a new network may have one (C7).
+        *self.egress.lock().unwrap_or_else(|p| p.into_inner()) = crate::egress::Egress::default();
         // **What the relays say about who left** (round NET-5,
         // `wires::Wires::departed`), for as long as these ears live: the
         // subscription ends when the endpoint does.
@@ -1979,6 +1987,8 @@ impl Node {
                         if has_home_relay(&e) {
                             n.ears_homed.store(true, std::sync::atomic::Ordering::Relaxed);
                         }
+                        // Whether any relay is there to go out by (C7).
+                        n.look_for_relays(&e);
                         if deaf.lock().expect("deaf watch poisoned").observe(heard) {
                             // Claimed before the test, so the beats behind
                             // this one do not ask again; the next look is
@@ -11631,7 +11641,13 @@ impl Node {
         // A machine its relay just said left, and that has not been heard
         // from since: a short dial — long enough for one that came straight
         // back on a new connection, not the full wait on one that is gone.
-        let within = dial_within(self.wires.last_rtt(id), self.wires.gone_lately(id), by);
+        let mut within = dial_within(self.wires.last_rtt(id), self.wires.gone_lately(id), by);
+        // No relay to go out by (C7): only a road this machine has can
+        // answer — a direct one, or the hop asked for before the dial.
+        // A short dial, not the full wait on relays it cannot reach.
+        if self.no_relay() {
+            within = within.min(NO_RELAY_DIAL);
+        }
         // This machine's own home among the relays tried (net-f): two
         // machines homed on the same public relay meet there even while
         // each one's row still names only its own list.

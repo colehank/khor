@@ -258,6 +258,15 @@ const F_CERT: &str = "cert";
 /// untouched and never reads it.
 const F_HOSTS: &str = "hosts";
 
+/// **The machine reaches no relay** (2026-10-21, C7): `true` while it has
+/// had no home relay and no relay answered for a while, so it is reached
+/// only directly or through another machine (`khor_node::egress`). Its
+/// peers read it to know a dial by the relay will not land, and to pick a
+/// middle for it. The machine writes its own; flat only, `F_HOSTS`'s
+/// reason; an older khor replicates the register untouched and never
+/// reads it, and a row that never said reads `false`.
+const F_NO_RELAY: &str = "no_relay";
+
 /// **The roads a machine reports about itself** (round NET-12, the 我的
 /// khor dial): one register per peer, `<id>/road/<to>`, holding a small
 /// JSON object (`khor_core::Road`, minus `to`). Only the machine itself
@@ -365,6 +374,8 @@ pub struct DeviceInfo {
     /// Whether the machine can host a session (`F_HOSTS`): `false` for a
     /// phone, `true` for a computer and for a row that never said.
     pub hosts: bool,
+    /// The machine says it reaches no relay (`F_NO_RELAY`).
+    pub no_relay: bool,
     /// The roads this machine reports to the others (`F_ROAD`), as
     /// `(to, the register's JSON)`: opaque here, read by `khor_node`.
     pub roads: Vec<(String, String)>,
@@ -861,6 +872,7 @@ impl DeviceDoc {
                     .str_field(&id, F_LABEL)
                     .filter(|l| !l.trim().is_empty()),
                 hosts: !matches!(self.flat(&id, F_HOSTS), Some(LoroValue::Bool(false))),
+                no_relay: matches!(self.flat(&id, F_NO_RELAY), Some(LoroValue::Bool(true))),
                 roads: self.roads_raw(&id),
                 receive_dir: self
                     .str_field(&id, F_RECEIVE_DIR)
@@ -933,6 +945,20 @@ impl DeviceDoc {
         }
         self.map()
             .insert(&fkey(id, F_HOSTS), hosts)
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// Says whether a machine reaches no relay (`F_NO_RELAY`), about
+    /// itself; unchanged means unwritten.
+    pub fn set_no_relay(&self, id: &str, no_relay: bool) -> Result<(), String> {
+        let was = matches!(self.flat(id, F_NO_RELAY), Some(LoroValue::Bool(true)));
+        if was == no_relay {
+            return Ok(());
+        }
+        self.map()
+            .insert(&fkey(id, F_NO_RELAY), no_relay)
             .map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())
@@ -1656,6 +1682,28 @@ mod tests {
         let before = d.version();
         d.set_pinned("aa", false).unwrap();
         assert_eq!(d.version(), before, "no change must mean no new ops");
+    }
+
+    /// **A machine that reaches no relay says so, and its peers read it**
+    /// (C7); a row that never said reaches one.
+    #[test]
+    fn no_relay_travels_and_silence_is_a_relay() {
+        let lab = DeviceDoc::new(1).unwrap();
+        lab.upsert("ll", "lecun", &[]).unwrap();
+        lab.set_no_relay("ll", true).unwrap();
+        let before = lab.version();
+        lab.set_no_relay("ll", true).unwrap();
+        assert_eq!(lab.version(), before, "saying it again writes nothing");
+        let desk = DeviceDoc::new(2).unwrap();
+        desk.upsert("aa", "mac", &[]).unwrap();
+        desk.merge(&lab.changes_since(&Default::default()).unwrap()).unwrap();
+        assert!(desk.get("ll").unwrap().no_relay, "it crosses the network");
+        assert!(!desk.get("aa").unwrap().no_relay, "a row that never said");
+        desk.upsert("ll", "lecun", &["10.0.0.7:1".into()]).unwrap();
+        assert!(desk.get("ll").unwrap().no_relay, "an upsert leaves it alone");
+        lab.set_no_relay("ll", false).unwrap();
+        desk.merge(&lab.changes_since(&Default::default()).unwrap()).unwrap();
+        assert!(!desk.get("ll").unwrap().no_relay, "and the way back");
     }
 
     /// **Whether a machine can host travels, and absence is a computer**

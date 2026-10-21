@@ -220,6 +220,10 @@ pub enum What {
         varies: Option<bool>,
         from: Vec<String>,
     },
+    /// Whether this machine has a relay to go out by (C7, `egress`):
+    /// `true` when it has had no home relay and no relay answered for
+    /// `egress::ENTER_AFTER`; `false` when one is back.
+    NoRelay { none: bool },
     /// The kernel sends this machine's internet traffic out from `src`, a
     /// fake-IP address (198.18.0.0/15): a proxy's TUN carries every UDP
     /// datagram and gives it a port of its own. `None`: it no longer does.
@@ -640,6 +644,8 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         What::Carry { up: false, why } => msg::journal_carry_down(scrub(why.as_deref().unwrap_or(""))),
         What::Person { by } if by == "page" => msg::journal_person_page().to_owned(),
         What::Person { .. } => msg::journal_person_face().to_owned(),
+        What::NoRelay { none: true } => msg::journal_no_relay().to_owned(),
+        What::NoRelay { none: false } => msg::journal_relay_back().to_owned(),
         What::Learnt { v4: None, v6: None, .. } => msg::journal_learnt_none().to_owned(),
         What::Learnt { v4, v6, varies, from } => {
             let addrs: Vec<&str> = v4.iter().chain(v6.iter()).map(String::as_str).collect();
@@ -689,6 +695,7 @@ pub fn is_trouble(e: &Entry) -> bool {
         What::Hop { via, .. } => via.is_none(),
         What::Carry { up, .. } => !up,
         What::Departed => true,
+        What::NoRelay { none } => *none,
         What::Sync { .. } | What::Apart { .. } | What::PenRetired { .. } => true,
         _ => false,
     }

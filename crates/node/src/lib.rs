@@ -28,6 +28,7 @@ pub mod cwd;
 pub mod day;
 pub mod doctor;
 pub mod drops;
+pub(crate) mod egress;
 pub mod face;
 pub mod favicon;
 pub mod files;
@@ -437,6 +438,8 @@ pub struct Node {
     pub(crate) reached_at: Arc<std::sync::atomic::AtomicU64>,
     /// Whether the ears this node answers on ever had a home relay.
     pub(crate) ears_homed: Arc<std::sync::atomic::AtomicBool>,
+    /// Whether this machine has a relay to go out by (`egress`, C7).
+    pub(crate) egress: Arc<Mutex<egress::Egress>>,
     /// The reason the deaf watch last said it stayed, so it says each
     /// once (`link::Node::say_once`).
     pub(crate) deaf_said: Arc<Mutex<Option<&'static str>>>,
@@ -1140,6 +1143,7 @@ impl Node {
             vouched: Arc::default(),
             reached_at: Arc::default(),
             ears_homed: Arc::default(),
+            egress: Arc::default(),
             deaf_said: Arc::default(),
             roadbook: Arc::default(),
             rows_sent: Arc::default(),

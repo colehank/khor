@@ -6,6 +6,9 @@
 //! M frozen, the wire goes back to the relay without going down
 //! (`crates/cli/tests/hop.rs` measured 13 s on loopback).
 //!
+//! Scenario f3 (C7): a machine with no relay at all goes out through a
+//! middle that has one (lecun, 2026-10-20). See its doc.
+//!
 //! Scenario f2: a hop with a relay leg (hinton, 2026-10-20). Y's home is
 //! a far relay (its v4 reaches nothing else: n0's aps1, 300–1000 ms); X
 //! reaches B only through the near relay; B and Y share a LAN. Through B
@@ -224,4 +227,69 @@ async fn f2_a_relay_leg_through_a_middle_beats_a_far_home() {
     assert_eq!(there.hop, Hop::Forwarded, "x → y holds on the hop");
     assert_eq!(back.hop, Hop::Forwarded, "y → x rides the same hop");
     assert_eq!(moves, 0, "no moves once through b");
+}
+
+/// f3: a machine with no relay (C7, lecun on 2026-10-20). X reaches no
+/// relay at all; it shares a LAN with B, and B reaches Y only by the
+/// relay. X should say it has no relay (its journal, and its row where
+/// Y reads it) within `egress::ENTER_AFTER` and a minute, and then reach
+/// Y through B — the middle's relay is X's way out — with dials that no
+/// longer wait out the relays.
+#[tokio::test(flavor = "multi_thread", worker_threads = 6)]
+async fn f3_a_machine_with_no_relay_goes_out_through_a_middle() {
+    let s = "f3";
+    let lab = Lab::new().await.unwrap();
+    let r = relay(&lab, s, "relay", None).await;
+    let (rl, ry) = (router(&lab, "lan", Net::Strict).await, router(&lab, "naty", Net::Strict).await);
+    let dx = lab.add_device("x").uplink(rl.id()).build().await.unwrap();
+    let db = lab.add_device("b").uplink(rl.id()).build().await.unwrap();
+    let dy = lab.add_device("y").uplink(ry.id()).build().await.unwrap();
+    for d in [&dx, &db, &dy] {
+        slow(d, LEG).await;
+    }
+    cut(&dx, r.dev.ip().expect("the relay has IPv4"));
+    let x = node(s, dx, "x", &[&r], &[]).await;
+    let b = node(s, db, "b", &[&r], &[]).await;
+    let y = node(s, dy, "y", &[&r], &[]).await;
+    tokio::time::sleep(Duration::from_secs(8)).await;
+    mesh(&[&b, &x, &y]).await;
+
+    let began = std::time::Instant::now();
+    let (said, said_at) = loop {
+        let at = x.journal(None).into_iter().find(|e| e["e"] == "no-relay" && e["none"] == true);
+        if at.is_some() || began.elapsed() > Duration::from_secs(13 * 60) {
+            break (at.as_ref().map(|_| began.elapsed()), at.and_then(|e| e["at"].as_u64()).unwrap_or(u64::MAX));
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    };
+    let hopped = x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Forwarded).await;
+    let x_id = x.id.clone();
+    let seen_by_y = y
+        .with(move |n| async move { n.devices().ok()?.into_iter().find(|d| d.id == x_id).map(|d| d.no_relay) })
+        .await;
+    // X's failed dials to Y once it knew: none waits out the relays.
+    let late: Vec<u64> = x
+        .journal(Some(&y))
+        .into_iter()
+        .filter(|e| e["e"] == "dial" && e["won"].is_null() && e["at"].as_u64().is_some_and(|t| t > said_at))
+        .filter_map(|e| e["ms"].as_u64())
+        .collect();
+    let ok = said.is_some()
+        && hopped.as_ref().is_some_and(|(_, l)| l.via.as_deref() == Some(b.id.as_str()))
+        && seen_by_y == Some(true)
+        && late.iter().all(|ms| *ms <= 5_000);
+    result(
+        s,
+        ok,
+        format!(
+            "no relay said after {}; y reads it {seen_by_y:?}; x→y through b {}; failed dials since {late:?} ms",
+            said.map_or("never in 13 min".into(), |t| format!("{t:.0?}")),
+            hopped.as_ref().map_or("never in 60 s".into(), |(t, l)| format!("after {t:.1?} ({})", word(l))),
+        ),
+    );
+    assert!(said.is_some(), "x says it has no relay");
+    assert_eq!(seen_by_y, Some(true), "y reads it in x's row");
+    let (_, l) = hopped.expect("x reaches y through b");
+    assert_eq!(l.via.as_deref(), Some(b.id.as_str()), "the middle is b");
+    assert!(late.iter().all(|ms| *ms <= 5_000), "no dial waits out the relays: {late:?}");
 }
