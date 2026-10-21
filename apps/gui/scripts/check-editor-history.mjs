@@ -66,8 +66,8 @@ async function check(engine,name){
    await mounted();if(scenario==='ordinary')await wait(2500);await page.evaluate(()=>window.__historyProbe.end());await page.keyboard.type('added');await wait(1300);
    assert.equal((await read()).text,BASE+'added');assert((await read()).undo>0,'typing creates history');
    if(scenario==='preview'){
-    await page.locator('[data-file-more]').click();await page.locator('[data-file-more-item=preview]').click();await page.locator('[data-file-preview=md]').waitFor();assert.equal(await page.locator('.cm-content').count(),0,'preview unmounts editor');await page.locator('[data-file-more-menu]').waitFor({state:'detached'});await wait(200);
-    await page.locator('[data-file-more]').click();await page.locator('[data-file-more-item=preview]').click();await mounted();
+    await page.locator('[data-file-face-toggle]').click();await page.locator('[data-file-preview=md]').waitFor();assert.equal(await page.locator('.cm-content').count(),0,'preview unmounts editor');await page.locator('[data-file-more-menu]').waitFor({state:'detached'});await wait(200);
+    await page.locator('[data-file-face-toggle]').click();await mounted();
    }else if(scenario==='remount')await remount();
    else if(scenario==='redo-remount'){
     await page.keyboard.press('Meta+z');assert.equal((await read()).text,BASE);await wait(1300);await remount();
