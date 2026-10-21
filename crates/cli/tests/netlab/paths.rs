@@ -27,6 +27,17 @@
 //!   both, on a dual-stack network with a QAD stand-in on each family).
 //!   Ten minutes, no 「本机网卡地址变化」.
 //!
+//! - p1s **one speed, stalls and a busy CPU** (net-flap, 2026-10-21): p1,
+//!   with every 30 s a 300 ms latency spike on alpha's two legs and a
+//!   keystroke in it, and both residents pinned to one CPU beside two busy
+//!   loops: the machines' own stalls (turing on NFS). Counts the moves
+//!   between the two roads; at most one.
+//! - p5 **a short stall rides out** (net-flap): one LAN road and a relay
+//!   500 ms away, the connection idle; every 30 s the LAN drops everything
+//!   for 150, 300 or 600 ms while a keystroke is on the wire. A stall
+//!   shorter than the relay's round trip moves nothing to the relay and
+//!   starts no round of hole punching.
+//!
 //! The clocks are real: ten minutes are ten minutes. Shortening iroh's
 //! timers (keepalive, the 60 s upgrade check, the net report's 20–26 s
 //! rhythm) would change the very ratios the flapping comes from, so the
@@ -39,6 +50,7 @@ use khor_core::Hop;
 use patchbay::{Device, IpSupport, Lab, LinkCondition, LinkDirection, Nat, Router, RouterPreset};
 
 use crate::lab::{LabNode, mesh, node, qad_relays_dual, relay, result};
+use crate::scratch::Reaped;
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64
@@ -205,6 +217,13 @@ fn long() -> Duration {
 /// Both roads `one_way` ms out of each machine (`jitter` ms either side),
 /// ten minutes: at most one move, no wire retired.
 async fn one_speed(s: &str, one_way: u32, jitter: u32) {
+    one_speed_stalling(s, one_way, jitter, false).await;
+}
+
+/// [`one_speed`]; `stalls`: every 30 s a 300 ms spike of 300 ms on both
+/// of alpha's legs with a keystroke in it, both residents on one CPU with
+/// two busy loops (p1s).
+async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
     let p = pair(s, async |da, db| {
         for d in [da, db] {
             for i in ["eth0", "eth1"] {
@@ -218,7 +237,31 @@ async fn one_speed(s: &str, one_way: u32, jitter: u32) {
     tokio::time::sleep(Duration::from_secs(30)).await;
     let since = now_ms();
     let (rounds0, traffic0) = (punch_rounds(&p.a).await, wire_traffic(&p.a.dev));
-    tokio::time::sleep(long()).await;
+    let (mut spikes, mut slowest) = (0, Duration::ZERO);
+    if stalls {
+        let _busy = busy_beside(&[&p.a, &p.b]);
+        let began = Instant::now();
+        while began.elapsed() < long() {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            let cond = LinkCondition::new().latency_ms(one_way + 300).jitter_ms(jitter);
+            for i in ["eth0", "eth1"] {
+                p.a.dev.iface(i).unwrap().set_condition(cond, LinkDirection::Egress).await.unwrap();
+            }
+            let typed = echo(&p.a);
+            let calm = async {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                let cond = LinkCondition::new().latency_ms(one_way).jitter_ms(jitter);
+                for i in ["eth0", "eth1"] {
+                    p.a.dev.iface(i).unwrap().set_condition(cond, LinkDirection::Egress).await.unwrap();
+                }
+            };
+            let ((took, _), ()) = tokio::join!(typed, calm);
+            slowest = slowest.max(took);
+            spikes += 1;
+        }
+    } else {
+        tokio::time::sleep(long()).await;
+    }
     let (ma, mb) = (moves(&p.a, &p.b, since), moves(&p.b, &p.a, since));
     let rounds = punch_rounds(&p.a).await - rounds0;
     let traffic = wire_traffic(&p.a.dev);
@@ -230,9 +273,10 @@ async fn one_speed(s: &str, one_way: u32, jitter: u32) {
         s,
         ok,
         format!(
-            "{}±{} ms each way, over {:?}: alpha moved {} {ma:?}, beta {} {mb:?}; retired {retired}; alpha: {changes} network changes, {rounds} punch rounds, {} packets {} bytes",
+            "{}±{} ms each way{}, over {:?}: alpha moved {} {ma:?}, beta {} {mb:?}; retired {retired}; alpha: {changes} network changes, {rounds} punch rounds, {} packets {} bytes",
             one_way,
             jitter,
+            if stalls { format!(", {spikes} spikes of 300 ms (slowest keystroke {slowest:.1?}), one busy CPU") } else { String::new() },
             long(),
             ma.len(),
             mb.len(),
@@ -258,6 +302,116 @@ async fn p1_two_roads_of_one_speed_hold_still() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn p1j_two_jittery_roads_of_one_speed_hold_still() {
     one_speed("p1j", 10, 2).await;
+}
+
+/// p1s: p1 with the machines' own stalls (net-flap, 2026-10-21): turing
+/// on NFS stalls, its ACKs come late, and the two LAN roads traded places
+/// 230–330 times a day.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p1s_two_roads_of_one_speed_hold_still_through_stalls() {
+    one_speed_stalling("p1s", 1, 0, true).await;
+}
+
+/// Pins `nodes`' residents to one CPU and runs two busy loops on it, until
+/// dropped: a machine short of CPU (p1s). The CPU is picked by this
+/// process's pid, so scenarios side by side pick different ones.
+fn busy_beside(nodes: &[&LabNode]) -> Vec<Reaped> {
+    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let cpu = (std::process::id() as usize % cpus).to_string();
+    for n in nodes {
+        let _ = Command::new("taskset").args(["-a", "-p", "-c", &cpu, &n.pid().to_string()]).stdout(Stdio::null()).status();
+    }
+    (0..2)
+        .filter_map(|_| {
+            Command::new("taskset")
+                .args(["-c", &cpu, "sh", "-c", "while :; do :; done"])
+                .spawn()
+                .ok()
+                .map(Reaped)
+        })
+        .collect()
+}
+
+/// p5 (net-flap, 2026-10-21): one direct road and a relay 500 ms away;
+/// every 30 s the road drops everything for 150, 300, then 600 ms, four
+/// times each, while a keystroke is on the wire (the connection otherwise
+/// idle). While the stall is shorter than the relay's round trip the
+/// connection should ride it out: no move to the relay, no round of hole
+/// punching. MacLab↔hinton left a 2 ms road for the 500 ms relay and came
+/// back within a second 212 times a day.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p5_a_short_stall_rides_out_and_punches_nothing() {
+    let s = "p5";
+    let lab = Lab::new().await.unwrap();
+    let r = relay(&lab, s, "relay", Some(Duration::from_millis(500))).await;
+    let lan = network(&lab, "lan").await;
+    let da = lab.add_device("a").uplink(lan.id()).build().await.unwrap();
+    let db = lab.add_device("b").uplink(lan.id()).build().await.unwrap();
+    let a = node(s, da, "alpha", &[&r], &[]).await;
+    let b = node(s, db, "beta", &[&r], &[]).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    mesh(&[&a, &b]).await;
+    for (x, y) in [(&a, &b), (&b, &a)] {
+        x.until(y, Duration::from_secs(120), |l| l.hop == Hop::Direct)
+            .await
+            .unwrap_or_else(|| panic!("{} goes direct to {}", x.name, y.name));
+    }
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    let ip_b = b.dev.ip().unwrap().to_string();
+    let drops: u32 = std::env::var("NETLAB_P5_DROPS").ok().and_then(|v| v.parse().ok()).unwrap_or(4);
+    let mut short_ok = true;
+    let mut said = vec![];
+    for stall in [150u64, 300, 600] {
+        let since = now_ms();
+        let rounds0 = (punch_rounds(&a).await, punch_rounds(&b).await);
+        let mut slowest = Duration::ZERO;
+        for _ in 0..drops {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            let typed = echo(&a);
+            let cut = async {
+                drop_between(&a.dev, &ip_b, true);
+                tokio::time::sleep(Duration::from_millis(stall)).await;
+                drop_between(&a.dev, &ip_b, false);
+            };
+            let ((took, _), ()) = tokio::join!(typed, cut);
+            slowest = slowest.max(took);
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let relayed = |n: &LabNode, peer: &LabNode| {
+            selections(n, peer, since).into_iter().filter(|(_, road, _)| road == "relay").count()
+        };
+        let (ra, rb) = (relayed(&a, &b), relayed(&b, &a));
+        let rounds = (punch_rounds(&a).await - rounds0.0, punch_rounds(&b).await - rounds0.1);
+        if stall < 500 {
+            short_ok &= ra == 0 && rb == 0 && rounds == (0, 0);
+        }
+        said.push(format!(
+            "{stall} ms ×{drops}: to the relay alpha {ra} beta {rb}, punch rounds alpha {} beta {}, slowest keystroke {slowest:.1?}; alpha {:?}",
+            rounds.0,
+            rounds.1,
+            moves(&a, &b, since),
+        ));
+    }
+    result(s, short_ok, said.join("; "));
+    assert!(short_ok, "a stall shorter than the relay's round trip moves nothing and punches nothing: {said:?}");
+}
+
+/// Drops (`on`) or stops dropping everything between `dev` and `ip` (nft,
+/// in `dev`).
+fn drop_between(dev: &Device, ip: &str, on: bool) {
+    let rules = if on {
+        format!(
+            "table inet netlab_flap {{\n chain flap_in {{ type filter hook input priority -10; policy accept;\n  ip saddr {ip} drop\n }}\n chain flap_out {{ type filter hook output priority -10; policy accept;\n  ip daddr {ip} drop\n }}\n}}\n"
+        )
+    } else {
+        "delete table inet netlab_flap\n".to_owned()
+    };
+    let mut cmd = Command::new("nft");
+    cmd.args(["-f", "-"]).stdin(Stdio::piped());
+    let mut child = dev.spawn_command_sync(cmd).unwrap();
+    use std::io::Write;
+    child.stdin.take().unwrap().write_all(rules.as_bytes()).unwrap();
+    assert!(child.wait().unwrap().success(), "nft took:\n{rules}");
 }
 
 /// A listing of beta's /tmp from alpha: one request and its answer on
