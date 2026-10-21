@@ -41,6 +41,8 @@ import type { GitStatus } from "@/gen/bindings/GitStatus";
 import type { WsSpot } from "@/hooks/use-session-side";
 import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { heavier, IGNORED } from "@/views/fileRow";
+import { movedFilePath } from "@/lib/file-actions";
+import { requestFileLocation } from "@/lib/file-location";
 import { FilePage } from "@/views/FilePage";
 import { useRepositoryHistory } from "@/hooks/use-repository-history";
 import { CommitPage } from "@/views/CommitPage";
@@ -82,6 +84,8 @@ export function SideWorkspace({
   spot,
   onSpot,
   onOpenContent,
+  onContentMoved,
+  onContentGone,
   findLeading,
   query,
   onQuery,
@@ -92,6 +96,8 @@ export function SideWorkspace({
 }: {
   /** A content-tab host may own file navigation and the search field's scope. */
   onOpenContent?: (path: string, line: number | null) => void;
+  onContentMoved?: (from:string,to:string)=>void;
+  onContentGone?: (path:string)=>void;
   findLeading?: ReactNode;
   query?: string;
   onQuery?: (query: string) => void;
@@ -277,6 +283,7 @@ export function SideWorkspace({
             error={huntError}
             query={hunt.trim()}
             dir={root}
+            here={here}
             onOpen={(path, line) => {
               if (onOpenContent) return onOpenContent(path, line);
               setFile(path);
@@ -293,11 +300,13 @@ export function SideWorkspace({
             open={file}
             onOpen={(path) => onOpenContent ? onOpenContent(path, null) : setFile(path)}
             onGone={(path) => {
-              if (file === path) setFile(null);
+              if (file && movedFilePath(file,path,path)!==null) setFile(null);
+              onContentGone?.(path);
               setGitAt((n) => n + 1);
             }}
             onMoved={(from, to) => {
-              if (file === from) setFile(to);
+              if (file) { const next=movedFilePath(file,from,to); if(next!==null)setFile(next); }
+              onContentMoved?.(from,to);
               setGitAt((n) => n + 1);
             }}
             onMade={() => setGitAt((n) => n + 1)}
@@ -359,6 +368,7 @@ export function SideWorkspace({
               setFile(to);
               setGitAt((n) => n + 1);
             }}
+            onLocate={() => { requestFileLocation(machine, file); setHunt(""); setFile(null); }}
             moreActs={fileActs?.(file)}
             onBack={onLeave && start?.path === file ? onLeave : () => setFile(null)}
           />

@@ -1,3 +1,4 @@
+import { fileManagerLabel } from "@/lib/file-actions";
 // **Files in an agent conversation** (round CHAT, 2026-10-03, the owner:
 // 「gui 对话得做到像 WeChat 一样：发文件、预览文件、还得显示文件在哪个路径」).
 //
@@ -474,7 +475,7 @@ export function FilePreview({
                 </Button>
                 {finder && (
                   <Button size="sm" data-file-preview-reveal onClick={toFinder}>
-                    {gui.chat_file_reveal}
+                    {fileManagerLabel()}
                   </Button>
                 )}
                 {!finder && sharing && (

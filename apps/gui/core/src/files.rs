@@ -216,23 +216,46 @@ pub fn trash_here() -> bool {
     khor_node::files::TRASH_HERE
 }
 
-/// Whether this machine can show a file in its file manager with the
-/// file selected (round CHAT, a conversation's file 「在访达中显示」):
-/// a Mac whose opener is its own `open`. Anywhere else the button is not
-/// drawn — the same word would be wrong on the next platform, and a
-/// smoke run's `KHOR_LAUNCHER` stand-in opens nothing to select in.
+/// Whether this backend can reveal a local path in the desktop file manager.
+/// The face must additionally require a native desktop viewer and a local file:
+/// a web client looking at this backend must never open the backend's desktop.
+/// An explicit custom/disabled launcher is respected, including smoke stand-ins.
 pub fn reveal_here() -> bool {
-    cfg!(target_os = "macos") && khor_node::files::launcher().as_deref() == Some("open")
+    reveal_available(
+        std::env::consts::OS,
+        std::env::var_os(khor_node::files::LAUNCHER_ENV).as_deref(),
+    )
 }
 
-/// Shows `path`, a file on this machine, in Finder with it selected
-/// (`open -R`). The same whitelist every opener call asks first
-/// (`khor_node::files::openable`): absolute, and never a flag.
+fn reveal_available(os: &str, launcher: Option<&std::ffi::OsStr>) -> bool {
+    let default = match os {
+        "macos" => "open",
+        "windows" => "explorer",
+        "linux" => "xdg-open",
+        _ => return false,
+    };
+    launcher.is_none_or(|given| given.to_str().is_some_and(|s| s.trim() == default))
+}
+
+/// Shows a local file or directory in its containing folder. macOS and Windows
+/// select the item. Linux asks FileManager1 to select it, falling back to opening
+/// the containing folder when that desktop has no FileManager1 implementation.
+/// No command shell is involved; paths are never interpreted as command text.
 pub fn reveal(path: &str) -> Result<(), String> {
-    khor_node::files::openable(path)?;
-    if !reveal_here() {
-        return Err(khor_catalog::msg::no_launcher(khor_node::files::LAUNCHER_ENV));
+    // Unlike the general opener, revealing a web URL is never meaningful.
+    if !Path::new(path).is_absolute() || path.contains('\0') {
+        return Err(khor_catalog::msg::not_openable(path));
     }
+    if !reveal_here() {
+        return Err(khor_catalog::msg::no_launcher(
+            khor_node::files::LAUNCHER_ENV,
+        ));
+    }
+    reveal_native(path).map_err(|e| khor_catalog::msg::cant_launch(path, e))
+}
+
+#[cfg(target_os = "macos")]
+fn reveal_native(path: &str) -> Result<(), String> {
     std::process::Command::new("open")
         .arg("-R")
         .arg(path)
@@ -241,7 +264,244 @@ pub fn reveal(path: &str) -> Result<(), String> {
         .stderr(std::process::Stdio::null())
         .spawn()
         .map(|_| ())
-        .map_err(|e| khor_catalog::msg::cant_launch(path, e))
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn reveal_native(path: &str) -> Result<(), String> {
+    reveal_linux(path, |program, args, wait| {
+        let mut command = std::process::Command::new(program);
+        command
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        if wait {
+            command
+                .status()
+                .map(|s| s.success())
+                .map_err(|e| e.to_string())
+        } else {
+            command.spawn().map(|_| true).map_err(|e| e.to_string())
+        }
+    })
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn reveal_linux(
+    path: &str,
+    mut run: impl FnMut(&str, &[String], bool) -> Result<bool, String>,
+) -> Result<(), String> {
+    let args = vec![
+        "--session".to_owned(),
+        "--print-reply".to_owned(),
+        "--type=method_call".to_owned(),
+        "--reply-timeout=1500".to_owned(),
+        "--dest=org.freedesktop.FileManager1".to_owned(),
+        "/org/freedesktop/FileManager1".to_owned(),
+        "org.freedesktop.FileManager1.ShowItems".to_owned(),
+        format!("array:string:{}", file_uri(path)),
+        "string:".to_owned(),
+    ];
+    // The reply is bounded: a missing service/tool or a rejected request must
+    // still allow a desktop without FileManager1 to reveal the containing folder.
+    if matches!(run("dbus-send", &args, true), Ok(true)) {
+        return Ok(());
+    }
+    let parent = Path::new(path).parent().unwrap_or_else(|| Path::new(path));
+    match run("xdg-open", &[parent.to_string_lossy().into_owned()], false)? {
+        true => Ok(()),
+        false => Err("file manager did not start".to_owned()),
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn file_uri(path: &str) -> String {
+    let mut uri = String::from("file://");
+    // Encode commas too: dbus-send separates array items with a comma. Spaces,
+    // hashes, percent signs and UTF-8 bytes must remain part of this one URI.
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            use std::fmt::Write;
+            write!(uri, "%{byte:02X}").expect("writing to String cannot fail");
+        }
+    }
+    uri
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn windows_reveal_path(path: &str) -> Vec<u16> {
+    path.encode_utf16().chain(Some(0)).collect()
+}
+
+#[cfg(target_os = "windows")]
+fn reveal_native(path: &str) -> Result<(), String> {
+    use std::ffi::c_void;
+    use std::ptr;
+
+    // Use the Shell API rather than Explorer's /select command-line parser:
+    // commas, quotes, Unicode and UNC paths remain one native path.
+    #[link(name = "ole32")]
+    unsafe extern "system" {
+        fn CoInitializeEx(reserved: *mut c_void, flags: u32) -> i32;
+        fn CoUninitialize();
+        fn CoTaskMemFree(memory: *mut c_void);
+    }
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SHParseDisplayName(
+            name: *const u16,
+            context: *mut c_void,
+            pidl: *mut *mut c_void,
+            attributes: u32,
+            actual: *mut u32,
+        ) -> i32;
+        fn SHOpenFolderAndSelectItems(
+            pidl: *const c_void,
+            count: u32,
+            children: *const *const c_void,
+            flags: u32,
+        ) -> i32;
+    }
+    fn checked(result: i32) -> Result<(), String> {
+        if result < 0 {
+            Err(format!("Windows Shell error 0x{:08X}", result as u32))
+        } else {
+            Ok(())
+        }
+    }
+    let wide = windows_reveal_path(path);
+    unsafe {
+        let initialized = CoInitializeEx(ptr::null_mut(), 2); // COINIT_APARTMENTTHREADED
+        // RPC_E_CHANGED_MODE means this thread already has another COM apartment;
+        // it may use Shell APIs, but this call must not uninitialize that apartment.
+        if initialized < 0 && initialized != 0x80010106u32 as i32 {
+            return checked(initialized);
+        }
+        let mut pidl = ptr::null_mut();
+        let parsed = SHParseDisplayName(
+            wide.as_ptr(),
+            ptr::null_mut(),
+            &mut pidl,
+            0,
+            ptr::null_mut(),
+        );
+        let result = if parsed < 0 {
+            checked(parsed)
+        } else if pidl.is_null() {
+            Err("Windows Shell returned no item".to_owned())
+        } else {
+            // With zero children, the absolute PIDL identifies the one item to
+            // select in its parent; this works for files and directories alike.
+            checked(SHOpenFolderAndSelectItems(pidl, 0, ptr::null(), 0))
+        };
+        if !pidl.is_null() {
+            CoTaskMemFree(pidl);
+        }
+        if initialized >= 0 {
+            CoUninitialize();
+        }
+        result
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn reveal_native(_: &str) -> Result<(), String> {
+    Err("no desktop file manager on this platform".to_owned())
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::*;
+
+    #[test]
+    fn capability_respects_platform_and_explicit_launcher() {
+        for (platform, launcher) in [
+            ("macos", "open"),
+            ("windows", "explorer"),
+            ("linux", "xdg-open"),
+        ] {
+            assert!(reveal_available(platform, None));
+            assert!(reveal_available(platform, Some(launcher.as_ref())));
+            assert!(!reveal_available(platform, Some("".as_ref())));
+            assert!(!reveal_available(platform, Some("/usr/bin/true".as_ref())));
+        }
+        assert!(!reveal_available("ios", None));
+        assert!(!reveal_available("android", None));
+    }
+
+    #[test]
+    fn windows_path_preserves_unicode_commas_and_unc_as_one_native_string() {
+        for path in [r"C:\Users\测试\a, b.md", r"\\server\shared folder\😀.md"] {
+            let wide = windows_reveal_path(path);
+            assert_eq!(wide.last(), Some(&0));
+            assert!(!wide[..wide.len() - 1].contains(&0));
+            assert_eq!(String::from_utf16(&wide[..wide.len() - 1]).unwrap(), path);
+        }
+    }
+
+    #[test]
+    fn linux_selects_one_encoded_uri_without_a_shell() {
+        let mut calls = Vec::new();
+        reveal_linux("/home/测试/a, b#%.md", |program, args, wait| {
+            calls.push((program.to_owned(), args.to_vec(), wait));
+            Ok(true)
+        })
+        .unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "dbus-send");
+        assert!(calls[0].2);
+        assert_eq!(
+            calls[0].1[7],
+            "array:string:file:///home/%E6%B5%8B%E8%AF%95/a%2C%20b%23%25.md"
+        );
+        assert!(calls[0].1.contains(&"--reply-timeout=1500".to_owned()));
+    }
+
+    #[test]
+    fn linux_falls_back_to_parent_for_missing_or_rejecting_service() {
+        for missing in [false, true] {
+            let mut calls = Vec::new();
+            reveal_linux("/home/user/my folder", |program, args, wait| {
+                calls.push((program.to_owned(), args.to_vec(), wait));
+                if program == "dbus-send" {
+                    if missing {
+                        Err("not installed".to_owned())
+                    } else {
+                        Ok(false)
+                    }
+                } else {
+                    Ok(true)
+                }
+            })
+            .unwrap();
+            assert_eq!(
+                calls[1],
+                ("xdg-open".to_owned(), vec!["/home/user".to_owned()], false)
+            );
+        }
+    }
+
+    #[test]
+    fn linux_root_fallback_does_not_use_an_empty_path_and_reports_errors() {
+        let mut calls = Vec::new();
+        let error = reveal_linux("/", |program, args, _| {
+            calls.push((program.to_owned(), args.to_vec()));
+            Err("not installed".to_owned())
+        })
+        .unwrap_err();
+        assert_eq!(calls[1].1, vec!["/".to_owned()]);
+        assert_eq!(error, "not installed");
+    }
+
+    #[test]
+    fn reveal_refuses_urls_flags_and_nul_before_starting_any_process() {
+        for path in ["https://example.com", "-R", "relative/file", "/tmp/a\0b"] {
+            assert!(reveal(path).is_err());
+        }
+    }
 }
 
 /// How much of a file gets sniffed for the NUL that means binary. git's

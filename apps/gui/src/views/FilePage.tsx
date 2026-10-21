@@ -8,14 +8,14 @@
  * session's 附栏 on both faces (UX-40 §4). Nothing at the top:
  * the file starts under the status bar. At the bottom the content pages'
  * deck (UX-14, the owner 2026-10-05): ‹ · a pill with the name, the
- * preview action in the more menu, and ✓ while the buffer differs from
+ * preview and more actions grouped beside the pill, and ✓ while the buffer differs from
  * the file · 分享 · 「…」. It folds into the title strip while the file
  * is read (UX-13) and stays over the keyboard with ✓ in reach.
  *
  * **No edit mode** (UX-14): a text file is editable as soon as it is open
  * (Notes) — a tap puts the caret where the finger is, a drag scrolls, the
  * keyboard's rise does not move the text. A file opens as source; the more
- * menu explicitly switches preview, retaining the reading position. The file
+ * preview button explicitly switches the face, retaining the reading position. The file
  * saves itself a second after the typing stops and on leaving (save-a,
  * 2026-10-08); the ✓ writes at once and says 已保存. A save that does not
  * land keeps the draft (the row carries its dot), and the file says why.
@@ -28,20 +28,18 @@
  * here (a picture, a cut file), no share where nothing can take a file,
  * no VS Code where the machine has none.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, Fragment, type ReactNode } from "react";
 
-import { launchOn, pullTemp, renamePath, reveal } from "@/api";
+import { launchOn, pullTemp, reveal } from "@/api";
 import type { CodeWindow } from "@/components/CodeWindow";
 import { caretCoveredAt, editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/lib/code/place";
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { preloadEditor } from "@/components/CodeEditor.lazy";
-import { GlassCircle, GlassItem } from "@/components/Glass";
+import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
-import { IconBack, IconBranch, IconCheck, IconEye, IconFiles, IconMore, IconReload, IconShare } from "@/components/icons";
-import { RemoveDialog } from "@/components/RemoveDialog";
+import { IconBack, IconBranch, IconCheck, IconEye, IconFiles, IconMore, IconReload } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -50,7 +48,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useCoarse } from "@/hooks/use-coarse";
@@ -62,13 +59,12 @@ import { useBlameShown } from "@/lib/blame";
 import { FILE_STEPS, fileSizeStyle, useFileSize } from "@/lib/file-size";
 import { groundAttr, GROUNDS, usePreviewGround } from "@/lib/preview-ground";
 import { baseName, directoryOf } from "@/lib/paths";
-import { treeChanged } from "@/lib/tree-changed";
 import { useRoad } from "@/lib/save-road";
 import { cn } from "@/lib/utils";
-import { bytesOf, revealHere, shares } from "@/views/chat-files";
+import { bytesOf, shares } from "@/views/chat-files";
 import { HistorySheet, revisionRenders, RevisionView, shortId } from "@/views/FileHistory";
 import { SymbolsSheet } from "@/views/FileSymbols";
-import { useRemoveFlow } from "@/views/fileRow";
+import { fileManagerLabel, useNativeFileManager } from "@/lib/file-actions";
 import { defaultFaceOf, FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
 
 // ── where the reader is ───────────────────────────────────────────
@@ -134,13 +130,11 @@ function useFileVerbs({
   path,
   here,
   code,
-  onGone,
-  onMoved,
+  onLocate,
   history = false,
   onRevision,
   previewing,
   faceToggle,
-  shareInMore = false,
   moreActs = [],
 }: {
   /** The page's own additions at the head of 「…」 (`FilePage` `moreActs`). */
@@ -149,26 +143,23 @@ function useFileVerbs({
       while the file is shown rendered. Left out (the Mac's workspace
       strip), they are offered as before. */
   previewing?: boolean;
-  /** Explicit preview/source action in the file’s existing more menu. */
+  /** Independent preview/source toggle grouped with the more menu. */
   faceToggle?: { face: "source" | "preview"; run: () => void };
-  /** **分享 inside 「…」** (UX-33 §4): the share circle is not drawn
-      and its acts are offered in the menu. */
-  shareInMore?: boolean;
   machine: string;
   path: string;
   here: boolean;
   code?: CodeWindow | null;
   onGone: (path: string) => void;
   onMoved: (from: string, to: string) => void;
+  onLocate?: () => void;
   /** The file is in a checkout: git 历史 and blame are offered (round UX-4). */
   history?: boolean;
   /** A revision picked from git 历史, to show where the file is. */
   onRevision?: (c: GitCommit) => void;
 }) {
   const coarse = useCoarse();
-  const [finder, setFinder] = useState(false);
+  const native = useNativeFileManager();
   const [said, setSaid] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState(false);
   const size = useFileSize();
   const blame = useBlameShown();
   const ground = usePreviewGround();
@@ -178,16 +169,12 @@ function useFileVerbs({
       a language with no tree, a rendered face or an empty file offers
       no 「符号」 (progressive disclosure). */
   const [hasSymbols, setHasSymbols] = useState(false);
-  useEffect(() => {
-    void revealHere().then(setFinder);
-  }, []);
   useEffect(() => setSaid(null), [path]);
-  const removal = useRemoveFlow({ machine, here, onGone });
   const kind = kindOf(path);
-  const sharing = !finder && kind !== "doc" && shares();
+  const sharing = !native && kind !== "doc" && shares();
   // On a Mac the file is handed to this machine's other apps: a far one
   // is fetched into a temporary folder first (`pullTemp`).
-  const local = () => pullTemp(here ? "" : machine, path);
+  const local = () => here ? Promise.resolve(path) : pullTemp(machine, path);
   const fail = (e: unknown) => setSaid(String((e as Error)?.message ?? e));
   const share = () =>
     void bytesOf(machine, path)
@@ -197,23 +184,18 @@ function useFileVerbs({
       });
   const previewKind = rendererOf(path) !== null || kind === "image" || kind === "svg" || kind === "pdf";
   const textKind = kind === "text";
-  const menu: { key: string; label: string; run: () => void; destructive?: boolean }[] = [
+  const menu: { key: string; label: string; run: () => void }[] = [
     ...moreActs,
-    ...(faceToggle ? [{ key: "preview", label: faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview, run: faceToggle.run }] : []),
-    ...(shareInMore && finder
-      ? [
-          { key: "open-other", label: gui.file_open_other, run: () => void local().then((p) => launchOn("", p)).catch(fail) },
-          { key: "reveal", label: gui.chat_file_reveal, run: () => void local().then((p) => reveal(p)).catch(fail) },
-        ]
-      : shareInMore && sharing
-        ? [{ key: "share", label: gui.chat_file_share, run: share }]
-        : []),
+    ...(onLocate ? [{key:"locate",label:gui.file_locate,run:onLocate}] : []),
+    ...(native ? [
+      {key:here?"open-default":"open-copy",label:here?gui.file_open_default:gui.file_open_copy,run:()=>void local().then(p=>launchOn("",p)).catch(fail)},
+      ...(here?[{key:"reveal",label:fileManagerLabel(),run:()=>void reveal(path).catch(fail)}]:[]),
+    ] : sharing ? [{key:"share",label:gui.chat_file_share,run:share}] : []),
     {
       key: "copy-path",
       label: gui.tab_copy_path,
       run: () => void navigator.clipboard.writeText(path).then(() => setSaid(gui.copied), () => setSaid(gui.copy_failed)),
     },
-    { key: "rename", label: gui.rename, run: () => setRenaming(true) },
     ...(hasSymbols ? [{ key: "symbols", label: gui.keys_group_symbol, run: () => setSymbolsOpen(true) }] : []),
     ...(history && onRevision ? [{ key: "history", label: gui.file_history, run: () => setHistoryOpen(true) }] : []),
     // Blame is said at the end of the caret's line (UX-23), which a phone
@@ -222,45 +204,22 @@ function useFileVerbs({
       ? [{ key: "blame", label: blame.on ? gui.blame_hide : gui.blame_show, run: () => blame.set(!blame.on) }]
       : []),
     ...(code?.offered ? [{ key: "code", label: gui.file_in_code, run: () => code.want() }] : []),
-    ...removal.actions(path, false).map((a) => ({ key: a.key, label: a.label, run: () => void a.run(), destructive: true })),
   ];
-  const shareCircle: ReactNode = shareInMore ? null : finder ? (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <GlassCircle aria-label={gui.chat_file_share} data-file-share tip={!coarse && gui.chat_file_share}>
-          <IconShare />
-        </GlassCircle>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" sideOffset={8} data-file-share-menu>
-        <DropdownMenuItem onSelect={() => void local().then((p) => launchOn("", p)).catch(fail)}>
-          {gui.file_open_other}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void local().then((p) => reveal(p)).catch(fail)}>
-          {gui.chat_file_reveal}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  ) : sharing ? (
-    <GlassCircle aria-label={gui.chat_file_share} data-file-share tip={!coarse && gui.chat_file_share} onClick={share}>
-      <IconShare />
-    </GlassCircle>
-  ) : null;
-  const moreCircle: ReactNode = (
+  const MoreButton = faceToggle ? GlassItem : GlassCircle;
+  const moreMenu: ReactNode = (
     <DropdownMenu onOpenChange={(o) => o && setHasSymbols(hasSymbolsIn(path))}>
       <DropdownMenuTrigger asChild>
-        <GlassCircle aria-label={gui.rail_more} data-file-more tip={!coarse && gui.rail_more}>
+        <MoreButton aria-label={gui.rail_more} data-file-more tip={!coarse && gui.rail_more}>
           <IconMore />
-        </GlassCircle>
+        </MoreButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="top" sideOffset={8} data-file-more-menu className="min-w-nav-menu">
-        {menu
-          .filter((m) => !m.destructive)
-          .map((m) => (
-            <DropdownMenuItem key={m.key} data-file-more-item={m.key} data-file-face-toggle={m.key === "preview" ? faceToggle?.face : undefined} onSelect={m.run}>
-              {m.key === "preview" && <IconEye />}
-              {m.label}
-            </DropdownMenuItem>
-          ))}
+        {menu.map((m, i) => (
+          <Fragment key={m.key}>
+            {i > 0 && ["symbols", "history", "blame", "code"].includes(m.key) && !["symbols", "history", "blame", "code"].includes(menu[i-1].key) && <DropdownMenuSeparator />}
+            <DropdownMenuItem data-file-more-item={m.key} onSelect={m.run}>{m.label}</DropdownMenuItem>
+          </Fragment>
+        ))}
         {/* 字号, for what reads (text, rendered or not); a picture or a
             PDF has no type to size. Two keys on one row, kept open. */}
         {(textKind || previewKind) && kind !== "image" && kind !== "svg" && kind !== "pdf" && previewing !== false && (
@@ -305,101 +264,24 @@ function useFileVerbs({
             ))}
           </div>
         )}
-        <DropdownMenuSeparator />
-        {menu
-          .filter((m) => m.destructive)
-          .map((m) => (
-            <DropdownMenuItem
-              key={m.key}
-              data-file-more-item={m.key}
-              data-destructive
-              className="text-destructive focus:text-destructive data-[highlighted]:text-destructive"
-              onSelect={m.run}
-            >
-              {m.label}
-            </DropdownMenuItem>
-          ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
   const dialogs = (
     <>
-      <RemoveDialog {...removal.dialog} />
       <SymbolsSheet open={symbolsOpen} onOpenChange={setSymbolsOpen} path={path} />
       {history && onRevision && (
         <HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} machine={machine} path={path} onPick={onRevision} />
       )}
-      <RenameDialog
-        open={renaming}
-        name={baseName(path)}
-        onClose={() => setRenaming(false)}
-        onRename={async (name) => {
-          const dir = path.slice(0, path.lastIndexOf("/")) || "/";
-          const to = `${dir === "/" ? "" : dir}/${name}`;
-          if (to === path) return;
-          await renamePath(machine, path, to);
-          onMoved(path, to);
-          // The tree under this page, and any other of this machine's
-          // (UX-43 §1).
-          treeChanged({ machine, here, dir });
-        }}
-      />
     </>
   );
-  return { shareCircle, moreCircle, dialogs, said, size, ground: ground.ground };
-}
-
-/** 重命名: the name only, in its directory (`FileTree`'s rule: a typed
-    `/` would move the file somewhere nothing is showing). */
-function RenameDialog({
-  open,
-  name,
-  onClose,
-  onRename,
-}: {
-  open: boolean;
-  name: string;
-  onClose: () => void;
-  onRename: (name: string) => Promise<void>;
-}) {
-  const [value, setValue] = useState(name);
-  const [refused, setRefused] = useState<string | null>(null);
-  useEffect(() => {
-    if (open) {
-      setValue(name);
-      setRefused(null);
-    }
-  }, [open, name]);
-  const go = () => {
-    const v = value.trim();
-    if (!v || v.includes("/")) return;
-    onRename(v).then(onClose, (e: unknown) => setRefused(String((e as Error)?.message ?? e)));
-  };
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <TaskOverlay purpose="edit" data-file-rename>
-        <DialogHeader>
-          <DialogTitle>{gui.rename}</DialogTitle>
-        </DialogHeader>
-        <Input
-          autoFocus
-          enterKeyHint="done"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && go()}
-        />
-        {refused && <span className="text-callout text-state-failed">{refused}</span>}
-        <DialogFooter>
-          <Button data-dialog-cancel onClick={onClose}>
-            {gui.delete_keep}
-          </Button>
-          <Button variant="primary" data-file-rename-go onClick={go}>
-            {gui.rename}
-          </Button>
-        </DialogFooter>
-      </TaskOverlay>
-    </Dialog>
-  );
+  const moreCircle = faceToggle ? (
+    <GlassCapsule data-file-actions role="group" aria-label={gui.file_actions}>
+      <GlassItem data-file-face-toggle={faceToggle.face} aria-label={faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview} aria-pressed={faceToggle.face === "preview"} on={faceToggle.face === "preview"} onClick={faceToggle.run} tip={!coarse && (faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview)}><IconEye /></GlassItem>
+      {moreMenu}
+    </GlassCapsule>
+  ) : moreMenu;
+  return { moreCircle, dialogs, said, size, ground: ground.ground };
 }
 
 /** The Mac's workspace strip carries the same verbs at its right end
@@ -408,9 +290,9 @@ export function FileVerbs(props: Parameters<typeof useFileVerbs>[0]) {
   const v = useFileVerbs(props);
   return (
     <div data-file-verbs className="flex flex-none items-center gap-in">
-      {v.shareCircle}
       {v.moreCircle}
       {v.dialogs}
+      {v.said && <span role="status" className="text-caption text-muted-foreground">{v.said}</span>}
     </div>
   );
 }
@@ -436,6 +318,7 @@ export function FilePage({
   history = false,
   tabs,
   moreActs,
+  onLocate,
   embedded = false,
   embeddedContext,
   contentDeck,
@@ -493,6 +376,7 @@ export function FilePage({
   onGone: (path: string) => void;
   /** The file was renamed from here. */
   onMoved: (from: string, to: string) => void;
+  onLocate?: () => void;
   /** The workspace's VS Code window, where that machine has one. */
   code?: CodeWindow | null;
 }) {
@@ -529,6 +413,7 @@ export function FilePage({
     code,
     onGone,
     onMoved,
+    onLocate,
     history,
     onRevision: (c) => {
       setRev(c);
@@ -539,7 +424,6 @@ export function FilePage({
     previewing: previewable ? face === "preview" : false,
     faceToggle: rev === null && previewable ? { face, run: () => turn() } : undefined,
     // The phone's deck: 分享 inside 「…」 (UX-33 §4).
-    shareInMore: true,
     moreActs,
   });
   /** A re-read asked for from the pill's ↻ (UX-33), added to the one asked
@@ -805,7 +689,6 @@ export function FilePage({
                 <IconEye />
               </GlassCircle>
             )}
-            {rev === null && verbs.shareCircle}
             {rev === null && verbs.moreCircle}
             {rev === null && contentDeck?.trail}
             {rev === null && tabs && (

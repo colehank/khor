@@ -4786,6 +4786,12 @@ chat-file-wrote = "已写入"
 # 文件页（round UX-3）底部「分享」在 Mac 上的两项之一（另一项借 `chat-file-reveal`），
 # 和「…」里的两项与字号的两颗键。远处的文件先取到本机的临时目录再交出去。
 file-open-other = "用其他应用打开"
+file-reveal-windows = "在文件资源管理器中显示"
+file-reveal-linux = "在文件管理器中显示"
+file-open-default = "使用默认应用打开"
+file-open-copy = "下载副本后打开"
+file-locate = "在工作区中显示"
+file-actions = "文件操作"
 file-in-code = "在 VS Code 中打开"
 file-size-down = "缩小"
 file-size-up = "放大"

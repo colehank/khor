@@ -20,10 +20,10 @@
 // directory) was chosen silently, so the row says where the file went;
 // a failure wears its words on the same row — the pin's rule, because
 // this app has nowhere that collects messages.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/RegionState";
-import { fetchLs, type DirListing } from "@/api";
+import { fetchLs, renamePath, type DirListing } from "@/api";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconBack, IconFiles } from "@/components/icons";
@@ -31,6 +31,10 @@ import { RowMenu } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { pathDrag } from "@/lib/path-drag";
+import { useFileObjectActions } from "@/lib/file-actions";
+import { consumeFileLocation, onFileLocation, pendingFileLocation, sameFileLocation } from "@/lib/file-location";
+import { levelOf, treeChanged } from "@/lib/tree-changed";
+import { RenameDialog } from "@/components/FileRenameDialog";
 import { cn } from "@/lib/utils";
 import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
 
@@ -61,6 +65,8 @@ export function FilesPane({
   here,
   marks,
   onDiff,
+  onMoved,
+  onGone,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
@@ -109,9 +115,16 @@ export function FilesPane({
       one — browsing a machine's whole disk, which is not a checkout —
       and the letter stays a letter then. */
   onDiff?: (path: string) => void;
+  /** The owning tab collection follows every file under a renamed directory. */
+  onMoved?: (from: string, to: string) => void;
+  /** Remove every tab under a deleted file/directory in the owning collection. */
+  onGone?: (path: string) => void;
 }) {
+  const listElement = useRef<HTMLElement>(null);
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const objectActions = useFileObjectActions(here, listing?.path ?? path);
   const { took, take, takes } = useTake(machine);
   /** Bumped when this pane changed the directory under itself, which is
       the one change its own effect cannot notice: the path did not
@@ -162,6 +175,49 @@ export function FilesPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [machine, path, again]);
 
+  // Returning from a file can reveal this retained list without remounting.
+  // Only the visible list with the requested row may consume the location.
+  useEffect(() => {
+    let frame = 0;
+    const attempt = () => {
+      frame = 0;
+      const request = pendingFileLocation(machine);
+      const pane = listElement.current;
+      if (!request || !pane || !listing || document.hidden || !pane.isConnected ||
+          pane.closest('[inert], [hidden], [aria-hidden="true"]')) return;
+      const bounds = pane.getBoundingClientRect();
+      if (!bounds.width || !bounds.height || getComputedStyle(pane).visibility === "hidden") return;
+      const target = [...pane.querySelectorAll<HTMLButtonElement>('button[data-file-path]')]
+        .find(row => sameFileLocation(row.dataset.filePath ?? "", request.path));
+      if (!target || !consumeFileLocation(request)) return;
+      const list = pane.querySelector<HTMLElement>('[data-files-list]');
+      if (list) {
+        const viewport = list.getBoundingClientRect();
+        const row = target.getBoundingClientRect();
+        if (row.top < viewport.top) list.scrollTop += row.top - viewport.top;
+        else if (row.bottom > viewport.bottom) list.scrollTop += row.bottom - viewport.bottom;
+      }
+      target.focus({ preventScroll: true });
+    };
+    const schedule = () => {
+      if (!frame && pendingFileLocation(machine)) frame = requestAnimationFrame(attempt);
+    };
+    const off = onFileLocation(schedule);
+    const observer = new MutationObserver(schedule);
+    for (let owner = listElement.current; owner; owner = owner.parentElement) {
+      observer.observe(owner, { attributes: true, attributeFilter: ["inert", "hidden", "aria-hidden", "class", "style", "data-content-visible", "data-open"] });
+    }
+    const resize = new ResizeObserver(schedule);
+    if (listElement.current) resize.observe(listElement.current);
+    document.addEventListener("visibilitychange", schedule);
+    schedule();
+    return () => {
+      off(); observer.disconnect(); resize.disconnect();
+      document.removeEventListener("visibilitychange", schedule);
+      cancelAnimationFrame(frame);
+    };
+  }, [machine, listing]);
+
   const up = () => {
     if (!listing) return;
     onPath(listing.path.slice(0, listing.path.lastIndexOf("/")) || "/");
@@ -183,7 +239,8 @@ export function FilesPane({
     machine,
     here,
     onGone: (full) => {
-      if (open === full) onFile(null);
+      if (onGone) onGone(full);
+      else if (open === full || open?.startsWith(`${full}/`)) onFile(null);
       reread();
     },
   });
@@ -192,7 +249,7 @@ export function FilesPane({
   // a second copy of them here would be two spellings of one fact one
   // poll apart. What is left is the listing.
   return (
-    <section className="flex h-full min-w-0 flex-col">
+    <section ref={listElement} className="flex h-full min-w-0 flex-col">
       <div data-files-list className="min-h-0 flex-1 overflow-y-auto">
         {error ? (
           // **The one thing this must never be is blank.** Enter in the
@@ -277,10 +334,11 @@ export function FilesPane({
                       button the handler sits on something focus reaches
                       and a keyboard's Menu key can fire `contextmenu`
                       on — the same shape `SessionsList` uses. */}
-                  <RowMenu items={actions(full, true)}>
+                  <RowMenu items={[...objectActions(full), { key: "rename", label: gui.rename, run: () => setRenaming(full) }, ...actions(full, true)]}>
                   <button
                     type="button"
                     data-dir={e.name}
+                    data-file-path={full}
                     // Dragged onto a terminal, the path (item 60).
                     {...pathDrag(here ? null : machine, full)}
                     onClick={() => onPath(full)}
@@ -355,10 +413,11 @@ export function FilesPane({
                       a file and pressing the button next to it are two
                       different asks, and the bigger target is the one
                       people mean. */}
-                  <RowMenu items={actions(full, false)}>
+                  <RowMenu items={[...objectActions(full), { key: "rename", label: gui.rename, run: () => setRenaming(full) }, ...actions(full, false)]}>
                   <button
                     type="button"
                     {...pathDrag(here ? null : machine, full)}
+                    data-file-path={full}
                     onClick={() => onFile(full)}
                     // **The name wears the letter's ink** (工作区批⑦):
                     // 「颜色与字符表示」 is one decoration in two
@@ -452,6 +511,24 @@ export function FilesPane({
                 is being asked about is state, and a sheet per row would
                 be one mounted component per file in the directory. */}
             <RemoveDialog {...dialog} />
+            <RenameDialog
+              open={renaming !== null}
+              name={renaming?.split("/").pop() ?? ""}
+              onClose={() => setRenaming(null)}
+              onRename={async (name: string) => {
+                if (renaming === null) return;
+                const dir = levelOf(renaming);
+                const to = `${dir === "/" ? "" : dir}/${name}`;
+                if (to === renaming) return;
+                await renamePath(machine, renaming, to);
+                if (onMoved) onMoved(renaming, to);
+                else if (open === renaming || open?.startsWith(`${renaming}/`)) {
+                  onFile(`${to}${open.slice(renaming.length)}`);
+                }
+                reread();
+                treeChanged({ machine, here, dir });
+              }}
+            />
             {listing.truncated && (
               // The cap is however many rows actually came — the number
               // belongs to the node, and a copy here would drift.

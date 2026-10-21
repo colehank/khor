@@ -81,7 +81,8 @@
     "field-interaction": "node scripts/check-field-interaction.mjs",
     "content-toolbar": "node scripts/check-content-toolbar.mjs",
     "editor-history": "node scripts/check-editor-history.mjs",
-    "editor-history-native": "python3 scripts/editor-history-probe/run.py"
+    "editor-history-native": "python3 scripts/editor-history-probe/run.py",
+    "file-actions": "node scripts/check-file-actions.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

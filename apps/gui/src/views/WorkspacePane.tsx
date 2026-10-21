@@ -44,7 +44,7 @@ import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
 import { PageAction, PageSubtitle, PageTitleAside } from "@/components/Region";
-import { type RowAction } from "@/components/RowMenu";
+import { RowMenu, type RowAction } from "@/components/RowMenu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,6 +63,9 @@ import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth, type PaneWidth } from "@/hooks/use-list-width";
 import { reportDrafts } from "@/lib/drafts";
+import { requestFileLocation } from "@/lib/file-location";
+import { directoryOf } from "@/lib/paths";
+import { movedFilePath, useFileObjectActions } from "@/lib/file-actions";
 import { discard, flushFile, roadOf, useRoads } from "@/lib/save-road";
 import { useReadFirst } from "@/hooks/use-read-first";
 import { useTabHost } from "@/lib/shortcuts";
@@ -1461,6 +1464,7 @@ export function WorkspacePane({
             setGitAt((n) => n + 1);
           }}
           onMoved={moved}
+          onLocate={() => { requestFileLocation(machine, file); setHunt(""); if(root === "")setAt(directoryOf(file)); setScreen("tree"); side?.set(true); }}
           history={git !== null}
           previewing={face === "preview"}
           faceToggle={rendererOf(file) !== null ? { face, run: face === "preview" ? editHere : readHere } : undefined}
@@ -1931,6 +1935,7 @@ export function WorkspacePane({
                 error={huntError}
                 query={hunt.trim()}
                 dir={huntDir}
+                here={here}
                 onOpen={(path, line) => {
                   open(path, false);
                   setGoLine(line === null ? null : { path, line, at: Date.now() });
@@ -1942,6 +1947,8 @@ export function WorkspacePane({
                 path={at}
                 onPath={setAt}
                 onLanded={setAt}
+                onMoved={moved}
+                onGone={path=>{for(const tab of tabs)if(movedFilePath(fileOf(tab),path,path)!==null)drop(tab);}}
                 // The browsing face gets the same strip: a tab is a
                 // file wherever the file was found, and a second rule
                 // for「what happens when you press a file」 is the kind
@@ -1975,7 +1982,7 @@ export function WorkspacePane({
                 open={file}
                 onOpen={open}
                 onDiff={openDiff}
-                onGone={drop}
+                onGone={path=>{for(const tab of tabs)if(movedFilePath(fileOf(tab),path,path)!==null)drop(tab);}}
                 onMoved={moved}
                 onMade={() => setGitAt((n) => n + 1)}
                 // The head's ＋ (`treeNew`), taken once.
@@ -2059,6 +2066,7 @@ export function WorkspacePane({
               goLine={goLine !== null && goLine.path === file ? goLine : null}
               onSaved={() => setGitAt((n) => n + 1)}
               onNote={setFileNote}
+              onLocate={() => { requestFileLocation(machine, file!); setHunt(""); if(root === "")setAt(directoryOf(file!)); setScreen("tree"); side?.set(true); }}
               onBack={() => setScreen("tree")}
               onGone={(p) => {
                 drop(p);
@@ -2435,6 +2443,7 @@ export function Hits({
   error,
   query,
   dir,
+  here,
   onOpen,
 }: {
   found: Found | null;
@@ -2443,11 +2452,13 @@ export function Hits({
   /** What the paths are shown relative to — the whole point of showing
       them at all is telling two `mod.rs` apart. */
   dir: string;
+  here: boolean;
   /** A row was pressed: open that file, and on a line hit go to that
       line — the road a path in a conversation already takes (ruling
       35). */
   onOpen: (path: string, line: number | null) => void;
 }) {
+  const actions = useFileObjectActions(here, dir);
   const short = (p: string) => (p.startsWith(`${dir}/`) ? p.slice(dir.length + 1) : p);
   return (
     <div data-tree-results className="min-h-0 flex-1 overflow-y-auto">
@@ -2464,8 +2475,8 @@ export function Hits({
         </div>
       )}
       {found?.names.map((path: string) => (
+        <RowMenu key={path} items={actions(path)}>
         <button
-          key={path}
           type="button"
           data-hit-name={path}
           onClick={() => onOpen(path, null)}
@@ -2477,10 +2488,11 @@ export function Hits({
           />
           <span className="min-w-0 flex-1 truncate">{marked(short(path), query)}</span>
         </button>
+        </RowMenu>
       ))}
       {found?.lines.map((hit: SearchHit) => (
+        <RowMenu key={`${hit.path}:${hit.line}`} items={actions(hit.path)}>
         <button
-          key={`${hit.path}:${hit.line}`}
           type="button"
           data-hit-line={`${short(hit.path)}:${hit.line}`}
           onClick={() => onOpen(hit.path, hit.line)}
@@ -2496,6 +2508,7 @@ export function Hits({
             {marked(hit.text.trim(), query)}
           </span>
         </button>
+        </RowMenu>
       ))}
       {found?.more === true && (
         <div data-hits-more className="px-(--page-inset) py-2 text-caption text-muted-foreground">

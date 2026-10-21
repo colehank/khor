@@ -494,10 +494,9 @@ pub fn launcher() -> Option<String> {
         let given = given.trim().to_owned();
         return if given.is_empty() { None } else { Some(given) };
     }
-    // Windows is deliberately not in this list. `explorer` answers a
-    // non-zero exit code on success, so「did it open」could only be
-    // guessed at — and a guess is the one thing [`launch`] must not
-    // answer. A Windows user names their opener in the variable above.
+    // Windows has no command-line default here: [`launch`] uses the native
+    // Shell API when no override was supplied. Explorer's process exit status
+    // does not report whether a default application accepted the target.
     if cfg!(target_os = "macos") {
         Some("open".to_owned())
     } else if cfg!(target_os = "linux") {
@@ -545,6 +544,10 @@ pub fn openable(target: &str) -> Result<(), String> {
 /// for a person to close a window.
 pub fn launch(target: &str) -> Result<(), String> {
     openable(target)?;
+    #[cfg(target_os = "windows")]
+    if std::env::var_os(LAUNCHER_ENV).is_none() {
+        return launch_windows(target).map_err(|e| msg::cant_launch(target, e));
+    }
     let opener = launcher().ok_or_else(|| msg::no_launcher(LAUNCHER_ENV))?;
     std::process::Command::new(&opener)
         .arg(target)
@@ -554,6 +557,116 @@ pub fn launch(target: &str) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|e| msg::cant_launch(target, e))
+}
+
+// ShellExecuteW takes a terminated UTF-16 target, never command text. Keep
+// these pure helpers testable without opening an application on the test host.
+#[cfg(any(target_os = "windows", test))]
+fn windows_open_target(target: &str) -> Result<Vec<u16>, String> {
+    if target.contains('\0') {
+        return Err("target contains a NUL character".to_owned());
+    }
+    Ok(target.encode_utf16().chain(Some(0)).collect())
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn windows_open_result(code: isize) -> Result<(), String> {
+    if code > 32 {
+        return Ok(());
+    }
+    let reason = match code {
+        0 | 8 => "not enough memory",
+        2 => "file not found",
+        3 => "path not found",
+        5 => "access denied",
+        26 => "file is in use",
+        27 | 31 => "no application is associated with this file",
+        28 => "application did not respond in time",
+        29 => "application could not accept the request",
+        30 => "application is busy",
+        32 => "required library was not found",
+        _ => "application could not be opened",
+    };
+    Err(format!("Windows Shell error {code}: {reason}"))
+}
+
+#[cfg(target_os = "windows")]
+fn launch_windows(target: &str) -> Result<(), String> {
+    use std::{ffi::c_void, ptr};
+    #[link(name = "ole32")]
+    unsafe extern "system" {
+        fn CoInitializeEx(reserved: *mut c_void, flags: u32) -> i32;
+        fn CoUninitialize();
+    }
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn ShellExecuteW(
+            window: *mut c_void,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show: i32,
+        ) -> *mut c_void;
+    }
+    let target = windows_open_target(target)?;
+    // Shell verbs may be implemented by COM extensions. Balance only the
+    // apartment initialized here; an existing apartment belongs to its caller.
+    let initialized = unsafe { CoInitializeEx(ptr::null_mut(), 6) };
+    if initialized < 0 && initialized != 0x80010106u32 as i32 {
+        return Err(format!("Windows COM error 0x{:08X}", initialized as u32));
+    }
+    // A null verb chooses the file type's default action. No parameters are
+    // supplied; spaces, commas and Unicode remain part of the same target.
+    let result = unsafe {
+        ShellExecuteW(
+            ptr::null_mut(),
+            ptr::null(),
+            target.as_ptr(),
+            ptr::null(),
+            ptr::null(),
+            1,
+        )
+    };
+    if initialized >= 0 {
+        unsafe { CoUninitialize() };
+    }
+    windows_open_result(result as isize)
+}
+
+#[cfg(test)]
+mod windows_open_tests {
+    use super::*;
+
+    #[test]
+    fn targets_preserve_paths_and_urls_as_one_terminated_wide_string() {
+        for target in [
+            r"C:\Users\测试\a, b.md",
+            r"\\server\share\😀.pdf",
+            "https://example.test/a?q=b,c",
+        ] {
+            let wide = windows_open_target(target).unwrap();
+            assert_eq!(wide.last(), Some(&0));
+            assert_eq!(String::from_utf16(&wide[..wide.len() - 1]).unwrap(), target);
+        }
+        assert!(windows_open_target("C:\\a\0ignored").is_err());
+    }
+
+    #[test]
+    fn only_shell_results_above_32_report_success() {
+        for code in 0..=32 {
+            assert!(windows_open_result(code).is_err());
+        }
+        for code in [33, 42, 0x12345678] {
+            assert!(windows_open_result(code).is_ok());
+        }
+        assert!(windows_open_result(31).unwrap_err().contains("associated"));
+        assert!(
+            windows_open_result(5)
+                .unwrap_err()
+                .contains("access denied")
+        );
+    }
 }
 
 /// One line that holds what somebody typed (工作区第六轮 第 47 条).

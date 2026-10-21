@@ -1,3 +1,4 @@
+import { fileManagerLabel } from "@/lib/file-actions";
 // A browsing landing, whole: tabs, an address bar, and whatever the open
 // tab is showing.
 //
@@ -563,7 +564,7 @@ export function BrowseLanding({
           onClick={() => void reveal(said.reveal ?? "").catch(() => {})}
           className="grid min-h-touch flex-none place-items-center px-in text-caption font-label text-brand-strong"
         >
-          {gui.chat_file_reveal}
+          {fileManagerLabel()}
         </button>
       )}
     </span>
