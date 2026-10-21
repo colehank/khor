@@ -12,7 +12,23 @@
 
 ## 补丁
 
-二十五处。
+二十六处。
+
+### 26. `src/net_report.rs`：QAD 连接真的复用；一族的探测拿到地址才算完（2026-10-21，net-home）
+
+两处，turing 一天 420 行「中继告知的公网地址」（v6 地址有、没有、又有）的来源。
+
+一、`run_probe_v4`/`run_probe_v6` 开的 QAD 连接存进 `QadConns`，观察值却从 `None` 起，只有地址变了才写；
+`current_v4`/`current_v6` 于是一直是 `None`，每一轮报告（25 秒一次）都对每台答 QAD 的中继重新握手，旁边握着的那条
+从没被用上。补丁：观察值的初值就是第一次回答。上游 main（2026-10-21）还是 `Watchable::new(None)`。后果：增量报告
+只读握着的连接（它的往返是活的 `rtt`，地址变了它的观察任务会写），不再重新握手；QAD 照旧会重测——完整报告（5 分钟，
+或网络大变）先 `qad_conns.clear()` 全部重拨，连接断了（`close_reason`）也重拨。
+二、`spawn_qad_probes` 一族的探测里任何一个结束（失败也算）就把 `ipv6_pending` 清掉；北京的主机是 IPv4 字面值，它的 v6 探测
+查不到 AAAA 当场失败，凑够 3 个 v4 回答就收场，aps1 的 v6 回答还没到——这一轮报告就没有 v6 地址。补丁：拿到地址才清，
+或者这一族都结束了（`qad_family_done`）。代价：有 v6 网卡、v6 却不通（只有 ULA）的机器，没握着 v6 连接时每轮报告最多多等
+`PROBES_TIMEOUT`（3 秒）。测试：`khor_the_qad_connection_is_reused`（本机中继，第一轮之后握着的连接有观察值；打补丁前红），
+`khor_a_failed_qad_probe_does_not_end_the_wait_for_an_address`。khor 这边 `journal::Learnt` 另外把「一轮没有」不算变化。
+上游可以提（第一处是明显的疏漏）。
 
 ### 25. `src/net_report.rs`：「量到」只认 HTTPS；老断的接班者停用一小时（2026-10-21，net-home）
 

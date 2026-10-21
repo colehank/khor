@@ -888,20 +888,36 @@ pub(crate) fn watch_ears(
 /// per destination. Ports are left out of the comparison — behind a NAT
 /// that maps per destination each fresh QAD connection gets a new one, and
 /// a line every five minutes would say nothing new.
+///
+/// **One report without an address is not the address gone** (2026-10-21):
+/// a report may end before a family's QAD answer is in, and turing wrote
+/// 420 lines in a day of its v6 address there, gone, there again. An
+/// address is gone when two reports in a row lack it.
 #[derive(Debug, Default)]
 struct Learnt {
     told: Option<(Option<std::net::IpAddr>, Option<std::net::IpAddr>, Option<bool>)>,
+    /// Reports in a row without the v4 and the v6 address told.
+    missed: (u8, u8),
 }
 
 impl Learnt {
     fn saw(&mut self, r: &iroh::unstable_net_report::NetReport) -> Option<What> {
         use iroh::unstable_net_report::Probe;
         let varies = r.mapping_varies_by_dest_ipv4.or(r.mapping_varies_by_dest_ipv6);
-        let key = (
+        let mut key = (
             r.global_v4.map(|a| std::net::IpAddr::V4(*a.ip())),
             r.global_v6.map(|a| std::net::IpAddr::V6(*a.ip())),
             varies,
         );
+        let told = self.told.unwrap_or_default();
+        let (v4, v6) = (key.0.is_none() && told.0.is_some(), key.1.is_none() && told.1.is_some());
+        self.missed = (if v4 { self.missed.0 + 1 } else { 0 }, if v6 { self.missed.1 + 1 } else { 0 });
+        if self.missed.0 == 1 {
+            key.0 = told.0;
+        }
+        if self.missed.1 == 1 {
+            key.1 = told.1;
+        }
         if self.told.as_ref() == Some(&key) {
             return None;
         }
@@ -1340,6 +1356,31 @@ pub fn not_direct(entries: &[Entry]) -> Vec<(String, String, Vec<Why>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// turing, 2026-10-20: 420 lines of its v6 address there, gone, there
+    /// again. One report without it is not a change; two in a row are.
+    #[test]
+    fn one_report_without_an_address_is_not_the_address_gone() {
+        let report = |v4: bool, v6: bool| {
+            let mut r = iroh::unstable_net_report::NetReport::default();
+            r.global_v4 = v4.then(|| "59.64.53.85:58869".parse().unwrap());
+            r.global_v6 = v6.then(|| "[2001:da8:207:e212::1]:48210".parse().unwrap());
+            r
+        };
+        let mut l = Learnt::default();
+        assert!(l.saw(&report(true, true)).is_some(), "the first is told");
+        assert!(l.saw(&report(true, false)).is_none(), "v6 missing once");
+        assert!(l.saw(&report(true, true)).is_none(), "and back");
+        assert!(l.saw(&report(false, true)).is_none(), "v4 missing once");
+        assert!(l.saw(&report(true, true)).is_none());
+        assert!(l.saw(&report(true, false)).is_none());
+        assert!(
+            matches!(l.saw(&report(true, false)), Some(What::Learnt { v6: None, .. })),
+            "missing twice is gone"
+        );
+        assert!(l.saw(&report(true, false)).is_none(), "and told once");
+        assert!(l.saw(&report(true, true)).is_some(), "back is told at once");
+    }
 
     /// **The report's 「为什么不是直连」, from MacLab's night of 10-09**: no
     /// IPv6 here, the iPhone offering Unicom v6, a NAT that maps per

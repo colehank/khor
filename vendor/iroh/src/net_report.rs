@@ -664,11 +664,15 @@ impl Client {
                 val = v4_buf.join_next(), if !v4_buf.is_empty() => {
                     let span = info_span!("QADv4");
                     let _guard = span.enter();
-                    ipv4_pending = false;
+                    // khor patch 26: pending until one brings an address.
+                    if qad_family_done(false, v4_buf.len()) {
+                        ipv4_pending = false;
+                    }
                     match val {
                         Some(Ok(Some(Ok(res)))) => {
                             match res {
                                 Ok((r, conn)) => {
+                                    ipv4_pending = !qad_family_done(true, v4_buf.len());
                                     debug!(?r, "probe report");
                                     let url = r.relay.clone();
                                     reports.push(ProbeReport::QadIpv4(r));
@@ -703,11 +707,15 @@ impl Client {
                 val = v6_buf.join_next(), if !v6_buf.is_empty() => {
                     let span = info_span!("QADv6");
                     let _guard = span.enter();
-                    ipv6_pending = false;
+                    // khor patch 26: pending until one brings an address.
+                    if qad_family_done(false, v6_buf.len()) {
+                        ipv6_pending = false;
+                    }
                     match val {
                         Some(Ok(Some(Ok(res)))) => {
                             match res {
                                 Ok((r, conn)) => {
+                                    ipv6_pending = !qad_family_done(true, v6_buf.len());
                                     debug!(?r, "probe report");
                                     let url = r.relay.clone();
                                     reports.push(ProbeReport::QadIpv6(r));
@@ -1046,6 +1054,18 @@ impl Client {
     }
 }
 
+/// khor patch 26 (vendor/iroh/KHOR.md): whether one family's QAD probes
+/// have done their part — one brought an address, or none is left to.
+/// Upstream counted any probe that ended, a failure included: the Beijing
+/// relay's host is an IPv4 literal, so its v6 probe failed at once
+/// (no AAAA) and cleared the wait before aps1's v6 answer was in, and
+/// turing's reports had a public v6 address in one and not the next
+/// (420 lines in a day).
+#[cfg(not(wasm_browser))]
+fn qad_family_done(got_addr: bool, left: usize) -> bool {
+    got_addr || left == 0
+}
+
 #[cfg(not(wasm_browser))]
 async fn run_probe_v4(
     relay: Arc<RelayConfig>,
@@ -1082,7 +1102,11 @@ async fn run_probe_v4(
         latency: conn.rtt(PathId::ZERO).unwrap_or_default(),
     };
 
-    let observer = Watchable::new(None);
+    // khor patch 26: the first answer is the observer's first value.
+    // Upstream left it `None` until the address changed, so
+    // `QadConns::current_v4`/`current_v6` saw nothing, and every report
+    // dialled every relay's QAD again beside the connection it held.
+    let observer = Watchable::new(Some(report.clone()));
     let endpoint = relay.url.clone();
     let handle = task::spawn(shutdown_token.run_until_cancelled_owned({
         let conn = conn.clone();
@@ -1154,7 +1178,11 @@ async fn run_probe_v6(
         latency: conn.rtt(PathId::ZERO).unwrap_or_default(),
     };
 
-    let observer = Watchable::new(None);
+    // khor patch 26: the first answer is the observer's first value.
+    // Upstream left it `None` until the address changed, so
+    // `QadConns::current_v4`/`current_v6` saw nothing, and every report
+    // dialled every relay's QAD again beside the connection it held.
+    let observer = Watchable::new(Some(report.clone()));
     let endpoint = relay.url.clone();
     let handle = task::spawn(shutdown_token.run_until_cancelled_owned({
         let observer = observer.clone();
@@ -1743,5 +1771,61 @@ mod tests {
         tokio::time::advance(Duration::from_secs(25)).await;
         let qad = [("d1", QadIpv4, 900), ("d2", QadIpv4, 10)];
         assert_eq!(khor_step(&mut c, false, &qad).as_deref(), Some("d1"));
+    }
+
+    #[test]
+    fn khor_a_failed_qad_probe_does_not_end_the_wait_for_an_address() {
+        assert!(
+            !qad_family_done(false, 2),
+            "Beijing's v6 failed, aps1's still out"
+        );
+        assert!(qad_family_done(true, 2), "one brought an address");
+        assert!(qad_family_done(false, 0), "none left to bring one");
+    }
+
+    /// Patch 26: the QAD connection a report opened answers the next one;
+    /// upstream's observer stayed empty and every report dialled again.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn khor_the_qad_connection_is_reused() -> Result<()> {
+        let (server, relay) = test_utils::relay().await;
+        let client_config = iroh_relay::tls::make_dangerous_client_config();
+        let ep = noq::Endpoint::client(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0)).anyerr()?;
+        let quic = QuicConfig {
+            ep: ep.clone(),
+            client_config,
+            ipv4: true,
+            ipv6: false,
+        };
+        let tls_config = CaTlsConfig::insecure_skip_verify()
+            .client_config(default_provider())
+            .expect("infallible");
+        let opts = Options::new(tls_config).quic_config(Some(quic));
+        let mut client = Client::new(
+            DnsResolver::new(),
+            RelayMap::from(relay),
+            opts,
+            Default::default(),
+        );
+        let if_state = IfStateDetails {
+            have_v4: true,
+            have_v6: false,
+        };
+        let first = client
+            .get_report(if_state.clone(), false, CancellationToken::new())
+            .await;
+        assert!(
+            first.global_v4.is_some(),
+            "the first report has an address: {first:?}"
+        );
+        let held = client.qad_conns.current_v4();
+        assert!(held.is_some(), "the connection it opened has one too");
+        let second = client
+            .get_report(if_state, false, CancellationToken::new())
+            .await;
+        assert_eq!(second.global_v4, first.global_v4);
+        drop(client);
+        ep.wait_idle().await;
+        server.shutdown().await?;
+        Ok(())
     }
 }
