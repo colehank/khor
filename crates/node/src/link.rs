@@ -1536,6 +1536,15 @@ impl Node {
                             }
                         };
                         let once_done = move |n: std::sync::Arc<Node>, e: std::sync::Arc<iroh::Endpoint>, conn: &iroh::endpoint::Connection| {
+                            // **Gone to the background while the handshake
+                            // ran** (net-dial B6): the suspension already let
+                            // every connection go, and this one would be left
+                            // half-open under the freeze. Closed as the
+                            // others were, before it is counted as served.
+                            if resting.load(std::sync::atomic::Ordering::Relaxed) {
+                                conn.close(0u32.into(), b"suspended");
+                                return;
+                            }
                             n.wires.serving(conn);
                             crate::roads::follow_inbound(
                                 &conn.remote_id().to_string(),
@@ -1543,9 +1552,6 @@ impl Node {
                                 n.wires.journal.get().cloned(),
                                 &n.carry,
                             );
-                            if resting.load(std::sync::atomic::Ordering::Relaxed) {
-                                return;
-                            }
                             // **A machine that dials in is back**: one this
                             // node holds no wire to — a phone returning to
                             // the front, a laptop waking — is visited now,
@@ -3031,6 +3037,12 @@ impl Node {
             self.hop_ahead(ep, d).await;
         }
         match self.dial(ep, &d.id, &d.addrs, proto.alpn(), by).await {
+            // Gone to the background while it dialled (net-dial B6): the
+            // suspension let every wire go and this one is not taken up.
+            Ok(conn) if self.resting.load(std::sync::atomic::Ordering::Relaxed) => {
+                conn.close(0u32.into(), b"suspended");
+                Err(DialFailure::Refused(msg::resting_no_dial().to_owned()))
+            }
             Ok(conn) => {
                 self.wires.adopt(&d.id, proto, conn.clone());
                 Ok(line(conn))
@@ -3220,7 +3232,12 @@ impl Node {
             // The question goes out with the handshake; its answer is
             // waited for apart, so the wire is handed to every other ask
             // the moment the handshake is done, not when this answer is.
-            let asked = {
+            //
+            // **Aborted unless it is handed on** (net-dial B7): a dial that
+            // timed out, or a handshake that failed, used to leave this task
+            // running with its clone of the connection — an orphan wire that
+            // nobody held, answered by the far side until its idle timeout.
+            let mut asked = Aborts(Some({
                 let (early, frame, budget) = (early.clone(), frame.clone(), req.budget());
                 tokio::spawn(async move {
                     let (mut send, mut recv) = early.open_bi().await.ok()?;
@@ -3232,15 +3249,12 @@ impl Node {
                         .ok()?;
                     proto::answer(&bytes).ok()
                 })
-            };
+            }));
             match early.handshake_completed().await.map_err(of_connecting)? {
-                iroh::endpoint::ZeroRttStatus::Accepted(conn) => Ok((conn, Some(asked))),
+                iroh::endpoint::ZeroRttStatus::Accepted(conn) => Ok((conn, asked.0.take())),
                 // Rejected: the far side kept nothing of it; asked again
-                // on the wire, which is up.
-                iroh::endpoint::ZeroRttStatus::Rejected(conn) => {
-                    asked.abort();
-                    Ok((conn, None))
-                }
+                // on the wire, which is up. (`asked` aborts as it drops.)
+                iroh::endpoint::ZeroRttStatus::Rejected(conn) => Ok((conn, None)),
             }
         };
         let outcome = tokio::time::timeout(within, attempt).await;
@@ -3277,6 +3291,13 @@ impl Node {
             );
         }
         match outcome {
+            Ok(Ok((conn, asked))) if self.resting.load(std::sync::atomic::Ordering::Relaxed) => {
+                if let Some(asked) = asked {
+                    asked.abort();
+                }
+                conn.close(0u32.into(), b"suspended");
+                Early::Failed(DialFailure::Refused(msg::resting_no_dial().to_owned()))
+            }
             Ok(Ok((conn, asked))) => {
                 crate::roads::replied(&self.roads, &d.id, started.elapsed());
                 crate::roads::watch(&self.roads, &d.id, &conn, self.wires.journal.get().cloned(), &self.carry);
@@ -11377,6 +11398,17 @@ pub enum RoadsUnread {
 /// Why a dial did not produce a connection. Kept apart from the sentence
 /// a person reads: every caller says who it was trying to reach and what
 /// for, and that is the half worth keeping at the call site.
+/// A task that is aborted when this is dropped, unless it was taken out.
+struct Aborts<T>(Option<tokio::task::JoinHandle<T>>);
+
+impl<T> Drop for Aborts<T> {
+    fn drop(&mut self) {
+        if let Some(task) = self.0.take() {
+            task.abort();
+        }
+    }
+}
+
 pub(crate) enum DialFailure {
     TimedOut,
     Refused(String),

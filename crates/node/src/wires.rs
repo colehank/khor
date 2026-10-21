@@ -903,25 +903,39 @@ impl Wires {
     /// Before (round NET-5's probe, 200 ms relay road): a machine whose
     /// resident stopped kept its word 中继 for 14 s, and the first ask to
     /// it waited out an ack and a full dial to say so.
+    ///
+    /// **Nor a wire heard within its keepalive** (net-dial B7): heard that
+    /// recently, it is on a road that works, whatever the relay says —
+    /// 2026-10-20 20:29:08 hinton retired its wire to turing 447 ms after
+    /// it last heard it. And while such a wire stands, the machine is not
+    /// marked as gone: its relay is not its only road, and the mark would
+    /// leave it alone for ten minutes for nothing.
     pub(crate) fn departed(&self, id: &str) {
         self.note(Some(id), crate::journal::What::Departed);
-        self.gone
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(id.to_owned(), Instant::now());
+        let now = Instant::now();
         let mut any = false;
+        let mut kept = false;
         {
             let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
             for proto in [Proto::Main, Proto::Tunnel] {
-                if let Some(slot) = slots.get_mut(&(id.to_owned(), proto))
-                    && slot.conn.is_some()
-                    && slot.word != Some(PathKind::Direct)
-                {
+                let Some(slot) = slots.get_mut(&(id.to_owned(), proto)) else { continue };
+                if slot.conn.as_ref().is_none_or(|c| c.close_reason().is_some()) {
+                    continue;
+                }
+                if heard_lately(slot.heard, slot.rtt, now) {
+                    kept = true;
+                } else if slot.word != Some(PathKind::Direct) {
                     self.drop_noted(id, proto, slot, Retired::Departed);
                     self.counts.retired(Retired::Departed);
                     any = true;
                 }
             }
+        }
+        if !kept {
+            self.gone
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(id.to_owned(), now);
         }
         if any {
             self.let_go_served_by(id, Retired::Departed);
@@ -1330,6 +1344,12 @@ impl Wires {
     }
 }
 
+/// Whether a wire last heard at `heard` was heard within its keepalive
+/// at `now`: alive, whatever anyone says about the road it is not on.
+fn heard_lately(heard: Option<Instant>, rtt: Duration, now: Instant) -> bool {
+    heard.is_some_and(|h| now.saturating_duration_since(h) < Patience::for_rtt(rtt).keepalive_missed)
+}
+
 fn drop_wire(slot: &mut Slot, why: Retired) {
     if let Some(conn) = slot.conn.take() {
         let (tx, rx) = bytes_of(&conn);
@@ -1508,6 +1528,23 @@ mod tests {
         measured(&w, Proto::Tunnel);
         drop_wire(w.slots.lock().unwrap().get_mut(&("m".to_owned(), Proto::Tunnel)).unwrap(), Retired::NewEars);
         assert_eq!(w.last_rtt("m"), Duration::from_secs(5), "let go on purpose: still trusted");
+    }
+
+    /// **A relay's word does not retire a wire heard within its
+    /// keepalive** (net-dial B7): 447 ms is alive (hinton→turing,
+    /// 2026-10-20 20:29:08); a keepalive missed is not.
+    #[test]
+    fn a_wire_heard_within_its_keepalive_outlives_a_relays_word() {
+        let now = Instant::now();
+        let ago = |ms| Some(now - Duration::from_millis(ms));
+        assert!(heard_lately(ago(447), Duration::from_millis(5), now));
+        assert!(!heard_lately(ago(6_500), Duration::from_millis(5), now), "past the 6 s keepalive floor");
+        assert!(heard_lately(ago(6_500), Duration::from_millis(200), now), "a slower road waits longer");
+        assert!(!heard_lately(None, Duration::ZERO, now), "never heard");
+        // With no wire at all, the word stands: the machine is left alone.
+        let w = Wires::default();
+        w.departed("m");
+        assert!(w.left_alone("m"));
     }
 
     /// **A middle's own word on the far machine** (net-dial B3): a wait
