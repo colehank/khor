@@ -12,7 +12,17 @@
 
 ## 补丁
 
-二十六处。
+二十七处。
+
+### 27. `src/socket.rs`：容器和虚拟机的网桥地址不进直接地址（2026-10-21，net-home）
+
+每台装了 Docker 的 Linux 都有 docker0，地址都是 172.17.0.1；对端拿它去打洞，打到的是自己的网桥（hinton、turing、lecun
+2026-10-20 每一轮打洞都给了它，各三百来轮）。补丁：`collect_local_addresses` 把名字是网桥的网卡（`virtual_bridge`：
+`docker0`、Docker 自建网络的 `br-` 加 12 位十六进制、libvirt 的 `virbr*`、podman 的 `podman*`/`cni-podman*`）上的地址
+剔掉，它们既不发布、也不当打洞候选。按网卡名不按网段：172.16.0.0/12 在机群里就是真局域网（MacLab 的 172.16.185.x，
+连接记录里还有 172.18.137.x、172.23.250.x、172.25.49.x），172.17 也可能是；OpenWrt 的 `br-lan` 不是 Docker 的。
+绑定到某个具体地址时不管（那是自己要的）。改动约 30 行。测试：`socket::tests::khor_container_and_vm_bridges_are_not_offered`。
+上游没有对应改动，升级 iroh 时要重新打。
 
 ### 26. `src/net_report.rs`：QAD 连接真的复用；一族的探测拿到地址才算完（2026-10-21，net-home）
 

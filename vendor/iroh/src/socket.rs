@@ -1984,6 +1984,18 @@ impl Actor {
                 regular: mut ips,
                 loopback,
             } = self.local_interfaces_watcher.get().local_addresses;
+            // khor patch 27 (vendor/iroh/KHOR.md): not a container or VM
+            // bridge's address. docker0 is 172.17.0.1 on every Linux host
+            // that runs Docker, so a peer probing it reaches its own bridge
+            // (hinton, turing and lecun offered it in every hole-punching
+            // round, 2026-10-20).
+            let bridged: Vec<IpAddr> = netmon_state
+                .interfaces
+                .values()
+                .filter(|i| virtual_bridge(i.name()))
+                .flat_map(|i| i.addrs().map(|a| a.addr()).collect::<Vec<_>>())
+                .collect();
+            ips.retain(|ip| !bridged.contains(ip));
             if ips.is_empty() && addrs.is_empty() {
                 // Include loopback addresses only if there are no other interfaces
                 // or public addresses, this allows testing offline.
@@ -2033,6 +2045,25 @@ impl Actor {
         #[cfg(not(wasm_browser))]
         self.update_direct_addresses(report.as_ref());
     }
+}
+
+/// khor patch 27: an interface that bridges this host's containers or VMs.
+/// Each such bridge has the same address on every host that runs the same
+/// software, so its address names a different box on every machine that
+/// reads it. By name, not by range: 172.16.0.0/12 is a campus LAN as often
+/// (MacLab's 172.16.185.0/24; 172.18.x, 172.23.x, 172.25.x in the fleet's
+/// journals), and a LAN may be 172.17.x too. `br-` is Docker's user
+/// networks, `br-` and twelve hex digits — not OpenWrt's `br-lan`.
+#[cfg(not(wasm_browser))]
+fn virtual_bridge(name: &str) -> bool {
+    let docker_network = name
+        .strip_prefix("br-")
+        .is_some_and(|id| id.len() == 12 && id.bytes().all(|b| b.is_ascii_hexdigit()));
+    name == "docker0"
+        || docker_network
+        || name.starts_with("virbr")
+        || name.starts_with("podman")
+        || name.starts_with("cni-podman")
 }
 
 #[cfg(not(wasm_browser))]
@@ -2206,6 +2237,31 @@ mod tests {
     };
 
     const ALPN: &[u8] = b"n0/test/1";
+
+    #[test]
+    fn khor_container_and_vm_bridges_are_not_offered() {
+        for name in [
+            "docker0",
+            "br-3f1c9a2b7d4e",
+            "virbr0",
+            "podman0",
+            "cni-podman0",
+        ] {
+            assert!(super::virtual_bridge(name), "{name}");
+        }
+        for name in [
+            "eth0",
+            "en0",
+            "br-lan",
+            "br0",
+            "br-3f1c9a2b7d4",
+            "wlan0",
+            "tailscale0",
+            "utun4",
+        ] {
+            assert!(!super::virtual_bridge(name), "{name}");
+        }
+    }
 
     fn default_options(rng: &mut impl CryptoRng) -> Options {
         let crypto_provider = default_provider();

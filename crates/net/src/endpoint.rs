@@ -880,12 +880,20 @@ fn relay_config(r: &Relay) -> Option<std::sync::Arc<iroh::RelayConfig>> {
 ///
 /// Loopback is left alone too: iroh already decides what to do with it,
 /// and a second opinion here would be a rule nobody could find.
+///
+/// **And 192.0.0.0/24** (2026-10-21): the IETF's protocol assignments —
+/// `192.0.0.6` is a DS-Lite tunnel end (RFC 7335), the address localhost
+/// offered in 54 hole-punching rounds (2026-10-20), and `192.0.0.2` is
+/// an iPhone's 464XLAT end on a v6-only carrier. Every such host has the
+/// same one; none is a road to it. Container bridges (docker0's
+/// 172.17.0.1) are dropped where interfaces have names, in iroh
+/// (vendor/iroh patch 27): by range they would take real LANs with them.
 fn unroutable(addr: &iroh::TransportAddr) -> bool {
     match addr {
         iroh::TransportAddr::Ip(sa) => match sa.ip() {
             std::net::IpAddr::V4(v4) => {
                 let o = v4.octets();
-                o[0] == 198 && (o[1] == 18 || o[1] == 19) && !in_lab()
+                (o[0] == 198 && (o[1] == 18 || o[1] == 19) && !in_lab()) || (o[0] == 192 && o[1] == 0 && o[2] == 0)
             }
             std::net::IpAddr::V6(_) => false,
         },
@@ -942,30 +950,56 @@ pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<i
     Ok(addr)
 }
 
-/// This endpoint's dialable addresses, as strings. Unspecified bind
-/// addresses (0.0.0.0) map to loopback — right for the same-machine
-/// case; LAN and NAT paths come from discovery.
+/// This endpoint's dialable addresses, as strings: what it publishes
+/// ([`table_addrs`]), then each bound socket as this machine reaches it —
+/// a wildcard as loopback of its own family (`0.0.0.0` → `127.0.0.1`,
+/// `[::]` → `[::1]`). For the same machine only: `endpoint.json`, which a
+/// one-shot verb reads to find the resident, and a pairing ticket.
 pub fn local_addrs(ep: &iroh::Endpoint) -> Vec<String> {
-    let mut out: Vec<String> = ep
-        .addr()
+    let mut out = table_addrs(ep);
+    for s in same_machine(&ep.bound_sockets()) {
+        if !out.contains(&s) {
+            out.push(s);
+        }
+    }
+    out
+}
+
+/// **The addresses this machine writes into its row of the device table**,
+/// which every peer reads: iroh's own, through the publishing filter
+/// ([`unroutable`]). No loopback of khor's making — a peer that reads
+/// `127.0.0.1:<port>` probes itself. iroh's list has loopback only when
+/// the endpoint is bound to it or the machine has no other interface,
+/// and then it is the one road there is.
+///
+/// Until 2026-10-21 the row carried the unfiltered list (198.18.0.1 from
+/// a proxy TUN) and both wildcards as `127.0.0.1`, the v6 one with a port
+/// only the v6 socket listened on.
+pub fn table_addrs(ep: &iroh::Endpoint) -> Vec<String> {
+    ep.addr()
         .addrs
         .iter()
+        .filter(|t| !unroutable(t))
         .filter_map(|t| match t {
             iroh::TransportAddr::Ip(s) => Some(s.to_string()),
             _ => None,
         })
-        .collect();
-    for s in ep.bound_sockets() {
-        let mapped = if s.ip().is_unspecified() {
-            format!("127.0.0.1:{}", s.port())
-        } else {
-            s.to_string()
-        };
-        if !out.contains(&mapped) {
-            out.push(mapped);
-        }
-    }
-    out
+        .collect()
+}
+
+/// Bound sockets as this machine dials them ([`local_addrs`]).
+fn same_machine(bound: &[std::net::SocketAddr]) -> Vec<String> {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+    bound
+        .iter()
+        .map(|s| match s.ip() {
+            IpAddr::V4(ip) if ip.is_unspecified() => SocketAddr::from((Ipv4Addr::LOCALHOST, s.port())),
+            IpAddr::V6(ip) if ip.is_unspecified() => SocketAddr::from((Ipv6Addr::LOCALHOST, s.port())),
+            _ => *s,
+        })
+        .filter(|s| !unroutable(&iroh::TransportAddr::Ip(*s)))
+        .map(|s| s.to_string())
+        .collect()
 }
 
 /// The pairing ticket: who to dial, where, and the one-time secret.
@@ -1397,6 +1431,61 @@ mod tests {
         // The edges, so the /15 is a /15 and not a /16 or a /14.
         for road in [ip("198.17.255.255:1"), ip("198.20.0.0:1")] {
             assert!(!unroutable(&road), "{road:?} is outside the range");
+        }
+        // 192.0.0.0/24: a DS-Lite end (localhost, 2026-10-20), an
+        // iPhone's 464XLAT end. Its edges.
+        for road in [ip("192.0.0.6:50911"), ip("192.0.0.2:1"), ip("192.0.0.255:1")] {
+            assert!(unroutable(&road), "{road:?} is the same on every such host");
+        }
+        for road in [ip("191.255.255.255:1"), ip("192.0.1.0:1"), ip("192.0.2.1:1")] {
+            assert!(!unroutable(&road), "{road:?} is outside 192.0.0.0/24");
+        }
+        // docker0's address is a LAN address by range; iroh drops it by
+        // the interface's name (vendor/iroh patch 27), not this filter.
+        assert!(!unroutable(&ip("172.17.0.1:50911")));
+        assert!(!unroutable(&ip("172.17.3.20:50911")), "a LAN may be 172.17 too");
+    }
+
+    /// The row of the device table carries no loopback of khor's making
+    /// and nothing unroutable; `endpoint.json` still finds the resident
+    /// on loopback, the v6 socket on `[::1]`.
+    #[tokio::test]
+    async fn the_table_row_has_no_loopback_and_the_same_machine_still_does() {
+        let relays = [Relay::bare("http://203.0.113.9:3340")];
+        let ep = builder(iroh::SecretKey::generate(), &relays, false, false).unwrap().bind().await.unwrap();
+        let started = std::time::Instant::now();
+        while ep.addr().addrs.iter().all(|t| !matches!(t, iroh::TransportAddr::Ip(_)))
+            && started.elapsed() < std::time::Duration::from_secs(10)
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let row = table_addrs(&ep);
+        let ips: Vec<std::net::SocketAddr> = row.iter().map(|a| a.parse().unwrap()).collect();
+        let alone = ips.iter().all(|a| a.ip().is_loopback());
+        if !alone {
+            assert!(ips.iter().all(|a| !a.ip().is_loopback()), "loopback in the row: {row:?}");
+        }
+        assert!(ips.iter().all(|a| !unroutable(&iroh::TransportAddr::Ip(*a))), "{row:?}");
+        let here = local_addrs(&ep);
+        for s in ep.bound_sockets() {
+            let want = if s.is_ipv4() { format!("127.0.0.1:{}", s.port()) } else { format!("[::1]:{}", s.port()) };
+            assert!(here.contains(&want), "{want} for {s} in {here:?}");
+        }
+        ep.close().await;
+    }
+
+    #[test]
+    fn a_wildcard_is_reached_on_loopback_of_its_own_family() {
+        let bound: Vec<std::net::SocketAddr> =
+            ["0.0.0.0:50911", "[::]:48210", "127.0.0.1:7", "[::1]:8", "192.168.10.8:9"].map(|s| s.parse().unwrap()).to_vec();
+        assert_eq!(
+            same_machine(&bound),
+            ["127.0.0.1:50911", "[::1]:48210", "127.0.0.1:7", "[::1]:8", "192.168.10.8:9"],
+            "the v6 wildcard's port is reached on [::1], not 127.0.0.1"
+        );
+        let tun: Vec<std::net::SocketAddr> = vec!["198.18.0.1:50911".parse().unwrap()];
+        if !in_lab() {
+            assert!(same_machine(&tun).is_empty(), "not even for the same machine");
         }
     }
 }

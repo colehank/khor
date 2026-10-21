@@ -1155,7 +1155,8 @@ impl Node {
     /// **The live home relay is one of them, first** (net-f, 2026-10-09):
     /// written again whenever the home changes ([`Wake::Home`]).
     fn publish_roads(&self, ep: &iroh::Endpoint) -> Result<(), String> {
-        let mut roads = endpoint::local_addrs(ep);
+        // What every peer reads: no loopback of our making, nothing unroutable.
+        let mut roads = endpoint::table_addrs(ep);
         roads.extend(self.published_relays(ep));
         let loaded = self.devices_loaded()?;
         loaded.doc.upsert(self.device_str(), self.name(), &roads)?;
