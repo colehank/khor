@@ -240,6 +240,8 @@ RTT 不变，选路器看不出来；建议在 actor 里按 path stats 周期重
 （离开不答的路不用确认），下一个 tick 有了样本又当场换回（中继→直连也不用确认），补丁 19 每次再打一轮。
 改为：从这条路上**最早还没被确认的那个要回 ACK 的包**发出算起，等了 max(300 ms, 3·PTO) 才算不答（`unanswered_for`；
 noq-proto 补丁 3 的 10-21 补露出这个时刻 `unacked_since` 和 `pto`），仍要两次 PTO、300 ms 没收到东西。
+代价：真黑洞时判得晚一点。p3（打字时在用的路黑洞）原来最后收到的包就在黑洞前一刻，最快约 0.1 秒就判；现在从黑洞后第一个包算满
+300 ms，最慢的回显从 0.39、0.41 秒变成 0.68 秒（门槛 1 秒）。
 二、**清「不答」要迟滞**：原来任何一份连接取到一个新样本当场就算答了；改为取到样本、且之后 1 秒（`SILENT_HOLD`）里没有一份
 再不答，才回到候选（`Silence`、`Measured::mark_silent`）；中途又不答就重新算。
 三、**卡顿还没长过别的路的往返，不离开在用的直连**：选路器拿得到这条路卡了多久（`PathSelectionData::unanswered_for`，
@@ -251,12 +253,18 @@ noq-proto 补丁 3 的 10-21 补露出这个时刻 `unacked_since` 和 `pto`）�
 改为 max(5 ms, 在用那条往返的四分之一)，换路后 60 秒里（`PathSelectionContext::held_for`，`State::selected_at`）max(10 ms, 一半）。
 真机记录里同步那一阵把在用的局域网抬到 5–8 ms、闲着的那条读 1 ms，差过 5 ms 就换，换过去那一阵跟着过去，30 秒后又一遍；
 p2 那种真变慢（1 → 21 ms）照旧当场换。
+六、**离开不答的路，只去在那之后答过的路**（`Moving::leave`）：原来不答的路当场离开，去选路器点的哪条都行。机器卡住时每条路都卡，
+闲着的那条没有在飞的包，看起来照样在答：p1s（每 30 秒 alpha 两条腿都慢 300 ms、两个常驻挤在一个 CPU 上）第一轮改后十分钟换了
+3 次。改为：要去的那条在卡顿开始之后取到过样本才走，没有就每个 tick ping 它，4 秒（`CONFIRM_MAX`）还没有就照走。
+为了不在判不答之后再等一个 tick（p3 黑洞时最慢的回显因此到过 0.9 秒），选中的路有个包等了 150 ms（`PROBE_OTHERS_AFTER`，
+已过一次 PTO）就先 ping 其余每条路一下（`probe_others`，每条一份、每 tick 至多一次、取到样本就停），判不答那一刻要去的那条已经答过了。试过另一条路——一条路读近 2 秒里最低的样本，好让卡顿留下的高平滑值不算数——p1s 没变好，
+p2i（闲着时第二条变慢）从 2.6 秒变成 14 秒，没留。
 测试：`remote_state.rs` 的单元测试（合成的 `PathStats`、读数）`an_idle_road_whose_ack_is_late_still_answers`（红例：闲着的
 2 ms 路 4 秒前收到上一个 ACK、两次 PTO、没答的那个包才发出 100 ms——改前判不答，改后不判）、`a_slow_road_waits_three_probe_timeouts`、
 `a_road_answers_without_two_ptos_or_while_heard`、`a_silent_road_answers_again_after_the_hold`、`the_watch_punches_on_a_long_stall_once_per_spacing`、
 `the_watch_punches_on_a_slowed_road_and_probes_a_slow_sample`、`a_move_goes_once_both_roads_sampled_for_two_seconds`、
-`a_move_never_confirmed_is_given_up_and_rests`、`one_good_direct_road_is_good_enough`、`rounds_asked_for_together_are_one`；
-同样的测试换回改前的规则（拷一份改回去跑）8 个红，改后 14 个全绿。`crates/net/src/carry.rs` 的
+`a_move_never_confirmed_is_given_up_and_rests`、`a_silent_road_is_left_for_one_that_answered_since`、`one_good_direct_road_is_good_enough`、`rounds_asked_for_together_are_one`；
+同样的测试换回改前的规则（拷一份改回去跑）8 个红，改后全绿。`crates/net/src/carry.rs` 的
 `a_stall_shorter_than_the_other_road_is_ridden_out`、`a_move_between_direct_roads_holds_for_a_minute`。
 netlab 新场景 p5（直连 + 500 ms 远中继，每 30 秒丢直连 150/300/600 ms、其间一个按键）、p1s（p1 + 每 30 秒 300 ms 的延迟尖峰、
 两个常驻挤在一个 CPU 上）；改前改后的数见 docs/NET.md「选路」一节。

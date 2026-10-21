@@ -136,6 +136,10 @@ const PROBE_SPACING: Duration = Duration::from_secs(30);
 /// measured, on every tick, before it is made ([`RemoteStateActor::confirm_move`]).
 const CONFIRM_FOR: Duration = Duration::from_secs(2);
 
+/// khor patch 17 (10-21): how long the selected road keeps a packet waiting before the other
+/// roads are pinged ([`RemoteStateActor::probe_others`]): half of [`UNANSWERED_FOR`].
+const PROBE_OTHERS_AFTER: Duration = Duration::from_millis(150);
+
 /// khor patch 17 (10-21): a move whose two paths did not both take a sample in this long is
 /// given up: every tick of it pings them, and one that never answers held the move, and the
 /// pinging, for as long as the selector wanted it.
@@ -993,6 +997,12 @@ impl RemoteStateActor {
     ///
     /// A move whose two paths do not both take a sample within [`CONFIRM_MAX`] is given up,
     /// and not tried again for [`CONFIRM_REST`] ([`Moving`]).
+    ///
+    /// 10-21 (net-flap): a path that stopped answering is left for one that answered since it
+    /// stopped, pinged every tick until it does, or after [`CONFIRM_MAX`] for whatever the
+    /// selector names ([`Moving::leave`]).  A machine that stalls stalls on every road, and the
+    /// other road, idle, has nothing in flight to show it: netlab p1s (300 ms spikes on both of
+    /// alpha's roads) left the road in use for the other on the spike and came back.
     fn confirm_move(&mut self, to: Option<&transports::FourTuple>) -> bool {
         let Some(to) = to.filter(|to| self.state.selected_path.as_ref() != Some(*to)) else {
             self.state.moving.clear();
@@ -1006,27 +1016,34 @@ impl RemoteStateActor {
             .connections
             .values()
             .any(|c| c.paths.values().any(|t| *t == from));
-        let silent = self
+        if !open || (!from.is_ip() && to.is_ip()) {
+            self.state.moving.clear();
+            return true;
+        }
+        let silence = self
             .state
             .measured
             .silent
             .get(&from)
-            .is_some_and(|s| s.answered.is_none());
-        if !open || silent || (!from.is_ip() && to.is_ip()) {
-            self.state.moving.clear();
-            return true;
-        }
+            .filter(|s| s.answered.is_none())
+            .copied();
         let now = Instant::now();
         let measured = &self.state.measured;
         let sampled = |road: &transports::FourTuple, after: Instant| {
             measured.road(road).is_some_and(|(_, at)| at > after)
         };
-        let step = self.state.moving.step(
-            to,
-            now,
-            |after| sampled(&from, after),
-            |after| sampled(to, after),
-        );
+        let step = match silence {
+            Some(silence) => self
+                .state
+                .moving
+                .leave(to, now, silence.began, |after| sampled(to, after)),
+            None => self.state.moving.step(
+                to,
+                now,
+                |after| sampled(&from, after),
+                |after| sampled(to, after),
+            ),
+        };
         let ping = match step {
             Step::Go => return true,
             Step::Rest => return false,
@@ -1047,9 +1064,44 @@ impl RemoteStateActor {
     /// khor patch 17: one measurement tick.  Watches the selected direct path for going
     /// silent or slowing down, then runs the selector on the paths' stats as they are now.
     fn reselect(&mut self) {
-        let sample = self.read_paths();
+        let (sample, waiting) = self.read_paths();
         self.watch_selected(sample);
+        self.probe_others(waiting);
         self.select_path_on(true);
+    }
+
+    /// khor patch 17 (10-21): the selected road has kept a packet waiting `waiting` (after a
+    /// probe timeout); from [`PROBE_OTHERS_AFTER`] on, every other road that took no sample
+    /// since that packet went out is pinged once a tick, so that when the selected road is
+    /// judged silent the road to leave for has already answered or not ([`Moving::leave`]):
+    /// leaving does not wait a further tick for it (netlab p3: 0.9 s worst echo, 0.6 s with).
+    fn probe_others(&mut self, waiting: Option<Duration>) {
+        let (Some(waiting), Some(selected)) = (waiting, self.state.selected_path.as_ref()) else {
+            return;
+        };
+        if waiting < PROBE_OTHERS_AFTER {
+            return;
+        }
+        let now = Instant::now();
+        let since = now.checked_sub(waiting).unwrap_or(now);
+        let mut pinged: Vec<&transports::FourTuple> = Vec::new();
+        for conn_state in self.connections.values() {
+            let Some(conn) = conn_state.handle.upgrade() else {
+                continue;
+            };
+            for (path_id, road) in conn_state.paths.iter() {
+                if road == selected
+                    || pinged.contains(&road)
+                    || self.state.measured.road(road).is_some_and(|(_, at)| at > since)
+                {
+                    continue;
+                }
+                if let Some(path) = conn.path(*path_id) {
+                    let _ = path.ping();
+                    pinged.push(road);
+                }
+            }
+        }
     }
 
     /// khor patch 17: reads every path's stats on every connection.  Two machines often have
@@ -1059,13 +1111,17 @@ impl RemoteStateActor {
     /// until a copy of it takes a new sample after that.  Returns the largest RTT sample the
     /// selected road's copies took since the last read (khor patch 19): the step of the
     /// smoothed RTT is an eighth of the sample's distance from it (RFC 6298).
-    fn read_paths(&mut self) -> Duration {
+    ///
+    /// Also returns how long the selected road has kept a packet waiting, if it has after a
+    /// probe timeout ([`Self::probe_others`]).
+    fn read_paths(&mut self) -> (Duration, Option<Duration>) {
         let now = Instant::now();
         let selected = self.state.selected_path.as_ref();
         let measured = &mut self.state.measured;
         let mut sample = Duration::ZERO;
         let mut present = Vec::new();
         let mut silent_now: Vec<(transports::FourTuple, Instant)> = Vec::new();
+        let mut waiting = None;
         for (conn_id, conn_state) in self.connections.iter() {
             let Some(conn) = conn_state.handle.upgrade() else {
                 continue;
@@ -1078,6 +1134,13 @@ impl RemoteStateActor {
                 present.push(key);
                 if let Some(waited) = unanswered_for(&stats, now.into_std()) {
                     silent_now.push((tuple.clone(), now.checked_sub(waited).unwrap_or(now)));
+                }
+                if Some(tuple) == selected
+                    && stats.pto_count > 0
+                    && let Some(sent) = stats.unacked_since
+                {
+                    let waited = now.into_std().saturating_duration_since(sent);
+                    waiting = Some(waiting.map_or(waited, |w: Duration| w.max(waited)));
                 }
                 match measured.rtts.get_mut(&key) {
                     Some(r) if r.rtt == stats.rtt => {}
@@ -1113,7 +1176,7 @@ impl RemoteStateActor {
         measured.mark_silent(now, &silent_now, |tuple| {
             connections.values().any(|c| c.paths.values().any(|t| t == tuple))
         });
-        sample
+        (sample, waiting)
     }
 
     /// khor patch 19: a selected direct path that stopped answering, or whose round trip
@@ -2094,6 +2157,34 @@ enum Step {
 }
 
 impl Moving {
+    /// One tick of the selection wanting to leave a path that stopped answering at `began` for
+    /// `to`: [`Step::Go`] once `to` took a sample after `began` (`to_sampled`), or after
+    /// [`CONFIRM_MAX`] of wanting it whatever; until then `to` is pinged.
+    fn leave(
+        &mut self,
+        to: &transports::FourTuple,
+        now: Instant,
+        began: Instant,
+        to_sampled: impl Fn(Instant) -> bool,
+    ) -> Step {
+        let since = match &self.to {
+            Some((moving, since)) if moving == to => *since,
+            _ => {
+                self.to = Some((to.clone(), now));
+                now
+            }
+        };
+        if to_sampled(began) || now >= since + CONFIRM_MAX {
+            self.to = None;
+            return Step::Go;
+        }
+        let tick = now.checked_sub(RESELECT_INTERVAL).unwrap_or(now);
+        Step::Hold {
+            from: false,
+            to: !to_sampled(tick),
+        }
+    }
+
     /// The path a move is being confirmed to.
     fn to(&self) -> Option<&transports::FourTuple> {
         self.to.as_ref().map(|(to, _)| to)
@@ -2320,21 +2411,6 @@ impl<'a> PathSelectionContext<'a> {
         }
     }
 
-    /// khor patch 17: [`Self::for_test`] with a backup and how long `current` was held.
-    #[cfg(test)]
-    pub(crate) fn for_test_held(
-        current: Option<&'a transports::FourTuple>,
-        backup: Option<&'a transports::FourTuple>,
-        held_for: Option<Duration>,
-        paths: Vec<PathSelectionData<'a>>,
-    ) -> Self {
-        Self {
-            backup,
-            held_for,
-            ..Self::for_test(current, paths)
-        }
-    }
-
     /// The path currently considered the preferred path to the remote endpoint, if any.
     pub fn current(&self) -> Option<&transports::FourTuple> {
         self.current
@@ -2438,19 +2514,6 @@ impl<'a> PathSelectionData<'a> {
             silent: None,
             fresh_rtt: None,
             source: StatsSource::Test(stats.map(Box::new)),
-        }
-    }
-
-    /// khor patch 17: [`Self::for_test`] for a road that stopped answering `stall` ago.
-    #[cfg(test)]
-    pub(crate) fn for_test_silent(
-        network_path: &'a transports::FourTuple,
-        stats: Option<PathStats>,
-        stall: Duration,
-    ) -> Self {
-        Self {
-            silent: Some(stall),
-            ..Self::for_test(network_path, stats)
         }
     }
 
@@ -2924,6 +2987,22 @@ mod tests {
         assert_eq!(m.step(&to, t + MS(10_000), yes, yes), Step::Rest, "resting");
         assert!(matches!(m.step(&other, t + MS(10_000), yes, no), Step::Hold { .. }), "another move is not");
         assert!(matches!(m.step(&to, t + CONFIRM_REST, yes, yes), Step::Hold { .. }), "tried again after the rest");
+    }
+
+    /// 10-21: a road that stopped answering is left for one that answered since, at once if it
+    /// did; one that has not is pinged until it does, or for [`CONFIRM_MAX`].
+    #[test]
+    fn a_silent_road_is_left_for_one_that_answered_since() {
+        let t0 = Instant::now();
+        let began = t0 - MS(300);
+        let to = addr(2);
+        let mut m = Moving::default();
+        assert_eq!(m.leave(&to, t0, began, |after| after < t0), Step::Go, "the spare answered after the stall began");
+        assert_eq!(m.leave(&to, t0, began, |_| false), Step::Hold { from: false, to: true }, "it has not: ping it");
+        assert_eq!(m.leave(&to, t0 + MS(250), began, |after| after < t0 + MS(100)), Step::Go, "now it did");
+        let mut m = Moving::default();
+        assert!(matches!(m.leave(&to, t0, began, |_| false), Step::Hold { .. }));
+        assert_eq!(m.leave(&to, t0 + CONFIRM_MAX, began, |_| false), Step::Go, "nothing answers: go all the same");
     }
 
     /// One direct road under 10 ms on any connection is good enough.
