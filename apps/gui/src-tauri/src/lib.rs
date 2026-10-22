@@ -870,6 +870,48 @@ async fn pull(machine: String, path: String) -> Result<String, String> {
     khor_gui_core::files::pull(&Node::root_from_env(), &machine, &path).await
 }
 
+#[tauri::command]
+fn file_handoff_start(id: String, machine: String, path: String) -> Result<khor_gui_core::file_handoff::FileHandoff,String> {
+    khor_gui_core::file_handoff::start(&Node::root_from_env(), &id, &machine, &path)
+}
+#[tauri::command]
+fn file_handoff_state(id: String) -> Result<khor_gui_core::file_handoff::FileHandoff,String> {
+    khor_gui_core::file_handoff::state(&Node::root_from_env(), &id)
+}
+#[tauri::command]
+fn file_handoff_cancel(id: String) -> Result<(),String> {
+    khor_gui_core::file_handoff::cancel(&Node::root_from_env(), &id)
+}
+#[tauri::command]
+fn file_handoff_supported() -> bool { cfg!(any(target_os = "ios",target_os = "macos",target_os="android")) }
+#[tauri::command]
+async fn file_handoff_open(app:tauri::AppHandle, webview: tauri::Webview, id: String) -> Result<bool,String> {
+    if webview.label() != "main" { return Err("file opening is only available in the app".into()); }
+    #[cfg(not(target_os="android"))]
+    let _=&app;
+    let path = khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
+    #[cfg(target_os = "ios")]
+    { phone_share::open(webview,path).await }
+    #[cfg(target_os = "macos")]
+    { khor_gui_core::files::launch(&Node::root_from_env(),"",&path.to_string_lossy()).await?; Ok(true) }
+    #[cfg(target_os="android")]
+    {tauri_plugin_khor_files::open(&app,&path).map_err(|_|khor_catalog::msg::file_open_unavailable().to_owned())?;Ok(true)}
+    #[cfg(not(any(target_os = "ios",target_os="macos",target_os="android")))]
+    { let _ = (app,path); Err(khor_catalog::msg::file_open_unavailable().into()) }
+}
+
+#[tauri::command]
+fn file_preview_supported() -> bool { cfg!(any(target_os="ios",target_os="macos")) }
+#[tauri::command]
+async fn file_preview_open(webview:tauri::Webview,id:String)->Result<bool,String> {
+    if webview.label()!="main" {return Err("file preview is only available in the app".into());}
+    let path=khor_gui_core::file_handoff::ready_path(&Node::root_from_env(),&id)?;
+    #[cfg(any(target_os="ios",target_os="macos"))]
+    {quick_look::open(webview,path).await}
+    #[cfg(not(any(target_os="ios",target_os="macos")))]
+    {let _=(webview,path);Err(khor_catalog::msg::file_preview_unavailable().into())}
+}
+
 /// The same file in a temporary folder here, for this machine's other
 /// apps (`files::pull_temp`); a path already here answers itself.
 #[tauri::command]
@@ -4626,6 +4668,8 @@ pub fn run() {
     khor_node::vitals::local::start(&Node::root_from_env());
 
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    #[cfg(target_os="android")]
+    let builder=builder.plugin(tauri_plugin_khor_files::init());
     // 加入网络's 扫码 (docs/IOS.md 第三步): the camera reads a pairing
     // ticket's QR code on a phone. Its grant is `capabilities/scan.json`;
     // whether the face draws the entry at all is `scanner_here`.
@@ -4940,6 +4984,13 @@ pub fn run() {
             ls,
             pull,
             pull_temp,
+            file_handoff_start,
+            file_handoff_state,
+            file_handoff_cancel,
+            file_handoff_supported,
+            file_handoff_open,
+            file_preview_supported,
+            file_preview_open,
             term_open,
             term_attach,
             term_ended,
@@ -5185,6 +5236,8 @@ mod page_trust;
 mod phone_page;
 #[cfg(target_os = "ios")]
 mod phone_files;
+#[cfg(target_os = "ios")]
+mod phone_share;
 #[cfg(desktop)]
 mod traffic;
 #[cfg(desktop)]
@@ -5319,3 +5372,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(any(target_os="ios",target_os="macos"))]
+mod quick_look;

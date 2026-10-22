@@ -7,8 +7,7 @@
  *
  * **Everything opens in place** (§4): a press opens the thing inside the
  * column — a file as the column's file page, a workspace as its listing,
- * a page in the column's browser. The main area is the session, always;
- * the one way there is a double-click, or the row menu's 「在主区打开」.
+ * a page in the column's browser. The main area remains the session.
  *
  * **删除 forgets a row** (UX-44 §3): slid left under a finger (a full
  * swipe at once), or the menu's last item under a mouse. Only the record
@@ -62,7 +61,6 @@ export function SideRecent({
   today,
   faceOf,
   onOpen,
-  onOpenMain,
   onForget,
 }: {
   /** `null` until the first answer. */
@@ -74,7 +72,6 @@ export function SideRecent({
   /** The machine's face, by device id (the row's base, UX-32). */
   faceOf: (device: string) => Avatar | null;
   onOpen: (it: RecentItem) => void;
-  onOpenMain: (it: RecentItem) => void;
   /** 删除 on a row: the record only (`use-side-recent`'s forget). */
   onForget: (it: RecentItem) => Promise<void>;
 }) {
@@ -104,7 +101,6 @@ export function SideRecent({
     corners: { bottom: (it.kind !== "file" || it.root === "") && it.at !== null ? <span data-recent-at>{ago(it.at)}</span> : undefined },
     find: `${nameOf(it)} ${whereOf(it)}`,
     menu: [
-      { key: "open-main", label: gui.open_in_main, run: () => onOpenMain(it) },
       // **删除 forgets the record, nothing else** (UX-44 §3): the file,
       // the page, the directory stay where they are. Asked nothing — what
       // goes is a line of memory, and going there again brings it back.
@@ -115,18 +111,11 @@ export function SideRecent({
     onOpen: () => onOpen(it),
     rowData: { "data-recent-row": it.key, "data-recent-kind": it.kind },
   }));
-  const byKey = new Map((items ?? []).map((it) => [it.key, it]));
   return (
     <div
       data-side-recent
       className="flex min-h-0 flex-1 flex-col"
-      // The double-click is the way to the main area (§4): read off the
-      // row it landed on, so the list keeps its one press for opening.
-      onDoubleClick={(e) => {
-        const row = (e.target as HTMLElement).closest<HTMLElement>("[data-recent-row]");
-        const it = row ? byKey.get(row.dataset.recentRow ?? "") : undefined;
-        if (it) onOpenMain(it);
-      }}
+
     >
       {/* No head of its own: the 附栏's one head says 最近 (UX-39 §2).
           The find row, with no ＋: nothing is made here (UX-40 §1); while

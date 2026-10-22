@@ -78,7 +78,6 @@ export function SideWorkspace({
   root,
   start = null,
   onRead,
-  fileActs,
   onLeave,
   backLabel = gui.group_recent,
   spot,
@@ -126,8 +125,6 @@ export function SideWorkspace({
   start?: { path: string; at: number } | null;
   /** A file was opened here (the 附栏 remembers it as the session's). */
   onRead?: (path: string) => void;
-  /** Acts for the open file's 「…」, by path. */
-  fileActs?: (path: string) => { key: string; label: string; run: () => void }[];
 }) {
   const [file, setFile] = useState<string | null>(spot ? spot.file : (start?.path ?? null));
   /** A line hit's line, for the file it opened (`FilePage`'s `goLine`). */
@@ -369,7 +366,6 @@ export function SideWorkspace({
               setGitAt((n) => n + 1);
             }}
             onLocate={() => { requestFileLocation(machine, file); setHunt(""); setFile(null); }}
-            moreActs={fileActs?.(file)}
             onBack={onLeave && start?.path === file ? onLeave : () => setFile(null)}
           />
         </div>

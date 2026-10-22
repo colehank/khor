@@ -17,6 +17,7 @@ pub mod code;
 pub mod console;
 pub mod console_complete;
 pub mod files;
+pub mod file_handoff;
 pub mod git;
 pub mod import;
 pub mod launch;

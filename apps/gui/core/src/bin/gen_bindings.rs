@@ -86,6 +86,7 @@ fn main() {
     khor_gui_core::workspaces::WorkspaceRow::export_all_to(&dir).expect("export WorkspaceRow");
     // One file's text, asked for when a file is opened; no row embeds it.
     khor_gui_core::files::FileText::export_all_to(&dir).expect("export FileText");
+    khor_gui_core::file_handoff::FileHandoff::export_all_to(&dir).expect("export FileHandoff");
     khor_gui_core::files::FileStat::export_all_to(&dir).expect("export FileStat");
     khor_gui_core::files::DirWatch::export_all_to(&dir).expect("export DirWatch");
     khor_gui_core::git::GitStatus::export_all_to(&dir).expect("export GitStatus");

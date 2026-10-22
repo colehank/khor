@@ -1421,6 +1421,17 @@ export const pullFile = (machine: string, path: string) =>
     its other apps (`khor_gui_core::files::pull_temp`); a path already
     here comes back as it is. */
 export const pullTemp = (machine: string, path: string) => call<string>("pull_temp", { machine, path });
+export type { FileHandoff } from "./gen/bindings/FileHandoff";
+import type { FileHandoff } from "./gen/bindings/FileHandoff";
+export const fileHandoffSupported = () => inApp ? call<boolean>("file_handoff_supported") : Promise.resolve(false);
+export const fileHandoffStart = (id:string,machine:string,path:string) => call<FileHandoff>("file_handoff_start",{id,machine,path});
+export const fileHandoffState = (id:string) => call<FileHandoff>("file_handoff_state",{id});
+export const fileHandoffCancel = (id:string) => call<null>("file_handoff_cancel",{id});
+export const fileHandoffOpen = (id:string) => call<boolean>("file_handoff_open",{id});
+export const filePreviewSupported = () => inApp ? call<boolean>("file_preview_supported") : Promise.resolve(false);
+export const filePreviewOpen = (id:string) => call<boolean>("file_preview_open",{id});
+
+
 /** Takes a path off whichever machine holds it (`khor_node::Link::
     remove_path`). `machine` empty is this one.
 

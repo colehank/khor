@@ -14,3 +14,6 @@ export const YIELD_MS = 2_000;
 // they stop. No CSS twin: CodeMirror writes it on the caret layer
 // itself; `npm run caret` reads it there.
 export const BLINK_MS = 1_000;
+
+// Original-file transfer progress, independent of animation timing.
+export const FILE_HANDOFF_POLL_MS = 200;

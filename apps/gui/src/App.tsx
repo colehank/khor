@@ -2689,13 +2689,6 @@ export default function App() {
     }
     sideShow(it.machine, it.path.slice(0, it.path.lastIndexOf("/")) || "/", { path: it.path, at: Date.now() });
   };
-  /** …and a double-click (or 「在主区打开」) takes the same thing to the
-      main area, by the roads the landings use. */
-  const openRecentMain = (it: RecentItem) => {
-    if (it.kind === "page") return openUrlMain(it.machine, it.url, false, it.device);
-    if (it.kind === "workspace") return openDirMain(it.machine, it.path);
-    openPathMain(it.machine, it.path, false, null);
-  };
   /** The column's seat, composed here because the narrow pages read the
       shell's own state (`SessionSide` is the box and the capsule). */
   const sideSeat = (): ReactNode => {
@@ -2710,7 +2703,6 @@ export default function App() {
             today={sheetToday(selectedRow)}
             faceOf={faceOf}
             onOpen={openRecent}
-            onOpenMain={openRecentMain}
             onForget={forgetRecentRow}
           />
         );
@@ -2740,7 +2732,6 @@ export default function App() {
               }}
               onLeave={sideFrom === "recent" ? backToRecent : undefined}
               onRead={(path) => touched("file", f.machine, path)}
-              fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
             />
           </div>
         );

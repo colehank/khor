@@ -1,0 +1,12 @@
+[package]
+name = "tauri-plugin-khor-files"
+version.workspace = true
+edition.workspace = true
+links = "tauri-plugin-khor-files"
+
+[dependencies]
+tauri = { version = "2", default-features = false }
+serde_json.workspace = true
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

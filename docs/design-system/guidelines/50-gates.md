@@ -674,3 +674,7 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 ### 工作区明确的 Git 状态（2026-10-22）
 
 `FACE_ONLY=workspace-status npm run face` 聚焦现有 corners d 的正式工作区行，检查宽窄布局、无改动、缺失及不完整读取、有变化计数／操作、普通文件夹无状态与无时长，继续量既有 Git 状态色和选中行的对比度。旧实现先红：clean／unread／partial 的右上角都是空。该过滤入口复用原回归，不新建 Lab。
+
+- `npm run file-handoff`：生产文件页的大文件出口、原文件系统打开、下载进度／取消／重试、离开页面与隐藏标签取消，以及附件一致性；仅替换原生 IPC 与系统面板边界。
+
+- `npm run quicklook`：生产文件页与附件的原文件预览入口、失败重试意图、关闭后重开、迟到取消与外部打开回退；系统 Quick Look 另做原生验收。

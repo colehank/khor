@@ -643,6 +643,9 @@ pub fn answer(
         "pull" => {
             to_json(&rt.block_on(crate::files::pull(root, &arg("machine")?, &arg("path")?))?)
         }
+        "file_handoff_start" => to_json(&crate::file_handoff::start(root, &arg("id")?, &arg("machine")?, &arg("path")?)?),
+        "file_handoff_state" => to_json(&crate::file_handoff::state(root, &arg("id")?)?),
+        "file_handoff_cancel" => { crate::file_handoff::cancel(root, &arg("id")?)?; Ok("null".to_owned()) },
         "pull_temp" => {
             to_json(&rt.block_on(crate::files::pull_temp(root, &arg("machine")?, &arg("path")?))?)
         }

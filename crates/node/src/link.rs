@@ -7798,6 +7798,31 @@ impl Node {
         outcome
     }
 
+    /// An app-owned temporary copy with progress and cancellation. Uses
+    /// the same file road as pulls and drops, without a drop's size cap
+    /// or a receive-directory receipt. It is valid on a non-hosting phone.
+    pub async fn pull_path_progress(
+        &self,
+        machine: &str,
+        path: &str,
+        dir: &std::path::Path,
+        job: &crate::road::Job,
+    ) -> Result<std::path::PathBuf, String> {
+        use crate::road::{Dest, Mode, Parcel, Source};
+        let dir = std::path::absolute(dir).map_err(|e| e.to_string())?;
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await.map_err(|e| e.to_string())?;
+        let result = self.land(&ep, &Parcel {
+            mode: Mode::Direct,
+            source: Source::Path { machine: machine.to_owned(), path: path.to_owned() },
+            into: Dest::Dir(dir),
+            cap: None,
+            resume: false,
+        }, Some(job)).await;
+        ep.close().await;
+        result.map(|landed| landed.path)
+    }
+
     /// The pull on an endpoint the caller owns. Asking this very
     /// machine is a plain copy through the same refusals — the files
     /// landing lists this machine too, and "download from myself" must
@@ -7836,28 +7861,40 @@ impl Node {
         let stopped = job.map(|j| j.stopped.clone());
         let is_stopped = move || stopped.as_ref().is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed));
         if home == self.device() {
+            let (tx, mut rx) = tokio::sync::mpsc::channel(1);
             let (path, part, is_stopped) = (path.to_owned(), fell.part.clone(), is_stopped.clone());
-            let moved = tokio::task::spawn_blocking(move || -> Result<u64, String> {
+            // Bound progress to one queued slice. The async caller owns
+            // the borrowed job; no atomics are borrowed by a worker.
+            let worker = tokio::task::spawn_blocking(move || -> Result<u64, String> {
                 // Through read_slice rather than fs::copy so the local
                 // pull refuses exactly what the remote one refuses
                 // (relative paths, directories).
                 let mut out = std::fs::File::create(&part).map_err(|e| e.to_string())?;
                 let mut offset = 0u64;
+                let mut stamp = None;
                 loop {
                     if is_stopped() {
                         return Err(crate::drops::cancelled());
                     }
-                    let (total, _, bytes) = crate::files::read_slice(&path, offset)?;
+                    let (total, at_ms, bytes) = crate::files::read_slice(&path, offset)?;
+                    if let Some(cap) = cap { if total > cap { return Err(msg::drop_too_big(cap >> 20, &path)); } }
+                    if stamp.is_some_and(|stamp| stamp != (total, at_ms)) { return Err(msg::file_changed_mid_pull().into()); }
+                    stamp = Some((total, at_ms));
                     out.write_all(&bytes).map_err(|e| e.to_string())?;
                     offset += bytes.len() as u64;
+                    let _ = tx.blocking_send((total, offset));
                     if offset >= total {
                         return Ok(offset);
                     }
                 }
-            })
-            .await
-            .map_err(|e| e.to_string())
-            .and_then(|r| r);
+            });
+            while let Some((total, moved)) = rx.recv().await {
+                if let Some(job) = job {
+                    job.total.store(total, std::sync::atomic::Ordering::Relaxed);
+                    job.moved.store(moved, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            let moved = worker.await.map_err(|e| e.to_string()).and_then(|r| r);
             return match moved {
                 Ok(moved) => {
                     std::fs::rename(&fell.part, &fell.dest).map_err(|e| e.to_string())?;

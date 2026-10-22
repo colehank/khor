@@ -1,3 +1,5 @@
+import { useFileHandoff } from "@/hooks/use-file-handoff";
+import { FileHandoffAction, FileHandoffStatus } from "@/components/FileHandoff";
 import { fileManagerLabel } from "@/lib/file-actions";
 // **Files in an agent conversation** (round CHAT, 2026-10-03, the owner:
 // 「gui 对话得做到像 WeChat 一样：发文件、预览文件、还得显示文件在哪个路径」).
@@ -342,7 +344,7 @@ export async function bytesOf(machine: string, path: string): Promise<File | nul
   const kind = kindOf(path);
   if (kind === "text") {
     const f = await fetchFileText(machine, path);
-    return f.binary ? null : new File([f.text], name, { type: "text/plain" });
+    return f.binary || f.cut ? null : new File([f.text], name, { type: "text/plain" });
   }
   if (kind === "doc") return null;
   const look = await fetchPreview(machine, path);
@@ -383,6 +385,7 @@ export function FilePreview({
   /** The face it opens on; left out, the file's own (`defaultFaceOf`). */
   initialFace?: "source" | "preview";
 }) {
+  const handoff=useFileHandoff(machine,path??"",path!==null);
   const opening = initialFace ?? (path === null ? "source" : defaultFaceOf(path));
   const [face, setFace] = useState(opening);
   useEffect(() => setFace(opening), [machine, path, opening]);
@@ -478,7 +481,8 @@ export function FilePreview({
                     {fileManagerLabel()}
                   </Button>
                 )}
-                {!finder && sharing && (
+                {!finder && handoff.supported && <FileHandoffAction handoff={handoff}/>}
+                {!finder && !handoff.supported && sharing && (
                   <Button size="sm" data-file-preview-share onClick={share}>
                     {gui.chat_file_share}
                   </Button>
@@ -490,10 +494,12 @@ export function FilePreview({
                 )}
               </div>
             </div>
-            <div data-file-preview-body className="flex min-h-0 flex-1 flex-col border-t">
+            <div ref={handoff.owner} data-file-preview-body className="relative flex min-h-0 flex-1 flex-col border-t">
+              <FileHandoffStatus handoff={handoff}/>
               {/* The workspace's own view of a file, read only: editing is
                   the file view's, one press away above. */}
               <FileView
+                handoff={handoff}
                 key={`${machine} ${path}`}
                 machine={machine}
                 path={path}

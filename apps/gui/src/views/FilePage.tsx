@@ -28,6 +28,8 @@
  * here (a picture, a cut file), no share where nothing can take a file,
  * no VS Code where the machine has none.
  */
+import { useFileHandoff, type FileHandoffControl } from "@/hooks/use-file-handoff";
+import { FileHandoffStatus } from "@/components/FileHandoff";
 import { useEffect, useLayoutEffect, useRef, useState, Fragment, type ReactNode } from "react";
 
 import { launchOn, pullTemp, reveal } from "@/api";
@@ -135,10 +137,9 @@ function useFileVerbs({
   onRevision,
   previewing,
   faceToggle,
-  moreActs = [],
+  handoff,
 }: {
-  /** The page's own additions at the head of 「…」 (`FilePage` `moreActs`). */
-  moreActs?: { key: string; label: string; run: () => void }[];
+  handoff?: FileHandoffControl;
   /** The file page's face (UX-14): 字号 and 预览背景 are offered only
       while the file is shown rendered. Left out (the Mac's workspace
       strip), they are offered as before. */
@@ -185,12 +186,12 @@ function useFileVerbs({
   const previewKind = rendererOf(path) !== null || kind === "image" || kind === "svg" || kind === "pdf";
   const textKind = kind === "text";
   const menu: { key: string; label: string; run: () => void }[] = [
-    ...moreActs,
+    ...(kind === "doc" && handoff?.previewSupported ? [{key:"native-preview",label:gui.file_face_preview,run:handoff.preview}] : []),
     ...(onLocate ? [{key:"locate",label:gui.file_locate,run:onLocate}] : []),
     ...(native ? [
       {key:here?"open-default":"open-copy",label:here?gui.file_open_default:gui.file_open_copy,run:()=>void local().then(p=>launchOn("",p)).catch(fail)},
       ...(here?[{key:"reveal",label:fileManagerLabel(),run:()=>void reveal(path).catch(fail)}]:[]),
-    ] : sharing ? [{key:"share",label:gui.chat_file_share,run:share}] : []),
+    ] : handoff?.supported ? [{key:"open-other",label:gui.file_open_other,run:handoff.open}] : sharing ? [{key:"share",label:gui.chat_file_share,run:share}] : []),
     {
       key: "copy-path",
       label: gui.tab_copy_path,
@@ -290,11 +291,14 @@ function useFileVerbs({
 /** The Mac's workspace strip carries the same verbs at its right end
     (round UX-3): 分享 and 「…」, beside the tab they are about. */
 export function FileVerbs(props: Parameters<typeof useFileVerbs>[0]) {
-  const v = useFileVerbs(props);
+  const own = useFileHandoff(props.machine, props.path, !props.handoff);
+  const handoff = props.handoff ?? own;
+  const v = useFileVerbs({...props,handoff});
   return (
-    <div data-file-verbs className="flex flex-none items-center gap-in">
+    <div ref={own.owner} data-file-verbs className="flex flex-none items-center gap-in">
       {v.moreCircle}
       {v.dialogs}
+      <FileHandoffStatus handoff={handoff}/>
       {v.said && <span role="status" className="text-caption text-muted-foreground">{v.said}</span>}
     </div>
   );
@@ -320,7 +324,6 @@ export function FilePage({
   code = null,
   history = false,
   tabs,
-  moreActs,
   onLocate,
   embedded = false,
   embeddedContext,
@@ -341,9 +344,6 @@ export function FilePage({
      in a head at the page's top (`SeatHead`). ⚠️ 墓碑 (UX-40 §4 → UX-43
      §4): `docked`, which kept the deck from ever folding there — the
      lead's default, not the owner's. */
-  /** Acts the page's host adds at the head of 「…」 (UX-30 §4: the
-      session's 附栏 offers 「在主区打开」, the one way out of the column). */
-  moreActs?: { key: string; label: string; run: () => void }[];
   /** Desktop content tabs own navigation; reuse the file and its verbs without a second deck. */
   embedded?: boolean;
   /** The grouped host can show the machine and a workspace-relative folder. */
@@ -412,6 +412,7 @@ export function FilePage({
       but a notebook, which opens as its preview (`defaultFaceOf`); the more
       menu turns between the two and keeps the place. */
   const [face, setFace] = useState<"source" | "preview">(() => defaultFaceOf(path));
+  const handoff = useFileHandoff(machine,path);
   const verbs = useFileVerbs({
     machine,
     path,
@@ -429,8 +430,7 @@ export function FilePage({
     // 字号 and 预览背景 only while the file is read rendered (UX-14).
     previewing: previewable ? face === "preview" : false,
     faceToggle: rev === null && previewable ? { face, run: () => turn() } : undefined,
-    // The phone's deck: 分享 inside 「…」 (UX-33 §4).
-    moreActs,
+    handoff,
   });
   /** A re-read asked for from the pill's ↻ (UX-33), added to the one asked
       from outside. */
@@ -541,6 +541,7 @@ export function FilePage({
 
   return (
     <div
+      ref={handoff.owner}
       data-file-page
       data-file-face={face}
       data-folded={!embedded && folded || undefined}
@@ -586,6 +587,7 @@ export function FilePage({
           <RevisionView machine={machine} path={path} rev={rev} compare={compare} face={face} narrow />
         ) : (
         <FileView
+          handoff={handoff}
           editorHistory={editorHistory ?? localHistory.current}
           key={`${machine} ${path}`}
           machine={machine}
@@ -730,6 +732,7 @@ export function FilePage({
           onClose={tabs.onClose}
         />
       )}
+      <FileHandoffStatus handoff={handoff}/>
       {verbs.dialogs}
     </div>
   );

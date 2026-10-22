@@ -2498,6 +2498,9 @@ tree-entry-unsupported = "目录传输暂不支持符号链接或特殊文件：
 tree-changed = "目录在传送期间发生变化，请重试"
 tree-copy-inside = "不能把目录复制到它自己或子目录内"
 folder-picker-unavailable = "此设备暂不支持原生目录选择"
+file-open-unavailable = "暂时无法显示系统打开面板，请重试"
+file-preview-unavailable = "系统暂时无法预览此文件，可用其他应用打开"
+file-cache-missing = "临时文件已被清理，请重试"
 folder-picker-busy = "目录选择器正在使用中"
 # Files going into the session (the owner 2026-10-07 13:15): the pill
 # writes only the file's name, no extension, no count; this long form,
@@ -4454,7 +4457,6 @@ side-hide = "收起附栏"
 side-seam = "调整附栏宽度"
 # The one way from the column to the main area (UX-30 §4): a file's
 # 「…」 act, beside the double-click.
-open-in-main = "在主区打开"
 # 最近 with nothing in it: no page visited, no workspace, no file open.
 recent-none = "还没有去过哪里"
 # The 附栏's 最近 and 浏览器 are this session's slice (UX-37 §1, UX-39
@@ -4792,6 +4794,9 @@ file-reveal-windows = "在文件资源管理器中显示"
 file-reveal-linux = "在文件管理器中显示"
 file-open-default = "使用默认应用打开"
 file-open-copy = "下载副本后打开"
+file-open-preparing = "正在下载原文件"
+file-open-presenting = "请选择打开方式"
+file-preview-too-big = "文件过大，无法在此预览"
 file-locate = "在工作区中显示"
 file-actions = "文件操作"
 file-in-code = "在 VS Code 中打开"

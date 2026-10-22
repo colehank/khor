@@ -12,6 +12,7 @@ members = [
     "crates/cli",
     "crates/commands",
     "apps/gui/core",
+    "apps/gui/native-files",
     "apps/gui/src-tauri",
 ]
 # A patched copy of a dependency is not a member: its tests are

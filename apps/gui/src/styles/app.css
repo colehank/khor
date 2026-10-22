@@ -3031,3 +3031,8 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 /* A field's help belongs below the field, not inside the row whose label
    aligns with it. The narrow form already seats every child in one column. */
 [data-new-session-launch-note] { margin-top: calc(var(--gap-in) - var(--gap-row)); }
+
+/* A transfer stays above the existing deck without resizing the page or sheet. */
+[data-file-page] [data-file-handoff-status] {
+  bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
+}

@@ -338,37 +338,12 @@ unsafe fn front_controller(view: *mut AnyObject) -> *mut AnyObject {
     top
 }
 
-/// The share sheet with the file at `path`; `false` where there is
-/// nothing to show it on.
-///
-/// # Safety
-/// Main thread; `view` is a live page view.
+/// Browser downloads own their temporary directory until the native
+/// sheet finishes. File handoffs use the same presenter with a cache.
 unsafe fn share(view: &AnyObject, path: &std::path::Path, dir: Option<std::path::PathBuf>) -> bool {
-    let at = view as *const AnyObject as *mut AnyObject;
-    let top = unsafe { front_controller(at) };
-    if top.is_null() {
-        return false;
-    }
-    unsafe {
-        let text = NSString::from_str(&path.to_string_lossy());
-        let url: Retained<AnyObject> = msg_send![class!(NSURL), fileURLWithPath: &*text, isDirectory: false];
-        let items: Retained<AnyObject> = msg_send![class!(NSArray), arrayWithObject: &*url];
-        let a: Allocated<AnyObject> = msg_send![class!(UIActivityViewController), alloc];
-        let sheet: Retained<AnyObject> = msg_send![a, initWithActivityItems: &*items, applicationActivities: std::ptr::null::<AnyObject>()];
-        // Where it is anchored on a wide screen (nil on an iPhone).
-        let pop: *mut AnyObject = msg_send![&*sheet, popoverPresentationController];
-        if !pop.is_null() {
-            let _: () = msg_send![pop, setSourceView: at];
-        }
-        let gone = block2::RcBlock::new(move |_kind: *mut AnyObject, _done: objc2::runtime::Bool, _items: *mut AnyObject, _err: *mut AnyObject| {
-            if let Some(dir) = &dir {
-                let _ = std::fs::remove_dir_all(dir);
-            }
-        });
-        let _: () = msg_send![&*sheet, setCompletionWithItemsHandler: &*gone];
-        let _: () = msg_send![top, presentViewController: &*sheet, animated: true, completion: std::ptr::null::<AnyObject>()];
-    }
-    true
+    unsafe { crate::phone_share::show(view, path, move |_| {
+        if let Some(dir) = &dir { let _ = std::fs::remove_dir_all(dir); }
+    }) }
 }
 
 define_class!(

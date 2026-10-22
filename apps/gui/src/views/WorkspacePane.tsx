@@ -16,6 +16,7 @@
 // whole landing of their own on the rail; the tree and the file have no
 // second address. So when the workspace list is open, this opens with
 // the sessions folded, and opening them is one press away.
+import { useFileHandoff } from "@/hooks/use-file-handoff";
 import { sessionInWorkspace } from "@/lib/session-cwd";
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -332,6 +333,7 @@ export function WorkspacePane({
   useEffect(() => setFace(file === null ? "source" : defaultFaceOf(file)), [machine, file]);
   /** The middle column, where the reader's place is read and put back. */
   const mid = useRef<HTMLDivElement>(null);
+  const handoff = useFileHandoff(machine, file ?? "", !narrow && file !== null, mid);
   /** Where to put the reader once the face has changed (a source line). */
   const restore = useRef<number | null>(null);
   /** A ✓ waiting on its save before the face goes back to reading. */
@@ -1455,6 +1457,7 @@ export function WorkspacePane({
     ) : !narrow && file !== null && diffOf(file) === null ? (
       <div data-ws-file-tail className="flex flex-none items-center gap-in px-2">
         <FileVerbs
+          handoff={handoff}
           machine={machine}
           path={file}
           here={here}
@@ -2009,7 +2012,7 @@ export function WorkspacePane({
           // a `min-width` it would be a wedge instead of a stop: the
           // three columns would simply overflow the window, and the
           // face would scroll sideways rather than the seam refusing.
-          className="flex min-w-0 flex-1 flex-col"
+          className="relative flex min-w-0 flex-1 flex-col"
         >
           {/* **One tab per open file, and the three switches at the far
               end of it** (工作区批⑧, the user's own layout: 「标签页的
@@ -2123,6 +2126,7 @@ export function WorkspacePane({
             <RevisionView machine={machine} path={file} rev={rev} compare={revCompare} face={face} narrow={narrow} />
           ) : (
             <FileView
+              handoff={handoff}
               key={`${machine} ${file}`}
               machine={machine}
               path={file}

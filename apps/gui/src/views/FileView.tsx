@@ -28,6 +28,8 @@
 // elsewhere, scroll what is here and take the rest if you need it, or
 // nothing. Folded into one「打不开」they would all read as khor being
 // broken, which is the failure `check-acp` 第二批 names.
+import { useFileHandoff, type FileHandoffControl } from "@/hooks/use-file-handoff";
+import { FileHandoffAction, FileHandoffStatus } from "@/components/FileHandoff";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -183,17 +185,38 @@ function Away({
   word,
   onTake,
   took,
+  path,
+  machine,
+  total,
+  handoff,
+  preview = false,
 }: {
+  preview?:boolean;
+  path:string;
+  machine:string;
+  total?:number;
+  handoff:FileHandoffControl;
   word: string;
   onTake: () => void;
   took: string | null;
 }) {
   // Not on a phone (docs/IOS.md 第二步): it takes no files (`useTake`).
   const takes = useHereHosts();
+  const [size,setSize]=useState(total);
+  useEffect(()=>{
+    setSize(total);if(total!==undefined)return;
+    let alive=true;void fetchFileStat(machine,path).then(s=>{if(alive)setSize(s.total);}).catch(()=>{});
+    return()=>{alive=false;};
+  },[machine,path,total]);
+  const name=path.split("/").pop()??path;
+  const type=name.includes(".")?name.slice(name.lastIndexOf(".")+1).toUpperCase():null;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-      <span className="text-body text-foreground">{word}</span>
-      {takes && (
+      <span data-file-fallback-name className="max-w-full break-words text-body text-foreground">{name}</span>
+      <span className="text-callout text-muted-foreground">{[type,size===undefined?null:sizeWord(size)].filter(Boolean).join(" · ")}</span>
+      {word && <span className="text-callout text-muted-foreground">{word}</span>}
+      <FileHandoffAction handoff={handoff} preview={preview}/>
+      {takes && !handoff.supported && (
         <Button size="sm" data-file-take onClick={onTake} className="mt-1 min-h-touch min-w-touch">
           {gui.file_take}
         </Button>
@@ -221,7 +244,17 @@ export function defaultFaceOf(path: string): "source" | "preview" {
   return rendererOf(path) === "ipynb" ? "preview" : "source";
 }
 
-export function FileView({
+export function FileView(props: Omit<Parameters<typeof FileBody>[0],"handoff"> & {handoff?:FileHandoffControl}) {
+  const own=useFileHandoff(props.machine,props.path,!props.handoff);
+  const handoff=props.handoff??own;
+  return <div ref={own.owner} data-file-body className="relative flex min-h-0 flex-1 flex-col">
+    <FileBody {...props} handoff={handoff}/>
+    {!props.handoff&&<FileHandoffStatus handoff={handoff}/>}
+  </div>;
+}
+
+function FileBody({
+  handoff,
   machine,
   path,
   face,
@@ -237,6 +270,7 @@ export function FileView({
   onCanEdit,
   editorHistory,
 }: {
+  handoff: FileHandoffControl;
   /** An open-tab owner may retain this across the file view's remount. */
   editorHistory?: EditorHistorySlot;
   /** **Read first, under a finger** (2026-10-03, the owner's ruling on
@@ -330,6 +364,7 @@ export function FileView({
   goLine?: { line: number; at: number } | null;
 }) {
   const localHistory = useRef<EditorHistorySlot>({});
+  const nativeOffice = kindOf(path) === "doc" && handoff.previewSupported;
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
       asking — `text`, which is the road this view already had. */
@@ -450,14 +485,14 @@ export function FileView({
     let live = true;
     setLook(null);
     setLookError(null);
-    if (kindOf(path) === "text") return;
+    if (kindOf(path) === "text" || (kindOf(path) === "doc" && handoff.previewSupported !== false)) return;
     fetchPreview(machine, path)
       .then((p) => live && setLook(p))
       .catch((e: unknown) => live && setLookError(String(e instanceof Error ? e.message : e)));
     return () => {
       live = false;
     };
-  }, [machine, path, reread]);
+  }, [machine, path, reread, nativeOffice, handoff.previewSupported]);
 
   useEffect(() => {
     let live = true;
@@ -839,14 +874,15 @@ export function FileView({
   };
 
   // ── the three screens that are not a code view ──────────────────
+  if (nativeOffice) return <Away machine={machine} path={path} handoff={handoff} preview word="" onTake={take} took={took}/>;
   if (kindOf(path) !== "text") {
     if (lookError !== null) {
-      return <div className="p-4 text-callout text-muted-foreground">{lookError}</div>;
+      return <Away machine={machine} path={path} handoff={handoff} word={lookError} onTake={take} took={took}/>;
     }
     if (look === null) return <div className="flex-1" />;
     if (look.cut) {
       return (
-        <Away word={gui.look_too_big(sizeWord(look.total))} onTake={take} took={took} />
+        <Away machine={machine} path={path} handoff={handoff} total={look.total} word={gui.file_preview_too_big} onTake={take} took={took} />
       );
     }
     if (look.kind === "image" || look.kind === "svg") {
@@ -922,7 +958,7 @@ export function FileView({
         </div>
       );
     }
-    return <Away word={gui.file_not_text} onTake={take} took={took} />;
+    return <Away machine={machine} path={path} handoff={handoff} word={gui.file_not_text} onTake={take} took={took} />;
   }
 
   if (error !== null) {
@@ -931,18 +967,7 @@ export function FileView({
   if (file === null) return <div className="flex-1" />;
 
   if (file.binary) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <span className="text-body text-foreground">{gui.file_not_text}</span>
-        <span className="text-callout text-muted-foreground tabular-nums">
-          {sizeWord(file.total)}
-        </span>
-        <Button size="sm" onClick={take} className="mt-1">
-          {gui.file_take}
-        </Button>
-        {took !== null && <span className="text-callout text-muted-foreground">{took}</span>}
-      </div>
-    );
+    return <Away machine={machine} path={path} handoff={handoff} total={file.total} word={gui.file_not_text} onTake={take} took={took}/>;
   }
 
   // **Nothing is drawn about HEAD while the buffer differs from disk.**
@@ -1010,9 +1035,7 @@ export function FileView({
               is the same fact twice, and「只读了开头」has already told
               the half that explains this one. */}
           <span data-read-only>{gui.file_read_only}</span>
-          <Button size="sm" onClick={take} className="ml-auto">
-            {gui.file_take}
-          </Button>
+          {handoff.supported ? <FileHandoffAction handoff={handoff}/> : <Button size="sm" onClick={take} className="ml-auto">{gui.file_take}</Button>}
           {/* Where it landed, **on the row whose button sent it** — a
               press with no answer is a press nobody can check, and this
               row is already here and already about the same file
