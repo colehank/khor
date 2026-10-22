@@ -252,3 +252,14 @@ khor devices                                                   # 五台都在线
 - iOS：沿用已验证 dist，采用 archive-only 归档，新静态库、归档 App 的时间、完整收据与签名通过。系统 PATH 独立导出上传返回 `Upload succeeded`／`EXPORT SUCCEEDED`；上传版本 0.1.14（56），Apple 正在处理。临时签名工程配置按构建前基线恢复。
 - 收尾：日志、会话快照与发布收据保留于 `/Volumes/disk0/khor-ship-20261022-content-toolbar/`。清理本次有包身份且无引用的 Xcode 导出副本、旧静态库备份及集群源码导出，共 730,101,982 字节；未确认身份的空暂存目录保留。已移除完成并合入的 content-toolbar worktree；保留最新静态库、正式归档与验收证据，没有全量清 target 或删除系统 swap。
 - 平台边界：Mac 原生网页操作已验；iOS 为编译／归档／上传，Windows getter 仅目标平台 metadata 编译，Linux getter未编译或运行。未把这些结果称为 iPhone 原生手势或其它桌面 GUI 验收。
+
+## 发布记录：2026-10-22（原件交接与系统 Office 预览）
+
+- 功能提交 `3ab68026`，iOS Quick Look 归档链接补齐 `b34e6273`，均已合入 main；同时发布此前已提交的 clean 工作区状态 `4e025269`。完整界面收据：`khor-ui-assets:/assets/index-pQqgYXf2.js`。
+- 大文件与无法内嵌预览的文件可取回完整原件，再用其他应用打开；进度、取消、重试、来源版本检查和缓存清理共用同一路径。切走内容或隐藏页面会取消未完成请求，迟到结果不打开旧文件；移除会话文件的「在主区打开」。iOS／macOS 的 Office 文件使用原生 Quick Look 只读预览，原件交接仍可作为后备；Android 通过私有 FileProvider 与临时读取授权交给已安装应用。
+- 验证：主干默认前端检查、TypeScript、生产构建通过，gates 为 82 scripts／76 entries；三项原件核心测试、真实双节点原件传输及命令表两项通过。正式组件检查了预览失败重试、原件交接、附件、导航后取消、同一内容恢复和甲板高度。真实隔离 Mac App 中 DOCX 标题／段落、PPTX 中文标题／项目布局显示正确，Esc／⌘W 关闭预览后回到原标签，其他标签保留。证据位于 `/Volumes/disk0/khor-mobile-file-proof/`。
+- Mac：最终 release CLI／GUI 的签名与完整收据通过；主窗口 97455 → 94569，实际 5467 监听进程同为新版且仅一枚主窗口。12 个原有辅助进程保留，会话记录 14 → 14，无新增失败。CLI SHA-256 `8ad2e74146fda3c4104037e1153382995bfff3127afb7c621cebc60eca2c721a`，GUI `b9000a10f56c595c8612799282c3ce2625eb8450594fb75f5200fdd747f896d9`。
+- 集群：hinton 构建并经 onset 安装，lecun／turing 的 keeper 自动换新。实际 5467 监听 PID 分别为 296144／3137612／1731782，运行 exe 与安装文件 SHA-256 均为 `cdce0269378193ba8cfb404a93c37419e450ade44e3e13023ed1f0c00223dda1`；完整二进制及 HTTP 收据一致，既有会话保留且没有新增失败，Mac CLI 确认三台直连。编译前移开远端旧产物，并将四份关键源文件与 main 逐字节核对；没有手工重启另外两台。
+- iOS：archive-only 重新编译，最新静态库与归档 App 的时间、完整收据、签名及最终 QuickLook.framework 链接均通过。系统 PATH 独立导出上传于 `2026-10-22 15:58:13 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，上传版本 0.1.14（57），Apple 已开始处理。两处临时签名配置按归档前基线恢复。
+- 收尾：发布日志、会话快照、哈希、归档与上传收据保留在 `/Volumes/disk0/khor-ship-20261022-office-preview/`。移除本次已合并且无进程引用的 mobile-file-handoff 与 workspace-clean-status worktree；按包身份和 lsof 无引用确认后清理一份 Khor Xcode 导出暂存与旧静态库备份，共 679,788,118 字节。保留最新正式归档、静态库、目标目录和验收证据；未全量清 target 或删除系统 swap。
+- 平台边界：iPhone Quick Look／系统分享仍待安装后的真机操作验收。Android 没有可用 SDK，本次未编 APK 或完成真机验收，也未宣称具备内嵌 Office 排版引擎；Windows／Linux 的外部应用 GUI 操作未实机验收。
