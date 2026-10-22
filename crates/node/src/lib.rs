@@ -4649,6 +4649,12 @@ impl Node {
         {
             return Err(msg::resume_running_elsewhere(pid));
         }
+        let codex = adaptor::codex::Codex::at(adaptor::codex_home(&self.root));
+        if codex.full_session_id(&live::clean_leaf(session)).as_deref() == Some(session)
+            && codex.has_writer(session)?
+        {
+            return Err(msg::takeover_writer_busy(session));
+        }
         gui_host::spawn_gui_host_reopen(self.root(), Some(cwd), title, cmd, Some(agent), session)
     }
 
@@ -4693,9 +4699,8 @@ impl Node {
     /// not somewhere this one can start a session anyway, so there is
     /// nothing here to ask the mesh for.
     pub fn places(&self) -> Vec<place::Place> {
-        let vendors = adaptor::vendor_home(&self.root);
-        let mut seen = adaptor::claude::Claude::at(vendors.join(".claude")).places();
-        seen.extend(adaptor::codex::Codex::at(vendors.join(".codex")).places());
+        let mut seen = adaptor::claude::Claude::at(adaptor::claude_home(&self.root)).places();
+        seen.extend(adaptor::codex::Codex::at(adaptor::codex_home(&self.root)).places());
         seen.extend(self.live.places());
         place::fold(seen)
     }
@@ -4860,11 +4865,9 @@ impl Node {
             return Err(msg::already_a_chat(&id.0));
         }
         // Whose conversation is this? The store that resolves the leaf
-        // answers — a vendor's transcript dir is its own registry, and
-        // the protocol has no wire question for this yet (`crates/acp`'s
-        // edge survey: session/list is an unadopted draft).
-        let vhome = adaptor::vendor_home(&self.root);
-        let claude = adaptor::claude::Claude::at(vhome.join(".claude"));
+        // answers. Generic ACP sessions use session/list + session/load;
+        // this conversion specifically needs a known vendor CLI/store.
+        let claude = adaptor::claude::Claude::at(adaptor::claude_home(&self.root));
         let (full, cwd, shim) = if let Some(full) = claude.full_session_id(leaf) {
             let cwd = claude
                 .recorded_cwd(leaf)
@@ -4872,7 +4875,7 @@ impl Node {
                 .ok_or_else(|| msg::takeover_no_record(&id.0))?;
             (full, cwd, "_cagent")
         } else {
-            let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+            let codex = adaptor::codex::Codex::at(adaptor::codex_home(&self.root));
             let full = codex
                 .full_session_id(leaf)
                 .ok_or_else(|| msg::takeover_no_record(&id.0))?;
@@ -4883,6 +4886,39 @@ impl Node {
             (full, cwd, "_codexagent")
         };
         let sighting = self.live.sighting_of(id);
+        // Refuse BEFORE touching a viewer or host when the only owner we know
+        // is a thread writer in a potentially shared daemon.
+        let codex_store = (shim == "_codexagent")
+            .then(|| adaptor::codex::Codex::at(adaptor::codex_home(&self.root)));
+        // A khor-owned terminal explicitly running `codex resume <uuid>` is
+        // also exact ownership evidence, including before its first OSC title.
+        let owned_resume = codex_store.is_some() && self.live.dir_of(id)
+            .and_then(|dir| host::read_host_file(&dir).ok())
+            .is_some_and(|host| {
+                if !link::pid_running(host.host_pid) { return false; }
+                let procs = adaptor::Procs::snapshot();
+                procs.held_by(&[host.child_pid]).into_iter().any(|pid| {
+                    crate::codex_terminal::scoped(&procs, pid) && procs.command(pid).is_some_and(|argv| {
+                        let args = argv.iter().skip(1).map(std::ffi::OsString::from).collect::<Vec<_>>();
+                        crate::codex_process::resuming(&args, &full)
+                    })
+                })
+            });
+        if let Some(store) = &codex_store {
+            if store.has_writer(&full)? && !owned_resume && sighting.as_ref().is_none_or(|(_, pids)| pids.is_empty()) {
+                return Err(msg::takeover_writer_busy(&id.0));
+            }
+        }
+        let named = if shim == "_codexagent" {
+            std::env::var("KHOR_CODEX").unwrap_or_else(|_| "codex".into())
+        } else {
+            std::env::var("KHOR_CLAUDE").unwrap_or_else(|_| "claude".into())
+        };
+        let path = crate::spawn_path(&named);
+        crate::find_program(&named, &path).ok_or_else(|| msg::command_not_found(&named, &path))?;
+        if !cwd.is_dir() {
+            return Err(msg::takeover_no_record(&id.0));
+        }
         let title = sighting
             .as_ref()
             .map(|(t, _)| t.clone())
@@ -4926,6 +4962,15 @@ impl Node {
             while pids.iter().any(|&p| link::pid_alive(p)) {
                 if std::time::Instant::now() > deadline {
                     return Err(msg::takeover_wont_die(&id.0));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+        if let Some(store) = &codex_store {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while store.has_writer(&full)? {
+                if std::time::Instant::now() >= deadline {
+                    return Err(msg::takeover_writer_busy(&id.0));
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
@@ -4978,9 +5023,8 @@ impl Node {
         // The same store-resolves-it vendor fork as `takeover`, plus
         // each vendor's own resume spelling: claude takes a flag,
         // codex a subcommand (`codex resume <uuid>`, probed 0.146.1).
-        let vhome = adaptor::vendor_home(&self.root);
-        let claude = adaptor::claude::Claude::at(vhome.join(".claude"));
-        let (cwd, resume) = if let Some(full) = claude.full_session_id(leaf) {
+        let claude = adaptor::claude::Claude::at(adaptor::claude_home(&self.root));
+        let (cwd, mut resume) = if let Some(full) = claude.full_session_id(leaf) {
             let cwd = claude
                 .recorded_cwd(leaf)
                 .or_else(std::env::home_dir)
@@ -4988,7 +5032,7 @@ impl Node {
             let bin = std::env::var("KHOR_CLAUDE").unwrap_or_else(|_| "claude".into());
             (cwd, vec![bin, "--resume".into(), full])
         } else {
-            let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+            let codex = adaptor::codex::Codex::at(adaptor::codex_home(&self.root));
             // **Neither vendor knows this row**, which since 批⑥ is a
             // thing that happens on purpose: a session opened with an
             // agent the user registered has no vendor CLI khor knows
@@ -5006,6 +5050,15 @@ impl Node {
             let bin = std::env::var("KHOR_CODEX").unwrap_or_else(|_| "codex".into());
             (cwd, vec![bin, "resume".into(), full])
         };
+        let named = &resume[0];
+        let path = crate::spawn_path(named);
+        let bin = crate::find_program(named, &path).ok_or_else(|| msg::command_not_found(named, &path))?;
+        if resume.get(1).is_some_and(|arg| arg == "resume") && crate::codex_process::supports_no_daemon(std::path::Path::new(&bin), &path) {
+            resume.insert(1, "--no-daemon".into());
+        }
+        if !cwd.is_dir() {
+            return Err(msg::takeover_no_record(&id.0));
+        }
         let dir = self
             .live
             .dir_of(id)
@@ -5299,14 +5352,13 @@ impl Node {
             .live
             .vendor_leaf_of(id)
             .unwrap_or_else(|| leaf.to_owned());
-        let vhome = adaptor::vendor_home(&self.root);
-        let claude = adaptor::claude::Claude::at(vhome.join(".claude"));
+        let claude = adaptor::claude::Claude::at(adaptor::claude_home(&self.root));
         match claude.transcript(&leaf) {
             Ok(t) => Ok(t),
             // The other store's turn — the takeover fork's rule:
             // whoever resolves the leaf owns the session.
             Err(claude_why) => {
-                let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+                let codex = adaptor::codex::Codex::at(adaptor::codex_home(&self.root));
                 match codex.full_session_id(&leaf) {
                     Some(full) => codex.transcript(&full),
                     None => Err(claude_why),
@@ -5355,12 +5407,11 @@ impl Node {
                         .unwrap_or_else(|| leaf.to_owned())
                 })
                 .and_then(|leaf| {
-                    let vhome = adaptor::vendor_home(&self.root);
-                    adaptor::claude::Claude::at(vhome.join(".claude"))
+                    adaptor::claude::Claude::at(adaptor::claude_home(&self.root))
                         .transcript_since(&leaf, from)
                         .ok()
                         .or_else(|| {
-                            let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+                            let codex = adaptor::codex::Codex::at(adaptor::codex_home(&self.root));
                             let full = codex.full_session_id(&leaf)?;
                             codex.transcript_since(&full, from).ok()
                         })

@@ -27,6 +27,7 @@ async fn the_shim_speaks_acp_for_a_fake_codex() {
         &fake,
         r#"#!/usr/bin/env python3
 import json, sys, os
+assert os.environ["CODEX_HOME"] == os.path.join(os.environ["KHOR_HOME"], ".codex"), "native child must use the same private store as discovery"
 open("fake.pid", "w").write(str(os.getpid()))
 assert sys.argv[1] == "app-server", sys.argv
 
@@ -135,6 +136,7 @@ for line in sys.stdin:
 
     // The session id is codex's own thread uuid — 同源: the rollout on
     // disk wears the same name.
+    handle.replay().await.expect("a new unprompted session has an empty history");
     assert_eq!(handle.session().0.to_string(), SID);
 
     let notes = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -384,14 +386,21 @@ for line in sys.stdin:
     );
     drop(handle3);
     let _ = pump3.await;
+    // The native peer accepts resume, but no transcript exists: opening must
+    // fail with a diagnostic, rather than present an invented empty history.
+    let missing = "00000000-0000-4000-8000-000000000099";
+    match khor_acp::start_resume(&format!("{exe} _codexagent"), dir.join("cwd"), missing).await {
+        Err(error) => assert!(error.said().contains("00000000"), "{error:?}"),
+        Ok(_) => panic!("a missing recorded history cannot be restored as empty"),
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// The real thing, opt-in — 真连 (账本: 网络类改动必须真连): the same
 /// ACP client, a real `codex` from PATH, one real model answer. Run
 /// with `cargo test -p khor-cli --test codexagent -- --ignored` on a
-/// machine whose codex gateway is alive; ignored otherwise because it
-/// spends real tokens and needs the network.
+/// machine with an explicitly configured isolated KHOR_VENDOR_HOME; ignored
+/// otherwise because it spends real tokens and needs authenticated settings.
 #[tokio::test]
 #[ignore]
 async fn the_shim_answers_through_a_real_codex() {
@@ -438,7 +447,7 @@ async fn the_shim_answers_through_a_real_codex() {
 
     // 同源: the thread this shim opened is a rollout file wearing the
     // same uuid, where discovery and usage accounting will find it.
-    let sessions = std::env::home_dir().unwrap().join(".codex/sessions");
+    let sessions = khor_node::adaptor::codex_home(&dir.join("home")).join("sessions");
     let mut found = false;
     let mut stack = vec![sessions];
     while let Some(d) = stack.pop() {

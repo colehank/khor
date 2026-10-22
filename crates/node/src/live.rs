@@ -1886,10 +1886,10 @@ impl LiveKind {
             .collect();
         vendor_leaves.extend(learned);
         let claude = crate::adaptor::claude::Claude::at(
-            crate::adaptor::vendor_home(&self.root).join(".claude"),
+            crate::adaptor::claude_home(&self.root),
         );
         let codex = crate::adaptor::codex::Codex::at(
-            crate::adaptor::vendor_home(&self.root).join(".codex"),
+            crate::adaptor::codex_home(&self.root),
         );
         for r in out.iter_mut() {
             // **An agent row never says its screen's bottom line**

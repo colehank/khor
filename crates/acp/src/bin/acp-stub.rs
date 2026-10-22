@@ -127,6 +127,22 @@ fn options_of(model: &str, fast: bool) -> Vec<SessionConfigOption> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> agent_client_protocol::Result<()> {
+    // SDK 3 normalizes outgoing initialization versions. Use a deliberately
+    // malformed raw peer for the unsupported-wire-version regression instead.
+    if let Ok(version) = std::env::var("KHOR_STUB_VERSION") {
+        use std::io::{BufRead, Write};
+        for line in std::io::stdin().lock().lines() {
+            let Ok(line) = line else { break };
+            let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+            if request["method"] == "initialize" {
+                println!("{}", serde_json::json!({"jsonrpc":"2.0", "id":request["id"], "result": {
+                    "protocolVersion": version.parse::<u16>().unwrap_or(0), "agentCapabilities": {}
+                }}));
+                std::io::stdout().flush().unwrap();
+            }
+        }
+        return Ok(());
+    }
     // What the settable stub currently has set: (model, fast).
     let set = Arc::new(Mutex::new(("small".to_owned(), false)));
     let set_option = set.clone();
@@ -152,7 +168,7 @@ async fn main() -> agent_client_protocol::Result<()> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |_request: ListSessionsRequest, responder, _connection| {
+            async move |request: ListSessionsRequest, responder, _connection| {
                 // Only reachable when advertised — a client that asked
                 // without checking would get an answer here and pass a
                 // test it should fail, so this mirrors a real agent by
@@ -170,6 +186,24 @@ async fn main() -> agent_client_protocol::Result<()> {
                         .map(PathBuf::from)
                         .unwrap_or_else(|_| PathBuf::from(fixed))
                 };
+                if let Ok(mode) = std::env::var("KHOR_STUB_PAGES") {
+                    if request.cwd.as_deref() != Some(std::path::Path::new("/filtered")) {
+                        return responder.respond_with_error(agent_client_protocol::Error::invalid_params());
+                    }
+                    let page = request.cursor.as_deref();
+                    if page.is_some() && mode == "fail" {
+                        return responder.respond_with_error(agent_client_protocol::Error::internal_error());
+                    }
+                    let (ids, next) = match page {
+                        None => (vec!["sess-a", "sess-b"], Some("page-two")),
+                        Some("page-two") => (vec!["sess-b", "sess-c"], Some(if mode == "loop" { "page-two" } else { "page-three" })),
+                        Some("page-three") => (vec!["sess-d"], None),
+                        _ => return responder.respond_with_error(agent_client_protocol::Error::invalid_params()),
+                    };
+                    let mut response = ListSessionsResponse::new(ids.into_iter().map(|id| SessionInfo::new(id, "/filtered")).collect());
+                    response.next_cursor = next.map(Into::into);
+                    return responder.respond(response);
+                }
                 let sessions = if has {
                     vec![
                         SessionInfo::new("sess-a", at("/w/one")).title("先看看那个文件"),

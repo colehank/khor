@@ -200,6 +200,13 @@ impl Codex {
         uuid_in_name(path.file_name()?.to_str()?).map(str::to_owned)
     }
 
+    /// A writer belongs to a thread, possibly inside a shared daemon. It is
+    /// never permission to terminate that daemon or guess a terminal PID.
+    pub(crate) fn has_writer(&self, uuid: &str) -> Result<bool, String> {
+        writer_owned(&self.root.join("thread-writer-locks").join(format!("{uuid}.lock")))
+            .map_err(|error| error.to_string())
+    }
+
     /// The rollout behind a lossy khor leaf, by name alone.
     fn rollout_of_leaf(&self, leaf: &str) -> Option<PathBuf> {
         self.rollouts().into_iter().map(|r| r.path).find(|p| {

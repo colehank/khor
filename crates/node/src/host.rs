@@ -612,7 +612,13 @@ fn spawn_host_with(
     // A host belongs to the store containing this session. A GUI request may
     // name a different root from its process environment; only the child gets
     // that root, before it changes directory to the session's working path.
-    c.env("KHOR_HOME", host_store_root(dir)?);
+    let root = host_store_root(dir)?;
+    c.env("KHOR_HOME", &root);
+    // Native TUI resume must read the very store the GUI shim/discovery used.
+    // Set these on the child only; a private node cannot inherit the user's
+    // unrelated native store through its parent process environment.
+    c.env("CLAUDE_CONFIG_DIR", crate::adaptor::claude_home(&root));
+    c.env("CODEX_HOME", crate::adaptor::codex_home(&root));
     c.env_remove(STARTUP_ENV);
     if let Some(text) = startup { c.env(STARTUP_ENV,text); }
     if let Some(cwd) = cwd {

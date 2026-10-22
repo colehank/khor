@@ -1391,6 +1391,7 @@ wizard-registered-no-terminal = "Registered agents have no terminal form: khor o
 wizard-registered-no-scheduler = "Registered agents can't act as a scheduler yet: khor's verbs are passed in through claude's and codex's own configs — the protocol's own door isn't wired up yet"
 wizard-unknown-agent = "Unknown agent: {0}"
 takeover-wont-die = "The process on the other end didn't exit — takeover aborted: {0}"
+takeover-writer-busy = "Codex still owns this session and cannot be safely taken over. Exit it in its original terminal, then retry: {0}"
 already-a-chat = "It's already in chat form: {0}"
 already-a-terminal = "It's already in terminal form: {0}"
 host-bad-convention = "Host arguments don't match the convention"

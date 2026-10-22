@@ -99,6 +99,8 @@ struct Shim {
     /// A cancel was sent for the current turn: its `result`, whatever
     /// its subtype, is the cancellation the client asked for.
     interrupted: AtomicBool,
+    /// A fresh, unprompted session may not have a transcript yet.
+    history_required: AtomicBool,
     /// Control requests this shim sent and is waiting on, by request
     /// id: claude answers each with a `control_response` naming the id,
     /// and `drain` hands the answer here. The interrupt is not in this
@@ -160,6 +162,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         session: Mutex::new(None),
         turn: Mutex::new(None),
         interrupted: AtomicBool::new(false),
+        history_required: AtomicBool::new(false),
         window: Mutex::new(None),
         pending: Mutex::new(HashMap::new()),
         asked: AtomicU64::new(0),
@@ -214,6 +217,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         )
         .on_receive_request(
             async move |prompt: PromptRequest, responder, connection| {
+                s_prompt.history_required.store(true, Ordering::SeqCst);
                 let text = prompt
                     .prompt
                     .iter()
@@ -301,11 +305,12 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                         return responder.respond_with_internal_error(msg::cagent_one_session());
                     }
                     None => {
+                        s_load.history_required.store(true, Ordering::SeqCst);
                         // A load before any new is the takeover: resume
                         // the recorded conversation. Its world (cwd) is
                         // the transcript's own record, not the loader's
                         // — the resumer may stand anywhere.
-                        let home = crate::adaptor::vendor_home(&s_load.root).join(".claude");
+                        let home = crate::adaptor::claude_home(&s_load.root);
                         let cwd = crate::adaptor::claude::Claude::at(home)
                             .recorded_cwd(&crate::live::clean_leaf(&sid))
                             .unwrap_or_else(|| load.cwd.clone());
@@ -314,10 +319,13 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                         }
                     }
                 }
-                let home = crate::adaptor::vendor_home(&s_load.root).join(".claude");
-                let said = crate::adaptor::claude::Claude::at(home)
-                    .transcript(&crate::live::clean_leaf(&sid))
-                    .unwrap_or_default();
+                let home = crate::adaptor::claude_home(&s_load.root);
+                let said = match crate::adaptor::claude::Claude::at(home)
+                    .transcript(&crate::live::clean_leaf(&sid)) {
+                    Ok(said) => said,
+                    Err(_) if !s_load.history_required.load(Ordering::SeqCst) => Vec::new(),
+                    Err(error) => return responder.respond_with_internal_error(error),
+                };
                 for u in said {
                     // `None` for a recorded block with nothing to
                     // paint; skipped rather than turned into an empty
@@ -476,6 +484,7 @@ impl Shim {
             .ok_or_else(|| msg::command_not_found(&named, &path))?;
         let mut c = std::process::Command::new(&bin);
         c.env("PATH", &path);
+        c.env("CLAUDE_CONFIG_DIR", crate::adaptor::claude_home(&self.root));
         c.args([
             "--print",
             "--input-format",

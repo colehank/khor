@@ -307,9 +307,13 @@ impl Meters {
     /// failed `read_dir`, which is what makes it cheap to know about
     /// agents nobody here runs (see [`pi`]).
     pub fn at(home: &Path) -> Meters {
+        Self::with_agent_dirs(home, home.join(".claude"), home.join(".codex"))
+    }
+
+    fn with_agent_dirs(home: &Path, claude_home: PathBuf, codex_home: PathBuf) -> Meters {
         let mut meters: Vec<Box<dyn Meter>> = vec![
-            Box::new(claude::Claude::at(home.join(".claude"))),
-            Box::new(codex::Codex::at(home.join(".codex"))),
+            Box::new(claude::Claude::at(claude_home)),
+            Box::new(codex::Codex::at(codex_home)),
             Box::new(gemini::Gemini::at(home.join(".gemini"))),
         ];
         for (vendor, root) in pi::ROOTS {
@@ -629,7 +633,9 @@ pub fn meters_for(home: &Path, ledger: &Path) -> std::sync::Arc<Meters> {
         .unwrap_or_else(|p| p.into_inner());
     all.entry((home.to_path_buf(), ledger.to_path_buf()))
         .or_insert_with(|| {
-            std::sync::Arc::new(Meters::at(home).with_ledger(ledger.to_path_buf()))
+            std::sync::Arc::new(Meters::with_agent_dirs(
+                home, crate::adaptor::claude_home(home), crate::adaptor::codex_home(home),
+            ).with_ledger(ledger.to_path_buf()))
         })
         .clone()
 }

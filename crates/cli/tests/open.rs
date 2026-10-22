@@ -505,3 +505,25 @@ fn the_same_command_starts_once_khor_is_told_where_to_look() {
     let _ = khor(&home).args(["close", &sid]).output();
     let _ = std::fs::remove_dir_all(&home);
 }
+
+#[test]
+fn a_private_host_does_not_inherit_an_unrelated_native_agent_store() {
+    let home = std::env::temp_dir().join(format!("khor-host-vendor-home-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let out = khor(&home)
+        .env("CODEX_HOME", "/unrelated-codex")
+        .env("CLAUDE_CONFIG_DIR", "/unrelated-claude")
+        .args(["open", "-d", "--", "sh", "-c",
+            "printf 'codex=%s;claude=%s;done\\n' \"$CODEX_HOME\" \"$CLAUDE_CONFIG_DIR\"; sleep 30"])
+        .output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let sid = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    let dir = home.join(".khor/sessions").join(sid.replace('/', "-"));
+    let hf = host::read_host_file(&dir).unwrap();
+    let _reap = Reaper(hf.host_pid);
+    let mut stream = host::connect_host_versioned(&dir, 80, 24).unwrap().stream;
+    let shown = read_until(&mut stream, ";done", 10);
+    assert!(shown.contains(&format!("codex={};claude={};done", home.join(".codex").display(), home.join(".claude").display())), "wrong store: {shown}");
+    assert!(khor(&home).args(["close", &sid]).status().unwrap().success());
+    let _ = std::fs::remove_dir_all(home);
+}

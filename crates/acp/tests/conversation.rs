@@ -544,3 +544,36 @@ async fn a_session_comes_with_its_settings_and_a_change_reaches_the_agent() {
         other => panic!("{other:?}"),
     }
 }
+
+/// Real multi-page transport: preserve the cwd, deduplicate overlapping pages,
+/// and refuse partial results when an agent fails or repeats a cursor.
+#[tokio::test]
+async fn listing_follows_every_cursor_and_rejects_partial_or_looped_results() {
+    use khor_acp::{list, Listing};
+    for mode in ["normal", "fail", "loop"] {
+        let cmd = serde_json::json!({"command": STUB, "env": {
+            "KHOR_STUB_LISTS": "1", "KHOR_STUB_PAGES": mode
+        }}).to_string();
+        let result = timeout(Duration::from_secs(10), list(&cmd, Some("/filtered".into())))
+            .await.expect("listing must terminate");
+        if mode == "normal" {
+            let Listing::Sessions(rows) = result.expect("all pages") else { panic!("sessions") };
+            assert_eq!(rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["sess-a", "sess-b", "sess-c", "sess-d"]);
+        } else {
+            assert!(result.is_err(), "{mode} must not silently publish a partial list");
+        }
+    }
+}
+
+/// Read-only acceptance against a real adapter, without opening a model turn.
+#[tokio::test]
+#[ignore = "needs ACP_AGENT_CMD and accesses its local session index"]
+async fn a_real_agents_full_listing_terminates_without_opening_a_session() {
+    let command = std::env::var("ACP_AGENT_CMD").expect("ACP_AGENT_CMD");
+    let out = timeout(Duration::from_secs(120), khor_acp::list(&command, None))
+        .await.expect("bounded listing").expect("adapter answers");
+    let khor_acp::Listing::Sessions(rows) = out else { panic!("adapter cannot list") };
+    let min: usize = std::env::var("ACP_EXPECTED_MIN").unwrap_or("0".into()).parse().unwrap();
+    assert!(rows.len() >= min, "missing later pages: {} < {min}", rows.len());
+    println!("listed {} unique conversations", rows.len());
+}
