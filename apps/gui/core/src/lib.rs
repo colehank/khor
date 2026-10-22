@@ -20,6 +20,7 @@ pub mod files;
 pub mod file_handoff;
 pub mod git;
 pub mod import;
+pub mod subscriptions;
 pub mod launch;
 pub mod miss;
 mod landing;

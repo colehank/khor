@@ -8,6 +8,7 @@
 //! answer what "looked at now" means, and close.
 
 pub mod accounts;
+pub mod subscriptions;
 pub mod answers;
 pub mod commands;
 pub mod integration;

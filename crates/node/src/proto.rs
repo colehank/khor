@@ -778,6 +778,8 @@ pub enum Request {
     SatFetchTree { sat: String, path: String },
     /// Atomic shell creation plus initial input; old peers refuse this word.
     OpenShellOnce { start: crate::shell_start::ShellStart },
+    /// Logins on the asked machine, or an explicit import there. No secrets.
+    Subscriptions { action: crate::subscriptions::Action },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1147,6 +1149,7 @@ pub enum Response {
     Tree {
         manifest: Option<crate::tree::Manifest>,
     },
+    Subscriptions { answer: crate::subscriptions::Answer },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1239,6 +1242,7 @@ impl Request {
                 | Request::SatGitDiff { .. }
                 | Request::Days
                 | Request::Places
+                | Request::Subscriptions { action: crate::subscriptions::Action::Discover }
                 | Request::Quotas
                 | Request::Load { .. }
                 | Request::Touched { .. }

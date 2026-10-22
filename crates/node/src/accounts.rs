@@ -218,9 +218,10 @@ impl Node {
     /// cannot check — and it would not fail at the keyboard, it would
     /// fail minutes later as a permanently troubled row on a screen
     /// somewhere else, which the person can only delete and retype.
-    /// **`home` is a field, not a constant**: `--home` is an argument
-    /// somebody can add the day that trade looks worth it, and nothing
-    /// here has to be redone for it.
+    /// Network import (`subscriptions_on`) asks the home machine to
+    /// check and register its own login first, then carries that verified
+    /// registration back. This local registration call still takes no
+    /// unverified `home` supplied by another machine.
     ///
     /// An unknown kind is refused rather than taken for a billed one,
     /// the same bargain [`Provider::parse`] makes: `AccountKind::Other`
@@ -454,7 +455,7 @@ impl Node {
     /// as 「the home machine holds no key for this account」, which is a
     /// sentence about a registration somebody made, not about one that
     /// half-happened.
-    fn commit_account(&self, account: Account) -> Result<Account, String> {
+    pub(crate) fn commit_account(&self, account: Account) -> Result<Account, String> {
         let loaded = self.accounts_loaded()?;
         loaded.doc.set(&account)?;
         let mut store = loaded.store;

@@ -418,6 +418,7 @@ pub enum Op {
     Note { text: String, files: Vec<String> },
     RecognitionOn { machine: String, action: crate::recognition::Action },
     OpenShellOn { machine: String, start: crate::shell_start::ShellStart },
+    SubscriptionsOn { machine: String, action: crate::subscriptions::Action },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -480,6 +481,7 @@ impl Op {
     fn table(&self) -> (&'static str, std::time::Duration) {
         match self {
             Op::RecognitionOn { .. } => ("RecognitionOn", DEADLINE_FAR),
+            Op::SubscriptionsOn { .. } => ("SubscriptionsOn", DEADLINE_FAR),
             Op::Hops => ("Hops", DEADLINE_LOCAL),
             Op::Roads => ("Roads", DEADLINE_LOCAL),
             Op::Wires => ("Wires", DEADLINE_LOCAL),
@@ -749,6 +751,7 @@ pub enum Reply {
     /// Tail-appended with [`Op::Post`]: the written message's id.
     Posted { id: String },
     Recognition { report: crate::recognition::Report },
+    Subscriptions { answer: crate::subscriptions::Answer },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

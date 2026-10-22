@@ -2492,6 +2492,12 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::SubscriptionsOn { machine, action } => {
+                match self.subscriptions_on_with(ep, &machine, action).await {
+                    Ok(answer) => ipc::Reply::Subscriptions { answer },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::LaunchOn { machine, target } => {
                 match self.launch_with(ep, &machine, &target).await {
                     Ok(()) => ipc::Reply::Launched,
@@ -3740,6 +3746,9 @@ impl Node {
             }
             Request::Recognition { action } => {
                 Ok(Response::Recognition { report: self.recognition_here(action)? })
+            }
+            Request::Subscriptions { action } => {
+                Ok(Response::Subscriptions { answer: self.subscriptions_local(action).await? })
             }
             Request::Launch { target } => {
                 // Nothing is opened on a phone (docs/IOS.md): its opener
@@ -5821,6 +5830,80 @@ impl Node {
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
+    }
+
+    async fn subscriptions_local(&self, action: crate::subscriptions::Action) -> Result<crate::subscriptions::Answer, String> {
+        // The credential store may invoke the platform keychain. Keep it off
+        // the resident's reactor, as the quota reader does for provider HTTP.
+        let root = self.root().to_path_buf();
+        tokio::task::spawn_blocking(move || Node::open(root)?.subscriptions_here(action))
+            .await.map_err(|e| e.to_string())?
+    }
+
+    /// Discovery is explicit and stays on the selected machine. A failed dial
+    /// must never fall back to inspecting this machine's login.
+    pub async fn subscriptions_on(
+        &self,
+        machine: &str,
+        action: crate::subscriptions::Action,
+    ) -> Result<crate::subscriptions::Answer, String> {
+        if machine.trim().is_empty() {
+            return Err(msg::subscription_computer().into());
+        }
+        let (_, home) = self.recognition_target(machine)?;
+        if home == self.device() {
+            return self.subscriptions_local(action).await;
+        }
+        if let Some(reply) = self.via_serve(ipc::Op::SubscriptionsOn {
+            machine: machine.into(), action: action.clone(),
+        }).await {
+            return match reply? {
+                ipc::Reply::Subscriptions { answer } => Ok(answer),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await.map_err(|e| e.to_string())?;
+        let out = self.subscriptions_on_with(&ep, machine, action).await;
+        ep.close().await;
+        out
+    }
+
+    async fn subscriptions_on_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        action: crate::subscriptions::Action,
+    ) -> Result<crate::subscriptions::Answer, String> {
+        if machine.trim().is_empty() {
+            return Err(msg::subscription_computer().into());
+        }
+        let (channel, home) = self.recognition_target(machine)?;
+        if home == self.device() {
+            return self.subscriptions_local(action).await;
+        }
+        if self.sat_and_sponsor(&channel)?.is_some() {
+            return Err(msg::subscription_computer().into());
+        }
+        let answer = match self.ask(ep, &channel, &Request::Subscriptions { action: action.clone() }).await? {
+            Response::Subscriptions { answer } => answer,
+            Response::Refused { why } if why.trim().is_empty()
+                || (why.contains("unknown variant") && why.contains("Subscriptions")) => {
+                    return Err(msg::subscription_predates().into());
+                }
+            Response::Refused { why } => return Err(why),
+            other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        };
+        match (&action, &answer) {
+            (crate::subscriptions::Action::Discover, crate::subscriptions::Answer::Candidates { .. }) => {}
+            (crate::subscriptions::Action::Import { provider }, crate::subscriptions::Answer::Imported { account })
+                if account.provider.word() == provider => {
+                    self.keep_imported_subscription(account, &home.hex())?;
+                }
+            _ => return Err(msg::peer_non_answer(format_args!("{answer:?}"))),
+        }
+        Ok(answer)
     }
 
     fn recognition_target(&self, machine: &str) -> Result<(String, khor_core::DeviceId), String> {

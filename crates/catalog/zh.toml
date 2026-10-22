@@ -2278,6 +2278,9 @@ account-sub-no-login = "这台机器上没有 {0} 登录，无法登记订阅—
 # 同一台机器上的第二条订阅。一台机器一份凭据,所以第二条只会是两行一模一样
 # 的数——那正是这一批要消灭的重复,只是换了件衣服由人手动造出来。
 account-sub-already-here = "这台机器上的订阅已经登记过了：{0}"
+subscription-computer = "选择一台运行 khor 的电脑来发现订阅"
+subscription-predates = "这台机器的 khor 还不支持发现订阅，升级后重试"
+subscription-wrong-home = "这台机器返回的订阅归属不符"
 # 这家没有订阅可读。**认识的那张单子写在句子里**,和 `no-such-provider` 同一
 # 条规矩:拒绝要说得出还剩什么可选。今天单子上只有 claude;codex 那档接上来
 # 是往单子里加一个词,不是改这句话的形状。
@@ -3055,6 +3058,11 @@ accounts-empty = "还没有登记 API 账号。登记后，用量会显示在这
 # 这一行只指路，不是第二扇门。「搜索框旁」宽档窄档都对（窄档的 ＋ 也在那一行）。
 accounts-empty-how = "点击上方的 ＋，登记账号"
 accounts-register = "登记"
+subscriptions-note = "发现网络内机器上的登录，导入后仍由原机器查询额度"
+subscriptions-no-computers = "网络内没有可发现订阅的电脑"
+subscriptions-import = "导入订阅"
+subscriptions-search = "搜索可导入的订阅"
+subscriptions-empty = "没有可导入的订阅"
 accounts-provider = "服务提供商"
 accounts-provider-newapi = "new-api 站"
 accounts-provider-claude = "Claude API"
