@@ -796,6 +796,10 @@ impl Discovery {
     pub fn for_root(root: &Path) -> Discovery {
         let home = vendor_home(root);
         let mut discovery = Discovery::at(&home);
+        discovery.adaptors = vec![
+            Box::new(claude::Claude::at(claude_home(root))),
+            Box::new(codex::Codex::at(codex_home(root))),
+        ];
         discovery.title_root = Some(root.to_path_buf());
         // The test door, KHOR_NAME's precedent: a scratch home never
         // watches the user's real tmux server, but a test (the smoke)
@@ -857,8 +861,60 @@ impl Discovery {
 /// the list watched another — and both would look fine.
 pub fn vendor_home(root: &Path) -> PathBuf {
     std::env::var_os("KHOR_VENDOR_HOME")
+        .filter(|p| !p.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| root.to_path_buf())
+}
+
+/// Resolve the native vendor directory, consistently for readers and writers.
+/// An explicit fixture/vendor home takes precedence over inherited CLI settings.
+/// Only the account's actual home may consume global vendor overrides.
+fn vendor_dir(root: &Path, folder: &str, variable: &str) -> PathBuf {
+    resolve_vendor_dir(
+        root,
+        folder,
+        std::env::var_os("KHOR_VENDOR_HOME").map(PathBuf::from),
+        is_real_home(root),
+        std::env::var_os(variable).map(PathBuf::from),
+    )
+}
+
+fn resolve_vendor_dir(
+    root: &Path,
+    folder: &str,
+    override_home: Option<PathBuf>,
+    real: bool,
+    native: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(home) = override_home.filter(|p| !p.as_os_str().is_empty()) {
+        return home.join(folder);
+    }
+    if real && let Some(path) = native.filter(|p| !p.as_os_str().is_empty()) {
+        return path;
+    }
+    root.join(folder)
+}
+
+pub fn claude_home(root: &Path) -> PathBuf {
+    vendor_dir(root, ".claude", "CLAUDE_CONFIG_DIR")
+}
+
+pub fn codex_home(root: &Path) -> PathBuf {
+    vendor_dir(root, ".codex", "CODEX_HOME")
+}
+
+#[cfg(test)]
+mod vendor_path_tests {
+    use super::*;
+    #[test]
+    fn native_overrides_never_escape_private_roots_and_explicit_vendor_home_wins() {
+        let root = Path::new("/account");
+        let native = Some(PathBuf::from("/native"));
+        assert_eq!(resolve_vendor_dir(root, ".codex", None, true, native.clone()), PathBuf::from("/native"));
+        assert_eq!(resolve_vendor_dir(root, ".codex", None, false, native.clone()), root.join(".codex"));
+        assert_eq!(resolve_vendor_dir(root, ".codex", Some("/fixture".into()), true, native), PathBuf::from("/fixture/.codex"));
+        assert_eq!(resolve_vendor_dir(root, ".claude", None, true, Some(PathBuf::new())), root.join(".claude"));
+    }
 }
 
 /// Whether this path is the account's own home directory.
@@ -1148,7 +1204,7 @@ mod tests {
         assert_eq!(
             seen,
             vec![
-                ("claude", "one-aa".to_owned()),
+                ("claude", "one".to_owned()),
                 ("codex", "alpha".to_owned()),
             ],
             "each vendor's own row must carry that vendor's name"

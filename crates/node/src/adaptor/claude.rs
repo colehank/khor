@@ -1077,7 +1077,7 @@ const HOOK_VERB: &str = " state --hook";
 
 /// Where claude keeps the settings a hook goes into.
 pub fn settings_path(vendor_home: &Path) -> PathBuf {
-    vendor_home.join(".claude").join("settings.json")
+    super::claude_home(vendor_home).join("settings.json")
 }
 
 /// What khor is on record as, for one event.

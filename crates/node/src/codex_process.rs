@@ -97,6 +97,80 @@ fn takes_value(s: &str) -> bool {
     )
 }
 
+/// An explicit resume UUID identifies the selected thread without a title or
+/// birth/cwd guess. A free-form initial prompt cannot establish this contract.
+pub(crate) fn resuming(args: &[OsString], thread: &str) -> bool {
+    let mut values = args.iter();
+    let mut resume = false;
+    let mut positional = false;
+    while let Some(arg) = values.next() {
+        let value = arg.to_string_lossy();
+        if !positional && value == "--" {
+            if !resume {
+                return false;
+            }
+            positional = true;
+            continue;
+        }
+        if !positional && value == "--last" {
+            return false;
+        }
+        if !positional && takes_value(&value) {
+            values.next();
+            continue;
+        }
+        if !positional && value.starts_with('-') {
+            continue;
+        }
+        if !resume {
+            if value != "resume" {
+                return false;
+            }
+            resume = true;
+        } else {
+            return value == thread;
+        }
+    }
+    false
+}
+
+/// Feature detection is bounded and happens before closing the GUI. Older
+/// CLIs without a shared daemon keep their normal resume spelling.
+pub(crate) fn supports_no_daemon(bin: &std::path::Path, path: &str) -> bool {
+    use std::io::Read;
+    let Ok(mut child) = std::process::Command::new(bin)
+        .env("PATH", path)
+        .arg("--help")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut text = String::new();
+                if let Some(stdout) = child.stdout.take() {
+                    let _ = stdout.take(65536).read_to_string(&mut text);
+                }
+                return status.success()
+                    && text.split_whitespace().any(|word| word == "--no-daemon");
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+}
+
 /// Extract CLI config overrides without mistaking option values or prompt
 /// text for configuration. Every reader of native title selection uses this.
 pub(crate) fn config_values(args: &[OsString]) -> Vec<&str> {
@@ -166,6 +240,26 @@ mod tests {
     use super::*;
     fn args(words: &[&str]) -> Vec<OsString> {
         words.iter().map(OsString::from).collect()
+    }
+    #[test]
+    fn an_explicit_resume_id_cannot_be_confused_with_a_prompt_or_option_value() {
+        assert!(resuming(
+            &args(&["--no-daemon", "resume", "thread"]),
+            "thread"
+        ));
+        assert!(resuming(
+            &args(&["resume", "-m", "model", "thread"]),
+            "thread"
+        ));
+        for words in [
+            vec!["a prompt", "resume", "thread"],
+            vec!["-m", "resume", "thread"],
+            vec!["resume", "--last"],
+            vec!["--", "resume", "thread"],
+            vec!["resume", "other"],
+        ] {
+            assert!(!resuming(&args(&words), "thread"), "{words:?}");
+        }
     }
     #[test]
     fn scopes_only_interactive_invocations() {

@@ -149,7 +149,7 @@ fn backup_path(root: &Path) -> PathBuf {
     root.join(".khor/codex-title.json")
 }
 fn config_path(home: &Path) -> PathBuf {
-    home.join(".codex/config.toml")
+    adaptor::codex_home(home).join("config.toml")
 }
 // Follow an existing symlink and retain it, including when the containing
 // directory itself is linked. Refuse dangling links instead of replacing them.
@@ -296,7 +296,7 @@ fn codex_change(root: &Path, home: &Path, enable: bool) -> Result<(), String> {
         if backup.is_some() {
             return Err(msg::recognition_changed().to_owned());
         }
-        if !home.join(".codex").is_dir() {
+        if !adaptor::codex_home(home).is_dir() {
             return Err(msg::recognition_missing().to_owned());
         }
         if doc.get("tui").is_some_and(|v| !v.is_table_like()) {
@@ -358,7 +358,7 @@ fn codex_change(root: &Path, home: &Path, enable: bool) -> Result<(), String> {
 }
 fn entry(root: &Path, home: &Path, agent: Agent) -> Entry {
     let path = match agent {
-        Agent::Claude => home.join(".claude/settings.json"),
+        Agent::Claude => adaptor::claude_home(home).join("settings.json"),
         Agent::Codex => config_path(home),
     };
     let mut e = Entry {
@@ -432,7 +432,7 @@ impl Node {
                 .map_err(|_| msg::recognition_busy().to_owned())?;
             match action {
                 Action::Enable(Agent::Claude) => {
-                    if !home.join(".claude").is_dir() {
+                    if !adaptor::claude_home(&home).is_dir() {
                         return Err(msg::recognition_missing().to_owned());
                     }
                     self.install_hooks()?;

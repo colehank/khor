@@ -32,6 +32,9 @@
 //! install this for you" is a different sentence from "khor cannot talk
 //! to this", and only the first one is true.
 //!
+//! Claude and Codex npm presets were refreshed to 0.94.0 / 2.2.2 on
+//! 2026-10-22. Other entries retain the dated registry snapshot above.
+//!
 //! # Keeping it fresh
 //!
 //! Versions here are pinned as the registry pinned them, so this table
@@ -81,7 +84,7 @@ pub const KNOWN: &[Known] = &[
         id: "claude-acp",
         name: "Claude Agent",
         about: "ACP wrapper for Anthropic's Claude",
-        argv: Some(&["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.70.0"]),
+        argv: Some(&["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.94.0"]),
     },
     Known {
         id: "cline",
@@ -99,7 +102,7 @@ pub const KNOWN: &[Known] = &[
         id: "codex-acp",
         name: "Codex",
         about: "ACP adapter for OpenAI's coding assistant",
-        argv: Some(&["npx", "-y", "@agentclientprotocol/codex-acp@1.7.0"]),
+        argv: Some(&["npx", "-y", "@agentclientprotocol/codex-acp@2.2.2"]),
     },
     Known {
         id: "deepagents",

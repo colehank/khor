@@ -22,6 +22,7 @@ async fn the_shim_speaks_acp_for_a_fake_claude() {
         &fake,
         r#"#!/usr/bin/env python3
 import json, sys, os
+assert os.environ["CLAUDE_CONFIG_DIR"] == os.path.join(os.environ["KHOR_HOME"], ".claude"), "native child must use the same private store as discovery"
 open("fake.pid", "w").write(str(os.getpid()))
 
 args = sys.argv[1:]
@@ -96,6 +97,7 @@ for line in sys.stdin:
         .await
         .unwrap();
 
+    handle.replay().await.expect("a new unprompted session has an empty history");
     let sid = handle.session().0.to_string();
     assert_eq!(sid.len(), 36, "a minted v4 uuid, dashes and all: {sid}");
     assert_eq!(
@@ -322,5 +324,12 @@ for line in sys.stdin:
     );
     drop(handle3);
     let _ = pump3.await;
+    // The native peer accepts resume, but no transcript exists: opening must
+    // fail with a diagnostic, rather than present an invented empty history.
+    let missing = "00000000-0000-4000-8000-000000000099";
+    match khor_acp::start_resume(&format!("{exe} _cagent"), dir.join("cwd"), missing).await {
+        Err(error) => assert!(error.said().contains("00000000"), "{error:?}"),
+        Ok(_) => panic!("a missing recorded history cannot be restored as empty"),
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

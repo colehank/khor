@@ -2140,6 +2140,7 @@ wizard-registered-no-terminal = "登记的 agent 没有终端形式：khor 只�
 wizard-registered-no-scheduler = "登记的 agent 暂时无法担任调度员：khor 的动词按 claude 和 codex 各自的配置传入，协议本身的入口尚未接通"
 wizard-unknown-agent = "不认识的智能体：{0}"
 takeover-wont-die = "原进程未退出，接管已中止：{0}"
+takeover-writer-busy = "Codex 仍持有此会话，无法安全接管。请先在原终端退出该会话，再重试：{0}"
 already-a-chat = "它已经是对话形式了：{0}"
 already-a-terminal = "它已经是终端形式了：{0}"
 # The `_host` re-exec convention got malformed arguments — a programming

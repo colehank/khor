@@ -191,7 +191,7 @@ export function SessionsList({
     // Only a vendor khor can speak for has a conversation to move
     // into — the same judgment the offer inside the read-only chat
     // used to make.
-    if (r.category !== "claude") return [];
+    if (r.category !== "claude" && r.category !== "codex") return [];
     return [
       {
         key: "to-a-chat",

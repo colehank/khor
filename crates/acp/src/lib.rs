@@ -563,27 +563,36 @@ async fn ask_for_sessions(
     if hello.agent_capabilities.session_capabilities.list.is_none() {
         return Ok(Listing::Cannot);
     }
-    let mut request = ListSessionsRequest::new();
-    if let Some(cwd) = cwd {
-        request = request.cwd(cwd);
+    let mut cursor = None;
+    let mut cursors = std::collections::HashSet::new();
+    let mut ids = std::collections::HashSet::new();
+    let mut rows = Vec::new();
+    loop {
+        let mut request = ListSessionsRequest::new();
+        request.cwd = cwd.clone();
+        request.cursor = cursor;
+        let answer = connection
+            .send_request(request)
+            .block_task()
+            .await
+            .map_err(refusal)?;
+        for s in answer.sessions {
+            if ids.insert(s.session_id.to_string()) {
+                rows.push(Recorded {
+                    id: s.session_id.to_string(),
+                    cwd: s.cwd,
+                    title: s.title.filter(|t| !t.trim().is_empty()),
+                    updated_at: s.updated_at,
+                });
+            }
+        }
+        let Some(next) = answer.next_cursor else { break };
+        if !cursors.insert(next.clone()) {
+            return Err(Refusal::Wont("the agent repeated a session-list cursor".into()));
+        }
+        cursor = Some(next);
     }
-    let answer = connection
-        .send_request(request)
-        .block_task()
-        .await
-        .map_err(refusal)?;
-    Ok(Listing::Sessions(
-        answer
-            .sessions
-            .into_iter()
-            .map(|s| Recorded {
-                id: s.session_id.to_string(),
-                cwd: s.cwd,
-                title: s.title.filter(|t| !t.trim().is_empty()),
-                updated_at: s.updated_at,
-            })
-            .collect(),
-    ))
+    Ok(Listing::Sessions(rows))
 }
 
 async fn start_with(
@@ -782,13 +791,20 @@ async fn open_one(
     Ok((session, facts, settings))
 }
 
-/// One JSON-RPC error, sorted. Only `auth_required` gets its own kind:
-/// it is the only code in the protocol whose remedy belongs to the
-/// person rather than to khor.
+/// Preserve the diagnostic carried in ACP error.data. SDK 3 rejects a wire
+/// version mismatch before returning InitializeResponse to our own guard.
 fn refusal(e: agent_client_protocol::Error) -> Refusal {
+    let detail = e.data.as_ref().and_then(|data| data.as_str());
+    let said = match detail {
+        Some(detail) => format!("{}: {detail}", e.message),
+        None => e.message.clone(),
+    };
     match e.code {
-        ErrorCode::AuthRequired => Refusal::Login(e.message),
-        _ => Refusal::Wont(e.message),
+        ErrorCode::AuthRequired => Refusal::Login(said),
+        ErrorCode::InvalidRequest if detail.is_some_and(|detail|
+            detail.starts_with("unsupported ACP protocol version ") ||
+            detail.starts_with("required ACP protocol version ")) => Refusal::Version(said),
+        _ => Refusal::Wont(said),
     }
 }
 

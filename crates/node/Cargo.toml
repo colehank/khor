@@ -5,7 +5,7 @@ edition.workspace = true
 
 [dependencies]
 khor-acp = { path = "../acp" }
-agent-client-protocol = "2"
+agent-client-protocol = { version = "3.5", features = ["process", "stdio"] }
 khor-core.workspace = true
 vt100.workspace = true
 khor-catalog.workspace = true
@@ -135,3 +135,8 @@ dispatch2 = "0.3"
 # in the tree under the CLI, so no new package. Every scratch home binds
 # with it and nothing else, so a test touches no real relay.
 iroh-relay = { version = "1.2.0", features = ["server"] }
+
+# Opt-in real native GUI/TUI round trip, re-executing this test as its hosts.
+[[test]]
+name = "native_handoff"
+harness = false
