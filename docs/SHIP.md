@@ -263,3 +263,12 @@ khor devices                                                   # 五台都在线
 - iOS：archive-only 重新编译，最新静态库与归档 App 的时间、完整收据、签名及最终 QuickLook.framework 链接均通过。系统 PATH 独立导出上传于 `2026-10-22 15:58:13 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，上传版本 0.1.14（57），Apple 已开始处理。两处临时签名配置按归档前基线恢复。
 - 收尾：发布日志、会话快照、哈希、归档与上传收据保留在 `/Volumes/disk0/khor-ship-20261022-office-preview/`。移除本次已合并且无进程引用的 mobile-file-handoff 与 workspace-clean-status worktree；按包身份和 lsof 无引用确认后清理一份 Khor Xcode 导出暂存与旧静态库备份，共 679,788,118 字节。保留最新正式归档、静态库、目标目录和验收证据；未全量清 target 或删除系统 swap。
 - 平台边界：iPhone Quick Look／系统分享仍待安装后的真机操作验收。Android 没有可用 SDK，本次未编 APK 或完成真机验收，也未宣称具备内嵌 Office 排版引擎；Windows／Linux 的外部应用 GUI 操作未实机验收。
+
+## 本机热修复：2026-10-22（Codex 状态扫描内存膨胀）
+
+- 修复提交 `35ee9c02`，已合入 main。用户停在终端时 macOS 报告 khor-gui 占用 21.60 GB；现场主进程采样的 physical footprint 为 5.0 GiB、峰值 7.0 GiB，重启相同代码后很快再次达到 4.0 GiB。12 个会话辅助进程逐个检查均不到 20 MiB。
+- 用保留符号的相同代码重新链接，验证原始与新二进制的 `__text` 共 46,977,488 字节逐字节相同，再还原原始采样调用栈。列表刷新与后台 `record_day` 同时进入 `Codex::last_word`，反复把数百 MiB 的 rollout 全量读入并构建 JSON 值，造成大规模分配／复制与分配器保留；本机最大 rollout 约 666 MiB。
+- 状态读取改为逐条流式解码少量字段，忽略工具内容／图片等值而不构造它们的字符串与对象；按文件身份、长度和修改时间缓存，增长时从最后一个完整换行继续。并发调用共用缓存锁，缓存限制 256 条；半写入、坏行、原位改写与日志替换分别处理，保留原状态及时间语义。
+- 验证：57 项 Codex 相关回归通过、1 项显式忽略；包含增量／无变化零扫描、半写入、16 MiB 单条内容、坏行后继续、替换及等长改写。大内容测试进程峰值 footprint 为 4,964,832 字节，最大 RSS 为 13,385,728 字节。
+- 本机：GUI 66837 → 25323，实际 5467 监听 PID 一致，12 个辅助进程全部保留；更新 CLI 后会话记录 15 → 15，无新增失败。真实会话观察数分钟，最终主进程 footprint 128.9 MiB、峰值 181.7 MiB，RSS 约 130 MiB，CPU 约 10%–13%。GUI 保留符号以便后续采样；GUI SHA-256 `4cd69a743639978b17cd4733ea719aa20a609e82ad4f0bee306c998baeb66e22`，CLI `099c7cf0ac880473ab1138a033b4abc57697fe8616d2a77c8a80918a3090ea9b`。
+- 范围：本轮替换 Mac GUI／CLI，未重新发布集群或 iOS。界面资源未改变，收据仍为 `khor-ui-assets:/assets/index-pQqgYXf2.js`；后端版本以本次二进制哈希核对。原始及符号化采样、内存快照、回归与构建日志保留在 `/Volumes/disk0/khor-memory-proof-20261022/`。没有修改用户日志、终端内容或系统 swap。
