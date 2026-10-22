@@ -8,7 +8,7 @@ import { usePlaces } from '@/browse/use-places';
 import { PAGES } from '@/views/PagesKind';
 import {ContentToolbar} from '@/components/ContentToolbar';
 import { ContentScope } from '@/components/ContentScope';
-import { ContentTabsGlyph, DeckBand, TabsGlyph, TabSheetRows } from '@/components/SessionBar';
+import { DeckBand, TabSheetRows } from '@/components/SessionBar';
 import { SessionFace, fileKind, pageKind, newTabKind } from '@/components/SessionFace';
 import { GlassCircle, GlassCapsule, GlassItem } from '@/components/Glass';
 import { IconBack, IconClose, IconPlus, IconSearch } from '@/components/icons';
@@ -44,23 +44,19 @@ export type DeckOwner={face:TabFace;content:SessionContent;navigation:ContentNav
 export function ContentOwnerIdentity({face,title,children,editing=false}: {face:TabFace;title?:string;children?:ReactNode;editing?:boolean}) {
   return <span className="content-owner-identity" data-content-editing={editing||undefined}><span className="content-owner-face">{face.session&&<SessionFace face={face.face} {...face.session} size="tab"/>}</span><span className="content-owner-name">{face.label}</span><span className="content-owner-slash">/</span>{children||<span className="content-owner-title">{title}</span>}</span>;
 }
-export function ContentTabButton({session,content,navigation}: Pick<DeckOwner,'content'|'navigation'> & {session:string}) {
-  const count=content.allTabs.filter(t=>t.session===session).length;
-  return <GlassCircle data-content-overview-button aria-label={gui.content_tabs_count(count)} aria-expanded={navigation.get(session).scene==='overview'} onClick={()=>navigation.overview(session)}><ContentTabsGlyph n={count}/></GlassCircle>;
-}
 /** The nested pill uses the terminal band's exact threshold, flick and cancellation. */
 export function ContentDocumentBand({session,face,content,navigation,title,onTitle}: Omit<DeckOwner,'onClose'> & {session:string;title:string;onTitle:()=>void}) {
   const tabs=content.allTabs.filter(t=>t.session===session);
   const active=navigation.get(session).key;
   const targets=contentTabTargets(tabs,content.handle);
   const faces=[...targets].map(([key,t])=>({...face,session:undefined,face:contentView(t)==='workspace'?null:face.face,hideFace:false,mark:contentView(t)==='workspace'?newTabKind():contentView(t)==='file'?fileKind(t.url):pageKind(content.pageIcon(t.url)),id:key,label:contentView(t)==='workspace'?gui.content_new:contentName(t)}));
-  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} renderFace={(item,role)=>item.mark?.key==='new-tab'||role==='cur'&&navigation.get(session).scene==='picker'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
+  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} onOverview={()=>navigation.overview(session)} renderFace={(item,role)=>item.mark?.key==='new-tab'||role==='cur'&&navigation.get(session).scene==='picker'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
 }
-export function MobileContentDeck({session,content,navigation,onClose:_onClose,children,editing=false,onEditEnd,leading,actions}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void;leading?:ReactNode;actions?:ReactNode}) {
+export function MobileContentDeck({session,navigation,onClose,children,editing=false,onEditEnd,leading,actions}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void;leading?:ReactNode;actions?:ReactNode}) {
   return <div className="mobile-content-deck" data-content-deck data-content-editing={editing||undefined}>
     {!editing&&leading}
     <div className="glass mobile-content-pill">{children}</div>
-    {editing?<GlassCircle data-content-edit-end aria-label={gui.edit_done} onPointerDown={e=>e.preventDefault()} onClick={onEditEnd}><IconClose/></GlassCircle>:<>{actions}<ContentTabButton session={session} content={content} navigation={navigation}/></>}
+    {editing?<GlassCircle data-content-edit-end aria-label={gui.edit_done} onPointerDown={e=>e.preventDefault()} onClick={onEditEnd}><IconClose/></GlassCircle>:<>{actions}{navigation.get(session).scene==='overview'&&<GlassCircle aria-label={gui.side_hide} onClick={onClose}><IconClose/></GlassCircle>}</>}
   </div>;
 }
 function ContentFileIdentity({session,face,content,navigation,title,devices,tab}: DeckOwner & {session:string;title:string;devices:DeviceRow[];tab:ContentTab}) {
@@ -68,8 +64,8 @@ function ContentFileIdentity({session,face,content,navigation,title,devices,tab}
  return editing&&device?<ContentPathField device={device} devices={devices} path={tab.url} base={directoryOf(tab.url)} mobile onLeave={()=>setEditing(false)} onDirectory={(d,path)=>{setEditing(false);navigation.browse(session,{device:d.id,root:path});}} onFile={(d,path)=>{setEditing(false);quiet(content.point(tab.id,d.id,path,'file'));}}/>:<ContentDocumentBand session={session} face={face} content={content} navigation={navigation} title={title} onTitle={()=>setEditing(true)}/>;
 }
 export function contentFileDeck(props: DeckOwner & {session:string;title:string;devices:DeviceRow[];tab:ContentTab}) {
- const {session,face,content,navigation,title}=props;
- return {identity:<div className="mobile-file-identity"><ContentFileIdentity {...props}/></div>,folded:<span className="mobile-fold-identity"><ContentOwnerIdentity face={face} title={title}/></span>,trail:<ContentTabButton session={session} content={content} navigation={navigation}/>};
+ const {face,title}=props;
+ return {identity:<div className="mobile-file-identity"><ContentFileIdentity {...props}/></div>,folded:<span className="mobile-fold-identity"><ContentOwnerIdentity face={face} title={title}/></span>};
 }
 /** Search has one clear button inside and an independent end-editing control outside. */
 export function ContentSearch({label,value,onChange,onEditing,onEnter}: {label:string;value:string;onChange:(value:string)=>void;onEditing:(editing:boolean)=>void;onEnter?:()=>void}) {
@@ -149,7 +145,7 @@ export function ContentOverview({session,row,devices,content,navigation,onPick,f
 export function ContentSessionOverview({faces,active,onFocus,onCloseSession,onNew,onClose,query,onQuery}: {faces:TabFace[];active:string;onFocus:(id:string)=>void;onCloseSession:(id:string)=>void;onNew:()=>void;onClose:()=>void;query:string;onQuery:(q:string)=>void}) {
   const [editing,setEditing]=useState(false);
   const q=query.trim().toLocaleLowerCase(),shown=faces.filter(f=>(f.title||f.label).toLocaleLowerCase().includes(q));
-  return <div className="mobile-content-overview"><div className="mobile-content-overview-list"><TabSheetRows faces={shown} active={active} onFocus={onFocus} onClose={onCloseSession} onNew={onNew} newLabel={gui.new_session}/>{!shown.length&&<p className="mobile-content-empty">{gui.content_no_match}</p>}</div><div data-content-deck className="mobile-content-deck" data-content-editing={editing||undefined}><div className="glass mobile-content-pill">{editing?<ContentSearch label={gui.search_sessions} value={query} onChange={onQuery} onEditing={setEditing}/>:<button data-session-overview-search className="content-search-prompt" onClick={()=>setEditing(true)}><IconSearch/>{query||gui.search_sessions}</button>}</div>{editing?<GlassCircle aria-label={gui.edit_done} onPointerDown={e=>e.preventDefault()} onClick={()=>{(document.activeElement as HTMLElement|null)?.blur();setEditing(false);}}><IconClose/></GlassCircle>:<GlassCircle aria-label={gui.switch_tabs(faces.length)} onClick={onClose}><TabsGlyph n={faces.length}/></GlassCircle>}</div></div>;
+  return <div className="mobile-content-overview"><div className="mobile-content-overview-list"><TabSheetRows faces={shown} active={active} onFocus={onFocus} onClose={onCloseSession} onNew={onNew} newLabel={gui.new_session}/>{!shown.length&&<p className="mobile-content-empty">{gui.content_no_match}</p>}</div><div data-content-deck className="mobile-content-deck" data-content-editing={editing||undefined}><div className="glass mobile-content-pill">{editing?<ContentSearch label={gui.search_sessions} value={query} onChange={onQuery} onEditing={setEditing}/>:<button data-session-overview-search className="content-search-prompt" onClick={()=>setEditing(true)}><IconSearch/>{query||gui.search_sessions}</button>}</div>{editing?<GlassCircle aria-label={gui.edit_done} onPointerDown={e=>e.preventDefault()} onClick={()=>{(document.activeElement as HTMLElement|null)?.blur();setEditing(false);}}><IconClose/></GlassCircle>:<GlassCircle aria-label={gui.side_hide} onClick={onClose}><IconClose/></GlassCircle>}</div></div>;
 }
 /** In-place sheet shared by content and session overviews. Its deck is
  * inside the current page; the retained terminal never changes geometry. */

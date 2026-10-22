@@ -503,7 +503,7 @@ export function SessionScreen({
             >
               <div data-deck-pill-row className="flex h-glass-btn min-w-0 items-center gap-in ps-1 pe-1">
                 <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
-                <DeckBand faces={faces} active={active} onFocus={onFocus} onTitle={stops.length ? grown.grow : onTitle} />
+                <DeckBand faces={faces} active={active} onFocus={onFocus} onTitle={stops.length ? grown.grow : onTitle} onOverview={() => onTabs ? onTabs() : setSheet(true)} />
                 {caption && (
                   // Gives way before the pill's own seats do (UX-22: a page's
                   // failure and its 重试 pushed reload out of the pill).
@@ -528,15 +528,6 @@ export function SessionScreen({
           ) : (
             <>
               <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center gap-in empty:hidden" />
-              <GlassCircle
-                data-deck-tabs
-                data-tab-count
-                aria-label={gui.switch_tabs(faces.length)}
-                aria-expanded={sheet}
-                onClick={() => onTabs ? onTabs() : setSheet(true)}
-              >
-                <TabsGlyph n={faces.length} />
-              </GlassCircle>
             </>
           )}
           {island && !editor && <NoticeIsland list={stops} pill={deckPill} growth={grown.growth} seat="size-glass-item-h" />}

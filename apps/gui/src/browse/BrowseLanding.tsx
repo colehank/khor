@@ -59,7 +59,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { onPageWord, openLink, openTab, pageDeck, pageGround, pageStep, recentVisit, reveal, type DeviceRow } from "@/api";
 import { revealHere } from "@/views/chat-files";
 import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
-import { nativeDeckHere, readDeck, seatControl } from "@/lib/native-deck";
+import { nativeDeckHere, readDeck, seatControl, openDeckOverview } from "@/lib/native-deck";
 import { pageFail, type PageFail } from "@/browse/page-fail";
 import { pageDownload, type PageSaid } from "@/browse/page-download";
 import { Tabs } from "@/browse/Tabs";
@@ -635,6 +635,7 @@ export function BrowseLanding({
     return onPageWord("page:deck", nativeTab, (t) => {
       const screen = document.querySelector<HTMLElement>("[data-session-screen]");
       if (!screen) return;
+      if (t === "overview") { openDeckOverview(screen); return; }
       if (t.startsWith("swipe:")) {
         // The tabs are a ring, as the DOM band's (UX-49 §2): past the
         // last is the first. One tab: nothing to go to.

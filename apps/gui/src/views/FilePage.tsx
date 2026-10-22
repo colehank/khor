@@ -38,7 +38,7 @@ import { caretCoveredAt, editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
-import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
+import { DeckBand, TabSheet } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
 import { IconBack, IconBranch, IconCheck, IconEye, IconFiles, IconMore, IconReload } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -351,7 +351,7 @@ export function FilePage({
   /** The host supplies navigation while the file keeps its own editing actions. */
   embeddedToolbar?: (actions: ReactNode, locationAction: ReactNode) => ReactNode;
   /** Session identity and content overview in this page’s original deck. */
-  contentDeck?: { identity: ReactNode; folded: ReactNode; trail: ReactNode };
+  contentDeck?: { identity: ReactNode; folded: ReactNode; trail?: ReactNode };
   /** The file is in a checkout: git 历史 is offered (round UX-4). */
   history?: boolean;
   /** **The workspace's open files, as the session page's tabs** (UX-25,
@@ -651,7 +651,7 @@ export function FilePage({
                 ✓ — 预览 is the circle beside the pill now. */}
             <div data-file-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-1">
               {contentDeck && rev === null ? contentDeck.identity : tabs && rev === null ? (
-                <DeckBand faces={tabs.faces} active={tabs.active} onFocus={tabs.onFocus} />
+                <DeckBand faces={tabs.faces} active={tabs.active} onFocus={tabs.onFocus} onOverview={() => setSheet(true)} />
               ) : (
                 <span data-file-name className="min-w-0 flex-1 truncate ps-2 text-body">
                   {name}
@@ -704,18 +704,6 @@ export function FilePage({
             )}
             {rev === null && verbs.moreCircle}
             {rev === null && contentDeck?.trail}
-            {rev === null && tabs && (
-              <GlassCircle
-                data-deck-tabs
-                data-tab-count
-                aria-label={gui.switch_tabs(tabs.faces.length)}
-                aria-expanded={sheet}
-                tip={!coarse && gui.switch_tabs(tabs.faces.length)}
-                onClick={() => setSheet(true)}
-              >
-                <TabsGlyph n={tabs.faces.length} />
-              </GlassCircle>
-            )}
           </div>
         )}
       </div>}

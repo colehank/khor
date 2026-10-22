@@ -1,5 +1,6 @@
 // Real App + private node/PTYs. Transport is the existing dev bridge;
 // native page overlay/borrow rendering requires desktop app acceptance.
+import {openTabs} from "./deck-gestures.mjs";
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {mkdirSync,writeFileSync,readFileSync,copyFileSync,rmSync} from 'node:fs';
@@ -160,7 +161,7 @@ try{
     await field.fill('notes');await shot('workspace-editing');
     await picker().getByText('notes.md',{exact:true}).click();await shown().locator('.cm-content').waitFor();
     assert.equal(await shown().getAttribute('data-content-preview'),null,'file still requires keeping');
-    await shown().locator('[data-file-more]').click();await page.locator('[data-file-more-item=content-browse]').click();
+    await shown().locator('[data-file-back]').click();
     note('workspace-back',{query:await picker().getByRole('searchbox').inputValue()});
     await picker().getByRole('button',{name:word('back'),exact:true}).click();
   });
@@ -184,16 +185,16 @@ try{
     const input=picker().locator('[data-page-address]');
     assert.equal(await input.inputValue(),orphan.place,'orphan address lost across width change');
     await page.locator(`[data-omni-item="m:${device.id}"]`).click();
-    await shown().locator('[data-content-page-more]').waitFor();
+    await shown().locator('[data-deck-band]').waitFor();
     assert.equal(await visibleTitle().textContent(),'orphan.example/a');
-    await shown().locator('[data-content-overview-button]').click();await page.locator('[data-tab-sheet-new]').click();await chooseSource('browser');
+    await openTabs(page,shown().locator('[data-deck-band]'));await page.locator('[data-tab-sheet-new]').click();await chooseSource('browser');
     await picker().locator(`[data-place="https://orphan.example/a"][data-place-device="${orphan.device}"]`).click();
     await picker().locator('[data-page-address]').fill('http://localhost:'+port+'/revised');
     await picker().locator('[data-page-machine-face]').tap();
     await page.locator(`[data-omni-item="m:${device.id}"]`).click();
-    await shown().locator('[data-content-page-more]').waitFor();
+    await shown().locator('[data-deck-band]').waitFor();
     assert.equal(await visibleTitle().textContent(),'localhost:'+port+'/revised','exit choice opened obsolete historical address');
-    await shown().locator('[data-content-overview-button]').click();await page.locator('[data-tab-sheet-new]').click();await chooseSource('browser');
+    await openTabs(page,shown().locator('[data-deck-band]'));await page.locator('[data-tab-sheet-new]').click();await chooseSource('browser');
   });
   await step('history-delete',async()=>{
     await picker().locator(`[data-place="https://orphan.example/a"][data-place-device="${orphan.device}"]`).click();await shot('orphan-recents');
@@ -215,7 +216,7 @@ try{
   await step('browser-picker-geometry',async()=>{
     let input=await editPicker();await input.fill('http://localhost:'+port+'/audit');await endPicker();
     note('browser-picker-geometry',await picker().evaluate(el=>{const r=e=>{const b=e.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height,centerY:b.y+b.height/2,font:getComputedStyle(e).fontSize};};return {prompt:r(el.querySelector('.content-new-title')),source:r(el.querySelector('[data-content-scope]')),bodyFont:getComputedStyle(el.querySelector('.mobile-content-pill')).fontSize,focused:el.contains(document.activeElement)&&document.activeElement.tagName==='INPUT'};}));await shot('browser-picker-address');
-    input=await editPicker();await input.press('Enter');await shown().locator('[data-content-page-more]').waitFor();
+    input=await editPicker();await input.press('Enter');await shown().locator('[data-deck-band]').waitFor();
     note('browser-document-layout',await shown().evaluate(el=>{const identity=el.querySelector('.mobile-page-identity .content-owner-identity');return {twoLine:!!identity&&getComputedStyle(identity).display==='grid',title:el.querySelector('[data-band-seg="cur"] .content-owner-title')?.textContent,titleWidth:el.querySelector('[data-band-seg="cur"] .content-owner-title')?.getBoundingClientRect().width};}));await shot('browser-document');
     assert.equal(await shown().getAttribute('data-content-preview'),null,'webpage still requires keeping');
     await shown().locator('.mobile-page-identity [data-band-seg="cur"] button').click();
@@ -234,7 +235,7 @@ try{
     await page.setViewportSize({width:390,height:844});await shown().locator('.mobile-content-page-editor').waitFor();
     await shown().locator('[data-page-address]').press('Escape');
     assert.equal(await visibleTitle().textContent(),'localhost:'+port+'/redirected','leaving editing did not restore the latest page');
-    await shown().locator('[data-content-overview-button]').click();await page.locator('[data-tab-sheet-new]').click();await chooseSource('browser');
+    await openTabs(page,shown().locator('[data-deck-band]'));await page.locator('[data-tab-sheet-new]').click();await chooseSource('browser');
   });
   await step('safe-area-keyboard',async()=>{
     await page.setViewportSize({width:390,height:500});await page.evaluate(()=>document.documentElement.style.setProperty('--safe-top','59px'));
@@ -260,7 +261,7 @@ try{
     await until(async()=>await shown().getAttribute('data-session-content')===seeded[0]);
     // Opened documents remain tabs without a keep step, in overview order.
     const opened=(await api('tabs_list',{kind:'content'})).tabs.filter(t=>t.session===sessions[0]&&t.view!=='workspace');assert(opened.length>=3);
-    await page.locator('[data-content-overview-button]:visible').click();
+    await openTabs(page);
     const overview=()=>page.locator('[data-content-overview]:not(.session-content-retained)');
     assert.equal(await overview().locator('input:visible').count(),0,'overview forced keyboard');
     await overview().locator('[data-content-overview-search]').click();
@@ -282,7 +283,7 @@ try{
     await drag(shown().locator('[data-deck-band]'),-.65);await resting(shown().locator('[data-deck-band]'));
     assert.equal(await shown().getAttribute('data-session-content'),ids[0],'one document did not spring back');
     await shot('content-pill-single');
-    await shown().locator('[data-content-overview-button]').click();await overview().waitFor();await overview().locator('[data-tab-sheet-new]').click();await chooseSource('browser');
+    await openTabs(page,shown().locator('[data-deck-band]'));await overview().waitFor();await overview().locator('[data-tab-sheet-new]').click();await chooseSource('browser');
   });
   await step('latest-position-and-session-search',async()=>{
     const text=await pickerBand().locator('[data-band-seg="cur"]').innerText();
@@ -291,7 +292,7 @@ try{
     assert.equal(await picker().locator('.mobile-content-browser:not([hidden])').count(),1,'reopening restored a document instead of browser entrance');
     assert.equal(await pickerBand().locator('[data-band-seg="cur"]').innerText(),text,'browser draft was lost on reopen');
     await page.locator('.mobile-content-scrim').click({position:{x:12,y:12}});
-    await page.locator('[data-deck-tabs]').click();const list=page.locator('[data-content-sessions]');await list.waitFor();
+    await openTabs(page);const list=page.locator('[data-content-sessions]');await list.waitFor();
     assert.equal(await list.locator('input:visible').count(),0,'session overview forced keyboard');
     const prompt=list.locator('[data-session-overview-search]');assert.equal((await prompt.innerText()).trim(),word('search-sessions'));
     await prompt.click();const search=list.getByRole('searchbox');await search.fill('Beta');

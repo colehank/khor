@@ -50,6 +50,7 @@
 // this gate goes red saying so — loud drift, the survivable kind.
 //
 // Run: `npm run face` (boots its own vite, needs system Chrome).
+import {openTabs} from "./deck-gestures.mjs";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { spawn } from "node:child_process";
@@ -17686,7 +17687,7 @@ try {
   if ((await page.locator("[data-session-bar] [data-back]").count()) === 0) {
     fail("probe dead: the narrow session page never drew its deck, so the tabs circle was never on a screen");
   } else {
-    const circle = page.locator("[data-session-deck] [data-deck-tabs]");
+    const band = page.locator("[data-session-deck] [data-deck-band]");
     const sheetRows = () => page.locator("[data-tab-sheet-row]").count();
     // Three open: back to the list, the next row, three times over.
     let opened = 1;
@@ -17696,13 +17697,13 @@ try {
       await pressNth("[data-list] [data-row-open]", n);
       opened += 1;
     }
-    const said = Number(((await circle.innerText().catch(() => "")) || "").trim());
-    console.log(`narrow deck · ${opened} tabs open, the circle says ${said}`);
-    if ((await circle.count()) !== 1) {
-      fail("the narrow deck has no tabs circle — the way to every open tab (src/components/SessionBar.tsx)");
+    const said = Number(((await band.getAttribute("data-band-size").catch(() => "")) || "").trim());
+    console.log(`narrow deck · ${opened} tabs open, the band owns ${said}`);
+    if ((await band.count()) !== 1) {
+      fail("the narrow deck has no tabs gesture — the way to every open tab (src/components/SessionBar.tsx)");
     } else {
-      if (said !== opened) fail(`${opened} rows were opened and the tabs circle says ${said}`);
-      await circle.click();
+      if (said !== opened) fail(`${opened} rows were opened and the tabs gesture says ${said}`);
+      await openTabs(page,band);
       await wait(400);
       const listed = await sheetRows();
       if (listed !== opened) fail(`the tabs sheet lists ${listed} of ${opened} open tabs`);
@@ -17723,7 +17724,7 @@ try {
         fail("putting the tabs sheet away did not land back on the session that was in front");
       }
       // Switching really switches: pick a tab that is not in front.
-      await circle.click();
+      await openTabs(page,band);
       await wait(400);
       const other = page.locator("[data-tab-sheet-row]:not([data-on]) [data-tab-sheet-open]").first();
       const id = await other.getAttribute("data-tab-sheet-open");
@@ -17736,7 +17737,7 @@ try {
         fail(`the sheet's pick of ${id} landed on 「${now}」, not 「${title}」 — that session's page comes to the front`);
       }
       // Closing from inside: the sheet stays up and the survivors stay.
-      await circle.click();
+      await openTabs(page,band);
       await wait(400);
       await press(`[data-tab-sheet-close="${id}"]`);
       const left = await sheetRows();
@@ -30586,7 +30587,7 @@ try {
       await wait(600);
       const read = () =>
         page.evaluate(() => ({
-          circle: document.querySelector("[data-file-deck] [data-deck-tabs]")?.textContent?.trim() ?? null,
+          circle: document.querySelector("[data-file-deck] [data-deck-band]")?.getAttribute("data-band-size") ?? null,
           name: document.querySelector("[data-file-deck] [data-file-pill] [data-deck-title], [data-file-deck] [data-file-name]")?.textContent?.trim() ?? null,
           sheet: document.querySelectorAll("[data-tab-sheet]").length,
           rows: [...document.querySelectorAll("[data-tab-sheet-row]")].map((r) => r.querySelector("[data-tab-sheet-name]")?.textContent?.trim()),
@@ -30594,14 +30595,14 @@ try {
           plus: document.querySelectorAll("[data-tab-sheet-new]").length,
         }));
       const two = await read();
-      await press("[data-file-deck] [data-deck-tabs]");
+      await openTabs(page,page.locator("[data-file-deck] [data-deck-band]"));
       await wait(500);
       const up = await read();
       const other = up.rows.findIndex((n) => n !== up.name);
       if (other >= 0) await page.locator("[data-tab-sheet-open]").nth(other).click();
       await wait(500);
       const picked = await read();
-      await press("[data-file-deck] [data-deck-tabs]");
+      await openTabs(page,page.locator("[data-file-deck] [data-deck-band]"));
       await wait(500);
       const back = up.rows.findIndex((n) => n !== picked.name);
       if (back >= 0) await page.locator("[data-tab-sheet-close]").nth(back).click();
@@ -31949,7 +31950,7 @@ try {
         return h;
       });
     /** The tabs circle's count. */
-    const tabsSaid = async () => Number(((await page.locator("[data-session-deck] [data-deck-tabs]").innerText().catch(() => "")) || "").trim());
+    const tabsSaid = async () => Number(((await page.locator("[data-session-deck] [data-deck-band]").getAttribute("data-band-size").catch(() => "")) || "").trim());
 
     const kTouch = await page.context().newCDPSession(page);
     if (!process.env.FACE_BAND) {
@@ -31987,7 +31988,7 @@ try {
       const title = ((await page.locator("[data-session-deck] [data-deck-title]").textContent().catch(() => null)) ?? "").trim();
       if (title !== terms[0].title) fail(`bar a · the deck's pill says 「${title}」, not the open session 「${terms[0].title}」`);
       if ((await count("[data-session-deck] [data-back]")) !== 1) fail("bar a · the deck has no 「‹」");
-      if ((await count("[data-session-deck] [data-deck-tabs]")) !== 1) fail("bar a · the deck has no tabs circle");
+      if ((await count("[data-session-deck] [data-deck-tabs]")) !== 0 || (await count("[data-session-deck] [data-deck-band]")) !== 1) fail("bar a · the deck must expose its pill overview action without a separate tabs circle");
       const keys = await count("[data-term-keys]");
       const sw = await count("[data-keyboard-switch], [data-key-row-switch]");
       if (keys || sw) fail(`bar a · a mouse got ${keys} key row(s) and ${sw} keyboard or key-row switch(es) — the pointer decides the touch things, not the width`);
@@ -33454,7 +33455,7 @@ try {
       if (!(await open("browser")) || !(await press('[data-side-row="t1"] [data-side-open]'))) {
         fail("probe dead: bar r · a browser tab with a page never opened on the narrow face");
       } else {
-        await until(3_000, async () => (await count("[data-session-deck] [data-deck-tabs]")) === 1);
+        await until(3_000, async () => (await count("[data-session-deck] [data-deck-band]")) === 1);
         await wait(400);
         const readOf = () =>
           page.evaluate(async () => {
@@ -33507,19 +33508,19 @@ try {
         if (!rest) {
           fail("bar r · readDeck read nothing off the narrow browser's deck");
         } else {
-          if (rest.glass.length !== 3 || rest.glass.some((h) => Math.abs(h - rest.btn) > 0.5)) {
-            fail(`bar r · glass shapes ${shown(rest.glass)} — ‹, the pill and the tabs circle, each --glass-btn (${rest.btn}) tall`);
+          if (rest.glass.length !== 2 || rest.glass.some((h) => Math.abs(h - rest.btn) > 0.5)) {
+            fail(`bar r · glass shapes ${shown(rest.glass)} — ‹ and the pill, each --glass-btn (${rest.btn}) tall`);
           }
           if (rest.tint !== rest.want) fail(`bar r · the native tint is ${rest.tint}, --glass is ${rest.want}`);
           if (rest.rim?.stops?.length !== rest.rimWant || rest.rimWant < 2 || !Number.isFinite(rest.rim.angle)) {
             fail(`bar r · the native rim reads ${shown(rest.rim)} — --glass-rim's ${rest.rimWant} stops at its angle (UX-38 §5; lib/native-deck.ts rimOf)`);
           }
           if (!rest.shadow || !(rest.shadow.blur > 0)) fail(`bar r · the native shadow reads ${shown(rest.shadow)} — --glass-shadow's widest layer (UX-38 §5)`);
-          if (!rest.seats.includes(0) || !rest.seats.includes(3) || !rest.seats.includes(5) || rest.swipe !== 1) {
-            fail(`bar r · seats ${shown(rest.seats)}, swipe ${rest.swipe} — ‹ (0), the title (3), the tabs (5), and the pill's swipe`);
+          if (!rest.seats.includes(0) || !rest.seats.includes(3) || rest.seats.includes(5) || rest.swipe !== 1) {
+            fail(`bar r · seats ${shown(rest.seats)}, swipe ${rest.swipe} — ‹ (0), the title (3), no separate tabs seat (5), and the pill's swipe`);
           }
           if (Math.abs(rest.inset - (rest.deck + rest.safe)) > 0.5) fail(`bar r · the page's inset ${rest.inset} is not the deck row ${rest.deck} and the safe area ${rest.safe}`);
-          if (rest.images < 3) fail(`bar r · ${rest.images} glyph/face image(s) — ‹, a face or glyph in the pill, the tabs figure at least`);
+          if (rest.images < 2) fail(`bar r · ${rest.images} glyph/face image(s) — ‹ and the pill's identity or reload`);
           const inBand = (r) => rest.band && r.x >= rest.band.x - 0.5 && r.x + r.w <= rest.band.x + rest.band.w + 0.5;
           if (!rest.band || rest.named.length !== 1 || !inBand(rest.named[0])) {
             fail(`bar r · the native title reads ${shown(rest.named)} against the band ${shown(rest.band)} — cut to the band's box (UX-35 §3; lib/native-deck.ts seen)`);
@@ -33534,7 +33535,7 @@ try {
         // sheet's row the title.
         const words = await page.evaluate(async () => {
           const pill = document.querySelector("[data-session-deck] [data-deck-title]")?.textContent?.trim() ?? null;
-          document.querySelector("[data-session-deck] [data-deck-tabs]")?.click();
+          (await import('/src/lib/native-deck.ts')).openDeckOverview(document.querySelector('[data-session-screen]'));
           await new Promise((r) => setTimeout(r, 600));
           const row = document.querySelector('[data-tab-sheet-row="t1"] [data-tab-sheet-name]')?.textContent?.trim() ?? null;
           document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -33602,7 +33603,7 @@ try {
         const over = await page.evaluate(async () => {
           const said = [];
           document.addEventListener("khor:page-place", (e) => said.push(e.detail.covered));
-          document.querySelector("[data-session-deck] [data-deck-tabs]")?.click();
+          (await import('/src/lib/native-deck.ts')).openDeckOverview(document.querySelector('[data-session-screen]'));
           await new Promise((r) => setTimeout(r, 900));
           const up = { sheet: document.querySelectorAll("[data-tab-sheet]").length, covered: said.at(-1) ?? null, looks: said.length };
           said.length = 0;
@@ -33641,13 +33642,13 @@ try {
         if(first.detent!=='half'||Math.abs(first.h-first.vh*.5)>2||!first.rim)fail('bar p · content sheet did not start at half with its top rim: '+shown(first));
         if(await page.locator('[data-session-bar]:visible').count()!==0)fail('bar p · terminal deck still visible behind content');
         if(await page.locator('[data-content-picker] [data-content-search]:visible').count()!==1)fail('bar p · first entry is not the current workspace');
-        if(await page.locator('[data-content-overview-button]:visible [data-content-tabs-glyph]').count()!==1)fail('bar p · content does not have its own card-stack glyph');
+        if(await page.locator('[data-content-overview-button]:visible').count()!==0||await page.locator('[data-deck-band]:visible').count()!==1)fail('bar p · content must use its pill overview action without an independent tabs button');
         const move=async dy=>{const r=await panel().locator('[data-place-grab]').boundingBox();const x=r.x+r.width/2,y=r.y+r.height/2;await kTouch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});for(let i=1;i<=8;i++){await kTouch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y+dy*i/8}]});await wait(20);}await kTouch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await wait(450);return read();};
         const full=await move(-first.vh*.4),half=await move(first.vh*.4);
         if(full.detent!=='full'||Math.abs(full.h-full.vh*.92)>2||half.detent!=='half')fail('bar p · content detents do not follow the grabber: '+shown({full,half}));
         await page.locator('[data-content-search]:visible').evaluate(el=>el.blur());await page.locator('[data-content-search]:visible').focus();await wait(350);
         if((await read()).detent!=='full')fail('bar p · search focus did not expand content');
-        await page.locator('[data-content-overview-button]:visible').click();
+        await openTabs(page);
         const overview=page.locator('[data-content-overview]:not(.session-content-retained)');
         if(!await overview.locator('[data-tab-sheet-new]').isVisible())fail('bar p · inner list has no final open-content row');
         if(!await overview.locator('[data-tab-sheet-new]').evaluate(el=>el===el.parentElement.lastElementChild))fail('bar p · open content is not the final row');
@@ -33656,7 +33657,7 @@ try {
         await panel().waitFor({state:'detached'});
         const after=await page.evaluate(()=>{const t=document.querySelector('[data-terminal]')?.__xterm;return{same:t===window.__barContentTerminal,size:t?[t.cols,t.rows]:null};});
         if(!after.same||JSON.stringify(before)!==JSON.stringify(after.size))fail('bar p · content changed the retained PTY geometry: '+shown({before,after}));
-        await page.locator('[data-session-deck] [data-deck-tabs]:visible').click();await page.locator('[data-content-sessions]').waitFor();
+        await openTabs(page);await page.locator('[data-content-sessions]').waitFor();
         await panel().evaluate(el=>window.__barOneContentSheet=el);
         await page.locator('[data-content-sessions] [data-tab-sheet-open="'+terms[2].id+'"]').click();
         await overview.waitFor();
@@ -33709,7 +33710,7 @@ try {
       } else {
         const sheets = [
           ["内容", "[data-content-panel]", () => press("[data-session-deck] button[data-deck-title]")],
-          ["会话标签", "[data-content-panel]", () => press("[data-session-deck] [data-deck-tabs]")],
+          ["会话标签", "[data-content-panel]", () => openTabs(page,page.locator("[data-session-deck] [data-deck-band]"))],
         ];
         // ⚠️ 墓碑 (UX-45): the tabs sheet's 新会话 was a sheet on this
         // list; its ＋ makes a new tab now, whose page is the choices
@@ -35740,7 +35741,7 @@ try {
         }, { s: sel, fade: rejoinFade });
       const sheetsJ = [
         ["the 附栏", "[data-place-sheet]", async () => (await toSession()) && press("[data-session-deck] button[data-deck-title]")],
-        ["the tabs sheet", "[data-tab-sheet]", async () => (await toSession()) && press("[data-session-deck] [data-deck-tabs]")],
+        ["the tabs sheet", "[data-tab-sheet]", async () => (await toSession()) && openTabs(page,page.locator("[data-session-deck] [data-deck-band]"))],
         // ⚠️ 墓碑 (UX-45): 新会话 here — it is a new tab's page now, not a sheet.
         ["导入", "[data-import-dialog]", async () => (await open("sessions")) && newItem("import")],
         ["添加机器", "[data-add-machine]", async () => (await open("devices")) && newItem("add")],
@@ -37805,11 +37806,11 @@ try {
       if (!up) fail("probe dead: tabs c · the phone list's ＋ → 新会话 opened no new tab");
       else if (list.page !== 0 || list.rows === 0 || list.bar !== 0) fail(`tabs c · 取消 on the phone left ${JSON.stringify(list)} — back on the list it was asked from`);
       await page.locator(`[data-list] [data-row="${ids[1]}"] [data-row-open]`).click();
-      await until(3_000, async () => (await count("[data-session-deck] [data-deck-tabs]")) === 1);
+      await until(3_000, async () => (await count("[data-session-deck] [data-deck-band]")) === 1);
       await wait(500);
       const title = () => page.evaluate(() => document.querySelector("[data-deck-title]")?.textContent?.trim() ?? null);
       const was = await title();
-      await press("[data-session-deck] [data-deck-tabs]");
+      await openTabs(page,page.locator("[data-session-deck] [data-deck-band]"));
       await until(3_000, async () => (await count("[data-tab-sheet-new]")) === 1);
       await press("[data-tab-sheet-new]");
       const up2 = await until(3_000, async () => (await count("[data-new-session-page]")) === 1);

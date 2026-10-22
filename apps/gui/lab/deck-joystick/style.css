@@ -1,0 +1,45 @@
+/* This experiment changes only the Lab route. Production tokens stay intact. */
+#root:has(.joystick-lab){overflow:auto;height:auto;min-height:100dvh}
+.joystick-lab{min-height:100dvh;display:flex;justify-content:center;align-items:center;gap:calc(3 * var(--gap-pane));padding:var(--gap-pane);background:var(--canvas-solid);color:var(--foreground)}
+.joystick-controls{width:calc(8 * var(--touch));max-height:calc(100dvh - 2 * var(--gap-pane));overflow:auto;font-size:var(--text-body);line-height:var(--text-body--line-height)}
+.joystick-eyebrow{color:var(--muted-foreground);font-size:var(--text-callout);margin-bottom:var(--gap-in)}
+.joystick-controls h1{font-size:var(--text-title-lg);font-weight:var(--font-weight-title);line-height:1.4}
+.joystick-intro{margin-top:var(--gap-base);line-height:1.7;color:var(--muted-foreground)}
+.joystick-tuning{margin-top:var(--gap-group)}
+.joystick-tuning>summary{font-size:var(--text-callout);color:var(--muted-foreground);padding-block:var(--gap-row);cursor:default}
+.joystick-tuning[open]>summary{margin-bottom:var(--gap-base)}
+.joystick-settings{display:grid;gap:var(--gap-base)}
+.joystick-settings label{display:grid;gap:var(--gap-in)}.joystick-settings label>span{display:flex;justify-content:space-between;align-items:center}
+.joystick-settings output{font-size:var(--text-caption);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.joystick-settings input{width:100%;accent-color:var(--brand-strong);min-height:var(--ctl-md)}
+.joystick-lab-actions{display:flex;flex-wrap:wrap;gap:var(--gap-in);margin-block:var(--gap-group)}
+.joystick-lab-facts{line-height:1.8}.joystick-lab-facts b{font-weight:500;font-variant-numeric:tabular-nums}
+.joystick-lab-note{font-size:var(--text-callout);color:var(--muted-foreground);margin-top:var(--gap-base);line-height:1.6}
+.joystick-mobile-lab-bar{display:none}
+.joystick-phone{position:relative;isolation:isolate;display:flex;flex-direction:column;width:calc(9 * var(--touch));height:calc(100dvh - 2 * var(--gap-pane));min-height:calc(10 * var(--touch));border:var(--hair) solid var(--border);border-radius:var(--radius-xl);overflow:hidden;background:var(--card);--glass-btn:var(--touch);--glass-item-h:calc(var(--touch) - 2 * var(--glass-pad));--glass-item-w:var(--glass-item-h)}
+.joystick-screen-seat{width:100%;height:100%;min-height:0}
+.joystick-screen-seat>[data-session-screen]{width:100%}
+.joystick-terminal-seat{flex:1;min-height:0;display:flex;flex-direction:column}
+.joystick-terminal{flex:1;min-height:0;overflow:hidden;padding:var(--gap-base) var(--gap-row) 0;font-family:var(--font-mono)}
+.joystick-terminal .xterm{height:100%}
+.joystick-key-row{display:flex;gap:var(--gap-in);padding:0 var(--gap-row) var(--gap-in)}
+.joystick-key-row button{height:var(--ctl-md);min-width:0;flex:1;border-radius:var(--radius-sm);background:var(--fill);font-family:var(--font-mono);font-size:var(--text-callout);color:var(--muted-foreground)}
+.joystick-shell-input{width:calc(100% - 2 * var(--gap-row));margin:0 var(--gap-row) var(--gap-in)}
+.joystick-page{position:relative;min-height:0;flex:1;display:flex;flex-direction:column;background:var(--card)}
+.joystick-page header{display:flex;justify-content:space-between;align-items:center;padding:var(--gap-base) var(--gap-row);gap:var(--gap-row)}
+.joystick-page h2{font-size:var(--text-title-md);font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.joystick-search{display:flex;align-items:center;gap:var(--gap-in);margin:0 var(--gap-row) var(--gap-base);border-radius:var(--radius-sm);background:var(--fill);padding-left:var(--gap-in)}
+.joystick-search svg{width:var(--ctl-glyph);height:var(--ctl-glyph);color:var(--muted-foreground);flex:none}.joystick-search input{border:0;background:transparent;box-shadow:none}
+.joystick-tab-list{flex:1;min-height:0;overflow:auto;padding:0 var(--gap-row) var(--gap-pane)}
+.joystick-empty{padding:var(--gap-pane);line-height:2;color:var(--muted-foreground)}
+.joystick-content-demo{display:flex;flex:1;min-height:0;overflow:auto;flex-direction:column;padding:var(--gap-base);gap:var(--gap-base)}
+.joystick-content-demo p{color:var(--muted-foreground);font-size:var(--text-callout)}
+.joystick-content-demo button{padding-block:var(--gap-base);text-align:left;border-bottom:var(--hair) solid var(--border);font-size:var(--text-body)}
+@media(max-width:760px){
+  .joystick-lab{padding:0;gap:0;display:block}
+  .joystick-mobile-lab-bar{height:var(--touch);display:flex;justify-content:space-between;align-items:center;padding-inline:var(--gap-row);font-size:var(--text-callout);border-bottom:var(--hair) solid var(--border)}
+  .joystick-phone{height:calc(100dvh - var(--touch));width:100%;border:0;border-radius:0;min-height:0}
+  .joystick-controls{display:none;width:100%;max-height:none;padding:var(--gap-pane)}
+  .joystick-controls[data-visible]{display:block}
+  .joystick-lab:has(.joystick-controls[data-visible]) .joystick-phone{display:none}
+}
