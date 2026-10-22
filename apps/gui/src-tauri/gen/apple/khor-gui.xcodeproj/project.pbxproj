@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9860DD4923D020CE4E5EBEA3 /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3ECE6565B9623D20E4377397 /* QuickLook.framework */; };
 		1D631792999EDA7DF92189ED /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F35D9EF14B6F829116490207 /* UIKit.framework */; };
 		405DD24F7CE90539AEB08D69 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5BA6129DE95D5B11DD2681A6 /* libapp.a */; };
 		4D02BD93DFF86C7330795F46 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E6A1F06B0EF714CDFFF37DB /* CoreGraphics.framework */; };
@@ -23,6 +24,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		3ECE6565B9623D20E4377397 /* QuickLook.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLook.framework; path = System/Library/Frameworks/QuickLook.framework; sourceTree = SDKROOT; };
 		129DB59333EC975C59FCA730 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
 		17ED832DAD926E11E593975F /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
 		1E6A1F06B0EF714CDFFF37DB /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
@@ -55,6 +57,7 @@
 				4D02BD93DFF86C7330795F46 /* CoreGraphics.framework in Frameworks */,
 				C44335F900DC5054D74010A5 /* Metal.framework in Frameworks */,
 				F0E4C4994E915329322C0AA3 /* MetalKit.framework in Frameworks */,
+				9860DD4923D020CE4E5EBEA3 /* QuickLook.framework in Frameworks */,
 				B72D90E32A15C33CF31061D0 /* QuartzCore.framework in Frameworks */,
 				C50DD54792B7A1D5C15FE330 /* Security.framework in Frameworks */,
 				E6DE7DC1155F8A5943964F8F /* SystemConfiguration.framework in Frameworks */,
@@ -149,6 +152,7 @@
 				5BA6129DE95D5B11DD2681A6 /* libapp.a */,
 				6C0E6C5F9060A7546FE2267E /* Metal.framework */,
 				648EE1EA958084B08AF89E21 /* MetalKit.framework */,
+				3ECE6565B9623D20E4377397 /* QuickLook.framework */,
 				CFDB6ECC5F814126A3E44374 /* QuartzCore.framework */,
 				E33D6272B5AD1BBBB60A582C /* Security.framework */,
 				129DB59333EC975C59FCA730 /* SystemConfiguration.framework */,

@@ -80,6 +80,7 @@ targets:
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
+      - sdk: QuickLook.framework
       - sdk: QuartzCore.framework
       - sdk: Security.framework
       # iroh's interface watcher (netdev, system-configuration) reads the

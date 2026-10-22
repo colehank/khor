@@ -20,6 +20,11 @@
     "active": false,
     "macOS": {
       "bundleName": "khor"
+    },
+    "iOS": {
+      "frameworks": [
+        "QuickLook"
+      ]
     }
   }
 }
