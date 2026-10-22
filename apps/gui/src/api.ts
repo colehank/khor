@@ -1961,6 +1961,8 @@ export const termOpen = (id: string, cols: number, rows: number, history: number
     its own mouse and paste. 「不必考虑旧版兼容」 is why there is no
     bridge.) */
 export const termAttach = (id: string) => call<TermStart>("term_attach", { id });
+/** The initial replay is parsed; live terminal queries can now be answered. */
+export const termReady = (id: string) => call<null>("term_ready", { id });
 /** **A dead terminal row's page** (P5-SHELL): how it ended, its last
     screen when its host left one (`ring.bin`), else the commands it ran,
     newest first. `null` while the session is not dead on this machine. */

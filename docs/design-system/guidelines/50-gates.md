@@ -36,6 +36,7 @@
 | `npm run session-content` | 正式 App + 独立节点/PTY：内容原地转换、自动保存、预览保持、会话隔离、CLI 同步与持久化、放大/恢复、拥挤时头像与两个 ＋、桌面临时浏览与无空记录、来源按钮与菜单尺寸对齐、无图标浏览标签、共享返回与草稿、手机单甲板与 PTY 位置保留、首次／最近文档恢复、逐级返回、两层标签入口和末尾新建行、临时查看与原地保留、目录滚动、真实触控取消与会话隔离；需先构建 CLI 与 bridge，可用 `CARGO_TARGET_DIR`、`CONTENT_CHECK_DIR` 指定外置盘 |
 | `npm run session-cwd` | cd、活动 pane、地点筛选/搜索、工作区归属、旧附栏恢复、默认跟随与主动固定目录 |
 | `npm run terminal-colors` | 统一终端外观解析：浅深 ANSI、自动／固定／DIY、保护默认与关闭迁移、跨窗口、重载、CSS 表面同步、预览隔离和标准扩展色表；DIM 完整目标、按格子取色的光标、渲染器回退、缓冲与调色板隔离 |
+| `npm run terminal-startup` | 独立节点、真实 PTY 与正式 App：延迟接入超过 250 ms 时命令仍待执行，仅连接 socket 不释放；xterm 初始回放结束后实时应答 OSC 10/11、保留显式背景；创建重试、重开、重载与重复就绪确认只执行一次。先构建 CLI 与 bridge，可用 `CARGO_TARGET_DIR` 指定构建目录；截图与探测结果保存在输出中的临时目录 |
 | `npm run avatar-ring` | 正式 FaceMark / TabStrip 的 102 个列表、18／22 标签与 72 大头像状态环：头像和光环 SVG 共用 viewport；macOS 原生 WKWebView 在四个分数位置的像素质心同心检查，保留截图。其它平台仅验 Chrome 几何，不宣称原生通过 |
 | `npm run terminal-drop` | 正式拖放监听：Mac/GTK 逻辑坐标与 Windows 缩放、原生空路径接回内部源机器、dragend/IPC 顺序、取消/离开/新拖清理、DOM/原生去重、保留终端共享分发。真实 Finder 与跨 app 拖动另做原生验收 |
 | `npm run native-menu` | 路径导入实际生产 Rust 协议的轻量隔离 Cargo 测试：owner/lease、旧关闭／尺寸／点击、当前候选验证和非法几何；离线、可指定外置临时目录，不链接 Tauri，不纳入默认前端测试 |

@@ -1048,6 +1048,11 @@ fn term_attach(id: String) -> Result<khor_gui_core::term::TermStart, String> {
 }
 
 #[tauri::command]
+fn term_ready(id: String) -> Result<(), String> {
+    khor_gui_core::term::term_ready(&id)
+}
+
+#[tauri::command]
 fn term_stream(id: String, since: u64) -> Result<khor_gui_core::term::TermChunk, String> {
     khor_gui_core::term::term_stream(&id, since)
 }
@@ -4993,6 +4998,7 @@ pub fn run() {
             file_preview_open,
             term_open,
             term_attach,
+            term_ready,
             term_ended,
             term_stream,
             term_history,

@@ -54,6 +54,14 @@ fn main() {
 
 struct Scratch(PathBuf);
 
+struct Hosted<'a>(&'a Node, khor_core::SessionId);
+
+impl Drop for Hosted<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.close(&self.1);
+    }
+}
+
 impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
@@ -122,6 +130,7 @@ async fn run() {
     .await
     .expect("the open must come back")
     .expect("the desk opens a shell for the phone");
+    let _shell_cleanup = Hosted(&desk, id.clone());
     let answered = asked.elapsed();
     let mut listed = None;
     while asked.elapsed() < Duration::from_secs(60) {
@@ -143,8 +152,8 @@ async fn run() {
         listed - answered
     );
 
-    // A literal startup is part of creation, never of attach. Retrying the
-    // same token keeps one host, one command execution and one shell state.
+    // A literal startup belongs to creation and is released by readiness.
+    // Retrying keeps one host, one command execution and one shell state.
     let counter=desk_root.0.join("startup-count");
     let value=desk_root.0.join("startup-env");
     let start=khor_node::shell_start::ShellStart {
@@ -153,15 +162,26 @@ async fn run() {
         command:format!("printf x >> '{}'\nexport KHOR_TEST_LAUNCH=kept",counter.display()),cols:69,rows:33,
     };
     let made=timeout(Duration::from_secs(35),phone().open_shell_on("desk",start.clone())).await.unwrap().unwrap();
+    let _startup_cleanup = Hosted(&desk, made.clone());
     let again=timeout(Duration::from_secs(35),phone().open_shell_on("desk",start)).await.unwrap().unwrap();
     assert_eq!(made,again,"retry must answer the same session");
+    // A new session may take much longer to reach the phone than Codex's
+    // 250 ms color probe allows. Creation must not run the command while
+    // no terminal can answer its queries.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(!counter.exists(), "startup ran before a terminal was ready to answer queries");
     let live=khor_node::live::LiveKind::new(desk_root.0.clone(),khor_core::DeviceId([1;32]));
     let dir=live.dir_of(&made).expect("startup session has a registry row");
     let mut first=khor_node::host::connect_host_versioned(&dir,69,33).unwrap().stream;
     use khor_node::host::{write_frame,ClientOp};
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!counter.exists(), "a connected socket is not yet a ready terminal");
     write_frame(&mut first,&ClientOp::Input(format!("printf '%s' \"$KHOR_TEST_LAUNCH\" > '{}'\r",value.display()).into_bytes())).unwrap();
+    write_frame(&mut first,&ClientOp::Ready).unwrap();
+    write_frame(&mut first,&ClientOp::Ready).unwrap();
     drop(first);
-    let second=khor_node::host::connect_host_versioned(&dir,69,33).unwrap();drop(second);
+    let mut second=khor_node::host::connect_host_versioned(&dir,69,33).unwrap();
+    write_frame(&mut second.stream,&ClientOp::Ready).unwrap();drop(second);
     let until=Instant::now()+Duration::from_secs(8);
     while std::fs::read_to_string(&value).unwrap_or_default()!="kept"&&Instant::now()<until {tokio::time::sleep(Duration::from_millis(50)).await;}
     let count=std::fs::read_to_string(&counter).unwrap_or_default();
@@ -169,6 +189,28 @@ async fn run() {
     let _=desk.close(&made);
     assert_eq!(count,"x","creation retry and two attaches must not repeat startup");
     assert_eq!(retained,"kept","startup runs in the interactive shell that remains attached");
+
+    // A pre-Ready client still works with a new host, without receiving or
+    // sending an operation its protocol does not know.
+    let old_count = desk_root.0.join("old-client-startup");
+    let legacy = khor_node::shell_start::ShellStart {
+        token: "5a7f8a4c-7426-4899-9714-4a1cb71fd11a".into(),
+        title: "legacy startup".into(), cwd: desk_root.0.display().to_string(),
+        command: format!("printf x >> '{}'", old_count.display()), cols: 69, rows: 33,
+    };
+    let old_id = phone().open_shell_on("desk", legacy).await.unwrap();
+    let _old_cleanup = Hosted(&desk, old_id.clone());
+    let old_dir = live.dir_of(&old_id).unwrap();
+    let file: khor_node::host::HostFile = serde_json::from_slice(&std::fs::read(old_dir.join("host.json")).unwrap()).unwrap();
+    let mut old = std::net::TcpStream::connect(("127.0.0.1", file.port)).unwrap();
+    old.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    write_frame(&mut old, &khor_node::host::Hello { cookie: file.cookie, cols: 69, rows: 33 }).unwrap();
+    let welcome: khor_node::host::Welcome = khor_node::host::read_frame(&mut old).unwrap();
+    assert!(welcome.ok);
+    write_frame(&mut old, &ClientOp::Version(4)).unwrap();
+    let until = Instant::now() + Duration::from_secs(8);
+    while !old_count.exists() && Instant::now() < until { tokio::time::sleep(Duration::from_millis(50)).await; }
+    assert_eq!(std::fs::read_to_string(old_count).unwrap(), "x");
 
     let _ = desk.close(&id);
     serve_desk.abort();

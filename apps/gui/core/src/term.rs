@@ -644,6 +644,16 @@ pub fn term_attach(id: &str) -> Result<TermStart, String> {
     })
 }
 
+/// A socket and its feed may exist before xterm does. Only the renderer
+/// can say that replay is over and live queries now have a responder.
+pub fn term_ready(id: &str) -> Result<(), String> {
+    let term = term_of(id)?;
+    if term.version.load(Ordering::Relaxed) >= 5 {
+        write_frame(&mut *plock(&term.conn), &ClientOp::Ready)?;
+    }
+    Ok(())
+}
+
 /// **A dead terminal row's page** (P5-SHELL items 1 and 2): how it ended,
 /// its last screen when its host left one (`ring.bin`), else the last
 /// commands its shell marked. Read only for a dead row of this machine's;

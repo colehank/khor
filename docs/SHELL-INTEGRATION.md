@@ -61,6 +61,29 @@ turning it on after Codex starts does not reactivate native mouse capture.
 An existing client started with mouse off needs a user-driven exit/resume.
 The Codex command is never wrapped to change tmux options.
 
+New-session launch commands wait in their shell host until a terminal can
+answer live queries. Host protocol 5 adds `Ready`: the GUI sends it after
+xterm has parsed the initial replay, and a CLI attachment sends it after raw
+input and its byte pumps are established. A socket connection alone is not
+readiness. This keeps Codex's 250 ms startup color probe out of the replay
+path, where stale query replies are deliberately suppressed.
+
+The host releases its startup once, before any keys queued during opening.
+Creation retries, multiple viewers, reload and reattach cannot repeat it.
+Fresh feeds after remote reconnect acknowledge readiness again. Older hosts
+receive no unknown operation; clients below protocol 5 release pending input
+on attachment. Ordinary `open -d -- command` and empty shells keep their
+existing behavior. No sleep, agent wrapper or color override is involved.
+
+Regression: `cargo test -p khor-node --test open_from_phone` was red because
+the command ran with no terminal attached. `npm run terminal-startup` was
+also red against the original bridge. It uses a private node and real app
+with a 250 ms OSC 10/11 probe, delayed attachment, actual xterm background
+cells, creation retry, reload and repeated readiness. The probe uses no model.
+Set `STARTUP_CODEX` to an installed Codex executable to also check its actual
+composer background with a private home and an unreachable fixture provider;
+no prompt is submitted. Screenshots cover desktop and mobile viewport sizes.
+
 The workspace uses the current shell or current window's active pane directory.
 `Meta.place` remains the birthplace. Default workspace views follow `cd` and
 pane changes; opening a particular file or directory pins that view until the

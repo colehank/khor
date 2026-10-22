@@ -726,6 +726,10 @@ pub fn answer(
             Ok("null".to_owned())
         }
         "term_attach" => to_json(&crate::term::term_attach(&arg("id")?)?),
+        "term_ready" => {
+            crate::term::term_ready(&arg("id")?)?;
+            to_json(&())
+        }
         // A dead terminal row's page (P5-SHELL): its last screen or its
         // commands. A read.
         "term_ended" => to_json(&crate::term::ended(root, &arg("id")?)?),

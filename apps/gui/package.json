@@ -61,6 +61,7 @@
     "appearance": "node scripts/check-appearance.mjs",
     "avatar-ring": "node scripts/check-avatar-ring.mjs",
     "terminal-colors": "node scripts/check-terminal-colors.mjs",
+    "terminal-startup": "node scripts/check-terminal-startup.mjs",
     "terminal-drop": "node scripts/check-terminal-drop.mjs",
     "ime": "node scripts/check-ime.mjs",
     "attachments": "node scripts/check-attachments-model.mjs",

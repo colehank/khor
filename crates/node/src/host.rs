@@ -118,6 +118,9 @@ pub enum ClientOp {
     /// it shows, said once after `Version`. The host's model keeps the
     /// most any face has asked for, up to [`MODEL_SCROLLBACK_MOST`].
     Scrollback(u32),
+    /// The terminal has parsed its initial replay and can answer live
+    /// queries (version 5). Releases this host's initial shell input once.
+    Ready,
 }
 
 /// **The host protocol's version** (audit/term-attach.md). 1 is every
@@ -129,7 +132,7 @@ pub enum ClientOp {
 /// its attributes and cursor, the modes) instead of the ring's bytes; an
 /// older client still gets the ring. No new frame: the host waits
 /// [`FIRST_FRAME`] for the client's first word before choosing. 4 adds
-/// [`ClientOp::Scrollback`] (item 56).
+/// [`ClientOp::Scrollback`] (item 56). 5 adds [`ClientOp::Ready`].
 ///
 /// **How it is agreed without changing a frame's shape.** msgpack here
 /// is positional, and a struct read from a longer array fails
@@ -140,7 +143,7 @@ pub enum ClientOp {
 /// answer is no — and a client that sees it answers with
 /// [`ClientOp::Version`] before anything else. Neither side sends a word
 /// the other has not said it knows.
-pub const HOST_VERSION: u32 = 4;
+pub const HOST_VERSION: u32 = 5;
 
 /// How long a host waits after its `Welcome` for the client's first frame
 /// before handing it the ring (item 46): a versioned client's `Version`
@@ -1724,27 +1727,14 @@ fn host_serving(
         .unwrap()
         .try_clone_reader()
         .map_err(msg::cant_read_pty)?;
-    let writer = Arc::new(Mutex::new(
+    let writer = Arc::new(Mutex::new(crate::shell_start::StartupInput::new(
         master
             .lock()
             .unwrap()
             .take_writer()
             .map_err(msg::cant_write_pty)?,
-    ));
-
-    if let Some(text) = startup {
-        let input = crate::shell_start::input(text);
-        let startup_writer = writer.clone();
-        let (ready, started) = std::sync::mpsc::sync_channel(0);
-        std::thread::spawn(move || {
-            let mut w = startup_writer.lock().unwrap();
-            // Hold the input lock before publishing the host address. A fast
-            // first attachment cannot put its keys ahead of the startup.
-            let _ = ready.send(());
-            let _ = w.write_all(&input).and_then(|()| w.flush());
-        });
-        let _ = started.recv();
-    }
+        startup,
+    )));
 
     let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -1786,7 +1776,9 @@ fn host_serving(
                 let own = ledger.lock().unwrap().fallback(std::time::Instant::now());
                 if !own.is_empty() {
                     let mut w = writer.lock().unwrap();
-                    let _ = w.write_all(&own).and_then(|()| w.flush());
+                    // Replies belong to the shell's already-pending queries,
+                    // not to the startup and keys waiting behind Ready.
+                    let _ = w.reply(&own);
                 }
             }
         });
@@ -2204,6 +2196,11 @@ fn host_serving(
                     if mux_client {
                         redraw_tmux_client(&cmd, master.lock().unwrap().tty_name());
                     }
+                    // Older clients cannot acknowledge renderer readiness.
+                    // They retain attach-time startup; no new op is required.
+                    if agreed_first < 5 && writer.lock().unwrap().ready().is_err() {
+                        continue;
+                    }
                     let master = master.clone();
                     let writer = writer.clone();
                     let ledger = ledger.clone();
@@ -2263,6 +2260,12 @@ fn host_serving(
                                     }
                                 }
                                 ClientOp::Scrollback(_) => {}
+                                ClientOp::Ready if agreed >= 5 => {
+                                    if writer.lock().unwrap().ready().is_err() {
+                                        break;
+                                    }
+                                }
+                                ClientOp::Ready => {}
                             }
                         }
                     });

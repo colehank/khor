@@ -64,7 +64,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, rejoinNow, said, termAttach, termDrop, termDropCancel, termDropProgress, termDropItems, termDropForget, termEnded, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait, type Miss } from "@/api";
+import { bellHaptic, faceNote, inApp, rejoinNow, said, termAttach, termReady, termDrop, termDropCancel, termDropProgress, termDropItems, termDropForget, termEnded, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait, type Miss } from "@/api";
 import { addAttachments, deviceAttachments, droppedAttachments, prepareAttachments, type Attachment, type PreparedDrop } from "@/lib/term-attachments";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
@@ -2072,9 +2072,14 @@ export function TerminalPane({
         if (b.bytes) {
           if (b.reset || gap > CATCH_UP_MS) {
             frames.flush();
-            replay(b64bytes(b.bytes));
+            if (b.reset) await new Promise<void>(done => replay(b64bytes(b.bytes), done));
+            else replay(b64bytes(b.bytes));
           } else frames.paint(b64bytes(b.bytes));
         }
+        if (stopped || mine !== generation) return "live";
+        // A remote pipe may have rejoined before its first Ready reached
+        // the host. A fresh feed needs the renderer's acknowledgement too.
+        if (b.reset && !b.gone && !b.stall) await termReady(id);
         seq = b.seq;
         if (b.gone) setGone(true);
         const held = b.gone ? null : (b.stall ?? null);
@@ -2147,7 +2152,7 @@ export function TerminalPane({
         : termOpen(id, term.cols, term.rows, termHistory());
       return opened
         .then(() => termAttach(id))
-        .then((a) => {
+        .then(async (a) => {
           if (stopped || mine !== generation) return;
           setJoining(false);
           // An open that lands after 停止等待 is still an open: the
@@ -2192,14 +2197,16 @@ export function TerminalPane({
           const noted = (n: number) => () => firstTouchRef.current?.attached(n);
           if (a.bytes) {
             const bytes = b64bytes(a.bytes);
-            replay(bytes, () => {
+            await new Promise<void>(done => replay(bytes, () => {
               landed();
               noted(bytes.length)();
-            });
+              done();
+            }));
           } else {
             landed();
             noted(0)();
           }
+          if (stopped || mine !== generation) return;
           lastBeat = performance.now();
           seq = a.seq;
           joined = true;
@@ -2219,6 +2226,10 @@ export function TerminalPane({
             // it was.
             if (term.textarea) holdFocus(term.textarea, finger);
           }
+          // Socket attachment precedes rendering. Release automatic shell
+          // input only after replay no longer suppresses live query replies.
+          await termReady(id);
+          if (stopped || mine !== generation) return;
           void loop();
         })
         .catch((e: unknown) => {

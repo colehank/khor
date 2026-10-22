@@ -5785,7 +5785,7 @@ fn attach_to(n: &Node, id: &SessionId) -> Result<(), String> {
 /// the resident serve bound, `Node::reach`). Splitting anywhere lower
 /// than this would mean two copies of the raw-mode dance.
 fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), String> {
-    use khor_node::host::{ClientOp, connect_at, write_frame};
+    use khor_node::host::{ClientOp, connect_versioned, write_frame};
     use std::io::{Read, Write};
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -5796,7 +5796,8 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
         return Err(msg::attach_needs_tty().into());
     }
     let (cols, rows) = tty_size().unwrap_or((80, 24));
-    let mut stream = connect_at(addr, cookie, cols, rows)?;
+    let khor_node::host::Attached { mut stream, version } =
+        connect_versioned(addr, cookie, cols, rows)?;
     eprintln!("{}", cli::attached(&id.0));
 
     let saved = raw_on()?;
@@ -5837,6 +5838,11 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
                 }
             }
         });
+    }
+    if version >= 5 {
+        // Raw input and both byte pumps are ready before a GUI-created
+        // session's pending startup is released through a CLI attachment.
+        let _ = tx.send(ClientOp::Ready);
     }
     {
         std::thread::spawn(move || {
