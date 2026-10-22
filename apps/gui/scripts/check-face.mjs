@@ -2305,7 +2305,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "workspace-status", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -24570,7 +24570,7 @@ try {
   //   d. workspaces — the branch after the name (secondary ink, a size
   //      down, `@1a2b3c4d` detached, cut in the middle on a phone row),
   //      the git symbols top-right in their inks (UX-51: 「⇡861 *1 !1 ?2」,
-  //      an operation's word first, nothing for a clean checkout) over how
+  //      an operation's word first, neutral text for a clean checkout) over how
   //      long it has held, HEAD's subject under the name, contrast ≥ 4.5
   //      on the ground and the picked row in both themes; a plain folder
   //      its newest file and nothing on the right;
@@ -24585,7 +24585,7 @@ try {
   //
   // `FACE_ONLY=corners` runs this section alone.
   corners: {
-  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "corners") break corners;
+  if (process.env.FACE_ONLY && !["corners", "workspace-status"].includes(process.env.FACE_ONLY)) break corners;
   const POSTURES = [
     ["wide", { width: 1400, height: 900 }],
     ["narrow", { width: 390, height: 844 }],
@@ -24628,6 +24628,7 @@ try {
   // (WORDS-1008): the browser's, 最近's, 存储's.
   const AGO = /^\d+ (秒|分钟|小时|天)前$/;
 
+  if (process.env.FACE_ONLY !== "workspace-status") {
   // a. machines.
   {
     const peer = devs.find((d) => d.name === "peer");
@@ -25060,11 +25061,13 @@ try {
     if (spill.length) fail(`corners c · ${posture} · a ring's reading spills out of its corner: ${JSON.stringify(spill)} (src/components/SideList.tsx Corners)`);
   }
 
+  }
+
   // d. workspaces (UX-48 → UX-51, the owner 2026-10-08): the branch after
   // the name — the title's aside, the secondary ink, a size down, cut in
   // the middle on a narrow row while the name and the symbols stay whole
   // (`@` and the short id when detached); top-right only the symbols, an
-  // operation's word before them, not drawn for a clean checkout; each
+  // operation's word before them, neutral text for a clean checkout; each
   // symbol in its git ink, ≥ 4.5 on the ground and on the picked row in
   // both themes. A branch never pushed counts its commits (⇡) and a
   // checkout with no remote at all counts none: the node decides both
@@ -25085,6 +25088,8 @@ try {
       add("detached", { ...none, branch: null, head: "1a2b3c4d", staged: 3 }),
       add("long", { branch: "feature/an-exceptionally-long-branch-name-that-cannot-fit-a-phone-row" }),
       add("clean", { ...none }),
+      { ...add("unread", {}), git: null },
+      add("partial", { ...none, capped: true }),
       add("every", { branch: "dev", behind: 2, ahead: 4, stashes: 1, conflicted: 1, staged: 2, unstaged: 3, untracked: 4 }),
       add("unpushed", { ...none, branch: "exp/sweep", ahead: 7 }),
       ...OPS.map((op) => add(`op-${op}`, { ...none, operation: op, conflicted: op === "bisect" ? 0 : 1 })),
@@ -25105,6 +25110,7 @@ try {
         merge: gui.ws_op_merge, rebase: gui.ws_op_rebase, "cherry-pick": gui.ws_op_cherry_pick, revert: gui.ws_op_revert, bisect: gui.ws_op_bisect,
         changed: gui.ws_newest_changed("drafts/plan.md"), added: gui.ws_newest_added("fresh.txt"),
         changedSlot: gui.ws_newest_changed("\u0001"),
+        clean: gui.ws_status_clean, unavailable: gui.ws_status_unavailable,
       };
     });
     const R = "git-remote", S = "git-stash", C = "git-conflict", A = "git-added", M = "git-modified", U = "git-untracked";
@@ -25112,7 +25118,7 @@ try {
       work: { branch: "main", top: [["⇡861", R], ["*1", S], ["!1", M], ["?2", U]] },
       detached: { branch: "@1a2b3c4d", top: [["+3", A]] },
       long: { branch: extra[1].git.branch, top: [["⇡861", R], ["*1", S], ["!1", M], ["?2", U]] },
-      clean: { branch: "main", top: null },
+      clean: { branch: "main", top: [], status: words.clean },
       every: { branch: "dev", top: [["⇣2⇡4", R], ["*1", S], ["~1", C], ["+2", A], ["!3", M], ["?4", U]] },
       unpushed: { branch: "exp/sweep", top: [["⇡7", R]] },
       ...Object.fromEntries(OPS.map((op) => [`op-${op}`, { branch: "main", top: [[words[op], C], ...(op === "bisect" ? [] : [["~1", C]])] }])),
@@ -25232,13 +25238,14 @@ try {
           fail(`corners d · ${posture} · the ${name} row reads branch ${JSON.stringify(r.branch)}, sub ${JSON.stringify(r.sub)} — 「${w.branch}」 after its name, HEAD's subject under it (UX-51)`);
         }
         // TR: the operation's word and the symbols, word by word, each in
-        // its token's ink — or nothing at all for a clean checkout.
+        // its token's ink — or a neutral state for a clean checkout.
         const said = r.inks.map((x) => [x.said, x.token]);
         if (JSON.stringify(w.top === null ? null : said) !== JSON.stringify(w.top) || (w.top === null) !== (r.top === null)) {
-          fail(`corners d · ${posture} · the ${name} row's top-right reads ${JSON.stringify(r.top === null ? null : said)} — ${JSON.stringify(w.top)} (UX-51: only the symbols, the operation's word first; a clean checkout draws none)`);
+          fail(`corners d · ${posture} · the ${name} row's top-right reads ${JSON.stringify(r.top === null ? null : said)} — ${JSON.stringify(w.top)} (UX-51: only the symbols, the operation's word first; clean and unavailable checkouts say their state)`);
         }
         const offInk = r.inks.filter((x) => x.ink !== x.tokenInk);
         if (offInk.length) fail(`corners d · ${posture} · the ${name} row paints ${JSON.stringify(offInk)} — each symbol in its own token's ink (UX-51)`);
+        if (w.status && r.topText !== w.status) fail(`workspace status · ${posture} · ${name}: expected ${w.status}, got ${r.topText}`);
         if (!BARE.test(r.bottom ?? "")) fail(`corners d · ${posture} · the ${name} row's bottom-right reads ${JSON.stringify(r.bottom)} — how long the segment has held, bare (UX-48)`);
         // The branch: the secondary ink, a size under the title's.
         const b = r.branch;
@@ -25246,6 +25253,10 @@ try {
           fail(`corners d · ${posture} · the ${name} row's branch is ${b.ink} at ${b.size} beside a ${b.titleSize} title — the secondary ink ${b.secondary}, a size down (UX-51)`);
         }
       }
+      for (const name of ["unread", "partial"]) {
+        if (rows[name]?.topText !== words.unavailable) fail(`workspace status · ${posture} · ${name}: expected ${words.unavailable}, got ${rows[name]?.topText}`);
+      }
+      if (rows.unread?.bottom !== null) fail(`workspace status · ${posture} · an unavailable segment invented a duration`);
       if (rows.notes.aside !== 0 || rows.notes.newest !== "drafts/plan.md" || rows.notes.where !== null || rows.notes.subject !== null || rows.notes.top !== null || rows.notes.bottom !== null) {
         fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(rows.notes)} — no branch, its newest file 「drafts/plan.md」 under its name (not its path), neither right corner drawn because a plain folder has no state (2026-10-19)`);
       }
@@ -25268,8 +25279,8 @@ try {
         const ok = got && got.drawn.startsWith(before) && got.drawn.endsWith(after) && (posture === "wide" && at < 0 ? name === full : at > 0 && full.startsWith(name.slice(0, at)) && full.endsWith(name.slice(at + 1)) && name.slice(at + 1).length > 0);
         if (!ok) fail(`corners d · ${posture} · a long file's sentence draws ${JSON.stringify(got)} — 「${before}」 whole, then the file cut in the middle (UX-51)`);
       }
-      if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== "3 分钟") {
-        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟」 under that, bare (UX-48, WORDS-1008)`);
+      if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== null) {
+        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, neither right corner: a plain folder has no git state or state duration (2026-10-19)`);
       }
       // The long row: the counts whole inside the corner, the name whole,
       // the branch cut — in the middle on a phone row, its head and its
@@ -25321,6 +25332,8 @@ try {
     await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "light");
     for (const r of extra) wsRows.splice(wsRows.indexOf(r), 1);
   }
+
+  if (process.env.FACE_ONLY === "workspace-status") break corners;
 
   // e. browser.
   for (const [posture, size] of POSTURES) {
@@ -25474,7 +25487,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "workspace-status", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25905,7 +25918,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "workspace-status", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26263,7 +26276,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "workspace-status", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26638,7 +26651,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "workspace-status", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27370,7 +27383,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "workspace-status", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28260,7 +28273,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "workspace-status", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });

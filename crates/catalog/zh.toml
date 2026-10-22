@@ -4396,6 +4396,8 @@ filter-unknown = "未知"
 # 还没答复是不是仓库的那一行角标是文件夹,筛选里也就算文件夹——筛的是屏上看到的。
 ws-kind-repo = "git 仓库"
 ws-kind-folder = "文件夹"
+ws-status-clean = "无改动"
+ws-status-unavailable = "未获取"
 # The word before a workspace row's git symbols (top right): a merge, rebase, cherry-pick,
 # revert or bisect started and not concluded (UX-51, the owner 2026-10-08).
 ws-op-merge = "合并中"

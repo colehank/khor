@@ -603,8 +603,8 @@ export function WorkspacesList({
       // **UX-48 → UX-51** (the owner 2026-10-07 / 10-08): top-left the
       // name, then the branch in the title's aside (`BranchAside`);
       // bottom-left HEAD's subject; top-right only the git symbols, an
-      // operation's word before them (`GitSegmentWord`), not drawn for a
-      // clean checkout; bottom-right how long that segment has held. A
+      // operation's word before them (`GitSegmentWord`), a neutral word for a
+      // clean or unavailable checkout; bottom-right how long that segment has held. A
       // plain folder has no state: bottom-left its most recently
       // modified file (its name, the path under the folder when nested,
       // `WorkspaceRow.newest`). It has no state, so neither right corner
@@ -625,7 +625,7 @@ export function WorkspacesList({
       // after its (UX-51).
       aside: repo && seg && branchOf(seg) ? <BranchAside seg={seg} /> : undefined,
       corners: {
-        top: repo && seg && (seg.operation || segmentSymbols(seg).length > 0) ? <GitSegmentWord seg={seg} /> : undefined,
+        top: repo ? <GitSegmentWord seg={seg} /> : undefined,
         bottom:
           repo && seg && seg.since_ms > 0 ? (
             // How long the git segment has held, bare (WORDS-1008).
@@ -636,7 +636,7 @@ export function WorkspacesList({
       // and its machine, which the face says (as the sessions' rows).
       // A plain folder stays findable by its path, which it no longer
       // draws, and by the file it names.
-      find: `${r.name} ${r.machine} ${repo ? (seg?.subject ?? "") : `${r.path} ${r.newest?.path ?? ""}`} ${repo && seg ? segmentText(seg) : ""}`,
+      find: `${r.name} ${r.machine} ${repo ? (seg?.subject ?? "") : `${r.path} ${r.newest?.path ?? ""}`} ${repo ? segmentText(seg) : ""}`,
       selected: isOpen,
       menu: actions(r),
       // **The row is the control, and pressing the open one folds its
@@ -737,7 +737,12 @@ export function branchOf(seg: GitSegment): string {
   return seg.branch ?? (seg.head ? `@${seg.head}` : "");
 }
 
-export function segmentText(seg: GitSegment): string {
+export function segmentText(seg?: GitSegment | null): string {
+  if (!seg) return gui.ws_status_unavailable;
+  const symbols = segmentSymbols(seg);
+  if (!seg.operation && symbols.length === 0) {
+    return [branchOf(seg), seg.capped ? gui.ws_status_unavailable : gui.ws_status_clean].filter(Boolean).join(" ");
+  }
   return [
     branchOf(seg),
     seg.operation ? OPERATION_WORD[seg.operation] : "",
@@ -793,12 +798,15 @@ const INK: Record<SegmentSymbol["ink"], string> = {
   "git-untracked": "text-git-untracked",
 };
 
-/** The row's top-right: the operation's word (in the conflict's ink:
-    something stands half done), then the symbols, all kept whole
-    (`data-corner-keep`); not drawn for a clean checkout. */
-function GitSegmentWord({ seg }: { seg: GitSegment }) {
-  const symbols = segmentSymbols(seg);
-  if (!seg.operation && symbols.length === 0) return null;
+/** The row's top-right: existing operation/count inks, or a neutral
+    explicit state. Missing or capped facts never claim a clean tree.
+    Corners supplies the same caption size, gray and selected ink. */
+function GitSegmentWord({ seg }: { seg?: GitSegment | null }) {
+  const symbols = seg ? segmentSymbols(seg) : [];
+  if (!seg || (!seg.operation && symbols.length === 0)) {
+    const clean = !!seg && !seg.capped;
+    return <span data-ws-git data-ws-state={clean ? "clean" : "unavailable"} data-corner-keep>{clean ? gui.ws_status_clean : gui.ws_status_unavailable}</span>;
+  }
   return (
     <span data-ws-git data-corner-keep className="flex flex-none items-baseline gap-xxs whitespace-nowrap">
       {seg.operation && (
