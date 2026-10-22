@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 
 use khor_core::State;
 
-use super::{Adaptor, Proc, Procs, Sighting, Sweep, read_text};
+use super::{Adaptor, Proc, Procs, Sighting, Sweep};
 
 /// The executable base name used by the legacy process join.
 pub(super) const PROCESS_NAME: &str = "codex";
@@ -625,35 +625,198 @@ fn read_meta(path: &Path) -> Option<Meta> {
     })
 }
 
-/// The last state-bearing event in the transcript, and when it happened.
-fn last_word(path: &Path) -> Option<(State, i64)> {
-    let text = read_text(path)?;
-    let mut word = None;
-    for line in text.lines() {
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        if v["type"].as_str() != Some("event_msg") {
-            continue;
+// Discovery is called by both the list and background recording. Reading the
+// entire rollout into a String and materializing every JSON value on each call
+// made a 666 MiB rollout exhaust application memory (2026-10-22). Only these
+// small fields are needed; serde skips tool results, images and context without
+// constructing their strings or object trees.
+#[derive(serde::Deserialize, Default)]
+struct StateRecord {
+    #[serde(default, rename = "type")]
+    kind: String,
+    #[serde(default)]
+    timestamp: Option<String>,
+    #[serde(default)]
+    payload: StatePayload,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct StatePayload {
+    #[serde(default, rename = "type")]
+    kind: String,
+    #[serde(default)]
+    error: Option<serde::de::IgnoredAny>,
+}
+
+/// A streaming view of exactly one JSONL record, including its terminator.
+/// Even a multi-megabyte line never becomes a multi-megabyte allocation.
+struct StateLine<'a, R> {
+    reader: &'a mut R,
+    bytes: u64,
+    complete: bool,
+    chunk_left: usize,
+}
+
+impl<R: std::io::BufRead> std::io::Read for StateLine<'_, R> {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        if self.complete || out.is_empty() {
+            return Ok(0);
         }
-        let payload = &v["payload"];
-        if let Some(mut w) = payload["type"].as_str().and_then(word_of) {
-            if matches!(
-                payload["type"].as_str(),
-                Some("turn_aborted" | "task_complete" | "turn_complete")
-            ) && !payload["error"].is_null()
-            {
-                w = State::Errored;
-            }
-            let at = v["timestamp"]
-                .as_str()
-                .and_then(|t| t.parse::<jiff::Timestamp>().ok())
-                .map(|t| t.as_millisecond());
-            word = Some((w, at));
+        let buf = self.reader.fill_buf()?;
+        if self.chunk_left == 0 {
+            self.chunk_left = buf
+                .iter()
+                .position(|b| *b == b'\n')
+                .map_or(buf.len(), |i| i + 1);
         }
+        let n = self.chunk_left.min(out.len());
+        out[..n].copy_from_slice(&buf[..n]);
+        self.complete = n > 0 && buf[n - 1] == b'\n';
+        self.reader.consume(n);
+        self.chunk_left -= n;
+        self.bytes += n as u64;
+        Ok(n)
     }
-    let (word, at) = word?;
-    Some((word, at.or_else(|| mtime_ms(path))?))
+}
+
+struct StateCursor {
+    metadata: std::fs::Metadata,
+    upto: u64,
+    word: Option<(State, Option<i64>)>,
+    answer: Option<(State, Option<i64>)>,
+    used: std::time::Instant,
+    #[cfg(test)]
+    scanned: u64,
+}
+
+fn same_rollout(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        (a.dev(), a.ino()) == (b.dev(), b.ino())
+    }
+    #[cfg(not(unix))]
+    {
+        a.created().ok() == b.created().ok()
+    }
+}
+
+#[derive(Default)]
+struct StateCache(std::collections::HashMap<PathBuf, StateCursor>);
+
+impl StateCache {
+    fn read(&mut self, path: &Path) -> Option<(State, i64)> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = std::fs::File::open(path).ok()?;
+        let metadata = file.metadata().ok()?;
+        let previous = self
+            .0
+            .get_mut(path)
+            .filter(|c| same_rollout(&c.metadata, &metadata));
+        if let Some(c) = previous.as_ref()
+            && c.metadata.len() == metadata.len()
+            && c.metadata.modified().ok() == metadata.modified().ok()
+        {
+            let c = self.0.get_mut(path)?;
+            c.used = std::time::Instant::now();
+            #[cfg(test)]
+            {
+                c.scanned = 0;
+            }
+            return c
+                .answer
+                .and_then(|(w, at)| Some((w, at.or_else(|| mtime_ms(path))?)));
+        }
+        // A shorter file, a replacement, or an in-place rewrite of equal
+        // length starts over. A growing file resumes at the last newline.
+        let (from, mut word) = previous
+            .filter(|c| metadata.len() > c.metadata.len())
+            .map_or((0, None), |c| (c.upto, c.word));
+        file.seek(SeekFrom::Start(from)).ok()?;
+        let mut reader = std::io::BufReader::new(file.take(metadata.len() - from));
+        let mut upto = from;
+        let mut provisional = None;
+        #[cfg(test)]
+        let mut scanned = 0;
+        loop {
+            let mut line = StateLine {
+                reader: &mut reader,
+                bytes: 0,
+                complete: false,
+                chunk_left: 0,
+            };
+            let record = serde_json::from_reader::<_, StateRecord>(&mut line).ok();
+            // Malformed records must not prevent later valid state events.
+            std::io::copy(&mut line, &mut std::io::sink()).ok()?;
+            #[cfg(test)]
+            {
+                scanned += line.bytes;
+            }
+            if line.bytes == 0 {
+                break;
+            }
+            if let Some(r) = record.filter(|r| r.kind == "event_msg")
+                && let Some(mut w) = word_of(&r.payload.kind)
+            {
+                if matches!(
+                    r.payload.kind.as_str(),
+                    "turn_aborted" | "task_complete" | "turn_complete"
+                ) && r.payload.error.is_some()
+                {
+                    w = State::Errored;
+                }
+                let at = r
+                    .timestamp
+                    .and_then(|t| t.parse::<jiff::Timestamp>().ok())
+                    .map(|t| t.as_millisecond());
+                if line.complete {
+                    word = Some((w, at));
+                } else {
+                    provisional = Some((w, at));
+                }
+            }
+            if !line.complete {
+                break;
+            }
+            upto += line.bytes;
+        }
+        let answer = provisional.or(word);
+        // One process normally sees a handful of active threads. Old paths
+        // must not turn a long-running registry into another unbounded cache.
+        if self.0.len() >= 256
+            && !self.0.contains_key(path)
+            && let Some(old) = self
+                .0
+                .iter()
+                .min_by_key(|(_, c)| c.used)
+                .map(|(p, _)| p.clone())
+        {
+            self.0.remove(&old);
+        }
+        self.0.insert(
+            path.to_owned(),
+            StateCursor {
+                metadata,
+                upto,
+                word,
+                answer,
+                used: std::time::Instant::now(),
+                #[cfg(test)]
+                scanned,
+            },
+        );
+        answer.and_then(|(w, at)| Some((w, at.or_else(|| mtime_ms(path))?)))
+    }
+}
+
+/// Serialize same-file refreshes across concurrent list/background callers.
+fn last_word(path: &Path) -> Option<(State, i64)> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<StateCache>> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .read(path)
 }
 
 fn mtime_ms(path: &Path) -> Option<i64> {
@@ -1382,6 +1545,108 @@ mod current {
             .unwrap()
             .as_millisecond();
         assert_eq!(last_word(&path), Some((State::Done, expected)));
+    }
+
+    #[test]
+    fn state_cache_only_reads_new_bytes_and_revisits_partial_records() {
+        use std::io::Write;
+        let home = Home::new("state-cursor");
+        let path = home.rollout(
+            THREAD,
+            "",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\"}}\n",
+        );
+        let mut cache = StateCache::default();
+        assert_eq!(cache.read(&path).unwrap().0, State::Busy);
+        assert!(cache.0[&path].scanned > 0);
+        assert_eq!(cache.read(&path).unwrap().0, State::Busy);
+        assert_eq!(
+            cache.0[&path].scanned, 0,
+            "unchanged files are not reparsed"
+        );
+        let before = cache.0[&path].upto;
+        let tail = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\"}";
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        write!(f, "{tail}").unwrap();
+        f.flush().unwrap();
+        assert_eq!(cache.read(&path).unwrap().0, State::Busy);
+        assert_eq!(cache.0[&path].upto, before);
+        writeln!(f, "}}").unwrap();
+        f.flush().unwrap();
+        assert_eq!(cache.read(&path).unwrap().0, State::Done);
+        assert_eq!(cache.0[&path].scanned, tail.len() as u64 + 2);
+        // A complete JSON record without its final newline is still visible,
+        // but its bytes remain uncommitted until the writer terminates it.
+        write!(
+            f,
+            "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"task_started\"}}}}"
+        )
+        .unwrap();
+        f.flush().unwrap();
+        assert_eq!(cache.read(&path).unwrap().0, State::Busy);
+        assert_eq!(cache.read(&path).unwrap().0, State::Busy);
+    }
+
+    #[test]
+    fn state_scan_skips_large_irrelevant_content_and_recovers_after_bad_lines() {
+        use std::io::Write;
+        let home = Home::new("state-large");
+        let path = home.rollout(THREAD, "", "");
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        write!(
+            f,
+            "{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"text\":\""
+        )
+        .unwrap();
+        let chunk = [b'x'; 8192];
+        for _ in 0..2048 {
+            f.write_all(&chunk).unwrap();
+        }
+        writeln!(f, "\"}}}}\nnot-json\n{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"task_complete\",\"error\":null}}}}").unwrap();
+        f.flush().unwrap();
+        let mut cache = StateCache::default();
+        assert_eq!(cache.read(&path).unwrap().0, State::Done);
+        assert_eq!(cache.0[&path].upto, f.metadata().unwrap().len());
+        assert_eq!(cache.read(&path).unwrap().0, State::Done);
+        assert_eq!(cache.0[&path].scanned, 0);
+    }
+
+    #[test]
+    fn state_cache_restarts_on_rotation_and_same_length_rewrite() {
+        let home = Home::new("state-replace");
+        let path = home.rollout(
+            THREAD,
+            "",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\"}}\n",
+        );
+        let mut cache = StateCache::default();
+        assert_eq!(cache.read(&path).unwrap().0, State::Done);
+        std::fs::rename(&path, path.with_extension("old")).unwrap();
+        std::fs::write(
+            &path,
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\"}}\n",
+        )
+        .unwrap();
+        assert_eq!(cache.read(&path).unwrap().0, State::Busy);
+        let previous = cache.0[&path].metadata.modified().unwrap();
+        std::fs::write(
+            &path,
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"turn_aborted\"}}\n",
+        )
+        .unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(previous + std::time::Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(cache.read(&path).unwrap().0, State::Idle);
     }
 
     #[test]
