@@ -325,6 +325,8 @@ pub fn answer(
         // The 额度 page: one ring per registered account, wherever its
         // key lives (`Node::quota_board`).
         "quota_board" => to_json(&rt.block_on(crate::quota_board(root))?),
+        "subscription_candidates" => to_json(&rt.block_on(crate::subscriptions::discover(root, &arg("machine")?))?),
+        "import_subscription" => to_json(&rt.block_on(crate::subscriptions::import(root, &arg("machine")?, &arg("provider")?))?),
         "register_account" => {
             // `budget` absent is "no budget"; present and not a number
             // is refused, the `restyle` rule (a malformed value quietly

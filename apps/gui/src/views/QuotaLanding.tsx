@@ -66,6 +66,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   TaskOverlay,
+  DialogBody,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -79,6 +80,7 @@ import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
+import { SubscriptionImport } from "@/views/SubscriptionImport";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
 import { QUOTA_AXES, agoOf, groupLabel, markOfCode, money, moneyIn, until, untilBare } from "@/words";
@@ -104,11 +106,6 @@ type Provider = (typeof PROVIDERS)[number];
 const BUDGETED: readonly string[] = ["claude", "openai", "openrouter"];
 /** Both vendors' usage reports are organisation-level admin calls. */
 const NEEDS_ADMIN: readonly string[] = ["claude", "openai"];
-/** Whose subscription khor can read — the vendors whose own login it
-    knows how to find (`khor_node::quota`, one description per vendor).
-    The node refuses anything else by name, so this list only decides
-    what the form *offers*. */
-const SUBSCRIBED: readonly string[] = ["claude", "codex"];
 /** A plan read through a login and nothing else: offered only as a
     subscription (the node refuses a billed one by name). */
 const SUB_ONLY: readonly string[] = ["codex"];
@@ -1956,6 +1953,8 @@ export function QuotaLanding({
         }}
       />
       <RegisterDialog
+        devices={devices}
+        registered={(board ?? []).map((a) => a.reading.account)}
         open={registering}
         onOpenChange={setRegistering}
         onRegistered={(id) => {
@@ -2280,7 +2279,9 @@ function EditDialog({
   );
 }
 
-function RegisterDialog({
+export function RegisterDialog({
+  devices,
+  registered,
   open,
   onOpenChange,
   onRegistered,
@@ -2288,6 +2289,8 @@ function RegisterDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRegistered: (id: string) => void;
+  devices: DeviceRow[];
+  registered: string[];
 }) {
   const [provider, setProvider] = useState<Provider>("newapi");
   const [kind, setKind] = useState("bill");
@@ -2316,8 +2319,8 @@ function RegisterDialog({
   const create = () => {
     if (busy) return;
     if (!name.trim()) return why.ask(gui.need_account_name, "#khor-quota-name");
-    if (kind !== "sub" && provider === "newapi" && !baseUrl.trim()) return why.ask(gui.need_address, "#khor-quota-address");
-    if (kind !== "sub" && !key.trim()) return why.ask(gui.need_key, "#khor-quota-key");
+    if (provider === "newapi" && !baseUrl.trim()) return why.ask(gui.need_address, "#khor-quota-address");
+    if (!key.trim()) return why.ask(gui.need_key, "#khor-quota-key");
     why.clear();
     setBusy(true);
     setError(null);
@@ -2325,12 +2328,9 @@ function RegisterDialog({
     registerAccount({
       name,
       provider,
-      kind,
-      base_url: kind === "sub" || provider !== "newapi" ? undefined : baseUrl,
-      // **Empty rather than omitted, and the node refuses a key on a
-      // subscription rather than dropping one.** Between them there is
-      // no path where a secret is accepted and quietly thrown away.
-      key: kind === "sub" ? "" : key,
+      kind: "bill",
+      base_url: provider !== "newapi" ? undefined : baseUrl,
+      key,
       budget: parsedBudget !== undefined && Number.isFinite(parsedBudget) ? parsedBudget : undefined,
     })
       .then((id) => {
@@ -2343,38 +2343,18 @@ function RegisterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <TaskOverlay purpose="edit" data-quota-dialog>
+      <TaskOverlay purpose={kind === "sub" ? "selection" : "edit"} scrollable data-quota-dialog>
         <DialogHeader>
-          <DialogTitle>{gui.accounts_register}</DialogTitle>
+          <DialogTitle>{kind === "sub" ? gui.subscriptions_import : gui.accounts_register}</DialogTitle>
         </DialogHeader>
         <FormGrid data-quota-form>
-          {/* **类型 first, because it decides what the rest of this form
-              even is** — a subscription has no key, no address and no
-              budget, and a form that asked for them and then refused
-              them would be asking somebody to type a secret it was
-              always going to send back.
-
-              The same two words the list's 类型 axis is made of, so a
-              person picks here what they will read there. Picking 订阅
-              narrows 哪家 to the vendors whose login khor knows how
-              to find, and carries the choice over rather than leaving a
-              provider selected that the kind cannot use. */}
-          {/* **Two fixed choices → a segmented control; a vendor list
-              that is eight long → the system's menu** (components/
-              SegmentedControl, PopupButton; 2026-09-28 — both were rows
-              of grey pills). */}
+          {/* Subscriptions are discovered on their home computers; billed accounts keep the key form. */}
           <FormLabel>{gui.quota_kind}</FormLabel>
           <div className="flex min-w-0">
             <SegmentedControl
               label={gui.quota_kind}
               value={kind}
-              onChange={(k) => {
-                setKind(k);
-                if (k === "sub" && !SUBSCRIBED.includes(provider)) {
-                  setProvider(SUBSCRIBED[0] as Provider);
-                }
-                if (k !== "sub" && SUB_ONLY.includes(provider)) setProvider("newapi");
-              }}
+              onChange={(k) => { setKind(k); why.clear(); }}
               options={["bill", "sub"].map((k) => ({
                 key: k,
                 label: kindWord(k),
@@ -2382,6 +2362,15 @@ function RegisterDialog({
               }))}
             />
           </div>
+        </FormGrid>
+        {kind === "sub" ? <SubscriptionImport
+          devices={devices}
+          registered={registered}
+          onCancel={() => onOpenChange(false)}
+          onImported={(id) => { onOpenChange(false); onRegistered(id); }}
+        /> : <>
+        <DialogBody>
+        <FormGrid>
           <FormLabel>{gui.accounts_provider}</FormLabel>
           <div className="flex min-w-0">
             <PopupButton
@@ -2390,7 +2379,7 @@ function RegisterDialog({
               value={provider}
               onPick={(p) => setProvider(p as Provider)}
               mark={{ "data-quota-provider-select": "" }}
-              choices={PROVIDERS.filter((p) => (kind === "sub" ? SUBSCRIBED.includes(p) : !SUB_ONLY.includes(p))).map((p) => ({
+              choices={PROVIDERS.filter((p) => !SUB_ONLY.includes(p)).map((p) => ({
                 value: p,
                 label: providerWord(p),
                 mark: { "data-quota-provider": p },
@@ -2399,7 +2388,7 @@ function RegisterDialog({
           </div>
           <FormLabel htmlFor="khor-quota-name">{gui.accounts_name}</FormLabel>
           <Input id="khor-quota-name" data-quota-name value={name} onChange={(e) => setName(e.target.value)} />
-          {kind !== "sub" && provider === "newapi" && (
+          {provider === "newapi" && (
             <>
               <FormLabel htmlFor="khor-quota-address">{gui.accounts_address}</FormLabel>
               <Input
@@ -2411,17 +2400,6 @@ function RegisterDialog({
               />
             </>
           )}
-          {kind === "sub" ? (
-            /* **The note is the key box's replacement, not decoration.**
-               Somebody who came here to register something and finds no
-               box to put a secret in is owed the reason — it is the
-               same debt the two lines under the key box pay, in the
-               other direction: there is nothing to paste because what
-               reads this is the login already on this machine. */
-            <p data-quota-sub-note className="col-start-2 text-caption text-muted-foreground">
-              {gui.accounts_sub_note(vendorOf(provider).name)}
-            </p>
-          ) : (
           <>
             <FormLabel htmlFor="khor-quota-key">{gui.accounts_key}</FormLabel>
             <Input
@@ -2439,8 +2417,7 @@ function RegisterDialog({
               {NEEDS_ADMIN.includes(provider) ? `${gui.accounts_key_stays} ${gui.accounts_needs_admin}` : gui.accounts_key_stays}
             </span>
           </>
-          )}
-          {kind !== "sub" && BUDGETED.includes(provider) && (
+          {BUDGETED.includes(provider) && (
             <>
               <FormLabel htmlFor="khor-quota-budget">{gui.accounts_budget}</FormLabel>
               <Input
@@ -2460,6 +2437,7 @@ function RegisterDialog({
             </p>
           )}
         </FormGrid>
+        </DialogBody>
         <DialogFooter>
           <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
             {gui.delete_keep}
@@ -2468,6 +2446,7 @@ function RegisterDialog({
             {gui.accounts_register}
           </Button>
         </DialogFooter>
+        </>}
       </TaskOverlay>
     </Dialog>
   );

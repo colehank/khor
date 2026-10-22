@@ -107,6 +107,7 @@ fn main() {
     // The 额度 page asks for its rings on its own beat; no row embeds
     // them. Walks into `AccountReading` and `Strain` from here.
     khor_gui_core::AccountRing::export_all_to(&dir).expect("export AccountRing");
+    khor_gui_core::subscriptions::SubscriptionCandidate::export_all_to(&dir).expect("export SubscriptionCandidate");
     // Same: the registry snapshot and one agent's recorded
     // conversations are each asked for on their own beat, so no row
     // embeds either. `AgentSaid` walks into `SeenSession` from here.

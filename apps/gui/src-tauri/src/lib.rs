@@ -370,6 +370,16 @@ async fn quota_board() -> Result<Vec<khor_gui_core::AccountRing>, String> {
     khor_gui_core::quota_board(&Node::root_from_env()).await
 }
 
+#[tauri::command]
+async fn subscription_candidates(machine: String) -> Result<Vec<khor_gui_core::subscriptions::SubscriptionCandidate>, String> {
+    khor_gui_core::subscriptions::discover(&Node::root_from_env(), &machine).await
+}
+
+#[tauri::command]
+async fn import_subscription(machine: String, provider: String) -> Result<String, String> {
+    khor_gui_core::subscriptions::import(&Node::root_from_env(), &machine, &provider).await
+}
+
 /// Its arguments are named as the face and the bridge name them
 /// (`snake_case`): tauri reads a command's arguments as camelCase unless
 /// told otherwise, and this one's multi-word argument then never arrived.
@@ -4923,6 +4933,8 @@ pub fn run() {
             devices,
             load,
             quota_board,
+            subscription_candidates,
+            import_subscription,
             register_account,
             pin_account,
             rename_account,

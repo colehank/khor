@@ -698,6 +698,10 @@ export const fetchLoad = (machine: string, top: number, by: string, desc: boolea
     lives — this machine's read now, another's as last carried here
     with its age (`Node::quota_board`). */
 export const fetchQuotaBoard = () => call<AccountRing[]>("quota_board");
+export const fetchSubscriptionCandidates = (machine: string) =>
+  call<import("./gen/bindings/SubscriptionCandidate").SubscriptionCandidate[]>("subscription_candidates", { machine });
+export const importSubscription = (machine: string, provider: string) =>
+  call<string>("import_subscription", { machine, provider });
 /** 登记 an account **on this machine**: a key is written here and never
     leaves; the description replicates. `provider` is the word the form
     offers (newapi / claude / openai); the node refuses an unknown one

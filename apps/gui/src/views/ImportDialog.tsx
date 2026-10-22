@@ -39,18 +39,14 @@ import {
   type CandidateRow,
   type DeviceRow,
 } from "@/api";
-import { MachineAvatar } from "@/components/Avatar";
-import { machineChoice } from "@/components/MachineField";
-import { ChoiceField } from "@/components/ui/choice-field";
+import { ImportCalm as Calm, ImportMachinePicker, ImportResult, ImportSearch, importMachineAway, importMachineInScope, toggleImportMachine } from "@/components/ImportPicker";
 import { sessionMark } from "@/components/BrandIcons";
-import { IconClose, IconSearch, IconDevices } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, TaskOverlay, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { imeKey } from "@/lib/ime";
 import { useHereHosts } from "@/lib/here";
-import { cn } from "@/lib/utils";
-import { ago, basename, connectionKey, connectionKeyWord, connectionWord } from "@/words";
+import { ago, basename } from "@/words";
 
 /** What one agent's recorded answer is, as the section's mark. */
 function markOf(answer: AgentSaid | undefined): string {
@@ -58,18 +54,6 @@ function markOf(answer: AgentSaid | undefined): string {
   if (answer.said === "unasked") return "unasked";
   if (answer.said === "cannot") return "cannot";
   return answer.rows.length === 0 ? "none" : "sessions";
-}
-
-/** **Why a machine is not in 「全部」**, or `null` for one that is: it
-    cannot be reached or is paused — `connectionKey`'s `down` / `paused`
-    and their words (不通 / 已暂停), the one derivation every surface
-    reads (WORDS-1008). Its choice stays, with the word; pressed, its
-    last-known sessions are listed. A machine the table has not named is
-    taken as reachable — what it reported is all there is. */
-function away(d: DeviceRow | undefined): string | null {
-  if (!d) return null;
-  const key = connectionKey(d);
-  return key === "down" || key === "paused" ? connectionKeyWord(key) : null;
 }
 
 /** The fields a typed word is looked for in. */
@@ -207,7 +191,7 @@ export function ImportDialog({
     const seen = new Map<string, string>();
     for (const r of rows ?? []) seen.set(r.device, r.machine);
     return [...seen]
-      .map(([id, name]) => ({ id, name, device: byId.get(id), away: away(byId.get(id)) }))
+      .map(([id, name]) => ({ id, name, device: byId.get(id), away: importMachineAway(byId.get(id)) }))
       .sort(
         (a, b) =>
           Number(a.away !== null) - Number(b.away !== null) ||
@@ -215,8 +199,7 @@ export function ImportDialog({
           a.name.localeCompare(b.name),
       );
   }, [rows, byId]);
-  const singleMachine = picked.size === 1 ? machines.find(m => picked.has(m.id)) : undefined;
-  const inScope = (r: CandidateRow) => (picked.size === 0 ? away(byId.get(r.device)) === null : picked.has(r.device));
+  const inScope = (r: CandidateRow) => importMachineInScope(r.device, picked, byId.get(r.device));
   // Newest first, which is the node's order.
   const shown = (rows ?? []).filter((r) => inScope(r) && matches(r, words));
 
@@ -225,14 +208,7 @@ export function ImportDialog({
     list.current?.querySelector<HTMLElement>("[data-import-row][data-active]")?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
-  const press = (id: string | null) => {
-    setPicked((was) => {
-      if (id === null) return new Set();
-      const next = new Set(was);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
-  };
+  const press = (id: string | null) => setPicked((was) => toggleImportMachine(was, id));
 
   /** **A tap imports it and opens it** (IMPORT-BRIEF ruling 4,「直接打开
       呀」): the shell opens what comes back (`onImported`). */
@@ -264,88 +240,24 @@ export function ImportDialog({
             defaults to `min-width: auto`, and one long directory would
             widen the whole dialog past its edge. */}
         <DialogBody data-import-body>
-          {/* The search field (components/SearchField): the text box with
-              a magnifier, and a clear mark while something is typed. */}
-          <div data-import-find className="relative flex-none">
-            <IconSearch className="pointer-events-none absolute top-1/2 left-in size-affordance -translate-y-1/2 text-tertiary" />
-            <input
-              ref={field}
-              data-import-field
-              data-slot="input"
-              type="search"
-              enterKeyHint="go"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              placeholder={gui.import_search}
-              aria-label={gui.import_search}
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => {
-                if (imeKey(e)) return;
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setActive((i) => Math.min(shown.length - 1, i + 1));
-                } else if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setActive((i) => Math.max(0, i - 1));
-                } else if (e.key === "Enter" && shown[active]) {
-                  e.preventDefault();
-                  go(shown[active]);
-                }
-              }}
-              className={cn(
-                // `appearance-none`: WebKit draws a search box its own way
-                // and drops the padding the magnifier stands in.
-                "h-ctl-md min-h-touch w-full min-w-0 appearance-none rounded-sm border-0 bg-fill ps-7 pe-8 text-body text-foreground placeholder:text-tertiary",
-                "focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring",
-                "[&::-webkit-search-cancel-button]:hidden",
-              )}
-            />
-            {q !== "" && (
-              <button
-                type="button"
-                data-import-clear
-                aria-label={gui.search_clear}
-                // The caret stays in the field.
-                onPointerDown={(e) => e.preventDefault()}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setQ("");
-                  field.current?.focus();
-                }}
-                className="absolute top-1/2 right-1 grid size-touch -translate-y-1/2 place-items-center"
-              >
-                <span className="grid size-5 place-items-center rounded-full bg-fill-strong text-muted-foreground">
-                  <IconClose className="size-3" />
-                </span>
-              </button>
-            )}
-          </div>
+          <ImportSearch inputRef={field} label={gui.import_search} value={q} onChange={setQ}
+            onKeyDown={(e) => {
+              if (imeKey(e)) return;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActive((i) => Math.min(shown.length - 1, i + 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActive((i) => Math.max(0, i - 1));
+              } else if (e.key === "Enter" && shown[active]) {
+                e.preventDefault();
+                go(shown[active]);
+              }
+            }} />
 
           {machines.length > 0 && (
             <div data-import-machines className="flex-none">
-              <ChoiceField
-                label={gui.devices_tab}
-                value={picked.size === 0 ? gui.sessions_all : singleMachine
-                  ? (singleMachine.device?.shown ?? singleMachine.name)
-                  : gui.import_machines_count(picked.size)}
-                leadingIcon={singleMachine
-                  ? <MachineAvatar face={singleMachine.device?.face ?? null} className="size-kind-mark" />
-                  : <IconDevices />}
-                checked={picked.size === 0 ? new Set(['all']) : picked}
-                keepOpenOnPick
-                options={[
-                  { id: 'all', label: gui.sessions_all, icon: <IconDevices /> },
-                  ...machines.map(m => machineChoice(
-                    m.device ?? { name: m.name, shown: m.name, face: null },
-                    m.id,
-                    m.device ? connectionWord(m.device) || undefined : m.away ?? undefined,
-                  )),
-                ]}
-                onPick={id => press(id === 'all' ? null : id)}
-                disabled={going !== null}
-              />
+              <ImportMachinePicker machines={machines} picked={picked} onPick={press} disabled={going !== null} />
             </div>
           )}
 
@@ -458,68 +370,20 @@ function Row({
   const Glyph = sessionMark(row.form, row.category ?? row.agent);
   const dir = row.place ? basename(row.place) : "";
   const command = row.form === "shell" ? row.command : null;
-  return (
-    <button
-      type="button"
-      data-import-row={row.id}
-      data-import-form={row.form}
-      data-active={active || undefined}
-      // While it is being imported it is the chosen row, and wears its
-      // one ink (`app.css`, a picked row in a floating list).
-      data-on={going || undefined}
-      aria-busy={going || undefined}
-      onClick={onPick}
-      className={cn(
-        "flex min-h-row-2 w-full min-w-0 flex-none items-center gap-row rounded-md px-in py-xxs text-left",
-        "hover:bg-fill data-[active]:bg-fill data-[on=true]:bg-fill-strong",
-      )}
-    >
-      <span data-import-glyph className="grid size-8 flex-none place-items-center text-muted-foreground">
-        <Glyph className="size-5" />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex min-w-0 items-baseline gap-row">
-          <span data-import-title className="min-w-0 flex-[0_1_auto] truncate text-body">
-            <Hit text={row.title || dir || row.id} words={words} />
-          </span>
-          {command && (
-            <span
-              data-import-command
-              className="min-w-[35%] flex-[1_1_0%] truncate text-right font-mono text-caption text-muted-foreground"
-            >
-              <Hit text={command} words={words} />
-            </span>
-          )}
-        </span>
-        {/* The whole path is the line's tooltip: the last part says
-            where, and two `app`s are told apart under the pointer. */}
-        <span data-import-where title={row.place ?? undefined} className="truncate text-callout text-muted-foreground">
-          <Hit text={row.machine} words={words} />
-          {dir && (
-            <>
-              {" · "}
-              <Hit text={dir} words={words} />
-            </>
-          )}
-          {row.at_ms > 0 && (
-            <>
-              {" · "}
-              <span className="tabular-nums">{ago(row.at_ms)}</span>
-            </>
-          )}
-        </span>
-      </span>
-    </button>
-  );
-}
-
-/** Nothing to list, one calm sentence in the list's place
-    (components/EmptyState). */
-function Calm({ sentence, hint, mark }: { sentence: string; hint?: string; mark: Record<string, string> }) {
-  return (
-    <div {...mark} className="flex min-h-40 flex-1 flex-col items-center justify-center gap-xxs px-base text-center">
-      <span className="text-body text-muted-foreground">{sentence}</span>
-      {hint && <span className="text-callout text-muted-foreground">{hint}</span>}
-    </div>
-  );
+  return <ImportResult
+    data-import-row={row.id}
+    data-import-form={row.form}
+    glyph={<Glyph className="size-5" />}
+    title={<Hit text={row.title || dir || row.id} words={words} />}
+    command={command ? <Hit text={command} words={words} /> : undefined}
+    detailTitle={row.place ?? undefined}
+    detail={<>
+      <Hit text={row.machine} words={words} />
+      {dir && <> · <Hit text={dir} words={words} /></>}
+      {row.at_ms > 0 && <> · <span className="tabular-nums">{ago(row.at_ms)}</span></>}
+    </>}
+    active={active}
+    busy={going}
+    onClick={onPick}
+  />;
 }
