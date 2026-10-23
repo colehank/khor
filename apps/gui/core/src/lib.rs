@@ -2313,12 +2313,108 @@ pub struct MachineLog {
     pub broken: u64,
 }
 
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct KhorAgentAccount {
+    pub id: String,
+    pub name: String,
+    pub home: String,
+    pub home_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct KhorAgentView {
+    pub config: Option<khor_node::AgentConfig>,
+    pub accounts: Vec<KhorAgentAccount>,
+    pub run: Option<String>,
+}
+
+pub async fn khor_agent(
+    root: &Path,
+    machine: &str,
+    action: &str,
+    payload: &serde_json::Value,
+) -> Result<KhorAgentView, String> {
+    let n = open(root)?;
+    let string = |key: &str| {
+        payload[key]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| khor_catalog::msg::agent_arguments().to_owned())
+    };
+    let mut config = n.khor_agent_config()?;
+    let mut run = None;
+    if action == "read" {
+        if n.hosts() {
+            n.reconcile_agent()?;
+        }
+    } else {
+        let action = match action {
+            "configure" => khor_node::khor_agent::Action::Configure {
+                account: string("account")?,
+                model: string("model")?,
+            },
+            "prompt" => khor_node::khor_agent::Action::Prompt {
+                token: string("token")?,
+                text: string("text")?,
+            },
+            "answer" => khor_node::khor_agent::Action::Answer {
+                run: string("run")?,
+                ask: string("ask")?,
+                allow: payload["allow"]
+                    .as_bool()
+                    .ok_or_else(|| khor_catalog::msg::agent_arguments().to_owned())?,
+            },
+            "stop" => khor_node::khor_agent::Action::Stop {
+                run: string("run")?,
+            },
+            _ => return Err(khor_catalog::msg::unknown_action(action)),
+        };
+        // Every action names its execution home; empty must never mean here.
+        if machine.is_empty() {
+            return Err(khor_catalog::msg::agent_not_configured().into());
+        }
+        let report = n.khor_agent_on(machine, action).await?;
+        config = report.config;
+        run = report.run;
+    }
+    let devices = n.devices()?;
+    let accounts = n
+        .accounts()?
+        .into_iter()
+        .filter(|a| a.kind == khor_node::AccountKind::Bill)
+        .filter(|a| {
+            devices
+                .iter()
+                .any(|d| d.id == a.home && d.hosts && d.sponsor.is_none())
+        })
+        .map(|a| KhorAgentAccount {
+            id: a.id,
+            name: a.name,
+            home_name: devices
+                .iter()
+                .find(|d| d.id == a.home)
+                .map(|d| d.shown().to_owned())
+                .unwrap_or_default(),
+            home: a.home,
+        })
+        .collect();
+    Ok(KhorAgentView {
+        config,
+        accounts,
+        run,
+    })
+}
+
 /// The broadcast's readout — what `khor log` prints, shaped for the
 /// chat pane. Takes the row's id (`wide/all`). ⚠️ 墓碑 (STORE-BRIEF phase
 /// 5): a machine's `chat/<机器>` conversation read here too; that session
 /// kind is gone.
 pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
-    wide_log(root, &open(root)?, id)
+    let n = open(root)?;
+    if n.hosts() {
+        n.reconcile_agent()?;
+    }
+    wide_log(root, &n, id)
 }
 
 /// The broadcast's readout (`khor_node::wide`), in the same shape: a

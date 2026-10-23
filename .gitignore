@@ -26,3 +26,6 @@ opencode.jsonc
 # is how `.khor/identity.key` reached a commit on 2026-09-13. A private
 # key is not a thing to rely on noticing.
 .khor/
+
+# Compiled Pi runtime; release builds embed it into the native executable.
+/apps/agent/dist/

@@ -419,6 +419,15 @@ pub enum Op {
     RecognitionOn { machine: String, action: crate::recognition::Action },
     OpenShellOn { machine: String, start: crate::shell_start::ShellStart },
     SubscriptionsOn { machine: String, action: crate::subscriptions::Action },
+    KhorAgent {
+        machine: String,
+        action: crate::khor_agent::Action,
+    },
+    Delegation {
+        machine: String,
+        #[serde(with = "crate::delegation::wire_json")]
+        action: crate::delegation::Action,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -522,6 +531,8 @@ impl Op {
             // Dials every target and may digest a far file.
             Op::Post { .. } => ("Post", DEADLINE_SLOW),
             Op::Note { .. } => ("Note", DEADLINE_SLOW),
+            Op::KhorAgent { .. } => ("KhorAgent", DEADLINE_FAR),
+            Op::Delegation { .. } => ("Delegation", DEADLINE_SLOW),
             Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
             Op::PaneHistoryOn { .. } => ("PaneHistoryOn", DEADLINE_FAR),
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
@@ -752,6 +763,13 @@ pub enum Reply {
     Posted { id: String },
     Recognition { report: crate::recognition::Report },
     Subscriptions { answer: crate::subscriptions::Answer },
+    KhorAgent {
+        report: crate::khor_agent::Report,
+    },
+    Delegation {
+        #[serde(with = "crate::delegation::wire_json")]
+        answer: crate::delegation::Answer,
+    },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

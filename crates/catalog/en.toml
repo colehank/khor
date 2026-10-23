@@ -357,6 +357,11 @@ usage: khor <verb>
                         process); once asked, the answer syncs across
                         the network — other machines don't have to ask
                         again
+  agents connect <name> <url> [--token-stdin]
+                        connects an A2A agent on this machine;
+                        the agent service needs no khor
+  agents disconnect a2a:<name>
+                        removes the local connection, keeps task receipts
   state <word|--hook>   (for process hooks) reports status; --hook
                         reads Claude events from stdin
   seen <session>        marks it read
@@ -993,6 +998,21 @@ console-token-conflict = "This submission identifier belongs to another command"
 console-interrupted = "The executor exited; this command was not retried"
 console-private = "Arguments and results are available only on the executing device"
 console-unknown = "Unknown command: {0}"
+mcp-read = "Read a UTF-8 text file on a named machine, up to 48 KiB, reporting truncation"
+mcp-search = "Search file names and text under a directory on a named machine; read only"
+agent-text-file = "This tool can only read UTF-8 text files"
+agent-busy = "khor is working; finish or stop the current task first"
+agent-not-running = "This task has ended"
+agent-not-configured = "Choose an account and model for khor first"
+agent-key-missing = "The API key is unavailable on this executor, or the account does not support API calls"
+agent-model-required = "Enter a model name"
+agent-runtime-missing = "The khor agent runtime is not installed"
+agent-runtime-failed = "Could not start khor agent: {0}"
+agent-failed = "khor agent exited unexpectedly"
+agent-arguments = "khor agent received invalid arguments"
+agent-approval-expired = "This approval request has ended"
+agent-stopped = "Task stopped; operations already submitted may have taken effect"
+agent-declined = "The user declined this operation; do not submit it again unchanged"
 console-output-cut = "Output too large; showing an excerpt"
 watch-path-relative = "Watched directory must be an absolute path: {0}"
 watch-path-dotdot = "Watched directory can't contain ..: {0}"
@@ -1607,6 +1627,15 @@ mcp-open-cwd = "Which directory to run in; omitted means that machine's home dir
 mcp-close = "Closes a session. **This ends the process on that machine.**"
 mcp-close-session = "The id of the session to close"
 mcp-tell = "Leaves a line in a machine's window. **Whoever is there will see it.**"
+mcp-agents = "List local ACP agents and configured A2A agents, or agents on a paired khor home named by machine. A2A cards include skills and selected HTTP interface. Availability means configured/program present, not authenticated or reachable now."
+mcp-agent-disconnect = "Disconnect an a2a:<name> registration on the selected khor home (default here). Existing task receipts remain queryable and cancelable."
+mcp-agent-connect = "Connect a native A2A v1 agent by Agent Card URL or service base URL. The remote machine needs no khor. The name is returned as a2a:<name>. Omit machine to use this khor execution home. No secrets in arguments; bearer setup uses khor agents connect <name> <url> --token-stdin locally."
+mcp-delegate = "Delegate to a registered ACP agent or a native a2a:<name> agent. Omit machine for this khor home; native A2A targets need no khor on the remote machine. Starting is not completion: task_wait until terminal or input required. Use context for a follow-up; use task plus the user reply for an A2A task awaiting input. Never infer user approval. Retry only identical arguments and request ID; uncertain A2A sends are reconciled without replay."
+mcp-task-status = "Read the durable status, partial output, revision and pending permission of a delegated task."
+mcp-task-wait = "Wait for task changes, a terminal state or required input. revision is the latest decimal string. For ACP khor.approval ask the user before task_answer. For A2A TASK_STATE_INPUT_REQUIRED, ask the user and send their reply via delegate with task/context and a new request ID. AuthRequired may need credential setup."
+mcp-task-cancel = "Request cancellation of a delegated task. Confirm task status; cancellation intent alone does not prove the agent stopped."
+mcp-task-answer = "Answer the exact pending ACP permission after user approval. Use its ask ID and a listed option ID; omit option to dismiss. Never infer approval from the delegation itself."
+mcp-task-list = "List this caller device's task receipts for an agent, optionally by context or after cursor. Follow returned next for another page. Native A2A lists are cached receipts (cached=true); use task_status or task_wait for a fresh reading."
 mcp-listing-cut = "…(there's more; this listing was cut)"
 mcp-open-needs-command = "open needs a command"
 mcp-closed = "Session closed"
@@ -1800,6 +1829,15 @@ recognition-user-config = "Configured outside khor"
 recognition-removed-note = "Restore only khor changes, keeping later manual edits"
 recognition-open = "Configure recognition"
 thread-unbound = "Thread unavailable"
+agent-setup = "Configure khor"
+agent-setup-hint = "khor runs and saves context on the account device; another device uses its own context"
+agent-add-key = "Register an API account using ＋ at the top left, then choose it here"
+agent-account = "Account"
+agent-model = "Model name"
+agent-deny = "Decline"
+agent-approve-hint = "Approve to execute this operation"
+agent-choose-first = "Configure the khor account and model below the input"
+agent-placeholder = "Ask khor, or type / to run a command"
 console-input = "Additional input"
 console-input-hint = "Input goes only to the executor"
 console-owner = "Run on {0}"

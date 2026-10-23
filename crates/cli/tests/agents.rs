@@ -593,5 +593,6 @@ fn kind_of(n: &khor_node::gui_host::GuiNote) -> &'static str {
         // tests is unexpected traffic, so naming it is enough.
         GuiNote::Refused { .. } => "Refused",
         GuiNote::Settings(_) => "Settings",
+        GuiNote::Delegated { .. } => "Delegated",
     }
 }

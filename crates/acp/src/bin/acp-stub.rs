@@ -61,6 +61,8 @@ use agent_client_protocol::{Agent, Stdio};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use agent_client_protocol::schema::v1::CancelNotification;
+
 fn chunk(text: &str) -> SessionUpdate {
     SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
         text.to_owned(),
@@ -146,8 +148,17 @@ async fn main() -> agent_client_protocol::Result<()> {
     // What the settable stub currently has set: (model, fast).
     let set = Arc::new(Mutex::new(("small".to_owned(), false)));
     let set_option = set.clone();
+    let canceled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let prompt_canceled = canceled.clone();
     Agent
         .builder()
+        .on_receive_notification(
+            async move |_request: CancelNotification, _connection| {
+                canceled.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            },
+            agent_client_protocol::on_receive_notification!(),
+        )
         .name("acp-stub")
         .on_receive_request(
             async move |request: InitializeRequest, responder, _connection| {
@@ -188,7 +199,8 @@ async fn main() -> agent_client_protocol::Result<()> {
                 };
                 if let Ok(mode) = std::env::var("KHOR_STUB_PAGES") {
                     if request.cwd.as_deref() != Some(std::path::Path::new("/filtered")) {
-                        return responder.respond_with_error(agent_client_protocol::Error::invalid_params());
+                        return responder
+                            .respond_with_error(agent_client_protocol::Error::invalid_params())
                     }
                     let page = request.cursor.as_deref();
                     if page.is_some() && mode == "fail" {
@@ -198,7 +210,10 @@ async fn main() -> agent_client_protocol::Result<()> {
                         None => (vec!["sess-a", "sess-b"], Some("page-two")),
                         Some("page-two") => (vec!["sess-b", "sess-c"], Some(if mode == "loop" { "page-two" } else { "page-three" })),
                         Some("page-three") => (vec!["sess-d"], None),
-                        _ => return responder.respond_with_error(agent_client_protocol::Error::invalid_params()),
+                        _ => {
+                            return responder
+                                .respond_with_error(agent_client_protocol::Error::invalid_params())
+                        }
                     };
                     let mut response = ListSessionsResponse::new(ids.into_iter().map(|id| SessionInfo::new(id, "/filtered")).collect());
                     response.next_cursor = next.map(Into::into);
@@ -228,7 +243,10 @@ async fn main() -> agent_client_protocol::Result<()> {
                     return responder
                         .respond_with_error(agent_client_protocol::Error::auth_required());
                 }
-                let mut opened = NewSessionResponse::new("stub-session-1");
+                let session = if std::env::args().any(|arg| arg == "--unique-session") {
+                    format!("stub-session-{}", std::process::id())
+                } else { "stub-session-1".to_owned() };
+                let mut opened = NewSessionResponse::new(session);
                 if settable() {
                     let (model, fast) = set.lock().unwrap().clone();
                     opened.modes = Some(modes_of("careful"));
@@ -305,6 +323,8 @@ async fn main() -> agent_client_protocol::Result<()> {
         )
         .on_receive_request(
             async move |request: PromptRequest, responder, connection| {
+                prompt_canceled.store(false, std::sync::atomic::Ordering::SeqCst);
+                let canceled = prompt_canceled.clone();
                 let session = request.session_id.clone();
                 for text in ["thinking it over", "about to act"] {
                     connection.send_notification(SessionNotification::new(
@@ -332,7 +352,12 @@ async fn main() -> agent_client_protocol::Result<()> {
                         session.clone(),
                         chunk(&word),
                     ))?;
-                    responder.respond(PromptResponse::new(StopReason::EndTurn))
+                    let stop = if canceled.load(std::sync::atomic::Ordering::SeqCst) {
+                        StopReason::Cancelled
+                    } else {
+                        StopReason::EndTurn
+                    };
+                    responder.respond(PromptResponse::new(stop))
                 })
             },
             agent_client_protocol::on_receive_request!(),

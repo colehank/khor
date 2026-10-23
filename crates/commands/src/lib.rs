@@ -5217,7 +5217,8 @@ fn agents(rest: &[String]) -> Result<(), String> {
     match rest.split_first() {
         None => {
             let listed = n.agents()?;
-            if listed.is_empty() {
+            let native = n.a2a_agents()?;
+            if listed.is_empty() && native.is_empty() {
                 // An empty registry and a broken one look identical;
                 // this line is the difference, and it is also the one
                 // thing a person cannot guess.
@@ -5226,6 +5227,31 @@ fn agents(rest: &[String]) -> Result<(), String> {
             for (name, spec) in listed {
                 println!("{name}\t{}", spec.typed());
             }
+            for endpoint in native {
+                println!("{}\t{}\t{}", endpoint.name, endpoint.interface.protocol_binding, endpoint.card_url);
+            }
+            Ok(())
+        }
+        Some((word, tail)) if word == "connect" => {
+            let (name, address, token_stdin) = match tail {
+                [name, address] => (name, address, false),
+                [name, address, flag] if flag == "--token-stdin" => (name, address, true),
+                _ => return Err(usage_text().into()),
+            };
+            let token = if token_stdin {
+                use std::io::Read;
+                let mut token = String::new();
+                std::io::stdin().take(8194).read_to_string(&mut token).map_err(|e| e.to_string())?;
+                Some(token.trim_end_matches(['\r', '\n']).to_owned())
+            } else { None };
+            let endpoint = n.connect_a2a(name, address, token.as_deref())?;
+            println!("{}", cli::agents_added(&endpoint.name));
+            Ok(())
+        }
+        Some((word, tail)) if word == "disconnect" => {
+            let [name] = tail else { return Err(usage_text().into()); };
+            n.disconnect_a2a(name)?;
+            println!("{}", cli::agents_forgotten(name));
             Ok(())
         }
         // The shipped snapshot of the ACP registry. A separate word

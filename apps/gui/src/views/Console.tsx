@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { CommandRecord } from "@/gen/bindings/CommandRecord";
 import type { SessionRow } from "@/api";
 import { StatusWord } from "@/components/StatusWord";
+import { KhorAgentResult } from "@/views/KhorAgent";
 
 /** Completion is owned by the public command parser, including its
  * replacement range. The capsule remains the only keyboard input. */
@@ -86,6 +87,7 @@ function StructuredData({ raw }: { raw: string }) {
 }
 
 export function ConsoleResult({ command: c, onSession, linked }: { command: CommandRecord; onSession?: (id: string) => void; linked?: SessionRow }) {
+  if (c.agent) return <KhorAgentResult record={c} />;
   const status = ({ running: gui.console_running, done: gui.console_done, failed: gui.console_failed, interrupted: gui.console_interrupted, cancelled: gui.console_cancelled } as Record<string, string>)[c.status] ?? c.status;
   return (
     <section data-console-result={c.id} data-console-status={c.status} aria-busy={c.status === "running"} className="min-w-0 space-y-in rounded-lg border px-row py-in text-body">

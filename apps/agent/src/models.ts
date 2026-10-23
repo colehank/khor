@@ -69,7 +69,7 @@ export function providerIdFor(word: string): string {
   throw new Error(`\`${word}\` is not a provider this agent knows. Known: ${knownProviders().join(", ")}`);
 }
 
-function seatCredentials(providerId: string, seat: AccountSeat): CredentialStore {
+export function seatCredentials(providerId: string, seat: AccountSeat): CredentialStore {
   const held = new Map<string, Credential>();
   if (seat.key) held.set(providerId, { type: "api_key", key: seat.key, env: seat.env });
   return {

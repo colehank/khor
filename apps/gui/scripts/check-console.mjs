@@ -37,6 +37,19 @@ try {
     let result = null;
     if (cmd === "machine_log") result = { messages: structuredClone(messages), broken: 0 };
     else if (cmd === "devices") result = [];
+    else if (cmd === "khor_agent") {
+      const config = { home: "local", account: "account-fixture", model: "fixture-model" };
+      result = { config, accounts: [{ id: config.account, name: "fixture account", home: "local", home_name: "local" }], run: null };
+      if (args.action === "prompt") {
+        const id = "note";
+        if (!messages.some((m) => m.id === id)) messages.push({ ...message(id, ++receiptNodeTail, null), command: { id, line: args.payload.text, owner: "local", owner_name: "local", status: "running", started_at_ms: Date.now(), ended_at_ms: null, stdout: "", stderr: "", data_json: null, session: null, error: null, agent: { model: config.model, approval: null } } });
+        result.run = id;
+      }
+      if (args.action === "answer") {
+        const m = messages.find((m) => m.id === args.payload.run);
+        m.command.agent.approval = null; m.command.status = "done"; m.command.ended_at_ms = Date.now();
+      }
+    }
     else if (cmd === "console_catalog") result = catalog;
     else if (cmd === "console_complete") {
       const line = args.line;
@@ -128,11 +141,42 @@ import '/scripts/.console-gate-${process.pid}.tsx';
   await page.waitForFunction(() => document.querySelector("[data-chat-composer]").value === "");
   const retried = calls.filter((c) => c.cmd === "console_run" && c.args.line.includes("--retry"));
   assert.equal(retried.length, 2); assert.equal(retried[1].args.input, "secret-stdin-value"); assert.equal(await page.locator("[data-console-input-panel]").count(), 0); assert.equal(retried[0].args.token, retried[1].args.token, "retry token changed");
-  await box.pressSequentially("@peer literal note");
+  await box.pressSequentially("@peer literal task");
   assert.equal(await page.locator("[data-at-picker]").count(), 0);
   await box.press("Enter");
   await page.waitForFunction(() => document.querySelector("[data-msg='note']"));
-  assert.equal(calls.find((c) => c.cmd === "post").args.typed, "@peer literal note");
+  const task = calls.find((c) => c.cmd === "khor_agent" && c.args.action === "prompt");
+  assert.equal(task.args.payload.text, "@peer literal task");
+  assert.equal(task.args.machine, "local");
+  assert.equal(calls.filter((c) => c.cmd === "post").length, 0, "natural-language task posted as a note");
+  const agentReceipt = messages.find((m) => m.id === "note").command;
+  agentReceipt.stdout = "**streamed answer**";
+  agentReceipt.status = "blocked";
+  agentReceipt.agent.approval = { id: "approval-fixture", tool: "open", arguments: '{"machine":"peer","command":"echo fixture"}' };
+  await page.locator("[data-khor-agent-approval]").waitFor();
+  assert.equal(await page.locator("[data-khor-agent-turn] strong").innerText(), "streamed answer");
+  await page.locator("[data-khor-agent-deny]").click();
+  await page.waitForFunction(() => !document.querySelector("[data-khor-agent-approval]"));
+  assert.equal(calls.find((c) => c.cmd === "khor_agent" && c.args.action === "answer").args.payload.allow, false);
+  await page.locator("[data-khor-agent-settings]").click();
+  await page.locator("[data-khor-agent-model]").fill("next-model");
+  await page.locator("[data-khor-agent-save]").click();
+  assert.equal(calls.find((c) => c.cmd === "khor_agent" && c.args.action === "configure").args.payload.model, "next-model");
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
+    for (const width of [390, 1000]) {
+      await page.setViewportSize({ width, height: 650 });
+      const layout = await page.locator("[data-khor-agent-turn]").evaluate((el) => ({ turn: el.getBoundingClientRect().width, column: document.querySelector("[data-chat-column]").getBoundingClientRect().width }));
+      assert(Math.abs(layout.turn - layout.column) < 2, "agent answer lost the shared reading width");
+      await page.locator("[data-khor-agent-settings]").click();
+      const bounds = await page.locator("[data-khor-agent-config]").boundingBox();
+      assert(bounds && bounds.x >= -1 && bounds.x + bounds.width <= width + 1, `${theme}/${width}: config outside viewport`);
+      assert(await page.locator("[data-khor-agent-save]").isVisible());
+      await page.keyboard.press("Escape");
+    }
+  }
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  await page.setViewportSize({ width: 1000, height: 650 });
 
   // A message arriving after the readout but before seen is processed is
   // deliberately newer than every visible bubble.
@@ -181,7 +225,7 @@ import '/scripts/.console-gate-${process.pid}.tsx';
   await pause(200);
   assert(calls.some((c) => c.cmd === "seen_snapshot" && c.args.messages.some((m) => m.id === "background" && m.at_ms === 900)), "visible tail did not resume read receipt");
   assert.deepEqual(errors, [], "browser errors");
-  console.log("console gate: real composer command/path/machine completions, idempotent retry, structured job updates/navigation, literal notes and bounded visible-tail receipts");
+  console.log("console gate: command completions/retry, structured results/navigation, khor agent tasks/configuration/approval/streaming and visible-tail receipts");
 } finally {
   await browser?.close(); vite?.kill(); rmSync(entry, { force: true });
 }

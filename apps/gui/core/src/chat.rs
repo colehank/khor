@@ -307,6 +307,8 @@ fn frame_of(note: GuiNote) -> ChatFrame {
             needs_login,
         },
         GuiNote::Refused { why } => ChatFrame::Refused { why },
+        GuiNote::Delegated { why: Some(why), .. } => ChatFrame::Refused { why },
+        GuiNote::Delegated { why: None, .. } => ChatFrame::Turning,
         GuiNote::Settings(s) => ChatFrame::Settings { settings: parse(s) },
     }
 }

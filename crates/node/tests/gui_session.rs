@@ -399,6 +399,7 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::Agent { .. } => "Agent",
         GuiNote::Refused { .. } => "Refused",
         GuiNote::Settings(_) => "Settings",
+        GuiNote::Delegated { .. } => "Delegated",
     }
 }
 

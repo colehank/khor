@@ -25,6 +25,7 @@ fn command_receipts_replicate_updates_without_duplicate_messages() {
         status: "running".into(), started_at_ms: 100, ended_at_ms: None,
         stdout: String::new(), stderr: String::new(), data_json: None,
         session: None, error: None,
+        agent: None,
     };
     a.command(&sender, &record).unwrap();
     b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();

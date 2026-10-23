@@ -1300,6 +1300,8 @@ impl Node {
         // Borrow rows left by a previous serve point at ports this
         // process does not hold; clear them before answering anyone.
         self.sweep_stale_borrows();
+        // Recover display receipts only; a restart never replays agent work.
+        let _ = self.reconcile_agent();
         // Held broadcast files deleted while it was off (`transfer::hold`).
         crate::transfer::forget_gone_held(self.root(), None);
 
@@ -2495,6 +2497,21 @@ impl Node {
             ipc::Op::SubscriptionsOn { machine, action } => {
                 match self.subscriptions_on_with(ep, &machine, action).await {
                     Ok(answer) => ipc::Reply::Subscriptions { answer },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::Delegation { machine, action } => {
+                match self.delegation_with(ep, &machine, action).await {
+                    Ok(answer) => ipc::Reply::Delegation { answer },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::KhorAgent { machine, action } => {
+                match self.khor_agent_with(ep, &machine, action).await {
+                    Ok(report) => {
+                        self.nudge(ep, true);
+                        ipc::Reply::KhorAgent { report }
+                    }
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
@@ -3749,6 +3766,19 @@ impl Node {
             }
             Request::Subscriptions { action } => {
                 Ok(Response::Subscriptions { answer: self.subscriptions_local(action).await? })
+            }
+            Request::Delegation { action } => {
+                // `remote` comes from the authenticated iroh connection; Action
+                // contains no caller field for a peer to forge.
+                let caller = crate::device_id_from_hex(remote)?;
+                self.delegation_local(caller, action)
+                    .await
+                    .map(|answer| Response::Delegation { answer })
+            }
+            Request::KhorAgent { action } => {
+                let report = self.khor_agent_here(action)?;
+                self.nudge(ep, true);
+                Ok(Response::KhorAgent { report })
             }
             Request::Launch { target } => {
                 // Nothing is opened on a phone (docs/IOS.md): its opener
@@ -5181,9 +5211,7 @@ impl Node {
                 Self::category_of_started(crate::kind::SHELL),
             )?;
             live.learn_place(&id, &cwd)?;
-            let dir = live
-                .dir_of(&id)
-                .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+            let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
             crate::host::spawn_shell_at(
                 &cwd,
                 &dir,
@@ -5913,6 +5941,149 @@ impl Node {
         self.resolve_or_here(machine)
     }
 
+    async fn delegation_local(
+        &self,
+        caller: khor_core::DeviceId,
+        action: crate::delegation::Action,
+    ) -> Result<crate::delegation::Answer, String> {
+        let root = self.root().to_path_buf();
+        tokio::task::spawn_blocking(move || Node::open(root)?.delegation_here(caller, action))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+
+    pub async fn delegation_on(
+        &self,
+        machine: &str,
+        action: crate::delegation::Action,
+    ) -> Result<crate::delegation::Answer, String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::Delegation {
+                machine: machine.into(),
+                action: action.clone(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Delegation { answer } => Ok(answer),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let (_, home) = self.recognition_target(machine)?;
+        if home == self.device() {
+            return self.delegation_local(self.device(), action).await;
+        }
+        let ep = endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let result = self.delegation_with(&ep, machine, action).await;
+        ep.close().await;
+        result
+    }
+
+    async fn delegation_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        action: crate::delegation::Action,
+    ) -> Result<crate::delegation::Answer, String> {
+        let (channel, home) = self.recognition_target(machine)?;
+        if home == self.device() {
+            return self.delegation_local(self.device(), action).await;
+        }
+        if self.sat_and_sponsor(&channel)?.is_some() {
+            return Err("Delegation requires a paired khor execution host".into());
+        }
+        match self
+            .ask(ep, &channel, &Request::Delegation { action })
+            .await?
+        {
+            Response::Delegation { answer } => Ok(answer),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    pub async fn khor_agent_on(
+        &self,
+        machine: &str,
+        action: crate::khor_agent::Action,
+    ) -> Result<crate::khor_agent::Report, String> {
+        if machine.trim().is_empty() && !matches!(action, crate::khor_agent::Action::Read) {
+            return Err(msg::agent_not_configured().into());
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::KhorAgent {
+                machine: machine.into(),
+                action: action.clone(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::KhorAgent { report } => {
+                    if matches!(action, crate::khor_agent::Action::Configure { .. }) {
+                        if let Some(config) = &report.config {
+                            self.chat.set_agent_config(config)?;
+                        }
+                    }
+                    Ok(report)
+                }
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let (_, home) = self.recognition_target(machine)?;
+        if home == self.device() {
+            return self.khor_agent_here(action);
+        }
+        let ep = endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let result = self.khor_agent_with(&ep, machine, action).await;
+        ep.close().await;
+        result
+    }
+
+    async fn khor_agent_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        action: crate::khor_agent::Action,
+    ) -> Result<crate::khor_agent::Report, String> {
+        let (channel, home) = self.recognition_target(machine)?;
+        if home == self.device() {
+            return self.khor_agent_here(action);
+        }
+        if self.sat_and_sponsor(&channel)?.is_some() {
+            return Err(msg::agent_runtime_missing().into());
+        }
+        let configure = matches!(action, crate::khor_agent::Action::Configure { .. });
+        match self
+            .ask(ep, &channel, &Request::KhorAgent { action })
+            .await?
+        {
+            Response::KhorAgent { report } => {
+                if configure {
+                    if let Some(config) = &report.config {
+                        self.chat.set_agent_config(config)?;
+                    }
+                }
+                Ok(report)
+            }
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
     /// Configure only the named khor computer. No empty-target fallback and no
     /// SSH installation: an old peer must refuse rather than modifying here.
     pub async fn recognition_on(
@@ -6355,7 +6526,8 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target)
+                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || {
                     crate::satellite::is_checkout(&host, &path)
@@ -6423,7 +6595,8 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target)
+                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || {
                     crate::satellite::touched(&host, &path)

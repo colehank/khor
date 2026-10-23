@@ -45,6 +45,7 @@ fn record(node: &Node, token: &str) -> CommandRecord {
         data_json: None,
         session: None,
         error: None,
+        agent: None,
     }
 }
 

@@ -153,7 +153,7 @@ pub enum MsgBody {
 
 /// A command's durable receipt. Only its submitting executor updates
 /// this value; importing it is never an instruction to execute it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 pub struct CommandRecord {
     pub id: String,
     pub line: String,
@@ -169,6 +169,33 @@ pub struct CommandRecord {
     pub data_json: Option<String>,
     pub session: Option<String>,
     pub error: Option<String>,
+    /// A khor agent turn uses the same durable, executor-owned receipt.
+    /// Absent on command receipts written by older versions.
+    #[serde(default)]
+    pub agent: Option<AgentTurn>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct AgentConfig {
+    pub home: String,
+    pub account: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct AgentTurn {
+    pub model: String,
+    pub approval: Option<AgentApproval>,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub updated_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct AgentApproval {
+    pub id: String,
+    pub tool: String,
+    pub arguments: String,
 }
 
 /// One message as read out of the document.
@@ -273,7 +300,10 @@ impl ChatDoc {
     /// execution. Re-delivery updates its receipt rather than appending.
     pub fn command(&self, from: &Sender, record: &CommandRecord) -> Result<String, String> {
         let encoded = serde_json::to_string(record).map_err(|e| e.to_string())?;
-        let at = record.ended_at_ms.unwrap_or(record.started_at_ms);
+        let at = record
+            .ended_at_ms
+            .unwrap_or(record.started_at_ms)
+            .max(record.agent.as_ref().map_or(0, |a| a.updated_at_ms));
         if let Some(m) = self.find(&record.id) {
             if str_of(&m, "from_id").as_deref() != Some(from.id.as_str()) {
                 return Err("command receipt belongs to another executor".to_owned());
@@ -405,6 +435,23 @@ impl ChatDoc {
         self.inner
             .get_map(HEAD)
             .insert("home", device)
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    pub fn agent_config(&self) -> Option<AgentConfig> {
+        str_of(&self.inner.get_map(HEAD), "agent_config")
+            .and_then(|s| serde_json::from_str(&s).ok())
+    }
+
+    pub fn set_agent_config(&self, config: &AgentConfig) -> Result<(), String> {
+        self.inner
+            .get_map(HEAD)
+            .insert(
+                "agent_config",
+                serde_json::to_string(config).map_err(|e| e.to_string())?,
+            )
             .map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())

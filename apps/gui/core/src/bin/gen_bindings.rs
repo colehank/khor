@@ -41,6 +41,7 @@ fn main() {
     // `DayMark` from here.
     khor_gui_core::DayRun::export_all_to(&dir).expect("export DayRun");
     khor_gui_core::FaceChoices::export_all_to(&dir).expect("export FaceChoices");
+    khor_gui_core::KhorAgentView::export_all_to(&dir).expect("export KhorAgentView");
     khor_gui_core::RelayChoices::export_all_to(&dir).expect("export RelayChoices");
     // What a relay write sends; embedded in no answer.
     khor_gui_core::RelayWant::export_all_to(&dir).expect("export RelayWant");
