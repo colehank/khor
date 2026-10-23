@@ -13,6 +13,8 @@
 ## 1. Mac 本机：关旧开新
 
 ```sh
+node apps/agent/build.mjs                            # 独立 Pi 运行组件，必须随宿主嵌入
+export KHOR_AGENT_BUNDLE="$PWD/apps/agent/dist/khor-agent"
 cd apps/gui && npm run build && cd ../..            # cargo 不跑 vite，不先 build 就是旧脸
 touch apps/gui/src-tauri/build.rs crates/web/build.rs   # 不 touch，cargo 不重嵌新 dist
 CARGO_INCREMENTAL=0 cargo build --release --bin khor-gui --bin khor
@@ -86,7 +88,7 @@ plist 里 `manageAppVersionAndBuildNumber` 开着，构建号 App Store Connect 
 三台（turing / hinton / lecun）共享 NFS 家目录，`~/.local/bin/khor` 是同一个文件。只在一台上跑：
 
 ```sh
-sh scripts/build-on.sh hinton        # 约十分钟；拒绝负载超过核数一半的机器，glibc 必须正好 2.31
+sh scripts/build-on.sh hinton        # 同时交叉编译并嵌入 Pi；拒绝负载超过核数一半的机器，glibc 必须正好 2.31
 ```
 
 另外两台的 keeper 盯着磁盘上的文件，变了就写一行「khor on disk changed version … restarting gracefully」自己重启，新进程从 `/tmp/khor-shield-*/` 的本地副本起。
@@ -272,3 +274,8 @@ khor devices                                                   # 五台都在线
 - 验证：57 项 Codex 相关回归通过、1 项显式忽略；包含增量／无变化零扫描、半写入、16 MiB 单条内容、坏行后继续、替换及等长改写。大内容测试进程峰值 footprint 为 4,964,832 字节，最大 RSS 为 13,385,728 字节。
 - 本机：GUI 66837 → 25323，实际 5467 监听 PID 一致，12 个辅助进程全部保留；更新 CLI 后会话记录 15 → 15，无新增失败。真实会话观察数分钟，最终主进程 footprint 128.9 MiB、峰值 181.7 MiB，RSS 约 130 MiB，CPU 约 10%–13%。GUI 保留符号以便后续采样；GUI SHA-256 `4cd69a743639978b17cd4733ea719aa20a609e82ad4f0bee306c998baeb66e22`，CLI `099c7cf0ac880473ab1138a033b4abc57697fe8616d2a77c8a80918a3090ea9b`。
 - 范围：本轮替换 Mac GUI／CLI，未重新发布集群或 iOS。界面资源未改变，收据仍为 `khor-ui-assets:/assets/index-pQqgYXf2.js`；后端版本以本次二进制哈希核对。原始及符号化采样、内存快照、回归与构建日志保留在 `/Volumes/disk0/khor-memory-proof-20261022/`。没有修改用户日志、终端内容或系统 swap。
+
+
+## Pi 手动发布组件（2026-10-23）
+
+Mac 的 Rust 构建必须设置 `KHOR_AGENT_BUNDLE` 为当前平台的 Pi 独立包。`build-on.sh` 会在源码 export 中按目标架构交叉编译 Linux Pi 包，再在远端 Rust 构建时嵌入；远端无需安装 Node。构建失败直接退出，不再从管道尾部成功退出后误装旧产物。iOS 不嵌入运行组件，继续通过账户归属设备执行。发布核验另检查被嵌入运行组件的内容哈希与无依赖环境下的本地模型／认证流程。
