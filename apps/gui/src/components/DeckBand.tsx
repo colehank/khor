@@ -12,7 +12,7 @@ import {deckJoystick,DECK_JOYSTICK_DEFAULTS,type DeckJoystickState,type DeckJoys
 import {DeckExplore} from './DeckExplore';
 import './deck-band.css';
 
-type Drag={pointer:number;touch:boolean;touchId:number|null;title:boolean;x:number;route:'joystick'|'swipe'};
+type Drag={pointer:number;touch:boolean;touchId:number|null;title:boolean;x:number;layout:string;route:'joystick'|'swipe'};
 export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JOYSTICK_DEFAULTS,renderFace,placement='bottom'}: {
   faces:TabFace[];active:string;onFocus:(id:string)=>void;onTitle?:()=>void;onOverview?:()=>void;
   /** Isolated fixtures can tune one contact; the App uses the approved defaults. */
@@ -28,6 +28,10 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
   const [state,setState]=useState<DeckScrubState>({opened:at,preview:at,position:at,mode:'idle',source:'swipe',direction:0,holding:false,...holdTiming(0,250)});
   const [steering,setSteering]=useState<DeckJoystickState>({phase:'idle',preview:at,dx:0,dy:0,direction:0,interval:tuning.slowMs,overview:false,tier:0,pulse:0});
   const alive=useRef(true),prior=useRef(at);
+  const layoutStamp=()=>{
+    const r=band.current?.getBoundingClientRect(),v=window.visualViewport;
+    return [r?.x,r?.y,r?.width,r?.height,innerWidth,innerHeight,v?.width,v?.height,v?.offsetLeft,v?.offsetTop].join(':');
+  };
   const focus=(index:number)=>{const now=latest.current,f=now.faces[index];if(f&&f.id!==now.active)now.onFocus(f.id);};
   const engine=useMemo(()=>deckScrubber(faces.length,at,s=>{
     if(!alive.current)return;
@@ -48,6 +52,9 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;steer.dispose();engine.cancel();};},[engine,steer]);
   const finish=(id:number)=>{
     const d=drag.current;if(!d||id!==d.pointer)return;
+    // Viewport metrics can change before its resize event is delivered.
+    // Releasing in that interval must still cancel the old contact.
+    if(d.layout!==layoutStamp()){cancel();return;}
     // A touch tap opens on its compatibility click. Opening on pointerup
     // would let that click hit the newly mounted sheet's scrim instead.
     clearCapture();
@@ -77,7 +84,7 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
     if(e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true],[data-band-control]'))return;
     if(window.getSelection()?.isCollapsed===false)return;
     pendingTap.current=false;
-    drag.current={pointer:e.pointerId,touch:e.pointerType==='touch',touchId:null,title:!!(e.target instanceof Element&&e.target.closest('[data-band-seg="cur"]')),x:e.clientX,route:'joystick'};
+    drag.current={pointer:e.pointerId,touch:e.pointerType==='touch',touchId:null,title:!!(e.target instanceof Element&&e.target.closest('[data-band-seg="cur"]')),x:e.clientX,layout:layoutStamp(),route:'joystick'};
     // Both recognizers start at touch-down, preserving the old swipe's
     // velocity history. Only the joystick may claim a stationary hold.
     const cs=getComputedStyle(band.current),step=parseFloat(cs.getPropertyValue('--glass-btn'))+3*parseFloat(cs.getPropertyValue('--gap-pane'));

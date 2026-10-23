@@ -45,7 +45,7 @@ function Lab(){
   return <main className="session-layout-lab">
     <aside className="layout-lab-controls" onChangeCapture={captureDraft}>
       <p className="layout-lab-eyebrow">KHOR · LAB</p><h1>会话操作区</h1>
-      <p>左上直接选择模型与思考强度，右上新建会话。会话头像放进底部输入栏；长按沿透明外弧选择，头像右侧显示标题，斜上推到「全部标签页」后松手打开列表。</p>
+      <p>左上直接选择模型与思考强度，右上新建会话。会话头像放在输入栏最右侧，点开展开会话药丸。长按直接使用终端同款浅 U 拨杆，左右轻拨翻选，回中暂停，上推打开全部标签页。</p>
       <label>会话<select aria-label="会话" value={session} onChange={e=>setSession(e.target.value)}>{scenes.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
       <label>尺寸<select aria-label="尺寸" value={width} onChange={e=>setWidth(e.target.value)}>{sizes.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
       <label>外观<select aria-label="外观" value={theme} onChange={e=>setTheme(e.target.value)}><option value="light">浅色</option><option value="dark">深色</option></select></label>
@@ -55,7 +55,7 @@ function Lab(){
       <label>布局<select aria-label="布局" value={deck} onChange={e=>setDeck(e.target.value)}><option value="compose">模型栏 · 输入内头像</option><option value="light">轻量页头 · 头像与文字</option><option value="combined">底部组合 · 输入与药丸</option><option value="top">顶部药丸 · 底部输入</option><option value="bottom">原底部 · 分开的胶囊</option></select></label>
       <label className="layout-lab-check"><input type="checkbox" checked={classic} onChange={e=>setClassic(e.target.checked)}/>对比原来的输入区</label>
       <a href={src} target="_blank" rel="noreferrer">打开全屏预览 ↗</a>
-      <p className="layout-lab-note">{deck==='compose'?'底部头像：点击打开总览；长按沿外弧选择，回到头像取消，斜上推到目标进入全部标签页。':deck==='light'?'点击头像或标题打开总览；长按头像显示轮盘，沿弧线滑动，回到头像取消。':(deck==='top'?'顶部药丸下拉':'底部药丸上滑')+'打开总览，长按左右拨动切换。'}会话内切换保留各自的文字草稿。预览不连接真实智能体；键盘与安全区是浏览器模拟。</p>
+      <p className="layout-lab-note">{deck==='compose'?'右侧头像：点击展开药丸；横拨切换，长按进入浅 U 拨杆；回中暂停，松手确认，上推进入全部标签页。':deck==='light'?'点击头像或标题打开总览；长按头像显示轮盘，沿弧线滑动，回到头像取消。':(deck==='top'?'顶部药丸下拉':'底部药丸上滑')+'打开总览，长按左右拨动切换。'}会话内切换保留各自的文字草稿。预览不连接真实智能体；键盘与安全区是浏览器模拟。</p>
       {wide&&<p className="layout-lab-note">宽屏沿用顶部标签，切换到窄屏查看本轮布局。</p>}
       <p className="layout-lab-note">实验分支 lab/gui-session-layout，尚未合入 main。</p>
     </aside>
