@@ -245,36 +245,84 @@ async fn f4_lab(
 /// two), never resting on the relay (a stretch of 20 s): the move off it
 /// took the 2 s confirm and a sample of the relay, which one round trip of
 /// 3.4 s could not give, and gave up for 30 s.
+///
+/// Back on the carried road it stays (carry, 2026-10-23): for 30 s after,
+/// no move to the relay. Three runs in four fell back about ten seconds on
+/// — the hop's own watch read the relay of the stall at two looks and let
+/// the middle go.
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
-    let s = "f4";
+    f4_stall("f4", Stall { black: 3000, relay_black: 1500, late: 1700, both: false, typing: 12 }).await;
+}
+
+/// f4s (carry, 2026-10-23): **f4 on a relay whose round trip is over the
+/// confirmation's 4 s**, the phone's journal reading 4994 ms: the relay's
+/// legs to X 2.5 s late each way from the start, X's leg to M black for 8 s,
+/// Y typing only through the first 3 s, so the connection then idles. Meant
+/// to show the 30 s rest d487a6da took away (leaving the relay asked for a
+/// sample of it within `CONFIRM_MAX`, which such a relay cannot give); the
+/// tree before it rested in none of four runs (two of these, 8.2 and 10.2 s
+/// at most on the relay; two of a 3 s stall, never on it). Red today now and then for another reason: after the long
+/// stall the carried road's smoothed RTT reads about 500 ms off the
+/// backlog's samples, an idle connection takes one sample per keepalive,
+/// and the relay at 450 ms is taken over it for up to 27 s.
+#[tokio::test(flavor = "multi_thread", worker_threads = 6)]
+async fn f4s_a_stalled_carried_road_is_taken_again_off_a_relay_slower_than_the_confirmation() {
+    f4_stall("f4s", Stall { black: 8000, relay_black: 0, late: 2500, both: true, typing: 3 }).await;
+}
+
+/// One f4 stall: X's leg to M black `black` ms; its leg to the relay black
+/// the first `relay_black` ms; what the relay sends X `late` ms late (and
+/// what X sends the relay too when `both`) until 1.5 s after M is back; Y
+/// typing for the first `typing` s.
+struct Stall {
+    black: u64,
+    relay_black: u64,
+    late: u32,
+    both: bool,
+    typing: u64,
+}
+
+async fn f4_stall(s: &str, st: Stall) {
+    let Stall { black, relay_black, late, both, typing: typing_s } = st;
     let (_lab, r, rx, x, y, m) = f4_lab(s).await;
     let relay_ip = r.dev.ip().expect("the relay has IPv4");
     let m_ip = m.dev.ip().expect("m has IPv4");
     let x_out = rx.uplink_ip().expect("x's NAT has an address outside");
+    let x_base = (LEG.as_millis() / 2) as u32;
 
     let t = now_ms();
     // Y types on X's terminal throughout (an echo every 200 ms): an idle
     // connection has nothing in flight for 3 s of black to show, and the
     // phone's own network change pings every path.
-    let typing_until = std::time::Instant::now() + Duration::from_secs(12);
+    let typing_until = std::time::Instant::now() + Duration::from_secs(typing_s);
     let stall = async {
         cut_as(&x.dev, m_ip, "flap_m");
-        cut_as(&x.dev, relay_ip, "flap_relay");
-        delay_to(&r.dev, x_out, F4_RELAY_ONE_WAY, Some(1700)).await;
-        tokio::time::sleep(Duration::from_millis(1500)).await;
-        uncut(&x.dev, "flap_relay");
-        tokio::time::sleep(Duration::from_millis(1500)).await;
+        if relay_black > 0 {
+            cut_as(&x.dev, relay_ip, "flap_relay");
+        }
+        delay_to(&r.dev, x_out, F4_RELAY_ONE_WAY, Some(late)).await;
+        if both {
+            delay_to(&x.dev, relay_ip, x_base, Some(late)).await;
+        }
+        if relay_black > 0 {
+            tokio::time::sleep(Duration::from_millis(relay_black)).await;
+            uncut(&x.dev, "flap_relay");
+        }
+        tokio::time::sleep(Duration::from_millis(black - relay_black)).await;
         uncut(&x.dev, "flap_m");
         let uncut_at = now_ms();
         tokio::time::sleep(Duration::from_millis(1500)).await;
         delay_to(&r.dev, x_out, F4_RELAY_ONE_WAY, None).await;
+        if both {
+            delay_to(&x.dev, relay_ip, x_base, None).await;
+        }
         uncut_at
     };
     // When the carried road answers again: its leg, m's wire to x, heard
     // again after the cut (the hop itself is read only by y's iroh).
     let leg_back = async {
-        tokio::time::sleep(Duration::from_millis(3000)).await;
+        tokio::time::sleep(Duration::from_millis(black)).await;
         let began = std::time::Instant::now();
         loop {
             if m.link(&x).await.and_then(|l| l.heard_ms).is_some_and(|h| h < 250) {
@@ -288,9 +336,10 @@ async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
     };
     let mut seen = vec![];
     let watch = async {
-        // Long enough to see a 30 s rest on the relay.
+        // Long enough to see a 30 s rest on the relay, and 30 s on the
+        // carried road once back.
         let began = std::time::Instant::now();
-        while began.elapsed() < Duration::from_secs(40) {
+        while began.elapsed() < Duration::from_millis(42_000 + black) {
             if let Some(l) = y.link(&x).await {
                 let w = format!("{:?}", l.hop);
                 if seen.last().map(|(_, s)| s) != Some(&w) {
@@ -326,6 +375,9 @@ async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
         longest = longest.max(end - s0);
     }
     let after_answer = back.map(|b| b.saturating_sub(answers));
+    // Back on the carried road, it stays: no move to the relay within 30 s.
+    let fell = back.and_then(|b| lines.iter().find(|(at, _, r)| *at > b && r == "relay").map(|(at, _, _)| *at - b));
+    let stayed = back.is_none_or(|b| fell.is_none_or(|f| f >= 30_000) && now_ms() >= b + 30_000);
     let now = y.link(&x).await;
     let x_lines: Vec<String> = path_lines(&x, &y, t)
         .into_iter()
@@ -334,23 +386,27 @@ async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
         .collect();
     let ok = now.as_ref().is_some_and(|l| l.hop == Hop::Forwarded)
         && longest < 20_000
+        && stayed
         && (on_relay.is_none() || after_answer.is_some_and(|ms| ms <= 1500));
     let secs = |at: u64| format!("{:.1}s", at.saturating_sub(t) as f64 / 1000.0);
     result(
         s,
         ok,
         format!(
-            "y→x: relay at {}, back on the carried road at {} ({} after the leg x–m is heard again, at {}), longest on the relay {:.1}s; selections {:?}; links {seen:?}; slowest keystroke {slowest:.1?}; now {}; x's selections {x_lines:?}",
+            "relay late {late} ms{}; y→x: relay at {}, back on the carried road at {} ({} after the leg x–m is heard again, at {}), fell back {}, longest on the relay {:.1}s; selections {:?}; links {seen:?}; slowest keystroke {slowest:.1?}; now {}; x's selections {x_lines:?}",
+            if both { " both ways" } else { " to x" },
             on_relay.map_or("never".into(), secs),
             back.map_or("never".into(), secs),
             after_answer.map_or("—".into(), |ms| format!("{:.1}s", ms as f64 / 1000.0)),
             leg.map_or(format!("never; uncut at {}", secs(uncut_at)), secs),
+            fell.map_or("never".into(), |f| format!("{:.1}s after", f as f64 / 1000.0)),
             longest as f64 / 1000.0,
             lines.iter().map(|(at, _, r)| format!("{r}@{}", secs(*at))).collect::<Vec<_>>(),
             now.as_ref().map_or("nothing".into(), word),
         ),
     );
     assert!(longest < 20_000, "no rest on the relay: {:.1}s", longest as f64 / 1000.0);
+    assert!(stayed, "back on the carried road, no move to the relay for 30 s: fell back {fell:?} ms after");
     if on_relay.is_some() {
         assert!(after_answer.is_some_and(|ms| ms <= 1500), "back within 1.5 s of the leg answering: {after_answer:?} ms");
     }
