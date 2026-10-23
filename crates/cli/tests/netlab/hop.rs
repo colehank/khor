@@ -361,41 +361,75 @@ async fn typing(n: &crate::lab::LabNode, peer: &crate::lab::LabNode, until: std:
 /// back in front lets its wires go and visits every machine; the new
 /// connection to Y begins on the relay while the machine's road is the one
 /// through M, and its first line read 「改走中继」, the next 「改为通过 m」:
-/// a flap in the journal that never happened to the machine.
+/// a flap in the journal that never happened to the machine. The phone's
+/// resume (`network_change_major`) is the app's call into its own
+/// resident, which a lab resident has no door for; both ends letting their
+/// wires go, X out of reach for a minute and more, back on the relay
+/// before m, and X visiting Y makes the same new connection.
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn f4i_a_new_connection_does_not_write_its_first_road_as_a_move() {
     let s = "f4i";
-    let (_lab, _r, _rx, x, y, _m) = f4_lab(s).await;
+    let (_lab, r, _rx, x, y, m) = f4_lab(s).await;
     let t = now_ms();
+    // Both ends let their wires go, so the next round is a new connection.
     let yname = y.name.clone();
     x.with(move |n| async move { n.let_go_of(&yname).await.ok() }).await.expect("x lets go of y");
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    let xname = x.name.clone();
+    y.with(move |n| async move { n.let_go_of(&xname).await.ok() }).await.expect("y lets go of x");
+    // As long as a phone in the background, and as unreachable: iroh's
+    // actor for the remote stops after a minute with no connection
+    // (`ACTOR_MAX_IDLE_TIMEOUT`), and the next connection has no carried
+    // path to begin on. Reachable, the two redial within 15 s and the new
+    // connection begins where the actor still is.
+    cut_as(&x.dev, m.dev.ip().expect("m has IPv4"), "away_m");
+    cut_as(&x.dev, r.dev.ip().expect("the relay has IPv4"), "away_relay");
+    tokio::time::sleep(Duration::from_secs(75)).await;
+    // Back with the relay first and m a little later (the phone's new
+    // network reaches the relay before the hop is found): the new
+    // connection begins on the relay, then moves through m.
+    uncut(&x.dev, "away_relay");
+    let u = now_ms();
     let yname = y.name.clone();
     x.with(move |n| async move { n.visit(&yname).await.ok() }).await.expect("x visits y");
-    let back = x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Forwarded && l.rtt_ms.is_some()).await;
+    let on_relay = x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Relay && l.rtt_ms.is_some()).await;
+    eprintln!("[netlab] f4i on the relay {:?}", on_relay.as_ref().map(|(t, _)| t));
+    uncut(&x.dev, "away_m");
+    let back = x.until(&y, Duration::from_secs(120), |l| l.hop == Hop::Forwarded && l.rtt_ms.is_some()).await;
     tokio::time::sleep(Duration::from_secs(15)).await;
     let (xl, yl) = (path_lines(&x, &y, t), path_lines(&y, &x, t));
-    let moved_to_relay = |l: &[(u64, String, String)]| l.iter().filter(|(_, c, r)| c == "selected" && r == "relay").count();
-    let started = |l: &[(u64, String, String)]| l.iter().filter(|(_, c, _)| c == "started").count();
     let fmt = |l: &[(u64, String, String)]| {
         l.iter().map(|(at, c, r)| format!("{c} {r}@{:.1}s", at.saturating_sub(t) as f64 / 1000.0)).collect::<Vec<_>>()
     };
-    let (xm, ym) = (moved_to_relay(&xl), moved_to_relay(&yl));
-    let ok = xm == 0 && ym == 0 && back.is_some();
+    let since_t = |n: &crate::lab::LabNode, peer: &crate::lab::LabNode| {
+        n.journal(Some(peer))
+            .into_iter()
+            .filter(|e| e["at"].as_u64().is_some_and(|a| a >= t))
+            .map(|e| format!("{}@{:.1}s", e["e"].as_str().unwrap_or("?"), e["at"].as_u64().unwrap_or(t).saturating_sub(t) as f64 / 1000.0))
+            .collect::<Vec<_>>()
+    };
+    eprintln!("[netlab] f4i x's lines {:?}; y's {:?}", since_t(&x, &y), since_t(&y, &x));
+    // Back in reach: the new connection's first road line, on either end,
+    // says where it began, and no line after `u` is a move to the relay.
+    let after: Vec<(u64, String, String)> =
+        xl.iter().chain(&yl).filter(|(at, c, _)| *at >= u && c != "opened").cloned().collect();
+    let first = after.iter().min_by_key(|(at, _, _)| *at).cloned();
+    let to_relay = after.iter().filter(|(_, c, r)| c == "selected" && r == "relay").count();
+    let ok = back.is_some() && first.as_ref().is_some_and(|(_, c, _)| c == "started") && to_relay == 0;
     result(
         s,
         ok,
         format!(
-            "x let go of y and visited: back through m {}; x's lines {:?} ({} started), y's {:?} ({} started)",
-            back.as_ref().map_or("never in 60 s".into(), |(t, l)| format!("after {t:.1?} ({})", word(l))),
+            "both let go, x away 75 s, x visited y: back through m {}; first line back {}; x's lines {:?}, y's {:?}",
+            back.as_ref().map_or("never in 120 s".into(), |(t, l)| format!("after {t:.1?} ({})", word(l))),
+            first.as_ref().map_or("none".into(), |(at, c, r)| format!("{c} {r}@{:.1}s", at.saturating_sub(t) as f64 / 1000.0)),
             fmt(&xl),
-            started(&xl),
             fmt(&yl),
-            started(&yl),
         ),
     );
     assert!(back.is_some(), "x is back through m");
-    assert_eq!((xm, ym), (0, 0), "no 「改走中继」 for a connection's first road: x {:?}, y {:?}", fmt(&xl), fmt(&yl));
+    let (_, change, _) = first.expect("a road line for the new connection");
+    assert_eq!(change, "started", "the new connection's first road is where it began, not a move: x {:?}, y {:?}", fmt(&xl), fmt(&yl));
+    assert_eq!(to_relay, 0, "no 「改走中继」 once back: x {:?}, y {:?}", fmt(&xl), fmt(&yl));
 }
 
 /// How long f2 watches the settled wire for moves.
