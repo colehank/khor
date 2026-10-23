@@ -148,6 +148,23 @@ pub(crate) fn rtt_of(conn: &Connection) -> Duration {
         .map_or(Duration::ZERO, |p| p.rtt())
 }
 
+/// How long a new wire's round trip goes unsaid on the machine's row
+/// ([`shown_rtt`]).
+const RTT_WARMUP: Duration = Duration::from_secs(5);
+
+/// **The round trip a machine's row shows for a wire adopted `age` ago**:
+/// none in its first [`RTT_WARMUP`] (flap, 2026-10-23). A new
+/// connection's first sample is its handshake, and the smoothed RTT starts
+/// there and moves an eighth of the way per sample after; a phone back in
+/// front dials over relays still reconnecting, and its rows read MacLab
+/// 3751 ms and hinton 14632 ms where the same roads were 50 ms seconds
+/// later. Unsaid rather than a median of the first readings: they are all
+/// the one handshake sample, decaying. The dial's own patience keeps the
+/// reading (`Slot::rtt`).
+fn shown_rtt(rtt: Duration, age: Option<Duration>) -> Option<Duration> {
+    (!rtt.is_zero() && age.is_none_or(|age| age >= RTT_WARMUP)).then_some(rtt)
+}
+
 /// **Asks every path of `conn` whether it is there** (vendor/iroh patch
 /// 21: a PING on each), before a wire is judged dead; answers how long to
 /// give the answers: three of the slowest open path's round trips, at
@@ -1253,7 +1270,7 @@ impl Wires {
             {
                 road = slot.word;
                 since = slot.word.and(slot.word_at).map(|at| now.saturating_duration_since(at));
-                rtt = Some(rtt_of(conn)).filter(|r| !r.is_zero());
+                rtt = shown_rtt(rtt_of(conn), slot.since.map(|at| now.saturating_duration_since(at)));
                 relay = khor_net::path::relay_name(conn);
             }
             if let Some(h) = slot.heard {
@@ -1379,6 +1396,17 @@ impl Slot {
 
 #[cfg(test)]
 mod tests {
+    /// flap: a wire's first seconds show no round trip — its handshake's,
+    /// over a relay that was reconnecting, read 14632 ms on a 50 ms road.
+    #[test]
+    fn a_new_wire_shows_no_round_trip_for_its_first_seconds() {
+        let ms = Duration::from_millis;
+        assert_eq!(super::shown_rtt(ms(14632), Some(ms(1200))), None);
+        assert_eq!(super::shown_rtt(ms(50), Some(super::RTT_WARMUP)), Some(ms(50)));
+        assert_eq!(super::shown_rtt(Duration::ZERO, Some(ms(9000))), None, "no sample yet");
+        assert_eq!(super::shown_rtt(ms(50), None), Some(ms(50)));
+    }
+
     use super::*;
 
     /// A different road is taken only after it held for two samples;
