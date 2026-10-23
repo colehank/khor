@@ -9,7 +9,23 @@
 
 ## 补丁
 
-六处。
+七处。
+
+### 7. `src/connection/mod.rs`：离开慢得多的路时，它上面在飞的东西在新路上重发（2026-10-23，carry）
+
+QUIC 的流按序交付：一段字节走了慢路，后面走快路的全要等它。netlab f4（手机到 turing 的直连黑 3 秒，中继发给手机的晚 1.7 秒）：
+turing 到手机的连接在黑洞里改走中继约一秒，腿通后一个 tick 就回了直连，可 hop 那条流在这段上又 1.5 秒什么新东西也交不出来，
+等的是 turing 走中继时发出、晚 1.7 秒才到的那些字节（黑洞里丢在直连上的包，判丢以后的重传也是在中继上发出去的）。
+补丁：本端有路径的状态变了（`set_path_status`；iroh 每次改选都会设），下一次 `poll_transmit` 先跑 `resend_off_slow_backups`：
+凡是 Backup、而往返不小于此刻 Available 里最快那条的两倍加 10 ms（`KHOR_FAR_BY`）的路径，把它上面在飞的、要回 ACK 的包当作
+丢了（`handle_lost_packets`：流数据重新排队，从可用的那条发出去；不含在飞的 MTU 探测）。晚到的原包是重复，接收端丢掉。
+代价：每次从慢路换到快得多的路，慢路上在飞的数据（至多一个拥塞窗口）多发一遍，慢路的拥塞窗口按一次丢包减；
+新连接打洞成功、从中继升到直连时也会这样，那时中继上在飞的东西改从直连送到，本来就是要的。两条差不到两倍加 10 ms 的路之间
+什么也不重发（直连之间不受影响）。改动约 70 行（含一个只在测试里用的 `khor_set_rtt`）。
+测试：`src/tests/multipath.rs` 的 `what_is_in_flight_on_a_far_slower_backup_is_resent_on_the_new_path`（不推时间，改状态后
+那一次发送就重发了；去掉补丁红）、`what_is_in_flight_on_a_backup_of_one_speed_is_not_resent`；noq-proto 自己的单元测试 430 个全过。
+netlab f4 改前改后见 vendor/iroh/KHOR.md 补丁 17 的「10-23 修订（carry）」。上游可以提（要点：多路径下换到快路时，慢路上在飞的
+数据会把按序的流堵住一个慢路往返；草案允许在任何路径上重传）。升级时要重打。
 
 ### 6. `src/connection/mod.rs`：连接级的保活只 ping 没有自己保活的路径（2026-10-17，path-fix 第三棒）
 
