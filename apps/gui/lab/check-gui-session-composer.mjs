@@ -25,12 +25,12 @@ try{
     await page.screenshot({animations:'disabled',path:`${shots}/${session==='wide/all'?'khor':session.includes('codex')?'codex':'claude'}-${theme}-${keyboard}.png`});checks++;
   }
   await open();await page.locator('[data-lab-session-settings]').click();
-  await page.getByLabel('模型',{exact:true}).selectOption('claude-opus-4-6');
+  await page.locator('[data-lab-option="model"]').click();await page.getByRole('menuitemradio',{name:'Opus 4.6',exact:true}).click();await page.locator('[data-lab-preferences]').waitFor({state:'hidden'});
   await page.waitForFunction(()=>document.querySelector('[data-lab-session-settings]')?.textContent.includes('Opus 4.6'));
-  await page.getByLabel('思考方式',{exact:true}).selectOption('deep');
-  await page.getByLabel('执行权限',{exact:true}).selectOption('auto');
+  await page.locator('[data-lab-session-settings]').click();await page.getByRole('menuitem',{name:/思考方式/}).click();await page.locator('[data-option-value="deep"]').click();await page.locator('[data-lab-preferences]').waitFor({state:'hidden'});
+  await page.locator('[data-lab-session-settings]').click();await page.getByRole('menuitem',{name:/执行权限/}).click();await page.locator('[data-option-value="auto"]').click();await page.locator('[data-lab-preferences]').waitFor({state:'hidden'});
   await page.locator('[data-lab-execution-badge]').waitFor();
-  await page.locator('[data-lab-model-id]').evaluate(el=>el.closest('details').open=true);
+  await page.locator('[data-lab-session-settings]').click();await page.getByRole('menuitem',{name:'模型详情',exact:true}).click();
   await page.screenshot({animations:'disabled',path:`${shots}/settings.png`});await page.keyboard.press('Escape');checks++;
   // Upload directory can be chosen before actual attachment upload starts.
   await page.locator('[data-lab-add]').click();await page.locator('[data-lab-attachments]').waitFor();
@@ -48,10 +48,11 @@ try{
   await open('wide/all');await page.locator('[data-lab-session-settings]').click();
   await page.locator('[data-lab-option="model"]').waitFor();
   await page.screenshot({animations:'disabled',path:`${shots}/khor-settings.png`});
-  await page.getByLabel('模型',{exact:true}).selectOption('claude-opus-4-6');
+  await page.locator('[data-lab-option="model"]').click();await page.getByRole('menuitemradio',{name:'Opus 4.6',exact:true}).click();await page.locator('[data-lab-preferences]').waitFor({state:'hidden'});
   await page.waitForFunction(()=>document.querySelector('[data-lab-session-settings]')?.textContent.includes('Opus 4.6'));
-  await page.getByRole('switch',{name:'自动压缩'}).click();
-  await page.waitForFunction(()=>document.querySelector('[role="switch"][aria-label="自动压缩"]')?.getAttribute('aria-checked')==='false');
+  await page.locator('[data-lab-session-settings]').click();await page.getByRole('menuitemcheckbox',{name:'自动压缩'}).click();
+  await page.waitForFunction(()=>document.querySelector('[role="menuitemcheckbox"]')?.getAttribute('aria-checked')==='false');
+  await page.keyboard.press('Escape');
   await page.locator('[data-composer-text]').fill('检查网络');await page.locator('[data-chat-send]').click();
   await page.locator('[data-chat-box] [data-chat-stop]').waitFor();await page.locator('[data-chat-box] [data-chat-stop]').click();
   await page.locator('[data-chat-box] [data-chat-stop]').waitFor({state:'hidden'});checks++;

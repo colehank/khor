@@ -4,28 +4,14 @@
 .composer-lab-trigger-words>span{overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .composer-lab-trigger-words>small{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-caption);line-height:var(--text-caption--line-height);color:var(--muted-foreground)}
 [data-lab-session-settings-slot]{display:flex;align-items:center;flex:none;align-self:center;padding-inline:var(--gap-in)}
-.composer-lab-preferences{display:flex;flex-direction:column;gap:var(--gap-row);width:calc(8 * var(--touch));max-width:calc(100vw - 2 * var(--gap-row));max-height:calc(var(--app-h,100dvh) - var(--safe-top) - 2 * var(--pane-head));overflow-y:auto;padding:var(--gap-row);border-radius:var(--radius-lg)}
-.composer-lab-preferences-heading{display:flex;justify-content:space-between;align-items:baseline;gap:var(--gap-in)}
-.composer-lab-preferences strong,.composer-lab-attachments strong{font-size:var(--text-body);font-weight:var(--font-weight-title)}
-.composer-lab-preferences-heading>span,.composer-lab-description{font-size:var(--text-callout);color:var(--muted-foreground)}
-.composer-lab-setting{display:flex;flex-direction:column;gap:var(--gap-in);font-size:var(--text-callout)}
-.composer-lab-setting select{width:100%;min-height:var(--touch);padding:var(--gap-in) var(--gap-row);border:var(--hair) solid var(--border);border-radius:var(--radius-md);background:var(--fill);color:var(--foreground);font:inherit}
-.composer-lab-setting small{font-size:var(--text-caption);line-height:var(--text-caption--line-height);color:var(--muted-foreground)}
-.composer-lab-fact{display:flex;align-items:baseline;justify-content:space-between;gap:var(--gap-row);font-size:var(--text-callout)}
-.composer-lab-fact>span:first-child{color:var(--muted-foreground)}
-.composer-lab-fact>span:last-child{min-width:0;text-align:right;overflow-wrap:anywhere}
-.composer-lab-details{border-top:var(--hair) solid var(--border);padding-top:var(--gap-in);font-size:var(--text-caption);color:var(--muted-foreground)}
-.composer-lab-details summary{min-height:var(--ctl-md);display:flex;align-items:center}
-.composer-lab-details code{display:block;font-family:var(--font-mono);overflow-wrap:anywhere;padding-top:var(--gap-in)}
-.composer-lab-attachments{display:flex;flex-direction:column;gap:var(--gap-in);width:calc(7 * var(--touch));max-width:calc(100vw - 2 * var(--gap-row));padding:var(--gap-row)}
-.composer-lab-attachments>button{display:flex;align-items:center;text-align:left;min-height:var(--touch);border-radius:var(--radius-md);padding-inline:var(--gap-in);font-size:var(--text-body)}
-.composer-lab-attachments>button:hover{background:var(--fill)}
-.composer-lab-upload-setting{border-top:var(--hair) solid var(--border);padding-top:var(--gap-in)}
-.composer-lab-upload-setting [data-send-into]{flex-wrap:wrap}
-.composer-lab-upload-setting [data-send-into-path]{flex-basis:60%;font-size:var(--text-callout);color:var(--foreground)}
+.composer-lab-menu{max-width:calc(100vw - 2 * var(--gap-row))}
+.composer-lab-menu-value{min-width:0;max-width:calc(3 * var(--touch));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted-foreground)}
+.composer-lab-menu-note{max-width:calc(6 * var(--touch));white-space:normal;line-height:var(--text-caption--line-height)}
+.composer-lab-choice{flex-direction:column;align-items:flex-start;justify-content:center;gap:var(--gap-xxs);padding-block:var(--gap-in)}
+.composer-lab-choice small{font-size:var(--text-caption);line-height:var(--text-caption--line-height);color:var(--muted-foreground)}
+.composer-lab-fact{display:flex;align-items:baseline;justify-content:space-between;gap:var(--gap-row)}
+.composer-lab-fact>span:last-child{min-width:0;max-width:calc(4 * var(--touch));text-align:right;overflow-wrap:anywhere;color:var(--foreground)}
+.composer-lab-model-id{display:block;max-width:calc(6 * var(--touch));font-family:var(--font-mono);overflow-wrap:anywhere;white-space:normal}
 :root[data-lab-unified] [data-send-into]{padding-inline:var(--gap-in)}
 :root[data-lab-unified] [data-session-composer]:empty{display:none}
 :root[data-lab-unified] [data-session-composer]{touch-action:none}
-
-.composer-lab-setting[data-switch]{display:grid;grid-template-columns:1fr auto;align-items:center;min-height:var(--touch)}
-.composer-lab-setting[data-switch] small{grid-column:1 / -1}

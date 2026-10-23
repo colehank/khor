@@ -16,6 +16,7 @@ Khor 的 Pi 进程继续使用 SDK 和 Rust 私有凭据／MCP 管道。`session
 | Context | SDK 实际读数；未知窗口不显示百分比 | 保留原有原生 usage 适配 | last.totalTokens / modelContextWindow | usage_update 快照 |
 | 登录 | Pi 原有 API key / OAuth 工作流，凭据留在账户 home | CLI 自己的登录 | CLI 自己的登录 | 新建会话前的 agent-defined authenticate，支持结构化补问 |
 | 会话 MCP | Rust-owned Khor 工具 | ACP descriptor → 原生 MCP 配置 | ACP descriptor → 原生 MCP 配置 | session/new、load、resume 标准注入 |
+| 执行权限 | Rust MCP 固定逐项审批，读取放行 | 原生模式和审批 | 原生模式和审批 | agent 提供的模式、配置与 request_permission |
 
 Context 是占用量快照，不能用累计账单 tokens 代替。模型切换和压缩时清除旧读数，收到新测量后再显示。Pi 对未知网关模型的默认窗口不作为实测窗口。配置记录新增的 options map 带 serde default，兼容旧数据；切换模型会重新验证思考档位。
 
@@ -32,6 +33,8 @@ Context 是占用量快照，不能用累计账单 tokens 代替。模型切换�
 新建第三方会话页可配置这一轮的 MCP servers 和附加目录。目录属于执行机器，必须是绝对目录；HTTP/SSE 和 additionalDirectories 受握手能力约束。MCP 描述不写入同步的 agent 注册表，执行上下文保存在执行节点的私有文件中，供恢复同一会话使用。
 
 调度员模式向第三方 ACP 注入标准 Khor MCP server；内置 Claude/Codex 继续保留原生调度说明和权限行为。Pi 的 Rust 审批边界保留。
+
+Khor 的审批入口在 `khor_agent::McpSession`，不依赖 Pi 是否自带权限弹窗。修改操作先保存 `AgentApproval` 并阻塞执行，GUI 的 `KhorAgentResult` 展示实际工具与参数；答复绑定 run 和 ask。取消／停止会撤销待答请求，随后到达的旧批准不能执行工具。当前仅有固定的「逐项确认」策略，没有实现 Khor 自身的自动授权档位；顶部菜单明确展示这个边界。
 
 恢复优先使用代理声明的 session/resume，否则使用 load。close、delete、logout 按能力开放；删除记录有单独确认。client filesystem 和 terminal 继续关闭：连接 GUI 的手机不承担执行机器的文件访问和进程运行。
 

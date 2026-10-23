@@ -56,6 +56,7 @@ export default mergeConfig(preview,defineConfig({
           localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'list'}));
           window.addEventListener('DOMContentLoaded',()=>{
             const root=document.documentElement,phone=q.get('phone')==='1';
+            if(q.get('labSession')==='wide/all'&&q.has('approval'))fetch('/__ai_preview/khor-approval',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pending:q.get('approval')==='1'})});
             root.dataset.layoutLab='';
             if(q.get('composer')!=='classic')root.dataset.labUnified='';
             if(phone){

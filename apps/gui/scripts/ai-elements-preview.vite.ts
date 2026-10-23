@@ -83,6 +83,8 @@ function previewBridge(): Plugin {
   const modelAccounts = [account];
   let modelConfig = { home: device.id, account: account.id, model: account.default_model, options:{thought_level:"medium",auto_compaction:true} };
   let khorRunning=false,khorPrompt='看看网络里的设备与会话。';
+  let khorApproval:{id:string;tool:string;arguments:string}|null=null;
+  const khorAnswers:unknown[]=[];
   let jobCounter = 0;
   const jobs = new Map<string, any>();
   const interactionAnswers:unknown[]=[];
@@ -91,7 +93,8 @@ function previewBridge(): Plugin {
     if (body.action === "catalog") return view(providers);
     const p = body.payload ?? {};
     if(body.action==='prompt'){khorRunning=true;khorPrompt=String(p.text);later(()=>{khorRunning=false;},10000);return view();}
-    if(body.action==='stop'){khorRunning=false;return view();}
+    if(body.action==='stop'){khorRunning=false;khorApproval=null;return view();}
+    if(body.action==='answer'&&p.run==='khor-preview-run'&&p.ask===khorApproval?.id){khorAnswers.push({ask:p.ask,allow:p.allow});khorApproval=null;khorRunning=false;return view();}
     if (body.action === "configure") { modelConfig = { home: body.machine, account: p.account, model: p.model,options:{thought_level:"medium",auto_compaction:true} }; return view(); }
     if (body.action !== "manage") return view();
     if(p.operation==='session_settings'||p.operation==='session_set_option'){
@@ -131,8 +134,8 @@ function previewBridge(): Plugin {
   }
   const previewAt = Date.now();
   const khorReceipt = () => ({ id: "khor-preview-run", at_ms: previewAt, from: device.name, from_me: true, to: [], text: null, files: null, note: null, unknown: null, retracted: false,
-    command: { id: "khor-preview-run", line: khorPrompt, owner: device.id, owner_name: device.name, status: khorRunning ? "running" : "done", started_at_ms: Date.now() - 2000, ended_at_ms: khorRunning ? null : Date.now(), stdout: "", stderr: "", data_json: null, session: null, error: null,
-      agent: { model: "fixture-model", approval: null, updated_at_ms: 100, updates: khorUpdates, updates_truncated: false } } });
+    command: { id: "khor-preview-run", line: khorPrompt, owner: device.id, owner_name: device.name, status: khorApproval ? "blocked" : khorRunning ? "running" : "done", started_at_ms: Date.now() - 2000, ended_at_ms: khorRunning ? null : Date.now(), stdout: "", stderr: "", data_json: null, session: null, error: null,
+      agent: { model: "fixture-model", approval: khorApproval, updated_at_ms: 100, updates: khorUpdates, updates_truncated: false } } });
   const later = (fn: () => void, ms: number) => {
     const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms); timers.add(timer);
   };
@@ -163,7 +166,7 @@ function previewBridge(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         const path = (req.url ?? "").split("?")[0].slice(1);
         if (path === "__ai_preview/reset") {
-          for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); khorRunning=false; generation.fill(0);
+          for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); khorRunning=false; khorApproval=null; khorAnswers.length=0; generation.fill(0);
           preferences.splice(0,preferences.length,...structuredClone(initialPreferences));
           modelConfig={home:device.id,account:account.id,model:account.default_model,options:{thought_level:"medium",auto_compaction:true}};
           frames = ids.map((_, i) => sampleWithSettings(i));
@@ -184,6 +187,8 @@ function previewBridge(): Plugin {
         const index = Math.max(0, ids.indexOf(String(body.id)));
         let answer: unknown = null;
         switch (path) {
+          case "__ai_preview/khor-approval":khorRunning=body.pending!==false;khorApproval=body.pending===false?null:{id:`approval-${++jobCounter}`,tool:"close",arguments:JSON.stringify({session:"fixture-session",machine:"临时测试设备"})};answer=khorApproval;break;
+          case "__ai_preview/khor-answers":answer=khorAnswers;break;
           case "__ai_preview/acp": frames[index].push(...(Array.isArray(body.frames)?body.frames:[]));answer=true;break;
           case "__ai_preview/answers":answer=interactionAnswers;break;
           case "chat_respond":interactionAnswers.push(body);frames[index].push({kind:'elicit_answered',ask:body.ask,response:{action:'accept'}});break;
