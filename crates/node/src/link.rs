@@ -142,6 +142,11 @@ fn rows_rebuilt(
     order.iter().map(|id| by_id.remove(id)).collect()
 }
 
+/// How long [`Request::Versions`] waits on one reading before leaving it
+/// out of the answer (`Node::answer_versions`). The quick ones are
+/// milliseconds; what is slower than this is waiting on something else.
+const READING_BY: Duration = Duration::from_secs(1);
+
 /// The request a reading's kind stands for in [`Request::Versions`].
 fn reading_request(kind: &str) -> Option<Request> {
     Some(match kind {
@@ -10666,12 +10671,31 @@ impl Node {
             }
         }
         let by_change = readings.iter().any(|(k, _)| k == ROWS_BY_CHANGE);
+        // **Each reading by its deadline, all at once** (fix/front): one
+        // slow reading — a quota read waiting on a provider, the first
+        // tally of a machine's transcripts — used to hold this whole
+        // answer, so the asker's round waited on it past the opening's
+        // own budget. One not ready by [`READING_BY`] is left out, which
+        // the asker reads as unchanged and keeps the copy it holds
+        // (`take_readings`); the work goes on where it runs, and the
+        // next round has it.
+        let answers = join_all(
+            readings
+                .into_iter()
+                .filter_map(|(kind, held)| Some((reading_request(&kind)?, kind, held)))
+                .map(|(req, kind, held)| async move {
+                    let answer =
+                        tokio::time::timeout(READING_BY, Box::pin(self.dispatch(remote, req, ep))).await;
+                    (kind, held, answer)
+                })
+                .collect(),
+        )
+        .await;
         let mut changed = Vec::new();
-        for (kind, held) in readings {
-            let Some(req) = reading_request(&kind) else {
+        for (kind, held, answer) in answers {
+            let Ok(answer) = answer else {
                 continue;
             };
-            let answer = Box::pin(self.dispatch(remote, req, ep)).await;
             let frame = match &answer {
                 Response::Refused { .. } => Vec::new(),
                 answer => proto::encode(answer)?,
