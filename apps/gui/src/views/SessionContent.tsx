@@ -114,10 +114,10 @@ function ContentFileToolbar({tab,device,devices,navigation,onPoint,onClose,child
   </ContentToolbar>;
 }
 
-export function SessionContentPane({ container, content, session, devices, rows, visible, onClose, mobile = false, navigation, sessionFaces, onInspect, onCloseSession, onNewSession }: {
+export function SessionContentPane({ container, content, session, devices, rows, visible, onClose, mobile = false, navigation, sessionFaces, onSelectSession, onCloseSession, onNewSession }: {
   container: HTMLElement; content: SessionContent; session: string | null;
   devices: DeviceRow[]; rows: SessionRow[]; visible: boolean; mobile?: boolean;
-  sessionFaces: TabFace[];onInspect:(id:string)=>void;onCloseSession:(id:string)=>void;onNewSession:()=>void;
+  sessionFaces: TabFace[];onSelectSession:(id:string)=>void;onCloseSession:(id:string)=>void;onNewSession:()=>void;
   navigation: ContentNavigation; onClose: () => void;
 }) {
   const visited = useRef(new Set<string>()), pickers = useRef(new Set<string>());
@@ -226,7 +226,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
         </ContentPosition>
       </Fragment>;
     })}
-    {session&&state?.scene==='sessions'&&<ContentPosition session={session} position="sessions" show={visible} mobile={mobile} navigation={navigation} data-content-sessions className="session-content-view mobile-content-overview"><ContentSessionOverview faces={sessionFaces} active={session} onFocus={onInspect} onCloseSession={onCloseSession} onNew={onNewSession} onClose={onClose} query={state.filter} onQuery={filter=>navigation.update(session,{filter})}/></ContentPosition>}
+    {session&&state?.scene==='sessions'&&<ContentPosition session={session} position="sessions" show={visible} mobile={mobile} navigation={navigation} data-content-sessions className="session-content-view mobile-content-overview"><ContentSessionOverview faces={sessionFaces} active={session} onFocus={onSelectSession} onCloseSession={onCloseSession} onNew={onNewSession} onClose={onClose} query={state.filter} onQuery={filter=>navigation.update(session,{filter})}/></ContentPosition>}
     {session && <ContentPosition session={session} position="overview" show={visible&&state?.scene==='overview'} mobile={mobile} navigation={navigation} data-content-overview className={cn('session-content-view', !(visible && state?.scene==='overview') && 'session-content-retained')} aria-hidden={state?.scene!=='overview'} inert={state?.scene!=='overview'}><ContentOverview face={face!} onClose={onClose} session={session} row={owner} devices={devices} content={content} navigation={navigation} onPick={pick}/></ContentPosition>}
   </NarrowBox>, container);
 }

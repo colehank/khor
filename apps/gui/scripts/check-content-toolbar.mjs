@@ -24,7 +24,7 @@ try{
  const env={...process.env,...fakeHome(join(scratch,'home'),usage.url),KHOR_HOME:join(scratch,'node'),KHOR_NAME:'toolbar-check',KHOR_NO_MDNS:'1',BRIDGE_PORT:String(bridgePort)};delete env.KHOR_SESSION;
  for(const n of ['bridge','khor'])copyFileSync(join(target,'debug',n),join(scratch,n));run(join(scratch,'bridge'),[],env);await until(()=>api('devices').then(r=>r.length));
  const device=(await api('devices')).find(d=>d.me),rootAt=join(scratch,'project');mkdirSync(rootAt,{recursive:true});const root=realpathSync(rootAt);writeFileSync(join(root,'notes.md'),'# Notes\n\nKept content.');mkdirSync(join(root,'child'));writeFileSync(join(root,'child','second.txt'),'Second file');mkdirSync(join(root,'child-renamed-other'));writeFileSync(join(root,'child-renamed-other','keep.txt'),'Kept sibling');
- const id=await api('open_on',{machine:'',title:'Toolbar checks',cwd:root,cols:100,rows:35});sessions.push(id);await api('recent_visit',{kind:'page',machine:device.name,place:usage.url});
+ const id=await api('open_on',{machine:'',title:'Toolbar checks',cwd:root,cols:100,rows:35});sessions.push(id);const other=await api('open_on',{machine:'',title:'Other session',cwd:root,cols:100,rows:35});sessions.push(other);await api('recent_visit',{kind:'page',machine:device.name,place:usage.url});
  // A test owns its optimizer cache. Shared node_modules is linked across
  // worktrees; a different Lab's dependency scan must not reload this App.
  process.env.KHOR_FACE_GATE='1';if(process.env.CONTENT_TRACE_RELOAD)process.env.DEBUG='vite:deps,vite:hmr';
@@ -35,11 +35,47 @@ try{
  await context.addInitScript(ids=>{localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:ids,active:ids[0]}));localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'detail'}));localStorage.setItem('khor.lang','zh');},sessions);
  page=await context.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));if(process.env.CONTENT_TRACE_RELOAD){page.on('console',m=>console.log('browser',m.type(),m.text()));page.on('framenavigated',f=>{if(f===page.mainFrame())console.log('navigation',f.url());});}
  const remote={...device,id:'a'.repeat(64),name:'toolbar-remote',shown:'远端 A',me:false,hop:'direct',paused:false};await page.route('**/devices',r=>r.fulfill({json:[device,remote]}));
- await page.goto(`http://localhost:${port}/?bridge=${bridgePort}`,{waitUntil:'domcontentloaded',timeout:15000});await page.addStyleTag({content:':root:not([data-keyboard]){--safe-bottom:34px}'});await page.locator('[data-session-title]').filter({hasText:/^Toolbar checks$/}).click();await page.locator('[data-session-deck] [data-deck-title]').click();
+ await page.goto(`http://localhost:${port}/?bridge=${bridgePort}`,{waitUntil:'domcontentloaded',timeout:15000});await page.addStyleTag({content:':root:not([data-keyboard]){--safe-bottom:34px}'});await page.locator('[data-session-title]').filter({hasText:/^Toolbar checks$/}).click();const sessionBand=()=>page.locator('[data-session-deck] [data-deck-band]');
+ const openSessions=async()=>{const b=await sessionBand().boundingBox(),cdp=await context.newCDPSession(page),p={x:b.x+b.width/2,y:b.y+b.height/2};await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[p]});await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:p.x,y:p.y-60}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.locator('[data-content-sessions]:visible').waitFor();await cdp.detach();};
+ for(const target of [other,other,id]){
+  await openSessions();await page.locator('[data-content-sessions]:visible [data-tab-sheet-open="'+target+'"]').click();
+  await until(async()=>await sessionBand().getAttribute('data-band-preview')===target);
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('[data-content-panel]:visible').count(),0,'choosing a session must show its session, without opening nested tabs');
+ }
+ console.log('PASS session overview selects different/current sessions and closes content sheet');
+ // Programmatic selection, held preview and direct swipe all move the same
+ // full-width identities; the currently open session changes only on release.
+ await openSessions();await page.locator('[data-tab-sheet-open="'+other+'"]').click();
+ const rootMotion=await sessionBand().evaluate(async band=>{
+  await new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)));
+  return [...band.querySelectorAll('[data-band-seg]')].map(el=>({id:el.dataset.bandId,x:el.getBoundingClientRect().left-band.getBoundingClientRect().left,width:el.getBoundingClientRect().width,band:band.clientWidth,preview:band.dataset.bandPreview,label:el.textContent}));
+ });
+ assert(rootMotion.some(s=>s.id===other&&Math.abs(s.x)>.5&&Math.abs(s.x)<s.band),'selected pill must slide in, rather than replace its contents at rest: '+JSON.stringify({id,other,rootMotion}));
+ await until(async()=>await sessionBand().getAttribute('data-band-preview')===other);await page.waitForTimeout(220);
+ await openSessions();await page.locator('[data-tab-sheet-open="'+id+'"]').click();await page.waitForTimeout(220);
+ console.log('PASS session selection moves the pill identity');
+ const held=await context.newCDPSession(page),heldBox=await sessionBand().boundingBox(),heldAt={x:heldBox.x+heldBox.width/2,y:heldBox.y+heldBox.height/2};
+ await held.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[heldAt]});await page.locator('[data-deck-selector]').waitFor();
+ await held.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:heldAt.x+20,y:heldAt.y}]});
+ const heldMotion=await sessionBand().evaluate(async band=>{await new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)));const box=band.getBoundingClientRect();return {preview:band.dataset.bandPreview,items:[...band.querySelectorAll('[data-band-seg]')].map(el=>({id:el.dataset.bandId,x:el.getBoundingClientRect().left-box.left,width:el.getBoundingClientRect().width})),width:box.width};});
+ assert.equal(heldMotion.preview,other);assert(heldMotion.items.some(s=>s.id===other&&Math.abs(s.x)>.5&&Math.abs(s.x)<heldMotion.width),'held candidates move inside the pill');
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('khor.sessions.tabs')).active),id,'held candidate must not open its session');
+ await held.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});await held.detach();await page.locator('[data-deck-selector]').waitFor({state:'detached'});await page.waitForTimeout(220);
+ console.log('PASS held session preview moves without opening and cancels to the current session');
+ await until(async()=>await sessionBand().getAttribute('data-band-preview')===id);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await openSessions();await page.locator('[data-tab-sheet-open="'+other+'"]').click();
+ await until(async()=>await sessionBand().getAttribute('data-band-preview')===other);
+ const reduced=await sessionBand().evaluate(b=>{const r=b.getBoundingClientRect();return [...b.querySelectorAll('[data-band-seg]')].filter(e=>getComputedStyle(e).visibility!=='hidden').map(e=>({id:e.dataset.bandId,x:e.getBoundingClientRect().left-r.left}));});
+ assert.equal(reduced.length,1);assert.equal(reduced[0].id,other);assert(Math.abs(reduced[0].x)<.5,'reduced motion selects directly without travel');
+ await openSessions();await page.locator('[data-tab-sheet-open="'+id+'"]').click();await page.emulateMedia({reducedMotion:'no-preference'});
+ console.log('PASS reduced motion selects without animation');
+ await page.locator('[data-session-deck] [data-deck-title]').click();
  const picker=()=>page.locator('[data-content-picker]:visible'),shown=()=>page.locator('[data-session-content][data-content-visible=true]');
  const settle=()=>page.evaluate(()=>Promise.all(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))));
  const dockBottom=async(locator,label)=>{const box=await locator.boundingBox();assert(box,label+' missing');assert(Math.abs(844-box.y-box.height-22)<1,label+' bottom '+(844-box.y-box.height));};
- await dockBottom(picker().locator('.mobile-content-pill'),'workspace deck');
+ await settle();await dockBottom(picker().locator('.mobile-content-pill'),'workspace deck');
  const toolbarMetrics=[];
  const toolbar=async(kind,source)=>{
   const bar=page.locator('[data-content-toolbar="'+kind+'"]:visible');await bar.waitFor();
@@ -74,7 +110,10 @@ try{
  const beforeSlow=await picker().locator('[data-deck-band]').getAttribute('data-band-preview');await page.mouse.move(q.x,q.y);await page.mouse.down();await page.waitForTimeout(200);await page.mouse.move(q.x-14,q.y);assert.equal(await picker().locator('[data-deck-band]').getAttribute('data-band-phase'),'swipe');await page.mouse.up();await until(async()=>await picker().locator('[data-deck-band]').getAttribute('data-band-phase')==='idle');assert.equal(await picker().locator('[data-deck-band]').getAttribute('data-band-preview'),beforeSlow,'slow short motion must not become a fast flick');console.log('PASS slow short motion preserves the original swipe velocity');
  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[q]});await page.locator('[data-deck-selector]').waitFor();assert.equal(await picker().locator('input:visible').count(),0);assert.equal(await page.locator('.deck-selector-wheel').count(),1);await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:q.x,y:q.y-140}]});assert.equal(await page.locator('[data-deck-selector]').count(),1);await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[q]});await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.locator('[data-deck-selector]').waitFor({state:'detached'});assert.equal(await picker().locator('input:visible').count(),0);console.log('PASS hold uses formal arc, retracting up retains the picker, release does not edit');
  await settle();const swipe=await picker().locator('[data-deck-band]').boundingBox(),start={x:swipe.x+swipe.width*.8,y:swipe.y+swipe.height/2};
- await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});for(const t of [.2,.5,.8,1])await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x-swipe.width*.65*t,y:start.y}]});assert.equal(await shown().count(),0,'preview opened an intermediate document');await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await shown().locator('.cm-content').waitFor();assert.equal(await shown().getAttribute('data-session-content'),second);await dockBottom(shown().locator('[data-file-pill]'),'file deck');assert.equal(await shown().locator('[data-content-path-editor]').count(),0,'swipe opened editor');assert.equal(await shown().locator('[data-file-back]').count(),1);await shown().locator('[data-file-back]').click();await picker().getByText('notes.md',{exact:true}).waitFor();
+ await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});for(const t of [.2,.5,.8,1]){
+  await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x-swipe.width*.65*t,y:start.y}]});
+  if(t===.5){const geometry=await picker().locator('[data-deck-band]').evaluate(async band=>{await new Promise(done=>requestAnimationFrame(done));const b=band.getBoundingClientRect();return {width:b.width,items:[...band.querySelectorAll('[data-band-seg]')].map(el=>({x:el.getBoundingClientRect().left-b.left,width:el.getBoundingClientRect().width})).filter(e=>Math.abs(e.x)<b.width-.5)};});assert.equal(geometry.items.length,2);assert(geometry.items.every(e=>Math.abs(e.width-geometry.width)<1),'both nested pill identities retain full width while moving');}
+ }assert.equal(await shown().count(),0,'preview opened an intermediate document');await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await shown().locator('.cm-content').waitFor();assert.equal(await shown().getAttribute('data-session-content'),second);await dockBottom(shown().locator('[data-file-pill]'),'file deck');assert.equal(await shown().locator('[data-content-path-editor]').count(),0,'swipe opened editor');assert.equal(await shown().locator('[data-file-back]').count(),1);await shown().locator('[data-file-back]').click();await picker().getByText('notes.md',{exact:true}).waitFor();
  await until(async()=>(await api('tabs_list',{kind:'content'})).tabs.find(t=>t.id===second)?.view==='workspace');
  const returnedFile=(await api('tabs_list',{kind:'content'})).tabs.find(t=>t.id===second);assert.equal(returnedFile.view,'workspace','Back must clear the current document from its actual tab');
  await picker().locator('[data-band-seg=cur] button').tap();await picker().locator('[data-content-path-editor] input').fill(join(root,'child','second.txt'));await picker().locator('[data-content-path-editor] input').press('Enter');await shown().locator('.cm-content').waitFor();assert.equal(await shown().getAttribute('data-session-content'),second,'next file must reuse the returned tab');

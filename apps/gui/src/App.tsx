@@ -4299,7 +4299,14 @@ export default function App() {
       <div hidden ref={el => { contentParking.current = el; if (el && !contentHost.parentElement) el.appendChild(contentHost); }} />
       <SessionContentPane container={contentHost} content={content} session={selectedRow?.id ?? null} devices={devices} rows={rows}
         mobile={narrow} navigation={contentNavigation} sessionFaces={tabFaces}
-        onInspect={id=>{if(isNewTab(id)){sessionTabs.focus(id);return;}contentNavigation.inspect(id);setSessionSide(id,{open:true,seat:"workspace"});sessionTabs.focus(id);setScreen("detail");}}
+        onSelectSession={id=>{
+          // Choosing a session leaves the overview, including when it is
+          // already current. Its documents remain available on the next tap.
+          previousContentGroup.current.open=false;
+          if(selected)hideSessionContent(selected);
+          hideSessionContent(id);
+          sessionTabs.focus(id);setScreen("detail");
+        }}
         onCloseSession={id=>{if(openTabs.length===1)setScreen("list");sessionTabs.close(id);}}
         onNewSession={()=>openNewTab()}
         visible={sessions && side.open && (narrow ? inSession : sideShown) && !hidden && morePage === null && !switchingTabs}

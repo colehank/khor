@@ -7,6 +7,7 @@ import {gui} from '@/gen/catalog';
 import {cn} from '@/lib/utils';
 import {feel} from '@/lib/haptics';
 import {stillMotion} from '@/lib/travel';
+import {useDeckPosition} from '@/hooks/use-deck-position';
 import {deckScrubber,DEFAULT_DECK_TUNING,holdTiming,nearbySlots,type DeckScrubState} from '@/lib/deck-scrub';
 import {deckJoystick,DECK_JOYSTICK_DEFAULTS,type DeckJoystickState,type DeckJoystickTuning} from '@/lib/deck-joystick';
 import {DeckExplore} from './DeckExplore';
@@ -24,7 +25,7 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
   const at=Math.max(0,faces.findIndex(f=>f.id===active));
   const [state,setState]=useState<DeckScrubState>({opened:at,preview:at,position:at,mode:'idle',source:'swipe',direction:0,holding:false,...holdTiming(0,250)});
   const [steering,setSteering]=useState<DeckJoystickState>({phase:'idle',preview:at,dx:0,dy:0,direction:0,interval:tuning.slowMs,overview:false,tier:0,pulse:0});
-  const alive=useRef(true),prior=useRef(at);
+  const alive=useRef(true),prior=useRef(at),focusDirection=useRef(0);
   const focus=(index:number)=>{const now=latest.current,f=now.faces[index];if(f&&f.id!==now.active)now.onFocus(f.id);};
   const engine=useMemo(()=>deckScrubber(faces.length,at,s=>{
     if(!alive.current)return;
@@ -143,9 +144,9 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
     );
 
   const exploring=steering.phase==='steering'||steering.phase==='pull';
-  const position=state.position,movingWay=state.holding?state.direction:Math.sign(position-state.opened);
-  const anchor=movingWay<0?Math.ceil(position):Math.floor(position),fraction=Math.abs(position-anchor);
-  const slots=nearbySlots(anchor,faces.length,1),past=state.mode==='swipe'&&state.preview!==state.opened;
+  const following=state.mode==='swipe'||state.mode==='settling';
+  const position=useDeckPosition(exploring?steering.preview:state.preview,faces.length,exploring?steering.direction:focusDirection.current,following?state.position:undefined,ids);
+  const anchor=Math.round(position),slots=nearbySlots(position,faces.length,1),past=state.mode==='swipe'&&state.preview!==state.opened;
   const previewing=state.mode==='swipe'&&!state.holding,selecting=state.mode==='swipe';
   return <>
     <div ref={band} data-deck-band data-band-size={faces.length} data-band-past={past||undefined} data-band-phase={exploring?'rail':steering.phase==='pending'?'pending':state.mode}
@@ -158,14 +159,13 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
       onClick={e=>{if(pendingTap.current||e.detail===0&&!onTitle)onTitleClick(e);}}
       onKeyDown={e=>{if(e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true]'))return;
         if(onOverview&&(e.key==='ArrowUp'||!onTitle&&(e.key==='Enter'||e.key===' '))){e.preventDefault();onOverview();}
-        else if(faces.length&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){e.preventDefault();focus((at+(e.key==='ArrowRight'?1:-1)+faces.length)%faces.length);}}}
+        else if(faces.length&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){e.preventDefault();focusDirection.current=e.key==='ArrowRight'?1:-1;focus((at+focusDirection.current+faces.length)%faces.length);}}}
       onContextMenu={e=>{if(state.mode!=='idle'||steering.phase!=='idle')e.preventDefault();}}>
       {faces.length>0&&slots.map(({slot,index})=>{
-        const f=faces[index],role=slot===anchor?'cur':slot<anchor?'prev':'next',incoming=slot===anchor+movingWay;
-        const share=role==='cur'?1:incoming?fraction:0,offset=role==='cur'?anchor-position:role==='next'?1-fraction:0;
-        return <div key={slot} data-band-seg={role} aria-hidden={role!=='cur'||undefined}
+        const f=faces[index],role=slot===anchor?'cur':slot<anchor?'prev':'next',offset=slot-position;
+        return <div key={slot} data-band-id={f.id} data-band-seg={role} aria-hidden={f.id!==active||undefined}
           className="deck-band-face absolute inset-0 flex items-center overflow-hidden text-foreground will-change-transform"
-          style={{display:share===0?'none':undefined,width:`${share*100}%`,transform:`translate3d(calc(${offset} * var(--deck-band-width)),0,0)`,opacity:previewing&&((past&&index===state.opened)||(!past&&index!==state.opened))?.4:1}}>
+          style={{visibility:Math.abs(offset)>=1?'hidden':undefined,transform:`translate3d(calc(${offset} * var(--deck-band-width)),0,0)`,opacity:previewing&&((past&&index===state.opened)||(!past&&index!==state.opened))?.4:1}}>
           <div data-band-body className="flex h-full flex-none items-center gap-in overflow-hidden whitespace-nowrap pe-row" style={{width:'var(--deck-band-width)'}}>{body(f,f.id===active?'cur':slot<state.opened?'prev':'next')}</div>
         </div>;
       })}
