@@ -720,3 +720,8 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 `npm run pi-accounts` 挂载正式 KhorAgentSettings / PiAccountDialog，仅替换认证后的节点边界。检查 1280/390 × 浅深主题、提供商和模型搜索、独立账户默认／会话当前模型、回复期间切换、密钥提示、OAuth 设备码和关闭取消；真实 ChoiceField / TaskOverlay 保持有界推荐及可滚动内容。焦点落标题，避免前一层退出时夺走新层焦点。`subscription-import` 显式选择原额度查询模式，并继续覆盖订阅发现／重试／导入和窄屏布局。
 
 原生 `pi_login_keeps_credentials` 验证 Pi 私有持久存储、账户默认迁移、Admin Key 隔离、取消及执行期间配置；`khor_agent_wire` 使用两台临时配对节点检查远程配置与密钥归属。`khor_agent` 集成回归验证当前回复／待批不变，下一轮使用新模型。独立 Bun 包在仓库之外验证 MCP／上下文恢复、OAuth 唤起／取消和免认证本地服务；不使用用户凭据，不调用付费模型。浏览器宽窄验收不代替 iOS / Android 原生登录与键盘验收。
+
+
+### 手机甲板底距（2026-10-23）
+
+`npm run dock-position` 使用正式 App 和现有隔离验收桥接，检查 iPhone 34 pt 安全区、无指示条、窄横屏、Android 手势／按钮导航、窄桌面窗口；列表留位、水平边距、会话甲板及真实 visualViewport 键盘升降。截图默认放外置盘，可由 `DOCK_SHOTS` 指定。`content-toolbar` 同时验证临时真实节点中的工作区、文件和网页使用同一基线。原生网页仍由现有 `native-deck` 从 DOM 读取位置，不另写 iOS 尺寸。

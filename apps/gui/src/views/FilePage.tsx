@@ -612,7 +612,7 @@ export function FilePage({
       {!embedded && <div
         ref={deck}
         data-file-deck
-        className="pointer-events-none absolute inset-x-0 bottom-[var(--safe-bottom)] flex flex-col items-stretch"
+        className="pointer-events-none absolute inset-x-0 bottom-[var(--dock-safe-bottom)] flex flex-col items-stretch"
       >
         {verbs.said && (
           <span data-file-said className="glass pointer-events-auto mx-auto mb-in rounded-full px-row py-1 text-callout text-muted-foreground">

@@ -172,9 +172,13 @@ function layoutBottom(): number {
 }
 
 export function followVisualViewport(): () => void {
+  const root = document.documentElement;
+  // iPadOS can use a desktop user agent. This affects floating dock
+  // geometry only; never reduce the content's or Android's safe area.
+  root.toggleAttribute("data-ios", /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (/Mac/i.test(navigator.platform) && navigator.maxTouchPoints > 1));
   const vv = window.visualViewport;
   if (!vv) return () => {};
-  const root = document.documentElement;
   // The pan WebKit made to show the field, taken back: the field is in
   // view without it once the shell is as tall as what is left, and a
   // panned shell is a page that scrolled. **Once after the keyboard rose

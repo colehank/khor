@@ -1656,7 +1656,7 @@ export default function App() {
       }}
       // Floating over the foot of whatever holds it — the screen, or the
       // list column — centred, clear of a phone's home indicator.
-      className="absolute bottom-[calc(var(--nav-gap)+var(--safe-bottom))] left-1/2 z-30 -translate-x-1/2"
+      className="absolute bottom-[var(--nav-bottom)] left-1/2 z-30 -translate-x-1/2"
     />
   );
 

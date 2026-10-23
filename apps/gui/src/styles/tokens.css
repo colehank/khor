@@ -2450,6 +2450,7 @@
   --spacing-nav-glyph: var(--nav-glyph);
   --spacing-nav-gap: var(--nav-gap);
   --spacing-nav-room: var(--nav-room);
+  --spacing-dock-safe-bottom: var(--dock-safe-bottom);
   --spacing-nav-menu: var(--nav-menu);
   --spacing-list-row: var(--list-row);
   --spacing-list-face: var(--list-face);
@@ -2891,7 +2892,13 @@
   --nav-h: 52px;
   --nav-item: 64px;
   --nav-glyph: 20px;
+  /* Horizontal gutters never determine the dock's vertical anchor. */
   --nav-gap: 16px;
+  --nav-bottom: calc(var(--safe-bottom) + var(--gap-base));
+  /* Only floating controls can enter the generous iOS home-indicator
+     band. Content, sheets and system navigation retain --safe-bottom. */
+  --dock-safe-bottom: var(--safe-bottom);
+  --dock-home-overlap: 20px;
   /* 更多's menu, as wide as the canvas draws it. */
   --nav-menu: 236px;
   --list-row: 56px;
@@ -2990,7 +2997,7 @@
   --list-head: var(--pane-head);
   /* What a scroller under the floating navigation keeps clear at its
      foot, so its last row can be scrolled out from under the glass. */
-  --nav-room: calc(var(--nav-h) + 2 * var(--nav-gap) + var(--safe-bottom));
+  --nav-room: calc(var(--nav-h) + var(--nav-bottom) + var(--gap-base));
 }
 @media (pointer: coarse) {
   :root {
@@ -3000,6 +3007,7 @@
     --nav-item: 76px;
     --nav-glyph: 24px;
     --nav-gap: 24px;
+    --nav-bottom: calc(var(--dock-safe-bottom) + var(--gap-in));
     --list-row: 68px;
     --list-face: 40px;
     --dial-seat: 36px;
@@ -3081,6 +3089,15 @@
        that sum. */
     --tab-lip: 4px;
   }
+}
+
+/* iPhone / iPad floating controls share a lower native-style baseline.
+   viewport.ts stamps this once before the first frame. With a 34-point
+   band, the control bottom is 34 - 20 + 8 = 22; no band (or a keyboard)
+   retains only the normal inner 8-point breath. A shorter landscape
+   indicator band still keeps up to 8 points below that breath. */
+:root[data-ios] {
+  --dock-safe-bottom: max(0px, min(var(--safe-bottom), var(--gap-in)), calc(var(--safe-bottom) - var(--dock-home-overlap)));
 }
 
 /* **The soft keyboard covers the home indicator** (2026-10-02). While it

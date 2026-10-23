@@ -411,7 +411,7 @@ export function SessionScreen({
         // The deck steps away while the sheet is up (UX-37 §4; the owner
         // 2026-10-06 21:05 again: 「展开了不要有下面的药丸这一行」). Over
         // the scrim while the pill is grown.
-        className={cn("flex flex-none flex-col pb-safe-bottom", away && "invisible", island && "relative z-50")}
+        className={cn("flex flex-none flex-col pb-dock-safe-bottom", away && "invisible", island && "relative z-50")}
       >
         <div ref={setAbove} data-session-bar-above className="flex flex-none flex-col empty:hidden" />
         {folded && (
