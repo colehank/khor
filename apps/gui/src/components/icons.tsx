@@ -139,6 +139,7 @@ const LIVE = {
   // The file page's two (round UX-3, 2026-10-04), on the 16 canvas: a
   // pencil laid on the diagonal (round), and the tray with its arrow.
   pencil: fit(1.99, 1.95, 12.06), // round
+  compose: fit(1.1, 0.7, 13.9), // square: frame and diagonal pen
   share: fit(1.2, 0.9, 13.6),
   // A file going into a session (item 71, 2026-10-07), on the 16 canvas,
   // computed: a disc of r 6.5 with its line fills the whole box — it
@@ -1124,6 +1125,15 @@ export function IconPencil({ className }: IconProps) {
       <path d="M3.9 9.6L3.2 12.8l3.2-.7" />
     </Mark>
   );
+}
+
+/** New conversation: a complete frame cut by the foreground pen. */
+export function IconCompose({ className }: IconProps) {
+  const barrel="M10.5 1.8l3 3-6.6 6.6-3-3Z",tip="M3.9 8.4L3.2 12.2l3.7-.8";
+  return <Mark className={className} live={LIVE.compose} icon="compose" cut={<path d={`${barrel} ${tip}`} fill="black" stroke="black" strokeWidth={cutOf(LIVE.compose)}/>}>{cutId=><>
+    <path mask={`url(#${cutId})`} d="M4.4 3.3h6.7a2.1 2.1 0 0 1 2.1 2.1v6.7a2.1 2.1 0 0 1-2.1 2.1H4.4a2.1 2.1 0 0 1-2.1-2.1V5.4a2.1 2.1 0 0 1 2.1-2.1Z"/>
+    <path data-body d={barrel}/><path d={tip}/>
+  </>}</Mark>;
 }
 
 /** 分享 (round UX-3): the system's own figure — an arrow leaving an open

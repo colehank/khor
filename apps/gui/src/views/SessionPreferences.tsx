@@ -34,6 +34,10 @@ function HeaderSeat({children}:{children:ReactNode}){
 function Preferences({model,agent,mode,options,disabled=false,children,danger,open,onOpen}:{model:string|null;agent:string;mode?:string;options:AddOption[];disabled?:boolean;children:ReactNode;danger?:ReactNode;open:boolean;onOpen:(open:boolean)=>void}){
   const inBar=useInBar(),docked=inBar&&labUnified&&new URLSearchParams(location.search).get('deck')==='combined';
   const light=inBar&&labUnified&&new URLSearchParams(location.search).get('deck')==='light';
+  const modelBar=inBar&&labUnified&&new URLSearchParams(location.search).get('deck')==='compose';
+  const thought=options.find(o=>o.kind==='values'&&o.category==='thought_level');
+  const levels:Record<string,string>={off:'关闭',minimal:'最低',low:'低',medium:'中',high:'高',xhigh:'极高',standard:'标准',deep:'深入',default:'默认',auto:'自动'};
+  const effort=thought?.kind==='values'?(levels[thought.current]??thought.values.find(v=>v.value===thought.current)?.name??thought.current):null;
   const [page,setPage]=useState<string|null>(null),panel=useRef<HTMLDivElement>(null);
   const choice=page?.startsWith('option:')?options.find(o=>o.id===page.slice(7)):undefined,values=choice?.kind==='values'?choice:null;
   const back=()=>{setPage(null);requestAnimationFrame(()=>panel.current?.querySelector<HTMLElement>(page?.startsWith('option:')?`[data-lab-option="${CSS.escape(page.slice(7))}"]`:'[data-lab-option]')?.focus());};
@@ -43,8 +47,8 @@ function Preferences({model,agent,mode,options,disabled=false,children,danger,op
     return()=>cancelAnimationFrame(frame);
   },[page,open]);
   return <HeaderSeat><DropdownMenu open={open} onOpenChange={value=>{if(value)setPage(null);onOpen(value);}}>
-    <DropdownMenuTrigger asChild><button type="button" data-lab-session-settings data-lab-dock-settings={docked||undefined} data-lab-config-trigger={light||undefined} title={light?'会话配置':undefined} aria-label={`会话配置：${shortModel(model)}`} className={`${light?'':'glass '}composer-lab-trigger data-[state=open]:glass-sel`}>
-      {light?<IconFilter/>:docked?<IconMore/>:<><span className="composer-lab-trigger-words"><span>{shortModel(model)}</span>{mode&&<small data-lab-execution-badge>{mode}</small>}</span><IconChevronDown/></>}
+    <DropdownMenuTrigger asChild><button type="button" data-lab-session-settings data-lab-dock-settings={docked||undefined} data-lab-config-trigger={light||undefined} data-lab-model-trigger={modelBar||undefined} title={light?'会话配置':undefined} aria-label={`会话配置：${shortModel(model)}${modelBar&&effort?' · '+effort:''}`} className={`${light||modelBar?'':'glass '}composer-lab-trigger data-[state=open]:glass-sel`}>
+      {modelBar?<><span className="lab-model-summary"><span>{shortModel(model)}</span>{effort&&<><span aria-hidden>·</span><span data-lab-effort>{effort}</span></>}</span><IconChevronDown/></>:light?<IconFilter/>:docked?<IconMore/>:<><span className="composer-lab-trigger-words"><span>{shortModel(model)}</span>{mode&&<small data-lab-execution-badge>{mode}</small>}</span><IconChevronDown/></>}
     </button></DropdownMenuTrigger>
     <DropdownMenuContent ref={panel} side={docked?'top':'bottom'} align="end" sideOffset={8} data-lab-preferences className="min-w-nav-menu composer-lab-menu" onKeyDown={e=>{if(e.key==='ArrowLeft'&&page){e.preventDefault();back();}}}>
       {page?<>
@@ -97,7 +101,7 @@ export function KhorHeader({view,onChanged,disabled,updates=[]}:{view:KhorAgentV
   const [open,setOpen]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState(''),[options,setOptions]=useState<SessionConfigOption[]>([]);
   const request=useRef<AbortController|null>(null);
   const account=view?.accounts.find(a=>a.id===view.config?.account),model=view?.config?.model??'';
-  useEffect(()=>{if(!open||!account||saving)return;const abort=new AbortController();setError('');
+  useEffect(()=>{if(!account||saving)return;const abort=new AbortController();setError('');
     void piJob(account.home,{operation:'session_settings',account:account.id},abort.signal).then(result=>{if(!abort.signal.aborted)setOptions(result.result?.configOptions??[]);},e=>{if(!abort.signal.aborted)setError(String(e));});
     return()=>abort.abort();
   },[open,account?.id,account?.home,model,saving]);
@@ -108,7 +112,7 @@ export function KhorHeader({view,onChanged,disabled,updates=[]}:{view:KhorAgentV
       if(!abort.signal.aborted){setOptions(result.result?.configOptions??[]);onChanged(await khorAgent('read',account.home));}
     }catch(e){if(!abort.signal.aborted)setError(String(e));}finally{if(!abort.signal.aborted)setSaving(false);}
   };
-  const ui=options.flatMap((o):AddOption[]=>o.type==='boolean'?[{kind:'switch',id:o.id,name:o.name,note:o.description??null,on:o.currentValue===true,onToggle:()=>void pick(o.id,o.currentValue!==true)}]:o.type==='select'?[{kind:'values',id:o.id,name:o.name,note:o.description??null,current:String(o.currentValue??''),values:(o.options??[]).flatMap(v=>'group' in v?v.options.map(x=>({...x,heading:v.name,note:x.description??null})):[{...v,heading:"",note:v.description??null}]),onPick:v=>void pick(o.id,v)}]:[]);
+  const ui=options.flatMap((o):AddOption[]=>o.type==='boolean'?[{kind:'switch',id:o.id,name:o.name,note:o.description??null,on:o.currentValue===true,onToggle:()=>void pick(o.id,o.currentValue!==true)}]:o.type==='select'?[{kind:'values',id:o.id,name:o.name,note:o.description??null,current:String(o.currentValue??''),values:(o.options??[]).flatMap(v=>'group' in v?v.options.map(x=>({...x,heading:v.name,note:x.description??null})):[{...v,heading:"",note:v.description??null}]),onPick:v=>void pick(o.id,v)}]:[]).map(o=>({...o,category:options.find(source=>source.id===o.id)?.category}));
   const usage=updates.reduce<{used:number;size:number}|null>((last,encoded)=>{try{const u=JSON.parse(encoded);if(u.sessionUpdate==='compaction_update')return null;return u.sessionUpdate==='usage_update'&&Number.isFinite(u.used)&&u.size>0?u:last;}catch{return last;}},null);
   return <Preferences model={model} agent="khor" options={ui} disabled={saving} open={open} onOpen={setOpen}>
     {!options.length&&account&&!error&&<DropdownMenuLabel role="status">读取会话设置…</DropdownMenuLabel>}

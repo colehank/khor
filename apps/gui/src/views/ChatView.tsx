@@ -1214,6 +1214,7 @@ export function ChatView({
       ? {
           kind: "switch",
           id: o.id,
+          category: o.category,
           name: o.name,
           note: o.description ?? null,
           on: o.currentValue === true,
@@ -1222,6 +1223,7 @@ export function ChatView({
       : {
           kind: "values",
           id: o.id,
+          category: o.category,
           name: o.name,
           note: o.description ?? null,
           current: String(o.currentValue ?? ""),

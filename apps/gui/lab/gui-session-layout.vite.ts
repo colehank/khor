@@ -19,12 +19,22 @@ export default mergeConfig(preview,defineConfig({
       if(id.endsWith('/src/App.tsx')){
         const anchor=/<SessionScreen\s+/;
         if(!anchor.test(code))throw new Error('SessionScreen Lab mount moved');
-        code="import '/lab/gui-session-dock.css';\nimport {LabSessionHeader} from '/lab/gui-session-header';\n"+code;
+        code="import '/lab/gui-session-dock.css';\nimport {LabSessionHeader} from '/lab/gui-session-header';\nimport {LabModelHeader} from '/lab/gui-session-compose';\n"+code;
         return code.replace(anchor,`<SessionScreen
-      renderHeader={new URLSearchParams(location.search).get('deck') === 'light' && (selectedRow?.kind === 'gui' || isChatTab(selected)) ? props=><LabSessionHeader {...props}/> : undefined}
+      renderHeader={(selectedRow?.kind === 'gui' || isChatTab(selected)) ? new URLSearchParams(location.search).get('deck') === 'compose' ? props=><LabModelHeader {...props}/> : new URLSearchParams(location.search).get('deck') === 'light' ? props=><LabSessionHeader {...props}/> : undefined : undefined}
       combinedDock={new URLSearchParams(location.search).get('deck') === 'combined' && (selectedRow?.kind === 'gui' || isChatTab(selected))}
       deckAt={['bottom','combined'].includes(new URLSearchParams(location.search).get('deck') ?? '') ? 'bottom' : selectedRow?.kind === 'gui' || isChatTab(selected) ? 'top' : 'bottom'}
-      `).replace(/onTabs=\{narrow\s*&&\s*selectedRow\s*\?/,"onTabs={narrow&&selectedRow&&new URLSearchParams(location.search).get('deck')!=='combined'&&new URLSearchParams(location.search).get('deck')!=='light'?").replace(/<Tabs\s+grouped/,`<Tabs tail={<span data-lab-session-settings-slot />} grouped`);
+      `).replace(/onTabs=\{narrow\s*&&\s*selectedRow\s*\?/,"onTabs={narrow&&selectedRow&&new URLSearchParams(location.search).get('deck')!=='combined'&&new URLSearchParams(location.search).get('deck')!=='light'&&new URLSearchParams(location.search).get('deck')!=='compose'?").replace(/<Tabs\s+grouped/,`<Tabs tail={<span data-lab-session-settings-slot />} grouped`);
+      }
+      if(id.endsWith('/src/views/Composer.tsx')){
+        code="import {useLabComposeLayout} from '/lab/gui-session-compose';\nimport {useNarrow} from '@/hooks/use-narrow';\n"+code;
+        code=code.replace('const cap = useRef<HTMLDivElement>(null);',`const cap = useRef<HTMLDivElement>(null);
+        const labNarrow=useNarrow();
+        const labCompose=labNarrow&&new URLSearchParams(location.search).get('deck')==='compose'&&new URLSearchParams(location.search).get('composer')!=='classic';
+        useLabComposeLayout(cap,labCompose);`);
+        if(!code.includes('useLabComposeLayout(cap,labCompose)'))throw new Error('Lab composer ref mount moved');
+        code=code.replace('data-chat-box','data-chat-box data-lab-compose-input={labCompose||undefined}');
+        return code.replace('{lead}',`{labCompose&&<span data-lab-composer-session-slot/>}{lead}`);
       }
       if(id.endsWith('/src/views/ChatView.tsx')){
         code="import {useLabSessionDraft} from '/lab/gui-session-drafts';\n"+code;

@@ -134,6 +134,7 @@ export function useInBar(): boolean {
 export type SessionHeaderProps = {
   faces: TabFace[]; active: string; onFocus: (id: string) => void; onBack: () => void;
   onOverview: () => void; barRef: RefObject<HTMLDivElement | null>; children: ReactNode; hidden: boolean;
+  onNew?: () => void; newLabel?: string;
 };
 
 export function SessionScreen({
@@ -399,7 +400,7 @@ export function SessionScreen({
   // up into it and the keyboard dropped under the thumb. The one lowering
   // rule is now the terminal's swipe, on its own scroller
   // (`TerminalPane`'s `swipeLowers`).
-  const deck = renderHeader ? renderHeader({faces, active, onFocus, onBack, onOverview: () => setSheet(true), barRef: bar, hidden: away || contentMode, children: <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center" />}) : (
+  const deck = renderHeader ? renderHeader({faces, active, onFocus, onBack, onNew, newLabel, onOverview: () => setSheet(true), barRef: bar, hidden: away || contentMode, children: <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center" />}) : (
       <div
         ref={bar}
         data-session-bar
