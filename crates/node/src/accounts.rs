@@ -642,11 +642,12 @@ impl Node {
             .filter(|a| a.home == me)
             .collect();
         let now = crate::live::now_ms();
-        let mut out = Vec::with_capacity(mine.len());
-        for account in mine {
-            out.push(self.read_one(&account, now).await);
-        }
-        Ok(out)
+        // **All at once** (fix/front): one after another, the read cost
+        // the sum of every provider's wait — two accounts on one slow
+        // gateway were 16 s every time — where it is now the slowest.
+        // Each account keeps its own cache file, so none write over
+        // another's.
+        Ok(link::join_all(mine.iter().map(|account| self.read_one(account, now)).collect()).await)
     }
 
     /// **What a far machine is answered with** (fix/front): every
@@ -3423,6 +3424,65 @@ mod tests {
             !r.model_tokens[0].cache_split,
             "a gateway log has no cache columns to state"
         );
+    }
+
+    /// A new-api gateway on loopback that answers every road, each after
+    /// the wait given for it — what a slow gateway looks like from here.
+    async fn slow_gateway(usage_wait: Duration, log_wait: Duration) -> String {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = l.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 2048];
+                    let n = sock.read(&mut buf).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let (wait, body) = if req.contains("/api/status") {
+                        (Duration::ZERO, r#"{"data":{"quota_per_unit":500000}}"#)
+                    } else if req.contains("/api/log/token") {
+                        (log_wait, r#"{"data":[]}"#)
+                    } else {
+                        (
+                            usage_wait,
+                            r#"{"code":true,"data":{"total_used":500000,"total_available":500000,"unlimited_quota":false,"expires_at":0}}"#,
+                        )
+                    };
+                    tokio::time::sleep(wait).await;
+                    let head = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                        body.len(),
+                    );
+                    let _ = sock.write_all(head.as_bytes()).await;
+                    let _ = sock.write_all(body.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    /// **Accounts are read at once, not one after another** (fix/front):
+    /// two accounts on a gateway that takes a second over its usage road
+    /// cost the read one second, not two.
+    #[tokio::test]
+    async fn two_slow_accounts_cost_the_read_one_wait_not_two() {
+        let root = std::env::temp_dir().join(format!("khor-accounts-both-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let n = Node::open(root.clone()).unwrap();
+        let gw = slow_gateway(Duration::from_secs(1), Duration::ZERO).await;
+        for name in ["one", "two"] {
+            n.register_account(name, Provider::Newapi, AccountKind::Bill, Some(&gw), "sk-x", None)
+                .unwrap();
+        }
+        let begun = std::time::Instant::now();
+        let got = n.quota_readings().await.unwrap();
+        let took = begun.elapsed();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(got.len(), 2);
+        assert!(got.iter().all(|r| r.trouble.is_none()), "both read: {got:?}");
+        assert!(took < Duration::from_millis(1800), "two accounts took {took:?}");
     }
 
     /// **A reading *file* written before the token report still
