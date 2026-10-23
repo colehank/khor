@@ -1,1 +1,1 @@
-{"extends":"../tsconfig.json","compilerOptions":{"allowImportingTsExtensions":true},"include":["../src","gui-session-composer.tsx","gui-session-layout.tsx"]}
+{"extends":"../tsconfig.json","compilerOptions":{"allowImportingTsExtensions":true},"include":["../src","gui-session-composer.tsx","gui-session-layout.tsx","gui-session-drafts.ts"]}

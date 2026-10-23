@@ -19,11 +19,15 @@ export default mergeConfig(preview,defineConfig({
       if(id.endsWith('/src/App.tsx')){
         const anchor=/<SessionScreen\s+/;
         if(!anchor.test(code))throw new Error('SessionScreen Lab mount moved');
+        code="import '/lab/gui-session-dock.css';\n"+code;
         return code.replace(anchor,`<SessionScreen
-      deckAt={new URLSearchParams(location.search).get('deck') === 'bottom' ? 'bottom' : selectedRow?.kind === 'gui' || isChatTab(selected) ? 'top' : 'bottom'}
-      `).replace(/<Tabs\s+grouped/,`<Tabs tail={<span data-lab-session-settings-slot />} grouped`);
+      combinedDock={new URLSearchParams(location.search).get('deck') === 'combined' && (selectedRow?.kind === 'gui' || isChatTab(selected))}
+      deckAt={['bottom','combined'].includes(new URLSearchParams(location.search).get('deck') ?? '') ? 'bottom' : selectedRow?.kind === 'gui' || isChatTab(selected) ? 'top' : 'bottom'}
+      `).replace(/onTabs=\{narrow\s*&&\s*selectedRow\s*\?/,"onTabs={narrow&&selectedRow&&new URLSearchParams(location.search).get('deck')!=='combined'?").replace(/<Tabs\s+grouped/,`<Tabs tail={<span data-lab-session-settings-slot />} grouped`);
       }
       if(id.endsWith('/src/views/ChatView.tsx')){
+        code="import {useLabSessionDraft} from '/lab/gui-session-drafts';\n"+code;
+        code=code.replace('const [text, setText] = useState("");','const [text, setText] = useLabSessionDraft("gui:"+id);');
 
         code=code.replace(/\{home\s*!==\s*null\s*&&\s*(\(?\s*)<SendInto/,'{home !== null && (!labUnified || files.items.length > 0) && $1<SendInto');
         if(!code.includes('(!labUnified || files.items.length > 0)'))throw new Error('Lab attachment destination mount moved');
@@ -32,7 +36,8 @@ export default mergeConfig(preview,defineConfig({
         return code;
       }
       if(id.endsWith('/src/views/MachineChat.tsx')){
-        code=`import {labUnified,KhorHeader,LabAdd,KhorSend} from '/lab/gui-session-composer';\n`+code;
+        code=`import {labUnified,KhorHeader,LabAdd,KhorSend} from '/lab/gui-session-composer';\nimport {useLabSessionDraft} from '/lab/gui-session-drafts';\n`+code;
+        code=code.replace('const [draft, setDraft] = useState("");','const [draft, setDraft] = useLabSessionDraft("khor:"+id);');
         const running='log?.messages.findLast(m => m.command?.agent && (m.command.status === "running" || m.command.status === "blocked"))?.command ?? null';
         code=code.replace('<BarSeat at="above">',`<BarSeat at="above">{labUnified && <KhorHeader view={agent} onChanged={setAgent} disabled={!!(${running})} updates={log?.messages.flatMap(m => m.command?.agent?.model === agent?.config?.model ? m.command.agent.updates : []) ?? []} />}`);
         code=code.replace(/<div className="flex justify-end pt-in">\s*<KhorAgentSettings([\s\S]*?)<\/div>/,match=>`{!labUnified && (${match})}`);

@@ -154,10 +154,13 @@ export function SessionScreen({
   contentMode = false,
   onTabs,
   deckAt = "bottom",
+  combinedDock = false,
   children,
 }: {
   /** GUI layout Lab: navigation above the thread, composer at its foot. */
   deckAt?: "top" | "bottom";
+  /** Lab: a single bottom surface for the conversation composer and deck. */
+  combinedDock?: boolean;
   /** **The deck steps away while the 附栏's sheet is up** (UX-37 §4,
       UX-39 §1): the sheet stands on the screen's foot where the deck
       was. Hidden in place, not taken out: the content keeps its height,
@@ -257,7 +260,7 @@ export function SessionScreen({
   const asked = foldedAsked !== undefined;
   // Nothing folds with the keyboard up, the browser's page included.
   const topDeck = deckAt === "top";
-  const folded = !topDeck && !contentMode && !keys && (foldedAsked ?? own);
+  const folded = !topDeck && !combinedDock && !contentMode && !keys && (foldedAsked ?? own);
   const content = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -532,7 +535,7 @@ export function SessionScreen({
           {children}
         </div>
       </SeatsContext.Provider>
-      {!topDeck && deck}
+      {!topDeck && (combinedDock ? <div data-session-dock className={cn("glass flex flex-none flex-col", (away || contentMode) && "invisible")}>{deck}</div> : deck)}
       {topDeck && <div ref={setAbove} data-session-composer className={cn("flex flex-none flex-col pb-dock-safe-bottom empty:hidden", (away || contentMode) && "invisible")} />}
       {island && <NoticeScrim on={grown.growth.big} openedAt={grown.openedAt} onFold={grown.fold} />}
       <TabSheet

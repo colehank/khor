@@ -77,6 +77,7 @@ try{
     assert((await page.locator('[data-composer-text]').boundingBox()).y>600,'wide composer remains at bottom');checks++;
   }
   await page.setViewportSize({width:1450,height:1050});await page.goto(`${base}/lab/gui-session-layout.html`);
+  await page.getByLabel('布局',{exact:true}).selectOption('top');
   await page.frameLocator('iframe').locator('[data-session-screen][data-deck-at="top"]').waitFor();
   await page.screenshot({path:`${shots}/lab.png`,fullPage:true});
   await page.getByLabel('会话',{exact:true}).selectOption('wide/all');
