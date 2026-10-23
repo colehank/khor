@@ -148,6 +148,21 @@ const CONFIRM_MAX: Duration = Duration::from_secs(4);
 /// khor patch 17 (10-21): and the same move is not tried again for this long.
 const CONFIRM_REST: Duration = Duration::from_secs(30);
 
+/// khor patch 17 (flap, 10-23): the slack in [`far_faster`].  The confirmation guards against
+/// one road's reading being off by a stall's sample: a 100 ms stall lifted a 1 ms road's
+/// smoothed RTT to 17 ms (netlab p1 under load), against the other's 3.4 ms; with 10 ms of
+/// slack that read far faster.  Readings that far apart only by a hundred milliseconds still
+/// take the confirmation; a relay of seconds against a road of tens of milliseconds does not.
+const FAR_FASTER_BY: Duration = Duration::from_millis(100);
+
+/// khor patch 17 (flap, 10-23): whether a path of round trip `to` is far faster than one of
+/// `from`: twice it, and [`FAR_FASTER_BY`], is still no more.  Twice: were the faster one's
+/// reading off by as much as itself, it would still be the faster, so there is nothing for the
+/// confirmation to find out.
+fn far_faster(to: Duration, from: Duration) -> bool {
+    to.saturating_mul(2).saturating_add(FAR_FASTER_BY) <= from
+}
+
 /// khor patch 19 (10-21): the rounds a selected path's degrading starts are at least this far
 /// apart, however often the selection moves.
 const PUNCH_SPACING: Duration = Duration::from_secs(30);
@@ -1003,6 +1018,10 @@ impl RemoteStateActor {
     /// selector names ([`Moving::leave`]).  A machine that stalls stalls on every road, and the
     /// other road, idle, has nothing in flight to show it: netlab p1s (300 ms spikes on both of
     /// alpha's roads) left the road in use for the other on the spike and came back.
+    ///
+    /// 10-23 (flap): the two paths' readings go into the confirmation ([`Moving::step`]): a
+    /// path far faster than the one in use is taken once it answered since the move began, and
+    /// a path in use slower than the confirmation itself is not waited on for a sample.
     fn confirm_move(&mut self, to: Option<&transports::FourTuple>) -> bool {
         let Some(to) = to.filter(|to| self.state.selected_path.as_ref() != Some(*to)) else {
             self.state.moving.clear();
@@ -2196,14 +2215,22 @@ impl Moving {
         self.to = None;
     }
 
-    /// One tick of the selection wanting to move to `to`; `from_sampled(t)`, `to_sampled(t)`:
-    /// whether the path moved from, to, took a sample after `t`.
+    /// One tick of the selection wanting to move to `to`; `from_rtt`, `to_rtt`: the two paths'
+    /// round trips as read now; `from_sampled(t)`, `to_sampled(t)`: whether the path moved from,
+    /// to, took a sample after `t`.
+    ///
+    /// flap (2026-10-23): a move to a path [`far_faster`] is made as soon as `to` took a sample
+    /// since the move began: the confirmation is there for two readings within noise of each
+    /// other, and the phone's carried road through turing (20 ms) waited it out against a relay
+    /// that read 1743 ms.  And a path moved from whose round trip is longer than [`CONFIRM_FOR`]
+    /// is not asked for a sample, nor pinged for one: it cannot take one in the confirmation,
+    /// and a relay that read 4994 ms had the move off it given up and rest 30 s.
     fn step(
         &mut self,
         to: &transports::FourTuple,
         now: Instant,
-        _from_rtt: Duration,
-        _to_rtt: Duration,
+        from_rtt: Duration,
+        to_rtt: Duration,
         from_sampled: impl Fn(Instant) -> bool,
         to_sampled: impl Fn(Instant) -> bool,
     ) -> Step {
@@ -2224,7 +2251,14 @@ impl Moving {
                 now
             }
         };
-        if now >= since + CONFIRM_FOR && from_sampled(since) && to_sampled(since) {
+        let far = far_faster(to_rtt, from_rtt);
+        let from_slow = from_rtt > CONFIRM_FOR;
+        let from_needed = !far && !from_slow;
+        if far && to_sampled(since) {
+            self.to = None;
+            return Step::Go;
+        }
+        if now >= since + CONFIRM_FOR && (!from_needed || from_sampled(since)) && to_sampled(since) {
             self.to = None;
             return Step::Go;
         }
@@ -2235,7 +2269,7 @@ impl Moving {
         }
         let tick = now.checked_sub(RESELECT_INTERVAL).unwrap_or(now);
         Step::Hold {
-            from: !from_sampled(tick),
+            from: from_needed && !from_sampled(tick),
             to: !to_sampled(tick),
         }
     }
