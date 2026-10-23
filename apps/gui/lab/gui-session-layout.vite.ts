@@ -19,11 +19,12 @@ export default mergeConfig(preview,defineConfig({
       if(id.endsWith('/src/App.tsx')){
         const anchor=/<SessionScreen\s+/;
         if(!anchor.test(code))throw new Error('SessionScreen Lab mount moved');
-        code="import '/lab/gui-session-dock.css';\n"+code;
+        code="import '/lab/gui-session-dock.css';\nimport {LabSessionHeader} from '/lab/gui-session-header';\n"+code;
         return code.replace(anchor,`<SessionScreen
+      renderHeader={new URLSearchParams(location.search).get('deck') === 'light' && (selectedRow?.kind === 'gui' || isChatTab(selected)) ? props=><LabSessionHeader {...props}/> : undefined}
       combinedDock={new URLSearchParams(location.search).get('deck') === 'combined' && (selectedRow?.kind === 'gui' || isChatTab(selected))}
       deckAt={['bottom','combined'].includes(new URLSearchParams(location.search).get('deck') ?? '') ? 'bottom' : selectedRow?.kind === 'gui' || isChatTab(selected) ? 'top' : 'bottom'}
-      `).replace(/onTabs=\{narrow\s*&&\s*selectedRow\s*\?/,"onTabs={narrow&&selectedRow&&new URLSearchParams(location.search).get('deck')!=='combined'?").replace(/<Tabs\s+grouped/,`<Tabs tail={<span data-lab-session-settings-slot />} grouped`);
+      `).replace(/onTabs=\{narrow\s*&&\s*selectedRow\s*\?/,"onTabs={narrow&&selectedRow&&new URLSearchParams(location.search).get('deck')!=='combined'&&new URLSearchParams(location.search).get('deck')!=='light'?").replace(/<Tabs\s+grouped/,`<Tabs tail={<span data-lab-session-settings-slot />} grouped`);
       }
       if(id.endsWith('/src/views/ChatView.tsx')){
         code="import {useLabSessionDraft} from '/lab/gui-session-drafts';\n"+code;

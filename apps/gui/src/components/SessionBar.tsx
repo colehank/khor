@@ -67,7 +67,7 @@
 // no bar** (the wide face, a workspace's session column) a view's `under`
 // renders in place, exactly where it always stood, and its `trail` is
 // not drawn: the wide face has no row that belongs to the open session.
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { DeckBand } from "@/components/DeckBand";
 
@@ -131,6 +131,11 @@ export function useInBar(): boolean {
   return useContext(SeatsContext) !== null;
 }
 
+export type SessionHeaderProps = {
+  faces: TabFace[]; active: string; onFocus: (id: string) => void; onBack: () => void;
+  onOverview: () => void; barRef: RefObject<HTMLDivElement | null>; children: ReactNode; hidden: boolean;
+};
+
 export function SessionScreen({
   faces,
   active,
@@ -155,12 +160,15 @@ export function SessionScreen({
   onTabs,
   deckAt = "bottom",
   combinedDock = false,
+  renderHeader,
   children,
 }: {
   /** GUI layout Lab: navigation above the thread, composer at its foot. */
   deckAt?: "top" | "bottom";
   /** Lab: a single bottom surface for the conversation composer and deck. */
   combinedDock?: boolean;
+  /** Lab: an independent identity header, with configuration in its sibling seat. */
+  renderHeader?: (props: SessionHeaderProps) => ReactNode;
   /** **The deck steps away while the 附栏's sheet is up** (UX-37 §4,
       UX-39 §1): the sheet stands on the screen's foot where the deck
       was. Hidden in place, not taken out: the content keeps its height,
@@ -391,7 +399,7 @@ export function SessionScreen({
   // up into it and the keyboard dropped under the thumb. The one lowering
   // rule is now the terminal's swipe, on its own scroller
   // (`TerminalPane`'s `swipeLowers`).
-  const deck = (
+  const deck = renderHeader ? renderHeader({faces, active, onFocus, onBack, onOverview: () => setSheet(true), barRef: bar, hidden: away || contentMode, children: <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center" />}) : (
       <div
         ref={bar}
         data-session-bar

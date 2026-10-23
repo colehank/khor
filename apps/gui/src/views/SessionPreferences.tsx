@@ -3,7 +3,7 @@ import {useEffect,useLayoutEffect,useRef,useState,isValidElement,cloneElement,Fr
 import {createPortal} from 'react-dom';
 import {BarSeat,useInBar} from '@/components/SessionBar';
 import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem,DropdownMenuLabel,DropdownMenuSeparator,DropdownMenuCheckboxItem,DropdownMenuRadioGroup,DropdownMenuRadioItem} from '@/components/ui/dropdown-menu';
-import {IconBack,IconChevronDown,IconChevronRight,IconFiles,IconUpload,IconMore} from '@/components/icons';
+import {IconBack,IconChevronDown,IconChevronRight,IconFiles,IconUpload,IconMore,IconFilter} from '@/components/icons';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogBody,DialogFooter} from '@/components/ui/dialog';
 import {SendInto,type SendIntoControl} from '@/views/chat-files';
@@ -33,6 +33,7 @@ function HeaderSeat({children}:{children:ReactNode}){
  * phone users never have to chase a submenu beside the screen. */
 function Preferences({model,agent,mode,options,disabled=false,children,danger,open,onOpen}:{model:string|null;agent:string;mode?:string;options:AddOption[];disabled?:boolean;children:ReactNode;danger?:ReactNode;open:boolean;onOpen:(open:boolean)=>void}){
   const inBar=useInBar(),docked=inBar&&labUnified&&new URLSearchParams(location.search).get('deck')==='combined';
+  const light=inBar&&labUnified&&new URLSearchParams(location.search).get('deck')==='light';
   const [page,setPage]=useState<string|null>(null),panel=useRef<HTMLDivElement>(null);
   const choice=page?.startsWith('option:')?options.find(o=>o.id===page.slice(7)):undefined,values=choice?.kind==='values'?choice:null;
   const back=()=>{setPage(null);requestAnimationFrame(()=>panel.current?.querySelector<HTMLElement>(page?.startsWith('option:')?`[data-lab-option="${CSS.escape(page.slice(7))}"]`:'[data-lab-option]')?.focus());};
@@ -42,8 +43,8 @@ function Preferences({model,agent,mode,options,disabled=false,children,danger,op
     return()=>cancelAnimationFrame(frame);
   },[page,open]);
   return <HeaderSeat><DropdownMenu open={open} onOpenChange={value=>{if(value)setPage(null);onOpen(value);}}>
-    <DropdownMenuTrigger asChild><button type="button" data-lab-session-settings data-lab-dock-settings={docked||undefined} aria-label={`会话设置：${shortModel(model)}`} className="glass composer-lab-trigger data-[state=open]:glass-sel">
-      {docked?<IconMore/>:<><span className="composer-lab-trigger-words"><span>{shortModel(model)}</span>{mode&&<small data-lab-execution-badge>{mode}</small>}</span><IconChevronDown/></>}
+    <DropdownMenuTrigger asChild><button type="button" data-lab-session-settings data-lab-dock-settings={docked||undefined} data-lab-config-trigger={light||undefined} title={light?'会话配置':undefined} aria-label={`会话配置：${shortModel(model)}`} className={`${light?'':'glass '}composer-lab-trigger data-[state=open]:glass-sel`}>
+      {light?<IconFilter/>:docked?<IconMore/>:<><span className="composer-lab-trigger-words"><span>{shortModel(model)}</span>{mode&&<small data-lab-execution-badge>{mode}</small>}</span><IconChevronDown/></>}
     </button></DropdownMenuTrigger>
     <DropdownMenuContent ref={panel} side={docked?'top':'bottom'} align="end" sideOffset={8} data-lab-preferences className="min-w-nav-menu composer-lab-menu" onKeyDown={e=>{if(e.key==='ArrowLeft'&&page){e.preventDefault();back();}}}>
       {page?<>

@@ -67,7 +67,7 @@ try{
  await page.locator('[data-chat-send]').click();await page.locator('[data-chat-box] [data-chat-stop]').waitFor();await page.locator('[data-chat-box] [data-chat-stop]').click();
  await choose('gui/codex-review');await choose('gui/ai-elements-review');assert.equal(await page.locator('[data-composer-text]').inputValue(),'','send clears saved draft');checks++;
  await page.setViewportSize({width:1450,height:1050});await page.goto(`${base}/lab/gui-session-layout.html`);
- const frame=page.frameLocator('iframe');await frame.locator('[data-session-dock] [data-composer-text]').fill('比较布局的草稿\n第二行');
+ await page.getByLabel('布局',{exact:true}).selectOption('combined');const frame=page.frameLocator('iframe');await frame.locator('[data-session-dock] [data-composer-text]').fill('比较布局的草稿\n第二行');
  for(const layout of ['top','bottom','combined']){
   await page.getByLabel('布局',{exact:true}).selectOption(layout);await frame.locator('[data-composer-text]').waitFor();
   assert.equal(await frame.locator('[data-composer-text]').inputValue(),'比较布局的草稿\n第二行');
