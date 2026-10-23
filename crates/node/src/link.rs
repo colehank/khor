@@ -3927,16 +3927,21 @@ impl Node {
                 })
             }
             Request::Quotas => {
-                // Reads the providers when the cache has aged out —
-                // seconds of HTTP, off the reactor for the `Vitals`
-                // arm's reason (`accounts` module head).
+                // **What this disk holds, now; the read goes on behind
+                // it** (fix/front). Answering through the read made
+                // every asker's round wait on the slowest provider —
+                // 16 s measured on two new-api accounts — and the next
+                // round has what it brings. One read at a time however
+                // many ask (`accounts::refresh_quotas`). The cache read
+                // is off the reactor for the `Days` arm's reason.
                 let root = self.root().to_path_buf();
+                crate::accounts::refresh_quotas(root.clone());
                 let readings = tokio::task::spawn_blocking(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
                         .build()
                         .map_err(|e| e.to_string())?;
-                    rt.block_on(crate::Node::open(root)?.quota_readings())
+                    rt.block_on(crate::Node::open(root)?.quota_readings_held())
                 })
                 .await
                 .map_err(|e| e.to_string())??;

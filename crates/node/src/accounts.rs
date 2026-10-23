@@ -630,8 +630,10 @@ impl Node {
     }
 
     /// This machine's reading of every account whose key it holds —
-    /// what it answers [`Request::Quotas`] with. Cached and cooled per
-    /// account (module head); accounts homed elsewhere are not in it.
+    /// this machine's own board, and the read behind what it answers
+    /// [`Request::Quotas`] with ([`Node::quota_readings_held`]). Cached
+    /// and cooled per account (module head); accounts homed elsewhere
+    /// are not in it.
     pub async fn quota_readings(&self) -> Result<Vec<AccountReading>, String> {
         let me = self.device_str().to_owned();
         let mine: Vec<Account> = self
@@ -643,6 +645,49 @@ impl Node {
         let mut out = Vec::with_capacity(mine.len());
         for account in mine {
             out.push(self.read_one(&account, now).await);
+        }
+        Ok(out)
+    }
+
+    /// **What a far machine is answered with** (fix/front): every
+    /// reading [`Node::quota_readings`] would give, as this disk last
+    /// holds it — cached or cooled, at any age, never a fetch. An
+    /// account with nothing held yet is left out, which the asker draws
+    /// as 「not answered yet」 (`trouble::NO_READING`), true until the
+    /// read behind this lands.
+    ///
+    /// The read itself is [`refresh_quotas`]'s, one at a time per home.
+    /// Answering through it is what made a round wait on a provider: 5
+    /// accounts read one after another, a 15 s timeout each, and every
+    /// asker's round held until the last.
+    pub async fn quota_readings_held(&self) -> Result<Vec<AccountReading>, String> {
+        let me = self.device_str().to_owned();
+        let mine: Vec<Account> = self
+            .accounts()?
+            .into_iter()
+            .filter(|a| a.home == me)
+            .collect();
+        let now = crate::live::now_ms();
+        let mut out = Vec::with_capacity(mine.len());
+        for account in mine {
+            let held = if account.kind.is_sub() {
+                match sub_reader(&account.provider) {
+                    Some(reader) => reader
+                        .peek()
+                        .await
+                        .map(|read| subscription_reading(&account, read, now)),
+                    None => Some(bare(&account, Some(trouble::UNKNOWN_PROVIDER), now)),
+                }
+            } else {
+                match self.cached_reading(&account.id) {
+                    Some(c) => Some(c.reading),
+                    None if self.key_of(&account.id).is_none() => {
+                        Some(bare(&account, Some(trouble::NO_KEY), now))
+                    }
+                    None => None,
+                }
+            };
+            out.extend(held);
         }
         Ok(out)
     }
@@ -797,6 +842,56 @@ impl Node {
         }
         Ok(out)
     }
+}
+
+/// How soon after one background read of a home's accounts the next may
+/// start. Each account keeps its own five minutes (`CACHE_TTL_MS`), so
+/// a read this soon would only open the node and find every cache
+/// fresh; this keeps a round every few seconds from doing that each time.
+const REFRESH_AGAIN: Duration = Duration::from_secs(30);
+
+/// **One read of this home's accounts at a time, behind the answer**
+/// (fix/front): [`Node::quota_readings`] on a blocking thread, which
+/// writes the caches [`Node::quota_readings_held`] answers from. Askers
+/// that come while it runs, or within [`REFRESH_AGAIN`] of its end, are
+/// that read — not one more each.
+pub(crate) fn refresh_quotas(root: PathBuf) {
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
+    use std::time::Instant;
+
+    /// Per home: whether a read is running, and when the last one ended.
+    static FLIGHTS: LazyLock<Mutex<HashMap<PathBuf, (bool, Option<Instant>)>>> =
+        LazyLock::new(Default::default);
+
+    /// Lands the flight however the read leaves, a panic included — a
+    /// flag left up would be no read for this home ever again.
+    struct Landed(PathBuf);
+    impl Drop for Landed {
+        fn drop(&mut self) {
+            let mut all = FLIGHTS.lock().unwrap_or_else(|p| p.into_inner());
+            all.insert(self.0.clone(), (false, Some(Instant::now())));
+        }
+    }
+
+    {
+        let mut all = FLIGHTS.lock().unwrap_or_else(|p| p.into_inner());
+        let (running, ended) = all.entry(root.clone()).or_default();
+        if *running || ended.is_some_and(|t| t.elapsed() < REFRESH_AGAIN) {
+            return;
+        }
+        *running = true;
+    }
+    tokio::task::spawn_blocking(move || {
+        let _landed = Landed(root.clone());
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            return;
+        };
+        let _ = rt.block_on(async { Node::open(root)?.quota_readings().await });
+    });
 }
 
 /// Which vendor answers for a provider's subscription — **the one
@@ -2485,6 +2580,54 @@ mod tests {
             "control: a good reading on record stands too"
         );
         assert_eq!(got[0].trouble, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **The far machine's answer never asks the provider** (fix/front):
+    /// nothing held is left out, and what is held answers at any age.
+    /// The address refuses at once, so a fetch would not hang this test
+    /// — it would turn the first arm into 问不出来, which is what the
+    /// arm is red on.
+    #[test]
+    fn the_answer_to_a_far_machine_is_what_this_disk_holds_at_any_age() {
+        let root = std::env::temp_dir().join(format!("khor-accounts-held-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let n = Node::open(root.clone()).unwrap();
+        let a = n
+            .register_account(
+                "gw",
+                Provider::Newapi,
+                AccountKind::Bill,
+                Some("http://127.0.0.1:1"),
+                "sk-x",
+                None,
+            )
+            .unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        assert_eq!(
+            rt.block_on(n.quota_readings_held()).unwrap(),
+            Vec::new(),
+            "nothing read yet is nothing said, not a trouble made up on the spot"
+        );
+
+        let old = crate::live::now_ms() - 2 * CACHE_TTL_MS;
+        let mut aged = bare(&a, None, old);
+        aged.fill = Some(0.3);
+        n.cache_reading(
+            &a.id,
+            &Cached {
+                reading: aged,
+                failed_at_ms: None,
+            },
+        );
+        let got = rt.block_on(n.quota_readings_held()).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].fill, Some(0.3), "an expired reading still answers");
+        assert_eq!(got[0].at_ms, old, "…and says how old it is");
         let _ = std::fs::remove_dir_all(&root);
     }
 

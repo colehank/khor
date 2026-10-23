@@ -111,6 +111,7 @@ async fn a_hanging_quota_read_over_there_does_not_hold_up_the_round() {
         .expect("sync must not hang")
         .unwrap();
     let took = begun.elapsed();
+    println!("alpha's round took {took:?}: {out:?}");
     let (_, beta_round) = out
         .iter()
         .find(|(name, _)| name == "beta")
