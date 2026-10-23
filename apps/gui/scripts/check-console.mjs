@@ -151,11 +151,21 @@ import '/scripts/.console-gate-${process.pid}.tsx';
   assert.equal(calls.filter((c) => c.cmd === "post").length, 0, "natural-language task posted as a note");
   const agentReceipt = messages.find((m) => m.id === "note").command;
   agentReceipt.stdout = "**streamed answer**";
+  agentReceipt.agent.updates = [
+    { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "检查设备网络" } },
+    { sessionUpdate: "tool_call", toolCallId: "pi-devices", title: "mcp__khor__devices", kind: "read", status: "in_progress", rawInput: {} },
+    { sessionUpdate: "tool_call_update", toolCallId: "pi-devices", status: "completed", content: [{ type: "content", content: { type: "text", text: "fixture device found" } }] },
+    { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "**streamed answer**" } },
+  ].map(JSON.stringify);
   agentReceipt.status = "blocked";
   agentReceipt.agent.approval = { id: "approval-fixture", tool: "open", arguments: '{"machine":"peer","command":"echo fixture"}' };
   await page.locator("[data-khor-agent-approval]").waitFor();
   assert.equal(await page.locator("[data-khor-agent-turn] strong").innerText(), "streamed answer");
-  await page.locator("[data-khor-agent-deny]").click();
+  await page.locator('[data-khor-agent-turn] [data-tool-id="pi-devices"] [data-tool-toggle]').click();
+  await page.getByText("fixture device found", { exact: true }).waitFor();
+  assert.equal(await page.locator('[data-khor-agent-turn] [data-chat-reasoning]').count(), 1, "khor reasoning uses the shared ACP presentation");
+  assert.equal(await page.locator('[data-khor-agent-turn] [data-tool-id="pi-devices"]').getAttribute("data-tool-status"), "completed");
+  await page.locator('[data-khor-agent-approval] [data-ask-option="deny"]').click();
   await page.waitForFunction(() => !document.querySelector("[data-khor-agent-approval]"));
   assert.equal(calls.find((c) => c.cmd === "khor_agent" && c.args.action === "answer").args.payload.allow, false);
   await page.locator("[data-khor-agent-settings]").click();
@@ -180,6 +190,8 @@ import '/scripts/.console-gate-${process.pid}.tsx';
 
   // A message arriving after the readout but before seen is processed is
   // deliberately newer than every visible bubble.
+  // Resume following after opening tool details / resizing the pane.
+  if (await page.locator("[data-machine-chat-bottom]").count()) await page.locator("[data-machine-chat-bottom]").click();
   receiptNodeTail = 999;
   messages.push(message("bounded", 500, "bounded visible"));
   await page.locator("[data-msg='bounded']").waitFor(); await pause(150);

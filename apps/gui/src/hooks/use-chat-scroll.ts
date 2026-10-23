@@ -71,5 +71,5 @@ export function useChatScroll(revision: unknown) {
     following.current = true; anchor.current = null;
     setAway(false); setFresh(false); sync();
   };
-  return { scroller, column, onScroll, captureDisclosure, toBottom, away, fresh };
+  return { scroller, column, following, onScroll, captureDisclosure, toBottom, away, fresh };
 }

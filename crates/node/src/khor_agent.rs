@@ -4,6 +4,8 @@ use crate::{AgentApproval, AgentConfig, AgentTurn, CommandRecord, Node};
 use khor_catalog::msg;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+#[path = "khor_agent_updates.rs"]
+mod updates;
 use std::{
     collections::HashMap,
     fs::{self, File, OpenOptions},
@@ -236,6 +238,8 @@ impl Node {
                             model: config.model.clone(),
                             approval: None,
                             updated_at_ms: 0,
+                            updates: Vec::new(),
+                            updates_truncated: false,
                         }),
                         ..Default::default()
                     },
@@ -400,6 +404,27 @@ impl Node {
     }
 }
 
+fn append_text(output: &mut String, text: &str, key: &str) {
+    const CAP: usize = 128 * 1024;
+    if output.len() >= CAP {
+        return;
+    }
+    if key.is_empty() {
+        output.push_str(text);
+    } else {
+        output.push_str(&text.replace(key, "[redacted]"));
+    }
+    if output.len() > CAP {
+        let mut cut = CAP;
+        while !output.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        output.truncate(cut);
+        output.push('\n');
+        output.push_str(msg::console_output_cut());
+    }
+}
+
 fn sidecar(root: &Path) -> Result<Command, String> {
     if let Some(path) = std::env::var_os("KHOR_AGENT_SIDECAR") {
         return Ok(Command::new(path));
@@ -548,23 +573,34 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                             send(&active, &json!({"type":"mcp","message":response}))?;
                         }
                     }
-                    Some("text") => {
-                        const CAP: usize = 128 * 1024;
-                        if saved.record.stdout.len() < CAP {
-                            saved
-                                .record
-                                .stdout
-                                .push_str(event["delta"].as_str().unwrap_or(""));
-                            if saved.record.stdout.len() > CAP {
-                                let mut cut = CAP;
-                                while !saved.record.stdout.is_char_boundary(cut) {
-                                    cut -= 1;
-                                }
-                                saved.record.stdout.truncate(cut);
-                                saved.record.stdout.push('\n');
-                                saved.record.stdout.push_str(msg::console_output_cut());
-                            }
+                    Some("update") => {
+                        // Validate the Pi display bridge with the same ACP v1
+                        // schema used for Claude and Codex. Receipts never run it.
+                        let update: agent_client_protocol::schema::v1::SessionUpdate =
+                            serde_json::from_value(event["update"].clone())
+                                .map_err(|_| msg::agent_arguments().to_owned())?;
+                        let value = serde_json::to_value(update).map_err(|e| e.to_string())?;
+                        if value["sessionUpdate"] == "agent_message_chunk"
+                            && value["content"]["type"] == "text"
+                        {
+                            append_text(
+                                &mut saved.record.stdout,
+                                value["content"]["text"].as_str().unwrap_or(""),
+                                key,
+                            );
                         }
+                        updates::push(saved.record.agent.as_mut().expect("agent turn"), value, key);
+                        if last_flush.elapsed() >= std::time::Duration::from_millis(200) {
+                            save(&root, &saved)?;
+                            last_flush = std::time::Instant::now();
+                        }
+                    }
+                    Some("text") => {
+                        append_text(
+                            &mut saved.record.stdout,
+                            event["delta"].as_str().unwrap_or(""),
+                            key,
+                        );
                         if last_flush.elapsed() >= std::time::Duration::from_millis(200) {
                             save(&root, &saved)?;
                             last_flush = std::time::Instant::now();
@@ -835,6 +871,8 @@ mod tests {
                     model: "fixture".into(),
                     approval: None,
                     updated_at_ms: 0,
+                    updates: Vec::new(),
+                    updates_truncated: false,
                 }),
                 ..Default::default()
             },

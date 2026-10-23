@@ -14,7 +14,26 @@ const out = process.env.AI_ELEMENTS_OUT ?? join(tmpdir(), `khor-ai-elements-${pr
 mkdirSync(out, { recursive: true });
 const modelFile = join(out, "agent-diff.mjs");
 await build({ entryPoints: [join(gui, "src/lib/agent-diff.ts")], outfile: modelFile, bundle: true, platform: "node", format: "esm", logLevel: "silent" });
-const { agentDiff, agentDiffContext } = await import(pathToFileURL(modelFile).href);
+const { agentDiff, agentDiffContext, agentPatch } = await import(pathToFileURL(modelFile).href);
+const patch = agentPatch("@@ -12,2 +20,2 @@\n shared\n-old\n+new\n\\ No newline at end of file\n");
+assert.equal(patch.find((r) => r.kind === "removed").before, 13);
+assert.equal(patch.find((r) => r.kind === "added").after, 21);
+assert.equal(patch.find((r) => r.kind === "added").noNewline, true);
+const projectorFile = join(out, "acp-view.mjs");
+await build({ entryPoints: [join(gui, "src/lib/acp-view.ts")], outfile: projectorFile, bundle: true, platform: "node", format: "esm", logLevel: "silent" });
+const { projectAcp } = await import(pathToFileURL(projectorFile).href);
+const encoded = (values) => values.map(JSON.stringify);
+const editStart = { sessionUpdate: "tool_call", toolCallId: "edit", title: "Edit file", kind: "edit", status: "in_progress", content: [{ type: "diff", path: "/work/file", oldText: "old", newText: "new" }] };
+const projected = projectAcp(encoded([editStart, { sessionUpdate: "tool_call_update", toolCallId: "edit", status: "completed", content: [{ type: "content", content: { type: "text", text: "done" } }, { type: "content", content: { type: "text", text: "second result" } }] }]));
+assert.equal(projected.items[0].diff.next, "new", "Claude's reported edit remains a transcript artifact with its result");
+assert.equal(projected.items[0].out, "done\nsecond result", "all result text blocks survive");
+assert.equal(projectAcp(encoded([editStart, { sessionUpdate: "tool_call_update", toolCallId: "edit", content: [] }])).items[0].diff, null, "explicit ACP clear removes earlier content artifacts");
+const codexPatch = { path: "/work/file", diff: "@@ -12 +12 @@\n-old\n+new" };
+const native = projectAcp(encoded([{ ...editStart, content: [] }, { sessionUpdate: "tool_call_update", toolCallId: "edit", status: "completed", rawOutput: { changes: [codexPatch] }, locations: [{ path: "/work/file" }] }]));
+assert.equal(native.items[0].patches[0].text, codexPatch.diff);
+assert.equal(native.items[0].diff, null, "a Codex patch is not a fabricated complete file");
+assert.equal(native.items[0].where[0], "/work/file");
+assert.deepEqual(projectAcp(["bad-json", "null", "{}"]), { items: [], plan: [] });
 for (const [before, after] of [
   ["a\nx\nz\n", "a\ny\nz\n"], ["a\n", "a\nx\n"], [null, "new file\n"], ["old\n", ""],
   ["same\n", "same\n"], ["a", "a\n"], ["a\n", "a"], ["a\r\nb\r\n", "a\nb\n"],

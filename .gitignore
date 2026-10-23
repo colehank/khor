@@ -29,3 +29,6 @@ opencode.jsonc
 
 # Compiled Pi runtime; release builds embed it into the native executable.
 /apps/agent/dist/
+
+# Per-worktree Pi dependencies, including local dependency links.
+/apps/agent/node_modules

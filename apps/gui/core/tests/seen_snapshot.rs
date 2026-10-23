@@ -114,6 +114,8 @@ fn a_later_file_or_note_does_not_hide_an_agent_waiting_for_approval() {
         model: "fixture".into(),
         approval: None,
         updated_at_ms: 101,
+        updates: Vec::new(),
+        updates_truncated: false,
     });
     node.record_command(&record).unwrap();
     tokio::runtime::Runtime::new()
@@ -135,6 +137,8 @@ fn agent_progress_and_approval_have_their_own_visible_versions() {
         model: "fixture".into(),
         approval: None,
         updated_at_ms: 100,
+        updates: Vec::new(),
+        updates_truncated: false,
     });
     node.record_command(&record).unwrap();
     let old = SeenMessage {

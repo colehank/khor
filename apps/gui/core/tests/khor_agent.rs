@@ -160,6 +160,23 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
         .unwrap();
     let done = receipt(&node, &id, "done");
     assert_eq!(done.stdout, "network ready");
+    let updates: Vec<Value> = done
+        .agent
+        .as_ref()
+        .unwrap()
+        .updates
+        .iter()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert!(updates.iter().any(|u| u["sessionUpdate"] == "tool_call"
+        && u["toolCallId"] == "devices-1"
+        && u["status"] == "completed"));
+    assert!(
+        updates
+            .iter()
+            .any(|u| u["sessionUpdate"] == "agent_message_chunk"
+                && u["content"]["text"] == "network ready")
+    );
     assert!(
         !serde_json::to_string(&done)
             .unwrap()
@@ -300,6 +317,8 @@ fn restarting_an_executor_interrupts_its_receipt_without_starting_pi() {
             model: "fixture".into(),
             approval: None,
             updated_at_ms: 1,
+            updates: Vec::new(),
+            updates_truncated: false,
         }),
         ..Default::default()
     };

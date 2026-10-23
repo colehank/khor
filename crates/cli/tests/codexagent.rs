@@ -96,6 +96,11 @@ for line in sys.stdin:
                  {"threadId": SID, "turnId": tid,
                   "item": {"type": "commandExecution", "id": "exec-0",
                            "command": "true", "status": "inProgress"}})
+            note("item/commandExecution/outputDelta", {"threadId": SID, "turnId": tid, "itemId": "exec-0", "delta": "streamed result"})
+            note("item/completed", {"threadId": SID, "turnId": tid, "item": {"id": "exec-0", "type": "commandExecution", "command": "true", "status": "completed", "exitCode": 0, "aggregatedOutput": "streamed result"}})
+            note("turn/plan/updated", {"threadId": SID, "turnId": tid, "plan": [{"step": "verify", "status": "completed"}]})
+            note("item/started", {"threadId": SID, "turnId": tid, "item": {"id": "edit-0", "type": "fileChange", "status": "inProgress", "changes": []}})
+            note("item/completed", {"threadId": SID, "turnId": tid, "item": {"id": "edit-0", "type": "fileChange", "status": "completed", "changes": [{"path": "/work/file.ts", "kind": {"type": "update"}, "diff": "@@ -12 +12 @@\n-old\n+new"}]}})
             note("item/agentMessage/delta",
                  {"threadId": SID, "turnId": tid, "itemId": "msg-1",
                   "delta": f"echo: {text}"})
@@ -188,6 +193,20 @@ for line in sys.stdin:
     assert!(
         said.contains("tool_call"),
         "the command item must surface as a tool act: {said}"
+    );
+    assert!(
+        said.contains("tool_call_update")
+            && said.contains("completed")
+            && said.contains("streamed result"),
+        "tool completion/output missing: {said}"
+    );
+    assert!(
+        said.contains("plan") && said.contains("verify"),
+        "plan missing: {said}"
+    );
+    assert!(
+        said.contains("/work/file.ts") && said.contains("@@ -12 +12 @@"),
+        "native patch missing: {said}"
     );
 
     // Until a mode is picked, a turn leaves the thread's own policy.

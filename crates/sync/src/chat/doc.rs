@@ -189,6 +189,11 @@ pub struct AgentTurn {
     #[serde(default)]
     #[ts(type = "number")]
     pub updated_at_ms: i64,
+    /// Bounded, compacted ACP v1 session updates. Missing on older receipts.
+    #[serde(default)]
+    pub updates: Vec<String>,
+    #[serde(default)]
+    pub updates_truncated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]

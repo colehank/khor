@@ -74,10 +74,10 @@ import {
   type ChatFrame,
   type Miss,
 } from "@/api";
-import { Message, MessageContent } from "@/components/ui/ai/message";
+import { AgentContent } from "@/components/ai-elements/content";
 import { Bubble, BubbleContent } from "@/components/ui/ai/bubble";
 import { IconBack } from "@/components/icons";
-import { AgentConfirmation, AgentPlan, AgentReasoning, AgentTool, ToolDot, type AgentToolData, type AgentPlanEntry } from "@/components/ai-elements/agent";
+import { AgentConfirmation, AgentPlan, ToolDot, type AgentToolData, type AgentPlanEntry } from "@/components/ai-elements/agent";
 import { Markdown } from "@/components/Markdown";
 import { Waiting } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
@@ -96,6 +96,7 @@ import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
 import { imeKey } from "@/lib/ime";
+import { applyAcpUpdate } from "@/lib/acp-view";
 
 /**
  * How often to ask for frames, while a turn runs and while none does.
@@ -211,6 +212,7 @@ type Update = {
       it produced. `content` is the protocol's tagged union — `content`,
       `diff` or `terminal`. */
   rawInput?: unknown;
+  rawOutput?: unknown;
   locations?: { path?: string; line?: number }[];
   /** `current_mode_update`: which mode the agent is in. */
   currentModeId?: string;
@@ -492,17 +494,6 @@ function updateOf(frame: ChatFrame): Update | null {
   return typeof inner === "object" && inner !== null ? (inner as Update) : null;
 }
 
-function textOf(u: Update): string {
-  const c = u.content;
-  if (!c || Array.isArray(c)) return "";
-  return c.type === "text" ? (c.text ?? "") : "";
-}
-
-/** The tool half of the overloaded `content` key. */
-function toolContent(u: Update): ToolContent[] {
-  return Array.isArray(u.content) ? u.content : [];
-}
-
 /**
  * Folds one frame into `out`, in place. Answers whether it painted
  * anything — a `Turning` or a `Gone` carries no picture, and a poll
@@ -513,16 +504,6 @@ function toolContent(u: Update): ToolContent[] {
  * change React has no way to see.
  */
 function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
-  const chunk = (who: "user" | "agent" | "thought", text: string): boolean => {
-    if (!text) return false;
-    const last = out[out.length - 1];
-    if (last && last.who === who && "text" in last) {
-      out[out.length - 1] = { ...last, text: last.text + text };
-    } else {
-      out.push({ who, text });
-    }
-    return true;
-  };
   if (frame.kind === "ask") {
     out.push({
       who: "ask",
@@ -575,115 +556,7 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
   }
   const u = updateOf(frame);
   if (!u) return false;
-  switch (u.sessionUpdate) {
-    case "agent_message_chunk":
-      return chunk("agent", textOf(u));
-    case "agent_thought_chunk":
-      return chunk("thought", textOf(u));
-    case "user_message_chunk":
-      return paintUser ? chunk("user", textOf(u)) : false;
-    case "tool_call":
-      out.push({
-        who: "tool",
-        id: u.toolCallId ?? "",
-        title: u.title ?? "",
-        kind: u.kind ?? "other",
-        status: u.status ?? "pending",
-        raw: u.rawInput ?? null,
-        where: (u.locations ?? []).map((l) => l.path ?? "").filter(Boolean),
-        diff: diffIn(u),
-        out: contentIn(u),
-      });
-      return true;
-    case "tool_call_update": {
-      // **Backwards, and only within this half.** A call and its result
-      // land in the same array (both halves are folded whole: history
-      // is rebuilt from its own frames, live grows from live ones), and
-      // the newest matching line is the one this update is about — an
-      // agent that calls the same tool twice gets two ids, but an id
-      // reused across a replay boundary must not reach back into the
-      // past and edit a line the record already settled.
-      const id = u.toolCallId;
-      if (!id) return false;
-      for (let i = out.length - 1; i >= 0; i--) {
-        const at = out[i];
-        if (at.who !== "tool" || at.id !== id) continue;
-        // Every field is optional on an update frame, and **absent is
-        // not empty**: the protocol sends only what changed, so a frame
-        // that carries a status and no title must not blank the title.
-        out[i] = {
-          ...at,
-          status: u.status ?? at.status,
-          title: u.title ?? at.title,
-          kind: u.kind ?? at.kind,
-          raw: u.rawInput ?? at.raw,
-          diff: diffIn(u) ?? at.diff,
-          out: contentIn(u) ?? at.out,
-        };
-        return true;
-      }
-      // An update naming a call this face never painted. Dropped rather
-      // than pushed as a new line: a status with no call to attach to
-      // would appear as a tool that ran with no name.
-      return false;
-    }
-    // **Everything named here was once in this line and is not any
-    // more** — plan, usage, session info, the mode and the tool
-    // payloads all have readers above or beside this fold. What is
-    // still unpainted, named so the next reader does not have to
-    // re-derive it from the protocol:
-    //
-    // - `config_option_update` — a session's own settings changing.
-    //   Nothing offers those settings yet, so a notice that one moved
-    //   would be about a control this face does not have.
-    // - the unstable plan operations (`plan_update`, `plan_removed`),
-    //   which are behind a feature flag in the protocol crate and may
-    //   change or go.
-    //
-    // **`ToolCallContent::Terminal` left this list, and not by being
-    // painted.** It sat here reading like a missing view — a tool whose
-    // output is a live terminal, and khor draws no terminal for it —
-    // and read that way the next step is obviously to go paint one.
-    //
-    // It cannot arrive. `terminal/*` are agent→client requests: the
-    // agent asks *khor* to start a process on this machine and is
-    // handed a `TerminalId` back, and the v1 schema grants them only to
-    // a client that set `terminal: true`. khor sets it false, so no
-    // conforming agent has an id to put in a tool call. **What the line
-    // described as a gap in this face is a door khor is holding shut**,
-    // and the thing worth guarding is the door — which is now a test
-    // beside the handshake rather than a sentence here
-    // (`khor_acp::what_khor_grants`).
-    //
-    // A list like this rots, and this one already has twice: it used to
-    // name three things that are painted now, and one thing that was
-    // never going to happen.
-    default:
-      return false;
-  }
-}
-
-/** The diff a tool frame carries, if it carries one.
-    The protocol's `content` is a tagged union and `diff` is one of its
-    three tags; the others (`content`, `terminal`) are read elsewhere or
-    not at all, so this picks rather than assumes. */
-function diffIn(u: Update): { path: string; old: string | null; next: string } | null {
-  for (const c of toolContent(u)) {
-    if (c.type === "diff" && typeof c.newText === "string") {
-      return { path: c.path ?? "", old: c.oldText ?? null, next: c.newText };
-    }
-  }
-  return null;
-}
-
-/** The text a tool frame carries as plain content. */
-function contentIn(u: Update): string | null {
-  for (const c of toolContent(u)) {
-    if (c.type === "content" && c.content?.type === "text" && c.content.text) {
-      return c.content.text;
-    }
-  }
-  return null;
+  return applyAcpUpdate(out, u, paintUser);
 }
 
 /**
@@ -1621,23 +1494,13 @@ export function ChatView({
                 </div>
               );
             })()
-          ) : item.who === "agent" ? (
-            <Message key={i} data-chat-message className="text-read py-row"><MessageContent><Markdown text={item.text} className="text-read-ink" /></MessageContent></Message>
-          ) : item.who === "thought" ? (
-            <AgentReasoning key={`${id}:${i}`} text={item.text} isStreaming={inTurn && i === items.length - 1} />
-          ) : item.who === "tool" ? (
-            <AgentTool
-              key={`${id}:${item.id}`}
-              tool={item}
-              open={open.has(item.id)}
-              onOpenChange={(shown) => setOpen((now) => {
-                const next = new Set(now);
-                if (shown) next.add(item.id);
-                else next.delete(item.id);
-                return next;
-              })}
-              onOpenFile={openFile}
-            />
+          ) : item.who === "agent" || item.who === "thought" || item.who === "tool" ? (
+            <AgentContent key={item.who === "tool" ? `${id}:${item.id}` : `${id}:${i}`} item={item}
+              streaming={inTurn && i === items.length - 1} active={inTurn}
+              open={item.who === "tool" && open.has(item.id)} onOpenFile={openFile}
+              onOpenChange={(shown) => { if (item.who === "tool") setOpen((now) => {
+                const next = new Set(now); if (shown) next.add(item.id); else next.delete(item.id); return next;
+              }); }} />
           ) : item.who === "ask" ? (
             <AgentConfirmation
               key={`${id}:${item.ask}`}

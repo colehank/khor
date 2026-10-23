@@ -36,6 +36,7 @@ import { imeKey } from "@/lib/ime";
 import { ConsoleMenu, ConsoleResult, useConsoleCompletion } from "@/views/Console";
 import { useHidden } from "@/hooks/use-hidden";
 import { KhorAgentSettings } from "@/views/KhorAgent";
+import { useChatScroll } from "@/hooks/use-chat-scroll";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
     list reads, and two different clocks would show two conversations. */
@@ -68,9 +69,8 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [agent, setAgent] = useState<KhorAgentView | null>(null);
-  const scroller = useRef<HTMLDivElement | null>(null);
-  const stickToEnd = useRef(true);
-  const [atEnd, setAtEnd] = useState(true);
+  const { scroller, column, following: stickToEnd, away, onScroll, captureDisclosure, toBottom } = useChatScroll(log);
+  const atEnd = !away;
   const seenMessages = useRef(new Set<string>());
   /** The box, for the keyboard's switch (`TermKeys`). */
   const box = useRef<HTMLTextAreaElement | null>(null);
@@ -94,14 +94,6 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
     const t = setInterval(refresh, POLL_MS);
     return () => clearInterval(t);
   }, [refresh]);
-
-  // Follow the tail only while the reader is at it: pinning the scroll
-  // on every poll would tear the pane out from under somebody reading
-  // history.
-  useEffect(() => {
-    const el = scroller.current;
-    if (el && stickToEnd.current) el.scrollTop = el.scrollHeight;
-  }, [log]);
 
   /** The machines name the local landing of a file. */
   const [machines, setMachines] = useState<DeviceRow[]>([]);
@@ -132,7 +124,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
     if (keys.every((key) => seenMessages.current.has(key))) return;
     const frame = requestAnimationFrame(() => {
       const el = scroller.current;
-      if (!el || document.hidden || !document.hasFocus() || !stickToEnd.current || el.scrollHeight - el.scrollTop - el.clientHeight >= 40) return;
+      if (!el || document.hidden || !document.hasFocus() || (!stickToEnd.current && el.scrollHeight > el.clientHeight) || el.scrollHeight - el.scrollTop - el.clientHeight >= 40) return;
       void markSeenSnapshot(id, messages).then(() => {
         if (currentId.current === id) keys.forEach((key) => seenMessages.current.add(key));
       }, () => {});
@@ -233,8 +225,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
         setCommandInput("");
         setInputOpen(false);
         closePicker();
-        stickToEnd.current = true;
-        setAtEnd(true);
+        toBottom();
         refresh();
       },
       // A lost command response may follow a successful submission.
@@ -249,18 +240,16 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
 
   return (
     <div data-machine-chat className="flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scroller}
         // The deck folds while the messages are read (UX-13, `lib/deck-fold`).
         data-machine-chat-scroll
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stickToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-          setAtEnd(stickToEnd.current);
-        }}
+        onScroll={onScroll}
+        onClickCapture={captureDisclosure}
         // The messages are read and copied (app.css 选字与手).
         data-selectable
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [overflow-anchor:none]"
       >
         {/* The same reading column the agent conversation is set in
             (`ChatView`), and it is here because of 两端对齐的是事实
@@ -270,7 +259,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
             face's controls — this one has its own.
 
             The measure is an em, so it and `text-read` ride together. */}
-        <div data-chat-column className="mx-auto w-full max-w-measure space-y-2 text-read">
+        <div ref={column} data-chat-column className="mx-auto w-full max-w-measure space-y-2 text-read">
         {log && log.broken > 0 && (
           <div data-chat-broken className="text-center text-caption text-muted-foreground">
             {cli.broken_blocks(log.broken)}
@@ -298,6 +287,10 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           />
         ))}
         </div>
+      </div>
+      {away && <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2">
+        <Button data-machine-chat-bottom size="sm" variant="secondary" className="pointer-events-auto shadow" onClick={toBottom}>{gui.to_bottom}</Button>
+      </div>}
       </div>
       {/* The node's refusal, where the act was started (the pin's rule):
           a target not reachable names the machine, and nothing was sent. */}

@@ -30,6 +30,16 @@ Pi 官方 MCP client 通过私有 JSONL 管道与 Rust MCP 分发器通信。当
 - 停止中止 Pi 请求和等待中的审批，并按持久子任务关联请求停止委派。已经提交给远端的操作可能已经生效，停止不表示回滚。
 - 密钥只经私有 stdin 交给 Pi，不写入任务记录或模型提示；子进程环境不继承模型提供商凭据。
 
+## GUI 与 ACP 的分工
+
+Claude、Codex 的 GUI 会话使用既有 ACP 宿主。khor 的 Pi 任务继续走原有私有 JSONL / MCP 通道，把 SDK 的文字、思考、工具开始／进度／结果转换为 ACP v1 `SessionUpdate`，由 Rust SDK 校验后写入原任务记录。这里统一的是事件与界面；khor 尚未因此成为一个可被外部编辑器连接的 stdio ACP 服务。
+
+三类会话共用 `lib/acp-view.ts` 和 AI Elements 消息、思考、工具、计划与审批组件。只有来源实际报告的内容才显示；审批仍由各自宿主授权。Codex 原生 unified patch 保留 hunk 范围与原始行号，不能当作完整文件。Claude 已报告的编辑作为对话产物保留，完成时另显示工具文字回执；显式清空内容仍移除它。
+
+khor 记录的显示快照最多 256 KiB / 512 项，合并连续文本和同一次工具的进度；过大的工具显示块不保留，界面提示详情截短。模型上下文仍由 Pi SessionManager 保存，显示快照不承担恢复执行。旧记录缺少这些字段时继续显示原来的回答；不会伪造旧的思考、工具或计划。接收同步快照不执行内容。
+
+版本核对（2026-10-23）：Pi 固定 1.4.0，ACP Rust SDK 固定 3.5.0；按官方当前稳定的 ACP v1 接入。Codex 映射对照本机 0.163.0 的 `app-server generate-json-schema`，包括命令输出与结束状态、MCP 结果、计划和文件补丁。Claude 沿用现有适配器与权限通道。
+
 ## Pi 组件的边界
 
 Pi 官方 [SDK 文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md) 区分会话核心、资源加载和可选的 MCP / ToolSearch / Codemode 扩展；接入 SDK 不会自动启用全部 CLI 组件。

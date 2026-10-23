@@ -45,6 +45,12 @@ icon.
   choices. Transport success alone does not settle the card; the ACP answer
   does. Failures can retry. Settled requests become compact Trace rows.
 
+ChatView and khor’s Pi-backed task receipts share `lib/acp-view.ts` and
+`ai-elements/content.tsx`. Pi events become ACP v1 display snapshots after
+Rust SDK validation; its private MCP transport and task authority stay intact.
+Codex unified patches retain their source hunk coordinates and are not
+interpreted as complete after-files. Tool results retain all textual blocks.
+
 ChatView uses Message and Bubble for conversation structure. Existing Markdown,
 composer, attachments, transport and scroll ownership remain in use.
 
@@ -75,6 +81,15 @@ This configuration is not part of the normal application build.
 - The older `npm run acp` suite has attachment-paste fixture failures and a
   wizard selector for the removed `data-new-session-add-agent` control. Both
   reproduce on unmodified main (`069b1271`); they are not suppressed here.
+- Latest-main integration (base `09c01676`): Pi's real local-provider tests
+  pass (36 tests, one packaged-runtime-only skip); Rust/Pi/MCP durable task,
+  approval, stop/restart and seen-snapshot tests pass (17 cases). The two-device
+  credential-home test passes. Claude/Codex stdio ACP fixtures pass; the paid
+  real-Codex test stays opt-in. All four bounded-update/translation unit cases
+  pass. Shared GUI and console browser suites, default checks and build pass.
+- The older ACP suite was rerun: the same three clipboard fixtures report zero
+  attachments, then the removed `data-new-session-add-agent` selector times out.
+  This gate is not reported as passing.
 - Native iOS / Android / Windows / Linux interactions were not exercised.
 - The graph index targets main, not this worktree; zero affected flows is not
   coverage evidence. The actual component source and diff were reviewed.

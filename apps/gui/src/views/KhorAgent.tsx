@@ -7,6 +7,10 @@ import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Dialog, TaskOverlay, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Markdown } from "@/components/Markdown";
+import { Bubble, BubbleContent } from "@/components/ui/ai/bubble";
+import { AgentConfirmation } from "@/components/ai-elements/agent";
+import { AgentTranscript } from "@/components/ai-elements/content";
+import { FilePreview } from "@/views/chat-files";
 import { StatusWord } from "@/components/StatusWord";
 
 export function KhorAgentSettings({ view, onChanged, disabled }: { view: KhorAgentView | null; onChanged: (view: KhorAgentView) => void; disabled: boolean }) {
@@ -42,6 +46,7 @@ export function KhorAgentSettings({ view, onChanged, disabled }: { view: KhorAge
 
 export function KhorAgentResult({ record: c }: { record: CommandRecord }) {
   const [error, setError] = useState<string | null>(null), [acting, setActing] = useState(false);
+  const [file, setFile] = useState<string | null>(null);
   const busy = c.status === "running" || c.status === "blocked", ask = c.agent?.approval;
   const action = async (name: string, extra: Record<string, unknown> = {}) => {
     if (acting) return;
@@ -52,14 +57,15 @@ export function KhorAgentResult({ record: c }: { record: CommandRecord }) {
   };
   const word = ({ running: "busy", blocked: "blocked", done: "done", failed: "failed", interrupted: "errored", cancelled: "idle" } as Record<string, string>)[c.status] ?? "idle";
   return <article data-khor-agent-turn={c.id} data-khor-agent-status={c.status} aria-busy={busy} className="min-w-0 space-y-row text-read">
-    <div className="flex justify-end"><div data-khor-agent-prompt className="max-w-[85%] whitespace-pre-wrap break-all rounded-lg bg-accent px-3 py-1.5 text-read-ink">{c.line}</div></div>
+    <Bubble align="end" variant="muted"><BubbleContent data-khor-agent-prompt className="text-read"><Markdown text={c.line} /></BubbleContent></Bubble>
     <div className="flex items-baseline gap-in text-caption text-secondary-foreground"><span>khor</span><span className="min-w-0 flex-1 truncate">{c.agent?.model} · {c.owner_name}</span><StatusWord word={word} />{busy && <Button data-khor-agent-stop variant="ghost" size="sm" disabled={acting} onClick={() => void action("stop")}>{gui.page_stop}</Button>}</div>
-    {c.stdout && <Markdown text={c.stdout} />}
+    <AgentTranscript updates={c.agent?.updates ?? []} busy={busy} fallback={c.stdout} onOpenFile={setFile} />
+    {c.agent?.updates_truncated && <p className="text-caption text-muted-foreground">{gui.agent_detail_cut}</p>}
     {c.stderr && <p className="text-callout text-secondary-foreground">{c.stderr}</p>}
-    {ask && <div data-khor-agent-approval className="space-y-in border-t pt-in">
-      <div className="text-callout">{gui.agent_approve_hint}</div><code className="text-callout">{ask.tool}</code><pre className="overflow-x-auto whitespace-pre-wrap break-all text-callout">{ask.arguments}</pre>
-      <div className="flex gap-in"><Button data-khor-agent-allow size="sm" disabled={acting} onClick={() => void action("answer", { ask: ask.id, allow: true })}>{gui.approve}</Button><Button data-khor-agent-deny variant="ghost" size="sm" disabled={acting} onClick={() => void action("answer", { ask: ask.id, allow: false })}>{gui.agent_deny}</Button></div>
-    </div>}
+    {ask && <div data-khor-agent-approval><AgentConfirmation key={ask.id} title={`${gui.agent_approve_hint}\n${ask.tool}\n${ask.arguments}`}
+      options={[["allow", gui.approve], ["deny", gui.agent_deny]]} answer={null} canAnswer={c.status === "blocked"}
+      onAnswer={(option) => khorAgent("answer", c.owner, { run: c.id, ask: ask.id, allow: option === "allow" })} /></div>}
     {(c.error || error) && <p role="alert" className="whitespace-pre-wrap break-all text-callout text-state-failed">{error || c.error}</p>}
+    {file !== null && <FilePreview machine={c.owner} shown={c.owner_name} here={false} path={file} onClose={() => setFile(null)} />}
   </article>;
 }

@@ -67,8 +67,8 @@
 //! # What is deliberately not translated
 //!
 //! The same judgment as `cagent`: only what a face paints — message
-//! and thought chunks, tool calls, the permission ask, and the stop
-//! reason. Codex's hook runs, MCP startup notices, rate-limit feeds
+//! and thought chunks, tool calls with progress/results, native file patches,
+//! plans, the permission ask, and the stop reason. Codex's hook runs, MCP startup notices, rate-limit feeds
 //! and skills bookkeeping stay its own. Codex has no slash-command
 //! list, so no `available_commands_update` rides the first turn — an
 //! empty "/" menu is the honest answer.
@@ -80,16 +80,18 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::v1::{
-    AgentCapabilities, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResourceResource,
+    AgentCapabilities, ContentBlock, CurrentModeUpdate, EmbeddedResourceResource,
     InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
     PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
     RequestPermissionRequest, SessionMode, SessionModeState, SessionNotification, SessionUpdate,
-    SetSessionModeRequest, SetSessionModeResponse, StopReason, TextContent, ToolCall,
-    ToolCallUpdate, ToolCallUpdateFields,
+    SetSessionModeRequest, SetSessionModeResponse, StopReason, ToolCallUpdate,
+    ToolCallUpdateFields,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo, Stdio};
 use khor_catalog::msg;
+#[path = "codexagent_updates.rs"]
+mod updates;
 use tokio::sync::{mpsc, oneshot};
 
 /// Where the codex binary is. The default asks PATH; the variable is
@@ -763,6 +765,7 @@ async fn drain(
     mut frames: mpsc::UnboundedReceiver<serde_json::Value>,
     conn: &ConnectionTo<Client>,
 ) {
+    let mut updates = updates::Updates::default();
     while let Some(f) = frames.recv().await {
         if f.get("khor_child_gone").is_some() {
             if let Some(tx) = shim.turn.lock().unwrap().take() {
@@ -775,47 +778,13 @@ async fn drain(
             None => continue,
         };
         let method = f.get("method").and_then(|m| m.as_str()).unwrap_or("");
+        if f["params"]["threadId"].as_str().is_some_and(|id| id != sid) {
+            continue;
+        }
+        for update in updates.take(method, &f["params"]) {
+            let _ = conn.send_notification(SessionNotification::new(sid.clone(), update));
+        }
         match method {
-            "item/agentMessage/delta" => {
-                if let Some(t) = f["params"]["delta"].as_str() {
-                    let _ = conn.send_notification(SessionNotification::new(
-                        sid.clone(),
-                        SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
-                            TextContent::new(t.to_owned()),
-                        ))),
-                    ));
-                }
-            }
-            "item/reasoning/summaryTextDelta" | "item/reasoning/textDelta" => {
-                if let Some(t) = f["params"]["delta"].as_str() {
-                    let _ = conn.send_notification(SessionNotification::new(
-                        sid.clone(),
-                        SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
-                            TextContent::new(t.to_owned()),
-                        ))),
-                    ));
-                }
-            }
-            "item/started" => {
-                let item = &f["params"]["item"];
-                let kind = item["type"].as_str().unwrap_or("");
-                // Conversation items already stream as deltas; what a
-                // face paints as a tool call is everything else that
-                // acts.
-                if matches!(kind, "userMessage" | "agentMessage" | "reasoning" | "") {
-                    continue;
-                }
-                let id = item["id"].as_str().unwrap_or("tool");
-                let name = item["command"]
-                    .as_str()
-                    .or_else(|| item["title"].as_str())
-                    .or_else(|| item["name"].as_str())
-                    .unwrap_or(kind);
-                let _ = conn.send_notification(SessionNotification::new(
-                    sid.clone(),
-                    SessionUpdate::ToolCall(ToolCall::new(id.to_owned(), name.to_owned())),
-                ));
-            }
             "item/commandExecution/requestApproval" | "item/fileChange/requestApproval" => {
                 answer_permission(&shim, conn, &sid, &f).await;
             }
@@ -899,9 +868,7 @@ mod tests {
     /// 「auto」, whose words say it asks before going online.
     #[test]
     fn the_opening_mode_is_the_threads_own_policy() {
-        let answer = |approval: serde_json::Value, sandbox: serde_json::Value| {
-            serde_json::json!({ "approvalPolicy": approval, "sandbox": sandbox })
-        };
+        let answer = |approval: serde_json::Value, sandbox: serde_json::Value| serde_json::json!({ "approvalPolicy": approval, "sandbox": sandbox });
         let ws = |net: bool| serde_json::json!({ "type": "workspaceWrite", "networkAccess": net });
         assert_eq!(preset_in(&answer("on-request".into(), ws(false))), Some(Preset::Auto));
         assert_eq!(preset_in(&answer("on-request".into(), ws(true))), None);

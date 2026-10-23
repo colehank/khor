@@ -703,3 +703,13 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 请求正在提交／等待会话确认的区别以及等待期间不可重复发送。
 差异模型检查真实行号、插入／删除／新建、EOF、空白／重复行、CRLF 与完整上下文
 重建，界面检查相同行不标成新增或删除。原验收入口也提供可展开上下文和延迟确认。
+
+### AI Elements 真实智能体接入（2026-10-23）
+
+- `npm run ai-elements`：共享 ACP 投影、多块结果、显式清空、Claude 编辑产物、Codex patch 行号与原始补丁；宽窄 × 浅深、正常/减少动效、手动展开、历史锚点、审批等待/失败/回答。
+- `npm run console`：khor 共用思考/工具/正文，批准拒绝与配置、回到底部按钮可点击、已读快照与历史不误读。
+- `npm test --prefix apps/agent`：真实 Pi SDK 本机模型、MCP 与上下文恢复，思考/进度/失败映射。
+- `cargo test -p khor-node --lib codexagent::updates::tests` 和 `khor_agent::updates::tests`：协议字段、输出/补丁/计划，持久显示压缩、上限与老记录兼容。
+- `cargo test -p khor-cli --test cagent --test codexagent`：真实 ACP stdio 客户端与可控 Claude/Codex 子进程；不连接用户付费模型。
+- `cargo test -p khor-gui-core --test khor_agent --test seen_snapshot --test console_receipts`：Rust → Pi → MCP → 持久记录、审批、停止、重启中断与已读边界。
+- 本地 `npm run ai-elements:preview` 在同一个正式 App 中提供 Claude、Codex、khor 示例；不单独重写 Lab 组件，不执行系统命令。浏览器验收不能替代各平台原生输入、剪贴板与滚动验收。

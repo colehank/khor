@@ -10,6 +10,22 @@ export type AgentDiffLine = {
 };
 export type AgentDiffGap = { kind: "gap"; at: number; count: number };
 
+/** A unified patch is a fragment with original line coordinates, not a file. */
+export function agentPatch(text: string): (AgentDiffLine | { kind: "heading"; text: string })[] {
+  const out: (AgentDiffLine | { kind: "heading"; text: string })[] = [];
+  let before = 0, after = 0, hunk = false;
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (header) { before = Number(header[1]); after = Number(header[2]); hunk = true; out.push({ kind: "heading", text: line }); }
+    else if (hunk && line.startsWith("\\ No newline")) { const last = out.at(-1); if (last && last.kind !== "heading") last.noNewline = true; }
+    else if (hunk && line.startsWith("-")) out.push({ kind: "removed", text: line.slice(1), before: before++, after: null });
+    else if (hunk && line.startsWith("+")) out.push({ kind: "added", text: line.slice(1), before: null, after: after++ });
+    else if (hunk && line.startsWith(" ")) out.push({ kind: "context", text: line.slice(1), before: before++, after: after++ });
+    else if (line) out.push({ kind: "heading", text: line });
+  }
+  return out;
+}
+
 /** Reuse the editor's bounded diff engine, without creating an editor view. */
 export function agentDiff(before: string | null, after: string): AgentDiffLine[] {
   const a = (before ?? "").replace(/\r\n/g, "\n"), b = after.replace(/\r\n/g, "\n");

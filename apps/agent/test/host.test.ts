@@ -58,7 +58,12 @@ test("the real Pi host uses MCP only, supplies the selected key, and restores mo
   try {
     const first = await turn("Remember fixture-task, then list my devices");
     assert.ok(first.some((e) => e.type === "done"));
-    assert.equal(first.filter((e) => e.type === "text").map((e) => e.delta).join(""), "network found");
+    assert.equal(first.filter((e) => e.type === "update" && e.update.sessionUpdate === "agent_message_chunk").map((e) => e.update.content.text).join(""), "network found");
+    const call = first.find((e) => e.type === "update" && e.update.sessionUpdate === "tool_call");
+    const done = first.find((e) => e.type === "update" && e.update.sessionUpdate === "tool_call_update" && e.update.status === "completed");
+    assert.equal(call?.update.toolCallId, "fixture-call");
+    assert.equal(done?.update.toolCallId, call?.update.toolCallId);
+    assert.ok(JSON.stringify(done?.update.content).includes("fixture-device"));
     assert.equal(toolsCalled, 1);
     assert.ok(authenticated, "the model received credentials other than the selected account");
     assert.deepEqual(requests[0]!.tools.map((t: any) => t.function.name), ["mcp__khor__devices"]);

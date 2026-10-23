@@ -8,8 +8,8 @@ const update = (sessionUpdate: string, rest: Record<string, unknown>, history = 
   kind: history ? "history" : "note", update: { update: { sessionUpdate, ...rest } },
 });
 const text = (value: string) => ({ content: { type: "text", text: value } });
-const ids = ["gui/ai-elements-review", "gui/ai-elements-plan", "gui/ai-elements-stream"];
-const titles = ["AI Elements · 组件总览", "AI Elements · 计划与确认", "AI Elements · 流式响应"];
+const ids = ["gui/ai-elements-review", "gui/ai-elements-plan", "gui/ai-elements-stream", "gui/codex-review", "wide/all"];
+const titles = ["AI Elements · 组件总览", "AI Elements · 计划与确认", "AI Elements · 流式响应", "Codex · 工具与补丁", "khor · 网络任务"];
 const device = { id: "e".repeat(64), name: "验收环境", me: true, face: null, pinned: false,
   vitals: null, hop: null, sponsor: null, watch: [], watched: null, seat: { left: 50, top: 50 }, hosts: true, receive_at: "/preview/files" };
 const boot = (): Frame => ({ kind: "agent", name: "Claude", replays: true, needs_login: false, images: false, embeds: false, lists: false });
@@ -22,6 +22,15 @@ const editorSource = (updated: boolean) => [
   "  languageSupport,", "];", "", "export function createEditor(doc: string) {", "  return EditorState.create({", "    doc,", "    extensions,", "  });", "}", "",
 ].join("\n");
 function sample(index: number): Frame[] {
+  if (index === 3) return [{ ...boot(), name: "Codex" },
+    update("user_message_chunk", text("检查结果，并展示实际修改的补丁。")),
+    update("agent_thought_chunk", text("工具与补丁来自 Codex app-server 的结构化事件；补丁保留原来的范围与行号。")),
+    update("tool_call", { toolCallId: "codex-command", title: "npm run editor-history", kind: "execute", status: "in_progress", rawInput: { command: "npm run editor-history", cwd: "/preview" } }),
+    update("tool_call_update", { toolCallId: "codex-command", status: "completed", content: [{ type: "content", content: { type: "text", text: "3 checks passed" } }] }),
+    update("tool_call", { toolCallId: "codex-patch", title: "fileChange", kind: "edit", status: "completed", locations: [{ path: "/preview/src/CodeEditor.tsx" }], rawOutput: { changes: [{ path: "/preview/src/CodeEditor.tsx", kind: { type: "update" }, diff: "@@ -12,4 +12,5 @@\n const extensions = [\n-  keymap.of(defaultKeymap),\n+  history(),\n+  keymap.of([...historyKeymap, ...defaultKeymap]),\n   languageSupport,\n ];" }] } }),
+    update("plan", { entries: [{ content: "检查快捷键", status: "completed" }, { content: "验证修改", status: "completed" }] }),
+    update("agent_message_chunk", text("检查完成。展开工具可看到执行结果与原始补丁；未把补丁片段当成完整文件。")), { kind: "history_end" },
+  ];
   if (index === 2) return [boot(), update("user_message_chunk", text("演示一轮流式思考和回复。")), { kind: "history_end" }];
   if (index === 1) return [boot(),
     update("user_message_chunk", text("检查这次改动，并在发布前让我确认。")),
@@ -45,8 +54,18 @@ function sample(index: number): Frame[] {
 function previewBridge(): Plugin {
   let frames = ids.map((_, i) => sample(i));
   const streaming = new Set<number>();
-  const generation = [0, 0, 0];
+  const generation = ids.map(() => 0);
   const timers = new Set<ReturnType<typeof setTimeout>>();
+  const khorUpdates = [
+    { sessionUpdate: "agent_thought_chunk", ...text("先查看网络中的设备，再读取目标机器的会话。") },
+    { sessionUpdate: "tool_call", toolCallId: "khor-devices", title: "mcp__khor__devices", kind: "read", status: "completed", rawInput: {}, content: [{ type: "content", content: { type: "text", text: "验收环境 · online\n临时测试设备 · online" } }] },
+    { sessionUpdate: "tool_call", toolCallId: "khor-sessions", title: "mcp__khor__sessions", kind: "read", status: "completed", rawInput: { machine: "临时测试设备" }, content: [{ type: "content", content: { type: "text", text: "fixture-session · idle" } }] },
+    { sessionUpdate: "agent_message_chunk", ...text("**网络检查完成**。两台设备在线，目标机器有一个空闲会话。\n\n这是隔离示例，不连接实际设备或执行命令。") },
+  ].map((u) => JSON.stringify(u));
+  const previewAt = Date.now();
+  const khorReceipt = () => ({ id: "khor-preview-run", at_ms: previewAt, from: device.name, from_me: true, to: [], text: null, files: null, note: null, unknown: null, retracted: false,
+    command: { id: "khor-preview-run", line: "看看网络里的设备与会话。", owner: device.id, owner_name: device.name, status: "done", started_at_ms: Date.now() - 2000, ended_at_ms: Date.now(), stdout: "", stderr: "", data_json: null, session: null, error: null,
+      agent: { model: "fixture-model", approval: null, updated_at_ms: 100, updates: khorUpdates, updates_truncated: false } } });
   const later = (fn: () => void, ms: number) => {
     const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms); timers.add(timer);
   };
@@ -89,8 +108,11 @@ function previewBridge(): Plugin {
         const index = Math.max(0, ids.indexOf(String(body.id)));
         let answer: unknown = null;
         switch (path) {
-          case "sessions": answer = ids.map((id, i) => ({ id, kind: "gui", title: titles[i], word: streaming.has(i) ? "busy" : "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "claude", group: "", face: null, hosted: true, attachable: false, last: "隔离示例 · 不连接真实智能体", via: null, via_face: null, home: device.name })); break;
+          case "sessions": answer = ids.map((id, i) => ({ id, kind: i === 4 ? "broadcast" : "gui", title: titles[i], word: streaming.has(i) ? "busy" : "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: i === 4 ? "khor" : i === 3 ? "codex" : "claude", group: "", face: null, hosted: true, attachable: false, last: "隔离示例 · 不连接真实智能体", via: null, via_face: null, home: device.name })); break;
           case "devices": answer = [device]; break;
+          case "machine_log": answer = { messages: [khorReceipt()], broken: 0 }; break;
+          case "khor_agent": answer = { config: { home: device.id, account: "fixture", model: "fixture-model" }, accounts: [{ id: "fixture", name: "隔离测试账户", home: device.id, home_name: device.name }], run: null }; break;
+          case "console_catalog": answer = []; break;
           case "chat_open": if (index === 2 && frames[index].length === 3) run(index); answer = true; break;
           case "chat_replay": break;
           case "chat_poll": case "chat_wait": {
@@ -104,7 +126,7 @@ function previewBridge(): Plugin {
           case "hooks_state": answer = { installed: false }; break;
           case "quota": answer = { quota: null, trouble: null }; break;
           case "config": case "dir_pins": case "web_pins": case "recents": case "workspaces": case "agents": case "quota_board": answer = []; break;
-          case "seen": case "session_seen": case "chat_leave": break;
+          case "seen_snapshot": case "seen": case "session_seen": case "chat_leave": break;
           default: res.statusCode = 400; answer = `验收环境未提供 ${path}`;
         }
         res.setHeader("content-type", "application/json; charset=utf-8");

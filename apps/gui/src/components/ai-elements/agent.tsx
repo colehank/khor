@@ -9,19 +9,12 @@ import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigg
 import { CircleCheckIcon, CircleDotIcon, CircleIcon, FilePenLineIcon, FileTextIcon, LoaderCircleIcon, RouteIcon, SearchIcon, TerminalIcon, WrenchIcon } from "./icons";
 import { gui } from "@/gen/catalog";
 import { word } from "@/words";
+import type { AcpTool } from "@/lib/acp-view";
 
 const AgentDiff = lazy(() => import("./diff").then((module) => ({ default: module.AgentDiff })));
+const AgentPatch = lazy(() => import("./diff").then((module) => ({ default: module.AgentPatch })));
 
-export type AgentToolData = {
-  id: string;
-  title: string;
-  kind: string;
-  status: string;
-  raw: unknown;
-  where: string[];
-  diff: { path: string; old: string | null; next: string } | null;
-  out: string | null;
-};
+export type AgentToolData = AcpTool;
 
 export type AgentPlanEntry = { content: string; status: string };
 
@@ -52,14 +45,16 @@ export function AgentReasoning({ text, isStreaming }: { text: string; isStreamin
   );
 }
 
-export function AgentTool({ tool, open, onOpenChange, onOpenFile }: {
+export function AgentTool({ tool, active = true, open, onOpenChange, onOpenFile }: {
   tool: AgentToolData;
+  active?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenFile: (path: string) => void;
 }) {
-  const more = tool.diff !== null || tool.out !== null || tool.raw !== null;
-  const live = running(tool.status), failed = tool.status === "failed";
+  const diffs = tool.diffs ?? (tool.diff ? [tool.diff] : []), patches = tool.patches ?? [];
+  const more = diffs.length > 0 || patches.length > 0 || tool.out !== null || tool.raw !== null;
+  const live = active && running(tool.status), failed = tool.status === "failed";
   const icons: Record<string, typeof WrenchIcon> = { read: FileTextIcon, edit: FilePenLineIcon, search: SearchIcon, execute: TerminalIcon };
   const Icon = icons[tool.kind] ?? WrenchIcon;
   const line = <TraceLine status={live ? "running" : failed ? "error" : undefined}>
@@ -75,8 +70,9 @@ export function AgentTool({ tool, open, onOpenChange, onOpenFile }: {
         <TraceCollapsibleTrigger data-tool-toggle title={tool.title} aria-label={tool.title}>{line}</TraceCollapsibleTrigger>
         <TraceCollapsibleContent>
           <div data-tool-body className="flex min-w-0 flex-col gap-row">
-            {tool.diff && <Suspense fallback={<div data-diff-loading className="h-16 rounded-md bg-muted" aria-hidden />}><AgentDiff diff={tool.diff} wrote={wrote ?? null} onOpenFile={onOpenFile} /></Suspense>}
-            {!tool.diff && tool.raw !== null && <CodeBlock size="sm">
+            {diffs.map((diff, i) => <Suspense key={`${diff.path}:${i}`} fallback={<div data-diff-loading className="h-16 rounded-md bg-muted" aria-hidden />}><AgentDiff diff={diff} wrote={tool.kind === "edit" && tool.status === "completed" && diff.path.startsWith("/") ? diff.path : wrote ?? null} onOpenFile={onOpenFile} /></Suspense>)}
+            {patches.map((patch, i) => <Suspense key={`${patch.path}:${i}`} fallback={<div data-diff-loading className="h-16 rounded-md bg-muted" aria-hidden />}><AgentPatch path={patch.path} text={patch.text} onOpenFile={tool.status === "completed" && patch.path.startsWith("/") ? onOpenFile : undefined} /></Suspense>)}
+            {diffs.length === 0 && patches.length === 0 && tool.raw !== null && <CodeBlock size="sm">
               <CodeBlockHeader><CodeBlockTitle>{command ? gui.key_group_commands : gui.chat_tool_input}</CodeBlockTitle><CodeBlockActions><CodeBlockCopyButton value={command ?? JSON.stringify(tool.raw, null, 2)} aria-label={gui.copy_text} /></CodeBlockActions></CodeBlockHeader>
               <CodeBlockContent data-tool-raw className="max-h-64">{command ?? JSON.stringify(tool.raw, null, 2)}</CodeBlockContent>
             </CodeBlock>}
