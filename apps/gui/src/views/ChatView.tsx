@@ -54,7 +54,7 @@ import { useReadingSession, type SessionReading } from "@/hooks/use-session-atte
 import { offerTabAct } from "@/lib/tab-acts";
 import { failedNotice, offerNotice, rejoinNotice, type PillNotice } from "@/lib/pill-notices";
 import { takeHandOff } from "@/lib/composer-handoff";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   launchOn,
@@ -74,7 +74,10 @@ import {
   type ChatFrame,
   type Miss,
 } from "@/api";
+import { Message, MessageContent } from "@/components/ui/ai/message";
+import { Bubble, BubbleContent } from "@/components/ui/ai/bubble";
 import { IconBack } from "@/components/icons";
+import { AgentConfirmation, AgentPlan, AgentReasoning, AgentTool, ToolDot, type AgentToolData, type AgentPlanEntry } from "@/components/ai-elements/agent";
 import { Markdown } from "@/components/Markdown";
 import { Waiting } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
@@ -83,6 +86,7 @@ import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
+import { useChatScroll } from "@/hooks/use-chat-scroll";
 import { BarSeat } from "@/components/SessionBar";
 import { sessionMark } from "@/components/BrandIcons";
 import { FileCard, FilePreview, MachineFilePick, PendingChips, SendInto, usePendingFiles } from "@/views/chat-files";
@@ -138,32 +142,7 @@ type Item =
   | { who: "user"; text: string }
   | { who: "agent"; text: string }
   | { who: "thought"; text: string }
-  | {
-      who: "tool";
-      /** The protocol's `toolCallId`. Carried because a later
-          `tool_call_update` names the call it is about, and matching by
-          title would fold two calls to the same tool into one. */
-      id: string;
-      title: string;
-      /** The protocol's `ToolKind`, lowercase off the wire. Unused by
-          this face today and carried anyway: it is the field that lets
-          tools from *other* agents group by what they do rather than by
-          what their author called them, which is what the next batch
-          needs and what a title can never give. */
-      kind: string;
-      /** `pending` | `in_progress` | `completed` | `failed`. */
-      status: string;
-      /** What the tool was handed, verbatim. The title is a summary and
-          summaries lose things; this is the thing itself, and it is
-          what a line opens onto. */
-      raw: unknown;
-      /** Files the call names, for a face that wants to offer them. */
-      where: string[];
-      /** The diff an edit carries, if it is an edit. */
-      diff: { path: string; old: string | null; next: string } | null;
-      /** What the tool said when it finished. */
-      out: string | null;
-    }
+  | (AgentToolData & { who: "tool" })
   | {
       who: "ask";
       ask: number;
@@ -307,7 +286,7 @@ function planIn(frame: ChatFrame): PlanEntry[] | null {
     .filter((e) => e.content);
 }
 
-type PlanEntry = { content: string; status: string };
+type PlanEntry = AgentPlanEntry;
 
 /** One of the agent's own modes (`SessionMode`). */
 type ModeListed = { id: string; name: string; description?: string | null };
@@ -708,58 +687,6 @@ function contentIn(u: Update): string | null {
 }
 
 /**
- * The mark that says whether something is **running or settled**, on a
- * tool line and on the turn itself.
- *
- * **Three shapes, not three colours.** Running breathes and is filled;
- * settled is a hollow ring; failed is filled in the failure colour. The
- * obvious design — one filled dot in three hues — has a hole this repo
- * has already paid for once: 忙碌's indigo was placed at grey's exact
- * loudness on purpose (`toolInk` has the measurement, ΔL* 1.03), so
- * with the breath off it and a completed mark would be **the same dot**.
- * And the breath is off for anyone who asked for less motion, which is
- * exactly the reader least able to spare a distinction.
- *
- * So the shape carries it and the motion is the second signal, never
- * the only one.
- *
- * **A fixed box, always.** A mark that changes size when the status
- * changes moves the title beside it — the same bug the terminal grid
- * was just rebuilt to kill, one surface over.
- */
-function ToolDot({ status }: { status: string }) {
-  const live = running(status);
-  const failed = status === "failed";
-  return (
-    <span
-      data-tool-dot
-      data-dot-state={live ? "running" : failed ? "failed" : "done"}
-      // `data-halo` rather than a selector of its own: that is already
-      // the breath's name for a *mark* (as opposed to a word), and it
-      // already carries the reduced-motion guard (app.css).
-      data-halo={live ? "busy" : undefined}
-      aria-hidden
-      // The ring is the third shape — a hollow dot — and it is a
-      // utility rather than an inline `box-shadow` because the width
-      // is a pixel, and a pixel written here is a number this app's
-      // tokens do not own (`check-px`). `ring-1 ring-inset` compiles to
-      // exactly the inset shadow it replaced.
-      className={cn(
-        "inline-block size-1.5 shrink-0 rounded-full",
-        !live && !failed && "ring-1 ring-inset ring-muted-foreground",
-      )}
-      style={{
-        background: live
-          ? "var(--state-busy)"
-          : failed
-            ? "var(--state-failed)"
-            : "transparent",
-      }}
-    />
-  );
-}
-
-/**
  * How long the running turn has been running, ticking once a second.
  *
  * **Its own component because a clock must not repaint a
@@ -783,72 +710,6 @@ function BusyFor({ since }: { since: number }) {
       {gui.chat_busy_for(lasting(Math.max(0, now - since)))}
     </span>
   );
-}
-
-/** Whether a tool call is still open.
-    `pending` counts: this agent never sends it (`cagent` opens at
-    `in_progress`), but a third-party agent may, and of the two possible
-    wrong pictures — "running" for something not yet started, versus
-    "finished" for something that has not run — only the second one
-    tells the reader the turn is further along than it is. */
-function running(status: string): boolean {
-  return status === "in_progress" || status === "pending";
-}
-
-/**
- * The ink a **plan entry** is written in — a different function from
- * `toolInk`, and the difference is the word `pending`.
- *
- * **The same word means opposite things in the two places.** On a tool
- * call `pending` is a state khor's own 垫片 never sends and a
- * third-party one rarely does, and of the two possible wrong pictures —
- * "running" for something not yet started versus "finished" for
- * something still going — only the second misleads about where the turn
- * is; so `toolInk` draws it as running. In a plan `pending` is the
- * normal state of most entries and means exactly "not started", and
- * drawing those like the step being worked erases the one thing a plan
- * is read for: **which line is now**.
- *
- * So here the present is full ink and everything else — done behind,
- * not started ahead — is muted. Two states sharing a weight is correct:
- * neither is the present, and three weights for three statuses would
- * spend contrast on a distinction the order already carries.
- *
- * Caught by `check-acp` printing `in_progress L*90.8  pending L*90.8`
- * on a run whose assertion covered only the done/doing pair — and the
- * comment beside that assertion described this split while the code
- * still shared `toolInk`.
- */
-function planInk(status: string): string {
-  return status === "in_progress" ? "var(--foreground)" : "var(--muted-foreground)";
-}
-
-/**
- * The ink a tool line is written in, by what happened to it.
- *
- * **Running is full ink and settled is muted — the pen's own pressures,
- * not a state hue.** The first version painted a running tool in
- * 忙碌's colour, on the reasoning that reusing a state word beats
- * inventing one. `check-acp` failed it before it ever shipped: in the
- * light theme 忙碌 and `--muted-foreground` are **ΔL* 1.03** apart.
- * That is not a mistake in the colour, it is what the colour is for —
- * 忙碌's indigo was placed at grey's exact loudness on purpose, so that
- * a session row could gain a hue without gaining weight. A hue built to
- * have no lightness difference cannot then be asked to carry one.
- *
- * It matters most with motion off: the breath stops (app.css), and if
- * hue were the only carrier there would be nothing left. Ink weight
- * survives both that and a reader who does not separate those hues.
- *
- * 失败 keeps its own colour, because there the word and the ink agree:
- * a tool that failed is that word's subject, and the alternative was
- * the state before this batch, where a tool that failed and a tool that
- * worked were the same grey line.
- */
-function toolInk(status: string): string {
-  if (status === "failed") return "var(--state-failed)";
-  if (running(status)) return "var(--foreground)";
-  return "var(--muted-foreground)";
 }
 
 /** One poll's worth of frames, folded into the picture. Answers the
@@ -1020,21 +881,13 @@ export function ChatView({
   const [text, setText] = useState("");
   /** Which line of the "/" menu is under the keyboard. */
   const [pick, setPick] = useState(0);
-  // Asks this face has answered: the buttons go, the line stays — a
-  // record that permission was asked outlives the asking. Local state
-  // on purpose: the host sends no receipt for an answer, and the turn
-  // moving on is the only confirmation the protocol has.
-  const [answered, setAnswered] = useState<Set<number>>(new Set());
   // Where the reader is standing, and whether anything landed while they
   // were away. Two facts, not one: leaving the tail is the reader's own
   // doing and needs no announcement, while text arriving behind their
   // back does — and a single flag would have to pick one of those to
   // lie about. Both are cleared by arriving at the bottom, which is the
   // only way this pair can go to zero (docs/UX.md 角标可归零).
-  const [away, setAway] = useState(false);
-  const [fresh, setFresh] = useState(false);
-  const scroller = useRef<HTMLDivElement>(null);
-  const nearBottom = useRef(true);
+  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom } = useChatScroll(paint);
   const box = useRef<HTMLTextAreaElement>(null);
   const coarse = useCoarse();
   // The box takes the keys the moment this pane opens, and any key
@@ -1355,27 +1208,8 @@ export function ChatView({
     setTurnSince(inTurn ? Date.now() : null);
   }, [inTurn]);
 
-  // Follow the stream only while the reader is at the tail — new frames
-  // must not yank someone who scrolled up into the past. What they get
-  // instead is the control below saying something landed.
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    if (nearBottom.current) el.scrollTop = el.scrollHeight;
-    else setFresh(true);
-  }, [paint]);
-
   // The box is as tall as what has been typed into it (`useGrowingText`).
   useGrowingText(box, text, still, gone);
-
-  const toBottom = () => {
-    const el = scroller.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    nearBottom.current = true;
-    setAway(false);
-    setFresh(false);
-  };
 
   /** A paste: the files on the clipboard go along with the line. */
   const takePaste = (e: React.ClipboardEvent) => {
@@ -1670,14 +1504,9 @@ export function ChatView({
       <div
         ref={scroller}
         data-chat-scroll
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          const near = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-          nearBottom.current = near;
-          setAway(!near);
-          if (near) setFresh(false);
-        }}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+        onScroll={onScroll}
+        onClickCapture={captureDisclosure}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [overflow-anchor:none]"
       >
         {/* **The reading column, and the one place it is set.** The pane
             is as wide as the window lets it be; a line of prose is not.
@@ -1710,7 +1539,7 @@ export function ChatView({
             bubble, and this column's own lines — an error, a request's
             title — had no wrap either). `break-word`, not `anywhere`: it
             leaves a table's widths alone, which scrolls in its frame. */}
-        <div data-chat-column data-selectable className="mx-auto w-full max-w-measure space-y-2 break-words text-read">
+        <div ref={chatColumn} data-chat-column data-selectable className="mx-auto w-full max-w-measure space-y-1 break-words text-read">
         {/* **The agent's own name for this conversation.** Scrolls with
             the conversation rather than sitting in a fixed header: it
             names the thing below it, and a title pinned over a
@@ -1742,36 +1571,7 @@ export function ChatView({
             been said here the line has nothing left to explain, and a
             standing notice about a limitation nobody is hitting is the
             kind of chrome this app's copy rules exist to keep out. */}
-        {/* **The agent's plan, above the conversation it is working
-            through.** Not inside the stream: the plan is a *state* and
-            the conversation is a record — folding it in as items would
-            paint the same three steps again every time one of them
-            moved, which is what the protocol's re-send would produce.
-
-            The present is full ink and everything else is muted —
-            see `planInk`, which is deliberately *not* `toolInk`: the
-            word `pending` means "not started" here and "probably
-            running" there, and one function for both drew the
-            not-yet-started steps exactly like the current one.
-
-            No count, no progress bar. The list is short by
-            construction, and「3/7」is a number nobody acts on beside
-            the steps themselves. */}
-        {plan.length > 0 && (
-          <div data-chat-plan className="pb-1 text-caption">
-            <div className="pb-0.5 text-muted-foreground">{gui.chat_plan}</div>
-            {plan.map((e, i) => (
-              <div
-                key={i}
-                data-plan-entry
-                data-plan-status={e.status}
-                style={{ color: planInk(e.status) }}
-              >
-                {e.content}
-              </div>
-            ))}
-          </div>
-        )}
+        <AgentPlan key={id} entries={plan} />
         {openedAt !== null && items.length === 0 && (
           <Waiting
             since={openedAt}
@@ -1805,14 +1605,9 @@ export function ChatView({
             (() => {
               const { words, paths } = splitAttachments(item.text);
               return (
-                <div key={i} className="flex flex-col items-end gap-in">
+                <div key={i} className="flex flex-col items-end gap-in py-row">
                   {words && (
-                    <div
-                      data-said
-                      className="max-w-[85%] rounded-lg bg-muted px-3 py-1.5 text-read-ink"
-                    >
-                      <Markdown text={words} />
-                    </div>
+                    <Bubble align="end" variant="muted"><BubbleContent data-said className="text-read"><Markdown text={words} /></BubbleContent></Bubble>
                   )}
                   {paths.map((p, j) => (
                     <FileCard
@@ -1827,201 +1622,31 @@ export function ChatView({
               );
             })()
           ) : item.who === "agent" ? (
-            <Markdown key={i} text={item.text} className="text-read-ink" />
+            <Message key={i} data-chat-message className="text-read py-row"><MessageContent><Markdown text={item.text} className="text-read-ink" /></MessageContent></Message>
           ) : item.who === "thought" ? (
-            <Markdown key={i} text={item.text} className="text-muted-foreground" />
+            <AgentReasoning key={`${id}:${i}`} text={item.text} isStreaming={inTurn && i === items.length - 1} />
           ) : item.who === "tool" ? (
-            // **A tool line gives up the left rule, and that is the
-            // whole of the fix.** It wore `border-l-2 pl-2` and so did
-            // a blockquote (`Markdown`), down to the same border colour
-            // and the same gutter — one shape saying two things, which
-            // is the reading it may not have: a rule down the left is
-            // quotation's own mark, and this is not somebody's words,
-            // it is a record that the agent did something.
-            //
-            // What tells them apart now is shape, not colour (the six
-            // words own the colours): no rule, and mono — the content
-            // is a verb and a path, which is code and was never prose.
-            // **The hue carries the fact and the breath does not.**
-            // A running tool wears 忙碌's colour and 忙碌's markup
-            // (`data-word`/`data-word-text`, app.css), so it inherits
-            // the breath and the reduced-motion guard that stops it —
-            // and because the colour is still there when the breath is
-            // not, a reader who has motion turned off loses nothing.
-            // That is the same split the waiting indicator below runs
-            // on, and reusing it is why no seventh state word gets
-            // invented for tools.
-            //
-            // A failed tool wears 失败's colour for the same reason the
-            // word exists: **before this, a tool that failed and a tool
-            // that worked were the same grey line**, and the whole of
-            // what the person could see about a broken turn was that
-            // the text after it read oddly.
-            //
-            // Settled-and-fine stays muted on purpose. A conversation
-            // holds many finished tools and one running one; if the
-            // finished ones were coloured too, the colour would stop
-            // meaning anything — the same reason a badge that is never
-            // zero is not a badge.
-            (() => {
-              // What there is to see if this line is opened. A line
-              // with nothing behind it is **not** made to look
-              // openable: a control that opens onto nothing is worse
-              // than no control, and until this batch every tool line
-              // had nothing behind it.
-              const more =
-                item.diff !== null || item.out !== null || item.raw !== null;
-              const shown = open.has(item.id);
-              // **A file the agent wrote is a card under the line** (round
-              // CHAT item 4), once the write is done: the file as it is
-              // now, one press from its preview. The line keeps the
-              // before and after it carried.
-              const wrote =
-                item.kind === "edit" && item.status === "completed"
-                  ? [item.diff?.path, ...item.where].find((p): p is string => !!p && p.startsWith("/")) ?? null
-                  : null;
-              return (
-                <Fragment key={i}>
-                <div
-                  data-chat-tool
-                  data-tool-status={item.status}
-                  data-tool-kind={item.kind}
-                  data-tool-open={more ? (shown ? "yes" : "no") : undefined}
-                  data-word={running(item.status) ? "busy" : undefined}
-                  className="font-mono text-mono"
-                >
-                  {more ? (
-                    <button
-                      data-tool-toggle
-                      className="flex w-full min-h-touch items-center gap-1.5 text-left pointer-fine:min-h-0"
-                      onClick={() =>
-                        setOpen((now) => {
-                          const next = new Set(now);
-                          if (!next.delete(item.id)) next.add(item.id);
-                          return next;
-                        })
-                      }
-                    >
-                      <ToolDot status={item.status} />
-                      {/* A flex item: `min-w-0` and `anywhere`, or a long
-                          path in the title holds the row past the column. */}
-                      <span data-word-text className="min-w-0 [overflow-wrap:anywhere]" style={{ color: toolInk(item.status) }}>
-                        {item.title}
-                      </span>
-                    </button>
-                  ) : (
-                    <span className="flex items-center gap-1.5">
-                      <ToolDot status={item.status} />
-                      <span data-word-text className="min-w-0 [overflow-wrap:anywhere]" style={{ color: toolInk(item.status) }}>
-                        {item.title}
-                      </span>
-                    </span>
-                  )}
-                  {shown && (
-                    <div data-tool-body className="mt-1 flex flex-col gap-1 pl-2">
-                      {item.diff && (
-                        <div data-tool-diff className="flex flex-col gap-1">
-                          {item.diff.old !== null && (
-                            <pre
-                              data-diff-before
-                              className="overflow-x-auto rounded-md bg-muted px-2 py-1 text-muted-foreground"
-                            >
-                              {gui.chat_diff_before}
-                              {"\n"}
-                              {item.diff.old}
-                            </pre>
-                          )}
-                          <pre
-                            data-diff-after
-                            className="overflow-x-auto rounded-md bg-muted px-2 py-1"
-                          >
-                            {gui.chat_diff_after}
-                            {"\n"}
-                            {item.diff.next}
-                          </pre>
-                        </div>
-                      )}
-                      {item.out !== null && (
-                        <pre
-                          data-tool-out
-                          className="max-h-64 overflow-auto rounded-md bg-muted px-2 py-1 text-muted-foreground"
-                        >
-                          {item.out}
-                        </pre>
-                      )}
-                      {/* The raw input, last and only when nothing
-                          better stood in for it: for an edit the diff
-                          *is* the input said properly, and printing the
-                          JSON underneath it would be the same fact
-                          twice, the second time unreadably. */}
-                      {!item.diff && item.raw !== null && (
-                        <pre
-                          data-tool-raw
-                          className="max-h-64 overflow-auto rounded-md bg-muted px-2 py-1 text-muted-foreground"
-                        >
-                          {JSON.stringify(item.raw, null, 1)}
-                        </pre>
-                      )}
-                    </div>
-                  )}
-                </div>
-                {wrote !== null && (
-                  <FileCard
-                    machine={home ?? ""}
-                    shown={home ?? ""}
-                    path={wrote}
-                    note={gui.chat_file_wrote}
-                    stamp={item.id}
-                    onOpen={() => openFile(wrote)}
-                  />
-                )}
-                </Fragment>
-              );
-            })()
+            <AgentTool
+              key={`${id}:${item.id}`}
+              tool={item}
+              open={open.has(item.id)}
+              onOpenChange={(shown) => setOpen((now) => {
+                const next = new Set(now);
+                if (shown) next.add(item.id);
+                else next.delete(item.id);
+                return next;
+              })}
+              onOpenFile={openFile}
+            />
           ) : item.who === "ask" ? (
-            <div
-              key={i}
-              data-chat-ask
-              className="flex flex-col gap-1.5 border-l-2 pl-2 text-caption"
-              style={{ borderColor: "var(--state-blocked)" }}
-            >
-              <span style={{ color: "var(--state-blocked)" }}>
-                {word("blocked")}
-                {item.title ? ` · ${item.title}` : ""}
-              </span>
-              {/* Once answered, the decision replaces the buttons: the
-                  line stays as the record that permission was asked,
-                  and it says what was decided in the agent's own word
-                  for it. `item.answer` is the host's fact and outlives
-                  this mount; `answered` is this face's own click,
-                  painted at once so the buttons do not sit there for a
-                  poll's length after being pressed. */}
-              {item.answer !== null && (
-                <span data-ask-answer className="text-muted-foreground">
-                  {item.options.find(([oid]) => oid === item.answer)?.[1] ?? ""}
-                </span>
-              )}
-              {/* The options are the agent's own, in its order and its
-                  words — including its refusals, so no extra dismiss
-                  control exists to answer differently than offered. */}
-              {!still && !gone && item.answer === null && !answered.has(item.ask) && (
-                <span className="flex gap-1.5">
-                  {item.options.map(([oid, label]) => (
-                    <Button
-                      key={oid}
-                      size="sm"
-                      data-ask-option={oid}
-                      onClick={() => {
-                        setAnswered((prev) => new Set(prev).add(item.ask));
-                        chatAnswer(id, item.ask, oid).catch(() => {});
-                      }}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </span>
-              )}
-            </div>
+            <AgentConfirmation
+              key={`${id}:${item.ask}`}
+              title={item.title}
+              options={item.options}
+              answer={item.answer}
+              canAnswer={!still && !gone}
+              onAnswer={(option) => chatAnswer(id, item.ask, option)}
+            />
           ) : (
             <div key={i} className="text-caption" style={{ color: "var(--state-errored)" }}>
               {item.text}

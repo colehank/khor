@@ -1,0 +1,30 @@
+{
+  "trace": {
+    "url": "https://ui.shadcn.com/r/styles/radix-nova/trace.json",
+    "source_sha256": "17f86b0e19fcfc7a8277061efa8c1af9b8f779436f60e1adb70c95f3e20b4468"
+  },
+  "message": {
+    "url": "https://ui.shadcn.com/r/styles/radix-nova/message.json",
+    "source_sha256": "64e9ae0f9d1e268b0ed7b738a53d374d273fe1e7e2dd7b35ad7417e50a9bbe6c"
+  },
+  "bubble": {
+    "url": "https://ui.shadcn.com/r/styles/radix-nova/bubble.json",
+    "source_sha256": "df1e461e33e835b7f69296939c2325e8cd76941b5ec69375d80d639793c5c4e2"
+  },
+  "item": {
+    "url": "https://ui.shadcn.com/r/styles/radix-nova/item.json",
+    "source_sha256": "6bab466798ad5bca030df773464cbe6c9dcc1dcc863d99e7091f75cd8d14a5eb"
+  },
+  "code-block": {
+    "url": "https://ui.shadcn.com/r/styles/radix-nova/code-block.json",
+    "source_sha256": "24eb7eaf7af4a2fcc24b73e541a0ead1f7e2476346de571c8091b33bb55f06b7"
+  },
+  "button": {
+    "url": "https://ui.shadcn.com/r/styles/radix-nova/button.json",
+    "source_sha256": "08e5f87833c5db8436e89337ebde0f776bcdbf649d3de69fb89be6441ca2e366"
+  },
+  "separator": {
+    "url": "https://ui.shadcn.com/r/styles/radix-nova/separator.json",
+    "source_sha256": "b5b5460e5337c2d5f361c1512001615b2e5eacb38c7449a4418bb9ddb47c4bba"
+  }
+}

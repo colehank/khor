@@ -27,6 +27,9 @@ import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+// 2026-10-23: user requested the upstream AI Elements icon semantics.
+// Only this adapter imports Lucide; app navigation keeps its own family.
+const AI_ICONS = "src/components/ai-elements/icons.ts";
 const FOREIGN = /["'][^"']*lucide[^"']*["']/;
 
 const offenders = [];
@@ -46,7 +49,7 @@ function check(path) {
   readFileSync(path, "utf8")
     .split("\n")
     .forEach((line, i) => {
-      if (FOREIGN.test(line)) offenders.push(`${rel}:${i + 1}: ${line.trim()}`);
+      if (rel !== AI_ICONS && FOREIGN.test(line)) offenders.push(`${rel}:${i + 1}: ${line.trim()}`);
     });
 }
 
@@ -103,4 +106,4 @@ if (offenders.length) {
   );
   process.exit(1);
 }
-console.log("icon gate: one family, and the brand marks only in BrandIcons.tsx, cleaned");
+console.log("icon gate: app family, scoped upstream AI Elements adapter, and cleaned brand marks");

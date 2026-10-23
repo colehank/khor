@@ -4897,6 +4897,15 @@ chat-needs-login = "这个智能体需要先登录才能开始对话"
 chat-empty = "这里还没有可显示的消息"
 # The agent's own plan (ACP `plan`). 一行标题,底下是条目——不写「计划」两个字
 # 当标签,因为条目本身就长得像计划,一个说明它是什么的标签是在解释实现。
+chat-reasoning-active = "正在思考"
+chat-tool-read = "读取"
+chat-tool-run = "运行"
+chat-tool-input = "参数"
+chat-confirmation = "需要你的确认"
+chat-confirmation-sending = "正在提交"
+chat-confirmation-waiting = "已提交，等待会话确认"
+chat-request-closed = "请求已结束"
+chat-reasoning = "思考过程"
 chat-plan = "计划"
 # The agent's current mode, when it is not the ordinary one. **只在不是
 # 默认档的时候出现**——一个常年挂着的标记等于没有标记,而这三档恰恰是
@@ -4936,6 +4945,10 @@ chat-mode = "模式"
 # 因为旁边就是内容本身,而「修改前的内容」这种话是在解释一个人已经看见的东西。
 chat-diff-before = "改前"
 chat-diff-after = "改后"
+chat-diff-no-newline = "末尾无换行"
+chat-diff-no-changes = "内容未改变"
+chat-diff-changes = "只看改动"
+chat-diff-full = "完整内容"
 # One attached image, waiting to be sent. Numbered rather than named:
 # a pasted screenshot has no filename, and「截图 1」是它在这一刻唯一
 # 诚实的身份。
