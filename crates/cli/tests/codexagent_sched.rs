@@ -27,6 +27,8 @@ for line in sys.stdin:
     method = m.get("method")
     if method == "initialize":
         emit({"jsonrpc": "2.0", "id": m["id"], "result": {}})
+    elif method == "model/list":
+        print(json.dumps({"jsonrpc":"2.0","id":m["id"],"result":{"data":[]}}),flush=True)
     elif method == "thread/start":
         open("fake.params", "w").write(json.dumps(m["params"]))
         emit({"jsonrpc": "2.0", "id": m["id"], "result": {"thread": {"id": SID}}})

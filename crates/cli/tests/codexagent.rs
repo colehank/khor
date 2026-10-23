@@ -44,6 +44,8 @@ for line in sys.stdin:
     method = m.get("method")
     if method == "initialize":
         emit({"jsonrpc": "2.0", "id": m["id"], "result": {}})
+    elif method == "model/list":
+        emit({"jsonrpc":"2.0","id":m["id"],"result":{"data":[{"model":"fixture-model","displayName":"Fixture model","defaultReasoningEffort":"low","supportedReasoningEfforts":[{"reasoningEffort":"low","description":"brief"},{"reasoningEffort":"high","description":"deep"}]}]}})
     elif method == "initialized":
         pass
     elif method == "thread/start":
@@ -52,7 +54,7 @@ for line in sys.stdin:
         # The policy the thread runs on, as codex answers it: the
         # user's config said workspace-write without network.
         emit({"jsonrpc": "2.0", "id": m["id"], "result": {
-            "thread": {"id": SID}, "approvalPolicy": "on-request",
+            "thread": {"id": SID}, "model":"fixture-model","reasoningEffort":"low", "approvalPolicy": "on-request",
             "sandbox": {"type": "workspaceWrite", "writableRoots": [],
                         "networkAccess": False, "excludeTmpdirEnvVar": False,
                         "excludeSlashTmp": False}}})
@@ -104,6 +106,7 @@ for line in sys.stdin:
             note("item/agentMessage/delta",
                  {"threadId": SID, "turnId": tid, "itemId": "msg-1",
                   "delta": f"echo: {text}"})
+        note("thread/tokenUsage/updated",{"threadId":SID,"turnId":tid,"tokenUsage":{"last":{"totalTokens":4200},"total":{"totalTokens":990000},"modelContextWindow":128000}})
         note("turn/completed",
              {"threadId": SID, "turn": {"id": tid, "status": "completed"}})
 "#,
@@ -141,7 +144,10 @@ for line in sys.stdin:
 
     // The session id is codex's own thread uuid — 同源: the rollout on
     // disk wears the same name.
-    handle.replay().await.expect("a new unprompted session has an empty history");
+    handle
+        .replay()
+        .await
+        .expect("a new unprompted session has an empty history");
     assert_eq!(handle.session().0.to_string(), SID);
 
     let notes = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -169,23 +175,64 @@ for line in sys.stdin:
                     break;
                 }
                 khor_acp::Event::Ready { .. } => {}
+                khor_acp::Event::Elicit(question) => drop(question),
+                khor_acp::Event::ElicitDone(_) => {}
             }
         }
     });
 
     // The mode the thread opened in is read off codex's answer, and
     // the list is codex's three presets.
-    let modes = handle.settings().modes.clone().expect("codex lists its modes");
+    let modes = handle
+        .settings()
+        .modes
+        .clone()
+        .expect("codex lists its modes");
     assert_eq!(modes.current_mode_id.to_string(), "workspace");
-    let ids: Vec<String> = modes.available_modes.iter().map(|m| m.id.to_string()).collect();
+    let ids: Vec<String> = modes
+        .available_modes
+        .iter()
+        .map(|m| m.id.to_string())
+        .collect();
     assert_eq!(ids, ["read-only", "workspace", "full-access"]);
     // Both attachments are advertised, because both are carried.
-    assert!(handle.facts().images && handle.facts().embeds, "＋ needs both");
+    assert!(
+        handle.facts().images && handle.facts().embeds,
+        "＋ needs both"
+    );
 
+    assert_eq!(
+        handle.settings().options.len(),
+        2,
+        "model and native reasoning choices are available before the first prompt"
+    );
+    handle
+        .set_option(
+            "thought_level",
+            serde_json::from_value(serde_json::json!({"value":"high"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(
+        handle
+            .set_option(
+                "thought_level",
+                serde_json::from_value(serde_json::json!({"value":"invented"})).unwrap()
+            )
+            .await
+            .is_err()
+    );
     // A plain turn: the reply streams through and the tool act shows.
     let stop = handle.prompt("hello there").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
+    let params: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("cwd/fake.turn")).unwrap()).unwrap();
+    assert_eq!(params["effort"], "high");
     let said = notes.lock().unwrap().join("\n");
+    assert!(
+        said.contains("usage_update") && said.contains("4200") && !said.contains("990000"),
+        "occupancy is the latest request, not billing total: {said}"
+    );
     assert!(
         said.contains("echo: hello there"),
         "the reply must stream through: {said}"
@@ -230,11 +277,24 @@ for line in sys.stdin:
         serde_json::from_str(&std::fs::read_to_string(dir.join("cwd/fake.turn")).unwrap()).unwrap();
     assert_eq!(turn["approvalPolicy"], "on-request", "{turn}");
     assert_eq!(turn["sandboxPolicy"]["type"], "readOnly", "{turn}");
-    let kinds: Vec<&str> = turn["input"].as_array().unwrap().iter().map(|i| i["type"].as_str().unwrap()).collect();
+    let kinds: Vec<&str> = turn["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["type"].as_str().unwrap())
+        .collect();
     assert_eq!(kinds, ["text", "text", "image"], "{turn}");
     assert_eq!(turn["input"][2]["url"], "data:image/png;base64,QUJD");
-    assert!(turn["input"][1]["text"].as_str().unwrap().contains("the notes"));
-    assert!(handle.set_mode("bypassPermissions").await.is_err(), "claude's ids are not codex's");
+    assert!(
+        turn["input"][1]["text"]
+            .as_str()
+            .unwrap()
+            .contains("the notes")
+    );
+    assert!(
+        handle.set_mode("bypassPermissions").await.is_err(),
+        "claude's ids are not codex's"
+    );
 
     // The approval round-trip: the server request surfaces as an ACP
     // ask, and the answer lands on codex's own JSON-RPC id as accept.

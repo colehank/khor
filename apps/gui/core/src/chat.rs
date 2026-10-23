@@ -103,6 +103,29 @@ pub enum ChatFrame {
         #[ts(type = "unknown")]
         settings: serde_json::Value,
     },
+    Capabilities {
+        #[ts(type = "unknown")]
+        capabilities: serde_json::Value,
+    },
+    Elicit {
+        #[ts(type = "number")]
+        ask: u64,
+        #[ts(type = "unknown")]
+        request: serde_json::Value,
+    },
+    ElicitAnswered {
+        #[ts(type = "number")]
+        ask: u64,
+        #[ts(type = "unknown")]
+        response: serde_json::Value,
+    },
+    ControlResult {
+        token: String,
+        operation: String,
+        #[ts(type = "unknown")]
+        data: Option<serde_json::Value>,
+        error: Option<String>,
+    },
 }
 
 /// What a poll answers: the frames since the cursor, the next cursor,
@@ -310,6 +333,28 @@ fn frame_of(note: GuiNote) -> ChatFrame {
         GuiNote::Delegated { why: Some(why), .. } => ChatFrame::Refused { why },
         GuiNote::Delegated { why: None, .. } => ChatFrame::Turning,
         GuiNote::Settings(s) => ChatFrame::Settings { settings: parse(s) },
+        GuiNote::Capabilities(s) => ChatFrame::Capabilities {
+            capabilities: parse(s),
+        },
+        GuiNote::Elicit { ask, request } => ChatFrame::Elicit {
+            ask,
+            request: parse(request),
+        },
+        GuiNote::ElicitAnswered { ask, response } => ChatFrame::ElicitAnswered {
+            ask,
+            response: parse(response),
+        },
+        GuiNote::ControlResult {
+            token,
+            operation,
+            data,
+            error,
+        } => ChatFrame::ControlResult {
+            token,
+            operation,
+            data: data.map(parse),
+            error,
+        },
     }
 }
 
@@ -599,6 +644,44 @@ pub fn chat_answer(id: &str, ask: u64, option: Option<String>) -> Result<(), Str
     let chat = chat_of(id)?;
     let mut conn = chat.conn.lock().unwrap();
     write_frame(&mut *conn, &GuiOp::Answer { ask, option })
+}
+
+pub fn chat_respond(id: &str, ask: u64, response: &serde_json::Value) -> Result<(), String> {
+    let response = serde_json::to_string(response).map_err(|e| e.to_string())?;
+    if response.len() > 128 * 1024 {
+        return Err("Interaction response is too large".into());
+    }
+    let chat = chat_of(id)?;
+    write_frame(
+        &mut *chat.conn.lock().unwrap(),
+        &GuiOp::ElicitAnswer { ask, response },
+    )
+}
+pub fn chat_control(
+    id: &str,
+    token: &str,
+    operation: &str,
+    payload: &serde_json::Value,
+) -> Result<(), String> {
+    if token.is_empty()
+        || token.len() > 128
+        || !matches!(operation, "close" | "delete" | "authenticate" | "logout")
+    {
+        return Err("Invalid session operation".into());
+    }
+    let payload = payload.to_string();
+    if payload.len() > 16 * 1024 {
+        return Err("Session operation is too large".into());
+    }
+    let chat = chat_of(id)?;
+    write_frame(
+        &mut *chat.conn.lock().unwrap(),
+        &GuiOp::Control {
+            token: token.into(),
+            operation: operation.into(),
+            payload,
+        },
+    )
 }
 
 /// Puts the session in one of the modes its agent listed

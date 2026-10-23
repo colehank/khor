@@ -53,7 +53,23 @@ function sample(index: number): Frame[] {
 }
 
 function previewBridge(): Plugin {
-  let frames = ids.map((_, i) => sample(i));
+  const preferences=ids.map((_,i)=>({
+    model:i===3?'gpt-5.4':'claude-sonnet-4-6',
+    modes:{currentModeId:'default',availableModes:[
+      {id:'default',name:'逐次询问',description:'执行操作前向你确认'},
+      {id:i===3?'workspace':'auto',name:i===3?'工作区内自动':'由 Claude 判断',description:i===3?'工作区内自动执行，超出范围仍需确认':'由 Claude 判断操作是否需要确认'},
+      {id:'plan',name:'仅规划',description:'讨论和制定计划，不修改文件'},
+    ]},
+    options:[
+      {id:'model',name:'模型',category:'model',type:'select',currentValue:i===3?'gpt-5.4':'claude-sonnet-4-6',options:i===3?[
+        {value:'gpt-5.4',name:'GPT-5.4'},{value:'gpt-5.4-mini',name:'GPT-5.4 mini'},
+      ]:[{value:'claude-sonnet-4-6',name:'Sonnet 4.6'},{value:'claude-opus-4-6',name:'Opus 4.6'}]},
+      {id:'reasoning',name:'思考方式',category:'thought_level',type:'select',currentValue:'standard',options:[{value:'standard',name:'标准'},{value:'deep',name:'深入'}]},
+    ],
+  }));
+  const initialPreferences=structuredClone(preferences);
+  const sampleWithSettings=(i:number)=>{const source=sample(i);return [source[0],{kind:'settings',settings:preferences[i]},...source.slice(1)];};
+  let frames = ids.map((_, i) => sampleWithSettings(i));
   const streaming = new Set<number>();
   const generation = ids.map(() => 0);
   const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -65,15 +81,31 @@ function previewBridge(): Plugin {
   ].map((u) => JSON.stringify(u));
   const account = { id: "fixture", name: "示例模型账户", home: device.id, home_name: device.name, provider: "anthropic", default_model: "claude-sonnet-4-6", configured: true, base_url: null, auth_type: "api_key" };
   const modelAccounts = [account];
-  let modelConfig = { home: device.id, account: account.id, model: account.default_model };
+  let modelConfig = { home: device.id, account: account.id, model: account.default_model, options:{thought_level:"medium",auto_compaction:true} };
+  let khorRunning=false,khorPrompt='看看网络里的设备与会话。';
   let jobCounter = 0;
   const jobs = new Map<string, any>();
+  const interactionAnswers:unknown[]=[];
   const view = (data: unknown = null) => ({ config: modelConfig, accounts: modelAccounts, run: null, data });
   function agentAction(body: Record<string, any>) {
     if (body.action === "catalog") return view(providers);
     const p = body.payload ?? {};
-    if (body.action === "configure") { modelConfig = { home: body.machine, account: p.account, model: p.model }; return view(); }
+    if(body.action==='prompt'){khorRunning=true;khorPrompt=String(p.text);later(()=>{khorRunning=false;},10000);return view();}
+    if(body.action==='stop'){khorRunning=false;return view();}
+    if (body.action === "configure") { modelConfig = { home: body.machine, account: p.account, model: p.model,options:{thought_level:"medium",auto_compaction:true} }; return view(); }
     if (body.action !== "manage") return view();
+    if(p.operation==='session_settings'||p.operation==='session_set_option'){
+      if(p.operation==='session_set_option'){
+        if(p.configId==='model'){modelConfig.model=p.value;modelConfig.options.thought_level='medium';}
+        else (modelConfig.options as Record<string,unknown>)[p.configId]=p.value;
+      }
+      const id=`session-${++jobCounter}`;
+      jobs.set(id,{status:'done',result:{model:modelConfig.model,options:modelConfig.options,configOptions:[
+        {id:'model',name:'模型',category:'model',type:'select',currentValue:modelConfig.model,options:[{value:'claude-sonnet-4-6',name:'Sonnet 4.6'},{value:'claude-opus-4-6',name:'Opus 4.6'}]},
+        {id:'thought_level',name:'思考强度',category:'thought_level',type:'select',currentValue:modelConfig.options.thought_level,options:['off','minimal','low','medium','high'].map(value=>({value,name:value}))},
+        {id:'auto_compaction',name:'自动压缩',category:'model_config',type:'boolean',currentValue:modelConfig.options.auto_compaction},
+      ]}});return view({job:id,status:'running'});
+    }
     if (p.operation === "models") {
       const id = `models-${++jobCounter}`;
       jobs.set(id, { status: "done", result: { models: [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", contextWindow: 200000, reasoning: true, image: true }, { id: "claude-opus-4-6", name: "Claude Opus 4.6", contextWindow: 200000, reasoning: true, image: true }] } });
@@ -99,7 +131,7 @@ function previewBridge(): Plugin {
   }
   const previewAt = Date.now();
   const khorReceipt = () => ({ id: "khor-preview-run", at_ms: previewAt, from: device.name, from_me: true, to: [], text: null, files: null, note: null, unknown: null, retracted: false,
-    command: { id: "khor-preview-run", line: "看看网络里的设备与会话。", owner: device.id, owner_name: device.name, status: "done", started_at_ms: Date.now() - 2000, ended_at_ms: Date.now(), stdout: "", stderr: "", data_json: null, session: null, error: null,
+    command: { id: "khor-preview-run", line: khorPrompt, owner: device.id, owner_name: device.name, status: khorRunning ? "running" : "done", started_at_ms: Date.now() - 2000, ended_at_ms: khorRunning ? null : Date.now(), stdout: "", stderr: "", data_json: null, session: null, error: null,
       agent: { model: "fixture-model", approval: null, updated_at_ms: 100, updates: khorUpdates, updates_truncated: false } } });
   const later = (fn: () => void, ms: number) => {
     const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms); timers.add(timer);
@@ -131,10 +163,19 @@ function previewBridge(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         const path = (req.url ?? "").split("?")[0].slice(1);
         if (path === "__ai_preview/reset") {
-          for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); frames = ids.map((_, i) => sample(i));
+          for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); khorRunning=false; generation.fill(0);
+          preferences.splice(0,preferences.length,...structuredClone(initialPreferences));
+          modelConfig={home:device.id,account:account.id,model:account.default_model,options:{thought_level:"medium",auto_compaction:true}};
+          frames = ids.map((_, i) => sampleWithSettings(i));
           res.setHeader("content-type", "application/json"); res.end("true"); return;
         }
         if (req.method !== "POST") return next();
+        if(path==='chat_put'||path==='upload'){
+          // Consume and discard demo bytes; never persist a selected file.
+          for await(const _chunk of req) { /* discard */ }
+          const query=new URL(req.url??'/', 'http://preview').searchParams;
+          res.setHeader('content-type','application/json');res.end(JSON.stringify(`${query.get('into')??'/preview/files'}/${query.get('name')??'attachment'}`));return;
+        }
         let body: Record<string, unknown>;
         try {
           let raw = ""; for await (const chunk of req) { raw += String(chunk); if (raw.length > 1000000) throw new Error("Preview request too large"); }
@@ -143,21 +184,33 @@ function previewBridge(): Plugin {
         const index = Math.max(0, ids.indexOf(String(body.id)));
         let answer: unknown = null;
         switch (path) {
+          case "__ai_preview/acp": frames[index].push(...(Array.isArray(body.frames)?body.frames:[]));answer=true;break;
+          case "__ai_preview/answers":answer=interactionAnswers;break;
+          case "chat_respond":interactionAnswers.push(body);frames[index].push({kind:'elicit_answered',ask:body.ask,response:{action:'accept'}});break;
+          case "chat_control":frames[index].push({kind:'control_result',token:body.token,operation:body.operation,data:{},error:null});break;
           case "sessions": answer = ids.map((id, i) => ({ id, kind: i === 4 ? "broadcast" : "gui", title: titles[i], word: streaming.has(i) ? "busy" : "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: i === 4 ? "khor" : i === 3 ? "codex" : "claude", group: "", face: null, hosted: true, attachable: false, last: "隔离示例 · 不连接真实智能体", via: null, via_face: null, home: device.name })); break;
           case "devices": answer = [device]; break;
           case "machine_log": answer = { messages: [khorReceipt()], broken: 0 }; break;
           case "khor_agent": answer = agentAction(body); break;
           case "console_catalog": answer = []; break;
-          case "chat_open": if (index === 2 && frames[index].length === 3) run(index); answer = true; break;
+          case "chat_open": if (index === 2 && generation[index] === 0) run(index); answer = true; break;
+          case "chat_set_mode": preferences[index].modes.currentModeId=String(body.mode);frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});break;
+          case "chat_set_option": {
+            const option=preferences[index].options.find(o=>o.id===body.option);
+            if(option)(option as {currentValue:unknown}).currentValue=body.value;
+            if(body.option==='model')preferences[index].model=String(body.value);
+            frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});break;
+          }
           case "chat_replay": break;
           case "chat_poll": case "chat_wait": {
             const since = Math.max(0, Number(body.since) || 0);
-            answer = { frames: frames[index].slice(since), next: frames[index].length, gone: false, lost: false, stall: null }; break;
+            answer = { frames: frames[index].slice(since).filter(f=>f.kind!=='turning'||streaming.has(index)), next: frames[index].length, gone: false, lost: false, stall: null }; break;
           }
           case "chat_answer": later(() => frames[index].push({ kind: "answered", ask: body.ask, option: body.option }, update("agent_message_chunk", text(body.option === "deny" ? "已取消。这次预览没有执行任何系统操作。" : "已确认。此处仅演示确认状态，不执行系统操作。"), false)), 900); break;
           case "chat_say": run(index, "收到。这是验收环境的示例回复，没有调用模型或执行命令。你可以展开上面的工具调用，检查输出与复制按钮。"); break;
           case "chat_stop": generation[index]++; streaming.delete(index); frames[index].push({ kind: "turn", stop: "Cancelled" }); break;
           case "tabs_list": answer = { tabs: [], active: "" }; break;
+          case "ls": answer={path:String(body.path||'/preview'),entries:['files','project','documents'].map(name=>({name,dir:true,size:0,at_ms:previewAt,from:null,received_ms:null})),truncated:false};break;
           case "hooks_state": answer = { installed: false }; break;
           case "quota": answer = { quota: null, trouble: null }; break;
           case "config": case "dir_pins": case "web_pins": case "recents": case "workspaces": case "agents": case "quota_board": answer = []; break;

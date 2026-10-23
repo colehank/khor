@@ -180,6 +180,9 @@ pub struct AgentConfig {
     pub home: String,
     pub account: String,
     pub model: String,
+    #[serde(default)]
+    #[ts(type = "Record<string, string | boolean>")]
+    pub options: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]

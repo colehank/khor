@@ -58,6 +58,9 @@ test("the real Pi host uses MCP only, supplies the selected key, and restores mo
   try {
     const first = await turn("Remember fixture-task, then list my devices");
     assert.ok(first.some((e) => e.type === "done"));
+    const settings=first.find(e=>e.type==='settings')?.settings;
+    assert.equal(settings.model,'fixture');assert(settings.configOptions.some((o:any)=>o.id==='auto_compaction'&&o.type==='boolean'));
+    assert(!first.some(e=>e.type==='update'&&e.update.sessionUpdate==='usage_update'),'unknown gateway context window is not measured');
     assert.equal(first.filter((e) => e.type === "update" && e.update.sessionUpdate === "agent_message_chunk").map((e) => e.update.content.text).join(""), "network found");
     const call = first.find((e) => e.type === "update" && e.update.sessionUpdate === "tool_call");
     const done = first.find((e) => e.type === "update" && e.update.sessionUpdate === "tool_call_update" && e.update.status === "completed");

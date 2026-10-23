@@ -45,6 +45,8 @@ pub mod shell_start;
 pub mod ipc;
 pub mod keeper;
 pub mod khor_agent;
+mod acp_management;
+mod acp_mcp;
 pub mod link;
 pub mod list;
 pub mod live;
@@ -4757,19 +4759,14 @@ impl Node {
             adaptor::codex::VENDOR => Picked::Codex,
             name => Picked::Registered(name.to_owned(), self.agent_or_refuse(name)?),
         };
-        // Which forms this agent can take, each refusal naming the wall
-        // it hit. A registered agent has two it cannot pass, and they
-        // are different walls: khor has no spelling for starting it in
-        // a terminal, and no way to hand it khor's verbs.
+        // Registered agents have no terminal launch spelling. Their
+        // scheduler form receives khor's tools through standard session MCP.
         match (&picked, form) {
             // The TUI form needs a pre-nameable session, and a bare
             // thread/start writes no rollout to resume (probed).
             (Picked::Codex, "term") => return Err(msg::wizard_codex_chat_only().into()),
             (Picked::Registered(..), "term") => {
                 return Err(msg::wizard_registered_no_terminal().into());
-            }
-            (Picked::Registered(..), "agent") => {
-                return Err(msg::wizard_registered_no_scheduler().into());
             }
             _ => {}
         }

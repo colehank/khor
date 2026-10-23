@@ -61,7 +61,22 @@ use agent_client_protocol::{Agent, Stdio};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use agent_client_protocol::schema::v1::CancelNotification;
+use agent_client_protocol::schema::v1::{
+    AuthenticateRequest, AuthenticateResponse, CancelNotification, CloseSessionRequest,
+    CloseSessionResponse, CreateElicitationRequest, ResumeSessionRequest, ResumeSessionResponse,
+};
+fn extended() -> bool {
+    std::env::var("KHOR_STUB_EXTENDED").is_ok() || std::env::args().any(|v| v == "--extended")
+}
+fn question(session: Option<&str>) -> CreateElicitationRequest {
+    let mut v = serde_json::json!({"mode":"form","message":"Choose a count","requestedSchema":{"type":"object","properties":{"count":{"type":"integer","minimum":1,"maximum":3}},"required":["count"]}});
+    if let Some(s) = session {
+        v["sessionId"] = s.into();
+    } else {
+        v["requestId"] = "auth".into();
+    }
+    serde_json::from_value(v).unwrap()
+}
 
 fn chunk(text: &str) -> SessionUpdate {
     SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
@@ -137,9 +152,12 @@ async fn main() -> agent_client_protocol::Result<()> {
             let Ok(line) = line else { break };
             let request: serde_json::Value = serde_json::from_str(&line).unwrap();
             if request["method"] == "initialize" {
-                println!("{}", serde_json::json!({"jsonrpc":"2.0", "id":request["id"], "result": {
-                    "protocolVersion": version.parse::<u16>().unwrap_or(0), "agentCapabilities": {}
-                }}));
+                println!(
+                    "{}",
+                    serde_json::json!({"jsonrpc":"2.0", "id":request["id"], "result": {
+                        "protocolVersion": version.parse::<u16>().unwrap_or(0), "agentCapabilities": {}
+                    }})
+                );
                 std::io::stdout().flush().unwrap();
             }
         }
@@ -161,7 +179,11 @@ async fn main() -> agent_client_protocol::Result<()> {
         )
         .name("acp-stub")
         .on_receive_request(
-            async move |request: InitializeRequest, responder, _connection| {
+            async move |request: InitializeRequest, responder, connection| {
+                if let Ok(marker)=std::env::var("KHOR_STUB_WAIT_INIT"){
+                    std::fs::write(marker,std::process::id().to_string()).unwrap();
+                    return connection.spawn(async move{tokio::time::sleep(std::time::Duration::from_secs(600)).await;responder.respond(InitializeResponse::new(request.protocol_version))});
+                }
                 // The version answered is the agent's to choose — which
                 // is exactly why a client must read it back.
                 let version = match std::env::var("KHOR_STUB_VERSION") {
@@ -174,7 +196,9 @@ async fn main() -> agent_client_protocol::Result<()> {
                         SessionCapabilities::new().list(SessionListCapabilities::new()),
                     );
                 }
-                responder.respond(InitializeResponse::new(version).agent_capabilities(caps))
+                let mut hello=serde_json::to_value(InitializeResponse::new(version).agent_capabilities(caps)).unwrap();
+                if extended(){hello["agentCapabilities"]["sessionCapabilities"]=serde_json::json!({"resume":{},"close":{},"delete":{},"additionalDirectories":{}});hello["agentCapabilities"]["mcpCapabilities"]=serde_json::json!({"http":true,"sse":true});hello["authMethods"]=serde_json::json!([{"type":"agent","id":"login","name":"Fixture login"}]);}
+                responder.respond(serde_json::from_value::<InitializeResponse>(hello).unwrap())
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -235,7 +259,7 @@ async fn main() -> agent_client_protocol::Result<()> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |_request: NewSessionRequest, responder, _connection| {
+            async move |request: NewSessionRequest, responder, _connection| {
                 if std::env::var("KHOR_STUB_LOGIN").is_ok() {
                     // The real spelling: `auth_required` is a code, not
                     // a phrase, and a client that matched on words
@@ -247,6 +271,7 @@ async fn main() -> agent_client_protocol::Result<()> {
                     format!("stub-session-{}", std::process::id())
                 } else { "stub-session-1".to_owned() };
                 let mut opened = NewSessionResponse::new(session);
+                if extended(){let mut meta=serde_json::Map::new();meta.insert("modelId".into(),serde_json::to_string(&request).unwrap().into());opened.meta=Some(meta);}
                 if settable() {
                     let (model, fast) = set.lock().unwrap().clone();
                     opened.modes = Some(modes_of("careful"));
@@ -295,9 +320,7 @@ async fn main() -> agent_client_protocol::Result<()> {
                             .respond_with_error(agent_client_protocol::Error::invalid_params())
                     }
                 }
-                responder.respond(SetSessionConfigOptionResponse::new(options_of(
-                    &now.0, now.1,
-                )))
+                responder.respond(SetSessionConfigOptionResponse::new(if std::env::var("KHOR_STUB_EMPTY_OPTIONS").is_ok(){vec![]}else{options_of(&now.0,now.1)}))
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -311,6 +334,7 @@ async fn main() -> agent_client_protocol::Result<()> {
                         .respond_with_error(agent_client_protocol::Error::method_not_found());
                 }
                 let session = request.session_id.clone();
+                if extended(){let inner=connection.clone();return connection.spawn(async move{let response=inner.send_request(question(Some(session.0.as_ref()))).block_task().await?;inner.send_notification(SessionNotification::new(session.clone(),chunk(&format!("load-answer:{} context:{}",serde_json::to_string(&response).unwrap(),serde_json::to_string(&request).unwrap()))))?;responder.respond(LoadSessionResponse::new())});}
                 for text in ["played back: one", "played back: two"] {
                     connection.send_notification(SessionNotification::new(
                         session.clone(),
@@ -321,6 +345,14 @@ async fn main() -> agent_client_protocol::Result<()> {
             },
             agent_client_protocol::on_receive_request!(),
         )
+        .on_receive_request(async move|request:AuthenticateRequest,responder,connection|{
+            if !extended()||request.method_id.0.as_ref()!="login"{return responder.respond_with_error(agent_client_protocol::Error::invalid_params());}
+            let inner=connection.clone();connection.spawn(async move{let response=inner.send_request(question(None)).block_task().await?;if serde_json::to_value(response).unwrap()["action"]!="accept"{return responder.respond_with_error(agent_client_protocol::Error::auth_required());}responder.respond(AuthenticateResponse::new())})
+        },agent_client_protocol::on_receive_request!())
+        .on_receive_request(async move|request:ResumeSessionRequest,responder,connection|{
+            connection.send_notification(SessionNotification::new(request.session_id,chunk("no-replay resume")))?;responder.respond(ResumeSessionResponse::new())
+        },agent_client_protocol::on_receive_request!())
+        .on_receive_request(async move|_request:CloseSessionRequest,responder,_connection|responder.respond(CloseSessionResponse::new()),agent_client_protocol::on_receive_request!())
         .on_receive_request(
             async move |request: PromptRequest, responder, connection| {
                 prompt_canceled.store(false, std::sync::atomic::Ordering::SeqCst);

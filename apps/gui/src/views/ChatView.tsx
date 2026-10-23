@@ -1,3 +1,7 @@
+import {labUnified,AcpHeader,LabAdd} from "@/views/SessionPreferences";
+import {AgentInteraction,type InteractionRequest} from "@/components/AgentInteraction";
+import {chatRespond,chatControl} from "@/api";
+import {configOptions,type AgentProtocol} from "@/lib/acp-session";
 import { useReadingSession, type SessionReading } from "@/hooks/use-session-attention";
 // The conversation face of a GUI session: history above, the live
 // stream below, one input. The frames come through the chat registry
@@ -92,7 +96,7 @@ import { sessionMark } from "@/components/BrandIcons";
 import { FileCard, FilePreview, MachineFilePick, PendingChips, SendInto, usePendingFiles } from "@/views/chat-files";
 import { LinkHomeProvider, useKnownFiles, useLinkHome, type LinkHome } from "@/views/linkHome";
 import { filesFolderIn, splitAttachments, withAttachments } from "@/lib/paths";
-import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
+import { Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
 import { imeKey } from "@/lib/ime";
@@ -140,6 +144,8 @@ const STILL_MS = 700;
 
 /** One painted item, folded from the protocol's chunks. */
 type Item =
+  | import("@/lib/acp-view").AcpCompaction
+  | import("@/lib/acp-view").AcpResource
   | { who: "user"; text: string }
   | { who: "agent"; text: string }
   | { who: "thought"; text: string }
@@ -195,7 +201,7 @@ type ToolContent = {
   newText?: string;
 };
 
-type Update = {
+type Update = import("@/lib/acp-view").AcpUpdate & {
   sessionUpdate?: string;
   /** **The protocol overloads this key.** On a message chunk it is one
       content block; on a tool call it is a *list* of `ToolCallContent`.
@@ -340,7 +346,7 @@ function settingsIn(frame: ChatFrame): Settings | null {
               : [],
           }
         : null,
-    options: Array.isArray(s.options) ? (s.options as OptionListed[]) : [],
+    options: configOptions(s.options),
     model: typeof s.model === "string" && s.model.trim() ? s.model.trim() : null,
   };
 }
@@ -354,9 +360,8 @@ function settingsIn(frame: ChatFrame): Settings | null {
  */
 function modelOf(settings: Settings | null): string | null {
   if (!settings) return null;
-  if (settings.model) return settings.model;
   const o = settings.options.find((x) => x.category === "model" && typeof x.currentValue === "string");
-  return typeof o?.currentValue === "string" && o.currentValue ? o.currentValue : null;
+  return typeof o?.currentValue === "string" && o.currentValue ? o.currentValue : settings.model;
 }
 
 /** The agent's name as a person knows it: the vendor's product for the
@@ -705,6 +710,12 @@ export function ChatView({
   /** What the session can be set to, as the host last told it —
       `null` until a `settings` frame, which most agents never send. */
   const [settings, setSettings] = useState<Settings | null>(null);
+  const measuredModel=useRef<string|null>(null);
+  const [protocol,setProtocol]=useState<AgentProtocol|null>(null);
+  const [interactions,setInteractions]=useState<{ask:number;request:InteractionRequest}[]>([]);
+  const [notice,setNotice]=useState<{title:string;message?:string;severity?:string}|null>(null);
+  const [controlError,setControlError]=useState<string|null>(null);
+  const control=(operation:string,payload:Record<string,unknown>={})=>chatControl(id,crypto.randomUUID(),operation,payload).catch(e=>setControlError(String(e)));
   /** The directory on the conversation's machine its files go to, picked
       above the box (「存到」, `SendInto`); `null` is its receive location.
       Read as each file is added: a file is put there when it is chosen. */
@@ -805,6 +816,7 @@ export function ChatView({
   useEffect(() => {
     let stopped = false;
     setLoaded(false);
+    setInteractions([]);setProtocol(null);setNotice(null);setControlError(null);setSettings(null);setUsage(null);
     let cursor = 0;
     if (ended && !still) {
       // Over, and no record to read: nothing to open and nothing to retry.
@@ -939,14 +951,10 @@ export function ChatView({
             chatReplay(id).catch(() => {});
           }
           if (batch.frames.length) {
-            if (batch.frames.some((f) => f.kind === "turn" || f.kind === "gone")) {
-              setInTurn(false);
+            for(const f of batch.frames){
+              if(f.kind==='turn'||f.kind==='gone')setInTurn(false);
+              if(f.kind==='turning')setInTurn(true);
             }
-            // A turn that was already running when this face attached.
-            // Without it, a second face opens on an inviting empty box
-            // and what it types is dropped (one turn at a time is the
-            // host's rule — `gui_host` `GuiNote::Turning`).
-            if (batch.frames.some((f) => f.kind === "turning")) setInTurn(true);
             for (const f of batch.frames) {
               if (f.kind === "agent") {
                 setFacts({
@@ -962,7 +970,7 @@ export function ChatView({
             // not in a turn — and the words are given back rather than
             // retyped. Only into an empty box: whatever was typed in
             // the meantime is newer than this and outranks it.
-            if (batch.frames.some((f) => f.kind === "refused")) {
+            if (batch.frames.some((f) => f.kind === "refused" && f.why === "turn-in-flight")) {
               setInTurn(false);
               const back = sent.current;
               sent.current = "";
@@ -985,6 +993,15 @@ export function ChatView({
               }
             }
             for (const f of batch.frames) {
+              if(f.kind==='capabilities')setProtocol(f.capabilities as AgentProtocol);
+              if(f.kind==='elicit')setInteractions(now=>now.some(v=>v.ask===f.ask)?now:[...now,{ask:f.ask,request:f.request as InteractionRequest}]);
+              if(f.kind==='elicit_answered')setInteractions(now=>now.filter(v=>v.ask!==f.ask));
+              if(f.kind==='gone'){setInteractions([]);setNotice(null);}
+              if(f.kind==='control_result')setControlError(f.error);
+              if(f.kind==='note'){
+                const u=(f.update as {update?:{sessionUpdate?:string;title?:string;description?:string;severity?:string}})?.update;
+                if(u?.sessionUpdate==='notice')setNotice({title:u.title??'',message:u.description,severity:u.severity});
+              }
               const list = commandsIn(f);
               if (list) setCommands(list);
               const u = usageIn(f);
@@ -994,11 +1011,12 @@ export function ChatView({
               const pl = planIn(f);
               if (pl) setPlan(pl);
               const u2 = updateOf(f);
+              if(u2?.sessionUpdate==='compaction_update')setUsage(null);
               if (u2?.sessionUpdate === "current_mode_update" && u2.currentModeId) {
                 setMode(u2.currentModeId);
               }
               const st = settingsIn(f);
-              if (st) setSettings(st);
+              if(st){const model=modelOf(st);if(measuredModel.current!==null&&measuredModel.current!==model)setUsage(null);measuredModel.current=model;setSettings(st);}
             }
             setPaint((prev) => absorb(prev, batch.frames));
           }
@@ -1494,7 +1512,7 @@ export function ChatView({
                 </div>
               );
             })()
-          ) : item.who === "agent" || item.who === "thought" || item.who === "tool" ? (
+          ) : item.who === "agent" || item.who === "thought" || item.who === "tool" || item.who === "compaction" || item.who === "resource" ? (
             <AgentContent key={item.who === "tool" ? `${id}:${item.id}` : `${id}:${i}`} item={item}
               streaming={inTurn && i === items.length - 1} active={inTurn}
               open={item.who === "tool" && open.has(item.id)} onOpenFile={openFile}
@@ -1516,6 +1534,9 @@ export function ChatView({
             </div>
           ),
         )}
+        {notice&&<div data-chat-notice role={notice.severity==='error'?'alert':'status'} className="rounded-md bg-fill p-row text-callout"><strong>{notice.title}</strong>{notice.message&&<p>{notice.message}</p>}<Button size="sm" onClick={()=>setNotice(null)}>关闭</Button></div>}
+        {controlError&&<p role="alert" className="text-destructive">{controlError}</p>}
+        {interactions.map(({ask,request})=><AgentInteraction key={`${id}:${ask}`} request={request} onAnswer={response=>chatRespond(id,ask,response)}/>)}
         {waiting && (
           <div data-chat-thinking className="flex items-center gap-1.5 text-caption">
             <ToolDot status="in_progress" />
@@ -1560,7 +1581,7 @@ export function ChatView({
           has its row of accessory keys, a chat has its input box」) —
           above the deck (2026-10-13); the deck sits on the keyboard.
           On the wide face it stands here, as it always did. */}
-      <BarSeat at="above">
+      <BarSeat at="above">{labUnified && <AcpHeader who={who} mode={modeSeat} options={addOptions} protocol={protocol} onControl={control} disabled={inTurn} />}
       {/* A recorded past has no channel to speak into: no input, and
           the only thing its footer can say is that the record is
           missing. */}
@@ -1757,7 +1778,7 @@ export function ChatView({
             )}
             <Composer
               lead={
-                <AddSeat
+                <LabAdd
                   onAttach={canAttach ? () => picker.current?.click() : undefined}
                   onAttachMachine={
                     canAttach && home ? { label: gui.chat_attach_machine_title(home), pick: () => setPickOpen(true) } : undefined
@@ -1772,8 +1793,8 @@ export function ChatView({
               seatYields={!inTurn && !!text.trim()}
               trail={
                 <>
-                  {modeSeat}
-                  <WhoSeat who={who} tip={!coarse} />
+                  {!labUnified && modeSeat}
+                  {!labUnified && <WhoSeat who={who} tip={!coarse} />}
                   {/* Send only while there is something to send and the
                       agent can take it; during a turn the interrupt
                       stands in its seat. At rest with an empty box,

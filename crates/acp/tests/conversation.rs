@@ -13,6 +13,91 @@ use tokio::time::timeout;
 
 const STUB: &str = env!("CARGO_BIN_EXE_acp-stub");
 
+#[tokio::test]
+async fn advertised_resume_is_preferred_and_unsupported_context_is_refused(){
+    let(h,mut rx)=khor_acp::start_configured(&stub_with("KHOR_STUB_EXTENDED","1"),std::env::temp_dir(),Some("existing".into()),khor_acp::Environment::default()).await.unwrap();
+    assert!(text_of(next(&mut rx).await).contains("no-replay resume"));
+    assert!(matches!(next(&mut rx).await,Event::Ready{..}));drop(h);
+    let context=khor_acp::Environment{additional_directories:vec![std::env::temp_dir()],..Default::default()};
+    assert!(matches!(khor_acp::start_configured(STUB,std::env::temp_dir(),None,context).await,Err(Refusal::Wont(_))));
+    let(h,_rx)=start(STUB,std::env::temp_dir()).await.unwrap();assert!(h.control("delete",&serde_json::json!({})).await.is_err());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cancelling_an_open_also_ends_a_stalled_handshake_process(){
+    let marker=std::env::temp_dir().join(format!("khor-acp-init-{}",std::process::id()));let _=std::fs::remove_file(&marker);
+    assert!(timeout(Duration::from_millis(500),start(&stub_with("KHOR_STUB_WAIT_INIT",marker.to_str().unwrap()),std::env::temp_dir())).await.is_err());
+    let pid=std::fs::read_to_string(&marker).expect("the handshake child started");
+    timeout(Duration::from_secs(5),async{
+        loop{if !std::process::Command::new("kill").args(["-0",&pid]).stderr(std::process::Stdio::null()).status().unwrap().success(){break;}tokio::time::sleep(Duration::from_millis(20)).await;}
+    }).await.expect("cancelling initialization must not leak its child");
+    let _=std::fs::remove_file(marker);
+}
+
+#[tokio::test]
+async fn login_before_a_session_answers_structured_input_without_a_model() {
+    let mut job =
+        khor_acp::manage(&stub_with("KHOR_STUB_EXTENDED", "1"), Some("login".into())).unwrap();
+    let Event::Elicit(question) = next(&mut job.events).await else {
+        panic!("login asks for input")
+    };
+    assert!(question
+        .validate(&serde_json::json!({"action":"accept","content":{"count":99}}))
+        .is_err());
+    let response = question
+        .validate(&serde_json::json!({"action":"accept","content":{"count":2}}))
+        .unwrap();
+    question.answer(response).unwrap();
+    let result = timeout(Duration::from_secs(5), &mut job.result)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(result["authMethods"][0]["id"], "login");
+}
+
+#[tokio::test]
+async fn session_context_survives_replay_while_interactions_remain_answerable() {
+    let environment=khor_acp::Environment{mcp_servers:vec![serde_json::from_value(serde_json::json!({"name":"tools","type":"http","url":"https://example.test/mcp","headers":[]})).unwrap()],additional_directories:vec![std::env::temp_dir()]};
+    let (h, mut rx) = khor_acp::start_configured(
+        &stub_with("KHOR_STUB_EXTENDED", "1"),
+        std::env::temp_dir(),
+        None,
+        environment,
+    )
+    .await
+    .unwrap();
+    assert!(h
+        .settings()
+        .model
+        .as_ref()
+        .unwrap()
+        .contains("example.test/mcp"));
+    let _ = next(&mut rx).await;
+    let h = std::sync::Arc::new(h);
+    let replay = tokio::spawn({
+        let h = h.clone();
+        async move { h.replay().await }
+    });
+    let Event::Elicit(question) = next(&mut rx).await else {
+        panic!("replay asks")
+    };
+    let response = question
+        .validate(&serde_json::json!({"action":"accept","content":{"count":2}}))
+        .unwrap();
+    question.answer(response).unwrap();
+    let note = text_of(next(&mut rx).await);
+    assert!(note.contains("example.test/mcp"));
+    assert!(note.contains("load-answer"));
+    timeout(Duration::from_secs(5), replay)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    h.control("close", &serde_json::json!({})).await.unwrap();
+}
+
 /// The stub, with one of its switches thrown (`acp-stub`'s module head).
 /// Spelled as the JSON form the protocol crate accepts, because that is
 /// the only way to hand a child an environment through a command
@@ -553,14 +638,27 @@ async fn listing_follows_every_cursor_and_rejects_partial_or_looped_results() {
     for mode in ["normal", "fail", "loop"] {
         let cmd = serde_json::json!({"command": STUB, "env": {
             "KHOR_STUB_LISTS": "1", "KHOR_STUB_PAGES": mode
-        }}).to_string();
-        let result = timeout(Duration::from_secs(10), list(&cmd, Some("/filtered".into())))
-            .await.expect("listing must terminate");
+        }})
+        .to_string();
+        let result = timeout(
+            Duration::from_secs(10),
+            list(&cmd, Some("/filtered".into())),
+        )
+        .await
+        .expect("listing must terminate");
         if mode == "normal" {
-            let Listing::Sessions(rows) = result.expect("all pages") else { panic!("sessions") };
-            assert_eq!(rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["sess-a", "sess-b", "sess-c", "sess-d"]);
+            let Listing::Sessions(rows) = result.expect("all pages") else {
+                panic!("sessions")
+            };
+            assert_eq!(
+                rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+                ["sess-a", "sess-b", "sess-c", "sess-d"]
+            );
         } else {
-            assert!(result.is_err(), "{mode} must not silently publish a partial list");
+            assert!(
+                result.is_err(),
+                "{mode} must not silently publish a partial list"
+            );
         }
     }
 }
@@ -571,9 +669,20 @@ async fn listing_follows_every_cursor_and_rejects_partial_or_looped_results() {
 async fn a_real_agents_full_listing_terminates_without_opening_a_session() {
     let command = std::env::var("ACP_AGENT_CMD").expect("ACP_AGENT_CMD");
     let out = timeout(Duration::from_secs(120), khor_acp::list(&command, None))
-        .await.expect("bounded listing").expect("adapter answers");
-    let khor_acp::Listing::Sessions(rows) = out else { panic!("adapter cannot list") };
-    let min: usize = std::env::var("ACP_EXPECTED_MIN").unwrap_or("0".into()).parse().unwrap();
-    assert!(rows.len() >= min, "missing later pages: {} < {min}", rows.len());
+        .await
+        .expect("bounded listing")
+        .expect("adapter answers");
+    let khor_acp::Listing::Sessions(rows) = out else {
+        panic!("adapter cannot list")
+    };
+    let min: usize = std::env::var("ACP_EXPECTED_MIN")
+        .unwrap_or("0".into())
+        .parse()
+        .unwrap();
+    assert!(
+        rows.len() >= min,
+        "missing later pages: {} < {min}",
+        rows.len()
+    );
     println!("listed {} unique conversations", rows.len());
 }

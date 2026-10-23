@@ -80,7 +80,118 @@ fn wait_for_ready(ready: &std::path::Path) -> SessionId {
 fn next_note(conn: &mut TcpStream) -> GuiNote {
     conn.set_read_timeout(Some(Duration::from_secs(15)))
         .unwrap();
-    read_frame::<GuiNote>(conn).expect("a frame within fifteen seconds")
+    loop {
+        let note = read_frame::<GuiNote>(conn).expect("a frame within fifteen seconds");
+        if !matches!(note, GuiNote::Capabilities(_)) {
+            return note;
+        }
+    }
+}
+
+#[test]
+fn a_complete_empty_option_list_removes_the_previous_controls(){
+    let root=std::env::temp_dir().join(format!("khor-gui-empty-settings-{}",khor_node::link::fresh_hex().unwrap()));std::fs::create_dir_all(&root).unwrap();let ready=root.join("ready");
+    let command=serde_json::json!({"command":stub_path(),"env":{"KHOR_STUB_SETTINGS":"1","KHOR_STUB_EMPTY_OPTIONS":"1"}}).to_string();
+    let host={let root=root.clone();let ready=ready.clone();std::thread::spawn(move||gui_host_main(root,ready,"options".into(),vec![command]))};
+    let id=wait_for_ready(&ready);let live=LiveKind::new(root.clone(),DeviceId([1;32]));let hf=read_host_file(&live.dir_of(&id).unwrap()).unwrap();let mut conn=TcpStream::connect(("127.0.0.1",hf.port)).unwrap();
+    write_frame(&mut conn,&Hello{cookie:hf.cookie,cols:0,rows:0}).unwrap();let _:Welcome=read_frame(&mut conn).unwrap();let _=next_note(&mut conn);
+    let GuiNote::Settings(first)=next_note(&mut conn)else{panic!("initial settings")};assert!(!serde_json::from_str::<serde_json::Value>(&first).unwrap()["options"].as_array().unwrap().is_empty());
+    write_frame(&mut conn,&GuiOp::SetOption{id:"fast".into(),value:Choice::Switch(true)}).unwrap();
+    let GuiNote::Settings(next)=next_note(&mut conn)else{panic!("updated settings")};assert_eq!(serde_json::from_str::<serde_json::Value>(&next).unwrap()["options"],serde_json::json!([]));
+    write_frame(&mut conn,&GuiOp::Close).unwrap();host.join().unwrap().unwrap();let _=std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn replay_keeps_answering_interactions_across_two_faces() {
+    let root = std::env::temp_dir().join(format!(
+        "khor-gui-elicit-{}",
+        khor_node::link::fresh_hex().unwrap()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let ready = root.join("ready");
+    let command =
+        serde_json::json!({"command":stub_path(),"env":{"KHOR_STUB_EXTENDED":"1"}}).to_string();
+    let host = {
+        let root = root.clone();
+        let ready = ready.clone();
+        std::thread::spawn(move || gui_host_main(root, ready, "interactive".into(), vec![command]))
+    };
+    let id = wait_for_ready(&ready);
+    let live = LiveKind::new(root.clone(), DeviceId([1; 32]));
+    let hf = read_host_file(&live.dir_of(&id).unwrap()).unwrap();
+    let connect = || {
+        let mut c = TcpStream::connect(("127.0.0.1", hf.port)).unwrap();
+        write_frame(
+            &mut c,
+            &Hello {
+                cookie: hf.cookie.clone(),
+                cols: 0,
+                rows: 0,
+            },
+        )
+        .unwrap();
+        let _: Welcome = read_frame(&mut c).unwrap();
+        c
+    };
+    let mut a = connect();
+    let _ = next_note(&mut a);
+    write_frame(&mut a, &GuiOp::Replay).unwrap();
+    let ask = loop {
+        if let GuiNote::Elicit { ask, .. } = next_note(&mut a) {
+            break ask;
+        }
+    };
+    write_frame(
+        &mut a,
+        &GuiOp::ElicitAnswer {
+            ask,
+            response: serde_json::json!({"action":"accept","content":{"count":99}}).to_string(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(next_note(&mut a), GuiNote::Refused { .. }));
+    let mut b = connect();
+    let _ = next_note(&mut b);
+    loop {
+        if let GuiNote::Elicit { ask: pending, .. } = next_note(&mut b) {
+            assert_eq!(pending, ask);
+            break;
+        }
+    }
+    write_frame(
+        &mut b,
+        &GuiOp::ElicitAnswer {
+            ask,
+            response: serde_json::json!({"action":"accept","content":{"count":2}}).to_string(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(next_note(&mut b),GuiNote::ElicitAnswered{ask:answered,..}if answered==ask));
+    let mut history = String::new();
+    loop {
+        match next_note(&mut a) {
+            GuiNote::History(s) => history.push_str(&s),
+            GuiNote::HistoryEnd => break,
+            _ => {}
+        }
+    }
+    assert!(history.contains("load-answer"));
+    assert!(history.contains("accept"));
+    write_frame(
+        &mut b,
+        &GuiOp::ElicitAnswer {
+            ask,
+            response: "{\"action\":\"accept\"}".into(),
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(next_note(&mut b), GuiNote::Refused { .. }),
+        "late answer does not execute again"
+    );
+    write_frame(&mut a, &GuiOp::Close).unwrap();
+    host.join().unwrap().unwrap();
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -399,6 +510,10 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::Agent { .. } => "Agent",
         GuiNote::Refused { .. } => "Refused",
         GuiNote::Settings(_) => "Settings",
+        GuiNote::Capabilities(_) => "Capabilities",
+        GuiNote::Elicit { .. } => "Elicit",
+        GuiNote::ElicitAnswered { .. } => "ElicitAnswered",
+        GuiNote::ControlResult { .. } => "ControlResult",
         GuiNote::Delegated { .. } => "Delegated",
     }
 }
@@ -463,13 +578,18 @@ fn an_agent_that_cannot_replay_is_not_a_conversation_with_nothing_in_it() {
     // Asking anyway closes the bracket rather than hanging — a face
     // that asks before reading the fact must not be left waiting.
     write_frame(&mut conn, &GuiOp::Replay).unwrap();
-    match next_note(&mut conn) {
-        GuiNote::HistoryEnd => {}
-        other => panic!(
-            "an unanswerable replay still closes its bracket, got {}",
-            kind_of(&other)
-        ),
-    }
+    let GuiNote::ControlResult {
+        operation, error, ..
+    } = next_note(&mut conn)
+    else {
+        panic!("a failed replay says why")
+    };
+    assert_eq!(operation, "replay");
+    assert!(error.is_some());
+    assert!(
+        matches!(next_note(&mut conn), GuiNote::HistoryEnd),
+        "a failed replay still closes its bracket"
+    );
 
     write_frame(&mut conn, &GuiOp::Close).unwrap();
     host.join().expect("the host thread ends").expect("cleanly");

@@ -13,12 +13,15 @@ import {DeckExplore} from './DeckExplore';
 import './deck-band.css';
 
 type Drag={pointer:number;touch:boolean;touchId:number|null;title:boolean;x:number;route:'joystick'|'swipe'};
-export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JOYSTICK_DEFAULTS,renderFace}: {
+export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JOYSTICK_DEFAULTS,renderFace,placement='bottom'}: {
   faces:TabFace[];active:string;onFocus:(id:string)=>void;onTitle?:()=>void;onOverview?:()=>void;
   /** Isolated fixtures can tune one contact; the App uses the approved defaults. */
   tuning?:DeckJoystickTuning;
   renderFace?:(face:TabFace,role:'prev'|'cur'|'next')=>ReactNode;
+  placement?:'top'|'bottom';
 }) {
+  const upward=placement==='bottom';
+  const gesture=upward?gui.deck_gesture:gui.deck_gesture_down;
   const band=useRef<HTMLDivElement>(null),drag=useRef<Drag|null>(null),pendingTap=useRef(false);
   const latest=useRef({faces,active,onFocus,onTitle,onOverview,tuning});latest.current={faces,active,onFocus,onTitle,onOverview,tuning};
   const at=Math.max(0,faces.findIndex(f=>f.id===active));
@@ -41,7 +44,7 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
   const clearCapture=()=>{const d=drag.current;drag.current=null;if(d&&band.current?.hasPointerCapture(d.pointer))band.current.releasePointerCapture(d.pointer);};
   const cancel=()=>{pendingTap.current=false;clearCapture();steer.cancel();engine.select(Math.max(0,latest.current.faces.findIndex(f=>f.id===latest.current.active)));};
   const ids=JSON.stringify(faces.map(f=>f.id));
-  useLayoutEffect(()=>{cancel();},[engine,steer,active,ids]);
+  useLayoutEffect(()=>{cancel();},[engine,steer,active,ids,placement]);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;steer.dispose();engine.cancel();};},[engine,steer]);
   const finish=(id:number)=>{
     const d=drag.current;if(!d||id!==d.pointer)return;
@@ -79,12 +82,12 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
     // velocity history. Only the joystick may claim a stationary hold.
     const cs=getComputedStyle(band.current),step=parseFloat(cs.getPropertyValue('--glass-btn'))+3*parseFloat(cs.getPropertyValue('--gap-pane'));
     engine.start(e.clientX,e.clientY,band.current.clientWidth,step);
-    steer.start(e.clientX,e.clientY);e.preventDefault();band.current.setPointerCapture(e.pointerId);
+    steer.start(e.clientX,upward?e.clientY:-e.clientY);e.preventDefault();band.current.setPointerCapture(e.pointerId);
   };
   const moving=(e:PointerEvent)=>{
     const d=drag.current;if(!d||d.pointer!==e.pointerId)return;
     if(d.route==='joystick'){
-      steer.move(e.clientX,e.clientY);
+      steer.move(e.clientX,upward?e.clientY:-e.clientY);
       if(steer.read().phase==='swipe'){
         d.route='swipe';steer.cancel();
         engine.move(e.clientX,e.clientY);
@@ -97,11 +100,11 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
     // **What stops this session takes the pill's look** (NOTICE-BRIEF):
     // the kind's mark in the face's seat, the short line in the name's
     // room — each tab its own, so a swipe works the same with one showing.
-    renderFace ? (role === "cur" && onTitle ? <button type="button" aria-description={onOverview?gui.deck_gesture:undefined} data-deck-title className="flex h-full min-h-touch min-w-0 flex-1 items-center text-left" onClick={e=>{onTitleClick(e);}}>{renderFace(f,role)}</button> : renderFace(f,role)) : f.interaction?.notices?.length ? (
+    renderFace ? (role === "cur" && onTitle ? <button type="button" aria-description={onOverview?gesture:undefined} data-deck-title className="flex h-full min-h-touch min-w-0 flex-1 items-center text-left" onClick={e=>{onTitleClick(e);}}>{renderFace(f,role)}</button> : renderFace(f,role)) : f.interaction?.notices?.length ? (
       role === "cur" && onTitle ? (
         <button
           type="button"
-          aria-description={onOverview?gui.deck_gesture:undefined} data-deck-title
+          aria-description={onOverview?gesture:undefined} data-deck-title
           data-deck-notice={f.interaction?.notices[0].kind}
           onClick={(e) => {
             onTitleClick(e);
@@ -124,7 +127,7 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
       {role === "cur" && onTitle ? (
         <button
           type="button"
-          aria-description={onOverview?gui.deck_gesture:undefined} data-deck-title
+          aria-description={onOverview?gesture:undefined} data-deck-title
           onClick={(e) => {
             onTitleClick(e);
           }}
@@ -135,7 +138,7 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
           {f.interaction?.drop ? <MidName text={f.interaction?.drop.name} even /> : f.label}
         </button>
       ) : (
-        <span aria-description={onOverview?gui.deck_gesture:undefined} data-deck-title={role === "cur" ? "" : undefined} className={cn("text-body", f.interaction?.drop && "flex min-w-0 flex-1")}>
+        <span aria-description={onOverview?gesture:undefined} data-deck-title={role === "cur" ? "" : undefined} className={cn("text-body", f.interaction?.drop && "flex min-w-0 flex-1")}>
           {f.interaction?.drop ? <MidName text={f.interaction?.drop.name} even /> : f.label}
         </span>
       )}
@@ -153,11 +156,11 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
       data-band-tier={steering.tier} data-band-interval={steering.interval} data-band-pulse={steering.pulse} data-band-overview={steering.overview}
       data-sheet-hold={!!onOverview||exploring||undefined} className="deck-band relative h-full min-w-0 flex-1 overflow-hidden"
       tabIndex={onOverview&&!onTitle?0:undefined} role={onOverview&&!onTitle?'button':undefined} aria-label={onOverview&&!onTitle?gui.switch_tabs(faces.length):undefined}
-      aria-description={onOverview&&!onTitle?gui.deck_gesture:undefined}
+      aria-description={onOverview&&!onTitle?gesture:undefined}
       style={{touchAction:'none'}} onPointerDown={down} onPointerMove={moving} onPointerUp={e=>finish(e.pointerId)} onPointerCancel={lost} onLostPointerCapture={lost}
       onClick={e=>{if(pendingTap.current||e.detail===0&&!onTitle)onTitleClick(e);}}
       onKeyDown={e=>{if(e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true]'))return;
-        if(onOverview&&(e.key==='ArrowUp'||!onTitle&&(e.key==='Enter'||e.key===' '))){e.preventDefault();onOverview();}
+        if(onOverview&&(e.key===(upward?'ArrowUp':'ArrowDown')||!onTitle&&(e.key==='Enter'||e.key===' '))){e.preventDefault();onOverview();}
         else if(faces.length&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){e.preventDefault();focus((at+(e.key==='ArrowRight'?1:-1)+faces.length)%faces.length);}}}
       onContextMenu={e=>{if(state.mode!=='idle'||steering.phase!=='idle')e.preventDefault();}}>
       {faces.length>0&&slots.map(({slot,index})=>{
@@ -171,6 +174,6 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
       })}
       {selecting&&<span data-band-count className="deck-band-count" aria-hidden="true">{state.preview+1}/{faces.length}</span>}
     </div>
-    {exploring&&<DeckExplore band={band} faces={faces} state={steering} origin={drag.current?.x??0} reach={tuning.reach} overview={!!onOverview}/>}
+    {exploring&&<DeckExplore placement={placement} band={band} faces={faces} state={steering} origin={drag.current?.x??0} reach={tuning.reach} overview={!!onOverview}/>}
   </>;
 }

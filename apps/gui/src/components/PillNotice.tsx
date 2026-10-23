@@ -342,11 +342,13 @@ export function NoticeIsland({
   pill,
   growth,
   seat,
+  placement = "bottom",
 }: {
   list: PillNotice[];
   pill: HTMLElement | null;
   growth: { mounted: boolean; big: boolean };
   seat: string;
+  placement?: "top" | "bottom";
 }) {
   const island = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -357,23 +359,27 @@ export function NoticeIsland({
   /** Where the lead row's first line stands, in the rows and as shown. */
   const [lead, setLead] = useState<{ at: number; shown: number } | null>(null);
   const top = list[0];
-  const rows = [...list].reverse();
+  const rows = placement === "top" ? list : [...list].reverse();
   useLayoutEffect(() => {
     const el = inner.current;
     const deck = island.current?.parentElement;
     if (!el || !deck) return;
-    const fit = () => setH(Math.min(el.scrollHeight, Math.round(deck.getBoundingClientRect().bottom / 2)));
+    const fit = () => {
+      const d = deck.getBoundingClientRect();
+      const room = placement === "top" ? (window.visualViewport?.height ?? window.innerHeight) - d.top : d.bottom;
+      setH(Math.min(el.scrollHeight, Math.round(room / 2)));
+    };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [list.length]);
+  }, [list.length, placement]);
   useLayoutEffect(() => {
     const s = scroller.current;
     const el = inner.current;
     const me = island.current;
     if (!s || !el || !me || !pill || h === 0) return;
-    s.scrollTop = s.scrollHeight;
+    s.scrollTop = placement === "top" ? 0 : s.scrollHeight;
     const row = el.querySelector<HTMLElement>("[data-row-lead]");
     const at = row ? row.offsetTop + (row.firstElementChild?.matches(".border-t") ? 1 : 0) : null;
     setLead(at === null ? null : { at, shown: at - s.scrollTop });
@@ -381,7 +387,7 @@ export function NoticeIsland({
     const p = pill.getBoundingClientRect();
     setBox({ top: p.top - i.top, right: i.right - p.right, bottom: i.bottom - p.bottom, left: p.left - i.left });
     setRadius(p.height / 2);
-  }, [h, pill, list.length]);
+  }, [h, pill, list.length, placement]);
   const armed = useArmed(h > 0 && box !== null && lead !== null);
   const move = armed && !stillMotion();
   if (!top) return null;
@@ -401,7 +407,7 @@ export function NoticeIsland({
       aria-label={plainOf(top.short)}
       // The pill's look as it stands on the deck: its tint over the
       // ground, so the program's colours never show through the words.
-      className="glass absolute inset-x-row bottom-in z-50 overflow-hidden [background:linear-gradient(var(--glass),var(--glass)),var(--card)]"
+      className={cn("glass absolute inset-x-row z-50 overflow-hidden [background:linear-gradient(var(--glass),var(--glass)),var(--card)]", placement === "top" ? "top-in" : "bottom-in")}
       style={{
         height: h,
         borderRadius: radius,

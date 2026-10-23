@@ -6026,7 +6026,7 @@ impl Node {
         {
             return match reply? {
                 ipc::Reply::KhorAgent { report } => {
-                    if matches!(action, crate::khor_agent::Action::Configure { .. }) {
+                    if crate::khor_agent::configuration_reply(&action, &report) {
                         if let Some(config) = &report.config {
                             self.chat.set_agent_config(config)?;
                         }
@@ -6066,13 +6066,13 @@ impl Node {
         if self.sat_and_sponsor(&channel)?.is_some() {
             return Err(msg::agent_runtime_missing().into());
         }
-        let configure = matches!(action, crate::khor_agent::Action::Configure { .. });
+        let configure_action = action.clone();
         match self
             .ask(ep, &channel, &Request::KhorAgent { action })
             .await?
         {
             Response::KhorAgent { report } => {
-                if configure {
+                if crate::khor_agent::configuration_reply(&configure_action, &report) {
                     if let Some(config) = &report.config {
                         self.chat.set_agent_config(config)?;
                     }

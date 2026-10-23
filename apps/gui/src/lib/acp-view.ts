@@ -6,11 +6,14 @@ export type AcpTool = {
   where: string[]; diff: AcpDiff | null; out: string | null;
   diffs?: AcpDiff[]; patches?: AcpPatch[];
 };
-export type AcpItem = { who: "user" | "agent" | "thought"; text: string } | (AcpTool & { who: "tool" });
+export type AcpCompaction = {who:"compaction";id:string;status:string;summary:string;error:string|null};
+export type AcpResource = {who:"resource";kind:string;name:string;uri?:string;data?:string;mime?:string};
+export type AcpItem = AcpCompaction | AcpResource | { who: "user" | "agent" | "thought"; text: string } | (AcpTool & { who: "tool" });
 export type AcpUpdate = {
+  compactionId?:string;summary?:{type?:string;text?:string}[]|null;error?:string|null;
   sessionUpdate?: string; toolCallId?: string; title?: string | null; kind?: string; status?: string;
   rawInput?: unknown; rawOutput?: unknown; locations?: { path?: string; line?: number }[];
-  content?: { type?: string; text?: string } | { type?: string; content?: { type?: string; text?: string }; path?: string; oldText?: string | null; newText?: string }[] | null;
+  content?: { type?: string; text?: string; uri?:string;name?:string;data?:string;mimeType?:string;resource?:{text?:string;uri?:string;mimeType?:string} } | { type?: string; content?: { type?: string; text?: string }; path?: string; oldText?: string | null; newText?: string }[] | null;
   entries?: { content?: string; status?: string; priority?: string }[];
 };
 
@@ -27,10 +30,30 @@ function details(u: AcpUpdate) {
 }
 
 export function applyAcpUpdate<T extends { who: string }>(out: (AcpItem | T)[], u: AcpUpdate, paintUser = true): boolean {
+  if ((u.sessionUpdate==='compaction_update'||u.sessionUpdate==='compaction_summary_chunk')&&u.compactionId) {
+    const at=out.findIndex(i=>i.who==='compaction'&&'id' in i&&i.id===u.compactionId);
+    const prior: AcpCompaction=at<0?{who:'compaction',id:u.compactionId,status:'in_progress',summary:'',error:null}:out[at] as AcpCompaction;
+    const next={...prior};
+    if(u.sessionUpdate==='compaction_summary_chunk')next.summary+=!Array.isArray(u.content)&&u.content?.type==='text'?u.content.text??'':'';
+    else {
+      if(u.status)next.status=u.status;
+      if('summary' in u)next.summary=(u.summary??[]).map(v=>v.type==='text'?v.text??'':'').join('');
+      if('error' in u)next.error=u.error??null;
+    }
+    if(at<0)out.push(next);else out[at]=next;
+    return true;
+  }
   if (["agent_message_chunk", "agent_thought_chunk", "user_message_chunk"].includes(u.sessionUpdate ?? "")) {
     const who = u.sessionUpdate === "agent_message_chunk" ? "agent" : u.sessionUpdate === "agent_thought_chunk" ? "thought" : "user";
     const text = !Array.isArray(u.content) && u.content?.type === "text" ? u.content.text ?? "" : "";
-    if (!text || (who === "user" && !paintUser)) return false;
+    if(who==='user'&&!paintUser)return false;
+    if(!text){
+      const c=!Array.isArray(u.content)?u.content:null;
+      if(!c||c.type==='text')return false;
+      out.push({who:'resource',kind:c.type??'unknown',name:c.name??c.resource?.uri??c.uri??c.mimeType??'附件',uri:c.uri??c.resource?.uri,data:c.data,mime:c.mimeType});
+      if(c.resource?.text)out.push({who,text:c.resource.text});
+      return true;
+    }
     const last = out[out.length - 1];
     if (last?.who === who && "text" in last && typeof last.text === "string") out[out.length - 1] = { ...last, text: last.text + text };
     else out.push({ who, text });

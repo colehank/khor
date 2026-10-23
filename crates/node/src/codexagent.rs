@@ -93,6 +93,12 @@ use khor_catalog::msg;
 #[path = "codexagent_updates.rs"]
 mod updates;
 use tokio::sync::{mpsc, oneshot};
+#[path = "codexagent_config.rs"]
+mod config;
+use agent_client_protocol::schema::v1::{
+    ConfigOptionUpdate as OptionsUpdate, SessionUpdate::ConfigOptionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
+};
 
 /// Where the codex binary is. The default asks PATH; the variable is
 /// the test door (a fake app-server drives the whole shim hermetically)
@@ -107,6 +113,8 @@ const ANSWER_BUDGET: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// One codex child and the turn in flight against it.
 struct Shim {
+    config: Mutex<config::Config>,
+    mcp: Mutex<Vec<agent_client_protocol::schema::v1::McpServer>>,
     root: PathBuf,
     /// Server→client traffic (notifications and approval requests);
     /// `drain` on the runtime picks them up. Answers to the shim's own
@@ -165,7 +173,11 @@ const OTHER: &str = "other";
 
 impl Preset {
     fn id(self) -> &'static str {
-        PRESETS.iter().find(|(_, p)| *p == self).map(|(id, _)| *id).unwrap_or("workspace")
+        PRESETS
+            .iter()
+            .find(|(_, p)| *p == self)
+            .map(|(id, _)| *id)
+            .unwrap_or("workspace")
     }
 
     fn of(id: &str) -> Option<Preset> {
@@ -219,7 +231,10 @@ fn other_words(answer: &serde_json::Value) -> String {
     let approval = match &answer["approvalPolicy"] {
         serde_json::Value::String(s) => s.clone(),
         serde_json::Value::Null => "?".to_owned(),
-        v => v.as_object().and_then(|o| o.keys().next().cloned()).unwrap_or_else(|| v.to_string()),
+        v => v
+            .as_object()
+            .and_then(|o| o.keys().next().cloned())
+            .unwrap_or_else(|| v.to_string()),
     };
     let sandbox = answer["sandbox"]["type"].as_str().unwrap_or("?").to_owned();
     msg::codex_mode_other(&approval, &sandbox)
@@ -232,9 +247,15 @@ fn modes_listed(current: Option<Preset>, other: Option<&str>) -> SessionModeStat
         .iter()
         .map(|(id, p)| {
             let (name, note) = match p {
-                Preset::ReadOnly => (msg::codex_mode_read_only(), msg::codex_mode_read_only_note()),
+                Preset::ReadOnly => (
+                    msg::codex_mode_read_only(),
+                    msg::codex_mode_read_only_note(),
+                ),
                 Preset::Auto => (msg::codex_mode_auto(), msg::codex_mode_auto_note()),
-                Preset::FullAccess => (msg::codex_mode_full_access(), msg::codex_mode_full_access_note()),
+                Preset::FullAccess => (
+                    msg::codex_mode_full_access(),
+                    msg::codex_mode_full_access_note(),
+                ),
             };
             SessionMode::new(*id, name).description(note)
         })
@@ -299,6 +320,8 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
     let (frames_tx, frames_rx) = mpsc::unbounded_channel::<serde_json::Value>();
     let shim = Arc::new(Shim {
         root,
+        config: Mutex::new(config::Config::default()),
+        mcp: Mutex::new(Vec::new()),
         frames: frames_tx,
         stdin: Mutex::new(None),
         child_pid: Mutex::new(None),
@@ -318,6 +341,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
     let s_load = shim.clone();
     let s_cancel = shim.clone();
     let s_mode = shim.clone();
+    let s_options = shim.clone();
     let s_drain = shim.clone();
 
     Agent
@@ -327,35 +351,42 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
             async move |initialize: InitializeRequest, responder, _connection| {
                 responder.respond(
                     InitializeResponse::new(initialize.protocol_version).agent_capabilities(
-                        AgentCapabilities::new().load_session(true).prompt_capabilities(
-                            // Both carried (`turn_input`): images as
-                            // data-URL images, a text file as a text item
-                            // that names it.
-                            PromptCapabilities::new().image(true).embedded_context(true),
-                        ),
+                        AgentCapabilities::new()
+                            .mcp_capabilities(
+                                agent_client_protocol::schema::v1::McpCapabilities::new()
+                                    .http(true),
+                            )
+                            .load_session(true)
+                            .prompt_capabilities(
+                                // Both carried (`turn_input`): images as
+                                // data-URL images, a text file as a text item
+                                // that names it.
+                                PromptCapabilities::new().image(true).embedded_context(true),
+                            ),
                     ),
                 )
             },
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |new: NewSessionRequest, responder, _connection| match s_new
-                .start_codex(&new.cwd)
-                .await
-            {
-                // The model codex said the thread runs on, in the
-                // session's `_meta` (`khor_acp::MODEL_META`): known the
-                // moment the thread starts. Beside it the modes, current
-                // as the thread's own answer says.
-                Ok((sid, model, _)) => {
-                    let mut opened = NewSessionResponse::new(sid);
-                    if let Some(m) = model {
-                        opened = opened.meta(khor_acp::model_meta(&m));
+            async move |new: NewSessionRequest, responder, _connection| {
+                *s_new.mcp.lock().unwrap() = new.mcp_servers;
+                match s_new.start_codex(&new.cwd).await {
+                    // The model codex said the thread runs on, in the
+                    // session's `_meta` (`khor_acp::MODEL_META`): known the
+                    // moment the thread starts. Beside it the modes, current
+                    // as the thread's own answer says.
+                    Ok((sid, model, _)) => {
+                        let mut opened = NewSessionResponse::new(sid);
+                        if let Some(m) = model {
+                            opened = opened.meta(khor_acp::model_meta(&m));
+                        }
+                        opened.modes = Some(s_new.modes());
+                        opened.config_options = Some(s_new.config.lock().unwrap().options());
+                        responder.respond(opened)
                     }
-                    opened.modes = Some(s_new.modes());
-                    responder.respond(opened)
+                    Err(e) => responder.respond_with_internal_error(e),
                 }
-                Err(e) => responder.respond_with_internal_error(e),
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -387,6 +418,15 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                         let (approval, sandbox) = p.policies();
                         params["approvalPolicy"] = approval;
                         params["sandboxPolicy"] = sandbox;
+                    }
+                    {
+                        let config = shim.config.lock().unwrap();
+                        if let Some(model) = &config.model {
+                            params["model"] = serde_json::json!(model);
+                        }
+                        if let Some(effort) = &config.effort {
+                            params["effort"] = serde_json::json!(effort);
+                        }
                     }
                     let started = shim.request("turn/start", params).await;
                     match started {
@@ -431,6 +471,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                         let cwd = crate::adaptor::codex::Codex::at(home)
                             .recorded_cwd(&sid)
                             .unwrap_or_else(|| load.cwd.clone());
+                        *s_load.mcp.lock().unwrap() = load.mcp_servers.clone();
                         match s_load.start_codex_resume(&cwd, &sid).await {
                             Ok((m, _)) => model = m,
                             Err(e) => return responder.respond_with_internal_error(e),
@@ -459,6 +500,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 // A second load of the live thread lists the mode it is
                 // in now: the one picked, else the one it opened in.
                 loaded.modes = Some(s_load.modes());
+                loaded.config_options = Some(s_load.config.lock().unwrap().options());
                 responder.respond(loaded)
             },
             agent_client_protocol::on_receive_request!(),
@@ -473,7 +515,8 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     if id == OTHER && s_mode.preset.lock().unwrap().is_none() {
                         return responder.respond(SetSessionModeResponse::new());
                     }
-                    return responder.respond_with_internal_error(msg::codexagent_unknown_mode(&id));
+                    return responder
+                        .respond_with_internal_error(msg::codexagent_unknown_mode(&id));
                 };
                 // **Applied from the next turn** (module head): there is
                 // nothing to ask codex now, so the mode is this shim's to
@@ -484,6 +527,30 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new(p.id().to_owned())),
                 ));
                 responder.respond(SetSessionModeResponse::new())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |set: SetSessionConfigOptionRequest, responder, connection| {
+                if s_options.turn.lock().unwrap().is_some() {
+                    return responder
+                        .respond_with_internal_error("Wait for the current turn to finish");
+                }
+                if s_options.session.lock().unwrap().as_deref() != Some(set.session_id.0.as_ref()) {
+                    return responder.respond_with_internal_error("Unknown session");
+                }
+                let value = serde_json::to_value(set.value).unwrap_or_default()["value"].clone();
+                let mut config = s_options.config.lock().unwrap();
+                if let Err(error) = config.set(set.config_id.0.as_ref(), &value) {
+                    return responder.respond_with_internal_error(error);
+                }
+                let options = config.options();
+                drop(config);
+                let _ = connection.send_notification(SessionNotification::new(
+                    set.session_id,
+                    ConfigOptionUpdate(OptionsUpdate::new(options.clone())),
+                ));
+                responder.respond(SetSessionConfigOptionResponse::new(options))
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -542,6 +609,10 @@ impl Shim {
         self.start_appserver(cwd)?;
         self.handshake().await?;
         let mut params = serde_json::json!({ "cwd": cwd.display().to_string() });
+        let servers = crate::acp_mcp::servers(&self.mcp.lock().unwrap(), true)?;
+        if !servers.as_object().is_none_or(|m| m.is_empty()) {
+            params["config"] = serde_json::json!({"mcp_servers":servers});
+        }
         scheduler_into(&mut params)?;
         let started = self.request("thread/start", params).await?;
         let sid = started["thread"]["id"]
@@ -549,6 +620,7 @@ impl Shim {
             .ok_or_else(|| msg::codexagent_bad_answer("thread/start"))?
             .to_owned();
         *self.session.lock().unwrap() = Some(sid.clone());
+        self.read_config(&started).await;
         Ok((sid, model_of(&started), self.policy_from(&started)))
     }
 
@@ -564,13 +636,49 @@ impl Shim {
         self.start_appserver(cwd)?;
         self.handshake().await?;
         let mut params = serde_json::json!({ "threadId": sid, "cwd": cwd.display().to_string() });
+        let servers = crate::acp_mcp::servers(&self.mcp.lock().unwrap(), true)?;
+        if !servers.as_object().is_none_or(|m| m.is_empty()) {
+            params["config"] = serde_json::json!({"mcp_servers":servers});
+        }
         scheduler_into(&mut params)?;
         let resumed = self.request("thread/resume", params).await?;
         if resumed["thread"]["id"].as_str() != Some(sid) {
             return Err(msg::codexagent_bad_answer("thread/resume"));
         }
         *self.session.lock().unwrap() = Some(sid.to_owned());
+        self.read_config(&resumed).await;
         Ok((model_of(&resumed), self.policy_from(&resumed)))
+    }
+
+    async fn read_config(self: &Arc<Self>, answer: &serde_json::Value) {
+        let mut models = Vec::new();
+        let mut cursor = serde_json::Value::Null;
+        let mut seen = std::collections::HashSet::new();
+        // Older app-servers may not implement discovery. Their current model remains readable.
+        for _ in 0..32 {
+            let Ok(Ok(page)) = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                self.request(
+                    "model/list",
+                    serde_json::json!({"cursor":cursor,"limit":100}),
+                ),
+            )
+            .await
+            else {
+                break;
+            };
+            if let Some(rows) = page["data"].as_array() {
+                models.extend(rows.iter().filter(|v| v["hidden"] != true).cloned());
+            }
+            cursor = page["nextCursor"].clone();
+            if cursor.is_null() || !seen.insert(cursor.to_string()) {
+                break;
+            }
+        }
+        let mut config = self.config.lock().unwrap();
+        config.models = models;
+        config.model = model_of(answer);
+        config.effort = answer["reasoningEffort"].as_str().map(str::to_owned);
     }
 
     /// The preset a start or resume answer runs on, and — when it is
@@ -736,18 +844,13 @@ fn scheduler_into(params: &mut serde_json::Value) -> Result<(), String> {
     }
     let exe = crate::self_exe()?;
     let root = crate::Node::root_from_env();
-    params["config"] = serde_json::json!({
-        "mcp_servers": {
-            "khor": {
-                "command": exe.display().to_string(),
-                "args": ["mcp"],
-                // The store is named rather than inherited (`cagent`'s
-                // `khor_tools` has why: a scheduler pointed at the
-                // wrong network is worse than one with no tools).
-                "env": { "KHOR_HOME": root.display().to_string() }
-            }
-        }
-    });
+    if !params["config"].is_object() {
+        params["config"] = serde_json::json!({});
+    }
+    if !params["config"]["mcp_servers"].is_object() {
+        params["config"]["mcp_servers"] = serde_json::json!({});
+    }
+    params["config"]["mcp_servers"]["khor"] = serde_json::json!({"command":exe.display().to_string(),"args":["mcp"],"env":{"KHOR_HOME":root.display().to_string()}});
     params["developerInstructions"] = serde_json::Value::String(msg::agent_brief().to_owned());
     Ok(())
 }
@@ -757,7 +860,10 @@ fn scheduler_into(params: &mut serde_json::Value) -> Result<(), String> {
 /// that very answer.
 /// The model a `thread/start` or `thread/resume` answer names.
 fn model_of(answer: &serde_json::Value) -> Option<String> {
-    answer["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned)
+    answer["model"]
+        .as_str()
+        .filter(|m| !m.is_empty())
+        .map(str::to_owned)
 }
 
 async fn drain(
@@ -870,14 +976,23 @@ mod tests {
     fn the_opening_mode_is_the_threads_own_policy() {
         let answer = |approval: serde_json::Value, sandbox: serde_json::Value| serde_json::json!({ "approvalPolicy": approval, "sandbox": sandbox });
         let ws = |net: bool| serde_json::json!({ "type": "workspaceWrite", "networkAccess": net });
-        assert_eq!(preset_in(&answer("on-request".into(), ws(false))), Some(Preset::Auto));
+        assert_eq!(
+            preset_in(&answer("on-request".into(), ws(false))),
+            Some(Preset::Auto)
+        );
         assert_eq!(preset_in(&answer("on-request".into(), ws(true))), None);
         assert_eq!(
-            preset_in(&answer("on-request".into(), serde_json::json!({ "type": "readOnly", "networkAccess": false }))),
+            preset_in(&answer(
+                "on-request".into(),
+                serde_json::json!({ "type": "readOnly", "networkAccess": false })
+            )),
             Some(Preset::ReadOnly)
         );
         assert_eq!(
-            preset_in(&answer("never".into(), serde_json::json!({ "type": "dangerFullAccess" }))),
+            preset_in(&answer(
+                "never".into(),
+                serde_json::json!({ "type": "dangerFullAccess" })
+            )),
             Some(Preset::FullAccess)
         );
         assert_eq!(preset_in(&answer("untrusted".into(), ws(false))), None);
@@ -895,7 +1010,11 @@ mod tests {
             assert_eq!(preset_in(&back), Some(p), "{back}");
             assert_eq!(Preset::of(p.id()), Some(p));
         }
-        assert_eq!(Preset::of("bypassPermissions"), None, "claude's ids are not codex's");
+        assert_eq!(
+            Preset::of("bypassPermissions"),
+            None,
+            "claude's ids are not codex's"
+        );
     }
 
     /// Three presets listed, current as given; a thread on none of them
@@ -903,15 +1022,27 @@ mod tests {
     #[test]
     fn the_list_says_the_current_mode_truthfully() {
         let ids = |s: &agent_client_protocol::schema::v1::SessionModeState| {
-            s.available_modes.iter().map(|m| m.id.to_string()).collect::<Vec<_>>()
+            s.available_modes
+                .iter()
+                .map(|m| m.id.to_string())
+                .collect::<Vec<_>>()
         };
         let plain = modes_listed(Some(Preset::ReadOnly), None);
         assert_eq!(plain.current_mode_id.to_string(), "read-only");
         assert_eq!(ids(&plain), ["read-only", "workspace", "full-access"]);
-        assert!(plain.available_modes.iter().all(|m| m.description.is_some()), "each mode has its line");
+        assert!(
+            plain
+                .available_modes
+                .iter()
+                .all(|m| m.description.is_some()),
+            "each mode has its line"
+        );
         let other = modes_listed(None, Some("other words"));
         assert_eq!(other.current_mode_id.to_string(), "other");
-        assert_eq!(ids(&other), ["read-only", "workspace", "full-access", "other"]);
+        assert_eq!(
+            ids(&other),
+            ["read-only", "workspace", "full-access", "other"]
+        );
     }
 
     /// A turn's input: the typed text, then each text file as a text
@@ -921,9 +1052,12 @@ mod tests {
         let blocks = vec![
             ContentBlock::Text(TextContent::new("look".to_owned())),
             ContentBlock::Image(ImageContent::new("QUJD".to_owned(), "image/png".to_owned())),
-            ContentBlock::Resource(EmbeddedResource::new(EmbeddedResourceResource::TextResourceContents(
-                TextResourceContents::new("fn main() {}".to_owned(), "file://main.rs".to_owned()),
-            ))),
+            ContentBlock::Resource(EmbeddedResource::new(
+                EmbeddedResourceResource::TextResourceContents(TextResourceContents::new(
+                    "fn main() {}".to_owned(),
+                    "file://main.rs".to_owned(),
+                )),
+            )),
         ];
         let input = turn_input(&blocks);
         assert_eq!(input.len(), 3);
@@ -931,7 +1065,10 @@ mod tests {
         assert_eq!(input[0]["text"], "look");
         assert_eq!(input[1]["type"], "text");
         let file = input[1]["text"].as_str().unwrap();
-        assert!(file.contains("file://main.rs") && file.contains("fn main() {}"), "{file}");
+        assert!(
+            file.contains("file://main.rs") && file.contains("fn main() {}"),
+            "{file}"
+        );
         assert_eq!(input[2]["type"], "image");
         assert_eq!(input[2]["url"], "data:image/png;base64,QUJD");
     }

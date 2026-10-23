@@ -1,3 +1,5 @@
+import {AcpAgentSetup,EMPTY_ENVIRONMENT,type SessionEnvironment} from "@/views/AcpAgentSetup";
+import {managePi} from "@/lib/pi-accounts";
 // New session: the target, its current directory, and what to run. The same
 // page sits behind the desktop strip and the narrow screen's bottom deck.
 import { useEffect, useRef, useState } from 'react';
@@ -66,6 +68,8 @@ export function NewSessionPage({
     agent: 'claude'
   });
   const [name, setName] = useState('');
+  const [contextValid,setContextValid]=useState(true);
+  const [environment,setEnvironment]=useState<SessionEnvironment>(EMPTY_ENVIRONMENT);
   const [pending, setPending] = useState(false),
     [opening, setOpening] = useState(false),
     [error, setError] = useState<string | null>(null);
@@ -172,7 +176,7 @@ export function NewSessionPage({
   const selected = launch.kind === 'agent' ? choices.find(c => c.id === 'agent:' + launch.agent) : launch.kind === 'tell' ? choices.find(c => c.id === 'tell') : choices.find(c => c.id === 'custom:' + launch.preset && c.launch.kind === 'shell' && c.launch.command === launch.command) ?? choices.find(c => c.launch.kind === 'shell' && c.launch.command === launch.command);
   const command = launch.kind === 'shell' ? launch.command : '';
   const create = () => {
-    if (opening || pending || !target) return;
+    if (opening || pending || !target || !contextValid) return;
     if (target.hosts === false && launch.kind !== 'tell') return;
     if (launch.kind === 'tell') {
       if (!target.me) draftFor(tellDraft(target.name));
@@ -185,11 +189,11 @@ export function NewSessionPage({
       return;
     }
     const title = name.trim() || (launch.kind === 'shell' && launch.preset ? presets.find(p => p.id === launch.preset)?.name || '' : '');
-    const key = JSON.stringify([channel, cwd, launch, title]);
+    const key = JSON.stringify([channel, cwd, launch, title,environment]);
     const token = tokenFor(key);
     setOpening(true);
     setError(null);
-    (launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : openSession(cwd, title, 'chat', launch.agent, channel, token)).then(id => {
+    (launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : environment.mcpServers.length||environment.additionalDirectories.length ? managePi(channel,{operation:'acp_open',agent:launch.agent,cwd,title,environment,token}).then(value=>{const session=(value as unknown as {session?:string}).session;if(!session)throw new Error('智能体未返回会话');return session;}) : openSession(cwd, title, 'chat', launch.agent, channel, token)).then(id => {
       creates.delete(key);
       startedAgent.current = launch.kind === 'agent';
       onOpened(id);
@@ -266,7 +270,7 @@ export function NewSessionPage({
               command: text
             })} onPick={id => {
               const choice = choices.find(c => c.id === id);
-              if (choice) setLaunch(choice.launch);
+              if (choice) {setLaunch(choice.launch);setEnvironment(EMPTY_ENVIRONMENT);setContextValid(true);}
             }} onSubmit={create} actions={[...(launch.kind === 'shell' && command.trim() ? [{
               id: 'save-command',
               label: gui.launch_add,
@@ -282,8 +286,9 @@ export function NewSessionPage({
     {handed && launch.kind === 'agent' && <><FormLabel>{gui.new_session_handed}</FormLabel><span data-new-session-handed className="min-w-0 truncate font-mono text-body">{handed}</span></>}
     {launch.kind !== 'tell' && <><FormLabel htmlFor="new-session-name">{gui.new_session_name}</FormLabel><Input id="new-session-name" data-new-session-name value={name} disabled={opening} placeholder={gui.new_session_name_hint} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !imeKey(e)) { e.preventDefault(); create(); } }} /></>}
    </FormGrid>
+   {launch.kind==='agent'&&!['claude','codex'].includes(launch.agent)&&<AcpAgentSetup key={`${channel}:${launch.agent}`} agent={launch.agent} machine={channel} environment={environment} onEnvironment={setEnvironment} onValid={setContextValid}/>}
    {error && <p data-new-session-error role="alert" className="text-callout text-destructive">{error}</p>}
-   <div className="flex justify-end gap-in"><Button data-new-tab-cancel onMouseDown={e => e.preventDefault()} onClick={cancel}>{gui.delete_keep}</Button><Button variant="primary" data-new-session-create disabled={opening || pending || !target || launch.kind !== 'tell' && !dir.trim()} aria-busy={opening || undefined} onMouseDown={e => e.preventDefault()} onClick={create}>{gui.create}</Button></div>
+   <div className="flex justify-end gap-in"><Button data-new-tab-cancel onMouseDown={e => e.preventDefault()} onClick={cancel}>{gui.delete_keep}</Button><Button variant="primary" data-new-session-create disabled={opening || pending || !target || !contextValid || launch.kind !== 'tell' && !dir.trim()} aria-busy={opening || undefined} onMouseDown={e => e.preventDefault()} onClick={create}>{gui.create}</Button></div>
   </div></div>
   <Dialog open={!!edit} onOpenChange={on => {
       if (!on && !saving) setEdit(null);

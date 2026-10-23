@@ -35,12 +35,13 @@ function RateCue({side,state,x}:{side:number;state:DeckJoystickState;x:number}){
   </span>;
 }
 
-export function DeckExplore({band,faces,state,origin,reach,overview}:{band:RefObject<HTMLDivElement|null>;faces:TabFace[];state:DeckJoystickState;origin:number;reach:number;overview:boolean}){
+export function DeckExplore({band,faces,state,origin,reach,overview,placement='bottom'}:{band:RefObject<HTMLDivElement|null>;faces:TabFace[];state:DeckJoystickState;origin:number;reach:number;overview:boolean;placement?:'top'|'bottom'}){
   const measure=()=>{
     const b=band.current!,r=b.getBoundingClientRect(),viewport=window.visualViewport;
     const host=b.closest('[data-deck-explore-host]')?.getBoundingClientRect();
     const left=host?.left??viewport?.offsetLeft??0,top=host?.top??viewport?.offsetTop??0;
-    return {left,top,width:host?.width??viewport?.width??document.documentElement.clientWidth,height:Math.max(0,Math.min(r.top-top,host?.height??viewport?.height??window.innerHeight))};
+    const bottom=top+(host?.height??viewport?.height??window.innerHeight);
+    return {left,top:placement==='top'?r.bottom:top,width:host?.width??viewport?.width??document.documentElement.clientWidth,height:Math.max(0,placement==='top'?bottom-r.bottom:Math.min(r.top-top,bottom-top))};
   };
   const [frame,setFrame]=useState(measure);
   useLayoutEffect(()=>{
@@ -48,7 +49,7 @@ export function DeckExplore({band,faces,state,origin,reach,overview}:{band:RefOb
     for(let parent:HTMLElement|null=band.current;parent;parent=parent.parentElement)observer.observe(parent);
     window.addEventListener('resize',update);window.addEventListener('scroll',update,true);window.visualViewport?.addEventListener('resize',update);window.visualViewport?.addEventListener('scroll',update);
     return()=>{observer.disconnect();window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);window.visualViewport?.removeEventListener('resize',update);window.visualViewport?.removeEventListener('scroll',update);};
-  },[band]);
+  },[band,placement]);
   const cs=getComputedStyle(band.current!),unit=parseFloat(cs.getPropertyValue('--touch'))||44;
   const duration=parseFloat(cs.getPropertyValue('--dur-180'))||180;
   const position=useArcPosition(state.preview,faces.length,state.direction,duration);
@@ -60,7 +61,7 @@ export function DeckExplore({band,faces,state,origin,reach,overview}:{band:RefOb
   const candidates=nearbySlots(position,faces.length,3).filter(s=>Math.abs(s.slot-position)<2.5);
   const unique=new Map<number,(typeof candidates)[number]>();
   for(const slot of candidates){const old=unique.get(slot.index);if(!old||Math.abs(slot.slot-position)<Math.abs(old.slot-position))unique.set(slot.index,slot);}
-  return createPortal(<div className="deck-selector" data-deck-selector data-sheet-hold data-overview={state.overview||undefined} data-direct-pull={pulling||undefined} style={{...frame,'--pull-progress':Math.min(1,Math.max(.15,-state.dy/48))} as CSSProperties}>
+  return createPortal(<div className="deck-selector" data-deck-selector data-below={placement==='top'||undefined} data-sheet-hold data-overview={state.overview||undefined} data-direct-pull={pulling||undefined} style={{...frame,'--pull-progress':Math.min(1,Math.max(.15,-state.dy/48))} as CSSProperties}>
     <div className="deck-selector-dimmer"/>
     {!pulling&&<div className="deck-selector-wheel" data-deck-arc aria-hidden="true">
       {[...unique.values()].map(({slot,index})=>{
@@ -87,6 +88,6 @@ export function DeckExplore({band,faces,state,origin,reach,overview}:{band:RefOb
       <span className="deck-selector-origin" data-paused={paused||undefined} style={{left:originX}}/>
       <RateCue side={1} state={state} x={Math.min(frame.width-unit*.6,originX+reach+unit*.45)}/>
     </div>}
-    <div className="sr-only" role="status" aria-live="polite">{state.overview?gui.deck_all_tabs:pulling?gui.deck_gesture:gui.deck_preview(f?.label||'')}</div>
+    <div className="sr-only" role="status" aria-live="polite">{state.overview?gui.deck_all_tabs:pulling?(placement==='top'?gui.deck_gesture_down:gui.deck_gesture):gui.deck_preview(f?.label||'')}</div>
   </div>,document.body);
 }

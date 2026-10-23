@@ -32,8 +32,8 @@
 //! for that reason: claude's and codex's own files answer without
 //! starting anything and whether or not an adapter lists, so discovery,
 //! usage and the recorded-past view keep reading them, one file-format
-//! per vendor in the adaptors. Still outside the stable protocol:
-//! no-replay resume and fork (v2 alpha / draft), and choosing and
+//! per vendor in the adaptors. Stable v1 also offers capability-gated no-replay resume and close.
+//! Fork remains experimental in the pinned SDK, as does choosing and
 //! spawning the agent binary (client-side by the protocol's own
 //! starting line).
 //!
@@ -62,6 +62,11 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use agent_client_protocol::schema::v1::{
+    AuthMethodId, AuthenticateRequest, ClientCapabilities, CloseSessionRequest,
+    CreateElicitationRequest, CreateElicitationResponse, DeleteSessionRequest, ElicitationAction,
+    LogoutRequest, McpServer, ResumeSessionRequest,
+};
+use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, EmbeddedResource, EmbeddedResourceResource, ImageContent,
     InitializeRequest, ListSessionsRequest, LoadSessionRequest, NewSessionRequest,
     PermissionOptionId, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
@@ -73,6 +78,10 @@ use agent_client_protocol::schema::v1::{
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, Agent, Client, ConnectionTo, ErrorCode};
 use tokio::sync::{mpsc, oneshot};
+mod interaction;
+mod management;
+pub use interaction::validate_elicitation;
+pub use management::{manage, Management};
 
 /// What the handshake said about the agent on the other end.
 ///
@@ -89,6 +98,8 @@ use tokio::sync::{mpsc, oneshot};
 /// changes because of it.
 #[derive(Debug, Clone)]
 pub struct Facts {
+    /// Complete handshake facts; additions never require a vendor-specific GUI.
+    pub protocol: serde_json::Value,
     /// The agent replays its own past (`session/load`). When false,
     /// [`Handle::replay`] is not worth asking and a face must say the
     /// past is unavailable rather than paint an empty one.
@@ -219,7 +230,10 @@ pub fn model_in(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> Op
 /// A `_meta` that says the model id ([`MODEL_META`]).
 pub fn model_meta(model: &str) -> serde_json::Map<String, serde_json::Value> {
     let mut meta = serde_json::Map::new();
-    meta.insert(MODEL_META.to_owned(), serde_json::Value::String(model.to_owned()));
+    meta.insert(
+        MODEL_META.to_owned(),
+        serde_json::Value::String(model.to_owned()),
+    );
     meta
 }
 
@@ -227,15 +241,44 @@ pub fn model_meta(model: &str) -> serde_json::Map<String, serde_json::Value> {
 #[derive(Debug)]
 pub enum Event {
     /// The session exists; prompts may be sent.
-    Ready { session: SessionId },
+    Ready {
+        session: SessionId,
+    },
     /// One `session/update` — conversation chunks, tool calls, plans.
     /// Raw on purpose: this crate maps nothing onto khor's words.
     Note(SessionNotification),
     /// The agent asked permission and is now waiting on [`Ask`].
     Ask(Ask),
+    Elicit(Elicitation),
+    ElicitDone(String),
     /// The connection ended. `None` is a close the caller asked for;
     /// `Some` carries the error text of one it did not.
     Closed(Option<String>),
+}
+
+/// A structured user interaction. As with permissions, dropping cancels it.
+#[derive(Debug)]
+pub struct Elicitation {
+    pub request: CreateElicitationRequest,
+    answer: oneshot::Sender<CreateElicitationResponse>,
+}
+impl Elicitation {
+    pub fn validate(&self, value: &serde_json::Value) -> Result<CreateElicitationResponse, String> {
+        validate_elicitation(&self.request, value)
+    }
+    pub fn answer(self, response: CreateElicitationResponse) -> Result<(), String> {
+        self.answer
+            .send(response)
+            .map_err(|_| "Interaction is no longer pending".to_owned())
+    }
+}
+
+/// Session execution context belongs to the execution node, never the GUI device.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct Environment {
+    pub mcp_servers: Vec<McpServer>,
+    pub additional_directories: Vec<PathBuf>,
 }
 
 /// A `session/request_permission`, waiting for exactly one answer.
@@ -272,6 +315,7 @@ pub struct Handle {
     /// the same cwd the session was opened with (the real adapter
     /// refuses a mismatch).
     cwd: PathBuf,
+    environment: Environment,
     facts: Facts,
     settings: Settings,
     /// Dropping this ends the connection's main task, which drops the
@@ -280,6 +324,58 @@ pub struct Handle {
 }
 
 impl Handle {
+    /// Standard lifecycle controls remain capability-gated.
+    pub async fn control(
+        &self,
+        operation: &str,
+        payload: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let caps = &self.facts.protocol["capabilities"];
+        match operation {
+            "close" if !caps["sessionCapabilities"]["close"].is_null() => self
+                .conn
+                .send_request(CloseSessionRequest::new(self.session.clone()))
+                .block_task()
+                .await
+                .map(|_| serde_json::json!({}))
+                .map_err(|e| e.to_string()),
+            "delete" if !caps["sessionCapabilities"]["delete"].is_null() => self
+                .conn
+                .send_request(DeleteSessionRequest::new(self.session.clone()))
+                .block_task()
+                .await
+                .map(|_| serde_json::json!({}))
+                .map_err(|e| e.to_string()),
+            "logout" if !caps["auth"]["logout"].is_null() => self
+                .conn
+                .send_request(LogoutRequest::new())
+                .block_task()
+                .await
+                .map(|_| serde_json::json!({}))
+                .map_err(|e| e.to_string()),
+            "authenticate" => {
+                let id = payload["methodId"]
+                    .as_str()
+                    .ok_or("Missing authentication method")?;
+                let method = self.facts.protocol["authMethods"]
+                    .as_array()
+                    .and_then(|xs| xs.iter().find(|x| x["id"] == id))
+                    .ok_or("Unknown authentication method")?;
+                if method["type"].as_str().is_some_and(|t| t != "agent") {
+                    return Err(
+                        "This authentication method requires its advertised login flow".into(),
+                    );
+                }
+                self.conn
+                    .send_request(AuthenticateRequest::new(AuthMethodId::new(id.to_owned())))
+                    .block_task()
+                    .await
+                    .map(|_| serde_json::json!({}))
+                    .map_err(|e| e.to_string())
+            }
+            _ => Err("The agent does not support this session operation".into()),
+        }
+    }
     /// One turn: send the text, resolve when the agent finishes it.
     /// Updates stream through [`Event::Note`] while this is pending.
     pub async fn prompt(&self, text: &str) -> Result<StopReason, String> {
@@ -351,7 +447,9 @@ impl Handle {
     /// transcript, so a session that has never had a turn may refuse
     /// with "not found" rather than replay nothing.
     pub async fn replay(&self) -> Result<(), String> {
-        let request = LoadSessionRequest::new(self.session.clone(), self.cwd.clone());
+        let mut request = LoadSessionRequest::new(self.session.clone(), self.cwd.clone());
+        request.mcp_servers = self.environment.mcp_servers.clone();
+        request.additional_directories = self.environment.additional_directories.clone();
         self.conn
             .send_request(request)
             .block_task()
@@ -446,6 +544,14 @@ pub async fn start_resume(
     session: &str,
 ) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
     start_with(command, cwd, Some(session.to_owned())).await
+}
+
+async fn start_with(
+    command: &str,
+    cwd: PathBuf,
+    resume: Option<String>,
+) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
+    start_configured(command, cwd, resume, Environment::default()).await
 }
 
 /// One session an agent says it has, in khor's own words.
@@ -586,34 +692,42 @@ async fn ask_for_sessions(
                 });
             }
         }
-        let Some(next) = answer.next_cursor else { break };
+        let Some(next) = answer.next_cursor else {
+            break;
+        };
         if !cursors.insert(next.clone()) {
-            return Err(Refusal::Wont("the agent repeated a session-list cursor".into()));
+            return Err(Refusal::Wont(
+                "the agent repeated a session-list cursor".into(),
+            ));
         }
         cursor = Some(next);
     }
     Ok(Listing::Sessions(rows))
 }
 
-async fn start_with(
+pub async fn start_configured(
     command: &str,
     cwd: PathBuf,
     resume: Option<String>,
+    environment: Environment,
 ) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
     let agent = AcpAgent::from_str(command).map_err(|e| Refusal::Wont(e.to_string()))?;
-    let (events_tx, events_rx) = mpsc::unbounded_channel::<Event>();
+    let (events_tx, mut events_rx) = mpsc::unbounded_channel::<Event>();
     type Opened = Result<(ConnectionTo<Agent>, SessionId, Facts, Settings), Refusal>;
-    let (ready_tx, ready_rx) = oneshot::channel::<Opened>();
+    let (ready_tx, mut ready_rx) = oneshot::channel::<Opened>();
     let (close_tx, close_rx) = oneshot::channel::<()>();
 
     let notes = events_tx.clone();
     let asks = events_tx.clone();
+    let elicits = events_tx.clone();
+    let completions = events_tx.clone();
     let closed = events_tx.clone();
     let home = cwd.clone();
+    let retained_environment = environment.clone();
 
     tokio::spawn(async move {
         let mut ready_tx = Some(ready_tx);
-        let outcome = Client
+        let transport = Client
             .builder()
             .on_receive_notification(
                 async move |n: SessionNotification, _cx| {
@@ -621,6 +735,14 @@ async fn start_with(
                     Ok(())
                 },
                 agent_client_protocol::on_receive_notification!(),
+            )
+            .on_receive_notification(async move|n:agent_client_protocol::schema::v1::CompleteElicitationNotification,_cx|{let _=completions.send(Event::ElicitDone(n.elicitation_id.to_string()));Ok(())},agent_client_protocol::on_receive_notification!())
+            .on_receive_request(
+                async move |request:CreateElicitationRequest,responder,connection|{
+                    let(tx,rx)=oneshot::channel();
+                    let _=elicits.send(Event::Elicit(Elicitation{request,answer:tx}));
+                    connection.spawn(async move {responder.respond(rx.await.unwrap_or_else(|_|CreateElicitationResponse::new(ElicitationAction::Cancel)))})
+                },agent_client_protocol::on_receive_request!(),
             )
             .on_receive_request(
                 async move |request: RequestPermissionRequest, responder, connection| {
@@ -642,7 +764,7 @@ async fn start_with(
                 agent_client_protocol::on_receive_request!(),
             )
             .connect_with(agent, |connection: ConnectionTo<Agent>| async move {
-                let opened = open_one(&connection, resume, cwd).await;
+                let opened = open_one(&connection, resume, cwd,environment).await;
                 // The refusal has to leave through the ready channel,
                 // because the alternative is what this used to do: fail
                 // out of the closure, land the text on `Event::Closed`
@@ -670,36 +792,63 @@ async fn start_with(
                 // loop until killed by hand. The EOF arm is an error on
                 // purpose: the caller did not ask for this ending, and
                 // Closed(None) is reserved for the one it did.
-                tokio::select! {
-                    _ = close_rx => Ok(()),
-                    _ = connection.incoming_closed() => {
-                        Err(agent_client_protocol::util::internal_error(
-                            "the agent closed the connection",
-                        ))
-                    }
-                }
-            })
-            .await;
-        let _ = closed.send(Event::Closed(outcome.err().map(|e| e.to_string())));
+                connection.incoming_closed().await;
+                Err::<(),_>(agent_client_protocol::util::internal_error("the agent closed the connection"))
+            });
+        // Closing must cancel initialization as well as an already-open session.
+        let error =
+            tokio::select! {result=transport=>result.err().map(|e|e.to_string()),_=close_rx=>None};
+        let _ = closed.send(Event::Closed(error));
     });
 
-    let (conn, session, facts, settings) = ready_rx
-        .await
-        .map_err(|_| Refusal::Wont("the agent ended before a session existed".to_owned()))??;
-    let _ = events_tx.send(Event::Ready {
+    let mut opening_notes = Vec::new();
+    let (conn, session, facts, settings) = loop {
+        tokio::select! {
+            biased;
+            result=&mut ready_rx=>break result.map_err(|_|Refusal::Wont("the agent ended before a session existed".into()))??,
+            event=events_rx.recv()=>match event{
+                Some(Event::Note(note))=>{if opening_notes.len()>=32768{return Err(Refusal::Wont("Too many updates before the session opened".into()));}opening_notes.push(Event::Note(note));},
+                Some(Event::Elicit(question))=>{drop(question);return Err(Refusal::Wont("This agent requires interactive session creation. Complete its setup before opening a session.".into()));},
+                Some(Event::Ask(ask))=>{drop(ask);return Err(Refusal::Wont("The agent requested permission before a session was available".into()));},
+                Some(Event::Closed(error))=>return Err(Refusal::Wont(error.unwrap_or_else(||"The agent disconnected".into()))),
+                None=>return Err(Refusal::Wont("The agent disconnected".into())),
+                _=>{}
+            }
+        }
+    };
+    let (forward, receiver) = mpsc::unbounded_channel();
+    for event in opening_notes {
+        let _ = forward.send(event);
+    }
+    while let Ok(event) = events_rx.try_recv() {
+        let _ = forward.send(event);
+    }
+    let _ = forward.send(Event::Ready {
         session: session.clone(),
+    });
+    tokio::spawn(async move {
+        while let Some(event) = events_rx.recv().await {
+            if forward.send(event).is_err() {
+                break;
+            }
+        }
     });
     Ok((
         Handle {
             conn,
             session,
             cwd: home,
+            environment: retained_environment,
             facts,
             settings,
             _close: close_tx,
         },
-        events_rx,
+        receiver,
     ))
+}
+
+fn client_capabilities() -> ClientCapabilities {
+    serde_json::from_value(serde_json::json!({"session":{"configOptions":{"boolean":{}},"compaction":{},"notices":{}},"elicitation":{"form":{},"url":{}}})).expect("client capabilities")
 }
 
 /// The handshake and the one session, or the reason there is neither.
@@ -712,9 +861,21 @@ async fn open_one(
     connection: &ConnectionTo<Agent>,
     resume: Option<String>,
     cwd: PathBuf,
+    environment: Environment,
 ) -> Result<(SessionId, Facts, Settings), Refusal> {
+    if environment
+        .additional_directories
+        .iter()
+        .any(|p| !p.is_absolute())
+    {
+        return Err(Refusal::Wont(
+            "Workspace roots must be absolute on the execution node".into(),
+        ));
+    }
+    let mut initialize = InitializeRequest::new(ProtocolVersion::V1);
+    initialize.client_capabilities = client_capabilities();
     let hello = connection
-        .send_request(InitializeRequest::new(ProtocolVersion::V1))
+        .send_request(initialize)
         .block_task()
         .await
         .map_err(refusal)?;
@@ -726,7 +887,28 @@ async fn open_one(
     if hello.protocol_version != ProtocolVersion::V1 {
         return Err(Refusal::Version(hello.protocol_version.to_string()));
     }
+    let protocol = serde_json::json!({"capabilities":hello.agent_capabilities,"authMethods":hello.auth_methods,"agentInfo":hello.agent_info});
     let caps = &hello.agent_capabilities;
+    if !environment.additional_directories.is_empty()
+        && caps.session_capabilities.additional_directories.is_none()
+    {
+        return Err(Refusal::Wont(
+            "The agent does not support additional workspace roots".into(),
+        ));
+    }
+    for server in &environment.mcp_servers {
+        let value = serde_json::to_value(server).expect("MCP server");
+        if value["type"] == "http" && !caps.mcp_capabilities.http {
+            return Err(Refusal::Wont(
+                "The agent does not support HTTP MCP servers".into(),
+            ));
+        }
+        if value["type"] == "sse" && !caps.mcp_capabilities.sse {
+            return Err(Refusal::Wont(
+                "The agent does not support SSE MCP servers".into(),
+            ));
+        }
+    }
     let (replays, images, embeds, lists) = (
         caps.load_session,
         caps.prompt_capabilities.image,
@@ -735,6 +917,7 @@ async fn open_one(
     );
     let needs_login = !hello.auth_methods.is_empty();
     let facts = Facts {
+        protocol,
         replays,
         name: hello.agent_info.map(|i| i.name),
         images,
@@ -758,8 +941,30 @@ async fn open_one(
     let (session, settings) = match resume {
         Some(sid) => {
             let sid = SessionId::new(sid);
+            if caps.session_capabilities.resume.is_some() {
+                let mut request = ResumeSessionRequest::new(sid.clone(), cwd.clone());
+                request.mcp_servers = environment.mcp_servers;
+                request.additional_directories = environment.additional_directories;
+                let loaded = connection
+                    .send_request(request)
+                    .block_task()
+                    .await
+                    .map_err(refusal)?;
+                return Ok((
+                    sid,
+                    Facts { ..facts },
+                    Settings {
+                        model: model_in(loaded.meta.as_ref()),
+                        modes: loaded.modes,
+                        options: loaded.config_options.unwrap_or_default(),
+                    },
+                ));
+            }
+            let mut request = LoadSessionRequest::new(sid.clone(), cwd);
+            request.mcp_servers = environment.mcp_servers;
+            request.additional_directories = environment.additional_directories;
             let loaded = connection
-                .send_request(LoadSessionRequest::new(sid.clone(), cwd))
+                .send_request(request)
                 .block_task()
                 .await
                 .map_err(refusal)?;
@@ -773,8 +978,11 @@ async fn open_one(
             )
         }
         None => {
+            let mut request = NewSessionRequest::new(cwd);
+            request.mcp_servers = environment.mcp_servers;
+            request.additional_directories = environment.additional_directories;
             let opened = connection
-                .send_request(NewSessionRequest::new(cwd))
+                .send_request(request)
                 .block_task()
                 .await
                 .map_err(refusal)?;
@@ -801,9 +1009,14 @@ fn refusal(e: agent_client_protocol::Error) -> Refusal {
     };
     match e.code {
         ErrorCode::AuthRequired => Refusal::Login(said),
-        ErrorCode::InvalidRequest if detail.is_some_and(|detail|
-            detail.starts_with("unsupported ACP protocol version ") ||
-            detail.starts_with("required ACP protocol version ")) => Refusal::Version(said),
+        ErrorCode::InvalidRequest
+            if detail.is_some_and(|detail| {
+                detail.starts_with("unsupported ACP protocol version ")
+                    || detail.starts_with("required ACP protocol version ")
+            }) =>
+        {
+            Refusal::Version(said)
+        }
         _ => Refusal::Wont(said),
     }
 }
@@ -844,7 +1057,8 @@ mod what_khor_grants {
     /// would pass a test that only read the Rust field.
     #[test]
     fn the_handshake_does_not_offer_an_agent_a_terminal_on_this_machine() {
-        let hello = InitializeRequest::new(ProtocolVersion::V1);
+        let mut hello = InitializeRequest::new(ProtocolVersion::V1);
+        hello.client_capabilities = client_capabilities();
         let wire = serde_json::to_value(&hello).expect("the handshake must serialize");
         let caps = &wire["clientCapabilities"];
 
@@ -860,7 +1074,12 @@ mod what_khor_grants {
             "probe dead — the key being asserted on is not in the object at all: {wire}"
         );
 
-        // Measured 2026-09-01, the whole of what khor grants:
+        assert!(caps["session"]["configOptions"]["boolean"].is_object());
+        assert!(caps["session"]["compaction"].is_object());
+        assert!(caps["session"]["notices"].is_object());
+        assert!(caps["elicitation"]["form"].is_object());
+        assert!(caps["elicitation"]["url"].is_object());
+        // Execution on the GUI remains disabled:
         //   {"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}
         assert_eq!(
             caps["terminal"],

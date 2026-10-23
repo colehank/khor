@@ -75,6 +75,11 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::Agent { .. } => "Agent",
         GuiNote::Refused { .. } => "Refused",
         GuiNote::Settings(_) => "Settings",
+        GuiNote::Delegated { .. } => "Delegated",
+        GuiNote::Capabilities(_) => "Capabilities",
+        GuiNote::Elicit { .. } => "Elicit",
+        GuiNote::ElicitAnswered { .. } => "ElicitAnswered",
+        GuiNote::ControlResult { .. } => "ControlResult",
     }
 }
 
@@ -143,6 +148,9 @@ fn a_dropped_op_is_said_back_to_the_face_that_sent_it() {
         };
         // Then what can be set: the claude shim lists its four modes,
         // so every attach is greeted with them before anything else.
+        let GuiNote::Capabilities(_) = read_frame::<GuiNote>(&mut c).unwrap() else {
+            panic!("full handshake snapshot")
+        };
         let GuiNote::Settings(_) = read_frame::<GuiNote>(&mut c).unwrap() else {
             panic!("then the settings — the shim lists claude's modes")
         };

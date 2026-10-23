@@ -41,6 +41,11 @@ def emit(obj):
 first = True
 for line in sys.stdin:
     m = json.loads(line)
+    if m.get("type")=="control_request" and m.get("request",{}).get("subtype")=="initialize":
+        emit({"type":"control_response","response":{"subtype":"success","request_id":m["request_id"],"response":{"models":[{"value":"fixture","displayName":"Fixture","supportsEffort":True,"supportedEffortLevels":["low","high"]}]}}});continue
+    if m.get("type")=="control_request" and m.get("request",{}).get("subtype")=="apply_flag_settings":
+        open("fake.settings","w").write(json.dumps(m["request"]["settings"]))
+        emit({"type":"control_response","response":{"subtype":"success","request_id":m["request_id"],"response":{}}});continue
     if m.get("type") != "user":
         continue
     text = m["message"]["content"][0]["text"]
@@ -97,7 +102,10 @@ for line in sys.stdin:
         .await
         .unwrap();
 
-    handle.replay().await.expect("a new unprompted session has an empty history");
+    handle
+        .replay()
+        .await
+        .expect("a new unprompted session has an empty history");
     let sid = handle.session().0.to_string();
     assert_eq!(sid.len(), 36, "a minted v4 uuid, dashes and all: {sid}");
     assert_eq!(
@@ -135,10 +143,51 @@ for line in sys.stdin:
                     break;
                 }
                 khor_acp::Event::Ready { .. } => {}
+                khor_acp::Event::Elicit(question) => drop(question),
+                khor_acp::Event::ElicitDone(_) => {}
             }
         }
     });
 
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !notes
+            .lock()
+            .unwrap()
+            .join("")
+            .contains("config_option_update")
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    handle
+        .set_option(
+            "model",
+            serde_json::from_value(serde_json::json!({"value":"fixture"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    handle
+        .set_option(
+            "thought_level",
+            serde_json::from_value(serde_json::json!({"value":"high"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    let applied: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("cwd/fake.settings")).unwrap())
+            .unwrap();
+    assert_eq!(applied["effortLevel"], "high");
+    assert!(
+        handle
+            .set_option(
+                "thought_level",
+                serde_json::from_value(serde_json::json!({"value":"invented"})).unwrap()
+            )
+            .await
+            .is_err()
+    );
     // A plain turn: the reply streams through, the command list rides
     // the first turn, and the stop reason is the turn's end.
     let stop = handle.prompt("hello there").await.unwrap();

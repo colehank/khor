@@ -38,6 +38,15 @@ impl Updates {
                     values.push(json!({"sessionUpdate":if method == "item/agentMessage/delta" { "agent_message_chunk" } else { "agent_thought_chunk" },"content":{"type":"text","text":delta}}));
                 }
             }
+            "thread/tokenUsage/updated" => {
+                let usage = &params["tokenUsage"];
+                if let (Some(used), Some(size)) = (
+                    usage["last"]["totalTokens"].as_u64(),
+                    usage["modelContextWindow"].as_u64().filter(|n| *n > 0),
+                ) {
+                    values.push(json!({"sessionUpdate":"usage_update","used":used,"size":size}));
+                }
+            }
             "turn/plan/updated" => {
                 if let Some(plan) = params["plan"].as_array() {
                     let entries: Vec<Value> = plan.iter().filter_map(|step| Some(json!({"content":step["step"].as_str()?,"priority":"medium","status":match step["status"].as_str()? {"inProgress"=>"in_progress","completed"=>"completed",_=>"pending"}}))).collect();

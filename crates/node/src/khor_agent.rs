@@ -115,6 +115,12 @@ fn safe_token(token: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
 }
+fn configuration_lock(root:&Path)->Result<File,String>{
+    fs::create_dir_all(directory(root)).map_err(|e|e.to_string())?;
+    let file=OpenOptions::new().create(true).truncate(false).read(true).write(true).open(directory(root).join("config.lock")).map_err(|e|e.to_string())?;
+    file.lock().map_err(|e|e.to_string())?;
+    Ok(file)
+}
 fn claim(root: &Path) -> Result<File, String> {
     fs::create_dir_all(directory(root).join("runs")).map_err(|e| e.to_string())?;
     let lock = OpenOptions::new()
@@ -167,6 +173,11 @@ fn send(active: &Running, value: &Value) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+pub(crate) fn configuration_reply(action: &Action, report: &Report) -> bool {
+    matches!(action, Action::Configure { .. })
+        || matches!(action,Action::Manage{request}if request["operation"]=="poll"&&report.data.as_ref().is_some_and(|data|data["status"]=="done"&&data["result"]["options"].is_object()&&data["result"]["configOptions"].is_array()))
+}
+
 impl Node {
     pub fn khor_agent_config(&self) -> Result<Option<AgentConfig>, String> {
         self.chat.agent_config()
@@ -184,6 +195,7 @@ impl Node {
         match action {
             Action::Manage { request } => {
                 report.data = Some(self.manage_agent(request)?);
+                report.config = self.khor_agent_config()?;
             }
             Action::Read => {
                 self.reconcile_agent()?;
@@ -197,10 +209,17 @@ impl Node {
                 {
                     return Err(msg::agent_model_required().to_owned());
                 }
+                let _configuration=configuration_lock(&root)?;
+                let current=self.khor_agent_config()?;
                 let config = AgentConfig {
                     home: self.device_str().into(),
-                    account: account.id,
+                    account: account.id.clone(),
                     model: model.trim().into(),
+                    options: current
+                        .as_ref()
+                        .filter(|c| c.account == account.id && c.model == model.trim())
+                        .map(|c| c.options.clone())
+                        .unwrap_or_default(),
                 };
                 self.chat.set_agent_config(&config)?;
                 let _ = self.emit_row_of(&crate::SessionId(crate::wide::BROADCAST.into()));
@@ -278,7 +297,7 @@ impl Node {
                     .lock()
                     .map_err(|e| e.to_string())?
                     .insert(root.clone(), active.clone());
-                let mut start = json!({"type":"start","protocol":1,"run":id,"text":text,"stateDir":directory(&root).join("sessions"),"model":config.model,
+                let mut start = json!({"type":"start","protocol":1,"run":id,"text":text,"stateDir":directory(&root).join("sessions"),"model":config.model,"options":config.options,
                     "account":{"provider":account.provider.word(),"baseUrl":account.base_url,"key":key.trim()}});
                 if let Some(inference) = &account.inference {
                     start["account"] =
@@ -617,6 +636,17 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                             save(&root, &saved)?;
                             last_flush = std::time::Instant::now();
                         }
+                    }
+                    Some("settings") => {
+                        let value = json!({"sessionUpdate":"config_option_update","configOptions":event["settings"]["configOptions"]});
+                        let update: agent_client_protocol::schema::v1::SessionUpdate =
+                            serde_json::from_value(value)
+                                .map_err(|_| msg::agent_arguments().to_owned())?;
+                        updates::push(
+                            saved.record.agent.as_mut().expect("agent turn"),
+                            serde_json::to_value(update).map_err(|e| e.to_string())?,
+                            key,
+                        );
                     }
                     Some("text") => {
                         append_text(

@@ -79,6 +79,37 @@ async fn agent_configuration_uses_the_key_home_and_never_copies_the_key() {
             .await
             .is_err()
     );
+    let manage_option = |request: Value| Action::Manage { request };
+    let started=beta.khor_agent_on(alpha.device_str(),manage_option(json!({"operation":"session_set_option","account":account.id,"configId":"auto_compaction","value":false}))).await.unwrap().data.unwrap();
+    let option_job = started["job"].as_str().unwrap();
+    let completed = timeout(Duration::from_secs(30), async {
+        loop {
+            let report = beta
+                .khor_agent_on(
+                    alpha.device_str(),
+                    manage_option(json!({"operation":"poll","job":option_job})),
+                )
+                .await
+                .unwrap();
+            let data = report.data.as_ref().unwrap();
+            if data["status"] == "done" {
+                break report;
+            }
+            assert_ne!(data["status"], "failed", "{data}");
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        completed.config.as_ref().unwrap().options["auto_compaction"],
+        false
+    );
+    assert_eq!(
+        beta.khor_agent_config().unwrap().unwrap().options["auto_compaction"],
+        false,
+        "validated options return to the calling machine"
+    );
     // A remote setup keeps both the new credential and OAuth refresh state on alpha.
     let manage = |request: Value| Action::Manage { request };
     let started=beta.khor_agent_on(alpha.device_str(),manage(json!({"operation":"login","provider":"anthropic","authType":"api_key","name":"remote inference"}))).await.unwrap().data.unwrap();

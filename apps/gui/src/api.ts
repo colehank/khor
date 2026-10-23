@@ -1338,6 +1338,8 @@ export const chatSetMode = (id: string, mode: string) => call<null>("chat_set_mo
     boolean is a switch. Same answer channel as {@link chatSetMode}. */
 export const chatSetOption = (id: string, option: string, value: string | boolean) =>
   call<null>("chat_set_option", { id, option, value });
+export const chatRespond=(id:string,ask:number,response:unknown)=>call<null>('chat_respond',{id,ask,response});
+export const chatControl=(id:string,token:string,operation:string,payload:Record<string,unknown>={})=>call<null>('chat_control',{id,token,operation,payload});
 export const chatPoll = (id: string, since: number) =>
   call<ChatBatch>("chat_poll", { id, since });
 /** `chatPoll`, held open until a frame lands past `since` (or `ms`

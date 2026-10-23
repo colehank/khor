@@ -6,4 +6,6 @@ edition = "2021"
 [dependencies]
 agent-client-protocol = { version = "3.5", features = ["process", "stdio"] }
 serde_json = { workspace = true }
+serde = { workspace = true }
+regex = { workspace = true }
 tokio = { workspace = true }
