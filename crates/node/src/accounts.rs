@@ -95,6 +95,11 @@ pub const CACHE_TTL_MS: i64 = 5 * 60 * 1000;
 /// a while, and asking every five minutes is how a key gets throttled.
 pub const FAIL_COOLDOWN_MS: i64 = 10 * 60 * 1000;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long new-api's `/api/log/token` is waited on. It only draws the
+/// chart, and a gateway sitting on it used to cost every read of the
+/// account [`HTTP_TIMEOUT`] (16.2 s measured on two accounts of one
+/// gateway, every time), with the figures already in hand.
+const LOG_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The keys [`AccountReading::trouble`] travels under.
 pub mod trouble {
@@ -1309,8 +1314,15 @@ async fn fetch_newapi(
     // log is the chart; the figures above are the reading. A gateway
     // too old for `/api/log/token`, or one that refuses it, must not
     // turn a good quota reading into 问不出来 — so this is read for
-    // what it gives and dropped when it gives nothing.
-    if let Ok(Ok(j)) = get_json(c.get(format!("{base}/api/log/token")).bearer_auth(key)).await {
+    // what it gives and dropped when it gives nothing, or nothing in
+    // [`LOG_TIMEOUT`].
+    if let Ok(Ok(j)) = get_json(
+        c.get(format!("{base}/api/log/token"))
+            .bearer_auth(key)
+            .timeout(LOG_TIMEOUT),
+    )
+    .await
+    {
         let log = read_log(&j, per_unit);
         r.days = log.days;
         r.model_days = log.model_days;
@@ -3483,6 +3495,23 @@ mod tests {
         assert_eq!(got.len(), 2);
         assert!(got.iter().all(|r| r.trouble.is_none()), "both read: {got:?}");
         assert!(took < Duration::from_millis(1800), "two accounts took {took:?}");
+    }
+
+    /// **The chart's road does not cost the reading its time**
+    /// (fix/front): `/api/log/token` only draws the chart, and a gateway
+    /// that sits on it is left after [`LOG_TIMEOUT`], with the figures
+    /// read and the chart empty — not after the reading's own 15 s.
+    #[tokio::test]
+    async fn a_gateway_sitting_on_its_log_still_gives_the_reading_in_a_few_seconds() {
+        let gw = slow_gateway(Duration::ZERO, Duration::from_secs(20)).await;
+        let mut account = wallet(Provider::Newapi, None);
+        account.base_url = Some(gw);
+        let begun = std::time::Instant::now();
+        let r = fetch_newapi(&account, "sk-x", 0).await.expect("the gateway answered");
+        let took = begun.elapsed();
+        assert_eq!(r.fill, Some(0.5), "the figures are the reading's");
+        assert!(r.days.is_empty(), "the chart is empty, not made up");
+        assert!(took < Duration::from_secs(5), "the read waited {took:?} on the chart's road");
     }
 
     /// **A reading *file* written before the token report still
