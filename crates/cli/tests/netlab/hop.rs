@@ -253,28 +253,38 @@ async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
     let x_out = rx.uplink_ip().expect("x's NAT has an address outside");
 
     let t = now_ms();
-    cut_as(&x.dev, m_ip, "flap_m");
-    cut_as(&x.dev, relay_ip, "flap_relay");
-    delay_to(&r.dev, x_out, F4_RELAY_ONE_WAY, Some(1700)).await;
-    tokio::time::sleep(Duration::from_millis(1500)).await;
-    uncut(&x.dev, "flap_relay");
-    tokio::time::sleep(Duration::from_millis(1500)).await;
-    uncut(&x.dev, "flap_m");
-    let answers = now_ms();
-    tokio::time::sleep(Duration::from_millis(1500)).await;
-    delay_to(&r.dev, x_out, F4_RELAY_ONE_WAY, None).await;
-    // Long enough to see a 30 s rest on the relay.
+    // Y types on X's terminal throughout (an echo every 200 ms): an idle
+    // connection has nothing in flight for 3 s of black to show, and the
+    // phone's own network change pings every path.
+    let typing_until = std::time::Instant::now() + Duration::from_secs(12);
+    let stall = async {
+        cut_as(&x.dev, m_ip, "flap_m");
+        cut_as(&x.dev, relay_ip, "flap_relay");
+        delay_to(&r.dev, x_out, F4_RELAY_ONE_WAY, Some(1700)).await;
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        uncut(&x.dev, "flap_relay");
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        uncut(&x.dev, "flap_m");
+        let answers = now_ms();
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        delay_to(&r.dev, x_out, F4_RELAY_ONE_WAY, None).await;
+        answers
+    };
     let mut seen = vec![];
-    let watch = std::time::Instant::now();
-    while watch.elapsed() < Duration::from_secs(40) {
-        if let Some(l) = y.link(&x).await {
-            let w = format!("{:?}", l.hop);
-            if seen.last().map(|(_, s)| s) != Some(&w) {
-                seen.push(((now_ms() - t) as f64 / 1000.0, w));
+    let watch = async {
+        // Long enough to see a 30 s rest on the relay.
+        let began = std::time::Instant::now();
+        while began.elapsed() < Duration::from_secs(40) {
+            if let Some(l) = y.link(&x).await {
+                let w = format!("{:?}", l.hop);
+                if seen.last().map(|(_, s)| s) != Some(&w) {
+                    seen.push(((now_ms() - t) as f64 / 1000.0, w));
+                }
             }
+            tokio::time::sleep(Duration::from_millis(250)).await;
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
+    };
+    let (answers, slowest, ()) = tokio::join!(stall, typing(&y, &x, typing_until), watch);
 
     let lines: Vec<(u64, String, String)> =
         path_lines(&y, &x, t).into_iter().filter(|(_, c, _)| c == "selected").collect();
@@ -300,6 +310,11 @@ async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
     }
     let after_answer = back.map(|b| b.saturating_sub(answers));
     let now = y.link(&x).await;
+    let x_lines: Vec<String> = path_lines(&x, &y, t)
+        .into_iter()
+        .filter(|(_, c, _)| c == "selected")
+        .map(|(at, _, r)| format!("{r}@{:.1}s", at.saturating_sub(t) as f64 / 1000.0))
+        .collect();
     let ok = now.as_ref().is_some_and(|l| l.hop == Hop::Forwarded)
         && longest < 10_000
         && (on_relay.is_none() || after_answer.is_some_and(|ms| ms <= 1500));
@@ -308,7 +323,7 @@ async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
         s,
         ok,
         format!(
-            "y→x: relay at {}, back on the carried road at {} ({} after m answers again), longest on the relay {:.1}s; selections {:?}; links {seen:?}; now {}",
+            "y→x: relay at {}, back on the carried road at {} ({} after m answers again), longest on the relay {:.1}s; selections {:?}; links {seen:?}; slowest keystroke {slowest:.1?}; now {}; x's selections {x_lines:?}",
             on_relay.map_or("never".into(), secs),
             back.map_or("never".into(), secs),
             after_answer.map_or("—".into(), |ms| format!("{:.1}s", ms as f64 / 1000.0)),
@@ -324,6 +339,24 @@ async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
     assert_eq!(now.map(|l| l.hop), Some(Hop::Forwarded), "y ends on the carried road");
 }
 
+/// Echoes from `n` to `peer` (a listing of /tmp, as a keystroke's round
+/// trip) one after another, 200 ms apart, until `until`; the slowest.
+async fn typing(n: &crate::lab::LabNode, peer: &crate::lab::LabNode, until: std::time::Instant) -> Duration {
+    let mut slowest = Duration::ZERO;
+    while std::time::Instant::now() < until {
+        let began = std::time::Instant::now();
+        let to = peer.name.clone();
+        let _ = tokio::time::timeout(
+            Duration::from_secs(30),
+            n.with(move |node| async move { node.ls_of(&to, "/tmp").await.map(|_| ()) }),
+        )
+        .await;
+        slowest = slowest.max(began.elapsed());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    slowest
+}
+
 /// f4i (flap): **a new connection's first road is not a move**. The phone
 /// back in front lets its wires go and visits every machine; the new
 /// connection to Y begins on the relay while the machine's road is the one
@@ -334,11 +367,11 @@ async fn f4i_a_new_connection_does_not_write_its_first_road_as_a_move() {
     let s = "f4i";
     let (_lab, _r, _rx, x, y, _m) = f4_lab(s).await;
     let t = now_ms();
-    let yid = y.id.clone();
-    x.with(move |n| async move { n.let_go_of(&yid).await.ok() }).await.expect("x lets go of y");
+    let yname = y.name.clone();
+    x.with(move |n| async move { n.let_go_of(&yname).await.ok() }).await.expect("x lets go of y");
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let yid = y.id.clone();
-    x.with(move |n| async move { n.visit(&yid).await.ok() }).await.expect("x visits y");
+    let yname = y.name.clone();
+    x.with(move |n| async move { n.visit(&yname).await.ok() }).await.expect("x visits y");
     let back = x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Forwarded && l.rtt_ms.is_some()).await;
     tokio::time::sleep(Duration::from_secs(15)).await;
     let (xl, yl) = (path_lines(&x, &y, t), path_lines(&y, &x, t));
