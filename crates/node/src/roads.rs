@@ -256,8 +256,12 @@ fn follow(
         // **The road it is on when the watch begins**: iroh selects the
         // first path while the connection is being added, before anyone can
         // subscribe, so a connection that never moved wrote no road at all
-        // (2026-10-16).
-        let mut first = selected_now();
+        // (2026-10-16). **Written as where it began, not as a move**
+        // (flap, 2026-10-23): a new connection begins on the relay while
+        // the machine's other connection rides the hop, and its first line
+        // read 「改走中继」 against the machine's last 「改为通过 turing」 —
+        // a move back and forth the machine never made.
+        let mut first = selected_now().map(|(_, pid, remote)| ("started", pid, remote));
         loop {
             let (change, path_id, remote) = if let Some(now) = first.take() {
                 now
@@ -312,8 +316,10 @@ fn follow(
                     continue;
                 }
             } else {
+                // Where a connection began and where it moved are the one
+                // road of the machine's, deduplicated together.
                 let mut written = WRITTEN.lock().unwrap_or_else(|p| p.into_inner());
-                let key = (id.clone(), change);
+                let key = (id.clone(), if change == "started" { "selected" } else { change });
                 if written.get(&key) == Some(&addr) {
                     continue;
                 }

@@ -2683,6 +2683,10 @@ journal-path-rtt = "，往返 {0} ms"
 # 转连的那一路说清是什么在转（net-e）：经第三台机器（通过 turing），或经 SSH。
 journal-path-hop = "改为通过 {0}"
 journal-path-ssh = "改为经 SSH 转连"
+# 新连接起步走的那条路（flap）：不是改走，这台机器别的连接可能还在原来的路上。
+journal-path-started = "新连接走{0}：{1}"
+journal-path-started-hop = "新连接通过 {0}"
+journal-path-started-ssh = "新连接经 SSH 转连"
 # 路径事件的缓冲满了，丢了几条（vendor/iroh 补丁 21）：此后的「改走」接着当时选中的那条。
 journal-paths-missed = "漏记了 {0} 条路径变化"
 journal-round = "打洞 {0} 轮：本机候选 {1}；对方候选 {2}"
