@@ -19,18 +19,20 @@ export default mergeConfig(preview,defineConfig({
       if(id.endsWith('/src/App.tsx')){
         const anchor=/<SessionScreen\s+/;
         if(!anchor.test(code))throw new Error('SessionScreen Lab mount moved');
-        code="import '/lab/gui-session-dock.css';\nimport {LabSessionHeader} from '/lab/gui-session-header';\nimport {LabModelHeader} from '/lab/gui-session-compose';\n"+code;
+        code="import '/lab/gui-session-dock.css';\nimport {LabSessionHeader} from '/lab/gui-session-header';\nimport {LabModelHeader} from '/lab/gui-session-compose';\nimport {useLabSessionVisits} from '/lab/gui-session-recents';\n"+code;
+        code=code.replace('const selected = sessionTabs.active;','const selected = sessionTabs.active; useLabSessionVisits(selected);');
+        if(!code.includes('useLabSessionVisits(selected)'))throw new Error('Lab session history mount moved');
         return code.replace(anchor,`<SessionScreen
-      renderHeader={(selectedRow?.kind === 'gui' || isChatTab(selected)) ? new URLSearchParams(location.search).get('deck') === 'compose' ? props=><LabModelHeader {...props}/> : new URLSearchParams(location.search).get('deck') === 'light' ? props=><LabSessionHeader {...props}/> : undefined : undefined}
+      renderHeader={(selectedRow?.kind === 'gui' || isChatTab(selected)) ? ['compose','fan'].includes(new URLSearchParams(location.search).get('deck')??'') ? props=><LabModelHeader {...props}/> : new URLSearchParams(location.search).get('deck') === 'light' ? props=><LabSessionHeader {...props}/> : undefined : undefined}
       combinedDock={new URLSearchParams(location.search).get('deck') === 'combined' && (selectedRow?.kind === 'gui' || isChatTab(selected))}
       deckAt={['bottom','combined'].includes(new URLSearchParams(location.search).get('deck') ?? '') ? 'bottom' : selectedRow?.kind === 'gui' || isChatTab(selected) ? 'top' : 'bottom'}
-      `).replace(/onTabs=\{narrow\s*&&\s*selectedRow\s*\?/,"onTabs={narrow&&selectedRow&&new URLSearchParams(location.search).get('deck')!=='combined'&&new URLSearchParams(location.search).get('deck')!=='light'&&new URLSearchParams(location.search).get('deck')!=='compose'?").replace(/<Tabs\s+grouped/,`<Tabs tail={<span data-lab-session-settings-slot />} grouped`);
+      `).replace(/onTabs=\{narrow\s*&&\s*selectedRow\s*\?/,"onTabs={narrow&&selectedRow&&new URLSearchParams(location.search).get('deck')!=='combined'&&new URLSearchParams(location.search).get('deck')!=='light'&&new URLSearchParams(location.search).get('deck')!=='compose'&&new URLSearchParams(location.search).get('deck')!=='fan'?").replace(/<Tabs\s+grouped/,`<Tabs tail={<span data-lab-session-settings-slot />} grouped`);
       }
       if(id.endsWith('/src/views/Composer.tsx')){
         code="import {useLabComposeLayout} from '/lab/gui-session-compose';\nimport {useNarrow} from '@/hooks/use-narrow';\n"+code;
         code=code.replace('const cap = useRef<HTMLDivElement>(null);',`const cap = useRef<HTMLDivElement>(null);
         const labNarrow=useNarrow();
-        const labCompose=labNarrow&&new URLSearchParams(location.search).get('deck')==='compose'&&new URLSearchParams(location.search).get('composer')!=='classic';
+        const labCompose=labNarrow&&['compose','fan'].includes(new URLSearchParams(location.search).get('deck')??'')&&new URLSearchParams(location.search).get('composer')!=='classic';
         useLabComposeLayout(cap,labCompose);`);
         if(!code.includes('useLabComposeLayout(cap,labCompose)'))throw new Error('Lab composer ref mount moved');
         code=code.replace('data-chat-box','data-chat-box data-lab-compose-input={labCompose||undefined}');
@@ -68,6 +70,7 @@ export default mergeConfig(preview,defineConfig({
         {
           const q=new URLSearchParams(location.search),session=q.get('labSession')||'gui/ai-elements-review';
           const sessions=['gui/ai-elements-review','gui/ai-elements-plan','gui/ai-elements-stream','gui/codex-review','wide/all'];
+          if(!sessionStorage.getItem('khor.lab.session-recents'))sessionStorage.setItem('khor.lab.session-recents',JSON.stringify(['gui/ai-elements-review','gui/codex-review','wide/all','gui/ai-elements-plan','gui/ai-elements-stream']));
           localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:sessions,active:session}));
           localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'list'}));
           window.addEventListener('DOMContentLoaded',()=>{

@@ -34,7 +34,7 @@ function HeaderSeat({children}:{children:ReactNode}){
 function Preferences({model,agent,mode,options,disabled=false,children,danger,open,onOpen}:{model:string|null;agent:string;mode?:string;options:AddOption[];disabled?:boolean;children:ReactNode;danger?:ReactNode;open:boolean;onOpen:(open:boolean)=>void}){
   const inBar=useInBar(),docked=inBar&&labUnified&&new URLSearchParams(location.search).get('deck')==='combined';
   const light=inBar&&labUnified&&new URLSearchParams(location.search).get('deck')==='light';
-  const modelBar=inBar&&labUnified&&new URLSearchParams(location.search).get('deck')==='compose';
+  const modelBar=inBar&&labUnified&&new URLSearchParams(location.search).get('deck')!==null&&['compose','fan'].includes(new URLSearchParams(location.search).get('deck')!);
   const thought=options.find(o=>o.kind==='values'&&o.category==='thought_level');
   const levels:Record<string,string>={off:'关闭',minimal:'最低',low:'低',medium:'中',high:'高',xhigh:'极高',standard:'标准',deep:'深入',default:'默认',auto:'自动'};
   const effort=thought?.kind==='values'?(levels[thought.current]??thought.values.find(v=>v.value===thought.current)?.name??thought.current):null;

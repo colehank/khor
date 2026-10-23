@@ -3,16 +3,18 @@ import {useEffect,useLayoutEffect,useRef,useState,type RefObject} from 'react';
 import {createPortal} from 'react-dom';
 import {TabAvatar} from '@/browse/TabStrip';
 import {IconBack,IconCompose} from '@/components/icons';
-import {TabsGlyph,type SessionHeaderProps} from '@/components/SessionBar';
+import {type SessionHeaderProps} from '@/components/SessionBar';
 import {gui} from '@/gen/catalog';
 import {DeckBand} from '@/components/DeckBand';
 import {DECK_JOYSTICK_DEFAULTS} from '@/lib/deck-joystick';
+import {SessionPill,useSessionPill} from './gui-session-pill';
+import {LabFanNavigator} from './gui-session-fan';
 import './gui-session-compose.css';
 
 /** Compact and expanded states both use the terminal's actual DeckBand.
  * No second pointer recognizer, selector geometry or timing lives here. */
 function ComposeNavigator({faces,active,onFocus,onOverview,hidden}:Pick<SessionHeaderProps,'faces'|'active'|'onFocus'|'onOverview'|'hidden'>){
-  const root=useRef<HTMLDivElement>(null),[expanded,setExpanded]=useState(false);
+  const root=useRef<HTMLDivElement>(null),{expanded,close,toggle}=useSessionPill(root,active,faces.map(f=>f.id).join('\0'),hidden);
   const [reach,setReach]=useState(DECK_JOYSTICK_DEFAULTS.reach);
   useLayoutEffect(()=>{
     const el=root.current;if(!el)return;
@@ -26,31 +28,15 @@ function ComposeNavigator({faces,active,onFocus,onOverview,hidden}:Pick<SessionH
     const observer=new ResizeObserver(measure);observer.observe(el);measure();window.addEventListener('resize',measure);window.visualViewport?.addEventListener('resize',measure);
     return()=>{observer.disconnect();window.removeEventListener('resize',measure);window.visualViewport?.removeEventListener('resize',measure);};
   },[]);
-  const close=()=>setExpanded(false),overview=()=>{close();onOverview();},focus=(id:string)=>{close();onFocus(id);};
-  const ids=faces.map(f=>f.id).join('\0');
-  useEffect(close,[active,ids,hidden]);
-  useEffect(()=>{
-    if(!expanded)return;
-    const outside=(e:globalThis.PointerEvent)=>{if(e.target instanceof Node&&!root.current?.contains(e.target))close();};
-    const key=(e:KeyboardEvent)=>{
-      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();}
-      else if(e.target instanceof Element&&e.target.matches('[data-composer-text]'))close();
-    };
-    const composer=root.current?.closest('[data-chat-box]');composer?.addEventListener('input',close);
-    window.addEventListener('pointerdown',outside);window.addEventListener('keydown',key,true);window.addEventListener('resize',close);window.addEventListener('blur',close);window.visualViewport?.addEventListener('resize',close);
-    return()=>{composer?.removeEventListener('input',close);window.removeEventListener('pointerdown',outside);window.removeEventListener('keydown',key,true);window.removeEventListener('resize',close);window.removeEventListener('blur',close);window.visualViewport?.removeEventListener('resize',close);};
-  },[expanded]);
+  const overview=()=>{close();onOverview();},focus=(id:string)=>{close();onFocus(id);};
   return <div ref={root} className="lab-compose-nav" data-lab-session-navigation>
     <div data-lab-compose-avatar data-expanded={expanded||undefined} className="lab-avatar-band">
-      <DeckBand faces={faces} active={active} onFocus={focus} onTitle={()=>setExpanded(value=>!value)} onOverview={overview} tuning={{...DECK_JOYSTICK_DEFAULTS,reach}} renderFace={face=><>
+      <DeckBand faces={faces} active={active} onFocus={focus} onTitle={toggle} onOverview={overview} tuning={{...DECK_JOYSTICK_DEFAULTS,reach}} renderFace={face=><>
         <span className="sr-only">切换会话：{face.title??face.label}，点击{expanded?'收起':'展开'}药丸</span>
         <TabAvatar f={face} bare="size-tab-face" seat="tab"/>
       </>}/>
     </div>
-    {expanded&&<div data-lab-session-pill className="glass absolute lab-session-pill" role="group" aria-label="会话药丸">
-      <DeckBand faces={faces} active={active} onFocus={focus} onTitle={overview} onOverview={overview}/>
-      <button type="button" data-lab-pill-overview className="lab-pill-overview" aria-label="全部标签页" onClick={overview}><TabsGlyph n={faces.length}/></button>
-    </div>}
+    {expanded&&<SessionPill faces={faces} active={active} onFocus={focus} onOverview={overview}/>}
   </div>;
 }
 export function LabModelHeader(props:SessionHeaderProps){
@@ -66,7 +52,7 @@ export function LabModelHeader(props:SessionHeaderProps){
       <div data-lab-model-settings>{children}</div>
       {onNew&&<button type="button" className="glass lab-compose-new" data-lab-new-session aria-label={newLabel??'新建会话'} onClick={onNew}><IconCompose/></button>}
     </header>
-    {slot&&createPortal(<ComposeNavigator {...props}/>,slot)}
+    {slot&&createPortal(new URLSearchParams(location.search).get('deck')==='fan'?<LabFanNavigator {...props}/>:<ComposeNavigator {...props}/>,slot)}
   </>;
 }
 
