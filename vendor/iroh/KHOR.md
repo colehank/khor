@@ -272,6 +272,31 @@ netlab 新场景 p5（直连 + 500 ms 远中继，每 30 秒丢直连 150/300/60
 vendor/noq-proto 拷到仓外一个目录，加一个 `[workspace] members = ["iroh", "noq-proto"]`、`[patch.crates-io] noq-proto = { path = "noq-proto" }`
 的 Cargo.toml，再 `cargo test -p iroh --lib remote_state`。
 
+**10-23 修订（flap）：离开中继、转连时，快得多的路不等两秒确认；被换走的路比确认还慢时不等它的样本**。手机换网、回前台时，
+在用的转连（经 turing 约 20 ms）卡住，选路器去了中继（备用路 15 秒才保活一次，看起来在答），中继此刻往返 1743、3468、
+4994 ms；转连答上以后要 `SILENT_HOLD` 1 秒加 `CONFIRM_FOR` 2 秒，还要中继也取到一个样本才回去，中继一个往返超过 4 秒时
+取不到，到 `CONFIRM_MAX` 作罢、`CONFIRM_REST` 30 秒不再试。改两处，都在 `Moving::step`（`confirm_move` 把两条路此刻的
+读数传进去；**只在从中继或转连换走时传**，直连之间传 0，规则和改前一样，p1、p1j、p1s 不受影响）：
+一、**目标快得多就当场走**（`far_faster`：目标的两倍加 `FAR_FASTER_BY` 10 ms 仍不超过在用那条）：目标在这次改走开始以后
+取到过样本就走，不等 2 秒，也不要求被换走那条有样本、不 ping 它。两倍：目标的读数就算差了它自己那么多，也还是快的那条，
+没有可确认的；10 ms 让两条几毫秒的快路不算差得远。原先试过只看读数、不分路的 100 ms 余量（为了挡住 p1 负载下 17 对 3.4 ms
+那种直连之间的假读数），f4 里中继 300 ms 对转连 116 ms 就不算快得多，又等满 2 秒；改为直连之间不参与，余量回到 10 ms。
+二、**被换走那条的读数超过 `CONFIRM_FOR` 时不等它的样本**：2 秒里它取不到样本，不能因此作罢、进 30 秒的 rest；
+满 2 秒、目标取到过样本就走。目标一直没样本，到 `CONFIRM_MAX` 照旧作罢。
+没改的（这一轮不做）：在用的转连卡住时 khor 的 `RoadOrder` 不像直连那样熬一熬（`carry.rs` 只把直连放进 stalled），
+当场离开；中继作为备用路 15 秒才一个样本，读数是旧的；`SILENT_HOLD` 1 秒照旧。所以卡顿时仍会去中继一趟，
+修的是回来那一步。
+量到的（netlab f4，turing 上四份并跑，带临时打点）：改后选路器想回转连的那一刻起，确认一个 tick（0.25 s）就走，没再出现过 rest；
+改前同样的场景回转连前要确认满 2 秒，有一份在中继上停了 16.8 s。但 f4 照它的门槛（x–m 那条腿重新听到后 1.5 s 内回转连）仍红：
+腿听到后 3.0–4.3 s 才回去，时间花在转连这条路自己的第一个样本上（腿通了以后 2–3 s，转连路径的 PTO 在 3 秒黑洞里退避过了）
+加 `SILENT_HOLD` 1 s；另有三份在回到转连后约 10 s 又掉回中继（转连那条路径被关掉，`confirm_move` 里 `open` 为假、当场换），
+都是转连这一层的事，不在这一轮。试过每个 tick ping 不答的非选中路（`probe_silent`），没看出变快，没留。
+测试：`a_far_faster_road_is_taken_without_the_two_second_confirm`（1743 → 20 ms 取到样本就 Go；30 → 20、300 → 150 ms 仍 Hold；
+309 → 116 ms Go）、`a_move_off_a_road_slower_than_the_confirm_is_not_given_up`（4994 → 54 ms 到 4 秒不是 Rest；2500 → 1400 ms
+满 2 秒就走、不 ping 慢的那条），改前两个都红；netlab 场景 f4（`crates/cli/tests/netlab/hop.rs`：y 一直在给 x 打字，
+x–m 黑洞 3 秒，x–中继黑洞 1.5 秒、中继发给 x 的晚 1.7 秒到 m 回来后 1.5 秒）。khor 这边 `roads.rs` 把每条连接起步那条路
+记成「新连接走…」（`started`），不再写成「改走…」（f4i，改前红、改后绿）。
+
 ### 16. `src/socket.rs`、`src/endpoint.rs`：公开「大的网络变化」（2026-10-09，net-r）
 
 上游只有 `Endpoint::network_change()`：交给网络监视器去判断，网卡没变就什么也不做。回到前台的手机多半还在原来那张网上，可 socket 可能被系统收回、中继连接和对端的路径可能在冻住时死了。上游测试里有现成的 `force_network_change(is_major)`（`#[cfg(test)]`），做的正是要的那一套：在原端口上重绑 UDP、查中继连接、重置 DNS、重测网络、通知 QUIC 去 ping 每条路径、打洞。改为：去掉那两处 `#[cfg(test)]`，加公开的 `Endpoint::network_change_major()` 调它（端点已关就不做）。khor 回前台时用它代替换新端点（`link.rs` 的 `Wake::Resume`）。测：`cargo test -p khor-node --test resume a_resume_keeps_the_ears`。

@@ -148,12 +148,12 @@ const CONFIRM_MAX: Duration = Duration::from_secs(4);
 /// khor patch 17 (10-21): and the same move is not tried again for this long.
 const CONFIRM_REST: Duration = Duration::from_secs(30);
 
-/// khor patch 17 (flap, 10-23): the slack in [`far_faster`].  The confirmation guards against
-/// one road's reading being off by a stall's sample: a 100 ms stall lifted a 1 ms road's
-/// smoothed RTT to 17 ms (netlab p1 under load), against the other's 3.4 ms; with 10 ms of
-/// slack that read far faster.  Readings that far apart only by a hundred milliseconds still
-/// take the confirmation; a relay of seconds against a road of tens of milliseconds does not.
-const FAR_FASTER_BY: Duration = Duration::from_millis(100);
+/// khor patch 17 (flap, 10-23): the slack in [`far_faster`], so that two fast roads a few
+/// milliseconds apart are not far apart.  Only moves off the relay or a carried road are
+/// weighed so ([`RemoteStateActor::confirm_move`]); between direct roads the confirmation
+/// stays as it was, where one stall's sample lifted a 1 ms road to 17 ms against the other's
+/// 3.4 ms (netlab p1 under load).
+const FAR_FASTER_BY: Duration = Duration::from_millis(10);
 
 /// khor patch 17 (flap, 10-23): whether a path of round trip `to` is far faster than one of
 /// `from`: twice it, and [`FAR_FASTER_BY`], is still no more.  Twice: were the faster one's
@@ -1019,9 +1019,10 @@ impl RemoteStateActor {
     /// other road, idle, has nothing in flight to show it: netlab p1s (300 ms spikes on both of
     /// alpha's roads) left the road in use for the other on the spike and came back.
     ///
-    /// 10-23 (flap): the two paths' readings go into the confirmation ([`Moving::step`]): a
-    /// path far faster than the one in use is taken once it answered since the move began, and
-    /// a path in use slower than the confirmation itself is not waited on for a sample.
+    /// 10-23 (flap): off the relay or a carried road, the two paths' readings go into the
+    /// confirmation ([`Moving::step`]): a path far faster than the one in use is taken once it
+    /// answered since the move began, and a path in use slower than the confirmation itself is
+    /// not waited on for a sample.  Between direct roads nothing changed.
     fn confirm_move(&mut self, to: Option<&transports::FourTuple>) -> bool {
         let Some(to) = to.filter(|to| self.state.selected_path.as_ref() != Some(*to)) else {
             self.state.moving.clear();
@@ -1056,10 +1057,15 @@ impl RemoteStateActor {
                 .state
                 .moving
                 .leave(to, now, silence.began, |after| sampled(to, after)),
+            // Between direct roads the readings are not weighed: a zero for the road moved
+            // from is neither far slower nor slower than the confirmation.
             None => self.state.moving.step(
                 to,
                 now,
-                measured.road(&from).map_or(Duration::ZERO, |(rtt, _)| rtt),
+                measured
+                    .road(&from)
+                    .filter(|_| !from.is_ip())
+                    .map_or(Duration::ZERO, |(rtt, _)| rtt),
                 measured.road(to).map_or(Duration::MAX, |(rtt, _)| rtt),
                 |after| sampled(&from, after),
                 |after| sampled(to, after),
@@ -3060,10 +3066,8 @@ mod tests {
         let yes = |_| true;
         assert!(matches!(m.step(&to, t0, MS(30), MS(20), yes, yes), Step::Hold { .. }));
         assert!(matches!(m.step(&to, tick, MS(30), MS(20), yes, yes), Step::Hold { .. }), "one speed: the two seconds");
-        assert!(
-            matches!(m.step(&to, tick, MS(17), MS(3), yes, yes), Step::Hold { .. }),
-            "17 ms after a 100 ms stall against 3 ms is not far"
-        );
+        assert!(matches!(m.step(&to, tick, MS(300), MS(150), yes, yes), Step::Hold { .. }), "twice and 10 ms is not");
+        assert_eq!(m.step(&to, tick, MS(309), MS(116), yes, yes), Step::Go, "the relay at 309 ms, the hop at 116 ms");
     }
 
     /// flap (10-23): a move off a road whose round trip is longer than [`CONFIRM_FOR`] (a relay
