@@ -1040,6 +1040,8 @@ impl RemoteStateActor {
             None => self.state.moving.step(
                 to,
                 now,
+                measured.road(&from).map_or(Duration::ZERO, |(rtt, _)| rtt),
+                measured.road(to).map_or(Duration::MAX, |(rtt, _)| rtt),
                 |after| sampled(&from, after),
                 |after| sampled(to, after),
             ),
@@ -2200,6 +2202,8 @@ impl Moving {
         &mut self,
         to: &transports::FourTuple,
         now: Instant,
+        _from_rtt: Duration,
+        _to_rtt: Duration,
         from_sampled: impl Fn(Instant) -> bool,
         to_sampled: impl Fn(Instant) -> bool,
     ) -> Step {
@@ -2956,10 +2960,10 @@ mod tests {
         let mut m = Moving::default();
         let yes = |_| true;
         let no = |_| false;
-        assert_eq!(m.step(&to, t0, no, yes), Step::Hold { from: true, to: false });
+        assert_eq!(m.step(&to, t0, MS(8), MS(3), no, yes), Step::Hold { from: true, to: false });
         assert_eq!(m.to(), Some(&to));
-        assert_eq!(m.step(&to, t0 + MS(1000), yes, yes), Step::Hold { from: false, to: false });
-        assert_eq!(m.step(&to, t0 + CONFIRM_FOR, yes, yes), Step::Go);
+        assert_eq!(m.step(&to, t0 + MS(1000), MS(8), MS(3), yes, yes), Step::Hold { from: false, to: false });
+        assert_eq!(m.step(&to, t0 + CONFIRM_FOR, MS(8), MS(3), yes, yes), Step::Go);
         assert_eq!(m.to(), None);
     }
 
@@ -2975,7 +2979,7 @@ mod tests {
         let mut pinged = 0;
         let mut t = t0;
         loop {
-            match m.step(&to, t, yes, no) {
+            match m.step(&to, t, MS(8), MS(3), yes, no) {
                 Step::Hold { to: true, .. } => pinged += 1,
                 Step::Rest => break,
                 step => panic!("{step:?} at {:?}", t - t0),
@@ -2984,9 +2988,9 @@ mod tests {
         }
         assert_eq!(t - t0, CONFIRM_MAX, "given up after four seconds");
         assert_eq!(pinged, 16, "a ping a tick until then");
-        assert_eq!(m.step(&to, t + MS(10_000), yes, yes), Step::Rest, "resting");
-        assert!(matches!(m.step(&other, t + MS(10_000), yes, no), Step::Hold { .. }), "another move is not");
-        assert!(matches!(m.step(&to, t + CONFIRM_REST, yes, yes), Step::Hold { .. }), "tried again after the rest");
+        assert_eq!(m.step(&to, t + MS(10_000), MS(8), MS(3), yes, yes), Step::Rest, "resting");
+        assert!(matches!(m.step(&other, t + MS(10_000), MS(8), MS(3), yes, no), Step::Hold { .. }), "another move is not");
+        assert!(matches!(m.step(&to, t + CONFIRM_REST, MS(8), MS(3), yes, yes), Step::Hold { .. }), "tried again after the rest");
     }
 
     /// 10-21: a road that stopped answering is left for one that answered since, at once if it
@@ -3003,6 +3007,54 @@ mod tests {
         let mut m = Moving::default();
         assert!(matches!(m.leave(&to, t0, began, |_| false), Step::Hold { .. }));
         assert_eq!(m.leave(&to, t0 + CONFIRM_MAX, began, |_| false), Step::Go, "nothing answers: go all the same");
+    }
+
+    /// flap (10-23): a move to a road far faster than the one in use (the carried road through
+    /// turing at 20 ms, off a relay that read 1743 ms) is made once the road moved to took a
+    /// sample since the move began: no [`CONFIRM_FOR`], and no sample asked of the slow one.
+    /// A move between roads of about one speed is confirmed as before.
+    #[test]
+    fn a_far_faster_road_is_taken_without_the_two_second_confirm() {
+        let t0 = Instant::now();
+        let to = addr(2);
+        let mut m = Moving::default();
+        let no = |_| false;
+        assert!(matches!(m.step(&to, t0, MS(1743), MS(20), no, no), Step::Hold { to: true, .. }), "ping the fast one");
+        let tick = t0 + RESELECT_INTERVAL;
+        assert_eq!(m.step(&to, tick, MS(1743), MS(20), no, |after| after < tick), Step::Go, "it answered: go");
+        let mut m = Moving::default();
+        let yes = |_| true;
+        assert!(matches!(m.step(&to, t0, MS(30), MS(20), yes, yes), Step::Hold { .. }));
+        assert!(matches!(m.step(&to, tick, MS(30), MS(20), yes, yes), Step::Hold { .. }), "one speed: the two seconds");
+        assert!(
+            matches!(m.step(&to, tick, MS(17), MS(3), yes, yes), Step::Hold { .. }),
+            "17 ms after a 100 ms stall against 3 ms is not far"
+        );
+    }
+
+    /// flap (10-23): a move off a road whose round trip is longer than [`CONFIRM_FOR`] (a relay
+    /// that read 4994 ms) is not given up for that road taking no sample: it cannot within the
+    /// confirmation.  It was, and the connection stayed on the relay [`CONFIRM_REST`] more.
+    #[test]
+    fn a_move_off_a_road_slower_than_the_confirm_is_not_given_up() {
+        let t0 = Instant::now();
+        let to = addr(2);
+        let no = |_| false;
+        let sampled_at = |t: Instant| move |after: Instant| after < t;
+        let mut m = Moving::default();
+        let _ = m.step(&to, t0, MS(4994), MS(54), no, no);
+        let late = t0 + CONFIRM_MAX;
+        assert_ne!(m.step(&to, late, MS(4994), MS(54), no, sampled_at(late)), Step::Rest, "far faster");
+        // Not far faster, both slow: the slow one's sample is not asked for.
+        let mut m = Moving::default();
+        let _ = m.step(&to, t0, MS(2500), MS(1400), no, no);
+        let first = t0 + MS(500);
+        assert!(matches!(m.step(&to, first, MS(2500), MS(1400), no, sampled_at(first)), Step::Hold { .. }));
+        let done = t0 + CONFIRM_FOR;
+        assert_eq!(m.step(&to, done, MS(2500), MS(1400), no, sampled_at(first)), Step::Go, "after the two seconds");
+        // And the slow one is not pinged for it.
+        let mut m = Moving::default();
+        assert_eq!(m.step(&to, t0, MS(2500), MS(1400), no, no), Step::Hold { from: false, to: true });
     }
 
     /// One direct road under 10 ms on any connection is good enough.
