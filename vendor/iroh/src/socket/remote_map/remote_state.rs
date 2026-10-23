@@ -115,7 +115,15 @@ pub(crate) fn unanswered_for(stats: &PathStats, now: std::time::Instant) -> Opti
 /// khor patch 17: how long a road that stopped answering has to answer again before it is a
 /// candidate again ([`Silence`]).  A road that answers off and on would otherwise be left and
 /// taken again on every other tick.
+///
+/// carry (10-23): a road far faster than the one in use, or the one in use itself, is a
+/// candidate again at its first round trip, unless it stopped answering once already within
+/// [`REHOLD`] of being back ([`Measured::mark_silent`]).
 const SILENT_HOLD: Duration = Duration::from_secs(1);
+
+/// khor patch 17 (carry, 10-23): a road that goes silent again within this long of being back
+/// is one that answers off and on, and waits out [`SILENT_HOLD`] whatever it reads.
+const REHOLD: Duration = Duration::from_secs(30);
 
 /// khor patch 19: how much the selected direct path's round trip has to rise over the lowest it
 /// read since it was selected before a hole-punching round is started at once, rather than at
@@ -161,6 +169,19 @@ const FAR_FASTER_BY: Duration = Duration::from_millis(10);
 /// confirmation to find out.
 fn far_faster(to: Duration, from: Duration) -> bool {
     to.saturating_mul(2).saturating_add(FAR_FASTER_BY) <= from
+}
+
+/// khor patch 17 (carry, 10-23): of the copies in a probe timeout's backoff (`backed_off`: the
+/// copy, its road, when the packet it waits on went out), those whose road heard something on
+/// any copy after that packet went out (`heard`: each road's last receipt).
+fn to_wake<'a>(
+    backed_off: &'a [(ConnId, PathId, transports::FourTuple, std::time::Instant)],
+    heard: &'a [(transports::FourTuple, std::time::Instant)],
+) -> impl Iterator<Item = (ConnId, PathId)> + 'a {
+    backed_off
+        .iter()
+        .filter(|(_, _, tuple, sent)| heard.iter().any(|(t, at)| t == tuple && at > sent))
+        .map(|(conn_id, path_id, _, _)| (*conn_id, *path_id))
 }
 
 /// khor patch 19 (10-21): the rounds a selected path's degrading starts are at least this far
@@ -1149,6 +1170,10 @@ impl RemoteStateActor {
         let mut present = Vec::new();
         let mut silent_now: Vec<(transports::FourTuple, Instant)> = Vec::new();
         let mut waiting = None;
+        // carry (10-23): the copies in a probe timeout's backoff, with the packet they wait on,
+        // and when each road last heard anything on any copy ([`Self::wake`]).
+        let mut backed_off: Vec<(ConnId, PathId, transports::FourTuple, std::time::Instant)> = Vec::new();
+        let mut heard: Vec<(transports::FourTuple, std::time::Instant)> = Vec::new();
         for (conn_id, conn_state) in self.connections.iter() {
             let Some(conn) = conn_state.handle.upgrade() else {
                 continue;
@@ -1161,6 +1186,17 @@ impl RemoteStateActor {
                 present.push(key);
                 if let Some(waited) = unanswered_for(&stats, now.into_std()) {
                     silent_now.push((tuple.clone(), now.checked_sub(waited).unwrap_or(now)));
+                }
+                if stats.pto_count > 0
+                    && let Some(sent) = stats.unacked_since
+                {
+                    backed_off.push((*conn_id, *path_id, tuple.clone(), sent));
+                }
+                if let Some(at) = stats.last_received {
+                    match heard.iter_mut().find(|(t, _)| t == tuple) {
+                        Some((_, last)) => *last = (*last).max(at),
+                        None => heard.push((tuple.clone(), at)),
+                    }
                 }
                 if Some(tuple) == selected
                     && stats.pto_count > 0
@@ -1199,11 +1235,69 @@ impl RemoteStateActor {
             }
             present.contains(key) || !r.changed.is_empty()
         });
+        // carry (10-23): a road far faster than the one in use comes back at its first round
+        // trip, and so does the one in use ([`SILENT_HOLD`]).  Only while the one in use is the
+        // relay or a carried road, as in [`Moving::step`]: between direct roads the hold, and
+        // the waking, stay as they were.
+        let off_direct = selected.is_some_and(|s| !s.is_ip());
+        let in_use = selected
+            .filter(|_| off_direct)
+            .and_then(|s| measured.road(s))
+            .map(|(rtt, _)| rtt);
+        let quick = |tuple: &transports::FourTuple, measured: &Measured| {
+            off_direct
+                && (Some(tuple) == selected
+                    || in_use.is_some_and(|from| {
+                        measured.road(tuple).is_some_and(|(to, _)| far_faster(to, from))
+                    }))
+        };
         let connections = &self.connections;
-        measured.mark_silent(now, &silent_now, |tuple| {
-            connections.values().any(|c| c.paths.values().any(|t| t == tuple))
-        });
+        measured.mark_silent(
+            now,
+            &silent_now,
+            |tuple| connections.values().any(|c| c.paths.values().any(|t| t == tuple)),
+            quick,
+        );
+        if off_direct {
+            self.wake(&backed_off, &heard);
+        }
         (sample, waiting)
+    }
+
+    /// carry (10-23): pings every copy of a road that is in a probe timeout's backoff while the
+    /// road heard something, on any copy, after the packet that copy waits on went out.
+    ///
+    /// The road answers again, and the copy would only learn so at its next probe timeout,
+    /// which a stall of seconds backed off to seconds as well: netlab f4 (x–m black for 3 s),
+    /// m's busy connection to x took a round trip a few hundred ms after the leg came back,
+    /// an idle one only 2 s later, and the road was as silent as that idle copy
+    /// ([`Measured::mark_silent`]); m's connection to x stayed on the relay, 1.7 s late, and
+    /// what y sent x through m with it.  The PING is answered in one round trip, and its ACK
+    /// ends the backoff (RFC 9002: an acknowledgement resets the probe count).  Nothing is
+    /// pinged on a road that heard nothing (a blackhole) or on a copy with nothing waiting;
+    /// at most once a tick each, and only until the copy's own round trip comes back.
+    ///
+    /// Only while the connection is off direct (on the relay or a carried road), as with the
+    /// rest of the 10-23 rules: between two direct roads in the same stall (netlab p1s, 300 ms
+    /// spikes on both), a PING woken mid-spike took a spike-long sample on the one road, its
+    /// smoothed RTT rose an eighth of 300 ms over the other's, and the connection moved and
+    /// came back (three runs in six went over p1s's one move; none before).
+    fn wake(
+        &self,
+        backed_off: &[(ConnId, PathId, transports::FourTuple, std::time::Instant)],
+        heard: &[(transports::FourTuple, std::time::Instant)],
+    ) {
+        for (conn_id, path_id) in to_wake(backed_off, heard) {
+            let Some(path) = self
+                .connections
+                .get(&conn_id)
+                .and_then(|c| c.handle.upgrade())
+                .and_then(|c| c.path(path_id))
+            else {
+                continue;
+            };
+            let _ = path.ping();
+        }
     }
 
     /// khor patch 19: a selected direct path that stopped answering, or whose round trip
@@ -2260,7 +2354,11 @@ impl Moving {
         let far = far_faster(to_rtt, from_rtt);
         let from_slow = from_rtt > CONFIRM_FOR;
         let from_needed = !far && !from_slow;
-        if far && to_sampled(since) {
+        // carry (10-23): a sample in the tick the move began is fresh too: a road back from a
+        // silence at its first round trip ([`Measured::mark_silent`]) is wanted on the tick
+        // that read it, and waited a tick and a ping more for another.
+        let fresh = since.checked_sub(RESELECT_INTERVAL).unwrap_or(since);
+        if far && to_sampled(fresh) {
             self.to = None;
             return Step::Go;
         }
@@ -2288,6 +2386,8 @@ struct Measured {
     rtts: FxHashMap<(ConnId, PathId), Reading>,
     /// The roads that stopped answering.
     silent: FxHashMap<transports::FourTuple, Silence>,
+    /// carry (10-23): when each road last answered again after a silence, for [`REHOLD`].
+    back: FxHashMap<transports::FourTuple, Instant>,
 }
 
 /// khor patch 17: a road that stopped answering ([`unanswered_for`]), until it answered again
@@ -2301,6 +2401,9 @@ struct Silence {
     /// Since when it answers again: a copy took a round trip after `judged`, and none is
     /// silent now.
     answered: Option<Instant>,
+    /// carry (10-23): it went silent within [`REHOLD`] of last being back, so it waits out
+    /// [`SILENT_HOLD`] however fast it reads.
+    rehold: bool,
 }
 
 impl Silence {
@@ -2328,22 +2431,52 @@ impl Measured {
     /// still a path on some connection.  A road no connection has any more is forgotten; one
     /// a copy of which took a round trip since it went silent, and none of which is silent
     /// now, answers again once it kept answering for [`SILENT_HOLD`].
+    ///
+    /// carry (10-23): or at once, when `quick` says so of it (the road in use, or one far
+    /// faster than it) and it was not back within [`REHOLD`] before this silence began.  The
+    /// hold is there for a road that answers off and on, and one that does goes silent again
+    /// soon after it is back; a road back from one stall waited out the hold on a relay 1.7 s
+    /// late (netlab f4), and the phone left its carried road for that relay a second after it
+    /// had answered again.
     fn mark_silent(
         &mut self,
         now: Instant,
         silent_now: &[(transports::FourTuple, Instant)],
         open: impl Fn(&transports::FourTuple) -> bool,
+        quick: impl Fn(&transports::FourTuple, &Measured) -> bool,
     ) {
+        self.back.retain(|_, at| now < *at + REHOLD);
         for (tuple, began) in silent_now {
+            let rehold = self.back.contains_key(tuple);
             let silence = self.silent.entry(tuple.clone()).or_insert(Silence {
                 began: *began,
                 judged: now,
                 answered: None,
+                rehold,
             });
             silence.judged = now;
             silence.answered = None;
         }
-        let rtts = &self.rtts;
+        let mut answered = Vec::new();
+        for (tuple, silence) in self.silent.iter_mut() {
+            if silent_now.iter().any(|(t, _)| t == tuple) || !open(tuple) {
+                continue;
+            }
+            if silence.answered.is_none()
+                && self.rtts.values().any(|r| r.road == *tuple && r.at > silence.judged)
+            {
+                silence.answered = Some(now);
+            }
+            if silence.answered.is_some() {
+                answered.push((tuple.clone(), silence.rehold));
+            }
+        }
+        let quick: Vec<transports::FourTuple> = answered
+            .into_iter()
+            .filter(|(tuple, rehold)| !rehold && quick(tuple, self))
+            .map(|(tuple, _)| tuple)
+            .collect();
+        let back = &mut self.back;
         self.silent.retain(|tuple, silence| {
             if silent_now.iter().any(|(t, _)| t == tuple) {
                 return true;
@@ -2351,12 +2484,13 @@ impl Measured {
             if !open(tuple) {
                 return false;
             }
-            if silence.answered.is_none()
-                && rtts.values().any(|r| r.road == *tuple && r.at > silence.judged)
-            {
-                silence.answered = Some(now);
+            let held = silence
+                .answered
+                .is_none_or(|at| now < at + SILENT_HOLD && !quick.contains(tuple));
+            if !held {
+                back.insert(tuple.clone(), now);
             }
-            silence.answered.is_none_or(|at| now < at + SILENT_HOLD)
+            held
         });
     }
 
@@ -2931,29 +3065,97 @@ mod tests {
     fn a_silent_road_answers_again_after_the_hold() {
         let road = addr(1);
         let open = |_: &transports::FourTuple| true;
+        let slow = |_: &transports::FourTuple, _: &Measured| false;
         let mut m = Measured::default();
         let t0 = Instant::now();
-        m.mark_silent(t0, &[(road.clone(), t0 - MS(300))], open);
+        m.mark_silent(t0, &[(road.clone(), t0 - MS(300))], open, slow);
         assert_eq!(m.silent[&road].stall(t0 + MS(100)), MS(400), "the stall counts from the packet");
-        m.mark_silent(t0 + MS(250), &[], open);
+        m.mark_silent(t0 + MS(250), &[], open, slow);
         assert!(m.silent[&road].answered.is_none(), "no round trip yet");
         m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t0 + MS(400)));
-        m.mark_silent(t0 + MS(500), &[], open);
+        m.mark_silent(t0 + MS(500), &[], open, slow);
         assert_eq!(m.silent[&road].answered, Some(t0 + MS(500)));
         assert_eq!(m.silent[&road].stall(t0 + MS(900)), MS(800), "the stall ends when it answered");
-        m.mark_silent(t0 + MS(1200), &[], open);
+        m.mark_silent(t0 + MS(1200), &[], open, slow);
         assert!(m.silent.contains_key(&road), "held for a second");
-        m.mark_silent(t0 + MS(1300), &[(road.clone(), t0 + MS(1000))], open);
+        m.mark_silent(t0 + MS(1300), &[(road.clone(), t0 + MS(1000))], open, slow);
         assert!(m.silent[&road].answered.is_none(), "silent again: the hold starts over");
         m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t0 + MS(1400)));
-        m.mark_silent(t0 + MS(1500), &[], open);
-        m.mark_silent(t0 + MS(2400), &[], open);
+        m.mark_silent(t0 + MS(1500), &[], open, slow);
+        m.mark_silent(t0 + MS(2400), &[], open, slow);
         assert!(m.silent.contains_key(&road));
-        m.mark_silent(t0 + MS(2500), &[], open);
+        m.mark_silent(t0 + MS(2500), &[], open, slow);
         assert!(!m.silent.contains_key(&road), "a second of answering");
-        m.mark_silent(t0 + MS(2600), &[(road.clone(), t0 + MS(2300))], open);
-        m.mark_silent(t0 + MS(2700), &[], |_| false);
+        m.mark_silent(t0 + MS(2600), &[(road.clone(), t0 + MS(2300))], open, slow);
+        m.mark_silent(t0 + MS(2700), &[], |_| false, slow);
         assert!(m.silent.is_empty(), "a road no connection has is forgotten");
+    }
+
+    /// carry (10-23): a road back from a stall that is the one in use, or far faster than it,
+    /// is a candidate at its first round trip; one that goes silent again within [`REHOLD`] of
+    /// being back waits out [`SILENT_HOLD`] however fast it reads, and after `REHOLD` it is
+    /// quick again.  netlab f4: the carried road through m answered 174 ms against a relay of
+    /// 856 ms, and waited out the hold on the relay.
+    #[test]
+    fn a_road_far_faster_than_the_one_in_use_is_back_at_its_first_round_trip() {
+        let road = addr(1);
+        let open = |_: &transports::FourTuple| true;
+        let fast = |_: &transports::FourTuple, _: &Measured| true;
+        let mut m = Measured::default();
+        let t0 = Instant::now();
+        m.mark_silent(t0, &[(road.clone(), t0 - MS(300))], open, fast);
+        m.mark_silent(t0 + MS(250), &[], open, fast);
+        assert!(m.silent.contains_key(&road), "no round trip yet: still silent");
+        m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t0 + MS(400)));
+        m.mark_silent(t0 + MS(500), &[], open, fast);
+        assert!(!m.silent.contains_key(&road), "back at its first round trip");
+        // Silent again five seconds on: off and on, so held.
+        let t1 = t0 + MS(5500);
+        m.mark_silent(t1, &[(road.clone(), t1 - MS(300))], open, fast);
+        m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t1 + MS(400)));
+        m.mark_silent(t1 + MS(500), &[], open, fast);
+        assert!(m.silent.contains_key(&road), "silent again within REHOLD: held");
+        m.mark_silent(t1 + MS(1400), &[], open, fast);
+        assert!(m.silent.contains_key(&road), "held for a second");
+        m.mark_silent(t1 + MS(1500), &[], open, fast);
+        assert!(!m.silent.contains_key(&road), "a second of answering");
+        // Long after it was last back, a stall is one stall again.
+        let t2 = t1 + MS(1500) + REHOLD;
+        m.mark_silent(t2, &[(road.clone(), t2 - MS(300))], open, fast);
+        m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t2 + MS(400)));
+        m.mark_silent(t2 + MS(500), &[], open, fast);
+        assert!(!m.silent.contains_key(&road), "quick again after REHOLD");
+        // And a road that is neither in use nor far faster keeps the hold.
+        let other = addr(2);
+        let slow = |_: &transports::FourTuple, _: &Measured| false;
+        m.mark_silent(t2 + MS(600), &[(other.clone(), t2 + MS(300))], open, slow);
+        m.rtts.insert((ConnId(1), PathId::ZERO), reading(&other, t2 + MS(700)));
+        m.mark_silent(t2 + MS(800), &[], open, slow);
+        assert!(m.silent.contains_key(&other), "not quick: held");
+    }
+
+    /// carry (10-23): a copy in a probe timeout's backoff is woken when its road heard anything
+    /// after the packet it waits on went out, on it or on another copy; not on a road that
+    /// heard nothing since (a blackhole).
+    #[test]
+    fn a_backed_off_copy_is_woken_when_its_road_is_heard_again() {
+        let (a, b) = (addr(1), addr(2));
+        let t0 = std::time::Instant::now();
+        let ms = |n: u64| t0 + MS(n);
+        let backed_off = vec![
+            // An idle copy of `a` whose keepalive went into the stall.
+            (ConnId(0), PathId::ZERO, a.clone(), ms(100)),
+            // The busy copy of `a`, its last probe out at 2.9 s.
+            (ConnId(1), PathId::ZERO, a.clone(), ms(2900)),
+            // `b`, still black.
+            (ConnId(1), PathId::from(1u32), b.clone(), ms(100)),
+        ];
+        let heard = vec![(a.clone(), ms(3100)), (b.clone(), ms(50))];
+        let woken: Vec<_> = to_wake(&backed_off, &heard).collect();
+        assert_eq!(woken, vec![(ConnId(0), PathId::ZERO), (ConnId(1), PathId::ZERO)]);
+        let before: Vec<_> = to_wake(&backed_off, &[(a.clone(), ms(2000))]).collect();
+        assert_eq!(before, vec![(ConnId(0), PathId::ZERO)], "heard before the busy copy's probe: only the idle one");
+        assert_eq!(to_wake(&backed_off, &[]).count(), 0, "nothing heard: nothing woken");
     }
 
     /// A short stall of the selected road starts no round; a long one does, once; and the
@@ -3068,6 +3270,13 @@ mod tests {
         assert!(matches!(m.step(&to, tick, MS(30), MS(20), yes, yes), Step::Hold { .. }), "one speed: the two seconds");
         assert!(matches!(m.step(&to, tick, MS(300), MS(150), yes, yes), Step::Hold { .. }), "twice and 10 ms is not");
         assert_eq!(m.step(&to, tick, MS(309), MS(116), yes, yes), Step::Go, "the relay at 309 ms, the hop at 116 ms");
+        // carry (10-23): sampled in the tick before the move began is sampled.
+        let mut m = Moving::default();
+        let last_tick = |after: Instant| after < t0 - MS(100);
+        assert_eq!(m.step(&to, t0, MS(856), MS(174), no, last_tick), Step::Go, "its sample of the last tick");
+        let mut m = Moving::default();
+        let older = |after: Instant| after < t0 - MS(400);
+        assert!(matches!(m.step(&to, t0, MS(856), MS(174), no, older), Step::Hold { to: true, .. }), "an older one is not");
     }
 
     /// flap (10-23): a move off a road whose round trip is longer than [`CONFIRM_FOR`] (a relay
