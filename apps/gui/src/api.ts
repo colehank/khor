@@ -806,6 +806,9 @@ export const compose = (typed: string, files: string[] = []) => call<string>("po
 export const machineLog = (id: string) => call<MachineLog>("machine_log", { id });
 export type { ConsoleCommand, ConsoleChoice, ConsoleCompletion };
 export const consoleCatalog = () => call<ConsoleCommand[]>("console_catalog");
+export type { KhorAgentView } from "./gen/bindings/KhorAgentView";
+export const khorAgent = (action: string, machine = "", payload: Record<string, unknown> = {}) =>
+  call<import("./gen/bindings/KhorAgentView").KhorAgentView>("khor_agent", { action, machine, payload });
 export const consoleComplete = (line: string, caret: number) => call<ConsoleCompletion>("console_complete", { line, caret });
 export const consoleRun = (line: string, token: string, input?: string) =>
   call<string>("console_run", { line, token, ...(input === undefined ? {} : { input }) });

@@ -142,6 +142,9 @@ pub enum GuiOp {
     Part(serde_bytes::ByteBuf),
     /// The slices sent so far are one op: run it. Tail-appended.
     Parts,
+    /// Authenticated local controller starts one durable A2A input. Tail-only;
+    /// old hosts refuse it, and the controller reports that failure.
+    Delegate { task: String, message: String },
 }
 
 /// How big one [`GuiOp::Part`] is: well under the host's frame cap, and
@@ -339,6 +342,8 @@ pub enum GuiNote {
     /// nothing to set is most agents, and silence is their honest
     /// shape. Tail-appended.
     Settings(String),
+    /// Sent only to a client which used Delegate; never broadcast to old faces.
+    Delegated { task: String, why: Option<String> },
 }
 
 /// The two keys [`GuiNote::Refused`] travels under. Constants rather
@@ -619,7 +624,7 @@ pub fn gui_host_main(
 ) -> Result<(), String> {
     let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
         .map_err(|e| e.to_string())?;
-    let live = LiveKind::new(root, khor_core::DeviceId(*key.public().as_bytes()));
+    let live = LiveKind::new(root.clone(), khor_core::DeviceId(*key.public().as_bytes()));
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -825,6 +830,10 @@ pub fn gui_host_main(
         let (set_tx, mut set_rx) =
             tokio::sync::mpsc::unbounded_channel::<(u64, Result<Setting, String>)>();
         let handle = Arc::new(handle);
+        let mut delegated: Option<crate::delegation::HostedTask> = None;
+        let mut cancellation_sent: Option<std::time::Instant> = None;
+        let mut delegation_tick = tokio::time::interval(std::time::Duration::from_millis(200));
+        delegation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
                 // Biased, events first: a turn's last update and its end
@@ -841,6 +850,9 @@ pub fn gui_host_main(
                         }
                         if matches!(n.update, SessionUpdate::UsageUpdate(_)) {
                             usage = Some(json.clone());
+                        }
+                        if let Some(task) = &mut delegated {
+                            if let Err(error) = task.note(&json) { break Some(error); }
                         }
                         fanout.send(&GuiNote::Note(json));
                         // The agent moving its own settings: the note
@@ -877,12 +889,15 @@ pub fn gui_host_main(
                         let n = next_ask;
                         next_ask += 1;
                         let title = ask.request.tool_call.fields.title.clone().unwrap_or_default();
-                        let options = ask
+                        let options: Vec<(String, String)> = ask
                             .request
                             .options
                             .iter()
                             .map(|o| (o.option_id.0.to_string(), o.name.clone()))
                             .collect();
+                        if let Some(task) = &mut delegated {
+                            if let Err(error) = task.ask(n, &title, &options) { break Some(error); }
+                        }
                         let note = GuiNote::Ask { ask: n, title, options };
                         fanout.send(&note);
                         asks.push((n, ask, note));
@@ -922,7 +937,39 @@ pub fn gui_host_main(
                         }
                     }
                 }
+                _ = delegation_tick.tick(), if delegated.is_some() => {
+                    if cancellation_sent.is_some_and(|at| at.elapsed() >= std::time::Duration::from_secs(10)) {
+                        break Some("ACP did not acknowledge cancellation; closing its host".into());
+                    }
+                    if cancellation_sent.is_none() && delegated.as_ref().is_some_and(|task| task.cancel_requested()) {
+                        cancellation_sent = Some(std::time::Instant::now());
+                        let _ = handle.cancel();
+                        asks.clear(); // Dropping permission senders cancels pending asks.
+                    }
+                }
                 op = ops_rx.recv() => match op {
+                    Some((who, GuiOp::Delegate { task, message })) => {
+                        if in_turn.is_some() {
+                            fanout.send_to(who, &GuiNote::Delegated { task, why: Some("ACP session already has a running turn".into()) });
+                            continue;
+                        }
+                        match crate::delegation::HostedTask::claim(&root, &id, &task, &message) {
+                            Ok((execution, text)) => {
+                                delegated = Some(execution);
+                                cancellation_sent = None;
+                                let _ = live.report(&id, State::Busy, Source::Reported);
+                                let handle = handle.clone();
+                                let turn_tx = turn_tx.clone();
+                                in_turn = Some(tokio::spawn(async move {
+                                    let out = handle.prompt(&text).await.map(|stop| format!("{stop:?}"));
+                                    let _ = turn_tx.send(out);
+                                }));
+                                fanout.send_to(who, &GuiNote::Delegated { task, why: None });
+                                fanout.send(&GuiNote::Turning);
+                            }
+                            Err(why) => fanout.send_to(who, &GuiNote::Delegated { task, why: Some(why) }),
+                        }
+                    }
                     // **One arm for both.** `SayWith` is `Say` with a
                     // list that is usually empty, and splitting the
                     // handler would be two copies of the turn-in-flight
@@ -971,6 +1018,13 @@ pub fn gui_host_main(
                         // Every face learns the answer, including the
                         // ones that arrive afterwards: the record of a
                         // settled permission outlives the answering.
+                        if let Some(task) = &mut delegated {
+                            let result = match asks.last() {
+                                Some((n, _, GuiNote::Ask { title, options, .. })) => task.ask(*n, title, options),
+                                _ => task.answered(),
+                            };
+                            if let Err(error) = result { break Some(error); }
+                        }
                         fanout.send(&GuiNote::Answered { ask, option });
                         if asks.is_empty() {
                             // 待批答才清 — and it clears to 忙碌: the
@@ -986,6 +1040,7 @@ pub fn gui_host_main(
                         // its own `Turn` note.
                         if in_turn.is_some() {
                             let _ = handle.cancel();
+                            if delegated.is_some() { asks.clear(); }
                         } else {
                             // Nothing to stop. A face that got here is
                             // holding a stop button over a turn that is
@@ -1050,6 +1105,12 @@ pub fn gui_host_main(
                 },
                 turn = turn_rx.recv() => {
                     in_turn = None;
+                    cancellation_sent = None;
+                    if let Some(mut task) = delegated.take() {
+                        let stop = match &turn { Some(Ok(stop)) => stop.as_str(), Some(Err(why)) => why.as_str(), None => "ACP turn disconnected" };
+                        if let Err(error) = task.finish(stop) { break Some(error); }
+                    }
+                    asks.clear();
                     match turn {
                         Some(Ok(stop)) => {
                             let word = match stop.as_str() {

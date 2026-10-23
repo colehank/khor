@@ -185,6 +185,7 @@ pub fn run(root: &Path, line: &str, token: &str, input: Option<&str>) -> Result<
         data_json: None,
         session: None,
         error: None,
+        agent: None,
     };
     let mut stored = Stored {
         fingerprint,

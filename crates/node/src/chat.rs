@@ -128,11 +128,13 @@ impl ChatKind {
             // retracted one is skipped (its slot stays, its words must
             // not); a kind this version cannot read previews as nothing
             // rather than as blank text (MsgBody::Unknown's rule).
-            last: msgs
-                .iter()
-                .rev()
-                .filter(|m| !m.retracted)
-                .find_map(|m| match &m.body {
+            last: msgs.iter().rev().filter(|m| !m.retracted).find_map(|m| {
+                if let Some(c) = &m.command {
+                    if c.agent.is_some() && !c.stdout.is_empty() {
+                        return Some(khor_core::preview(&c.stdout));
+                    }
+                }
+                match &m.body {
                     khor_sync::chat::MsgBody::Text(t) => Some(khor_core::preview(t)),
                     khor_sync::chat::MsgBody::Files(fs) => Some(khor_core::preview(
                         &fs.iter()
@@ -141,7 +143,8 @@ impl ChatKind {
                             .join(" "),
                     )),
                     khor_sync::chat::MsgBody::Unknown(_) => None,
-                }),
+                }
+            }),
             via: None,
             term: false,
             // **No place, and that is not a gap.** A conversation with
@@ -230,6 +233,17 @@ impl ChatKind {
             messages: loaded.doc.messages(),
             broken: loaded.broken.len(),
         })
+    }
+
+    pub fn agent_config(&self) -> Result<Option<khor_sync::chat::AgentConfig>, String> {
+        Ok(self.load(crate::wide::BROADCAST)?.doc.agent_config())
+    }
+
+    pub fn set_agent_config(&self, config: &khor_sync::chat::AgentConfig) -> Result<(), String> {
+        let loaded = self.load(crate::wide::BROADCAST)?;
+        loaded.doc.set_agent_config(config)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
     }
 
     pub fn command(&self, channel: &str, record: &khor_sync::chat::CommandRecord) -> Result<String, String> {

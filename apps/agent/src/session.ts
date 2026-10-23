@@ -1,12 +1,6 @@
 /**
- * Assembles the agent: verb table from the binary, gate over the
- * table, two tools over the gate, pi's Agent over the tools.
- *
- * The seat this is built for is a conversation session under
- * `khor serve` (docs/AGENT.md): same host, same six words, and the
- * gate's asks surfacing as that session's 待批.  The Approver is the
- * hinge — the serve host implements it with the session primitive,
- * dev.ts implements it with a terminal prompt.
+ * Legacy CLI/gate development harness used by dev.ts. The shipping
+ * khor agent uses host.ts and the Rust-owned MCP execution boundary.
  */
 import { Agent } from "@earendil-works/pi-agent-core";
 import { Gate, type Mode, type VerbTable } from "./gate.ts";

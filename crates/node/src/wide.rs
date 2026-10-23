@@ -214,21 +214,37 @@ impl KindSurface for WideKind {
         // (`ChatKind::row_from`'s `last`): a retracted slot has no word.
         let me = node.device_str();
         let kept = Kept::read(&msgs);
-        let pressed = msgs
-            .iter()
-            .rev()
-            .find(|m| !m.retracted)
+        let active_agent = msgs.iter().rev().find(|m| {
+            !m.retracted
+                && m.command.as_ref().is_some_and(|c| {
+                    c.agent.is_some()
+                        && c.ended_at_ms.is_none()
+                        && matches!(c.status.as_str(), "running" | "blocked")
+                })
+        });
+        if let Some(c) = active_agent.and_then(|m| m.command.as_ref()) {
+            row.last = Some(khor_core::preview(if c.stdout.is_empty() {
+                &c.line
+            } else {
+                &c.stdout
+            }));
+        }
+        let pressed = active_agent
+            .or_else(|| msgs.iter().rev().find(|m| !m.retracted))
             .and_then(|m| {
                 if let Some(c) = &m.command {
                     let word = match c.status.as_str() {
                         "running" => State::Busy,
+                        "blocked" if c.agent.is_some() => State::Blocked,
                         "failed" => State::Failed,
                         "interrupted" => State::Errored,
                         _ => return None,
                     };
                     return Some((word, m.at));
                 }
-                if m.from.id == me || bytes(m).is_none() { return None; }
+                if m.from.id == me || bytes(m).is_none() {
+                    return None;
+                }
                 let word = match kept.fate(m, me)?.step {
                     Step::Moving => State::Busy,
                     Step::Failed => State::Errored,

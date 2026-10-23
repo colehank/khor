@@ -37,6 +37,7 @@ fn command(node: &Node, id: &str, at: i64) -> CommandRecord {
         data_json: None,
         session: None,
         error: None,
+        agent: None,
     }
 }
 fn row(node: &Node) -> khor_node::SessionView {
@@ -99,6 +100,67 @@ fn same_id_new_command_result_requires_its_own_rendered_receipt() {
         "an old rendered version must not acknowledge new output"
     );
     node.seen_snapshot(&board, &[version(&command)]).unwrap();
+    assert_eq!(row(&node).session.unread, 0);
+}
+
+#[test]
+fn a_later_file_or_note_does_not_hide_an_agent_waiting_for_approval() {
+    let scratch = Scratch::new();
+    let node = Node::open_as(scratch.0.clone(), "agent-snapshot").unwrap();
+    let mut record = command(&node, "active-agent", 100);
+    record.status = "blocked".into();
+    record.stdout = "current agent answer".into();
+    record.agent = Some(khor_node::AgentTurn {
+        model: "fixture".into(),
+        approval: None,
+        updated_at_ms: 101,
+    });
+    node.record_command(&record).unwrap();
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(node.note("a later note", &[]))
+        .unwrap();
+    let session = row(&node).session;
+    assert_eq!(session.state.state, khor_core::State::Blocked);
+    assert_eq!(session.last.as_deref(), Some("current agent answer"));
+}
+
+#[test]
+fn agent_progress_and_approval_have_their_own_visible_versions() {
+    let scratch = Scratch::new();
+    let node = Node::open_as(scratch.0.clone(), "agent-snapshot").unwrap();
+    let board = SessionId(khor_node::wide::BROADCAST.into());
+    let mut record = command(&node, "agent-progress", 100);
+    record.agent = Some(khor_node::AgentTurn {
+        model: "fixture".into(),
+        approval: None,
+        updated_at_ms: 100,
+    });
+    node.record_command(&record).unwrap();
+    let old = SeenMessage {
+        id: record.id.clone(),
+        at_ms: 100,
+    };
+    node.seen_snapshot(&board, &[old.clone()]).unwrap();
+    record.status = "blocked".into();
+    record.agent.as_mut().unwrap().updated_at_ms = 101;
+    record.agent.as_mut().unwrap().approval = Some(khor_node::AgentApproval {
+        id: "ask".into(),
+        tool: "close".into(),
+        arguments: "{}".into(),
+    });
+    node.record_command(&record).unwrap();
+    node.seen_snapshot(&board, &[old]).unwrap();
+    assert_eq!(row(&node).session.unread, 1);
+    assert_eq!(row(&node).session.state.state, khor_core::State::Blocked);
+    node.seen_snapshot(
+        &board,
+        &[SeenMessage {
+            id: record.id,
+            at_ms: 101,
+        }],
+    )
+    .unwrap();
     assert_eq!(row(&node).session.unread, 0);
 }
 

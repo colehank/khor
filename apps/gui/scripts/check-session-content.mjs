@@ -1,5 +1,6 @@
 // Real App + private node/PTYs. Transport is the existing dev bridge;
 // native page overlay/borrow rendering requires desktop app acceptance.
+import {openTabs} from "./deck-gestures.mjs";
 import assert from 'node:assert/strict';
 import {spawn,execFileSync} from 'node:child_process';
 import {mkdirSync,writeFileSync,readFileSync,copyFileSync,rmSync} from 'node:fs';
@@ -109,7 +110,7 @@ try{ checks:{
   assert.equal(await child(secondId).getByRole('tab').getAttribute('aria-selected'),'true','reorder changed the active document');
   await child(activeBlank).getByRole('tab').click();assert.equal(await shown().getAttribute('data-content-handle'),firstHandle);
   // Browsing from an opened file preserves that file and opens a separate website tab.
-  await shown().locator('[data-file-more]').click();await page.locator('[data-file-more-item=content-browse]').click();await picker().waitFor();
+  await shown().locator('[data-file-back]').click();await picker().waitFor();
   await picker().locator('[data-content-scope]:visible').click();await page.locator('[data-content-source=browser]').click();
   const address=()=>picker().locator('[data-page-address]');
   await address().focus();await address().fill('http://localhost:'+port);await address().press('Enter');
@@ -130,12 +131,12 @@ try{ checks:{
   await api('tabs_pin',{kind:'content',id:pin.id,on:false});await child(pin.id).locator('[data-tab-close]').waitFor();
   // Wide→narrow uses the same persisted tabs and per-tab locations.
   await page.setViewportSize({width:390,height:800});await picker().waitFor();
-  await page.locator('[data-content-overview-button]:visible').click();
+  await openTabs(page);
   const overview=()=>page.locator('[data-content-overview]:not(.session-content-retained)');
   await overview().waitFor();assert.equal(await overview().locator('[data-content-overview-tab]').count(),5);
   await overview().locator('[data-tab-sheet-new]').click();await picker().waitFor();
   await until(async()=>(await peers(sessions[0])).length===6);
-  await page.locator('[data-content-overview-button]:visible').click();await overview().waitFor();
+  await openTabs(page);await overview().waitFor();
   await overview().locator('[data-content-overview-search]').click();await overview().getByRole('searchbox').fill('extra-03');
   assert.equal(await overview().locator('[data-content-overview-tab]').count(),1);
   await overview().getByRole('searchbox').fill('');await overview().locator('[data-content-edit-end]').click();

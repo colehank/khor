@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/a2a",
     "crates/acp",
     "crates/core",
     "crates/catalog",
@@ -29,6 +30,7 @@ version = "0.1.14"
 edition = "2024"
 
 [workspace.dependencies]
+khor-a2a = { path = "crates/a2a" }
 khor-core = { path = "crates/core" }
 khor-catalog = { path = "crates/catalog" }
 khor-detect = { path = "crates/detect" }

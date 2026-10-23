@@ -3,15 +3,18 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "khor's own in-app agent: Pi embedded over the khor CLI, with the approval gate at the tool layer",
+  "description": "khor agent: Pi SDK sessions with Rust-owned network tools and approvals",
   "scripts": {
+    "build": "node build.mjs",
     "check": "tsc --noEmit",
     "test": "tsc --noEmit && node --test test/*.test.ts",
     "dev": "node src/dev.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.85.1",
-    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-agent-core": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-mcp": "1.4.0",
     "typebox": "1.3.7"
   },
   "devDependencies": {

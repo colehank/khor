@@ -349,6 +349,10 @@ usage = """
                         known 看随包带的 ACP 注册表快照；@<id> 直接用快照里那条命令。
                         sessions 看它有哪些对话（读记下来的；--ask 才真去问，那会起一个进程）；
                         问过的答案全网同步，别的机器不用再起一遍
+  agents connect <名字> <地址> [--token-stdin]
+                        在本机连接 A2A 智能体，对方服务无需安装 khor
+  agents disconnect a2a:<名字>
+                        断开本机登记，保留任务回执
   state <词|--hook>     （给进程钩子用）汇报状态；--hook 从标准输入读 Claude 事件
   seen <session>        标已读
   rename [-m] <session|机器> [名字...]
@@ -1392,6 +1396,21 @@ console-token-conflict = "这个提交标识已用于另一条命令"
 console-interrupted = "执行进程已退出；此命令未自动重试"
 console-private = "此命令的参数和结果仅在执行设备查看"
 console-unknown = "未知命令：{0}"
+mcp-read = "读取指定设备上的文本文件，最多读取 48 KiB，并明确报告截断"
+mcp-search = "在指定设备的目录中搜索文件名和文本内容，只读操作"
+agent-text-file = "这个工具只能读取 UTF-8 文本文件"
+agent-busy = "khor 正在处理任务，完成或停止后再试"
+agent-not-running = "这个任务已经结束"
+agent-not-configured = "先为 khor 选择账户和模型"
+agent-key-missing = "这个账户的 API key 不在执行设备，或账户不支持 API 调用"
+agent-model-required = "填写模型名称"
+agent-runtime-missing = "khor agent 运行组件未安装"
+agent-runtime-failed = "khor agent 无法启动：{0}"
+agent-failed = "khor agent 意外退出"
+agent-arguments = "khor agent 收到无效参数"
+agent-approval-expired = "这项批准请求已经结束"
+agent-stopped = "任务已停止；已经提交的操作可能已经生效"
+agent-declined = "用户拒绝了这项操作，不要重新提交相同操作"
 console-output-cut = "输出过长，已截取显示"
 # ── the watch list (关注目录) ──
 # Refused at the one write entry (`Node::set_watch`), so the CLI and the
@@ -2561,6 +2580,15 @@ mcp-open-cwd = "在哪个目录里运行；省略则为那台机器的主目录"
 mcp-close = "关闭一个 session。**这会结束那台机器上的进程。**"
 mcp-close-session = "要关闭的 session 的 id"
 mcp-tell = "给某台机器的窗口留一句话。**对方会看到它。**"
+mcp-agents = "列出本机的 ACP 和原生 A2A 智能体，也可用 machine 选择已配对 khor 机器。A2A Card 包含技能与所选 HTTP 接口。available 只表示已配置或找到程序，不代表当前可达或已完成认证。"
+mcp-agent-disconnect = "断开指定 khor 机器上的 a2a:<名字> 登记，省略 machine 表示本机。已有任务回执仍可查询和取消。"
+mcp-agent-connect = "按 Agent Card 地址或服务根地址连接原生 A2A v1 智能体，对方机器无需安装 khor。返回名字 a2a:<名字>。省略 machine 表示当前 khor 执行机器。参数不收密钥；Bearer 认证在本机用 khor agents connect <名字> <地址> --token-stdin 配置。"
+mcp-delegate = "委派给登记的 ACP 智能体或原生 a2a:<名字> 智能体。省略 machine 表示当前 khor 执行机器；原生 A2A 对方机器无需 khor。启动不等于完成，用 task_wait 等到结束或需要输入。context 用于后续任务；A2A 同任务追问用 task 加用户答复和新的 request。不得推断用户已批准。响应不确定时仅用完全相同参数和 request 查回，A2A 不盲目重发。"
+mcp-task-status = "读取委派任务的持久状态、部分输出、revision 和待批请求。"
+mcp-task-wait = "等待任务更新、结束或需要输入，revision 填最新十进制字符串。ACP 的 khor.approval 先问用户再 task_answer。A2A 的 TASK_STATE_INPUT_REQUIRED 先问用户，再以 delegate 携带 task、context、用户答复和新的 request 继续。AuthRequired 可能需要配置认证。"
+mcp-task-cancel = "请求停止委派任务。继续确认任务状态；已提出停止请求不等于智能体已经停止。"
+mcp-task-answer = "得到用户批准后，回答指定的 ACP 审批。ask 填原请求编号，option 填所列选项 ID；省略 option 表示拒绝。发起委派本身不代表用户批准了后续操作。"
+mcp-task-list = "列出当前调用设备的指定智能体任务回执，可按 context 或 after 筛选。后续页使用返回的 next。原生 A2A 列表是本地回执缓存（cached=true），用 task_status 或 task_wait 获取最新状态。"
 # 列目录被截断时的最后一行:不许悄悄截断,这条规矩对模型也成立。
 mcp-listing-cut = "…（还有更多，没有列全）"
 mcp-open-needs-command = "open 需要一条命令"
@@ -2760,6 +2788,15 @@ recognition-user-config = "已由其他方式配置"
 recognition-removed-note = "撤销只恢复 khor 修改的配置，保留后来的手动修改"
 recognition-open = "配置识别"
 thread-unbound = "识别受限"
+agent-setup = "配置 khor"
+agent-setup-hint = "khor 在账户所在设备处理任务并保存上下文；切换设备会使用另一份上下文"
+agent-add-key = "从左上角 ＋ 登记 API 账户，再回来选择"
+agent-account = "账户"
+agent-model = "模型名称"
+agent-deny = "拒绝"
+agent-approve-hint = "批准后执行以下操作"
+agent-choose-first = "先在输入框下方配置 khor 的账户和模型"
+agent-placeholder = "交给 khor，或输入 / 运行命令"
 console-input = "附加输入"
 console-input-hint = "输入仅发给执行设备"
 console-owner = "执行于 {0}"
@@ -5159,6 +5196,9 @@ close-tab = "关闭标签页"
 # button, and pressing it is the only way to another tab on a face that
 # shows one at a time.
 switch-tabs = "{0} 个标签页"
+deck-all-tabs = "全部标签"
+deck-gesture = "上滑打开全部标签，长按后左右轻拨切换，回中暂停，松手确认；上方向键打开全部标签"
+deck-preview = "候选：{0}"
 # The address bar's name, standing in as its hint. **One control, two
 # states** — a resting face, and a box with completions once it is
 # pressed. A second box beside it would be the two-search-fields

@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+khor-a2a.workspace = true
+# Official A2A v1 HTTP client (Apache-2.0), sharing the pinned core types.
+a2a-client = { package = "a2a-client-lf", version = "=0.2.9" }
 khor-acp = { path = "../acp" }
 agent-client-protocol = { version = "3.5", features = ["process", "stdio"] }
 khor-core.workspace = true
@@ -130,6 +133,12 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "
 dispatch2 = "0.3"
 
 [dev-dependencies]
+tiny_http = "0.12"
+# Independent official HTTP server for native-agent interoperability tests.
+# Apache-2.0; axum is MIT, futures is MIT OR Apache-2.0.
+a2a-server = { package = "a2a-server-lf", version = "=0.5.3", default-features = false }
+axum = "0.8"
+futures = "0.3"
 # The tests' own relay (`tests/util`'s `hermetic`): iroh-relay's server
 # in plain HTTP on loopback, the one `khor relay --dev` embeds — already
 # in the tree under the CLI, so no new package. Every scratch home binds
@@ -139,4 +148,9 @@ iroh-relay = { version = "1.2.0", features = ["server"] }
 # Opt-in real native GUI/TUI round trip, re-executing this test as its hosts.
 [[test]]
 name = "native_handoff"
+harness = false
+
+# Re-executes itself as detached ACP hosts for real delegation round trips.
+[[test]]
+name = "delegation_wire"
 harness = false

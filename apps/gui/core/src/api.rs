@@ -74,6 +74,12 @@ pub fn answer(
             .ok_or_else(|| format!("missing number arg: {name}"))
     };
     match cmd {
+        "khor_agent" => to_json(&rt.block_on(crate::khor_agent(
+            root,
+            &arg("machine")?,
+            &arg("action")?,
+            args.get("payload").ok_or("missing payload")?,
+        ))?),
         "console_catalog" => to_json(&crate::console::catalog()),
         "console_complete" => to_json(&rt.block_on(crate::console_complete::complete(root, &arg("line")?, num("caret")? as usize))?),
         "console_run" => to_json(&crate::console::run(root, &arg("line")?, &arg("token")?, opt_str("input")?.as_deref())?),

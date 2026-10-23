@@ -86,7 +86,8 @@ const SEATS = [
   "[data-session-deck] [data-page-step=\"forward\"]",
   "[data-session-deck] [data-deck-title]",
   "[data-session-deck] [data-page-step=\"reload\"]",
-  "[data-session-deck] [data-deck-tabs]",
+  // Seat 5 belonged to the removed tabs circle. Keep later wire seats stable.
+  ":not(*)",
   "[data-session-bar] [data-deck-strip]",
   // A page that could not be opened (UX-22).
   "[data-session-deck] [data-page-retry]",
@@ -96,6 +97,14 @@ const SEATS = [
 export function seatControl(screen: HTMLElement, seat: number): HTMLElement | null {
   const sel = SEATS[seat];
   return sel ? screen.querySelector<HTMLElement>(sel) : null;
+}
+
+/** The iPhone page's upward title swipe uses the DOM band's same action. */
+export function openDeckOverview(screen:HTMLElement):boolean {
+  const band=screen.querySelector<HTMLElement>('[data-deck-band]');
+  if(!band)return false;
+  band.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}));
+  return true;
 }
 
 /** An inline SVG as a PNG at the screen's scale, its `currentColor` the

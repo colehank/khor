@@ -1591,6 +1591,15 @@ define_class!(
             said(deck, &seat.to_string());
         }
 
+        // The recognizer belongs to the title's hit area, so it keeps
+        // tracking when an upward swipe leaves the pill's rectangle.
+        #[unsafe(method(overview:))]
+        fn overview(&self, rec: *mut AnyObject) {
+            let title: *mut AnyObject = unsafe { msg_send![rec, view] };
+            let deck: *mut AnyObject = unsafe { msg_send![title, superview] };
+            said(deck, "overview");
+        }
+
         // SAFETY: a gesture recogniser's action with the recogniser.
         #[unsafe(method(swipe:))]
         fn swipe(&self, rec: *mut AnyObject) {
@@ -1773,6 +1782,13 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
                 let _: () = msg_send![&*b, setTag: h.seat as isize];
                 // 64: UIControlEventTouchUpInside.
                 let _: () = msg_send![&*b, addTarget: &**target, action: objc2::sel!(hit:), forControlEvents: 64usize];
+                if h.seat == 3 {
+                    let a: Allocated<AnyObject> = msg_send![class!(UISwipeGestureRecognizer), alloc];
+                    let rec: Retained<AnyObject> = msg_send![a, initWithTarget: &**target, action: objc2::sel!(overview:)];
+                    // UISwipeGestureRecognizerDirectionUp (1 << 2).
+                    let _: () = msg_send![&*rec, setDirection: 4usize];
+                    let _: () = msg_send![&*b, addGestureRecognizer: &*rec];
+                }
                 let _: () = msg_send![&*view, addSubview: &*b];
             }
             if pill.is_some() {

@@ -1,61 +1,92 @@
-/** Long-press exploration shares the pill's identities, never opens a preview. */
-import {useLayoutEffect,useRef,useState,type RefObject} from 'react';
+/** The approved shallow U, shared by root sessions, files and webpages. */
+import {useLayoutEffect,useMemo,useRef,useState,type RefObject,type CSSProperties} from 'react';
 import {createPortal} from 'react-dom';
 import {TabAvatar,type TabFace} from '@/browse/TabStrip';
+import {IconChevronUp,IconChevronRight} from '@/components/icons';
+import {gui} from '@/gen/catalog';
 import {nearbySlots} from '@/lib/deck-scrub';
+import type {DeckJoystickState} from '@/lib/deck-joystick';
+import {stillMotion} from '@/lib/travel';
 
-type Frame={left:number;top:number;width:number;height:number;center:number};
-export function DeckExplore({band,faces,position,preview,leaving}: {
-  band:RefObject<HTMLDivElement|null>;faces:TabFace[];position:number;preview:number;leaving:boolean;
-}) {
-  const title=useRef<HTMLSpanElement>(null),titleSeat=useRef<HTMLDivElement>(null);
-  const measure=():Frame=>{
-    const b=band.current;if(!b)return {left:0,top:0,width:0,height:0,center:0};
-    const r=b.getBoundingClientRect(),viewport=window.visualViewport;
-    // The explicit host only bounds component fixtures. The app uses its
-    // visible viewport; the deck itself already sits above the keyboard.
+/** Presentation follows each selected item around one continuous arc. It
+ * never delays the engine's selection, pause, reversal or release. */
+function useArcPosition(preview:number,count:number,direction:number,duration:number){
+  const [position,setPosition]=useState(preview),current=useRef(preview),target=useRef(preview),previous=useRef(preview);
+  useLayoutEffect(()=>{
+    let delta=preview-previous.current;
+    if(delta>count/2)delta-=count;if(delta<-count/2)delta+=count;
+    if(count===2&&Math.abs(delta)===1&&direction)delta=direction;
+    previous.current=preview;target.current+=delta;
+    if(stillMotion()){current.current=target.current;setPosition(target.current);return;}
+    const from=current.current,to=target.current,began=performance.now();let frame=0;
+    const tick=(now:number)=>{const p=Math.min(1,(now-began)/duration);current.current=from+(to-from)*(1-(1-p)**3);setPosition(current.current);if(p<1)frame=requestAnimationFrame(tick);};
+    frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
+  },[preview,count]);
+  return position;
+}
+
+function RateCue({side,state,x}:{side:number;state:DeckJoystickState;x:number}){
+  const active=state.direction===side&&!state.overview,level=active?state.tier:0;
+  return <span className="deck-selector-rate" data-rate-side={side} data-active={active||undefined} data-rate-level={level}
+    style={{left:x,'--cue-interval':`${state.interval}ms`} as CSSProperties} aria-hidden="true">
+    <span className="deck-selector-rate-glyphs" key={`${active}-${state.pulse}`} style={{transform:side<0?'rotate(180deg)':undefined}}>
+      {[0,1,2].map(i=><span key={i} data-lit={i<level||undefined} data-rest={level===0&&i===0||undefined} style={{'--cue-order':i} as CSSProperties}><IconChevronRight/></span>)}
+    </span>
+  </span>;
+}
+
+export function DeckExplore({band,faces,state,origin,reach,overview}:{band:RefObject<HTMLDivElement|null>;faces:TabFace[];state:DeckJoystickState;origin:number;reach:number;overview:boolean}){
+  const measure=()=>{
+    const b=band.current!,r=b.getBoundingClientRect(),viewport=window.visualViewport;
     const host=b.closest('[data-deck-explore-host]')?.getBoundingClientRect();
     const left=host?.left??viewport?.offsetLeft??0,top=host?.top??viewport?.offsetTop??0;
-    const width=host?.width??viewport?.width??document.documentElement.clientWidth;
-    const height=Math.max(0,Math.min(r.top-top,host?.height??viewport?.height??window.innerHeight));
-    const cs=getComputedStyle(b),face=parseFloat(cs.getPropertyValue('--glass-btn'))||44;
-    const line=title.current?parseFloat(getComputedStyle(title.current).lineHeight):22;
-    const gap=parseFloat(cs.getPropertyValue('--gap-base'))||8;
-    const center=Math.max(0,Math.min(Math.max(116,height*.61),height-face-2*line-3*gap));
-    return {left,top,width,height,center};
+    return {left,top,width:host?.width??viewport?.width??document.documentElement.clientWidth,height:Math.max(0,Math.min(r.top-top,host?.height??viewport?.height??window.innerHeight))};
   };
   const [frame,setFrame]=useState(measure);
   useLayoutEffect(()=>{
-    const update=()=>setFrame(measure());update();
-    const observer=new ResizeObserver(update);
-    if(band.current)observer.observe(band.current);if(titleSeat.current)observer.observe(titleSeat.current);
-    // Ancestor size changes also move a deck when a keyboard or sheet moves.
-    for(let parent=band.current?.parentElement;parent;parent=parent.parentElement)observer.observe(parent);
+    const update=()=>setFrame(measure()),observer=new ResizeObserver(update);update();
+    for(let parent:HTMLElement|null=band.current;parent;parent=parent.parentElement)observer.observe(parent);
     window.addEventListener('resize',update);window.addEventListener('scroll',update,true);window.visualViewport?.addEventListener('resize',update);window.visualViewport?.addEventListener('scroll',update);
     return()=>{observer.disconnect();window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);window.visualViewport?.removeEventListener('resize',update);window.visualViewport?.removeEventListener('scroll',update);};
   },[band]);
-  const extent=Math.min(2.6,faces.length/2),radius=Math.min(205,frame.width*.46);
-  const slots=nearbySlots(position,faces.length,3).filter(({slot})=>Math.abs(slot-position)<extent);
-  return createPortal(<div data-deck-selector data-sheet-hold data-leaving={leaving||undefined}
-    className="deck-selector" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
+  const cs=getComputedStyle(band.current!),unit=parseFloat(cs.getPropertyValue('--touch'))||44;
+  const duration=parseFloat(cs.getPropertyValue('--dur-180'))||180;
+  const position=useArcPosition(state.preview,faces.length,state.direction,duration);
+  const radius=Math.min(205,frame.width*.46),f=faces[state.preview];
+  const titleSegments=useMemo(()=>Array.from(new Intl.Segmenter('zh',{granularity:'word'}).segment(f?.label||''),piece=>piece.segment),[f?.label]);
+  const labelWidth=Math.min(2*unit,frame.width*.24);
+  const originX=origin-frame.left,pulling=state.phase==='pull',paused=state.direction===0&&!state.overview;
+  // Small sets contain each identity once, including the two-tab case.
+  const candidates=nearbySlots(position,faces.length,3).filter(s=>Math.abs(s.slot-position)<2.5);
+  const unique=new Map<number,(typeof candidates)[number]>();
+  for(const slot of candidates){const old=unique.get(slot.index);if(!old||Math.abs(slot.slot-position)<Math.abs(old.slot-position))unique.set(slot.index,slot);}
+  return createPortal(<div className="deck-selector" data-deck-selector data-sheet-hold data-overview={state.overview||undefined} data-direct-pull={pulling||undefined} style={{...frame,'--pull-progress':Math.min(1,Math.max(.15,-state.dy/48))} as CSSProperties}>
     <div className="deck-selector-dimmer"/>
-    <div role="listbox" aria-label={faces[preview]?.label} className="deck-selector-wheel" style={{top:frame.center}}>
-      {slots.map(({slot,index})=>{
-        const distance=slot-position,absolute=Math.abs(distance),focus=Math.exp(-distance*distance*.9);
-        const edge=Math.min(1,Math.max(0,(extent-absolute)/.42));
+    {!pulling&&<div className="deck-selector-wheel" data-deck-arc aria-hidden="true">
+      {[...unique.values()].map(({slot,index})=>{
+        const item=faces[index];if(!item)return null;
+        const distance=slot-position,focus=Math.exp(-distance*distance*.9),edge=Math.min(1,(2.5-Math.abs(distance))/.5);
+        // The current app's shallow U: center low, neighbors raised.
+        const absolute=Math.abs(distance);
+        // Three readable identities; peripheral faces only suggest continuity.
+        const labelOpacity=Math.max(0,Math.min(1,(absolute-.8)/.2))*Math.max(0,Math.min(1,(1.7-absolute)/.35));
         const x=Math.sin(distance*.4)*radius+Math.sign(distance)*28*(1-Math.exp(-distance*distance*3));
         const y=-((1-Math.cos(distance*.4))*radius+12*(1-Math.exp(-distance*distance*3)));
-        return <div key={slot} role="option" aria-label={faces[index].label} aria-selected={slot===Math.round(position)}
-          className="deck-selector-item" style={{transform:`translate3d(${x}px,${y}px,0)`,opacity:edge}}>
-          <span className="deck-selector-face" style={{transform:`scale(${.78+.22*focus})`,opacity:.64+.36*focus}}>
-            {!faces[index].hideFace&&<TabAvatar f={faces[index]} bare="size-list-face" seat="row"/>}
-          </span>
-          <span className="deck-selector-label" aria-hidden="true" style={{opacity:.84*Math.max(0,Math.min(1,(absolute-.55)/.25))}}>{faces[index].label}</span>
+        const labelShift=Math.max(-frame.width/2+labelWidth/2+4,Math.min(frame.width/2-labelWidth/2-4,x))-x;
+        return <div key={slot} className="deck-selector-item" data-arc-offset={slot-Math.round(position)} data-current={index===state.preview||undefined}
+          style={{transform:`translate3d(${x}px,${y}px,0)`,opacity:edge}}>
+          <span className="deck-selector-face" style={{transform:`scale(${.78+.54*focus})`,opacity:.26+.74*focus}}>{!item.hideFace&&<TabAvatar f={item} bare="size-list-face" seat="row"/>}</span>
+          <span className="deck-selector-label" style={{width:labelWidth,transform:`translateX(calc(-50% + ${labelShift}px))`,opacity:labelOpacity}}>{item.label}</span>
         </div>;
       })}
-      <div ref={titleSeat} className="deck-selector-title-seat" aria-hidden="true">
-        <span ref={title} key={faces[preview]?.id} className="deck-selector-title">{faces[preview]?.label}</span>
-      </div>
-    </div>
+      <div className="deck-selector-title-seat" data-arc-title><span key={f?.id} className="deck-selector-title">{titleSegments.map((segment,i)=>/\p{Script=Han}/u.test(segment)?<span key={i} data-title-word>{segment}</span>:segment)}</span></div>
+    </div>}
+    {overview&&<div className="deck-selector-target" data-deck-overview-target data-active={state.overview||undefined} style={{left:originX}}><IconChevronUp centred/><span>{gui.deck_all_tabs}</span></div>}
+    {!pulling&&<div className="deck-selector-steering-cues" aria-hidden="true">
+      <RateCue side={-1} state={state} x={Math.max(unit*.6,originX-reach-unit*.45)}/>
+      <span className="deck-selector-origin" data-paused={paused||undefined} style={{left:originX}}/>
+      <RateCue side={1} state={state} x={Math.min(frame.width-unit*.6,originX+reach+unit*.45)}/>
+    </div>}
+    <div className="sr-only" role="status" aria-live="polite">{state.overview?gui.deck_all_tabs:pulling?gui.deck_gesture:gui.deck_preview(f?.label||'')}</div>
   </div>,document.body);
 }

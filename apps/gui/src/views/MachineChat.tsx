@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   compose,
   consoleRun,
+  khorAgent,
+  type KhorAgentView,
   fetchDevices,
   inApp,
   machineLog,
@@ -33,6 +35,7 @@ import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat, Tip, useGrowingText } from
 import { imeKey } from "@/lib/ime";
 import { ConsoleMenu, ConsoleResult, useConsoleCompletion } from "@/views/Console";
 import { useHidden } from "@/hooks/use-hidden";
+import { KhorAgentSettings } from "@/views/KhorAgent";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
     list reads, and two different clocks would show two conversations. */
@@ -47,9 +50,9 @@ function fmtSize(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)}GB`;
 }
 
-/** The network's khor conversation: notes and files share the stream
- * with persisted public CLI command records. Slash commands are parsed
- * by the same engine as the CLI; ordinary text remains a note.
+/** The network's khor conversation: agent turns and files share the
+ * stream with durable command receipts. Slash commands use the CLI
+ * engine; natural-language tasks go to the configured agent home.
  * The shared Composer and BarSeat keep the deck and keyboard geometry. */
 export function MachineChat({ id, active = true, onSession, sessions = [] }: { id: string; active?: boolean; onSession?: (id: string) => void; sessions?: SessionRow[] }) {
   const hidden = useHidden();
@@ -64,6 +67,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   const jsonInput = /^\/state\b/.test(draft.trimStart()) && /(?:^|\s)--hook(?:\s|$)/.test(draft);
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
+  const [agent, setAgent] = useState<KhorAgentView | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
   const stickToEnd = useRef(true);
   const [atEnd, setAtEnd] = useState(true);
@@ -74,6 +78,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   useGrowingText(box, draft);
 
   const refresh = useCallback(() => {
+    void khorAgent("read").then((value) => { if (currentId.current === id) setAgent(value); }, () => {});
     machineLog(id).then(
       (l) => { if (currentId.current === id) setReadout({ id, log: l }); },
       // A poll that threw on a blip must not take the screen down;
@@ -212,7 +217,13 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
     if (text.startsWith("/") && (runToken.current?.line !== text || runToken.current?.input !== input)) {
       runToken.current = { line: text, input, token: crypto.randomUUID() };
     }
-    const posted = text.startsWith("/") ? consoleRun(text, runToken.current!.token, input) : compose(text, files);
+    const agentPrompt = !text.startsWith("/") && text.length > 0 && files.length === 0;
+    if (agentPrompt && !agent?.config) { setSending(false); setRefused(gui.agent_choose_first); return; }
+    if (agentPrompt && (runToken.current?.line !== text || runToken.current?.input !== undefined)) {
+      runToken.current = { line: text, input: undefined, token: crypto.randomUUID() };
+    }
+    const posted = text.startsWith("/") ? consoleRun(text, runToken.current!.token, input) : agentPrompt
+      ? khorAgent("prompt", agent!.config!.home, { text, token: runToken.current!.token }) : compose(text, files);
     posted.then(
       () => {
         setDraft((now) => (now.trim() === text ? "" : now));
@@ -315,10 +326,9 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           </div>
         )}
         <PendingChips items={pending} onRemove={(key) => setPending((now) => now.filter((p) => p.key !== key))} />
-        {/* **The conversation's capsule** (`Composer`, the redesign,
-            2026-10-02): ＋ to add a file, the text, and send once there is
-            something to send. No mode and no interrupt — a message has no
-            agent on the other end. */}
+        {/* The shared capsule keeps files and explicit slash input in
+            their existing slots; agent approvals and stop belong to
+            the turn whose executor owns them. */}
         <Composer
           lead={
             <Tip label={isCommand ? gui.console_input : gui.send_file}>
@@ -357,7 +367,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           aria-expanded={pickerOpen}
           // The same word the agent conversation's capsule wears: one
           // capsule, one invitation (the closing pass, 2026-10-03).
-          placeholder={gui.console_placeholder}
+          placeholder={gui.agent_placeholder}
           // Return sends, and the soft keyboard's key says so (Shift+Enter
           // on a hardware keyboard breaks the line).
           enterKeyHint="send"
@@ -406,6 +416,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           className={COMPOSER_TEXT}
         />
         </Composer>
+        <div className="flex justify-end pt-in"><KhorAgentSettings view={agent} onChanged={setAgent} disabled={log?.messages.some((m) => m.command?.agent && (m.command.status === "running" || m.command.status === "blocked")) ?? false} /></div>
       </div>
       </div>
       </BarSeat>
@@ -480,12 +491,12 @@ function MsgLine({
           {stamp}
         </div>
       )}
-    <div data-msg={m.id} className={cn("flex", m.from_me ? "justify-end" : "justify-start")}>
-      <div className="max-w-[85%]">
+    <div data-msg={m.id} className={cn("flex", m.command?.agent ? "w-full" : m.from_me ? "justify-end" : "justify-start")}>
+      <div className={m.command?.agent ? "min-w-0 w-full" : "max-w-[85%]"}>
         {/* The sender, over the bubble — the name as written, never
             re-resolved (`Sender`'s rule), and only where it informs:
             own messages sit on their own side already. */}
-        {!m.from_me && (
+        {!m.from_me && !m.command?.agent && (
           <div data-msg-from className="mb-0.5 text-caption text-muted-foreground">
             {m.from}
           </div>

@@ -1,9 +1,7 @@
 /**
- * Terminal dev loop for the khor agent — scaffolding, not the seat.
- * The real seat is a conversation session under `khor serve`
- * (docs/AGENT.md); until that host exists, this REPL is the way to sit
- * where the user will sit: same gate, same plan flow, approvals on
- * stdin instead of 待批.
+ * Legacy standalone REPL for CLI/gate development. The product runtime
+ * is host.ts: Pi SDK sessions with MCP and authorization owned by Rust.
+ * This harness keeps its explicit terminal approvals for local experiments.
  *
  * Env:
  *   KHOR_BIN             which binary to drive (default: `khor` on PATH)

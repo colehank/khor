@@ -27,6 +27,8 @@ pub mod recognition;
 pub mod config;
 pub mod cwd;
 pub mod day;
+pub mod delegation;
+pub mod a2a_http;
 pub mod doctor;
 pub mod drops;
 pub(crate) mod egress;
@@ -42,6 +44,7 @@ pub mod host;
 pub mod shell_start;
 pub mod ipc;
 pub mod keeper;
+pub mod khor_agent;
 pub mod link;
 pub mod list;
 pub mod live;
@@ -92,7 +95,7 @@ pub use khor_core::{
     WireCounts,
     UsageDay, Vitals, kind,
 };
-pub use khor_sync::chat::{CommandRecord, Fate, FileRef, Message, MsgBody, Step as FateStep};
+pub use khor_sync::chat::{AgentApproval, AgentConfig, AgentTurn, CommandRecord, Fate, FileRef, Message, MsgBody, Step as FateStep};
 pub use khor_sync::devices::DeviceInfo;
 pub use trust::{PendingRow, RootState, Standing};
 /// A relay and the key it admits by — what [`Node::set_relays`] takes.

@@ -1,0 +1,1 @@
+{"extends":"../tsconfig.json","compilerOptions":{"types":["vite/client"]},"include":["deck-joystick.tsx","deck-joystick/**/*.ts","deck-joystick/**/*.tsx"]}

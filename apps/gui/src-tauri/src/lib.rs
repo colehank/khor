@@ -488,6 +488,15 @@ fn console_catalog() -> Vec<khor_gui_core::console::ConsoleCommand> {
 }
 
 #[tauri::command]
+async fn khor_agent(
+    machine: String,
+    action: String,
+    payload: serde_json::Value,
+) -> Result<khor_gui_core::KhorAgentView, String> {
+    khor_gui_core::khor_agent(&Node::root_from_env(), &machine, &action, &payload).await
+}
+
+#[tauri::command]
 async fn console_complete(line: String, caret: usize) -> Result<khor_gui_core::console_complete::Completion, String> {
     khor_gui_core::console_complete::complete(&Node::root_from_env(), &line, caret).await
 }
@@ -4950,6 +4959,7 @@ pub fn run() {
             seen,
             seen_snapshot,
             console_catalog,
+            khor_agent,
             console_complete,
             console_run,
             close_session,

@@ -780,6 +780,11 @@ pub enum Request {
     OpenShellOnce { start: crate::shell_start::ShellStart },
     /// Logins on the asked machine, or an explicit import there. No secrets.
     Subscriptions { action: crate::subscriptions::Action },
+    /// Authenticated agent control; never executed as replayable early data.
+    KhorAgent { action: crate::khor_agent::Action },
+    /// Canonical A2A data over khor's authenticated binding. Old peers refuse
+    /// this new word; callers display that refusal and do not replay a send.
+    Delegation { #[serde(with = "crate::delegation::wire_json")] action: crate::delegation::Action },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1150,6 +1155,13 @@ pub enum Response {
         manifest: Option<crate::tree::Manifest>,
     },
     Subscriptions { answer: crate::subscriptions::Answer },
+    KhorAgent {
+        report: crate::khor_agent::Report,
+    },
+    Delegation {
+        #[serde(with = "crate::delegation::wire_json")]
+        answer: crate::delegation::Answer,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1366,6 +1378,9 @@ impl Request {
             | Request::SatWrite { .. }
             | Request::SatSearch { .. }
             | Request::SatCheckout { .. } => Duration::from_secs(30),
+            Request::Delegation {
+                action: crate::delegation::Action::Send { .. },
+            } => Duration::from_secs(40),
             Request::Open { .. }
             | Request::OpenAgent { .. }
             | Request::OpenOnce { .. }

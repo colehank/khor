@@ -12,7 +12,7 @@ import {IconBack,IconClose} from '@/components/icons';
 import {PageHistory,PageReload,usePageSteps} from '@/browse/PageControls';
 import {gui} from '@/gen/catalog';
 import type {ContentTab} from '@/hooks/use-session-content';
-import {ContentDocumentBand,ContentTabButton,type DeckOwner} from '@/views/MobileSessionContent';
+import {ContentDocumentBand,type DeckOwner} from '@/views/MobileSessionContent';
 
 export function MobileContentPage({tab,handle,device,devices,face,content,navigation,onClose,onPoint,children,desktop=false}: DeckOwner & {
   desktop?:boolean;
@@ -50,7 +50,7 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
         </>}
         {!editing&&<PageReload tab={handle} busy={busy}/>}
       </div>
-      {editing?<GlassCircle data-content-edit-end aria-label={gui.edit_done} onPointerDown={e=>e.preventDefault()} onClick={()=>{(document.activeElement as HTMLElement|null)?.blur();setEditing(false);}}><IconClose/></GlassCircle>:<ContentTabButton session={tab.session} content={content} navigation={navigation}/>}
+      {editing&&<GlassCircle data-content-edit-end aria-label={gui.edit_done} onPointerDown={e=>e.preventDefault()} onClick={()=>{(document.activeElement as HTMLElement|null)?.blur();setEditing(false);}}><IconClose/></GlassCircle>}
     </div>}
   </div>;
 }

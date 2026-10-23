@@ -105,8 +105,9 @@ test("an account's base URL moves a vendor model to that endpoint, spelled as gi
 });
 
 test("the account's key reaches pi-ai with no environment variable set", async () => {
-  const saved = process.env.ANTHROPIC_API_KEY;
-  delete process.env.ANTHROPIC_API_KEY;
+  const names = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"];
+  const saved = names.map((name) => process.env[name]);
+  for (const name of names) delete process.env[name];
   try {
     const bare = openModels({ provider: "claude" });
     assert.equal(await bare.models.getAuth("anthropic"), undefined);
@@ -115,6 +116,6 @@ test("the account's key reaches pi-ai with no environment variable set", async (
     assert.equal(auth?.auth.apiKey, "k-1");
     assert.equal(auth?.source, "stored credential");
   } finally {
-    if (saved !== undefined) process.env.ANTHROPIC_API_KEY = saved;
+    names.forEach((name, i) => { if (saved[i] === undefined) delete process.env[name]; else process.env[name] = saved[i]; });
   }
 });

@@ -1,0 +1,17 @@
+[package]
+name = "khor-a2a"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+khor-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+blake3.workspace = true
+# Official A2A v1 types, including their ProtoJSON wire spelling. Keep protocol
+# types upstream; transport and ACP executors can be added independently.
+# Apache-2.0. New transitive packages are recorded in Cargo.lock.
+a2a = { package = "a2a-lf", version = "=0.4.2" }
+
+[dev-dependencies]
+tokio.workspace = true
