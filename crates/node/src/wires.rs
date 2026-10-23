@@ -643,6 +643,17 @@ impl Wires {
             .filter(|c| c.close_reason().is_none())
     }
 
+    /// **Whether the relay keeps `id` off its carried road on measurement**
+    /// ([`khor_net::path::relay_beats_carried`]), on the live wire
+    /// [`Self::link`] reads (requests first). No live wire: true, the relay
+    /// as good as kept it.
+    pub(crate) fn relay_beats_carried(&self, id: &str) -> bool {
+        let margin = khor_net::carry::SWITCH_MARGIN.as_millis();
+        self.live(id, Proto::Main)
+            .or_else(|| self.live(id, Proto::Tunnel))
+            .is_none_or(|c| khor_net::path::relay_beats_carried(&khor_net::path::path_facts(&c), margin))
+    }
+
     /// The lock that makes a key's dials one at a time.
     pub(crate) fn dial_lock(&self, id: &str, proto: Proto) -> DialLock {
         self.dialing

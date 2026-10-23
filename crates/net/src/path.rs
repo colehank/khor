@@ -95,6 +95,24 @@ pub fn path_facts(conn: &iroh::endpoint::Connection) -> Vec<PathFact> {
     facts
 }
 
+/// **Whether the relay keeps a connection off its carried road on
+/// measurement** (carry, 2026-10-23): the relay is the selected path, and
+/// no carried path reads faster than it by `margin_ms`. A carried road that
+/// stopped answering keeps the round trip it read before (only an answer
+/// moves it), so a relay taken while the carried road stalls is not this:
+/// the hop's own watch let the middle go when the phone's leg to it was
+/// black for 3 s (netlab f4), and the connection fell back to the relay
+/// for good ten seconds after it was back on the hop. A carried path with
+/// no reading yet does not count as faster.
+pub fn relay_beats_carried(facts: &[PathFact], margin_ms: u128) -> bool {
+    let Some(relay) = facts.iter().find(|f| f.selected && f.relay) else {
+        return false;
+    };
+    !facts
+        .iter()
+        .any(|f| f.carried && f.rtt_ms > 0 && f.rtt_ms + margin_ms <= relay.rtt_ms)
+}
+
 /// Watches a connection settle into direct or relay. Hole-punching is
 /// async — connections usually start on the relay and upgrade — so
 /// judging at connect time is wrong; give it a window.
@@ -125,6 +143,31 @@ pub async fn observe_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn carried(selected: bool, rtt_ms: u128) -> PathFact {
+        PathFact {
+            relay: false,
+            carried: true,
+            selected,
+            rtt_ms,
+            addr: "Custom(khor)".into(),
+        }
+    }
+
+    /// The relay keeps a connection off its hop only when the hop, measured
+    /// end to end, is no faster: a stalled carried road reads what it read
+    /// before the stall (netlab f4: 100 ms against a relay 1.7 s late), and a
+    /// relay taken over it is not the hop losing.
+    #[test]
+    fn the_relay_beats_the_hop_only_on_measurement() {
+        assert!(!relay_beats_carried(&[path(true, true, 856), carried(false, 100)], 10), "a stalled hop");
+        assert!(relay_beats_carried(&[path(true, true, 200), carried(false, 300)], 10), "a slower hop");
+        assert!(relay_beats_carried(&[path(true, true, 200), carried(false, 195)], 10), "within the margin");
+        assert!(relay_beats_carried(&[path(true, true, 200)], 10), "no carried path");
+        assert!(relay_beats_carried(&[path(true, true, 200), carried(false, 0)], 10), "a carried path never measured");
+        assert!(!relay_beats_carried(&[path(true, false, 200), carried(true, 300)], 10), "on the hop now");
+        assert!(!relay_beats_carried(&[path(false, true, 2), path(true, false, 200)], 10), "direct");
+    }
 
     fn path(relay: bool, selected: bool, rtt_ms: u128) -> PathFact {
         PathFact {

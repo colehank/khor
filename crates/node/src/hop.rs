@@ -462,13 +462,20 @@ impl Node {
                 }
                 // Direct took over, or the relay kept it (the hop is no
                 // faster), for two looks: the middle is let go, so it
-                // carries nothing it need not.
+                // carries nothing it need not. **The relay keeps it only on
+                // measurement** (carry, 2026-10-23): one taken while the
+                // carried road stalls is not the hop losing. The phone's leg
+                // to turing black for 3 s read 「relay」 at two looks, the
+                // middle was let go as lost for ten minutes, its path closed,
+                // and the connection, back on the hop, fell to the relay for
+                // good (netlab f4).
                 let road = wires.link(&id).road;
-                held = if matches!(road, Some(khor_net::path::PathKind::Direct | khor_net::path::PathKind::Relay)) {
-                    held + 1
-                } else {
-                    0
+                let losing = match road {
+                    Some(khor_net::path::PathKind::Direct) => true,
+                    Some(khor_net::path::PathKind::Relay) => wires.relay_beats_carried(&id),
+                    _ => false,
                 };
+                held = if losing { held + 1 } else { 0 };
                 if held >= 2 {
                     if road == Some(khor_net::path::PathKind::Relay) {
                         lost(&id, &via.to_string());
