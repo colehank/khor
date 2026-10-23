@@ -207,6 +207,15 @@ impl<'de> Deserialize<'de> for AccountKind {
     }
 }
 
+/// Inference metadata only. Credentials remain on `Account.home`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Inference {
+    pub provider: String,
+    pub base_url: Option<String>,
+    pub default_model: String,
+    pub auth_type: String,
+}
+
 /// One registered account, as every machine sees it. No secret.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Account {
@@ -283,6 +292,8 @@ pub struct Account {
     /// like any other row, and only 「what kind is this」 is beyond it.
     #[serde(default)]
     pub kind: AccountKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference: Option<Inference>,
 }
 
 pub struct AccountDoc {
@@ -385,6 +396,7 @@ mod tests {
 
     fn one(id: &str, name: &str) -> Account {
         Account {
+            inference: None,
             id: id.to_owned(),
             name: name.to_owned(),
             provider: Provider::Newapi,

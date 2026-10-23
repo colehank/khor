@@ -91,7 +91,8 @@
     "file-handoff": "node scripts/check-file-handoff.mjs",
     "quicklook": "node scripts/check-file-handoff.mjs --quicklook",
     "ai-elements": "node scripts/check-ai-elements.mjs",
-    "ai-elements:preview": "vite --config scripts/ai-elements-preview.vite.ts --host 127.0.0.1 --port 23776 --strictPort"
+    "ai-elements:preview": "vite --config scripts/ai-elements-preview.vite.ts --host 127.0.0.1 --port 23776 --strictPort",
+    "pi-accounts": "node scripts/check-pi-accounts.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

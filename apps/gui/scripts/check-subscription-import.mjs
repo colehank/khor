@@ -33,7 +33,9 @@ try{
  }else if(req.url==='/import_subscription'){
  imports.push(args);assert(devices.some(d=>d.id===args.machine)&&['claude','codex'].includes(args.provider));
  await new Promise(r=>setTimeout(r,300));if(!serving&&attempts++===0){res.statusCode=500;result='turing 上的登录已失效'}else result='remote-account';
- }else if(req.url==='/register_account'){imports.push(args);result='billed-account'}
+ }else if(req.url==='/devices')result=devices;
+ else if(req.url==='/khor_agent')result={config:null,accounts:[],run:null,data:args.action==='catalog'?[]:null};
+ else if(req.url==='/register_account'){imports.push(args);result='billed-account'}
  else{res.statusCode=500;result='Unexpected fixture command '+req.url}
  res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));
  })}}]});await server.listen();
@@ -91,6 +93,7 @@ try{
   assert.deepEqual(imports,[{machine:id(2),provider:'codex'},{machine:id(2),provider:'codex'}],'one request per explicit attempt');
   assert.deepEqual(new Set(discovery),new Set(devices.map(d=>d.id)));
   await page.getByRole('button',{name:'+',exact:true}).click();
+  await page.locator('[data-quota-kind-pick="bill"]').click();
   await page.locator('[data-quota-name]').fill('Gateway');await page.locator('[data-quota-address]').fill('https://fixture.invalid');await page.locator('[data-quota-key]').fill('fixture-key');await page.locator('[data-quota-create]').click();
   await page.waitForFunction(()=>window.imported==='billed-account');assert.equal(imports[2].kind,'bill','billed registration still uses its key form');
   await page.close();console.log(`subscription import · ${width}: shared machine picker, search/multiselect/all, independent discovery, empty/down/old peer, retry, direct import, bill regression`);

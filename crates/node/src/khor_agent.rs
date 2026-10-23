@@ -4,6 +4,8 @@ use crate::{AgentApproval, AgentConfig, AgentTurn, CommandRecord, Node};
 use khor_catalog::msg;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+#[path = "agent_accounts.rs"]
+mod accounts;
 #[path = "khor_agent_updates.rs"]
 mod updates;
 use std::{
@@ -22,6 +24,9 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Action {
     Read,
+    Manage {
+        request: Value,
+    },
     Configure {
         account: String,
         model: String,
@@ -44,6 +49,8 @@ pub enum Action {
 pub struct Report {
     pub config: Option<AgentConfig>,
     pub run: Option<String>,
+    #[serde(default)]
+    pub data: Option<Value>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -86,6 +93,15 @@ fn now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+pub fn providers() -> Value {
+    accounts::catalog()
+}
+pub fn account_provider(account: &crate::Account) -> String {
+    accounts::provider_id(account)
+}
+pub fn account_ready(node: &Node, account: &crate::Account) -> bool {
+    accounts::inference_ready(node, account)
 }
 fn directory(root: &Path) -> PathBuf {
     root.join(".khor/agent")
@@ -163,14 +179,17 @@ impl Node {
         let mut report = Report {
             config: self.khor_agent_config()?,
             run: None,
+            data: None,
         };
         match action {
+            Action::Manage { request } => {
+                report.data = Some(self.manage_agent(request)?);
+            }
             Action::Read => {
                 self.reconcile_agent()?;
             }
             Action::Configure { account, model } => {
                 self.refuse_unless_hosting()?;
-                let _claim = claim(&root)?;
                 let account = self.agent_account(&account)?;
                 if model.trim().is_empty()
                     || model.len() > 256
@@ -198,8 +217,12 @@ impl Node {
                     .filter(|c| c.home == self.device_str())
                     .ok_or_else(|| msg::agent_not_configured().to_owned())?;
                 let account = self.agent_account(&config.account)?;
-                let key = fs::read_to_string(self.root().join(".khor/keys").join(&account.id))
-                    .map_err(|_| msg::agent_key_missing().to_owned())?;
+                let key = if account.inference.is_some() {
+                    String::new()
+                } else {
+                    fs::read_to_string(self.root().join(".khor/keys").join(&account.id))
+                        .map_err(|_| msg::agent_key_missing().to_owned())?
+                };
                 let id = format!("agent-{}-{token}", &self.device_str()[..16]);
                 let fingerprint = blake3::hash(
                     &serde_json::to_vec(&(&text, &config)).map_err(|e| e.to_string())?,
@@ -255,8 +278,13 @@ impl Node {
                     .lock()
                     .map_err(|e| e.to_string())?
                     .insert(root.clone(), active.clone());
-                let start = json!({"type":"start","protocol":1,"run":id,"text":text,"stateDir":directory(&root).join("sessions"),"model":config.model,
+                let mut start = json!({"type":"start","protocol":1,"run":id,"text":text,"stateDir":directory(&root).join("sessions"),"model":config.model,
                     "account":{"provider":account.provider.word(),"baseUrl":account.base_url,"key":key.trim()}});
+                if let Some(inference) = &account.inference {
+                    start["account"] =
+                        json!({"provider":inference.provider,"baseUrl":inference.base_url});
+                    start["credentialPath"] = json!(accounts::credential_path(&root, &account.id));
+                }
                 let recovery_root = root.clone();
                 let recovery_id = id.clone();
                 let spawned =
@@ -348,13 +376,8 @@ impl Node {
     fn agent_account(&self, id: &str) -> Result<crate::Account, String> {
         self.accounts()?
             .into_iter()
-            .find(|a| {
-                a.id == id && a.home == self.device_str() && a.kind == crate::AccountKind::Bill
-            })
-            .filter(|a| {
-                fs::read_to_string(self.root().join(".khor/keys").join(&a.id))
-                    .is_ok_and(|s| !s.trim().is_empty())
-            })
+            .find(|a| a.id == id && a.home == self.device_str())
+            .filter(|a| accounts::inference_ready(self, a))
             .ok_or_else(|| msg::agent_key_missing().to_owned())
     }
 

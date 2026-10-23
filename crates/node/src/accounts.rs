@@ -272,6 +272,7 @@ impl Node {
             return Err(msg::account_budget_bad().into());
         }
         let account = Account {
+            inference: None,
             id: link::fresh_hex()?,
             name: name.to_owned(),
             provider,
@@ -349,6 +350,7 @@ impl Node {
             return Err(msg::account_sub_no_login(reader.vendor, reader.command));
         }
         self.commit_account(Account {
+            inference: None,
             id: link::fresh_hex()?,
             name: name.to_owned(),
             provider,
@@ -425,6 +427,7 @@ impl Node {
                     continue;
                 }
                 self.commit_account(Account {
+                    inference: None,
                     id: link::fresh_hex()?,
                     name: msg::sub_auto_name(reader.vendor),
                     provider,
@@ -476,6 +479,7 @@ impl Node {
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         let _ = std::fs::remove_file(self.keys_dir().join(id));
+        let _ = std::fs::remove_dir_all(self.root().join(".khor/agent/credentials").join(id));
         let _ = std::fs::remove_file(self.quotas_dir().join(format!("{id}.json")));
         Ok(())
     }
@@ -658,6 +662,9 @@ impl Node {
         // (`Quota::as_of`), which is the axis this page is built on.
         if account.kind.is_sub() {
             return read_subscription(account, now).await;
+        }
+        if account.inference.is_some() && self.key_of(&account.id).is_none() {
+            return bare(account, Some("usage-not-configured"), now);
         }
         let cached = self.cached_reading(&account.id);
         if let Some(c) = &cached
@@ -2406,6 +2413,7 @@ mod tests {
     #[test]
     fn a_budget_makes_a_fraction_and_no_budget_makes_none() {
         let acc = Account {
+            inference: None,
             id: "a".into(),
             name: "n".into(),
             provider: Provider::Openai,
@@ -2672,6 +2680,7 @@ mod tests {
 
     fn wallet(provider: Provider, budget: Option<f64>) -> Account {
         Account {
+            inference: None,
             id: "a".into(),
             name: "n".into(),
             provider,
@@ -2816,6 +2825,7 @@ mod tests {
 
     fn subscription(home: &str) -> Account {
         Account {
+            inference: None,
             id: "s1".into(),
             name: "max".into(),
             provider: Provider::Claude,

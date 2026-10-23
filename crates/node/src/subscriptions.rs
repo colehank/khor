@@ -104,6 +104,7 @@ impl Node {
                     });
                 }
                 let account = self.commit_account(Account {
+                    inference: None,
                     id: crate::link::fresh_hex()?,
                     name: msg::sub_auto_name(reader.vendor),
                     provider: parsed,

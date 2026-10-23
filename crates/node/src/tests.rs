@@ -2976,6 +2976,7 @@ fn a_login_found_here_is_registered_once() {
         loaded
             .doc
             .set(&Account {
+                inference: None,
                 id: crate::link::fresh_hex().unwrap(),
                 name: "by hand".into(),
                 provider: Provider::Claude,

@@ -713,3 +713,10 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `cargo test -p khor-cli --test cagent --test codexagent`：真实 ACP stdio 客户端与可控 Claude/Codex 子进程；不连接用户付费模型。
 - `cargo test -p khor-gui-core --test khor_agent --test seen_snapshot --test console_receipts`：Rust → Pi → MCP → 持久记录、审批、停止、重启中断与已读边界。
 - 本地 `npm run ai-elements:preview` 在同一个正式 App 中提供 Claude、Codex、khor 示例；不单独重写 Lab 组件，不执行系统命令。浏览器验收不能替代各平台原生输入、剪贴板与滚动验收。
+
+
+### Pi 模型账户（2026-10-23）
+
+`npm run pi-accounts` 挂载正式 KhorAgentSettings / PiAccountDialog，仅替换认证后的节点边界。检查 1280/390 × 浅深主题、提供商和模型搜索、独立账户默认／会话当前模型、回复期间切换、密钥提示、OAuth 设备码和关闭取消；真实 ChoiceField / TaskOverlay 保持有界推荐及可滚动内容。焦点落标题，避免前一层退出时夺走新层焦点。`subscription-import` 显式选择原额度查询模式，并继续覆盖订阅发现／重试／导入和窄屏布局。
+
+原生 `pi_login_keeps_credentials` 验证 Pi 私有持久存储、账户默认迁移、Admin Key 隔离、取消及执行期间配置；`khor_agent_wire` 使用两台临时配对节点检查远程配置与密钥归属。`khor_agent` 集成回归验证当前回复／待批不变，下一轮使用新模型。独立 Bun 包在仓库之外验证 MCP／上下文恢复、OAuth 唤起／取消和免认证本地服务；不使用用户凭据，不调用付费模型。浏览器宽窄验收不代替 iOS / Android 原生登录与键盘验收。

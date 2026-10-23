@@ -204,16 +204,8 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
     let blocked = receipt(&node, &second_id, "blocked");
     let ask = blocked.agent.unwrap().approval.unwrap();
     assert_eq!(ask.tool, "close");
-    assert!(
-        rt.block_on(khor_gui_core::khor_agent(
-            &root,
-            home,
-            "configure",
-            &configure
-        ))
-        .is_err(),
-        "configuration must remain fixed during an operation"
-    );
+    rt.block_on(khor_gui_core::khor_agent(&root,home,"configure",&configure)).unwrap();
+    assert_eq!(receipt(&node,&second_id,"blocked").agent.unwrap().approval.unwrap().id,ask.id,"a model choice must not dismiss the active approval");
     assert!(
         rt.block_on(khor_gui_core::khor_agent(
             &root,
@@ -281,6 +273,9 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
         assert!(Instant::now() < until);
         thread::sleep(Duration::from_millis(20));
     }
+    rt.block_on(khor_gui_core::khor_agent(&root, home, "configure", &json!({"account":account.id,"model":"fixture-next"}))).unwrap();
+    assert_eq!(receipt(&node,&third_id,"running").agent.unwrap().model,"fixture","switching must leave the active request unchanged");
+    assert_eq!(node.khor_agent_config().unwrap().unwrap().model,"fixture-next");
     rt.block_on(khor_gui_core::khor_agent(
         &root,
         home,

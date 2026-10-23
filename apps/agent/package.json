@@ -8,7 +8,8 @@
     "build": "node build.mjs",
     "check": "tsc --noEmit",
     "test": "tsc --noEmit && node --test test/*.test.ts",
-    "dev": "node src/dev.ts"
+    "dev": "node src/dev.ts",
+    "providers": "node scripts/providers.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.4.0",

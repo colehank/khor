@@ -1,7 +1,8 @@
-// A read-only fixture bridge in front of the production App. Never
+// An isolated fixture bridge in front of the production App. Never
 // installed in the normal Vite config, native app, or production build.
 import { defineConfig, mergeConfig, type Plugin } from "vite";
 import base from "../vite.config";
+import providers from "../../agent/providers.json";
 
 type Frame = Record<string, unknown>;
 const update = (sessionUpdate: string, rest: Record<string, unknown>, history = true): Frame => ({
@@ -62,6 +63,40 @@ function previewBridge(): Plugin {
     { sessionUpdate: "tool_call", toolCallId: "khor-sessions", title: "mcp__khor__sessions", kind: "read", status: "completed", rawInput: { machine: "临时测试设备" }, content: [{ type: "content", content: { type: "text", text: "fixture-session · idle" } }] },
     { sessionUpdate: "agent_message_chunk", ...text("**网络检查完成**。两台设备在线，目标机器有一个空闲会话。\n\n这是隔离示例，不连接实际设备或执行命令。") },
   ].map((u) => JSON.stringify(u));
+  const account = { id: "fixture", name: "示例模型账户", home: device.id, home_name: device.name, provider: "anthropic", default_model: "claude-sonnet-4-6", configured: true, base_url: null, auth_type: "api_key" };
+  const modelAccounts = [account];
+  let modelConfig = { home: device.id, account: account.id, model: account.default_model };
+  let jobCounter = 0;
+  const jobs = new Map<string, any>();
+  const view = (data: unknown = null) => ({ config: modelConfig, accounts: modelAccounts, run: null, data });
+  function agentAction(body: Record<string, any>) {
+    if (body.action === "catalog") return view(providers);
+    const p = body.payload ?? {};
+    if (body.action === "configure") { modelConfig = { home: body.machine, account: p.account, model: p.model }; return view(); }
+    if (body.action !== "manage") return view();
+    if (p.operation === "models") {
+      const id = `models-${++jobCounter}`;
+      jobs.set(id, { status: "done", result: { models: [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", contextWindow: 200000, reasoning: true, image: true }, { id: "claude-opus-4-6", name: "Claude Opus 4.6", contextWindow: 200000, reasoning: true, image: true }] } });
+      return view({ job: id, status: "running" });
+    }
+    if (p.operation === "login") {
+      const id = `login-${++jobCounter}`;
+      jobs.set(id, { setup: p, status: "waiting", ask: 1, prompt: { type: p.authType === "oauth" ? "manual_code" : "secret", message: "隔离示例：请输入任意测试文字，不要输入真实凭据" } });
+      return view({ job: id, status: "running" });
+    }
+    if (p.operation === "poll") { const { setup, ...safe } = jobs.get(p.job) ?? { status: "failed", error: "示例已结束" }; return view(safe); }
+    if (p.operation === "reply") {
+      const job = jobs.get(p.job); if (!job) return view({ status: "failed", error: "示例已结束" });
+      const setup = job.setup, id = setup.account ?? `preview-${++jobCounter}`;
+      const next = { ...account, id, name: setup.name, provider: setup.provider, base_url: setup.baseUrl || null, auth_type: setup.authType, default_model: "" };
+      const index = modelAccounts.findIndex((a) => a.id === id); if (index >= 0) modelAccounts[index] = next; else modelAccounts.push(next);
+      // Submitted values are deliberately discarded by this isolated boundary.
+      jobs.set(p.job, { status: "done", account: id, accountInfo: next }); return view({ status: "running" });
+    }
+    if (p.operation === "cancel") { jobs.delete(p.job); return view({ status: "cancelled" }); }
+    if (p.operation === "default") { const target = modelAccounts.find((a) => a.id === p.account); if (target) target.default_model = p.model; return view({ status: "done", account: p.account, accountInfo: target }); }
+    return view();
+  }
   const previewAt = Date.now();
   const khorReceipt = () => ({ id: "khor-preview-run", at_ms: previewAt, from: device.name, from_me: true, to: [], text: null, files: null, note: null, unknown: null, retracted: false,
     command: { id: "khor-preview-run", line: "看看网络里的设备与会话。", owner: device.id, owner_name: device.name, status: "done", started_at_ms: Date.now() - 2000, ended_at_ms: Date.now(), stdout: "", stderr: "", data_json: null, session: null, error: null,
@@ -111,7 +146,7 @@ function previewBridge(): Plugin {
           case "sessions": answer = ids.map((id, i) => ({ id, kind: i === 4 ? "broadcast" : "gui", title: titles[i], word: streaming.has(i) ? "busy" : "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: i === 4 ? "khor" : i === 3 ? "codex" : "claude", group: "", face: null, hosted: true, attachable: false, last: "隔离示例 · 不连接真实智能体", via: null, via_face: null, home: device.name })); break;
           case "devices": answer = [device]; break;
           case "machine_log": answer = { messages: [khorReceipt()], broken: 0 }; break;
-          case "khor_agent": answer = { config: { home: device.id, account: "fixture", model: "fixture-model" }, accounts: [{ id: "fixture", name: "隔离测试账户", home: device.id, home_name: device.name }], run: null }; break;
+          case "khor_agent": answer = agentAction(body); break;
           case "console_catalog": answer = []; break;
           case "chat_open": if (index === 2 && frames[index].length === 3) run(index); answer = true; break;
           case "chat_replay": break;

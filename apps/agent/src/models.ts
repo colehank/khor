@@ -129,9 +129,14 @@ function gatewayProvider(baseUrl: string, fetchImpl: typeof fetch) {
     baseUrl,
     auth: {
       apiKey: {
-        name: "gateway key",
+        name: "API Key",
+        login: async (interaction) => {
+          const method = await interaction.prompt({ type: "select", message: "Authentication", options: [{ id: "key", label: "API Key" }, { id: "none", label: "No authentication (local/private service)" }] });
+          if (method === "none") return { type: "api_key", env: { KHOR_GATEWAY_NO_AUTH: "1" } };
+          return { type: "api_key", key: await interaction.prompt({ type: "secret", message: "API Key" }) };
+        },
         resolve: async ({ credential }) =>
-          credential?.key ? { auth: { apiKey: credential.key }, source: "khor account" } : undefined,
+          credential?.env?.KHOR_GATEWAY_NO_AUTH === "1" ? { auth: {}, source: "khor account" } : credential?.key ? { auth: { apiKey: credential.key }, source: "khor account" } : undefined,
       },
     },
     models: [],
@@ -153,9 +158,9 @@ function gatewayProvider(baseUrl: string, fetchImpl: typeof fetch) {
   });
 }
 
-export function openModels(seat: AccountSeat, fetchImpl: typeof fetch = fetch): Seated {
+export function openModels(seat: AccountSeat, fetchImpl: typeof fetch = fetch, credentials?: CredentialStore): Seated {
   const providerId = providerIdFor(seat.provider);
-  const models = createModels({ credentials: seatCredentials(providerId, seat) });
+  const models = createModels({ credentials: credentials ?? seatCredentials(providerId, seat) });
   if (providerId === GATEWAY) {
     if (!seat.baseUrl) throw new Error("a gateway account needs a base URL");
     models.setProvider(gatewayProvider(gatewayBase(seat.baseUrl), fetchImpl));

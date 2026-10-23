@@ -1,6 +1,7 @@
 //! Agent configuration reaches the account's home over authenticated mesh/IPC.
 mod util;
 use khor_node::{AccountKind, Node, Provider, khor_agent::Action};
+use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -77,6 +78,74 @@ async fn agent_configuration_uses_the_key_home_and_never_copies_the_key() {
         beta.khor_agent_on(beta.device_str(), action.clone())
             .await
             .is_err()
+    );
+    // A remote setup keeps both the new credential and OAuth refresh state on alpha.
+    let manage = |request: Value| Action::Manage { request };
+    let started=beta.khor_agent_on(alpha.device_str(),manage(json!({"operation":"login","provider":"anthropic","authType":"api_key","name":"remote inference"}))).await.unwrap().data.unwrap();
+    let job = started["job"].as_str().unwrap();
+    let waiting = timeout(Duration::from_secs(20), async {
+        loop {
+            let state = beta
+                .khor_agent_on(
+                    alpha.device_str(),
+                    manage(json!({"operation":"poll","job":job})),
+                )
+                .await
+                .unwrap()
+                .data
+                .unwrap();
+            if state["status"] == "waiting" {
+                break state;
+            }
+            assert_ne!(state["status"], "failed", "{state}");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap();
+    beta.khor_agent_on(alpha.device_str(),manage(json!({"operation":"reply","job":job,"ask":waiting["ask"],"value":"fixture-remote-inference-key"}))).await.unwrap();
+    let finished = timeout(Duration::from_secs(20), async {
+        loop {
+            let state = beta
+                .khor_agent_on(
+                    alpha.device_str(),
+                    manage(json!({"operation":"poll","job":job})),
+                )
+                .await
+                .unwrap()
+                .data
+                .unwrap();
+            if state["status"] == "done" {
+                break state;
+            }
+            assert_ne!(state["status"], "failed", "{state}");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        !finished
+            .to_string()
+            .contains("fixture-remote-inference-key")
+    );
+    let id = finished["account"].as_str().unwrap();
+    assert_eq!(finished["accountInfo"]["home"], alpha.device_str());
+    assert!(
+        alpha_root
+            .0
+            .join(".khor/agent/credentials")
+            .join(id)
+            .join("auth.json")
+            .is_file()
+    );
+    assert!(
+        !beta_root
+            .0
+            .join(".khor/agent/credentials")
+            .join(id)
+            .join("auth.json")
+            .exists()
     );
     let request = khor_node::proto::Request::KhorAgent { action };
     assert!(!request.rides_early());

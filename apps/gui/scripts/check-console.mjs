@@ -39,7 +39,8 @@ try {
     else if (cmd === "devices") result = [];
     else if (cmd === "khor_agent") {
       const config = { home: "local", account: "account-fixture", model: "fixture-model" };
-      result = { config, accounts: [{ id: config.account, name: "fixture account", home: "local", home_name: "local" }], run: null };
+      result = { config, accounts: [{ id: config.account, name: "fixture account", home: "local", home_name: "local", provider: "anthropic", default_model: "fixture-model", configured: true, base_url: null, auth_type: "api_key" }], run: null };
+      if (args.action === "manage") result.data = args.payload.operation === "models" ? { job: "models-fixture", status: "running" } : { status: "done", result: { models: [{ id: "fixture-model", name: "Fixture", contextWindow: 128000, reasoning: false, image: false }] } };
       if (args.action === "prompt") {
         const id = "note";
         if (!messages.some((m) => m.id === id)) messages.push({ ...message(id, ++receiptNodeTail, null), command: { id, line: args.payload.text, owner: "local", owner_name: "local", status: "running", started_at_ms: Date.now(), ended_at_ms: null, stdout: "", stderr: "", data_json: null, session: null, error: null, agent: { model: config.model, approval: null } } });
@@ -169,7 +170,7 @@ import '/scripts/.console-gate-${process.pid}.tsx';
   await page.waitForFunction(() => !document.querySelector("[data-khor-agent-approval]"));
   assert.equal(calls.find((c) => c.cmd === "khor_agent" && c.args.action === "answer").args.payload.allow, false);
   await page.locator("[data-khor-agent-settings]").click();
-  await page.locator("[data-khor-agent-model]").fill("next-model");
+  await page.locator("[data-khor-agent-model] input").fill("next-model");
   await page.locator("[data-khor-agent-save]").click();
   assert.equal(calls.find((c) => c.cmd === "khor_agent" && c.args.action === "configure").args.payload.model, "next-model");
   for (const theme of ["light", "dark"]) {

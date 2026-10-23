@@ -1,3 +1,5 @@
+import type { KhorAgentAccount } from "@/gen/bindings/KhorAgentAccount";
+import { PiAccountForm, PiAccountDialog } from "@/views/PiAccount";
 // 额度: the API accounts a person registered, each as a dial.
 //
 // **One dial is one account, and the account is on one machine.** The
@@ -29,6 +31,7 @@ import { useContext, useEffect, useRef, useMemo, useState, type ReactNode } from
 
 import {
   fetchQuotaBoard,
+  khorAgent,
   fetchUsage,
   pinAccount,
   registerAccount,
@@ -158,6 +161,8 @@ function troubleWord(key: string, provider: string): string {
       return gui.accounts_trouble_unreadable;
     case "cooling":
       return gui.accounts_trouble_cooling;
+    case "usage-not-configured":
+      return gui.agent_usage_not_configured;
     case "no-key":
       return gui.accounts_trouble_no_key;
     case "no-reading":
@@ -1101,6 +1106,8 @@ export function QuotaLanding({
   // The action keeps its plain name even when it opens a dialog.
   const quotaActions = [{ key: "register", label: gui.accounts_register, onSelect: () => setRegistering(true) }];
   const [registering, setRegistering] = useState(false);
+  const [modelAccount, setModelAccount] = useState<KhorAgentAccount | undefined>();
+  const [modelSetup, setModelSetup] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
       keeps for the machine list, and for its reason: what failed
       outlives one opening of a menu. */
@@ -1330,6 +1337,11 @@ export function QuotaLanding({
             }),
       },
       { key: "edit", label: gui.accounts_edit, run: () => setEditing(r) },
+      ...(devices.some((d) => d.id === acc.reading.home && d.hosts && d.sponsor === null) ? [{ key: "model", label: gui.agent_account_inference, run: async () => {
+        const view = await khorAgent("read"), account = view.accounts.find((a) => a.id === id);
+        if (!account) throw new Error(gui.agent_provider_missing);
+        setModelAccount(account); setModelSetup(true);
+      } }] : []),
       // 删除 last, behind a line — every sidebar's menu opens on 置顶 and
       // closes on 删除 (2026-09-28 audit 第 16 条, Apple HIG). It was the
       // second item from docs/SHELL.md 第二轮 until then, and 撤掉 and
@@ -1952,6 +1964,7 @@ export function QuotaLanding({
           fetchQuotaBoard().then(setBoard).catch(() => {});
         }}
       />
+      <PiAccountDialog open={modelSetup} onOpenChange={setModelSetup} account={modelAccount} onDone={() => { void fetchQuotaBoard().then(setBoard).catch(() => {}); }} />
       <RegisterDialog
         devices={devices}
         registered={(board ?? []).map((a) => a.reading.account)}
@@ -2293,7 +2306,7 @@ export function RegisterDialog({
   registered: string[];
 }) {
   const [provider, setProvider] = useState<Provider>("newapi");
-  const [kind, setKind] = useState("bill");
+  const [kind, setKind] = useState("model");
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [key, setKey] = useState("");
@@ -2304,7 +2317,7 @@ export function RegisterDialog({
   useEffect(() => {
     if (!open) return;
     setProvider("newapi");
-    setKind("bill");
+    setKind("model");
     setName("");
     setBaseUrl("");
     setKey("");
@@ -2349,21 +2362,20 @@ export function RegisterDialog({
         </DialogHeader>
         <FormGrid data-quota-form>
           {/* Subscriptions are discovered on their home computers; billed accounts keep the key form. */}
-          <FormLabel>{gui.quota_kind}</FormLabel>
-          <div className="flex min-w-0">
+          <div className="col-span-2 flex min-w-0">
             <SegmentedControl
               label={gui.quota_kind}
               value={kind}
               onChange={(k) => { setKind(k); why.clear(); }}
-              options={["bill", "sub"].map((k) => ({
+              options={["model", "bill", "sub"].map((k) => ({
                 key: k,
-                label: kindWord(k),
+                label: k === "model" ? gui.agent_model_account : k === "bill" ? gui.agent_usage_account : kindWord(k),
                 mark: { "data-quota-kind-pick": k },
               }))}
             />
           </div>
         </FormGrid>
-        {kind === "sub" ? <SubscriptionImport
+        {kind === "model" ? <PiAccountForm onCancel={() => onOpenChange(false)} onDone={(_view, id) => { onOpenChange(false); onRegistered(id); }} /> : kind === "sub" ? <SubscriptionImport
           devices={devices}
           registered={registered}
           onCancel={() => onOpenChange(false)}

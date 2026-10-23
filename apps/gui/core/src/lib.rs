@@ -1224,7 +1224,13 @@ pub async fn quota_board(root: &Path) -> Result<Vec<AccountRing>, String> {
                     .unwrap_or_else(|| reading.home.clone()),
                 mine: reading.home == me,
                 strain: khor_node::accounts::strain_of(reading.fill),
-                base_url: account.and_then(|a| a.base_url.clone()),
+                base_url: account.and_then(|a| {
+                    a.base_url.clone().or_else(|| {
+                        (a.provider == khor_node::Provider::Newapi)
+                            .then(|| a.inference.as_ref().and_then(|i| i.base_url.clone()))
+                            .flatten()
+                    })
+                }),
                 budget: account.and_then(|a| a.budget),
                 unit: account.and_then(|a| a.unit.clone()),
                 pinned: account.is_some_and(|a| a.pinned),
@@ -2315,6 +2321,11 @@ pub struct MachineLog {
 
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct KhorAgentAccount {
+    pub provider: String,
+    pub default_model: String,
+    pub configured: bool,
+    pub base_url: Option<String>,
+    pub auth_type: Option<String>,
     pub id: String,
     pub name: String,
     pub home: String,
@@ -2323,6 +2334,8 @@ pub struct KhorAgentAccount {
 
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct KhorAgentView {
+    #[ts(type = "unknown")]
+    pub data: Option<serde_json::Value>,
     pub config: Option<khor_node::AgentConfig>,
     pub accounts: Vec<KhorAgentAccount>,
     pub run: Option<String>,
@@ -2343,12 +2356,18 @@ pub async fn khor_agent(
     };
     let mut config = n.khor_agent_config()?;
     let mut run = None;
-    if action == "read" {
+    let mut data = None;
+    if action == "catalog" {
+        data = Some(khor_node::khor_agent::providers());
+    } else if action == "read" {
         if n.hosts() {
             n.reconcile_agent()?;
         }
     } else {
         let action = match action {
+            "manage" => khor_node::khor_agent::Action::Manage {
+                request: payload.clone(),
+            },
             "configure" => khor_node::khor_agent::Action::Configure {
                 account: string("account")?,
                 model: string("model")?,
@@ -2376,18 +2395,24 @@ pub async fn khor_agent(
         let report = n.khor_agent_on(machine, action).await?;
         config = report.config;
         run = report.run;
+        data = report.data;
     }
     let devices = n.devices()?;
     let accounts = n
         .accounts()?
         .into_iter()
-        .filter(|a| a.kind == khor_node::AccountKind::Bill)
+        .filter(|a| a.kind == khor_node::AccountKind::Bill || a.kind == khor_node::AccountKind::Sub)
         .filter(|a| {
             devices
                 .iter()
                 .any(|d| d.id == a.home && d.hosts && d.sponsor.is_none())
         })
         .map(|a| KhorAgentAccount {
+            provider: khor_node::khor_agent::account_provider(&a),
+            default_model: a.inference.as_ref().map(|i| i.default_model.clone()).unwrap_or_default(),
+            configured: khor_node::khor_agent::account_ready(&n, &a),
+            base_url: a.inference.as_ref().and_then(|i| i.base_url.clone()).or_else(|| a.base_url.clone()),
+            auth_type: a.inference.as_ref().map(|i| i.auth_type.clone()),
             id: a.id,
             name: a.name,
             home_name: devices
@@ -2399,6 +2424,7 @@ pub async fn khor_agent(
         })
         .collect();
     Ok(KhorAgentView {
+        data,
         config,
         accounts,
         run,
