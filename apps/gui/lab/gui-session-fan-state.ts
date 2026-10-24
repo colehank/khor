@@ -9,26 +9,30 @@ export function fanControl(origin:FanPoint,point:FanPoint,unit=44,placement:'rig
 }
 /** Acquire a comfortable landing; steer by thumb travel rather than polar angle. */
 export function fanStick(origin:FanPoint,unit=44,placement:'right'|'bottom'='right'){
-  let neutralPoint={...origin},radius=0,acquired=false,side=0,peak=0,wasOverview=false,motionPoint={...origin};
+  let neutralPoint={...origin},radius=0,acquired=false,side=0,gear=0,wasOverview=false,motionPoint={...origin};
   return {move(point:FanPoint,armed=false){
     const raw=fanControl(origin,point,unit,placement,armed),defaultAngle=placement==='bottom'?90:45;
     const gate=Math.max(unit*3.2,radius+unit*1.5),overview=Math.abs(raw.angle-defaultAngle)<=22&&raw.distance>gate-(armed?unit*.5:0);
-    const rest={...raw,overview:false,gain:0,extraSteps:0,acquired,moved:false,cursor:0};
-    if(overview){wasOverview=true;side=0;peak=0;return {...rest,overview:true};}
+    const rest={...raw,overview:false,gain:0,acquired,moved:false,cursor:0};
+    if(overview){wasOverview=true;side=0;gear=0;return {...rest,overview:true};}
     if(!acquired&&raw.distance>=unit*.7&&Math.abs(raw.angle-defaultAngle)<=60){neutralPoint={...point};motionPoint={...point};radius=Math.min(raw.distance,unit*1.2);acquired=true;wasOverview=false;return {...rest,acquired};}
     if(wasOverview){neutralPoint={...point};motionPoint={...point};wasOverview=false;return rest;}
     // Up/down remains usable with either diagonal or a straight thumb path.
     // The small horizontal contribution tolerates natural right-hand drift.
     const travel=placement==='bottom'?point.x-neutralPoint.x:neutralPoint.y-point.y+.2*(neutralPoint.x-point.x);
-    const magnitude=Math.abs(travel),enter=unit*.25,step=unit*.4,threshold=side?unit*.16:enter;
+    const magnitude=Math.abs(travel),threshold=side?unit*.16:unit*.25;
     const cursor=acquired?Math.max(-2,Math.min(2,travel/(unit*.6))):0;
-    if(!acquired||magnitude<=threshold){side=0;peak=0;return {...rest,cursor};}
-    const next=Math.sign(travel),level=Math.min(3,1+Math.floor(Math.max(0,magnitude-enter)/step));
-    const extraSteps=next!==side?0:Math.max(0,level-peak);
-    peak=next===side?Math.max(peak,level):level;side=next;
-    const gain=next*(11+Math.min(1,Math.max(0,(magnitude-enter)/(2*step)))*45);
-    const moved=Math.hypot(point.x-motionPoint.x,point.y-motionPoint.y)>=unit*.12;if(moved)motionPoint={...point};
-    return {...rest,gain,extraSteps,moved,cursor};
+    if(!acquired||magnitude<=threshold){side=0;gear=0;return {...rest,cursor};}
+    // Gear changes only adjust the stationary repeat rate. Wider overlaps
+    // keep thumb tremor from accelerating or skipping another candidate.
+    const next=Math.sign(travel),previous=gear;
+    if(next!==side)gear=1;
+    while(gear<3&&magnitude>=unit*(gear===1?.85:1.3))gear++;
+    while(gear>1&&magnitude<unit*(gear===3?1:.6))gear--;
+    side=next;
+    const gain=next*[0,18,35,DECK_JOYSTICK_DEFAULTS.reach][gear];
+    const moved=gear!==previous||Math.hypot(point.x-motionPoint.x,point.y-motionPoint.y)>=unit*.12;if(moved)motionPoint={...point};
+    return {...rest,gain,moved,cursor};
   }};
 }
 export function thumbFanJoystick(changed:(state:FanState)=>void,clock?:DeckJoystickClock){
@@ -38,7 +42,7 @@ export function thumbFanJoystick(changed:(state:FanState)=>void,clock?:DeckJoyst
   const read=()=>({...state,origin:{...state.origin},point:{...state.point},ids:[...state.ids]});
   const publish=()=>changed(read());
   const update=()=>{
-    const control=state.held?stick.move(state.point,state.armed):{...fanControl(state.origin,state.point,unit,'right',state.armed),extraSteps:0,acquired:false,moved:false,cursor:0},{distance}=control;
+    const control=state.held?stick.move(state.point,state.armed):{...fanControl(state.origin,state.point,unit,'right',state.armed),acquired:false,moved:false,cursor:0},{distance}=control;
     state.deflection=control.gain/DECK_JOYSTICK_DEFAULTS.reach;state.acquired=control.acquired;state.cursor=control.cursor;
     travelled ||= distance>unit*.55;
     // Short thumb travel steers; deliberate outward travel opens overview.
@@ -49,7 +53,6 @@ export function thumbFanJoystick(changed:(state:FanState)=>void,clock?:DeckJoyst
     if(outward){if(state.held)engine?.move(0,0);publish();return;}
     if(!state.held){publish();return;}
     engine?.move(control.gain,0);
-    for(let i=0;i<Math.min(control.extraSteps,Math.max(0,state.ids.length-2));i++){engine?.move(0,0);engine?.move(control.gain,0);}
     if(control.moved)engine?.restartReading();
   };
   const sync=(next:DeckJoystickState)=>{

@@ -130,6 +130,7 @@ node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
 
 ```sh
 node lab/check-gui-session-fan-state.mjs
+node lab/check-gui-session-fan-gears.mjs
 node lab/check-gui-session-fan-many.mjs
 node lab/check-gui-session-fan.mjs
 node lab/check-gui-session-compose.mjs
@@ -234,3 +235,11 @@ node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
 键盘和长草稿把可见候选压缩为三项或一项时，沿用相同的左上方操作位置，按可用槽数缩短轨迹、指示点行程和方向提示；不再让短布局的操控线伸出可见区域或回到右下角。斜向上下位移控制、回中暂停、保持循环、松手确认及底部药丸左右拖动继续沿用上一版。
 
 先复现下端未向内收及紧凑布局回程空间不足，再修复。117 项几何检查和 Lab TypeScript 通过；78 项常规浏览器检查、57 项完整 GUI 检查（含浏览器触摸）及 8 项实际长草稿／键盘紧凑布局检查通过，实际覆盖一项、三项和五项布局。已核对 320／390 的普通及紧凑截图，位于 `/Volumes/disk0/khor-gui-session-layout-proof/thumb-return/`。仍仅在 Lab，不合入 main；真机握姿与触感继续由 Lab 体验确认。
+
+## 档位敏感度调整（当前 Lab）
+
+用户反馈档位太灵敏，第二档已难以控制。原因是连续位移既进入更快档位，又触发额外的立即预选，换档与换项叠在一起。现在轻推仍立即预选一项，继续推只调循环速度；换档本身不再额外跳候选。
+
+第一档可用行程加宽；第二／三档分别在中立落点之外约 0.85／1.3 个 touch 单位进入，回撤到 0.6／1 个 touch 单位才降档，扩大边界容差。档位改变时重新留足当前档位的完整阅读间隔，轻微抖动不反复加速或降档。三档仍使用正式药丸的 1400／1000／700 ms 节拍。即时指示点、回中暂停、反向预选、倾斜短弧、松手确认及总览回撤保持。
+
+先复现普通行程误入第二档，再修复。31 项状态、216 项循环／节拍、6 项斜向跟随、10 项档位／边界抖动／无额外跳项检查和 Lab TypeScript 通过。40 项实际鼠标／浏览器触摸检查覆盖 320／390、双向三档、第二档边界抖动、完整阅读时间、暂停／反向和松手；57 项完整 GUI 回归通过。截图位于 `/Volumes/disk0/khor-gui-session-layout-proof/steady-gears/`。仍只在 Lab，不合入 main。

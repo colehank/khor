@@ -10,6 +10,6 @@ for(const slope of [-.5,0,.35,1]){const {fan,move,advance}=make();move(18,18*slo
  const {fan,move}=make();move(3,1);assert.equal(fan.read().hot,0);assert(fan.read().cursor>0,'cursor follows below selection threshold');const first=fan.read().cursor;move(6,2);assert(fan.read().cursor>first);assert.equal(fan.read().hot,0);fan.cancel();checks++;
 }
 {
- const {fan,move,advance}=make();for(const [up,left] of [[2,8],[-3,-9],[4,-5],[-4,5],[0,0]])move(up,left);advance(4000);assert.equal(fan.read().hot,0,'small hand tremor stays neutral');move(18);move(55);assert.equal(fan.read().hot,3,'continued fast travel crosses all intervening detents');move(0,0);const paused=fan.read().hot;advance(4000);assert.equal(fan.read().hot,paused);fan.cancel();checks++;
+ const {fan,move,advance}=make();for(const [up,left] of [[2,8],[-3,-9],[4,-5],[-4,5],[0,0]])move(up,left);advance(4000);assert.equal(fan.read().hot,0,'small hand tremor stays neutral');move(18);move(55);assert.equal(fan.read().hot,1,'continued travel changes speed without skipping candidates');move(0,0);const paused=fan.read().hot;advance(4000);assert.equal(fan.read().hot,paused);fan.cancel();checks++;
 }
-console.log(`${checks} diagonal travel, immediate subthreshold cursor, tremor, full detents and return-pause checks passed.`);
+console.log(`${checks} diagonal travel, immediate subthreshold cursor, tremor, no skips and return-pause checks passed.`);
