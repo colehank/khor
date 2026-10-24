@@ -2342,3 +2342,104 @@ fn regression_discarded_path_stats_are_up_to_date() -> TestResult {
 
     Ok(())
 }
+
+/// khor patch 7 (vendor/noq-proto/KHOR.md): when data moves off a backup path far slower than
+/// the one it goes on now, what is in flight on the slow one is resent at once on the fast one,
+/// not left for the slow one's acknowledgement or probe timeout: a stream is delivered in
+/// order, and netlab f4 held a hop's stream 1.5 s for the last bytes sent by a relay.
+#[test]
+fn what_is_in_flight_on_a_far_slower_backup_is_resent_on_the_new_path() -> TestResult {
+    let _guard = subscribe();
+    let mut pair = ConnPair::builder().enable_multipath().connect();
+    let routing = pair.routes.as_basic();
+    let (mut ca, mut sa) = (routing.client_addr, routing.server_addr);
+    let addrs_client = vec![ca, {
+        ca.set_port(ca.port() + 1);
+        ca
+    }];
+    let addrs_server = vec![sa, {
+        sa.set_port(sa.port() + 1);
+        sa
+    }];
+    pair.routes =
+        ManyToManyRouting::simple_symmetric(addrs_client.clone(), addrs_server.clone()).into();
+    let second = pair.open_path(
+        Client,
+        FourTuple {
+            local_ip: Some(addrs_client[1].ip()),
+            remote: addrs_server[1],
+        },
+        PathStatus::Backup,
+    )?;
+    pair.drive();
+    while pair.poll(Client).is_some() {}
+    while pair.poll(Server).is_some() {}
+
+    // Data goes out on path 0 and is lost on the way: in flight, unacknowledged.
+    let s = pair.streams(Client).open(Dir::Uni).unwrap();
+    pair.send_stream(Client, s).write(b"through the slow road").unwrap();
+    pair.drive_client();
+    pair.server.inbound.clear();
+    let lost_before = pair.conn_mut(Client).path_stats(PathId::ZERO).unwrap().lost_packets;
+
+    // Path 0 is far slower now (a relay 1.7 s late), the second path fast: data moves.
+    pair.conn_mut(Client).khor_set_rtt(PathId::ZERO, Duration::from_secs(2));
+    pair.conn_mut(Client).khor_set_rtt(second, Duration::from_millis(20));
+    pair.set_path_status(Client, second, PathStatus::Available)?;
+    pair.set_path_status(Client, PathId::ZERO, PathStatus::Backup)?;
+    pair.drive_client();
+    let lost = pair.conn_mut(Client).path_stats(PathId::ZERO).unwrap().lost_packets;
+    assert!(lost > lost_before, "resent at once, no time passed: {lost_before} -> {lost}");
+
+    pair.drive();
+    assert_matches!(pair.streams(Server).accept(Dir::Uni), Some(id) if id == s);
+    let mut recv = pair.recv_stream(Server, s);
+    let mut chunks = recv.read(true).unwrap();
+    assert_matches!(chunks.next(usize::MAX), Ok(Some(chunk)) if chunk.bytes == &b"through the slow road"[..]);
+    let _ = chunks.finalize();
+    Ok(())
+}
+
+/// khor patch 7: between paths of about one speed nothing is resent.
+#[test]
+fn what_is_in_flight_on_a_backup_of_one_speed_is_not_resent() -> TestResult {
+    let _guard = subscribe();
+    let mut pair = ConnPair::builder().enable_multipath().connect();
+    let routing = pair.routes.as_basic();
+    let (mut ca, mut sa) = (routing.client_addr, routing.server_addr);
+    let addrs_client = vec![ca, {
+        ca.set_port(ca.port() + 1);
+        ca
+    }];
+    let addrs_server = vec![sa, {
+        sa.set_port(sa.port() + 1);
+        sa
+    }];
+    pair.routes =
+        ManyToManyRouting::simple_symmetric(addrs_client.clone(), addrs_server.clone()).into();
+    let second = pair.open_path(
+        Client,
+        FourTuple {
+            local_ip: Some(addrs_client[1].ip()),
+            remote: addrs_server[1],
+        },
+        PathStatus::Backup,
+    )?;
+    pair.drive();
+    while pair.poll(Client).is_some() {}
+    while pair.poll(Server).is_some() {}
+
+    let s = pair.streams(Client).open(Dir::Uni).unwrap();
+    pair.send_stream(Client, s).write(b"x").unwrap();
+    pair.drive_client();
+    pair.server.inbound.clear();
+    let lost_before = pair.conn_mut(Client).path_stats(PathId::ZERO).unwrap().lost_packets;
+    pair.conn_mut(Client).khor_set_rtt(PathId::ZERO, Duration::from_millis(25));
+    pair.conn_mut(Client).khor_set_rtt(second, Duration::from_millis(20));
+    pair.set_path_status(Client, second, PathStatus::Available)?;
+    pair.set_path_status(Client, PathId::ZERO, PathStatus::Backup)?;
+    pair.drive_client();
+    let lost = pair.conn_mut(Client).path_stats(PathId::ZERO).unwrap().lost_packets;
+    assert_eq!(lost, lost_before, "one speed: left to its own acknowledgement");
+    Ok(())
+}

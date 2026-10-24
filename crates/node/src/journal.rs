@@ -233,7 +233,8 @@ pub enum What {
     },
     /// A path of a connection to the peer, for the life of the
     /// connection: `opened`, a direct path validated (a punch landed);
-    /// `selected`, the path now carrying it.
+    /// `started`, the path a new connection began on; `selected`, the
+    /// path now carrying it.
     Path {
         change: String,
         road: String,
@@ -660,6 +661,14 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         What::Path { change, road, addr, rtt_ms } => {
             let mut s = if change == "opened" {
                 msg::journal_path_opened(addr)
+            } else if change == "started" {
+                if road == "carried" && addr == "ssh" {
+                    msg::journal_path_started_ssh().to_owned()
+                } else if road == "carried" && !addr.is_empty() {
+                    msg::journal_path_started_hop(name_of(addr))
+                } else {
+                    msg::journal_path_started(road_word(road), addr)
+                }
             } else if road == "carried" && addr == "ssh" {
                 msg::journal_path_ssh().to_owned()
             } else if road == "carried" && !addr.is_empty() {
@@ -1316,7 +1325,7 @@ pub fn not_direct(entries: &[Entry]) -> Vec<(String, String, Vec<Why>)> {
             (Some(p), What::Settled { road, .. }) => {
                 peers.entry(p.clone()).or_default().0 = Some(road.clone());
             }
-            (Some(p), What::Path { change, road, .. }) if change == "selected" => {
+            (Some(p), What::Path { change, road, .. }) if change == "selected" || change == "started" => {
                 peers.entry(p.clone()).or_default().0 = Some(road.clone());
             }
             (Some(p), What::Round { remote, rounds, .. }) => {
@@ -1579,6 +1588,28 @@ mod tests {
         assert_eq!(
             words(&e("b1", Some(3)), &name_of),
             format!("{}{}", msg::journal_path_hop("turing"), msg::journal_path_rtt(3))
+        );
+    }
+
+    /// flap: the road a new connection began on is said as where it began,
+    /// not 「改走中继」 — it is no move of the machine's.
+    #[test]
+    fn a_connections_first_road_is_not_a_move() {
+        let name_of = |id: &str| if id == "b1" { "turing".to_owned() } else { id.to_owned() };
+        let e = |road: &str, addr: &str| Entry {
+            at: 0,
+            peer: Some("y".into()),
+            what: What::Path { change: "started".into(), road: road.into(), addr: addr.into(), rtt_ms: None },
+        };
+        assert_eq!(
+            words(&e("relay", "r.example"), &name_of),
+            msg::journal_path_started(msg::journal_road_relay(), "r.example")
+        );
+        assert_eq!(words(&e("carried", "b1"), &name_of), msg::journal_path_started_hop("turing"));
+        assert_eq!(words(&e("carried", "ssh"), &name_of), msg::journal_path_started_ssh());
+        assert_ne!(
+            words(&e("relay", "r.example"), &name_of),
+            msg::journal_path_selected(msg::journal_road_relay(), "r.example")
         );
     }
 
