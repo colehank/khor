@@ -40,8 +40,9 @@ export function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];sta
   const lastDirection=useRef(0);if(state.direction)lastDirection.current=state.direction;
   const position=useDeckArcPosition(state.hot??Math.max(0,faces.findIndex(f=>f.id===state.ids[0])),Math.max(1,state.ids.length),lastDirection.current,duration);
   const items=fanItems(position,state.ids.length,frame),candidate=state.hot===null?null:faces.find(f=>f.id===state.ids[state.hot!]);
-  const steering=state.cursor??(state.deflection??0)*2,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0)));
-  const guide=Array.from({length:41},(_,i)=>outerPoint(frame,-2+i/10)).map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
+  const extent=frame.placement==='right'&&!frame.horizontal?Math.max(.5,(frame.slots-1)/2):2;
+  const steering=state.cursor??(state.deflection??0)*2,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0))*extent/2);
+  const guide=Array.from({length:41},(_,i)=>outerPoint(frame,extent*(-1+i/20))).map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
   return createPortal(<div data-lab-left-fan data-fan-placement={frame.placement} data-fan-slots={frame.slots} data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-cursor={steering} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
     <div className="deck-selector-dimmer"/>
     <div className="lab-fan-identities" data-dimmed={state.lane==='overview'||undefined} aria-hidden="true">
@@ -52,7 +53,7 @@ export function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];sta
     </div>
     <div className="lab-fan-steering" aria-hidden="true">
       <svg className="lab-fan-guide" width={frame.width} height={frame.height}><path d={guide}/></svg>
-      {[-1,1].map(side=>{const t=side*1.2,p=outerPoint(frame,t),q=outerPoint(frame,t+.02),rotation=Math.atan2(q.y-p.y,q.x-p.x)*180/Math.PI;return <span key={side} className="lab-fan-cue" style={{left:p.x,top:p.y,rotate:`${rotation}deg`}}><DeckRateCue side={side} state={{...state,overview:state.armed}} x={0}/></span>;})}
+      {[-1,1].map(side=>{const t=side*extent*.6,p=outerPoint(frame,t),q=outerPoint(frame,t+.02),rotation=Math.atan2(q.y-p.y,q.x-p.x)*180/Math.PI;return <span key={side} className="lab-fan-cue" style={{left:p.x,top:p.y,rotate:`${rotation}deg`}}><DeckRateCue side={side} state={{...state,overview:state.armed}} x={0}/></span>;})}
       <span className="deck-selector-origin" data-lab-fan-neutral data-paused={state.direction===0||undefined} style={{left:neutral.x,top:neutral.y}}/>
       <span className="lab-fan-cursor" data-lab-fan-cursor style={{left:cursor.x,top:cursor.y}}/>
 

@@ -16,7 +16,13 @@ for(const placement of ['right','bottom'])for(const width of [320,390,430])for(c
 for(const width of [320,390,430]){
  const f=fanFrame({left:0,top:0,width,height:390,touch:44,gap:12,originX:width-36,originY:414,placement:'right'});
  const avatar=t=>fanPoint(f,t).x+(f.gap+f.titleWidth)*fanScale(t);
- for(const t of [1,2]){assert(Math.abs(avatar(t)-avatar(-t))<.001,'avatar arc has matching upper/lower ends');assert(Math.abs(outerPoint(f,t).x-outerPoint(f,-t).x)<.001,'control arc has matching upper/lower ends');assert(avatar(0)<avatar(t)&&outerPoint(f,0).x<outerPoint(f,t).x,'both arcs bow left like an opening parenthesis');checks++;}
+ for(const t of [1,2]){assert(avatar(-t)<avatar(0)&&outerPoint(f,-t).x<outerPoint(f,0).x,'lower arc comes inward instead of returning to the right corner');assert((avatar(t)+avatar(-t))/2>avatar(0),'tilted avatar arc retains its opening-parenthesis curvature');checks++;}
+ const lower=outerPoint(f,-2);assert(lower.x<=f.originX-f.touch*.8&&lower.y<=f.height-f.touch*1.2,'lower thumb path reserves left and upward return room');checks++;
  assert(avatar(0)<width-f.gap-f.face/2,'right-hand group moves left from the previous baseline');checks++;
 }
-console.log(`${checks} outer-control placement, five titled identity bounds and non-overlap checks passed.`);
+for(const width of [320,390,430])for(const height of [160,230,290]){
+ const f=fanFrame({left:0,top:0,width,height,touch:44,gap:12,originX:width-36,originY:height+24,placement:'right'}),extent=Math.max(.5,(f.slots-1)/2),lower=outerPoint(f,-extent);
+ assert(lower.x<=f.originX-f.touch*.8&&lower.y<=f.originY-f.touch*1.2,'compact thumb path also stays inward and above its entry');
+ for(let i=0;i<=40;i++){const p=outerPoint(f,extent*(-1+i/20));assert(p.x>=0&&p.x<=width&&p.y>=0&&p.y<=height,'shortened compact guide fits the available area');}checks++;
+}
+console.log(`${checks} outer-control placement, five titled identity bounds, inward return and compact-guide checks passed.`);
