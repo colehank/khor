@@ -95,6 +95,11 @@ pub const CACHE_TTL_MS: i64 = 5 * 60 * 1000;
 /// a while, and asking every five minutes is how a key gets throttled.
 pub const FAIL_COOLDOWN_MS: i64 = 10 * 60 * 1000;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long new-api's `/api/log/token` is waited on. It only draws the
+/// chart, and a gateway sitting on it used to cost every read of the
+/// account [`HTTP_TIMEOUT`] (16.2 s measured on two accounts of one
+/// gateway, every time), with the figures already in hand.
+const LOG_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The keys [`AccountReading::trouble`] travels under.
 pub mod trouble {
@@ -634,9 +639,38 @@ impl Node {
     }
 
     /// This machine's reading of every account whose key it holds —
-    /// what it answers [`Request::Quotas`] with. Cached and cooled per
-    /// account (module head); accounts homed elsewhere are not in it.
+    /// this machine's own board, and the read behind what it answers
+    /// [`Request::Quotas`] with ([`Node::quota_readings_held`]). Cached
+    /// and cooled per account (module head); accounts homed elsewhere
+    /// are not in it.
     pub async fn quota_readings(&self) -> Result<Vec<AccountReading>, String> {
+        let me = self.device_str().to_owned();
+        let mine: Vec<Account> = self
+            .accounts()?
+            .into_iter()
+            .filter(|a| a.home == me)
+            .collect();
+        let now = crate::live::now_ms();
+        // **All at once** (fix/front): one after another, the read cost
+        // the sum of every provider's wait — two accounts on one slow
+        // gateway were 16 s every time — where it is now the slowest.
+        // Each account keeps its own cache file, so none write over
+        // another's.
+        Ok(link::join_all(mine.iter().map(|account| self.read_one(account, now)).collect()).await)
+    }
+
+    /// **What a far machine is answered with** (fix/front): every
+    /// reading [`Node::quota_readings`] would give, as this disk last
+    /// holds it — cached or cooled, at any age, never a fetch. An
+    /// account with nothing held yet is left out, which the asker draws
+    /// as 「not answered yet」 (`trouble::NO_READING`), true until the
+    /// read behind this lands.
+    ///
+    /// The read itself is [`refresh_quotas`]'s, one at a time per home.
+    /// Answering through it is what made a round wait on a provider: 5
+    /// accounts read one after another, a 15 s timeout each, and every
+    /// asker's round held until the last.
+    pub async fn quota_readings_held(&self) -> Result<Vec<AccountReading>, String> {
         let me = self.device_str().to_owned();
         let mine: Vec<Account> = self
             .accounts()?
@@ -646,7 +680,24 @@ impl Node {
         let now = crate::live::now_ms();
         let mut out = Vec::with_capacity(mine.len());
         for account in mine {
-            out.push(self.read_one(&account, now).await);
+            let held = if account.kind.is_sub() {
+                match sub_reader(&account.provider) {
+                    Some(reader) => reader
+                        .peek()
+                        .await
+                        .map(|read| subscription_reading(&account, read, now)),
+                    None => Some(bare(&account, Some(trouble::UNKNOWN_PROVIDER), now)),
+                }
+            } else {
+                match self.cached_reading(&account.id) {
+                    Some(c) => Some(c.reading),
+                    None if self.key_of(&account.id).is_none() => {
+                        Some(bare(&account, Some(trouble::NO_KEY), now))
+                    }
+                    None => None,
+                }
+            };
+            out.extend(held);
         }
         Ok(out)
     }
@@ -804,6 +855,56 @@ impl Node {
         }
         Ok(out)
     }
+}
+
+/// How soon after one background read of a home's accounts the next may
+/// start. Each account keeps its own five minutes (`CACHE_TTL_MS`), so
+/// a read this soon would only open the node and find every cache
+/// fresh; this keeps a round every few seconds from doing that each time.
+const REFRESH_AGAIN: Duration = Duration::from_secs(30);
+
+/// **One read of this home's accounts at a time, behind the answer**
+/// (fix/front): [`Node::quota_readings`] on a blocking thread, which
+/// writes the caches [`Node::quota_readings_held`] answers from. Askers
+/// that come while it runs, or within [`REFRESH_AGAIN`] of its end, are
+/// that read — not one more each.
+pub(crate) fn refresh_quotas(root: PathBuf) {
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
+    use std::time::Instant;
+
+    /// Per home: whether a read is running, and when the last one ended.
+    static FLIGHTS: LazyLock<Mutex<HashMap<PathBuf, (bool, Option<Instant>)>>> =
+        LazyLock::new(Default::default);
+
+    /// Lands the flight however the read leaves, a panic included — a
+    /// flag left up would be no read for this home ever again.
+    struct Landed(PathBuf);
+    impl Drop for Landed {
+        fn drop(&mut self) {
+            let mut all = FLIGHTS.lock().unwrap_or_else(|p| p.into_inner());
+            all.insert(self.0.clone(), (false, Some(Instant::now())));
+        }
+    }
+
+    {
+        let mut all = FLIGHTS.lock().unwrap_or_else(|p| p.into_inner());
+        let (running, ended) = all.entry(root.clone()).or_default();
+        if *running || ended.is_some_and(|t| t.elapsed() < REFRESH_AGAIN) {
+            return;
+        }
+        *running = true;
+    }
+    tokio::task::spawn_blocking(move || {
+        let _landed = Landed(root.clone());
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            return;
+        };
+        let _ = rt.block_on(async { Node::open(root)?.quota_readings().await });
+    });
 }
 
 /// Which vendor answers for a provider's subscription — **the one
@@ -1220,8 +1321,15 @@ async fn fetch_newapi(
     // log is the chart; the figures above are the reading. A gateway
     // too old for `/api/log/token`, or one that refuses it, must not
     // turn a good quota reading into 问不出来 — so this is read for
-    // what it gives and dropped when it gives nothing.
-    if let Ok(Ok(j)) = get_json(c.get(format!("{base}/api/log/token")).bearer_auth(key)).await {
+    // what it gives and dropped when it gives nothing, or nothing in
+    // [`LOG_TIMEOUT`].
+    if let Ok(Ok(j)) = get_json(
+        c.get(format!("{base}/api/log/token"))
+            .bearer_auth(key)
+            .timeout(LOG_TIMEOUT),
+    )
+    .await
+    {
         let log = read_log(&j, per_unit);
         r.days = log.days;
         r.model_days = log.model_days;
@@ -2496,6 +2604,54 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// **The far machine's answer never asks the provider** (fix/front):
+    /// nothing held is left out, and what is held answers at any age.
+    /// The address refuses at once, so a fetch would not hang this test
+    /// — it would turn the first arm into 问不出来, which is what the
+    /// arm is red on.
+    #[test]
+    fn the_answer_to_a_far_machine_is_what_this_disk_holds_at_any_age() {
+        let root = std::env::temp_dir().join(format!("khor-accounts-held-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let n = Node::open(root.clone()).unwrap();
+        let a = n
+            .register_account(
+                "gw",
+                Provider::Newapi,
+                AccountKind::Bill,
+                Some("http://127.0.0.1:1"),
+                "sk-x",
+                None,
+            )
+            .unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        assert_eq!(
+            rt.block_on(n.quota_readings_held()).unwrap(),
+            Vec::new(),
+            "nothing read yet is nothing said, not a trouble made up on the spot"
+        );
+
+        let old = crate::live::now_ms() - 2 * CACHE_TTL_MS;
+        let mut aged = bare(&a, None, old);
+        aged.fill = Some(0.3);
+        n.cache_reading(
+            &a.id,
+            &Cached {
+                reading: aged,
+                failed_at_ms: None,
+            },
+        );
+        let got = rt.block_on(n.quota_readings_held()).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].fill, Some(0.3), "an expired reading still answers");
+        assert_eq!(got[0].at_ms, old, "…and says how old it is");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// **A rename reaches the board at once, and moves nothing else.**
     /// 2026-09-30, the owner: the 额度 list renames the session list's
     /// way (a double-click on the name).
@@ -3290,6 +3446,82 @@ mod tests {
             !r.model_tokens[0].cache_split,
             "a gateway log has no cache columns to state"
         );
+    }
+
+    /// A new-api gateway on loopback that answers every road, each after
+    /// the wait given for it — what a slow gateway looks like from here.
+    async fn slow_gateway(usage_wait: Duration, log_wait: Duration) -> String {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = l.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 2048];
+                    let n = sock.read(&mut buf).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let (wait, body) = if req.contains("/api/status") {
+                        (Duration::ZERO, r#"{"data":{"quota_per_unit":500000}}"#)
+                    } else if req.contains("/api/log/token") {
+                        (log_wait, r#"{"data":[]}"#)
+                    } else {
+                        (
+                            usage_wait,
+                            r#"{"code":true,"data":{"total_used":500000,"total_available":500000,"unlimited_quota":false,"expires_at":0}}"#,
+                        )
+                    };
+                    tokio::time::sleep(wait).await;
+                    let head = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                        body.len(),
+                    );
+                    let _ = sock.write_all(head.as_bytes()).await;
+                    let _ = sock.write_all(body.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    /// **Accounts are read at once, not one after another** (fix/front):
+    /// two accounts on a gateway that takes a second over its usage road
+    /// cost the read one second, not two.
+    #[tokio::test]
+    async fn two_slow_accounts_cost_the_read_one_wait_not_two() {
+        let root = std::env::temp_dir().join(format!("khor-accounts-both-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let n = Node::open(root.clone()).unwrap();
+        let gw = slow_gateway(Duration::from_secs(1), Duration::ZERO).await;
+        for name in ["one", "two"] {
+            n.register_account(name, Provider::Newapi, AccountKind::Bill, Some(&gw), "sk-x", None)
+                .unwrap();
+        }
+        let begun = std::time::Instant::now();
+        let got = n.quota_readings().await.unwrap();
+        let took = begun.elapsed();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(got.len(), 2);
+        assert!(got.iter().all(|r| r.trouble.is_none()), "both read: {got:?}");
+        assert!(took < Duration::from_millis(1800), "two accounts took {took:?}");
+    }
+
+    /// **The chart's road does not cost the reading its time**
+    /// (fix/front): `/api/log/token` only draws the chart, and a gateway
+    /// that sits on it is left after [`LOG_TIMEOUT`], with the figures
+    /// read and the chart empty — not after the reading's own 15 s.
+    #[tokio::test]
+    async fn a_gateway_sitting_on_its_log_still_gives_the_reading_in_a_few_seconds() {
+        let gw = slow_gateway(Duration::ZERO, Duration::from_secs(20)).await;
+        let mut account = wallet(Provider::Newapi, None);
+        account.base_url = Some(gw);
+        let begun = std::time::Instant::now();
+        let r = fetch_newapi(&account, "sk-x", 0).await.expect("the gateway answered");
+        let took = begun.elapsed();
+        assert_eq!(r.fill, Some(0.5), "the figures are the reading's");
+        assert!(r.days.is_empty(), "the chart is empty, not made up");
+        assert!(took < Duration::from_secs(5), "the read waited {took:?} on the chart's road");
     }
 
     /// **A reading *file* written before the token report still

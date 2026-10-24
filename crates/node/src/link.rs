@@ -142,6 +142,11 @@ fn rows_rebuilt(
     order.iter().map(|id| by_id.remove(id)).collect()
 }
 
+/// How long [`Request::Versions`] waits on one reading before leaving it
+/// out of the answer (`Node::answer_versions`). The quick ones are
+/// milliseconds; what is slower than this is waiting on something else.
+const READING_BY: Duration = Duration::from_secs(1);
+
 /// The request a reading's kind stands for in [`Request::Versions`].
 fn reading_request(kind: &str) -> Option<Request> {
     Some(match kind {
@@ -3922,16 +3927,21 @@ impl Node {
                 })
             }
             Request::Quotas => {
-                // Reads the providers when the cache has aged out —
-                // seconds of HTTP, off the reactor for the `Vitals`
-                // arm's reason (`accounts` module head).
+                // **What this disk holds, now; the read goes on behind
+                // it** (fix/front). Answering through the read made
+                // every asker's round wait on the slowest provider —
+                // 16 s measured on two new-api accounts — and the next
+                // round has what it brings. One read at a time however
+                // many ask (`accounts::refresh_quotas`). The cache read
+                // is off the reactor for the `Days` arm's reason.
                 let root = self.root().to_path_buf();
+                crate::accounts::refresh_quotas(root.clone());
                 let readings = tokio::task::spawn_blocking(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
                         .build()
                         .map_err(|e| e.to_string())?;
-                    rt.block_on(crate::Node::open(root)?.quota_readings())
+                    rt.block_on(crate::Node::open(root)?.quota_readings_held())
                 })
                 .await
                 .map_err(|e| e.to_string())??;
@@ -10666,12 +10676,31 @@ impl Node {
             }
         }
         let by_change = readings.iter().any(|(k, _)| k == ROWS_BY_CHANGE);
+        // **Each reading by its deadline, all at once** (fix/front): one
+        // slow reading — a quota read waiting on a provider, the first
+        // tally of a machine's transcripts — used to hold this whole
+        // answer, so the asker's round waited on it past the opening's
+        // own budget. One not ready by [`READING_BY`] is left out, which
+        // the asker reads as unchanged and keeps the copy it holds
+        // (`take_readings`); the work goes on where it runs, and the
+        // next round has it.
+        let answers = join_all(
+            readings
+                .into_iter()
+                .filter_map(|(kind, held)| Some((reading_request(&kind)?, kind, held)))
+                .map(|(req, kind, held)| async move {
+                    let answer =
+                        tokio::time::timeout(READING_BY, Box::pin(self.dispatch(remote, req, ep))).await;
+                    (kind, held, answer)
+                })
+                .collect(),
+        )
+        .await;
         let mut changed = Vec::new();
-        for (kind, held) in readings {
-            let Some(req) = reading_request(&kind) else {
+        for (kind, held, answer) in answers {
+            let Ok(answer) = answer else {
                 continue;
             };
-            let answer = Box::pin(self.dispatch(remote, req, ep)).await;
             let frame = match &answer {
                 Response::Refused { .. } => Vec::new(),
                 answer => proto::encode(answer)?,

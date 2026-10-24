@@ -187,6 +187,25 @@ impl Provider {
         Ok(quota)
     }
 
+    /// This vendor's reading **without the network** — what [`run`]
+    /// would answer if no remote strategy were asked: a local that
+    /// answers, else the remote reading last fetched at any age, else
+    /// the cooldown or the trouble. `None` when only a fetch can say.
+    ///
+    /// What a far machine is answered with while the read itself goes
+    /// on behind it (`Node::quota_readings_held`).
+    pub async fn peek(&'static self) -> Option<Result<Quota, QuotaTrouble>> {
+        let cache = disk_cache_path(self.id);
+        let now = jiff::Timestamp::now().as_second();
+        let mut quota = match peek_in(&(self.strategies)(), self.state, &cache, now).await? {
+            Ok(quota) => quota,
+            Err(why) => return Some(Err(why)),
+        };
+        (self.finish)(&mut quota);
+        quota.fill = whole_plan_fill(&quota.windows);
+        Some(Ok(quota))
+    }
+
     /// What the last read tried, strategy by strategy.
     pub fn last_attempts(&self) -> Vec<Attempt> {
         self.state.last.lock().unwrap().clone()
@@ -307,6 +326,51 @@ pub async fn run(
         _ => Err(last),
     };
     (answer, attempts)
+}
+
+/// [`run`] with every remote fetch taken out: the same locals, the same
+/// cache and cooldown, but a cached reading of any age answers, and
+/// where `run` would fetch this says `None`.
+pub async fn peek_in(
+    chain: &[Strategy],
+    state: &State,
+    cache: &Path,
+    now: i64,
+) -> Option<Result<Quota, QuotaTrouble>> {
+    let mut last = QuotaTrouble::NoLogin;
+    for s in chain {
+        if !(s.available)() {
+            continue;
+        }
+        if s.step == Step::Local {
+            match (s.fetch)().await {
+                Ok(mut quota) => {
+                    quota.source = Some(s.name.to_owned());
+                    return Some(Ok(quota));
+                }
+                Err(why) => last = why,
+            }
+            continue;
+        }
+        let cached = state
+            .mem
+            .lock()
+            .unwrap()
+            .clone()
+            .or_else(|| read_cache_at(cache, now));
+        if let Some((taken, quota)) = cached {
+            return Some(Ok(stamp(quota, taken)));
+        }
+        if let Some(failed_at) = *state.failed_at.lock().unwrap() {
+            let waited = now - failed_at;
+            if waited < FAIL_COOLDOWN {
+                let minutes = (FAIL_COOLDOWN - waited) / 60 + 1;
+                return Some(Err(QuotaTrouble::Cooling { minutes }));
+            }
+        }
+        return None;
+    }
+    Some(Err(last))
 }
 
 /// How full the subscription is **as a whole**, `0..=1`, or `None` when
@@ -571,6 +635,31 @@ mod tests {
         assert_eq!(got.source.as_deref(), Some("remote"));
         assert!((got.windows[0].used_pct - 9.0).abs() < 1e-6);
         assert_eq!(attempts[1].outcome, Outcome::Used);
+    }
+
+    /// **A peek never fetches** (fix/front): a local answers first; with
+    /// none, the remote reading last fetched answers at any age; with
+    /// nothing fetched and no cooldown, there is nothing to say yet.
+    #[test]
+    fn a_peek_answers_from_the_cache_at_any_age_and_never_fetches() {
+        let cache = tmp_cache("peek");
+        let state = State::new();
+        let (local, _) = counted("local", Step::Local, true, Err(QuotaTrouble::Unreadable));
+        let (remote, asked) = counted("remote", Step::Remote, true, Ok(quota_at(9.0)));
+        let chain = [local, remote];
+        assert_eq!(rt().block_on(peek_in(&chain, &state, &cache, 1_000)), None);
+
+        write_cache_at(&cache, 1_000, &quota_at(4.0));
+        let later = 1_000 + 10 * CACHE_TTL;
+        let got = rt().block_on(peek_in(&chain, &state, &cache, later)).unwrap().unwrap();
+        assert!((got.windows[0].used_pct - 4.0).abs() < 1e-6, "an expired reading answers");
+        assert_eq!(got.as_of, Some(1_000), "…stamped with when it was taken");
+        assert_eq!(asked.load(Ordering::SeqCst), 0, "and the endpoint is never asked");
+
+        let (local, _) = counted("local", Step::Local, true, Ok(quota_at(6.0)));
+        let (remote, _) = counted("remote", Step::Remote, true, Ok(quota_at(9.0)));
+        let got = rt().block_on(peek_in(&[local, remote], &state, &cache, later));
+        assert_eq!(got.unwrap().unwrap().source.as_deref(), Some("local"));
     }
 
     /// Within five minutes the machine's reading answers and nothing
