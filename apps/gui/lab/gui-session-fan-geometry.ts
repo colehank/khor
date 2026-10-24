@@ -1,6 +1,6 @@
 import type {FanPoint} from './gui-session-fan-state';
 export type FanPlacement='right'|'bottom';
-export type FanFrame={left:number;top:number;width:number;height:number;placement:FanPlacement;compact:boolean;horizontal:boolean;slots:number;anchor:FanPoint;touch:number;face:number;gap:number;pitch:number;titleWidth:number;originX:number;originY:number;target:FanPoint};
+export type FanFrame={left:number;top:number;width:number;height:number;placement:FanPlacement;compact:boolean;horizontal:boolean;slots:number;anchor:FanPoint;touch:number;face:number;gap:number;pitch:number;curve:number;titleWidth:number;originX:number;originY:number;target:FanPoint};
 type Bounds={left:number;top:number;width:number;height:number;touch:number;gap:number;originX:number;originY:number;placement?:FanPlacement};
 export const fanScale=(offset:number)=>.6+.4*Math.exp(-offset*offset*.9);
 export function fanPoint(frame:FanFrame,offset:number){
@@ -12,7 +12,7 @@ export function fanPoint(frame:FanFrame,offset:number){
   if(frame.horizontal)return {x:frame.anchor.x+offset*frame.pitch,y:frame.anchor.y};
   // Position the right-hand avatar itself on the curve. Its left-facing
   // title shrinks with it, without skewing the upper and lower halves.
-  const avatarX=frame.anchor.x-frame.touch*.45*offset*offset;
+  const avatarX=frame.anchor.x+frame.curve*offset*offset;
   return {x:avatarX-(frame.gap+frame.titleWidth)*fanScale(offset),y:frame.anchor.y-offset*frame.pitch};
 }
 export function outerPoint(frame:FanFrame,offset:number){
@@ -22,7 +22,7 @@ export function outerPoint(frame:FanFrame,offset:number){
   }
   if(!frame.horizontal){
     const left=fanPoint(frame,0).x-frame.face/2;
-    return {x:left-frame.gap-frame.touch*.28-frame.touch*.25*offset*offset,y:frame.anchor.y-offset*frame.pitch};
+    return {x:left-frame.gap-frame.touch*.28+frame.touch*.25*offset*offset,y:frame.anchor.y-offset*frame.pitch};
   }
   const p=fanPoint(frame,offset),scale=fanScale(offset),space=frame.face*scale/2+frame.gap+frame.touch*.28;
   return frame.horizontal?{x:p.x+(frame.gap+frame.titleWidth)/2*scale,y:p.y-space}:{x:p.x-space,y:p.y};
@@ -32,8 +32,12 @@ export function fanFrame(b:Bounds):FanFrame{
   const row=placement==='bottom'?Math.min(3*touch,(width-4*gap)*.39):0;
   const titleWidth=placement==='bottom'?row:horizontal?3*touch:3.4*touch;
   const pitch=placement==='bottom'?Math.min(1.7*touch,Math.max(touch*.5,(height-face-3*gap)/Math.max(1,slots/2))):horizontal?(width-2*gap-face-gap-titleWidth)/(slots-1):Math.min(1.5*touch,(height-2*gap-face*(slots===3?.76:.61))/Math.max(1,slots-1));
-  const anchor={x:placement==='bottom'?width/2:horizontal?gap+face/2+pitch*(slots-1)/2:width-gap-face/2-touch*.3,y:placement==='bottom'?height-gap-face/2-touch*(slots===1?.65:1.1):horizontal||slots===1?Math.max(face/2,Math.min(height-face/2,height*.62)):height-gap-face*(slots===3?.76:.61)/2-(slots-1)/2*pitch};
-  const frame:FanFrame={...b,placement,compact,horizontal,slots,face,titleWidth,pitch,anchor,target:{x:0,y:0}},neutral=outerPoint(frame,0);
+  // Keep the outer ends in place; bow left only as far as the title and
+  // control can fit, so narrow screens retain the complete identity.
+  const edge=(slots-1)/2,rightEdge=width-gap-face/2-touch*.3;
+  const curve=Math.max(0,Math.min(touch*.45,(rightEdge-titleWidth-face/2-3*gap-touch*.28)/Math.max(1,edge*edge)));
+  const anchor={x:placement==='bottom'?width/2:horizontal?gap+face/2+pitch*(slots-1)/2:rightEdge-curve*edge*edge,y:placement==='bottom'?height-gap-face/2-touch*(slots===1?.65:1.1):horizontal||slots===1?Math.max(face/2,Math.min(height-face/2,height*.62)):height-gap-face*(slots===3?.76:.61)/2-(slots-1)/2*pitch};
+  const frame:FanFrame={...b,placement,compact,horizontal,slots,face,titleWidth,pitch,curve,anchor,target:{x:0,y:0}},neutral=outerPoint(frame,0);
   frame.target={x:Math.max(touch*.8,Math.min(width-touch*.8,neutral.x-(placement==='right'&&!horizontal?touch*.7:0))),y:Math.max(gap,neutral.y-touch*(placement==='bottom'||horizontal?2:1.2))};
   return frame;
 }
