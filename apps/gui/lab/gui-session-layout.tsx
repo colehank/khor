@@ -45,7 +45,7 @@ function Lab(){
   return <main className="session-layout-lab">
     <aside className="layout-lab-controls" onChangeCapture={captureDraft}>
       <p className="layout-lab-eyebrow">KHOR · LAB</p><h1>会话操作区</h1>
-      <p>左上直接选择模型与思考强度，右上新建会话。会话头像放在输入栏最右侧，点开展开会话药丸。长按轻拨预选，保持偏移循环翻选，回中暂停、反向倒退，松手停靠确认。扇形与药丸共用窗口顺序，最多五个会话按弧形排列，头像右侧显示标题，整组近大远小；空间不足时减少可见项。上推独立展开全部标签页，点开的药丸保留原来的连续翻选。</p>
+      <p>左上直接选择模型与思考强度，右上新建会话。会话头像放在输入栏最右侧，点开展开会话药丸。长按沿弧轻拨预选，保持角度偏移循环翻选，回中暂停、反向倒退，松手停靠确认。扇形与药丸共用窗口顺序，最多五个会话按弧形排列，头像右侧显示标题，整组近大远小；空间不足时减少可见项。向左上推远后松手展开全部标签页，回撤恢复扫选，点开的药丸保留原来的连续翻选。</p>
       <label>会话<select aria-label="会话" value={session} onChange={e=>setSession(e.target.value)}>{scenes.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
       <label>窗口数量<select aria-label="窗口数量" value={count} onChange={e=>setCount(e.target.value)}><option value="3">3 个窗口</option><option value="4">4 个窗口</option><option value="5">5 个窗口</option></select></label>
       <label>尺寸<select aria-label="尺寸" value={width} onChange={e=>setWidth(e.target.value)}>{sizes.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
@@ -56,7 +56,7 @@ function Lab(){
       <label>布局<select aria-label="布局" value={deck} onChange={e=>setDeck(e.target.value)}><option value="fan">右手扇形 · 循环拨杆</option><option value="compose">右侧头像 · 连续拨杆</option><option value="light">轻量页头 · 头像与文字</option><option value="combined">底部组合 · 输入与药丸</option><option value="top">顶部药丸 · 底部输入</option><option value="bottom">原底部 · 分开的胶囊</option></select></label>
       <label className="layout-lab-check"><input type="checkbox" checked={classic} onChange={e=>setClassic(e.target.checked)}/>对比原来的输入区</label>
       <a href={src} target="_blank" rel="noreferrer">打开全屏预览 ↗</a>
-      <p className="layout-lab-note">{deck==='fan'?'右侧头像：长按轻拨预选，保持偏移按三档速度循环翻选，回中暂停、反向倒退，松手确认；正上方展开列表。顺序与药丸一致，预选不打开中间内容。':deck==='compose'?'右侧头像：点击展开药丸；横拨切换，长按进入浅 U 拨杆；回中暂停，松手确认，上推进入全部标签页。':deck==='light'?'点击头像或标题打开总览；长按头像显示轮盘，沿弧线滑动，回到头像取消。':(deck==='top'?'顶部药丸下拉':'底部药丸上滑')+'打开总览，长按左右拨动切换。'}会话内切换保留各自的文字草稿。预览不连接真实智能体；键盘与安全区是浏览器模拟。</p>
+      <p className="layout-lab-note">{deck==='fan'?'右侧头像：长按沿弧拨动预选，保持角度偏移按三档速度循环翻选，回中暂停、反向倒退，松手确认；向左上推远展开列表，回撤恢复扫选。顺序与药丸一致，预选不打开中间内容。':deck==='compose'?'右侧头像：点击展开药丸；横拨切换，长按进入浅 U 拨杆；回中暂停，松手确认，上推进入全部标签页。':deck==='light'?'点击头像或标题打开总览；长按头像显示轮盘，沿弧线滑动，回到头像取消。':(deck==='top'?'顶部药丸下拉':'底部药丸上滑')+'打开总览，长按左右拨动切换。'}会话内切换保留各自的文字草稿。预览不连接真实智能体；键盘与安全区是浏览器模拟。</p>
       {wide&&<p className="layout-lab-note">宽屏沿用顶部标签，切换到窄屏查看本轮布局。</p>}
       <p className="layout-lab-note">实验分支 lab/gui-session-layout，尚未合入 main。</p>
     </aside>

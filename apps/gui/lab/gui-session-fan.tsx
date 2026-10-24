@@ -13,7 +13,7 @@ import {thumbFanJoystick,type FanState,type FanPoint,type FanResult} from './gui
 import {SessionPill,useSessionPill} from './gui-session-pill';
 import './gui-session-fan.css';
 
-type Frame={left:number;top:number;width:number;height:number;compact:boolean;horizontal:boolean;slots:number;anchor:FanPoint;touch:number;face:number;gap:number;pitch:number;titleWidth:number;originX:number;target:{x:number;y:number}};
+type Frame={left:number;top:number;width:number;height:number;compact:boolean;horizontal:boolean;slots:number;anchor:FanPoint;touch:number;face:number;gap:number;pitch:number;titleWidth:number;originX:number;originY:number;target:{x:number;y:number}};
 type Contact={pointer:number;touch:boolean;touchId:number|null;active:string;ids:string;layout:DeckContactLayout};
 const titleOf=(face:TabFace|undefined)=>face?.label??'会话';
 function frameFor(button:HTMLElement):Frame{
@@ -24,7 +24,7 @@ function frameFor(button:HTMLElement):Frame{
   const titleWidth=horizontal?3*touch:3.4*touch,rowWidth=face+(horizontal?gap/1.5:gap)+titleWidth;
   const pitch=horizontal?(width-2*gap-rowWidth)/(slots-1):Math.min(1.5*touch,(height-2*gap-face*(slots===3?.76:.61))/Math.max(1,slots-1));
   const anchor={x:horizontal?gap+face/2+pitch*(slots-1)/2:x-4.8*touch,y:horizontal||slots===1?Math.max(face/2,Math.min(height-face/2,height*.62)):height-gap-face*(slots===3?.76:.61)/2-(slots-1)/2*pitch};
-  return {left,top,width,height,compact,horizontal,slots,anchor,touch,face,gap,pitch,titleWidth,originX:x,target:{x:Math.min(x,width-size*2-gap),y:compact?gap:Math.max(gap,height-3.5*touch)}};
+  return {left,top,width,height,compact,horizontal,slots,anchor,touch,face,gap,pitch,titleWidth,originX:x,originY:b.y+b.height/2-top,target:{x:Math.min(x-touch*.9,width-size*2-gap),y:compact?gap:Math.max(gap,height-3*touch)}};
 }
 type Closing={state:FanState;frame:Frame;contact:Contact;phase:'settling'|'fading';result:FanResult};
 function fanItems(position:number,count:number,frame:Frame){
@@ -43,7 +43,7 @@ function TitleWords({text}:{text:string}){
 function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];state:FanState;frame:Frame;phase:string;duration:number}){
   const position=useDeckArcPosition(state.hot??Math.max(0,faces.findIndex(f=>f.id===state.ids[0])),Math.max(1,state.ids.length),state.direction,duration);
   const items=fanItems(position,state.ids.length,frame),candidate=state.hot===null?null:faces.find(f=>f.id===state.ids[state.hot!]);
-  return createPortal(<div data-lab-left-fan data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
+  return createPortal(<div data-lab-left-fan data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
     <div className="deck-selector-dimmer"/>
     <div className="lab-fan-identities" data-dimmed={state.lane==='overview'||undefined} aria-hidden="true">
       {items.map(item=>{const id=state.ids[item.index],face=faces.find(f=>f.id===id);return face&&<span key={item.slot} data-lab-fan-session={id} data-selected={state.hot===item.index||undefined} className="lab-fan-item" style={{left:item.x-frame.face/2,top:item.y,width:frame.face+frame.gap+frame.titleWidth,opacity:item.opacity,transform:`translateY(-50%) scale(${item.scale})`,transformOrigin:`${frame.face/2}px 50%`,gap:frame.horizontal?frame.gap/1.5:frame.gap}}>
@@ -52,9 +52,9 @@ function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];state:FanS
       </span>;})}
     </div>
     <div className="lab-fan-steering" aria-hidden="true">
-      <DeckRateCue side={-1} state={{...state,direction:-state.direction,overview:state.lane==='overview'}} x={frame.originX-frame.touch*.85}/>
-      <span className="deck-selector-origin" data-paused={state.direction===0||undefined} style={{left:frame.originX}}/>
-      <DeckRateCue side={1} state={{...state,direction:-state.direction,overview:state.lane==='overview'}} x={Math.min(frame.width-2*frame.gap,frame.originX+frame.touch*.65)}/>
+      <svg className="lab-fan-guide" width={frame.width} height={frame.height}><path d={`M ${frame.originX-2*frame.touch*Math.cos(25*Math.PI/180)} ${frame.originY-2*frame.touch*Math.sin(25*Math.PI/180)} A ${2*frame.touch} ${2*frame.touch} 0 0 1 ${frame.originX-2*frame.touch*Math.cos(75*Math.PI/180)} ${frame.originY-2*frame.touch*Math.sin(75*Math.PI/180)}`}/></svg>
+      {[-1,1].map(side=>{const angle=side<0?30:70;return <span key={side} className="lab-fan-cue" style={{left:frame.originX-2*frame.touch*Math.cos(angle*Math.PI/180),top:frame.originY-2*frame.touch*Math.sin(angle*Math.PI/180),rotate:`${angle-90}deg`}}><DeckRateCue side={side} state={{...state,overview:state.armed}} x={0}/></span>;})}
+      <span className="deck-selector-origin" data-paused={state.direction===0||undefined} style={{left:frame.originX-Math.SQRT2*frame.touch,top:frame.originY-Math.SQRT2*frame.touch}}/>
     </div>
     <div data-lab-fan-overview data-active={state.lane==='overview'&&state.armed||undefined} className="lab-fan-overview" style={{left:frame.target.x,top:frame.target.y}} aria-hidden="true"><IconChevronUp centred/><span>全部标签</span></div>
   </div>,document.body);
@@ -106,18 +106,18 @@ export function LabFanNavigator({faces,active,onFocus,onOverview,hidden}:Pick<Se
   },[engine]);
   const down=(e:ReactPointerEvent<HTMLButtonElement>)=>{
     if(!e.isPrimary||e.button!==0||contact.current||!button.current)return;e.preventDefault();stopClosing();pendingTap.current=false;
-    const frame=frameFor(button.current),v=window.visualViewport,right=(v?.offsetLeft??0)+(v?.width??innerWidth);
-    setFrame(frame);engine.start({x:e.clientX,y:e.clientY},latest.current.faces.map(f=>f.id),latest.current.active,right-e.clientX-frame.gap/2);
+    const frame=frameFor(button.current);
+    setFrame(frame);engine.start({x:e.clientX,y:e.clientY},latest.current.faces.map(f=>f.id),latest.current.active,frame.touch);
     const c:Contact={pointer:e.pointerId,touch:e.pointerType==='touch',touchId:null,active:latest.current.active,ids:latest.current.ids,layout:readDeckContactLayout(button.current)};contact.current=c;button.current.setPointerCapture(c.pointer);
   };
   const shown=closing?.state??state,shownFrame=closing?.frame??frame;
   const visible=!!closing||shown?.phase==='fan'||shown?.phase==='overview',candidate=shown?.hot==null?null:faces.find(f=>f.id===shown.ids[shown.hot!]),current=faces.find(f=>f.id===active);
   return <div ref={root} className="lab-compose-nav" data-lab-session-navigation data-fan-open={visible||undefined}>
-    <button ref={button} type="button" data-lab-compose-avatar data-lab-fan-avatar data-expanded={expanded||undefined} aria-label={`切换会话：${titleOf(current)}`} aria-expanded={expanded||visible} aria-description="点击展开药丸；长按轻拨预选，保持偏移循环翻选，回中暂停，反向倒退，松手切换；直接上推展开全部标签" onPointerDown={down} onPointerMove={e=>{if(contact.current?.pointer===e.pointerId)engine.move({x:e.clientX,y:e.clientY});}} onPointerUp={e=>finish(e.pointerId,{x:e.clientX,y:e.clientY})} onPointerCancel={cancel} onLostPointerCapture={()=>{if(contact.current)cancel();}} onContextMenu={e=>e.preventDefault()} onClick={e=>{if(e.detail===0||pendingTap.current){cancel();toggle();}}} onKeyDown={e=>{if(e.key==='ArrowUp'){e.preventDefault();overview();}}}>
+    <button ref={button} type="button" data-lab-compose-avatar data-lab-fan-avatar data-expanded={expanded||undefined} aria-label={`切换会话：${titleOf(current)}`} aria-expanded={expanded||visible} aria-description="点击展开药丸；长按沿弧拨动预选，保持角度偏移循环翻选，回中暂停，反向倒退；向左上推远后松手展开全部标签，回撤恢复扫选" onPointerDown={down} onPointerMove={e=>{if(contact.current?.pointer===e.pointerId)engine.move({x:e.clientX,y:e.clientY});}} onPointerUp={e=>finish(e.pointerId,{x:e.clientX,y:e.clientY})} onPointerCancel={cancel} onLostPointerCapture={()=>{if(contact.current)cancel();}} onContextMenu={e=>e.preventDefault()} onClick={e=>{if(e.detail===0||pendingTap.current){cancel();toggle();}}} onKeyDown={e=>{if(e.key==='ArrowUp'){e.preventDefault();overview();}}}>
       {(candidate??current)&&<span key={(candidate??current)!.id} data-lab-fan-avatar-preview={(candidate??current)!.id} className="lab-fan-avatar-face"><TabAvatar f={(candidate??current)!} bare="size-tab-face" seat="tab"/></span>}
     </button>
     {expanded&&<SessionPill faces={faces} active={active} onFocus={focus} onOverview={overview}/>}
     {visible&&shown&&shownFrame&&<FanLayer faces={faces} state={shown} frame={shownFrame} phase={closing?.phase??shown.phase} duration={closing?SETTLE_MS:timing.current.follow}/>}
-    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.lane==='overview'?shown.armed?'松手展开全部标签':'上推展开，回撤取消':candidate?`预选 ${titleOf(candidate)}，松手切换，回中暂停，Esc 取消`:'轻拨预选，保持偏移循环翻选，回中暂停，向上展开全部标签':''}</span>
+    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.lane==='overview'?shown.armed?'松手展开全部标签':'向左上推远展开，回撤恢复扫选':candidate?`预选 ${titleOf(candidate)}，松手切换，回中暂停，Esc 取消`:'轻拨预选，保持偏移循环翻选，回中暂停，向左上推远展开全部标签':''}</span>
   </div>;
 }

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdirSync} from 'node:fs';
 import {chromium} from 'playwright-core';
-const base=process.env.LAYOUT_LAB_URL??'http://localhost:23795',shots='/Volumes/disk0/khor-gui-session-layout-proof/fan-cycle';
+const base=process.env.LAYOUT_LAB_URL??'http://localhost:23795',shots='/Volumes/disk0/khor-gui-session-layout-proof/fan-arc';
 mkdirSync(shots,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:process.env.PW_HEADLESS==='1'});let page;
 try{
@@ -61,7 +61,8 @@ try{
  await pick('gui/codex-review');await page.locator('[data-composer-text]').fill('保留 Codex 草稿');await pick('gui/ai-elements-review');checks++;
  const begin=async()=>{const a=await avatar().boundingBox(),x=a.x+a.width/2,y=a.y+a.height/2;await page.mouse.move(x,y);await page.mouse.down();return {x,y};};
  const hold=async()=>{const p=await begin();await fan().waitFor();assert.equal(await fan().getAttribute('data-fan-phase'),'fan');return p;};
- const move=async(p,dx,up=0)=>page.mouse.move(p.x+dx,p.y-up,{steps:3});
+ const arc=async(p,angle,radius=80)=>page.mouse.move(p.x-radius*Math.cos(angle*Math.PI/180),p.y-radius*Math.sin(angle*Math.PI/180),{steps:3});
+ const move=async(p,dx)=>arc(p,45-dx/56*30);
  const hot=()=>fan().getAttribute('data-fan-selected');
  const parked=()=>page.waitForFunction(()=>{const e=document.querySelector('[data-lab-left-fan]');return e&&Math.abs(Number(e.dataset.fanPosition)-Math.round(Number(e.dataset.fanPosition)))<.001;});
  const noLateCommit=async id=>{await page.evaluate(async()=>{const at=performance.now();await new Promise(resolve=>{const tick=()=>performance.now()-at>350?resolve():requestAnimationFrame(tick);tick();});});assert.equal(await selected(),id);};
@@ -89,11 +90,14 @@ try{
   await page.evaluate(phase=>{window.__fanCancelled=false;const el=document.querySelector('[data-lab-left-fan]'),observer=new MutationObserver(()=>{if(el.dataset.fanPhase===phase){observer.disconnect();window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));window.__fanCancelled=true;}});observer.observe(el,{attributes:true,attributeFilter:['data-fan-phase']});},phase);
   await page.mouse.up();await page.waitForFunction(()=>window.__fanCancelled);await fan().waitFor({state:'hidden'});await noLateCommit(ordered[0]);checks++;
  }
- origin=await hold();await move(origin,-14);await move(origin,0,75);assert.equal(await fan().getAttribute('data-fan-lane'),'fan');assert.equal(await fan().getAttribute('data-fan-direction'),'0');assert.equal(await page.locator('[data-lab-fan-overview][data-active]').count(),0);await page.keyboard.press('Escape');await page.mouse.up();checks++;
- origin=await begin();await move(origin,0,75);await page.locator('[data-lab-fan-overview][data-active]').waitFor();await move(origin,-80,40);assert.equal(await fan().getAttribute('data-fan-lane'),'overview');assert.equal(await hot(),null);await page.mouse.up();assert.equal(await page.locator('[data-tab-sheet]').count(),0);checks++;
- origin=await begin();await move(origin,0,75);await page.locator('[data-lab-fan-overview][data-active]').waitFor();await move(origin,0,8);await page.mouse.up();assert.equal(await page.locator('[data-tab-sheet]').count(),0);checks++;
- origin=await begin();await move(origin,0,75);await page.locator('[data-lab-fan-overview][data-active]').waitFor();await page.screenshot({path:`${shots}/upward-overview.png`});await page.mouse.up();await page.locator('[data-tab-sheet-open="gui/ai-elements-review"]').click();await page.locator('[data-tab-sheet]').waitFor({state:'hidden'});checks++;
- origin=await hold();await move(origin,0,75);await page.locator('[data-lab-fan-overview][data-active]').waitFor();await page.mouse.up();await page.locator('[data-tab-sheet-open="gui/ai-elements-review"]').click();await page.locator('[data-tab-sheet]').waitFor({state:'hidden'});checks++;
+ // Y motion at the same X must reverse angular steering.
+ origin=await hold();await page.mouse.move(origin.x-70,origin.y-40);assert.equal(await fan().getAttribute('data-fan-direction'),'-1');await page.mouse.move(origin.x-70,origin.y-100);assert.equal(await fan().getAttribute('data-fan-direction'),'1');await page.keyboard.press('Escape');await page.mouse.up();checks++;
+ // Outward travel remains available after selecting, with reversible hysteresis.
+ origin=await hold();await arc(origin,55);const retained=await hot();await arc(origin,45,145);await page.locator('[data-lab-fan-overview][data-active]').waitFor();assert.equal(await fan().getAttribute('data-fan-direction'),'0');await arc(origin,45,130);assert.equal(await page.locator('[data-lab-fan-overview][data-active]').count(),1);await arc(origin,45,100);assert.equal(await page.locator('[data-lab-fan-overview][data-active]').count(),0);assert.equal(await hot(),retained);await arc(origin,35);assert.equal(await fan().getAttribute('data-fan-direction'),'-1');await page.keyboard.press('Escape');await page.mouse.up();checks++;
+ origin=await begin();await arc(origin,45,145);await page.locator('[data-lab-fan-overview][data-active]').waitFor();await arc(origin,45,80);await page.mouse.up();assert.equal(await page.locator('[data-tab-sheet]').count(),0);checks++;
+ origin=await begin();await arc(origin,45,145);await page.locator('[data-lab-fan-overview][data-active]').waitFor();await page.waitForFunction(()=>{const e=document.querySelector('[data-lab-left-fan]');return e&&Number(getComputedStyle(e).opacity)>.99;});await page.screenshot({path:`${shots}/outward-overview.png`});await page.mouse.up();await page.locator('[data-tab-sheet-open="gui/ai-elements-review"]').click();await page.locator('[data-tab-sheet]').waitFor({state:'hidden'});checks++;
+ origin=await hold();await arc(origin,55);await arc(origin,45,145);await page.locator('[data-lab-fan-overview][data-active]').waitFor();await page.mouse.up();await page.locator('[data-tab-sheet-open="gui/ai-elements-review"]').click();await page.locator('[data-tab-sheet]').waitFor({state:'hidden'});checks++;
+ origin=await hold();await page.mouse.move(origin.x,origin.y-100);assert.equal(await page.locator('[data-lab-fan-overview][data-active]').count(),0);await page.keyboard.press('Escape');await page.mouse.up();checks++;
  for(const interruption of ['pointer','multi','resize','blur']){
   origin=await hold();await move(origin,-60,20);
   if(interruption==='pointer')await avatar().dispatchEvent('pointercancel',{pointerId:1,isPrimary:true});
@@ -106,7 +110,7 @@ try{
  await avatar().click();const fullBand=page.locator('[data-lab-session-pill] [data-deck-band]'),b=await fullBand.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x-b.width*.2,b.y+b.height/2,{steps:6});const swiped=await fullBand.getAttribute('data-band-preview');await page.mouse.up();await page.waitForFunction(id=>JSON.parse(localStorage.getItem('khor.sessions.tabs')).active===id,swiped);checks++;
  await avatar().focus();await page.keyboard.press('Enter');await page.locator('[data-lab-session-pill]').waitFor();await page.keyboard.press('ArrowUp');await page.locator('[data-tab-sheet-open="gui/ai-elements-review"]').click();await page.locator('[data-tab-sheet]').waitFor({state:'hidden'});checks++;
  const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:2});
- let a=await avatar().boundingBox(),t={x:a.x+a.width/2,y:a.y+a.height/2,id:0};await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[t]});await fan().waitFor();await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...t,x:t.x-14,y:t.y-4}]});const touched=await hot();assert(touched&&touched!==ordered[0]);await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForFunction(id=>JSON.parse(localStorage.getItem('khor.sessions.tabs')).active===id,touched);assert.equal(await page.locator('[data-lab-session-pill], [data-tab-sheet]').count(),0);checks++;
+ let a=await avatar().boundingBox(),t={x:a.x+a.width/2,y:a.y+a.height/2,id:0};await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[t]});await fan().waitFor();await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...t,x:t.x-40,y:t.y-69.2820323}]});const touched=await hot();assert(touched&&touched!==ordered[0]);await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForFunction(id=>JSON.parse(localStorage.getItem('khor.sessions.tabs')).active===id,touched);assert.equal(await page.locator('[data-lab-session-pill], [data-tab-sheet]').count(),0);checks++;
  a=await avatar().boundingBox();t={x:a.x+a.width/2,y:a.y+a.height/2,id:0};await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[t]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.locator('[data-lab-session-pill]').waitFor();await page.keyboard.press('Escape');await page.locator('[data-lab-session-pill]').waitFor({state:'hidden'});checks++;
  await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:false});
  const known=['gui/ai-elements-review','gui/codex-review','wide/all','gui/ai-elements-plan','gui/ai-elements-stream'];
@@ -132,5 +136,5 @@ try{
  await page.setViewportSize({width:1450,height:1050});await page.goto(`${base}/lab/gui-session-layout.html`);const frame=page.frameLocator('iframe');await frame.locator('[data-lab-fan-avatar]').waitFor();await frame.locator('[data-composer-text]').fill('比较时保留草稿');
  for(const count of ['3','4','5']){await page.getByLabel('窗口数量',{exact:true}).selectOption(count);await frame.locator('[data-lab-fan-avatar]').waitFor();assert.equal(await frame.locator('[data-composer-text]').inputValue(),'比较时保留草稿');}checks++;
  await page.getByLabel('布局',{exact:true}).selectOption('compose');await frame.locator('.lab-avatar-band').waitFor();assert.equal(await frame.locator('[data-composer-text]').inputValue(),'比较时保留草稿');await page.getByLabel('布局',{exact:true}).selectOption('fan');await frame.locator('[data-lab-fan-avatar]').waitFor();assert.equal(await frame.locator('[data-composer-text]').inputValue(),'比较时保留草稿');await page.screenshot({path:`${shots}/lab.png`,fullPage:true});checks++;
- assert.deepEqual(errors,[]);console.log(`${checks} cyclic fan, titles, preview scale, gears/pause/reverse, settle/fade, touch and layout checks passed. Screenshots: ${shots}`);
+ assert.deepEqual(errors,[]);console.log(`${checks} angular fan, outward/retractable overview, titles, gears/pause/reverse, settle/fade, touch and layout checks passed. Screenshots: ${shots}`);
 }catch(error){if(page)await page.screenshot({path:`${shots}/failure.png`});throw error;}finally{await browser.close();}
