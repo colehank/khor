@@ -21,8 +21,7 @@ export function outerPoint(frame:FanFrame,offset:number){
     return {x:frame.width/2+offset*Math.min(1.1*frame.touch,(frame.width/2-frame.gap)/2),y:top-frame.gap-frame.touch*.28-offset*offset*frame.touch*.25};
   }
   if(!frame.horizontal){
-    const left=fanPoint(frame,0).x-frame.face/2;
-    return {x:left-frame.gap-frame.touch*.28+frame.touch*.25*offset*offset,y:frame.anchor.y-offset*frame.pitch};
+    return {x:frame.anchor.x+frame.face/2+frame.gap+frame.touch*.28+frame.curve*offset*offset,y:frame.anchor.y-offset*frame.pitch};
   }
   const p=fanPoint(frame,offset),scale=fanScale(offset),space=frame.face*scale/2+frame.gap+frame.touch*.28;
   return frame.horizontal?{x:p.x+(frame.gap+frame.titleWidth)/2*scale,y:p.y-space}:{x:p.x-space,y:p.y};
@@ -32,12 +31,12 @@ export function fanFrame(b:Bounds):FanFrame{
   const row=placement==='bottom'?Math.min(3*touch,(width-4*gap)*.39):0;
   const titleWidth=placement==='bottom'?row:horizontal?3*touch:3.4*touch;
   const pitch=placement==='bottom'?Math.min(1.7*touch,Math.max(touch*.5,(height-face-3*gap)/Math.max(1,slots/2))):horizontal?(width-2*gap-face-gap-titleWidth)/(slots-1):Math.min(1.5*touch,(height-2*gap-face*(slots===3?.76:.61))/Math.max(1,slots-1));
-  // Keep the outer ends in place; bow left only as far as the title and
-  // control can fit, so narrow screens retain the complete identity.
-  const edge=(slots-1)/2,rightEdge=width-gap-face/2-touch*.3;
-  const curve=Math.max(0,Math.min(touch*.45,(rightEdge-titleWidth-face/2-3*gap-touch*.28)/Math.max(1,edge*edge)));
+  // Reserve the right edge for the thumb guide; fit the entire title to
+  // its left, flattening the curve when a narrow viewport needs room.
+  const edge=(slots-1)/2,rightEdge=width-2*gap-face/2-touch*(.3+.28);
+  const curve=Math.max(0,Math.min(touch*.45,(rightEdge-titleWidth-face/2-2*gap)/Math.max(1,edge*edge)));
   const anchor={x:placement==='bottom'?width/2:horizontal?gap+face/2+pitch*(slots-1)/2:rightEdge-curve*edge*edge,y:placement==='bottom'?height-gap-face/2-touch*(slots===1?.65:1.1):horizontal||slots===1?Math.max(face/2,Math.min(height-face/2,height*.62)):height-gap-face*(slots===3?.76:.61)/2-(slots-1)/2*pitch};
   const frame:FanFrame={...b,placement,compact,horizontal,slots,face,titleWidth,pitch,curve,anchor,target:{x:0,y:0}},neutral=outerPoint(frame,0);
-  frame.target={x:Math.max(touch*.8,Math.min(width-touch*.8,neutral.x-(placement==='right'&&!horizontal?touch*.7:0))),y:Math.max(gap,neutral.y-touch*(placement==='bottom'||horizontal?2:1.2))};
+  frame.target={x:Math.max(touch*.8,Math.min(width-touch*.8,placement==='right'&&!horizontal?fanPoint(frame,0).x-face/2-touch*.7:neutral.x)),y:Math.max(gap,neutral.y-touch*(placement==='bottom'||horizontal?2:1.2))};
   return frame;
 }

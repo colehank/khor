@@ -1,44 +1,47 @@
 /** Right-thumb coordinates adapt the production pill joystick, not its rhythm. */
 import {deckJoystick,DECK_JOYSTICK_DEFAULTS,type DeckJoystickClock,type DeckJoystickState} from '../src/lib/deck-joystick';
 export type FanPoint={x:number;y:number};
-export type FanState={phase:'idle'|'pending'|'fan'|'overview';lane:'fan'|'overview'|null;held:boolean;origin:FanPoint;point:FanPoint;ids:string[];hot:number|null;armed:boolean;direction:number;tier:number;interval:number;pulse:number;deflection:number;acquired:boolean};
+export type FanState={phase:'idle'|'pending'|'fan'|'overview';lane:'fan'|'overview'|null;held:boolean;origin:FanPoint;point:FanPoint;ids:string[];hot:number|null;armed:boolean;direction:number;tier:number;interval:number;pulse:number;deflection:number;cursor?:number;acquired:boolean};
 export type FanResult={kind:'none'|'tap'|'overview'}|{kind:'focus';id:string};
 export function fanControl(origin:FanPoint,point:FanPoint,unit=44,placement:'right'|'bottom'='right',armed=false){
   const dx=origin.x-point.x,up=origin.y-point.y,distance=Math.hypot(dx,up),angle=Math.atan2(up,dx)*180/Math.PI,neutral=placement==='bottom'?90:45;
   return {distance,angle,overview:Math.abs(angle-neutral)<=18&&distance>unit*(armed?2.7:3.2),gain:distance>unit*.55&&Math.abs(angle-neutral)<=40?(angle-neutral)/30*DECK_JOYSTICK_DEFAULTS.reach:0};
 }
-/** Short throw: acquire a comfortable neutral, then move through detents. */
+/** Acquire a comfortable landing; steer by thumb travel rather than polar angle. */
 export function fanStick(origin:FanPoint,unit=44,placement:'right'|'bottom'='right'){
-  let neutral=placement==='bottom'?90:45,radius=0,acquired=false,side=0,peak=0,wasOverview=false,resume:number|null=null,motionAngle=neutral,motionPoint={...origin};
+  let neutralPoint={...origin},radius=0,acquired=false,side=0,peak=0,wasOverview=false,motionPoint={...origin};
   return {move(point:FanPoint,armed=false){
     const raw=fanControl(origin,point,unit,placement,armed),defaultAngle=placement==='bottom'?90:45;
     const gate=Math.max(unit*3.2,radius+unit*1.5),overview=Math.abs(raw.angle-defaultAngle)<=22&&raw.distance>gate-(armed?unit*.5:0);
-    if(overview){wasOverview=true;side=0;peak=0;return {...raw,overview:true,gain:0,extraSteps:0,acquired,moved:false};}
-    if(!acquired&&raw.distance>=unit*.7&&Math.abs(raw.angle-defaultAngle)<=60){neutral=raw.angle;motionAngle=raw.angle;motionPoint={...point};radius=Math.min(raw.distance,unit*1.2);acquired=true;return {...raw,overview:false,gain:0,extraSteps:0,acquired,moved:false};}
-    if(wasOverview){resume=raw.angle;wasOverview=false;}
-    if(resume!==null&&Math.abs(raw.angle-resume)>3)resume=null;
-    const delta=raw.angle-neutral,magnitude=Math.abs(delta),threshold=side?8:12;
-    const active=acquired&&resume===null&&raw.distance>unit*.45&&magnitude>threshold&&Math.abs(delta)<=65;
-    if(!active){side=0;peak=0;return {...raw,overview:false,gain:0,extraSteps:0,acquired,moved:false};}
-    const next=Math.sign(delta),level=Math.min(3,1+Math.floor(Math.max(0,magnitude-12)/12));
-    const extraSteps=next!==side?0:Math.min(1,Math.max(0,level-peak));
+    const rest={...raw,overview:false,gain:0,extraSteps:0,acquired,moved:false,cursor:0};
+    if(overview){wasOverview=true;side=0;peak=0;return {...rest,overview:true};}
+    if(!acquired&&raw.distance>=unit*.7&&Math.abs(raw.angle-defaultAngle)<=60){neutralPoint={...point};motionPoint={...point};radius=Math.min(raw.distance,unit*1.2);acquired=true;wasOverview=false;return {...rest,acquired};}
+    if(wasOverview){neutralPoint={...point};motionPoint={...point};wasOverview=false;return rest;}
+    // Up/down remains usable with either diagonal or a straight thumb path.
+    // The small horizontal contribution tolerates natural right-hand drift.
+    const travel=placement==='bottom'?point.x-neutralPoint.x:neutralPoint.y-point.y+.2*(neutralPoint.x-point.x);
+    const magnitude=Math.abs(travel),enter=unit*.25,step=unit*.4,threshold=side?unit*.16:enter;
+    const cursor=acquired?Math.max(-2,Math.min(2,travel/(unit*.6))):0;
+    if(!acquired||magnitude<=threshold){side=0;peak=0;return {...rest,cursor};}
+    const next=Math.sign(travel),level=Math.min(3,1+Math.floor(Math.max(0,magnitude-enter)/step));
+    const extraSteps=next!==side?0:Math.max(0,level-peak);
     peak=next===side?Math.max(peak,level):level;side=next;
-    const gain=next*(11+Math.min(1,Math.max(0,(magnitude-12)/24))*45);
-    const moved=Math.abs(raw.angle-motionAngle)>=3||Math.hypot(point.x-motionPoint.x,point.y-motionPoint.y)>=unit*.12;if(moved){motionAngle=raw.angle;motionPoint={...point};}
-    return {...raw,overview:false,gain,extraSteps,acquired,moved};
+    const gain=next*(11+Math.min(1,Math.max(0,(magnitude-enter)/(2*step)))*45);
+    const moved=Math.hypot(point.x-motionPoint.x,point.y-motionPoint.y)>=unit*.12;if(moved)motionPoint={...point};
+    return {...rest,gain,extraSteps,moved,cursor};
   }};
 }
 export function thumbFanJoystick(changed:(state:FanState)=>void,clock?:DeckJoystickClock){
-  const idle=():FanState=>({phase:'idle',lane:null,held:false,origin:{x:0,y:0},point:{x:0,y:0},ids:[],hot:null,armed:false,direction:0,tier:0,interval:DECK_JOYSTICK_DEFAULTS.slowMs,pulse:0,deflection:0,acquired:false});
+  const idle=():FanState=>({phase:'idle',lane:null,held:false,origin:{x:0,y:0},point:{x:0,y:0},ids:[],hot:null,armed:false,direction:0,tier:0,interval:DECK_JOYSTICK_DEFAULTS.slowMs,pulse:0,deflection:0,cursor:0,acquired:false});
   let state=idle(),travelled=false,initial=0,unit=44;
   let engine:ReturnType<typeof deckJoystick>|null=null,stick=fanStick({x:0,y:0});
   const read=()=>({...state,origin:{...state.origin},point:{...state.point},ids:[...state.ids]});
   const publish=()=>changed(read());
   const update=()=>{
-    const control=state.held?stick.move(state.point,state.armed):{...fanControl(state.origin,state.point,unit,'right',state.armed),extraSteps:0,acquired:false,moved:false},{distance}=control;
-    state.deflection=control.gain/DECK_JOYSTICK_DEFAULTS.reach;state.acquired=control.acquired;
+    const control=state.held?stick.move(state.point,state.armed):{...fanControl(state.origin,state.point,unit,'right',state.armed),extraSteps:0,acquired:false,moved:false,cursor:0},{distance}=control;
+    state.deflection=control.gain/DECK_JOYSTICK_DEFAULTS.reach;state.acquired=control.acquired;state.cursor=control.cursor;
     travelled ||= distance>unit*.55;
-    // Angular steering and deliberate outward travel have independent axes.
+    // Short thumb travel steers; deliberate outward travel opens overview.
     // The radial overlap prevents tremor from flickering the overview target.
     const outward=control.overview;
     state.armed=outward;state.lane=outward?'overview':state.held?'fan':null;
