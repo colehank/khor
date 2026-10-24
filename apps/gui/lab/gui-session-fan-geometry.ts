@@ -36,6 +36,7 @@ export function fanFrame(b:Bounds):FanFrame{
   const edge=(slots-1)/2,rightEdge=width-2*gap-face/2-touch*(.3+.28);
   const curve=Math.max(0,Math.min(touch*.45,(rightEdge-titleWidth-face/2-2*gap)/Math.max(1,edge*edge)));
   const anchor={x:placement==='bottom'?width/2:horizontal?gap+face/2+pitch*(slots-1)/2:rightEdge-curve*edge*edge,y:placement==='bottom'?height-gap-face/2-touch*(slots===1?.65:1.1):horizontal||slots===1?Math.max(face/2,Math.min(height-face/2,height*.62)):height-gap-face*(slots===3?.76:.61)/2-(slots-1)/2*pitch};
+  if(placement==='right'&&!horizontal)anchor.x-=Math.min(touch*.3,Math.max(0,anchor.x-titleWidth-face/2-gap*1.5));
   const frame:FanFrame={...b,placement,compact,horizontal,slots,face,titleWidth,pitch,curve,anchor,target:{x:0,y:0}},neutral=outerPoint(frame,0);
   frame.target={x:Math.max(touch*.8,Math.min(width-touch*.8,placement==='right'&&!horizontal?fanPoint(frame,0).x-face/2-touch*.7:neutral.x)),y:Math.max(gap,neutral.y-touch*(placement==='bottom'||horizontal?2:1.2))};
   return frame;

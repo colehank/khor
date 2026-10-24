@@ -224,3 +224,5 @@ node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
 左上推远仍进入全部标签，回撤保留进入总览时的预选，并以回撤落点重新建立中立位置。取消、窗口变化、失焦、指针取消及松手停靠／淡出沿用既有行为。
 
 先复现斜向短推不换项及轨迹在错误一侧，再改为通过。31 项状态、216 项循环／节拍、6 项斜向跟随／小位移指示／防抖、105 项几何检查和 Lab TypeScript 通过。78 项定向浏览器检查覆盖 320／390／430、键盘开关、四种行程方向、轨迹位于头像右侧、标题在左和松手确认；57 项完整 GUI 检查含浏览器触摸、21 项终端及展开药丸检查也通过。已核对 320 和 390 的实际界面截图，位于 `/Volumes/disk0/khor-gui-session-layout-proof/diagonal-thumb/`。仍仅在 Lab，不合入 main；iPhone 的实际握姿和触感继续通过 Lab 验收。
+
+后续位置微调：右侧头像、标题和操控轨迹整体再向左移动约 0.3 个 touch 单位；窄屏按剩余留白限幅，至少保留半个行间距。弧形、内部间距和斜向手势不变。105 项几何检查、Lab TypeScript、24 项浏览器边界／行程／松手检查通过；已核对截图，位于 `/Volumes/disk0/khor-gui-session-layout-proof/left-nudge/`。仍只在 Lab。
