@@ -201,3 +201,10 @@ node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
 32 项短行程／中立／防抖／节拍状态检查、216 项 2–32 窗口循环检查、96 项外侧轨迹与候选边界检查通过。21 项真实终端和展开药丸检查、57 项 GUI 浏览器检查、10 项窄屏滚轮／触摸滚动检查通过；覆盖双向循环、回中、上推与回撤、真实 xterm 保留、普通横滑、原生触摸、键盘、跨 GUI 草稿及 320／390／430／667 的可见边界。默认前端检查、Lab TypeScript 与生产构建通过。截图在 `/Volumes/disk0/khor-gui-session-layout-proof/outer-arcs/` 与 `fan-arc/`。
 
 仍仅在 `lab/gui-session-layout`，没有合入 main。真实 iPhone 的握姿、遮挡、键盘和触感需要继续体验。
+
+
+## 右下扇形左移与「）」弧形
+
+右下头像弧和外侧操控弧统一为「）」：中间向右鼓，上下两端对称向左收。按最终确认方向，相对上一版向左移动约 0.3 个 touch 单位；标题仍在左、头像在右。头像位置独立于标题宽度缩放计算，避免上下半弧歪斜。底部及展开药丸的几何和左右拖动不变。
+
+105 项几何检查通过，包含上下端对称、中心向右鼓、向左位移、轨迹在候选外侧与候选不重叠；Lab TypeScript 通过。额外 24 项实际 App 检查覆盖 320／390／430、键盘开关、左侧标题、视口边界与松手确认，已核对截图。截图在 `/Volumes/disk0/khor-gui-session-layout-proof/right-parenthesis/`。继续保留在 Lab，不合入 main。

@@ -13,4 +13,10 @@ for(const placement of ['right','bottom'])for(const width of [320,390,430])for(c
  for(let t=-2;t<=2;t+=.1){const p=outerPoint(frame,t);for(const box of boxes)assert(p.x<box.left||p.x>box.right||p.y<box.top||p.y>box.bottom,'the whole control path stays outside every identity');}checks++;
  assert(fanScale(0)>fanScale(1)&&fanScale(1)>fanScale(2));checks++;
 }
+for(const width of [320,390,430]){
+ const f=fanFrame({left:0,top:0,width,height:390,touch:44,gap:12,originX:width-36,originY:414,placement:'right'});
+ const avatar=t=>fanPoint(f,t).x+(f.gap+f.titleWidth)*fanScale(t);
+ for(const t of [1,2]){assert(Math.abs(avatar(t)-avatar(-t))<.001,'avatar arc has matching upper/lower ends');assert(Math.abs(outerPoint(f,t).x-outerPoint(f,-t).x)<.001,'control arc has matching upper/lower ends');assert(avatar(0)>avatar(t)&&outerPoint(f,0).x>outerPoint(f,t).x,'both arcs bow right like a closing parenthesis');checks++;}
+ assert(avatar(0)<width-f.gap-f.face/2,'right-hand group moves left from the previous baseline');checks++;
+}
 console.log(`${checks} outer-control placement, five titled identity bounds and non-overlap checks passed.`);
