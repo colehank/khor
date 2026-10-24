@@ -1,43 +1,42 @@
 import assert from 'node:assert/strict';
-import {leftThumbFan,recentCandidates} from './gui-session-fan-state.ts';
+import {build} from 'esbuild';
+const bundle=await build({stdin:{contents:"export * from './lab/gui-session-fan-state';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false});
+const {thumbFanJoystick}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 let checks=0;
-const origin={x:310,y:500},at=(angle,r=72)=>({x:origin.x-r*Math.cos(angle*Math.PI/180),y:origin.y-r*Math.sin(angle*Math.PI/180)});
-const make=(ids=['a','b','c'])=>{const f=leftThumbFan(44,()=>{});f.start(origin,ids);return f;};
-assert.deepEqual(recentCandidates(['current','b','unknown','a','b','new-tab:1','c','d'],['current','a','b','c','d','new-tab:1'],'current'),['b','a','c','d']);checks++;
-for(const count of [0,1,2,3])for(const angle of [5,33,61]){
-  const ids=['a','b','c'].slice(0,count),f=make(ids);f.hold();f.move(at(angle));const result=f.release();
-  if(count)assert(ids.includes(result.id));else assert.equal(result.kind,'none');checks++;
-}
-for(const [angle,id] of [[8,'a'],[33,'b'],[58,'c']]){
-  for(const radius of [32,72,115]){const f=make();f.hold();f.move(at(angle,radius));assert.deepEqual(f.release(),{kind:'focus',id});checks++;}
-}
-{
-  const ids=['a','b','c'],f=make(ids);f.hold();ids.reverse();f.move(at(8));assert.equal(f.release().id,'a','the contact owns a frozen candidate order');checks++;
-}
-{
-  const f=make();f.hold();f.move(at(10));f.move(at(58));f.move(origin);assert.equal(f.release().kind,'none','return to avatar cancels');checks++;
+const origin={x:350,y:500};
+const make=(ids=['a','b','c'],active='a')=>{
+ let now=0,next=0;const frames=new Map(),clock={now:()=>now,request:f=>{frames.set(++next,f);return next;},cancel:id=>frames.delete(id)};
+ const fan=thumbFanJoystick(()=>{},clock);fan.start(origin,ids,active,24);
+ const advance=ms=>{for(let end=now+ms;now<end;){now=Math.min(end,now+16);const jobs=[...frames.values()];frames.clear();jobs.forEach(f=>f());}};
+ return {fan,advance,move:(dx,up=0)=>fan.move({x:origin.x+dx,y:origin.y-up}),frames};
+};
+for(const [dx,tier,interval] of [[-14,1,1400],[-32,2,1000],[-60,3,700]]){
+ const {fan,advance,move}=make();advance(288);move(dx,20);assert.equal(fan.read().hot,1);assert.equal(fan.read().tier,tier);assert.equal(fan.read().interval,interval);checks++;
+ advance(interval-32);assert.equal(fan.read().hot,1);advance(48);assert.equal(fan.read().hot,2);checks++;
+ move(0);const paused=fan.read().hot;advance(4000);assert.equal(fan.read().hot,paused);assert.equal(fan.read().direction,0);checks++;
+ move(14);assert.equal(fan.read().hot,1);assert.equal(fan.read().direction,-1);assert.deepEqual(fan.release(),{kind:'focus',id:'b'});assert.equal(fan.release().kind,'none');checks++;
 }
 {
-  const f=make();f.hold();f.move(at(33));f.move({x:origin.x,y:origin.y-90});assert.equal(f.release().kind,'none','fan cannot become overview midway');checks++;
+ const ids=['a','b','c'],{fan,advance,move}=make(ids);ids.reverse();advance(288);move(-14);assert.equal(fan.release().id,'b','contact freezes the pill order');checks++;
 }
 for(const held of [false,true]){
-  const f=make();if(held)f.hold();f.move({x:origin.x,y:origin.y-65});assert.equal(f.release().kind,'overview');checks++;
-  const retract=make();if(held)retract.hold();retract.move({x:origin.x,y:origin.y-65});retract.move(origin);assert.equal(retract.release().kind,'none');checks++;
+ const {fan,advance,move}=make();if(held)advance(288);move(0,75);assert.equal(fan.read().phase,'overview');assert.equal(fan.release().kind,'overview');assert.equal(fan.release().kind,'none');checks++;
+ const retract=make();if(held)retract.advance(288);retract.move(0,75);retract.move(0);assert.equal(retract.fan.release().kind,'none');checks++;
 }
 {
-  const f=make();f.move({x:origin.x,y:origin.y-65});f.hold();f.move(at(33));assert.equal(f.release().kind,'none','overview cannot become fan midway');checks++;
-}
-for(const p of [{x:origin.x+80,y:origin.y-10},{x:origin.x-80,y:origin.y+70}]){const f=make();f.hold();f.move(p);assert.equal(f.release().kind,'none');checks++;}
-{
-  const f=make();f.move(at(8));assert.equal(f.release().kind,'none','a quick left flick is not a hold or a tap');checks++;
+ const {fan,advance,move}=make();advance(288);move(-14);move(0,75);assert.equal(fan.read().lane,'fan');assert.equal(fan.read().direction,0);assert.deepEqual(fan.release(),{kind:'focus',id:'b'},'return to neutral pauses and retains preview');checks++;
 }
 {
-  const f=make();assert.equal(f.release().kind,'tap');assert.equal(f.release().kind,'none','native touch and pointer end cannot consume twice');checks++;
+ const {fan,advance,move}=make();move(0,75);advance(5000);move(-50,20);assert.equal(fan.read().lane,'overview');assert.equal(fan.release().kind,'none');checks++;
 }
 {
-  const f=make();f.hold();f.move(at(15));assert.equal(f.read().hot,0);f.move(at(17));assert.equal(f.read().hot,0,'boundary tremor keeps the previous candidate');f.move(at(22));assert.equal(f.release().id,'b');checks++;
+ const {fan,move}=make();move(-20);assert.equal(fan.release().kind,'none','quick flick is neither held nor tap');checks++;
+ const tap=make();assert.equal(tap.fan.release().kind,'tap');assert.equal(tap.fan.release().kind,'none');checks++;
+}
+for(const count of [0,1]){
+ const {fan,advance,move,frames}=make(['a'].slice(0,count));advance(288);move(-60);advance(5000);assert.equal(fan.release().kind,'none');assert.equal(frames.size,0);checks++;
 }
 {
-  const f=make();f.hold();f.move(at(8));f.cancel();assert.equal(f.release().kind,'none');checks++;
+ const {fan,advance,move,frames}=make();advance(288);move(-60);fan.cancel();advance(5000);assert.equal(fan.read().phase,'idle');assert.equal(fan.release().kind,'none');assert.equal(frames.size,0);checks++;
 }
-console.log(`${checks} recent-session ranking, leftward direct selection, direction locking, neutral cancellation and release checks passed.`);
+console.log(`${checks} production joystick gears, pause, reversal, order, lane ownership and cancellation checks passed.`);

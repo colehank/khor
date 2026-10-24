@@ -25,7 +25,7 @@ export function useDeckArcPosition(preview:number,count:number,direction:number,
   return position;
 }
 
-function RateCue({side,state,x}:{side:number;state:DeckJoystickState;x:number}){
+export function DeckRateCue({side,state,x}:{side:number;state:Pick<DeckJoystickState,'direction'|'overview'|'tier'|'interval'|'pulse'>;x:number}){
   const active=state.direction===side&&!state.overview,level=active?state.tier:0;
   return <span className="deck-selector-rate" data-rate-side={side} data-active={active||undefined} data-rate-level={level}
     style={{left:x,'--cue-interval':`${state.interval}ms`} as CSSProperties} aria-hidden="true">
@@ -84,9 +84,9 @@ export function DeckExplore({band,faces,state,origin,reach,overview,placement='b
     </div>}
     {overview&&<div className="deck-selector-target" data-deck-overview-target data-active={state.overview||undefined} style={{left:originX}}><IconChevronUp centred/><span>{gui.deck_all_tabs}</span></div>}
     {!pulling&&<div className="deck-selector-steering-cues" aria-hidden="true">
-      <RateCue side={-1} state={state} x={Math.max(unit*.6,originX-reach-unit*.45)}/>
+      <DeckRateCue side={-1} state={state} x={Math.max(unit*.6,originX-reach-unit*.45)}/>
       <span className="deck-selector-origin" data-paused={paused||undefined} style={{left:originX}}/>
-      <RateCue side={1} state={state} x={Math.min(frame.width-unit*.6,originX+reach+unit*.45)}/>
+      <DeckRateCue side={1} state={state} x={Math.min(frame.width-unit*.6,originX+reach+unit*.45)}/>
     </div>}
     <div className="sr-only" role="status" aria-live="polite">{state.overview?gui.deck_all_tabs:pulling?(placement==='top'?gui.deck_gesture_down:gui.deck_gesture):gui.deck_preview(f?.label||'')}</div>
   </div>,document.body);
