@@ -52,7 +52,7 @@ function sample(index: number): Frame[] {
   ];
 }
 
-function previewBridge(): Plugin {
+function previewBridge(terminal = false): Plugin {
   const preferences=ids.map((_,i)=>({
     model:i===3?'gpt-5.4':'claude-sonnet-4-6',
     modes:{currentModeId:'default',availableModes:[
@@ -184,6 +184,11 @@ function previewBridge(): Plugin {
           let raw = ""; for await (const chunk of req) { raw += String(chunk); if (raw.length > 1000000) throw new Error("Preview request too large"); }
           body = JSON.parse(raw || "{}");
         } catch { res.statusCode = 400; res.end('"Invalid preview request"'); return; }
+        if(terminal && (String(body.id)==='shell/layout-lab' && path.startsWith('term_') || path==='face_note')){
+          const screen='\x1b[2J\x1b[Hkhor / layout-lab\r\n\r\n'+['$ git status --short','  clean working tree','','$ khor sessions','  Claude   tools & confirmation','  Codex    tools & patch','  khor     network tasks','  shell    layout preview','','Long press the bottom pill to explore.','This preview does not execute input.','','preview % '].join('\r\n');
+          const value=path==='term_attach'?{bytes:Buffer.from(screen).toString('base64'),seq:1}:['term_stream','term_wait'].includes(path)?{bytes:'',seq:1,gone:false,reset:false,stall:null}:null;
+          res.setHeader('content-type','application/json');res.setHeader('cache-control','no-store');res.end(JSON.stringify(value));return;
+        }
         const index = Math.max(0, ids.indexOf(String(body.id)));
         let answer: unknown = null;
         switch (path) {
@@ -193,7 +198,7 @@ function previewBridge(): Plugin {
           case "__ai_preview/answers":answer=interactionAnswers;break;
           case "chat_respond":interactionAnswers.push(body);frames[index].push({kind:'elicit_answered',ask:body.ask,response:{action:'accept'}});break;
           case "chat_control":frames[index].push({kind:'control_result',token:body.token,operation:body.operation,data:{},error:null});break;
-          case "sessions": answer = ids.map((id, i) => ({ id, kind: i === 4 ? "broadcast" : "gui", title: titles[i], word: streaming.has(i) ? "busy" : "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: i === 4 ? "khor" : i === 3 ? "codex" : "claude", group: "", face: null, hosted: true, attachable: false, last: "隔离示例 · 不连接真实智能体", via: null, via_face: null, home: device.name })); break;
+          case "sessions": answer = ids.map((id, i) => ({ id, kind: i === 4 ? "broadcast" : "gui", title: titles[i], word: streaming.has(i) ? "busy" : "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: i === 4 ? "khor" : i === 3 ? "codex" : "claude", group: "", face: null, hosted: true, attachable: false, last: "隔离示例 · 不连接真实智能体", via: null, via_face: null, home: device.name })); if(terminal)(answer as Frame[]).push({id:'shell/layout-lab',kind:'shell',title:'终端 · 布局试验',word:'idle',at_ms:Date.now(),unread:0,source:null,pinned:false,stale:false,category:'shell',group:'',face:null,hosted:true,attachable:true,last:'隔离终端示例',via:null,via_face:null,home:device.name,mux:false});break;
           case "devices": answer = [device]; break;
           case "machine_log": answer = { messages: [khorReceipt()], broken: 0 }; break;
           case "khor_agent": answer = agentAction(body); break;
@@ -229,4 +234,5 @@ function previewBridge(): Plugin {
   };
 }
 
-export default mergeConfig(base, defineConfig({ plugins: [previewBridge()], server: { host: "127.0.0.1", port: 23776, strictPort: true } }));
+export function aiElementsPreview(terminal=false){return mergeConfig(base,defineConfig({plugins:[previewBridge(terminal)],server:{host:"127.0.0.1",port:23776,strictPort:true}}));}
+export default aiElementsPreview();

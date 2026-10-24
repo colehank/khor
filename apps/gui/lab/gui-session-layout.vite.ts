@@ -2,7 +2,7 @@ import {readFileSync,realpathSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defineConfig,mergeConfig} from 'vite';
-import preview from '../scripts/ai-elements-preview.vite';
+import {aiElementsPreview} from '../scripts/ai-elements-preview.vite';
 
 // Only this Lab server opts into the experimental layout. App/main stay unchanged.
 const tokens=readFileSync(new URL('../src/styles/tokens.css',import.meta.url),'utf8');
@@ -12,7 +12,7 @@ for(const match of tokens.matchAll(/@media\s*\(pointer:\s*coarse\)\s*\{/g)){
   while(depth&&end<tokens.length){if(tokens[end]==='{')depth++;if(tokens[end]==='}')depth--;end++;}
   coarse.push(tokens.slice(cursor,end-1));
 }
-export default mergeConfig(preview,defineConfig({
+export default mergeConfig(aiElementsPreview(true),defineConfig({
   plugins:[{
     name:'gui-session-layout-lab',enforce:'pre',
     transform(code,id){
@@ -25,6 +25,14 @@ export default mergeConfig(preview,defineConfig({
       combinedDock={new URLSearchParams(location.search).get('deck') === 'combined' && (selectedRow?.kind === 'gui' || isChatTab(selected))}
       deckAt={['bottom','combined'].includes(new URLSearchParams(location.search).get('deck') ?? '') ? 'bottom' : selectedRow?.kind === 'gui' || isChatTab(selected) ? 'top' : 'bottom'}
       `).replace(/onTabs=\{narrow\s*&&\s*selectedRow\s*\?/,"onTabs={narrow&&selectedRow&&new URLSearchParams(location.search).get('deck')!=='combined'&&new URLSearchParams(location.search).get('deck')!=='light'&&new URLSearchParams(location.search).get('deck')!=='compose'&&new URLSearchParams(location.search).get('deck')!=='fan'?").replace(/<Tabs\s+grouped/,`<Tabs tail={<span data-lab-session-settings-slot />} grouped`);
+      }
+      if(id.endsWith('/src/views/TerminalPane.tsx')){
+        return code.replace(/import\s*\{\s*useCoarse\s*\}\s*from\s*['"]@\/hooks\/use-coarse['"];?/,"import {useLabTerminalCoarse as useCoarse} from '/lab/gui-session-terminal';");
+      }
+      if(id.endsWith('/src/components/DeckBand.tsx')){
+        code=code.replace(/import\s*\{\s*DeckExplore\s*\}\s*from\s*['"]\.\/DeckExplore['"];?/,"import {LabDeckExplore as DeckExplore} from '/lab/gui-session-terminal';");
+        if(!code.includes('LabDeckExplore as DeckExplore'))throw new Error('Lab pill presentation mount moved');
+        return code;
       }
       if(id.endsWith('/src/views/Composer.tsx')){
         code="import {useLabComposeLayout} from '/lab/gui-session-compose';\nimport {useNarrow} from '@/hooks/use-narrow';\n"+code;
@@ -67,7 +75,7 @@ export default mergeConfig(preview,defineConfig({
       return [{tag:'script',injectTo:'head-prepend',children:`
         {
           const q=new URLSearchParams(location.search),session=q.get('labSession')||'gui/ai-elements-review';
-          const sessions=['gui/ai-elements-review','gui/ai-elements-plan','gui/ai-elements-stream','gui/codex-review','wide/all'];
+          const sessions=['gui/ai-elements-review','gui/ai-elements-plan','gui/ai-elements-stream','gui/codex-review','wide/all','shell/layout-lab'];
           const requested=q.get('labTabs')?.split(',').filter(id=>sessions.includes(id));
           const tabs=requested?.includes(session)?requested:sessions;
           localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs,active:session}));
@@ -91,7 +99,7 @@ export default mergeConfig(preview,defineConfig({
               key.style.cssText='position:fixed;inset:auto 0 0;height:'+cover+'px;display:grid;place-items:center;background:var(--fill-strong);color:var(--muted-foreground);font-size:var(--text-callout);border-top:var(--hair) solid var(--border)';
               document.body.append(key);
             }
-            const names=['AI Elements · 组件总览','AI Elements · 计划与确认','AI Elements · 流式响应','Codex · 工具与补丁','khor'];
+            const names=['AI Elements · 组件总览','AI Elements · 计划与确认','AI Elements · 流式响应','Codex · 工具与补丁','khor','终端 · 布局试验'];
             const title=names[sessions.indexOf(session)]||names[0];
             const open=()=>{
               if(document.querySelector('[data-session-screen]')){observer.disconnect();return;}

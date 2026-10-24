@@ -15,7 +15,7 @@ export function useDeckArcPosition(preview:number,count:number,direction:number,
   useLayoutEffect(()=>{
     let delta=preview-previous.current;
     if(loop){if(delta>count/2)delta-=count;if(delta<-count/2)delta+=count;}
-    if(loop&&count===2&&Math.abs(delta)===1&&direction)delta=direction;
+    if(loop&&delta&&direction&&Math.sign(delta)!==direction)delta+=direction*count;
     previous.current=preview;target.current+=delta;
     if(direct||stillMotion()){current.current=target.current;setPosition(target.current);return;}
     const from=current.current,to=target.current,began=performance.now();let frame=0;

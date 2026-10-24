@@ -164,7 +164,7 @@ node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
 验收：24 项拨杆适配检查、220 项双向循环与正式药丸节奏一致性检查通过，覆盖 2–32 个窗口、正反向完整循环、三档节奏、无限暂停、短反向行程和接触清理。56 项正式 App 浏览器检查通过，覆盖五项右侧标题与整组缩放、实际 1／2／3／4／5 个窗口、首尾循环、预选头像同步、松手延迟确认、停靠／淡出取消、上推方向锁定、原生触摸结束和兼容点击、原药丸及键盘入口、模型设置、草稿和布局比较，以及 320／430／667 的可见边界和长多行草稿。旧右侧入口 36 项、组合布局 23 项回归，默认前端检查、Lab TypeScript、正式药丸状态机和生产构建通过。截图在 `/Volumes/disk0/khor-gui-session-layout-proof/fan-cycle/`。iPhone 的握姿、真实键盘动画与触感仍需真机体验。
 
 
-## 沿弧操控与向左上展开（当前 Lab 默认）
+## 沿弧操控与向左上展开（已由短行程版替代）
 
 用户确认手势本身沿弧线，向更深的左上方推展开全部标签；扫选后仍能主动进入总览，回撤恢复扫选。本轮只修改 Lab。
 
@@ -174,3 +174,30 @@ node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
 - 23 项角度／径向状态检查、220 项 2–32 窗口循环与正式药丸节奏一致性检查通过；Lab TypeScript 通过。57 项正式 App 浏览器检查通过，新增同一 X 下通过 Y 移动反转角度、先扫选再进入总览、径向缓冲和回撤继续扫选、松手打开总览、纯上推不误展开，继续覆盖五项标题、首尾循环、触摸、草稿、可见边界和取消。额外核对总览高亮完成绘制后松手打开列表。截图在 `/Volumes/disk0/khor-gui-session-layout-proof/fan-arc/`。
 
 没有合入 main；原生 iPhone 的行程、键盘和触感尚待真机体验。
+
+## 外侧操控弧、终端对比与短行程（当前 Lab 默认）
+
+本轮纳入用户的后续裁定：GUI 右下入口标题在左、头像在右；终端底部和点击头像展开的药丸保持头像在上、标题在下，并继续左右拖动。三处共享五项候选的缩放、明暗和循环呈现；只有 GUI 直接长按头像使用沿弧操控。
+
+- 新增「终端 · 底部药丸」场景。使用正式 `TerminalPane`、xterm、`SessionScreen` 与 `DeckBand`，由隔离 bridge 提供固定终端字节；输入只丢弃，不执行命令、不创建 PTY、不访问真实节点。普通 AI Elements 预览默认不启用此 fixture。Lab 的手机选项同时展示正式终端快捷键栏入口。
+- 终端及展开药丸不替换手势识别器：普通横滑、长按左右拨杆、上推总览、键盘入口、触摸结束与取消继续走正式组件。仅在本 Lab 的 `deck=fan` 中替换探索呈现，候选均显示标题，当前项最清楚，远项缩小、变暗。展开药丸与终端共用同一个呈现组件。
+- GUI 右侧轨迹放在完整身份单元左侧，底部轨迹放在所有候选上方。轻轨迹、中立点、方向提示和实时指示点共享纯几何计算；轨迹不穿过头像或标题，不增加玻璃底板。
+- GUI 起手以约 0.7 个 touch 单位的短推建立符合当前握姿的中立角；首次落点不换项。中立区采用 12° 进入、8° 回撤的重叠，换项档位间隔 12°；单次突变只先换一项，持续沿弧越过下一档才立即推进下一项。保持偏移后继续按正式 1400／1000／700 ms 节拍循环。明显移动会重置读完当前项的计时，手指停稳后再续翻；回中保留预选并暂停。参数仍为 Lab 试验值。
+- 修复首次握姿角度偏离 45° 时误跳项：先复现 5° 起手输出换项增益，再改为所有允许的首次落点只建立中立。角度 5／20／45／70／90° 的检查均通过。候选跟随用 `--dur-120`，多档快速预选保留实际移动方向，跨首尾不会反向绕近路。
+- 修复窄屏 Lab 无法下滑验收：仅给外层 HTML 壳解除继承的固定高度与滚动锁；真实 App iframe 仍保持原滚动规则。顶部增加「查看预览」跳转和全屏入口。先观察窄屏滚轮前后预览 y 均为 1042、页面 scrollY 为 0；修复后滚动可到预览，原生触摸模拟同样通过。
+
+验收入口：
+
+```sh
+node lab/check-gui-session-fan-state.mjs
+node lab/check-gui-session-fan-many.mjs
+node lab/check-gui-session-outer-geometry.mjs
+node lab/check-gui-session-terminal.mjs
+node lab/check-gui-session-fan.mjs
+node lab/check-gui-session-lab-scroll.mjs
+node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
+```
+
+32 项短行程／中立／防抖／节拍状态检查、216 项 2–32 窗口循环检查、96 项外侧轨迹与候选边界检查通过。21 项真实终端和展开药丸检查、57 项 GUI 浏览器检查、10 项窄屏滚轮／触摸滚动检查通过；覆盖双向循环、回中、上推与回撤、真实 xterm 保留、普通横滑、原生触摸、键盘、跨 GUI 草稿及 320／390／430／667 的可见边界。默认前端检查、Lab TypeScript 与生产构建通过。截图在 `/Volumes/disk0/khor-gui-session-layout-proof/outer-arcs/` 与 `fan-arc/`。
+
+仍仅在 `lab/gui-session-layout`，没有合入 main。真实 iPhone 的握姿、遮挡、键盘和触感需要继续体验。

@@ -10,21 +10,17 @@ import {SETTLE_MS,nearbySlots} from '@/lib/deck-scrub';
 import {stillMotion} from '@/lib/travel';
 import {useDeckArcPosition,DeckRateCue} from '@/components/DeckExplore';
 import {thumbFanJoystick,type FanState,type FanPoint,type FanResult} from './gui-session-fan-state';
+import {fanFrame,fanPoint,outerPoint,fanScale,type FanFrame as Frame} from './gui-session-fan-geometry';
 import {SessionPill,useSessionPill} from './gui-session-pill';
 import './gui-session-fan.css';
 
-type Frame={left:number;top:number;width:number;height:number;compact:boolean;horizontal:boolean;slots:number;anchor:FanPoint;touch:number;face:number;gap:number;pitch:number;titleWidth:number;originX:number;originY:number;target:{x:number;y:number}};
 type Contact={pointer:number;touch:boolean;touchId:number|null;active:string;ids:string;layout:DeckContactLayout};
 const titleOf=(face:TabFace|undefined)=>face?.label??'会话';
 function frameFor(button:HTMLElement):Frame{
-  const css=getComputedStyle(button),touch=parseFloat(css.getPropertyValue('--touch')),gap=parseFloat(css.getPropertyValue('--gap-row')),size=parseFloat(css.fontSize);
+  const css=getComputedStyle(button),touch=parseFloat(css.getPropertyValue('--touch')),gap=parseFloat(css.getPropertyValue('--gap-row'));
   const b=button.getBoundingClientRect(),cap=button.closest('[data-chat-box]')!.getBoundingClientRect(),screen=button.closest('[data-session-screen]')!,r=screen.getBoundingClientRect(),header=screen.querySelector('[data-lab-model-header]')!.getBoundingClientRect(),v=window.visualViewport;
   const left=Math.max(r.left,v?.offsetLeft??0),top=Math.max(header.bottom,v?.offsetTop??0),width=Math.max(0,Math.min(r.right,(v?.offsetLeft??0)+(v?.width??innerWidth))-left),height=Math.max(0,Math.min(cap.top,(v?.offsetTop??0)+(v?.height??innerHeight))-top);
-  const x=b.x+b.width/2-left,compact=height<6.8*touch+2*gap,horizontal=compact&&width>=12*touch,slots=compact?(horizontal||height>=4.5*touch?3:1):5,face=touch*1.32;
-  const titleWidth=horizontal?3*touch:3.4*touch,rowWidth=face+(horizontal?gap/1.5:gap)+titleWidth;
-  const pitch=horizontal?(width-2*gap-rowWidth)/(slots-1):Math.min(1.5*touch,(height-2*gap-face*(slots===3?.76:.61))/Math.max(1,slots-1));
-  const anchor={x:horizontal?gap+face/2+pitch*(slots-1)/2:x-4.8*touch,y:horizontal||slots===1?Math.max(face/2,Math.min(height-face/2,height*.62)):height-gap-face*(slots===3?.76:.61)/2-(slots-1)/2*pitch};
-  return {left,top,width,height,compact,horizontal,slots,anchor,touch,face,gap,pitch,titleWidth,originX:x,originY:b.y+b.height/2-top,target:{x:Math.min(x-touch*.9,width-size*2-gap),y:compact?gap:Math.max(gap,height-3*touch)}};
+  return fanFrame({left,top,width,height,touch,gap,originX:b.x+b.width/2-left,originY:b.y+b.height/2-top});
 }
 type Closing={state:FanState;frame:Frame;contact:Contact;phase:'settling'|'fading';result:FanResult};
 function fanItems(position:number,count:number,frame:Frame){
@@ -32,7 +28,7 @@ function fanItems(position:number,count:number,frame:Frame){
   for(const item of candidates){const old=unique.get(item.index);if(!old||Math.abs(item.slot-position)<Math.abs(old.slot-position))unique.set(item.index,item);}
   return [...unique.values()].map(({index,slot})=>{
     const offset=slot-position,focus=Math.exp(-offset*offset*.9),edge=Math.min(1,Math.max(0,(reach-Math.abs(offset))/.5));
-    return {index,slot,x:frame.horizontal?frame.anchor.x+offset*frame.pitch:frame.anchor.x+offset*.8*frame.touch+offset*offset*.15*frame.touch,y:frame.horizontal?frame.anchor.y:frame.anchor.y-offset*frame.pitch,scale:.6+.4*focus,opacity:edge*(.5+.5*focus)};
+    return {index,slot,...fanPoint(frame,offset),scale:fanScale(offset),opacity:edge*(.5+.5*focus)};
   });
 }
 function TitleWords({text}:{text:string}){
@@ -40,21 +36,26 @@ function TitleWords({text}:{text:string}){
   return <>{words.map((word,i)=>/\p{Script=Han}/u.test(word)?<span data-fan-word key={i}>{word}</span>:word)}</>;
 }
 /** A fresh layer owns one continuous cyclic position per contact. */
-function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];state:FanState;frame:Frame;phase:string;duration:number}){
-  const position=useDeckArcPosition(state.hot??Math.max(0,faces.findIndex(f=>f.id===state.ids[0])),Math.max(1,state.ids.length),state.direction,duration);
+export function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];state:FanState;frame:Frame;phase:string;duration:number}){
+  const lastDirection=useRef(0);if(state.direction)lastDirection.current=state.direction;
+  const position=useDeckArcPosition(state.hot??Math.max(0,faces.findIndex(f=>f.id===state.ids[0])),Math.max(1,state.ids.length),lastDirection.current,duration);
   const items=fanItems(position,state.ids.length,frame),candidate=state.hot===null?null:faces.find(f=>f.id===state.ids[state.hot!]);
-  return createPortal(<div data-lab-left-fan data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
+  const steering=(state.deflection??0)*2,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0)));
+  const guide=Array.from({length:41},(_,i)=>outerPoint(frame,-2+i/10)).map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
+  return createPortal(<div data-lab-left-fan data-fan-placement={frame.placement} data-fan-slots={frame.slots} data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
     <div className="deck-selector-dimmer"/>
     <div className="lab-fan-identities" data-dimmed={state.lane==='overview'||undefined} aria-hidden="true">
-      {items.map(item=>{const id=state.ids[item.index],face=faces.find(f=>f.id===id);return face&&<span key={item.slot} data-lab-fan-session={id} data-selected={state.hot===item.index||undefined} className="lab-fan-item" style={{left:item.x-frame.face/2,top:item.y,width:frame.face+frame.gap+frame.titleWidth,opacity:item.opacity,transform:`translateY(-50%) scale(${item.scale})`,transformOrigin:`${frame.face/2}px 50%`,gap:frame.horizontal?frame.gap/1.5:frame.gap}}>
+      {items.map(item=>{const id=state.ids[item.index],face=faces.find(f=>f.id===id);return face&&<span key={item.slot} data-lab-fan-session={id} data-selected={state.hot===item.index||undefined} className="lab-fan-item" style={frame.placement==='bottom'?{left:item.x-frame.titleWidth/2,top:item.y-frame.face/2,width:frame.titleWidth,opacity:item.opacity,transform:`scale(${item.scale})`,transformOrigin:`50% ${frame.face/2}px`,gap:frame.gap/3}:{left:item.x-frame.face/2,top:item.y,width:frame.face+frame.gap+frame.titleWidth,opacity:item.opacity,transform:`translateY(-50%) scale(${item.scale})`,transformOrigin:`${frame.face/2}px 50%`,gap:frame.horizontal?frame.gap/1.5:frame.gap}}>
         <span className="lab-fan-face"><TabAvatar f={face} bare="size-list-face" seat="row"/></span>
         <span className="lab-fan-label" data-lab-fan-title style={{width:frame.titleWidth}}><TitleWords text={titleOf(face)}/></span>
       </span>;})}
     </div>
     <div className="lab-fan-steering" aria-hidden="true">
-      <svg className="lab-fan-guide" width={frame.width} height={frame.height}><path d={`M ${frame.originX-2*frame.touch*Math.cos(25*Math.PI/180)} ${frame.originY-2*frame.touch*Math.sin(25*Math.PI/180)} A ${2*frame.touch} ${2*frame.touch} 0 0 1 ${frame.originX-2*frame.touch*Math.cos(75*Math.PI/180)} ${frame.originY-2*frame.touch*Math.sin(75*Math.PI/180)}`}/></svg>
-      {[-1,1].map(side=>{const angle=side<0?30:70;return <span key={side} className="lab-fan-cue" style={{left:frame.originX-2*frame.touch*Math.cos(angle*Math.PI/180),top:frame.originY-2*frame.touch*Math.sin(angle*Math.PI/180),rotate:`${angle-90}deg`}}><DeckRateCue side={side} state={{...state,overview:state.armed}} x={0}/></span>;})}
-      <span className="deck-selector-origin" data-paused={state.direction===0||undefined} style={{left:frame.originX-Math.SQRT2*frame.touch,top:frame.originY-Math.SQRT2*frame.touch}}/>
+      <svg className="lab-fan-guide" width={frame.width} height={frame.height}><path d={guide}/></svg>
+      {[-1,1].map(side=>{const t=side*1.2,p=outerPoint(frame,t),q=outerPoint(frame,t+.02),rotation=Math.atan2(q.y-p.y,q.x-p.x)*180/Math.PI;return <span key={side} className="lab-fan-cue" style={{left:p.x,top:p.y,rotate:`${rotation}deg`}}><DeckRateCue side={side} state={{...state,overview:state.armed}} x={0}/></span>;})}
+      <span className="deck-selector-origin" data-lab-fan-neutral data-paused={state.direction===0||undefined} style={{left:neutral.x,top:neutral.y}}/>
+      <span className="lab-fan-cursor" data-lab-fan-cursor style={{left:cursor.x,top:cursor.y}}/>
+
     </div>
     <div data-lab-fan-overview data-active={state.lane==='overview'&&state.armed||undefined} className="lab-fan-overview" style={{left:frame.target.x,top:frame.target.y}} aria-hidden="true"><IconChevronUp centred/><span>全部标签</span></div>
   </div>,document.body);
@@ -65,7 +66,7 @@ export function LabFanNavigator({faces,active,onFocus,onOverview,hidden}:Pick<Se
   const latest=useRef({faces,active,ids,onFocus,onOverview,close,toggle});latest.current={faces,active,ids,onFocus,onOverview,close,toggle};
   const [state,setState]=useState<FanState|null>(null),[frame,setFrame]=useState<Frame|null>(null),[closing,setClosing]=useState<Closing|null>(null);
   const closingLive=useRef<Closing|null>(null),closingTimer=useRef<ReturnType<typeof setTimeout>|null>(null),frameLive=useRef<Frame|null>(null),timing=useRef({follow:180,fade:120});frameLive.current=frame;
-  useLayoutEffect(()=>{if(button.current){const css=getComputedStyle(button.current);timing.current={follow:parseFloat(css.getPropertyValue('--dur-180')),fade:parseFloat(css.getPropertyValue('--dur-120'))};}},[]);
+  useLayoutEffect(()=>{if(button.current){const css=getComputedStyle(button.current);timing.current={follow:parseFloat(css.getPropertyValue('--dur-120')),fade:parseFloat(css.getPropertyValue('--dur-120'))};}},[]);
   const previous=useRef(0);
   const engine=useMemo(()=>thumbFanJoystick(next=>{
     if(next.pulse>0&&next.pulse!==previous.current)feel('threshold');previous.current=next.pulse;setState(next);
