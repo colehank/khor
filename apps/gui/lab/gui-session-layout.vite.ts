@@ -71,7 +71,9 @@ export default mergeConfig(preview,defineConfig({
           const q=new URLSearchParams(location.search),session=q.get('labSession')||'gui/ai-elements-review';
           const sessions=['gui/ai-elements-review','gui/ai-elements-plan','gui/ai-elements-stream','gui/codex-review','wide/all'];
           if(!sessionStorage.getItem('khor.lab.session-recents'))sessionStorage.setItem('khor.lab.session-recents',JSON.stringify(['gui/ai-elements-review','gui/codex-review','wide/all','gui/ai-elements-plan','gui/ai-elements-stream']));
-          localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:sessions,active:session}));
+          const requested=q.get('labTabs')?.split(',').filter(id=>sessions.includes(id));
+          const tabs=requested?.includes(session)?requested:sessions;
+          localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs,active:session}));
           localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'list'}));
           window.addEventListener('DOMContentLoaded',()=>{
             const root=document.documentElement,phone=q.get('phone')==='1';

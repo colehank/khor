@@ -10,18 +10,18 @@ import {stillMotion} from '@/lib/travel';
 
 /** Presentation follows each selected item around one continuous arc. It
  * never delays the engine's selection, pause, reversal or release. */
-function useArcPosition(preview:number,count:number,direction:number,duration:number){
+export function useDeckArcPosition(preview:number,count:number,direction:number,duration:number,direct=false,loop=true){
   const [position,setPosition]=useState(preview),current=useRef(preview),target=useRef(preview),previous=useRef(preview);
   useLayoutEffect(()=>{
     let delta=preview-previous.current;
-    if(delta>count/2)delta-=count;if(delta<-count/2)delta+=count;
-    if(count===2&&Math.abs(delta)===1&&direction)delta=direction;
+    if(loop){if(delta>count/2)delta-=count;if(delta<-count/2)delta+=count;}
+    if(loop&&count===2&&Math.abs(delta)===1&&direction)delta=direction;
     previous.current=preview;target.current+=delta;
-    if(stillMotion()){current.current=target.current;setPosition(target.current);return;}
+    if(direct||stillMotion()){current.current=target.current;setPosition(target.current);return;}
     const from=current.current,to=target.current,began=performance.now();let frame=0;
     const tick=(now:number)=>{const p=Math.min(1,(now-began)/duration);current.current=from+(to-from)*(1-(1-p)**3);setPosition(current.current);if(p<1)frame=requestAnimationFrame(tick);};
     frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
-  },[preview,count]);
+  },[preview,count,direct,loop,duration]);
   return position;
 }
 
@@ -52,7 +52,7 @@ export function DeckExplore({band,faces,state,origin,reach,overview,placement='b
   },[band,placement]);
   const cs=getComputedStyle(band.current!),unit=parseFloat(cs.getPropertyValue('--touch'))||44;
   const duration=parseFloat(cs.getPropertyValue('--dur-180'))||180;
-  const position=useArcPosition(state.preview,faces.length,state.direction,duration);
+  const position=useDeckArcPosition(state.preview,faces.length,state.direction,duration);
   const radius=Math.min(205,frame.width*.46),f=faces[state.preview];
   const titleSegments=useMemo(()=>Array.from(new Intl.Segmenter('zh',{granularity:'word'}).segment(f?.label||''),piece=>piece.segment),[f?.label]);
   const labelWidth=Math.min(2*unit,frame.width*.24);

@@ -1,14 +1,14 @@
 /** Lab-only direct selection. Coordinates are relative to the actual contact. */
 export type FanPoint={x:number;y:number};
-export type FanState={phase:'idle'|'pending'|'fan'|'overview';lane:'fan'|'overview'|null;held:boolean;origin:FanPoint;point:FanPoint;ids:string[];hot:number|null;armed:boolean};
+export type FanState={phase:'idle'|'pending'|'fan'|'overview';lane:'fan'|'overview'|null;held:boolean;origin:FanPoint;point:FanPoint;ids:string[];hot:number|null;position:number;armed:boolean};
 export type FanResult={kind:'none'|'tap'|'overview'}|{kind:'focus';id:string};
 export function recentCandidates(history:readonly string[],known:readonly string[],active:string){
   const valid=new Set(known);
-  return [...new Set(history)].filter(id=>id!==active&&valid.has(id)&&!id.startsWith('new-tab:')).slice(0,3);
+  return [...new Set([...history,...known])].filter(id=>id!==active&&valid.has(id)&&!id.startsWith('new-tab:'));
 }
 export function leftThumbFan(touch:number,changed:(state:FanState)=>void){
   const neutral=touch*.55,upThreshold=touch*1.1;
-  const idle=():FanState=>({phase:'idle',lane:null,held:false,origin:{x:0,y:0},point:{x:0,y:0},ids:[],hot:null,armed:false});
+  const idle=():FanState=>({phase:'idle',lane:null,held:false,origin:{x:0,y:0},point:{x:0,y:0},ids:[],hot:null,position:0,armed:false});
   let state=idle(),travelled=false;
   const read=()=>({...state,origin:{...state.origin},point:{...state.point},ids:[...state.ids]});
   const publish=()=>changed(read());
@@ -21,7 +21,7 @@ export function leftThumbFan(touch:number,changed:(state:FanState)=>void){
       // A clear vertical start owns overview, before or after a hold.
       // The gap between vertical and fan starts is deliberately unclaimed.
       if(up>=neutral&&Math.abs(dx)<=up*.25)state.lane='overview';
-      else if(state.held&&dx<=-neutral*.5&&up>=-touch*.45&&up<=-dx*2.25)state.lane='fan';
+      else if(state.held&&dx<=-neutral*.5&&up>=-touch*.45&&up<=-dx*2.5)state.lane='fan';
     }
     if(state.lane==='overview'){
       state.phase='overview';
@@ -31,20 +31,19 @@ export function leftThumbFan(touch:number,changed:(state:FanState)=>void){
     state.phase=state.held?'fan':'pending';state.armed=false;
     if(state.lane!=='fan'||dx>-neutral*.5||up<-touch*.45||!state.ids.length)return;
     const angle=Math.max(0,Math.min(66,Math.atan2(up,-dx)*180/Math.PI));
-    const slot=Math.min(state.ids.length-1,Math.floor(angle/66*state.ids.length));
-    state.hot=slot;
+    state.position=angle/66*Math.max(0,state.ids.length-1);
+    state.hot=Math.round(state.position);
   };
   let lastHot:number|null=null;
   return {
     read,
-    start(origin:FanPoint,ids:readonly string[]){state={...idle(),phase:'pending',origin:{...origin},point:{...origin},ids:[...ids].slice(0,3)};travelled=false;lastHot=null;publish();},
+    start(origin:FanPoint,ids:readonly string[]){state={...idle(),phase:'pending',origin:{...origin},point:{...origin},ids:[...ids]};travelled=false;lastHot=null;publish();},
     hold(){if(state.phase==='idle')return;state.held=true;update();lastHot=state.hot;publish();},
     move(point:FanPoint){
       if(state.phase==='idle')return;state.point={...point};update();
       if(state.hot!==null&&lastHot!==null&&state.hot!==lastHot){
-        const angle=Math.atan2(state.origin.y-point.y,state.origin.x-point.x)*180/Math.PI;
-        const boundary=66/state.ids.length*(state.hot>lastHot?state.hot:lastHot);
-        if(Math.abs(angle-boundary)<3)state.hot=lastHot;
+        const boundary=(state.hot+lastHot)/2;
+        if(Math.abs(state.position-boundary)<.08)state.hot=lastHot;
       }
       lastHot=state.hot;publish();
     },
