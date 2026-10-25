@@ -50,7 +50,7 @@ try {
  put(`${prefix}.html`, `<!doctype html><html><body><div id="root"></div><script type="module" src="/scripts/${prefix}.tsx"></script></body></html>`);
  server=await createServer({configFile:config,root:gui,optimizeDeps:{entries:[`${prefix}.html`]},server:{host:'127.0.0.1',port,strictPort:true,hmr:false},logLevel:'error'});await server.listen();
  for(const engine of engines) {
-  browser=await (engine==='chrome'?chromium:webkit).launch({headless:true,...(engine==='chrome'?{channel:'chrome'}:{})});
+  browser=await (engine==='chrome'?chromium:webkit).launch({headless:true,...(engine==='chrome'?{channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined}:{})});
   for(const name of ['late-close','strict-late-close','close-reopen','machine-late-close']) {
    const page=await browser.newPage({viewport:{width:1100,height:800}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);
    try {
