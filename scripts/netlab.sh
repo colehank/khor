@@ -23,7 +23,9 @@ set -eu
 HOST=turing
 while [ $# -gt 0 ]; do
     case $1 in
-        --on) HOST=$2; shift 2 ;;
+        --on)
+            [ $# -ge 2 ] || { echo 'netlab: --on needs an SSH host' >&2; exit 2; }
+            HOST=$2; shift 2 ;;
         *) break ;;
     esac
 done
@@ -32,7 +34,12 @@ if [ "$(uname -s)" != Linux ]; then
     REPO=$(cd "$(dirname "$0")/.." && pwd)
     rsync -a --delete --exclude /target --exclude node_modules --exclude .git \
         --exclude /apps/gui/dist "$REPO/" "$HOST:/tmp/khor-netlab-src/"
-    exec ssh "$HOST" "sh /tmp/khor-netlab-src/scripts/netlab.sh $*"
+    remote='sh /tmp/khor-netlab-src/scripts/netlab.sh'
+    for arg do
+        quoted=$(printf '%s' "$arg" | sed "s/'/'\\\\''/g")
+        remote="$remote '$quoted'"
+    done
+    exec ssh "$HOST" "$remote"
 fi
 
 SRC=$(cd "$(dirname "$0")/.." && pwd)
@@ -59,9 +66,11 @@ fi
 command -v tc >/dev/null || [ -x /usr/sbin/tc ] || { echo "netlab: no tc (iproute2)" >&2; exit 1; }
 export PATH="$PATH:/usr/sbin:/sbin"
 
-RUN=/tmp/khor-netlab-run
+RUN=${NETLAB_RUN_DIR:-/tmp/khor-netlab-run}
 mkdir -p "$RUN"
-LOG="$RUN/$(date +%Y%m%d-%H%M%S).log"
+RUN=$(mktemp -d "$RUN/$(date +%Y%m%d-%H%M%S).XXXXXX")
+BUILD_LOG="$RUN/build.log"
+LOG="$RUN/scenarios.log"
 cd "$SRC"
 # khor-web's build wants the face's index.html; the lab never serves the
 # face, so a scratch copy without one gets a placeholder (the rsync
@@ -73,11 +82,19 @@ if [ ! -f apps/gui/dist/index.html ] || ! grep -q '/assets/index-' apps/gui/dist
     echo '<!doctype html><title>netlab: no face</title><script type="module" src="/assets/index-netlab.js"></script>' >apps/gui/dist/index.html
 fi
 echo "netlab: building on $(hostname) (target $CARGO_TARGET_DIR)"
-nice -n 10 cargo test -p khor-cli --test netlab --no-run 2>&1 | grep -E '^(error|warning: unused)|Finished' || true
+if nice -n 10 cargo test --locked -p khor-cli --test netlab --no-run >"$BUILD_LOG" 2>&1; then
+    grep -E '^(error|warning: unused)|Finished' "$BUILD_LOG" || true
+else
+    status=$?
+    cat "$BUILD_LOG" >&2
+    echo "netlab: build failed (log $BUILD_LOG)" >&2
+    exit "$status"
+fi
 echo "netlab: running (log $LOG)"
 # Scenarios run side by side: each lab is namespaces of its own.
 # --nocapture: a green scenario's numbers are the point too.
-nice -n 10 cargo test -p khor-cli --test netlab -- --test-threads 8 --nocapture "$@" >"$LOG" 2>&1 || true
+status=0
+nice -n 10 cargo test --locked -p khor-cli --test netlab -- --test-threads 8 --nocapture "$@" >"$LOG" 2>&1 || status=$?
 
 echo
 echo "| scenario | today | measured |"
@@ -85,3 +102,12 @@ echo "|---|---|---|"
 grep '^\[netlab-result\]' "$LOG" | sed 's/^\[netlab-result\] /| /; s/$/ |/' | sort
 echo
 grep -E '^test result|^test .* (FAILED|ok)$' "$LOG" || true
+if [ "$status" -ne 0 ]; then
+    cat "$LOG" >&2
+    echo "netlab: scenarios failed (log $LOG)" >&2
+    exit "$status"
+fi
+if ! grep -q '^\[netlab-result\]' "$LOG"; then
+    echo "netlab: no scenario results; check the filters (log $LOG)" >&2
+    exit 2
+fi

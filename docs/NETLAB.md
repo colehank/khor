@@ -28,7 +28,9 @@ scripts/netlab.sh --on <主机> …   # 换一台 Linux
 它把工作树 rsync 到那台机器的本地盘 `/tmp/khor-netlab-src`，target 在 `/tmp/khor-netlab-target/khor`
 （不碰 NFS 家目录，不碰机群构建用的 `/tmp/khor-src-*`、`/tmp/khor-target-*`，不装机），
 编译、并行跑（8 个一起，每个场景是自己的一套命名空间），最后打一张表；全文日志在那台机器的
-`/tmp/khor-netlab-run/<时间>.log`。在 Linux 上直接跑同一个脚本也行。
+`/tmp/khor-netlab-run/<时间>.<随机后缀>/` 的 `build.log` 和 `scenarios.log`。在 Linux 上直接跑同一个脚本也行。
+编译失败立即停止，场景失败打印结果后保留失败退出码；过滤后没有场景结果也返回失败，避免空跑被记为通过。
+`NETLAB_RUN_DIR` 可以指定日志父目录。执行器的隔离回归用 `python3 scripts/tests/test_netlab.py`，只调用临时工具替身，不连接机器或运行 Cargo。
 
 机器要求：Linux、允许非特权 user namespace、有 `tc`。没有 `nft`、`conntrack` 时脚本用
 `apt-get download` 把发行版的包解到 `~/khor-netlab/tools`（不要 root）。
