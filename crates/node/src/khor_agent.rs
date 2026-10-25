@@ -10,11 +10,13 @@ mod accounts;
 mod updates;
 #[path = "khor_agent_output.rs"]
 mod output;
+#[path = "khor_agent_io.rs"]
+mod io;
 use output::TextStream;
 use std::{
     collections::HashMap,
     fs::{self, File, OpenOptions},
-    io::{BufRead, BufReader, Write},
+    io::Write,
     path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::{
@@ -548,7 +550,7 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
         // Drain stderr without retaining credentials or unbounded output.
         let drain = std::thread::spawn(move || {
             if let Some(stderr) = stderr {
-                for _ in BufReader::new(stderr).lines() {}
+                io::drain_stderr(stderr);
             }
         });
         if let Err(error) = send(&active, &start) {
@@ -563,8 +565,12 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
         // approval. Blocking the reader here could execute an expired request.
         let (out, events) = mpsc::sync_channel(64);
         let reader = std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                if out.send(line.map_err(|e| e.to_string())).is_err() {
+            for line in io::event_lines(stdout) {
+                let line = line.map_err(|error| match error {
+                    io::EventError::Read(error) => error.to_string(),
+                    io::EventError::TooLarge => msg::agent_arguments().into(),
+                });
+                if out.send(line).is_err() {
                     break;
                 }
             }
@@ -586,9 +592,6 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                         continue;
                     }
                 };
-                if line.len() > 2 * 1024 * 1024 {
-                    return Err(msg::agent_arguments().into());
-                }
                 let event: Value =
                     serde_json::from_str(&line).map_err(|_| msg::agent_arguments().to_owned())?;
                 match event["type"].as_str() {

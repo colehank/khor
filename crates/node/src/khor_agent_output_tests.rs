@@ -140,6 +140,76 @@ fn failed_sidecar_child() {
     assert_eq!(receipt.record.error.unwrap().len(), expected.len());
 }
 
+#[test]
+fn oversized_sidecar_events_are_rejected_before_the_writer_finishes() {
+    for newline in [false, true] {
+        let scratch = Scratch(std::env::temp_dir().join(format!(
+            "khor-pipe-limit-{}",
+            crate::link::fresh_hex().unwrap()
+        )));
+        fs::create_dir(&scratch.0).unwrap();
+        let sidecar = scratch.0.join("sidecar");
+        let finished = scratch.0.join("writer-finished");
+        let script = format!(
+            "#!/bin/sh\nset -e\nread -r start\nchunk={}\ni=0\nwhile [ \"$i\" -lt 1024 ]; do\n printf '%s' \"$chunk\"\n i=$((i+1))\ndone\n{}printf '%s' reached >{}\n",
+            shell_literal(&"x".repeat(8192)),
+            if newline { "printf '\\n'\n" } else { "" },
+            shell_literal(finished.to_str().unwrap()),
+        );
+        fs::write(&sidecar, script).unwrap();
+        fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut worker = Worker(
+            Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "khor_agent::output_tests::failed_sidecar_child",
+                    "--ignored",
+                ])
+                .env("KHOR_AGENT_SIDECAR", &sidecar)
+                .env("KHOR_OUTPUT_TEST_ROOT", scratch.0.join("store"))
+                .env("KHOR_OUTPUT_TEST_KEY", "")
+                .env("KHOR_OUTPUT_TEST_EXPECTED", msg::agent_arguments())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let status = loop {
+            if let Some(status) = worker.0.try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "oversized pipe fixture timed out"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        use std::io::Read;
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        worker
+            .0
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_string(&mut stdout)
+            .unwrap();
+        worker
+            .0
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .unwrap();
+        assert!(status.success(), "{stdout}\n{stderr}");
+        assert!(
+            !finished.exists(),
+            "the executor consumed the entire oversized event"
+        );
+    }
+}
+
 fn streamed_case(name: &str) -> Value {
     let (key, channel, ending, chunks, checkpoint) = match name {
         "stdout-done" => (
