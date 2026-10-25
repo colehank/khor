@@ -771,3 +771,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 
 `npm run chat-drafts`：取消/失败草稿的tab owner与send token归属，检查关闭/重开、迟到回执、成功释放、同文不同token、多个session与稳定订阅；缩略图URL不转移所有权，大字符串共享。加入 `npm run test:unit`。这是状态模块检查，完整ChatView/附件与网络发送流程另验。
+
+
+`npm run chat-cancel`：真实 ChatView/App 与 api.ts 的上传取消、HTTP admission/commit 区分、失败或未知回执、草稿和附件恢复、切 tab/关闭重开与过期 retry/cancel 回调归属回归。加入 `npm run test:interaction`；`CHAT_CANCEL_WEBKIT=1` 同跑 WebKit，`CHAT_CANCEL_CHECK_DIR` 保存报告与窄屏截图，`CHAT_CANCEL_SCENARIOS` 可选场景，空/重复/未知选择拒绝。transport、附件内容与 IPC 为隔离 fixture，不能代替原生 App/真实 host 链验收。

@@ -64,6 +64,8 @@ jobs:
           QUALITY_HEADLESS: '1'
           EDITOR_OVERWRITE_WEBKIT: '1'
           CHAT_POLL_WEBKIT: '1'
+          CHAT_CANCEL_WEBKIT: '1'
+          CHAT_CANCEL_CHECK_DIR: ${{ runner.temp }}/quality-chat-cancel
           PAGE_RETENTION_UI_OUT: ${{ runner.temp }}/quality-pages
           CHAT_POLL_CHECK_DIR: ${{ runner.temp }}/quality-chat-poll
           EDITOR_OVERWRITE_CHECK_DIR: ${{ runner.temp }}/quality-overwrite
@@ -78,5 +80,6 @@ jobs:
             ${{ runner.temp }}/quality-elements
             ${{ runner.temp }}/quality-overwrite
             ${{ runner.temp }}/quality-chat-poll
+            ${{ runner.temp }}/quality-chat-cancel
             ${{ runner.temp }}/quality-pages
           if-no-files-found: warn
