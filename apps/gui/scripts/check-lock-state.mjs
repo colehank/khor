@@ -161,7 +161,7 @@ check('StrictMode cleanup ignores the abandoned first mount read', async f => {
   assert.deepEqual(await f.state(), { facts: ON, settled: true, locked: true });
 }, true);
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const browser = await chromium.launch({ channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? 'chrome') || undefined, headless: process.env.LOCK_STATE_HEADED !== '1' });
 let failed = 0;
 console.log(`use-lock SHA-256: ${beforeHash}; React browser: ${browser.version()}`);
 try {

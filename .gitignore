@@ -32,3 +32,6 @@ opencode.jsonc
 
 # Per-worktree Pi dependencies, including local dependency links.
 /apps/agent/node_modules
+
+# Python test runner bytecode.
+__pycache__/

@@ -755,3 +755,5 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `npm run test:interaction` 运行 AI Elements 的桌面/手机两种主题，以及聊天滚动和提交跳转的生产组件回归。CI 使用 `QUALITY_ENGINES=chrome,webkit`；本地默认系统 Chrome，`PLAYWRIGHT_CHROMIUM_CHANNEL=''` 使用锁定 Playwright 版本下载的 Chromium。
 - `.github/workflows/quality.yml` 在 PR 与 main 更新时执行 shell 执行器回归、agent 类型/测试、GUI 默认检查、移动静态检查和两浏览器交互检查。日志/截图作为 artifact 保存；release 复用同一工作流并等待检查通过。
 - `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` 检查脚本的失败传递和 dry-run 等行为，使用临时目录与替身，不安装、卸载或连接用户机器。
+
+- `npm run lock-state`：真实 React hook 宿主中的锁配置刷新、请求乱序、PIN/系统解锁、跨窗通知与清理回归。只替换transport与时钟，不读真实锁配置；加入 `npm run test:interaction`。
