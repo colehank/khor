@@ -36,7 +36,9 @@ if [ "$(uname -s)" != Linux ]; then
         --exclude /apps/gui/dist "$REPO/" "$HOST:/tmp/khor-netlab-src/"
     remote='sh /tmp/khor-netlab-src/scripts/netlab.sh'
     for arg do
-        quoted=$(printf '%s' "$arg" | sed "s/'/'\\\\''/g")
+        # The sentinel preserves trailing newlines through command substitution.
+        quoted=$(printf '%sX' "$arg" | sed "s/'/'\\\\''/g")
+        quoted=${quoted%X}
         remote="$remote '$quoted'"
     done
     exec ssh "$HOST" "$remote"

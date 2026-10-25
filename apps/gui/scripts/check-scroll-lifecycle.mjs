@@ -127,7 +127,8 @@ async function commitCase(page, mode, evidence) {
     // Reach the trigger as a keyboard user, without calling element.focus().
     for (let i = 0; i < 30; i++) {
       // WebKit on macOS uses Option-Tab to include buttons in traversal.
-      await page.keyboard.press(page.context().browser().browserType().name() === 'webkit' ? 'Alt+Tab' : 'Tab');
+      const optionTab = process.platform === 'darwin' && page.context().browser().browserType().name() === 'webkit';
+      await page.keyboard.press(optionTab ? 'Alt+Tab' : 'Tab');
       if (await trigger.evaluate(el => el === document.activeElement)) break;
     }
     assert(await trigger.evaluate(el => el === document.activeElement), 'Tab must reach the jump trigger');

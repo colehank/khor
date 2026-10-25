@@ -1,9 +1,11 @@
 """Exercise the netlab runner in a scratch checkout, without a network or Cargo."""
 
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -104,6 +106,37 @@ exit 99
         self.assertEqual(len(logs), 2, self.output)
         self.assertTrue(any("Finished test profile" in p.read_text() for p in logs))
         self.assertTrue(any("[netlab-result] fixture" in p.read_text() for p in logs))
+
+    def test_remote_filters_are_literal_and_ssh_failure_propagates(self):
+        (self.bin / "uname").write_text("#!/bin/sh\necho Darwin\n")
+        capture = self.root / "capture.py"
+        capture.write_text(
+            "import json, os, sys\n"
+            "with open(os.environ['NETLAB_REMOTE_ARGS'], 'w') as output:\n"
+            "    json.dump(sys.argv[1:], output)\n"
+        )
+        import shlex
+        mocks = {
+            "rsync": "exit 0",
+            "ssh": '/bin/sh -c "$2"\nexit 29',
+            "sh": f'exec {shlex.quote(sys.executable)} {shlex.quote(str(capture))} "$@"',
+        }
+        for name, body in mocks.items():
+            path = self.bin / name
+            path.write_text("#!/bin/sh\nset -eu\n" + body + "\n")
+            path.chmod(0o755)
+        marker = self.root / "unexpected-execution"
+        filters = ["with space", "one'two", f"$(touch {marker})", "a; echo unexpected", "last\n\n"]
+        result = subprocess.run(
+            ["/bin/sh", str(self.root / "scripts/netlab.sh"), "--on", "fixture-host", *filters],
+            env={**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}",
+                 "NETLAB_REMOTE_ARGS": str(self.root / "remote-args.json")},
+            text=True, capture_output=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 29, result.stderr)
+        received = json.loads((self.root / "remote-args.json").read_text())
+        self.assertEqual(received, ["/tmp/khor-netlab-src/scripts/netlab.sh", *filters])
+        self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":
