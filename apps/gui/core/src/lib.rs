@@ -3064,33 +3064,32 @@ mod wizard_agent_tests {
         );
     }
 
-    /// **The two forms a registered agent cannot take say which wall
-    /// they hit, and they are different walls.**
-    ///
-    /// Enumerated, and asserted to *differ from each other and from
-    /// codex's* — the neighbouring-answer trap is the whole risk here:
-    /// three refusals collapsed into one "只有对话形式" would be true
-    /// of all of them and useful for none, and `is_err()` cannot see
-    /// the difference.
     #[test]
-    fn a_registered_agent_is_refused_the_two_forms_it_cannot_take() {
+    fn registered_agents_refuse_terminal_but_accept_the_scheduler_form() {
         let r = root("forms");
         let n = khor_node::Node::open(r.to_path_buf()).unwrap();
-        n.register_agent("zed", &["some-acp-agent".to_owned()])
+        let missing_command = r.join("missing-agent");
+        assert!(!missing_command.exists());
+        n.register_agent("zed", &[missing_command.display().to_string()])
             .unwrap();
 
         let term =
             wait(open_session(&r, "~", "", "term", "zed", "", None)).expect_err("no terminal form");
-        let sched =
-            wait(open_session(&r, "~", "", "agent", "zed", "", None)).expect_err("no scheduler form");
         assert_eq!(term, khor_catalog::msg::wizard_registered_no_terminal());
-        assert_eq!(sched, khor_catalog::msg::wizard_registered_no_scheduler());
-        assert_ne!(term, sched, "starting it and arming it are different walls");
-        assert_ne!(
-            term,
-            khor_catalog::msg::wizard_codex_chat_only(),
-            "and neither of them is codex's refusal, which is about a different limit"
-        );
+
+        let missing_directory = r.join("missing-directory");
+        let directory = missing_directory.to_str().unwrap();
+        let why = wait(open_session(&r, directory, "", "agent", "zed", "", None))
+            .expect_err("the scheduler directory does not exist");
+        assert_eq!(why, khor_catalog::msg::no_such_dir(directory));
+
+        // A valid directory reaches the registered launch path. The absolute,
+        // absent command makes the result independent of the machine's PATH.
+        let spec = n.agent_or_refuse("zed").unwrap();
+        let expected = khor_node::Node::agent_launch(&spec).expect_err("no installed fixture command");
+        let sched = wait(open_session(&r, r.to_str().unwrap(), "", "agent", "zed", "", None))
+            .expect_err("the registered scheduler command is absent");
+        assert_eq!(sched, expected);
     }
 
     /// khor's own two keep every form they had. The control for the

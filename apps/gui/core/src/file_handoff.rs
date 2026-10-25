@@ -211,10 +211,11 @@ async fn prepare(
             return Err(khor_catalog::msg::file_changed_mid_pull().into());
         }
         let relative = landed.strip_prefix(&dir).map_err(|e| e.to_string())?;
+        let original = landed.canonicalize().map_err(|e| e.to_string())?;
         let note = dir.join(format!("ready-{token}.json"));
         std::fs::write(&note, relative.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
         std::fs::rename(note, manifest).map_err(|e| e.to_string())?;
-        Ok(landed)
+        Ok(original)
     }
     .await;
     if result.is_err() {
