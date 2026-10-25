@@ -1,57 +1,56 @@
 # 当前状态
 
-更新：2026-10-25 · 首批浏览器/Lab版本已交付，原生验收与下一批治理待继续
+更新：2026-10-25 · 用户重新激活完整治理目标，继续执行。
 
-## 目标与授权
+## 目标与边界
 
-用户在规划后指示“开始做吧”。按全仓审计、分批修复、独立审查与Lab验收执行；主智能体集成并维护本总账。当前没有合并main或发布动作。首轮范围和协作/压缩恢复规则读 [PLAN](PLAN.md)，风险与后续优先级读 [AUDIT](AUDIT.md)。
+完整范围仍为 [PLAN.md](PLAN.md) P1–P5：全仓审查、分批功能修复与结构治理、工程规范和整体验收。不能以首批或单项通过代替全面完成。[AUDIT.md](AUDIT.md) 保存发现与后续优先级。main/发布没有本轮授权；独立分支和隔离验收继续。
 
-## 权威路径与版本
+## 当前路径与版本
 
-- main基线：/Users/zgh/Desktop/working/khor，`8704a503a27b36ad58f922690de50e766f8bd485`，tracked工作树保持clean。
-- 权威协调目录：/Volumes/disk0/khor-code-quality-plan/docs/code-quality，plan/code-quality分支。其他worktree副本是快照；恢复先读这里。
-- 集成实现：/Volumes/disk0/khor-code-quality-wave1，integrate/code-quality-wave1。
-- 源码提交：`4d3c52f9` 自动保存，`dc843dd2` 聊天滚动/提交焦点/回归/Lab。后续文档提交不改变上述已验证源码。
-- Q020原实现worktree：/Volumes/disk0/khor-quality-save-road，fix/quality-save-road，原提交d9865696已cherry-pick；工作树保留。
-- 主仓AGENTS.md是gitignored本地入口，已补本协调目录指针。不要因main无改动而重新实现或重复发布。
+- 主仓：`/Users/zgh/Desktop/working/khor`，main `8704a503a27b36ad58f922690de50e766f8bd485`，tracked clean。
+- 权威协调：本文件所在目录，plan/code-quality 分支。其他 worktree 的同名文档是快照。
+- 集成实现：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，integrate/code-quality-wave1，当前 HEAD `c3fe828b`（Q030/Q021b 已集成，原生验收期间冻结）。
+- 内盘恢复：`/Users/zgh/Developer/Khor/worktrees/recovery/`，4 个恢复副本，均保留真实差异；禁止重建旧 Desktop/working 路径或按摘要覆盖。
+- 外盘资料：`/Volumes/disk0/Khor`。存储与迁移索引见 [STORAGE.md](STORAGE.md)；内盘备份 `/Users/zgh/khor-backups/{disk0-20261025,working-20261025}`。
+- 上次 ship 的 Mac 二进制仍在主仓 target/release/khor-gui，SHA-256 与发布收据一致；没有把它当成本轮修复版原生验收。
 
-## 任务状态
+## 已集成与确认的证据
 
-| 任务 | 状态 | 记录 |
-|---|---|---|
-| Q-001A/B/C 审计 | 首轮结构巡检与重点抽样已交付 | 报告、逐文件清单在tasks/；不代表全仓逐行深审 |
-| Q-010 聊天位置 | integrated，原生验收待补 | 第四版保护布局/caret变化，真实输入优先；Q-010.md及独立review |
-| Q-011 提交跳转 | integrated，原生验收待补 | 菜单关闭交目标焦点，Escape维持；Q-011.md |
-| Q-012 漏检与回归 | 首批浏览器回归完成 | Q-012.md，原始红/候选绿同脚本指纹 |
-| Q-020 自动保存 | integrated | 取消epoch、按编辑线队列、内容重复head；24回归和独立审查 |
-| Q-013 Lab | integrated | 320/390触摸与1200布局通过；跨iframe键盘失焦也有正式回归 |
+| 任务 | 当前结论 |
+| --- | --- |
+| Q001A/B/C | 首轮结构盘点与重点抽样完成；GUI 525 文件清单/42 重点文件，后端 165 文件清单/36 关键路径；尚非全仓深入审查 |
+| Q010/Q011/Q013 | 首批滚动、提交跳转、Lab 已提交并集成。固定版本浏览器 Chrome/WebKit 26/26，通过对应版本 gen/types/unit/build；真正原生 App/物理 iPhone 待验 |
+| Q020 | 自动保存摘要回环、取消与编辑线隔离已集成，24 回归与独立编辑器检查通过；显式“用我的覆盖”另列 Q020b |
+| Q021 | 已知锁状态刷新失败保护已集成 882e3c50；首次未知失败恢复在 Q021b |
+| Q022 | 身份原子首建 e89da2e6 已集成；真实 Cargo 9 通过+1 专用 worker、64 子进程；断电目录项持久性与 Windows 实跑不作保证 |
+| Q023 | dry-run、purge 范围和现代指纹 hostname fallback 拒绝已集成至 9b175b42；安装 binary 的真实 owner 证明仍待 Q023b |
+| Q024 | netlab 失败/空跑退出码、mobile 静态/编译分层、质量 CI 与平台 Tab 修正已提交；GitHub CI 实跑、最终完整交互和 Q025 native/mobile 静态收尾仍待完成 |
 
-全部子智能体完成本轮交接。下一次派发仍使用PLAN的独立worktree、文件所有权、非作者审查规则，先核对现场再修改。
+## 本轮实际分工
 
-## 已有证据
+| 任务 | 所有者 / 工作副本 | 现场与下一步 |
+| --- | --- | --- |
+| Q021b | root；内盘 recovery/khor-quality-recovery | 作者提交 4c616670、集成 c3fe828b；20 hook、types、unit和独立审查通过，Chrome/WebKit 4个App场景通过。确切集成版Chrome/WebKit全交互30/30通过，源码指纹稳定；RECOVERY.md 文档另留 |
+| Q023b | store_owner；内盘 recovery/khor-quality-store-owner-recovery | owner/Node/CLI/onset 严格回执已落盘；上次 80 场景红绿，rustfmt 后待复跑；真实CLI精确测试1/1通过，已释放槽；轻量最终80/80通过，作者提交fb0c6700；root独立源审/6规则+80场景复验通过，冻结窗口结束后集成 |
+| Q030 | root 复审集成；外盘 current/khor-quality-agent-protocol | 作者提交 9d09899c，仅4个输出文件；真实整组8通过+1专用worker。root 非作者审查记录 Q-030-review.md；已集成 de27d3f3，Q031差异保留，集成版对应测试待跑 |
+| Q030b | agent_redaction；同上独立后续提交 | 跨chunk真红后已落候选；12项轻量流/Recorder测试通过，真实fake-sidecar回归已写但尚未Cargo类型/运行验证；完整槽排native之后 |
+| Q010-native | native_acceptance；wave1 只读 | 上次用户暂停时 Cargo SIGTERM，未安装/启动隔离 App，不计通过。现场旧进程已确认终止；现获唯一槽，按冻结HEAD c3fe828b续建真正Tauri iOS App，独立bundle/fixture，不改用户App |
+| Q025 | root接手；外盘 current/khor-quality-native-io | queue/connection/chat/term/native dispatcher 未提交，std-only7/7；root补5个真实core协议用例和核对Tauri解码oracle，待串行Cargo，不计编译通过 |
+| Q020b / Q031 / Q032 | 保留，未关闭 | 覆盖入口仅新增回归未完成；A2A Message context 只有红测试；HTTP JSON 为审计准备，尚未实现 |
 
-证据根：/Volumes/disk0/khor-code-quality-evidence。manifest.json记录源码、锁文件、环境和检查边界。
+## 验证与资源
 
-- baseline-final：原始commit三种选择均回顶部、聊天键盘第一步失去tail、draft增高尾差40；Escape控制通过。
-- scroll-lifecycle-final：Chrome155.0.8059.85、WebKit26.5，各13场景，共26/26；未捕获pageerror=0，源文件指纹开始/结束一致；与baseline只有两生产文件不同。
-- gen通过（独立Cargo缓存由暖缓存APFS clone，使用完仅清理本任务缓存）；完整tsc、默认test、gates登记与build通过。build有既有大chunk警告，gen有vendor/node/ts-rs警告。
-- save-road集成24/24，非作者补3边界通过；editor-history Chrome/WebKit各8场景通过。
-- ai-elements-final2四组通过；首次final运行mobile工具展开超时，保留日志。已补失败截图/状态诊断，不宣称已确定偶发原因。
-- Q001C曾误跑mobile，静态10失败，后续cargo被它自行中断；不是通过。具体基线漂移与进程处理在审计报告。
-- 图谱在基线虽HEAD匹配仍不完整；集成worktree初始图为空，commit钩子才增量建立修改文件。risk0或test gap数量不作正确性依据。
+- 证据根 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`，各任务卡记录确切 source/lock hashes 与平台边界。
+- 同时只有一个完整 Cargo/native 构建槽，当前分给 native_acceptance；store_owner 已完成并释放。jobs=2，沿用 quality-target；主发布缓存不写、不清。
+- 外置盒风扇故障、USB SMART 温度不可读；用户明确允许继续。外盘约21GiB、内盘约24GiB可用。各构建仅监测/停止自己的进程组；掉盘、连续 I/O 错误或低于5GiB时保存日志并停止该构建。
+- 不按旧 PID/句柄判断进程。上次 native 构建和 fixture 已按暂停要求终止，所有模拟器尚未用于本轮完整 App 验收；旧 Lab 地址未经当前核验不宣称在线。
+- Q021b 的 face gate 上次被用户暂停中断，不计通过；dialogs、words 与 types 已过。新的局部与集成结果须按当前版本记录。
 
-## Lab与保留进程
+## 尚未完成的完整范围
 
-- 服务：node PID79697，exec75507，cwd /Volumes/disk0/khor-code-quality-wave1/apps/gui，port23820。
-- 桌面： http://127.0.0.1:23820/lab/quality.html
-- 当前同网入口： http://172.23.250.213:23820/lab/quality.html （本机HTTP200已核验，地址变化后重查）
-- 全部虚构会话/commit，同源API，无真实模型/用户文件操作。键盘模拟原位改变visualViewport，手机全屏入口用于真实键盘操作。保留Lab服务供用户检查。
-- 各测试临时服务已由所有者清理；WebKit浏览器在/Volumes/disk0/khor-playwright。iPhone17Pro模拟器E52DFE43-E03C-4FBE-99D4-C8CEDEE87ED9由本轮启动并已停止，Safari只访问隔离Lab。
+首批原生/物理设备/辅助技术验收；Q020b/Q023b/Q025/Q030b/Q031/Q032；native page迟到归属、chat轮询结束/退避、sidecar取消期限、4MiB同步缺口恢复、once锁回收；工具链与产物可复现、installer checksum和mirror一致性；模块职责重构、格式/命名/错误/注释规则、剩余模块深入审查，以及最终确切集成版本的完整用户流程验收。完整清单不因本轮优先项缩减。
 
-## 尚未完成与下一步
+## 历史与恢复
 
-1. Khor原生App/物理iPhone及辅助技术未验本提交。模拟器Safari基础键盘末尾可见，但硬件输入后切软件键盘出现外壳位移异常，未分清Safari与App，不能作为原生通过；单列原生验收。
-2. Lab反馈如需调整，在此分支继续，不自动合并/发布。
-3. 后续按AUDIT优先级：锁定刷新失败、identity并发首建、卸载dry-run/purge；再修验证退出码/移动端普查漂移、A2A context、错误脱敏和生命周期。
-4. Q020独立审查补出的“用我的覆盖”历史digest假冲突，父/子都有；另立任务处理fresh pin来源，不让所有asked绕过冲突保护。
-5. 大入口拆分、统一格式/注释、协议恢复和构建可复现性均在后续批次，不能把第一轮Lab交付写作全面重构完成。
+本文件只保留当前事实。暂停/拔盘/两次目录整理前的总账快照见 [history/STATE-before-resume-20261025.md](history/STATE-before-resume-20261025.md)，详细过程读单任务卡。恢复时先读当前用户指令、本文件、PLAN和对应任务卡，再核对真实 worktree/HEAD/diff/进程；历史摘要、通过日志和图谱风险分数均不能替代当前证据。
