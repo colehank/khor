@@ -759,3 +759,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `npm run lock-state`：真实 React hook 宿主中的锁配置刷新、请求乱序、PIN/系统解锁、跨窗通知与清理回归。只替换transport与时钟，不读真实锁配置；加入 `npm run test:interaction`。
 
 原生 I/O 调度的轻量回归：仓库根运行 `node scripts/check-native-io.mjs`，Quality/scripts 持续执行。直接编译当前 CommandQueue/Connection，并原样提取 term_paste/paste，覆盖保序、关闭/重开隔离、锁等待期间取消与完成通知；依赖 rustc，不启动 Cargo。原生参数/ACL 与真实 GUI core TCP 用例另用 Cargo 执行，轻量脚本不替代它们。
+
+
+`npm run editor-overwrite`：正式 FilePage/CodeMirror 的内容摘要 CAS 冲突覆盖回归，包含读期间继续输入、取消、丢弃、关闭/重开、切文件、二编辑线、残缺/二进制响应与采用磁盘内容后的再次保存；不写用户磁盘文件。加入 `npm run test:interaction`。默认 Chrome，`EDITOR_OVERWRITE_WEBKIT=1` 同跑 WebKit，`EDITOR_OVERWRITE_CHECK_DIR` 指定证据目录；CI 下载的 Chromium 沿用 `PLAYWRIGHT_CHROMIUM_CHANNEL=''`。

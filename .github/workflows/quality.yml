@@ -62,6 +62,8 @@ jobs:
           PLAYWRIGHT_CHROMIUM_CHANNEL: ''
           QUALITY_ENGINES: chrome,webkit
           QUALITY_HEADLESS: '1'
+          EDITOR_OVERWRITE_WEBKIT: '1'
+          EDITOR_OVERWRITE_CHECK_DIR: ${{ runner.temp }}/quality-overwrite
           QUALITY_OUT: ${{ runner.temp }}/quality-scroll
           AI_ELEMENTS_OUT: ${{ runner.temp }}/quality-elements
       - uses: actions/upload-artifact@v4
@@ -71,4 +73,5 @@ jobs:
           path: |
             ${{ runner.temp }}/quality-scroll
             ${{ runner.temp }}/quality-elements
+            ${{ runner.temp }}/quality-overwrite
           if-no-files-found: warn
