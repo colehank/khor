@@ -61,6 +61,75 @@ khor_root() {
     fi
 }
 
+# Destructive operations require a readable, recognised claim. Unlike opening
+# a new store, an empty or missing owner is not permission to remove old data.
+# The name may be empty in a valid fingerprint-only claim; only the binary can
+# resolve that claim. The no-binary fallback below requires a hostname.
+khor_owner_name() {
+    [ -f "$1" ] && [ -r "$1" ] && [ ! -L "$1" ] || return 1
+    awk '
+        { sub(/\r$/, "") }
+        NF == 1 && NR == 1 && $1 != "machine" && $1 != "name" { legacy = $1; next }
+        NF == 2 && $1 == "machine" && !machine { machine = $2; next }
+        NF == 2 && $1 == "name" && !name { name = $2; next }
+        { bad = 1 }
+        END {
+            if (bad || (legacy && NR != 1) || (!legacy && !machine && !name)) exit 1
+            print legacy ? legacy : name
+        }
+    ' "$1"
+}
+
+# Keep install/start's permissive first-run behaviour separate from uninstall.
+# The binary selects renamed rooms by fingerprint; never recompute its answer
+# after deleting it. Only a store directly under this home may be removed.
+khor_uninstall_root() (
+    case "$HOME" in /*) : ;; *) echo "onset: HOME must be absolute" >&2; return 1 ;; esac
+    case "$HOME" in /|*/|*/../*|*/./*|*/..|*/.|*'
+'*) echo "onset: unsafe HOME" >&2; return 1 ;; esac
+    for _path in "$HOME/.local" "$HOME/.local/bin"; do
+        [ ! -L "$_path" ] || { echo "onset: refusing symlink: $_path" >&2; return 1; }
+    done
+    _binary="$HOME/.local/bin/khor"
+    _authority=no
+    if [ -e "$_binary" ] || [ -L "$_binary" ]; then
+        [ -x "$_binary" ] || { echo "onset: installed khor is not executable" >&2; return 1; }
+        # A login's inherited override may belong to a different instance.
+        _root=$(unset KHOR_HOME; "$_binary" root) || { echo "onset: cannot resolve installed store" >&2; return 1; }
+        _authority=yes
+    else
+        _host=$(hostname) || return 1
+        case "$_host" in ''|.|..|*[!a-zA-Z0-9_.-]*) echo "onset: invalid hostname" >&2; return 1 ;; esac
+        _root="$HOME"
+        if [ -e "$HOME/.khor" ] || [ -L "$HOME/.khor" ]; then
+            [ ! -L "$HOME/.khor" ] || { echo "onset: refusing symlink store" >&2; return 1; }
+            _owner=$(khor_owner_name "$HOME/.khor/owner") || { echo "onset: cannot verify home owner" >&2; return 1; }
+            [ -n "$_owner" ] || { echo "onset: owner needs installed khor to resolve its fingerprint" >&2; return 1; }
+            [ "$_owner" = "$_host" ] || _root="$HOME/.khor-hosts/$_host"
+        fi
+    fi
+    case "$_root" in
+        "$HOME") : ;;
+        "$HOME"/.khor-hosts/*)
+            _room=${_root#"$HOME"/.khor-hosts/}
+            case "$_room" in ''|.|..|*/*|*'
+'*) echo "onset: unsafe store path: $_root" >&2; return 1 ;; esac
+            [ ! -L "$HOME/.khor-hosts" ] && [ ! -L "$_root" ] || { echo "onset: refusing symlink room" >&2; return 1; }
+            ;;
+        *) echo "onset: store is outside the home layout: $_root" >&2; return 1 ;;
+    esac
+    _store="$_root/.khor"
+    if [ -e "$_store" ] || [ -L "$_store" ]; then
+        [ -d "$_store" ] && [ ! -L "$_store" ] || { echo "onset: refusing non-directory or symlink store" >&2; return 1; }
+        _owner=$(khor_owner_name "$_store/owner") || { echo "onset: cannot verify store owner: $_store" >&2; return 1; }
+        if [ "$_authority" = no ] && [ "$_owner" != "$_host" ]; then
+            echo "onset: store owner does not match this machine" >&2
+            return 1
+        fi
+    fi
+    printf '%s\n' "$_root"
+)
+
 # **Is this pid actually khor's resident, right now?**
 #
 # A pid read out of a file is a claim about the past. Pids get reused,
@@ -92,20 +161,32 @@ khor_is_serve() {
 # Never kills what it did not recognise.
 khor_stop_serve() {
     _pidf="$1"
+    [ ! -L "$_pidf" ] || { echo "onset: refusing symlink pid file: $_pidf" >&2; return 1; }
     [ -f "$_pidf" ] || return 0
     _pid=$(cat "$_pidf" 2>/dev/null)
     if [ -z "$_pid" ]; then
         rm -f "$_pidf"
         return 0
     fi
+    case "$_pid" in *[!0-9]*) echo "onset: invalid resident pid in $_pidf" >&2; return 1 ;; esac
+    [ "$_pid" -gt 1 ] 2>/dev/null || { echo "onset: invalid resident pid in $_pidf" >&2; return 1; }
     if ! kill -0 "$_pid" 2>/dev/null; then
+        if ps -o args= -p "$_pid" >/dev/null 2>&1; then
+            echo "onset: cannot signal resident $_pid" >&2
+            return 1
+        fi
         # Nobody home: the file outlived the process it named.
         rm -f "$_pidf"
         return 0
     fi
     if khor_is_serve "$_pid"; then
-        kill "$_pid" 2>/dev/null || true
-        sleep 1
+        kill "$_pid" 2>/dev/null || { echo "onset: could not stop resident $_pid" >&2; return 1; }
+        _wait=0
+        while kill -0 "$_pid" 2>/dev/null; do
+            [ "$_wait" -lt 5 ] || { echo "onset: resident $_pid did not stop" >&2; return 1; }
+            sleep 1
+            _wait=$((_wait + 1))
+        done
         rm -f "$_pidf"
         return 0
     fi

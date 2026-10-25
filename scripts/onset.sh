@@ -25,8 +25,8 @@
 #   natively on a Linux box whose glibc *is* the floor. Nothing is sent;
 #   the file is renamed into the staged name and walks the same gate.
 #
-# `--dry-run` stops once the binary is ready and says what would be
-# sent — the way to look at a release before shipping it anywhere.
+# For installation, `--dry-run` stops once the binary is ready.
+# For uninstallation, it prints the plan without contacting the target.
 #
 # **glibc by default, static only when asked.** A statically linked
 # binary is the tidier idea — it runs on any kernel, no version floor —
@@ -61,21 +61,36 @@ SOURCE=build
 RELEASE=latest
 ONTARGET=""
 DRY=no
+UNINSTALL=no
+PRINT_UP=no
+INSTALL_OPTIONS=no
 for arg in "$@"; do
     case "$arg" in
-        --uninstall) MODE=uninstall ;;
+        --uninstall) MODE=uninstall; UNINSTALL=yes ;;
         --purge) PURGE=yes ;;
-        --no-serve) SERVE=no ;;
-        --musl) LIBC=musl ;;
-        --release) SOURCE=release ;;
-        --release=*) SOURCE=release; RELEASE="${arg#--release=}" ;;
-        --bin-on-target=*) SOURCE=ontarget; ONTARGET="${arg#--bin-on-target=}" ;;
+        --no-serve) SERVE=no; INSTALL_OPTIONS=yes ;;
+        --musl) LIBC=musl; INSTALL_OPTIONS=yes ;;
+        --release) SOURCE=release; INSTALL_OPTIONS=yes ;;
+        --release=*) SOURCE=release; RELEASE="${arg#--release=}"; INSTALL_OPTIONS=yes ;;
+        --bin-on-target=*) SOURCE=ontarget; ONTARGET="${arg#--bin-on-target=}"; INSTALL_OPTIONS=yes ;;
         --dry-run) DRY=yes ;;
-        --print-serve-up) MODE=print-serve-up ;;
+        --print-serve-up) MODE=print-serve-up; PRINT_UP=yes ;;
         -*) echo "unknown option: $arg" >&2; exit 2 ;;
-        *) HOST="$arg" ;;
+        *)
+            [ -z "$HOST" ] && [ -n "$arg" ] || { echo "onset: expected one ssh host" >&2; exit 2; }
+            case "$arg" in *[!a-zA-Z0-9_.@:%+\[\]-]*) echo "onset: invalid ssh host: $arg" >&2; exit 2 ;; esac
+            HOST="$arg"
+            ;;
     esac
 done
+if [ "$UNINSTALL" = yes ] && { [ "$PRINT_UP" = yes ] || [ "$INSTALL_OPTIONS" = yes ]; }; then
+    echo "onset: --uninstall cannot be combined with installation or print options" >&2
+    exit 2
+fi
+if [ "$PURGE" = yes ] && [ "$UNINSTALL" != yes ]; then
+    echo "onset: --purge requires --uninstall" >&2
+    exit 2
+fi
 # **`khor-serve-up`, the login pull-up, is shipped too — and it is
 # install.sh's own text, cut out of install.sh**, not a copy of it.
 #
@@ -100,14 +115,18 @@ if [ "$MODE" = print-serve-up ]; then
     exit 0
 fi
 [ -n "$HOST" ] || { echo "usage: onset.sh <ssh-host> [--musl] [--uninstall] [--purge] [--no-serve] [--release[=tag]] [--bin-on-target=PATH] [--dry-run]" >&2; exit 2; }
+if [ "$MODE" = uninstall ] && [ "$DRY" = yes ]; then
+    printf 'onset: dry run — would stop the resident and remove the binary on %s; no connection made\n' "$HOST"
+    [ "$PURGE" != yes ] || printf 'onset: would purge only the verified machine store; its path will be resolved on the target\n'
+    exit 0
+fi
 if [ "$SOURCE" = release ] && [ "$LIBC" = musl ]; then
     echo "onset: the release has no static build (release.yml says why); build --musl here instead" >&2
     exit 2
 fi
 
-STAGE="${TMPDIR:-/tmp}/khor-onset.$$"
-mkdir -p "$STAGE"
-trap 'ssh -O exit -o ControlPath="$STAGE/mux" "$HOST" 2>/dev/null; rm -rf "$STAGE"' EXIT
+STAGE=$(mktemp -d "${TMPDIR:-/tmp}/khor-onset.XXXXXXXX")
+trap 'ssh -O exit -o ControlPath="$STAGE/mux" "$HOST" 2>/dev/null || :; rm -rf "$STAGE"' EXIT
 
 # **One TCP connection for the whole run.** A run asks the target half a
 # dozen things (what it is, where its home is, install, start), and
@@ -136,37 +155,33 @@ say() { printf '%s\n' "$*"; }
 # same way whether we are installing, starting or removing (onset-lib.sh
 # carries why both questions are dangerous).
 LIB="$REPO/scripts/onset-lib.sh"
-remote() { cat "$LIB" "$1" | ssh_ "sh -s"; }
+remote() {
+    cat "$LIB" "$1" > "$STAGE/remote.sh" || return 1
+    ssh_ "sh -s" < "$STAGE/remote.sh"
+}
 
 # ── uninstall ────────────────────────────────────────────
 if [ "$MODE" = uninstall ]; then
-    cat > "$STAGE/off.sh" <<'REMOTE'
+    printf 'purge=%s\n' "$PURGE" > "$STAGE/off.sh"
+    cat >> "$STAGE/off.sh" <<'REMOTE'
 set -eu
-# **This machine's store only.** The loop used to walk both candidate
-# roots, and on a shared home `$HOME/.khor/serve.pid` is *another
-# machine's* pid file — so removing khor from hinton would read turing's
-# number and kill whatever on hinton happens to hold it.
-khor_stop_serve "$(khor_root)/.khor/serve.pid" || true
+# Resolve while the installed binary still exists. Reuse this exact store
+# for stopping and purging; another machine may own the shared front store.
+root=$(khor_uninstall_root)
+khor_stop_serve "$root/.khor/serve.pid"
 rm -f "$HOME/.local/bin/khor"
 # The note that started all this. Deleted rather than updated: nothing
 # reads it any more, and a stale pointer left lying about is exactly
 # what it was.
 rm -f "$HOME/.local/bin/.khor-root"
 echo "onset: binary and resident removed"
+if [ "$purge" = yes ]; then
+    rm -rf "$root/.khor"
+    printf 'onset: store purged: %s/.khor\n' "$root"
+fi
 REMOTE
     say "onset: removing khor from $HOST"
     remote "$STAGE/off.sh"
-    if [ "$PURGE" = yes ]; then
-        # Data is the one thing an uninstall must not take by default:
-        # the device identity lives here, and a machine that loses it
-        # rejoins the mesh as a stranger.
-        cat > "$STAGE/purge.sh" <<'REMOTE'
-set -eu
-rm -rf "$HOME/.khor" "$HOME/.khor-hosts/$(hostname)"
-echo "onset: store purged"
-REMOTE
-        remote "$STAGE/purge.sh"
-    fi
     exit 0
 fi
 
