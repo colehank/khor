@@ -9,21 +9,19 @@ import {chromium, webkit} from 'playwright-core';
 import {nativeEventRuntime} from './fixtures/native-events/runtime.mjs';
 
 const guiUrl = new URL('../', import.meta.url), gui = fileURLToPath(guiUrl);
-const fixture = mkdtempSync(join(gui, '.native-event-check-'));
-const evidence = process.env.NATIVE_EVENTS_CHECK_DIR || mkdtempSync(join(tmpdir(), 'khor-native-events-'));
-mkdirSync(evidence, {recursive: true});
 const known = ['late-existing-group', 'late-no-group', 'ready-before-eval', 'close-before-import', 'normal-live', 'listen-rejected', 'close-then-reject', 'unlisten-rejected', 'same-event-remount', 'peer-rejected', 'web-noop'];
 const scenarios = process.env.NATIVE_EVENTS_SCENARIOS?.split(',') ?? known;
 assert(scenarios.length && new Set(scenarios).size === scenarios.length);
 for (const name of scenarios) assert(known.includes(name), `Unknown scenario ${name}`);
 const sources = ['src/api.ts', 'src/lib/native-events.ts', 'package-lock.json', 'scripts/check-native-events.mjs',
+  '../../Cargo.lock', 'node_modules/@tauri-apps/api/core.js', 'node_modules/@tauri-apps/api/event.js',
   'scripts/fixtures/native-events/runtime.mjs', 'scripts/fixtures/native-events/probe.tsx',
   ...['core.js', 'event-mod.rs', 'event-init.js'].map(file => `scripts/fixtures/native-events/tauri-2.11.5/${file}`)];
 const fingerprint = () => Object.fromEntries(sources.map(file => [file, existsSync(join(gui, file)) ? createHash('sha256').update(readFileSync(join(gui, file))).digest('hex') : null]));
 const sourceBefore = fingerprint(), results = [];
-writeFileSync(join(fixture, 'bootstrap.js'), nativeEventRuntime(guiUrl));
-writeFileSync(join(fixture, 'index.html'), '<link rel="icon" href="data:,"><div id="root"></div><script src="./bootstrap.js"></script><script type="module" src="./probe.tsx"></script>');
-writeFileSync(join(fixture, 'probe.tsx'), readFileSync(new URL('./fixtures/native-events/probe.tsx', import.meta.url)));
+const evidence = process.env.NATIVE_EVENTS_CHECK_DIR || mkdtempSync(join(tmpdir(), 'khor-native-events-'));
+mkdirSync(evidence, {recursive: true});
+const fixture = mkdtempSync(join(gui, '.native-event-check-'));
 let server, browser;
 
 async function exercise(page, name) {
@@ -107,6 +105,9 @@ async function exercise(page, name) {
 }
 
 try {
+  writeFileSync(join(fixture, 'bootstrap.js'), nativeEventRuntime(guiUrl));
+  writeFileSync(join(fixture, 'index.html'), '<link rel="icon" href="data:,"><div id="root"></div><script src="./bootstrap.js"></script><script type="module" src="./probe.tsx"></script>');
+  writeFileSync(join(fixture, 'probe.tsx'), readFileSync(new URL('./fixtures/native-events/probe.tsx', import.meta.url)));
   process.env.KHOR_FACE_GATE = '1';
   server = await createServer({root: gui, cacheDir: join(fixture, '.vite'), optimizeDeps: {entries: [join(fixture, 'index.html')]},
     server: {host: '127.0.0.1', port: Number(process.env.NATIVE_EVENTS_PORT || 23843), strictPort: true, hmr: false}, logLevel: 'error'});
