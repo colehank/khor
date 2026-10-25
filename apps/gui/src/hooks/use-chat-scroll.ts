@@ -100,10 +100,10 @@ export function useChatScroll(revision: unknown) {
     const el = scroller.current;
     if (!el || el.clientHeight === 0 || acceptReaderScroll()) return;
     const focus = document.activeElement;
-    const editingComposer = focus?.matches("[data-composer-text]")
-      || (!document.hasFocus() && composerHadFocus.current);
-    // Caret restoration can arrive well after layout settled. Reader input wins.
-    if (editingComposer || layoutFrame.current || el.scrollHeight !== position.current.height || el.clientHeight !== position.current.viewport) {
+    const composerOwnsLayout = focus?.matches("[data-composer-text]")
+      || (composerHadFocus.current && (focus === document.body || !document.hasFocus()));
+    // Native caret restoration can outlive composer focus; BODY is not a reader action.
+    if (composerOwnsLayout || layoutFrame.current || el.scrollHeight !== position.current.height || el.clientHeight !== position.current.viewport) {
       sync();
       return;
     }

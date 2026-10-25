@@ -19,7 +19,7 @@ const out = process.env.QUALITY_OUT ?? join(tmpdir(), `khor-scroll-lifecycle-${p
 const headless = process.env.QUALITY_HEADLESS === '1';
 const engines = (process.env.QUALITY_ENGINES ?? 'chrome').split(',');
 const only = (process.env.QUALITY_ONLY ?? '').split(',').filter(Boolean);
-const names = ['lock-unavailable', 'lock-pin-failure', 'commit-mouse', 'commit-touch', 'commit-keyboard', 'commit-escape', 'lab-acp-blur', 'chat-acp-tail', 'chat-acp-history', 'chat-acp-input-tail', 'chat-acp-input-history', 'chat-khor-tail', 'chat-khor-history', 'chat-khor-input-tail', 'chat-khor-input-history'];
+const names = ['lock-unavailable', 'lock-pin-failure', 'commit-mouse', 'commit-touch', 'commit-keyboard', 'commit-escape', 'lab-acp-blur', 'chat-acp-tail', 'chat-acp-history', 'chat-acp-input-tail', 'chat-acp-input-history', 'chat-acp-blur-restore', 'chat-khor-tail', 'chat-khor-history', 'chat-khor-input-tail', 'chat-khor-input-history', 'chat-khor-blur-restore'];
 for (const name of engines) assert(['chrome', 'webkit'].includes(name), `Unknown engine: ${name}`);
 for (const name of only) assert(names.some(candidate => candidate === name || candidate.startsWith(`${name}-`)), `Unknown scenario: ${name}`);
 mkdirSync(out, { recursive: true });
@@ -184,6 +184,12 @@ async function labBlurCase(page, evidence) {
   const input = frame.locator('[data-composer-text]');
   const draft = '键盘验收草稿：这段文字不发送';
   await input.fill(draft);
+  evidence.draftBeforeLayout = await frame.locator(selector).evaluate(box => ({
+    at: performance.now(), top: box.scrollTop, height: box.scrollHeight, view: box.clientHeight,
+    gap: box.scrollHeight - box.clientHeight - box.scrollTop,
+    focus: document.activeElement?.tagName,
+  }));
+  await frames(frame);
   evidence.focusBefore = await frame.evaluate(() => ({ documentHasFocus: document.hasFocus(), activeIsComposer: document.activeElement?.matches('[data-composer-text]') }));
   assert(evidence.focusBefore.documentHasFocus && evidence.focusBefore.activeIsComposer, 'Typing must really focus the embedded composer before focus leaves');
   evidence.draftBefore = await samples(frame, selector, null, 350);
@@ -285,7 +291,7 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
     const upstream = await route.fetch(), value = await upstream.json();
     await route.fulfill({ response: upstream, json: { ...value, messages: [...value.messages, ...rows] } });
   });
-  await page.goto(`${base}/?${new URLSearchParams({ phone: '1', labSession: session, labTabs: session })}`);
+  await page.goto(`${base}/?${new URLSearchParams({ phone: '1', labSession: session, labTabs: session })}`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.locator(selector).waitFor();
   await add(60);
   await page.waitForFunction(selector => { const box = document.querySelector(selector); return box && box.scrollHeight - box.clientHeight > 1000; }, selector);
@@ -297,6 +303,52 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
   const input = page.locator('[data-composer-text]');
   await input.click();
   if (phase === 'input-tail') return inputDuringResize(page, selector, evidence);
+  if (phase === 'blur-restore') {
+    const oldTop = evidence.before.at(-1).top;
+    await keyboard(page, 300, evidence, 'blurKeyboardOpen');
+    await input.fill('draft words '.repeat(24));
+    await frames(page);
+    evidence.blurDraftOpen = await samples(page, selector, null, 350);
+    assertTail(evidence.blurDraftOpen, 'Long draft while the composer owns layout');
+    await input.evaluate(element => element.blur());
+    await keyboard(page, 0, evidence, 'blurKeyboardClose');
+    evidence.blurBeforeRestoration = await samples(page, selector, null, 350);
+    assertTail(evidence.blurBeforeRestoration, 'Layout settles after the composer loses focus');
+    evidence.passiveRestoration = await page.locator(selector).evaluate((box, oldTop) => {
+      const before = box.scrollTop;
+      box.scrollTop = oldTop;
+      return { before, attempted: box.scrollTop, activeTag: document.activeElement?.tagName, documentHasFocus: document.hasFocus() };
+    }, oldTop);
+    assert.equal(evidence.passiveRestoration.activeTag, 'BODY');
+    assert(evidence.passiveRestoration.documentHasFocus, 'Composer blur keeps this document focused');
+    assert(evidence.passiveRestoration.before - evidence.passiveRestoration.attempted > 80, 'The injected native restoration must actually displace the message viewport');
+    evidence.blurRestored = await samples(page, selector, null, 1000);
+    assertTail(evidence.blurRestored, 'A late passive restoration cannot replace the latest-message intent');
+
+    const beforeReader = evidence.blurRestored.at(-1);
+    const bounds = await page.locator(selector).boundingBox();
+    await page.locator(selector).evaluate(box => {
+      window.__qualityBlurWheel = null;
+      box.addEventListener('wheel', event => { window.__qualityBlurWheel = { trusted: event.isTrusted, delta: event.deltaY }; }, { once: true, passive: true });
+    });
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    await page.mouse.wheel(0, -400);
+    evidence.blurReader = await samples(page, selector, null, 800);
+    evidence.blurWheel = await page.evaluate(() => window.__qualityBlurWheel);
+    assert(evidence.blurWheel?.trusted, 'A real wheel takes reading ownership after composer blur');
+    assert(evidence.blurReader.at(-1).top < beforeReader.top - 200, 'Composer ownership cannot undo a reader moving to history');
+
+    await page.getByRole('button', { name: '返回', exact: true }).first().focus();
+    evidence.otherControl = await page.evaluate(() => ({ tag: document.activeElement?.tagName, text: document.activeElement?.getAttribute('aria-label') }));
+    evidence.ordinaryScroll = await page.locator(selector).evaluate(box => {
+      const before = box.scrollTop;
+      box.scrollTop = before - 80;
+      return { before, chosen: box.scrollTop };
+    });
+    evidence.afterOtherFocus = await samples(page, selector, null, 650);
+    assert(Math.abs(evidence.afterOtherFocus.at(-1).top - evidence.ordinaryScroll.chosen) <= 2, 'An explicit focus transfer preserves ordinary non-composer scrolling');
+    return;
+  }
   if (phase === 'tail') {
     await keyboard(page, 300, evidence, 'keyboardOpenFrames');
     evidence.keyboardOpen = await samples(page, selector);
@@ -412,7 +464,7 @@ try {
       const mobile = name.startsWith('lock-') || name === 'commit-touch' || name.startsWith('chat-');
       // Playwright cannot send a wheel in mobile WebKit. History keeps the
       // phone viewport/coarse pointer, with desktop WebKit wheel capability.
-      const mobileEmulation = mobile && !(engine === 'webkit' && (name.endsWith('-history') || name.includes('-input-')));
+      const mobileEmulation = mobile && !(engine === 'webkit' && (name.endsWith('-history') || name.includes('-input-') || name.endsWith('-blur-restore')));
       const context = await browser.newContext({ viewport: mobile || name.startsWith('lab-') ? { width: 390, height: 844 } : { width: 1280, height: 900 }, hasTouch: mobile, isMobile: mobileEmulation, reducedMotion: 'no-preference' });
       const page = await context.newPage();
       page.setDefaultTimeout(12_000);
