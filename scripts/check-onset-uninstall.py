@@ -39,11 +39,31 @@ sleep() { :; }
         print(os.environ.get("ONSET_TEST_HOSTNAME", "B"))
         return 0
     if tool == "khor":
-        log("root", args=args, inherited_override=os.environ.get("KHOR_HOME"))
-        assert args == ["root"]
-        if os.environ.get("ONSET_TEST_ROOT_FAIL"):
-            return 23
-        print(os.environ.get("KHOR_HOME", os.environ["ONSET_TEST_ROOT"]))
+        if args == ["root"]:
+            log("root", args=args, inherited_override=os.environ.get("KHOR_HOME"))
+            if os.environ.get("ONSET_TEST_ROOT_FAIL"):
+                return 23
+            print(os.environ.get("KHOR_HOME", os.environ["ONSET_TEST_ROOT"]))
+            return 0
+        assert args == ["root", "--verify-owner"], args
+        log("verify", args=args, root=os.environ.get("KHOR_HOME"))
+        root = os.environ["KHOR_HOME"]
+        if os.environ.get("ONSET_TEST_VERIFY_FAIL"):
+            return 24
+        # The lightweight suite mocks the protocol, not the ownership rule.
+        # check-store-owner.py supplies the production Rust verifier here.
+        verifier = os.environ.get("ONSET_TEST_OWNER_VERIFIER")
+        if verifier:
+            verified = subprocess.run([verifier, root, os.environ["ONSET_TEST_HOSTNAME"],
+                                       os.environ["ONSET_TEST_FINGERPRINT"]])
+            if verified.returncode:
+                return verified.returncode
+        mode = os.environ.get("ONSET_TEST_RECEIPT", "valid")
+        if mode != "old-binary":
+            print("khor-store-owner-v1" if mode != "wrong-version" else "khor-store-owner-v0")
+        print(root if mode != "wrong-root" else os.environ["HOME"] + "/different")
+        if mode == "extra-output":
+            print("unexpected diagnostic")
         return 0
     if tool in ("ps", "kill"):
         log(tool, args=args)
@@ -99,7 +119,7 @@ def run_suite():
     def case(name, *, args=None, shared=False, host="B", root=None, owner=True,
              binary=True, purge=False, dry=False, error=False, no_remote=False, env=None, setup=None):
         with tempfile.TemporaryDirectory(prefix="khor-onset-check-") as directory:
-            scope = Path(directory)
+            scope = Path(directory).resolve()
             home = scope / "home with space"
             tools = scope / "bin"
             tools.mkdir()
@@ -133,7 +153,10 @@ def run_suite():
                 launcher(home / ".local/bin/khor", "khor")
             environment = {"PATH": f"{tools}:/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(home),
                            "TMPDIR": str(scope / "tmp"), "ONSET_TEST_SCOPE": str(scope),
-                           "ONSET_TEST_ROOT": str(remote_root), "ONSET_TEST_HOSTNAME": host}
+                           "ONSET_TEST_ROOT": str(remote_root), "ONSET_TEST_HOSTNAME": host,
+                           "ONSET_TEST_FINGERPRINT": f"fingerprint-{host}"}
+            if os.environ.get("ONSET_TEST_OWNER_VERIFIER"):
+                environment["ONSET_TEST_OWNER_VERIFIER"] = os.environ["ONSET_TEST_OWNER_VERIFIER"]
             if env:
                 environment.update({key: value.replace("{home}", str(home)) for key, value in env.items()})
             if setup:
@@ -177,6 +200,10 @@ def run_suite():
                     assert outside(before) == outside(after), "uninstall changed an unrelated file or machine store"
                     if binary:
                         assert len([event for event in events if event["event"] == "root"]) == 1, "store must be selected once before deleting binary"
+                        proofs = [event for event in events if event["event"] == "verify"]
+                        assert len(proofs) == 1 and proofs[0]["root"] == str(remote_root), "verify the selected candidate exactly once"
+                        proof_index = next(i for i, event in enumerate(events) if event["event"] == "verify")
+                        assert all(event["event"] not in ("kill", "rm") for event in events[:proof_index]), "ownership must be verified before stopping or removing"
                 entry["status"] = "passed"
             except AssertionError as failure:
                 entry.update(status="failed", assertion=str(failure))
@@ -193,6 +220,19 @@ def run_suite():
     case("shared-B-retain-data", shared=True)
     case("shared-B-inherited-override", shared=True, purge=True, env={"KHOR_HOME": "{home}"})
     case("renamed-B-room", shared=True, root=".khor-hosts/old-B", purge=True)
+    case("renamed-B-owner", shared=True, root=".khor-hosts/old-B", purge=True,
+         setup=lambda home, root, scope: (root / ".khor/owner").write_text("machine fingerprint-B\nname old-B\n"))
+    for mode in ["old-binary", "wrong-version", "wrong-root", "extra-output"]:
+        case("unverified-receipt-" + mode, purge=True, error=True, env={"ONSET_TEST_RECEIPT": mode})
+    case("owner-verification-failure", shared=True, purge=True, error=True,
+         env={"ONSET_TEST_VERIFY_FAIL": "1"})
+    # With the Rust probe this must fail through the real fingerprint rule.
+    # Without it the protocol mock supplies the same refusal explicitly.
+    refusal = {} if os.environ.get("ONSET_TEST_OWNER_VERIFIER") else {"ONSET_TEST_VERIFY_FAIL": "1"}
+    case("selected-room-owned-by-C-with-B-name", shared=True, purge=True, error=True, env=refusal,
+         setup=lambda home, root, scope: (root / ".khor/owner").write_text("machine fingerprint-C\nname B\n"))
+    case("selected-home-owned-by-C-with-B-name", purge=True, error=True, env=refusal,
+         setup=lambda home, root, scope: (root / ".khor/owner").write_text("machine fingerprint-C\nname B\n"))
     case("missing-binary-modern-claim", shared=True, binary=False, purge=True, error=True)
     case("missing-binary-same-name-different-fingerprint", binary=False, purge=True, error=True,
          setup=lambda home, root, scope: (root / ".khor/owner").write_text("machine fingerprint-other-machine\nname B\n"))

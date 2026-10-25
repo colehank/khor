@@ -86,6 +86,7 @@ pub mod vitals;
 pub mod watch;
 pub mod wide;
 pub mod workspace;
+mod store_owner;
 pub(crate) mod wsfacts;
 pub(crate) mod wires;
 
@@ -107,6 +108,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use store_owner::Owner;
 
 /// One recorded utterance as the protocol update a face paints
 /// (`cagent::replayed`).
@@ -630,90 +632,6 @@ pub fn self_exe() -> Result<PathBuf, String> {
         return Ok(live);
     }
     Err(msg::self_moved(live.display()))
-}
-
-/// What a store's `owner` file says. Two fields, either of which may
-/// be missing: the machine's stable fingerprint ([`crate::hardware`])
-/// and the name it went by when it claimed the store.
-///
-/// ```text
-/// machine 3f1a…            ← the claim
-/// name    turing           ← a note for whoever reads the file
-/// ```
-///
-/// **A bare line is the old format**, a hostname and nothing else, and
-/// it reads back as `name` alone. Every store on disk before
-/// 2026-09-11 is one of those.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct Owner {
-    pub(crate) machine: Option<String>,
-    pub(crate) name: Option<String>,
-}
-
-impl Owner {
-    fn parse(text: &str) -> Owner {
-        let text = text.trim();
-        if text.is_empty() {
-            return Owner::default();
-        }
-        if !text.contains('\n') && !text.starts_with("machine ") && !text.starts_with("name ") {
-            // The old format: one bare hostname.
-            return Owner {
-                machine: None,
-                name: Some(text.to_string()),
-            };
-        }
-        let mut out = Owner::default();
-        for line in text.lines() {
-            let Some((k, v)) = line.trim().split_once(char::is_whitespace) else {
-                continue;
-            };
-            let v = v.trim();
-            if v.is_empty() {
-                continue;
-            }
-            match k {
-                "machine" => out.machine = Some(v.to_string()),
-                "name" => out.name = Some(v.to_string()),
-                _ => {}
-            }
-        }
-        out
-    }
-
-    fn render(&self) -> String {
-        let mut out = String::new();
-        if let Some(m) = &self.machine {
-            out.push_str("machine ");
-            out.push_str(m);
-            out.push('\n');
-        }
-        if let Some(n) = &self.name {
-            out.push_str("name ");
-            out.push_str(n);
-            out.push('\n');
-        }
-        out
-    }
-
-    /// Whether this stamp is **this** machine's. `here` is the current
-    /// hostname, `fp` this machine's fingerprint when it has one.
-    ///
-    /// The fingerprint decides whenever both sides have one, and only
-    /// then does a rename become free. The name is the fallback for the
-    /// two cases where it cannot: a store stamped before this existed,
-    /// and a platform that will not name its hardware. **An empty stamp
-    /// belongs to whoever asks** — that is how a half-made store from a
-    /// crashed first run gets finished instead of becoming unopenable.
-    fn is_mine(&self, here: &str, fp: Option<&str>) -> bool {
-        match (&self.machine, fp) {
-            (Some(theirs), Some(mine)) => theirs == mine,
-            _ => match &self.name {
-                Some(n) => n == here,
-                None => true,
-            },
-        }
-    }
 }
 
 /// How long a machine's label may be, in characters not bytes — the
@@ -1732,6 +1650,17 @@ impl Node {
         return Self::sandbox_root(&home);
         #[cfg(not(target_os = "ios"))]
         Self::store_under(&home)
+    }
+
+    /// Prove this machine owns an existing store without opening or changing it.
+    /// Store selection alone can return an unclaimed or foreign fallback path.
+    pub fn verify_store_owner(root: &std::path::Path) -> Result<(), String> {
+        let here = gethostname::gethostname().to_string_lossy().to_string();
+        store_owner::verify(root, &here, hardware::fingerprint().as_deref()).map_err(|error| match error {
+            store_owner::VerificationError::Io(error) => error.to_string(),
+            store_owner::VerificationError::Invalid(reason) => reason.to_owned(),
+            store_owner::VerificationError::Foreign(theirs) => msg::store_belongs_to(&theirs, &here),
+        })
     }
 
     /// Where the store lives inside an iOS app's sandbox. `$HOME` there is

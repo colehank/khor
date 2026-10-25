@@ -854,6 +854,14 @@ fn root(rest: &[String]) -> Result<(), String> {
             println!("{}", command_root().display());
             Ok(())
         }
+        [flag] if flag == "--verify-owner" => {
+            let root = command_root();
+            Node::verify_store_owner(&root)?;
+            // A versioned receipt prevents old binaries that ignore flags from
+            // turning a selected path into proof of ownership.
+            println!("khor-store-owner-v1\n{}", root.display());
+            Ok(())
+        }
         [word] if word == "show" => root_show(false),
         [word, flag] if word == "show" && flag == "--json" => root_show(true),
         [word] if word == "words" => Err(node()?.root_words_confirmed("").unwrap_err()),

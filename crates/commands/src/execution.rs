@@ -465,7 +465,7 @@ fn grammar(word: &str) -> &'static str {
         "sync" => "sync",
         "mcp" => "mcp",
         "version" => "version",
-        "root" => "root [show [--json]|words <machine>|recover <words>...|init]",
+        "root" => "root [--verify-owner|show [--json]|words <machine>|recover <words>...|init]",
         "forget" => "forget <machine>",
         "leave" => "leave <machine>",
         "pause" => "pause [<machine>]",
@@ -529,6 +529,78 @@ mod tests {
         let version = execute(root, &["--version".into()], None);
         assert_eq!(version.stdout.trim(), khor_node::VERSION);
         assert!(!version.stdout.contains("explicit-command-root"));
+    }
+
+    #[test]
+    fn root_owner_receipt_is_strict_scoped_and_read_only() {
+        struct Scratch(PathBuf);
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let root = std::env::temp_dir().canonicalize().unwrap().join(format!(
+            "khor-command-owner-{}",
+            khor_node::link::fresh_hex().unwrap()
+        ));
+        let scratch = Scratch(root.clone());
+        let store = root.join(".khor");
+        std::fs::create_dir_all(&store).unwrap();
+        let fingerprint = khor_node::hardware::fingerprint();
+        let owner = format!(
+            "machine {}\nname previous-name\n",
+            fingerprint.as_deref().unwrap_or("unverifiable-test-machine")
+        );
+        std::fs::write(store.join("owner"), &owner).unwrap();
+        let args = ["root".into(), "--verify-owner".into()];
+        let verified = execute(&root, &args, None);
+        assert_eq!(
+            verified.error.is_none(),
+            fingerprint.is_some(),
+            "{:?}",
+            verified.error
+        );
+        let expected = if fingerprint.is_some() {
+            format!("khor-store-owner-v1\n{}\n", root.display())
+        } else {
+            String::new()
+        };
+        assert_eq!(verified.stdout, expected);
+        assert_eq!(std::fs::read_to_string(store.join("owner")).unwrap(), owner);
+        assert_eq!(std::fs::read_dir(&store).unwrap().count(), 1);
+        assert!(!store.join("identity.key").exists());
+
+        for rest in [
+            vec!["--verify-owner", "extra"],
+            vec!["--verify-owner", "--json"],
+            vec!["--verify-owner", "--verify-owner"],
+            vec!["--verify-owner=true"],
+        ] {
+            let args = std::iter::once("root")
+                .chain(rest)
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let result = execute(&root, &args, None);
+            assert!(result.error.is_some(), "{args:?}");
+            assert!(result.stdout.is_empty(), "{args:?}");
+        }
+        let foreign = format!(
+            "machine not-{}\nname previous-name\n",
+            fingerprint.as_deref().unwrap_or("known")
+        );
+        std::fs::write(store.join("owner"), &foreign).unwrap();
+        let denied = execute(&root, &args, None);
+        assert!(denied.error.is_some());
+        assert!(denied.stdout.is_empty());
+        assert_eq!(std::fs::read_to_string(store.join("owner")).unwrap(), foreign);
+        assert!(!store.join("identity.key").exists());
+        std::fs::remove_file(store.join("owner")).unwrap();
+        let missing = execute(&root, &args, None);
+        assert!(missing.error.is_some());
+        assert!(missing.stdout.is_empty());
+        assert_eq!(std::fs::read_dir(&store).unwrap().count(), 0);
+        assert!(!store.join("identity.key").exists());
+        drop(scratch);
     }
     #[test]
     fn concurrent_requests_keep_roots_inputs_and_output_separate() {

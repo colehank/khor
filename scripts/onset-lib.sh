@@ -128,6 +128,19 @@ khor_uninstall_root() (
             return 1
         fi
     fi
+    if [ "$_authority" = yes ]; then
+        # `root` selects a candidate, including a fallback that may be foreign.
+        # Verify that exact path without asking the selector a second time.
+        _proof=$(KHOR_HOME="$_root" "$_binary" root --verify-owner) || {
+            echo "onset: installed khor could not verify store ownership" >&2
+            return 1
+        }
+        _expected=$(printf 'khor-store-owner-v1\n%s\n' "$_root")
+        [ "$_proof" = "$_expected" ] || {
+            echo "onset: installed khor did not return a valid ownership receipt" >&2
+            return 1
+        }
+    fi
     printf '%s\n' "$_root"
 )
 
