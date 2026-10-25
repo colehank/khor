@@ -10,7 +10,7 @@
 
 - 主仓：`/Users/zgh/Desktop/working/khor`，main `8704a503a27b36ad58f922690de50e766f8bd485`，tracked clean。
 - 权威协调：本文件所在目录，plan/code-quality 分支。其他 worktree 的同名文档是快照。
-- 集成实现：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，integrate/code-quality-wave1，当前 HEAD `c3fe828b`（Q030/Q021b 已集成，原生验收期间冻结）。
+- 集成实现：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，integrate/code-quality-wave1，当前 HEAD `c3fe828b`（Q030/Q021b 已集成；仅放开 Q010b hook/对应回归，其他集成等待原生候选完成）。
 - 内盘恢复：`/Users/zgh/Developer/Khor/worktrees/recovery/`，4 个恢复副本，均保留真实差异；禁止重建旧 Desktop/working 路径或按摘要覆盖。
 - 外盘资料：`/Volumes/disk0/Khor`。存储与迁移索引见 [STORAGE.md](STORAGE.md)；内盘备份 `/Users/zgh/khor-backups/{disk0-20261025,working-20261025}`。
 - 上次 ship 的 Mac 二进制仍在主仓 target/release/khor-gui，SHA-256 与发布收据一致；没有把它当成本轮修复版原生验收。
@@ -34,22 +34,24 @@
 | Q021b | root；内盘 recovery/khor-quality-recovery | 作者提交 4c616670、集成 c3fe828b；20 hook、types、unit和独立审查通过，Chrome/WebKit 4个App场景通过。确切集成版Chrome/WebKit全交互30/30通过，源码指纹稳定；RECOVERY.md 文档另留 |
 | Q023b | store_owner；内盘 recovery/khor-quality-store-owner-recovery | owner/Node/CLI/onset 严格回执已落盘；上次 80 场景红绿，rustfmt 后待复跑；真实CLI精确测试1/1通过，已释放槽；轻量最终80/80通过，作者提交fb0c6700；root独立源审/6规则+80场景复验通过，冻结窗口结束后集成 |
 | Q030 | root 复审集成；外盘 current/khor-quality-agent-protocol | 作者提交 9d09899c，仅4个输出文件；真实整组8通过+1专用worker。root 非作者审查记录 Q-030-review.md；已集成 de27d3f3，Q031差异保留，集成版对应测试待跑 |
-| Q030b | agent_redaction；同上独立后续提交 | 跨chunk真红后已落候选；12项轻量流/Recorder测试通过，真实fake-sidecar回归已写但尚未Cargo类型/运行验证；完整槽排native之后 |
-| Q010-native | native_acceptance；wave1 只读 | 上次用户暂停时 Cargo SIGTERM，未安装/启动隔离 App，不计通过。现场旧进程已确认终止；现获唯一槽，按冻结HEAD c3fe828b续建真正Tauri iOS App，独立bundle/fixture，不改用户App |
-| Q025 | root接手；外盘 current/khor-quality-native-io | queue/connection/chat/term/native dispatcher 未提交，std-only7/7；root补5个真实core协议用例和核对Tauri解码oracle，待串行Cargo，不计编译通过 |
-| Q020b / Q031 / Q032 | 保留，未关闭 | 覆盖入口仅新增回归未完成；A2A Message context 只有红测试；HTTP JSON 为审计准备，尚未实现 |
+| Q030b | agent_redaction；同上独立后续提交 | 作者提交63f31737；真实Cargo17通过、2专用子worker由父测试执行；live receipt确认中途无凭据前缀，结束完整redacted。root独立源审通过，等待集成窗口 |
+| Q010-native | native_acceptance；wave1 仅hook/对应测试可写 | 上次用户暂停时 Cargo SIGTERM，未安装/启动隔离 App，不计通过。真正App已跑原生键盘开合与第6/8 commit稳定定位；又取得ACP长稿关闭gap164真红，允许仅hook/对应测试做JS候选红绿。旧c3基线证据保留，不把整套报绿；通知初始化拒绝Q015另列 |
+| Q025 | root接手；外盘 current/khor-quality-native-io | queue/connection/chat/term/native dispatcher 未提交，std-only7+4通过；配置超车修复后core8/8通过，paste锁等待取消新增修复后尚待最终core重跑；命令普查2/2、mobile静态、真实native参数/ACL2/2通过且source stable；第三方已审通过，待root复跑/提交 |
+| Q020b/c | root待审；内盘overwrite-recovery | 作者提交cab465c5/93438e43，最终模块30、组件Chrome/WebKit26通过；新入口待全局登记，冻结结束后集成 |
+| Q031 | agent_redaction；外盘agent-protocol | 作者提交d464f6be；真实Cargo4通过、1专用子worker由父执行，JSONRPC/REST跨进程恢复有证据；root独立源审通过，等待集成 |
+| Q032 | store_owner；内盘web-input-recovery | 第一阶段提交5ce2721f，流式预算候选18/18轻量绿；发现tiny_http析构按Content-Length分配的真红，已授权最小vendor补丁与锁依赖边。唯一Cargo槽已交其做真实Web/HTTP验收 |
 
 ## 验证与资源
 
 - 证据根 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`，各任务卡记录确切 source/lock hashes 与平台边界。
-- 同时只有一个完整 Cargo/native 构建槽，当前分给 native_acceptance；store_owner 已完成并释放。jobs=2，沿用 quality-target；主发布缓存不写、不清。
-- 外置盒风扇故障、USB SMART 温度不可读；用户明确允许继续。外盘约21GiB、内盘约24GiB可用。各构建仅监测/停止自己的进程组；掉盘、连续 I/O 错误或低于5GiB时保存日志并停止该构建。
-- 不按旧 PID/句柄判断进程。上次 native 构建和 fixture 已按暂停要求终止，所有模拟器尚未用于本轮完整 App 验收；旧 Lab 地址未经当前核验不宣称在线。
+- 同时只有一个完整 Cargo/native 构建槽，当前分给 store_owner（Q032 Web/HTTP；Q025 native已退出0）；native阶段仅Swift driver/UI诊断，下一次Rust重编需重新申请。jobs=2，沿用 quality-target；主发布缓存不写、不清。
+- 外置盒风扇故障、USB SMART 温度不可读；用户明确允许继续。最近外盘约11GiB、内盘约13GiB可用（启动下一构建前复核）。各构建仅监测/停止自己的进程组；掉盘、连续 I/O 错误或低于5GiB时保存日志并停止该构建。
+- 不按旧 PID/句柄判断进程。已在隔离iOS模拟器实际运行本轮c3 App，commit第6/8项真实触摸通过；ACP长草稿收键盘gap164真实红仍在修复。不得把未完成候选或旧Lab当完整原生验收。
 - Q021b 的 face gate 上次被用户暂停中断，不计通过；dialogs、words 与 types 已过。新的局部与集成结果须按当前版本记录。
 
 ## 尚未完成的完整范围
 
-首批原生/物理设备/辅助技术验收；Q020b/Q023b/Q025/Q030b/Q031/Q032；native page迟到归属、chat轮询结束/退避、sidecar取消期限、4MiB同步缺口恢复、once锁回收；工具链与产物可复现、installer checksum和mirror一致性；模块职责重构、格式/命名/错误/注释规则、剩余模块深入审查，以及最终确切集成版本的完整用户流程验收。完整清单不因本轮优先项缩减。
+首批原生/物理设备/辅助技术验收；新发现Q015通知插件初始化ACL拒绝、Q033上传停止仍可能启动turn；Q020b/c/Q023b/Q025/Q030b/Q031/Q032；native page迟到归属、chat轮询结束/退避、sidecar取消期限、4MiB同步缺口恢复、once锁回收；工具链与产物可复现、installer checksum和mirror一致性；模块职责重构、格式/命名/错误/注释规则、剩余模块深入审查，以及最终确切集成版本的完整用户流程验收。完整清单不因本轮优先项缩减。
 
 ## 历史与恢复
 
