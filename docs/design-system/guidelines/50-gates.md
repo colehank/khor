@@ -768,3 +768,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 
 `npm run page-retention`：真实网页资源ledger与per-tab原生操作队列，控制native Promise测试迟到取得、多个集合owner、8活页LRU、StrictMode共享、失败与关闭重开。加入 `npm run test:unit`，`PAGE_RETENTION_CASES`选定自有场景名，空/未知/原型名拒绝。`npm run page-retention-ui`：真实BrowserPane/MachineWeb在React StrictMode和两引擎下检查清理；加入 `npm run test:interaction`，`PAGE_RETENTION_UI_OUT`保留报告/截图。native IPC为fixture，真实WebView/借网句柄数量另做App验收。
+
+
+`npm run chat-drafts`：取消/失败草稿的tab owner与send token归属，检查关闭/重开、迟到回执、成功释放、同文不同token、多个session与稳定订阅；缩略图URL不转移所有权，大字符串共享。加入 `npm run test:unit`。这是状态模块检查，完整ChatView/附件与网络发送流程另验。

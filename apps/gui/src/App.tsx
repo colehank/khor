@@ -1,5 +1,6 @@
 import {SessionHeader} from '@/components/SessionHeader';
 import {retainSessionDrafts} from '@/hooks/use-session-draft';
+import {retainCancelledChatDrafts} from '@/lib/chat-drafts';
 import { useSessionAttention } from "@/hooks/use-session-attention";
 import { useSessionReads } from "@/hooks/use-session-reads";
 import { sessionCwdOnScreen, workspaceCwd, followsSessionCwd } from "@/lib/session-cwd";
@@ -2531,7 +2532,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, sessions]);
   // A tab closed forgets its 附栏's open (`keepSidesOf`).
-  useEffect(() => {keepSidesOf(openTabs);retainSessionDrafts(openTabs);}, [openTabs]);
+  useEffect(() => {
+    keepSidesOf(openTabs);
+    retainSessionDrafts(openTabs);
+    retainCancelledChatDrafts(openTabs);
+  }, [openTabs]);
   /**
    * **Opened again, the 附栏 is where it was left** (UX-47, the owner
    * 2026-10-07, replacing UX-40 §3's 「每次打开都是显示最近」): per
