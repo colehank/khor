@@ -21,7 +21,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 /// How long a token's record is kept. A retry is seconds to minutes
 /// after the first ask; a day covers a machine that was off overnight.
@@ -67,20 +67,33 @@ pub(crate) fn note(root: &Path, token: &str, id: &str) -> Result<(), String> {
     crate::live::write_whole(&d.join(token), id.as_bytes())
 }
 
-type Locks = Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
+type Locks = Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>;
 static LOCKS: std::sync::OnceLock<Locks> = std::sync::OnceLock::new();
 
 /// Holds `token` for this process until the guard drops.
 pub(crate) async fn lock(token: &str) -> tokio::sync::OwnedMutexGuard<()> {
-    let one = LOCKS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .entry(token.to_owned())
-        .or_default()
-        .clone();
+    let one = {
+        let mut locks = LOCKS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        // Both held guards and queued lock_owned futures keep their mutex alive.
+        locks.retain(|_, lock| lock.strong_count() != 0);
+        match locks.get(token).and_then(Weak::upgrade) {
+            Some(one) => one,
+            None => {
+                let one = Arc::new(tokio::sync::Mutex::new(()));
+                locks.insert(token.to_owned(), Arc::downgrade(&one));
+                one
+            }
+        }
+    };
     one.lock_owned().await
 }
+
+#[cfg(test)]
+#[path = "once_lock_tests.rs"]
+mod lock_tests;
 
 #[cfg(test)]
 mod tests {
