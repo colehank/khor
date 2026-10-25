@@ -802,8 +802,12 @@ export function ChatView({
     const now = composer.current;
     return now.session === id && now.text.length === 0 && now.documents.length === 0 && now.attachments.length === 0;
   };
+  const discardDraft = (draft: ChatDraft) => {
+    discardChatDraft(id, draft.token, draft.owner);
+    setUnsent(was => was?.id === `say:${draft.token}` ? null : was);
+  };
   const addDraft = (draft: ChatDraft) => {
-    if (draft.session !== id || chatDraftOwner(id) !== draft.owner || !recoverableChatDrafts(id).some(entry => entry.draft === draft)) return;
+    if (!mounted.current || currentSession.current !== id || draft.session !== id || chatDraftOwner(id) !== draft.owner || !recoverableChatDrafts(id).some(entry => entry.draft === draft && entry.reason !== "unconfirmed")) return;
     const now = composer.current;
     const next = now.text && draft.text ? `${now.text}\n\n${draft.text}` : now.text || draft.text;
     const documents = [...now.documents, ...draft.documents];
@@ -811,8 +815,7 @@ export function ChatView({
     setText(next);
     setDocs(documents);
     files.restore(draft.attachments);
-    discardChatDraft(id, draft.token, draft.owner);
-    setUnsent(was => was?.id === `say:${draft.token}` ? null : was);
+    discardDraft(draft);
   };
   const addDraftNow = useRef(addDraft);
   addDraftNow.current = addDraft;
@@ -1398,9 +1401,9 @@ export function ChatView({
     issueDraft(draft);
   };
   retryDraft.current = previous => {
-    if (previous.session !== id || inTurn || gone) return;
+    if (!mounted.current || currentSession.current !== id || previous.session !== id || inTurn || gone) return;
     const owner = chatDraftOwner(id);
-    if (!owner) return;
+    if (!owner || owner !== previous.owner || !recoverableChatDrafts(id).some(entry => entry.draft === previous && entry.reason === "failed")) return;
     const draft = rememberChatDraft({...previous, owner, reader: reader.current, token: crypto.randomUUID()});
     if (!draft) return;
     discardChatDraft(id, previous.token, previous.owner);
@@ -1644,7 +1647,7 @@ export function ChatView({
               <p className="truncate">{(draft.text || [...draft.attachments.map(file => file.name), ...draft.documents.map(([name]) => name)].join(" · ")).slice(0, 160)}</p>
             </div>
             {reason !== "unconfirmed" && <Button size="sm" data-chat-draft-add onClick={() => addDraft(draft)} className="min-h-touch pointer-fine:min-h-ctl-md">{gui.chat_add_draft}</Button>}
-            <Button size="sm" variant="ghost" data-chat-draft-drop onClick={() => discardChatDraft(id, draft.token, draft.owner)} className="min-h-touch pointer-fine:min-h-ctl-md">{gui.chat_discard_draft}</Button>
+            <Button size="sm" variant="ghost" data-chat-draft-drop onClick={() => discardDraft(draft)} className="min-h-touch pointer-fine:min-h-ctl-md">{gui.chat_discard_draft}</Button>
           </div>
         ))}
         {interactions.map(({ask,request})=><AgentInteraction key={`${id}:${ask}`} request={request} onAnswer={response=>chatRespond(id,ask,response)}/>)}

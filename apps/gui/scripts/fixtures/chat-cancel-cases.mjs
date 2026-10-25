@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-export const extraCancelCases = ['new-draft-add', 'discard', 'multi-cancel', 'retry-token', 'web-admission', 'unconfirmed', 'unconfirmed-then-cancel', 'lost-commit', 'keyed-switch', 'app-switch-close', 'app-close-late', 'narrow', 'app-narrow', 'old-owner-gone', 'late-switch-cancel', 'restart-unknown'];
+export const extraCancelCases = ['new-draft-add', 'discard', 'multi-cancel', 'retry-token', 'discard-notice', 'add-notice', 'switched-notice', 'app-reopened-notice', 'discard-other-notice', 'web-admission', 'unconfirmed', 'unconfirmed-then-cancel', 'lost-commit', 'keyed-switch', 'app-switch-close', 'app-close-late', 'narrow', 'app-narrow', 'old-owner-gone', 'late-switch-cancel', 'restart-unknown'];
 export async function exerciseCancellation(scenario, f) {
   const {page, draft, sent, session, emit, cancel, until, attach, evidence, engine} = f;
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -36,6 +36,47 @@ export async function exerciseCancellation(scenario, f) {
     assert.equal(await input.inputValue(), `third draft\n\n${draft}\n\n${fresh}`);
     assert.equal(await page.locator('[data-chat-pending-file]').count(), 2); assert.equal(await page.locator('[data-chat-doc]').count(), 1);
     assert.equal(await rows.count(), 0);
+  } else if (['discard-notice', 'add-notice', 'switched-notice', 'app-reopened-notice', 'discard-other-notice'].includes(scenario)) {
+    await emit([{kind: 'unsent', token: sent.token, miss: {kind: 'unreached', machine: null, raw: 'synthetic write failure'}}]);
+    await until(async () => await rows.count() === 1, 'the failed token has its own recoverable snapshot');
+    await page.evaluate(async id => {
+      const {noticesOf} = await import('/src/lib/pill-notices.ts');
+      window.__capturedRetry = noticesOf(id).flatMap(n => n.acts).find(a => a.key === 'retry').run;
+    }, session);
+    if (scenario === 'discard-other-notice') {
+      await input.fill(fresh); await page.locator('[data-chat-send]').click();
+      await until(async () => (await sends()).length === 2, 'a second independent send entered');
+      const second = (await sends())[1];
+      await emit([{kind: 'unsent', token: second.token, miss: {kind: 'unreached', machine: null, raw: 'second write failure'}}]);
+      await until(async () => await rows.count() === 2, 'both failure snapshots remain recoverable');
+      await page.locator(`[data-chat-cancelled-draft="${sent.token}"] [data-chat-draft-drop]`).click();
+      const notices = await page.evaluate(async id => (await import('/src/lib/pill-notices.ts')).noticesOf(id).map(n => n.id), session);
+      assert(notices.includes(`say:${second.token}`), 'discarding another snapshot preserves the newer failure notice');
+      await page.evaluate(() => window.__cancelReact.retry());
+      await until(async () => (await sends()).length === 3, 'the retained failure notice can still retry');
+      assert.equal((await sends())[2].text, fresh);
+    } else if (scenario === 'discard-notice' || scenario === 'add-notice') {
+      await page.locator(scenario === 'discard-notice' ? '[data-chat-draft-drop]' : '[data-chat-draft-add]').click();
+      assert.equal(await rows.count(), 0);
+      await page.evaluate(() => window.__capturedRetry());
+      await wait(100);
+      assert.equal((await sends()).length, 1, 'a captured retry cannot send a snapshot after it was discarded or added to the composer');
+      const notices = await page.evaluate(async id => (await import('/src/lib/pill-notices.ts')).noticesOf(id).map(n => n.id), session);
+      assert(!notices.includes(`say:${sent.token}`), 'consuming a failed snapshot withdraws only its matching failure notice');
+    } else if (scenario === 'switched-notice') {
+      await page.evaluate(() => window.__cancelReact.switch());
+      await until(() => page.evaluate(() => window.__cancelWire.polls.some(p => !p.done && p.id === 'beta')), 'the old keyed ChatView unmounted');
+      await page.evaluate(() => window.__capturedRetry()); await wait(100);
+      assert.equal((await sends()).length, 1, 'a captured old-view notice cannot call chatSay after keyed unmount');
+    } else {
+      await page.locator(`[data-tab="${session}"] [data-tab-close]`).click();
+      await until(async () => await page.locator(`[data-tab="${session}"]`).count() === 0, 'the failed send tab closed');
+      await page.locator('[data-row-open]').filter({hasText: 'AI Elements · 组件总览'}).first().click();
+      await until(async () => await page.locator(`[data-tab="${session}"]`).count() === 1, 'the same session id reopened with a new owner');
+      await page.evaluate(() => window.__capturedRetry()); await wait(100);
+      assert.equal((await sends()).length, 1, 'an old notice cannot re-register its snapshot under the reopened tab owner');
+      assert.equal(await rows.count(), 0);
+    }
   } else if (scenario === 'retry-token') {
     await emit([{kind: 'unsent', token: sent.token, miss: {kind: 'unreached', machine: null, raw: 'synthetic write failure'}}]);
     await until(async () => await rows.count() === 1, 'the failed token has its own recoverable snapshot');
