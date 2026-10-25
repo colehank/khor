@@ -8,6 +8,9 @@ use serde_json::{Value, json};
 mod accounts;
 #[path = "khor_agent_updates.rs"]
 mod updates;
+#[path = "khor_agent_output.rs"]
+mod output;
+use output::append_text;
 use std::{
     collections::HashMap,
     fs::{self, File, OpenOptions},
@@ -446,27 +449,6 @@ impl Node {
     }
 }
 
-fn append_text(output: &mut String, text: &str, key: &str) {
-    const CAP: usize = 128 * 1024;
-    if output.len() >= CAP {
-        return;
-    }
-    if key.is_empty() {
-        output.push_str(text);
-    } else {
-        output.push_str(&text.replace(key, "[redacted]"));
-    }
-    if output.len() > CAP {
-        let mut cut = CAP;
-        while !output.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        output.truncate(cut);
-        output.push('\n');
-        output.push_str(msg::console_output_cut());
-    }
-}
-
 fn sidecar(root: &Path) -> Result<Command, String> {
     if let Some(path) = std::env::var_os("KHOR_AGENT_SIDECAR") {
         return Ok(Command::new(path));
@@ -668,7 +650,7 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                         return Err(event["error"]
                             .as_str()
                             .unwrap_or(msg::agent_failed())
-                            .replace(key, "[redacted]"));
+                            .to_owned());
                     }
                     _ => return Err(msg::agent_arguments().into()),
                 }
@@ -713,7 +695,8 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
     saved.record.error = if stopped {
         None
     } else {
-        outcome.err().map(|e| e.replace(key, "[redacted]"))
+        // Raw failures reach this display boundary exactly once.
+        outcome.err().map(|e| output::redact(&e, key).into_owned())
     };
     if stopped {
         saved.record.stderr = msg::agent_stopped().into();
@@ -991,3 +974,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "khor_agent_output_tests.rs"]
+mod output_tests;

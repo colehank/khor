@@ -8,7 +8,11 @@ const COUNT: usize = 512;
 
 fn redact(value: &mut Value, key: &str) {
     match value {
-        Value::String(s) if !key.is_empty() => *s = s.replace(key, "[redacted]"),
+        Value::String(s) => {
+            if let std::borrow::Cow::Owned(redacted) = super::output::redact(s, key) {
+                *s = redacted;
+            }
+        }
         Value::Array(xs) => xs.iter_mut().for_each(|x| redact(x, key)),
         Value::Object(xs) => xs.values_mut().for_each(|x| redact(x, key)),
         _ => {}
