@@ -5085,6 +5085,10 @@ new-below = "有新消息"
 # error of this person's.
 chat-refused-turn-in-flight = "另一个窗口正在对话，刚才的消息未发送，已退回输入框"
 chat-refused-no-turn = "当前没有进行中的回合"
+chat-upload-stopped-reconnect = "上传已停止，重新连接后可继续"
+chat-cancelled-draft = "已停止上传的草稿"
+chat-add-draft = "加入输入框"
+chat-discard-draft = "丢弃草稿"
 # A mode or an option the agent would not take (`refused::SETTING_REFUSED`).
 # 「没收」: the control on screen stays where it was, so the sentence is
 # about the agent's answer, not about anything having broken here.
