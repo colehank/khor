@@ -31,8 +31,8 @@ import { heardFrom, LOCK_TOLD } from "@/lib/other-windows";
 const STIRS = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
 
 export type Lock = {
-  /** `null` until the store has answered, and `null` for good on a
-      store this face could not read. */
+  /** `null` until the first successful read. A failed refresh preserves
+      the last known configuration. */
   facts: LockFacts | null;
   /** Whether the store has answered at all, either way.
    *
@@ -68,28 +68,27 @@ export function useLock(): Lock {
   /** Bumped by `reread`, so 安全 changing the setting reaches here
       without this hook polling a file that changes by hand once a year. */
   const [asked, setAsked] = useState(0);
+  const readEpoch = useRef(0);
 
   useEffect(() => {
     let alive = true;
+    const epoch = readEpoch.current;
     fetchLock().then(
       (f) => {
-        if (!alive) return;
+        if (!alive || epoch !== readEpoch.current) return;
         setFacts(f);
         setSettled(true);
-        // Only the **first** answer decides: a re-read while somebody is
+        // Only the first successful read decides: a re-read while somebody is
         // working must not lock the face under them, and turning the
         // lock on from 安全 is a setting for next time, not an act.
         setLocked((was) => (facts === null ? f.on : was));
       },
       () => {
-        // A store this face cannot read is a face with no lock to
-        // enforce — and leaving it locked would be a window nothing can
-        // open. `facts` stays null rather than being invented: there is
-        // no ladder and no floor to offer, and 安全 says so where it
-        // would have drawn them. The shell shows the ordinary backend
-        // refusal on its own beat.
-        if (!alive) return;
-        setLocked(false);
+        if (!alive || epoch !== readEpoch.current) return;
+        // Preserve the existing fallback only while configuration is
+        // unknown. A refresh failure says nothing about whether this
+        // face is locked or whether a PIN already opened it.
+        if (facts === null) setLocked(false);
         setSettled(true);
       },
     );
@@ -116,10 +115,7 @@ export function useLock(): Lock {
   // `metaKey || ctrlKey` here, so on a Mac ⌃L — a shell's 「clear the
   // screen」 — locked the app from inside a terminal.
 
-  // Idle. **One timer, restarted by activity** rather than a tick that
-  // compares clocks: a laptop that slept fires this on the first stir
-  // after waking, which is the same moment either way, and there is no
-  // beat running while nobody is there.
+  // Idle is checked against the last interaction on a coarse beat.
   const stirredAt = useRef(Date.now());
   useEffect(() => {
     const minutes = facts?.on ? facts.timeout_min : 0;
@@ -156,7 +152,11 @@ export function useLock(): Lock {
     setLocked(false);
   }, []);
 
-  const reread = useCallback(() => setAsked((n) => n + 1), []);
+  const reread = useCallback(() => {
+    // Revoke the old read immediately, before React cleans up its effect.
+    readEpoch.current += 1;
+    setAsked((n) => n + 1);
+  }, []);
   // 安全 in another window (the Mac's settings window): the lock turned on
   // there arms this window's idle timer now, not at the next launch.
   useEffect(() => heardFrom(LOCK_TOLD, reread), [reread]);
