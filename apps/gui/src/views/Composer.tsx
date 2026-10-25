@@ -1,3 +1,5 @@
+import {useComposeLayout} from '@/hooks/use-compose-layout';
+import {useComposeNavigation} from '@/components/SessionBar';
 /**
  * **The conversation's input: one glass capsule** (the redesign,
  * 2026-10-02, the owner after Gemini's: 「gui 的 session 会话, 输入栏现在
@@ -73,6 +75,8 @@ export function Composer({
   seatYields?: boolean;
 }) {
   const cap = useRef<HTMLDivElement>(null);
+  const composeNavigation=useComposeNavigation();
+  useComposeLayout(cap,composeNavigation);
   const [seatGone, setSeatGone] = useState(false);
   const seatW = useRef(0);
   const measure = useRef(() => {});
@@ -102,10 +106,11 @@ export function Composer({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  return (
+  const capsule = (
     <div
       ref={cap}
       data-chat-box
+      data-lab-compose-input={composeNavigation||undefined}
       data-seat-gone={seatGone || undefined}
       className="glass flex min-h-composer min-w-0 flex-1 items-end gap-1 rounded-composer p-1.5 data-[seat-gone]:[&_[data-composer-seat]]:hidden"
     >
@@ -114,6 +119,7 @@ export function Composer({
       {trail}
     </div>
   );
+  return composeNavigation?<div data-session-compose-row className="relative flex min-w-0 flex-1 items-end gap-in">{capsule}<span data-lab-composer-session-slot/></div>:capsule;
 }
 
 /**

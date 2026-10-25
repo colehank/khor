@@ -93,7 +93,9 @@
     "ai-elements": "node scripts/check-ai-elements.mjs",
     "ai-elements:preview": "vite --config scripts/ai-elements-preview.vite.ts --host 127.0.0.1 --port 23776 --strictPort",
     "pi-accounts": "node scripts/check-pi-accounts.mjs",
-    "dock-position": "node scripts/check-dock-position.mjs"
+    "dock-position": "node scripts/check-dock-position.mjs",
+    "session-navigation": "node scripts/check-session-navigation.mjs",
+    "session-navigation-ui": "node scripts/check-session-navigation-ui.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

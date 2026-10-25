@@ -1,3 +1,5 @@
+import {SessionHeader} from '@/components/SessionHeader';
+import {retainSessionDrafts} from '@/hooks/use-session-draft';
 import { useSessionAttention } from "@/hooks/use-session-attention";
 import { useSessionReads } from "@/hooks/use-session-reads";
 import { sessionCwdOnScreen, workspaceCwd, followsSessionCwd } from "@/lib/session-cwd";
@@ -2529,7 +2531,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, sessions]);
   // A tab closed forgets its 附栏's open (`keepSidesOf`).
-  useEffect(() => keepSidesOf(openTabs), [openTabs]);
+  useEffect(() => {keepSidesOf(openTabs);retainSessionDrafts(openTabs);}, [openTabs]);
   /**
    * **Opened again, the 附栏 is where it was left** (UX-47, the owner
    * 2026-10-07, replacing UX-40 §3's 「每次打开都是显示最近」): per
@@ -3315,10 +3317,13 @@ export default function App() {
   const terminalPill = selectedRow !== null;
   const sessionScreen = (
     <SessionScreen
+      navigation
+      renderHeader={selectedRow?.kind === 'gui' || isChatTab(selected) ? props=><SessionHeader {...props}/> : undefined}
+      deckAt={selectedRow?.kind === 'gui' || isChatTab(selected) ? 'top' : 'bottom'}
       faces={tabFaces}
       active={selected ?? ""}
       contentMode={narrow && side.open && selectedRow !== null}
-      onTabs={narrow&&selectedRow?()=>{(document.activeElement as HTMLElement|null)?.blur();contentNavigation.sessions(selectedRow.id);setSessionSide(selectedRow.id,{open:true,seat:"workspace"});}:undefined}
+      onTabs={narrow&&selectedRow&&selectedRow.kind!=='gui'&&!isChatTab(selected)?()=>{(document.activeElement as HTMLElement|null)?.blur();contentNavigation.sessions(selectedRow.id);setSessionSide(selectedRow.id,{open:true,seat:"workspace"});}:undefined}
       onTitle={terminalPill && selectedRow ? () => {
         (document.activeElement as HTMLElement | null)?.blur();
         if (!side.open) contentNavigation.resume(selectedRow.id);
@@ -4223,6 +4228,7 @@ export default function App() {
                   (`SessionSide` `boxRef`). */}
               {sessions && openTabs.length > 0 ? (
                 <Tabs
+                  tail={<span data-lab-session-settings-slot className="empty:hidden"/>}
                   grouped
                   bodyClass="flex min-h-0 flex-col"
                   faces={tabFaces.filter(f => !sessionTabsFocused || isNewTab(selected ?? "") || f.id === selected).map(f => ({ ...f,

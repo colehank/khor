@@ -1,5 +1,5 @@
-// GUI layout Lab (2026-10-23): a top deck stays visible while the
-// thread scrolls; its composer owns the bottom. Default remains bottom.
+// GUI conversations use a model header and a bottom composer with an
+// independent session avatar. Terminals keep the shared bottom deck.
 // **A session on the narrow face: the content on top, the way back and
 // the tabs at the foot** (2026-10-02, iOS 第三步 A).
 //
@@ -86,6 +86,7 @@ import { usePillSignal } from "@/lib/pill-signal";
 import { footCovered } from "@/lib/viewport";
 
 type Seats = {
+  conversation: boolean;
   lead: HTMLElement | null;
   trail: HTMLElement | null;
   above: HTMLElement | null;
@@ -114,7 +115,7 @@ export const VerbSeat = createContext<HTMLElement | null>(null);
  * written, `lead` goes to the wide face's verbs (`VerbSeat`) where there
  * is one, and `trail`, `pill` and `progress` are not drawn.
  */
-export function BarSeat({ at, children }: { at: keyof Seats; children: ReactNode }) {
+export function BarSeat({ at, children }: { at: Exclude<keyof Seats,"conversation">; children: ReactNode }) {
   const seats = useContext(SeatsContext);
   const verbs = useContext(VerbSeat);
   if (!seats) {
@@ -127,6 +128,8 @@ export function BarSeat({ at, children }: { at: keyof Seats; children: ReactNode
 
 /** Whether the open session is in the bar's screen — a view that lays
     itself out differently there (the day's float) asks this. */
+export function useComposeNavigation(): boolean {return !!useContext(SeatsContext)?.conversation;}
+
 export function useInBar(): boolean {
   return useContext(SeatsContext) !== null;
 }
@@ -162,13 +165,15 @@ export function SessionScreen({
   deckAt = "bottom",
   combinedDock = false,
   renderHeader,
+  navigation = false,
   children,
 }: {
-  /** GUI layout Lab: navigation above the thread, composer at its foot. */
+  /** Conversations keep model controls above their thread. */
   deckAt?: "top" | "bottom";
-  /** Lab: a single bottom surface for the conversation composer and deck. */
+  navigation?: boolean;
+  /** Retained for isolated historical layout comparisons. */
   combinedDock?: boolean;
-  /** Lab: an independent identity header, with configuration in its sibling seat. */
+  /** A conversation header, with configuration supplied by its own seat. */
   renderHeader?: (props: SessionHeaderProps) => ReactNode;
   /** **The deck steps away while the 附栏's sheet is up** (UX-37 §4,
       UX-39 §1): the sheet stands on the screen's foot where the deck
@@ -248,7 +253,8 @@ export function SessionScreen({
   const [pill, setPill] = useState<HTMLElement | null>(null);
   const [progress, setProgress] = useState<HTMLElement | null>(null);
   const [sheet, setSheet] = useState(false);
-  const seats = useMemo(() => ({ lead, trail, above, under, pill, progress }), [lead, trail, above, under, pill, progress]);
+  const conversation=!!renderHeader;
+  const seats = useMemo(() => ({ lead, trail, above, under, pill, progress, conversation }), [lead, trail, above, under, pill, progress, conversation]);
   const at = faces.findIndex((f) => f.id === active);
   const face = at < 0 ? null : faces[at];
   /** **The pill grows while something stops this session** (NOTICE-BRIEF):
@@ -536,7 +542,7 @@ export function SessionScreen({
       </div>
   );
   return (
-    <div data-session-screen data-deck-at={deckAt} data-content-mode={contentMode || undefined} data-deck-folded={folded || undefined} className="relative flex h-full min-h-0 flex-col bg-card">
+    <div data-session-screen data-session-navigation-root={navigation||undefined} data-deck-at={deckAt} data-content-mode={contentMode || undefined} data-deck-folded={folded || undefined} className="relative flex h-full min-h-0 flex-col bg-card">
       <div data-session-top {...WINDOW_DRAG} className="h-safe-top flex-none" />
       {topDeck && deck}
       <SeatsContext.Provider value={seats}>

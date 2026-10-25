@@ -252,3 +252,10 @@ node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
 收手时扩大中立范围，并在停住后锁定更宽的恢复边界，小幅过冲不会重启循环或倒退。一次合并触摸事件直接越过整个中立区时先刹车，再继续明确反拨才倒退；重复的静止事件不会触发反向。第一次轻推的即时预选与指示点反馈保留，真实回程与轻推后停住分别判断。取消键、失焦／多触点取消、总览回撤、三档节拍、倾斜短弧和底部药丸左右拖动沿用既有行为。
 
 先复现原头像不能取消、轻推静止被当作回程及边缘起手不能回到头像中心取消，再修复。31 项状态、216 项循环／节拍、6 项斜向跟随、10 项档位及 8 项取消／停稳检查和 Lab TypeScript 通过。57 项完整 GUI 回归及 72 项定向鼠标／浏览器触摸检查通过，覆盖 320／390、浅深主题、键盘开关、边缘起手、长草稿、一项／三项布局、取消提示边界、草稿保留、过冲刹车、继续反向和回中确认。已核对截图，位于 `/Volumes/disk0/khor-gui-session-layout-proof/cancel-brake/` 与其 `compact-edge/` 子目录。仍只在 Lab，不合入 main；iPhone 的实际握姿和触感留待真机体验。
+
+
+## 正式整合与独立玻璃头像（2026-10-25）
+
+已将最终方案搬入 `src/components/SessionHeader.tsx`、`SessionExplore.tsx`、`components/session-nav/` 和共享输入／配置组件；正式 App 不再依赖 Lab 参数或 Vite 源码替换来启用。保留 main 已有的连续药丸动效修复。右下会话头像使用独立 `GlassCircle`，放在输入框右侧，整行铺满可用区域，底边对齐；按压缩放由稳定外框承接，避免松手被误判为布局变化。
+
+默认前端检查、生成类型、生产构建、90 脚本／83 入口的门索引通过。388 项正式导航状态／几何检查、58 项正式 App 浏览器检查、72 项鼠标／浏览器触摸取消与回中检查、21 项真实 xterm／药丸检查通过。Pi 运行组件 43 项测试通过；ACP stdio、节点设置／GUI／密钥归属、GUI core 命令表与任务／已读／回执回归通过，ACP 两项外部 CLI 检查按原定义忽略。截图与日志位于 `/Volumes/disk0/khor-session-production-proof/` 及 `/Volumes/disk0/khor-session-*.log`。发布按 `docs/SHIP.md` 执行，真机安装与触感验收单独记录。

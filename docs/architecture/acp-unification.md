@@ -1,6 +1,6 @@
 # Khor 的 ACP 会话基座
 
-本轮保留在 `lab/gui-session-layout`，未合入 main。布局预览：<http://localhost:23795/lab/gui-session-layout.html>。Lab 的桥接数据是内存示例；真实适配由下面的协议、原生 CLI 和节点测试验证，预览不会调用真实模型。
+已将验收后的布局与配置接入正式组件。`npm run session-navigation-ui` 使用内存桥接示例验收正式 App，真实适配由下面的协议、原生 CLI 和节点测试验证；预览不会调用真实模型。原 Lab 作为布局讨论记录保留。
 
 ## 统一边界
 
@@ -48,7 +48,7 @@ Khor 的审批入口在 `khor_agent::McpSession`，不依赖 Pi 是否自带权�
 - `apps/agent/src/session-state.ts`、`management.ts`：Pi 配置、实际用量与 SDK 档位。
 - `cagent_config.rs`、`codexagent_config.rs`：两个原生协议边界的动态配置。
 - GUI core / HTTP / Tauri 共用 `chat_respond`、`chat_control`；wire 枚举只在尾部增加变体。
-- `SessionPreferences`：Lab 顶部的公共配置控件；`AgentInteraction` 与 `AcpAgentSetup`：会话补问、登录与 MCP 上下文。
+- `SessionPreferences`：三类 GUI 会话共用的模型、权限与上下文配置控件；`AgentInteraction` 与 `AcpAgentSetup`：会话补问、登录与 MCP 上下文。
 
 Pi 通过 `khor_agent/manage` 的 session_settings / session_set_option 工作流校验和持久化；并发配置发生变化时拒绝覆盖旧快照。完成的设置结果会回传调用机器。第三方 ACP 使用 acp_initialize / acp_authenticate / acp_poll / acp_reply / acp_cancel / acp_open，同样经现有认证 mesh/IPC 路由到所选节点。
 

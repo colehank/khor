@@ -1,4 +1,5 @@
-import {labUnified,AcpHeader,LabAdd} from "@/views/SessionPreferences";
+import {useSessionDraft} from '@/hooks/use-session-draft';
+import {unifiedSession,AcpHeader,SessionAdd} from "@/views/SessionPreferences";
 import {AgentInteraction,type InteractionRequest} from "@/components/AgentInteraction";
 import {chatRespond,chatControl} from "@/api";
 import {configOptions,type AgentProtocol} from "@/lib/acp-session";
@@ -762,7 +763,7 @@ export function ChatView({
     /** The gate on attaching a file's contents. */
     embeds: boolean;
   } | null>(null);
-  const [text, setText] = useState("");
+  const [text, setText] = useSessionDraft("gui:"+id);
   /** Which line of the "/" menu is under the keyboard. */
   const [pick, setPick] = useState(0);
   // Where the reader is standing, and whether anything landed while they
@@ -1583,7 +1584,7 @@ export function ChatView({
           has its row of accessory keys, a chat has its input box」) —
           above the deck (2026-10-13); the deck sits on the keyboard.
           On the wide face it stands here, as it always did. */}
-      <BarSeat at="above">{labUnified && <AcpHeader who={who} mode={modeSeat} options={addOptions} protocol={protocol} onControl={control} disabled={inTurn} />}
+      <BarSeat at="above">{unifiedSession && <AcpHeader who={who} mode={modeSeat} options={addOptions} protocol={protocol} onControl={control} disabled={inTurn} />}
       {/* A recorded past has no channel to speak into: no input, and
           the only thing its footer can say is that the record is
           missing. */}
@@ -1692,7 +1693,7 @@ export function ChatView({
           {/* Where a file put from here lands on the conversation's
               machine, and the way to choose another directory there
               (STORE-BRIEF phase 2) — the 留言's line, the same component. */}
-          {home !== null && (
+          {home !== null && files.items.length > 0 && (
             <SendInto machine={machine ?? ""} name={home} into={into} onInto={setInto} className="pb-xxs" />
           )}
           {sending && (
@@ -1780,7 +1781,8 @@ export function ChatView({
             )}
             <Composer
               lead={
-                <LabAdd
+                <SessionAdd
+                  destination={home !== null ? <SendInto machine={machine ?? ""} name={home} into={into} onInto={setInto} /> : null}
                   onAttach={canAttach ? () => picker.current?.click() : undefined}
                   onAttachMachine={
                     canAttach && home ? { label: gui.chat_attach_machine_title(home), pick: () => setPickOpen(true) } : undefined
@@ -1795,8 +1797,8 @@ export function ChatView({
               seatYields={!inTurn && !!text.trim()}
               trail={
                 <>
-                  {!labUnified && modeSeat}
-                  {!labUnified && <WhoSeat who={who} tip={!coarse} />}
+                  {!unifiedSession && modeSeat}
+                  {!unifiedSession && <WhoSeat who={who} tip={!coarse} />}
                   {/* Send only while there is something to send and the
                       agent can take it; during a turn the interrupt
                       stands in its seat. At rest with an empty box,
@@ -1830,7 +1832,7 @@ export function ChatView({
               onPaste={takePaste}
               rows={1}
               value={text}
-              placeholder={gui.chat_input}
+              placeholder="发消息…"
               // The soft keyboard's return key says what Enter does here:
               // it sends (Shift+Enter, on a keyboard that has one, breaks
               // the line).

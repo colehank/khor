@@ -12,6 +12,5 @@
 .composer-lab-fact{display:flex;align-items:baseline;justify-content:space-between;gap:var(--gap-row)}
 .composer-lab-fact>span:last-child{min-width:0;max-width:calc(4 * var(--touch));text-align:right;overflow-wrap:anywhere;color:var(--foreground)}
 .composer-lab-model-id{display:block;max-width:calc(6 * var(--touch));font-family:var(--font-mono);overflow-wrap:anywhere;white-space:normal}
-:root[data-lab-unified] [data-send-into]{padding-inline:var(--gap-in)}
-:root[data-lab-unified] [data-session-composer]:empty{display:none}
-:root[data-lab-unified] [data-session-composer]{touch-action:none}
+[data-session-navigation-root] [data-send-into]{padding-inline:var(--gap-in)}
+[data-session-navigation-root] [data-session-composer]:empty{display:none}

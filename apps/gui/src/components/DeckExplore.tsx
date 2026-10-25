@@ -1,5 +1,5 @@
 /** The approved shallow U, shared by root sessions, files and webpages. */
-import {useLayoutEffect,useMemo,useState,type RefObject,type CSSProperties} from 'react';
+import {useLayoutEffect,useMemo,useRef,useState,type RefObject,type CSSProperties} from 'react';
 import {createPortal} from 'react-dom';
 import {TabAvatar,type TabFace} from '@/browse/TabStrip';
 import {IconChevronUp,IconChevronRight} from '@/components/icons';

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { khorAgent, said, type KhorAgentView } from "@/api";
 import type { CommandRecord } from "@/gen/bindings/CommandRecord";
 import { gui } from "@/gen/catalog";
@@ -13,7 +13,7 @@ import { AgentTranscript } from "@/components/ai-elements/content";
 import { FilePreview } from "@/views/chat-files";
 import { StatusWord } from "@/components/StatusWord";
 
-export function KhorAgentSettings({ view, onChanged, disabled: running }: { view: KhorAgentView | null; onChanged: (view: KhorAgentView) => void; disabled: boolean }) {
+export function KhorAgentSettings({ view, onChanged, disabled: running, openRequest=0, hideTrigger=false }: { view: KhorAgentView | null; onChanged: (view: KhorAgentView) => void; disabled: boolean; openRequest?:number; hideTrigger?:boolean }) {
   const [open, setOpen] = useState(false), [account, setAccount] = useState(""), [model, setModel] = useState("");
   const [saving, setSaving] = useState(false), [error, setError] = useState<string | null>(null);
   const [setup, setSetup] = useState(false), [editing, setEditing] = useState<string | undefined>();
@@ -26,6 +26,7 @@ export function KhorAgentSettings({ view, onChanged, disabled: running }: { view
     }
     setOpen(value);
   };
+  useEffect(()=>{if(openRequest)choose(true);},[openRequest]);
   const save = async () => {
     if (!picked || !model.trim() || saving) return;
     setSaving(true); setError(null);
@@ -36,7 +37,7 @@ export function KhorAgentSettings({ view, onChanged, disabled: running }: { view
   const add = (id?: string) => { setEditing(id); setOpen(false); setSetup(true); };
   return <>
     <Dialog open={open} onOpenChange={choose}>
-      <Button data-khor-agent-settings variant="ghost" size="sm" disabled={!view} onClick={() => choose(true)}>{view?.config?.model ?? gui.agent_setup}</Button>
+      {!hideTrigger&&<Button data-khor-agent-settings variant="ghost" size="sm" disabled={!view} onClick={() => choose(true)}>{view?.config?.model ?? gui.agent_setup}</Button>}
       <TaskOverlay purpose="edit" data-khor-agent-config onOpenAutoFocus={(e) => { e.preventDefault(); title.current?.focus(); }}>
         <DialogHeader><DialogTitle ref={title} tabIndex={-1}>{gui.agent_model_session}</DialogTitle><DialogDescription>{running ? gui.agent_model_next_turn : gui.agent_setup_hint}</DialogDescription></DialogHeader>
         <div className="space-y-row">

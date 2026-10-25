@@ -11,7 +11,7 @@ import {useDeckPosition} from '@/hooks/use-deck-position';
 import {readDeckContactLayout,sameDeckContactLayout,type DeckContactLayout} from '@/lib/deck-contact';
 import {deckScrubber,DEFAULT_DECK_TUNING,holdTiming,nearbySlots,type DeckScrubState} from '@/lib/deck-scrub';
 import {deckJoystick,DECK_JOYSTICK_DEFAULTS,type DeckJoystickState,type DeckJoystickTuning} from '@/lib/deck-joystick';
-import {DeckExplore} from './DeckExplore';
+import {DeckExplore} from './SessionExplore';
 import './deck-band.css';
 
 type Drag={pointer:number;touch:boolean;touchId:number|null;title:boolean;x:number;layout:DeckContactLayout;route:'joystick'|'swipe'};

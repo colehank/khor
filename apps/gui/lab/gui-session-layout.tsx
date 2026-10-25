@@ -8,7 +8,7 @@ document.title='khor · 会话布局 Lab';
 const scenes=[['gui/ai-elements-review','Claude · 工具与确认'],['gui/codex-review','Codex · 工具与补丁'],['wide/all','Khor · 网络任务'],['shell/layout-lab','终端 · 底部药丸'],['gui/ai-elements-plan','Claude · 计划'],['gui/ai-elements-stream','Claude · 流式回复']];
 const sizes=[['390','窄屏 · 390'],['430','窄屏 · 430'],['667','横屏 · 667'],['1280','宽屏 · 1280']];
 function Lab(){
-  const [session,setSession]=useState(scenes[0][0]),[width,setWidth]=useState('390'),[theme,setTheme]=useState('light'),[keyboard,setKeyboard]=useState(false),[deck,setDeck]=useState('fan'),[count,setCount]=useState('5'),[classic,setClassic]=useState(false),[attachment,setAttachment]=useState(false),[approval,setApproval]=useState(false);
+  const [session,setSession]=useState(scenes[0][0]),[width,setWidth]=useState('390'),[theme,setTheme]=useState('light'),[keyboard,setKeyboard]=useState(false),[deck]=useState('fan'),[count,setCount]=useState('5'),[classic]=useState(false),[attachment,setAttachment]=useState(false),[approval,setApproval]=useState(false);
   const wide=Number(width)>760,height=width==='667'?375:wide?800:844;
   const params=new URLSearchParams({bridge:location.port,labSession:session,theme,deck,keyboard:keyboard?'1':'0',phone:wide?'0':'1',labTabs:[session,...scenes.map(([id])=>id).filter(id=>id!==session)].slice(0,Number(count)).join(','),composer:classic?'classic':'unified',attachment:attachment?'1':'0',approval:approval?'1':'0'});
   const src=`/?${params}`;
@@ -54,11 +54,10 @@ function Lab(){
       <label className="layout-lab-check"><input type="checkbox" checked={keyboard} onChange={e=>setKeyboard(e.target.checked)}/>模拟键盘升起</label>
       <label className="layout-lab-check"><input type="checkbox" checked={attachment} onChange={e=>setAttachment(e.target.checked)}/>附带示例文件</label>
       {session==='wide/all'&&<label className="layout-lab-check"><input type="checkbox" checked={approval} onChange={e=>setApproval(e.target.checked)}/>演示 Khor 待审批</label>}
-      <label>布局<select aria-label="布局" value={deck} onChange={e=>setDeck(e.target.value)}><option value="fan">右手扇形 · 循环拨杆</option><option value="compose">右侧头像 · 连续拨杆</option><option value="light">轻量页头 · 头像与文字</option><option value="combined">底部组合 · 输入与药丸</option><option value="top">顶部药丸 · 底部输入</option><option value="bottom">原底部 · 分开的胶囊</option></select></label>
-      <label className="layout-lab-check"><input type="checkbox" checked={classic} onChange={e=>setClassic(e.target.checked)}/>对比原来的输入区</label>
+      <p className="layout-lab-note">当前预览直接使用正式组件：右下头像与倾斜扇形，终端及展开药丸保持左右拨动。</p>
       <p className="layout-lab-note">{session==='shell/layout-lab'&&deck==='fan'?'终端药丸：快速横滑直接切换；长按左右拨动循环，回中暂停、反向倒退。操控轨迹在候选上方，上推远后松手打开全部标签，回撤恢复。':deck==='fan'?'右侧头像：长按轻推建立中立位，再沿弧拨动预选，保持偏移按三档速度循环翻选，回中暂停、反向倒退，松手确认；向左上推远展开列表，回撤恢复扫选。顺序与药丸一致，预选不打开中间内容。':deck==='compose'?'右侧头像：点击展开药丸；横拨切换，长按进入浅 U 拨杆；回中暂停，松手确认，上推进入全部标签页。':deck==='light'?'点击头像或标题打开总览；长按头像显示轮盘，沿弧线滑动，回到头像取消。':(deck==='top'?'顶部药丸下拉':'底部药丸上滑')+'打开总览，长按左右拨动切换。'}会话内切换保留各自的文字草稿。预览不连接真实智能体；键盘与安全区是浏览器模拟。</p>
       {wide&&<p className="layout-lab-note">宽屏沿用顶部标签，切换到窄屏查看本轮布局。</p>}
-      <p className="layout-lab-note">实验分支 lab/gui-session-layout，尚未合入 main。</p>
+      <p className="layout-lab-note">已验收方案的正式组件预览；示例数据与真实账户隔离。</p>
     </aside>
     <section id="layout-lab-preview" className="layout-lab-stage" aria-label="会话预览" tabIndex={-1}>
       <iframe ref={preview} onLoad={restoreDraft} title="Khor 会话布局预览" key={src} src={src} style={{width:Number(width),height}}/>

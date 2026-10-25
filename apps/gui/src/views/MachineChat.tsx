@@ -1,3 +1,6 @@
+import type {CommandRecord} from '@/gen/bindings/CommandRecord';
+import {KhorHeader,SessionAdd,KhorSend} from '@/views/SessionPreferences';
+import {useSessionDraft} from '@/hooks/use-session-draft';
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -31,11 +34,10 @@ import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
 import { BarSeat } from "@/components/SessionBar";
-import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat, Tip, useGrowingText } from "@/views/Composer";
+import { Composer, COMPOSER_TEXT, PlusSeat, Tip, useGrowingText } from "@/views/Composer";
 import { imeKey } from "@/lib/ime";
 import { ConsoleMenu, ConsoleResult, useConsoleCompletion } from "@/views/Console";
 import { useHidden } from "@/hooks/use-hidden";
-import { KhorAgentSettings } from "@/views/KhorAgent";
 import { useChatScroll } from "@/hooks/use-chat-scroll";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
@@ -61,7 +63,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   const log = readout?.id === id ? readout.log : null;
   const currentId = useRef(id);
   currentId.current = id;
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useSessionDraft("khor:"+id);
   const [inputOpen, setInputOpen] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const isCommand = draft.trimStart().startsWith("/");
@@ -69,6 +71,8 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [agent, setAgent] = useState<KhorAgentView | null>(null);
+  const runningAgent=log?.messages.reduce<CommandRecord|null>((last,m)=>m.command?.agent&&(m.command.status==='running'||m.command.status==='blocked')?m.command:last,null)??null;
+  const agentUpdates=log?.messages.flatMap(m=>{const a=m.command?.agent;return a&&a.model===agent?.config?.model?a.updates:[];})??[];
   const { scroller, column, following: stickToEnd, away, onScroll, captureDisclosure, toBottom } = useChatScroll(log);
   const atEnd = !away;
   const seenMessages = useRef(new Set<string>());
@@ -304,7 +308,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           same reason: the line divides two regions, the column is where
           the writing is. On the narrow face it sits above the deck
           (`components/SessionBar`, 2026-10-13), like the agent composer. */}
-      <BarSeat at="above">
+      <BarSeat at="above"><KhorHeader view={agent} onChanged={setAgent} disabled={!!(runningAgent)} updates={agentUpdates} />
       <div className="flex-none px-row pt-in pb-in">
       <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
         {pickerOpen && <ConsoleMenu choices={choices} pick={pick} onPick={choose} />}
@@ -325,7 +329,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
         <Composer
           lead={
             <Tip label={isCommand ? gui.console_input : gui.send_file}>
-              {isCommand ? <PlusSeat data-console-input-toggle aria-label={gui.console_input} aria-expanded={inputOpen} onClick={() => setInputOpen((value) => !value)} /> : <PlusSeat data-attach-file aria-label={gui.send_file} onClick={attach} />}
+              {isCommand ? <PlusSeat data-console-input-toggle aria-label={gui.console_input} aria-expanded={inputOpen} onClick={() => setInputOpen((value) => !value)} /> : <SessionAdd onAttach={attach} options={[]} />}
             </Tip>
           }
           trail={
@@ -334,7 +338,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
             // **The keyboard stays up after a note** (P7, 2026-10-03, the
             // owner's ruling): the press does not take the focus from the
             // text, so the next line is typed at once, as in Messages.
-            ready ? <SendSeat onSend={send} disabled={sending} keepFocus /> : null
+            <KhorSend record={runningAgent} onStopped={refresh} ready={ready} sending={sending} onSend={send} />
           }
         >
         {/* The browser forms' picker: a real <input type=file>, hidden —
@@ -360,7 +364,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           aria-expanded={pickerOpen}
           // The same word the agent conversation's capsule wears: one
           // capsule, one invitation (the closing pass, 2026-10-03).
-          placeholder={gui.agent_placeholder}
+          placeholder="发消息…"
           // Return sends, and the soft keyboard's key says so (Shift+Enter
           // on a hardware keyboard breaks the line).
           enterKeyHint="send"
@@ -409,7 +413,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           className={COMPOSER_TEXT}
         />
         </Composer>
-        <div className="flex justify-end pt-in"><KhorAgentSettings view={agent} onChanged={setAgent} disabled={log?.messages.some((m) => m.command?.agent && (m.command.status === "running" || m.command.status === "blocked")) ?? false} /></div>
+
       </div>
       </div>
       </BarSeat>
