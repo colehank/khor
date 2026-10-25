@@ -35,7 +35,7 @@
 // tells the pane through the `orphan` its view handed over on leaving.
 import { useSyncExternalStore } from "react";
 
-import { fetchFileText, said, saveFileText } from "@/api";
+import { fetchFileText, said, saveFileText, type FileText } from "@/api";
 
 /** A write that landed. `by` is the line of editing it came from. */
 export type Landed = {
@@ -65,6 +65,24 @@ export type RoadState = {
 
 /** A write to make: the text, the digest it is pinned to, its line. */
 export type Pinned = { text: string; was: string; by: string };
+
+/** Read a fresh base for an explicit overwrite. A pin starts a new editing
+    line and is revoked by discard, even after the read has already resolved. */
+export async function readForOverwrite(
+  machine: string,
+  path: string,
+): Promise<{ file: FileText; pin: (text: string) => Pinned | null }> {
+  const r = road(machine, path);
+  const epoch = r.epoch;
+  const file = await fetchFileText(machine, path);
+  return {
+    file,
+    pin(text) {
+      if (file.digest === "" || epoch !== r.epoch || hushAll || hushed.has(keyOf(machine, path))) return null;
+      return { text, was: file.digest, by: newLine() };
+    },
+  };
+}
 
 type Waiter = { ok: (l: Landed) => void; no: (t: Trouble) => void };
 type Job = Pinned & { epoch: number; asked: boolean; orphan?: () => void; waiters: Waiter[] };

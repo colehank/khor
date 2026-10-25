@@ -12,9 +12,9 @@ const digest = text => createHash('sha256').update(text).digest('hex');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture(initial = 'A') {
-  let disk = initial, now = 0, timerId = 0, delayReads = false;
+  let disk = initial, now = 0, timerId = 0, delayReads = false, readableDigest = true;
   const requests = [], reads = [], timers = new Map(), landed = [];
-  const snapshot = () => ({ text: disk, digest: digest(disk), at_ms: now });
+  const snapshot = () => ({ text: disk, digest: readableDigest ? digest(disk) : '', at_ms: now });
   const api = {
     said: error => String(error),
     fetchFileText: () => delayReads ? new Promise(resolve => reads.push(resolve)) : Promise.resolve(snapshot()),
@@ -70,6 +70,7 @@ function fixture(initial = 'A') {
     discard: () => road.discard('machine', '/file'),
     reopen: () => road.reopened('machine', '/file'),
     holdReads: () => { delayReads = true; },
+    withoutDigest: () => { readableDigest = false; },
     replyRead: async index => { assert(reads[index], `read ${index} was submitted`); reads[index](snapshot()); await settle(); },
   };
 }
@@ -103,6 +104,47 @@ check('a real external edit is not advanced through another digest', async () =>
   const pending = f.write('C', 'first', digest('A'));
   await f.reply(1); assert.equal((await pending).error.kind, 'clash');
   assert.equal(f.disk, 'external'); assert.equal(f.timers.size, 0);
+});
+check('a fresh overwrite read starts its own line instead of forwarding historical content', async () => {
+  const f = fixture(); await f.save('B'); f.disk = 'A';
+  const read = await f.road.readForOverwrite('machine', '/file');
+  const pin = read.pin('C'); assert(pin);
+  assert.equal(pin.was, digest('A')); assert.notEqual(pin.by, 'first');
+  const pending = f.write(pin.text, pin.by, pin.was, {asked: true});
+  await f.reply(1); assert(!(await pending).error); assert.equal(f.disk, 'C');
+  await f.save('D', pin.by, pin.was); assert.equal(f.disk, 'D');
+});
+check('an ordinary asked save does not turn a stale pin into a fresh overwrite', async () => {
+  const f = fixture(); await f.save('B'); f.disk = 'A';
+  const pending = f.write('C', 'first', digest('A'), {asked: true});
+  await f.reply(1); assert.equal((await pending).error.kind, 'clash');
+  assert.equal(f.disk, 'A'); assert.equal(f.requests[1].was, digest('B'));
+});
+for (const stage of ['pending', 'resolved']) {
+  check(`discard revokes a ${stage} overwrite read even after reopening`, async () => {
+    const f = fixture();
+    if (stage === 'pending') f.holdReads();
+    const pending = f.road.readForOverwrite('machine', '/file');
+    let read;
+    if (stage === 'resolved') read = await pending;
+    f.discard(); f.reopen();
+    if (stage === 'pending') { await f.replyRead(0); read = await pending; }
+    assert.equal(read.pin('C'), null); assert.equal(f.requests.length, 0); assert.equal(f.disk, 'A');
+  });
+}
+check('a fresh overwrite still refuses a file changed after its read', async () => {
+  const f = fixture(); await f.save('B');
+  const read = await f.road.readForOverwrite('machine', '/file');
+  f.disk = 'external';
+  const pin = read.pin('C'); assert(pin);
+  const pending = f.write(pin.text, pin.by, pin.was, {asked: true});
+  await f.reply(1); assert.equal((await pending).error.kind, 'clash');
+  assert.equal(f.disk, 'external');
+});
+check('an incomplete overwrite read cannot produce an editable pin', async () => {
+  const f = fixture(); f.withoutDigest();
+  const read = await f.road.readForOverwrite('machine', '/file');
+  assert.equal(read.pin('C'), null); assert.equal(f.requests.length, 0);
 });
 check('coalescing never acknowledges a different editor with somebody else’s text', async () => {
   const f = fixture(), base = digest('A');

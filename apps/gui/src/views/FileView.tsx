@@ -68,6 +68,7 @@ import {
   onAnyLanded,
   onLanded,
   PAUSE_MS,
+  readForOverwrite,
   reopened,
   useRoad,
   write,
@@ -408,6 +409,11 @@ function FileBody({
   );
   /** A way out of a clash is under way (a read, a merge, an overwrite). */
   const [working, setWorking] = useState(false);
+  const overwriteEpoch = useRef(0);
+  useEffect(() => {
+    setWorking(false);
+    return () => { overwriteEpoch.current += 1; };
+  }, [machine, path]);
   /** Bumped to read this file again without changing which file it is
       — the way out of a refusal that keeps the person's own change
       (`theirs`). A counter for `diffAt`'s reason: two reads of one
@@ -797,6 +803,8 @@ function FileBody({
 
   /** Throw away what is in the box and read the file again. */
   const theirs = () => {
+    overwriteEpoch.current += 1;
+    setWorking(false);
     forget(machine, path);
     setOops(null);
     setClashes(null);
@@ -852,18 +860,33 @@ function FileBody({
    */
   const mine = () => {
     if (edit === null || working) return;
+    const action = ++overwriteEpoch.current;
+    const by = edit.by;
     setWorking(true);
     setOops(null);
-    const pin = edit;
-    fetchFileText(machine, path)
-      .then((now) => write(machine, path, { ...pin, was: now.digest }, { asked: true }))
-      .then(() => setClashes(null))
+    readForOverwrite(machine, path)
+      .then((read) => {
+        if (action !== overwriteEpoch.current) return;
+        const latest = leaving.current.edit;
+        if (latest === null || latest.by !== by) return;
+        const pin = read.pin(latest.text);
+        if (pin === null) return;
+        // New typing belongs to the fresh base too. The write and the next
+        // keystroke must share this new line, rather than the old line's head.
+        remember(machine, path, read.file);
+        setFile(read.file);
+        setEdit(pin);
+        leaving.current = { ...leaving.current, edit: pin };
+        return write(machine, path, pin, { asked: true });
+      })
       .catch((e: unknown) => {
         // A refusal of the write is the road's trouble and on screen
         // already; what is left is the read that did not happen.
-        if (e instanceof Error || typeof e === "string") setOops(said(e));
+        if (action === overwriteEpoch.current && (e instanceof Error || typeof e === "string")) setOops(said(e));
       })
-      .finally(() => setWorking(false));
+      .finally(() => {
+        if (action === overwriteEpoch.current) setWorking(false);
+      });
   };
 
   const take = () => {
