@@ -6,6 +6,9 @@
 .deck-band-count{position:absolute;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;width:var(--glass-item-h);font-size:var(--text-caption);line-height:1;color:var(--tertiary);font-variant-numeric:tabular-nums;pointer-events:none}
 /* The selector leaves the keyboard and actual deck in place. */
 .deck-selector{position:fixed;z-index:70;pointer-events:none;overflow:hidden;color:var(--foreground);--glass-btn:var(--touch);--selector-target-h:max(var(--touch),calc(var(--text-callout--line-height) + var(--gap-row) + var(--gap-xxs)));animation:deck-selector-in var(--dur-180) var(--ease-out)}
+/* Top-deck Lab mirrors the same geometry; words and faces stay upright. */
+.deck-selector[data-below]{transform:scaleY(-1)}
+.deck-selector[data-below] :is(.deck-selector-face,.deck-selector-label,.deck-selector-title-seat>span,.deck-selector-target>span){scale:1 -1}
 .deck-selector-dimmer{position:absolute;inset:0;background:linear-gradient(180deg,color-mix(in srgb,var(--card) 32%,transparent),color-mix(in srgb,var(--card) 64%,transparent) 42%,color-mix(in srgb,var(--card) 96%,transparent) 72%,var(--card));backdrop-filter:blur(var(--gap-xxs));-webkit-backdrop-filter:blur(var(--gap-xxs))}
 .deck-selector-wheel{position:absolute;bottom:calc(var(--gap-pane) + var(--gap-row));left:0;right:0;height:calc(1.5 * var(--touch) + 2 * var(--text-body--line-height) + var(--selector-target-h));transition:opacity var(--dur-180),transform var(--dur-180);animation:deck-selector-wheel-in var(--dur-180) var(--ease-out)}
 .deck-selector-item{position:absolute;left:calc(50% - .5 * var(--list-face));top:0;width:var(--list-face);height:var(--list-face);display:grid;place-items:center;will-change:transform,opacity}

@@ -134,6 +134,9 @@ impl Node {
     pub(super) fn manage_agent(&self, request: Value) -> Result<Value, String> {
         self.refuse_unless_hosting()?;
         let operation = text(&request, "operation")?;
+        if operation.starts_with("acp_") {
+            return crate::acp_management::manage(self, &request);
+        }
         let root = self.root().to_path_buf();
         if matches!(operation, "poll" | "reply" | "cancel") {
             let id = text(&request, "job")?;
@@ -235,7 +238,10 @@ impl Node {
                 json!({"status":"done","account":account.id,"accountInfo":account_info(self,&account)}),
             );
         }
-        if !matches!(operation, "models" | "login") {
+        if !matches!(
+            operation,
+            "models" | "login" | "session_settings" | "session_set_option"
+        ) {
             return Err(msg::agent_arguments().into());
         }
         let existing = request["account"]
@@ -243,6 +249,25 @@ impl Node {
             .filter(|id| !id.is_empty())
             .map(|id| own(self, id))
             .transpose()?;
+        let session_config = if matches!(operation, "session_settings" | "session_set_option") {
+            let config = self
+                .khor_agent_config()?
+                .filter(|c| {
+                    c.home == self.device_str()
+                        && existing.as_ref().is_some_and(|a| a.id == c.account)
+                })
+                .ok_or_else(|| msg::agent_not_configured().to_owned())?;
+            if operation == "session_set_option"
+                && (!request["configId"].is_string()
+                    || !(request["value"].is_string() || request["value"].is_boolean())
+                    || request["value"].to_string().len() > 512)
+            {
+                return Err(msg::agent_arguments().into());
+            }
+            Some(config)
+        } else {
+            None
+        };
         let id = existing
             .as_ref()
             .map(|a| a.id.clone())
@@ -327,7 +352,7 @@ impl Node {
                 .map_err(|e| e.to_string())?;
         }
         let mut seat = json!({"provider":provider,"baseUrl":(!base.is_empty()).then_some(base)});
-        if operation == "models"
+        if operation != "login"
             && existing
                 .as_ref()
                 .is_some_and(|a| a.inference.is_none() && inference_ready(self, a))
@@ -372,7 +397,13 @@ impl Node {
             .stdout
             .take()
             .ok_or_else(|| msg::agent_runtime_missing().to_owned())?;
-        let start = json!({"type":"manage","operation":operation,"account":seat,"credentialPath":path,"authType":auth_type,"deviceId":self.device_str()});
+        let mut start = json!({"type":"manage","operation":operation,"account":seat,"credentialPath":path,"authType":auth_type,"deviceId":self.device_str()});
+        if let Some(config) = &session_config {
+            start["model"] = json!(config.model);
+            start["options"] = json!(config.options);
+            start["configId"] = request["configId"].clone();
+            start["value"] = request["value"].clone();
+        }
         if let Err(error) = writeln!(input, "{start}").and_then(|_| input.flush()) {
             let _ = child.kill();
             let _ = child.wait();
@@ -425,6 +456,36 @@ impl Node {
                             state["events"] = events.into();
                         }
                         Some("result") => {
+                            if operation == "session_set_option" {
+                                let _configuration=super::configuration_lock(&root)?;
+                                let node = Node::open(root.clone())?;
+                                if node.khor_agent_config()? != session_config {
+                                    return Err(msg::agent_arguments().into());
+                                }
+                                let mut config = session_config
+                                    .clone()
+                                    .ok_or_else(|| msg::agent_not_configured().to_owned())?;
+                                config.model = event["value"]["model"]
+                                    .as_str()
+                                    .filter(|m| !m.is_empty() && clean_model(m))
+                                    .ok_or_else(|| msg::agent_arguments().to_owned())?
+                                    .to_owned();
+                                config.options =
+                                    serde_json::from_value(event["value"]["options"].clone())
+                                        .map_err(|_| msg::agent_arguments().to_owned())?;
+                                if config.options.len() > 32
+                                    || config.options.iter().any(|(id, value)| {
+                                        id.len() > 256
+                                            || !(value.is_string() || value.is_boolean())
+                                            || value.to_string().len() > 512
+                                    })
+                                {
+                                    return Err(msg::agent_arguments().into());
+                                }
+                                node.chat.set_agent_config(&config)?;
+                                let _ = node
+                                    .emit_row_of(&crate::SessionId(crate::wide::BROADCAST.into()));
+                            }
                             if operation == "login" {
                                 let node = Node::open(root.clone())?;
                                 let mut account = node

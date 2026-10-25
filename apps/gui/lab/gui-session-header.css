@@ -1,0 +1,16 @@
+[data-lab-light-header]{display:flex;align-items:center;gap:var(--gap-in);min-height:calc(var(--glass-btn) + 2 * var(--gap-in));padding:var(--gap-in) var(--gap-row);flex:none}
+.lab-header-icon,[data-lab-light-header] [data-lab-config-trigger]{display:grid;place-items:center;width:var(--glass-btn);height:var(--glass-btn);padding:0;flex:none;border-radius:var(--radius-full);background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+.lab-header-icon>svg,[data-lab-light-header] [data-lab-config-trigger]>svg{width:var(--ctl-glyph);height:var(--ctl-glyph)}
+[data-lab-config-trigger]::before{content:none}
+.lab-session-identity{display:flex;align-items:center;gap:var(--gap-in);min-width:0;flex:1;min-height:var(--touch);text-align:left}
+[data-lab-header-avatar]{display:grid;place-items:center;width:var(--glass-btn);height:var(--glass-btn);flex:none;border-radius:var(--radius-full);touch-action:none;user-select:none;-webkit-user-select:none}
+[data-lab-header-avatar]>span{display:grid;place-items:center;pointer-events:none}
+.lab-header-words{display:flex;flex-direction:column;min-width:0;gap:var(--gap-xxs)}
+[data-lab-header-title]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-body);font-weight:var(--font-weight-title)}
+.lab-header-words>small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-caption);line-height:var(--text-caption--line-height);color:var(--muted-foreground)}
+.lab-session-wheel{position:fixed;inset:0;z-index:60;pointer-events:none}
+.lab-wheel-track{position:absolute;inset:0;width:100%;height:100%;overflow:visible;fill:none}
+.lab-wheel-track path{stroke:var(--popover);stroke-width:calc(var(--touch) + var(--gap-row));stroke-linecap:round}
+.lab-wheel-track path[data-rim]{stroke:var(--border);stroke-width:calc(var(--touch) + var(--gap-row) + 2 * var(--hair))}
+.lab-wheel-slot{position:absolute;display:grid;place-items:center;width:var(--touch);height:var(--touch);border-radius:var(--radius-full);transform:translate(-50%,-50%)}
+.lab-wheel-slot[data-selected]{background:var(--fill-strong);outline:var(--ring-w) solid var(--foreground);outline-offset:var(--ring-off)}

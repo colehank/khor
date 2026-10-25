@@ -22,7 +22,7 @@ export function deckJoystick(count:number,initial:number,changed:(s:DeckJoystick
     if(s.phase!=='idle')frame=clock.request(tick);
   };
   return {
-    read:()=>({...s}),cancel,dispose:()=>{clock.cancel(frame);frame=0;},
+    read:()=>({...s}),cancel,restartReading:()=>{progress=0;last=clock.now();},dispose:()=>{clock.cancel(frame);frame=0;},
     start(x:number,y:number){cancel();tuning={...getTuning()};origin={x,y};began=last=clock.now();s.phase='pending';publish();frame=clock.request(tick);},
     move(x:number,y:number){
       if(s.phase==='idle')return;

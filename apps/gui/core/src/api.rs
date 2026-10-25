@@ -631,6 +631,23 @@ pub fn answer(
         // `value` is handed over as it came — a string or a bool — and
         // sorted by shape one layer down, where the two shapes are
         // named (`chat::chat_set_option`).
+        "chat_respond" => {
+            crate::chat::chat_respond(
+                &arg("id")?,
+                num("ask")?,
+                args.get("response").ok_or("missing response")?,
+            )?;
+            Ok("null".into())
+        }
+        "chat_control" => {
+            crate::chat::chat_control(
+                &arg("id")?,
+                &arg("token")?,
+                &arg("operation")?,
+                args.get("payload").unwrap_or(&serde_json::Value::Null),
+            )?;
+            Ok("null".into())
+        }
         "chat_set_option" => {
             let value = args
                 .get("value")

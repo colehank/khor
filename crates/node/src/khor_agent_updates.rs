@@ -16,6 +16,10 @@ fn redact(value: &mut Value, key: &str) {
 }
 
 pub(super) fn push(agent: &mut AgentTurn, mut value: Value, key: &str) {
+    // Notices are transient, never durable conversation history.
+    if value["sessionUpdate"] == "notice" {
+        return;
+    }
     redact(&mut value, key);
     if value.to_string().len() > FRAME_LIMIT {
         agent.updates_truncated = true;
@@ -70,9 +74,31 @@ pub(super) fn push(agent: &mut AgentTurn, mut value: Value, key: &str) {
                 replace = Some(agent.updates.len() - 1);
             }
         }
-    } else if kind == "plan" {
+    } else if matches!(kind, "compaction_update" | "compaction_summary_chunk") {
         replace = agent.updates.iter().rposition(|s| {
-            serde_json::from_str::<Value>(s).is_ok_and(|v| v["sessionUpdate"] == "plan")
+            serde_json::from_str::<Value>(s).is_ok_and(|v| {
+                v["sessionUpdate"] == "compaction_update"
+                    && v["compactionId"] == value["compactionId"]
+            })
+        });
+        let mut prior=replace.and_then(|at|serde_json::from_str::<Value>(&agent.updates[at]).ok()).unwrap_or_else(||serde_json::json!({"sessionUpdate":"compaction_update","compactionId":value["compactionId"],"status":"in_progress"}));
+        if kind == "compaction_summary_chunk" {
+            if !prior["summary"].is_array() {
+                prior["summary"] = serde_json::json!([]);
+            }
+            prior["summary"]
+                .as_array_mut()
+                .unwrap()
+                .push(value["content"].clone());
+        } else {
+            for (k, v) in value.as_object().expect("ACP update") {
+                prior[k] = v.clone();
+            }
+        }
+        value = prior;
+    } else if matches!(kind, "plan" | "usage_update" | "config_option_update") {
+        replace = agent.updates.iter().rposition(|s| {
+            serde_json::from_str::<Value>(s).is_ok_and(|v| v["sessionUpdate"] == kind)
         });
     }
     let mut encoded = value.to_string();
@@ -90,7 +116,15 @@ pub(super) fn push(agent: &mut AgentTurn, mut value: Value, key: &str) {
         }
     }
     if let Some(at) = replace {
-        agent.updates[at] = encoded;
+        if matches!(
+            value["sessionUpdate"].as_str(),
+            Some("usage_update" | "config_option_update" | "plan")
+        ) {
+            agent.updates.remove(at);
+            agent.updates.push(encoded);
+        } else {
+            agent.updates[at] = encoded;
+        }
     } else if agent.updates.len() < COUNT {
         agent.updates.push(encoded);
     } else {
@@ -110,6 +144,18 @@ mod tests {
             updates: vec![],
             updates_truncated: false,
         }
+    }
+    #[test]
+    fn snapshots_keep_receive_order_and_compaction_patches_keep_their_meaning(){
+        let mut a=turn();
+        push(&mut a,json!({"sessionUpdate":"usage_update","used":900,"size":1000}),"");
+        push(&mut a,json!({"sessionUpdate":"compaction_update","compactionId":"c","status":"in_progress","summary":[{"type":"text","text":"kept"}]}),"");
+        push(&mut a,json!({"sessionUpdate":"compaction_update","compactionId":"c","status":"completed"}),"");
+        push(&mut a,json!({"sessionUpdate":"usage_update","used":200,"size":1000}),"");
+        let values:Vec<Value>=a.updates.iter().map(|s|serde_json::from_str(s).unwrap()).collect();assert_eq!(values[0]["summary"][0]["text"],"kept");assert_eq!(values.last().unwrap()["used"],200);
+        push(&mut a,json!({"sessionUpdate":"compaction_update","compactionId":"c","status":"completed","summary":null}),"");
+        let compaction:Value=serde_json::from_str(&a.updates[0]).unwrap();assert!(compaction["summary"].is_null());
+        let count=a.updates.len();push(&mut a,json!({"sessionUpdate":"notice","title":"temporary","severity":"info"}),"");assert_eq!(a.updates.len(),count);
     }
     #[test]
     fn compacts_chunks_and_updates_without_losing_order_or_credentials() {

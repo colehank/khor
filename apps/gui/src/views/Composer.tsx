@@ -338,11 +338,12 @@ export function ModeSeat({
 
 /** One of the agent's own settings, as the ＋ menu draws it. */
 export type AddOption =
-  | { kind: "switch"; id: string; name: string; note: string | null; on: boolean; onToggle: () => void }
+  | { kind: "switch"; id: string; name: string; category?: string | null; note: string | null; on: boolean; onToggle: () => void }
   | {
       kind: "values";
       id: string;
       name: string;
+      category?: string | null;
       note: string | null;
       current: string;
       values: { value: string; name: string; note: string | null; heading: string | null }[];

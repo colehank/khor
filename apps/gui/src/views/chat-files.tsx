@@ -226,12 +226,15 @@ export function PendingChips({ items, onRemove }: { items: Pending[]; onRemove: 
  * picked. One line for both conversations — a machine's (`MachineChat`)
  * and an agent's (`ChatView`) — so the two cannot say it two ways.
  */
+export type SendIntoControl = {path:string;pick:()=>void;reset:(()=>void)|null};
+
 export function SendInto({
   machine,
   name,
   into,
   onInto,
   className,
+  render,
 }: {
   /** The API's spelling, for the picker: `""` is this machine. */
   machine: string;
@@ -241,6 +244,8 @@ export function SendInto({
   into: string | null;
   onInto: (into: string | null) => void;
   className?: string;
+  /** Reuse this location and picker from an action menu. */
+  render?: (control:SendIntoControl)=>ReactNode;
 }) {
   const [at, setAt] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
@@ -256,7 +261,7 @@ export function SendInto({
   }, [name]);
   return (
     <>
-      <div
+      {render?render({path:into??at??"~/khor-drop",pick:()=>setPicking(true),reset:into===null?null:()=>onInto(null)}):<div
         data-send-into={into ?? ""}
         className={cn("flex min-w-0 items-center gap-in text-caption text-muted-foreground", className)}
       >
@@ -271,7 +276,7 @@ export function SendInto({
             {gui.store_place_reset}
           </Button>
         )}
-      </div>
+      </div>}
       <DirPicker open={picking} onOpenChange={setPicking} machine={machine} fixed onPick={(p) => onInto(p.path)} />
     </>
   );

@@ -63,7 +63,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::v1::{
-    SessionConfigKind, SessionConfigOption, SessionConfigOptionValue, SessionModeId, SessionUpdate,
+    SessionConfigOption, SessionConfigOptionValue, SessionModeId, SessionUpdate,
 };
 use khor_catalog::msg;
 use khor_core::{SessionId, State};
@@ -79,7 +79,10 @@ pub enum GuiOp {
     Say(String),
     /// The answer to [`GuiNote::Ask`] with this number: the chosen
     /// option id, or `None` to refuse.
-    Answer { ask: u64, option: Option<String> },
+    Answer {
+        ask: u64,
+        option: Option<String>,
+    },
     /// End the conversation: the agent dies with the connection. Held
     /// at its position — frames are positional msgpack, and an old host
     /// reading a new client must fail on the frame, never misread an
@@ -129,7 +132,10 @@ pub enum GuiOp {
     SetMode(String),
     /// Set one of the agent's options to a listed value or a switch
     /// position. Tail-appended, and answered the same two ways.
-    SetOption { id: String, value: Choice },
+    SetOption {
+        id: String,
+        value: Choice,
+    },
     /// **One slice of an op too big for one frame** (a turn carrying
     /// photos): the op's own frame bytes, in order. The host keeps them
     /// per connection and runs the op at [`GuiOp::Parts`]. Ops sent
@@ -144,7 +150,19 @@ pub enum GuiOp {
     Parts,
     /// Authenticated local controller starts one durable A2A input. Tail-only;
     /// old hosts refuse it, and the controller reports that failure.
-    Delegate { task: String, message: String },
+    Delegate {
+        task: String,
+        message: String,
+    },
+    ElicitAnswer {
+        ask: u64,
+        response: String,
+    },
+    Control {
+        token: String,
+        operation: String,
+        payload: String,
+    },
 }
 
 /// How big one [`GuiOp::Part`] is: well under the host's frame cap, and
@@ -184,7 +202,10 @@ pub fn write_op(
         sent += slice.len();
         progress(sent, bytes.len());
     }
-    write_frame(&mut *conn.lock().unwrap_or_else(|p| p.into_inner()), &GuiOp::Parts)
+    write_frame(
+        &mut *conn.lock().unwrap_or_else(|p| p.into_inner()),
+        &GuiOp::Parts,
+    )
 }
 
 /// One connection's ops as they are read, slices put back together
@@ -280,7 +301,10 @@ pub enum GuiNote {
     /// memory — so the next face to read this conversation paints live
     /// buttons on a permission that was settled minutes ago, and
     /// pressing one answers a request that already has an answer.
-    Answered { ask: u64, option: Option<String> },
+    Answered {
+        ask: u64,
+        option: Option<String>,
+    },
     /// What the agent on the other end said it can do, told to a face
     /// the moment it attaches (`khor_acp::Facts`). Tail-appended.
     ///
@@ -331,7 +355,9 @@ pub enum GuiNote {
     /// words are looked up at the last moment (`zh.toml`'s own rule).
     /// A sentence here would freeze today's wording into the protocol
     /// and reach a face that cannot translate it.
-    Refused { why: String },
+    Refused {
+        why: String,
+    },
     /// What this session can be set to and what it is set to, as the
     /// protocol's own JSON: `{"modes": SessionModeState | null,
     /// "options": [SessionConfigOption]}` (`khor_acp::Settings`). Told
@@ -343,7 +369,25 @@ pub enum GuiNote {
     /// shape. Tail-appended.
     Settings(String),
     /// Sent only to a client which used Delegate; never broadcast to old faces.
-    Delegated { task: String, why: Option<String> },
+    Delegated {
+        task: String,
+        why: Option<String>,
+    },
+    Capabilities(String),
+    Elicit {
+        ask: u64,
+        request: String,
+    },
+    ElicitAnswered {
+        ask: u64,
+        response: String,
+    },
+    ControlResult {
+        token: String,
+        operation: String,
+        data: Option<String>,
+        error: Option<String>,
+    },
 }
 
 /// The two keys [`GuiNote::Refused`] travels under. Constants rather
@@ -371,31 +415,10 @@ fn has_settings(s: &khor_acp::Settings) -> bool {
     s.modes.is_some() || !s.options.is_empty() || s.model.is_some()
 }
 
-/// An option change the agent took but answered with no list — the
-/// protocol has it send the whole list back, and most do; for one
-/// that does not, the one option this face changed is moved here so
-/// the screen does not read the old value over a change that took.
-fn apply_choice(options: &mut [SessionConfigOption], id: &str, value: &Choice) {
-    let Some(option) = options.iter_mut().find(|o| o.id.to_string() == id) else {
-        return;
-    };
-    match (&mut option.kind, value) {
-        (SessionConfigKind::Select(s), Choice::Value(v)) => {
-            s.current_value = v.clone().into();
-        }
-        (SessionConfigKind::Boolean(b), Choice::Switch(on)) => b.current_value = *on,
-        _ => {}
-    }
-}
-
-/// What a change a face asked for came back as.
+/// The complete state returned by a setting change, including an empty list.
 enum Setting {
     Mode(String),
-    Options {
-        list: Vec<SessionConfigOption>,
-        id: String,
-        value: Choice,
-    },
+    Options { list: Vec<SessionConfigOption> },
 }
 
 /// Where the freshly-minted session id is written for the opener —
@@ -414,6 +437,26 @@ pub fn spawn_gui_host(
     agent: bool,
 ) -> Result<SessionId, String> {
     spawn_ghost(root, cwd, title, cmd, None, vendor, agent)
+}
+
+pub fn spawn_gui_host_context(
+    root: &std::path::Path,
+    cwd: &std::path::Path,
+    title: &str,
+    cmd: &[String],
+    vendor: &str,
+    environment: &khor_acp::Environment,
+) -> Result<SessionId, String> {
+    spawn_ghost_context(
+        root,
+        Some(cwd),
+        title,
+        cmd,
+        None,
+        Some(vendor),
+        false,
+        Some(environment),
+    )
 }
 
 /// [`spawn_gui_host`], but resuming an existing vendor session — the
@@ -464,8 +507,12 @@ const RESUME_ENV: &str = "KHOR_GHOST_RESUME";
 /// `LiveKind::learn_category` never overwrites what is already there.
 const VENDOR_ENV: &str = "KHOR_GHOST_VENDOR";
 
-fn ghost_command(root: &std::path::Path, executable: &std::path::Path) -> Result<std::process::Command, String> {
-    let root = std::fs::canonicalize(root).map_err(|error| msg::cant_read(root.display(), error))?;
+fn ghost_command(
+    root: &std::path::Path,
+    executable: &std::path::Path,
+) -> Result<std::process::Command, String> {
+    let root =
+        std::fs::canonicalize(root).map_err(|error| msg::cant_read(root.display(), error))?;
     let mut command = std::process::Command::new(executable);
     // Only this child receives its session store; concurrent GUI requests keep
     // independent roots without changing the parent process environment.
@@ -482,6 +529,18 @@ fn spawn_ghost(
     vendor: Option<&str>,
     agent: bool,
 ) -> Result<SessionId, String> {
+    spawn_ghost_context(root, cwd, title, cmd, resume, vendor, agent, None)
+}
+fn spawn_ghost_context(
+    root: &std::path::Path,
+    cwd: Option<&std::path::Path>,
+    title: &str,
+    cmd: &[String],
+    resume: Option<&str>,
+    vendor: Option<&str>,
+    agent: bool,
+    environment: Option<&khor_acp::Environment>,
+) -> Result<SessionId, String> {
     let exe = crate::self_exe()?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
@@ -489,6 +548,17 @@ fn spawn_ghost(
         crate::link::fresh_hex()?
     ));
     let mut c = ghost_command(root, &exe)?;
+    match environment {
+        Some(context) => {
+            c.env(
+                "KHOR_GHOST_CONTEXT",
+                serde_json::to_string(context).map_err(|e| e.to_string())?,
+            );
+        }
+        None => {
+            c.env_remove("KHOR_GHOST_CONTEXT");
+        }
+    }
     if let Some(cwd) = cwd {
         c.current_dir(cwd);
     }
@@ -637,12 +707,28 @@ pub fn gui_host_main(
     // has pinned the process elsewhere (第十四轮 第 4 条).
     let cwd = crate::cwd::standing().unwrap_or_else(std::env::temp_dir);
     let resume = std::env::var(RESUME_ENV).ok();
+    let saved_context = resume
+        .as_ref()
+        .and_then(|sid| std::fs::read_to_string(context_path(&root, sid)).ok());
+    let mut environment: khor_acp::Environment = std::env::var("KHOR_GHOST_CONTEXT")
+        .ok()
+        .or(saved_context)
+        .map(|s| serde_json::from_str(&s))
+        .transpose()
+        .map_err(|e| format!("Invalid session context: {e}"))?
+        .unwrap_or_default();
+    if std::env::var(crate::cagent::AGENT_ENV).is_ok() {
+        environment.mcp_servers.retain(|s| {
+            serde_json::to_value(s)
+                .ok()
+                .is_none_or(|v| v["name"] != "khor")
+        });
+        environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::self_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
+    }
+    let retained_environment = environment.clone();
     let (handle, mut events) = rt
         .block_on(async {
-            match &resume {
-                Some(sid) => khor_acp::start_resume(&command, cwd, sid).await,
-                None => khor_acp::start(&command, cwd).await,
-            }
+            tokio::time::timeout(std::time::Duration::from_secs(28),khor_acp::start_configured(&command,cwd,resume.clone(),environment)).await.unwrap_or_else(|_|Err(khor_acp::Refusal::Wont("The agent did not finish the ACP handshake within 28 seconds".into())))
         })
         // The opener is waiting on a file, and this is the only moment
         // that knows why there will never be one. Written before
@@ -654,6 +740,23 @@ pub fn gui_host_main(
             why
         })?;
 
+    let context = context_path(&root, handle.session().0.as_ref());
+    if !retained_environment.mcp_servers.is_empty()
+        || !retained_environment.additional_directories.is_empty()
+    {
+        let parent = context.parent().expect("context parent");
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+        }
+        crate::link::write_private(
+            &context,
+            &serde_json::to_vec(&retained_environment).map_err(|e| e.to_string())?,
+        )?;
+    }
     // The vendor's uuid is the id — the whole merge story hangs on this
     // line (module head).
     let id = crate::adaptor::id_for(&handle.session().0);
@@ -789,11 +892,14 @@ pub fn gui_host_main(
         // by: a face that arrives later must be told the same sentence
         // the first face got, not a second rendering of it.
         let mut asks: Vec<(u64, khor_acp::Ask, GuiNote)> = Vec::new();
+        let mut elicits:Vec<(u64,khor_acp::Elicitation,GuiNote)>=Vec::new();
         let mut next_ask: u64 = 0;
         // Who asked for history while a turn was running: answered when
         // the turn ends (module head — a mid-turn load would interleave
         // replayed and live updates indistinguishably).
         let mut replay_wanted: Vec<u64> = Vec::new();
+        let mut replay: Option<Replay> = None;
+        let (replay_tx,mut replay_rx)=tokio::sync::mpsc::unbounded_channel::<Result<(),String>>();
         let mut in_turn: Option<tokio::task::JoinHandle<()>> = None;
         // Read once here rather than off the handle at each use: this
         // is what the handshake said, and it cannot change while the
@@ -829,7 +935,10 @@ pub fn gui_host_main(
         let mut usage: Option<String> = None;
         let (set_tx, mut set_rx) =
             tokio::sync::mpsc::unbounded_channel::<(u64, Result<Setting, String>)>();
+        let (control_tx,mut control_rx)=tokio::sync::mpsc::unbounded_channel::<(u64,String,String,Result<serde_json::Value,String>)>();
         let handle = Arc::new(handle);
+        let mut controlling=false;
+        let setting_gate=Arc::new(tokio::sync::Mutex::new(()));
         let mut delegated: Option<crate::delegation::HostedTask> = None;
         let mut cancellation_sent: Option<std::time::Instant> = None;
         let mut delegation_tick = tokio::time::interval(std::time::Duration::from_millis(200));
@@ -845,6 +954,7 @@ pub fn gui_host_main(
                 event = events.recv() => match event {
                     Some(khor_acp::Event::Note(n)) => {
                         let json = serde_json::to_string(&n).unwrap_or_default();
+                        if let Some(replay)=replay.as_mut(){replay.push(json);continue;}
                         if matches!(n.update, SessionUpdate::AvailableCommandsUpdate(_)) {
                             commands = Some(json.clone());
                         }
@@ -886,6 +996,7 @@ pub fn gui_host_main(
                         }
                     }
                     Some(khor_acp::Event::Ask(ask)) => {
+                        if ask.request.session_id!=*handle.session(){drop(ask);continue;}
                         let n = next_ask;
                         next_ask += 1;
                         let title = ask.request.tool_call.fields.title.clone().unwrap_or_default();
@@ -902,6 +1013,21 @@ pub fn gui_host_main(
                         fanout.send(&note);
                         asks.push((n, ask, note));
                         let _ = live.report(&id, State::Blocked, Source::Reported);
+                    }
+                    Some(khor_acp::Event::Elicit(request))=>{
+                        let encoded=serde_json::to_value(&request.request).unwrap_or_default();
+                        if encoded["sessionId"].as_str().is_some_and(|s|s!=handle.session().0.as_ref()) {drop(request);continue;}
+                        let ask=next_ask;next_ask+=1;
+                        let note=GuiNote::Elicit{ask,request:encoded.to_string()};
+                        fanout.send(&note);elicits.push((ask,request,note));
+                        let _=live.report(&id,State::Blocked,Source::Reported);
+                    }
+                    Some(khor_acp::Event::ElicitDone(elicitation_id))=>{
+                        if let Some(at)=elicits.iter().position(|(_,q,_)|serde_json::to_value(&q.request).is_ok_and(|v|v["mode"]=="url"&&v["elicitationId"]==elicitation_id)){
+                            let(ask,q,_)=elicits.remove(at);let value=serde_json::json!({"action":"accept"});if let Ok(response)=q.validate(&value){let _=q.answer(response);}
+                            fanout.send(&GuiNote::ElicitAnswered{ask,response:value.to_string()});
+                            let _=live.report(&id,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                        }
                     }
                     Some(khor_acp::Event::Ready { .. }) => {}
                     // A channel that just stops is an ending too, and
@@ -920,6 +1046,7 @@ pub fn gui_host_main(
                         // of all whether asking for the past means
                         // anything.
                         fanout.send_to(who, &agent_note);
+                        fanout.send_to(who,&GuiNote::Capabilities(handle.facts().protocol.to_string()));
                         if has_settings(&settings) {
                             fanout.send_to(who, &GuiNote::Settings(settings_json(&settings)));
                         }
@@ -935,6 +1062,7 @@ pub fn gui_host_main(
                         for (_, _, note) in &asks {
                             fanout.send_to(who, note);
                         }
+                        for(_,_,note) in &elicits{fanout.send_to(who,note);}
                     }
                 }
                 _ = delegation_tick.tick(), if delegated.is_some() => {
@@ -948,8 +1076,29 @@ pub fn gui_host_main(
                     }
                 }
                 op = ops_rx.recv() => match op {
+                    Some((who,GuiOp::ElicitAnswer{ask,response}))=>{
+                        let accepted=elicits.iter().position(|(id,_,_)|*id==ask).and_then(|at|{
+                            let value:serde_json::Value=serde_json::from_str(&response).ok()?;
+                            elicits[at].1.validate(&value).ok().map(|answer|(at,answer))
+                        });
+                        if let Some((at,answer))=accepted{
+                            let(_,request,_)=elicits.remove(at);
+                            let action=serde_json::to_value(&answer).unwrap_or_default()["action"].clone();
+                            let accepted=request.answer(answer).is_ok();
+                            fanout.send(&GuiNote::ElicitAnswered{ask,response:serde_json::json!({"action":if accepted{action}else{serde_json::json!("cancel")}}).to_string()});
+                            let _=live.report(&id,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                        }else{fanout.send_to(who,&GuiNote::Refused{why:refused::SETTING_REFUSED.into()});}
+                    }
+                    Some((who,GuiOp::Control{token,operation,payload}))=>{
+                        if in_turn.is_some()||replay.is_some()||controlling{fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some(refused::TURN_IN_FLIGHT.into())});continue;}
+                        let parsed=serde_json::from_str(&payload);
+                        if token.is_empty()||token.len()>128||payload.len()>16*1024||operation.len()>64||parsed.is_err(){fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some("Invalid session operation".into())});continue;}
+                        controlling=true;
+                        let h=handle.clone();let tx=control_tx.clone();
+                        tokio::spawn(async move{let result=tokio::time::timeout(std::time::Duration::from_secs(120),h.control(&operation,&parsed.unwrap())).await.unwrap_or_else(|_|Err("The agent did not answer this operation".into()));let _=tx.send((who,token,operation,result));});
+                    }
                     Some((who, GuiOp::Delegate { task, message })) => {
-                        if in_turn.is_some() {
+                        if in_turn.is_some() || replay.is_some() || controlling {
                             fanout.send_to(who, &GuiNote::Delegated { task, why: Some("ACP session already has a running turn".into()) });
                             continue;
                         }
@@ -982,7 +1131,7 @@ pub fn gui_host_main(
                             GuiOp::SayWith { text, images, files } => (text, images, files),
                             _ => unreachable!("the pattern above admits nothing else"),
                         };
-                        if in_turn.is_some() {
+                        if in_turn.is_some() || replay.is_some() || controlling {
                             // One turn at a time; a queue would answer
                             // "who said what when" wrongly on every face.
                             // **Said back, though.** Dropping it in
@@ -1033,14 +1182,15 @@ pub fn gui_host_main(
                         }
                     }
                     Some((who, GuiOp::Stop)) => {
+                        cancel_elicits(&mut elicits,&fanout);
                         // The cancel goes to the agent, not to the task:
                         // aborting the join handle here would leave the
                         // agent still working with nobody reading it.
                         // The turn ends the way every turn ends, through
                         // its own `Turn` note.
-                        if in_turn.is_some() {
+                        if in_turn.is_some() || replay.is_some() || controlling {
                             let _ = handle.cancel();
-                            if delegated.is_some() { asks.clear(); }
+                            for(ask,_,_)in asks.drain(..){fanout.send(&GuiNote::Answered{ask,option:None});}
                         } else {
                             // Nothing to stop. A face that got here is
                             // holding a stop button over a turn that is
@@ -1060,16 +1210,16 @@ pub fn gui_host_main(
                     // be busy.
                     Some((who, GuiOp::SetMode(mode))) => {
                         let handle = handle.clone();
-                        let set_tx = set_tx.clone();
-                        tokio::spawn(async move {
+                        let set_tx = set_tx.clone();let gate=setting_gate.clone();
+                        tokio::spawn(async move {let _guard=gate.lock().await;
                             let out = handle.set_mode(&mode).await.map(|()| Setting::Mode(mode));
                             let _ = set_tx.send((who, out));
                         });
                     }
                     Some((who, GuiOp::SetOption { id: option, value })) => {
                         let handle = handle.clone();
-                        let set_tx = set_tx.clone();
-                        tokio::spawn(async move {
+                        let set_tx = set_tx.clone();let gate=setting_gate.clone();
+                        tokio::spawn(async move {let _guard=gate.lock().await;
                             let wire = match &value {
                                 Choice::Value(v) => SessionConfigOptionValue::value_id(v.clone()),
                                 Choice::Switch(on) => SessionConfigOptionValue::boolean(*on),
@@ -1077,11 +1227,11 @@ pub fn gui_host_main(
                             let out = handle
                                 .set_option(&option, wire)
                                 .await
-                                .map(|list| Setting::Options { list, id: option, value });
+                                .map(|list| Setting::Options { list });
                             let _ = set_tx.send((who, out));
                         });
                     }
-                    Some((_, GuiOp::Close)) => break None,
+                    Some((_, GuiOp::Close)) => {asks.clear();elicits.clear();let _=handle.cancel();let _=tokio::time::timeout(std::time::Duration::from_secs(2),handle.control("close",&serde_json::json!({}))).await;break None;},
                     // Put back together by the reader (`Reassembly`).
                     Some((_, GuiOp::Part(_) | GuiOp::Parts)) => {}
                     Some((who, GuiOp::Replay)) => {
@@ -1097,8 +1247,10 @@ pub fn gui_host_main(
                         // empty conversation.
                         if in_turn.is_some() {
                             replay_wanted.push(who);
-                        } else if let Err(e) = replay_to(&handle, &mut events, &fanout, who).await {
-                            break e;
+                        } else if let Some(active)=replay.as_mut(){
+                            if !active.who.contains(&who){active.who.push(who);}
+                        } else {
+                            replay=Some(Replay::start(vec![who],handle.clone(),replay_tx.clone()));
                         }
                     }
                     None => break None,
@@ -1111,6 +1263,7 @@ pub fn gui_host_main(
                         if let Err(error) = task.finish(stop) { break Some(error); }
                     }
                     asks.clear();
+                    cancel_elicits(&mut elicits,&fanout);
                     match turn {
                         Some(Ok(stop)) => {
                             let word = match stop.as_str() {
@@ -1129,16 +1282,18 @@ pub fn gui_host_main(
                     }
                     // The turn is over: the replays that waited on it,
                     // in the order they were asked for.
-                    let mut fell = false;
-                    let mut fall = None;
-                    for who in replay_wanted.drain(..) {
-                        if let Err(e) = replay_to(&handle, &mut events, &fanout, who).await {
-                            (fell, fall) = (true, e);
-                            break;
-                        }
+                    if !replay_wanted.is_empty(){
+                        replay=Some(Replay::start(std::mem::take(&mut replay_wanted),handle.clone(),replay_tx.clone()));
                     }
-                    if fell {
-                        break fall;
+                }
+                result=replay_rx.recv()=>{
+                    if let(Some(active),Some(result))=(replay.take(),result){
+                        cancel_elicits(&mut elicits,&fanout);
+                        for who in active.who{
+                            if result.is_ok()&&!active.overflow{for note in &active.notes{fanout.send_to(who,&GuiNote::History(note.clone()));}}
+                            else{fanout.send_to(who,&GuiNote::ControlResult{token:"replay".into(),operation:"replay".into(),data:None,error:Some(result.as_ref().err().cloned().unwrap_or_else(||"Session history exceeds the replay limit".into()))});}
+                            fanout.send_to(who,&GuiNote::HistoryEnd);
+                        }
                     }
                 }
                 set = set_rx.recv() => {
@@ -1154,12 +1309,8 @@ pub fn gui_host_main(
                             }
                             fanout.send(&GuiNote::Settings(settings_json(&settings)));
                         }
-                        Ok(Setting::Options { list, id, value }) => {
-                            if list.is_empty() {
-                                apply_choice(&mut settings.options, &id, &value);
-                            } else {
-                                settings.options = list;
-                            }
+                        Ok(Setting::Options { list }) => {
+                            settings.options = list;
                             fanout.send(&GuiNote::Settings(settings_json(&settings)));
                         }
                         // The agent said no; the screen keeps what it
@@ -1169,6 +1320,16 @@ pub fn gui_host_main(
                             who,
                             &GuiNote::Refused { why: refused::SETTING_REFUSED.to_owned() },
                         ),
+                    }
+                }
+                result=control_rx.recv()=>{
+                    if let Some((who,token,operation,result))=result {
+                        controlling=false;
+                        let end=result.is_ok()&&matches!(operation.as_str(),"close"|"delete"|"logout");
+                        let(data,error)=match result{Ok(value)=>(Some(value.to_string()),None),Err(e)=>(None,Some(e))};
+                        let deleting=operation=="delete";
+                        fanout.send_to(who,&GuiNote::ControlResult{token,operation,data,error});
+                        if end{if deleting{let _=std::fs::remove_file(&context);}break None;}
                     }
                 }
             }
@@ -1185,36 +1346,63 @@ pub fn gui_host_main(
     Ok(())
 }
 
-/// One replay, answered to one connection: ask the agent
-/// ([`khor_acp::Handle::replay`] — every replayed update is on the
-/// events channel when it resolves), drain, relay as [`GuiNote::History`]
-/// to the asker, close with [`GuiNote::HistoryEnd`]. Runs only between
-/// turns, so what the drain can meet besides replayed notes is an
-/// ending — returned as `Err` for the caller to break the loop with.
-/// A failed load relays nothing and still closes the bracket
-/// ([`GuiNote::HistoryEnd`]'s doc): a partial replay would paint a past
-/// that silently stops short, which is worse than no past at all.
-async fn replay_to(
-    handle: &khor_acp::Handle,
-    events: &mut tokio::sync::mpsc::UnboundedReceiver<khor_acp::Event>,
-    fanout: &Fanout,
-    who: u64,
-) -> Result<(), Option<String>> {
-    let loaded = handle.replay().await;
-    let mut fell = false;
-    let mut fall = None;
-    while let Ok(event) = events.try_recv() {
-        match event {
-            khor_acp::Event::Note(n) if loaded.is_ok() => {
-                let json = serde_json::to_string(&n).unwrap_or_default();
-                fanout.send_to(who, &GuiNote::History(json));
-            }
-            khor_acp::Event::Closed(err) => (fell, fall) = (true, err),
-            _ => {}
+fn context_path(root: &std::path::Path, session: &str) -> PathBuf {
+    root.join(".khor/acp-context").join(format!(
+        "{}.json",
+        blake3::hash(session.as_bytes()).to_hex()
+    ))
+}
+
+/// History is buffered while the main loop continues answering interactions.
+/// A failed/oversized load never paints an apparently complete partial past.
+struct Replay {
+    who: Vec<u64>,
+    notes: Vec<String>,
+    bytes: usize,
+    overflow: bool,
+}
+impl Replay {
+    fn start(
+        who: Vec<u64>,
+        handle: Arc<khor_acp::Handle>,
+        tx: tokio::sync::mpsc::UnboundedSender<Result<(), String>>,
+    ) -> Self {
+        tokio::spawn(async move {
+            let result = handle.replay().await;
+            let _ = tx.send(result);
+        });
+        Self {
+            who,
+            notes: Vec::new(),
+            bytes: 0,
+            overflow: false,
         }
     }
-    fanout.send_to(who, &GuiNote::HistoryEnd);
-    if fell { Err(fall) } else { Ok(()) }
+    fn push(&mut self, json: String) {
+        // Transient notices must never become history, even from a broken adapter.
+        if serde_json::from_str::<serde_json::Value>(&json)
+            .ok()
+            .is_some_and(|v| v["update"]["sessionUpdate"] == "notice")
+        {
+            return;
+        }
+        self.bytes = self.bytes.saturating_add(json.len());
+        if self.bytes > 32 * 1024 * 1024 {
+            self.overflow = true;
+            self.notes.clear();
+        }
+        if !self.overflow {
+            self.notes.push(json);
+        }
+    }
+}
+fn cancel_elicits(elicits: &mut Vec<(u64, khor_acp::Elicitation, GuiNote)>, fanout: &Fanout) {
+    for (ask, _, _) in elicits.drain(..) {
+        fanout.send(&GuiNote::ElicitAnswered {
+            ask,
+            response: serde_json::json!({"action":"cancel"}).to_string(),
+        });
+    }
 }
 
 #[cfg(test)]
@@ -1260,7 +1448,10 @@ mod parts_tests {
         .unwrap();
         let seen = reader.join().unwrap();
         assert!(slices >= 4, "{slices} slices");
-        assert!(matches!(seen[0], GuiOp::Stop), "the stop ran before the turn was whole");
+        assert!(
+            matches!(seen[0], GuiOp::Stop),
+            "the stop ran before the turn was whole"
+        );
         match &seen[1] {
             GuiOp::SayWith { text, images, .. } => {
                 assert_eq!(text, "look");
@@ -1271,10 +1462,20 @@ mod parts_tests {
 
         let mut parts = Reassembly::default();
         for _ in 0..=(MAX_PARTS / PART) {
-            assert!(parts.take(GuiOp::Part(serde_bytes::ByteBuf::from(vec![0u8; PART]))).is_none());
+            assert!(
+                parts
+                    .take(GuiOp::Part(serde_bytes::ByteBuf::from(vec![0u8; PART])))
+                    .is_none()
+            );
         }
-        assert!(parts.take(GuiOp::Parts).is_none(), "past the cap, dropped whole");
-        assert!(matches!(parts.take(GuiOp::Stop), Some(GuiOp::Stop)), "and the next op runs");
+        assert!(
+            parts.take(GuiOp::Parts).is_none(),
+            "past the cap, dropped whole"
+        );
+        assert!(
+            matches!(parts.take(GuiOp::Stop), Some(GuiOp::Stop)),
+            "and the next op runs"
+        );
     }
 }
 
@@ -1283,12 +1484,22 @@ mod command_store_root_tests {
     use super::*;
     #[test]
     fn ghost_child_receives_the_requested_store_before_changing_directory() {
-        let root = std::env::temp_dir().join(format!("khor-ghost-root-{}", crate::link::fresh_hex().unwrap()));
+        let root = std::env::temp_dir().join(format!(
+            "khor-ghost-root-{}",
+            crate::link::fresh_hex().unwrap()
+        ));
         std::fs::create_dir_all(&root).unwrap();
         let mut command = ghost_command(&root, std::path::Path::new("unused-executable")).unwrap();
         command.current_dir(std::env::temp_dir());
-        let configured = command.get_envs().find(|(key, _)| *key == "KHOR_HOME").and_then(|(_, value)| value).unwrap();
-        assert_eq!(std::path::PathBuf::from(configured), std::fs::canonicalize(&root).unwrap());
+        let configured = command
+            .get_envs()
+            .find(|(key, _)| *key == "KHOR_HOME")
+            .and_then(|(_, value)| value)
+            .unwrap();
+        assert_eq!(
+            std::path::PathBuf::from(configured),
+            std::fs::canonicalize(&root).unwrap()
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -45,14 +45,19 @@ use agent_client_protocol::schema::v1::{
     ContentChunk, Cost, CurrentModeUpdate, Diff, EmbeddedResourceResource, InitializeRequest,
     InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
     NewSessionResponse, PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest,
-    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionMode,
-    SessionInfoUpdate, SessionModeState, SessionNotification, SessionUpdate, SetSessionModeRequest,
+    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionInfoUpdate,
+    SessionMode, SessionModeState, SessionNotification, SessionUpdate, SetSessionModeRequest,
     SetSessionModeResponse, StopReason, TextContent, ToolCall, ToolCallContent, ToolCallLocation,
     ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo, Stdio};
 use khor_catalog::msg;
 use tokio::sync::{mpsc, oneshot};
+#[path = "cagent_config.rs"]
+mod config;
+use agent_client_protocol::schema::v1::{
+    ConfigOptionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
+};
 
 /// Where the claude binary is. The default asks PATH, which is the
 /// user's own answer; the variable is the test door (a fake claude
@@ -68,6 +73,8 @@ pub(crate) const AGENT_ENV: &str = "KHOR_AGENT";
 
 /// One claude child and the turn in flight against it.
 struct Shim {
+    config: Mutex<config::Config>,
+    mcp: Mutex<Vec<agent_client_protocol::schema::v1::McpServer>>,
     /// How many tokens fit in this model's context, as **claude last
     /// reported it** — not a table of model names to sizes here.
     ///
@@ -156,6 +163,8 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
     let (frames_tx, frames_rx) = mpsc::unbounded_channel::<serde_json::Value>();
     let shim = Arc::new(Shim {
         root,
+        config: Mutex::new(config::Config::default()),
+        mcp: Mutex::new(Vec::new()),
         frames: frames_tx,
         stdin: Mutex::new(None),
         child_pid: Mutex::new(None),
@@ -168,6 +177,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         asked: AtomicU64::new(0),
     });
     let s_mode = shim.clone();
+    let s_options = shim.clone();
     let s_new = shim.clone();
     let s_prompt = shim.clone();
     let s_load = shim.clone();
@@ -181,7 +191,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
             async move |initialize: InitializeRequest, responder, _connection| {
                 responder.respond(
                     InitializeResponse::new(initialize.protocol_version).agent_capabilities(
-                        AgentCapabilities::new()
+                        AgentCapabilities::new().mcp_capabilities(agent_client_protocol::schema::v1::McpCapabilities::new().http(true).sse(true))
                             .load_session(true)
                             // **Advertised because it is now true.**
                             // A capability advertised before it
@@ -203,16 +213,16 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |new: NewSessionRequest, responder, _connection| match s_new
-                .start_claude(&new.cwd)
-            {
+            async move |new: NewSessionRequest, responder, _connection| {
+                *s_new.mcp.lock().unwrap()=new.mcp_servers;
+                match s_new.start_claude(&new.cwd) {
                 Ok(sid) => {
                     let mut opened = NewSessionResponse::new(sid);
                     opened.modes = Some(modes_listed("default"));
                     responder.respond(opened)
                 }
                 Err(e) => responder.respond_with_internal_error(e),
-            },
+            }},
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
@@ -314,6 +324,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                         let cwd = crate::adaptor::claude::Claude::at(home)
                             .recorded_cwd(&crate::live::clean_leaf(&sid))
                             .unwrap_or_else(|| load.cwd.clone());
+                        *s_load.mcp.lock().unwrap()=load.mcp_servers.clone();
                         if let Err(e) = s_load.start_claude_resume(&cwd, &sid) {
                             return responder.respond_with_internal_error(e);
                         }
@@ -392,6 +403,21 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 })
             },
             agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |set:SetSessionConfigOptionRequest,responder,connection|{
+                if s_options.turn.lock().unwrap().is_some(){return responder.respond_with_internal_error("Wait for the current turn to finish");}
+                if s_options.session.lock().unwrap().as_deref()!=Some(set.session_id.0.as_ref()){return responder.respond_with_internal_error("Unknown session");}
+                let mut next=s_options.config.lock().unwrap().clone();
+                let settings=match next.change(set.config_id.0.as_ref(),&serde_json::to_value(set.value).unwrap_or_default()["value"].clone()){Ok(v)=>v,Err(e)=>return responder.respond_with_internal_error(e)};
+                let shim=s_options.clone();let inner=connection.clone();
+                connection.spawn(async move{
+                    if let Err(error)=shim.request_control(serde_json::json!({"subtype":"apply_flag_settings","settings":settings})).await{return responder.respond_with_internal_error(error);}
+                    let options=next.options();*shim.config.lock().unwrap()=next;
+                    let _=inner.send_notification(SessionNotification::new(set.session_id,SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(options.clone()))));
+                    responder.respond(SetSessionConfigOptionResponse::new(options))
+                })
+            },agent_client_protocol::on_receive_request!(),
         )
         .on_receive_notification(
             async move |_cancel: agent_client_protocol::schema::v1::CancelNotification, _cx| {
@@ -496,7 +522,7 @@ impl Shim {
             "stdio",
         ])
         .args(tail)
-        .args(khor_tools()?)
+        .args(mcp_tools(&self.mcp.lock().unwrap())?)
         .current_dir(cwd)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -531,7 +557,46 @@ impl Shim {
             // The child ended; a pending turn must not hang forever.
             let _ = frames.send(serde_json::json!({ "type": "khor_child_gone" }));
         });
+        let shim = self.clone();
+        tokio::spawn(async move {
+            if let Ok(answer) = shim
+                .request_control(serde_json::json!({"subtype":"initialize","hooks":null}))
+                .await
+            {
+                if let Some(models) = answer["models"].as_array() {
+                    shim.config.lock().unwrap().models = models.clone();
+                    let _ = shim
+                        .frames
+                        .send(serde_json::json!({"type":"khor_config_ready"}));
+                }
+            }
+        });
         Ok(())
+    }
+
+    async fn request_control(
+        &self,
+        request: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let id = format!("khor-config-{}", self.asked.fetch_add(1, Ordering::SeqCst));
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().unwrap().insert(id.clone(), tx);
+        if let Err(e) = self.control(
+            &serde_json::json!({"type":"control_request","request_id":id,"request":request}),
+        ) {
+            self.pending.lock().unwrap().remove(&id);
+            return Err(e);
+        }
+        let answer = tokio::time::timeout(std::time::Duration::from_secs(10), rx).await;
+        self.pending.lock().unwrap().remove(&id);
+        match answer {
+            Ok(Ok(v)) if v["subtype"] == "success" => Ok(v["response"].clone()),
+            Ok(Ok(v)) => Err(v["error"]
+                .as_str()
+                .unwrap_or("Claude refused the session setting")
+                .into()),
+            _ => Err("Claude did not answer the session setting".into()),
+        }
     }
 
     /// One user turn onto claude's stdin.
@@ -598,6 +663,13 @@ async fn drain(
             None => continue,
         };
         match f.get("type").and_then(|t| t.as_str()) {
+            Some("khor_config_ready") => {
+                let options = shim.config.lock().unwrap().options();
+                let _ = conn.send_notification(SessionNotification::new(
+                    sid.clone(),
+                    SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(options)),
+                ));
+            }
             Some("assistant") => {
                 for block in f["message"]["content"].as_array().into_iter().flatten() {
                     if let Some(u) = said(block) {
@@ -652,6 +724,13 @@ async fn drain(
                 // `_meta` is where it rides (`khor_acp::MODEL_META`): ACP
                 // has no stable field for a model.
                 if let Some(model) = f["model"].as_str().filter(|m| !m.is_empty()) {
+                    {
+                        let mut config = shim.config.lock().unwrap();
+                        config.model = Some(model.into());
+                    }
+                    let _ = shim
+                        .frames
+                        .send(serde_json::json!({"type":"khor_config_ready"}));
                     let _ = conn.send_notification(SessionNotification::new(
                         sid.clone(),
                         SessionUpdate::SessionInfoUpdate(
@@ -1136,47 +1215,39 @@ fn kind_of(name: &str) -> ToolKind {
     }
 }
 
-fn khor_tools() -> Result<Vec<String>, String> {
-    if std::env::var(AGENT_ENV).is_err() {
-        return Ok(Vec::new());
+fn mcp_tools(
+    servers: &[agent_client_protocol::schema::v1::McpServer],
+) -> Result<Vec<String>, String> {
+    let scheduler = std::env::var(AGENT_ENV).is_ok();
+    if !scheduler && servers.is_empty() {
+        return Ok(vec![]);
     }
-    let exe = crate::self_exe()?;
-    let root = crate::Node::root_from_env();
-    let config = serde_json::json!({
-        "mcpServers": {
-            "khor": {
-                "command": exe.display().to_string(),
-                "args": ["mcp"],
-                // The store is named rather than inherited: this
-                // child is spawned by a host that may itself have
-                // been started with another one, and a scheduler
-                // pointed at the wrong network is worse than one
-                // with no tools at all.
-                "env": { "KHOR_HOME": root.display().to_string() }
-            }
-        }
-    });
-    let path = std::env::temp_dir().join(format!("khor-mcp-{}.json", std::process::id()));
-    std::fs::write(
-        &path,
-        serde_json::to_vec(&config).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-    let mut args = vec![
-        "--mcp-config".into(),
-        path.display().to_string(),
-        "--strict-mcp-config".into(),
-        "--append-system-prompt".into(),
-        msg::agent_brief().into(),
-    ];
+    let mut configured = crate::acp_mcp::servers(servers, false)?;
+    if scheduler {
+        let exe = crate::self_exe()?;
+        let root = crate::Node::root_from_env();
+        configured["khor"] = serde_json::json!({"command":exe.display().to_string(),"args":["mcp"],"env":{"KHOR_HOME":root.display().to_string()}});
+    }
+    let config = serde_json::json!({"mcpServers":configured});
+    // Claude accepts JSON directly; no credential-bearing temporary config file.
+    let mut args = vec!["--mcp-config".into(), config.to_string()];
+    if scheduler {
+        args.extend([
+            "--strict-mcp-config".into(),
+            "--append-system-prompt".into(),
+            msg::agent_brief().into(),
+        ]);
+    }
     // 读免批 (docs/AGENT.md). Looking at the network is not an act, and
     // asking permission for it teaches a person to press 允许 without
     // reading — which is the same as having no gate on the ones that
     // matter. The names come from the tool table itself, so a tool
     // added on the reading side is free the day it lands and one added
     // on the acting side is gated the day it lands.
-    args.push("--allowedTools".into());
-    args.extend(crate::mcp::free_tools());
+    if scheduler {
+        args.push("--allowedTools".into());
+        args.extend(crate::mcp::free_tools());
+    }
     Ok(args)
 }
 

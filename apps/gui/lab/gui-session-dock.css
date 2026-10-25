@@ -1,0 +1,17 @@
+/* This surface is loaded only by the layout Lab. The composer and deck
+   keep their real controls and gestures; only their shared housing changes. */
+[data-session-dock]{margin-inline:var(--gap-row);margin-bottom:calc(var(--dock-safe-bottom) + var(--gap-in));border-radius:var(--radius-xl)}
+[data-session-dock]>[data-session-bar]{padding-bottom:0}
+[data-session-dock] [data-session-bar-above]>div{padding:var(--gap-xxs)}
+[data-session-dock] [data-chat-box]{border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+[data-session-dock] [data-chat-box]::before{content:none}
+[data-session-dock] [data-session-deck]{min-height:calc(var(--glass-btn) + 2 * var(--gap-xxs));padding:var(--gap-xxs);gap:var(--gap-xxs);border-top:var(--hair) solid var(--border)}
+[data-session-dock] [data-session-deck] :is([data-glass-circle],[data-deck-pill],[data-lab-dock-settings]){box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+[data-session-dock] [data-session-deck] :is([data-glass-circle],[data-deck-pill],[data-lab-dock-settings])::before{content:none}
+[data-session-dock] [data-session-deck] :is([data-glass-circle],[data-lab-dock-settings]){background:transparent}
+[data-session-dock] [data-deck-pill]{background:var(--fill)}
+[data-session-dock] [data-lab-dock-settings]{width:var(--glass-btn);padding:0}
+[data-session-dock] [data-lab-dock-settings]>svg{width:var(--ctl-glyph);height:var(--ctl-glyph)}
+:root[data-keyboard] [data-session-dock] [data-session-deck]{padding-block:0}
+/* A long draft leaves readable history even on a short landscape viewport. */
+[data-session-dock] [data-composer-text]{max-height:min(var(--chat-box),calc(var(--app-h,100dvh) / 4))}

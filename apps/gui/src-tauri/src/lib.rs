@@ -852,6 +852,20 @@ fn chat_set_option(id: String, option: String, value: serde_json::Value) -> Resu
 }
 
 #[tauri::command]
+fn chat_respond(id: String, ask: u64, response: serde_json::Value) -> Result<(), String> {
+    khor_gui_core::chat::chat_respond(&id, ask, &response)
+}
+#[tauri::command]
+fn chat_control(
+    id: String,
+    token: String,
+    operation: String,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    khor_gui_core::chat::chat_control(&id, &token, &operation, &payload)
+}
+
+#[tauri::command]
 fn chat_replay(id: String) -> Result<(), String> {
     khor_gui_core::chat::chat_replay(&id)
 }
@@ -5001,6 +5015,8 @@ pub fn run() {
             chat_stop,
             chat_set_mode,
             chat_set_option,
+            chat_respond,
+            chat_control,
             page_icon,
             page_icons,
             open_link,

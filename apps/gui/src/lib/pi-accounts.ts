@@ -1,10 +1,11 @@
+import type { SessionConfigOption } from "./acp-session";
 import type { KhorAgentAccount } from "@/gen/bindings/KhorAgentAccount";
 import { khorAgent } from "@/api";
 export type PiProvider = { id: string; name: string; chat: boolean; methods: { id: string; label: string }[] };
 export type PiModel = { id: string; name: string; contextWindow: number; reasoning: boolean; image: boolean };
 export type AuthPrompt = { type: "text" | "secret" | "select" | "manual_code"; message: string; placeholder?: string; options?: { id: string; label: string }[] };
 export type AuthEvent = { type: string; message?: string; url?: string; userCode?: string; verificationUri?: string; instructions?: string; links?: { url: string; label?: string }[] };
-export type PiJob = { job?: string; status: string; ask?: number; prompt?: AuthPrompt; events?: AuthEvent[]; account?: string; accountInfo?: KhorAgentAccount; error?: string; result?: { models?: PiModel[]; trouble?: string; credentialType?: string } };
+export type PiJob = { job?: string; status: string; ask?: number; prompt?: AuthPrompt; events?: AuthEvent[]; account?: string; accountInfo?: KhorAgentAccount; error?: string; result?: { models?: PiModel[]; trouble?: string; credentialType?: string; configOptions?: SessionConfigOption[]; model?: string; options?: Record<string,string|boolean> } };
 export const managePi = async (machine: string, payload: Record<string, unknown>) => (await khorAgent("manage", machine, payload)).data as PiJob;
 export async function piJob(machine: string, request: Record<string, unknown>, signal: AbortSignal, progress?: (job: PiJob, id: string) => void) {
   const started = await managePi(machine, request), id = started.job;

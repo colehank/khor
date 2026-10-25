@@ -5237,6 +5237,7 @@ close-tab = "关闭标签页"
 switch-tabs = "{0} 个标签页"
 deck-all-tabs = "全部标签"
 deck-gesture = "上滑打开全部标签，长按后左右轻拨切换，回中暂停，松手确认；上方向键打开全部标签"
+deck-gesture-down = "下滑打开全部标签，长按后左右轻拨切换，回中暂停，松手确认；下方向键打开全部标签"
 deck-preview = "候选：{0}"
 # The address bar's name, standing in as its hint. **One control, two
 # states** — a resting face, and a box with completions once it is
