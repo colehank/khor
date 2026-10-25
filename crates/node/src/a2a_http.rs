@@ -52,6 +52,38 @@ struct Ledger {
     inputs: BTreeMap<String, Input>,
     tasks: BTreeMap<String, Receipt>,
 }
+impl Ledger {
+    fn owns_context(
+        &self,
+        caller: DeviceId,
+        agent: &str,
+        endpoint: &Endpoint,
+        context: &str,
+    ) -> bool {
+        if endpoint.name != agent {
+            return false;
+        }
+        let same_service = |saved: &Endpoint| {
+            saved.name == agent && saved.card_url == endpoint.card_url
+        };
+        if self.tasks.values().any(|receipt| {
+            receipt.record.caller == caller
+                && receipt.record.target.agent == agent
+                && receipt.record.task.context_id == context
+                && same_service(&receipt.endpoint)
+        }) {
+            return true;
+        }
+        // Inputs are durable receipts, not an expiring dedup cache. Future
+        // pruning must preserve context grants before removing these responses.
+        self.inputs.values().any(|input| {
+            input.caller == caller
+                && same_service(&input.endpoint)
+                && matches!(&input.response, Some(p::SendMessageResponse::Message(message))
+                    if message.context_id.as_deref() == Some(context))
+        })
+    }
+}
 struct Files {
     directory: PathBuf,
 }
@@ -578,6 +610,12 @@ fn response(
         }
         p::SendMessageResponse::Message(message) => {
             opaque(&message.message_id)?;
+            if let Some(context) = &message.context_id {
+                opaque(context)?;
+            }
+            if let Some(task) = &message.task_id {
+                opaque(task)?;
+            }
             if message.role != p::Role::Agent
                 || message.parts.is_empty()
                 || serde_json::to_vec(message)
@@ -721,8 +759,9 @@ async fn handle_async(node: &Node, caller: DeviceId, action: Action) -> Result<A
             };
             if let Some(context) = &message.context_id {
                 opaque(context)?;
-                let known = files.transaction(|l| Ok(l.tasks.values().any(|r|
-                    r.record.caller == caller && r.record.task.context_id == *context)))?;
+                let known = files.transaction(|ledger| {
+                    Ok(ledger.owns_context(caller, &agent, &endpoint, context))
+                })?;
                 if !known {
                     return Err("A2A context does not belong to this caller and agent".into());
                 }

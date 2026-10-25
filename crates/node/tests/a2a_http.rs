@@ -59,10 +59,17 @@ impl AgentExecutor for Executor {
             p::PartContent::Text(t) => t.as_str(),
             _ => "",
         };
-        if text == "inline" {
-            return Box::pin(stream::iter([Ok(p::StreamResponse::Message(
-                p::Message::new(p::Role::Agent, vec![p::Part::text("inline answer")]),
-            ))]));
+        if matches!(
+            text,
+            "inline" | "inline-no-context" | "inline-invalid-context"
+        ) {
+            let mut reply = p::Message::new(p::Role::Agent, vec![p::Part::text("inline answer")]);
+            reply.context_id = match text {
+                "inline-no-context" => None,
+                "inline-invalid-context" => Some("invalid\ncontext".into()),
+                _ => Some(ctx.context_id),
+            };
+            return Box::pin(stream::iter([Ok(p::StreamResponse::Message(reply))]));
         }
         let state = match text {
             "ask" => p::TaskState::InputRequired,
@@ -462,7 +469,10 @@ async fn interop(binding: &str) {
     let inline = call(&root.0, send("inline-1", "inline", None, None))
         .await
         .unwrap();
-    assert!(matches!(inline, Answer::Message { .. }));
+    let inline_context = match inline {
+        Answer::Message { message, .. } => message.context_id.expect("inline context"),
+        other => panic!("expected Message, got {other:?}"),
+    };
     let before = service.calls.load(Ordering::SeqCst);
     assert!(matches!(
         call(&root.0, send("inline-1", "inline", None, None))
@@ -471,6 +481,168 @@ async fn interop(binding: &str) {
         Answer::Message { .. }
     ));
     assert_eq!(service.calls.load(Ordering::SeqCst), before);
+    // A direct Message owns a context without fabricating a Task. A new
+    // request may continue it, and reopening the connector retains ownership.
+    let follow = call(
+        &root.0,
+        send("inline-2", "inline", Some(inline_context.clone()), None),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(follow, Answer::Message { message, .. }
+        if message.context_id.as_deref() == Some(inline_context.as_str())));
+    assert_eq!(service.calls.load(Ordering::SeqCst), before + 1);
+    continue_in_another_process(&root.0, &inline_context).await;
+    let after_restart = service.calls.load(Ordering::SeqCst);
+    assert_eq!(after_restart, before + 2);
+    call(
+        &root.0,
+        send(
+            "inline-after-restart",
+            "inline",
+            Some(inline_context.clone()),
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        service.calls.load(Ordering::SeqCst),
+        after_restart,
+        "restart retry must not send twice"
+    );
+
+    assert!(
+        call(
+            &other_caller.0,
+            send(
+                "not-my-inline",
+                "inline",
+                Some(inline_context.clone()),
+                None
+            )
+        )
+        .await
+        .unwrap_err()
+        .contains("does not belong")
+    );
+    let other_root = root.0.clone();
+    let address = service.address.clone();
+    tokio::task::spawn_blocking(move || {
+        Node::open(other_root)
+            .unwrap()
+            .connect_a2a("other", &address, Some(TOKEN))
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    let mut wrong_agent = send(
+        "wrong-agent-inline",
+        "inline",
+        Some(inline_context.clone()),
+        None,
+    );
+    if let Action::Send { agent, .. } = &mut wrong_agent {
+        *agent = "a2a:other".into();
+    }
+    assert!(
+        call(&root.0, wrong_agent)
+            .await
+            .unwrap_err()
+            .contains("does not belong")
+    );
+    assert_eq!(service.calls.load(Ordering::SeqCst), after_restart);
+
+    // A stale/mismatched endpoint receipt cannot authorize the current route.
+    // Only this scratch ledger is fault-injected, then restored byte for byte.
+    let ledger_path = root
+        .0
+        .join(".khor/a2a/http")
+        .join(blake3::hash(b"a2a:fixture").to_hex().as_str())
+        .join("ledger.json");
+    let original = std::fs::read(&ledger_path).unwrap();
+    for boundary in ["endpoint", "agent", "unconfirmed", "task-endpoint"] {
+        let mut ledger: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        if boundary == "task-endpoint" {
+            for receipt in ledger["tasks"].as_object_mut().unwrap().values_mut() {
+                receipt["endpoint"]["card_url"] =
+                    "http://127.0.0.1:1/different-service.json".into();
+            }
+        } else {
+            for input in ledger["inputs"].as_object_mut().unwrap().values_mut() {
+                match boundary {
+                    "endpoint" => {
+                        input["endpoint"]["card_url"] =
+                            "http://127.0.0.1:1/different-service.json".into()
+                    }
+                    "agent" => input["endpoint"]["name"] = "a2a:other".into(),
+                    "unconfirmed" => input["response"] = serde_json::Value::Null,
+                    _ => unreachable!(),
+                }
+            }
+        }
+        std::fs::write(&ledger_path, serde_json::to_vec(&ledger).unwrap()).unwrap();
+        let context = if boundary == "task-endpoint" {
+            initial.task.context_id.clone()
+        } else {
+            inline_context.clone()
+        };
+        let mismatch = call(
+            &root.0,
+            send(
+                &format!("mismatched-{boundary}-inline"),
+                "inline",
+                Some(context),
+                None,
+            ),
+        )
+        .await;
+        std::fs::write(&ledger_path, &original).unwrap();
+        assert!(
+            mismatch.unwrap_err().contains("does not belong"),
+            "boundary {boundary}"
+        );
+    }
+    assert!(
+        call(
+            &root.0,
+            send(
+                "unknown-inline-context",
+                "inline",
+                Some("never-confirmed-context".into()),
+                None
+            )
+        )
+        .await
+        .unwrap_err()
+        .contains("does not belong")
+    );
+    assert_eq!(service.calls.load(Ordering::SeqCst), after_restart);
+
+    let without_context = call(
+        &root.0,
+        send("inline-without-context", "inline-no-context", None, None),
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(without_context, Answer::Message { message, .. } if message.context_id.is_none())
+    );
+    assert!(
+        call(
+            &root.0,
+            send(
+                "inline-invalid-context",
+                "inline-invalid-context",
+                None,
+                None
+            )
+        )
+        .await
+        .unwrap_err()
+        .contains("A2A ID")
+    );
+
     let Answer::Tasks {
         records,
         cached,
@@ -520,6 +692,30 @@ async fn interop(binding: &str) {
         .await
         .is_err()
     );
+    // Disconnect removes discovery only. Confirmed Message context receipts
+    // survive a same-service reconnect and its fresh credential reference.
+    connect(&root.0, &service, Some(TOKEN)).await.unwrap();
+    let reconnected = call(
+        &root.0,
+        send(
+            "inline-reconnected",
+            "inline",
+            Some(inline_context.clone()),
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(reconnected, Answer::Message { message, .. }
+        if message.context_id.as_deref() == Some(inline_context.as_str())));
+    call(
+        &root.0,
+        Action::Disconnect {
+            agent: "a2a:fixture".into(),
+        },
+    )
+    .await
+    .unwrap();
     // A name cannot silently be rebound to a different service.
     let other = server(binding, false).await;
     assert!(
@@ -603,6 +799,16 @@ async fn paired_connector_keeps_credentials_local_and_scopes_callers() {
             .await
             .unwrap(),
     );
+    let local_inline = call(&home.0, send("local-inline", "inline", None, None))
+        .await
+        .unwrap();
+    let Answer::Message {
+        message: local_inline,
+        ..
+    } = local_inline
+    else {
+        panic!("expected Message")
+    };
     let host = Node::open_as(home.0.clone(), "connector").unwrap();
     let home_id = host.device_str().to_owned();
     let serving = Serving(tokio::spawn(async move { host.serve().await }));
@@ -642,6 +848,51 @@ async fn paired_connector_keeps_credentials_local_and_scopes_callers() {
     ] {
         assert!(client.delegation_on(&home_id, action).await.is_err());
     }
+    assert!(
+        client
+            .delegation_on(
+                &home_id,
+                send("stolen-inline", "inline", local_inline.context_id, None)
+            )
+            .await
+            .unwrap_err()
+            .contains("does not belong")
+    );
+    let remote_inline = client
+        .delegation_on(&home_id, send("remote-inline", "inline", None, None))
+        .await
+        .unwrap();
+    let Answer::Message {
+        message: remote_inline,
+        ..
+    } = remote_inline
+    else {
+        panic!("expected Message")
+    };
+    let remote_context = remote_inline.context_id.expect("remote inline context");
+    let remote_follow = client
+        .delegation_on(
+            &home_id,
+            send(
+                "remote-inline-next",
+                "inline",
+                Some(remote_context.clone()),
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(remote_follow, Answer::Message { message, .. }
+        if message.context_id.as_deref() == Some(remote_context.as_str())));
+    assert!(
+        call(
+            &home.0,
+            send("home-steals-inline", "inline", Some(remote_context), None)
+        )
+        .await
+        .unwrap_err()
+        .contains("does not belong")
+    );
     let Answer::Tasks { records, .. } = client
         .delegation_on(
             &home_id,
@@ -701,4 +952,43 @@ async fn paired_connector_keeps_credentials_local_and_scopes_callers() {
     assert_eq!(canceled.task.status.state, p::TaskState::Canceled);
     assert!(!caller.0.join(".khor/a2a/http/credentials").exists());
     drop(serving);
+}
+
+async fn continue_in_another_process(root: &Path, context: &str) {
+    let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", "continue_saved_message_child", "--ignored"])
+        .env("KHOR_A2A_CONTEXT_ROOT", root)
+        .env("KHOR_A2A_CONTEXT_ID", context)
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(Duration::from_secs(20), command.output())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
+#[ignore = "fresh process used by the Message-context persistence regression"]
+async fn continue_saved_message_child() {
+    let root = PathBuf::from(std::env::var_os("KHOR_A2A_CONTEXT_ROOT").unwrap());
+    let context = std::env::var("KHOR_A2A_CONTEXT_ID").unwrap();
+    let answer = call(
+        &root,
+        send(
+            "inline-after-restart",
+            "inline",
+            Some(context.clone()),
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(answer, Answer::Message { message, .. }
+        if message.context_id.as_deref() == Some(context.as_str())));
 }
