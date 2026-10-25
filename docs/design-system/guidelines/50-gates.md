@@ -765,3 +765,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 
 `npm run chat-poll`：真实 ChatView/React 与 api.ts，检查失败退避、结束停止、游标续接、成功/重连复位、隐藏与前台恢复、HTTP节拍、卸载与旧owner迟到结果。加入 `npm run test:interaction`；`CHAT_POLL_WEBKIT=1` 同跑 WebKit，`CHAT_POLL_CHECK_DIR` 指定每次请求时间与断言报告，`CHAT_POLL_SCENARIOS` 可选定场景，非法/空选择失败。传输与时钟为fixture，不能代替真正App/网络运行。
+
+
+`npm run page-retention`：真实网页资源ledger与per-tab原生操作队列，控制native Promise测试迟到取得、多个集合owner、8活页LRU、StrictMode共享、失败与关闭重开。加入 `npm run test:unit`，`PAGE_RETENTION_CASES`选定自有场景名，空/未知/原型名拒绝。`npm run page-retention-ui`：真实BrowserPane/MachineWeb在React StrictMode和两引擎下检查清理；加入 `npm run test:interaction`，`PAGE_RETENTION_UI_OUT`保留报告/截图。native IPC为fixture，真实WebView/借网句柄数量另做App验收。
