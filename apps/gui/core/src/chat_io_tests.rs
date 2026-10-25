@@ -185,7 +185,9 @@ fn queued_close_failure_keeps_its_original_token_across_same_text_resubmission()
     assert!(
         matches!(attached.chat.frames.lock().unwrap().held.as_slice(), [ChatFrame::Unsent { token: Some(token), .. }] if token == "old-draft")
     );
-    assert!(fresh.chat.frames.lock().unwrap().held.is_empty());
+    assert!(
+        matches!(fresh.chat.frames.lock().unwrap().held.as_slice(), [ChatFrame::SendCommitted { token }] if token == "new-draft")
+    );
     release.send(()).unwrap();
     blocker.wait().unwrap();
 }
@@ -240,12 +242,24 @@ fn send_tokens_are_optional_bounded_and_never_encoded_on_the_host_wire() {
         );
     }
     for token in [None, Some("draft-2_A.b:c".into()), Some("x".repeat(128))] {
+        let expected = token.clone();
         let pending =
             submit_say_with_token(&attached.id, "hi".into(), vec![], vec![], token).unwrap();
         assert!(
             matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(), GuiOp::SayWith { text, images, files } if text == "hi" && images.is_empty() && files.is_empty())
         );
         pending.wait().unwrap();
+        let frames = &attached.chat.frames.lock().unwrap().held;
+        if let Some(expected) = expected {
+            assert!(
+                matches!(frames.last(), Some(ChatFrame::SendCommitted { token }) if token == &expected)
+            );
+        } else {
+            assert!(
+                frames.is_empty(),
+                "legacy untagged success needs no uncorrelated receipt"
+            );
+        }
     }
 }
 
@@ -297,6 +311,59 @@ fn http_admits_the_token_before_returning_and_rejects_invalid_tokens() {
     assert!(
         matches!(attached.chat.frames.lock().unwrap().held.as_slice(), [ChatFrame::SendCancelled{token:Some(token),reconnect:false}] if token=="http-draft")
     );
+}
+
+#[test]
+fn http_returns_at_admission_and_commits_only_after_the_complete_input_is_written() {
+    let mut attached = Attached::new();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (release, blocked) = mpsc::channel();
+    let blocker = attached
+        .chat
+        .turns
+        .submit(move || blocked.recv().map_err(|e| e.to_string()))
+        .unwrap();
+    assert_eq!(
+        crate::api::answer(
+            &runtime,
+            std::path::Path::new("."),
+            "chat_say",
+            &serde_json::json!({"id":attached.id,"text":"commit me","token":"http-commit"})
+        )
+        .unwrap(),
+        "null"
+    );
+    assert!(
+        chat_poll(&attached.id, 0).unwrap().frames.is_empty(),
+        "HTTP admission cannot report a write commit"
+    );
+    release.send(()).unwrap();
+    blocker.wait().unwrap();
+    assert!(
+        matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(), GuiOp::SayWith { text, .. } if text == "commit me")
+    );
+    let until = Instant::now() + Duration::from_secs(2);
+    loop {
+        let batch = chat_poll(&attached.id, 0).unwrap();
+        if !batch.frames.is_empty() {
+            assert!(
+                matches!(batch.frames.as_slice(), [ChatFrame::SendCommitted { token }] if token == "http-commit")
+            );
+            assert_eq!(
+                serde_json::to_value(&batch.frames).unwrap(),
+                serde_json::json!([{"kind":"send_committed","token":"http-commit"}])
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < until,
+            "successful write had no commit receipt"
+        );
+        std::thread::yield_now();
+    }
 }
 
 #[test]

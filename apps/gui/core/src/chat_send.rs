@@ -63,7 +63,7 @@ impl Sending {
         state.stop.is_some() && !std::mem::replace(&mut state.notified, true)
     }
 
-    pub fn claim_failure(&self) -> bool {
+    pub fn claim_receipt(&self) -> bool {
         !std::mem::replace(&mut self.state.lock().unwrap().notified, true)
     }
 

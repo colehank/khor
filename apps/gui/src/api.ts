@@ -1349,7 +1349,10 @@ export const chatWait = (id: string, since: number, ms: number) =>
 /** One user turn. `images` are `[mime, base64]` pairs and are only ever
     non-empty when the agent said it takes them (`ChatFrame::Agent`'s
     `images`) — the host puts them on a different op (`GuiOp::SayWith`),
-    so an empty list costs the old frame exactly nothing. */
+    so an empty list costs the old frame exactly nothing.
+    With a client token, delivery follows send_committed / unsent /
+    send_cancelled receipts. HTTP may resolve this request at admission;
+    resolving the promise alone must not release the retained draft. */
 export const chatSay = (
   id: string,
   text: string,

@@ -102,6 +102,9 @@ pub enum ChatFrame {
     /// An admitted input was cancelled before reaching the agent. The optional
     /// client token correlates the retained draft without keeping its payload.
     SendCancelled { token: Option<String>, reconnect: bool },
+    /// The complete input was written, including its final commit frame.
+    /// This is not an acknowledgement of remote execution or agent completion.
+    SendCommitted { token: String },
     /// What this session can be set to and what it is set to
     /// (`khor_node::gui_host::GuiNote::Settings`): `{ modes, options }`
     /// in the protocol's own JSON, `unknown` here for the reason
@@ -701,6 +704,17 @@ pub fn submit_say_with_token(
             .and_then(|_| send_turn(&job.chat, text, images, files, &job.sending));
         if let Err(why) = &result {
             failed_send(&job.chat, &job.sending, why);
+        } else if let Some(token) = &job.sending.token
+            && job.sending.claim_receipt()
+        {
+            job.chat
+                .frames
+                .lock()
+                .unwrap()
+                .push(ChatFrame::SendCommitted {
+                    token: token.clone(),
+                });
+            job.chat.arrived.notify_waiters();
         }
         job.complete = true;
         result
@@ -797,7 +811,7 @@ fn failed_send(chat: &Chat, send: &Sending, why: &str) {
             send,
             chat.left.load(Ordering::Relaxed) || chat.gone.load(Ordering::Relaxed),
         );
-    } else if send.claim_failure() {
+    } else if send.claim_receipt() {
         chat.frames.lock().unwrap().push(ChatFrame::Unsent {
             miss: crate::miss::read(why, chat.far.as_deref()),
             token: send.token.clone(),

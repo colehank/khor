@@ -223,6 +223,13 @@ fn cancel_upload(legacy: bool) {
         !batch
             .frames
             .iter()
+            .any(|frame| matches!(frame, ChatFrame::SendCommitted { .. })),
+        "cancelled upload cannot report a successful write commit"
+    );
+    assert!(
+        !batch
+            .frames
+            .iter()
             .any(|frame| matches!(frame, ChatFrame::Unsent { .. }))
     );
     assert_eq!(fixture.prompt_count(), 0);
