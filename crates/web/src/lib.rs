@@ -24,6 +24,7 @@
 //! exactly that reason.
 
 pub mod key;
+mod json_request;
 
 mod assets {
     include!(concat!(env!("OUT_DIR"), "/assets.rs"));
@@ -312,11 +313,9 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             // Read only once the request is allowed to be here: a body
             // from somebody who has not shown a key is a body khor has
             // no reason to pull into memory.
-            let mut body = String::new();
-            let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
-            let args: serde_json::Value =
-                serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
-            match khor_gui_core::api::answer(rt, root, cmd, &args) {
+            match json_request::dispatch(req.as_reader(), |args| {
+                khor_gui_core::api::answer(rt, root, cmd, args)
+            }) {
                 Ok(json) => Reply {
                     code: 200,
                     kind: "application/json",
