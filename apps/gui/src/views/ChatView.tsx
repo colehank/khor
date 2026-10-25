@@ -130,6 +130,7 @@ const IDLE_MS = 500;
     of either beat above, and a frame shows the moment it lands (round
     NET-2, piece 6). */
 const WAIT_MS = 1000;
+const FAILED_MS_MOST = 5000;
 /**
  * How often a *discovered* conversation's transcript is re-read.
  *
@@ -886,8 +887,11 @@ export function ChatView({
     // racing on one cursor.
     let timer: number | null = null;
     let asking = false;
+    let finished = false;
+    let retryDelay = 0;
+    let retryNotBefore = 0;
     const tick = () => {
-      if (stopped) return;
+      if (stopped || finished) return;
       if (timer !== null) {
         window.clearTimeout(timer);
         timer = null;
@@ -895,7 +899,13 @@ export function ChatView({
       // A poll already in the air will schedule the next one itself;
       // calling in on top of it would fork the loop in two.
       if (asking) return;
+      const remaining = retryNotBefore - Date.now();
+      if (remaining > 0) {
+        timer = window.setTimeout(tick, remaining);
+        return;
+      }
       asking = true;
+      let outcome: "live" | "ended" | "failed" = "failed";
       const pushed = inApp && pace.current !== HIDDEN_MS;
       (pushed ? chatWait(id, cursor, WAIT_MS) : chatPoll(id, cursor))
         .then((batch) => {
@@ -1022,15 +1032,25 @@ export function ChatView({
             setPaint((prev) => absorb(prev, batch.frames));
           }
           if (batch.gone) setGone(true);
+          outcome = batch.gone ? "ended" : "live";
         })
         .catch(() => {
-          // A poll that misses answers on the next tick; a chat that
-          // never opened is `gone` below.
+          // A failed wait may return immediately; it has not paid a beat.
         })
         .finally(() => {
           asking = false;
-          // A held wait has already waited: the next is asked at once.
-          if (!stopped) timer = window.setTimeout(tick, pushed ? 0 : pace.current);
+          if (stopped) return;
+          finished = outcome === "ended";
+          if (finished) return;
+          retryDelay = outcome === "failed"
+            ? Math.min(FAILED_MS_MOST, retryDelay === 0 ? LIVE_MS * 2 : retryDelay * 2)
+            : 0;
+          const nextPace = document.hidden ? HIDDEN_MS : pace.current;
+          const nextPushed = inApp && nextPace !== HIDDEN_MS;
+          const after = Math.max(retryDelay, nextPushed ? 0 : nextPace);
+          // Pace/visibility kicks must not bypass an outstanding failure wait.
+          retryNotBefore = retryDelay > 0 ? Date.now() + retryDelay : 0;
+          timer = window.setTimeout(tick, after);
         });
     };
     pollNow.current = tick;
