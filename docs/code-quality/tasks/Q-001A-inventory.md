@@ -537,4 +537,3 @@
 | `apps/gui/src/views/more/WindowAppearanceSection.tsx` | 图/路径登记，未源码深审 |
 | `apps/gui/src/vite-env.d.ts` | 图/路径登记，未源码深审 |
 | `apps/gui/src/words.ts` | 图/路径登记，未源码深审 |
-

@@ -46,7 +46,7 @@
 - 桌面： http://127.0.0.1:23820/lab/quality.html
 - 当前同网入口： http://172.23.250.213:23820/lab/quality.html （本机HTTP200已核验，地址变化后重查）
 - 全部虚构会话/commit，同源API，无真实模型/用户文件操作。键盘模拟原位改变visualViewport，手机全屏入口用于真实键盘操作。保留Lab服务供用户检查。
-- 各测试临时服务已由所有者清理；WebKit浏览器在/Volumes/disk0/khor-playwright。iPhone17Pro模拟器E52DFE43-E03C-4FBE-99D4-C8CEDEE87ED9由本轮启动，Safari只访问隔离Lab。
+- 各测试临时服务已由所有者清理；WebKit浏览器在/Volumes/disk0/khor-playwright。iPhone17Pro模拟器E52DFE43-E03C-4FBE-99D4-C8CEDEE87ED9由本轮启动并已停止，Safari只访问隔离Lab。
 
 ## 尚未完成与下一步
 
