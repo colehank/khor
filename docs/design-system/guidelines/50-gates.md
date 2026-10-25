@@ -733,3 +733,15 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 - `npm run session-navigation`：直接运行正式会话扇形状态机与几何；首项即时预选、三档容差、循环、回中、取消、过冲刹车、边缘起手、紧凑布局和标题边界。
 - `npm run session-navigation-ui`：仅替换数据源的正式 App；GUI 输入与模型菜单、右下头像、终端／展开药丸、鼠标／浏览器触摸、取消与回中、草稿隔离、窄宽屏和键盘布局。浏览器模拟不代替 iPhone 握姿与系统键盘验收。
+
+
+### 代码治理首批回归（2026-10-25）
+
+| 入口 | 验证范围 |
+|---|---|
+| `npm run save-road` | 生产自动保存模块与真实内容摘要 compare-and-write 语义的隔离 fixture：内容回环、同编辑线排队、不同编辑线冲突、失败重试、丢弃在飞请求与新一代编辑、退出 flush。默认 `npm test` 同时运行；不写用户文件。 |
+| `npm run scroll-lifecycle` | 生产 CommitPage、ChatView、MachineChat：菜单鼠标／触摸／键盘选取与 Escape、关闭后的目标和焦点；长会话键盘逐帧开合、输入框增高、新消息、历史阅读位置。默认可见 Chrome，`QUALITY_ENGINES=chrome,webkit` 另验 WebKit；`QUALITY_ONLY` 选择场景，`QUALITY_PORT`／`QUALITY_OUT` 隔离环境与证据。模拟 visualViewport 不等于 iOS App 键盘验收。 |
+| `npm run test:interaction` | 顺序运行 `ai-elements` 与 `scroll-lifecycle`，覆盖本轮聊天内容和滚动／焦点交互。与默认模型／类型检查分开，不能用 `npm test` 代称已跑此入口。 |
+| `npm run quality:preview` | 本轮隔离 Lab 开发服务；打开 `/lab/quality.html`。正式页面使用虚构会话与提交，手机通过同源 API 访问。它是人工验收入口，不是通过结论。 |
+
+`gates` 仅核对入口与文档登记，不执行以上回归。证据需记录源码版本、浏览器、场景及未覆盖平台。

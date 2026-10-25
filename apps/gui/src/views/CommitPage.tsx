@@ -81,10 +81,12 @@ export function CommitPage({
   }, [machine, root, commit.id]);
   const body = bodyOf(commit);
   const scroller = useRef<HTMLDivElement>(null);
+  const selectedFile = useRef<string | null>(null);
   const jump = (path: string) => {
     const box = scroller.current;
     const bar = [...(box?.querySelectorAll<HTMLElement>("[data-commit-file]") ?? [])].find((e) => e.dataset.commitFile === path);
     if (!box || !bar) return;
+    bar.focus({ preventScroll: true });
     box.scrollTop += bar.getBoundingClientRect().top - box.getBoundingClientRect().top;
   };
   const jumps = shown !== null && shown.files.length > 1;
@@ -147,9 +149,18 @@ export function CommitPage({
                               {gui.commit_jump}<IconChevronDown className="size-affordance"/>
                             </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent side="bottom" align="center" sideOffset={8} data-commit-jump-menu className="overflow-hidden">
+                          <DropdownMenuContent
+                            side="bottom" align="center" sideOffset={8} data-commit-jump-menu className="overflow-hidden"
+                            onCloseAutoFocus={(event) => {
+                              const path = selectedFile.current;
+                              selectedFile.current = null;
+                              if (path === null) return;
+                              event.preventDefault();
+                              jump(path);
+                            }}
+                          >
                             <MenuViewport>{shown.files.map((f) => (
-                              <DropdownMenuItem key={f.path} data-commit-jump-item={f.path} onSelect={() => jump(f.path)}>
+                              <DropdownMenuItem key={f.path} data-commit-jump-item={f.path} onSelect={() => { selectedFile.current = f.path; }}>
                                 <span className={cn("w-[1ch] flex-none font-mono text-caption", markInk(f.status))}>{f.status}</span>
                                 <span className="min-w-0 truncate" title={f.path}>
                                   {basename(f.path)}
@@ -182,7 +193,7 @@ export function CommitPage({
     whose lines these are. */
 function FileChange({ f }: { f: GitCommitFile }) {
   return (
-    <section data-commit-file={f.path} className="border-b border-border">
+    <section data-commit-file={f.path} tabIndex={-1} aria-label={f.path} className="border-b border-border">
       <div
         data-commit-file-bar
         className="sticky top-0 z-10 flex min-w-0 items-center gap-in border-b border-border bg-card px-row py-2"

@@ -100,7 +100,7 @@ async function checkDisclosureMotion(page, trigger) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await content.evaluate((el) => getComputedStyle(el).animationName), "none", "reduced motion disables the height animation");
 }
-let browser, vite;
+let browser, vite, currentPage;
 try {
   vite = spawn("node_modules/.bin/vite", ["--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
     cwd: gui, env: { ...process.env, KHOR_FACE_GATE: "1" }, stdio: ["ignore", "pipe", "pipe"],
@@ -114,6 +114,7 @@ try {
   for (const [name, width, scheme] of [["desktop-light", 1280, "light"], ["desktop-dark", 1280, "dark"], ["mobile-light", 390, "light"], ["mobile-dark", 390, "dark"]]) {
     const context = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: "reduce", hasTouch: width < 600, isMobile: width < 600 });
     const page = await context.newPage(), errors = [], requests = [];
+    currentPage = page;
     page.on("pageerror", (error) => { errors.push(error.message); console.error(error.message); });
     const reply = (value) => (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
     const row = (id, title) => ({ id, kind: "gui", title, word: "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "claude", group: "", face: null, hosted: true, attachable: false, last: null, via: null, via_face: null, home: "gate" });
@@ -311,9 +312,7 @@ try {
     // optimistic answer must not make the next session unanswerable.
     otherQueue = [{ kind: "history_end" }, { kind: "ask", ask: 31, title: "Another session", options: [["different", "另一会话的选项"]] }];
     if (width < 600) {
-      const folded = page.locator("[data-session-bar] [data-deck-strip]");
-      if (await folded.isVisible()) await folded.click();
-      await page.locator("[data-session-deck] [data-back]").click();
+      await page.locator("[data-session-bar]").getByRole("button", { name: /^(返回|Back)$/ }).click();
     }
     await page.locator("[data-list] [data-row-open]").filter({ hasText: "Elements B" }).click();
     await page.locator('[data-ask-option="different"]').click();
@@ -327,6 +326,16 @@ try {
   }
   writeFileSync(join(out, "results.json"), JSON.stringify(results, null, 2));
   console.log("AI Elements evidence:", out);
+} catch (error) {
+  if (currentPage && !currentPage.isClosed()) {
+    await currentPage.screenshot({ path: join(out, "failure.png") }).catch(() => {});
+    const state = await currentPage.evaluate(() => ({
+      focus: document.activeElement?.outerHTML,
+      tools: [...document.querySelectorAll("[data-chat-tool]")].map(el => ({ kind: el.getAttribute("data-tool-kind"), expanded: el.querySelector("[data-tool-toggle]")?.getAttribute("aria-expanded"), text: el.textContent })),
+    })).catch(() => null);
+    writeFileSync(join(out, "failure.json"), JSON.stringify({ error: String(error), state }, null, 2));
+  }
+  throw error;
 } finally {
   if (browser) await browser.close();
   if (vite) { vite.kill("SIGTERM"); if (vite.exitCode === null) await new Promise((resolve) => vite.once("exit", resolve)); }

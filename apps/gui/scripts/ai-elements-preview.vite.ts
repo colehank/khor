@@ -73,12 +73,13 @@ function previewBridge(terminal = false): Plugin {
   const streaming = new Set<number>();
   const generation = ids.map(() => 0);
   const timers = new Set<ReturnType<typeof setTimeout>>();
-  const khorUpdates = [
+  const initialKhorUpdates = [
     { sessionUpdate: "agent_thought_chunk", ...text("先查看网络中的设备，再读取目标机器的会话。") },
     { sessionUpdate: "tool_call", toolCallId: "khor-devices", title: "mcp__khor__devices", kind: "read", status: "completed", rawInput: {}, content: [{ type: "content", content: { type: "text", text: "验收环境 · online\n临时测试设备 · online" } }] },
     { sessionUpdate: "tool_call", toolCallId: "khor-sessions", title: "mcp__khor__sessions", kind: "read", status: "completed", rawInput: { machine: "临时测试设备" }, content: [{ type: "content", content: { type: "text", text: "fixture-session · idle" } }] },
     { sessionUpdate: "agent_message_chunk", ...text("**网络检查完成**。两台设备在线，目标机器有一个空闲会话。\n\n这是隔离示例，不连接实际设备或执行命令。") },
   ].map((u) => JSON.stringify(u));
+  let khorUpdates = [...initialKhorUpdates];
   const account = { id: "fixture", name: "示例模型账户", home: device.id, home_name: device.name, provider: "anthropic", default_model: "claude-sonnet-4-6", configured: true, base_url: null, auth_type: "api_key" };
   const modelAccounts = [account];
   let modelConfig = { home: device.id, account: account.id, model: account.default_model, options:{thought_level:"medium",auto_compaction:true} };
@@ -170,6 +171,7 @@ function previewBridge(terminal = false): Plugin {
           preferences.splice(0,preferences.length,...structuredClone(initialPreferences));
           modelConfig={home:device.id,account:account.id,model:account.default_model,options:{thought_level:"medium",auto_compaction:true}};
           frames = ids.map((_, i) => sampleWithSettings(i));
+          khorUpdates = [...initialKhorUpdates];
           res.setHeader("content-type", "application/json"); res.end("true"); return;
         }
         if (req.method !== "POST") return next();
@@ -193,6 +195,7 @@ function previewBridge(terminal = false): Plugin {
         let answer: unknown = null;
         switch (path) {
           case "__ai_preview/khor-approval":khorRunning=body.pending!==false;khorApproval=body.pending===false?null:{id:`approval-${++jobCounter}`,tool:"close",arguments:JSON.stringify({session:"fixture-session",machine:"临时测试设备"})};answer=khorApproval;break;
+          case "__ai_preview/khor-long": khorUpdates = [...initialKhorUpdates, JSON.stringify({ sessionUpdate: "agent_message_chunk", ...text(String(body.text ?? "")) })]; answer = true; break;
           case "__ai_preview/khor-answers":answer=khorAnswers;break;
           case "__ai_preview/acp": frames[index].push(...(Array.isArray(body.frames)?body.frames:[]));answer=true;break;
           case "__ai_preview/answers":answer=interactionAnswers;break;
