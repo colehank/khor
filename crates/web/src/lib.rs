@@ -313,7 +313,7 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             // Read only once the request is allowed to be here: a body
             // from somebody who has not shown a key is a body khor has
             // no reason to pull into memory.
-            match json_request::dispatch(req.as_reader(), |args| {
+            match json_request::dispatch(cmd, req.as_reader(), |args| {
                 khor_gui_core::api::answer(rt, root, cmd, args)
             }) {
                 Ok(json) => Reply {
@@ -322,7 +322,7 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
                     body: json.into_bytes(),
                     remember: None,
                 },
-                Err(sentence) => Reply::refused(400, sentence),
+                Err(error) => Reply::refused(error.code, error.message),
             }
         }
     }
@@ -535,3 +535,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "http_input_tests.rs"]
+mod http_input_tests;
