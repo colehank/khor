@@ -24,6 +24,11 @@ permissions:
   contents: write
 
 jobs:
+  quality:
+    uses: ./.github/workflows/quality.yml
+    permissions:
+      contents: read
+
   # **The face is built once, not four times.**
   #
   # `khor web` serves the desktop GUI's own bundle, and that bundle is
@@ -42,6 +47,7 @@ jobs:
   # by cargo from `crates/catalog/zh.toml` and the Rust structs, which
   # is what keeps the frontend from holding its own copy of either.
   frontend:
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

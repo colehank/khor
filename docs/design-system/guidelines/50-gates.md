@@ -745,3 +745,13 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 | `npm run quality:preview` | 本轮隔离 Lab 开发服务；打开 `/lab/quality.html`。正式页面使用虚构会话与提交，手机通过同源 API 访问。它是人工验收入口，不是通过结论。 |
 
 `gates` 仅核对入口与文档登记，不执行以上回归。证据需记录源码版本、浏览器、场景及未覆盖平台。
+
+
+### 分层运行与持续集成（代码治理 Q-024）
+
+- `npm run test:unit` 运行原默认集合中的快速模块/源码契约检查；`npm run test:types` 检查完整前端类型。`npm test` 仍先生成绑定，然后依次运行两层。
+- `npm run mobile:static` 在任意平台检查移动入口、权限文案、主线程命令普查和参数契约，不调用 Rust 工具链。
+- `npm run mobile:compile` 只检查 iOS 编译，需要 macOS/Xcode、已安装的 iOS target 和构建好的 dist；缺少条件返回失败。`npm run mobile` 先跑静态检查，失败立即停止，再检查 iOS 编译；两者均不代表真机交互通过。
+- `npm run test:interaction` 运行 AI Elements 的桌面/手机两种主题，以及聊天滚动和提交跳转的生产组件回归。CI 使用 `QUALITY_ENGINES=chrome,webkit`；本地默认系统 Chrome，`PLAYWRIGHT_CHROMIUM_CHANNEL=''` 使用锁定 Playwright 版本下载的 Chromium。
+- `.github/workflows/quality.yml` 在 PR 与 main 更新时执行 shell 执行器回归、agent 类型/测试、GUI 默认检查、移动静态检查和两浏览器交互检查。日志/截图作为 artifact 保存；release 复用同一工作流并等待检查通过。
+- `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` 检查脚本的失败传递和 dry-run 等行为，使用临时目录与替身，不安装、卸载或连接用户机器。

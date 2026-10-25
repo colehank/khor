@@ -1,0 +1,72 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+
+  agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: apps/agent/package-lock.json
+      - run: npm ci
+        working-directory: apps/agent
+      - run: npm test
+        working-directory: apps/agent
+
+  gui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/gui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: quality-gen
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: apps/gui/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run gates && npm run mobile:static
+      - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit
+      - run: npm run test:interaction
+        env:
+          PLAYWRIGHT_CHROMIUM_CHANNEL: ''
+          QUALITY_ENGINES: chrome,webkit
+          QUALITY_HEADLESS: '1'
+          QUALITY_OUT: ${{ runner.temp }}/quality-scroll
+          AI_ELEMENTS_OUT: ${{ runner.temp }}/quality-elements
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gui-interaction-evidence
+          path: |
+            ${{ runner.temp }}/quality-scroll
+            ${{ runner.temp }}/quality-elements
+          if-no-files-found: warn

@@ -355,7 +355,7 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
 try {
   await startPreview();
   for (const engine of engines) {
-    browser = await (engine === 'chrome' ? chromium : webkit).launch({ ...(engine === 'chrome' ? { channel: 'chrome' } : {}), headless });
+    browser = await (engine === 'chrome' ? chromium : webkit).launch({ ...(engine === 'chrome' ? { channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? 'chrome') || undefined } : {}), headless });
     for (const name of names.filter(name => !only.length || only.some(filter => name === filter || name.startsWith(`${filter}-`)))) {
       const mobile = name === 'commit-touch' || name.startsWith('chat-');
       // Playwright cannot send a wheel in mobile WebKit. History keeps the
