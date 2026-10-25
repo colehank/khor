@@ -51,7 +51,7 @@ const cases={
  },
 };
 const selected=process.env.PAGE_RETENTION_CASES?.split(',').filter(Boolean)??Object.keys(cases);
-assert(selected.length,'Select at least one case');assert.equal(selected.length,new Set(selected).size,'Cases must not repeat');for(const name of selected)assert(name in cases,`Unknown case: ${name}`);
+assert(selected.length,'Select at least one case');assert.equal(selected.length,new Set(selected).size,'Cases must not repeat');for(const name of selected)assert(Object.hasOwn(cases,name),`Unknown case: ${name}`);
 mkdirSync(out,{recursive:true});const results=[];
 for(const name of selected){const f=await fixture();try{await cases[name](f);results.push({name,ok:true,calls:f.calls});console.log('PASS',name);}catch(error){results.push({name,ok:false,error:error.stack,calls:f.calls});console.error('FAIL',name,error.message);}}
 assert.deepEqual(fingerprint(),sources,'Production/test source stayed fixed');writeFileSync(join(out,'report.json'),JSON.stringify({sources,results,boundary:'Real ledger/queue modules, controlled native promises; no actual native handles'},null,2));assert(results.every(r=>r.ok),`${results.filter(r=>!r.ok).length} retention cases failed`);console.log(`page retention: ${results.length}/${results.length} passed`,out);
