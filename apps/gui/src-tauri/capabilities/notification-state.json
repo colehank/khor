@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "notification-state",
+  "description": "The notification plugin initializes Notification.permission by querying its current state. Only Khor-owned webviews may read that state; notification requests and delivery remain native commands.",
+  "webviews": [
+    "main",
+    "menu",
+    "settings"
+  ],
+  "permissions": [
+    "notification:allow-is-permission-granted"
+  ]
+}
