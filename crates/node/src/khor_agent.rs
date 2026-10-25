@@ -10,7 +10,7 @@ mod accounts;
 mod updates;
 #[path = "khor_agent_output.rs"]
 mod output;
-use output::append_text;
+use output::TextStream;
 use std::{
     collections::HashMap,
     fs::{self, File, OpenOptions},
@@ -505,6 +505,8 @@ fn sidecar(root: &Path) -> Result<Command, String> {
 }
 
 fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, key: &str) {
+    let mut text_output = TextStream::new(key);
+    let mut snapshots = updates::Recorder::new(key);
     let outcome = (|| -> Result<(), String> {
         // Extraction and hashing of the bundled runtime stay off the reactor.
         let mut command = sidecar(&root)?;
@@ -607,13 +609,12 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                         if value["sessionUpdate"] == "agent_message_chunk"
                             && value["content"]["type"] == "text"
                         {
-                            append_text(
+                            text_output.append_to(
                                 &mut saved.record.stdout,
                                 value["content"]["text"].as_str().unwrap_or(""),
-                                key,
                             );
                         }
-                        updates::push(saved.record.agent.as_mut().expect("agent turn"), value, key);
+                        snapshots.push(saved.record.agent.as_mut().expect("agent turn"), value);
                         if last_flush.elapsed() >= std::time::Duration::from_millis(200) {
                             save(&root, &saved)?;
                             last_flush = std::time::Instant::now();
@@ -624,17 +625,15 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                         let update: agent_client_protocol::schema::v1::SessionUpdate =
                             serde_json::from_value(value)
                                 .map_err(|_| msg::agent_arguments().to_owned())?;
-                        updates::push(
+                        snapshots.push(
                             saved.record.agent.as_mut().expect("agent turn"),
                             serde_json::to_value(update).map_err(|e| e.to_string())?,
-                            key,
                         );
                     }
                     Some("text") => {
-                        append_text(
+                        text_output.append_to(
                             &mut saved.record.stdout,
                             event["delta"].as_str().unwrap_or(""),
-                            key,
                         );
                         if last_flush.elapsed() >= std::time::Duration::from_millis(200) {
                             save(&root, &saved)?;
@@ -680,6 +679,10 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
         }
         Ok(())
     })();
+    text_output.finish_into(&mut saved.record.stdout);
+    if let Some(agent) = saved.record.agent.as_mut() {
+        snapshots.finish(agent);
+    }
     let stopped = active.stopped.load(Ordering::SeqCst);
     if stopped || outcome.is_err() {
         let _ = crate::delegation::cancel_children(&root, &active.id);
