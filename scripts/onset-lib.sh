@@ -63,19 +63,20 @@ khor_root() {
 
 # Destructive operations require a readable, recognised claim. Unlike opening
 # a new store, an empty or missing owner is not permission to remove old data.
-# The name may be empty in a valid fingerprint-only claim; only the binary can
-# resolve that claim. The no-binary fallback below requires a hostname.
+# Only the binary can resolve a machine fingerprint. Without it, the fallback
+# accepts legacy name-only claims; equal hostnames do not prove equal machines.
 khor_owner_name() {
     [ -f "$1" ] && [ -r "$1" ] && [ ! -L "$1" ] || return 1
-    awk '
+    awk -v fingerprint_authority="${2:-yes}" '
         { sub(/\r$/, "") }
-        NF == 1 && NR == 1 && $1 != "machine" && $1 != "name" { legacy = $1; next }
-        NF == 2 && $1 == "machine" && !machine { machine = $2; next }
-        NF == 2 && $1 == "name" && !name { name = $2; next }
+        NF == 1 && NR == 1 && $1 != "machine" && $1 != "name" { legacy = $1; legacy_seen = 1; next }
+        NF == 2 && $1 == "machine" && !machine_seen { machine_seen = 1; next }
+        NF == 2 && $1 == "name" && !name_seen { name = $2; name_seen = 1; next }
         { bad = 1 }
         END {
-            if (bad || (legacy && NR != 1) || (!legacy && !machine && !name)) exit 1
-            print legacy ? legacy : name
+            if (bad || (legacy_seen && NR != 1) || (!legacy_seen && !machine_seen && !name_seen)) exit 1
+            if (machine_seen && fingerprint_authority != "yes") exit 1
+            print legacy_seen ? legacy : name
         }
     ' "$1"
 }
@@ -103,7 +104,7 @@ khor_uninstall_root() (
         _root="$HOME"
         if [ -e "$HOME/.khor" ] || [ -L "$HOME/.khor" ]; then
             [ ! -L "$HOME/.khor" ] || { echo "onset: refusing symlink store" >&2; return 1; }
-            _owner=$(khor_owner_name "$HOME/.khor/owner") || { echo "onset: cannot verify home owner" >&2; return 1; }
+            _owner=$(khor_owner_name "$HOME/.khor/owner" no) || { echo "onset: cannot verify home owner without installed khor" >&2; return 1; }
             [ -n "$_owner" ] || { echo "onset: owner needs installed khor to resolve its fingerprint" >&2; return 1; }
             [ "$_owner" = "$_host" ] || _root="$HOME/.khor-hosts/$_host"
         fi
@@ -121,7 +122,7 @@ khor_uninstall_root() (
     _store="$_root/.khor"
     if [ -e "$_store" ] || [ -L "$_store" ]; then
         [ -d "$_store" ] && [ ! -L "$_store" ] || { echo "onset: refusing non-directory or symlink store" >&2; return 1; }
-        _owner=$(khor_owner_name "$_store/owner") || { echo "onset: cannot verify store owner: $_store" >&2; return 1; }
+        _owner=$(khor_owner_name "$_store/owner" "$_authority") || { echo "onset: cannot verify store owner: $_store" >&2; return 1; }
         if [ "$_authority" = no ] && [ "$_owner" != "$_host" ]; then
             echo "onset: store owner does not match this machine" >&2
             return 1

@@ -193,7 +193,19 @@ def run_suite():
     case("shared-B-retain-data", shared=True)
     case("shared-B-inherited-override", shared=True, purge=True, env={"KHOR_HOME": "{home}"})
     case("renamed-B-room", shared=True, root=".khor-hosts/old-B", purge=True)
-    case("missing-binary-fallback", shared=True, binary=False, purge=True)
+    case("missing-binary-modern-claim", shared=True, binary=False, purge=True, error=True)
+    case("missing-binary-same-name-different-fingerprint", binary=False, purge=True, error=True,
+         setup=lambda home, root, scope: (root / ".khor/owner").write_text("machine fingerprint-other-machine\nname B\n"))
+    for fingerprint in ["0", "00", "0.0"]:
+        case("missing-binary-zero-fingerprint-" + fingerprint, binary=False, purge=True, error=True,
+             setup=lambda home, root, scope, fingerprint=fingerprint:
+                 (root / ".khor/owner").write_text(f"machine {fingerprint}\nname B\n"))
+    case("duplicate-zero-fingerprint", purge=True, error=True,
+         setup=lambda home, root, scope: (root / ".khor/owner").write_text("machine 0\nmachine 0\nname B\n"))
+    def legacy_claims(home, root, scope):
+        (home / ".khor/owner").write_text("A\n")
+        (root / ".khor/owner").write_text("B\n")
+    case("missing-binary-legacy-fallback", shared=True, binary=False, purge=True, setup=legacy_claims)
     case("legacy-owner", purge=True, setup=lambda home, root, scope: (root / ".khor/owner").write_text("B\n"))
     case("unknown-owner", owner=False, error=True, purge=True)
     case("empty-owner", error=True, purge=True, setup=lambda home, root, scope: (root / ".khor/owner").write_text(""))
