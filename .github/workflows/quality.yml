@@ -83,3 +83,23 @@ jobs:
             ${{ runner.temp }}/quality-chat-cancel
             ${{ runner.temp }}/quality-pages
           if-no-files-found: warn
+
+  windows-agent-process:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify owned processes and cancellable pipes on Windows
+        shell: pwsh
+        run: |
+          cargo run --locked --manifest-path crates/node/tests/windows-process-harness/Cargo.toml *> "$env:RUNNER_TEMP/agent-process.log"
+          $processCheckExit = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/agent-process.log"
+          exit $processCheckExit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-agent-process-evidence
+          path: ${{ runner.temp }}/agent-process.log
+          if-no-files-found: warn

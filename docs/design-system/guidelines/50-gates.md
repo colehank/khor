@@ -774,3 +774,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 
 `npm run chat-cancel`：真实 ChatView/App 与 api.ts 的上传取消、HTTP admission/commit 区分、失败或未知回执、草稿和附件恢复、切 tab/关闭重开与过期 retry/cancel 回调归属回归。加入 `npm run test:interaction`；`CHAT_CANCEL_WEBKIT=1` 同跑 WebKit，`CHAT_CANCEL_CHECK_DIR` 保存报告与窄屏截图，`CHAT_CANCEL_SCENARIOS` 可选场景，空/重复/未知选择拒绝。transport、附件内容与 IPC 为隔离 fixture，不能代替原生 App/真实 host 链验收。
+
+
+质量 CI 的 `windows-agent-process` 在真正 Windows runner 上运行 `cargo run --locked --manifest-path crates/node/tests/windows-process-harness/Cargo.toml`：生产 Job/管道后端的 argv/env/UTF16、创建时纳管、子孙、Drop 即刻终止、阻塞 I/O 独立取消与公共监督器首次 Stop 期限。macOS 的交叉 `cargo check` 只证明编译，不能替代该 job 的执行结果；本地非 Windows 运行 harness 会明确失败。
