@@ -1,3 +1,4 @@
+import { awaitChatDraftReceipt, chatDraftOwner, completeChatDraft, discardChatDraft, rememberChatDraft, recoverableChatDrafts, settleChatDraft, subscribeChatDrafts, unconfirmedChatDrafts, type ChatDraft } from '@/lib/chat-drafts';
 import {useSessionDraft} from '@/hooks/use-session-draft';
 import {unifiedSession,AcpHeader,SessionAdd} from "@/views/SessionPreferences";
 import {AgentInteraction,type InteractionRequest} from "@/components/AgentInteraction";
@@ -59,7 +60,7 @@ import { useReadingSession, type SessionReading } from "@/hooks/use-session-atte
 import { offerTabAct } from "@/lib/tab-acts";
 import { failedNotice, offerNotice, rejoinNotice, type PillNotice } from "@/lib/pill-notices";
 import { takeHandOff } from "@/lib/composer-handoff";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   launchOn,
@@ -148,7 +149,7 @@ const STILL_MS = 700;
 type Item =
   | import("@/lib/acp-view").AcpCompaction
   | import("@/lib/acp-view").AcpResource
-  | { who: "user"; text: string }
+  | { who: "user"; text: string; token?: string }
   | { who: "agent"; text: string }
   | { who: "thought"; text: string }
   | (AgentToolData & { who: "tool" })
@@ -788,10 +789,52 @@ export function ChatView({
   const sent = useRef("");
   const pollNow = useRef<() => void>(() => {});
   /** The last turn as it went, for 重试 on a turn that did not go. */
-  const lastSay = useRef<{ line: string; full: string; images: [string, string][]; docs: [string, string][] } | null>(null);
+  const lastSay = useRef<ChatDraft | null>(null);
+  const currentSession = useRef(id);
+  currentSession.current = id;
+  const reader = useRef<object>({});
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const composer = useRef({session: id, text, documents: docs, attachments: files.items});
+  composer.current = {session: id, text, documents: docs, attachments: files.items};
+  const savedDrafts = useSyncExternalStore(subscribeChatDrafts, () => recoverableChatDrafts(id));
+  const composerEmpty = () => {
+    const now = composer.current;
+    return now.session === id && now.text.length === 0 && now.documents.length === 0 && now.attachments.length === 0;
+  };
+  const addDraft = (draft: ChatDraft) => {
+    if (draft.session !== id || chatDraftOwner(id) !== draft.owner || !recoverableChatDrafts(id).some(entry => entry.draft === draft)) return;
+    const now = composer.current;
+    const next = now.text && draft.text ? `${now.text}\n\n${draft.text}` : now.text || draft.text;
+    const documents = [...now.documents, ...draft.documents];
+    composer.current = {session: id, text: next, documents, attachments: [...now.attachments, ...draft.attachments]};
+    setText(next);
+    setDocs(documents);
+    files.restore(draft.attachments);
+    discardChatDraft(id, draft.token, draft.owner);
+    setUnsent(was => was?.id === `say:${draft.token}` ? null : was);
+  };
+  const addDraftNow = useRef(addDraft);
+  addDraftNow.current = addDraft;
+  const emptyComposerNow = useRef(composerEmpty);
+  emptyComposerNow.current = composerEmpty;
   /** **A turn that did not go, and the session reconnecting, on its pill**
       (NOTICE-BRIEF): offered by this conversation's id. */
   const [unsent, setUnsent] = useState<PillNotice | null>(null);
+  const consideredDrafts = useRef(new Set<string>());
+  useEffect(() => {
+    if (still || ended) return;
+    const retained = new Set(savedDrafts.map(entry => entry.draft.token));
+    consideredDrafts.current = new Set([...consideredDrafts.current].filter(token => retained.has(token)));
+    for (const {draft, reason} of savedDrafts) {
+      if (reason !== "cancelled" || consideredDrafts.current.has(draft.token)) continue;
+      consideredDrafts.current.add(draft.token);
+      // A former view can archive a late receipt. Its current same-session
+      // consumer decides whether the composer is still empty enough to restore.
+      const currentTurn = lastSay.current === null || lastSay.current.token === draft.token;
+      if (currentTurn && emptyComposerNow.current()) addDraftNow.current(draft);
+    }
+  }, [savedDrafts, id, still, ended]);
   useEffect(() => (unsent ? offerNotice(id, unsent) : undefined), [id, unsent]);
   const [stall, setStall] = useState<Miss | null>(null);
   const [stallSince, setStallSince] = useState(0);
@@ -813,10 +856,13 @@ export function ChatView({
     );
   }, [id, stall, stallSince, gone, machine]);
   /** Says the last turn again, painted as it was the first time. */
-  const sayAgain = useRef<() => void>(() => {});
+  const retryDraft = useRef<(draft: ChatDraft) => void>(() => {});
 
   useEffect(() => {
     let stopped = false;
+    let draftOwner = chatDraftOwner(id);
+    const reading = {};
+    reader.current = reading;
     setLoaded(false);
     setInteractions([]);setProtocol(null);setNotice(null);setControlError(null);setSettings(null);setUsage(null);
     let cursor = 0;
@@ -909,42 +955,60 @@ export function ChatView({
       const pushed = inApp && pace.current !== HIDDEN_MS;
       (pushed ? chatWait(id, cursor, WAIT_MS) : chatPoll(id, cursor))
         .then((batch) => {
-          if (stopped) return;
+          // Receipts may arrive after this view was switched away. They can
+          // settle the original open tab, but never paint or call its old API.
+          const recovered = new Map<string, ChatDraft>();
+          const retired = batch.gone || batch.frames.some(frame => frame.kind === "send_cancelled" && frame.reconnect);
+          const inactive = stopped || currentSession.current !== id || reader.current !== reading;
+          const receiptReader = inactive ? reading : undefined;
+          for (const frame of batch.frames) {
+            if (frame.kind === "send_committed" && draftOwner) completeChatDraft(id, frame.token, draftOwner, receiptReader);
+            if (frame.kind === "send_cancelled" || frame.kind === "unsent") {
+              const draft = settleChatDraft(id, frame.token, frame.kind === "send_cancelled" ? "cancelled" : "failed", draftOwner, receiptReader);
+              if (draft) recovered.set(draft.token, draft);
+            }
+          }
+          if (batch.lost || retired) unconfirmedChatDrafts(id, draftOwner, inactive ? {reader: reading} : undefined);
+          if (inactive) return;
           setLoaded(true);
           cursor = batch.next;
           setSending(batch.sending_of > 0 ? [batch.sending, batch.sending_of] : null);
-          const held = batch.gone ? null : (batch.stall ?? null);
+          const held = retired ? null : (batch.stall ?? null);
           setStall((was) => (was && held && was.kind === held.kind && was.raw === held.raw ? was : held));
           setStallSince((t) => (held ? t || Date.now() : 0));
-          // **A turn that did not go** (`Unsent`): taken back off the
-          // transcript, and on the pill until 重试 or 取消 — 取消 hands
-          // the words back to an empty box.
-          const unsentFrame = batch.frames.find((f): f is Extract<ChatFrame, { kind: "unsent" }> => f.kind === "unsent");
-          const turn = lastSay.current;
-          if (unsentFrame && turn) {
-            setInTurn(false);
-            sent.current = "";
-            setPaint((prev) => {
-              const last = prev.live[prev.live.length - 1];
-              if (!last || last.who !== "user" || last.text !== turn.full) return prev;
-              return { ...prev, live: prev.live.slice(0, -1) };
-            });
-            setUnsent(
-              failedNotice({
-                id: "say",
-                miss: unsentFrame.miss,
+          for (const frame of batch.frames) {
+            if (frame.kind !== "send_cancelled" && frame.kind !== "unsent") continue;
+            const draft = frame.token ? recovered.get(frame.token) : undefined;
+            if (frame.kind === "send_cancelled" && frame.reconnect) setOpenWhy(gui.chat_upload_stopped_reconnect);
+            if (draft) {
+              const currentTurn = lastSay.current === null || lastSay.current.token === draft.token;
+              setPaint(previous => {
+                const live = previous.live.filter(item => item.who !== "user" || item.token !== draft.token);
+                return live.length === previous.live.length ? previous : {...previous, live};
+              });
+              if (lastSay.current?.token === draft.token) {
+                lastSay.current = null;
+                sent.current = "";
+                setInTurn(false);
+              }
+              if (frame.kind === "send_cancelled" && currentTurn && emptyComposerNow.current()) addDraftNow.current(draft);
+            }
+            if (frame.kind === "unsent") {
+              const notice = failedNotice({
+                id: `say:${frame.token ?? "legacy"}`,
+                miss: frame.miss,
                 machine: machine ?? null,
                 what: "say",
-                retry: () => {
-                  setUnsent(null);
-                  sayAgain.current();
-                },
+                retry: () => { if (draft) retryDraft.current(draft); },
                 cancel: () => {
                   setUnsent(null);
-                  setText((now) => (now.trim() ? now : turn.line));
+                  if (draft && emptyComposerNow.current()) addDraftNow.current(draft);
                 },
-              }),
-            );
+              });
+              // Old/null receipts can explain failure without guessing which
+              // newer message or draft they belong to.
+              setUnsent(draft ? notice : {...notice, acts: notice.acts.filter(action => action.key === "cancel")});
+            }
           }
           // **The past this face was holding is no longer backed by
           // anything.** The attachment's frame list is capped
@@ -1031,8 +1095,8 @@ export function ChatView({
             }
             setPaint((prev) => absorb(prev, batch.frames));
           }
-          if (batch.gone) setGone(true);
-          outcome = batch.gone ? "ended" : "live";
+          if (retired) setGone(true);
+          outcome = retired ? "ended" : "live";
         })
         .catch(() => {
           // A failed wait may return immediately; it has not paid a beat.
@@ -1067,7 +1131,17 @@ export function ChatView({
         // Only a fresh attachment asks for history: the host answers
         // every replay it is asked for, and a second mount of a living
         // chat (dev double-mount) already holds the replayed frames.
-        if (fresh) chatReplay(id).catch(() => {});
+        draftOwner ??= chatDraftOwner(id);
+        if (fresh) {
+          unconfirmedChatDrafts(id, draftOwner, {reader: reading, except: true});
+          if (lastSay.current?.reader !== reading) {
+            lastSay.current = null;
+            sent.current = "";
+            setInTurn(false);
+            setSending(null);
+          }
+          chatReplay(id).catch(() => {});
+        }
         tick();
       })
       .catch((e: unknown) => {
@@ -1296,42 +1370,46 @@ export function ChatView({
     <ModeSeat current={mode} word={modeSaid(mode) ?? mode} />
   ) : null;
 
+  const issueDraft = (draft: ChatDraft) => {
+    chatSay(draft.session, draft.full, [...draft.images], [...draft.documents], draft.token).catch(() => {
+      awaitChatDraftReceipt(draft.session, draft.token, draft.owner);
+      if (mounted.current && currentSession.current === draft.session && reader.current === draft.reader && lastSay.current?.token === draft.token) setInTurn(false);
+    });
+  };
   const say = () => {
     const line = text.trim();
-    // A line, or files without one; never while a file is still on its
-    // way to the machine (the send seat says busy meanwhile).
     if ((!line && files.items.length === 0 && docs.length === 0) || inTurn || gone || files.busy) return;
-    const placed = files.items.filter((f) => f.path !== null);
-    const full = withAttachments(line, placed.map((f) => f.path as string));
-    const carried = facts?.images ? placed.flatMap((f) => (f.inline ? [f.inline] : [])) : [];
-    // A handed-off terminal block rides as text (roadmap 2.3).
-    const carriedDocs = docs;
+    const owner = chatDraftOwner(id);
+    if (!owner) return;
+    const placed = files.items.filter(file => file.path !== null);
+    const full = withAttachments(line, placed.map(file => file.path as string));
+    const images = facts?.images ? placed.flatMap(file => file.inline ? [file.inline] : []) : [];
+    const draft = rememberChatDraft({owner, reader: reader.current, session: id, token: crypto.randomUUID(), text, full, images, documents: docs, attachments: files.items});
+    if (!draft) return;
+    composer.current = {session: id, text: "", documents: [], attachments: []};
     setText("");
     setInTurn(true);
     files.clear();
     setDocs([]);
-    // Painted first-hand, at the end of the live half (module head).
-    // It used to be pinned to a count of live frames and slotted back
-    // in by the fold; appended here it lands in the same place for the
-    // same reason — saying happens now, so it goes after everything
-    // that has arrived and before everything that has not.
-    setPaint((prev) => ({ ...prev, live: [...prev.live, { who: "user", text: full }] }));
-    // Kept until the host either takes it or refuses it: a refused line
-    // was painted here a moment ago as though it had gone, and handing
-    // it back is the difference between "it did not go in" and "it did
-    // not go in and you get to type it again".
+    setPaint(previous => ({...previous, live: [...previous.live, {who: "user", text: full, token: draft.token}]}));
     sent.current = line;
-    lastSay.current = { line, full, images: carried, docs: carriedDocs };
+    lastSay.current = draft;
     setUnsent(null);
-    chatSay(id, full, carried, carriedDocs).catch(() => setInTurn(false));
+    issueDraft(draft);
   };
-  sayAgain.current = () => {
-    const turn = lastSay.current;
-    if (!turn || inTurn || gone) return;
+  retryDraft.current = previous => {
+    if (previous.session !== id || inTurn || gone) return;
+    const owner = chatDraftOwner(id);
+    if (!owner) return;
+    const draft = rememberChatDraft({...previous, owner, reader: reader.current, token: crypto.randomUUID()});
+    if (!draft) return;
+    discardChatDraft(id, previous.token, previous.owner);
     setInTurn(true);
-    setPaint((prev) => ({ ...prev, live: [...prev.live, { who: "user", text: turn.full }] }));
-    sent.current = turn.line;
-    chatSay(id, turn.full, turn.images, turn.docs).catch(() => setInTurn(false));
+    setPaint(paint => ({...paint, live: [...paint.live, {who: "user", text: draft.full, token: draft.token}]}));
+    sent.current = draft.text.trim();
+    lastSay.current = draft;
+    setUnsent(null);
+    issueDraft(draft);
   };
 
   // The "/" menu: the agent's own commands, filtered by what has been
@@ -1559,6 +1637,16 @@ export function ChatView({
         )}
         {notice&&<div data-chat-notice role={notice.severity==='error'?'alert':'status'} className="rounded-md bg-fill p-row text-callout"><strong>{notice.title}</strong>{notice.message&&<p>{notice.message}</p>}<Button size="sm" onClick={()=>setNotice(null)}>关闭</Button></div>}
         {controlError&&<p role="alert" className="text-destructive">{controlError}</p>}
+        {savedDrafts.map(({draft, reason}) => (
+          <div key={draft.token} data-chat-cancelled-draft={draft.token} data-reason={reason} className="flex min-w-0 flex-wrap items-center gap-in py-in text-callout">
+            <div className="min-w-0 flex-1">
+              <p className="text-muted-foreground">{reason === "unconfirmed" ? gui.chat_send_unconfirmed : reason === "failed" ? gui.notice_say_failed_short(home ?? machine ?? gui.machine_here) : gui.chat_cancelled_draft}</p>
+              <p className="truncate">{(draft.text || [...draft.attachments.map(file => file.name), ...draft.documents.map(([name]) => name)].join(" · ")).slice(0, 160)}</p>
+            </div>
+            {reason !== "unconfirmed" && <Button size="sm" data-chat-draft-add onClick={() => addDraft(draft)} className="min-h-touch pointer-fine:min-h-ctl-md">{gui.chat_add_draft}</Button>}
+            <Button size="sm" variant="ghost" data-chat-draft-drop onClick={() => discardChatDraft(id, draft.token, draft.owner)} className="min-h-touch pointer-fine:min-h-ctl-md">{gui.chat_discard_draft}</Button>
+          </div>
+        ))}
         {interactions.map(({ask,request})=><AgentInteraction key={`${id}:${ask}`} request={request} onAnswer={response=>chatRespond(id,ask,response)}/>)}
         {waiting && (
           <div data-chat-thinking className="flex items-center gap-1.5 text-caption">
@@ -1834,7 +1922,14 @@ export function ChatView({
                         // this asks, the host answers with a `Turn` frame
                         // like any other ending. Painting it stopped here
                         // would be a guess about somebody else's process.
-                        chatStop(id).catch(() => {});
+                        const stopping = lastSay.current?.token;
+                        const stoppingReader = reader.current;
+                        setControlError(null);
+                        chatStop(id).catch((error: unknown) => {
+                          if (mounted.current && currentSession.current === id && reader.current === stoppingReader && lastSay.current?.token === stopping) {
+                            setControlError(String((error as {message?: string})?.message ?? error));
+                          }
+                        });
                       }}
                     />
                   )}

@@ -164,9 +164,16 @@ export function usePendingFiles(id: string, into: string | null = null) {
       for (const i of now) if (i.thumb) URL.revokeObjectURL(i.thumb);
       return [];
     });
+  /** Recovered picks already live on the session's machine. Thumbnail URLs
+      belonged to the old composer; metadata and inline strings can be reused. */
+  const restore = (remembered: readonly Pending[]) => {
+    if (!mounted.current) return;
+    const restored = remembered.map(item => ({ ...item, key: `r${++seq.current}`, thumb: null }));
+    setItems(now => [...now, ...restored]);
+  };
   /** A file still on its way: sending waits for it. */
   const busy = items.some((i) => i.path === null && i.error === null);
-  return { items, addFiles, addLocalPaths, addPaths, remove, clear, busy };
+  return { items, addFiles, addLocalPaths, addPaths, remove, clear, restore, busy };
 }
 
 /** The chips over the text: each file going along, with its × to take
