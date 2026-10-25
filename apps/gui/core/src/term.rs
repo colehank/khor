@@ -36,7 +36,6 @@ mod upload;
 pub use upload::{term_drop_folder, term_drop_stage_into, term_drop_stage_native};
 
 use std::collections::{HashMap, VecDeque};
-use std::net::TcpStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -148,7 +147,8 @@ pub struct TermChunk {
 
 struct Term {
     /// The write half. One lock per op so keystrokes never interleave.
-    conn: Mutex<TcpStream>,
+    conn: crate::connection::Connection,
+    commands: crate::command_queue::CommandQueue,
     /// The screen the reader thread overwrites in place.
     parser: Mutex<vt100::Parser>,
     /// **Lives as long as the screen, because `ESC ( 0` is a mode.**
@@ -269,7 +269,8 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
         // nothing; a socket that just ended is the stream's to report.
         let _ = term_resize(id, cols, rows);
         if let Ok(term) = term_of(id) {
-            keep_history(&term, history);
+            let target = term.clone();
+            term.commands.submit(move || { keep_history(&target, history); Ok(()) })?.wait()?;
         }
         return Ok(());
     }
@@ -295,7 +296,8 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
     let sid = SessionId(id.to_owned());
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let term = Arc::new(Term {
-        conn: Mutex::new(conn),
+        conn: crate::connection::Connection::new(conn)?,
+        commands: Default::default(),
         // No scrollback: the parser answers modes now, not history —
         // history is the feed, and xterm keeps the scroll.
         parser: Mutex::new(vt100::Parser::new(rows, cols, 0)),
@@ -311,7 +313,8 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
         history: AtomicU32::new(0),
     });
     term.version.store(version, Ordering::Relaxed);
-    keep_history(&term, history);
+    let target = term.clone();
+    let initial = term.commands.submit(move || { keep_history(&target, history); Ok(()) })?;
     let reader = term.clone();
     let root = root.to_path_buf();
     std::thread::spawn(move || {
@@ -357,9 +360,8 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
                         break;
                     };
                     let Ok(again) = conn.try_clone() else { break };
-                    let mut conn = conn;
-                    say_history(&reader, &mut conn, reader.history.load(Ordering::Relaxed));
-                    *plock(&reader.conn) = conn;
+                    if reader.conn.replace(conn).is_err() { break; }
+                    keep_history(&reader, reader.history.load(Ordering::Relaxed));
                     reading = again;
                     fresh = true;
                 }
@@ -385,9 +387,13 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
         }
         *plock(&reader.stall) = None;
         reader.gone.store(true, Ordering::Relaxed);
+        reader.commands.close();
+        reader.conn.close();
         reader.arrived.notify_waiters();
     });
-    registry.insert(id.to_owned(), term);
+    registry.insert(id.to_owned(), term.clone());
+    drop(registry);
+    initial.wait()?;
     Ok(())
 }
 
@@ -647,11 +653,21 @@ pub fn term_attach(id: &str) -> Result<TermStart, String> {
 /// A socket and its feed may exist before xterm does. Only the renderer
 /// can say that replay is over and live queries now have a responder.
 pub fn term_ready(id: &str) -> Result<(), String> {
+    submit_ready(id)?.wait()
+}
+pub fn submit_ready(id: &str) -> Result<crate::command_queue::Pending<()>, String> {
+    submit(id, |term| {
+        if term.version.load(Ordering::Relaxed) >= 5 {
+            write_frame(&mut *plock(&term.conn), &ClientOp::Ready)?;
+        }
+        Ok(())
+    })
+}
+
+fn submit<T: Send + 'static>(id: &str, work: impl FnOnce(Arc<Term>) -> Result<T, String> + Send + 'static) -> Result<crate::command_queue::Pending<T>, String> {
     let term = term_of(id)?;
-    if term.version.load(Ordering::Relaxed) >= 5 {
-        write_frame(&mut *plock(&term.conn), &ClientOp::Ready)?;
-    }
-    Ok(())
+    let target = term.clone();
+    term.commands.submit(move || work(target))
 }
 
 /// **A dead terminal row's page** (P5-SHELL items 1 and 2): how it ended,
@@ -868,9 +884,10 @@ pub async fn term_wait(id: &str, since: u64, longest: std::time::Duration) -> Re
 /// Keystrokes, as the bytes a terminal would send — the face translates
 /// keys to bytes, this layer stays a pipe.
 pub fn term_key(id: &str, bytes: Vec<u8>) -> Result<(), String> {
-    let term = term_of(id)?;
-    let mut conn = plock(&term.conn);
-    write_input(&mut *conn, &bytes)
+    submit_key(id, bytes)?.wait()
+}
+pub fn submit_key(id: &str, bytes: Vec<u8>) -> Result<crate::command_queue::Pending<()>, String> {
+    submit(id, move |term| write_input(&mut *plock(&term.conn), &bytes))
 }
 
 /// The most input bytes one frame to the host carries (T-16, the terminal
@@ -915,8 +932,16 @@ fn write_input(conn: &mut (impl std::io::Write + ?Sized), bytes: &[u8]) -> Resul
 /// gesture itself, so no face calls this over the wire any more. The
 /// one caller left is [`term_drop`] — a dropped file is a paste, and
 /// the wrapping decision still lives where the DECSET 2004 fact is.
-fn term_paste(id: &str, text: &str) -> Result<(), String> {
-    let term = term_of(id)?;
+fn term_paste(term: Arc<Term>, text: String, stopped: Arc<AtomicBool>) -> Result<crate::command_queue::Pending<()>, String> {
+    let target = term.clone();
+    term.commands.submit(move || {
+        if stopped.load(Ordering::Relaxed) { return Err(khor_node::drops::cancelled()); }
+        if target.left.load(Ordering::Relaxed) { return Err("attachment is closed".into()); }
+        paste(&target, &text, &stopped)
+    })
+}
+
+fn paste(term: &Term, text: &str, stopped: &AtomicBool) -> Result<(), String> {
     let bracketed = plock(&term.parser).screen().bracketed_paste();
     let mut bytes = Vec::new();
     if bracketed {
@@ -927,6 +952,14 @@ fn term_paste(id: &str, text: &str) -> Result<(), String> {
         bytes.extend_from_slice(b"\x1b[201~");
     }
     let mut conn = plock(&term.conn);
+    // Cancellation may arrive while the parser or writer is locked. The
+    // paste becomes committed only when this check permits its first bytes.
+    if stopped.load(Ordering::Relaxed) {
+        return Err(khor_node::drops::cancelled());
+    }
+    if term.left.load(Ordering::Relaxed) {
+        return Err("attachment is closed".into());
+    }
     write_input(&mut *conn, &bytes)
 }
 
@@ -1051,15 +1084,48 @@ pub fn term_drop(
     from: Option<&str>,
     into: Option<&str>,
 ) -> DropEnd {
-    let items = paths
-        .iter()
-        .map(|path| DropItem {
-            path: path.clone(),
-            from: from.map(str::to_owned),
-            keep: false,
-        })
-        .collect::<Vec<_>>();
-    term_drop_items(root, id, &items, into)
+    begin_drop(id).run_paths(root, paths, from, into)
+}
+
+/// Register cancellation and capture the attachment on the caller's thread.
+/// Transfers run later, but neither a late cancel nor a reopened id can change
+/// which job/terminal this request belongs to.
+pub struct DropJob {
+    held: Held,
+    attachment: Result<Arc<Term>, String>,
+}
+
+pub fn begin_drop(id: &str) -> DropJob {
+    DropJob { held: Held::begin(id), attachment: term_of(id) }
+}
+
+impl DropJob {
+    pub fn run_paths(self, root: &Path, paths: &[String], from: Option<&str>, into: Option<&str>) -> DropEnd {
+        let items = paths.iter().map(|path| DropItem {
+            path: path.clone(), from: from.map(str::to_owned), keep: false,
+        }).collect::<Vec<_>>();
+        self.run(root, &items, into)
+    }
+
+    pub fn run(self, root: &Path, items: &[DropItem], into: Option<&str>) -> DropEnd {
+        let id = &self.held.id;
+        let ended = drop_items_text(root, id, items, into, &self.held).and_then(|(landed, text)| {
+            if !text.is_empty() {
+                term_paste(self.attachment.clone()?, text, self.held.stopped.clone())?.wait()?;
+            }
+            Ok(landed)
+        });
+        match ended {
+            Ok(landed) => DropEnd { landed, miss: None },
+            Err(why) => {
+                let far = Node::open(root.to_path_buf()).ok()
+                    .and_then(|n| n.far_machine(&SessionId(id.to_owned())).ok().flatten());
+                let mut miss = crate::miss::read(&why, far.as_deref());
+                if miss.kind == MissKind::Cancelled { miss.raw.clear(); }
+                DropEnd { landed: Vec::new(), miss: Some(miss) }
+            }
+        }
+    }
 }
 
 /// One source per item: a selection may span this device and several peers.
@@ -1073,26 +1139,7 @@ pub struct DropItem {
 }
 
 pub fn term_drop_items(root: &Path, id: &str, items: &[DropItem], into: Option<&str>) -> DropEnd {
-    let held = Held::begin(id);
-    let ended = drop_items_text(root, id, items, into, &held).and_then(|(landed, text)| {
-        if !text.is_empty() {
-            term_paste(id, &text)?;
-        }
-        Ok(landed)
-    });
-    match ended {
-        Ok(landed) => DropEnd { landed, miss: None },
-        Err(why) => {
-            let far = Node::open(root.to_path_buf())
-                .ok()
-                .and_then(|n| n.far_machine(&SessionId(id.to_owned())).ok().flatten());
-            let mut miss = crate::miss::read(&why, far.as_deref());
-            if miss.kind == MissKind::Cancelled {
-                miss.raw.clear();
-            }
-            DropEnd { landed: Vec::new(), miss: Some(miss) }
-        }
-    }
+    begin_drop(id).run(root, items, into)
 }
 
 /// What [`term_drop`] answers: where the files landed, or the failure.
@@ -1347,10 +1394,15 @@ pub fn term_drop_progress(id: &str) -> Option<f32> {
 /// which go now rather than waiting out [`STAGED_FOR`]. Only what
 /// [`term_drop_stage`] made is taken for one.
 pub fn term_drop_cancel(root: &Path, id: &str, staged: &[String]) {
+    cancel_drop(id);
+    term_drop_forget(root, staged);
+}
+
+/// Set the current job's flag before an IPC handler returns; cleanup can wait.
+pub fn cancel_drop(id: &str) {
     if let Some(d) = plock(dropping()).get(id) {
         d.stopped.store(true, Ordering::Relaxed);
     }
-    term_drop_forget(root, staged);
 }
 
 pub fn term_drop_forget(root: &Path, staged: &[String]) {
@@ -1431,7 +1483,12 @@ fn drop_items_blocking(
 /// host kept it (false: a host from before the handshake, where the
 /// clear is this face's alone, as it always was).
 pub fn term_forget(id: &str, redraw: bool) -> Result<bool, String> {
-    let term = term_of(id)?;
+    submit_forget(id, redraw)?.wait()
+}
+pub fn submit_forget(id: &str, redraw: bool) -> Result<crate::command_queue::Pending<bool>, String> {
+    submit(id, move |term| forget(&term, redraw))
+}
+fn forget(term: &Term, redraw: bool) -> Result<bool, String> {
     let kept = term.version.load(Ordering::Relaxed) >= 2;
     {
         let mut conn = plock(&term.conn);
@@ -1450,7 +1507,12 @@ pub fn term_forget(id: &str, redraw: bool) -> Result<bool, String> {
 /// the local screen is set to match, so the bytes that repaint arrive
 /// into a screen already the right shape.
 pub fn term_resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
-    let term = term_of(id)?;
+    submit_resize(id, cols, rows)?.wait()
+}
+pub fn submit_resize(id: &str, cols: u16, rows: u16) -> Result<crate::command_queue::Pending<()>, String> {
+    submit(id, move |term| resize(&term, cols, rows))
+}
+fn resize(term: &Term, cols: u16, rows: u16) -> Result<(), String> {
     // Never a wide character split at the new edge (item 57b): the next
     // redraw over it panicked this oracle as it did the host's model.
     khor_node::host::resize_screen(&mut plock(&term.parser), rows, cols);
@@ -1466,7 +1528,11 @@ pub fn term_leave(id: &str) -> Result<(), String> {
         Some(term) => {
             if term.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
                 term.left.store(true, Ordering::Relaxed);
-                registry.remove(id);
+                let term = registry.remove(id).unwrap();
+                drop(registry);
+                term.commands.close();
+                term.conn.close();
+                return Ok(());
             }
         }
         // Its open may still be reaching: the hold it would take is
@@ -1477,6 +1543,10 @@ pub fn term_leave(id: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "term_io_tests.rs"]
+mod io_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1810,7 +1880,8 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let term = Arc::new(Term {
-            conn: Mutex::new(conn),
+            conn: crate::connection::Connection::new(conn).unwrap(),
+            commands: Default::default(),
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
@@ -1857,7 +1928,8 @@ mod tests {
         let (mut host, _) = listener.accept().unwrap();
         host.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
         let term = Arc::new(Term {
-            conn: Mutex::new(conn),
+            conn: crate::connection::Connection::new(conn).unwrap(),
+            commands: Default::default(),
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
@@ -1893,7 +1965,8 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let term = Arc::new(Term {
-            conn: Mutex::new(conn),
+            conn: crate::connection::Connection::new(conn).unwrap(),
+            commands: Default::default(),
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
@@ -2051,7 +2124,8 @@ mod burst_tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let term = Arc::new(Term {
-            conn: Mutex::new(conn),
+            conn: crate::connection::Connection::new(conn).unwrap(),
+            commands: Default::default(),
             parser: Mutex::new(vt100::Parser::new(24, 80, 0)),
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),

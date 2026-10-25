@@ -13,6 +13,8 @@ pub mod add;
 pub mod agents;
 pub mod api;
 pub mod chat;
+pub mod command_queue;
+mod connection;
 pub mod code;
 pub mod console;
 pub mod console_complete;

@@ -257,7 +257,9 @@ impl Frames {
 
 struct Chat {
     /// The write half. One lock per op so frames never interleave.
-    conn: Mutex<TcpStream>,
+    conn: crate::connection::Connection,
+    commands: crate::command_queue::CommandQueue,
+    turns: crate::command_queue::CommandQueue,
     frames: Mutex<Frames>,
     gone: AtomicBool,
     /// Between a far pipe ending and the next one ([`ChatBatch::stall`]).
@@ -268,10 +270,6 @@ struct Chat {
     /// Woken whenever a frame lands, the attachment is made again or
     /// ends: what a held [`chat_wait`] waits on.
     arrived: tokio::sync::Notify,
-    /// One turn on its way at a time ([`chat_say_with`]): its slices
-    /// must not interleave with another turn's. Ops that are not turns
-    /// take `conn` alone and go between the slices.
-    saying: Mutex<()>,
     /// Bytes of the turn on its way sent so far, and in all (0: none).
     sending: (AtomicU64, AtomicU64),
     /// How many opens hold this attachment. React mounts an effect,
@@ -413,13 +411,14 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
     let sid = SessionId(id.to_owned());
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let chat = Arc::new(Chat {
-        conn: Mutex::new(conn),
+        conn: crate::connection::Connection::new(conn)?,
+        commands: Default::default(),
+        turns: Default::default(),
         frames: Mutex::new(Frames::default()),
         gone: AtomicBool::new(false),
         stall: Mutex::new(None),
         far: far.clone(),
         arrived: tokio::sync::Notify::new(),
-        saying: Mutex::new(()),
         sending: (AtomicU64::new(0), AtomicU64::new(0)),
         holds: AtomicUsize::new(1),
         left: AtomicBool::new(false),
@@ -467,7 +466,7 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
             *reader.stall.lock().unwrap() = None;
             // The write half first, so the history a face asks for on
             // seeing `lost` goes down the new attachment.
-            *reader.conn.lock().unwrap() = conn;
+            if reader.conn.replace(conn).is_err() { break; }
             reader.frames.lock().unwrap().restart();
             reader.arrived.notify_waiters();
             reading = again;
@@ -475,6 +474,9 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         // A goodbye and a torn connection land the same way (ChatBatch).
         *reader.stall.lock().unwrap() = None;
         reader.gone.store(true, Ordering::Relaxed);
+        reader.commands.close();
+        reader.turns.close();
+        reader.conn.close();
         reader.arrived.notify_waiters();
     });
     registry.insert(id.to_owned(), chat);
@@ -615,10 +617,29 @@ pub fn chat_say_with(
     images: Vec<(String, String)>,
     files: Vec<(String, String)>,
 ) -> Result<(), String> {
+    submit_say(id, text.to_owned(), images, files)?.wait()
+}
+
+/// Capture this attachment and the end of its admitted controls before dispatching.
+/// Turns wait for those controls, while later Stop can pass between their slices.
+pub fn submit_say(
+    id: &str,
+    text: String,
+    images: Vec<(String, String)>,
+    files: Vec<(String, String)>,
+) -> Result<crate::command_queue::Pending<()>, String> {
     let chat = chat_of(id)?;
-    let _one = chat.saying.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let preceding_controls = chat.commands.submit(|| Ok(()))?;
+    let target = chat.clone();
+    chat.turns.submit(move || {
+        preceding_controls.wait()?;
+        send_turn(&target, text, images, files)
+    })
+}
+
+fn send_turn(chat: &Chat, text: String, images: Vec<(String, String)>, files: Vec<(String, String)>) -> Result<(), String> {
     let op = GuiOp::SayWith {
-        text: text.to_owned(),
+        text,
         images,
         files,
     };
@@ -638,101 +659,77 @@ pub fn chat_say_with(
     sent
 }
 
-/// The answer to an [`ChatFrame::Ask`]: the chosen option id, or `None`
-/// to refuse.
-pub fn chat_answer(id: &str, ask: u64, option: Option<String>) -> Result<(), String> {
-    let chat = chat_of(id)?;
-    let mut conn = chat.conn.lock().unwrap();
-    write_frame(&mut *conn, &GuiOp::Answer { ask, option })
+/// Controls share one FIFO; whole turns deliberately use another one.
+pub enum Control {
+    Answer { ask: u64, option: Option<String> },
+    Respond { ask: u64, response: serde_json::Value },
+    Operation { token: String, operation: String, payload: serde_json::Value },
+    SetMode(String),
+    SetOption { option: String, value: serde_json::Value },
+    Stop,
+    Replay,
 }
 
-pub fn chat_respond(id: &str, ask: u64, response: &serde_json::Value) -> Result<(), String> {
-    let response = serde_json::to_string(response).map_err(|e| e.to_string())?;
-    if response.len() > 128 * 1024 {
-        return Err("Interaction response is too large".into());
-    }
-    let chat = chat_of(id)?;
-    write_frame(
-        &mut *chat.conn.lock().unwrap(),
-        &GuiOp::ElicitAnswer { ask, response },
-    )
-}
-pub fn chat_control(
-    id: &str,
-    token: &str,
-    operation: &str,
-    payload: &serde_json::Value,
-) -> Result<(), String> {
-    if token.is_empty()
-        || token.len() > 128
-        || !matches!(operation, "close" | "delete" | "authenticate" | "logout")
-    {
-        return Err("Invalid session operation".into());
-    }
-    let payload = payload.to_string();
-    if payload.len() > 16 * 1024 {
-        return Err("Session operation is too large".into());
-    }
-    let chat = chat_of(id)?;
-    write_frame(
-        &mut *chat.conn.lock().unwrap(),
-        &GuiOp::Control {
-            token: token.into(),
-            operation: operation.into(),
-            payload,
-        },
-    )
-}
-
-/// Puts the session in one of the modes its agent listed
-/// (`GuiOp::SetMode`). The answer is a `Settings` frame on the poll,
-/// or a `Refused` one — never this call's result, which only says the
-/// op left.
-pub fn chat_set_mode(id: &str, mode: &str) -> Result<(), String> {
-    let chat = chat_of(id)?;
-    let mut conn = chat.conn.lock().unwrap();
-    write_frame(&mut *conn, &GuiOp::SetMode(mode.to_owned()))
-}
-
-/// Sets one of the agent's options (`GuiOp::SetOption`): a string is
-/// a listed value's id, a bool is a switch. Anything else is refused
-/// here by shape — the two are the protocol's only two, and a number
-/// quietly stringified would reach the agent as a value it never
-/// listed.
-pub fn chat_set_option(id: &str, option: &str, value: &serde_json::Value) -> Result<(), String> {
-    let value = match value {
-        serde_json::Value::String(v) => Choice::Value(v.clone()),
-        serde_json::Value::Bool(on) => Choice::Switch(*on),
-        other => {
-            return Err(format!(
-                "an option is set to a word or a switch, not {other}"
-            ));
+/// Validate before enqueueing, retaining the core errors used by every skin.
+pub fn submit_control(id: &str, command: Control) -> Result<crate::command_queue::Pending<()>, String> {
+    let op = match command {
+        Control::Answer { ask, option } => GuiOp::Answer { ask, option },
+        Control::Respond { ask, response } => {
+            let response = serde_json::to_string(&response).map_err(|e| e.to_string())?;
+            if response.len() > 128 * 1024 { return Err("Interaction response is too large".into()); }
+            GuiOp::ElicitAnswer { ask, response }
         }
+        Control::Operation { token, operation, payload } => {
+            if token.is_empty() || token.len() > 128
+                || !matches!(operation.as_str(), "close" | "delete" | "authenticate" | "logout") {
+                return Err("Invalid session operation".into());
+            }
+            let payload = payload.to_string();
+            if payload.len() > 16 * 1024 { return Err("Session operation is too large".into()); }
+            GuiOp::Control { token, operation, payload }
+        }
+        Control::SetMode(mode) => GuiOp::SetMode(mode),
+        Control::SetOption { option, value } => {
+            let value = match value {
+                serde_json::Value::String(v) => Choice::Value(v),
+                serde_json::Value::Bool(on) => Choice::Switch(on),
+                other => return Err(format!("an option is set to a word or a switch, not {other}")),
+            };
+            GuiOp::SetOption { id: option, value }
+        }
+        Control::Stop => GuiOp::Stop,
+        Control::Replay => GuiOp::Replay,
     };
     let chat = chat_of(id)?;
-    let mut conn = chat.conn.lock().unwrap();
-    write_frame(
-        &mut *conn,
-        &GuiOp::SetOption {
-            id: option.to_owned(),
-            value,
-        },
-    )
+    let target = chat.clone();
+    chat.commands.submit(move || write_frame(&mut *target.conn.lock().unwrap(), &op))
 }
 
-/// Ends the running turn — not the session (`GuiOp::Stop`).
+/// Chosen option id, or None to refuse. Synchronous bridge callers still wait
+/// until the op left; native IPC awaits the same submitted command instead.
+pub fn chat_answer(id: &str, ask: u64, option: Option<String>) -> Result<(), String> {
+    submit_control(id, Control::Answer { ask, option })?.wait()
+}
+pub fn chat_respond(id: &str, ask: u64, response: &serde_json::Value) -> Result<(), String> {
+    submit_control(id, Control::Respond { ask, response: response.clone() })?.wait()
+}
+pub fn chat_control(id: &str, token: &str, operation: &str, payload: &serde_json::Value) -> Result<(), String> {
+    submit_control(id, Control::Operation { token: token.into(), operation: operation.into(), payload: payload.clone() })?.wait()
+}
+/// The agent's Settings/Refused frame carries the outcome; this result says
+/// only that the op left, as it did before commands acquired a queue.
+pub fn chat_set_mode(id: &str, mode: &str) -> Result<(), String> {
+    submit_control(id, Control::SetMode(mode.into()))?.wait()
+}
+pub fn chat_set_option(id: &str, option: &str, value: &serde_json::Value) -> Result<(), String> {
+    submit_control(id, Control::SetOption { option: option.into(), value: value.clone() })?.wait()
+}
+/// Ends the running turn, not the session; never waits for a whole turn's queue.
 pub fn chat_stop(id: &str) -> Result<(), String> {
-    let chat = chat_of(id)?;
-    let mut conn = chat.conn.lock().unwrap();
-    write_frame(&mut *conn, &GuiOp::Stop)
+    submit_control(id, Control::Stop)?.wait()
 }
-
-/// Asks for the conversation so far; it arrives as
-/// [`ChatFrame::History`] frames closed by [`ChatFrame::HistoryEnd`].
 pub fn chat_replay(id: &str) -> Result<(), String> {
-    let chat = chat_of(id)?;
-    let mut conn = chat.conn.lock().unwrap();
-    write_frame(&mut *conn, &GuiOp::Replay)
+    submit_control(id, Control::Replay)?.wait()
 }
 
 /// The recorded past of a session khor did not open: the vendor's own
@@ -835,7 +832,12 @@ pub fn chat_leave(id: &str) -> Result<(), String> {
         Some(chat) => {
             if chat.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
                 chat.left.store(true, Ordering::Relaxed);
-                registry.remove(id);
+                let chat = registry.remove(id).unwrap();
+                drop(registry);
+                chat.commands.close();
+                chat.turns.close();
+                chat.conn.close();
+                return Ok(());
             }
         }
         // Its open may still be reaching: the hold it would take is
@@ -1055,6 +1057,10 @@ mod old_host_tests {
 }
 
 #[cfg(test)]
+#[path = "chat_io_tests.rs"]
+mod io_tests;
+
+#[cfg(test)]
 mod wait_tests {
     use super::*;
 
@@ -1064,13 +1070,14 @@ mod wait_tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let chat = Arc::new(Chat {
-            conn: Mutex::new(conn),
+            conn: crate::connection::Connection::new(conn).unwrap(),
+            commands: Default::default(),
+            turns: Default::default(),
             frames: Mutex::new(Frames::default()),
             gone: AtomicBool::new(false),
             stall: Mutex::new(None),
             far: None,
             arrived: tokio::sync::Notify::new(),
-            saying: Mutex::new(()),
             sending: (AtomicU64::new(0), AtomicU64::new(0)),
             holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),

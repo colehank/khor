@@ -41,7 +41,7 @@ fn repo_file(rel: &str) -> String {
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("reading {}: {e}", p.display()))
 }
 
-/// What the shipped app answers: the names inside `generate_handler![…]`.
+/// The generated handler plus commands synchronously admitted to attachment queues.
 fn tauri_commands() -> BTreeSet<String> {
     let src = repo_file("../src-tauri/src/lib.rs");
     let open = src.find("generate_handler![").expect(
@@ -52,12 +52,26 @@ fn tauri_commands() -> BTreeSet<String> {
         + src[start..]
             .find(']')
             .expect("the handler list is closed by `]`");
-    src[start..end]
+    let mut commands: BTreeSet<String> = src[start..end]
         .split(',')
         .map(str::trim)
         .filter(|w| !w.is_empty())
         .map(str::to_owned)
-        .collect()
+        .collect();
+    if src.contains("native_io::dispatch(invoke)") {
+        let native = repo_file("../src-tauri/src/native_io.rs");
+        let marker = "const COMMANDS: &[&str] = &[";
+        let start = native.find(marker).expect("native dispatcher lost its command table") + marker.len();
+        let end = start + native[start..].find("];").expect("native command table is not closed");
+        let admitted: Vec<_> = native[start..end].split(',').map(str::trim)
+            .filter(|s| !s.is_empty()).map(|s| s.strip_prefix('"').and_then(|s| s.strip_suffix('"'))
+                .expect("native command table must contain string literals")).collect();
+        assert!(!admitted.is_empty(), "native command finder found no commands");
+        for name in admitted {
+            assert!(commands.insert(name.to_owned()), "duplicate native command {name}");
+        }
+    }
+    commands
 }
 
 /// What every HTTP skin answers: the string arms of the shared

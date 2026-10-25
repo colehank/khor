@@ -18,7 +18,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
+      - uses: dtolnay/rust-toolchain@stable
       - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - run: node scripts/check-native-io.mjs
 
   agent:
     runs-on: ubuntu-latest

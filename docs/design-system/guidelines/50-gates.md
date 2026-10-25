@@ -757,3 +757,5 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` 检查脚本的失败传递和 dry-run 等行为，使用临时目录与替身，不安装、卸载或连接用户机器。
 
 - `npm run lock-state`：真实 React hook 宿主中的锁配置刷新、请求乱序、PIN/系统解锁、跨窗通知与清理回归。只替换transport与时钟，不读真实锁配置；加入 `npm run test:interaction`。
+
+原生 I/O 调度的轻量回归：仓库根运行 `node scripts/check-native-io.mjs`，Quality/scripts 持续执行。直接编译当前 CommandQueue/Connection，并原样提取 term_paste/paste，覆盖保序、关闭/重开隔离、锁等待期间取消与完成通知；依赖 rustc，不启动 Cargo。原生参数/ACL 与真实 GUI core TCP 用例另用 Cargo 执行，轻量脚本不替代它们。

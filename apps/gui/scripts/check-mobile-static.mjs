@@ -9,6 +9,22 @@ export function checkMobileSources(gui) {
   const probeDead = message => fail(`probe dead: ${message}`);
   // ── 2) the entry point ─────────────────────────────────────────────
   const lib = readFileSync(join(gui, "src-tauri", "src", "lib.rs"), "utf8");
+  const admitted = new Set();
+  if (lib.includes("native_io::dispatch(invoke)")) {
+    const native = readFileSync(join(gui, "src-tauri", "src", "native_io.rs"), "utf8");
+    const table = /const COMMANDS:\s*&\[&str\]\s*=\s*&\[([\s\S]*?)\];/.exec(native)?.[1];
+    if (table === undefined || !/COMMANDS\s*\.iter\(\)/.test(native)) {
+      probeDead("ordered native dispatcher must use its COMMANDS table for admission");
+    } else {
+      for (const entry of table.split(",").map(s => s.trim()).filter(Boolean)) {
+        const name = /^"([a-z_0-9]+)"$/.exec(entry)?.[1];
+        if (!name || admitted.has(name)) probeDead(`invalid or duplicate native command: ${entry}`);
+        else admitted.add(name);
+      }
+      if (admitted.size === 0) probeDead("ordered native command table is empty");
+      if (!native.includes("respond_async")) probeDead("ordered native commands lost asynchronous completion");
+    }
+  }
   if (!/#\[cfg_attr\(mobile,\s*tauri::mobile_entry_point\)\]\s*pub fn run\(\)/.test(lib)) {
     fail(
       "no entry point: `pub fn run()` in src-tauri/src/lib.rs lost " +
@@ -95,20 +111,16 @@ export function checkMobileSources(gui) {
     "update_account", "register_account", "remove_account", "seen", "rename_session",
     "rename_machine", "relays", "set_relays", "pin_session", "pin_device", "forget_device",
     "set_watch", "set_receive_dir", "face_choices", "restyle", "recents", "recent_visit", "forget_recent", "find",
-    "history", "history_follow", "machine_log", "import_candidates", "import_sessions", "agents",
+    "machine_log", "import_candidates", "import_sessions", "agents",
     "agents_known", "agents_known_taken", "register_known_agent", "agent_seen", "invite",
     "pending_list", "root_words", "set_paused", "set_machine_paused", "config", "set_config",
     "about", "web_key", "rotate_web_key", "reset_identity", "page_icons",
     // This machine's own settings files.
     "hooks_state", "install_hooks", "uninstall_hooks", "lock_state", "set_lock", "set_lock_pin",
     "set_lock_timeout", "unlock", "doctor_fix",
-    // An attachment already open: memory, and a write to its socket.
-    "chat_poll", "chat_answer", "chat_stop", "chat_set_mode", "chat_set_option",
-    "chat_replay", "chat_leave", "term_attach", "term_stream", "term_key", "term_resize", "term_leave",
-    "term_forget", "term_drop_progress",
-    // A drop's cancel (item 71): a flag in memory, and the directories of
-    // the few files a face staged for it.
-    "term_drop_cancel",
+    // Attachment reads and leave only touch memory or interrupt a socket;
+    // ordered writes are admitted by native_io and complete asynchronously.
+    "chat_poll", "chat_leave", "term_attach", "term_stream", "term_leave", "term_drop_progress",
     // Answers the build knows, or plain memory.
     "console_catalog", // static command descriptors; no node/network work
     "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",
@@ -151,7 +163,7 @@ export function checkMobileSources(gui) {
     // its own snapshot by design (`khor_node::Node::day_strips`). Measured
     // at 31 ms held on a scratch app, with key→echo max 35 ms in the same
     // window against a p95 of 12 ms.
-    "day_strips",
+    "day_strips", "history", "history_follow",
   ];
   {
     const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(async\s+)?fn\s+([a-z_0-9]+)/g;
@@ -160,6 +172,10 @@ export function checkMobileSources(gui) {
     for (const m of lib.matchAll(decl)) {
       all.add(m[3]);
       if (!m[2] && !/async/.test(m[1] ?? "")) sync.add(m[3]);
+    }
+    for (const name of admitted) {
+      if (all.has(name)) fail(`ordered native command \`${name}\` is also declared as a generated command`);
+      all.add(name);
     }
     if (all.size < 100) {
       probeDead(`read only ${all.size} commands out of src-tauri/src/lib.rs — the declaration pattern no longer matches`);

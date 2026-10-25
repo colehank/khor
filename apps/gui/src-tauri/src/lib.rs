@@ -4,6 +4,7 @@
 
 mod menu_overlay;
 mod page_history;
+mod native_io;
 
 #[cfg(desktop)]
 mod window_surface;
@@ -753,38 +754,6 @@ async fn chat_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::cha
     khor_gui_core::chat::chat_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
 }
 
-/// One turn, with what it carries: `images` as `[mime, base64]` and
-/// `files` as `[name, text]` pairs. **Async, off the main thread**: a
-/// turn carrying photos to a far machine takes as long as the road does
-/// (2026-10-04: two phone photos held the interface for minutes), and
-/// it goes in slices with its progress on the poll (`chat::chat_say_with`).
-///
-/// ⚠️ 墓碑: this command took `id` and `text` only, so a picture or a
-/// file attached in the app never left it — the web face's bridge was
-/// the one door that carried them.
-#[tauri::command]
-async fn chat_say(
-    id: String,
-    text: String,
-    images: Option<Vec<(String, String)>>,
-    files: Option<Vec<(String, String)>>,
-) -> Result<(), String> {
-    off_main(move || {
-        khor_gui_core::chat::chat_say_with(
-            &id,
-            &text,
-            images.unwrap_or_default(),
-            files.unwrap_or_default(),
-        )
-    })
-    .await
-}
-
-#[tauri::command]
-fn chat_answer(id: String, ask: u64, option: Option<String>) -> Result<(), String> {
-    khor_gui_core::chat::chat_answer(&id, ask, option)
-}
-
 /// A page's site icon, through the page's own exit (docs/SHELL.md 第四轮).
 #[tauri::command]
 async fn page_icon(url: String, proxy: Option<String>) -> Result<String, String> {
@@ -838,39 +807,6 @@ fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn chat_stop(id: String) -> Result<(), String> {
-    khor_gui_core::chat::chat_stop(&id)
-}
-#[tauri::command]
-fn chat_set_mode(id: String, mode: String) -> Result<(), String> {
-    khor_gui_core::chat::chat_set_mode(&id, &mode)
-}
-
-#[tauri::command]
-fn chat_set_option(id: String, option: String, value: serde_json::Value) -> Result<(), String> {
-    khor_gui_core::chat::chat_set_option(&id, &option, &value)
-}
-
-#[tauri::command]
-fn chat_respond(id: String, ask: u64, response: serde_json::Value) -> Result<(), String> {
-    khor_gui_core::chat::chat_respond(&id, ask, &response)
-}
-#[tauri::command]
-fn chat_control(
-    id: String,
-    token: String,
-    operation: String,
-    payload: serde_json::Value,
-) -> Result<(), String> {
-    khor_gui_core::chat::chat_control(&id, &token, &operation, &payload)
-}
-
-#[tauri::command]
-fn chat_replay(id: String) -> Result<(), String> {
-    khor_gui_core::chat::chat_replay(&id)
-}
-
-#[tauri::command]
 fn chat_leave(id: String) -> Result<(), String> {
     khor_gui_core::chat::chat_leave(&id)
 }
@@ -878,16 +814,16 @@ fn chat_leave(id: String) -> Result<(), String> {
 /// A discovered session's recorded past — the vendor's transcript in
 /// replay-shaped frames (`khor_gui_core::chat::history`).
 #[tauri::command]
-fn history(id: String) -> Result<Vec<khor_gui_core::chat::ChatFrame>, String> {
-    khor_gui_core::chat::history(&Node::root_from_env(), &id)
+async fn history(id: String) -> Result<Vec<khor_gui_core::chat::ChatFrame>, String> {
+    off_main(move || khor_gui_core::chat::history(&Node::root_from_env(), &id)).await
 }
 
 /// A discovered conversation, **followed**: whatever its transcript has
 /// said since `from`, and where to continue. The read-only half of
 /// watching a session that is running in its own terminal.
 #[tauri::command]
-fn history_follow(id: String, from: u64) -> Result<khor_gui_core::chat::Followed, String> {
-    khor_gui_core::chat::history_follow(&Node::root_from_env(), &id, from)
+async fn history_follow(id: String, from: u64) -> Result<khor_gui_core::chat::Followed, String> {
+    off_main(move || khor_gui_core::chat::history_follow(&Node::root_from_env(), &id, from)).await
 }
 
 /// One machine's directory, for the files landing. Async because the
@@ -1081,11 +1017,6 @@ fn term_attach(id: String) -> Result<khor_gui_core::term::TermStart, String> {
 }
 
 #[tauri::command]
-fn term_ready(id: String) -> Result<(), String> {
-    khor_gui_core::term::term_ready(&id)
-}
-
-#[tauri::command]
 fn term_stream(id: String, since: u64) -> Result<khor_gui_core::term::TermChunk, String> {
     khor_gui_core::term::term_stream(&id, since)
 }
@@ -1114,13 +1045,6 @@ async fn term_prompt(id: String, up: bool) -> Result<(), String> {
 #[tauri::command]
 async fn term_scroll(id: String, rows: i32) -> Result<bool, String> {
     khor_gui_core::term::scroll(&Node::root_from_env(), &id, rows).await
-}
-
-/// ⌘K kept where the bytes are (`term::term_forget`): true when the host
-/// kept it too.
-#[tauri::command]
-fn term_forget(id: String, redraw: bool) -> Result<bool, String> {
-    khor_gui_core::term::term_forget(&id, redraw)
 }
 
 /// A tmux row's front pane history from an anchor on (item 31,
@@ -1319,48 +1243,11 @@ fn joy_haptic(app: tauri::AppHandle, kind: String) {
     let _ = (app, kind);
 }
 
-#[tauri::command]
-fn term_key(id: String, keys: String) -> Result<(), String> {
-    khor_gui_core::term::term_key(&id, keys.into_bytes())
-}
-
-/// Files dropped on a terminal: their paths, shell-quoted, pasted in
-/// (`term::term_drop`). The quoting is the registry's because it is
-/// about the shell's syntax, and one wrong escape is a command.
-///
-/// The root rides along because the terminal may not be on this
-/// machine: a drop onto a far session has that machine pull the files
-/// first and pastes where they landed, and finding that out is a node's
-/// job — the frontend never learns there is a network under it.
-///
-/// `from` is the machine the files are on when they came from a listing
-/// of another machine's disk (item 60); absent, they are this machine's.
-/// `into` is the shell's current directory for 「放到当前目录」 (part 5);
-/// absent, they land in that machine's `~/khor-drop`.
-#[tauri::command]
-async fn term_drop(id: String, paths: Vec<String>, from: Option<String>, into: Option<String>) -> Result<khor_gui_core::term::DropEnd, String> {
-    off_main(move || Ok(khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths, from.as_deref(), into.as_deref()))).await
-}
-
 /// How far a terminal's drop has got, for its pill's line (item 60):
 /// memory.
 #[tauri::command]
 fn term_drop_progress(id: String) -> Option<f32> {
     khor_gui_core::term::term_drop_progress(&id)
-}
-
-/// The drop under way on a terminal, cancelled (item 71, the pill's ×):
-/// nothing is pasted, and `staged` — picks the face staged for a drop it
-/// will not ask for — go now (`term::term_drop_cancel`). Memory and a
-/// few directories, so on the main thread like the progress.
-#[tauri::command]
-fn term_drop_cancel(id: String, staged: Option<Vec<String>>) {
-    khor_gui_core::term::term_drop_cancel(&Node::root_from_env(), &id, &staged.unwrap_or_default())
-}
-
-#[tauri::command]
-fn term_resize(id: String, cols: u16, rows: u16) -> Result<(), String> {
-    khor_gui_core::term::term_resize(&id, cols, rows)
 }
 
 #[tauri::command]
@@ -4913,7 +4800,12 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(|invoke| {
+            let invoke = match native_io::dispatch(invoke) {
+                Ok(()) => return true,
+                Err(invoke) => invoke,
+            };
+            let fallback: fn(tauri::ipc::Invoke<_>) -> bool = tauri::generate_handler![
             tabs_list,
             tabs_open,
             tabs_go,
@@ -5010,17 +4902,9 @@ pub fn run() {
             chat_open,
             chat_poll,
             chat_wait,
-            chat_say,
-            chat_answer,
-            chat_stop,
-            chat_set_mode,
-            chat_set_option,
-            chat_respond,
-            chat_control,
             page_icon,
             page_icons,
             open_link,
-            chat_replay,
             chat_leave,
             history,
             history_follow,
@@ -5036,14 +4920,12 @@ pub fn run() {
             file_preview_open,
             term_open,
             term_attach,
-            term_ready,
             term_ended,
             term_stream,
             term_history,
             term_prompt,
             term_scroll,
             term_pane_history,
-            term_forget,
             term_wait,
             bell_haptic,
             edit_menu,
@@ -5055,11 +4937,7 @@ pub fn run() {
             name_settings,
             face_note,
             notify_finished,
-            term_key,
-            term_drop,
             term_drop_progress,
-            term_drop_cancel,
-            term_resize,
             term_leave,
             recents,
             recent_visit,
@@ -5145,7 +5023,9 @@ pub fn run() {
             leave,
             set_paused,
             set_machine_paused
-        ])
+            ];
+            fallback(invoke)
+        })
         .build(tauri::generate_context!())
         .expect("tauri build")
         // **Every way out is said in the log** (round NET-FIX): a window
