@@ -7,95 +7,124 @@
 //! makes this a *different* machine — every paired device loses it, and
 //! all they see is "connection timed out".
 
-use std::path::Path;
+use std::fs::{File, OpenOptions};
+use std::io::{ErrorKind, Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
 use khor_catalog::msg;
 
-/// Loads the identity, or generates one and writes it 0600.
+/// Loads the identity, or publishes a complete private key without replacing
+/// another process's identity. All concurrent creators load the same winner.
 pub fn load_or_create(path: &Path) -> Result<iroh::SecretKey> {
-    if path.exists() {
-        check_private_permissions(path)?;
-        let raw = std::fs::read(path).context(msg::identity_unreadable())?;
-        let bytes: [u8; 32] = raw
-            .as_slice()
-            .try_into()
-            .map_err(|_| anyhow::anyhow!(msg::identity_corrupt(path.display())))?;
-        return Ok(iroh::SecretKey::from_bytes(&bytes));
+    match File::open(path) {
+        Ok(file) => return read_private(file, path),
+        Err(err) if err.kind() == ErrorKind::NotFound => {}
+        Err(err) => return Err(err).context(msg::identity_unreadable()),
     }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| msg::cant_make_dir_for(dir.display()))?;
-    }
+
     let key = iroh::SecretKey::generate();
-    write_private(path, &key.to_bytes())?;
-    Ok(key)
+    let pending = prepare_private(path, &key.to_bytes())?;
+    pending.publish(path)?;
+    // Even a losing creator must use the installed identity, never its own
+    // candidate. Do not retry creation if someone removes the winner here.
+    read_private(File::open(path).context(msg::identity_unreadable())?, path)
 }
 
-/// Writes a file readable by the owner only.
-fn write_private(path: &Path, data: &[u8]) -> Result<()> {
-    std::fs::write(path, data).with_context(|| msg::cant_write_file(path.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .context(msg::cant_set_permissions())?;
+fn read_private(file: File, path: &Path) -> Result<iroh::SecretKey> {
+    check_private_permissions(&file, path)?;
+    // A corrupt file must not cause an unbounded allocation, or be replaced.
+    let mut raw = Vec::with_capacity(33);
+    file.take(33)
+        .read_to_end(&mut raw)
+        .context(msg::identity_unreadable())?;
+    let bytes: [u8; 32] = raw
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!(msg::identity_corrupt(path.display())))?;
+    Ok(iroh::SecretKey::from_bytes(&bytes))
+}
+
+static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+
+/// A complete candidate in the destination directory. Dropping it only removes
+/// the temporary name; a published hard link remains intact.
+struct PendingIdentity {
+    path: PathBuf,
+}
+
+impl PendingIdentity {
+    fn publish(&self, path: &Path) -> Result<()> {
+        match std::fs::hard_link(&self.path, path) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => Ok(()),
+            Err(err) => Err(err).with_context(|| msg::cant_write_file(path.display())),
+        }
+        // No rename fallback: it could overwrite the winner. This applies on
+        // Windows too; filesystems without hard links fail closed. Windows
+        // access control inherits the parent directory's ACL, not Unix modes.
     }
-    Ok(())
 }
 
-/// A loose mode refuses to start: silently using a group- or
-/// world-readable private key is far more dangerous than failing.
-fn check_private_permissions(path: &Path) -> Result<()> {
+impl Drop for PendingIdentity {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn prepare_private(path: &Path, data: &[u8; 32]) -> Result<PendingIdentity> {
+    let dir = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(dir).with_context(|| msg::cant_make_dir_for(dir.display()))?;
+    let (pending, mut file) = loop {
+        let serial = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+        let temp = dir.join(format!(
+            ".khor-identity-{}-{serial}.tmp",
+            std::process::id()
+        ));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // Apply the private mode in open(), before any bytes exist.
+            options.mode(0o600);
+        }
+        match options.open(&temp) {
+            Ok(file) => break (PendingIdentity { path: temp }, file),
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err).with_context(|| msg::cant_write_file(path.display())),
+        }
+    };
+    // Sync the content before it becomes visible. This does not promise that
+    // the new directory entry survives power loss (the directory is not synced).
+    let written = file.write_all(data).and_then(|()| file.sync_all());
+    // Close before cleanup or publication, including on Windows.
+    drop(file);
+    written.with_context(|| msg::cant_write_file(path.display()))?;
+    Ok(pending)
+}
+
+/// Validate the opened inode, so permission checks and reads refer to the same
+/// key even if the path changes. Loose keys are refused, never silently repaired.
+fn check_private_permissions(file: &File, path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(path)?.permissions().mode() & 0o777;
+        let mode = file.metadata()?.permissions().mode() & 0o777;
         anyhow::ensure!(
             mode & 0o077 == 0,
             msg::identity_too_open(format_args!("{mode:o}"), path.display())
         );
     }
     #[cfg(not(unix))]
-    let _ = path;
+    let _ = (file, path);
     Ok(())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The reason this file exists: the identity must survive a restart,
-    /// or every paired device goes dark.
-    #[test]
-    fn the_same_identity_comes_back_on_the_second_call() {
-        let dir = std::env::temp_dir().join(format!("khor-id-{}", std::process::id()));
-        let path = dir.join("identity.key");
-        let _ = std::fs::remove_dir_all(&dir);
-        let a = load_or_create(&path).unwrap();
-        let b = load_or_create(&path).unwrap();
-        assert_eq!(a.public(), b.public());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_world_readable_key_is_refused_rather_than_used() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("khor-id-perm-{}", std::process::id()));
-        let path = dir.join("identity.key");
-        let _ = std::fs::remove_dir_all(&dir);
-        load_or_create(&path).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        let err = load_or_create(&path).unwrap_err().to_string();
-        // The message is parameterized; its prefix up to the first
-        // argument is the stable part to assert on.
-        let probe = msg::identity_too_open('\u{0}', '\u{0}');
-        assert!(
-            err.contains(probe.split('\u{0}').next().unwrap()),
-            "got: {err}"
-        );
-        // The error must say how to fix it, not just "no".
-        assert!(err.contains("chmod 600"), "got: {err}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-}
+#[path = "identity/tests.rs"]
+mod tests;
