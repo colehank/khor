@@ -6,25 +6,31 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 #[path = "agent_accounts.rs"]
 mod accounts;
-#[path = "khor_agent_updates.rs"]
-mod updates;
-#[path = "khor_agent_output.rs"]
-mod output;
+#[path = "khor_agent_input.rs"]
+mod input;
 #[path = "khor_agent_io.rs"]
 mod io;
+#[path = "khor_agent_output.rs"]
+mod output;
+#[path = "khor_agent_process.rs"]
+mod process;
+#[path = "khor_agent_updates.rs"]
+mod updates;
 use output::TextStream;
 use std::{
     collections::HashMap,
     fs::{self, File, OpenOptions},
-    io::Write,
     path::{Path, PathBuf},
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Command, Stdio},
     sync::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
 };
+
+#[cfg(all(test, unix))]
+use std::process::Child;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Action {
@@ -66,27 +72,59 @@ struct Saved {
 
 struct Running {
     id: String,
-    input: Mutex<Option<ChildStdin>>,
+    input: Mutex<Option<input::Input>>,
+    process: Arc<process::Control>,
     stopped: AtomicBool,
     approval: Mutex<Option<(String, Option<bool>)>>,
 }
 
-struct ChildGuard(Child);
-impl std::ops::Deref for ChildGuard {
-    type Target = Child;
-    fn deref(&self) -> &Child {
-        &self.0
+impl Running {
+    fn new(id: String) -> Self {
+        Self {
+            id,
+            input: Mutex::new(None),
+            process: Arc::default(),
+            stopped: AtomicBool::new(false),
+            approval: Mutex::new(None),
+        }
+    }
+    fn request_stop(&self) {
+        self.stopped.store(true, Ordering::SeqCst);
+        self.process.stop();
+        if let Some(input) = self
+            .input
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+        {
+            input.abort();
+        }
     }
 }
-impl std::ops::DerefMut for ChildGuard {
-    fn deref_mut(&mut self) -> &mut Child {
-        &mut self.0
+struct Execution {
+    child: process::Session,
+    input: input::Input,
+    writer: Option<std::thread::JoinHandle<()>>,
+    reader: Option<std::thread::JoinHandle<()>>,
+    drain: Option<std::thread::JoinHandle<()>>,
+}
+impl Execution {
+    fn finish(&mut self, force: bool) -> std::io::Result<std::process::ExitStatus> {
+        self.input.close();
+        let exit = self.child.finish(force);
+        for thread in [&mut self.writer, &mut self.reader, &mut self.drain] {
+            if let Some(thread) = thread.take() {
+                let _ = thread.join();
+            }
+        }
+        exit
     }
 }
-impl Drop for ChildGuard {
+impl Drop for Execution {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        if self.writer.is_some() {
+            let _ = self.finish(true);
+        }
     }
 }
 fn running() -> &'static Mutex<HashMap<PathBuf, Arc<Running>>> {
@@ -120,10 +158,16 @@ fn safe_token(token: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
 }
-fn configuration_lock(root:&Path)->Result<File,String>{
-    fs::create_dir_all(directory(root)).map_err(|e|e.to_string())?;
-    let file=OpenOptions::new().create(true).truncate(false).read(true).write(true).open(directory(root).join("config.lock")).map_err(|e|e.to_string())?;
-    file.lock().map_err(|e|e.to_string())?;
+fn configuration_lock(root: &Path) -> Result<File, String> {
+    fs::create_dir_all(directory(root)).map_err(|e| e.to_string())?;
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(directory(root).join("config.lock"))
+        .map_err(|e| e.to_string())?;
+    file.lock().map_err(|e| e.to_string())?;
     Ok(file)
 }
 fn claim(root: &Path) -> Result<File, String> {
@@ -169,13 +213,15 @@ fn save(root: &Path, saved: &Saved) -> Result<(), String> {
     Ok(())
 }
 fn send(active: &Running, value: &Value) -> Result<(), String> {
-    let mut input = active.input.lock().map_err(|e| e.to_string())?;
-    let input = input
-        .as_mut()
+    let input = active
+        .input
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
         .ok_or_else(|| msg::agent_not_running().to_owned())?;
-    writeln!(input, "{value}")
-        .and_then(|_| input.flush())
-        .map_err(|e| e.to_string())
+    let mut bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
+    input.send(bytes)
 }
 
 pub(crate) fn configuration_reply(action: &Action, report: &Report) -> bool {
@@ -214,8 +260,8 @@ impl Node {
                 {
                     return Err(msg::agent_model_required().to_owned());
                 }
-                let _configuration=configuration_lock(&root)?;
-                let current=self.khor_agent_config()?;
+                let _configuration = configuration_lock(&root)?;
+                let current = self.khor_agent_config()?;
                 let config = AgentConfig {
                     home: self.device_str().into(),
                     account: account.id.clone(),
@@ -292,12 +338,7 @@ impl Node {
                     },
                 };
                 save(&root, &saved)?;
-                let active = Arc::new(Running {
-                    id: id.clone(),
-                    input: Mutex::new(None),
-                    stopped: AtomicBool::new(false),
-                    approval: Mutex::new(None),
-                });
+                let active = Arc::new(Running::new(id.clone()));
                 running()
                     .lock()
                     .map_err(|e| e.to_string())?
@@ -384,8 +425,7 @@ impl Node {
                     .filter(|r| r.id == run)
                     .cloned()
                     .ok_or_else(|| msg::agent_not_running().to_owned())?;
-                active.stopped.store(true, Ordering::SeqCst);
-                let _ = send(&active, &json!({"type":"abort"}));
+                active.request_stop();
                 let cancel_root = root.clone();
                 let cancel_run = run.clone();
                 std::thread::spawn(move || {
@@ -509,7 +549,11 @@ fn sidecar(root: &Path) -> Result<Command, String> {
 fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, key: &str) {
     let mut text_output = TextStream::new(key);
     let mut snapshots = updates::Recorder::new(key);
+    let mut process_stopped = true;
     let outcome = (|| -> Result<(), String> {
+        if active.stopped.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         // Extraction and hashing of the bundled runtime stay off the reactor.
         let mut command = sidecar(&root)?;
         // Pass only operating-system settings. Provider keys, tokens, Pi config
@@ -540,31 +584,33 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = ChildGuard(command.spawn().map_err(|e| msg::agent_runtime_failed(e))?);
-        *active.input.lock().map_err(|e| e.to_string())? = child.stdin.take();
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| msg::agent_runtime_missing().to_owned())?;
-        let stderr = child.stderr.take();
-        // Drain stderr without retaining credentials or unbounded output.
-        let drain = std::thread::spawn(move || {
-            if let Some(stderr) = stderr {
-                io::drain_stderr(stderr);
-            }
-        });
-        if let Err(error) = send(&active, &start) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(error);
-        }
         if active.stopped.load(Ordering::SeqCst) {
-            let _ = send(&active, &json!({"type":"abort"}));
+            return Ok(());
         }
+        let (child, pipes) = process::Session::spawn(command, active.process.clone())
+            .map_err(|e| msg::agent_runtime_failed(e))?;
+        process_stopped = false;
+        let (input, writer) = input::Input::spawn(pipes.stdin).map_err(|e| e.to_string())?;
+        {
+            let mut current = active.input.lock().unwrap_or_else(|p| p.into_inner());
+            if active.stopped.load(Ordering::SeqCst) {
+                input.abort();
+            }
+            *current = Some(input.clone());
+        }
+        let mut execution = Execution {
+            child,
+            input,
+            writer: Some(writer),
+            reader: None,
+            drain: None,
+        };
+        execution.drain = Some(std::thread::spawn(move || io::drain_stderr(pipes.stderr)));
+        let stdout = pipes.stdout;
         // Keep consuming cancellation/EOF while a person is considering an
         // approval. Blocking the reader here could execute an expired request.
         let (out, events) = mpsc::sync_channel(64);
-        let reader = std::thread::spawn(move || {
+        execution.reader = Some(std::thread::spawn(move || {
             for line in io::event_lines(stdout) {
                 let line = line.map_err(|error| match error {
                     io::EventError::Read(error) => error.to_string(),
@@ -574,11 +620,12 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                     break;
                 }
             }
-        });
+        }));
         let mut completed = false;
         let mut pending = McpSession::default();
         let mut last_flush = std::time::Instant::now();
         let read_result = (|| -> Result<(), String> {
+            send(&active, &start)?;
             loop {
                 let line = match events.recv_timeout(std::time::Duration::from_millis(100)) {
                     Ok(line) => line?,
@@ -667,15 +714,12 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .take();
-        if read_result.is_err() {
-            let _ = child.kill();
-        }
-        // Drop the receiver before joining: a full bounded pipe must not keep
-        // its reader alive after a final event or protocol failure.
+        // The supervisor progresses independently of blocked pipe operations.
+        // Only its successful wait confirms that the owned process was reaped.
         drop(events);
-        let exit = child.wait().map_err(|e| e.to_string())?;
-        let _ = reader.join();
-        let _ = drain.join();
+        let exit = execution.finish(read_result.is_err());
+        process_stopped = exit.is_ok();
+        let exit = exit.map_err(|e| e.to_string())?;
         read_result?;
         if !exit.success() {
             return Err(msg::agent_failed().into());
@@ -686,7 +730,7 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
     if let Some(agent) = saved.record.agent.as_mut() {
         snapshots.finish(agent);
     }
-    let stopped = active.stopped.load(Ordering::SeqCst);
+    let stopped = active.stopped.load(Ordering::SeqCst) && process_stopped;
     if stopped || outcome.is_err() {
         let _ = crate::delegation::cancel_children(&root, &active.id);
     }
@@ -901,6 +945,7 @@ mod tests {
         let active = Running {
             id: "agent-approval-fixture".into(),
             input: Mutex::new(None),
+            process: Arc::default(),
             stopped: AtomicBool::new(false),
             approval: Mutex::new(None),
         };
@@ -968,7 +1013,7 @@ mod tests {
             .message(&root, &mut saved, &active, &request)
             .unwrap();
         active.approval.lock().unwrap().as_mut().unwrap().1 = Some(true);
-        active.stopped.store(true, Ordering::SeqCst);
+        active.request_stop();
         assert_eq!(
             session.poll(&root, &mut saved, &active).unwrap().unwrap()["result"]["isError"],
             true
@@ -984,3 +1029,11 @@ mod tests {
 #[cfg(all(test, unix))]
 #[path = "khor_agent_output_tests.rs"]
 mod output_tests;
+
+#[cfg(all(test, unix))]
+#[path = "khor_agent_cancel_tests.rs"]
+mod cancel_tests;
+
+#[cfg(all(test, unix))]
+#[path = "khor_agent_lifecycle_tests.rs"]
+mod lifecycle_tests;

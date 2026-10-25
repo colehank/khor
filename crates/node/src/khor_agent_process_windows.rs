@@ -114,8 +114,14 @@ impl Process {
 impl Drop for Process {
     fn drop(&mut self) {
         self.cancel_io();
-        // The unnamed, non-inherited job handle owns this run, even after the leader exits.
-        // Closing the last handle kills remaining members without a PID-reuse race.
+        // Even spawn-thread failure must confirm the leader has stopped before
+        // returning the executor claim. Keep the owned job through the wait.
+        if self.terminate().and_then(|_| self.wait()).is_err() {
+            drop(self.job.take());
+            unsafe {
+                WaitForSingleObject(self.process.as_raw_handle(), INFINITE);
+            }
+        }
         drop(self.job.take());
     }
 }

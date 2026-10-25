@@ -108,6 +108,7 @@ fn failed_sidecar_child() {
     let active = Arc::new(Running {
         id: "agent-output-fixture".into(),
         input: Mutex::new(None),
+        process: Arc::default(),
         stopped: AtomicBool::new(false),
         approval: Mutex::new(None),
     });
@@ -435,6 +436,7 @@ fn streamed_sidecar_child() {
     let active = Arc::new(Running {
         id: "agent-stream-fixture".into(),
         input: Mutex::new(None),
+        process: Arc::default(),
         stopped: AtomicBool::new(false),
         approval: Mutex::new(None),
     });
@@ -482,7 +484,7 @@ fn streamed_sidecar_child() {
             std::thread::sleep(Duration::from_millis(10));
         };
         if case["ending"] == "cancelled" {
-            active.stopped.store(true, Ordering::SeqCst);
+            active.request_stop();
         }
         fs::write(directory.join("continue"), b"").unwrap();
         receipt

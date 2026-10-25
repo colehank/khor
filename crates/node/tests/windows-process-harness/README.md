@@ -18,3 +18,8 @@ cargo check --locked --manifest-path crates/node/tests/windows-process-harness/C
 ```
 
 This cross-check does not execute Windows, link the final App, or prove the runtime groups. Running this executable on a non-Windows host exits with status 2.
+
+The common supervisor is compiled from production source too. Its eighth runtime
+check fills stdin, repeats Stop after 3/6/9 seconds, and requires termination
+from the original ten-second deadline. Drop checks require signalled retained
+process handles immediately when Drop returns, without an exit grace period.

@@ -1,4 +1,8 @@
 #[cfg(windows)]
+#[path = "../../../src/khor_agent_process.rs"]
+mod supervised;
+
+#[cfg(windows)]
 #[path = "../../../src/khor_agent_process_windows.rs"]
 mod process;
 
@@ -89,7 +93,7 @@ fn fixture() {
 
 #[cfg(windows)]
 mod checks {
-    use super::{Pipes, process};
+    use super::{Pipes, process, supervised};
     use std::{
         ffi::{OsStr, OsString},
         io::{BufRead, BufReader, Read, Write},
@@ -169,7 +173,9 @@ mod checks {
         println!(
             "PASS independent I/O cancellation unblocks both reads while child holds output pipes"
         );
-        println!("PASS 7 Windows runtime groups");
+        supervised_deadline();
+        println!("PASS supervisor deadline progresses through blocked stdin and repeated Stop");
+        println!("PASS 8 Windows runtime groups");
     }
 
     fn echo_roundtrip(scratch: &Scratch) {
@@ -348,8 +354,46 @@ mod checks {
         let (child, _output, leader_pid, descendant) = start_tree("tree");
         let leader = process_handle(leader_pid);
         drop(child);
-        assert_dead(&leader);
-        assert_dead(&descendant);
+        for handle in [&leader, &descendant] {
+            assert_eq!(
+                unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) },
+                WAIT_OBJECT_0,
+                "Drop returned before the owned tree stopped"
+            );
+        }
+    }
+
+    fn supervised_deadline() {
+        let control = std::sync::Arc::new(supervised::Control::default());
+        let (mut session, pipes) =
+            supervised::Session::spawn(command("sleep"), control.clone()).unwrap();
+        let (sent, received) = std::sync::mpsc::channel();
+        let mut stdin = pipes.stdin;
+        let writer = thread::spawn(move || {
+            let _ = sent.send(stdin.write_all(&vec![b'x'; 8 * 1024 * 1024]));
+        });
+        assert!(matches!(
+            received.recv_timeout(Duration::from_millis(150)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        let started = Instant::now();
+        control.stop();
+        for seconds in [3, 6, 9] {
+            thread::sleep(Duration::from_secs(seconds).saturating_sub(started.elapsed()));
+            control.stop();
+        }
+        assert!(
+            received
+                .recv_timeout(Duration::from_secs(4))
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            started.elapsed() < Duration::from_millis(12_500),
+            "repeated Stop extended the first deadline"
+        );
+        assert!(!session.finish(false).unwrap().success());
+        writer.join().unwrap();
     }
 
     fn blocked_stdin() {
