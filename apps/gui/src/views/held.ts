@@ -24,10 +24,35 @@
 // **Module state, deliberately.** It has to outlive every component
 // here: the landing itself unmounts when somebody walks to another
 // screen, and the browsing windows it opened do not close with it.
-import { closePage, dropWebBorrow } from "@/api";
+import { dropWebBorrow } from "@/api";
+import { closeNativePage } from "@/lib/native-page-open";
+
+class RetentionOwners {
+  private collections = new Map<string, readonly string[]>();
+  private published = new Set<string>();
+
+  acquire(value: string, owner: string): void {
+    if (this.published.has(owner)) return;
+    const provisional = this.collections.get(owner) ?? [];
+    if (!provisional.includes(value)) this.collections.set(owner, [...provisional, value]);
+  }
+
+  update(keep: readonly string[], owner: string): void {
+    this.published.add(owner);
+    this.collections.set(owner, [...keep]);
+  }
+
+  wanted(): Set<string> {
+    return new Set([...this.collections.values()].flat());
+  }
+}
+
+const borrowOwners = new RetentionOwners();
+const pageOwners = new RetentionOwners();
 
 /** device id → the borrow session opened for it. */
 const open = new Map<string, string>();
+const dropping = new Set<string>();
 
 /**
  * Remembers the borrow a page was opened through.
@@ -36,8 +61,10 @@ const open = new Map<string, string>();
  * second page on a machine is handed back the first page's session, so
  * writing it again writes the same value.
  */
-export function holdBorrow(device: string, session: string): void {
+export function holdBorrow(device: string, session: string, owner = "page"): void {
   open.set(device, session);
+  borrowOwners.acquire(device, owner);
+  sweepBorrows();
 }
 
 /**
@@ -59,17 +86,21 @@ export function holdBorrow(device: string, session: string): void {
  * taken deliberately (docs/NET.md 可达性) — a row that exists only so
  * something can reap it is a session in the list that is not a session.
  */
-const borrowOwners = new Map<string, readonly string[]>();
-const pageOwners = new Map<string, readonly string[]>();
 export function releaseBorrows(keep: readonly string[], owner = "page"): void {
-  borrowOwners.set(owner, keep);
-  const wanted = new Set([...borrowOwners.values()].flat());
+  borrowOwners.update(keep, owner);
+  sweepBorrows();
+}
+
+function sweepBorrows(): void {
+  const wanted = borrowOwners.wanted();
   for (const [device, session] of [...open]) {
     if (wanted.has(device)) continue;
     open.delete(device);
-    dropWebBorrow(session).catch(() => {
+    if (dropping.has(session)) continue;
+    dropping.add(session);
+    void dropWebBorrow(session).catch(() => {
       /* nothing holds it but the serve's own process; see above */
-    });
+    }).finally(() => { dropping.delete(session); });
   }
 }
 
@@ -97,15 +128,8 @@ export function releaseBorrows(keep: readonly string[], owner = "page"): void {
  * to measure — the light one is already known and it is not the one
  * that would hurt.
  *
- * ⚠️ **No gate watches the cap, and none can watch it cheaply.** It
- * only bites at the ninth live page, and 「the ninth tab let the first
- * one go」 is invisible on the glass: a tab whose page was released
- * looks exactly like a tab nobody has pressed yet, which is the point
- * of the design. The seam a gate would read is [`releasePages`]'s
- * `closePage` calls, and reaching nine of them means nine real borrows
- * against an engine this repo does not test with. So the ordering and
- * the arithmetic below are reviewed, not measured — the first person to
- * change either of them should know that.
+ * The module regression checks the retirement calls and LRU ordering.
+ * Those controlled native calls do not measure real page memory.
  */
 export const LIVE_TABS = 8;
 
@@ -129,10 +153,12 @@ const pages: string[] = [];
  * — the question is which of *this landing's tabs* are still open, and
  * only this side has that list.
  */
-export function holdPage(tab: string): void {
+export function holdPage(tab: string, owner = "page"): void {
   const at = pages.indexOf(tab);
   if (at >= 0) pages.splice(at, 1);
   pages.push(tab);
+  pageOwners.acquire(tab, owner);
+  sweepPages();
 }
 
 /**
@@ -143,8 +169,12 @@ export function holdPage(tab: string): void {
  * would need to know what this ledger holds.
  */
 export function releasePages(keep: readonly string[], owner = "page"): void {
-  pageOwners.set(owner, keep);
-  const wanted = new Set([...pageOwners.values()].flat());
+  pageOwners.update(keep, owner);
+  sweepPages();
+}
+
+function sweepPages(): void {
+  const wanted = pageOwners.wanted();
   // **Two reasons a page goes, and the order matters.** First the tabs
   // that are not open any more — those are gone for good and must not
   // count against the cap. What is left is every live page whose tab is
@@ -156,7 +186,7 @@ export function releasePages(keep: readonly string[], owner = "page"): void {
   pages.length = 0;
   pages.push(...alive.slice(Math.max(0, alive.length - LIVE_TABS)));
   for (const tab of [...closed, ...capped]) {
-    closePage(tab).catch(() => {
+    closeNativePage(tab).catch(() => {
       /* a webview whose window is gone is already the state we wanted */
     });
   }

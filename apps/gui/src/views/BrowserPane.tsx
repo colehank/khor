@@ -53,6 +53,7 @@ type Opening = { url: string; state: "opening" | "opened" | "failed"; word: stri
 
 export function BrowserPane({
   tab,
+  retentionOwner,
   machine,
   device,
   url,
@@ -68,6 +69,8 @@ export function BrowserPane({
   /** This tab's handle. The page webview is keyed by it on the app side,
       so every call about that page names it. */
   tab: string;
+  /** Collection responsible for retaining this page after its pane unmounts. */
+  retentionOwner: string;
   /** The exit machine's name — whose network a page leaves through. */
   machine: string;
   /** Its device id — what a web pin is keyed by. */
@@ -277,8 +280,8 @@ export function BrowserPane({
         // borrow is open on the far machine whether or not this pane is
         // still on screen; a record skipped because the tab was closed
         // mid-dial is a lease nobody can give back.
-        if (!here) holdBorrow(device, borrow.session);
-        holdPage(tab);
+        if (!here) holdBorrow(device, borrow.session, retentionOwner);
+        holdPage(tab, retentionOwner);
         exit.current = borrow.addr;
         // ⚠️ **Nothing is asked for a pane that is gone, and this is
         // where that rule was nearly lost.** The icon used to be fetched
@@ -364,7 +367,7 @@ export function BrowserPane({
       present(tab, () => !showing.has(tab), () => hidePage(tab));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, machine, url, here]);
+  }, [tab, machine, url, here, retentionOwner]);
 
   // The page is a native view laid over this rectangle, not something in
   // the layout, so nothing moves it when the layout moves. This is the

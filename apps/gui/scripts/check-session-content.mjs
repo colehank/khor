@@ -19,14 +19,14 @@ const port=Number(process.env.CONTENT_VITE_PORT||1476), bridgePort=Number(proces
 const word=key=>readFileSync(join(repo,'crates/catalog/zh.toml'),'utf8').match(new RegExp('^'+key+' = "([^"]*)"','m'))?.[1];
 // Exercise the real shared resource ledger with only its native calls replaced.
 const calls=[];globalThis.__contentHeldCalls=calls;
-const bundled=await build({stdin:{contents:'export * from "./src/views/held.ts";',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'native-boundary',setup(b){b.onResolve({filter:/^@\/api$/},()=>({path:'native-boundary',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const closePage=id=>{globalThis.__contentHeldCalls.push(["page",id]);return Promise.resolve()};export const dropWebBorrow=id=>{globalThis.__contentHeldCalls.push(["borrow",id]);return Promise.resolve()};',loader:'js'}));}}]});
+const bundled=await build({stdin:{contents:'export * from "./src/views/held.ts";',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',alias:{'@':join(gui,'src')},plugins:[{name:'native-boundary',setup(b){b.onResolve({filter:/^@\/api$/},()=>({path:'native-boundary',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const openPage=()=>Promise.reject(new Error("unexpected open"));export const closePage=id=>{globalThis.__contentHeldCalls.push(["page",id]);return Promise.resolve()};export const dropWebBorrow=id=>{globalThis.__contentHeldCalls.push(["borrow",id]);return Promise.resolve()};',loader:'js'}));}}]});
 const held=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
-held.holdBorrow('shared','borrow-shared');held.holdPage('landing');held.holdPage('child');
+held.holdBorrow('shared','borrow-shared','page');held.holdPage('landing','page');held.holdPage('child','content');
 held.releaseBorrows(['shared'],'page');held.releaseBorrows(['shared'],'content');held.releasePages(['landing'],'page');held.releasePages(['child'],'content');
 held.releasePages([],'content');held.releaseBorrows([],'content');
 assert.deepEqual(calls,[['page','child']],'closing content released a page or borrow owned by the browser landing');
 held.releasePages([],'page');held.releaseBorrows([],'page');assert.deepEqual(calls,[['page','child'],['page','landing'],['borrow','borrow-shared']]);
-calls.length=0;const capped=Array.from({length:10},(_,i)=>'cap-'+i);for(const id of capped)held.holdPage(id);held.releasePages(capped,'page');assert.deepEqual(calls,[['page','cap-0'],['page','cap-1']],'global native page cap changed');held.releasePages([],'page');
+calls.length=0;const capped=Array.from({length:10},(_,i)=>'cap-'+i);held.releasePages(capped,'page');for(const id of capped)held.holdPage(id,'page');assert.deepEqual(calls,[['page','cap-0'],['page','cap-1']],'global native page cap changed');held.releasePages([],'page');
 assert.equal(directoryOf('/notes.md'),'/');assert.equal(directoryOf("C:\\notes.md"),"C:\\");assert.equal(directoryOf('C:/notes.md'),'C:/');assert.equal(directoryOf('/repo/a.txt'),'/repo');
 console.log('PASS: shared page/borrow ownership, native page cap, POSIX and Windows parent directories');
 if(process.env.CONTENT_MODEL_ONLY==='1')process.exit(0);

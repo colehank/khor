@@ -184,6 +184,7 @@ function useBorrowsHeld(open: readonly HeldTab[]): void {
 function Surf({ tab, machine, place, onPlace, onLanded, onPopup, onTitle, onIcon, onBusy }: BodyProps) {
   return (
     <BrowserPane
+      retentionOwner="page"
       tab={tab}
       machine={machine.name}
       device={machine.id}
