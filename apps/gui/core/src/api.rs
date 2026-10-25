@@ -601,8 +601,14 @@ pub fn answer(
             // the batch's `sending`, and an `Unsent` frame if it did not
             // go (`chat::chat_say_with`).
             let (id, text) = (arg("id")?, arg("text")?);
+            let token = match args.get("token") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(serde_json::Value::String(token)) => Some(token.clone()),
+                _ => return Err("token must be a string or null".into()),
+            };
+            let pending = crate::chat::submit_say_with_token(&id, text, images, files, token)?;
             std::thread::spawn(move || {
-                let _ = crate::chat::chat_say_with(&id, &text, images, files);
+                let _ = pending.wait();
             });
             Ok("null".to_owned())
         }

@@ -745,7 +745,31 @@ pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpS
 
 /// [`connect_at`], agreeing a version ([`HOST_VERSION`]): with a host
 /// that advertises one, the client's own is sent before anything else.
-pub fn connect_versioned(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<Attached, String> {
+pub fn connect_versioned(
+    addr: &str,
+    cookie: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<Attached, String> {
+    let (mut s, w) = connect_welcomed(addr, cookie, cols, rows)?;
+    let version = advertised(&w).min(HOST_VERSION);
+    if version >= 2 {
+        write_frame(&mut s, &ClientOp::Version(HOST_VERSION))?;
+    }
+    let _ = s.set_read_timeout(None);
+    let _ = s.set_write_timeout(None);
+    Ok(Attached { stream: s, version })
+}
+
+/// The common cookie handshake, before a terminal or GUI selects its protocol.
+/// Successful `why` remains available for capability negotiation without
+/// changing the positional Hello/Welcome frames.
+pub fn connect_welcomed(
+    addr: &str,
+    cookie: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<(TcpStream, Welcome), String> {
     let mut s = TcpStream::connect(addr).map_err(|_| msg::host_gone().to_string())?;
     // A keystroke is one small frame: never held back for an ack.
     let _ = s.set_nodelay(true);
@@ -763,13 +787,7 @@ pub fn connect_versioned(addr: &str, cookie: &str, cols: u16, rows: u16) -> Resu
     if !w.ok {
         return Err(w.why);
     }
-    let version = advertised(&w).min(HOST_VERSION);
-    if version >= 2 {
-        write_frame(&mut s, &ClientOp::Version(HOST_VERSION))?;
-    }
-    let _ = s.set_read_timeout(None);
-    let _ = s.set_write_timeout(None);
-    Ok(Attached { stream: s, version })
+    Ok((s, w))
 }
 
 /// The host's `Welcome`, or **why it did not come** in words a person

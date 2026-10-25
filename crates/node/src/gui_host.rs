@@ -175,6 +175,37 @@ pub const PART: usize = 256 * 1024;
 /// so before sending, and the host drops what it was sent.
 pub const MAX_PARTS: usize = 64 * 1024 * 1024;
 
+const GUI_GREETING: &str = "khor-gui/1";
+
+pub struct Attached {
+    pub stream: TcpStream,
+    pub upload_cancel: bool,
+}
+
+/// GUI capabilities use their own greeting. A terminal version greeting would
+/// make existing clients send ClientOp::Version on a GuiOp connection.
+pub fn connect_at(addr: &str, cookie: &str) -> Result<Attached, String> {
+    let (stream, welcome) = crate::host::connect_welcomed(addr, cookie, 0, 0)?;
+    let _ = stream.set_read_timeout(None);
+    let _ = stream.set_write_timeout(None);
+    Ok(Attached {
+        stream,
+        upload_cancel: welcome.why == GUI_GREETING,
+    })
+}
+
+pub fn connect(dir: &std::path::Path) -> Result<Attached, String> {
+    let host = crate::host::read_host_file(dir)?;
+    connect_at(&format!("127.0.0.1:{}", host.port), &host.cookie)
+}
+
+#[derive(Clone, Copy)]
+pub enum WriteStep {
+    Whole,
+    Part,
+    Commit,
+}
+
 /// Writes one op to a host connection — **in slices when it is too big
 /// for one frame** ([`GuiOp::Part`]), taking `conn` for each slice
 /// alone, so other ops on the same connection go between them.
@@ -182,11 +213,27 @@ pub const MAX_PARTS: usize = 64 * 1024 * 1024;
 pub fn write_op(
     conn: &Mutex<TcpStream>,
     op: &GuiOp,
-    mut progress: impl FnMut(usize, usize),
+    progress: impl FnMut(usize, usize),
 ) -> Result<(), String> {
+    write_op_guarded(conn, op, progress, |_| Ok(()))
+}
+
+/// The guard runs with the writer held, immediately before each frame. It can
+/// cancel uncommitted input without racing the final Parts/whole-frame write.
+pub fn write_op_guarded(
+    conn: &Mutex<TcpStream>,
+    op: &GuiOp,
+    mut progress: impl FnMut(usize, usize),
+    mut before: impl FnMut(WriteStep) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut write = |op: &GuiOp, step| {
+        let mut writer = conn.lock().unwrap_or_else(|p| p.into_inner());
+        before(step)?;
+        write_frame(&mut *writer, op)
+    };
     let bytes = crate::proto::encode(op)?;
     if bytes.len() <= PART {
-        write_frame(&mut *conn.lock().unwrap_or_else(|p| p.into_inner()), op)?;
+        write(op, WriteStep::Whole)?;
         progress(bytes.len(), bytes.len());
         return Ok(());
     }
@@ -195,17 +242,14 @@ pub fn write_op(
     }
     let mut sent = 0;
     for slice in bytes.chunks(PART) {
-        write_frame(
-            &mut *conn.lock().unwrap_or_else(|p| p.into_inner()),
+        write(
             &GuiOp::Part(serde_bytes::ByteBuf::from(slice)),
+            WriteStep::Part,
         )?;
         sent += slice.len();
         progress(sent, bytes.len());
     }
-    write_frame(
-        &mut *conn.lock().unwrap_or_else(|p| p.into_inner()),
-        &GuiOp::Parts,
-    )
+    write(&GuiOp::Parts, WriteStep::Commit)
 }
 
 /// One connection's ops as they are read, slices put back together
@@ -219,8 +263,19 @@ struct Reassembly {
 }
 
 impl Reassembly {
+    fn has_upload(&self) -> bool {
+        self.over || !self.held.is_empty()
+    }
+
     fn take(&mut self, op: GuiOp) -> Option<GuiOp> {
         match op {
+            GuiOp::Stop => {
+                if self.has_upload() {
+                    self.held = Vec::new();
+                    self.over = true;
+                }
+                Some(GuiOp::Stop)
+            }
             GuiOp::Part(slice) => {
                 if self.over || self.held.len() + slice.len() > MAX_PARTS {
                     self.over = true;
@@ -815,7 +870,7 @@ pub fn gui_host_main(
     let fanout = Arc::new(Fanout {
         clients: Mutex::new(Vec::new()),
     });
-    let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, GuiOp)>();
+    let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, GuiOp, bool)>();
     // A face that just arrived, so the loop can hand it what is
     // outstanding. Its own channel rather than a `GuiOp`: joining is
     // not something a face *does*, it is something that happened to
@@ -851,7 +906,7 @@ pub fn gui_host_main(
                     &mut conn,
                     &Welcome {
                         ok: true,
-                        why: String::new(),
+                        why: GUI_GREETING.into(),
                     },
                 )
                 .is_err()
@@ -869,10 +924,11 @@ pub fn gui_host_main(
                 std::thread::spawn(move || {
                     let mut parts = Reassembly::default();
                     while let Ok(op) = read_frame::<GuiOp>(&mut readable) {
+                        let stopped_upload = matches!(op, GuiOp::Stop) && parts.has_upload();
                         let Some(op) = parts.take(op) else {
                             continue;
                         };
-                        if ops_tx.send((who, op)).is_err() {
+                        if ops_tx.send((who, op, stopped_upload)).is_err() {
                             break;
                         }
                     }
@@ -1075,7 +1131,12 @@ pub fn gui_host_main(
                         asks.clear(); // Dropping permission senders cancels pending asks.
                     }
                 }
-                op = ops_rx.recv() => match op {
+                op = ops_rx.recv() => {
+                    let (op, stopped_upload) = match op {
+                        Some((who, op, stopped)) => (Some((who, op)), stopped),
+                        None => (None, false),
+                    };
+                    match op {
                     Some((who,GuiOp::ElicitAnswer{ask,response}))=>{
                         let accepted=elicits.iter().position(|(id,_,_)|*id==ask).and_then(|at|{
                             let value:serde_json::Value=serde_json::from_str(&response).ok()?;
@@ -1191,6 +1252,9 @@ pub fn gui_host_main(
                         if in_turn.is_some() || replay.is_some() || controlling {
                             let _ = handle.cancel();
                             for(ask,_,_)in asks.drain(..){fanout.send(&GuiNote::Answered{ask,option:None});}
+                        } else if stopped_upload {
+                            let _ = live.report(&id, State::Idle, Source::Reported);
+                            fanout.send_to(who, &GuiNote::Turn("Cancelled".into()));
                         } else {
                             // Nothing to stop. A face that got here is
                             // holding a stop button over a turn that is
@@ -1254,6 +1318,7 @@ pub fn gui_host_main(
                         }
                     }
                     None => break None,
+                    }
                 },
                 turn = turn_rx.recv() => {
                     in_turn = None;
@@ -1409,11 +1474,23 @@ fn cancel_elicits(elicits: &mut Vec<(u64, khor_acp::Elicitation, GuiNote)>, fano
 mod parts_tests {
     use super::*;
 
-    /// **A big op crosses in slices and comes out whole, with a stop
-    /// between the slices running as it arrives** — and a reassembly
+    #[test]
+    fn an_uncancelled_sliced_turn_retains_the_complete_payload() {
+        let picture = "x".repeat(3 * PART + 17);
+        let op = GuiOp::SayWith { text: "keep this".into(), images: vec![("image/png".into(), picture.clone())], files: vec![] };
+        let bytes = crate::proto::encode(&op).unwrap();
+        let mut parts = Reassembly::default();
+        for slice in bytes.chunks(PART) {
+            assert!(parts.take(GuiOp::Part(slice.to_vec().into())).is_none());
+        }
+        assert!(matches!(parts.take(GuiOp::Parts), Some(GuiOp::SayWith { text, images, .. }) if text == "keep this" && images[0].1 == picture));
+    }
+
+    /// A Stop cancels its partial upload; the following turn still crosses
+    /// the same connection normally. A reassembly
     /// that runs past the cap is dropped whole, not run half.
     #[test]
-    fn a_sliced_turn_comes_back_whole_and_a_stop_goes_between() {
+    fn a_stop_discards_the_upload_and_the_next_turn_still_runs() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = Mutex::new(TcpStream::connect(listener.local_addr().unwrap()).unwrap());
         let (mut far, _) = listener.accept().unwrap();
@@ -1446,6 +1523,9 @@ mod parts_tests {
             }
         })
         .unwrap();
+        write_frame(&mut *conn.lock().unwrap(), &GuiOp::SayWith {
+            text: "next".into(), images: vec![], files: vec![],
+        }).unwrap();
         let seen = reader.join().unwrap();
         assert!(slices >= 4, "{slices} slices");
         assert!(
@@ -1454,8 +1534,8 @@ mod parts_tests {
         );
         match &seen[1] {
             GuiOp::SayWith { text, images, .. } => {
-                assert_eq!(text, "look");
-                assert_eq!(images[0].1, picture);
+                assert_eq!(text, "next");
+                assert!(images.is_empty());
             }
             _ => panic!("the turn came out whole"),
         }

@@ -1355,12 +1355,14 @@ export const chatSay = (
   text: string,
   images: [string, string][] = [],
   files: [string, string][] = [],
+  token?: string,
 ) =>
   call<null>("chat_say", {
     id,
     text,
     ...(images.length ? { images } : {}),
     ...(files.length ? { files } : {}),
+    ...(token === undefined ? {} : { token }),
   });
 /** A file for an agent conversation (round CHAT), put on the machine the
     conversation runs on, in that machine's chat files folder

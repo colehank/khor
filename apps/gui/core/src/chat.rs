@@ -14,13 +14,18 @@
 //! paint is the face's judgment.
 
 use std::collections::HashMap;
+#[cfg(test)]
 use std::net::TcpStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use khor_node::gui_host::{Choice, GuiNote, GuiOp, write_op};
-use khor_node::host::{connect, read_frame, write_frame};
+#[path = "chat_send.rs"]
+mod send;
+use send::{Sending, Stage, StopAction, StopSignal, StopWriter};
+
+use khor_node::gui_host::{Choice, GuiNote, GuiOp, write_op_guarded};
+use khor_node::host::{read_frame, write_frame};
 use khor_node::{Node, SessionId};
 use serde::Serialize;
 use ts_rs::TS;
@@ -93,7 +98,10 @@ pub enum ChatFrame {
     /// transcript and offers 重试 / 取消 on the session's pill. ⚠️ 墓碑:
     /// a `Refused` frame carrying the write's own error, which the face
     /// read as 「当前没有进行中的回合」.
-    Unsent { miss: crate::miss::Miss },
+    Unsent { miss: crate::miss::Miss, token: Option<String> },
+    /// An admitted input was cancelled before reaching the agent. The optional
+    /// client token correlates the retained draft without keeping its payload.
+    SendCancelled { token: Option<String>, reconnect: bool },
     /// What this session can be set to and what it is set to
     /// (`khor_node::gui_host::GuiNote::Settings`): `{ modes, options }`
     /// in the protocol's own JSON, `unknown` here for the reason
@@ -260,6 +268,8 @@ struct Chat {
     conn: crate::connection::Connection,
     commands: crate::command_queue::CommandQueue,
     turns: crate::command_queue::CommandQueue,
+    sends: Mutex<Vec<std::sync::Weak<Sending>>>,
+    upload_cancel: AtomicBool,
     frames: Mutex<Frames>,
     gone: AtomicBool,
     /// Between a far pipe ending and the next one ([`ChatBatch::stall`]).
@@ -282,6 +292,21 @@ struct Chat {
     /// Nobody holds it any more: a pipe that ends now is not asked for
     /// again (`crate::rejoin`).
     left: AtomicBool,
+}
+
+struct SendJob {
+    chat: Arc<Chat>,
+    sending: Arc<Sending>,
+    complete: bool,
+}
+
+impl Drop for SendJob {
+    fn drop(&mut self) {
+        if !self.complete {
+            failed_send(&self.chat, &self.sending, "attachment is closed");
+        }
+        self.sending.finish();
+    }
 }
 
 fn chats() -> &'static Mutex<HashMap<String, Arc<Chat>>> {
@@ -394,7 +419,8 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .land(id);
-    let (conn, far) = attached?;
+    let (attached, far) = attached?;
+    let conn = attached.stream;
     if left {
         let _ = conn.shutdown(std::net::Shutdown::Both);
         return Ok(false);
@@ -414,6 +440,8 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         conn: crate::connection::Connection::new(conn)?,
         commands: Default::default(),
         turns: Default::default(),
+        sends: Default::default(),
+        upload_cancel: AtomicBool::new(attached.upload_cancel),
         frames: Mutex::new(Frames::default()),
         gone: AtomicBool::new(false),
         stall: Mutex::new(None),
@@ -457,7 +485,11 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
                 machine,
                 &sid,
                 &reader.left,
-                |addr, cookie| khor_node::host::connect_at(addr, cookie, 0, 0),
+                |addr, cookie| {
+                    let attached = khor_node::gui_host::connect_at(addr, cookie)?;
+                    reader.upload_cancel.store(attached.upload_cancel, Ordering::Relaxed);
+                    Ok(attached.stream)
+                },
                 told,
             ) else {
                 break;
@@ -486,7 +518,7 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
 /// The connection [`chat_open`] attaches with, and the far machine it
 /// came through (`None` when the conversation is hosted here). No lock
 /// is held: a far one waits on the network.
-fn attach(root: &Path, id: &str) -> Result<(TcpStream, Option<String>), String> {
+fn attach(root: &Path, id: &str) -> Result<(khor_node::gui_host::Attached, Option<String>), String> {
     let n = Node::open(root.to_path_buf())?;
     let sid = SessionId(id.to_owned());
     // **An ended conversation says so, in its own words** (UX-4, decided):
@@ -512,13 +544,13 @@ fn attach(root: &Path, id: &str) -> Result<(TcpStream, Option<String>), String> 
     let conn = match &far {
         Some(machine) => {
             let (addr, cookie) = crate::term::reach_blocking(root, machine, &sid)?;
-            khor_node::host::connect_at(&addr, &cookie, 0, 0)?
+            khor_node::gui_host::connect_at(&addr, &cookie)?
         }
         None => {
             let dir = n
                 .session_dir(&sid)
                 .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
-            connect(&dir, 0, 0)?
+            khor_node::gui_host::connect(&dir)?
         }
     };
     Ok((conn, far))
@@ -628,33 +660,102 @@ pub fn submit_say(
     images: Vec<(String, String)>,
     files: Vec<(String, String)>,
 ) -> Result<crate::command_queue::Pending<()>, String> {
+    submit_say_with_token(id, text, images, files, None)
+}
+
+pub fn validate_send_token(token: Option<&str>) -> Result<(), String> {
+    if token.is_some_and(|token| {
+        token.is_empty()
+            || token.len() > 128
+            || !token
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._:-".contains(&b))
+    }) {
+        return Err("Invalid client send token".into());
+    }
+    Ok(())
+}
+
+pub fn submit_say_with_token(
+    id: &str,
+    text: String,
+    images: Vec<(String, String)>,
+    files: Vec<(String, String)>,
+    token: Option<String>,
+) -> Result<crate::command_queue::Pending<()>, String> {
+    validate_send_token(token.as_deref())?;
     let chat = chat_of(id)?;
+    let mut sends = chat.sends.lock().unwrap();
+    sends.retain(|send| send.strong_count() > 0);
+    let sending = Arc::new(Sending::new(token));
+    sends.push(Arc::downgrade(&sending));
+    let mut job = SendJob {
+        chat: chat.clone(),
+        sending,
+        complete: false,
+    };
     let preceding_controls = chat.commands.submit(|| Ok(()))?;
-    let target = chat.clone();
     chat.turns.submit(move || {
-        preceding_controls.wait()?;
-        send_turn(&target, text, images, files)
+        let result = preceding_controls
+            .wait()
+            .and_then(|_| send_turn(&job.chat, text, images, files, &job.sending));
+        if let Err(why) = &result {
+            failed_send(&job.chat, &job.sending, why);
+        }
+        job.complete = true;
+        result
     })
 }
 
-fn send_turn(chat: &Chat, text: String, images: Vec<(String, String)>, files: Vec<(String, String)>) -> Result<(), String> {
+fn send_turn(
+    chat: &Chat,
+    text: String,
+    images: Vec<(String, String)>,
+    files: Vec<(String, String)>,
+    sending: &Sending,
+) -> Result<(), String> {
     let op = GuiOp::SayWith {
         text,
         images,
         files,
     };
-    let sent = write_op(&chat.conn, &op, |sent, all| {
-        chat.sending.1.store(all as u64, Ordering::Relaxed);
-        chat.sending.0.store(sent as u64, Ordering::Relaxed);
-        chat.arrived.notify_waiters();
-    });
+    let mut sent = write_op_guarded(
+        &chat.conn,
+        &op,
+        |sent, all| {
+            chat.sending.1.store(all as u64, Ordering::Relaxed);
+            chat.sending.0.store(sent as u64, Ordering::Relaxed);
+            chat.arrived.notify_waiters();
+        },
+        |step| sending.before(step),
+    );
+    let cancelled = sending.cancellation();
+    if let Some((stage, stop)) = &cancelled {
+        let reconnect = match stop.wait() {
+            Ok(StopAction::Written) if *stage == Stage::Uploading => {
+                // Stop is already on this stream. Parts now ends the host's
+                // discard state instead of committing the cancelled payload.
+                if write_frame(&mut *chat.conn.lock().unwrap(), &GuiOp::Parts).is_err() {
+                    cancelled_notice(chat, sending, true);
+                    retire_cancelled_upload(chat);
+                    true
+                } else {
+                    false
+                }
+            }
+            Err(_) if *stage == Stage::Uploading => {
+                cancelled_notice(chat, sending, true);
+                retire_cancelled_upload(chat);
+                true
+            }
+            Ok(StopAction::Disconnected) => true,
+            _ => false,
+        };
+        cancelled_notice(chat, sending, reconnect);
+        sent = Err(khor_node::drops::cancelled());
+    }
     chat.sending.0.store(0, Ordering::Relaxed);
     chat.sending.1.store(0, Ordering::Relaxed);
-    if let Err(why) = &sent {
-        chat.frames.lock().unwrap().push(ChatFrame::Unsent {
-            miss: crate::miss::read(why, chat.far.as_deref()),
-        });
-    }
     chat.arrived.notify_waiters();
     sent
 }
@@ -670,8 +771,124 @@ pub enum Control {
     Replay,
 }
 
+fn retire_cancelled_upload(chat: &Chat) {
+    chat.left.store(true, Ordering::Relaxed);
+    chat.gone.store(true, Ordering::Relaxed);
+    chat.commands.close();
+    chat.turns.close();
+    chat.conn.close();
+    chat.arrived.notify_waiters();
+}
+
+fn cancelled_notice(chat: &Chat, send: &Sending, reconnect: bool) {
+    if send.claim_notice() {
+        chat.frames.lock().unwrap().push(ChatFrame::SendCancelled {
+            token: send.token.clone(),
+            reconnect,
+        });
+        chat.arrived.notify_waiters();
+    }
+}
+
+fn failed_send(chat: &Chat, send: &Sending, why: &str) {
+    if send.cancellation().is_some() {
+        cancelled_notice(
+            chat,
+            send,
+            chat.left.load(Ordering::Relaxed) || chat.gone.load(Ordering::Relaxed),
+        );
+    } else if send.claim_failure() {
+        chat.frames.lock().unwrap().push(ChatFrame::Unsent {
+            miss: crate::miss::read(why, chat.far.as_deref()),
+            token: send.token.clone(),
+        });
+        chat.arrived.notify_waiters();
+    }
+}
+
+fn cancelled_notices(chat: &Chat, sends: &[(Arc<Sending>, Stage)], reconnect: bool) {
+    let mut frames = chat.frames.lock().unwrap();
+    for (send, _) in sends {
+        if send.claim_notice() {
+            frames.push(ChatFrame::SendCancelled {
+                token: send.token.clone(),
+                reconnect,
+            });
+        }
+    }
+    drop(frames);
+    chat.arrived.notify_waiters();
+}
+
+fn submit_stop(id: &str) -> Result<crate::command_queue::Pending<()>, String> {
+    let chat = chat_of(id)?;
+    let mut sends = chat.sends.lock().unwrap();
+    sends.retain(|send| send.strong_count() > 0);
+    let signal = Arc::new(StopSignal::default());
+    let writer = StopWriter(signal.clone());
+    let plan = Arc::new(Mutex::new(None::<Vec<(Arc<Sending>, Stage)>>));
+    let mut preparing = plan.lock().unwrap();
+    let ready = plan.clone();
+    let target = chat.clone();
+    let pending = chat.commands.submit(move || {
+        let plan = ready
+            .lock()
+            .unwrap()
+            .take()
+            .expect("Stop admitted before its worker");
+        let uploading = plan.iter().any(|(_, stage)| *stage == Stage::Uploading);
+        let legacy_upload = uploading && !target.upload_cancel.load(Ordering::Relaxed);
+        let needs_wire = plan.is_empty()
+            || plan
+                .iter()
+                .any(|(_, stage)| matches!(stage, Stage::Uploading | Stage::Committed));
+        let result = if legacy_upload {
+            // Never replay Stop after reconnect: it could target a new turn.
+            if let Ok(mut conn) = target.conn.try_lock() {
+                let _ = conn.set_write_timeout(Some(std::time::Duration::from_millis(50)));
+                let _ = write_frame(&mut *conn, &GuiOp::Stop);
+            }
+            cancelled_notices(&target, &plan, true);
+            retire_cancelled_upload(&target);
+            Ok(StopAction::Disconnected)
+        } else if needs_wire {
+            write_frame(&mut *target.conn.lock().unwrap(), &GuiOp::Stop)
+                .map(|_| StopAction::Written)
+        } else {
+            Ok(StopAction::Local)
+        };
+        if result.is_err() && uploading {
+            cancelled_notices(&target, &plan, true);
+            retire_cancelled_upload(&target);
+        } else if !legacy_upload {
+            for (send, stage) in &plan {
+                if *stage != Stage::Uploading {
+                    cancelled_notice(&target, send, false);
+                }
+            }
+        }
+        writer.complete(result.clone());
+        result.map(|_| ())
+    })?;
+    *preparing = Some(
+        sends
+            .iter()
+            .filter_map(std::sync::Weak::upgrade)
+            .filter_map(|send| {
+                let stage = send.cancel(&signal);
+                (stage != Stage::Finished).then_some((send, stage))
+            })
+            .collect(),
+    );
+    drop(preparing);
+    Ok(pending)
+}
+
 /// Validate before enqueueing, retaining the core errors used by every skin.
 pub fn submit_control(id: &str, command: Control) -> Result<crate::command_queue::Pending<()>, String> {
+    if matches!(command, Control::Stop) {
+        return submit_stop(id);
+    }
     let op = match command {
         Control::Answer { ask, option } => GuiOp::Answer { ask, option },
         Control::Respond { ask, response } => {
@@ -1073,6 +1290,8 @@ mod wait_tests {
             conn: crate::connection::Connection::new(conn).unwrap(),
             commands: Default::default(),
             turns: Default::default(),
+            sends: Default::default(),
+            upload_cancel: AtomicBool::new(true),
             frames: Mutex::new(Frames::default()),
             gone: AtomicBool::new(false),
             stall: Mutex::new(None),

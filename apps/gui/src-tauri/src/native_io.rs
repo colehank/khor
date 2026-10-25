@@ -45,6 +45,7 @@ enum Request {
         text: String,
         images: Vec<(String, String)>,
         files: Vec<(String, String)>,
+        token: Option<String>,
     },
     Key {
         id: String,
@@ -117,13 +118,19 @@ fn parse<R: Runtime>(invoke: &Invoke<R>, name: &'static str) -> Result<Request, 
         "chat_stop" => Control::Stop,
         "chat_replay" => Control::Replay,
         "chat_say" => {
+            let text = arg!("text");
+            let images = argument::<R, Option<Vec<(String, String)>>>(invoke, name, "images")?
+                .unwrap_or_default();
+            let files = argument::<R, Option<Vec<(String, String)>>>(invoke, name, "files")?
+                .unwrap_or_default();
+            let token: Option<String> = argument(invoke, name, "token")?;
+            chat::validate_send_token(token.as_deref()).map_err(InvokeError::from)?;
             return Ok(Request::Say {
                 id,
-                text: arg!("text"),
-                images: argument::<R, Option<Vec<(String, String)>>>(invoke, name, "images")?
-                    .unwrap_or_default(),
-                files: argument::<R, Option<Vec<(String, String)>>>(invoke, name, "files")?
-                    .unwrap_or_default(),
+                text,
+                images,
+                files,
+                token,
             });
         }
         "term_key" => {
@@ -202,7 +209,11 @@ fn submit<R: Runtime>(invoke: Invoke<R>, request: Request) {
             text,
             images,
             files,
-        } => reply(invoke, chat::submit_say(&id, text, images, files)),
+            token,
+        } => reply(
+            invoke,
+            chat::submit_say_with_token(&id, text, images, files, token),
+        ),
         Request::Key { id, keys } => reply(invoke, term::submit_key(&id, keys.into_bytes())),
         Request::Resize { id, cols, rows } => reply(invoke, term::submit_resize(&id, cols, rows)),
         Request::Ready { id } => reply(invoke, term::submit_ready(&id)),
@@ -308,8 +319,10 @@ mod tests {
             text: String,
             images: Option<Vec<(String, String)>>,
             files: Option<Vec<(String, String)>>,
-        ) -> bool {
-            true
+            token: Option<String>,
+        ) -> Result<bool, String> {
+            khor_gui_core::chat::validate_send_token(token.as_deref())?;
+            Ok(true)
         }
         #[tauri::command]
         pub fn term_key(id: String, keys: String) -> bool {
@@ -405,6 +418,10 @@ mod tests {
             ("chat_stop", json!({"id":"fixture"})),
             ("chat_replay", json!({"id":"fixture"})),
             ("chat_say", json!({"id":"fixture","text":"hi"})),
+            (
+                "chat_say",
+                json!({"id":"fixture","text":"hi","token":"draft-1"}),
+            ),
             ("term_key", json!({"id":"fixture","keys":"hi"})),
             ("term_resize", json!({"id":"fixture","cols":80,"rows":24})),
             ("term_ready", json!({"id":"fixture"})),
@@ -442,6 +459,22 @@ mod tests {
                     "{name}"
                 );
             }
+        }
+        for token in [
+            json!(null),
+            json!("draft-1"),
+            json!(3),
+            json!([]),
+            json!(""),
+            json!("x".repeat(129)),
+            json!("bad token"),
+            json!("秘密"),
+        ] {
+            let body = json!({"id":"fixture","text":"hi","token":token});
+            assert_eq!(
+                response(&after, "chat_say", body.clone().into()),
+                response(&before, "chat_say", body.into())
+            );
         }
         for (name, body) in [
             (
