@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {createServer} from 'vite';
 import {chromium, webkit} from 'playwright-core';
 
-const knownScenarios = ['mine', 'two-editors', 'newer-external', 'external-aba', 'typing-during-read', 'cancel-during-read', 'discard-during-read', 'close-during-read', 'switch-file-during-read', 'reopen-during-read', 'incomplete-read', 'binary-read'];
+const knownScenarios = ['mine', 'two-editors', 'newer-external', 'external-aba', 'typing-during-read', 'cancel-during-read', 'discard-during-read', 'close-during-read', 'switch-file-during-read', 'reopen-during-read', 'incomplete-read', 'binary-read', 'take-theirs'];
 const scenarios = process.env.EDITOR_OVERWRITE_SCENARIOS?.split(',').filter(Boolean) ?? knownScenarios;
 assert(scenarios.length > 0, 'Select at least one overwrite scenario');
 assert.equal(new Set(scenarios).size, scenarios.length, 'Overwrite scenarios must not repeat');
@@ -112,6 +112,19 @@ async function run(engine, name) {
       disk = 'A'; await type('C');
       await pane('one').locator('[data-save-state=refused]').waitFor();
       const before = writes.length;
+      if (scenario === 'take-theirs') {
+        await pane('one').locator('[data-take-theirs]').click();
+        await page.waitForFunction(() => {
+          const node = document.querySelector('[data-editor=one] [data-code-view]');
+          return node?.__view?.state.doc.toString() === 'A' && node.querySelector('.cm-content')?.isContentEditable;
+        }, undefined, {timeout: 5000});
+        assert.equal(writes.length, before, 'taking the disk version must not write the discarded input');
+        await type('D'); await until(() => disk === 'D', 'the reloaded file stays editable and saves from its fresh base');
+        assert.equal(writes[before].was, hash('A'));
+        assert.deepEqual(errors, []);
+        results.push({engine: name, scenario, ok: true, disk, writes}); console.log('PASS', name, scenario);
+        continue;
+      }
       if (scenario.endsWith('-during-read')) holdNextRead = true;
       if (scenario === 'newer-external') mutateAtWrite = () => { disk = 'external-after-read'; };
       if (scenario === 'external-aba') mutateAtWrite = () => { disk = 'external-intermediate'; disk = 'A'; };
@@ -163,7 +176,11 @@ async function run(engine, name) {
       assert.deepEqual(errors, []);
       results.push({engine: name, scenario, ok: true, disk, writes}); console.log('PASS', name, scenario);
     } catch (error) {
-      results.push({engine: name, scenario, ok: false, error: error.message, disk, writes, errors, consoleErrors}); console.error('FAIL', name, scenario, error.message);
+      const editorState = await page.evaluate(() => {
+        const node = document.querySelector('[data-editor=one] [data-code-view]');
+        return node ? {text: node.__view?.state.doc.toString(), editable: node.querySelector('.cm-content')?.isContentEditable} : null;
+      }).catch(() => null);
+      results.push({engine: name, scenario, ok: false, error: error.message, disk, writes, errors, consoleErrors, editorState}); console.error('FAIL', name, scenario, error.message);
       await page.screenshot({path: join(evidence, `${name}-${scenario}.png`)}).catch(() => {});
     } finally {
       if (heldRead) await heldRead().catch(() => {});

@@ -544,7 +544,7 @@ function FileBody({
     return () => {
       live = false;
     };
-  }, [machine, path]);
+  }, [machine, path, reread]);
 
   // Asked beside the text rather than after it: the two answers are
   // about the same file at the same moment, and waiting for the first
