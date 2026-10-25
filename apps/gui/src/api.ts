@@ -11,6 +11,7 @@ import { gui, msg } from "./gen/catalog";
 // head describes about copying a token.
 import type { MenuRows } from "./components/OmniMenu";
 import { nativeMenuQueue } from "./lib/native-menu-queue";
+import { listenNativeEvent } from "./lib/native-events";
 import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
 import type { Connections } from "./gen/bindings/Connections";
 import type { ReachReport } from "./gen/bindings/ReachReport";
@@ -1813,22 +1814,7 @@ export const menuPick = (id: string, key: string) =>
  */
 export function hear<T>(event: string, said: (payload: T) => void): () => void {
   if (!inApp) return () => {};
-  let drop: (() => void) | null = null;
-  let gone = false;
-  void import("@tauri-apps/api/event")
-    .then(({ listen }) =>
-      listen<T>(event, (e) => said(e.payload)).then((un) => {
-        if (gone) un();
-        else drop = un;
-      }),
-    )
-    .catch((e: unknown) => {
-      console.error(`khor: cannot listen for ${event}`, e);
-    });
-  return () => {
-    gone = true;
-    drop?.();
-  };
+  return listenNativeEvent(event, said);
 }
 /**
  * The app's window is being closed, and something wants a say
