@@ -291,3 +291,14 @@ Mac 的 Rust 构建必须设置 `KHOR_AGENT_BUNDLE` 为当前平台的 Pi 独立
 - iOS：移开旧静态库强制重编，以 archive-only 复用已验证 dist；新静态库、归档 App 的时间、完整收据与签名通过。系统 PATH 独立导出上传于 `2026-10-23 13:43:40 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，上传版本 **0.1.14（58）**，Apple 已开始处理。两处临时签名工程配置按构建前基线恢复。
 - 构建环境与收尾：外挂盘起初仅余约 483 MiB，在无编译进程且无引用时清理可重建的 debug/incremental，释放约 14 GiB。发布后按包身份和 lsof 无引用核验，清理本轮源码 export、旧静态库备份和一份 Khor Xcode 导出暂存，共 851,050,922 字节；无法确认身份的空暂存目录保留。保留最新静态库、正式归档、当前二进制和发布证据 `/Volumes/disk0/khor-ship-20261023-pi-dock/`。最终系统盘约余 15 GiB、外挂盘约余 10 GiB；未全量清 target、删除会话或系统 swap。
 - 平台边界：本次 iOS 完成编译／归档／上传，未称为真机触控验收；Windows／Android 未打包或发布。集群脚本改动通过 shell 语法检查，本次远端发布使用其等价分步命令与实际产物校验，未将其称为脚本完整端到端回归。
+
+## 发布记录：2026-10-25（GUI 会话导航与独立玻璃头像）
+
+- 功能提交 `cce854d3`，Lab 与最新主干已整合并进入 main。底部输入框右侧的会话头像独立使用一颗 GlassCircle，点击展开药丸、长按进入扇形；会话标题、近大远小、循环预选、档位迟滞、回中暂停、反向倒退及取消／收尾行为共用正式组件。终端保留底部横向操作，头像在上、标题在下。完整界面收据：`khor-ui-assets:/assets/index-VeGyBzd6.js`。
+- GUI／Khor 会话使用统一模型与思考强度入口，继续接入账户设置、权限、上下文与附件菜单；正式界面不依赖 Lab 查询参数。独立头像的手势测量使用稳定外座，避免玻璃按压缩放影响松手判定。
+- 验证：生成、默认前端检查、TypeScript、生产构建、gates（90 scripts／83 entries）通过。388 项状态／几何检查及 151 项正式组件浏览器交互检查通过，包含窄屏、独立玻璃布局、1–5 个会话、循环、档位、暂停／反向、取消／收尾、草稿、账户入口及终端共用药丸。Pi 源码测试 43 项、Mac 独立包 4 项通过；相关 Rust 测试 49 项通过、2 项显式忽略。Linux 独立 Pi 的私有登录／凭据保存检查通过，没有调用付费模型。
+- Mac：release CLI／GUI 的签名、完整收据及 Pi 实际嵌入通过；CLI 原子替换。主窗口 60408 → 10707，实际 5467 监听 PID 一致，仅一枚主窗口。23 个既有辅助进程、26 条会话全部保留，无新增失败，HTTP 与启动日志收据一致。CLI SHA-256 `8f9f2d6c1cfbe1ffec093094362cbec87f43e598f8e4f7111a4cae6411954af5`，GUI `9c3e078f355aa65e3f9d0137ae38548a1f2d75d21bf261528335e031ee6dbc01`。
+- 集群：正式 `build-on.sh hinton` 从提交导出源码、重新构建前端、交叉打包 Pi、远端编译并经 onset 安装；turing／lecun 的 keeper 自动换新。实际 5467 监听 PID 为 hinton 2945980、turing 3145285、lecun 8419；三台运行 exe、安装文件与产物 SHA-256 均为 `15b6d9a86ed14add9014d64d89a4a00e29e1993fedcf852eed4f9589f1db4d8e`，HTTP 收据相同，六份关键源码与 main 校验一致。三台各 26 条会话保留，无新增失败，Mac CLI 确认三台 Direct。首次核验遇到 turing 重启空窗、lecun 尚在旧进程，等待 keeper 完成后通过，没有重复安装或手工重启。
+- iOS：先移开旧静态库，archive-only 复用已验证 dist，重新编译 Rust 并归档；新静态库、归档 App 的时间、完整收据与签名通过。系统 PATH 导出上传于 `2026-10-25 13:09:29 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，上传版本 **0.1.14（59）**，Apple 已开始处理。临时签名工程配置按构建前基线恢复。
+- 收尾：日志、截图、会话快照与发布收据保留于 `/Volumes/disk0/khor-ship-20261025-session-nav/`、`/Volumes/disk0/khor-session-production-proof/`。确认包身份／本次源码及 lsof 无引用后，清理源码 export、旧静态库备份与 Khor Xcode 导出暂存，共 909,094,738 字节。保留当前二进制、最新静态库、正式归档、Lab 和测试证据，没有清理用户会话、全量 target 或系统 swap。
+- 平台边界：本次 iOS 完成编译／归档／上传；手势与键盘的 iPhone 真机操作仍待安装后验收。Windows／Android 未打包或发布。
