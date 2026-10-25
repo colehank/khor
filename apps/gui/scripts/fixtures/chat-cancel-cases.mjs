@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-export const extraCancelCases = ['new-draft-add', 'discard', 'multi-cancel', 'retry-token', 'discard-notice', 'add-notice', 'switched-notice', 'app-reopened-notice', 'discard-other-notice', 'web-admission', 'unconfirmed', 'unconfirmed-then-cancel', 'lost-commit', 'keyed-switch', 'app-switch-close', 'app-close-late', 'narrow', 'app-narrow', 'old-owner-gone', 'late-switch-cancel', 'restart-unknown'];
+export const extraCancelCases = ['new-draft-add', 'discard', 'multi-cancel', 'retry-token', 'discard-notice', 'add-notice', 'switched-notice', 'app-reopened-notice', 'discard-other-notice', 'stale-cancel-notice', 'cancel-notice', 'web-admission', 'unconfirmed', 'unconfirmed-then-cancel', 'lost-commit', 'keyed-switch', 'app-switch-close', 'app-close-late', 'narrow', 'app-narrow', 'old-owner-gone', 'late-switch-cancel', 'restart-unknown'];
 export async function exerciseCancellation(scenario, f) {
   const {page, draft, sent, session, emit, cancel, until, attach, evidence, engine} = f;
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -36,14 +36,22 @@ export async function exerciseCancellation(scenario, f) {
     assert.equal(await input.inputValue(), `third draft\n\n${draft}\n\n${fresh}`);
     assert.equal(await page.locator('[data-chat-pending-file]').count(), 2); assert.equal(await page.locator('[data-chat-doc]').count(), 1);
     assert.equal(await rows.count(), 0);
-  } else if (['discard-notice', 'add-notice', 'switched-notice', 'app-reopened-notice', 'discard-other-notice'].includes(scenario)) {
+  } else if (['discard-notice', 'add-notice', 'switched-notice', 'app-reopened-notice', 'discard-other-notice', 'stale-cancel-notice', 'cancel-notice'].includes(scenario)) {
     await emit([{kind: 'unsent', token: sent.token, miss: {kind: 'unreached', machine: null, raw: 'synthetic write failure'}}]);
     await until(async () => await rows.count() === 1, 'the failed token has its own recoverable snapshot');
     await page.evaluate(async id => {
       const {noticesOf} = await import('/src/lib/pill-notices.ts');
       window.__capturedRetry = noticesOf(id).flatMap(n => n.acts).find(a => a.key === 'retry').run;
+      window.__capturedCancel = noticesOf(id).flatMap(n => n.acts).find(a => a.key === 'cancel').run;
     }, session);
-    if (scenario === 'discard-other-notice') {
+    if (scenario === 'cancel-notice') {
+      await page.evaluate(() => window.__capturedCancel());
+      await until(async () => await input.inputValue() === draft, 'the current failure notice still hands its own draft back to the empty composer');
+      assert.equal(await rows.count(), 0); assert.equal(await page.locator('[data-chat-pending-file]').count(), 2);
+      assert.equal(await page.locator('[data-chat-doc]').count(), 1); assert.equal((await sends()).length, 1);
+      const notices = await page.evaluate(async id => (await import('/src/lib/pill-notices.ts')).noticesOf(id).map(n => n.id), session);
+      assert(!notices.includes(`say:${sent.token}`));
+    } else if (scenario === 'discard-other-notice' || scenario === 'stale-cancel-notice') {
       await input.fill(fresh); await page.locator('[data-chat-send]').click();
       await until(async () => (await sends()).length === 2, 'a second independent send entered');
       const second = (await sends())[1];
@@ -52,6 +60,12 @@ export async function exerciseCancellation(scenario, f) {
       await page.locator(`[data-chat-cancelled-draft="${sent.token}"] [data-chat-draft-drop]`).click();
       const notices = await page.evaluate(async id => (await import('/src/lib/pill-notices.ts')).noticesOf(id).map(n => n.id), session);
       assert(notices.includes(`say:${second.token}`), 'discarding another snapshot preserves the newer failure notice');
+      if (scenario === 'stale-cancel-notice') {
+        await page.evaluate(() => window.__capturedCancel()); await wait(100);
+        const after = await page.evaluate(async id => (await import('/src/lib/pill-notices.ts')).noticesOf(id).map(n => n.id), session);
+        assert(after.includes(`say:${second.token}`), 'the captured cancel for the discarded token cannot withdraw the newer token notice');
+        assert.equal(await rows.count(), 1); assert.equal(await input.inputValue(), '');
+      }
       await page.evaluate(() => window.__cancelReact.retry());
       await until(async () => (await sends()).length === 3, 'the retained failure notice can still retry');
       assert.equal((await sends())[2].text, fresh);

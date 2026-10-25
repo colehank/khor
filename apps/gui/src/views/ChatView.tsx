@@ -997,20 +997,22 @@ export function ChatView({
               if (frame.kind === "send_cancelled" && currentTurn && emptyComposerNow.current()) addDraftNow.current(draft);
             }
             if (frame.kind === "unsent") {
-              const notice = failedNotice({
+              const notice: PillNotice = failedNotice({
                 id: `say:${frame.token ?? "legacy"}`,
                 miss: frame.miss,
                 machine: machine ?? null,
                 what: "say",
                 retry: () => { if (draft) retryDraft.current(draft); },
                 cancel: () => {
-                  setUnsent(null);
+                  if (!mounted.current || currentSession.current !== id) return;
+                  setUnsent(was => was === notice ? null : was);
                   if (draft && emptyComposerNow.current()) addDraftNow.current(draft);
                 },
               });
               // Old/null receipts can explain failure without guessing which
               // newer message or draft they belong to.
-              setUnsent(draft ? notice : {...notice, acts: notice.acts.filter(action => action.key === "cancel")});
+              if (!draft) notice.acts = notice.acts.filter(action => action.key === "cancel");
+              setUnsent(notice);
             }
           }
           // **The past this face was holding is no longer backed by
