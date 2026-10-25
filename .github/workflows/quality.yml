@@ -63,6 +63,8 @@ jobs:
           QUALITY_ENGINES: chrome,webkit
           QUALITY_HEADLESS: '1'
           EDITOR_OVERWRITE_WEBKIT: '1'
+          CHAT_POLL_WEBKIT: '1'
+          CHAT_POLL_CHECK_DIR: ${{ runner.temp }}/quality-chat-poll
           EDITOR_OVERWRITE_CHECK_DIR: ${{ runner.temp }}/quality-overwrite
           QUALITY_OUT: ${{ runner.temp }}/quality-scroll
           AI_ELEMENTS_OUT: ${{ runner.temp }}/quality-elements
@@ -74,4 +76,5 @@ jobs:
             ${{ runner.temp }}/quality-scroll
             ${{ runner.temp }}/quality-elements
             ${{ runner.temp }}/quality-overwrite
+            ${{ runner.temp }}/quality-chat-poll
           if-no-files-found: warn

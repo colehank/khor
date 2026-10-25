@@ -762,3 +762,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 
 `npm run editor-overwrite`：正式 FilePage/CodeMirror 的内容摘要 CAS 冲突覆盖回归，包含读期间继续输入、取消、丢弃、关闭/重开、切文件、二编辑线、残缺/二进制响应与采用磁盘内容后的再次保存；不写用户磁盘文件。加入 `npm run test:interaction`。默认 Chrome，`EDITOR_OVERWRITE_WEBKIT=1` 同跑 WebKit，`EDITOR_OVERWRITE_CHECK_DIR` 指定证据目录；CI 下载的 Chromium 沿用 `PLAYWRIGHT_CHROMIUM_CHANNEL=''`。
+
+
+`npm run chat-poll`：真实 ChatView/React 与 api.ts，检查失败退避、结束停止、游标续接、成功/重连复位、隐藏与前台恢复、HTTP节拍、卸载与旧owner迟到结果。加入 `npm run test:interaction`；`CHAT_POLL_WEBKIT=1` 同跑 WebKit，`CHAT_POLL_CHECK_DIR` 指定每次请求时间与断言报告，`CHAT_POLL_SCENARIOS` 可选定场景，非法/空选择失败。传输与时钟为fixture，不能代替真正App/网络运行。
