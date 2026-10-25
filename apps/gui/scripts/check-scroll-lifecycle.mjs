@@ -19,12 +19,12 @@ const out = process.env.QUALITY_OUT ?? join(tmpdir(), `khor-scroll-lifecycle-${p
 const headless = process.env.QUALITY_HEADLESS === '1';
 const engines = (process.env.QUALITY_ENGINES ?? 'chrome').split(',');
 const only = (process.env.QUALITY_ONLY ?? '').split(',').filter(Boolean);
-const names = ['commit-mouse', 'commit-touch', 'commit-keyboard', 'commit-escape', 'lab-acp-blur', 'chat-acp-tail', 'chat-acp-history', 'chat-acp-input-tail', 'chat-acp-input-history', 'chat-khor-tail', 'chat-khor-history', 'chat-khor-input-tail', 'chat-khor-input-history'];
+const names = ['lock-unavailable', 'lock-pin-failure', 'commit-mouse', 'commit-touch', 'commit-keyboard', 'commit-escape', 'lab-acp-blur', 'chat-acp-tail', 'chat-acp-history', 'chat-acp-input-tail', 'chat-acp-input-history', 'chat-khor-tail', 'chat-khor-history', 'chat-khor-input-tail', 'chat-khor-input-history'];
 for (const name of engines) assert(['chrome', 'webkit'].includes(name), `Unknown engine: ${name}`);
 for (const name of only) assert(names.some(candidate => candidate === name || candidate.startsWith(`${name}-`)), `Unknown scenario: ${name}`);
 mkdirSync(out, { recursive: true });
 const hash = value => createHash('sha256').update(value).digest('hex');
-const files = ['src/hooks/use-chat-scroll.ts', 'src/views/CommitPage.tsx', 'scripts/check-scroll-lifecycle.mjs', 'scripts/quality-fixture.mjs', 'scripts/quality-preview.vite.ts', 'scripts/ai-elements-preview.vite.ts', 'scripts/session-navigation-preview.vite.ts', 'lab/quality.tsx', 'lab/quality.css', 'lab/quality.html'];
+const files = ['src/hooks/use-lock.ts', 'src/views/LockScreen.tsx', 'src/App.tsx', '../../crates/catalog/zh.toml', '../../crates/catalog/en.toml', 'src/hooks/use-chat-scroll.ts', 'src/views/CommitPage.tsx', 'scripts/check-scroll-lifecycle.mjs', 'scripts/quality-fixture.mjs', 'scripts/quality-preview.vite.ts', 'scripts/ai-elements-preview.vite.ts', 'scripts/session-navigation-preview.vite.ts', 'lab/quality.tsx', 'lab/quality.css', 'lab/quality.html'];
 const report = {
   started: new Date().toISOString(), base, headless,
   head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
@@ -353,12 +353,63 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
   assertTail(evidence.returnToTail, 'Explicit return to the latest message');
 }
 
+async function lockCase(page, mode, evidence) {
+  const facts = { on: true, has_pin: true, timeout_min: 0, timeouts: [0, 1, 5], pin_min: 4, system_door: false };
+  let connected = mode !== 'unavailable', reads = 0, pinOutcome = 'offline';
+  await page.route('**/lock_state', async route => {
+    reads++;
+    await route.fulfill(connected
+      ? { contentType: 'application/json', body: JSON.stringify(facts) }
+      : { status: 503, body: 'fixture configuration unavailable' });
+  });
+  await page.route('**/unlock', route => route.fulfill(pinOutcome === 'offline'
+    ? { status: 503, body: 'fixture verification unavailable' }
+    : { contentType: 'application/json', body: JSON.stringify(pinOutcome === 'accepted') }));
+  await page.goto(`${base}/?${new URLSearchParams({ phone: '1', labSession: 'gui/ai-elements-review', labTabs: 'gui/ai-elements-review' })}`, {
+    waitUntil: 'domcontentloaded', timeout: 45_000,
+  });
+  const hidden = async () => assert.equal(await page.locator('[data-chat-scroll], [data-machine-chat-scroll], [data-composer-text]').count(), 0, 'Locked content is removed from the document');
+  if (mode === 'unavailable') {
+    await page.locator('[data-lock-unavailable]').waitFor();
+    await hidden();
+    assert.equal(await page.locator('[data-lock-pin]').count(), 0, 'Unknown configuration cannot offer an authentication form');
+    const before = reads, deadline = Date.now() + 4000;
+    while (reads === before && Date.now() < deadline) await sleep(50);
+    assert(reads > before, 'Failed configuration retries automatically');
+    await hidden();
+    connected = true;
+    await page.locator('[data-lock-retry]').click();
+    await page.locator('[data-lock-pin]').waitFor();
+    assert.equal(await page.locator('[data-lock-unavailable]').count(), 0);
+    await hidden();
+  } else {
+    const input = page.locator('[data-lock-pin]');
+    await input.fill('1234');
+    await page.locator('[data-lock-open]').click();
+    await page.locator('[data-lock-verification-failed]').waitFor();
+    assert.equal(await page.locator('[data-lock-wrong]').count(), 0, 'Transport failure is not a wrong PIN');
+    await hidden();
+    pinOutcome = 'wrong';
+    await page.locator('[data-lock-open]').click();
+    await page.locator('[data-lock-wrong]').waitFor();
+    assert.equal(await page.locator('[data-lock-verification-failed]').count(), 0);
+    await hidden();
+  }
+  pinOutcome = 'accepted';
+  await page.locator('[data-lock-pin]').fill('1234');
+  await page.locator('[data-lock-open]').click();
+  await page.locator('[data-chat-scroll]').waitFor();
+  assert.equal(await page.locator('[data-lock-screen]').count(), 0);
+  evidence.configurationReads = reads;
+  evidence.recovered = true;
+}
+
 try {
   await startPreview();
   for (const engine of engines) {
     browser = await (engine === 'chrome' ? chromium : webkit).launch({ ...(engine === 'chrome' ? { channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? 'chrome') || undefined } : {}), headless });
     for (const name of names.filter(name => !only.length || only.some(filter => name === filter || name.startsWith(`${filter}-`)))) {
-      const mobile = name === 'commit-touch' || name.startsWith('chat-');
+      const mobile = name.startsWith('lock-') || name === 'commit-touch' || name.startsWith('chat-');
       // Playwright cannot send a wheel in mobile WebKit. History keeps the
       // phone viewport/coarse pointer, with desktop WebKit wheel capability.
       const mobileEmulation = mobile && !(engine === 'webkit' && (name.endsWith('-history') || name.includes('-input-')));
@@ -369,7 +420,8 @@ try {
       report.results.push(result);
       page.on('pageerror', error => result.errors.push(error.message));
       try {
-        if (name.startsWith('commit-')) await commitCase(page, name.slice(7), result.evidence);
+        if (name.startsWith('lock-')) await lockCase(page, name.slice(5), result.evidence);
+        else if (name.startsWith('commit-')) await commitCase(page, name.slice(7), result.evidence);
         else if (name === 'lab-acp-blur') await labBlurCase(page, result.evidence);
         else await chatCase(page, name.split('-')[1], result.evidence, name.split('-').slice(2).join('-'));
         assert.deepEqual(result.errors, [], 'No uncaught browser errors');

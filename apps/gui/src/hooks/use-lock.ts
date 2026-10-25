@@ -43,6 +43,8 @@ export type Lock = {
    * ordinary launch would flash a lock screen on a machine that has no
    * lock. One blank frame says nothing about anybody's session. */
   settled: boolean;
+  /** Configuration is unknown after a failed read; content remains hidden. */
+  unavailable: boolean;
   /** Whether this face is locked **right now**. */
   locked: boolean;
   /** Tries a PIN. Answers whether it opened; a wrong one is `false`,
@@ -60,6 +62,7 @@ export type Lock = {
 export function useLock(): Lock {
   const [facts, setFacts] = useState<LockFacts | null>(null);
   const [settled, setSettled] = useState(false);
+  const [readFailed, setReadFailed] = useState(false);
   // **Starts locked and is only ever let go by an answer.** The
   // alternative — start open, lock once the store says so — draws the
   // session list for one frame on a machine whose whole setting says
@@ -69,15 +72,23 @@ export function useLock(): Lock {
       without this hook polling a file that changes by hand once a year. */
   const [asked, setAsked] = useState(0);
   const readEpoch = useRef(0);
+  const retryAttempt = useRef(0);
+  const reread = useCallback(() => {
+    readEpoch.current += 1;
+    setAsked((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let alive = true;
+    let retryTimer: number | undefined;
     const epoch = readEpoch.current;
     fetchLock().then(
       (f) => {
         if (!alive || epoch !== readEpoch.current) return;
         setFacts(f);
         setSettled(true);
+        setReadFailed(false);
+        retryAttempt.current = 0;
         // Only the first successful read decides: a re-read while somebody is
         // working must not lock the face under them, and turning the
         // lock on from 安全 is a setting for next time, not an act.
@@ -85,20 +96,23 @@ export function useLock(): Lock {
       },
       () => {
         if (!alive || epoch !== readEpoch.current) return;
-        // Preserve the existing fallback only while configuration is
-        // unknown. A refresh failure says nothing about whether this
-        // face is locked or whether a PIN already opened it.
-        if (facts === null) setLocked(false);
+        // A connection failure cannot establish that a lock is disabled.
+        setReadFailed(true);
         setSettled(true);
+        const delay = Math.min(1000 * 2 ** Math.min(retryAttempt.current++, 5), 30_000);
+        retryTimer = window.setTimeout(() => {
+          if (alive && epoch === readEpoch.current) reread();
+        }, delay);
       },
     );
     return () => {
       alive = false;
+      window.clearTimeout(retryTimer);
     };
     // `facts` is read for its null-ness only, and adding it would
     // re-run this on every answer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asked]);
+  }, [asked, reread]);
 
   const now = useCallback(() => {
     // **Only when there is a key to it.** ⌘L on a machine with no PIN
@@ -152,14 +166,9 @@ export function useLock(): Lock {
     setLocked(false);
   }, []);
 
-  const reread = useCallback(() => {
-    // Revoke the old read immediately, before React cleans up its effect.
-    readEpoch.current += 1;
-    setAsked((n) => n + 1);
-  }, []);
   // 安全 in another window (the Mac's settings window): the lock turned on
   // there arms this window's idle timer now, not at the next launch.
   useEffect(() => heardFrom(LOCK_TOLD, reread), [reread]);
 
-  return { facts, settled, locked, open, opened, now, reread };
+  return { facts, settled, unavailable: facts === null && readFailed, locked, open, opened, now, reread };
 }

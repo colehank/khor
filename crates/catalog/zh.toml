@@ -4134,6 +4134,8 @@ store-open = "打开目录"
 lock-pin = "PIN"
 lock-open = "解锁"
 lock-wrong = "PIN 不正确"
+lock-unavailable = "暂时无法读取锁定设置，正在重试"
+lock-verification-failed = "暂时无法验证 PIN，稍后重试"
 # macOS 的 app 上多的那把钥匙。网页脸上这个按钮整个不画:浏览器里没有这
 # 回事,而一个按下去会拒绝的按钮比没有按钮更糟。
 lock-system = "使用系统验证"

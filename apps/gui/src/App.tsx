@@ -3776,6 +3776,7 @@ export default function App() {
       <LockScreen
         me={devices.find((d) => d.me) ?? null}
         onOpen={lock.open}
+        retry={lock.unavailable ? lock.reread : undefined}
         // The app's other key, and **only where there is one**: a
         // browser has no LocalAuthentication, and a button that refuses
         // is worse than no button (`api.ts` systemUnlock).

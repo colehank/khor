@@ -21,13 +21,15 @@ const bundle = await build({
     const reads = [], pins = [], outcomes = [], history = [], intervals = new Map();
     let clock = 1000, timer = 0, current, root;
     Date.now = () => clock;
-    window.setInterval = (run, ms) => { const id = ++timer; intervals.set(id, { run, ms, at: clock + ms }); return id; };
+    window.setInterval = (run, ms) => { const id = ++timer; intervals.set(id, { run, ms, at: clock + ms, repeat: true }); return id; };
     window.clearInterval = id => intervals.delete(id);
+    window.setTimeout = (run, ms) => { const id = ++timer; intervals.set(id, { run, ms, at: clock + ms, repeat: false, id }); return id; };
+    window.clearTimeout = id => intervals.delete(id);
     const deferred = into => new Promise((resolve, reject) => into.push({ resolve, reject }));
     window.__lockTransport = { fetchLock: () => deferred(reads), unlock: () => deferred(pins) };
     window.IS_REACT_ACT_ENVIRONMENT = true;
     function Host() { current = useLock(); history.push(snapshot()); return null; }
-    function snapshot() { return { facts: current.facts, settled: current.settled, locked: current.locked }; }
+    function snapshot() { return { facts: current.facts, settled: current.settled, locked: current.locked, unavailable: current.unavailable }; }
     window.__lockTest = {
       async mount(strict) { root = createRoot(document.getElementById('root')); await act(async () => root.render(strict ? <React.StrictMode><Host/></React.StrictMode> : <Host/>)); },
       read: () => ({ ...snapshot(), reads: reads.length, pins: pins.length, outcomes, history, intervals: intervals.size }),
@@ -57,7 +59,7 @@ const bundle = await build({
             for (;;) {
               const due = [...intervals.values()].filter(t => t.at <= until).sort((a, b) => a.at - b.at)[0];
               if (!due) break;
-              clock = due.at; due.at += due.ms; due.run();
+              clock = due.at; if (due.repeat) due.at += due.ms; else intervals.delete(due.id); due.run();
             }
             clock = until;
           }
@@ -83,10 +85,34 @@ check('initial enabled/disabled answers keep launch semantics', async f => {
   await f.run('reread'); await f.run('read', 1, ON);
   assert.equal((await f.state()).locked, false, 'enabling is configuration, not a lock-now action');
 });
-check('first unknown read failure retains the existing fallback and can recover', async f => {
-  await f.run('failRead', 0); assert.deepEqual(await f.state(), { facts: null, settled: true, locked: false });
-  await f.run('reread'); await f.run('read', 1, ON);
-  assert.deepEqual(await f.state(), { facts: ON, settled: true, locked: true });
+check('unknown configuration stays locked and automatically recovers', async f => {
+  await f.run('failRead', 0); assert.deepEqual(await f.state(), { facts: null, settled: true, locked: true });
+  assert.equal((await f.all()).unavailable, true);
+  await f.run('advance', 999); assert.equal((await f.all()).reads, 1);
+  await f.run('advance', 1); assert.equal((await f.all()).reads, 2);
+  await f.run('read', 1, OFF);
+  assert.deepEqual(await f.state(), { facts: OFF, settled: true, locked: false });
+  assert.equal((await f.all()).unavailable, false);
+});
+check('configuration retries back off, remain bounded and reset after recovery', async f => {
+  for (const [index, delay] of [1000, 2000, 4000, 8000, 16000, 30000, 30000].entries()) {
+    await f.run('failRead', index);
+    await f.run('advance', delay - 1); assert.equal((await f.all()).reads, index + 1);
+    await f.run('advance', 1); assert.equal((await f.all()).reads, index + 2);
+    assert.equal((await f.state()).locked, true);
+  }
+  await f.run('read', 7, ON); await f.run('reread'); await f.run('failRead', 8);
+  await f.run('advance', 1000); assert.equal((await f.all()).reads, 10);
+});
+check('manual retry revokes the pending automatic retry', async f => {
+  await f.run('failRead', 0); await f.run('reread');
+  await f.run('advance', 5000); assert.equal((await f.all()).reads, 2);
+  await f.run('read', 1, ON); assert.equal((await f.all()).unavailable, false);
+});
+check('unmount clears a pending retry without another request', async f => {
+  await f.run('failRead', 0); await f.run('unmount');
+  await f.run('advance', 60000); assert.equal((await f.all()).reads, 1);
+  assert.equal((await f.all()).intervals, 0);
 });
 check('failed refresh cannot unlock an already locked face', async f => {
   await f.run('read', 0, ON); await f.run('reread'); await f.run('failRead', 1);

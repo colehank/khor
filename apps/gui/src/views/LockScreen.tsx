@@ -30,6 +30,7 @@ export function LockScreen({
   me,
   onOpen,
   systemUnlock,
+  retry,
 }: {
   /** This machine's row, or `null` before the table has answered — the
       face and the name are painted from it, and nothing else on this
@@ -41,10 +42,13 @@ export function LockScreen({
       Absent everywhere else — a browser has no such thing, and a button
       that refuses is worse than no button. */
   systemUnlock?: () => void;
+  /** A configuration read failed; no authentication form is shown until it recovers. */
+  retry?: () => void;
 }) {
   const [pin, setPin] = useState("");
   const [wrong, setWrong] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [verificationFailed, setVerificationFailed] = useState(false);
   const box = useRef<HTMLInputElement>(null);
 
   // The box has the caret the moment the screen arrives: this screen has
@@ -52,7 +56,7 @@ export function LockScreen({
   // a step that exists for no reason.
   useEffect(() => {
     box.current?.focus();
-  }, []);
+  }, [retry]);
 
   /** With no PIN yet, the act says so and the caret goes to the box
       (`components/Why`). */
@@ -65,6 +69,8 @@ export function LockScreen({
       return;
     }
     setAsking(true);
+    setWrong(false);
+    setVerificationFailed(false);
     try {
       const took = await onOpen(pin);
       if (!took) {
@@ -73,9 +79,7 @@ export function LockScreen({
         box.current?.focus();
       }
     } catch {
-      // khor could not read its own record — a different thing from a
-      // wrong PIN, and said as a different thing (`khor_node::lock`).
-      setWrong(true);
+      setVerificationFailed(true);
     } finally {
       setAsking(false);
     }
@@ -101,7 +105,16 @@ export function LockScreen({
       <div data-lock-name className="text-title-md font-title">
         {me?.shown ?? ""}
       </div>
-      <form
+      {retry ? (
+        <div className="flex w-full max-w-measure flex-col items-center gap-2">
+          <p role="status" data-lock-unavailable className="text-callout text-muted-foreground">
+            {gui.lock_unavailable}
+          </p>
+          <Button type="button" data-lock-retry onClick={retry} className="min-h-touch w-full">
+            {gui.region_retry}
+          </Button>
+        </div>
+      ) : <form
         className="flex w-full max-w-measure flex-col items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
@@ -125,12 +138,18 @@ export function LockScreen({
             setPin(e.target.value);
             setWrong(false);
             setNeed(false);
+            setVerificationFailed(false);
           }}
           className="min-h-touch w-full text-center"
         />
         {wrong && (
           <div data-lock-wrong className="text-callout text-destructive">
             {gui.lock_wrong}
+          </div>
+        )}
+        {verificationFailed && (
+          <div role="status" data-lock-verification-failed className="text-callout text-destructive">
+            {gui.lock_verification_failed}
           </div>
         )}
         {need && (
@@ -152,7 +171,7 @@ export function LockScreen({
             {gui.lock_system}
           </Button>
         )}
-      </form>
+      </form>}
     </div>
   );
 }

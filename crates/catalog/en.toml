@@ -2388,6 +2388,8 @@ store-open = "Open folder"
 lock-pin = "PIN"
 lock-open = "Unlock"
 lock-wrong = "Wrong"
+lock-unavailable = "Lock settings are unavailable. Retrying."
+lock-verification-failed = "PIN verification is unavailable. Try again."
 # The app's other key on macOS. The web face draws no such button: a
 # browser has nothing to ask, and a button that refuses is worse than
 # none.
