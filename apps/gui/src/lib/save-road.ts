@@ -15,9 +15,9 @@
 // when the last write has to go — so the write cannot belong to the
 // mount that asked for it. This module holds, per file:
 //
-// - **one write in flight, and at most one waiting.** Edits made while a
-//   write flies go in the next one, and a newer next replaces an older
-//   one — only the newest text is worth writing.
+// - **one write in flight, and one waiting per line of editing.** Newer
+//   text replaces waiting text from the same buffer. Separate buffers
+//   keep their own place and their own compare-and-write check.
 // - **what khor's own writes moved the digest from and to, per line of
 //   editing** (`by`, one per buffer read from the disk). A write pinned to
 //   a digest this same buffer's earlier write already moved on from is
@@ -67,15 +67,18 @@ export type RoadState = {
 export type Pinned = { text: string; was: string; by: string };
 
 type Waiter = { ok: (l: Landed) => void; no: (t: Trouble) => void };
-type Job = Pinned & { asked: boolean; orphan?: () => void; waiters: Waiter[] };
+type Job = Pinned & { epoch: number; asked: boolean; orphan?: () => void; waiters: Waiter[] };
+type Line = { head: string; bases: Set<string> };
 
 type Road = {
   machine: string;
   path: string;
   flying: Job | null;
-  next: Job | null;
-  /** `${by}\0${from}` → to, for khor's own writes. */
-  moved: Map<string, string>;
+  next: Job[];
+  /** Confirmed head and known bases, per buffer. Content digests can repeat. */
+  lines: Map<string, Line>;
+  /** Forgetting a buffer revokes old jobs' retry and UI callbacks. */
+  epoch: number;
   trouble: Trouble | null;
   /** The write that failed, held for the retry. */
   failed: Job | null;
@@ -113,8 +116,9 @@ function road(machine: string, path: string): Road {
       machine,
       path,
       flying: null,
-      next: null,
-      moved: new Map(),
+      next: [],
+      lines: new Map(),
+      epoch: 0,
       trouble: null,
       failed: null,
       tries: 0,
@@ -131,7 +135,7 @@ function road(machine: string, path: string): Road {
 function changed(r: Road) {
   const state: RoadState = {
     trouble: r.trouble,
-    busy: r.flying !== null || r.next !== null,
+    busy: r.flying !== null || r.next.length > 0,
     confirmed: r.until > Date.now(),
   };
   const s = r.state;
@@ -144,15 +148,8 @@ function changed(r: Road) {
 
 /** Where khor's own writes on this line took `was`. */
 function forward(r: Road, by: string, was: string): string {
-  let at = was;
-  // Bounded: a cycle cannot happen (each step is a new digest), but a
-  // loop that trusts that is a frozen face the day it does.
-  for (let i = 0; i < 1000; i += 1) {
-    const to = r.moved.get(`${by}\u0000${at}`);
-    if (to === undefined) break;
-    at = to;
-  }
-  return at;
+  const line = r.lines.get(by);
+  return line?.bases.has(was) ? line.head : was;
 }
 
 /** **Writes a file through the road.** Resolves when this text (or a
@@ -178,7 +175,7 @@ export function write(
     const waiter = { ok, no };
     // The same text from the same line is already flying: wait for it.
     const f = r.flying;
-    if (f !== null && r.next === null && f.by === pin.by && f.text === pin.text) {
+    if (f !== null && f.epoch === r.epoch && r.next.length === 0 && f.by === pin.by && f.text === pin.text) {
       f.waiters.push(waiter);
       f.asked ||= asked;
       f.orphan = how.orphan ?? f.orphan;
@@ -189,17 +186,17 @@ export function write(
       r.retry = null;
     }
     r.failed = null;
-    const job: Job = { ...pin, asked, orphan: how.orphan, waiters: [waiter] };
+    const job: Job = { ...pin, epoch: r.epoch, asked, orphan: how.orphan, waiters: [waiter] };
     if (r.flying !== null) {
-      // **The newest text replaces what was waiting**, and whoever was
-      // waiting on the older one is answered by the newer one: what they
-      // asked for is in it.
-      if (r.next !== null) {
-        job.waiters.unshift(...r.next.waiters);
-        job.asked ||= r.next.asked;
-        job.orphan ??= r.next.orphan;
-      }
-      r.next = job;
+      // Only the same buffer's newer text can answer its older waiters.
+      const at = r.next.findIndex((n) => n.by === job.by && n.epoch === job.epoch);
+      if (at >= 0) {
+        const n = r.next[at];
+        job.waiters.unshift(...n.waiters);
+        job.asked ||= n.asked;
+        job.orphan ??= n.orphan;
+        r.next[at] = job;
+      } else r.next.push(job);
       changed(r);
       return;
     }
@@ -209,17 +206,25 @@ export function write(
 
 function start(r: Road, job: Job) {
   r.flying = job;
+  r.failed = null;
   changed(r);
   const was = forward(r, job.by, job.was);
   const done = (l: Landed) => {
-    r.moved.set(`${job.by}\u0000${was}`, l.digest);
-    r.trouble = null;
-    r.failed = null;
-    r.tries = 0;
-    if (job.asked) confirm(r);
+    if (job.epoch === r.epoch) {
+      const line = r.lines.get(job.by) ?? { head: l.digest, bases: new Set<string>() };
+      line.bases.add(was);
+      line.bases.add(l.digest);
+      line.head = l.digest;
+      r.lines.set(job.by, line);
+      r.trouble = null;
+      r.failed = null;
+      r.tries = 0;
+      if (job.asked) confirm(r);
+    }
+    // Cancellation cannot undo a write already accepted by the disk.
     for (const h of anyLanded) h(l);
     for (const h of r.heard) h(l);
-    if (r.heard.size === 0 && r.next === null) job.orphan?.();
+    if (job.epoch === r.epoch && r.heard.size === 0 && r.next.length === 0) job.orphan?.();
     for (const w of job.waiters) w.ok(l);
   };
   const landed = (digest: string, at_ms: number): Landed => ({
@@ -252,30 +257,31 @@ function start(r: Road, job: Job) {
       }
       const clash = now !== null && now.digest !== was;
       const t: Trouble = { kind: clash ? "clash" : "failed", said: why };
-      r.trouble = t;
-      if (!clash) {
-        r.failed = { ...job, asked: false, waiters: [] };
-        r.tries += 1;
+      if (job.epoch === r.epoch) {
+        r.trouble = t;
+        if (!clash) {
+          r.failed = { ...job, asked: false, waiters: [] };
+          r.tries += 1;
+        }
       }
       for (const w of job.waiters) w.no(t);
     })
     .finally(() => {
       r.flying = null;
-      const n = r.next;
-      r.next = null;
-      if (n !== null) start(r, n);
+      const n = r.next.shift();
+      if (n !== undefined) start(r, n);
       else {
         // **Retried while somebody can see it**, and a few minutes more
         // when nobody can: a file deleted or renamed after its view left
         // is refused every time, and a road nobody reads must not knock
         // on a machine for ever. The pane still holds the draft and its
         // dot, so the next open writes again.
-        if (r.failed !== null && r.retry === null && (r.heard.size > 0 || r.tries <= RETRY_UNSEEN)) {
+        if (r.failed !== null && r.failed.epoch === r.epoch && r.retry === null && (r.heard.size > 0 || r.tries <= RETRY_UNSEEN)) {
           const wait = Math.min(RETRY_MOST_MS, RETRY_FIRST_MS * 2 ** Math.max(0, r.tries - 1));
           r.retry = setTimeout(() => {
             r.retry = null;
             const j = r.failed;
-            if (j === null || r.flying !== null) return;
+            if (j === null || j.epoch !== r.epoch || r.flying !== null) return;
             r.failed = null;
             start(r, j);
           }, wait);
@@ -303,15 +309,16 @@ export function confirmSaved(machine: string, path: string) {
 export function forget(machine: string, path: string) {
   const r = roads.get(keyOf(machine, path));
   if (r === undefined) return;
+  r.epoch += 1;
+  r.lines.clear();
   if (r.retry !== null) clearTimeout(r.retry);
   r.retry = null;
   r.failed = null;
   r.tries = 0;
   r.trouble = null;
-  if (r.next !== null) {
-    for (const w of r.next.waiters) w.no({ kind: "failed", said: "" });
-    r.next = null;
-  }
+  r.until = 0;
+  for (const n of r.next) for (const w of n.waiters) w.no({ kind: "failed", said: "" });
+  r.next = [];
   changed(r);
 }
 
@@ -428,10 +435,10 @@ export async function flushAll(): Promise<void> {
   }
   // Writes that were already under way count too.
   for (const r of roads.values()) {
-    if (r.flying !== null || r.next !== null) {
+    if (r.flying !== null || r.next.length > 0) {
       all.push(
         new Promise<void>((done) => {
-          const j = r.next ?? r.flying;
+          const j = r.next.at(-1) ?? r.flying;
           j?.waiters.push({ ok: () => done(), no: () => done() });
         }),
       );
