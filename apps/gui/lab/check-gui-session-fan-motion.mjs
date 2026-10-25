@@ -5,7 +5,7 @@ const {thumbFanJoystick}=await import('data:text/javascript;base64,'+Buffer.from
 let checks=0;
 function make(){let now=0,next=0;const jobs=new Map(),clock={now:()=>now,request:f=>{jobs.set(++next,f);return next;},cancel:id=>jobs.delete(id)},fan=thumbFanJoystick(()=>{},clock);const origin={x:350,y:500},neutral={x:325,y:475};fan.start(origin,['a','b','c','d','e'],'a');const advance=ms=>{for(let end=now+ms;now<end;){now=Math.min(end,now+16);const run=[...jobs.values()];jobs.clear();run.forEach(f=>f());}};advance(288);fan.move(neutral);return {fan,neutral,advance,move:(up,left=up*.35)=>fan.move({x:neutral.x-left,y:neutral.y-up})};}
 // The old polar-only controller ignores this whole diagonal stroke.
-for(const slope of [-.5,0,.35,1]){const {fan,move,advance}=make();move(18,18*slope);assert.equal(fan.read().hot,1,'upward straight/diagonal travel selects immediately');move(0,0);advance(4000);assert.equal(fan.read().hot,1);move(-18,-18*slope);assert.equal(fan.read().hot,0,'the same diagonal path reverses');fan.cancel();checks++;}
+for(const slope of [-.5,0,.35,1]){const {fan,move,advance}=make();move(18,18*slope);assert.equal(fan.read().hot,1,'upward straight/diagonal travel selects immediately');move(0,0);advance(4000);assert.equal(fan.read().hot,1);move(-28,28*Math.abs(slope));assert.equal(fan.read().hot,0,'the same diagonal path reverses');fan.cancel();checks++;}
 {
  const {fan,move}=make();move(3,1);assert.equal(fan.read().hot,0);assert(fan.read().cursor>0,'cursor follows below selection threshold');const first=fan.read().cursor;move(6,2);assert(fan.read().cursor>first);assert.equal(fan.read().hot,0);fan.cancel();checks++;
 }

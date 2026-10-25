@@ -43,9 +43,9 @@ export function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];sta
   const extent=frame.placement==='right'&&!frame.horizontal?Math.max(.5,(frame.slots-1)/2):2;
   const steering=state.cursor??(state.deflection??0)*2,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0))*extent/2);
   const guide=Array.from({length:41},(_,i)=>outerPoint(frame,extent*(-1+i/20))).map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
-  return createPortal(<div data-lab-left-fan data-fan-placement={frame.placement} data-fan-slots={frame.slots} data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-cursor={steering} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
+  return createPortal(<div data-lab-left-fan data-fan-placement={frame.placement} data-fan-slots={frame.slots} data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-cancel={state.cancelArmed||undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-cursor={steering} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
     <div className="deck-selector-dimmer"/>
-    <div className="lab-fan-identities" data-dimmed={state.lane==='overview'||undefined} aria-hidden="true">
+    <div className="lab-fan-identities" data-dimmed={state.lane==='overview'||state.cancelArmed||undefined} aria-hidden="true">
       {items.map(item=>{const id=state.ids[item.index],face=faces.find(f=>f.id===id);return face&&<span key={item.slot} data-lab-fan-session={id} data-selected={state.hot===item.index||undefined} className="lab-fan-item" style={frame.placement==='bottom'?{left:item.x-frame.titleWidth/2,top:item.y-frame.face/2,width:frame.titleWidth,opacity:item.opacity,transform:`scale(${item.scale})`,transformOrigin:`50% ${frame.face/2}px`,gap:frame.gap/3}:{left:item.x-frame.face/2,top:item.y,width:frame.face+frame.gap+frame.titleWidth,opacity:item.opacity,transform:`translateY(-50%) scale(${item.scale})`,transformOrigin:`${frame.face/2}px 50%`,gap:frame.horizontal?frame.gap/1.5:frame.gap}}>
         <span className="lab-fan-face"><TabAvatar f={face} bare="size-list-face" seat="row"/></span>
         <span className="lab-fan-label" data-lab-fan-title style={{width:frame.titleWidth}}><TitleWords text={titleOf(face)}/></span>
@@ -59,6 +59,7 @@ export function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];sta
 
     </div>
     <div data-lab-fan-overview data-active={state.lane==='overview'&&state.armed||undefined} className="lab-fan-overview" style={{left:frame.target.x,top:frame.target.y}} aria-hidden="true"><IconChevronUp centred/><span>全部标签</span></div>
+    {state.cancelArmed&&<span data-lab-fan-cancel-hint className="lab-fan-cancel-hint" style={{left:Math.max(frame.touch,Math.min(frame.width-frame.touch,frame.originX)),top:Math.max(frame.gap,frame.height-frame.touch*.65)}} aria-hidden="true">松手取消</span>}
   </div>,document.body);
 }
 export function LabFanNavigator({faces,active,onFocus,onOverview,hidden}:Pick<SessionHeaderProps,'faces'|'active'|'onFocus'|'onOverview'|'hidden'>){
@@ -68,9 +69,9 @@ export function LabFanNavigator({faces,active,onFocus,onOverview,hidden}:Pick<Se
   const [state,setState]=useState<FanState|null>(null),[frame,setFrame]=useState<Frame|null>(null),[closing,setClosing]=useState<Closing|null>(null);
   const closingLive=useRef<Closing|null>(null),closingTimer=useRef<ReturnType<typeof setTimeout>|null>(null),frameLive=useRef<Frame|null>(null),timing=useRef({follow:180,fade:120});frameLive.current=frame;
   useLayoutEffect(()=>{if(button.current){const css=getComputedStyle(button.current);timing.current={follow:parseFloat(css.getPropertyValue('--dur-120')),fade:parseFloat(css.getPropertyValue('--dur-120'))};}},[]);
-  const previous=useRef(0);
+  const previous=useRef(0),cancelCue=useRef(false);
   const engine=useMemo(()=>thumbFanJoystick(next=>{
-    if(next.pulse>0&&next.pulse!==previous.current)feel('threshold');previous.current=next.pulse;setState(next);
+    if(next.pulse>0&&next.pulse!==previous.current||next.cancelArmed&&!cancelCue.current)feel('threshold');previous.current=next.pulse;cancelCue.current=!!next.cancelArmed;setState(next);
   }),[]);
   const clear=()=>{const c=contact.current;contact.current=null;if(c&&button.current?.hasPointerCapture(c.pointer))button.current.releasePointerCapture(c.pointer);};
   const stopClosing=()=>{if(closingTimer.current)clearTimeout(closingTimer.current);closingTimer.current=null;closingLive.current=null;setClosing(null);};
@@ -109,17 +110,18 @@ export function LabFanNavigator({faces,active,onFocus,onOverview,hidden}:Pick<Se
   const down=(e:ReactPointerEvent<HTMLButtonElement>)=>{
     if(!e.isPrimary||e.button!==0||contact.current||!button.current)return;e.preventDefault();stopClosing();pendingTap.current=false;
     const frame=frameFor(button.current);
-    setFrame(frame);engine.start({x:e.clientX,y:e.clientY},latest.current.faces.map(f=>f.id),latest.current.active,frame.touch);
+    setFrame(frame);engine.start({x:e.clientX,y:e.clientY},latest.current.faces.map(f=>f.id),latest.current.active,frame.touch,{x:frame.left+frame.originX,y:frame.top+frame.originY});
     const c:Contact={pointer:e.pointerId,touch:e.pointerType==='touch',touchId:null,active:latest.current.active,ids:latest.current.ids,layout:readDeckContactLayout(button.current)};contact.current=c;button.current.setPointerCapture(c.pointer);
   };
   const shown=closing?.state??state,shownFrame=closing?.frame??frame;
   const visible=!!closing||shown?.phase==='fan'||shown?.phase==='overview',candidate=shown?.hot==null?null:faces.find(f=>f.id===shown.ids[shown.hot!]),current=faces.find(f=>f.id===active);
+  const avatarFace=shown?.cancelArmed?current:candidate??current;
   return <div ref={root} className="lab-compose-nav" data-lab-session-navigation data-fan-open={visible||undefined}>
-    <button ref={button} type="button" data-lab-compose-avatar data-lab-fan-avatar data-expanded={expanded||undefined} aria-label={`切换会话：${titleOf(current)}`} aria-expanded={expanded||visible} aria-description="点击展开药丸；长按轻推后斜向上下拨动预选，保持偏移循环翻选，回中暂停，反向倒退；向左上推远后松手展开全部标签，回撤恢复扫选" onPointerDown={down} onPointerMove={e=>{if(contact.current?.pointer===e.pointerId)engine.move({x:e.clientX,y:e.clientY});}} onPointerUp={e=>finish(e.pointerId,{x:e.clientX,y:e.clientY})} onPointerCancel={cancel} onLostPointerCapture={()=>{if(contact.current)cancel();}} onContextMenu={e=>e.preventDefault()} onClick={e=>{if(e.detail===0||pendingTap.current){cancel();toggle();}}} onKeyDown={e=>{if(e.key==='ArrowUp'){e.preventDefault();overview();}}}>
-      {(candidate??current)&&<span key={(candidate??current)!.id} data-lab-fan-avatar-preview={(candidate??current)!.id} className="lab-fan-avatar-face"><TabAvatar f={(candidate??current)!} bare="size-tab-face" seat="tab"/></span>}
+    <button ref={button} type="button" data-lab-compose-avatar data-lab-fan-avatar data-expanded={expanded||undefined} aria-label={`切换会话：${titleOf(current)}`} aria-expanded={expanded||visible} aria-description="点击展开药丸；长按轻推后斜向上下拨动预选，保持偏移循环翻选，弧上回中暂停，继续反拨倒退；回到原头像松手取消；向左上推远后松手展开全部标签，回撤恢复扫选" onPointerDown={down} onPointerMove={e=>{if(contact.current?.pointer===e.pointerId)engine.move({x:e.clientX,y:e.clientY});}} onPointerUp={e=>finish(e.pointerId,{x:e.clientX,y:e.clientY})} onPointerCancel={cancel} onLostPointerCapture={()=>{if(contact.current)cancel();}} onContextMenu={e=>e.preventDefault()} onClick={e=>{if(e.detail===0||pendingTap.current){cancel();toggle();}}} onKeyDown={e=>{if(e.key==='ArrowUp'){e.preventDefault();overview();}}}>
+      {avatarFace&&<span key={avatarFace.id} data-lab-fan-avatar-preview={avatarFace.id} className="lab-fan-avatar-face"><TabAvatar f={avatarFace} bare="size-tab-face" seat="tab"/></span>}
     </button>
     {expanded&&<SessionPill faces={faces} active={active} onFocus={focus} onOverview={overview}/>}
     {visible&&shown&&shownFrame&&<FanLayer faces={faces} state={shown} frame={shownFrame} phase={closing?.phase??shown.phase} duration={closing?SETTLE_MS:timing.current.follow}/>}
-    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.lane==='overview'?shown.armed?'松手展开全部标签':'向左上推远展开，回撤恢复扫选':candidate?`预选 ${titleOf(candidate)}，松手切换，回中暂停，Esc 取消`:'斜向上下轻拨预选，保持偏移循环翻选，回中暂停，向左上推远展开全部标签':''}</span>
+    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.cancelArmed?'松手取消，离开原头像可恢复预选':shown?.lane==='overview'?shown.armed?'松手展开全部标签':'向左上推远展开，回撤恢复扫选':candidate?`预选 ${titleOf(candidate)}，松手切换，弧上回中暂停，回到原头像松手取消`:'斜向上下轻拨预选，保持偏移循环翻选，回中暂停，向左上推远展开全部标签':''}</span>
   </div>;
 }

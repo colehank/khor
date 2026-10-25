@@ -7,7 +7,7 @@ for(const [up,tier,interval] of [[17,1,1400],[36,2,1000],[55,3,700]]){
  const {fan,advance,sweep,acquire}=make();acquire();sweep(up);assert.equal(fan.read().hot,1,'first candidate responds without waiting for repeat');assert.equal(fan.read().tier,tier);assert.equal(fan.read().interval,interval);checks++;
  advance(interval-32);assert.equal(fan.read().hot,1);advance(48);assert.equal(fan.read().hot,2);checks++;
  sweep(0);const paused=fan.read().hot;advance(4000);assert.equal(fan.read().hot,paused);assert.equal(fan.read().direction,0);checks++;
- sweep(-17);assert.equal(fan.read().hot,(paused+4)%5);fan.release();assert.equal(fan.release().kind,'none');checks++;
+ sweep(-24);assert.equal(fan.read().hot,(paused+4)%5);fan.release();assert.equal(fan.release().kind,'none');checks++;
 }
 {
  const {fan,sweep,acquire,advance}=make();acquire();for(const up of [3,-4,6,-6,0])sweep(up);advance(3000);assert.equal(fan.read().hot,0,'neutral absorbs small tremor');sweep(17);sweep(3);for(const up of [2,-3,0])sweep(up);advance(3000);assert.equal(fan.read().hot,1,'returning to neutral retains selection');checks++;fan.cancel();
@@ -16,12 +16,12 @@ for(const [up,tier,interval] of [[17,1,1400],[36,2,1000],[55,3,700]]){
  const {fan,advance}=make();advance(288);const p=point(30);fan.move(p);assert.equal(fan.read().hot,0,'first comfortable landing acquires neutral without jumping');fan.move({x:p.x-6,y:p.y-17});assert.equal(fan.read().hot,1);fan.move(p);advance(3000);assert.equal(fan.read().hot,1);checks++;fan.cancel();
 }
 {
- const {fan,sweep,acquire,advance}=make();acquire();sweep(17);const target=fan.read().hot;fan.move(point(45,145));assert(fan.read().armed);fan.move(point(45,130));assert(fan.read().armed);fan.move(point(45,110));assert(!fan.read().armed);assert.equal(fan.read().hot,target);advance(3000);assert.equal(fan.read().hot,target,'retraction pauses at a fresh comfortable neutral');const p=point(45,110);fan.move({x:p.x+6,y:p.y+17});assert.equal(fan.read().hot,0);checks++;fan.cancel();
+ const {fan,sweep,acquire,advance}=make();acquire();sweep(17);const target=fan.read().hot;fan.move(point(45,145));assert(fan.read().armed);fan.move(point(45,130));assert(fan.read().armed);fan.move(point(45,110));assert(!fan.read().armed);assert.equal(fan.read().hot,target);advance(3000);assert.equal(fan.read().hot,target,'retraction pauses at a fresh comfortable neutral');const p=point(45,110);fan.move({x:p.x+6,y:p.y+24});assert.equal(fan.read().hot,0);checks++;fan.cancel();
 }
 for(const held of [false,true]){const {fan,acquire}=make();if(held)acquire();fan.move(point(45,145));assert.equal(fan.release().kind,'overview');checks++;}
 for(const count of [0,1,2,3]){const {fan,acquire,sweep,frames}=make(['a','b','c'].slice(0,count));acquire();sweep(50);assert.equal(fan.read().hot,count>1?1:0);fan.cancel();assert.equal(frames.size,0);checks++;}
 {
- const stick=fanStick(origin);assert.equal(stick.move(neutral).gain,0);assert(stick.move({x:325,y:458}).gain>0);assert.equal(stick.move(neutral).gain,0);assert(stick.move({x:325,y:492}).gain<0);checks++;
+ const stick=fanStick(origin);assert.equal(stick.move(neutral).gain,0);assert(stick.move({x:325,y:458}).gain>0);assert.equal(stick.move(neutral).gain,0);assert(stick.move({x:325,y:500}).gain<0);checks++;
  const {fan,acquire,sweep,frames,advance}=make();acquire();sweep(50);fan.cancel();advance(5000);assert.equal(fan.read().phase,'idle');assert.equal(frames.size,0);checks++;
  const tap=make();assert.equal(tap.fan.release().kind,'tap');assert.equal(tap.fan.release().kind,'none');checks++;
 }

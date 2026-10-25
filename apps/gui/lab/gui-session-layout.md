@@ -131,6 +131,7 @@ node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
 ```sh
 node lab/check-gui-session-fan-state.mjs
 node lab/check-gui-session-fan-gears.mjs
+node lab/check-gui-session-fan-cancel.mjs
 node lab/check-gui-session-fan-many.mjs
 node lab/check-gui-session-fan.mjs
 node lab/check-gui-session-compose.mjs
@@ -243,3 +244,11 @@ node_modules/.bin/tsc --noEmit -p lab/gui-session-layout.tsconfig.json
 第一档可用行程加宽；第二／三档分别在中立落点之外约 0.85／1.3 个 touch 单位进入，回撤到 0.6／1 个 touch 单位才降档，扩大边界容差。档位改变时重新留足当前档位的完整阅读间隔，轻微抖动不反复加速或降档。三档仍使用正式药丸的 1400／1000／700 ms 节拍。即时指示点、回中暂停、反向预选、倾斜短弧、松手确认及总览回撤保持。
 
 先复现普通行程误入第二档，再修复。31 项状态、216 项循环／节拍、6 项斜向跟随、10 项档位／边界抖动／无额外跳项检查和 Lab TypeScript 通过。40 项实际鼠标／浏览器触摸检查覆盖 320／390、双向三档、第二档边界抖动、完整阅读时间、暂停／反向和松手；57 项完整 GUI 回归通过。截图位于 `/Volumes/disk0/khor-gui-session-layout-proof/steady-gears/`。仍只在 Lab，不合入 main。
+
+## 原头像取消与更容易停稳（当前 Lab）
+
+落实讨论中优先选择的取消与停稳两项。回到原头像区域时暂停预选，入口恢复为当前实际会话的头像，候选变暗，输入框上方显示「松手取消」，进入取消状态沿用已有轻触反馈。松手留在原会话，不展开药丸或总览，不改变草稿；移回弧上的中立落点可恢复同一个预选并松手确认。取消区域兼顾原头像中心与最初触点，边缘起手也能收回；边界设重叠容差，避免抖动反复切换取消状态。
+
+收手时扩大中立范围，并在停住后锁定更宽的恢复边界，小幅过冲不会重启循环或倒退。一次合并触摸事件直接越过整个中立区时先刹车，再继续明确反拨才倒退；重复的静止事件不会触发反向。第一次轻推的即时预选与指示点反馈保留，真实回程与轻推后停住分别判断。取消键、失焦／多触点取消、总览回撤、三档节拍、倾斜短弧和底部药丸左右拖动沿用既有行为。
+
+先复现原头像不能取消、轻推静止被当作回程及边缘起手不能回到头像中心取消，再修复。31 项状态、216 项循环／节拍、6 项斜向跟随、10 项档位及 8 项取消／停稳检查和 Lab TypeScript 通过。57 项完整 GUI 回归及 72 项定向鼠标／浏览器触摸检查通过，覆盖 320／390、浅深主题、键盘开关、边缘起手、长草稿、一项／三项布局、取消提示边界、草稿保留、过冲刹车、继续反向和回中确认。已核对截图，位于 `/Volumes/disk0/khor-gui-session-layout-proof/cancel-brake/` 与其 `compact-edge/` 子目录。仍只在 Lab，不合入 main；iPhone 的实际握姿和触感留待真机体验。

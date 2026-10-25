@@ -8,6 +8,6 @@ for(const sign of [-1,1]){
  move(sign*36);assert.equal(fan.read().tier,2);assert.equal(fan.read().interval,1000);for(const up of [31,34,30,33,35]){move(sign*up);assert.equal(fan.read().tier,2,'second gear survives boundary tremor');assert.equal(fan.read().pulse,1);}checks++;
  advance(720);move(sign*24);assert.equal(fan.read().tier,1);advance(1200);assert.equal(fan.read().pulse,1,'downshift gives a full reading interval');advance(240);assert.equal(fan.read().pulse,2);checks++;
  move(sign*55);assert.equal(fan.read().tier,3);assert.equal(fan.read().pulse,2,'a deliberate fast gear only changes cadence');for(const up of [48,45,50]){move(sign*up);assert.equal(fan.read().tier,3);}move(sign*40);assert.equal(fan.read().tier,2);checks++;
- move(0);const paused=fan.read().pulse;advance(5000);assert.equal(fan.read().pulse,paused);move(-sign*17);assert.equal(fan.read().pulse,paused+1);assert.equal(fan.read().tier,1,'reverse starts gently');fan.cancel();assert.equal(jobs.size,0);checks++;
+ move(0);const paused=fan.read().pulse;advance(5000);assert.equal(fan.read().pulse,paused);move(-sign*24);assert.equal(fan.read().pulse,paused+1);assert.equal(fan.read().tier,1,'reverse starts gently');fan.cancel();assert.equal(jobs.size,0);checks++;
 }
 console.log(`${checks} wide gears, directional tremor, no manual skips, full reading interval, pause and reverse checks passed.`);
