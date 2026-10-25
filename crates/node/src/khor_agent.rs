@@ -12,8 +12,7 @@ mod input;
 mod io;
 #[path = "khor_agent_output.rs"]
 mod output;
-#[path = "khor_agent_process.rs"]
-mod process;
+use crate::agent_process as process;
 #[path = "khor_agent_updates.rs"]
 mod updates;
 use output::TextStream;

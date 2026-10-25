@@ -79,6 +79,10 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, Agent, Client, ConnectionTo, ErrorCode};
 use tokio::sync::{mpsc, oneshot};
 mod interaction;
+mod lifecycle;
+use lifecycle::{CloseGate, Opening};
+pub use lifecycle::{ProcessExit, ShutdownOutcome, TransportLifecycle};
+use std::sync::Arc;
 mod management;
 pub use interaction::validate_elicitation;
 pub use management::{manage, Management};
@@ -318,14 +322,37 @@ pub struct Handle {
     environment: Environment,
     facts: Facts,
     settings: Settings,
-    /// Dropping this ends the connection's main task, which drops the
-    /// transport, which kills the agent's process group.
-    _close: oneshot::Sender<()>,
+    close: Arc<CloseGate>,
+}
+
+impl Drop for Handle {
+    fn drop(&mut self) {
+        self.request_shutdown();
+    }
 }
 
 impl Handle {
+    pub fn request_shutdown(&self) {
+        self.close.request();
+    }
+
+    /// A shared confirmation. DriverClosed alone does not prove a child was reaped.
+    pub async fn shutdown(&self) -> Result<ShutdownOutcome, String> {
+        self.request_shutdown();
+        self.close.completed().await
+    }
+
     /// Standard lifecycle controls remain capability-gated.
     pub async fn control(
+        &self,
+        operation: &str,
+        payload: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        self.close
+            .while_open(self.control_inner(operation, payload))
+            .await
+    }
+    async fn control_inner(
         &self,
         operation: &str,
         payload: &serde_json::Value,
@@ -401,6 +428,16 @@ impl Handle {
         images: &[(String, String)],
         files: &[(String, String)],
     ) -> Result<StopReason, String> {
+        self.close
+            .while_open(self.prompt_with_inner(text, images, files))
+            .await
+    }
+    async fn prompt_with_inner(
+        &self,
+        text: &str,
+        images: &[(String, String)],
+        files: &[(String, String)],
+    ) -> Result<StopReason, String> {
         let mut blocks = vec![ContentBlock::Text(TextContent::new(text.to_owned()))];
         for (mime, data) in images {
             blocks.push(ContentBlock::Image(ImageContent::new(
@@ -447,6 +484,9 @@ impl Handle {
     /// transcript, so a session that has never had a turn may refuse
     /// with "not found" rather than replay nothing.
     pub async fn replay(&self) -> Result<(), String> {
+        self.close.while_open(self.replay_inner()).await
+    }
+    async fn replay_inner(&self) -> Result<(), String> {
         let mut request = LoadSessionRequest::new(self.session.clone(), self.cwd.clone());
         request.mcp_servers = self.environment.mcp_servers.clone();
         request.additional_directories = self.environment.additional_directories.clone();
@@ -460,6 +500,7 @@ impl Handle {
 
     /// Interrupt the current turn without ending the session.
     pub fn cancel(&self) -> Result<(), String> {
+        self.close.check_open()?;
         self.conn
             .send_notification(CancelNotification::new(self.session.clone()))
             .map_err(|e| e.to_string())
@@ -489,6 +530,9 @@ impl Handle {
     /// answers a mode it did not list with an error, which comes back
     /// here as its words.
     pub async fn set_mode(&self, id: &str) -> Result<(), String> {
+        self.close.while_open(self.set_mode_inner(id)).await
+    }
+    async fn set_mode_inner(&self, id: &str) -> Result<(), String> {
         let request =
             SetSessionModeRequest::new(self.session.clone(), SessionModeId::new(id.to_owned()));
         self.conn
@@ -506,6 +550,15 @@ impl Handle {
     /// updated only the one it touched would be drawing the rest from
     /// memory.
     pub async fn set_option(
+        &self,
+        id: &str,
+        value: SessionConfigOptionValue,
+    ) -> Result<Vec<SessionConfigOption>, String> {
+        self.close
+            .while_open(self.set_option_inner(id, value))
+            .await
+    }
+    async fn set_option_inner(
         &self,
         id: &str,
         value: SessionConfigOptionValue,
@@ -712,10 +765,57 @@ pub async fn start_configured(
     environment: Environment,
 ) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
     let agent = AcpAgent::from_str(command).map_err(|e| Refusal::Wont(e.to_string()))?;
+    start_transport(agent, None, cwd, resume, environment).await
+}
+
+/// Connect through caller-owned streams without giving the SDK ownership of the child.
+/// A returned refusal waits for owner cleanup. If this future is externally cancelled,
+/// the caller must retain the lifecycle and request/confirm shutdown before retrying.
+pub async fn start_configured_on(
+    transport: impl agent_client_protocol::ConnectTo<Client>,
+    lifecycle: TransportLifecycle,
+    cwd: PathBuf,
+    resume: Option<String>,
+    environment: Environment,
+) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
+    let cleanup = lifecycle.clone();
+    match start_transport(transport, Some(lifecycle), cwd, resume, environment).await {
+        Ok(opened) => Ok(opened),
+        Err(refusal) => {
+            cleanup.request_shutdown();
+            match cleanup.confirmed_exit().await {
+                Ok(_) => Err(refusal),
+                Err(error) => {
+                    let append = |said: String| {
+                        format!("{said}\nACP process cleanup was not confirmed: {error}")
+                    };
+                    Err(match refusal {
+                        Refusal::Login(said) => Refusal::Login(append(said)),
+                        Refusal::Version(said) => Refusal::Version(append(said)),
+                        Refusal::Wont(said) => Refusal::Wont(append(said)),
+                    })
+                }
+            }
+        }
+    }
+}
+
+async fn start_transport(
+    agent: impl agent_client_protocol::ConnectTo<Client>,
+    lifecycle: Option<TransportLifecycle>,
+    cwd: PathBuf,
+    resume: Option<String>,
+    environment: Environment,
+) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
     let (events_tx, mut events_rx) = mpsc::unbounded_channel::<Event>();
     type Opened = Result<(ConnectionTo<Agent>, SessionId, Facts, Settings), Refusal>;
     let (ready_tx, mut ready_rx) = oneshot::channel::<Opened>();
     let (close_tx, close_rx) = oneshot::channel::<()>();
+    let (result_tx, result_rx) = tokio::sync::watch::channel(None);
+    let close = Arc::new(CloseGate::new(close_tx, result_rx, lifecycle));
+    let mut opening = Opening(Some(close.clone()));
+    let driver_close = close.clone();
+    let driver_cleanup = Opening(Some(close.clone()));
 
     let notes = events_tx.clone();
     let asks = events_tx.clone();
@@ -726,6 +826,7 @@ pub async fn start_configured(
     let retained_environment = environment.clone();
 
     tokio::spawn(async move {
+        let _driver_cleanup = driver_cleanup;
         let mut ready_tx = Some(ready_tx);
         let transport = Client
             .builder()
@@ -798,6 +899,9 @@ pub async fn start_configured(
         // Closing must cancel initialization as well as an already-open session.
         let error =
             tokio::select! {result=transport=>result.err().map(|e|e.to_string()),_=close_rx=>None};
+        let completion = driver_close.driver_closed().await;
+        let error = error.or_else(|| completion.as_ref().err().cloned());
+        result_tx.send_replace(Some(completion));
         let _ = closed.send(Event::Closed(error));
     });
 
@@ -841,7 +945,7 @@ pub async fn start_configured(
             environment: retained_environment,
             facts,
             settings,
-            _close: close_tx,
+            close: opening.0.take().expect("opening owns its close gate"),
         },
         receiver,
     ))

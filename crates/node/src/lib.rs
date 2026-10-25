@@ -44,7 +44,10 @@ pub mod host;
 pub mod shell_start;
 pub mod ipc;
 pub mod keeper;
+#[path = "khor_agent_process.rs"]
+pub(crate) mod agent_process;
 pub mod khor_agent;
+pub(crate) mod acp_process;
 mod acp_management;
 mod acp_mcp;
 pub mod link;
