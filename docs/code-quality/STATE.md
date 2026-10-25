@@ -1,70 +1,68 @@
 # 当前状态
 
-更新：2026-10-25 · 用户重新激活完整治理目标，继续执行。
+更新：2026-10-25，继续完整治理；尚未完成全仓目标。
 
 ## 目标与边界
 
-完整范围仍为 [PLAN.md](PLAN.md) P1–P5：全仓审查、分批功能修复与结构治理、工程规范和整体验收。不能以首批或单项通过代替全面完成。[AUDIT.md](AUDIT.md) 保存发现与后续优先级。main/发布没有本轮授权；独立分支和隔离验收继续。
+[PLAN.md](PLAN.md) P1–P5仍完整有效：全仓深入审查、功能修复、结构与工程治理、真实用户流程验收。用户最新指令为“继续”，不能以首批/单项通过结束目标。main、合并与发布本轮没有授权；只在独立分支集成和验收。治理在进行，旧目录整理“暂停”记录不再代表当前状态。
 
-## 当前路径与版本
+## 权威路径与实际版本
 
-- 主仓：`/Users/zgh/Desktop/working/khor`，main `8704a503a27b36ad58f922690de50e766f8bd485`，tracked clean。
-- 权威协调：本文件所在目录，plan/code-quality 分支。其他 worktree 的同名文档是快照。
-- 集成实现：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，integrate/code-quality-wave1，当前 HEAD `3d10bbaff062b0ccb32b3b9d36d5432275812b20`（后端Q033最终SendCommitted已集成；GUI待审）。
-- 内盘恢复：`/Users/zgh/Developer/Khor/worktrees/recovery/`，4 个恢复副本，均保留真实差异；禁止重建旧 Desktop/working 路径或按摘要覆盖。
-- 外盘资料：`/Volumes/disk0/Khor`。存储与迁移索引见 [STORAGE.md](STORAGE.md)；内盘备份 `/Users/zgh/khor-backups/{disk0-20261025,working-20261025}`。
-- 上次 ship 的 Mac 二进制仍在主仓 target/release/khor-gui，SHA-256 与发布收据一致；没有把它当成本轮修复版原生验收。
+- 主仓 `/Users/zgh/Desktop/working/khor`，main `8704a503a27b36ad58f922690de50e766f8bd485`，最近核对tracked clean。上次ship的target/release/khor-gui含前端、可直接启动；SHA `9c3e078f355aa65e3f9d0137ae38548a1f2d75d21bf261528335e031ee6dbc01`。没有以它代替本轮新App验收。
+- 本文件在 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-plan/docs/code-quality`，plan/code-quality；其他worktree同名文件为快照。
+- 集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，integrate/code-quality-wave1，最新 `c37151a1ed90abc81ce7c119994912574e16163f`：Q033 GUI三提交、Q037 Pi生命周期与Windows叶、Windows CI门及Q040a弱锁回收均已集成；尚需当前整合头的完整后端/原生验收。
+- Git对象在内盘主仓`.git`；未提交外盘源码另备份。外盘 `/Volumes/disk0/Khor` 是唯一开发资料分类根，不新增散落khor*目录，复用既有worktree。
+- 恢复入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/RESUME.md`；当前文档缓存同目录current-code-quality-docs。目录迁移/内盘恢复细节见STORAGE/RECOVERY及历史STATE。
 
-## 已集成与确认的证据
+## 已集成批次与证据边界
 
-| 任务 | 当前结论 |
+| 任务 | 当前事实 |
 | --- | --- |
-| Q001A/B/C | 首轮结构盘点与重点抽样完成；GUI 525 文件清单/42 重点文件，后端 165 文件清单/36 关键路径；尚非全仓深入审查 |
-| Q010/Q011/Q013 | 首批滚动、提交跳转、Lab 已提交并集成。固定版本浏览器 Chrome/WebKit 26/26，通过对应版本 gen/types/unit/build；Q010b已在真正Tauri iOS模拟器取得键盘红绿与真实touch-hide绿、commit真实触摸通过；物理iPhone仍待验 |
-| Q020 | 自动保存摘要回环、取消与编辑线隔离已集成，24 回归与独立编辑器检查通过；显式“用我的覆盖”另列 Q020b |
-| Q021 | 已知锁状态刷新失败保护已集成 882e3c50；首次未知失败恢复在 Q021b |
-| Q022 | 身份原子首建 e89da2e6 已集成；真实 Cargo 9 通过+1 专用 worker、64 子进程；断电目录项持久性与 Windows 实跑不作保证 |
-| Q023 | dry-run、purge 范围和现代指纹 hostname fallback 拒绝已集成至 9b175b42；安装 binary 的真实 owner 证明仍待 Q023b |
-| Q024 | netlab 失败/空跑退出码、mobile 静态/编译分层、质量 CI 与平台 Tab 修正已提交；GitHub CI 实跑、最终完整交互和 Q025 native/mobile 静态收尾仍待完成 |
+| Q001A/B/C | 首轮GUI525文件/42重点、后端165文件/36关键路径盘点已做；仍非全仓深入审查。AUDIT保存后续范围。 |
+| Q010/Q011/Q013 | 首批键盘/提交跳转/Lab已集成。Q010b 093d4115在真实Tauri iOS模拟器取得ACP长稿收键盘gap164→0、实际XCUI swipe触发隐藏通过；真实reader drag历史gap460不被拉回，commit第6/8真实触摸通过。最终确切集成App与物理iPhone仍待验。 |
+| Q015 | 最小notification is-permission-granted cap已静态独立审过并集成15a4660d；真实重建App启动拒绝消失仍待验。 |
+| Q020/b/c | 自动保存回环、取消、编辑线隔离与显式覆盖已集成；模块30、正式编辑器Chrome/WebKit26通过，门已登记。 |
+| Q021/b | 已知/首次未知锁刷新失败保护集成至c3fe828b；hook20、独立App交互及精确当时双引擎全交互30通过。 |
+| Q022 | 身份原子首建e89da2e6；真实Cargo9+专用worker/64子进程通过，未声称断电目录项或Windows实跑。 |
+| Q023/b | dry-run/purge范围/指纹拒绝与严格binary owner回执集成至7251f2db；实际规则/CLI/80场景红绿及独立复验通过。 |
+| Q024 | netlab失败/空跑、移动静态/编译分层、quality CI/平台Tab门已修；GitHub实际CI结果仍待。 |
+| Q025/Q036 | FIFO真实写完成/控制屏障/独立connection shutdown/旧owner隔离，集成918127ea；原core123过2失败1bench忽略后，Q036 canonical缓存路径与陈旧scheduler测试已修46d5d0eb，作者117过0失败1bench（不含Q025新增8）。最终整合全core仍待。 |
+| Q030/b/Q031 | 流式凭据裁剪、一次redact、live receipt与JSONRPC/REST恢复集成至3f73f8ec/908d60e4；真实单组/worker与独立审查过，不直接代替当前集成全组。 |
+| Q032 | web输入预算/断开固定buffer集成0e667094；真实Web26、vendor5过，不声称慢连接deadline。 |
+| Q033 backend | 21994830→dd15b9d1，3d0dc41f→3d10bbaf；token guard/取消receipt/SendCommitted，HTTP null仅admission。真实core15、实际host gated链4、NodeGUI3、terminal2、native参数2均过并独立审。旧host未commit上传只能退役attachment后显式重连；不谎称已commit取消。 |
+| Q033 GUI | 3f2b8b18/8da0d063/7746378f→e56eef64/87674beb/bd58566a。owner/reader/token关联恢复原稿/附件，未知不自动重放；独立复审先抓4类过期retry真红、又抓旧cancel撤新notice真红，均独立复验绿。精确集成85a78fe9生成成功、Chrome/WebKit56/56、types/unit/gates101脚本94条、旧poll22/22通过且指纹匹配。门/CI85a78fe9；真实GUI/native链仍待。 |
+| Q034 | 轮询失败退避、前台恢复、gone停止d5ff206c，门4822e64b；作者22/22与独立6场景过；最新Q033集成poll22也过。 |
+| Q035 | 迟到page/borrow按最新owner释放、tab串行操作与8活页上限35e12364；selector与CI channel跟进37f8c54f/cc3a3295。module10、两引擎组件8通过，真正native资源句柄计数仍待。 |
+| Q038 | 有预算event reader与固定stderr drain作者29fcad93→c5ab273d；std7/7、独立11/11、真实agent25+2专用worker、8MiB真实sidecar通过。不代表全RSS/取消期限已解决。 |
+| Q037 Pi部分 | Windows作者b51a7d9c→873a6304；root7fa059ba→32e227f1。独立监督首Stop10s、串行stdin、可取消pipe、WNOWAIT归属anchor、确认wait再终态、Execution RAII。真实Configure/Prompt/Stop两种不合作sidecar及下一轮成功、重复Stop/后代/尾缓冲/panic/早停等最终agent33过0失败6专用workers（父实际执行），固定source；Windows公共层+叶+harness交叉check过，8组Windows runtime尚未运行，CI f186d340已提供。完整Q037仍有MCP/远端子任务同步阻塞与普通ACP取消未解决，不能标done。 |
 
-## 本轮实际分工
+旧完整整合检查点ea0e2c57的types/unit/lock20/mobile/static/std11/overwrite26/scroll34等保留在证据，不能当后续改动头已全通过。单次setup错误、缺browser cache、缺本地agent依赖和source变化运行均保留并不冒充业务绿；具体见单卡。
 
-| 任务 | 所有者 / 工作副本 | 现场与下一步 |
+## 当前所有者与下一步
+
+| 所有者 | 工作副本 / 当前任务 | 下一步 |
 | --- | --- | --- |
-| Q021b | root；内盘 recovery/khor-quality-recovery | 作者提交 4c616670、集成 c3fe828b；20 hook、types、unit和独立审查通过，Chrome/WebKit 4个App场景通过。确切集成版Chrome/WebKit全交互30/30通过，源码指纹稳定；RECOVERY.md 文档另留 |
-| Q023b | store_owner；内盘 recovery/khor-quality-store-owner-recovery | owner/Node/CLI/onset 严格回执已落盘；上次 80 场景红绿，rustfmt 后待复跑；真实CLI精确测试1/1通过，已释放槽；轻量最终80/80通过，作者提交fb0c6700；root独立源审/6规则+80场景复验通过，已集成7251f2db，精确集成回归待收齐 |
-| Q030 | root 复审集成；外盘 current/khor-quality-agent-protocol | 作者提交 9d09899c，仅4个输出文件；真实整组8通过+1专用worker。root 非作者审查记录 Q-030-review.md；已集成 de27d3f3，Q031差异保留，集成版对应测试待跑 |
-| Q030b | agent_redaction；同上独立后续提交 | 作者提交63f31737；真实Cargo17通过、2专用子worker由父测试执行；live receipt确认中途无凭据前缀，结束完整redacted。root独立源审通过，已集成3f73f8ec，等待精确集成回归 |
-| Q010-native | native_acceptance；wave1 仅hook/对应测试可写 | 上次用户暂停时 Cargo SIGTERM，未安装/启动隔离 App，不计通过。真正App已跑原生键盘开合与第6/8 commit稳定定位；又取得ACP长稿关闭gap164真红，允许仅hook/对应测试做JS候选红绿。旧c3基线证据保留，不把整套报绿；通知初始化拒绝Q015另列 |
-| Q025 | root接手；外盘 current/khor-quality-native-io | queue/connection/chat/term/native dispatcher 作者2ab71a6c→集成918127ea；最终core8/8、std7+4、native参数/ACL2/2均通过且source稳定；独立审查完成。扩跑全core123过2失败1基准忽略，另列Q036，不报全绿 |
-| Q020b/c | root审完已集成；内盘overwrite-recovery现复用Q036 | 作者cab465c5/93438e43→集成919e6194/355b7e3a；模块30、作者组件26通过；已全局登记，集成types/unit通过，精确集成overwrite Chrome/WebKit26/26通过 |
-| Q031 | agent_redaction；外盘agent-protocol | 作者d464f6be→集成908d60e4；真实Cargo4通过、1专用子worker由父执行，JSONRPC/REST跨进程恢复有证据；root独立源审通过，精确集成回归待跑 |
-| Q032 | store_owner；内盘web-input-recovery | 作者5ce2721f/c4ec0fa1→集成d82d4a47/0e667094；真实Web26/26与vendor5/5过，root独立审查/指纹复核过。固定8KiB清理内存，不声称解决慢连接deadline |
+| root | wave1集成；native-io fix/quality-agent-cancel-deadline HEAD7fa059ba clean | 当前integrated Node/core及真实iOS App来源/通知/滚动/commit/资源验证；处理跨任务接口，维护总账。 |
+| native_acceptance | 内盘recovery/khor-quality-web-input-recovery，fix/quality-once-lock-lifetime，base85a78fe9 | Q040a作者26abd267→集成c37151a1，真实7过3红→10/10，root源审通过。当前转run11真实iOS App，唯一Cargo/native槽已授，独立bundle/原c3保留，冻结c37151a1。 |
+| agent_redaction | 外盘agent-protocol，fix/quality-acp-lifecycle基于f186d340，Q039研究fcd分支保留 | Q037 ACP真实host收到cancel后15s仍不退出已真红；获准阶段1Node重定位共享进程+generation/永久期限分离+bounded async桥+ACP窄lifecycle接口，不先接host新行为。阶段1提交不能把尚红的test-only host路径带入集成；Cargo等run11释放。Q039生产协议仍未改。 |
+| store_owner | Q033 GUI作者内盘store-owner-recovery HEAD7746378f clean；Q037额外测试已移交root | Q041构建/安装/镜像审计交付；当前只定a+b immutable release/checksum/纯fetch-verify-place契约与夹具方案，尚不改生产或执行install/ship/同步。 |
 
-## 正在推进的下一项与集成记录
+Q039研究fcd0ad29：真实25.4MB合法差集超过4MiB，重复/重启不收敛，反向小更新与epoch正常；研究红不登记生产绿。分片完整blob、能力确认、VV/flush/ACK、spool/并发预算方案在卡；chunk固定不代表全内存有界，生产实现待接口/资源决策。
 
-- 集成HEAD为3d10bbaf；main仍原8704a503。Q035 CI空channel兼容cc3a3295已提交并以已有内盘Chromium4/4验证；外盘cache缺headless shell那次为环境失败，未下载。
-- Q034/Q035/Q036已集成，详见任务卡；真实App资源句柄和Q015通知cap仍待精确集成App重建验证。旧浏览器/旧App结果不移作最新HEAD证据。
-- Q033 backend：21994830→dd15b9d1，SendCommitted后续3d0dc41f→3d10bbaf；独立复审通过。真实core15、gui_host gated链4、Node3、terminal handshake2、native2均通过；HTTP null仅admission，GUI各transport均等commit帧清pending。旧host只能退役未commit上传attachment再显式重连；不谎称已commit取消。
-- Q033 GUI：store_owner作者3f2b8b18+8da0d063+7746378f，内盘store-owner-recovery干净冻结。root审出丢弃/加入/切tab/关后重开四种旧retry可再发，作者取得4真红再修；新增选择性notice保护，作者52/52后独立审查又复现旧cancel撤掉新notice，作者774补对象身份保护与正例，最终Chrome28+WebKit28=56/56及types通过。agent_redaction正在非作者复审最后补丁；未集成，门登记由root负责。root App retain与5条catalog、registry基座已集成。
-- Q038：root作者29fcad93→集成c5ab273d；固定预算stdio叶7/7、独立11/11、真实khor_agent Cargo25过+2专用worker由父执行，8MiB真实sidecar过；独立复审完成。不代替取消期限或总RSS治理。
-- Q037：root复用外盘native-io，fix/quality-agent-cancel-deadline基于3d10bbaf。真实Prompt/Stop fixture确收abort仍运行15s，已取得目标红；首个token非法导致的setup失败不算业务红。common supervisor/Unix WNOWAIT anchor/可取消nonblocking pipes/独立serialized input已真实编译；首轮已可Stop后回收，但下一正常快速done因Darwin zombie-only killpg EPERM失败，原日志保留。正补仅唯一未reap leader的保守macOS分支及更多真实管道测试。native_acceptance Windows Job/overlapped pipe作者b51a7d9c→实现分支55d72f50，root补Drop等待与公共supervisor，窄Windows交叉check通过；Windows实跑未有。store_owner只读审第一候选；MCP同步tool与delegation远端取消阻塞仍待处理，不能仅侧进程绿即关Q037。
-- Q039：agent_redaction研究提交fcd0ad29，外盘agent-protocol的research/quality-sync-catchup。真实合法25.4MB差集超过4MiB并重启不收敛，反向小更新与epoch正常；实验测试为明确执行的研究红，不登记为已过门。生产协议未改。分片完整blob候选及输入/缓存/RSS边界写卡；固定chunk不代表端到端内存有界，需先审兼容与预算政策。
-- ea0e2c57的精确集成证据：types、unit（含save-road30）、lock-state20、mobile静态、std11、overwrite26与scroll34均过，source稳定；Python14中1项仅因平台跳过，store-owner Rust/SSH确实执行。后续ChatView/retention修改后按影响范围再验，不能直接沿用为最新HEAD全通过。
-- 集成仅遇50-gates.md尾部追加冲突，已保留锁检查与native I/O两条；无业务实现二选一。WebKit缺默认cache那次是环境失败，使用已存在外盘cache后26全过。Q035新增门原先硬编码Chrome，root正在补空channel兼容；首次CI Chromium启动又因外盘cache无headless shell失败，改用已有内盘cache验证，不下载。
+Q040只回收互斥资源：全局弱表在同一std表锁下retain/upgrade/create，Tokio queued future/owned guard持强Arc。必须先验证不能同token双活锁；不清持久receipt，不用LRU破坏未知重试。
 
-## 验证与资源
+Q041确认代码条件缺陷：镜像第二次API失败可被空while吞掉仍写VERSION；两次latest/逐文件推送混代；install/join未消费checksum且镜像忽略明确版本；onset默认build可能漏Pi bundle。完整卡给出a安装完整性、b不可变release descriptor事务、c构建前置/manifest、d工具固定、e native来源、f结构维护；当前尚未修复，未声称生产已损坏。
 
-- 证据根 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`，各任务卡记录确切 source/lock hashes 与平台边界。
-- 同时只有一个Cargo/native构建槽；当前槽由root持有供Q037真实Node回归，Windows窄check已结束，禁止另起完整编译；native阶段仅Swift driver/UI诊断，下一次Rust重编需重新申请。jobs=2，沿用 quality-target；主发布缓存不写、不清。
-- 外置盒风扇故障、USB SMART 温度不可读；用户明确允许继续。已按manifest逐项清理quality-target旧single-link first-party rcgu对象约5.25GiB，保留16个现存rlib/测试二进制并复核元数据；最近外盘约9GiB、内盘约13GiB可用（启动下一构建前复核）。各构建仅监测/停止自己的进程组；掉盘、连续 I/O 错误或低于5GiB时保存日志并停止该构建。
-- 不按旧 PID/句柄判断进程。已在隔离iOS模拟器实际运行本轮c3 App，commit第6/8项真实触摸通过；ACP长草稿收键盘gap164→0已红绿，真实touch hide/reader drag也通过，候选093d4115；精确当前集成App仍待重新构建验证。不得把未完成候选或旧Lab当完整原生验收。
-- Q021b 的 face gate 上次被用户暂停中断，不计通过；dialogs、words 与 types 已过。新的局部与集成结果须按当前版本记录。
+## 真实App与资源
 
-## 尚未完成的完整范围
+- 证据根 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`；Q010-native-20261025/ACCEPTANCE.md是实际App运行账，旧单卡前半暂停记录仅历史。模拟器FE04AC7C-B375-4F2E-AE7E-B6F8F5608947与独立bundle io.github.colehank.khor.quality，当前停止；不得覆盖用户App。
+- 下一App须用当前同源静态lib+独立生成工程，保留原c3/lib/App；pure-origin23840 fixture、实际UIKit keyboard/XCUI touch与原生能力单独计，WebKit浏览器不冒充原生。物理iPhone/Chinese IME/硬件Escape未完成。
+- 一个Cargo/native槽，当前run11 native_acceptance持有；root不并发Cargo，jobs=2，quality-target复用。主发布khor-target不写不清。
+- 外置盒风扇坏、USB SMART温度不可读；用户明确继续。第二次审计清16310个闭合单链接对象，保留25个archive/executable并核元数据；外盘7,373,307,904→11,322,572,800B（约10.5GiB），内盘约10.4GiB（每次启动前核对）。监测掉盘/连续3I/O错误/任一盘<5GiB只停本构建PGID。曾依manifest清旧single-link first-party rcgu约5.25GiB，16现存rlib/测试二进制保留并核inode/size/mtime。
+- WebKit cache外盘khor-playwright已存在；系统Chrome默认；CI空channel用内盘既有Chromium验证过。无headless shell的外盘cache那次不计功能失败，未下载浏览器。
 
-首批原生/物理设备/辅助技术验收；新发现Q015通知插件初始化ACL拒绝、Q033上传停止仍可能启动turn；Q020b/c/Q023b/Q025/Q030b/Q031/Q032；native page迟到归属、chat轮询结束/退避、sidecar取消期限、4MiB同步缺口恢复、once锁回收；工具链与产物可复现、installer checksum和mirror一致性；模块职责重构、格式/命名/错误/注释规则、剩余模块深入审查，以及最终确切集成版本的完整用户流程验收。完整清单不因本轮优先项缩减。
+## 仍未完成与恢复
 
-## 历史与恢复
+全仓剩余模块深审、普通ACP/同步大差集/once及相邻owner、工程与发布链重构、工具与制品来源、真正原生/物理设备/辅助技术及最终整合用户流程都未结束。完成标准不缩水。每次压缩后先当前用户指令→STATE/PLAN/任务卡→实际branch/HEAD/diff/进程→固定source证据；图谱旧索引/历史摘要不能代替现场。
 
-本文件只保留当前事实。暂停/拔盘/两次目录整理前的总账快照见 [history/STATE-before-resume-20261025.md](history/STATE-before-resume-20261025.md)，详细过程读单任务卡。恢复时先读当前用户指令、本文件、PLAN和对应任务卡，再核对真实 worktree/HEAD/diff/进程；历史摘要、通过日志和图谱风险分数均不能替代当前证据。
+本次重写前状态保留history/STATE-before-process-integration-20261025.md；更早目录/暂停历史见history索引及单任务卡。root维护此文件；任务作者只写自己的任务卡。
