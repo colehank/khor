@@ -584,8 +584,8 @@ mod tests {
             std::thread::sleep(Duration::from_millis(25));
         }
     }
-    #[test]
-    fn pi_login_keeps_credentials_local_reuses_accounts_and_switches_only_future_turns() {
+    #[tokio::test]
+    async fn pi_login_keeps_credentials_local_reuses_accounts_and_switches_only_future_turns() {
         let root = std::env::temp_dir().join(format!(
             "khor-pi-accounts-{}",
             crate::link::fresh_hex().unwrap()
@@ -631,6 +631,7 @@ mod tests {
             account: account.id.clone(),
             model: "conversation-model".into(),
         })
+        .await
         .unwrap();
         assert_eq!(
             node.khor_agent_config().unwrap().unwrap().model,

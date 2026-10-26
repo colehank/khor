@@ -1480,6 +1480,7 @@ impl Node {
         {
             let n = node.clone();
             let wake = wake.clone();
+            let paused = paused.clone();
             tokio::spawn(async move {
                 let mut beat = tokio::time::interval(wires::TICK);
                 beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1488,6 +1489,7 @@ impl Node {
                 loop {
                     beat.tick().await;
                     n.wires.tick();
+                    crate::remote_cancel::pump(n.root(), !paused.load(std::sync::atomic::Ordering::Relaxed) && !n.resting.load(std::sync::atomic::Ordering::Relaxed));
                     let ran = mono.elapsed();
                     let walked = wall.elapsed().unwrap_or_default();
                     if walked > ran + SLEPT_AFTER {
@@ -3813,15 +3815,15 @@ impl Node {
                 Ok(Response::Subscriptions { answer: self.subscriptions_local(action).await? })
             }
             Request::Delegation { action } => {
-                // `remote` comes from the authenticated iroh connection; Action
-                // contains no caller field for a peer to forge.
+                // `remote` comes from the authenticated iroh connection. A
+                // Bound caller is checked against this transport identity.
                 let caller = crate::device_id_from_hex(remote)?;
                 self.delegation_local(caller, action)
                     .await
                     .map(|answer| Response::Delegation { answer })
             }
             Request::KhorAgent { action } => {
-                let report = self.khor_agent_here(action)?;
+                let report = self.khor_agent_here(action).await?;
                 self.nudge(ep, true);
                 Ok(Response::KhorAgent { report })
             }
@@ -6007,6 +6009,14 @@ impl Node {
         machine: &str,
         action: crate::delegation::Action,
     ) -> Result<crate::delegation::Answer, String> {
+        let selected = match &action {
+            crate::delegation::Action::Bound { binding, .. } => Some(binding.home.hex()),
+            crate::delegation::Action::ResolveBinding { .. } => {
+                Some(self.recognition_target(machine)?.1.hex())
+            }
+            _ => None,
+        };
+        let machine = selected.as_deref().unwrap_or(machine);
         if let Some(reply) = self
             .via_serve(ipc::Op::Delegation {
                 machine: machine.into(),
@@ -6015,7 +6025,14 @@ impl Node {
             .await
         {
             return match reply? {
-                ipc::Reply::Delegation { answer } => Ok(answer),
+                ipc::Reply::Delegation { answer } => {
+                    let home = match &action {
+                        crate::delegation::Action::Bound { binding, .. } => binding.home,
+                        _ => self.recognition_target(machine)?.1,
+                    };
+                    crate::delegation::validate_answer(&action, home, self.device(), &answer)?;
+                    Ok(answer)
+                }
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
@@ -6042,18 +6059,40 @@ impl Node {
         machine: &str,
         action: crate::delegation::Action,
     ) -> Result<crate::delegation::Answer, String> {
-        let (channel, home) = self.recognition_target(machine)?;
+        let (channel, home) = match &action {
+            crate::delegation::Action::Bound { binding, .. } => {
+                let home = binding.home;
+                if home == self.device() {
+                    return self.delegation_local(self.device(), action).await;
+                }
+                let device = self
+                    .devices()?
+                    .into_iter()
+                    .find(|d| d.id == home.hex())
+                    .ok_or("Bound delegation home is no longer paired")?;
+                (device.name, home)
+            }
+            _ => self.recognition_target(machine)?,
+        };
         if home == self.device() {
             return self.delegation_local(self.device(), action).await;
         }
         if self.sat_and_sponsor(&channel)?.is_some() {
             return Err("Delegation requires a paired khor execution host".into());
         }
-        match self
-            .ask(ep, &channel, &Request::Delegation { action })
-            .await?
-        {
-            Response::Delegation { answer } => Ok(answer),
+        let device = self
+            .devices()?
+            .into_iter()
+            .find(|d| d.id == home.hex())
+            .ok_or("Selected delegation home is no longer paired")?;
+        let request = Request::Delegation {
+            action: action.clone(),
+        };
+        match self.ask_on(ep, &device, &request).await? {
+            Response::Delegation { answer } => {
+                crate::delegation::validate_answer(&action, home, self.device(), &answer)?;
+                Ok(answer)
+            }
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
@@ -6089,7 +6128,7 @@ impl Node {
         }
         let (_, home) = self.recognition_target(machine)?;
         if home == self.device() {
-            return self.khor_agent_here(action);
+            return self.khor_agent_here(action).await;
         }
         let ep = endpoint::bind_with(
             self.secret_key().clone(),
@@ -6111,7 +6150,7 @@ impl Node {
     ) -> Result<crate::khor_agent::Report, String> {
         let (channel, home) = self.recognition_target(machine)?;
         if home == self.device() {
-            return self.khor_agent_here(action);
+            return self.khor_agent_here(action).await;
         }
         if self.sat_and_sponsor(&channel)?.is_some() {
             return Err(msg::agent_runtime_missing().into());

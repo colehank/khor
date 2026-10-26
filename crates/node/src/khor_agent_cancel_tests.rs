@@ -98,9 +98,9 @@ fn run_fixture(scenario: &str, script: &str) {
     assert!(status.success(), "{stdout}\n{stderr}");
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "isolated Prompt/Stop home-handler regression worker"]
-fn uncooperative_stop_child() {
+async fn uncooperative_stop_child() {
     let blocked = std::env::var("KHOR_CANCEL_SCENARIO").unwrap() == "blocked-input";
     let scratch = PathBuf::from(std::env::var_os("KHOR_CANCEL_TEST_ROOT").unwrap());
     let root = scratch.join("store");
@@ -120,6 +120,7 @@ fn uncooperative_stop_child() {
         account: account.id,
         model: "fixture".into(),
     })
+    .await
     .unwrap();
     let run = node
         .khor_agent_here(Action::Prompt {
@@ -130,6 +131,7 @@ fn uncooperative_stop_child() {
                 "fixture".into()
             },
         })
+        .await
         .unwrap()
         .run
         .unwrap();
@@ -146,6 +148,7 @@ fn uncooperative_stop_child() {
     assert!(pid > 0);
     let stopped = Instant::now();
     node.khor_agent_here(Action::Stop { run: run.clone() })
+        .await
         .unwrap();
     assert!(
         stopped.elapsed() < Duration::from_secs(1),
@@ -200,10 +203,13 @@ fn uncooperative_stop_child() {
     .unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     let second = loop {
-        match node.khor_agent_here(Action::Prompt {
-            token: "after-stop-fixture-token".into(),
-            text: "next fixture".into(),
-        }) {
+        match node
+            .khor_agent_here(Action::Prompt {
+                token: "after-stop-fixture-token".into(),
+                text: "next fixture".into(),
+            })
+            .await
+        {
             Ok(report) => break report.run.unwrap(),
             Err(error) if error == msg::agent_busy() => {
                 assert!(

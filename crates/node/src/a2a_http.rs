@@ -688,13 +688,54 @@ async fn recover_input(root: &Path, input: &Input) -> Result<p::SendMessageRespo
     Err("A2A send outcome is unknown. The message was not replayed; inspect the remote agent before sending new work".into())
 }
 
+fn endpoint_digest(endpoint: &Endpoint) -> String {
+    // URL parsing rejects embedded credentials; the digest never discloses URLs.
+    hash(&(&endpoint.card_url, &endpoint.interface))
+}
+fn check_binding(endpoint: &Endpoint, expected: Option<&str>) -> Result<(), String> {
+    if expected.is_some_and(|expected| endpoint_digest(endpoint) != expected) {
+        return Err("Delegation endpoint binding changed".into());
+    }
+    Ok(())
+}
+pub(crate) fn resolve_binding(
+    node: &Node,
+    caller: DeviceId,
+    agent: &str,
+    task: Option<&str>,
+) -> Result<crate::delegation::BindingProtocol, String> {
+    let files = Files::new(node.root(), agent)?;
+    let endpoint = match task {
+        Some(task) => files.receipt(caller, task)?.endpoint,
+        None => files.endpoint()?,
+    };
+    Ok(crate::delegation::BindingProtocol::Http {
+        endpoint_digest: endpoint_digest(&endpoint),
+    })
+}
+pub(crate) fn handle_bound(
+    node: &Node,
+    caller: DeviceId,
+    agent: &str,
+    action: crate::delegation::BoundAction,
+    digest: &str,
+) -> Result<Answer, String> {
+    runtime()?.block_on(async {
+        tokio::time::timeout(
+            Duration::from_secs(12),
+            handle_async(node, caller, action.into_action(agent.into()), Some(digest)),
+        )
+        .await
+        .map_err(|_| "A2A bound operation outcome is unknown".to_owned())?
+    })
+}
 pub(crate) fn handle(node: &Node, caller: DeviceId, action: Action) -> Result<Answer, String> {
     runtime()?.block_on(async {
-        tokio::time::timeout(Duration::from_secs(12),handle_async(node,caller,action)).await
+        tokio::time::timeout(Duration::from_secs(12),handle_async(node,caller,action,None)).await
             .map_err(|_|"A2A operation timed out; a send may have been accepted. Read its receipt before retrying".to_owned())?
     })
 }
-async fn handle_async(node: &Node, caller: DeviceId, action: Action) -> Result<Answer, String> {
+async fn handle_async(node: &Node, caller: DeviceId, action: Action, expected: Option<&str>) -> Result<Answer, String> {
     let agent = match &action {
         Action::Send { agent, .. }
         | Action::Get { agent, .. }
@@ -727,6 +768,7 @@ async fn handle_async(node: &Node, caller: DeviceId, action: Action) -> Result<A
             gate.try_lock().map_err(|_| "This A2A input is already being sent; query or retry the same request later".to_owned())?;
             let prior = files.transaction(|l| Ok(l.inputs.get(&key).cloned()))?;
             if let Some(input) = prior {
+                check_binding(&input.endpoint, expected)?;
                 if input.fingerprint != fingerprint {
                     return Err("A2A message ID already belongs to different input".into());
                 }
@@ -757,6 +799,7 @@ async fn handle_async(node: &Node, caller: DeviceId, action: Action) -> Result<A
             } else {
                 files.endpoint()?
             };
+            check_binding(&endpoint, expected)?;
             if let Some(context) = &message.context_id {
                 opaque(context)?;
                 let known = files.transaction(|ledger| {
@@ -785,7 +828,7 @@ async fn handle_async(node: &Node, caller: DeviceId, action: Action) -> Result<A
             response(&files, node, caller, &agent, &input, value)
         }
         Action::Get { task, .. } => Ok(Answer::Task {
-            record: Box::new(refresh(node, &files, caller, &agent, &task).await?),
+            record: Box::new(refresh_bound(node, &files, caller, &agent, &task, expected).await?),
         }),
         Action::Wait { task, revision, .. } => {
             let until = Instant::now() + Duration::from_secs(7);
@@ -803,6 +846,7 @@ async fn handle_async(node: &Node, caller: DeviceId, action: Action) -> Result<A
         Action::Cancel { task, .. } => {
             let _gate = task_gate(&files, caller, &task)?;
             let receipt = files.receipt(caller, &task)?;
+            check_binding(&receipt.endpoint, expected)?;
             if receipt.record.task.status.state.is_terminal() {
                 return Ok(Answer::Task { record: Box::new(receipt.record) });
             }
@@ -868,8 +912,19 @@ async fn refresh(
     agent: &str,
     id: &str,
 ) -> Result<Record, String> {
+    refresh_bound(node, files, caller, agent, id, None).await
+}
+async fn refresh_bound(
+    node: &Node,
+    files: &Files,
+    caller: DeviceId,
+    agent: &str,
+    id: &str,
+    expected: Option<&str>,
+) -> Result<Record, String> {
     let _gate = task_gate(files, caller, id)?;
     let receipt = files.receipt(caller, id)?;
+    check_binding(&receipt.endpoint, expected)?;
     let task = client(node.root(), &receipt.endpoint)
         .await?
         .get_task(&p::GetTaskRequest {

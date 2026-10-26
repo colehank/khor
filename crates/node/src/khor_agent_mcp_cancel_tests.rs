@@ -270,12 +270,13 @@ fn absent(pid: i32) -> bool {
         && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
 }
 
-fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<(), String> {
+async fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<(), String> {
     let run = node
         .khor_agent_here(Action::Prompt {
             token: "mcp-cancel-first-fixture".into(),
             text: "fixture only".into(),
-        })?
+        })
+        .await?
         .run
         .ok_or("no first run")?;
     cleanup.run = Some(run.clone());
@@ -294,11 +295,14 @@ fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<(), St
     }
     let stopped = Instant::now();
     let sweeps_before = crate::mcp_worker::SWEEPS_STARTED.load(Ordering::SeqCst);
-    node.khor_agent_here(Action::Stop { run: run.clone() })?;
+    node.khor_agent_here(Action::Stop { run: run.clone() })
+        .await?;
     for _ in 1..16 {
         // Repeated Stop must share the same local owner; a finished run may
         // already have retired by the last call.
-        let _ = node.khor_agent_here(Action::Stop { run: run.clone() });
+        let _ = node
+            .khor_agent_here(Action::Stop { run: run.clone() })
+            .await;
     }
     // Checked after map/claim retirement below, when the single sweep has been
     // admitted. No snapshot of a source-level flag substitutes for this count.
@@ -366,7 +370,8 @@ fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<(), St
         .khor_agent_here(Action::Prompt {
             token: "mcp-cancel-next-fixture".into(),
             text: "next fixture".into(),
-        })?
+        })
+        .await?
         .run
         .ok_or("no second run")?;
     cleanup.run = Some(second.clone());
@@ -410,9 +415,9 @@ fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<(), St
     Ok(())
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "isolated actual MCP/IPC cancellation regression worker"]
-fn mcp_cancel_worker() {
+async fn mcp_cancel_worker() {
     let scratch = PathBuf::from(std::env::var_os("KHOR_MCP_CANCEL_ROOT").unwrap());
     let node = Node::open_as(scratch.join("store"), "mcp-cancel-fixture").unwrap();
     let root = node.root().to_path_buf();
@@ -430,6 +435,7 @@ fn mcp_cancel_worker() {
         account: account.id,
         model: "fixture".into(),
     })
+    .await
     .unwrap();
     let cookie = crate::link::fresh_hex().unwrap();
     let ipc = HeldIpc::new(cookie.clone());
@@ -447,7 +453,7 @@ fn mcp_cancel_worker() {
         run: None,
         ipc,
     };
-    let outcome = exercise(&node, &scratch, &mut cleanup);
+    let outcome = exercise(&node, &scratch, &mut cleanup).await;
     // Preserve the product assertion, but retire the held socket and observe
     // actual executor release before failing. Never leave its 300s call behind.
     let cleanup_result = cleanup.finish();

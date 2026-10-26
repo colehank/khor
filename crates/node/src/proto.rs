@@ -1290,6 +1290,10 @@ impl Request {
             | Request::SatCheckout { .. } => Duration::from_secs(30),
             Request::Delegation {
                 action: crate::delegation::Action::Send { .. },
+            } | Request::Delegation {
+                action: crate::delegation::Action::Bound {
+                    action: crate::delegation::BoundAction::Send { .. }, ..
+                },
             } => Duration::from_secs(40),
             Request::Open { .. }
             | Request::OpenAgent { .. }

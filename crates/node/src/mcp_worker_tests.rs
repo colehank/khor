@@ -14,7 +14,7 @@ fn native_cli() -> PathBuf {
     assert!(path.is_absolute() && path.is_file(), "{path:?}");
     path
 }
-fn configured(name: &str) -> (TempTree, Node) {
+async fn configured(name: &str) -> (TempTree, Node) {
     native_cli();
     let scratch = TempTree::fresh(name);
     let node = Node::open_as(scratch.join("store"), "mcp-worker-fixture").unwrap();
@@ -32,6 +32,7 @@ fn configured(name: &str) -> (TempTree, Node) {
         account: account.id,
         model: "fixture".into(),
     })
+    .await
     .unwrap();
     (scratch, node)
 }
@@ -88,7 +89,7 @@ fn native_worker_rejects_trailing_or_oversize_input_before_opening_any_store() {
     let root = scratch.join("must-not-exist");
     let request = serde_json::to_vec(&Request {
         root: root.clone(),
-        operation: Operation::CancelChildren {
+        operation: Operation::CancelStep {
             run: "fixture".into(),
         },
     })
@@ -119,10 +120,10 @@ fn native_worker_rejects_trailing_or_oversize_input_before_opening_any_store() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "requires the exact newly built CLI via KHOR_TEST_MCP_EXECUTABLE"]
-fn real_worker_authorization_and_original_parent_identity_survive_the_process_boundary() {
-    let (_scratch, node) = configured("worker-parent");
+async fn real_worker_authorization_and_original_parent_identity_survive_the_process_boundary() {
+    let (scratch, node) = configured("worker-parent").await;
     let mut read = tool(&node, "devices", json!({}), false);
     let pid = read.session.as_ref().unwrap().pid();
     assert!(finish(&mut read).unwrap().contains("mcp-worker-fixture"));
@@ -135,20 +136,54 @@ fn real_worker_authorization_and_original_parent_identity_survive_the_process_bo
     let mut approved = tool(&node, "delegate", args, true);
     // The target is intentionally unconfigured: no model or host is launched.
     assert!(finish(&mut approved).is_err());
-    let directory = node
-        .root()
-        .join(".khor/agent/children")
-        .join(blake3::hash(b"worker-parent-fixture").to_hex().as_str());
-    assert_eq!(fs::read_dir(directory).unwrap().count(), 1);
+    assert!(
+        !node.root().join(".khor/agent/children").exists(),
+        "a refused binding has no side effect to track"
+    );
+    assert!(!node.root().join(".khor/agent/messages").exists());
+    let agent = "registered-parent-fixture";
+    node.register_agent(
+        agent,
+        &[scratch
+            .join("must-not-exist")
+            .to_string_lossy()
+            .into_owned()],
+    )
+    .unwrap();
+    let args = json!({"agent":agent, "prompt":"fixture", "request":"owned-message"});
+    let mut unauthorized = tool(&node, "delegate", args.clone(), false);
+    assert!(finish(&mut unauthorized).is_err());
+    assert!(!node.root().join(".khor/agent/children").exists());
+    let mut authorized = tool(&node, "delegate", args.clone(), true);
+    let result = finish(&mut authorized).unwrap();
+    let crate::delegation::Answer::Task { record } = serde_json::from_str(&result).unwrap() else {
+        panic!("actual registered Send returned no Task");
+    };
+    assert_eq!(
+        record.task.status.state,
+        crate::delegation::protocol::TaskState::Failed,
+        "missing command must fail the real accepted task before a host starts"
+    );
     let parent = crate::delegation::TaskRef {
         home: node.device(),
         id: "worker-parent-fixture".into(),
     };
-    let key = blake3::hash(
-        &serde_json::to_vec(&("", "not-configured-fixture", "owned-message")).unwrap(),
-    )
-    .to_hex()
-    .to_string();
+    assert_eq!(record.parent.as_ref(), Some(&parent));
+    let crate::delegation::Answer::Binding { binding } = node
+        .delegation_here(
+            node.device(),
+            crate::delegation::Action::ResolveBinding {
+                agent: agent.into(),
+                task: Some(record.task.id.clone()),
+            },
+        )
+        .unwrap()
+    else {
+        panic!("missing actual owned Binding");
+    };
+    let key = blake3::hash(&serde_json::to_vec(&(&binding, "owned-message")).unwrap())
+        .to_hex()
+        .to_string();
     let actual: crate::delegation::TaskRef = serde_json::from_slice(
         &fs::read(
             node.root()
@@ -159,6 +194,49 @@ fn real_worker_authorization_and_original_parent_identity_survive_the_process_bo
     )
     .unwrap();
     assert_eq!(actual, parent);
+    let later_run = "later-worker-parent-fixture";
+    let mut later = Worker::spawn(
+        Request {
+            root: node.root().clone(),
+            operation: Operation::Tool {
+                run: later_run.into(),
+                authorized: true,
+                name: "delegate".into(),
+                args,
+            },
+        },
+        Arc::default(),
+        Duration::from_secs(15),
+        None,
+    )
+    .unwrap();
+    let later_result = finish(&mut later).unwrap();
+    let crate::delegation::Answer::Task {
+        record: later_record,
+    } = serde_json::from_str(&later_result).unwrap()
+    else {
+        panic!("later real Send returned no Task");
+    };
+    assert_eq!(later_record.task.id, record.task.id);
+    assert_eq!(later_record.parent.as_ref(), Some(&parent));
+    for run in ["worker-parent-fixture", later_run] {
+        let directory = crate::delegation::children_dir(node.root(), run);
+        let files: Vec<_> = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(files.len(), 1);
+        let link: crate::delegation::ChildLink =
+            serde_json::from_slice(&fs::read(&files[0]).unwrap()).unwrap();
+        assert_eq!(link.binding, binding);
+        assert_eq!(link.task.as_deref(), Some(record.task.id.as_str()));
+    }
+    let owned = node
+        .delegation_store()
+        .unwrap()
+        .get(node.device(), &record.target, &record.task.id)
+        .unwrap();
+    assert_eq!(owned.parent, Some(parent));
 }
 
 struct ChildOwner(std::process::Child);
@@ -177,11 +255,11 @@ impl Drop for AgentProbe {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "requires the exact newly built CLI via KHOR_TEST_MCP_EXECUTABLE"]
-fn real_worker_keeps_ssh_broker_and_network_policy_without_inheriting_credentials() {
+async fn real_worker_keeps_ssh_broker_and_network_policy_without_inheriting_credentials() {
     if let Some(root) = std::env::var_os("KHOR_WORKER_ENV_FIXTURE") {
-        environment_fixture(Path::new(&root));
+        environment_fixture(Path::new(&root)).await;
         return;
     }
     native_cli();
@@ -221,7 +299,7 @@ fn real_worker_keeps_ssh_broker_and_network_policy_without_inheriting_credential
         "actual environment fixture failed: {status}"
     );
 }
-fn environment_fixture(root: &Path) {
+async fn environment_fixture(root: &Path) {
     use std::os::unix::net::UnixListener;
     let listener = UnixListener::bind(root.join("agent.sock")).unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -251,7 +329,7 @@ fn environment_fixture(root: &Path) {
             .write_all(&[0, 0, 0, 5, 12, 0, 0, 0, 0])
             .map_err(|e| e.to_string())
     })));
-    let (_tree, node) = configured("worker-environment-child");
+    let (_tree, node) = configured("worker-environment-child").await;
     node.set_relays(
         &[khor_net::endpoint::Relay::parse("http://127.0.0.1:9").unwrap()],
         true,
@@ -298,10 +376,10 @@ fn environment_fixture(root: &Path) {
     assert_eq!(fs::read(&marker).unwrap(), b"ok");
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "requires the exact newly built CLI via KHOR_TEST_MCP_EXECUTABLE"]
-fn a_real_a2a_ledger_lock_cannot_keep_a_cancelled_worker_or_its_io_alive() {
-    let (_scratch, node) = configured("worker-ledger-lock");
+async fn a_real_a2a_ledger_lock_cannot_keep_a_cancelled_worker_or_its_io_alive() {
+    let (_scratch, node) = configured("worker-ledger-lock").await;
     let agent = "a2a:held-fixture";
     let task = "held-task";
     let directory = node
@@ -357,10 +435,10 @@ fn a_real_a2a_ledger_lock_cannot_keep_a_cancelled_worker_or_its_io_alive() {
     drop(ledger);
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "requires the exact newly built CLI via KHOR_TEST_MCP_EXECUTABLE"]
-fn cancellation_registered_before_os_spawn_still_reaps_the_actual_worker() {
-    let (_scratch, node) = configured("worker-stop-before-spawn");
+async fn cancellation_registered_before_os_spawn_still_reaps_the_actual_worker() {
+    let (_scratch, node) = configured("worker-stop-before-spawn").await;
     let control = Arc::new(Control::default());
     control.terminate_now();
     let started = Instant::now();
@@ -457,57 +535,73 @@ impl AnswerReceiptGate {
         let (release, released) = mpsc::sync_channel(1);
         let thread = thread::spawn(move || {
             let result = (|| -> Result<std::net::TcpStream, String> {
-                let by = Instant::now() + Duration::from_secs(8);
-                let mut stream = loop {
-                    match listener.accept() {
-                        Ok((stream, peer)) => {
-                            if !peer.ip().is_loopback() {
-                                return Err("non-loopback Answer peer".into());
-                            }
-                            break stream;
-                        }
-                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                            if Instant::now() >= by {
-                                return Err("Answer IPC did not arrive".into());
-                            }
-                            thread::sleep(Duration::from_millis(5));
-                        }
-                        Err(error) => return Err(error.to_string()),
-                    }
-                };
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .map_err(|e| e.to_string())?;
-                let mut bytes = Vec::new();
-                (&mut stream)
-                    .take((crate::proto::MAX_FRAME + 1) as u64)
-                    .read_to_end(&mut bytes)
-                    .map_err(|e| e.to_string())?;
-                if bytes.len() > crate::proto::MAX_FRAME {
-                    return Err("Answer IPC exceeded frame budget".into());
-                }
-                let handoff: crate::ipc::Handoff = crate::proto::decode(&bytes)?;
-                if handoff.cookie != cookie {
-                    return Err("wrong owned Answer cookie".into());
-                }
-                let crate::ipc::Op::Delegation { machine, action } = handoff.op else {
-                    return Err("expected actual Delegation".into());
-                };
-                if !machine.is_empty()
-                    || !matches!(&action,crate::delegation::Action::Answer {agent,option,..} if agent=="fixture" && option.as_deref()==Some("go"))
-                {
-                    return Err("expected actual fixture Answer".into());
-                }
                 let node = Node::open(root)?;
-                let crate::delegation::Answer::Task { record } =
-                    node.delegation_here(node.device(), action)?
-                else {
-                    return Err("Answer returned no task".into());
-                };
-                if crate::delegation::approval(&record).is_some() {
-                    return Err("actual ACP permission was not resolved".into());
+                let by = Instant::now() + Duration::from_secs(8);
+                loop {
+                    let mut stream = loop {
+                        match listener.accept() {
+                            Ok((stream, peer)) => {
+                                if !peer.ip().is_loopback() {
+                                    return Err("non-loopback Answer peer".into());
+                                }
+                                break stream;
+                            }
+                            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                                if Instant::now() >= by {
+                                    return Err("Answer IPC did not arrive".into());
+                                }
+                                thread::sleep(Duration::from_millis(5));
+                            }
+                            Err(error) => return Err(error.to_string()),
+                        }
+                    };
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .map_err(|e| e.to_string())?;
+                    let mut bytes = Vec::new();
+                    (&mut stream)
+                        .take((crate::proto::MAX_FRAME + 1) as u64)
+                        .read_to_end(&mut bytes)
+                        .map_err(|e| e.to_string())?;
+                    if bytes.len() > crate::proto::MAX_FRAME {
+                        return Err("Answer IPC exceeded frame budget".into());
+                    }
+                    let handoff: crate::ipc::Handoff = crate::proto::decode(&bytes)?;
+                    if handoff.cookie != cookie {
+                        return Err("wrong owned Answer cookie".into());
+                    }
+                    let crate::ipc::Op::Delegation { machine, action } = handoff.op else {
+                        return Err("expected actual Delegation".into());
+                    };
+                    if matches!(&action, crate::delegation::Action::ResolveBinding { agent, task: Some(_) } if agent == "fixture")
+                    {
+                        if machine != node.device_str() {
+                            return Err("expected stable resolution home".into());
+                        }
+                        let answer = node.delegation_here(node.device(), action)?;
+                        let bytes =
+                            crate::proto::encode(&crate::ipc::Reply::Delegation { answer })?;
+                        stream.write_all(&bytes).map_err(|e| e.to_string())?;
+                        stream
+                            .shutdown(std::net::Shutdown::Write)
+                            .map_err(|e| e.to_string())?;
+                        continue;
+                    }
+                    if machine != node.device_str()
+                        || !matches!(&action,crate::delegation::Action::Bound { binding, action: crate::delegation::BoundAction::Answer { option, .. } } if binding.home == node.device() && binding.caller == node.device() && binding.agent=="fixture" && option.as_deref()==Some("go"))
+                    {
+                        return Err("expected actual authenticated bound fixture Answer".into());
+                    }
+                    let crate::delegation::Answer::Task { record } =
+                        node.delegation_here(node.device(), action)?
+                    else {
+                        return Err("Answer returned no task".into());
+                    };
+                    if crate::delegation::approval(&record).is_some() {
+                        return Err("actual ACP permission was not resolved".into());
+                    }
+                    break Ok(stream);
                 }
-                Ok(stream)
             })();
             match result {
                 Ok(stream) => {
@@ -539,11 +633,11 @@ impl Drop for AnswerReceiptGate {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "requires freshly built native CLI and KHOR_TEST_ACP_STUB"]
-fn answering_an_existing_task_keeps_a_durable_link_when_cancelled_after_actual_resume() {
+async fn answering_an_existing_task_keeps_a_durable_link_when_cancelled_after_actual_resume() {
     use std::os::unix::fs::PermissionsExt;
-    let (_scratch, node) = configured("worker-answer-before-receipt");
+    let (_scratch, node) = configured("worker-answer-before-receipt").await;
     let stub = PathBuf::from(
         std::env::var_os("KHOR_TEST_ACP_STUB").expect("set freshly built acp-stub path"),
     );
@@ -625,10 +719,10 @@ fn answering_an_existing_task_keeps_a_durable_link_when_cancelled_after_actual_r
     drop(gate);
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "requires freshly built native CLI and KHOR_TEST_ACP_STUB"]
-fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
-    let (_scratch, node) = configured("worker-durable-ghost");
+async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
+    let (_scratch, node) = configured("worker-durable-ghost").await;
     let stub = PathBuf::from(
         std::env::var_os("KHOR_TEST_ACP_STUB").expect("set freshly built acp-stub path"),
     );
@@ -704,10 +798,10 @@ fn quote(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "requires the exact newly built CLI via KHOR_TEST_MCP_EXECUTABLE"]
-fn a_real_durable_shell_host_survives_its_successful_worker() {
-    let (scratch, node) = configured("worker-durable-host");
+async fn a_real_durable_shell_host_survives_its_successful_worker() {
+    let (scratch, node) = configured("worker-durable-host").await;
     let mut host = ShellHost {
         release: scratch.join("release"),
         pid: None,

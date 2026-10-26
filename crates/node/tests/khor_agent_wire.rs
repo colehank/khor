@@ -23,6 +23,22 @@ fn root(tag: &str) -> Scratch {
     Scratch(p)
 }
 struct Serving(tokio::task::JoinHandle<Result<(), String>>);
+
+#[test]
+fn cancellation_actions_and_snapshots_use_the_existing_wire_envelopes() {
+    fn round_trip<T: serde::Serialize + serde::de::DeserializeOwned>(value: T) {
+        let expected = serde_json::to_value(&value).unwrap();
+        let decoded: T = khor_node::proto::decode(&khor_node::proto::encode(&value).unwrap()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
+    }
+    for action in [Action::CancellationStatus { run: "historical-run".into() }, Action::RetryCancellation { run: "historical-run".into() }] {
+        round_trip(khor_node::proto::Request::KhorAgent { action: action.clone() });
+        round_trip(khor_node::ipc::Op::KhorAgent { machine: "selected-home".into(), action });
+    }
+    let report = khor_node::khor_agent::Report { config: None, run: Some("historical-run".into()), data: Some(json!({"run":"historical-run","durability":{"state":"PersistenceUnknown","code":"MetadataOutcomeUnknown"},"all_known_children_canceled":false,"late_input_fence":false})) };
+    round_trip(khor_node::proto::Response::KhorAgent { report: report.clone() });
+    round_trip(khor_node::ipc::Reply::KhorAgent { report });
+}
 impl Drop for Serving {
     fn drop(&mut self) {
         self.0.abort();

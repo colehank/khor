@@ -53,6 +53,12 @@ pub enum Action {
     Stop {
         run: String,
     },
+    CancellationStatus {
+        run: String,
+    },
+    RetryCancellation {
+        run: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -263,7 +269,45 @@ impl Node {
     }
 
     /// Only called on the selected home, through the authenticated node route.
-    pub(crate) fn khor_agent_here(&self, action: Action) -> Result<Report, String> {
+    pub(crate) async fn khor_agent_here(&self, action: Action) -> Result<Report, String> {
+        if let Action::Stop { run } = &action {
+            let active = running()
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .get(self.root())
+                .filter(|r| &r.id == run)
+                .cloned()
+                .ok_or_else(|| msg::agent_not_running().to_owned())?;
+            active.request_stop();
+            let data = crate::remote_cancel::request(
+                self.root(),
+                run,
+                true,
+                !self.paused() && !self.resting.load(Ordering::Relaxed),
+                false,
+            )
+            .await;
+            return Ok(Report {
+                config: self.khor_agent_config().ok().flatten(),
+                run: Some(run.clone()),
+                data: Some(data),
+            });
+        }
+        if let Action::CancellationStatus { run } | Action::RetryCancellation { run } = &action {
+            let data = crate::remote_cancel::request(
+                self.root(),
+                run,
+                matches!(action, Action::RetryCancellation { .. }),
+                !self.paused() && !self.resting.load(Ordering::Relaxed),
+                true,
+            )
+            .await;
+            return Ok(Report {
+                config: self.khor_agent_config().ok().flatten(),
+                run: Some(run.clone()),
+                data: Some(data),
+            });
+        }
         self.reconcile_agent()?;
         let root = self.root().to_path_buf();
         let mut report = Report {
@@ -445,17 +489,9 @@ impl Node {
                 *answer = Some(allow);
                 report.run = Some(run);
             }
-            Action::Stop { run } => {
-                let active = running()
-                    .lock()
-                    .map_err(|e| e.to_string())?
-                    .get(&root)
-                    .filter(|r| r.id == run)
-                    .cloned()
-                    .ok_or_else(|| msg::agent_not_running().to_owned())?;
-                active.request_stop();
-                report.run = Some(run);
-            }
+            Action::Stop { .. }
+            | Action::CancellationStatus { .. }
+            | Action::RetryCancellation { .. } => unreachable!("handled before reconciliation"),
         }
         Ok(report)
     }
@@ -469,6 +505,10 @@ impl Node {
     }
 
     pub fn reconcile_agent(&self) -> Result<(), String> {
+        crate::remote_cancel::pump(
+            self.root(),
+            !self.paused() && !self.resting.load(Ordering::Relaxed),
+        );
         if !self.hosts() {
             return Ok(());
         }
@@ -763,31 +803,6 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
         snapshots.finish(agent);
     }
     let stopped = active.stopped.load(Ordering::SeqCst) && process_stopped;
-    if stopped || outcome.is_err() {
-        // All local tool workers are retired before this single run-owned
-        // sweep observes durable links. It cannot hold this executor's claim.
-        let sweep = crate::mcp_worker::schedule_cancel(
-            root.clone(),
-            active.id.clone(),
-            active.path.get().cloned(),
-        );
-        let previous = saved
-            .record
-            .data_json
-            .take()
-            .map(|raw| serde_json::from_str::<Value>(&raw).unwrap_or(Value::String(raw)));
-        let mut data = match previous {
-            Some(Value::Object(object)) => Value::Object(object),
-            Some(value) => json!({"previousData":value}),
-            None => json!({}),
-        };
-        data["remoteCancellation"] = json!({
-                "state":"pending", "confirmed":false,
-                "sweep":if sweep.is_ok() { "scheduled" } else { "not_admitted" },
-                "reason":sweep.err()
-        });
-        saved.record.data_json = Some(data.to_string());
-    }
     saved.record.status = if stopped {
         "cancelled"
     } else if outcome.is_ok() {
@@ -811,6 +826,9 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
         agent.approval = None;
     }
     let _ = save(&root, &saved);
+    if stopped || saved.record.status == "failed" {
+        crate::remote_cancel::local_retired(root, active.id.clone());
+    }
 }
 
 #[derive(Default)]
@@ -1074,8 +1092,8 @@ fn mcp_request(request: &Value) -> Result<Option<Value>, String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_queued_cancel_wins_over_ui_approval_after_an_intervening_update() {
+    #[tokio::test]
+    async fn a_queued_cancel_wins_over_ui_approval_after_an_intervening_update() {
         let scratch = crate::testdir::TempTree::fresh("mcp-queued-cancel");
         let node = Node::open_as(scratch.join("store"), "queued-cancel-fixture").unwrap();
         let _claim = claim(node.root()).unwrap();
@@ -1124,6 +1142,7 @@ mod tests {
             ask,
             allow: true,
         })
+        .await
         .unwrap();
         assert_eq!(
             active.approval.lock().unwrap().as_ref().unwrap().1,
@@ -1227,9 +1246,9 @@ mod tests {
         assert_eq!(pong["result"], json!({}));
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore = "requires the exact newly built CLI via KHOR_TEST_MCP_EXECUTABLE"]
-    fn cancelling_one_worker_cannot_cancel_or_answer_a_later_request() {
+    async fn cancelling_one_worker_cannot_cancel_or_answer_a_later_request() {
         let scratch = crate::testdir::TempTree::fresh("mcp-worker-request-generation");
         let node = Node::open_as(scratch.join("store"), "worker-generation").unwrap();
         let account = node
@@ -1246,6 +1265,7 @@ mod tests {
             account: account.id,
             model: "fixture".into(),
         })
+        .await
         .unwrap();
         let active = Running::new("worker-generation-fixture".into());
         let mut saved = Saved {
@@ -1310,8 +1330,8 @@ mod tests {
         assert!(active.worker.lock().unwrap().is_none());
     }
 
-    #[test]
-    fn cancelled_or_stopped_mcp_requests_cannot_consume_a_later_approval() {
+    #[tokio::test]
+    async fn cancelled_or_stopped_mcp_requests_cannot_consume_a_later_approval() {
         let root = std::env::temp_dir().join(format!(
             "khor-mcp-approval-{}",
             crate::link::fresh_hex().unwrap()
@@ -1384,6 +1404,7 @@ mod tests {
                 ask,
                 allow: true
             })
+            .await
             .is_err()
         );
         let active = running().lock().unwrap().remove(&root).unwrap();
@@ -1423,3 +1444,7 @@ mod lifecycle_tests;
 #[cfg(all(test, unix))]
 #[path = "khor_agent_remote_cancel_tests.rs"]
 mod remote_cancel_tests;
+
+#[cfg(all(test, unix))]
+#[path = "remote_cancel_tests.rs"]
+mod cancellation_receipt_tests;

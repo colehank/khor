@@ -1,7 +1,7 @@
 //! R0: real six-run Stop admission, with four actual cancellation IPC replies held.
 //! The controlled peer is not an ACP executor or proof of remote terminal state.
 use super::*;
-use crate::delegation::{AgentTarget, Answer, Execution, Record, Store, TaskRef, protocol};
+use crate::delegation::{AgentTarget, Answer, Execution, Record, TaskRef, protocol};
 use std::{
     collections::HashSet,
     io::{Read, Write},
@@ -110,7 +110,7 @@ struct Peer {
     thread: Option<JoinHandle<Result<(), String>>>,
 }
 impl Peer {
-    fn new(cookie: String) -> Result<Self, String> {
+    fn new(root: PathBuf, cookie: String) -> Result<Self, String> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         listener.set_nonblocking(true).map_err(|e| e.to_string())?;
@@ -135,8 +135,11 @@ impl Peer {
                             cookie.clone(),
                             send.clone(),
                         );
+                        let root = root.clone();
                         handlers.push(thread::spawn(move || {
-                            if let Err(error) = reply(stream, &cookie, rows, release, stop, &send) {
+                            if let Err(error) =
+                                reply(stream, &cookie, &root, rows, release, stop, &send)
+                            {
                                 let _ = send.send(Err(error));
                             }
                         }));
@@ -193,6 +196,7 @@ impl Drop for Peer {
 fn reply(
     mut stream: TcpStream,
     cookie: &str,
+    root: &Path,
     rows: Records,
     released: Arc<AtomicBool>,
     stopping: Arc<AtomicBool>,
@@ -233,26 +237,35 @@ fn reply(
     if handoff.cookie != cookie {
         return Err("setup: incorrect private IPC cookie".into());
     }
-    let (machine, agent, task, cancel) = match handoff.op {
-        crate::ipc::Op::Delegation {
-            machine,
-            action: crate::delegation::Action::Get { agent, task },
-        } => (machine, agent, task, false),
-        crate::ipc::Op::Delegation {
-            machine,
-            action: crate::delegation::Action::Cancel { agent, task },
-        } => (machine, agent, task, true),
+    let crate::ipc::Op::Delegation { machine, action } = handoff.op else {
+        return Err("setup: expected actual bound Delegation".into());
+    };
+    let (binding, task, cancel) = match &action {
+        crate::delegation::Action::Bound {
+            binding,
+            action: crate::delegation::BoundAction::Get { task },
+        } => (binding, task.clone(), false),
+        crate::delegation::Action::Bound {
+            binding,
+            action: crate::delegation::BoundAction::Cancel { task },
+        } => (binding, task.clone(), true),
         other => return Err(format!("setup: unexpected handoff {other:?}")),
     };
-    if !machine.is_empty() || agent != "fixture" {
-        return Err("setup: changed target identity".into());
-    }
-    let (index, mut record) = rows
+    let (index, record) = rows
         .lock()
         .unwrap()
         .get(&task)
         .cloned()
         .ok_or("setup: unknown exact task")?;
+    let node = Node::open(root.to_path_buf())?;
+    if machine != node.device_str()
+        || binding.home != node.device()
+        || binding.caller != node.device()
+        || binding.agent != "fixture"
+        || record.task.id != task
+    {
+        return Err("setup: changed bound target identity".into());
+    }
     events
         .send(Ok((task.clone(), cancel)))
         .map_err(|e| e.to_string())?;
@@ -264,14 +277,9 @@ fn reply(
             }
             thread::sleep(Duration::from_millis(5));
         }
-        // Controlled peer delivery response only, not an actual ACP execution receipt.
-        record.task.status.state = protocol::TaskState::Canceled;
     }
-    let bytes = crate::proto::encode(&crate::ipc::Reply::Delegation {
-        answer: Answer::Task {
-            record: Box::new(record),
-        },
-    })?;
+    let answer = node.delegation_here(node.device(), action)?;
+    let bytes = crate::proto::encode(&crate::ipc::Reply::Delegation { answer })?;
     stream.write_all(&bytes).map_err(|e| e.to_string())?;
     stream.shutdown(Shutdown::Write).map_err(|e| e.to_string())
 }
@@ -285,10 +293,10 @@ fn local_retired(root: &Path, run: &str) -> Result<bool, String> {
         && claim(root).is_ok())
 }
 
-fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String> {
-    let store = Store::open(scratch.join("controlled-peer-store"), node.device())
-        .map_err(|e| e.to_string())?;
+async fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String> {
+    let store = node.delegation_store()?;
     let mut tasks = Vec::new();
+    let mut executions = Vec::new();
     let mut cancels = HashSet::new();
     let mut native_workers = HashSet::new();
     let mut held_since = None;
@@ -301,7 +309,8 @@ fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String> {
             .khor_agent_here(Action::Prompt {
                 token: format!("remote-cancel-r0-{index}"),
                 text: "owned fixture".into(),
-            })?
+            })
+            .await?
             .run
             .ok_or("setup: Prompt returned no run")?;
         wait_for(|| Ok(ready.is_file()), 3)
@@ -339,19 +348,31 @@ fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String> {
             .lock()
             .unwrap()
             .insert(task.clone(), (index, execution.record().clone()));
-        drop(execution);
+        executions.push(execution);
+        let Answer::Binding { binding } = node.delegation_here(
+            node.device(),
+            crate::delegation::Action::ResolveBinding {
+                agent: "fixture".into(),
+                task: Some(task.clone()),
+            },
+        )?
+        else {
+            return Err("setup: no real owned native binding".into());
+        };
         crate::delegation::track_child(
             node.root(),
             &parent,
             "",
-            "fixture",
+            &binding,
             &message.message_id,
             Some(&task),
         )?;
         println!(
             "run {index}: actual Prompt ready pid={pid}; production durable track_child task={task}"
         );
-        node.khor_agent_here(Action::Stop { run: run.clone() })?;
+        let stopped = node
+            .khor_agent_here(Action::Stop { run: run.clone() })
+            .await?;
         wait_for(|| Ok(local_retired(node.root(), &run)? && absent(pid)), 3)
             .map_err(|e| format!("setup: run {index} local retirement: {e}"))?;
         if !pids(&scratch.join("pi-aborts"))?.contains(&pid) {
@@ -360,17 +381,15 @@ fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String> {
         let saved: Saved =
             serde_json::from_slice(&fs::read(file(node.root(), &run)).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
-        let data: Value = serde_json::from_str(
-            saved
-                .record
-                .data_json
-                .as_deref()
-                .ok_or("setup: no cancellation metadata")?,
-        )
-        .map_err(|e| e.to_string())?;
+        let data = stopped.data.ok_or("setup: no cancellation snapshot")?;
+        if data["durability"]["state"] != "DurablyQueued" {
+            return Err(format!(
+                "setup: Stop did not durably queue cancellation: {data}"
+            ));
+        }
         println!(
-            "run {index}: Pi ESRCH; cancelled; map=false claim=free; sweep={}",
-            data["remoteCancellation"]["sweep"]
+            "run {index}: Pi ESRCH; cancelled; map=false claim=free; durability={}",
+            data["durability"]["state"]
         );
         if index < 4 {
             wait_for(
@@ -409,7 +428,7 @@ fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String> {
     let by = Instant::now() + Duration::from_secs(8);
     loop {
         node.reconcile_agent()?;
-        node.khor_agent_here(Action::Read)?;
+        node.khor_agent_here(Action::Read).await?;
         peer.observe(&mut cancels)?;
         if cancels.contains(&tasks[4]) && cancels.contains(&tasks[5]) {
             break;
@@ -458,9 +477,9 @@ fn cleanup(node: &Node, scratch: &Path, peer: &mut Peer) -> Result<(), String> {
     reaped
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "private process for real six-run remote cancellation admission regression"]
-fn remote_cancel_worker() {
+async fn remote_cancel_worker() {
     let scratch = PathBuf::from(std::env::var_os("KHOR_REMOTE_CANCEL_ROOT").unwrap());
     let node = Node::open_as(scratch.join("store"), "remote-cancel-r0").unwrap();
     let account = node
@@ -477,9 +496,10 @@ fn remote_cancel_worker() {
         account: account.id,
         model: "fixture".into(),
     })
+    .await
     .unwrap();
     let cookie = crate::link::fresh_hex().unwrap();
-    let mut peer = Peer::new(cookie.clone()).unwrap();
+    let mut peer = Peer::new(node.root().clone(), cookie.clone()).unwrap();
     let endpoint = node.root().join(".khor/endpoint.json");
     fs::write(
         &endpoint,
@@ -489,10 +509,13 @@ fn remote_cancel_worker() {
     )
     .unwrap();
     fs::set_permissions(endpoint, fs::Permissions::from_mode(0o600)).unwrap();
-    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        exercise(&node, &scratch, &peer)
-    }))
-    .unwrap_or_else(|_| Err("setup: exercise panicked; explicit cleanup still required".into()));
+    use futures::FutureExt;
+    let outcome = std::panic::AssertUnwindSafe(exercise(&node, &scratch, &peer))
+        .catch_unwind()
+        .await
+        .unwrap_or_else(
+            |_| Err("setup: exercise panicked; explicit cleanup still required".into()),
+        );
     let retired = cleanup(&node, &scratch, &mut peer);
     assert!(retired.is_ok(), "cleanup={retired:?}; primary={outcome:?}");
     assert!(outcome.is_ok(), "{outcome:?}");

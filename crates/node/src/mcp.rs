@@ -318,6 +318,18 @@ pub(crate) fn call_with_parent(
                 let value = s(key);
                 if value.is_empty() { None } else { Some(value) }
             };
+            let binding = if matches!(name, "delegate" | "task_answer") {
+                let answer = runtime()?.block_on(n.delegation_on(&s("machine"), Action::ResolveBinding {
+                    agent: s("agent"), task: optional("task"),
+                }))?;
+                let crate::delegation::Answer::Binding { binding } = answer else {
+                    return Err("Delegation returned no binding".into());
+                };
+                if binding.caller != n.device() || binding.agent != s("agent") {
+                    return Err("Delegation binding identity mismatch".into());
+                }
+                Some(binding)
+            } else { None };
             let action = match name {
                 "agents" => Action::Agents,
                 "agent_connect" => Action::Connect {agent:s("agent"),url:s("url")},
@@ -335,15 +347,15 @@ pub(crate) fn call_with_parent(
                             root,
                             parent,
                             &s("machine"),
-                            &s("agent"),
+                            binding.as_ref().expect("resolved delegate binding"),
                             &message.message_id,
-                            None,
+                            message.task_id.as_deref(),
                         )?;
                     }
                     Action::Send {
                         agent: s("agent"),
                         message,
-                        parent: parent.as_ref().map(|parent| crate::delegation::original_parent(root, parent, &s("machine"), &s("agent"), &s("request"))).transpose()?,
+                        parent: parent.as_ref().map(|parent| crate::delegation::original_parent(root, parent, binding.as_ref().expect("resolved delegate binding"), &s("request"))).transpose()?,
                     }
                 }
                 "task_status" => Action::Get {
@@ -373,7 +385,7 @@ pub(crate) fn call_with_parent(
                             root,
                             parent,
                             &s("machine"),
-                            &s("agent"),
+                            binding.as_ref().expect("resolved answer binding"),
                             &format!("task:{}", s("task")),
                             Some(&s("task")),
                         )?;
@@ -392,6 +404,14 @@ pub(crate) fn call_with_parent(
                 },
                 _ => unreachable!(),
             };
+            let action = if let Some(binding) = &binding {
+                let action = match action {
+                    Action::Send { message, parent, .. } => crate::delegation::BoundAction::Send { message, parent },
+                    Action::Answer { task, ask, option, .. } => crate::delegation::BoundAction::Answer { task, ask, option },
+                    _ => unreachable!("binding only for side effects"),
+                };
+                Action::Bound { binding: binding.clone(), action }
+            } else { action };
             let answer = runtime()?.block_on(n.delegation_on(&s("machine"), action))?;
             if name == "delegate" || name == "task_answer" {
                 if let (Some(parent), crate::delegation::Answer::Task { record }) =
@@ -401,7 +421,7 @@ pub(crate) fn call_with_parent(
                         root,
                         parent,
                         &s("machine"),
-                        &s("agent"),
+                        binding.as_ref().expect("resolved side effect binding"),
                         &if name == "delegate" { s("request") } else { format!("task:{}", record.task.id) },
                         Some(&record.task.id),
                     )?;

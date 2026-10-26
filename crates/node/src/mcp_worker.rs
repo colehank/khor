@@ -10,7 +10,7 @@ use std::{
     io::{self, Read, Write},
     path::PathBuf,
     process::{Command, ExitStatus},
-    sync::{Arc, Mutex, OnceLock, mpsc},
+    sync::{Arc, mpsc},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -40,8 +40,11 @@ pub(crate) enum Operation {
         name: String,
         args: Value,
     },
-    CancelChildren {
+    CancelStep {
         run: String,
+    },
+    CancellationMetadata {
+        operation: crate::remote_cancel::Metadata,
     },
 }
 
@@ -75,7 +78,7 @@ pub fn main_if_requested() -> Option<i32> {
     let result = read_request(std::io::stdin().lock()).and_then(|request| {
         let budget = match &request.operation {
             Operation::Tool { .. } => TOOL_BUDGET,
-            Operation::CancelChildren { .. } => SWEEP_BUDGET,
+            Operation::CancelStep { .. } | Operation::CancellationMetadata { .. } => SWEEP_BUDGET,
         };
         // The parent's owner can disappear at process exit. Keep an independent
         // fuse inside the child so Unix workers cannot become 300s orphan
@@ -152,9 +155,9 @@ fn dispatch(request: Request) -> Result<String, String> {
                 }),
             )
         }
-        Operation::CancelChildren { run } => {
-            crate::delegation::cancel_children(&request.root, &run)?;
-            Ok(String::new())
+        Operation::CancelStep { run } => crate::remote_cancel::step(&request.root, &run),
+        Operation::CancellationMetadata { operation } => {
+            crate::remote_cancel::metadata(&request.root, operation)
         }
     }
 }
@@ -244,12 +247,21 @@ pub(crate) struct Worker {
     deadline: Instant,
 }
 impl Worker {
+    #[cfg(test)]
+    pub(crate) fn pid(&self) -> Option<u32> {
+        self.session.as_ref().map(Session::pid)
+    }
     pub(crate) fn spawn(
         request: Request,
         control: Arc<Control>,
         budget: Duration,
         path: Option<String>,
     ) -> Result<Self, String> {
+        let output_limit = match &request.operation {
+            Operation::Tool { .. } => OUTPUT_LIMIT,
+            Operation::CancelStep { .. } => 16 * 1024,
+            Operation::CancellationMetadata { .. } => 256 * 1024,
+        };
         let deadline = Instant::now()
             .checked_add(budget)
             .ok_or("MCP worker deadline overflow")?;
@@ -346,7 +358,7 @@ impl Worker {
             thread::Builder::new()
                 .name("mcp-worker-output".into())
                 .spawn(move || {
-                    let _ = output_tx.send(Event::Output(read_output(stdout)));
+                    let _ = output_tx.send(Event::Output(read_output(stdout, output_limit)));
                 })
                 .map_err(|_| "MCP worker output owner could not start")?,
         );
@@ -441,14 +453,14 @@ fn command() -> Result<Command, String> {
     Ok(Command::new(crate::self_exe()?))
 }
 
-fn read_output(mut reader: impl Read) -> Result<Vec<u8>, String> {
+fn read_output(mut reader: impl Read, limit: usize) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     let mut chunk = [0; 8192];
     loop {
         match reader.read(&mut chunk) {
             Ok(0) => return Ok(bytes),
             Ok(count) => {
-                if count > OUTPUT_LIMIT - bytes.len() {
+                if count > limit - bytes.len() {
                     return Err("MCP worker output exceeded its byte budget".into());
                 }
                 bytes.extend_from_slice(&chunk[..count]);
@@ -473,57 +485,6 @@ fn drain_errors(mut reader: impl Read) -> io::Result<()> {
             Err(error) => return Err(error),
         }
     }
-}
-
-/// Finite run-owned sweeps are independent of the local executor claim. Handles
-/// are retained and joined, admission is bounded, and durable links are never
-/// removed on timeout. Fair per-child scheduling/remote receipts are separate.
-pub(crate) fn schedule_cancel(
-    root: PathBuf,
-    run: String,
-    path: Option<String>,
-) -> Result<(), String> {
-    static SWEEPS: OnceLock<Mutex<Vec<JoinHandle<()>>>> = OnceLock::new();
-    let mut sweeps = SWEEPS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    let mut active = Vec::new();
-    for handle in sweeps.drain(..) {
-        if handle.is_finished() {
-            let _ = handle.join();
-        } else {
-            active.push(handle);
-        }
-    }
-    *sweeps = active;
-    if sweeps.len() >= 4 {
-        return Err("Remote cancellation remains pending: sweep capacity is full".into());
-    }
-    let handle = thread::Builder::new()
-        .name("mcp-cancel-sweep".into())
-        .spawn(move || {
-            let control = Arc::new(Control::default());
-            let Ok(mut worker) = Worker::spawn(
-                Request {
-                    root,
-                    operation: Operation::CancelChildren { run },
-                },
-                control,
-                SWEEP_BUDGET,
-                path,
-            ) else {
-                return;
-            };
-            while worker.poll().is_none() {
-                thread::sleep(Duration::from_millis(10));
-            }
-        })
-        .map_err(|_| "Remote cancellation remains pending: sweep owner could not start")?;
-    sweeps.push(handle);
-    #[cfg(test)]
-    SWEEPS_STARTED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    Ok(())
 }
 
 #[cfg(all(test, unix))]

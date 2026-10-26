@@ -286,6 +286,16 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
     let cancelled = receipt(&node, &third_id, "cancelled");
     assert!(cancelled.error.is_none());
     assert!(!cancelled.stderr.is_empty());
+    // Exercise both GUI mappings and their unmodified JSON projection. This
+    // libtest is not a native worker executable; R1's owned CLI tests establish
+    // durability, rather than treating this routing check as a remote ACK.
+    for action in ["cancel_status", "cancel_retry"] {
+        let view = rt.block_on(khor_gui_core::khor_agent(&root, home, action, &json!({"run":third_id}))).unwrap();
+        assert_eq!(view.run.as_deref(), Some(third_id.as_str()));
+        let data = view.data.unwrap();
+        assert_eq!(data["run"], third_id);
+        assert!(data["durability"]["state"].is_string());
+    }
     drop(fixture);
     serving.join().unwrap();
 }

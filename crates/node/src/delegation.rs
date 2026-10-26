@@ -20,6 +20,14 @@ use std::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Action {
+    ResolveBinding {
+        agent: String,
+        task: Option<String>,
+    },
+    Bound {
+        binding: Binding,
+        action: BoundAction,
+    },
     Agents,
     Connect {
         agent: String,
@@ -60,6 +68,9 @@ pub enum Action {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Answer {
+    Binding {
+        binding: Binding,
+    },
     Agents {
         agents: Vec<Agent>,
     },
@@ -77,6 +88,97 @@ pub enum Answer {
         agent: String,
         message: protocol::Message,
     },
+}
+
+/// Captured before a side effect. It contains no endpoint credentials or history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Binding {
+    pub home: DeviceId,
+    pub caller: DeviceId,
+    pub agent: String,
+    pub protocol: BindingProtocol,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BindingProtocol {
+    Native,
+    Http { endpoint_digest: String },
+}
+/// A flat whitelist prevents recursive envelopes and unrelated configuration work.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BoundAction {
+    Send {
+        message: protocol::Message,
+        parent: Option<TaskRef>,
+    },
+    Answer {
+        task: String,
+        ask: u64,
+        option: Option<String>,
+    },
+    Get {
+        task: String,
+    },
+    Cancel {
+        task: String,
+    },
+}
+impl BoundAction {
+    pub(crate) fn into_action(self, agent: String) -> Action {
+        match self {
+            Self::Send { message, parent } => Action::Send {
+                agent,
+                message,
+                parent,
+            },
+            Self::Answer { task, ask, option } => Action::Answer {
+                agent,
+                task,
+                ask,
+                option,
+            },
+            Self::Get { task } => Action::Get { agent, task },
+            Self::Cancel { task } => Action::Cancel { agent, task },
+        }
+    }
+}
+
+pub(crate) fn validate_answer(
+    action: &Action,
+    home: DeviceId,
+    caller: DeviceId,
+    answer: &Answer,
+) -> Result<(), String> {
+    let valid = match (action, answer) {
+        (Action::ResolveBinding { agent, .. }, Answer::Binding { binding }) => {
+            binding.home == home && binding.caller == caller && &binding.agent == agent
+        }
+        (Action::Bound { binding, action }, Answer::Task { record }) => {
+            let expected_task = match action {
+                BoundAction::Get { task }
+                | BoundAction::Cancel { task }
+                | BoundAction::Answer { task, .. } => Some(task),
+                BoundAction::Send { message, .. } => message.task_id.as_ref(),
+            };
+            record.target.home == binding.home
+                && record.caller == binding.caller
+                && record.target.agent == binding.agent
+                && expected_task.is_none_or(|task| task == &record.task.id)
+        }
+        (
+            Action::Bound {
+                binding,
+                action: BoundAction::Send { .. },
+            },
+            Answer::Message { agent, .. },
+        ) => &binding.agent == agent,
+        (Action::ResolveBinding { .. } | Action::Bound { .. }, _) => false,
+        _ => true,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err("Delegation reply identity mismatch".into())
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
@@ -108,6 +210,60 @@ impl Node {
         action: Action,
     ) -> Result<Answer, String> {
         self.refuse_unless_hosting()?;
+        let action = match action {
+            Action::ResolveBinding { agent, task } => {
+                let protocol = if crate::a2a_http::is_target(&agent) {
+                    crate::a2a_http::resolve_binding(self, caller, &agent, task.as_deref())?
+                } else {
+                    if let Some(task) = task {
+                        self.delegation_store()?
+                            .get(
+                                caller,
+                                &AgentTarget {
+                                    home: self.device(),
+                                    agent: agent.clone(),
+                                },
+                                &task,
+                            )
+                            .map_err(|e| e.to_string())?;
+                    } else {
+                        self.delegation_target(&agent)?;
+                    }
+                    BindingProtocol::Native
+                };
+                return Ok(Answer::Binding {
+                    binding: Binding {
+                        home: self.device(),
+                        caller,
+                        agent,
+                        protocol,
+                    },
+                });
+            }
+            Action::Bound { binding, action } => {
+                if binding.home != self.device() || binding.caller != caller {
+                    return Err("Delegation binding identity mismatch".into());
+                }
+                match &binding.protocol {
+                    BindingProtocol::Http { endpoint_digest }
+                        if crate::a2a_http::is_target(&binding.agent) =>
+                    {
+                        return crate::a2a_http::handle_bound(
+                            self,
+                            caller,
+                            &binding.agent,
+                            action,
+                            endpoint_digest,
+                        );
+                    }
+                    BindingProtocol::Native if !crate::a2a_http::is_target(&binding.agent) => {
+                        action.into_action(binding.agent)
+                    }
+                    _ => return Err("Delegation binding protocol mismatch".into()),
+                }
+            }
+            action => action,
+        };
         match &action {
             Action::Connect { agent, url } => {
                 return Ok(Answer::Agents {
@@ -158,7 +314,11 @@ impl Node {
         }
 
         let agent = match &action {
-            Action::Agents | Action::Connect { .. } | Action::Disconnect { .. } => unreachable!(),
+            Action::ResolveBinding { .. }
+            | Action::Bound { .. }
+            | Action::Agents
+            | Action::Connect { .. }
+            | Action::Disconnect { .. } => unreachable!(),
             Action::Send { agent, .. }
             | Action::Get { agent, .. }
             | Action::Wait { agent, .. }
@@ -173,7 +333,11 @@ impl Node {
         };
         let read = |task: &str| store.get(caller, &target, task).map_err(|e| e.to_string());
         let record = match action {
-            Action::Agents | Action::Connect { .. } | Action::Disconnect { .. } => unreachable!(),
+            Action::ResolveBinding { .. }
+            | Action::Bound { .. }
+            | Action::Agents
+            | Action::Connect { .. }
+            | Action::Disconnect { .. } => unreachable!(),
             Action::Send {
                 agent,
                 message,
@@ -614,11 +778,33 @@ mod tests {
             id: "next-root-run".into(),
         };
         assert_eq!(
-            original_parent(&root, &first, "here", "fixture-agent", "same-input").unwrap(),
+            original_parent(
+                &root,
+                &first,
+                &Binding {
+                    home: node.device(),
+                    caller: node.device(),
+                    agent: "fixture-agent".into(),
+                    protocol: BindingProtocol::Native
+                },
+                "same-input"
+            )
+            .unwrap(),
             first
         );
         assert_eq!(
-            original_parent(&root, &next, "here", "fixture-agent", "same-input").unwrap(),
+            original_parent(
+                &root,
+                &next,
+                &Binding {
+                    home: node.device(),
+                    caller: node.device(),
+                    agent: "fixture-agent".into(),
+                    protocol: BindingProtocol::Native
+                },
+                "same-input"
+            )
+            .unwrap(),
             first
         );
         std::fs::remove_dir_all(root).unwrap();
@@ -626,155 +812,74 @@ mod tests {
 }
 
 #[derive(Serialize, Deserialize)]
-struct ChildLink {
-    machine: String,
-    agent: String,
-    message: String,
-    task: Option<String>,
+pub(crate) struct ChildLink {
+    pub(crate) machine: String,
+    pub(crate) binding: Binding,
+    pub(crate) message: String,
+    pub(crate) task: Option<String>,
 }
-fn children_dir(root: &Path, run: &str) -> std::path::PathBuf {
+pub(crate) fn children_dir(root: &Path, run: &str) -> std::path::PathBuf {
     root.join(".khor/agent/children")
         .join(blake3::hash(run.as_bytes()).to_hex().as_str())
 }
-/// Durable intent is written before sending, so a lost response can still be
-/// found by message ID. A root stop racing launch also cancels after it returns.
+/// Bind before sending. A lost response keeps an unresolved link; cancellation
+/// never replays Send/Answer or claims an unknown task has stopped.
 pub(crate) fn track_child(
     root: &Path,
     parent: &TaskRef,
     machine: &str,
-    agent: &str,
+    binding: &Binding,
     message: &str,
     task: Option<&str>,
 ) -> Result<(), String> {
     let dir = children_dir(root, &parent.id);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let fingerprint = serde_json::to_vec(&(machine, agent, message)).map_err(|e| e.to_string())?;
+    if binding.caller != parent.home {
+        return Err("Child binding caller mismatch".into());
+    }
+    let fingerprint = serde_json::to_vec(&(binding, message)).map_err(|e| e.to_string())?;
     let leaf = blake3::hash(&fingerprint).to_hex().to_string();
     let path = dir.join(format!("{leaf}.json"));
-    let prior = fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<ChildLink>(&bytes).ok());
+    let names = crate::remote_cancel::names(&dir, crate::remote_cancel::CHILD_LIMIT * 2)?;
+    if !path.exists() && names.len() >= crate::remote_cancel::CHILD_LIMIT {
+        return Err("Child link resource limit".into());
+    }
+    let prior = if path.try_exists().map_err(|e| e.to_string())? {
+        let prior: ChildLink = crate::remote_cancel::read(&path, 16 * 1024)?;
+        if prior.binding != *binding
+            || prior.message != message
+            || task.is_some_and(|task| prior.task.as_ref().is_some_and(|previous| previous != task))
+        {
+            return Err("Child link identity mismatch".into());
+        }
+        Some(prior)
+    } else {
+        None
+    };
     let link = ChildLink {
         machine: machine.into(),
-        agent: agent.into(),
+        binding: binding.clone(),
         message: message.into(),
         task: task
             .map(str::to_owned)
             .or_else(|| prior.and_then(|p| p.task)),
     };
     let temporary = dir.join(format!("{}.tmp", protocol::new_task_id()));
-    crate::link::write_private(
-        &temporary,
-        &serde_json::to_vec(&link).map_err(|e| e.to_string())?,
-    )?;
-    fs::rename(temporary, path).map_err(|e| e.to_string())
-}
-/// Best effort across offline devices. Durable links remain queryable; no
-/// cancellation is reported as confirmed until the target records it.
-pub(crate) fn cancel_children(root: &Path, run: &str) -> Result<(), String> {
-    let dir = children_dir(root, run);
-    if !dir.is_dir() {
-        return Ok(());
+    let bytes = serde_json::to_vec(&link).map_err(|e| e.to_string())?;
+    if bytes.len() > 16 * 1024 {
+        return Err("Child link resource limit".into());
     }
-    let node = Node::open(root.to_path_buf())?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
+    crate::link::write_private(&temporary, &bytes)?;
+    fs::File::open(&temporary)
+        .and_then(|f| f.sync_all())
         .map_err(|e| e.to_string())?;
-    let mut failures = Vec::new();
-    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        if entry.path().extension().is_none_or(|s| s != "json") {
-            continue;
-        }
-        let link: ChildLink =
-            serde_json::from_slice(&fs::read(entry.path()).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
-        let outcome = runtime.block_on(async {
-            let task = if let Some(task) = link.task {
-                Some(task)
-            } else {
-                let mut after = None;
-                let mut found = None;
-                loop {
-                    let answer = node
-                        .delegation_on(
-                            &link.machine,
-                            Action::List {
-                                agent: link.agent.clone(),
-                                context: None,
-                                after: after.clone(),
-                            },
-                        )
-                        .await?;
-                    let Answer::Tasks { records, next, .. } = answer else {
-                        return Err("Peer returned no task list".to_owned());
-                    };
-                    if let Some(record) = records.iter().find(|r| {
-                        let message = if crate::a2a_http::is_target(&link.agent) {
-                            crate::a2a_http::wire_id(
-                                r.target.home,
-                                node.device(),
-                                &link.agent,
-                                &link.message,
-                            )
-                        } else {
-                            link.message.clone()
-                        };
-                        r.task
-                            .history
-                            .as_ref()
-                            .is_some_and(|h| h.iter().any(|m| m.message_id == message))
-                    }) {
-                        found = Some(record.task.id.clone());
-                        break;
-                    }
-                    if next.is_none() {
-                        break;
-                    }
-                    if next == after {
-                        break;
-                    }
-                    after = next;
-                }
-                found
-            };
-            if let Some(task) = task {
-                if let Answer::Task { record } = node
-                    .delegation_on(
-                        &link.machine,
-                        Action::Get {
-                            agent: link.agent.clone(),
-                            task: task.clone(),
-                        },
-                    )
-                    .await?
-                {
-                    if !record.task.status.state.is_terminal() {
-                        node.delegation_on(
-                            &link.machine,
-                            Action::Cancel {
-                                agent: link.agent,
-                                task,
-                            },
-                        )
-                        .await?;
-                    }
-                }
-            }
-            Ok::<_, String>(())
-        });
-        if let Err(why) = outcome {
-            failures.push(why);
-        }
-    }
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        Err(failures.join("; "))
-    }
+    fs::rename(temporary, &path).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    fs::File::open(&dir)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
-
 /// Official A2A types omit optional JSON fields. Positional MessagePack cannot
 /// safely carry those structs directly; carry canonical JSON at this boundary.
 pub(crate) mod wire_json {
@@ -805,13 +910,12 @@ pub(crate) mod wire_json {
 pub(crate) fn original_parent(
     root: &Path,
     parent: &TaskRef,
-    machine: &str,
-    agent: &str,
+    binding: &Binding,
     message: &str,
 ) -> Result<TaskRef, String> {
     let dir = root.join(".khor/agent/messages");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let key = serde_json::to_vec(&(machine, agent, message)).map_err(|e| e.to_string())?;
+    let key = serde_json::to_vec(&(binding, message)).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{}.json", blake3::hash(&key).to_hex()));
     match fs::read(&path) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string()),

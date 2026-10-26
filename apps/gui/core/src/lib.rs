@@ -2385,6 +2385,12 @@ pub async fn khor_agent(
                     .as_bool()
                     .ok_or_else(|| khor_catalog::msg::agent_arguments().to_owned())?,
             },
+            "cancel_status" => khor_node::khor_agent::Action::CancellationStatus {
+                run: string("run")?,
+            },
+            "cancel_retry" => khor_node::khor_agent::Action::RetryCancellation {
+                run: string("run")?,
+            },
             "stop" => khor_node::khor_agent::Action::Stop {
                 run: string("run")?,
             },
