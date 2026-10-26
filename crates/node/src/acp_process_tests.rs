@@ -65,6 +65,18 @@ fn injected_transport_preserves_permissions_cooperative_cancel_and_shared_shutdo
                 if cancel { "Cancelled" } else { "EndTurn" }
             );
             assert!(control.complete_operation(&operation));
+            if cancel {
+                tokio::time::sleep(Duration::from_millis(1200)).await;
+                let pid = std::fs::read_to_string(script.with_extension("pid"))
+                    .unwrap()
+                    .parse::<libc::pid_t>()
+                    .unwrap();
+                assert_eq!(
+                    unsafe { libc::kill(pid, 0) },
+                    0,
+                    "an acknowledged cancellation killed the process after its old grace"
+                );
+            }
         }
         let clone = handle.clone();
         let outcome = tokio::time::timeout(Duration::from_secs(2), handle.shutdown())
@@ -217,5 +229,98 @@ fn dropping_the_driver_runtime_retires_the_process_even_when_a_handle_survives()
         );
     });
     drop(handle);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn an_operation_deadline_alone_reaps_the_live_process_and_finishes_its_io_workers() {
+    let root = std::env::temp_dir().join(format!(
+        "khor-owned-expiry-{}",
+        crate::link::fresh_hex().unwrap()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let script = root.join("agent.py");
+    std::fs::write(&script, include_str!("fixtures/acp-owned.py")).unwrap();
+    let transport =
+        spawn(&serde_json::json!({"command":"python3","args":[script]}).to_string()).unwrap();
+    let lifecycle = transport.lifecycle.clone();
+    let control = transport.control.clone();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (handle, mut events) = tokio::time::timeout(
+            Duration::from_secs(3),
+            khor_acp::start_configured_on(
+                transport.streams,
+                transport.lifecycle,
+                root.clone(),
+                None,
+                khor_acp::Environment::default(),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let handle = Arc::new(handle);
+        let pending = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.prompt("synthetic blocked permission").await })
+        };
+        let ask = loop {
+            match tokio::time::timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+            {
+                khor_acp::Event::Ask(ask) => break ask,
+                _ => {}
+            }
+        };
+        let pid = std::fs::read_to_string(script.with_extension("pid"))
+            .unwrap()
+            .parse::<libc::pid_t>()
+            .unwrap();
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            0,
+            "fixture must be live before cancellation is armed"
+        );
+        let operation = control.begin_operation().unwrap();
+        assert!(control.cancel_operation(&operation, Duration::from_millis(200)));
+        // A late repeat may legitimately find expiry already committed on a busy CI host.
+        // Either way it must not postpone the original grace to this much longer one.
+        let _ = control.cancel_operation(&operation, Duration::from_secs(30));
+        let exited = tokio::time::timeout(Duration::from_secs(5), lifecycle.confirmed_exit()).await;
+        if exited.is_err() {
+            // Failure cleanup is separate from the assertion; it cannot make the case pass.
+            handle.request_shutdown();
+            let _ = tokio::time::timeout(Duration::from_secs(2), lifecycle.confirmed_exit()).await;
+            panic!(
+                "the supervisor ignored the operation deadline or renewed it on a repeated Stop"
+            );
+        }
+        exited.unwrap().unwrap();
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            -1,
+            "operation confirmation preceded child reap"
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+        // No cancel notification, complete_operation, shutdown or finish preceded this proof.
+        drop(ask);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), pending)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_err()
+        );
+    });
     std::fs::remove_dir_all(root).unwrap();
 }

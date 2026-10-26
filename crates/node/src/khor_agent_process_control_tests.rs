@@ -16,32 +16,13 @@ fn an_old_ack_cannot_clear_a_new_operations_deadline() {
 }
 
 #[test]
-fn repeated_stop_preserves_the_first_operations_deadline() {
+fn a_stop_after_expiry_cannot_restart_the_operations_grace() {
     let control = Control::default();
     let operation = control.begin_operation().unwrap();
-    assert!(control.cancel_operation(&operation, Duration::from_millis(10)));
-    let first = control
-        .0
-        .lock()
-        .unwrap()
-        .operation
-        .as_ref()
-        .unwrap()
-        .deadline;
-    assert!(control.cancel_operation(&operation, Duration::from_secs(30)));
-    assert_eq!(
-        control
-            .0
-            .lock()
-            .unwrap()
-            .operation
-            .as_ref()
-            .unwrap()
-            .deadline,
-        first
-    );
-    std::thread::sleep(Duration::from_millis(15));
+    assert!(control.cancel_operation(&operation, Duration::ZERO));
+    assert!(!control.cancel_operation(&operation, Duration::from_secs(30)));
     assert!(!control.complete_operation(&operation));
+    assert!(control.begin_operation().is_none());
 }
 
 #[test]
