@@ -133,6 +133,11 @@ fn a_remote_inventory_load_failure_reports_error_but_seen_and_pins_still_sync() 
     run_worker("inventory-remote");
 }
 
+#[test]
+fn a_large_devices_gap_converges_through_real_node_transfer() {
+    run_worker("convergence");
+}
+
 /// A failing assertion or timeout aborts this fixture's own resident. Worker
 /// process teardown also reclaims the hermetic relay's dedicated runtime.
 struct Serving(JoinHandle<Result<(), String>>);
@@ -514,13 +519,176 @@ async fn exercise_inventory(root: &Path, case: &str) {
     serving.stop().await;
 }
 
+/// A separate acceptance oracle for the same legitimate history: unlike the
+/// existing cap-rejection case, the complete fixed target must reach disk.
+async fn exercise_convergence(root: &Path) {
+    const MAX_VISITS: usize = 4;
+    let receiver = root.join("receiver");
+    let sender = root.join("sender");
+    util::hermetic(&receiver);
+    util::hermetic(&sender);
+
+    let resident = Node::open_hosting(receiver.clone(), "isolation-receiver", false).unwrap();
+    assert!(!resident.relays_n0());
+    assert_eq!(resident.relay_map().len(), 1);
+    let serving = Serving(tokio::spawn(resident.serve()));
+    listening(&receiver, &serving).await;
+    let issuer = Node::open_hosting(receiver.clone(), "isolation-receiver", false).unwrap();
+    let client = Node::open_hosting(sender.clone(), "isolation-sender", false).unwrap();
+    assert!(!client.relays_n0());
+    assert_eq!(client.relay_map().len(), 1);
+    assert_eq!(
+        timeout(OPERATION_BY, client.pair(&issuer.invite().unwrap()))
+            .await
+            .expect("convergence fixture pairing deadline")
+            .expect("real pairing succeeds before creating the large history"),
+        "isolation-receiver"
+    );
+    assert_eq!(client.devices().unwrap().len(), 2);
+    assert_eq!(issuer.devices().unwrap().len(), 2);
+
+    let before = store::load_pile::<DeviceDoc>(&devices_dir(&receiver), 0x3940).unwrap();
+    let before_version = before.doc.version();
+    let receiver_epoch = before.store.epoch();
+    drop(before);
+    let expected_receive_dir = root.join("converged-receive-directory");
+    let expected_receive_dir_text = expected_receive_dir.display().to_string();
+    let (source_version, source_epoch, gap_bytes) = {
+        let mut source = store::load_pile::<DeviceDoc>(&devices_dir(&sender), 0x3941).unwrap();
+        let me = source.doc.get(client.device_str()).unwrap();
+        large_address_history(&source.doc, &me.id, &me.name, &me.addrs);
+        source
+            .doc
+            .set_receive_dir(client.device_str(), &expected_receive_dir_text)
+            .unwrap();
+        source.store.flush(&source.doc).unwrap();
+        let restored = source.doc.get(client.device_str()).unwrap();
+        assert_eq!(restored.name, me.name);
+        assert_eq!(restored.addrs, me.addrs);
+        assert_eq!(source.doc.all().len(), 2, "no artificial machine to dial");
+        (
+            source.doc.version(),
+            source.store.epoch(),
+            source.doc.changes_since(&before_version).unwrap().len(),
+        )
+    };
+    assert_eq!(source_epoch, receiver_epoch);
+    assert!(
+        !before_version.includes_vv(&source_version),
+        "the receiver must start without the fixed source target"
+    );
+    assert!(
+        gap_bytes > wire::MAX_BYTES,
+        "exceed the actual old live-wire cap"
+    );
+    assert!(
+        gap_bytes > 24 * 1024 * 1024,
+        "retain the full 25.4 MB history"
+    );
+    assert!(
+        gap_bytes as u64 <= khor_sync::transfer::MAX_BLOB_BYTES,
+        "the full history must fit the current bounded transfer contract"
+    );
+    {
+        let mut seen = store::load_pile::<SeenDoc>(&seen_dir(&sender), 0x3942).unwrap();
+        seen.doc.mark(SESSION, 123).unwrap();
+        seen.store.flush(&seen.doc).unwrap();
+        let mut pins = store::load_pile::<PinDoc>(&pins_dir(&sender), 0x3943).unwrap();
+        pins.doc.set(SESSION, true).unwrap();
+        pins.store.flush(&pins.doc).unwrap();
+    }
+    assert_eq!(
+        store::load_pile::<SeenDoc>(&seen_dir(&receiver), 0x3944)
+            .unwrap()
+            .doc
+            .watermark(SESSION),
+        0
+    );
+    assert!(
+        !store::load_pile::<PinDoc>(&pins_dir(&receiver), 0x3945)
+            .unwrap()
+            .doc
+            .pinned(SESSION)
+    );
+    assert!(!expected_receive_dir.exists());
+    eprintln!(
+        "[Q039-CONVERGENCE] prepared raw_gap={gap_bytes} old_cap={} epoch={source_epoch}/{receiver_epoch} baseline_seen=0 baseline_pin=false max_visits={MAX_VISITS}",
+        wire::MAX_BYTES
+    );
+
+    // The sender has no resident. Every visit uses the public Node driver;
+    // the fixture never transports or imports the exported history itself.
+    let mut completed = false;
+    let mut cap_rejections = 0;
+    for visit in 1..=MAX_VISITS {
+        let outcomes = timeout(OPERATION_BY, client.sync_now())
+            .await
+            .expect("a convergence visit must not hang")
+            .expect("sync_now returns per-device outcomes");
+        assert_eq!(
+            outcomes.len(),
+            1,
+            "only the real paired receiver is visited"
+        );
+        assert_eq!(outcomes[0].0, "isolation-receiver");
+        let verdict = &outcomes[0].1;
+        if let Err(why) = verdict {
+            assert!(
+                khor_catalog::read(why).is_some_and(|(key, _)| key == "msg.outbound-too-big"),
+                "an unrelated sync/transport error is not the large-history oracle: {why}"
+            );
+            cap_rejections += 1;
+        }
+        let seen = store::load_pile::<SeenDoc>(&seen_dir(&receiver), 0x3946)
+            .unwrap()
+            .doc
+            .watermark(SESSION);
+        let pinned = store::load_pile::<PinDoc>(&pins_dir(&receiver), 0x3947)
+            .unwrap()
+            .doc
+            .pinned(SESSION);
+        assert_eq!(
+            seen, 123,
+            "the first visit must already persist independent Seen"
+        );
+        assert!(
+            pinned,
+            "the first visit must already persist independent Pins"
+        );
+        let after = store::load_pile::<DeviceDoc>(&devices_dir(&receiver), 0x3948).unwrap();
+        assert_eq!(after.store.epoch(), receiver_epoch);
+        let covered = after.doc.version().includes_vv(&source_version);
+        let row = after.doc.get(client.device_str()).unwrap();
+        let content_matches =
+            row.receive_dir.as_deref() == Some(expected_receive_dir_text.as_str());
+        eprintln!(
+            "[Q039-CONVERGENCE] visit={visit} verdict={verdict:?} seen={seen} pinned={pinned} target_covered={covered} content_matches={content_matches} cap_rejections={cap_rejections} final_name={:?} final_addrs={:?}",
+            row.name, row.addrs
+        );
+        assert_eq!(after.doc.all().len(), 2);
+        if covered && content_matches {
+            verdict
+                .as_ref()
+                .expect("a completed transfer must not retain a hard error");
+            completed = true;
+            break;
+        }
+    }
+    // Release the actual resident before reporting the intended business red.
+    serving.stop().await;
+    assert!(
+        completed,
+        "the fixed devices target and its receive-dir content must converge after {MAX_VISITS} real Node visits; raw_gap={gap_bytes}, cap_rejections={cap_rejections}"
+    );
+}
+
 #[test]
-#[ignore = "dedicated process fixture, actually launched by the four ordinary parents"]
+#[ignore = "dedicated process fixture, actually launched by the ordinary parents"]
 fn node_doc_isolation_worker() {
     let case = std::env::var("KHOR_NODE_ISOLATION_CASE").expect("parent supplies its fixture case");
     assert!(matches!(
         case.as_str(),
-        "oversize" | "epoch" | "inventory-local" | "inventory-remote"
+        "oversize" | "epoch" | "inventory-local" | "inventory-remote" | "convergence"
     ));
     let root = PathBuf::from(
         std::env::var_os("KHOR_NODE_ISOLATION_ROOT").expect("parent owns this scratch root"),
@@ -533,7 +701,9 @@ fn node_doc_isolation_worker() {
         .unwrap();
     runtime.block_on(async {
         timeout(WORKER_BY, async {
-            if case.starts_with("inventory-") {
+            if case == "convergence" {
+                exercise_convergence(&root).await;
+            } else if case.starts_with("inventory-") {
                 exercise_inventory(&root, &case).await;
             } else {
                 exercise(&root, &case).await;
