@@ -4,6 +4,40 @@
 # so the answers cannot drift between installing, starting and removing.
 # POSIX sh: the targets are whatever `/bin/sh` is over there.
 
+# Check the embedded copy byte-for-byte before returning local trusted source.
+# This is a generated-source consistency check, not a Shell parser.
+khor_install_components() (
+    set -eu
+    _installer="$1" _canonical="$2"
+    _copy=$(mktemp "${TMPDIR:-/tmp}/khor-install-components.XXXXXXXX")
+    trap 'rm -f "$_copy"' EXIT
+    LC_ALL=C awk '
+        $0 == "# KHOR_INSTALL_DECLARATIONS_BEGIN" {
+            if (state != 0 || ++begins != 1) bad = 1
+            state = 1; next
+        }
+        $0 == "# KHOR_INSTALL_DECLARATIONS_END" {
+            if (state != 2 || previous != "}" || ++ends != 1) bad = 1
+            state = 3; next
+        }
+        state == 0 { if ($0 !~ /^#/ && $0 !~ /^[[:space:]]*$/) bad = 1; next }
+        state == 1 {
+            if ($0 == "khor_install_main() {") { state = 2; next }
+            print; next
+        }
+        state == 2 { previous = $0; next }
+        state == 3 {
+            if ($0 != "khor_install_main \"$@\"") bad = 1
+            state = 4; next
+        }
+        { bad = 1 }
+        END { if (bad || state != 4 || begins != 1 || ends != 1) exit 1 }
+    ' "$_installer" > "$_copy" || exit 1
+    cmp -s "$_copy" "$_canonical" || { echo "khor: installer components are out of sync" >&2; exit 1; }
+    /bin/sh -n "$_canonical"
+    cat "$_canonical"
+)
+
 # **Which store on this machine is khor's.**
 #
 # Recomputed from what khor itself records, never read back from a note

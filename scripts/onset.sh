@@ -237,33 +237,21 @@ release)
         *) echo "onset: the release ships no $TARGET" >&2; exit 1 ;;
     esac
     GH_REPO="${KHOR_REPO:-colehank/khor}"
-    if [ -n "${KHOR_MIRROR:-}" ]; then
-        # The mirror carries one version, whatever its sync last pulled
-        # (install.sh says the same); a tag asked for here is not on it.
-        [ "$RELEASE" = latest ] || { echo "onset: a mirror has no tags; drop --release=$RELEASE or KHOR_MIRROR" >&2; exit 2; }
-        URL="${KHOR_MIRROR%/}/$ASSET.gz"
-    elif [ "$RELEASE" = latest ]; then
-        URL="https://github.com/$GH_REPO/releases/latest/download/$ASSET.gz"
-    else
-        URL="https://github.com/$GH_REPO/releases/download/$RELEASE/$ASSET.gz"
-    fi
+    (. "$LIB"; khor_install_components "$REPO/scripts/install.sh" "$REPO/scripts/install-components.sh") >/dev/null || {
+        echo "onset: local installer components are out of sync" >&2; exit 1;
+    }
+    . "$REPO/scripts/install-components.sh"
     say "onset: fetching $ASSET ($RELEASE)"
-    # The archive and the digest the workflow wrote beside it, both, and
-    # the digest checked before the bytes are believed: a download that
-    # came back short or as GitHub's HTML for a tag that is not there
-    # must stop here, not on the target as「khor does not run」.
-    curl -fsSL "$URL" -o "$STAGE/$ASSET.gz" || { echo "onset: could not fetch $URL" >&2; exit 1; }
-    curl -fsSL "$URL.sha256" -o "$STAGE/$ASSET.gz.sha256" || { echo "onset: no digest beside $URL" >&2; exit 1; }
-    ( cd "$STAGE" && { command -v sha256sum >/dev/null 2>&1 && sha256sum -c --quiet "$ASSET.gz.sha256" \
-        || shasum -a 256 -c --quiet "$ASSET.gz.sha256"; } ) \
-        || { echo "onset: $ASSET.gz does not match the digest the release published" >&2; exit 1; }
+    (
+        unset KHOR_ASSET_FILE KHOR_ASSET_SHA256
+        khor_fetch_release "$GH_REPO" "$RELEASE" "${KHOR_MIRROR:-}" "$ASSET" "$STAGE"
+    )
     BIN="$STAGE/khor"
-    gzip -dc "$STAGE/$ASSET.gz" > "$BIN" || { echo "onset: $URL is not a gzip (wrong tag?)" >&2; exit 1; }
     case "$(head -c 4 "$BIN" | od -An -tx1 | tr -d ' \n')" in
         7f454c46) : ;;
-        *) echo "onset: $URL did not answer with a program (wrong tag?)" >&2; exit 1 ;;
+        *) echo "onset: the selected Linux asset is not an ELF program" >&2; exit 1 ;;
     esac
-    say "onset: $ASSET verified ($(cut -c1-12 "$STAGE/$ASSET.gz.sha256")…)"
+    say "onset: $ASSET verified against its selected source SHA256"
     ;;
 ontarget)
     # ── already on the target ────────────────────────────────

@@ -27,18 +27,50 @@
 //! pairing ticket travels on the pair command's stdin and is never
 //! printed, logged, or put on a command line (a command line is in
 //! `ps` on both machines).
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use khor_catalog::{cli, msg};
+use sha2::{Digest, Sha256};
 
 use crate::satellite::{self, Dest};
 use crate::Node;
 
 /// The install script, as shipped: what runs on the far machine.
 const INSTALL_SH: &str = include_str!("../../../scripts/install.sh");
+
+// The receiving shell owns its stage until it publishes the exact path.
+// An installer consumes only that stage; concurrent pushes never share a file.
+const PUSH_ARCHIVE_SH: &str = r#"
+set -eu
+B="$1"
+umask 077
+mkdir -p "$B"
+S=$(mktemp "$B/.khor.push.XXXXXXXX")
+trap 'rm -f "$S"' EXIT
+cat > "$S"
+printf 'KHOR_PUSH_ASSET_V1\t%s\n' "$S"
+trap - EXIT
+"#;
+
+struct PushedArchive {
+    path: String,
+    digest: String,
+}
+
+fn pushed_archive_path(receipt: &str) -> Result<String, String> {
+    let path = receipt.strip_prefix("KHOR_PUSH_ASSET_V1\t")
+        .and_then(|value| value.strip_suffix('\n'))
+        .filter(|value| value.starts_with('/') && value.len() <= 8192
+            && !value.contains(['\n', '\r', '\0']))
+        .ok_or("remote archive transfer did not return one exact path")?;
+    let valid_name = path.rsplit('/').next().and_then(|name| name.strip_prefix(".khor.push."))
+        .is_some_and(|nonce| nonce.len() == 8 && nonce.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+    if !valid_name { return Err("remote archive transfer returned an invalid stage path".into()); }
+    Ok(path.to_owned())
+}
 
 /// How long the new machine has to call back over iroh and pair. Past
 /// it the machine is one khor cannot talk to directly, which is what a
@@ -219,7 +251,6 @@ drop() { [ -f "$1" ] || return 0; grep -v "$2" "$1" > "$1.khor-undo" ; mv -f "$1
 [ -n "$HAD_PROFILE" ] || [ -s "$HOME/.profile" ] || rm -f "$HOME/.profile"
 [ -n "$HAD_BIN" ] || rm -f "$B/khor"
 [ -n "$HAD_UP" ] || rm -f "$B/khor-serve-up"
-rm -f "$B"/.khor.download.* "$B/.khor.push.gz"
 [ -n "$HAD_DIR" ] || rmdir "$B" "$HOME/.local" 2>/dev/null
 # The directories the keeper's file went into, deepest first; `rmdir`
 # leaves any that hold something else.
@@ -310,18 +341,106 @@ fn run(to: &Dest, command: &str, stdin: &[u8], wait: Duration) -> Result<(bool, 
     ))
 }
 
+fn archive_digest(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn published_archive_digest(record: &[u8], asset: &str) -> Result<String, String> {
+    let line = record.strip_suffix(b"\n").unwrap_or(record);
+    let name = format!("{asset}.gz");
+    if record.len() > 512
+        || line.len() != 66 + name.len()
+        || !line[..64].iter().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        || &line[64..66] != b"  "
+        || &line[66..] != name.as_bytes()
+    {
+        return Err("release checksum must contain one digest for the exact archive basename".into());
+    }
+    Ok(line[..64].iter().map(|byte| char::from(*byte)).collect())
+}
+
+fn release_asset_url(mirror: Option<&str>, repo: Option<&str>, version: &str, asset: &str) -> Result<String, String> {
+    if !matches!(asset, "khor-linux-x86_64" | "khor-linux-aarch64" | "khor-macos-arm64" | "khor-macos-x86_64")
+        || version.is_empty()
+        || !version.bytes().all(|byte| byte.is_ascii_alphanumeric() || b".-+".contains(&byte))
+    {
+        return Err("invalid release asset or version".into());
+    }
+    if let Some(mirror) = mirror.filter(|value| !value.is_empty()) {
+        let url = reqwest::Url::parse(mirror).map_err(|_| "invalid release mirror URL".to_owned())?;
+        if !matches!(url.scheme(), "http" | "https")
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || !mirror.bytes().all(|byte| byte.is_ascii_alphanumeric() || b":/._~+[]-".contains(&byte))
+        {
+            return Err("invalid release mirror URL".into());
+        }
+        return Ok(format!("{}/releases/v{version}/{asset}.gz", url.as_str().trim_end_matches('/')));
+    }
+    let repo = repo.filter(|value| !value.is_empty()).unwrap_or("colehank/khor");
+    let parts: Vec<_> = repo.split('/').collect();
+    if parts.len() != 2 || parts.iter().any(|part| {
+        part.is_empty() || part.len() > 100 || matches!(*part, "." | "..")
+            || !part.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte))
+    }) {
+        return Err("invalid release repository".into());
+    }
+    Ok(format!("https://github.com/{repo}/releases/download/v{version}/{asset}.gz"))
+}
+
+fn fetch_archive_bytes(url: &str, limit: Option<usize>) -> Result<Vec<u8>, String> {
+    let mut command = Command::new("curl");
+    command.args(["--disable", "-fsSL", "--connect-timeout", "15", url]);
+    if limit.is_some() {
+        command.args(["--max-time", "30"]);
+    }
+    read_archive_output(command, limit)
+}
+
+fn read_archive_output(mut command: Command, limit: Option<usize>) -> Result<Vec<u8>, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = command.spawn().map_err(|error| error.to_string())?;
+    let Some(mut stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("release download has no output pipe".into());
+    };
+    let mut bytes = Vec::new();
+    let read = match limit {
+        Some(limit) => stdout.take((limit + 1) as u64).read_to_end(&mut bytes),
+        None => stdout.read_to_end(&mut bytes),
+    };
+    if read.is_err() || limit.is_some_and(|limit| bytes.len() > limit) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("release metadata exceeds its limit or could not be read".into());
+    }
+    if !child.wait().map_err(|error| error.to_string())?.success() {
+        return Err("could not fetch the selected release archive or checksum".into());
+    }
+    Ok(bytes)
+}
+
 /// The environment the install script is started under over there:
 /// this machine's version, and its mirror when it has one. Values are
 /// single-quoted; the names are ours.
 fn install_env(extra: &str) -> String {
     let mut e = format!("KHOR_VERSION='v{}'", crate::VERSION);
-    if let Ok(m) = std::env::var("KHOR_MIRROR")
-        && !m.is_empty()
-        && !m.contains('\'')
-    {
-        e.push_str(&format!(" KHOR_MIRROR='{m}'"));
+    for name in ["KHOR_MIRROR", "KHOR_REPO"] {
+        if let Ok(value) = std::env::var(name)
+            && !value.is_empty()
+        {
+            e.push_str(&format!(" {name}={}", install_quoted_value(&value)));
+        }
     }
     format!("{e} {extra} sh -s")
+}
+
+fn install_quoted_value(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn last_line(text: &str) -> String {
@@ -506,9 +625,23 @@ impl Node {
             // It could not fetch for itself: this machine brings it.
             let pushed = self
                 .push_asset(to, asset)
-                .and_then(|()| {
-                    let env = install_env("KHOR_NO_SERVE=1 KHOR_ASSET_FILE=\"$HOME/.local/bin/.khor.push.gz\"");
-                    let (ok, _, err2) = run(to, &env, INSTALL_SH.as_bytes(), wait)?;
+                .and_then(|archive| {
+                    let env = install_env(&format!(
+                        "KHOR_NO_SERVE=1 KHOR_ASSET_FILE={} KHOR_ASSET_SHA256={}",
+                        install_quoted_value(&archive.path), install_quoted_value(&archive.digest),
+                    ));
+                    let result = run(to, &env, INSTALL_SH.as_bytes(), wait);
+                    if !matches!(&result, Ok((true, _, _))) {
+                        let cleanup = run(to, &format!("rm -f -- {}", install_quoted_value(&archive.path)), &[], Duration::from_secs(30));
+                        if !matches!(cleanup, Ok((true, _, _))) {
+                            let why = match &result {
+                                Err(why) => why.clone(),
+                                Ok((_, _, stderr)) => last_line(stderr),
+                            };
+                            return Err(format!("{why}; remote archive cleanup could not be confirmed"));
+                        }
+                    }
+                    let (ok, _, err2) = result?;
                     if ok { Ok(()) } else { Err(last_line(&err2)) }
                 });
             if let Err(e) = pushed {
@@ -626,51 +759,38 @@ impl Node {
 
     /// Fetches (or, on the same platform, takes this machine's own) the
     /// asset and pushes it next to the far bin directory.
-    fn push_asset(&self, to: &Dest, asset: &str) -> Result<(), String> {
-        let tmp = self.root().join(".khor").join(format!(".add-{asset}.gz"));
-        let made = if own_asset() == Some(asset) {
+    fn push_asset(&self, to: &Dest, asset: &str) -> Result<PushedArchive, String> {
+        let bytes = if own_asset() == Some(asset) {
             let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-            let f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
-            Command::new("gzip")
+            let output = Command::new("gzip")
                 .arg("-c")
                 .arg(&exe)
-                .stdout(f)
-                .status()
-                .map_err(|e| e.to_string())?
-                .success()
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !output.status.success() {
+                return Err(msg::add_no_asset_here(asset));
+            }
+            output.stdout
         } else {
-            let url = match std::env::var("KHOR_MIRROR") {
-                Ok(m) if !m.is_empty() => format!("{}/{asset}.gz", m.trim_end_matches('/')),
-                _ => format!(
-                    "https://github.com/colehank/khor/releases/download/v{}/{asset}.gz",
-                    crate::VERSION
-                ),
-            };
-            Command::new("curl")
-                .args(["-fsL", "--connect-timeout", "15", "-o"])
-                .arg(&tmp)
-                .arg(&url)
-                .stderr(Stdio::null())
-                .status()
-                .map_err(|e| e.to_string())?
-                .success()
+            let mirror = std::env::var("KHOR_MIRROR").ok();
+            let repo = std::env::var("KHOR_REPO").ok();
+            let url = release_asset_url(mirror.as_deref(), repo.as_deref(), crate::VERSION, asset)?;
+            let bytes = fetch_archive_bytes(&url, None)?;
+            let record = fetch_archive_bytes(&format!("{url}.sha256"), Some(512))?;
+            let expected = published_archive_digest(&record, asset)?;
+            if archive_digest(&bytes) != expected {
+                return Err("release archive does not match its selected SHA256".into());
+            }
+            bytes
         };
-        let pushed = if made {
-            let bytes = std::fs::read(&tmp).map_err(|e| e.to_string());
-            bytes.and_then(|b| {
-                let (ok, _, err) = run(
-                    to,
-                    "mkdir -p \"$HOME/.local/bin\" && cat > \"$HOME/.local/bin/.khor.push.gz\"",
-                    &b,
-                    Duration::from_secs(600),
-                )?;
-                if ok { Ok(()) } else { Err(last_line(&err)) }
-            })
-        } else {
-            Err(msg::add_no_asset_here(asset))
-        };
-        let _ = std::fs::remove_file(&tmp);
-        pushed
+        // This is the digest of this exact transport buffer. A locally gzipped
+        // current_exe is a local source, not an independently signed release.
+        let digest = archive_digest(&bytes);
+        let command = format!("sh -c {} sh \"$HOME/.local/bin\"", install_quoted_value(PUSH_ARCHIVE_SH));
+        let uncertain = |why: String| format!("{why}; remote transfer was not confirmed and an unclaimed temporary archive may remain");
+        let (ok, receipt, err) = run(to, &command, &bytes, Duration::from_secs(600)).map_err(uncertain)?;
+        if !ok { return Err(uncertain(last_line(&err))); }
+        Ok(PushedArchive { path: pushed_archive_path(&receipt).map_err(uncertain)?, digest })
     }
 
     fn undo(&self, to: &Dest, look: &Look) -> Result<(), String> {
@@ -806,6 +926,105 @@ fn keeper_words(k: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn archive_checksum_names_exactly_one_compressed_asset() {
+        let asset = "khor-linux-x86_64";
+        let digest = archive_digest(b"abc");
+        assert_eq!(digest, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        let record = format!("{digest}  {asset}.gz");
+        assert_eq!(published_archive_digest(record.as_bytes(), asset).unwrap(), digest);
+        assert!(published_archive_digest(format!("{record}\n").as_bytes(), asset).is_ok());
+        for record in [
+            String::new(), format!("{digest}  other.gz\n"), format!("{digest}  ./{asset}.gz\n"),
+            format!("{digest} *{asset}.gz\n"), format!("{record}\n\n"), format!("{record}\r\n"),
+            format!("{record}\n{record}\n"), format!("{}  {asset}.gz\n", digest.to_uppercase()),
+        ] {
+            assert!(published_archive_digest(record.as_bytes(), asset).is_err(), "{record:?}");
+        }
+    }
+
+    #[test]
+    fn pushed_archive_uses_one_explicit_release_directory() {
+        let asset = "khor-linux-x86_64";
+        assert_eq!(release_asset_url(Some("http://127.0.0.1:1234/base/"), None, "1.2.3", asset).unwrap(),
+            "http://127.0.0.1:1234/base/releases/v1.2.3/khor-linux-x86_64.gz");
+        assert_eq!(release_asset_url(None, Some("owner/repo"), "1.2.3", asset).unwrap(),
+            "https://github.com/owner/repo/releases/download/v1.2.3/khor-linux-x86_64.gz");
+        for mirror in ["file:///tmp/release", "https://user:pass@example.test", "https://example.test/?v=2", "https://example.test/#tag"] {
+            assert!(release_asset_url(Some(mirror), None, "1.2.3", asset).is_err());
+        }
+        assert!(release_asset_url(None, Some("../repo"), "1.2.3", asset).is_err());
+        assert!(release_asset_url(None, None, "1.2.3/other", asset).is_err());
+    }
+
+    #[test]
+    fn installer_configuration_values_are_literal_shell_words() {
+        assert_eq!(install_quoted_value("a'b"), "'a'\\''b'");
+        assert_eq!(install_quoted_value("$(touch never)"), "'$(touch never)'");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn archive_output_checks_producer_status_and_bounds_metadata() {
+        let mut exact = Command::new("/usr/bin/printf");
+        exact.args(["%s", &"x".repeat(512)]);
+        assert_eq!(read_archive_output(exact, Some(512)).unwrap(), vec![b'x'; 512]);
+
+        let mut oversized = Command::new("/usr/bin/printf");
+        oversized.args(["%s", &"x".repeat(100_000)]);
+        assert!(read_archive_output(oversized, Some(512)).is_err());
+
+        let mut failed = Command::new("/bin/sh");
+        failed.args(["-c", "printf partial; exit 7"]);
+        assert!(read_archive_output(failed, Some(512)).is_err());
+    }
+
+    #[test]
+    fn archive_transfer_receipts_identify_one_owned_path() {
+        assert_eq!(pushed_archive_path("KHOR_PUSH_ASSET_V1\t/tmp/path with 'quotes'/.khor.push.A1b2C3d4\n").unwrap(),
+            "/tmp/path with 'quotes'/.khor.push.A1b2C3d4");
+        for receipt in ["", "banner\nKHOR_PUSH_ASSET_V1\t/tmp/.khor.push.A1b2C3d4\n",
+            "KHOR_PUSH_ASSET_V1\trelative/.khor.push.A1b2C3d4\n",
+            "KHOR_PUSH_ASSET_V1\t/tmp/khor\n", "KHOR_PUSH_ASSET_V1\t/tmp/.khor.push.A1b2C3d4\nextra\n",
+            "KHOR_PUSH_ASSET_V1\t/tmp/.khor.push.A1b2C3d4\r\n",
+        ] { assert!(pushed_archive_path(receipt).is_err(), "{receipt:?}"); }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn concurrent_archive_transfers_keep_separate_owned_stages() {
+        let dir = std::env::temp_dir().join(format!("khor-archive-stage-{}", crate::link::fresh_hex().unwrap()));
+        std::fs::create_dir(&dir).unwrap();
+        struct Scratch(std::path::PathBuf);
+        impl Drop for Scratch { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+        let _scratch = Scratch(dir.clone());
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let workers: Vec<_> = [b"first archive".as_slice(), b"second archive".as_slice()].into_iter().map(|payload| {
+            let dir = dir.clone(); let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                let mut child = Command::new("/bin/sh").args(["-c", PUSH_ARCHIVE_SH, "archive-stage"])
+                    .arg(dir).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+                child.stdin.take().unwrap().write_all(payload).unwrap();
+                let output = child.wait_with_output().unwrap();
+                assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+                let path = pushed_archive_path(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
+                assert_eq!(std::fs::read(&path).unwrap(), payload);
+                (path, payload)
+            })
+        }).collect();
+        let stages: Vec<_> = workers.into_iter().map(|worker| worker.join().unwrap()).collect();
+        assert_ne!(stages[0].0, stages[1].0);
+        std::fs::remove_file(&stages[0].0).unwrap();
+        assert_eq!(std::fs::read(&stages[1].0).unwrap(), stages[1].1);
+
+        let failed = format!("cat() {{ printf partial; return 7; }}\n{PUSH_ARCHIVE_SH}");
+        let output = Command::new("/bin/sh").args(["-c", &failed, "archive-stage"]).arg(&dir).output().unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty(), "a partial stage cannot publish a receipt");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "failure cleans only its stage");
+    }
 
     #[test]
     fn the_asset_table_is_install_shs() {
