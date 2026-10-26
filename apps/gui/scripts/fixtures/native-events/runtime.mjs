@@ -18,6 +18,15 @@ export function nativeEventRuntime(gui) {
   assert.equal(createHash('sha256').update(event).digest('hex'), 'f00d22c559ce7e58a85d860e35fd60d20826f13d7f534a5f3548a7ef94446e84', 'Use the genuine locked SDK, not an event mock');
   const coreApi = readFileSync(new URL('node_modules/@tauri-apps/api/core.js', gui));
   assert.equal(createHash('sha256').update(coreApi).digest('hex'), 'b2187a1c0c0a25806dc64f8823757ce553c09d3bbe3e409bd05cab32e245f1c9', 'Review the SDK core delegation on upgrade');
+  const helperSdk = {
+    'window.js': '2b7c5d852dd6ea216d3eef7eed7dbe3000232b3359ec47aa8809945f889104d9',
+    'webview.js': '29b803a82322bac10e08a809f257725367ce9200f251563c73b7113722db1c46',
+    'dpi.js': '69920668363f105d89b9fbad7db499271fd95b93feeeab84387d43319fbc8f77',
+  };
+  for (const [name, expected] of Object.entries(helperSdk)) {
+    const actual = readFileSync(new URL(`node_modules/@tauri-apps/api/${name}`, gui));
+    assert.equal(createHash('sha256').update(actual).digest('hex'), expected, `Review the genuine SDK ${name} helper semantics on upgrade`);
+  }
   const sources = Object.fromEntries(Object.entries(hashes).map(([file, hash]) => {
     const content = readFileSync(new URL(file, upstream));
     assert.equal(createHash('sha256').update(content).digest('hex'), hash, file);

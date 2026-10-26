@@ -1,5 +1,6 @@
 // Exercise production listeners, including native event/dragend ordering.
 // No user session or real terminal input: this gate records the drop payload.
+// The owned subscription is the seam; check-native-helpers covers real SDK cleanup.
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 const saved=Object.fromEntries(['window','navigator','devicePixelRatio'].map(k=>[k,globalThis[k]]));
@@ -7,8 +8,8 @@ const native=[];let listening=0,unlistened=0;
 try {
  const win=new EventTarget();win.matchMedia=()=>({matches:false});
  Object.assign(globalThis,{window:win,devicePixelRatio:2});Object.defineProperty(globalThis,'navigator',{configurable:true,value:{platform:'MacIntel'}});
- const bundle=await build({stdin:{contents:"export * from './src/lib/path-drag'; export * from './src/lib/window-drop';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false,define:{'import.meta.env.DEV':'true'},plugins:[{name:'native-fixture',setup(b){b.onResolve({filter:/^@\/api$/},()=>({path:'api',namespace:'fixture'}));b.onResolve({filter:/^@tauri-apps\/api\/webview$/},()=>({path:'tauri',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='api'?'export const inApp=true':'export const getCurrentWebview=()=>({onDragDropEvent:globalThis.__listenDrop})',loader:'js'}));}}]});
- globalThis.__listenDrop=async cb=>{listening++;native.push(cb);return()=>{unlistened++;native.splice(native.indexOf(cb),1)}};
+ const bundle=await build({stdin:{contents:"export * from './src/lib/path-drag'; export * from './src/lib/window-drop';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false,define:{'import.meta.env.DEV':'true'},plugins:[{name:'native-fixture',setup(b){b.onResolve({filter:/^@\/api$/},()=>({path:'api',namespace:'fixture'}));b.onResolve({filter:/^\.\/native-events$/},()=>({path:'owned',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='api'?'export const inApp=true':'export const listenNativeDragDrop=globalThis.__listenDrop',loader:'js'}));}}]});
+ globalThis.__listenDrop=cb=>{listening++;native.push(cb);return()=>{unlistened++;native.splice(native.indexOf(cb),1)}};
  const mod=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
  const emit=payload=>{for(const cb of [...native])cb({payload})};
  const seen=[],hidden=[];const offHidden=mod.onWindowDrop(d=>{if(false)hidden.push(d)}),off=mod.onWindowDrop(d=>seen.push(d));

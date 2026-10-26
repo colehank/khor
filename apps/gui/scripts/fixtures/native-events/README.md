@@ -19,3 +19,26 @@ node apps/gui/scripts/check-native-events.mjs
 ```
 
 The fixture uses Chrome and WebKit via existing `playwright-core` dependencies. `PLAYWRIGHT_BROWSERS_PATH`, `PLAYWRIGHT_CHROMIUM_CHANNEL`, `NATIVE_EVENTS_PORT` (default 23843), `NATIVE_EVENTS_CHECK_DIR`, and `NATIVE_EVENTS_SCENARIOS` allow isolated verification. It touches no installed Khor App, native services, user files, or HOME. Each case gets a fresh document; successful unlisten is acknowledged only after the controlled native listener has actually been removed. A deliberately rejected unlisten must leave that resource visible and produce a diagnostic while releasing the JS business callback.
+
+
+`check-native-helpers.mjs` uses the same genuine runtime and locked SDK for
+production `onPageWord`, `onQuitRequested`, `onFullscreen`, `onWindowDrop` and
+`listenNativeDragDrop`. It verifies exact Any/Window/Webview targets, tab
+filtering and readiness, in-flight fullscreen queries, `CloseRequestedEvent`
+prevention and owner-checked async destruction, all four `PhysicalPosition`
+drag payloads, partial-admission rollback and refused native cleanup. A genuine
+SDK drag listener is a separate payload-shape control. Native IPC answers remain
+controlled; these browser checks do not claim an actual OS drag/window-close or
+Rust listener-heap audit. `runtime.mjs` also pins window/webview/dpi source hashes;
+upgrades must recheck their public helper semantics.
+
+```
+node apps/gui/scripts/check-native-helpers.mjs
+```
+
+The helper runner uses `NATIVE_HELPERS_PORT` (default 23844),
+`NATIVE_HELPERS_CHECK_DIR` and `NATIVE_HELPERS_SCENARIOS` for isolation; browser
+selection/cache use the same environment settings as the hear runner. All helper
+production files, test sources, Cargo/package locks and SDK modules are
+fingerprinted before/after each run. Invalid selectors and contract failures are
+rejected before allocating a fixture or output directory.

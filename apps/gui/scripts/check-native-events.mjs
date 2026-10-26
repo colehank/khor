@@ -15,6 +15,7 @@ assert(scenarios.length && new Set(scenarios).size === scenarios.length);
 for (const name of scenarios) assert(known.includes(name), `Unknown scenario ${name}`);
 const sources = ['src/api.ts', 'src/lib/native-events.ts', 'package-lock.json', 'scripts/check-native-events.mjs',
   '../../Cargo.lock', 'node_modules/@tauri-apps/api/core.js', 'node_modules/@tauri-apps/api/event.js',
+  ...['window', 'webview', 'dpi'].map(name => `node_modules/@tauri-apps/api/${name}.js`),
   'scripts/fixtures/native-events/runtime.mjs', 'scripts/fixtures/native-events/probe.tsx',
   ...['core.js', 'event-mod.rs', 'event-init.js'].map(file => `scripts/fixtures/native-events/tauri-2.11.5/${file}`)];
 const fingerprint = () => Object.fromEntries(sources.map(file => [file, existsSync(join(gui, file)) ? createHash('sha256').update(readFileSync(join(gui, file))).digest('hex') : null]));

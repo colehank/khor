@@ -1658,34 +1658,9 @@ export function onPageWord(
   onReady?: () => void,
 ): () => void {
   if (!inApp) return () => {};
-  let drop: (() => void) | null = null;
-  let gone = false;
-  void import("@tauri-apps/api/event")
-    .then(({ listen }) =>
-      listen<{ tab: string; text: string }>(event, (e) => {
-        if (e.payload.tab === tab) said(e.payload.text);
-      }).then((un) => {
-        // Unsubscribed before the subscription landed: undo it now, or
-        // the listener outlives the tab it was speaking for and writes
-        // into a component that is gone.
-        if (gone) un();
-        else { drop = un; onReady?.(); }
-      }),
-    )
-    // **Loud, and this is the whole reason it says anything.** Listening
-    // is a core-plugin command and therefore behind tauri's capability
-    // list; khor had no capabilities file at all, so every `listen` was
-    // refused and this promise rejected into nothing. The address bar
-    // stopped following the page and links asking for a new window did
-    // nothing, and **neither of them said a word** — measured 2026-09-09,
-    // and it cost three wrong diagnoses before somebody looked here.
-    .catch((e: unknown) => {
-      console.error(`khor: cannot listen for ${event}`, e);
-    });
-  return () => {
-    gone = true;
-    drop?.();
-  };
+  return listenNativeEvent<{ tab: string; text: string }>(event, payload => {
+    if (payload.tab === tab) said(payload.text);
+  }, { onReady });
 }
 
 // ── Trusted native menu presenters (desktop window / iOS sibling WK) ──
@@ -1841,24 +1816,25 @@ export function hear<T>(event: string, said: (payload: T) => void): () => void {
  */
 export function onQuitRequested(ask: () => boolean): () => void {
   if (!inApp) return () => {};
-  let drop: (() => void) | null = null;
+  let drop: (() => void) | undefined;
+  let question: typeof ask | null = ask;
   let gone = false;
   void import("@tauri-apps/api/window")
-    .then(({ getCurrentWindow }) =>
-      getCurrentWindow()
-        .onCloseRequested((e) => {
-          if (ask()) e.preventDefault();
-        })
-        .then((un) => {
-          if (gone) un();
-          else drop = un;
-        }),
-    )
-    .catch((e: unknown) => {
-      console.error("khor: cannot hear the window closing", e);
-    });
+    .then(({ getCurrentWindow, CloseRequestedEvent }) => {
+      if (gone) return;
+      const win = getCurrentWindow();
+      drop = listenNativeEvent<null>("tauri://close-requested", async (_, event, isActive) => {
+        // Match Window.onCloseRequested: await the handler, then destroy
+        // only when it did not prevent the close and this owner still lives.
+        const requested = new CloseRequestedEvent(event);
+        await (() => { if (question?.()) requested.preventDefault(); })();
+        if (isActive() && !requested.isPreventDefault()) await win.destroy();
+      }, { target: { kind: "Window", label: win.label } });
+    })
+    .catch((error: unknown) => console.error("khor: cannot hear the window closing", error));
   return () => {
     gone = true;
+    question = null;
     drop?.();
   };
 }
@@ -1915,33 +1891,26 @@ export const trafficLights =
  */
 export function onFullscreen(tell: (full: boolean) => void): () => void {
   if (!inApp) return () => {};
-  let drop: (() => void) | null = null;
+  let drop: (() => void) | undefined;
+  let receive: typeof tell | null = tell;
   let gone = false;
   void import("@tauri-apps/api/window")
-    .then(async ({ getCurrentWindow }) => {
+    .then(({ getCurrentWindow }) => {
+      if (gone) return;
       const win = getCurrentWindow();
       const say = () => {
-        void win
-          .isFullscreen()
-          .then((full) => {
-            if (!gone) tell(full);
-          })
-          .catch((e: unknown) => {
-            console.error("khor: cannot ask the window about full screen", e);
-          });
+        if (gone) return;
+        void win.isFullscreen()
+          .then(full => { if (!gone) receive?.(full); })
+          .catch((error: unknown) => console.error("khor: cannot ask the window about full screen", error));
       };
-      // The answer now, before any resize — a window that started full
-      // screen never resizes and would otherwise never be asked.
       say();
-      const un = await win.onResized(say);
-      if (gone) un();
-      else drop = un;
+      drop = listenNativeEvent("tauri://resize", say, { target: { kind: "Window", label: win.label } });
     })
-    .catch((e: unknown) => {
-      console.error("khor: cannot watch the window's size", e);
-    });
+    .catch((error: unknown) => console.error("khor: cannot watch the window's size", error));
   return () => {
     gone = true;
+    receive = null;
     drop?.();
   };
 }

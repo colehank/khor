@@ -1,3 +1,4 @@
+import { listenNativeDragDrop } from "@/lib/native-events";
 import { awaitChatDraftReceipt, chatDraftOwner, completeChatDraft, discardChatDraft, rememberChatDraft, recoverableChatDrafts, settleChatDraft, subscribeChatDrafts, unconfirmedChatDrafts, type ChatDraft } from '@/lib/chat-drafts';
 import {useSessionDraft} from '@/hooks/use-session-draft';
 import {unifiedSession,AcpHeader,SessionAdd} from "@/views/SessionPreferences";
@@ -1270,38 +1271,23 @@ export function ChatView({
   // against this pane's box, the event being the window's.
   useEffect(() => {
     if (!inApp || !canAttach) return;
-    let undo: (() => void) | undefined;
-    let stopped = false;
-    void (async () => {
-      try {
-        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
-        const un = await getCurrentWebview().onDragDropEvent((e) => {
-          const box = dropBox.current?.getBoundingClientRect();
-          if (e.payload.type === "leave" || !box) {
-            setDropping(false);
-            return;
-          }
-          // Physical pixels, the page's box is CSS ones.
-          const x = e.payload.position.x / devicePixelRatio;
-          const y = e.payload.position.y / devicePixelRatio;
-          const over = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
-          if (e.payload.type !== "drop") {
-            setDropping(over);
-            return;
-          }
-          setDropping(false);
-          if (over && e.payload.paths.length > 0) files.addLocalPaths(e.payload.paths);
-        });
-        if (stopped) un();
-        else undo = un;
-      } catch {
-        // No tauri here: the HTML5 drop above is the whole of it.
+    return listenNativeDragDrop((e) => {
+      const box = dropBox.current?.getBoundingClientRect();
+      if (e.payload.type === "leave" || !box) {
+        setDropping(false);
+        return;
       }
-    })();
-    return () => {
-      stopped = true;
-      undo?.();
-    };
+      // Physical pixels, the page's box is CSS ones.
+      const x = e.payload.position.x / devicePixelRatio;
+      const y = e.payload.position.y / devicePixelRatio;
+      const over = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+      if (e.payload.type !== "drop") {
+        setDropping(over);
+        return;
+      }
+      setDropping(false);
+      if (over && e.payload.paths.length > 0) files.addLocalPaths(e.payload.paths);
+    });
     // `files`' adders are fresh closures each render; the subscription
     // is per conversation, and the adders read only setters and `id`.
     // eslint-disable-next-line react-hooks/exhaustive-deps

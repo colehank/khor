@@ -8,6 +8,7 @@
 // `{ paths, x, y }`, CSS pixels): the face gate's way to drop without
 // an OS drag, which no browser can synthesize with paths in it.
 import { inApp } from "@/api";
+import { listenNativeDragDrop } from "./native-events";
 import { clearPathDrag, nativePathEnter, nativePathLeave, takeNativePath } from "./path-drag";
 
 export type WindowDrop = { paths: string[]; x: number; y: number; from?: string | null };
@@ -32,33 +33,23 @@ export function onWindowDrop(handler: (d: WindowDrop) => void): () => void {
   handlers.add(handler);
   if (handlers.size === 1) {
     let undo: (() => void) | undefined;
-    let stopped = false;
-    if (inApp) void (async () => {
-      try {
-        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
-        const un = await getCurrentWebview().onDragDropEvent((e) => {
-          const payload = e.payload;
-          if (payload.type === "enter") { nativePathEnter(payload.paths); return; }
-          if (payload.type === "leave") { nativePathLeave(); return; }
-          if (payload.type !== "drop" || !payload.position) return;
-          const source = payload.paths.length ? null : takeNativePath();
-          if (payload.paths.length) nativePathEnter(payload.paths);
-          if (!payload.paths.length && !source) return;
-          deliver({ paths: source ? [source.path] : payload.paths, from: source?.machine ?? null,
-            ...dropPoint(payload.position, navigator.platform, devicePixelRatio) });
-        });
-        if (stopped) un(); else undo = un;
-      } catch {
-        // No Tauri here after all.
-      }
-    })();
+    if (inApp) undo = listenNativeDragDrop((e) => {
+      const payload = e.payload;
+      if (payload.type === "enter") { nativePathEnter(payload.paths); return; }
+      if (payload.type === "leave") { nativePathLeave(); return; }
+      if (payload.type !== "drop" || !payload.position) return;
+      const source = payload.paths.length ? null : takeNativePath();
+      if (payload.paths.length) nativePathEnter(payload.paths);
+      if (!payload.paths.length && !source) return;
+      deliver({ paths: source ? [source.path] : payload.paths, from: source?.machine ?? null,
+        ...dropPoint(payload.position, navigator.platform, devicePixelRatio) });
+    });
     const seam = (e: Event) => {
       const d = (e as CustomEvent<WindowDrop>).detail;
       if (d && Array.isArray(d.paths)) deliver(d);
     };
     if (import.meta.env.DEV) window.addEventListener(WINDOW_DROP_EVENT, seam);
     stopListening = () => {
-      stopped = true;
       undo?.();
       clearPathDrag();
       if (import.meta.env.DEV) window.removeEventListener(WINDOW_DROP_EVENT, seam);
