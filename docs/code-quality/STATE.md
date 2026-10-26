@@ -77,7 +77,7 @@
 
 Q052 terminal current candidate01：host精确khor-host/5+首Version5，绝对整frame deadline，删Attached/versioned wrapper/Term版本降级；保当前snapshot/nomodelring/tmux/history/rendererReady/Forget/reconnect。3生产+tests 12路径，1921inputs/28双盘file，root独立源码审无确认阻断；计划23不同普通父，native_handoff仅compile，tmux无skip才记绿。runner准备但**未编译/运行/集成**，不把旧兼容测试删除当新绿。实施卡已交root，validation-plan卡另有冻结准备。
 
-完整剩余N1/05真实同步及N2、R1相关收尾/集成及R2、Q052运行、Q033真GUI→Tauri→Rust上传、Q035真实borrow lease、P1余下模块深审、P4命名/职责/错误/失效历史/工具链治理、P5最终同源App全流程；Q041剩fresh onset/远程/Linux/musl/Rust嵌入，Q045 SSH/master/远端lease依任务卡继续。物理iPhone/IME/Windowsruntime未知，不以类型/元数据冒runtime，不关闭完整目标。
+完整剩余N1/05真实同步及N2、R1相关收尾/集成及R2、Q052运行、Q033真GUI→Tauri→Rust上传、Q035真实borrow lease、P1余下模块深审、P4命名/职责/错误/失效历史/工具链治理（Q053已实测205第一方Rust格式差异且未改源；Q054本地typed IO边界待实施）、P5最终同源App全流程；Q041剩fresh onset/远程/Linux/musl/Rust嵌入，Q045 SSH/master/远端lease依任务卡继续。物理iPhone/IME/Windowsruntime未知，不以类型/元数据冒runtime，不关闭完整目标。
 
 ## 恢复入口
 
