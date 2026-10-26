@@ -23,3 +23,13 @@ use-compose-layout.ts在紧凑测量时暂保留root当前minHeight，finally恢
 补充草稿清空/缩短与宽度矩阵发现WebKit ResizeObserver warning；旧c371与minHeight候选均有（Q010-safari-transitions-baseline），不是新回归。原width reader gap>100断言不适用于文本重排变短后的几何（同一情况40仍在历史）；仅将宽度后断言改成不被拉到尾部>2，保持固定宽度时严格首段与offset。原失败报告保留，不当成产品红或绿。
 
 第二独立候选将ResizeObserver触发的测量合并到单个可取消rAF，避免在observer交付周期内改被观察root尺寸；input和React layout仍同步，minHeight修复不靠延迟。四组补充矩阵已实际通过、无pageerror；默认32/已有scroll34/types复验中。该候选还需独立提交与最终实际Safari复验。没有main合并/ship授权。
+
+
+## 固定第二候选与集成验证
+
+25c2591a→8ca3e23f的单rAF observer交付：4/4草稿/宽度（source稳定，无pageerror）、32/32默认矩阵、既有scroll34/34、types0。root在集成增加36组统一入口/CI并支持空Chromium channel、严格selector，提交d9ef30de；integrated-compose-8ca固定36/36 source稳定。
+
+同款已编译XCTest driver针对集成8ca实际前端再跑真实MobileSafari/UIKit，68.4s exit0，26指标、ACP/Khor长稿各6次gap0、reader开合锚点保持；source-before/after完全相同。run11/safari-compose-observer-final/acceptance.json。不是新整合Rust App或物理设备声明。root已停测试server，非作者hook源审交native_helpers，等待结论。
+
+
+非作者native_helpers对固定d9源码审查无阻断：Tailwind preflight border-box与临时minHeight外高契约一致、try/finally恢复/缩短无遗留、RO单rAF与cleanup取消完整，input/layout同步。未重复计作者运行，源审与现有同源证据边界已核。该Safari子项已集成并通过其范围验收，P5完整新Rust App/真机仍另记。

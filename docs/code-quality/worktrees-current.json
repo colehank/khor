@@ -1,0 +1,38 @@
+[
+  {
+    "path": "/Users/zgh/Desktop/working/khor",
+    "head": "8704a503a27b36ad58f922690de50e766f8bd485",
+    "branch": "main",
+    "status": ""
+  },
+  {
+    "path": "/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1",
+    "head": "d9ef30de33d5f6762236540d711a66268fd3f9c2",
+    "branch": "integrate/code-quality-wave1",
+    "status": ""
+  },
+  {
+    "path": "/Volumes/disk0/Khor/worktrees/current/khor-quality-native-io",
+    "head": "25c2591aa2b44ef414ec6ee37ab7228375a7eba4",
+    "branch": "fix/quality-safari-compose-range",
+    "status": ""
+  },
+  {
+    "path": "/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol",
+    "head": "013efc408efe706426d3da607bef313c6493b786",
+    "branch": "fix/quality-acp-lifecycle",
+    "status": " M crates/acp/src/lib.rs\n M crates/node/src/gui_host.rs\n?? crates/acp/src/event_fence_tests.rs\n?? crates/node/src/fixtures/acp-cancel.py\n?? crates/node/src/gui_host_cancel_tests.rs\n?? crates/node/src/gui_host_fanout.rs\n?? crates/node/src/gui_host_fanout_tests.rs\n"
+  },
+  {
+    "path": "/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery",
+    "head": "c9f2962bba44128678771e26639430fbe4cb2f5b",
+    "branch": "fix/quality-install-integrity",
+    "status": " M crates/node/src/join.rs\n M scripts/check-release-install.py\n M scripts/install.sh\n"
+  },
+  {
+    "path": "/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery",
+    "head": "d9ef30de33d5f6762236540d711a66268fd3f9c2",
+    "branch": "fix/quality-native-helper-ownership",
+    "status": ""
+  }
+]

@@ -1,82 +1,49 @@
-# 当前状态
+# 当前治理状态
 
-更新：2026-10-26，继续完整治理；尚未完成全仓目标。
+更新：2026-10-26。全仓目标继续执行，尚未完成。用户最新指令“继续”；完整范围/多智能体与压缩恢复规则仍以 [PLAN.md](PLAN.md) 为准。
 
-## 当前恢复检查点（优先于下方历史批次描述）
+## 执行边界与权威入口
 
-- 集成新增 bf559f4f/7493e8e9（ACP阶段1及独立test followup）、01646778/f21a840b（Q043 hear适配及runner），当前691bb90e（新增native-events全局门/CI）；未合并 main、未发布。精确集成后端已实跑：Node khor_agent 33过0失败6专用worker（父实际调用），once 10过，全 core 132过0失败1 benchmark忽略，source稳定；证据 integrated-c371-backend/results.json。
-- run11 同源 c371 iOS模拟器App：Q015 notification nullable契约、ACP/Khor实际UIKit键盘与历史锚点、commit第6/8文件跳转、ACP长稿收键盘、Q035 native page句柄四组均通过。borrow lease与Q033 native上传取消全链仍待；物理iPhone/IME未验。详细来源/恢复App记录见 tasks/Q-010-native-run11.md。
-- Safari独立原生键盘测试发现 Khor 长稿收键盘后的晚回跳 gap164。root已接管（native_acceptance额度中断）。真实组件Chrome/WebKit32对照中28绿/4红，唯一失败为长稿+尾部+父重绘但消息引用不变（有/无只读诊断probe均红）；不是扩大等待阈值消除故障。候选测量期间保留composer占位，32/32固定通过，同款实际Safari/UIKit 26指标与34附件通过，已提交54aa0f3f。补充发现旧版也有ResizeObserver交付周期警告，独立RO候选四组已过，默认32与既有34复验中。源码树 native-io，fix/quality-safari-compose-range，HEAD54aa0f3f，当前仅RO候选生产hook未提交。见 tasks/Q-010-safari.md。
-- Q043 hear adapter 9fd2603f + runner d4757136，overwrite-recovery树clean冻结；root独立源审暂未发现生产阻断，全Chrome/WebKit22/22 source_stable=true。真实App候选JS/native双端资源验收已过：原c371 Rust质量App+d475 JS，真实host node:woken前后台触发，9listen/9unlisten确认，全部已关闭callback实际从Map释放，8owner先全收一次、关闭4后仅另4收到第二次，无unhandled；Q043/native-candidate-02/acceptance.json。其余native helpers仍待，不标全Q043完成。
-- Q037 ACP阶段1 50f73f7f固定，host尚未接线。root复审测试追加真deadline独立触发与合作取消超过旧grace存活：真实Node acp_process 12/12、Control6/6通过。仅test followup待独立提交；gui_host test入口/host red/fixture三路径仍冻结红，不随阶段1集成。
-- 唯一Cargo/native槽当前root；74006 ACP编译已退出；7495集成ACP/Control/Pi/acp lib四组串行编译运行。浏览器32/scroll34由root独立进程运行。旧native/Safari服务器已停，用户main进程不动。当前两盘都高于5GiB。
-- Q041设计卡已保存；store_owner短暂容量错误后原模型恢复，复用旧Q033树从c371建fix/quality-install-integrity，正在独占install.sh纯函数提取a0与真实loopback夹具。未执行真实安装/镜像/SSH。
+- main `/Users/zgh/Desktop/working/khor` = `8704a503a27b36ad58f922690de50e766f8bd485`，本次现场tracked clean。本轮没有main合并/发布授权。已ship的`target/release/khor-gui`包含前端可直接启动，SHA9c3e078f…；不能用旧binary证明本轮实现。
+- 权威文档仅本目录 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-plan/docs/code-quality`（plan/code-quality）；其他树同名副本为快照。当前集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1`，HEAD **07c107f7及c9安装结构提取后续集成（以现场git为准）**。
+- 外盘资料统一在`/Volumes/disk0/Khor`，复用已有工作副本，不新建散落khor目录。内盘Git对象保存所有已提交refs；未提交外盘源另快照，不能按摘要覆盖。外盘离线先读`/Users/zgh/Library/Caches/khor-code-quality/recovery/RESUME.md`及current-code-quality-docs。
+- 旧完整批次账已移入history/STATE-before-completion-fairness-20261026.md；此前native/集成状态为历史，下面现场状态优先。
 
+## 已集成与固定验证
 
-
-## 目标与边界
-
-[PLAN.md](PLAN.md) P1–P5仍完整有效：全仓深入审查、功能修复、结构与工程治理、真实用户流程验收。用户最新指令为“继续”，不能以首批/单项通过结束目标。main、合并与发布本轮没有授权；只在独立分支集成和验收。治理在进行，旧目录整理“暂停”记录不再代表当前状态。
-
-## 权威路径与实际版本
-
-- 主仓 `/Users/zgh/Desktop/working/khor`，main `8704a503a27b36ad58f922690de50e766f8bd485`，最近核对tracked clean。上次ship的target/release/khor-gui含前端、可直接启动；SHA `9c3e078f355aa65e3f9d0137ae38548a1f2d75d21bf261528335e031ee6dbc01`。没有以它代替本轮新App验收。
-- 本文件在 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-plan/docs/code-quality`，plan/code-quality；其他worktree同名文件为快照。
-- 集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，integrate/code-quality-wave1，最新 `c37151a1ed90abc81ce7c119994912574e16163f`：Q033 GUI三提交、Q037 Pi生命周期与Windows叶、Windows CI门及Q040a弱锁回收均已集成；尚需当前整合头的完整后端/原生验收。
-- Git对象在内盘主仓`.git`；未提交外盘源码另备份。外盘 `/Volumes/disk0/Khor` 是唯一开发资料分类根，不新增散落khor*目录，复用既有worktree。
-- 恢复入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/RESUME.md`；当前文档缓存同目录current-code-quality-docs。目录迁移/内盘恢复细节见STORAGE/RECOVERY及历史STATE。
-
-## 已集成批次与证据边界
-
-| 任务 | 当前事实 |
+| 范围 | 当前事实与证据边界 |
 | --- | --- |
-| Q001A/B/C | 首轮GUI525文件/42重点、后端165文件/36关键路径盘点已做；仍非全仓深入审查。AUDIT保存后续范围。 |
-| Q010/Q011/Q013 | 首批键盘/提交跳转/Lab已集成。Q010b 093d4115在真实Tauri iOS模拟器取得ACP长稿收键盘gap164→0、实际XCUI swipe触发隐藏通过；真实reader drag历史gap460不被拉回，commit第6/8真实触摸通过。最终确切集成App与物理iPhone仍待验。 |
-| Q015 | 最小notification is-permission-granted cap已静态独立审过并集成15a4660d；真实重建App启动拒绝消失仍待验。 |
-| Q020/b/c | 自动保存回环、取消、编辑线隔离与显式覆盖已集成；模块30、正式编辑器Chrome/WebKit26通过，门已登记。 |
-| Q021/b | 已知/首次未知锁刷新失败保护集成至c3fe828b；hook20、独立App交互及精确当时双引擎全交互30通过。 |
-| Q022 | 身份原子首建e89da2e6；真实Cargo9+专用worker/64子进程通过，未声称断电目录项或Windows实跑。 |
-| Q023/b | dry-run/purge范围/指纹拒绝与严格binary owner回执集成至7251f2db；实际规则/CLI/80场景红绿及独立复验通过。 |
-| Q024 | netlab失败/空跑、移动静态/编译分层、quality CI/平台Tab门已修；GitHub实际CI结果仍待。 |
-| Q025/Q036 | FIFO真实写完成/控制屏障/独立connection shutdown/旧owner隔离，集成918127ea；原core123过2失败1bench忽略后，Q036 canonical缓存路径与陈旧scheduler测试已修46d5d0eb，作者117过0失败1bench（不含Q025新增8）。最终整合全core仍待。 |
-| Q030/b/Q031 | 流式凭据裁剪、一次redact、live receipt与JSONRPC/REST恢复集成至3f73f8ec/908d60e4；真实单组/worker与独立审查过，不直接代替当前集成全组。 |
-| Q032 | web输入预算/断开固定buffer集成0e667094；真实Web26、vendor5过，不声称慢连接deadline。 |
-| Q033 backend | 21994830→dd15b9d1，3d0dc41f→3d10bbaf；token guard/取消receipt/SendCommitted，HTTP null仅admission。真实core15、实际host gated链4、NodeGUI3、terminal2、native参数2均过并独立审。旧host未commit上传只能退役attachment后显式重连；不谎称已commit取消。 |
-| Q033 GUI | 3f2b8b18/8da0d063/7746378f→e56eef64/87674beb/bd58566a。owner/reader/token关联恢复原稿/附件，未知不自动重放；独立复审先抓4类过期retry真红、又抓旧cancel撤新notice真红，均独立复验绿。精确集成85a78fe9生成成功、Chrome/WebKit56/56、types/unit/gates101脚本94条、旧poll22/22通过且指纹匹配。门/CI85a78fe9；真实GUI/native链仍待。 |
-| Q034 | 轮询失败退避、前台恢复、gone停止d5ff206c，门4822e64b；作者22/22与独立6场景过；最新Q033集成poll22也过。 |
-| Q035 | 迟到page/borrow按最新owner释放、tab串行操作与8活页上限35e12364；selector与CI channel跟进37f8c54f/cc3a3295。module10、两引擎组件8通过，真正native资源句柄计数仍待。 |
-| Q038 | 有预算event reader与固定stderr drain作者29fcad93→c5ab273d；std7/7、独立11/11、真实agent25+2专用worker、8MiB真实sidecar通过。不代表全RSS/取消期限已解决。 |
-| Q037 Pi部分 | Windows作者b51a7d9c→873a6304；root7fa059ba→32e227f1。独立监督首Stop10s、串行stdin、可取消pipe、WNOWAIT归属anchor、确认wait再终态、Execution RAII。真实Configure/Prompt/Stop两种不合作sidecar及下一轮成功、重复Stop/后代/尾缓冲/panic/早停等最终agent33过0失败6专用workers（父实际执行），固定source；Windows公共层+叶+harness交叉check过，8组Windows runtime尚未运行，CI f186d340已提供。完整Q037仍有MCP/远端子任务同步阻塞与普通ACP取消未解决，不能标done。 |
+| Q010/11、Q015 | c371同源run11真正Tauri iOS模拟器已验证nullable notification query、ACP/Khor实际UIKit键盘与历史锚点、commit第6/8跳转、ACP长稿真实收键盘、Q035 native page句柄4组。tasks/Q-010-native-run11.md含来源/恢复App收据；物理iPhone/IME未验。 |
+| Q010 Safari后续 | 真MobileSafari旧c371长稿晚gap164红。测高暂保留composer占位54aa→4678，RO交付周期写尺寸警告（旧版也有）单rAF调度25c→8ca，门d9。实际集成8ca前端的同款编译driver无重建通过26份指标：ACP/Khor长稿各6次settled gap0，reader键盘开合锚点保留。源码稳定，原始截图/指标在run11/safari-compose-observer-final。组件36/36、既有scroll34、types通过；浏览器不冒充真机。native_helpers已完成固定d9独立源审无阻断；尚未重建整合Rust App。 |
+| Q020/b/c、Q021/b | 自动保存、冲突与锁刷新治理均已分批集成/独立审，相关模块和正式GUI双引擎通过；详见对应任务卡。 |
+| Q022、Q023/b | 身份原子首建、purge范围与真实binary owner验证已集成，真实进程/CLI/scratch边界通过；不声称断电目录项或Windows运行。 |
+| Q025/Q036、Q032、Q040 | FIFO写完成/连接owner、web输入预算、canonical cache与once弱锁回收已集成。精确c371后端：agent33/0fail/6专用worker（父实际执行）、once10、core132/0fail/1benchmark ignore，source稳定；integrated-c371-backend。不是所有慢连接/收据生命周期已审完。 |
+| Q030/b/Q031/Q038 | 凭据流式裁剪、A2A context、事件读取预算与stderr drain已集成/单独审，证据在各卡。仍有同步MCP/远端取消阻塞未闭环。 |
+| Q033/Q034/Q035 | 上传取消receipt与GUI owner恢复、轮询退避/gone、native page owner/LRU已集成。GUI56/56、poll22/22；native直接page句柄4/4。Q033真正GUI→Rust上传取消及Q035 borrow lease仍待，不用HTTP mock冒充。 |
+| Q037 Pi与ACP阶段1 | Pi监督进程/Windows叶、RAII、operation代次与owned ACP transport已集成。ACP50f→bf559，test013→7493；精确691集成Node acp12、Control6、Pi29过5专用worker、ACP lib9均过/source稳定（integrated-acp-native-events）。共享process完整组与conversation后续仍应补入最终集成，不把这四组当全Q037完成。Windows8组仅交叉编译+CI配置，未实跑。 |
+| Q043 hear | adapter9fd→016467、runnerd475→f21a、门691。非作者源审/独立双引擎22/22；实际原c371 Rust质量App+d475候选JS的真实node:woken两次前后台转换：关闭4/8后只剩4收新事件，9listen/9unlisten确认且9callback均从原Map释放，无unhandled。已进入集成，d9精确GUI回归正在收口；剩余helpers下一行单独处理。 |
 
-旧完整整合检查点ea0e2c57的types/unit/lock20/mobile/static/std11/overwrite26/scroll34等保留在证据，不能当后续改动头已全通过。单次setup错误、缺browser cache、缺本地agent依赖和source变化运行均保留并不冒充业务绿；具体见单卡。
+已有P1批次不是全仓深入审查完成。覆盖清单见AUDIT，格式/大入口/构建治理与最终全流程仍在完整目标内。
 
-## 当前所有者与下一步
+## 当前所有者、未提交内容与下一步
 
-| 所有者 | 工作副本 / 当前任务 | 下一步 |
+| 所有者 | 当前树与唯一写入边界 | 工作与下一步 |
 | --- | --- | --- |
-| root | wave1 c371集成；native-io fix/quality-safari-compose-range；agent-protocol fix/quality-acp-lifecycle；overwrite-recovery fix/quality-native-event-ownership | 接管Safari/native QA与ACP followup，当前精确版本验证后分批集成；更新总账。 |
-| native_acceptance | 执行额度中断，已停止；此前run11来源与日志完整保留 | root接管，不再假设其仍运行。 |
-| store_owner | Q043作者 d475 clean冻结；Q041待确认复用路径 | 只准备Q041 a+b改动范围与本地fixture，不启动Cargo/native或真实外部写入。 |
+| root | wave1 d9ef30de；native-io已保留fix/quality-safari-compose-range@25c，当前新fix/quality-sync-chunked HEAD9c61993e（d9+Q039研究fcd→9c），尚无生产修改；中央STATE与root任务卡 | 集成验证、独立源审、资源与恢复总账。Q010新回归已登记103脚本/96入口；等作者下一批明确冻结再集成。 |
+| fanout_owner | 外盘agent-protocol fix/quality-acp-lifecycle HEAD013efc40；独占gui_host.rs、gui_host_cancel_tests.rs、fixture/acp-cancel.py、2个新Fanout文件及新ACP fence窄接口/测试 | root最初managed host候选真实不合作Stop1/1绿（10.21s，Gone立即ESRCH+重开下一轮）。独立审发现Control中Replay误退役、completion仍被notes/ops饿死，现接手修。真实RPC响应即ACK本Operation，显式forwarder barrier+有限notes fence再发UI终态；Abandoned不ACK。ACP实际forwarder barrier4/4与host首批7/7通过。新Fanout曾发现合法16,384小History快读者被128frame队列退役真红，已改实际capacity Waker+独立有限publisher，std10/10、完整host10/10（47.54s、2专用worker由父实际执行）固定源通过；partial取消明确ControlResult(cancelled)→HistoryEnd，close join publisher，SDK响应后live Note不再当history吞。尚未提交、待root非作者复审/兼容组/集成。此树尚无阶段2提交，不得把旧三路径视为仍冻结不可改；写权已交接。 |
+| store_owner | 内盘recovery/khor-quality-store-owner-recovery，fix/quality-install-integrity HEADc9f2962b；install/onset/onset-lib/join/mirror-sync/site deploy allowlist及Q041卡 | a0纯函数提取c9已固定，root独立7/7与源审。a1缺/错/严格SHA等真红→shell13/13，join/resolver/onset仍写中未冻结未Cargo；loader函数间顶层命令拒绝缺口已要求补。只scratch/loopback，禁止真实HOME/install/SSH/mirror/ship。 |
+| native_helpers | 内盘recovery/khor-quality-overwrite-recovery；保留d475旧分支，从d9建fix/quality-native-helper-ownership | Q043两笔b8ffbc44/adb868e0已交付clean，38/38+hear22/22+poll4+terminal/types、共享consumer真红→绿；root两次源审无阻断，已分别进入集成，root独立集成38/38 source稳定，global门07c107f7已登记104脚本/97入口。实际c371 Rust质量App+集成helpers JS原生7listen/7unlisten确认，Any/Window(main)/Webview(main)target准确、callback真实释放、child WK title实际交付，page_steps Some→null，无unhandled；OS drag/windowclose及fullscreen值查询仍未验。现转Q039-A：在root native-io只新增真实Node doc失败隔离test，root独占link.rs，待真红后修。 |
+| native_acceptance | 执行额度中断，已停止 | 已有run11证据完整，root已接管。不要等待或假设其仍运行。 |
 
-Q039研究fcd分支保留 | Q037 ACP真实host收到cancel后15s仍不退出已真红；获准阶段1Node重定位共享进程+generation/永久期限分离+bounded async桥+ACP窄lifecycle接口，不先接host新行为。阶段1提交不能把尚红的test-only host路径带入集成；Cargo等run11释放。Q039生产协议仍未改。 |
-| store_owner | Q033 GUI作者内盘store-owner-recovery HEAD7746378f clean；Q037额外测试已移交root | Q041构建/安装/镜像审计交付；当前只定a+b immutable release/checksum/纯fetch-verify-place契约与夹具方案，尚不改生产或执行install/ship/同步。 |
+## 资源与验证纪律
 
-Q039研究fcd0ad29：真实25.4MB合法差集超过4MiB，重复/重启不收敛，反向小更新与epoch正常；研究红不登记生产绿。分片完整blob、能力确认、VV/flush/ACK、spool/并发预算方案在卡；chunk固定不代表全内存有界，生产实现待接口/资源决策。
+- 唯一Cargo/native槽：root最终Safari已exit0且server停；当前优先授fanout_owner阶段2首个真实Cargo验证，启动前回报固定源码/命令/PGID。store_owner尚未申请。jobs2，复用quality-target；主发布khor-target从未清理或写入。
+- 外盘风扇坏、SMART温度不可读，用户已允许继续。两盘可用必须>=5GiB；低于线/掉盘/连续3I/O错误仅停自己的PGID。2026-10-26曾4.8GiB触线已暂停新编译；1280闭合single-link第一方rcgu按manifest清（保留6个archive/binary元数据不变），再清52轮停跑Vite重复prebundle cache实际释放约2.6GB。raw日志/source/截图/xcresult/App/Rust质量archives/binaries保留。后续又触4.28GiB：定位未统一CARGO_TARGET_DIR的wave1/target为21小时前遗留独立generator缓存，无open handles/compilers且全ignored，manifest后移除12,473文件，实际4,406,730,752→7,136,890,880B。不是主发布/quality-target/App/source；任何governance gen也须显式共用CARGO_TARGET_DIR避免再长一套。未断言所有空间增长都由此造成。凭据不进证据。
+- 证据根 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`。已停止的quality App/Safari/23840/23841不得误作活动；模拟器FE04AC7C-B375-4F2E-AE7E-B6F8F5608947保留booted，独立bundle io.github.colehank.khor.quality；用户主App/常驻服务不动。
+- root只在确切HEAD/dirty指纹下计绿。原始失败和setup错误保留，不放宽阈值；图谱旧索引/0 affected flow不代替现场。任何源码变化后按影响复验。
 
-Q040只回收互斥资源：全局弱表在同一std表锁下retain/upgrade/create，Tokio queued future/owned guard持强Arc。必须先验证不能同token双活锁；不清持久receipt，不用LRU破坏未知重试。
+## 明确仍开放
 
-Q041确认代码条件缺陷：镜像第二次API失败可被空while吞掉仍写VERSION；两次latest/逐文件推送混代；install/join未消费checksum且镜像忽略明确版本；onset默认build可能漏Pi bundle。完整卡给出a安装完整性、b不可变release descriptor事务、c构建前置/manifest、d工具固定、e native来源、f结构维护；当前尚未修复，未声称生产已损坏。
+Q037 ACP阶段2与同步MCP/远端取消；Q039合法25.4MB差集超过4MiB反复/重启不收敛（研究fcd，生产未改，不能只抬cap）；Q041不可变release/descriptor/checksum以及构建工具/制品来源；Q043其余native helpers；Q033真实native上传全链、Q035 borrow lease、Windows runtime/物理iPhone/IME/辅助技术；其余模块深审、P4风格/职责/错误约定与P5精确整合全用户流程。无main合并/发布授权。
 
-## 真实App与资源
-
-- 证据根 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`；Q010-native-20261025/ACCEPTANCE.md是实际App运行账，旧单卡前半暂停记录仅历史。模拟器FE04AC7C-B375-4F2E-AE7E-B6F8F5608947与独立bundle io.github.colehank.khor.quality，当前停止；不得覆盖用户App。
-- 下一App须用当前同源静态lib+独立生成工程，保留原c3/lib/App；pure-origin23840 fixture、实际UIKit keyboard/XCUI touch与原生能力单独计，WebKit浏览器不冒充原生。物理iPhone/Chinese IME/硬件Escape未完成。
-- 一个Cargo/native槽，当前root持有；不并发Cargo，jobs=2，quality-target复用。主发布khor-target不写不清。
-- 外置盒风扇坏、USB SMART温度不可读；用户明确继续。第二次审计清16310个闭合单链接对象，保留25个archive/executable并核元数据；外盘7,373,307,904→11,322,572,800B（约10.5GiB），内盘约10.4GiB（每次启动前核对）。监测掉盘/连续3I/O错误/任一盘<5GiB只停本构建PGID。曾依manifest清旧single-link first-party rcgu约5.25GiB，16现存rlib/测试二进制保留并核inode/size/mtime。
-- WebKit cache外盘khor-playwright已存在；系统Chrome默认；CI空channel用内盘既有Chromium验证过。无headless shell的外盘cache那次不计功能失败，未下载浏览器。
-
-## 仍未完成与恢复
-
-全仓剩余模块深审、普通ACP/同步大差集/once及相邻owner、工程与发布链重构、工具与制品来源、真正原生/物理设备/辅助技术及最终整合用户流程都未结束。完成标准不缩水。每次压缩后先当前用户指令→STATE/PLAN/任务卡→实际branch/HEAD/diff/进程→固定source证据；图谱旧索引/历史摘要不能代替现场。
-
-本次重写前状态保留history/STATE-before-process-integration-20261025.md；更早目录/暂停历史见history索引及单任务卡。root维护此文件；任务作者只写自己的任务卡。
+压缩后恢复顺序：用户指令→本STATE/PLAN/任务卡→实际worktree HEAD/diff/agent/进程→源指纹与真实证据。不能覆盖原盘未提交内容；各作者仅写自己卡，root维护总账与最终集成。
