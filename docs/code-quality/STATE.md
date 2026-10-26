@@ -1,6 +1,18 @@
 # 当前状态
 
-更新：2026-10-25，继续完整治理；尚未完成全仓目标。
+更新：2026-10-26，继续完整治理；尚未完成全仓目标。
+
+## 当前恢复检查点（优先于下方历史批次描述）
+
+- 集成新增 bf559f4f/7493e8e9（ACP阶段1及独立test followup）、01646778/f21a840b（Q043 hear适配及runner），当前691bb90e（新增native-events全局门/CI）；未合并 main、未发布。精确集成后端已实跑：Node khor_agent 33过0失败6专用worker（父实际调用），once 10过，全 core 132过0失败1 benchmark忽略，source稳定；证据 integrated-c371-backend/results.json。
+- run11 同源 c371 iOS模拟器App：Q015 notification nullable契约、ACP/Khor实际UIKit键盘与历史锚点、commit第6/8文件跳转、ACP长稿收键盘、Q035 native page句柄四组均通过。borrow lease与Q033 native上传取消全链仍待；物理iPhone/IME未验。详细来源/恢复App记录见 tasks/Q-010-native-run11.md。
+- Safari独立原生键盘测试发现 Khor 长稿收键盘后的晚回跳 gap164。root已接管（native_acceptance额度中断）。真实组件Chrome/WebKit32对照中28绿/4红，唯一失败为长稿+尾部+父重绘但消息引用不变（有/无只读诊断probe均红）；不是扩大等待阈值消除故障。候选测量期间保留composer占位，32/32固定通过，同款实际Safari/UIKit 26指标与34附件通过，已提交54aa0f3f。补充发现旧版也有ResizeObserver交付周期警告，独立RO候选四组已过，默认32与既有34复验中。源码树 native-io，fix/quality-safari-compose-range，HEAD54aa0f3f，当前仅RO候选生产hook未提交。见 tasks/Q-010-safari.md。
+- Q043 hear adapter 9fd2603f + runner d4757136，overwrite-recovery树clean冻结；root独立源审暂未发现生产阻断，全Chrome/WebKit22/22 source_stable=true。真实App候选JS/native双端资源验收已过：原c371 Rust质量App+d475 JS，真实host node:woken前后台触发，9listen/9unlisten确认，全部已关闭callback实际从Map释放，8owner先全收一次、关闭4后仅另4收到第二次，无unhandled；Q043/native-candidate-02/acceptance.json。其余native helpers仍待，不标全Q043完成。
+- Q037 ACP阶段1 50f73f7f固定，host尚未接线。root复审测试追加真deadline独立触发与合作取消超过旧grace存活：真实Node acp_process 12/12、Control6/6通过。仅test followup待独立提交；gui_host test入口/host red/fixture三路径仍冻结红，不随阶段1集成。
+- 唯一Cargo/native槽当前root；74006 ACP编译已退出；7495集成ACP/Control/Pi/acp lib四组串行编译运行。浏览器32/scroll34由root独立进程运行。旧native/Safari服务器已停，用户main进程不动。当前两盘都高于5GiB。
+- Q041设计卡已保存；store_owner短暂容量错误后原模型恢复，复用旧Q033树从c371建fix/quality-install-integrity，正在独占install.sh纯函数提取a0与真实loopback夹具。未执行真实安装/镜像/SSH。
+
+
 
 ## 目标与边界
 
@@ -42,9 +54,11 @@
 
 | 所有者 | 工作副本 / 当前任务 | 下一步 |
 | --- | --- | --- |
-| root | wave1集成；native-io fix/quality-agent-cancel-deadline HEAD7fa059ba clean | 当前integrated Node/core及真实iOS App来源/通知/滚动/commit/资源验证；处理跨任务接口，维护总账。 |
-| native_acceptance | 内盘recovery/khor-quality-web-input-recovery，fix/quality-once-lock-lifetime，base85a78fe9 | Q040a作者26abd267→集成c37151a1，真实7过3红→10/10，root源审通过。当前转run11真实iOS App，唯一Cargo/native槽已授，独立bundle/原c3保留，冻结c37151a1。 |
-| agent_redaction | 外盘agent-protocol，fix/quality-acp-lifecycle基于f186d340，Q039研究fcd分支保留 | Q037 ACP真实host收到cancel后15s仍不退出已真红；获准阶段1Node重定位共享进程+generation/永久期限分离+bounded async桥+ACP窄lifecycle接口，不先接host新行为。阶段1提交不能把尚红的test-only host路径带入集成；Cargo等run11释放。Q039生产协议仍未改。 |
+| root | wave1 c371集成；native-io fix/quality-safari-compose-range；agent-protocol fix/quality-acp-lifecycle；overwrite-recovery fix/quality-native-event-ownership | 接管Safari/native QA与ACP followup，当前精确版本验证后分批集成；更新总账。 |
+| native_acceptance | 执行额度中断，已停止；此前run11来源与日志完整保留 | root接管，不再假设其仍运行。 |
+| store_owner | Q043作者 d475 clean冻结；Q041待确认复用路径 | 只准备Q041 a+b改动范围与本地fixture，不启动Cargo/native或真实外部写入。 |
+
+Q039研究fcd分支保留 | Q037 ACP真实host收到cancel后15s仍不退出已真红；获准阶段1Node重定位共享进程+generation/永久期限分离+bounded async桥+ACP窄lifecycle接口，不先接host新行为。阶段1提交不能把尚红的test-only host路径带入集成；Cargo等run11释放。Q039生产协议仍未改。 |
 | store_owner | Q033 GUI作者内盘store-owner-recovery HEAD7746378f clean；Q037额外测试已移交root | Q041构建/安装/镜像审计交付；当前只定a+b immutable release/checksum/纯fetch-verify-place契约与夹具方案，尚不改生产或执行install/ship/同步。 |
 
 Q039研究fcd0ad29：真实25.4MB合法差集超过4MiB，重复/重启不收敛，反向小更新与epoch正常；研究红不登记生产绿。分片完整blob、能力确认、VV/flush/ACK、spool/并发预算方案在卡；chunk固定不代表全内存有界，生产实现待接口/资源决策。
@@ -57,7 +71,7 @@ Q041确认代码条件缺陷：镜像第二次API失败可被空while吞掉仍�
 
 - 证据根 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`；Q010-native-20261025/ACCEPTANCE.md是实际App运行账，旧单卡前半暂停记录仅历史。模拟器FE04AC7C-B375-4F2E-AE7E-B6F8F5608947与独立bundle io.github.colehank.khor.quality，当前停止；不得覆盖用户App。
 - 下一App须用当前同源静态lib+独立生成工程，保留原c3/lib/App；pure-origin23840 fixture、实际UIKit keyboard/XCUI touch与原生能力单独计，WebKit浏览器不冒充原生。物理iPhone/Chinese IME/硬件Escape未完成。
-- 一个Cargo/native槽，当前run11 native_acceptance持有；root不并发Cargo，jobs=2，quality-target复用。主发布khor-target不写不清。
+- 一个Cargo/native槽，当前root持有；不并发Cargo，jobs=2，quality-target复用。主发布khor-target不写不清。
 - 外置盒风扇坏、USB SMART温度不可读；用户明确继续。第二次审计清16310个闭合单链接对象，保留25个archive/executable并核元数据；外盘7,373,307,904→11,322,572,800B（约10.5GiB），内盘约10.4GiB（每次启动前核对）。监测掉盘/连续3I/O错误/任一盘<5GiB只停本构建PGID。曾依manifest清旧single-link first-party rcgu约5.25GiB，16现存rlib/测试二进制保留并核inode/size/mtime。
 - WebKit cache外盘khor-playwright已存在；系统Chrome默认；CI空channel用内盘既有Chromium验证过。无headless shell的外盘cache那次不计功能失败，未下载浏览器。
 
