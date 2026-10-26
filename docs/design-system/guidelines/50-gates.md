@@ -783,3 +783,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 
 `npm run scroll-compose`：真实SessionScreen/Composer/useChatScroll与样式，Chrome/WebKit共36组检查稳定/更新消息引用的父重绘、长短草稿、阅读锚点、清空与宽度变化；测量不得缩小消息scroll range，不得遗留inline min-height或ResizeObserver错误。`COMPOSE_OUT`保存逐帧/源指纹（默认独立临时目录）；`COMPOSE_SCENARIOS=parent|transitions|all`选择32/4/36组，`COMPOSE_ENGINES`选引擎，非法选择拒绝。加入test:interaction；浏览器组件不冒充UIKit/Safari真实系统键盘验收。
+
+
+`npm run native-helpers`：真实锁定SDK Window/Webview/PhysicalPosition/CloseRequestedEvent与owned adapter，双引擎38组检查精确target、页面onReady/过滤、窗口关闭prevent/异步owner退役、fullscreen在途查询、四drag订阅形状/部分失败/回滚、throwing peer。纳入test:interaction；`NATIVE_HELPERS_CHECK_DIR`保存源/资源报告，`NATIVE_HELPERS_SCENARIOS`支持严格选择。terminal-drop原业务门另验共享consumer异常隔离且诊断不包含路径。浏览器native runtime为真实SDK+可控IPC时序，OS窗口/拖放/真实App另验。

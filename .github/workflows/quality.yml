@@ -66,6 +66,7 @@ jobs:
           CHAT_POLL_WEBKIT: '1'
           CHAT_CANCEL_WEBKIT: '1'
           COMPOSE_OUT: ${{ runner.temp }}/quality-compose
+          NATIVE_HELPERS_CHECK_DIR: ${{ runner.temp }}/quality-native-helpers
           NATIVE_EVENTS_CHECK_DIR: ${{ runner.temp }}/quality-native-events
           CHAT_CANCEL_CHECK_DIR: ${{ runner.temp }}/quality-chat-cancel
           PAGE_RETENTION_UI_OUT: ${{ runner.temp }}/quality-pages
@@ -85,6 +86,7 @@ jobs:
             ${{ runner.temp }}/quality-chat-cancel
             ${{ runner.temp }}/quality-pages
             ${{ runner.temp }}/quality-native-events
+            ${{ runner.temp }}/quality-native-helpers
             ${{ runner.temp }}/quality-compose
           if-no-files-found: warn
 
