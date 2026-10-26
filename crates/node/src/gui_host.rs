@@ -179,19 +179,17 @@ const GUI_GREETING: &str = "khor-gui/1";
 
 pub struct Attached {
     pub stream: TcpStream,
-    pub upload_cancel: bool,
 }
 
-/// GUI capabilities use their own greeting. A terminal version greeting would
-/// make existing clients send ClientOp::Version on a GuiOp connection.
+/// GUI and terminal connections have distinct greetings and frame protocols.
 pub fn connect_at(addr: &str, cookie: &str) -> Result<Attached, String> {
     let (stream, welcome) = crate::host::connect_welcomed(addr, cookie, 0, 0)?;
+    if welcome.why != GUI_GREETING {
+        return Err(msg::host_gui_protocol().into());
+    }
     let _ = stream.set_read_timeout(None);
     let _ = stream.set_write_timeout(None);
-    Ok(Attached {
-        stream,
-        upload_cancel: welcome.why == GUI_GREETING,
-    })
+    Ok(Attached { stream })
 }
 
 pub fn connect(dir: &std::path::Path) -> Result<Attached, String> {

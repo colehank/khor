@@ -28,7 +28,7 @@ struct Fixture {
     release: mpsc::Sender<()>,
 }
 impl Fixture {
-    fn new(legacy: bool) -> Self {
+    fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
             "khor-upload-{}",
             khor_node::link::fresh_hex().unwrap()
@@ -83,10 +83,7 @@ impl Fixture {
                             };
                             let mut server = TcpStream::connect(upstream).unwrap();
                             write_frame(&mut server, &hello).unwrap();
-                            let mut welcome: Welcome = read_frame(&mut server).unwrap();
-                            if legacy {
-                                welcome.why.clear();
-                            }
+                            let welcome: Welcome = read_frame(&mut server).unwrap();
                             write_frame(&mut client, &welcome).unwrap();
                             let mut notes = server.try_clone().unwrap();
                             let mut back = client.try_clone().unwrap();
@@ -180,8 +177,8 @@ impl Drop for Fixture {
         let _ = self.release.send(());
         let _ = chat::chat_leave(&self.id);
         if let Some(host) = self.host.take() {
-            if let Ok(mut stream) = host::connect_at(&self.addr, &self.cookie, 0, 0) {
-                let _ = write_frame(&mut stream, &GuiOp::Close);
+            if let Ok(mut attached) = khor_node::gui_host::connect_at(&self.addr, &self.cookie) {
+                let _ = write_frame(&mut attached.stream, &GuiOp::Close);
             }
             let result = host.join();
             if std::thread::panicking() {
@@ -197,8 +194,8 @@ impl Drop for Fixture {
     }
 }
 
-fn cancel_upload(legacy: bool) {
-    let fixture = Fixture::new(legacy);
+fn cancel_upload() {
+    let fixture = Fixture::new();
     fixture.settings();
     let turn = chat::submit_say_with_token(
         &fixture.id,
@@ -216,9 +213,9 @@ fn cancel_upload(legacy: bool) {
     fixture.release.send(()).unwrap();
     stop.wait().unwrap();
     assert!(turn.wait().is_err());
-    fixture.until(|frame|matches!(frame,ChatFrame::SendCancelled{token:Some(token),reconnect} if token=="draft-1" && *reconnect==legacy));
+    fixture.until(|frame|matches!(frame,ChatFrame::SendCancelled{token:Some(token),reconnect} if token=="draft-1" && !*reconnect));
     let batch = chat::chat_poll(&fixture.id, 0).unwrap();
-    assert_eq!(batch.gone, legacy);
+    assert!(!batch.gone);
     assert!(
         !batch
             .frames
@@ -233,11 +230,6 @@ fn cancel_upload(legacy: bool) {
             .any(|frame| matches!(frame, ChatFrame::Unsent { .. }))
     );
     assert_eq!(fixture.prompt_count(), 0);
-    if legacy {
-        chat::chat_leave(&fixture.id).unwrap();
-        assert!(chat::chat_open(&fixture.root, &fixture.id).unwrap());
-        fixture.until(|frame|matches!(frame,ChatFrame::Settings{settings} if settings["modes"]["currentModeId"]=="bold" && settings["options"][0]["currentValue"]=="two"));
-    }
     let next = chat::submit_say_with_token(
         &fixture.id,
         "fresh turn".into(),
@@ -251,29 +243,27 @@ fn cancel_upload(legacy: bool) {
     assert_eq!(fixture.prompt_count(), 1);
     assert_eq!(
         fixture.accepted.load(Ordering::Relaxed),
-        if legacy { 2 } else { 1 },
-        "new host must keep the original connection; legacy uses explicit reconnect"
+        1,
+        "cancelling an upload must keep the original connection"
     );
 }
 #[test]
-fn new_host_cancels_upload_and_next_turn_uses_the_same_connection() {
-    cancel_upload(false)
-}
-#[test]
-fn legacy_greeting_retires_only_the_upload_attachment_and_explicit_reconnect_preserves_settings() {
-    cancel_upload(true)
+fn cancelling_an_upload_keeps_the_same_connection_for_the_next_turn() {
+    cancel_upload()
 }
 
 #[test]
-fn old_client_upload_stop_keeps_the_new_host_socket_usable() {
-    let fixture = Fixture::new(false);
-    let mut client = host::connect_at(&fixture.addr, &fixture.cookie, 0, 0).unwrap();
+fn residual_upload_parts_cannot_revive_a_stopped_turn_on_the_same_socket() {
+    let fixture = Fixture::new();
+    let mut client = khor_node::gui_host::connect_at(&fixture.addr, &fixture.cookie)
+        .unwrap()
+        .stream;
     client
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
     for split in [true, false] {
         let bytes =
-            khor_node::proto::encode(&GuiOp::Say("cancelled legacy upload".into())).unwrap();
+            khor_node::proto::encode(&GuiOp::Say("cancelled residual upload".into())).unwrap();
         let at = if split { bytes.len() / 2 } else { bytes.len() };
         write_frame(&mut client, &GuiOp::Part(bytes[..at].to_vec().into())).unwrap();
         write_frame(&mut client, &GuiOp::Stop).unwrap();
@@ -287,7 +277,7 @@ fn old_client_upload_stop_keeps_the_new_host_socket_usable() {
                 break;
             }
         }
-        write_frame(&mut client, &GuiOp::Say("fresh legacy turn".into())).unwrap();
+        write_frame(&mut client, &GuiOp::Say("fresh turn".into())).unwrap();
         loop {
             if let khor_node::gui_host::GuiNote::Ask { ask, options, .. } =
                 read_frame(&mut client).unwrap()
@@ -313,36 +303,34 @@ fn old_client_upload_stop_keeps_the_new_host_socket_usable() {
     assert_eq!(
         fixture.prompt_count(),
         2,
-        "cancelled legacy uploads must not reach ACP"
+        "cancelled residual uploads must not reach ACP"
     );
 }
 
 #[test]
 fn a_committed_small_turn_uses_agent_stop_and_keeps_the_attachment() {
-    for legacy in [false, true] {
-        let fixture = Fixture::new(legacy);
-        chat::submit_say_with_token(
-            &fixture.id,
-            "already committed".into(),
-            vec![],
-            vec![],
-            Some("committed".into()),
-        )
-        .unwrap()
-        .wait()
-        .unwrap();
-        fixture.until(|frame| matches!(frame, ChatFrame::Ask { .. }));
-        chat::chat_stop(&fixture.id).unwrap();
-        fixture.until(|frame| matches!(frame, ChatFrame::Turn { stop } if stop == "Cancelled"));
-        let batch = chat::chat_poll(&fixture.id, 0).unwrap();
-        assert!(!batch.gone);
-        assert!(
-            !batch
-                .frames
-                .iter()
-                .any(|frame| matches!(frame, ChatFrame::SendCancelled { .. }))
-        );
-        assert_eq!(fixture.prompt_count(), 1);
-        assert_eq!(fixture.accepted.load(Ordering::Relaxed), 1);
-    }
+    let fixture = Fixture::new();
+    chat::submit_say_with_token(
+        &fixture.id,
+        "already committed".into(),
+        vec![],
+        vec![],
+        Some("committed".into()),
+    )
+    .unwrap()
+    .wait()
+    .unwrap();
+    fixture.until(|frame| matches!(frame, ChatFrame::Ask { .. }));
+    chat::chat_stop(&fixture.id).unwrap();
+    fixture.until(|frame| matches!(frame, ChatFrame::Turn { stop } if stop == "Cancelled"));
+    let batch = chat::chat_poll(&fixture.id, 0).unwrap();
+    assert!(!batch.gone);
+    assert!(
+        !batch
+            .frames
+            .iter()
+            .any(|frame| matches!(frame, ChatFrame::SendCancelled { .. }))
+    );
+    assert_eq!(fixture.prompt_count(), 1);
+    assert_eq!(fixture.accepted.load(Ordering::Relaxed), 1);
 }

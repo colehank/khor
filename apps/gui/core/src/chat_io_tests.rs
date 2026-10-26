@@ -24,7 +24,6 @@ impl Attached {
             commands: Default::default(),
             turns: Default::default(),
             sends: Default::default(),
-            upload_cancel: AtomicBool::new(true),
             frames: Mutex::new(Frames::default()),
             gone: AtomicBool::new(false),
             stall: Mutex::new(None),

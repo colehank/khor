@@ -1462,6 +1462,7 @@ host-file-garbled = "Host record is garbled: {0}"
 # handshake's time (item 36): stopped, wedged, or a far pipe that went
 # quiet. Said instead of the socket's own errno ("os error 35").
 host-silent = "The host did not answer for {0} s"
+host-gui-protocol = "The session host protocol does not match"
 no-frame = "Can't read a frame: {0}"
 frame-too-big = "Frame too large: {0}"
 # A machine asked to watch the folders a tree has open, that cannot

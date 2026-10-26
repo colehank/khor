@@ -2224,6 +2224,7 @@ host-file-garbled = "无法解析宿主记录：{0}"
 # handshake's time (item 36): stopped, wedged, or a far pipe that went
 # quiet. Said instead of the socket's own errno (「os error 35」).
 host-silent = "主机 {0} 秒没有应答"
+host-gui-protocol = "会话宿主协议不匹配"
 no-frame = "无法读取帧：{0}"
 frame-too-big = "帧超限：{0}"
 # A machine asked to watch the folders a tree has open, that cannot

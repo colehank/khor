@@ -76,7 +76,6 @@ impl Sending {
 pub(super) enum StopAction {
     Local,
     Written,
-    Disconnected,
 }
 
 #[derive(Default)]

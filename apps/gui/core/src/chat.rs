@@ -272,7 +272,6 @@ struct Chat {
     commands: crate::command_queue::CommandQueue,
     turns: crate::command_queue::CommandQueue,
     sends: Mutex<Vec<std::sync::Weak<Sending>>>,
-    upload_cancel: AtomicBool,
     frames: Mutex<Frames>,
     gone: AtomicBool,
     /// Between a far pipe ending and the next one ([`ChatBatch::stall`]).
@@ -444,7 +443,6 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         commands: Default::default(),
         turns: Default::default(),
         sends: Default::default(),
-        upload_cancel: AtomicBool::new(attached.upload_cancel),
         frames: Mutex::new(Frames::default()),
         gone: AtomicBool::new(false),
         stall: Mutex::new(None),
@@ -490,7 +488,6 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
                 &reader.left,
                 |addr, cookie| {
                     let attached = khor_node::gui_host::connect_at(addr, cookie)?;
-                    reader.upload_cancel.store(attached.upload_cancel, Ordering::Relaxed);
                     Ok(attached.stream)
                 },
                 told,
@@ -762,7 +759,6 @@ fn send_turn(
                 retire_cancelled_upload(chat);
                 true
             }
-            Ok(StopAction::Disconnected) => true,
             _ => false,
         };
         cancelled_notice(chat, sending, reconnect);
@@ -851,21 +847,11 @@ fn submit_stop(id: &str) -> Result<crate::command_queue::Pending<()>, String> {
             .take()
             .expect("Stop admitted before its worker");
         let uploading = plan.iter().any(|(_, stage)| *stage == Stage::Uploading);
-        let legacy_upload = uploading && !target.upload_cancel.load(Ordering::Relaxed);
         let needs_wire = plan.is_empty()
             || plan
                 .iter()
                 .any(|(_, stage)| matches!(stage, Stage::Uploading | Stage::Committed));
-        let result = if legacy_upload {
-            // Never replay Stop after reconnect: it could target a new turn.
-            if let Ok(mut conn) = target.conn.try_lock() {
-                let _ = conn.set_write_timeout(Some(std::time::Duration::from_millis(50)));
-                let _ = write_frame(&mut *conn, &GuiOp::Stop);
-            }
-            cancelled_notices(&target, &plan, true);
-            retire_cancelled_upload(&target);
-            Ok(StopAction::Disconnected)
-        } else if needs_wire {
+        let result = if needs_wire {
             write_frame(&mut *target.conn.lock().unwrap(), &GuiOp::Stop)
                 .map(|_| StopAction::Written)
         } else {
@@ -874,7 +860,7 @@ fn submit_stop(id: &str) -> Result<crate::command_queue::Pending<()>, String> {
         if result.is_err() && uploading {
             cancelled_notices(&target, &plan, true);
             retire_cancelled_upload(&target);
-        } else if !legacy_upload {
+        } else {
             for (send, stage) in &plan {
                 if *stage != Stage::Uploading {
                     cancelled_notice(&target, send, false);
@@ -1305,7 +1291,6 @@ mod wait_tests {
             commands: Default::default(),
             turns: Default::default(),
             sends: Default::default(),
-            upload_cancel: AtomicBool::new(true),
             frames: Mutex::new(Frames::default()),
             gone: AtomicBool::new(false),
             stall: Mutex::new(None),
