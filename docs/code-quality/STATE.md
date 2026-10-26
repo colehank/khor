@@ -27,18 +27,18 @@
 | owner | worktree / branch / baseline | 当前行动 |
 | --- | --- | --- |
 | root | wave1@670347d7；plan总账；native-io Gen c89aa135源码已交还 | 集成、独审、公共接口协调和最终验收。Gen小片已完成；负责N1 delta、R1 paired与后续terminal独审。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，fix/quality-node-doc-transfer@**5f2d5cf7**+N1 13源 | 正常DocTransfer接线01已normal check15.307s，1083输入稳；独审确认B1真实raw1MiB门漏、C1测试proof方向。02已修并冻，仅5源delta。当前获唯一槽仅B1真实raw父红→绿，运行时在冻结red/02四源间精确切换；不要当场覆盖其源。link/proto/lib及Pending catalog en/zh仍归其本片；暂不自动N0/11unit。 |
-| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，fix/quality-remote-cancel@**8242b5bda383b456a0122fc2613ca4e274620187**，19源checkpoint已commit；仅delegation_wire新增WIP | R1 18 focused不同父已过且root证据独审；已知child可靠取消片尚需旧受影响24+真paired Bound父。paired01 root发现Unix libc helper破坏Windows编译，已授仅该test最小平台guard修订/paired02冻结；不Cargo。R2未知task/lateSend仅设计，生产不动。原link/proto/lib保01原patch，后续写权已交N1/root。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，fix/quality-node-doc-transfer@**5f2d5cf7**+N1 13源 | 正常DocTransfer接线01已normal check15.307s，1083输入稳；独审确认B1真实raw1MiB门漏、C1测试proof方向。02已修并冻，仅5源delta。B1真实raw父已真红→绿，root逐原日志/35+36双盘file/两个fresh=false实际artifact独审通过。源已恢复冻结02。link/proto/lib及Pending catalog en/zh仍归其本片；只准备11unit/相关/N0，不Cargo，先让R1复用05 libtest。 |
+| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，fix/quality-remote-cancel@**8242b5bda383b456a0122fc2613ca4e274620187**，19源checkpoint已commit；仅delegation_wire新增WIP | R1 18 focused不同父已过且root证据独审；已知child可靠取消片尚需旧受影响24+真paired Bound父。paired01 root发现Unix libc helper破坏Windows编译，02已最小guard修好并root审。现获唯一槽24相关+新paired1；原19生产保持冻结。R2未知task/lateSend仅设计，生产不动。原link/proto/lib保01原patch，后续写权已交N1/root。 |
 | node_test_review（现terminal作者） | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，fix/quality-terminal-current@**13a9459f**+Q052 WIP | Gen实现/卡已交root，不能自审；N1独审已交root。当前实现Q052终端current-only清理：host/GUI term与必要commands/CLI/测试调用机械适配，无UI/依赖/公共link/proto/lib/catalog写权；只源码/定向测试及freeze，不Cargo。 |
 
 所有树均复用旧目录，不增worktree。send_message不唤醒completed agent；有动作须followup_task。旧库作者源权已归还root。作者不能自审自己的片。
 
 ## 当前唯一槽与真实运行
 
-- **唯一Cargo/native/gen槽：node_transfer_owner，仅B1 red→green两exact**。已现场核无其它编译后启动red：runner67142 / Cargo PGID67160 / exec session30075；实际是否仍live以该handle/ps为准，不因timeout重启。红若setup/编译/资源/清理或意外结果，立即停且恢复冻结02；只有真实raw-cap业务红才续同父green。
-- 两runner STEP300/TOTAL420/MIN5368709120，jobs1/locked/offline/incremental0，统一target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`，短独占TMP、源前后/实际binary/有限group drain/双盘回执。跨树必须核当前firstparty source与fresh=false实际产物；不得把后续被覆盖binary哈希回填旧记录。
-- 外内可用都≥5GiB；掉盘/越线/连续3IO只停自有组。外盘风扇坏/SMART不可读，用户已允许继续。最新B1启动外5,969,137,664B/内13,232,922,624B，动态测。
-- storage-audit-10已凭精确SHA/uid/nlink/inode/lsof0回收5个已退自有test缓存约1.004GB，含旧R1-01/Node/Pair；源码/证据/App没动，缓存删除不否认历史结果，不复用旧清单删新文件。
+- **唯一Cargo/native/gen槽：remote_cancel_owner，24相关+新paired1**。related-and-paired-20261026T205804Z，runner70875 / exec52297；最新现场确认agent-wire Cargo71066/rustc71257 live。只stub必要build与3相关testtarget构建、复用05 libtest/03 CLI，再顺序25exact，失败停报。实际是否仍live以handle/ps为准，不能据timeout重启。N1两B1段已完成归还槽，原red/green记录保留。
+- N1两runner STEP300/TOTAL420、当前R1 STEP300/TOTAL720，MIN5368709120，jobs1/locked/offline/incremental0，统一target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`，短独占TMP、源前后/实际binary/有限group drain/双盘回执。跨树必须核当前firstparty source与fresh=false实际产物；不得把后续被覆盖binary哈希回填旧记录。
+- 外内可用都≥5GiB；掉盘/越线/连续3IO只停自有组。外盘风扇坏/SMART不可读，用户已允许继续。最新R1启动外6,020,411,392B/内13,216,579,584B，动态测。
+- storage-audit-10已凭精确SHA/uid/nlink/inode/lsof0回收5个已退自有test缓存约1.004GB；11同法精确回收3个已完成Q033 test exe共320,048,608B，外盘回到6.018GB，保R1 05 libtest/CLI及N1 agents_wire。源码/证据/App没动，历史结果不因缓存删除失效，不复用旧清单删新文件。
 
 ## N1/N2实况与下一步
 
@@ -47,15 +47,15 @@
 - N1当前单DocTransfer1MiB encoded/256KiB chunks、quiet一次Versions、每doc双向合计4chunk/1MiB quantum、visit32MiB/30s、固定Preparing/Ready、checked flush→durable receipt→Applied与exact ACK/GC。删正常旧Sync/Synced/base64，不留兼容fallback。源码01独审除B1/C1无新增确认阻断；实际性能/收敛未验。
 - B1新增父使用真实Pair身份、同连接2MiB普通Versions admission正对照、padded canonicalWrite/Confirm、合法256KiB Exchange Stored正对照。01必须显式出现原Missing/Confirmed及创建transfer dirs才算业务红；02必须exact cap Refused且无state副作用，正常chunk仍可用。
 - 冻结：external Q039/node-transfer-n1-b1-red-candidate-01、node-transfer-n1-candidate-02，internal recovery同名（不带Q039层），各19files/1083inputs。test-only另4files。源当前运行状态优先，不按“02已冻”覆盖red测试中的四源。
-- B1后再授11新unit、原normalPair/agents/knownhost/inventory/epoch/64MiB隔离和N0实际收敛；quiet1Versions、fairness与postflush/prereceipt reopen需实证。任务卡Q-039-node-transfer、Q-039-node-n1-review。
+- B1实际红69.753s/绿56.155s：同测试旧padded Missing/Confirmed并创建state，修后专用Refused且无state，两段正常256KiB Stored对照都过；原raw/source/artifact/cleanup已root独审（Q039/node-n1-b1-root-audit）。R1本轮先复用05 libtest，后再授N1 11新unit、原normalPair/agents/knownhost/inventory/epoch/64MiB隔离和N0实际收敛；quiet1Versions、fairness与postflush/prereceipt reopen需实证。任务卡Q-039-node-transfer、Q-039-node-n1-review。
 
 ## R1/R2实况与下一步
 
 - R0真六Prompt/Stop，四held实际Cancel释放后旧实现第五六永不投递；现修复真正送达。原R0是受控peer/真实local runtime/IPC，非外部ACP全终态证明。
 - R1 4有限网络Worker+1metadata lane、durable intent/child receipts、stable native/HTTP binding、明确Durability/ACK/Terminal状态、坏记录隔离、退避/公平/暂停均已实现。01独审五项及root03两项已修。
 - 03执行原R0/auth-parent两父通过；随后fixture缺runs目录setup失败。04建目录后前五新父过，Completed fixture误把合法Refused当服务错误而停。05只修该测试共享reply harness，16新父全通过；总**18不同父**，不累计04重复。root逐rawlog/source2350/19源/双盘/2binary/161PID独审通过；生产相对03无变化。checkpoint **8242b5bd**=受测19源，未集成。
-- 当前新paired父必须真实ResolveBinding→BoundSend/Get→actualACP permission；错caller/home/反向绑定走真实认证transport拒绝，原任务保持，再validCancel→freshGet Canceled、原parent/单Task不变，cleanup先断言。不得拿旧裸Send/Get/Cancel的旧paired测试替代。补平台guard中，原默认测试保留；新父explicit selector不nested Cargo。
-- 后续最小相关清单24旧不同父+新paired1（20lib、wire2、GUI2、paired1），需要当前stub provenance及相关必要test targets；只复用05真实libtest不冒充重跑18。方案/runner在Q037/remote-r1/paired-candidate01-*与next-validation-plan-*，修后另冻02。
+- 当前新paired父必须真实ResolveBinding→BoundSend/Get→actualACP permission；错caller/home/反向绑定走真实认证transport拒绝，原任务保持，再validCancel→freshGet Canceled、原parent/单Task不变，cleanup先断言。不得拿旧裸Send/Get/Cancel的旧paired测试替代。paired02平台guard已源码审闭合，原默认测试保留；新父explicit selector不nested Cargo，正排真实执行。
+- 后续最小相关清单24旧不同父+新paired1（20lib、wire2、GUI2、paired1），需要当前stub provenance及相关必要test targets；只复用05真实libtest不冒充重跑18。方案/runner在Q037/remote-r1/paired-candidate02-20261026T205304Z（runner SHA330bdb1e…12737b1），20冻结源/2350frame已launch核齐；原18不重跑不充数。
 - **R2未知首次Send task lookup/lateSend fence仍open**，不得重放Send/Answer、从List起点无限扫描或将未知标全取消。集成顺序先R0 seed f0104d73，再R1固定提交及新test；三公共源与N1意图由root整合。任务卡Q-037-remote-r1/root-review。
 
 ## 完整目标剩余

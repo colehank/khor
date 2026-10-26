@@ -40,3 +40,11 @@
 **candidate01先修B1，并校正C1后另冻delta；本片尚不能给无阻断结论。** 不需要新框架或拓宽N2。normal --lib check只证明正常库编译；随后定向11+新增rawrequest边界、既有normalPair/agents/knownhost/inventory/epoch/64MiB失败隔离及原N0真25MiB父，按root唯一槽分别判断。原N0固定VV/receive_dir与Seen/Pin真正收敛才证明本片产品目标；还需核quiet实际1 Versions、bidirectional quantum与一份postflush/prereceipt reopen行为，不能用unit summary或source字面形状替代。巨大Pair04/Vouch/claim N2仍open，不能把未做N2当这片修复阻断，也不能提前称全goal完成。
 
 本次审没有启动任何Cargo/native/gen/Node/relay、没有更改生产/测试源或进程、没有cleanup/commit；没有为其自身Gen实现出独审结论。
+
+## Root candidate02 delta与B1真实执行独审
+
+Root逐读02五源delta与263行真实raw父：两个真实incoming decode入口均经question原bytes门、dispatch/metadata前拒绝，保一般6MiB；最大request proof已反向并直接过同模块private validate_roles，未放宽生产可见性。无新增确认阻断。新增父实际Pair身份/同connection一般Versions admission/正常完整256KiB Stored对照都成立才断言raw cap；不用question API构造测试，因此同一父可验证01真红。
+
+实际node-transfer-n1-b1-red-01的raw显示两2MiB帧Missing/Confirmed且state dirs created，正常262144 chunk Stored先过，最终cap目标失败（1普通父exit101）；green-02同一源父显示两帧exact专用Refused且dirs absent，正常chunk Stored先过，1普通父exit0。Root逐rawlog/summary/actualcurrentNode与test fresh=false/1083对应源稳/35与36全file双盘SHA/PGID ESRCH/ownedTMP clean独立核齐，收据Q039/node-n1-b1-root-audit。两段是同一故障红→绿，不当两个不同绿case。
+
+B1/C1本片源码阻断已闭合，N1整体仍待11新unit、normal网络相关与原N0真实大差集收敛等；N2仍另做。当前共享05 libtest须先留R1相关组使用，N1 --lib随后排，避免覆盖后无意义重编。
