@@ -43,6 +43,7 @@ fn missing_supervisor_receipt_is_one_error_then_none() {
         control: Arc::new(Control::default()),
         supervisor: None,
         exit: Some(rx),
+        pid: 0,
     };
     assert!(session.poll_exit().unwrap().is_err());
     assert!(session.poll_exit().is_none());

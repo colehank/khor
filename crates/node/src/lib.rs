@@ -55,6 +55,7 @@ pub mod list;
 pub mod live;
 pub mod lock;
 pub mod mcp;
+pub mod mcp_worker;
 pub mod merge;
 pub mod modes;
 pub(crate) mod once;

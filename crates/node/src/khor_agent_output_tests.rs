@@ -109,6 +109,8 @@ fn failed_sidecar_child() {
         id: "agent-output-fixture".into(),
         input: Mutex::new(None),
         process: Arc::default(),
+        worker: Mutex::new(None),
+        path: OnceLock::new(),
         stopped: AtomicBool::new(false),
         approval: Mutex::new(None),
     });
@@ -117,6 +119,7 @@ fn failed_sidecar_child() {
         record: CommandRecord {
             id: active.id.clone(),
             started_at_ms: now(),
+            data_json: Some(json!({"existingFixtureMetadata":{"token":"kept"}}).to_string()),
             agent: Some(AgentTurn {
                 model: "fixture".into(),
                 approval: None,
@@ -137,6 +140,10 @@ fn failed_sidecar_child() {
     let receipt: Saved =
         serde_json::from_slice(&fs::read(file(&root, &active.id)).unwrap()).unwrap();
     assert_eq!(receipt.record.status, "failed");
+    let data: Value = serde_json::from_str(receipt.record.data_json.as_deref().unwrap()).unwrap();
+    assert_eq!(data["existingFixtureMetadata"]["token"], "kept");
+    assert_eq!(data["remoteCancellation"]["state"], "pending");
+    assert_eq!(data["remoteCancellation"]["confirmed"], false);
     assert_eq!(receipt.record.error.as_deref(), Some(expected.as_str()));
     assert_eq!(receipt.record.error.unwrap().len(), expected.len());
 }
@@ -437,6 +444,8 @@ fn streamed_sidecar_child() {
         id: "agent-stream-fixture".into(),
         input: Mutex::new(None),
         process: Arc::default(),
+        worker: Mutex::new(None),
+        path: OnceLock::new(),
         stopped: AtomicBool::new(false),
         approval: Mutex::new(None),
     });

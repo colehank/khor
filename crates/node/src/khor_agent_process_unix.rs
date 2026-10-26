@@ -105,7 +105,18 @@ pub(super) fn spawn(mut command: Command) -> io::Result<(Process, Pipes)> {
     };
     Ok((process, pipes))
 }
+
+pub(super) fn spawn_with_profile(
+    command: Command,
+    _profile: super::SpawnProfile,
+) -> io::Result<(Process, Pipes)> {
+    spawn(command)
+}
 impl Process {
+    #[cfg(test)]
+    pub(super) fn id(&self) -> u32 {
+        self.child.id()
+    }
     pub(super) fn exited(&mut self) -> io::Result<bool> {
         // WNOWAIT preserves the leader's PID as the process-group ownership
         // anchor. Reaping before killpg could target a reused process group.
@@ -166,7 +177,9 @@ impl Process {
                         Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                         Err(error) => return Err(error),
                     }
-                    if std::time::Instant::now() >= deadline { break; }
+                    if std::time::Instant::now() >= deadline {
+                        break;
+                    }
                     std::thread::sleep(Duration::from_millis(1));
                 }
             }

@@ -654,6 +654,7 @@ fn spawn_host_with(
             Ok(())
         });
     }
+    crate::mcp_worker::prepare_durable_child(&mut c);
     // The `PATH` this process worked out travels down rather than
     // being worked out again: `_host` is a fresh process and would
     // otherwise re-run the user's login shell on every single spawn

@@ -73,6 +73,8 @@ struct Running {
     id: String,
     input: Mutex<Option<input::Input>>,
     process: Arc<process::Control>,
+    worker: Mutex<Option<Arc<process::Control>>>,
+    path: OnceLock<String>,
     stopped: AtomicBool,
     approval: Mutex<Option<(String, Option<bool>)>>,
 }
@@ -83,12 +85,22 @@ impl Running {
             id,
             input: Mutex::new(None),
             process: Arc::default(),
+            worker: Mutex::new(None),
+            path: OnceLock::new(),
             stopped: AtomicBool::new(false),
             approval: Mutex::new(None),
         }
     }
     fn request_stop(&self) {
-        self.stopped.store(true, Ordering::SeqCst);
+        {
+            // Registration and Stop share this lock, including the pre-spawn
+            // window. A pre-stopped Control retires a racing spawn as well.
+            let worker = self.worker.lock().unwrap_or_else(|p| p.into_inner());
+            self.stopped.store(true, Ordering::SeqCst);
+            if let Some(control) = worker.as_ref() {
+                control.terminate_now();
+            }
+        }
         self.process.stop();
         if let Some(input) = self
             .input
@@ -97,6 +109,23 @@ impl Running {
             .as_ref()
         {
             input.abort();
+        }
+    }
+    fn register_worker(&self, control: Arc<process::Control>) -> bool {
+        let mut worker = self.worker.lock().unwrap_or_else(|p| p.into_inner());
+        if self.stopped.load(Ordering::SeqCst) || worker.is_some() {
+            return false;
+        }
+        *worker = Some(control);
+        true
+    }
+    fn release_worker(&self, control: &Arc<process::Control>) {
+        let mut worker = self.worker.lock().unwrap_or_else(|p| p.into_inner());
+        if worker
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, control))
+        {
+            *worker = None;
         }
     }
 }
@@ -425,11 +454,6 @@ impl Node {
                     .cloned()
                     .ok_or_else(|| msg::agent_not_running().to_owned())?;
                 active.request_stop();
-                let cancel_root = root.clone();
-                let cancel_run = run.clone();
-                std::thread::spawn(move || {
-                    let _ = crate::delegation::cancel_children(&cancel_root, &cancel_run);
-                });
                 report.run = Some(run);
             }
         }
@@ -578,8 +602,10 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                 command.env(name, value);
             }
         }
+        let path = Node::user_path().to_owned();
+        let _ = active.path.set(path.clone());
         command
-            .env("PATH", Node::user_path())
+            .env("PATH", path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -633,7 +659,7 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                         // Process all queued cancellation messages before
                         // consuming a user's answer and starting a write.
                         if let Some(response) = pending.poll(&root, &mut saved, &active)? {
-                            send(&active, &json!({"type":"mcp","message":response}))?;
+                            send_mcp(&active, response)?;
                         }
                         continue;
                     }
@@ -645,7 +671,7 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                         if let Some(response) =
                             pending.message(&root, &mut saved, &active, &event["message"])?
                         {
-                            send(&active, &json!({"type":"mcp","message":response}))?;
+                            send_mcp(&active, response)?;
                         }
                     }
                     Some("update") => {
@@ -702,12 +728,19 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                     }
                     _ => return Err(msg::agent_arguments().into()),
                 }
+                // Running work can complete while events remain queued. Only
+                // the idle branch may consume an approval: queued cancellation
+                // notifications must win over a previously submitted answer.
+                if let Some(response) = pending.poll_worker(&active)? {
+                    send_mcp(&active, response)?;
+                }
             }
             if !completed {
                 return Err(msg::agent_failed().into());
             }
             Ok(())
         })();
+        pending.retire(&active)?;
         active
             .input
             .lock()
@@ -731,7 +764,29 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
     }
     let stopped = active.stopped.load(Ordering::SeqCst) && process_stopped;
     if stopped || outcome.is_err() {
-        let _ = crate::delegation::cancel_children(&root, &active.id);
+        // All local tool workers are retired before this single run-owned
+        // sweep observes durable links. It cannot hold this executor's claim.
+        let sweep = crate::mcp_worker::schedule_cancel(
+            root.clone(),
+            active.id.clone(),
+            active.path.get().cloned(),
+        );
+        let previous = saved
+            .record
+            .data_json
+            .take()
+            .map(|raw| serde_json::from_str::<Value>(&raw).unwrap_or(Value::String(raw)));
+        let mut data = match previous {
+            Some(Value::Object(object)) => Value::Object(object),
+            Some(value) => json!({"previousData":value}),
+            None => json!({}),
+        };
+        data["remoteCancellation"] = json!({
+                "state":"pending", "confirmed":false,
+                "sweep":if sweep.is_ok() { "scheduled" } else { "not_admitted" },
+                "reason":sweep.err()
+        });
+        saved.record.data_json = Some(data.to_string());
     }
     saved.record.status = if stopped {
         "cancelled"
@@ -763,8 +818,58 @@ struct McpSession {
     pending: Option<Value>,
     progress: Option<std::time::Instant>,
     progress_count: u64,
+    operation: Option<(Value, crate::mcp_worker::Worker)>,
 }
 impl McpSession {
+    fn retire(&mut self, active: &Running) -> Result<(), String> {
+        if let Some((_, mut worker)) = self.operation.take() {
+            let retired = worker.cancel_and_join();
+            active.release_worker(&worker.control);
+            retired?;
+        }
+        Ok(())
+    }
+
+    fn start(
+        &mut self,
+        root: &Path,
+        active: &Running,
+        request: &Value,
+        authorized: bool,
+    ) -> Result<Option<Value>, String> {
+        let id = &request["id"];
+        if self.operation.is_some() || self.pending.is_some() {
+            return Ok(Some(tool_error(id, msg::agent_busy())));
+        }
+        let control = Arc::new(process::Control::default());
+        if !active.register_worker(control.clone()) {
+            return Ok(Some(tool_error(id, msg::agent_stopped())));
+        }
+        let request = crate::mcp_worker::Request {
+            root: root.to_path_buf(),
+            operation: crate::mcp_worker::Operation::Tool {
+                run: active.id.clone(),
+                authorized,
+                name: request["params"]["name"].as_str().unwrap_or("").into(),
+                args: request["params"]["arguments"].clone(),
+            },
+        };
+        match crate::mcp_worker::Worker::spawn(
+            request,
+            control.clone(),
+            crate::mcp_worker::TOOL_BUDGET,
+            active.path.get().cloned(),
+        ) {
+            Ok(worker) => {
+                self.operation = Some((id.clone(), worker));
+                Ok(None)
+            }
+            Err(error) => {
+                active.release_worker(&control);
+                Ok(Some(tool_error(id, &error)))
+            }
+        }
+    }
     fn clear(&mut self, root: &Path, saved: &mut Saved, active: &Running) -> Result<(), String> {
         self.pending = None;
         *active.approval.lock().map_err(|e| e.to_string())? = None;
@@ -781,6 +886,13 @@ impl McpSession {
         request: &Value,
     ) -> Result<Option<Value>, String> {
         if request["method"] == "notifications/cancelled" {
+            if self
+                .operation
+                .as_ref()
+                .is_some_and(|(id, _)| *id == request["params"]["requestId"])
+            {
+                self.retire(active)?;
+            }
             if self
                 .pending
                 .as_ref()
@@ -800,7 +912,7 @@ impl McpSession {
             && crate::mcp::validate(name, args).is_ok()
             && !active.stopped.load(Ordering::SeqCst)
         {
-            if self.pending.is_some() {
+            if self.pending.is_some() || self.operation.is_some() {
                 return Ok(Some(tool_error(&request["id"], msg::agent_busy())));
             }
             let ask = crate::link::fresh_hex()?;
@@ -817,7 +929,33 @@ impl McpSession {
             self.progress_count = 0;
             return Ok(None);
         }
-        mcp_request(root, active, request, false)
+        if request["method"] == "tools/call" {
+            self.start(root, active, request, false)
+        } else {
+            mcp_request(request)
+        }
+    }
+
+    fn poll_worker(&mut self, active: &Running) -> Result<Option<Value>, String> {
+        if self.operation.is_some() {
+            if active.stopped.load(Ordering::SeqCst) {
+                self.retire(active)?;
+                return Ok(None);
+            }
+            let answer = self
+                .operation
+                .as_mut()
+                .and_then(|(_, worker)| worker.poll());
+            if let Some(answer) = answer {
+                let (id, worker) = self.operation.take().expect("polled operation");
+                active.release_worker(&worker.control);
+                if active.stopped.load(Ordering::SeqCst) {
+                    return Ok(None);
+                }
+                return Ok(Some(tool_response(&id, answer)));
+            }
+        }
+        Ok(None)
     }
 
     fn poll(
@@ -826,6 +964,9 @@ impl McpSession {
         saved: &mut Saved,
         active: &Running,
     ) -> Result<Option<Value>, String> {
+        if let Some(response) = self.poll_worker(active)? {
+            return Ok(Some(response));
+        }
         let Some(request) = self.pending.as_ref() else {
             return Ok(None);
         };
@@ -859,7 +1000,7 @@ impl McpSession {
         if decision != Some(true) || active.stopped.load(Ordering::SeqCst) {
             return Ok(Some(tool_error(&request["id"], msg::agent_declined())));
         }
-        mcp_request(root, active, &request, true)
+        self.start(root, active, &request, true)
     }
 }
 
@@ -867,12 +1008,49 @@ fn tool_error(id: &Value, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":message}],"isError":true}})
 }
 
-fn mcp_request(
-    root: &Path,
-    active: &Running,
-    request: &Value,
-    authorized: bool,
-) -> Result<Option<Value>, String> {
+fn tool_response(id: &Value, answer: Result<String, String>) -> Value {
+    let (text, failed) = match answer {
+        Ok(text) => (text, false),
+        Err(error) => (error, true),
+    };
+    let mut content = json!({"type":"text"});
+    content["text"] = Value::String(text);
+    let mut result = json!({"isError":failed});
+    result["content"] = Value::Array(vec![content]);
+    let mut frame = json!({"jsonrpc":"2.0","id":id});
+    frame["result"] = result;
+    frame
+}
+
+fn send_mcp(active: &Running, response: Value) -> Result<(), String> {
+    if active.stopped.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+    let mut frame = json!({"type":"mcp"});
+    frame["message"] = response;
+    let bytes = match crate::mcp_worker::encode_message(&frame) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            // Include the request id, bridge envelope and newline in the same
+            // total budget. Replace the entire content before emitting bytes.
+            frame["message"]["result"] =
+                json!({"content":[{"type":"text","text":error}],"isError":true});
+            crate::mcp_worker::encode_message(&frame)?
+        }
+    };
+    if active.stopped.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+    let input = active
+        .input
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| msg::agent_not_running().to_owned())?;
+    input.send(bytes)
+}
+
+fn mcp_request(request: &Value) -> Result<Option<Value>, String> {
     let Some(id) = request.get("id") else {
         return Ok(None);
     };
@@ -883,43 +1061,6 @@ fn mcp_request(
         }
         "ping" => json!({}),
         "tools/list" => crate::mcp::tools(),
-        "tools/call" => {
-            let name = request["params"]["name"].as_str().unwrap_or("");
-            let args = &request["params"]["arguments"];
-            let result = (|| -> Result<String, String> {
-                crate::mcp::validate(name, args)?;
-                if active.stopped.load(Ordering::SeqCst) {
-                    return Err(msg::agent_stopped().into());
-                }
-                if crate::mcp::reads(name) == Some(false) && !authorized {
-                    return Err(msg::agent_declined().into());
-                }
-                let node = Node::open(root.to_path_buf())?;
-                if node
-                    .khor_agent_config()?
-                    .is_none_or(|c| c.home != node.device_str())
-                {
-                    return Err(msg::agent_not_configured().into());
-                }
-                let result = crate::mcp::call_with_parent(
-                    root,
-                    name,
-                    args,
-                    Some(crate::delegation::TaskRef {
-                        home: node.device(),
-                        id: active.id.clone(),
-                    }),
-                );
-                if active.stopped.load(Ordering::SeqCst) {
-                    let _ = crate::delegation::cancel_children(root, &active.id);
-                }
-                result
-            })();
-            match result {
-                Ok(text) => json!({"content":[{"type":"text","text":text}]}),
-                Err(error) => json!({"content":[{"type":"text","text":error}],"isError":true}),
-            }
-        }
         _ => {
             return Ok(Some(
                 json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":msg::unknown_action(method)}}),
@@ -934,6 +1075,242 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_queued_cancel_wins_over_ui_approval_after_an_intervening_update() {
+        let scratch = crate::testdir::TempTree::fresh("mcp-queued-cancel");
+        let node = Node::open_as(scratch.join("store"), "queued-cancel-fixture").unwrap();
+        let _claim = claim(node.root()).unwrap();
+        let active = Arc::new(Running::new("queued-cancel-fixture-run".into()));
+        running()
+            .lock()
+            .unwrap()
+            .insert(node.root().into(), active.clone());
+        struct RegisteredRun(PathBuf);
+        impl Drop for RegisteredRun {
+            fn drop(&mut self) {
+                running()
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&self.0);
+            }
+        }
+        let _registered = RegisteredRun(node.root().into());
+        let mut saved = Saved {
+            fingerprint: "fixture".into(),
+            record: CommandRecord {
+                id: active.id.clone(),
+                status: "running".into(),
+                started_at_ms: now(),
+                agent: Some(AgentTurn {
+                    model: "fixture".into(),
+                    approval: None,
+                    updated_at_ms: 0,
+                    updates: vec![],
+                    updates_truncated: false,
+                }),
+                ..Default::default()
+            },
+        };
+        let mut session = McpSession::default();
+        session.message(node.root(), &mut saved, &active,
+            &json!({"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"tell","arguments":{
+                "machine":node.name(),"text":"queued-cancel-must-not-be-posted"
+            }}})).unwrap();
+        let ask = active.approval.lock().unwrap().as_ref().unwrap().0.clone();
+        let (queued, events) = mpsc::sync_channel(2);
+        queued.send(json!({"type":"update","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"queued update"}}})).unwrap();
+        queued.send(json!({"type":"mcp","message":{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":17}}})).unwrap();
+        node.khor_agent_here(Action::Answer {
+            run: active.id.clone(),
+            ask,
+            allow: true,
+        })
+        .unwrap();
+        assert_eq!(
+            active.approval.lock().unwrap().as_ref().unwrap().1,
+            Some(true)
+        );
+        let update = events.recv().unwrap();
+        let _: agent_client_protocol::schema::v1::SessionUpdate =
+            serde_json::from_value(update["update"].clone()).unwrap();
+        // This is the actual execute after-event entry, with the second event
+        // already queued. It must not turn that UI answer into an operation.
+        assert!(session.poll_worker(&active).unwrap().is_none());
+        assert!(session.operation.is_none());
+        assert!(active.worker.lock().unwrap().is_none());
+        let cancel = events.recv().unwrap();
+        session
+            .message(node.root(), &mut saved, &active, &cancel["message"])
+            .unwrap();
+        assert!(session.poll_worker(&active).unwrap().is_none());
+        assert!(
+            session
+                .poll(node.root(), &mut saved, &active)
+                .unwrap()
+                .is_none()
+        );
+        assert!(session.operation.is_none());
+        assert!(active.worker.lock().unwrap().is_none());
+        assert!(active.approval.lock().unwrap().is_none());
+        assert!(saved.record.agent.as_ref().unwrap().approval.is_none());
+        assert!(node.wide_log(crate::wide::BROADCAST).unwrap().0.messages.iter()
+            .all(|m|!matches!(&m.body,crate::MsgBody::Text(text) if text=="queued-cancel-must-not-be-posted")));
+    }
+
+    #[test]
+    fn ordinary_notifications_cannot_register_a_worker_or_request_write_approval() {
+        let scratch = crate::testdir::TempTree::fresh("mcp-notification-no-id");
+        let node = Node::open_as(scratch.join("store"), "notification-fixture").unwrap();
+        let active = Running::new("notification-fixture-run".into());
+        let mut saved = Saved {
+            fingerprint: "fixture".into(),
+            record: CommandRecord {
+                id: active.id.clone(),
+                status: "running".into(),
+                agent: Some(AgentTurn {
+                    model: "fixture".into(),
+                    approval: None,
+                    updated_at_ms: 0,
+                    updates: vec![],
+                    updates_truncated: false,
+                }),
+                ..Default::default()
+            },
+        };
+        let receipt_before = serde_json::to_vec(&saved).unwrap();
+        let messages_before = node
+            .wide_log(crate::wide::BROADCAST)
+            .unwrap()
+            .0
+            .messages
+            .len();
+        let mut session = McpSession::default();
+        for request in [
+            json!({"jsonrpc":"2.0","method":"tools/call","params":{"name":"devices","arguments":{}}}),
+            json!({"jsonrpc":"2.0","method":"tools/call","params":{"name":"tell","arguments":{
+                "machine":node.name(),"text":"notification-must-not-be-posted"
+            }}}),
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+        ] {
+            assert!(
+                session
+                    .message(node.root(), &mut saved, &active, &request)
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                session.operation.is_none(),
+                "a notification must not own a process"
+            );
+            assert!(
+                active.worker.lock().unwrap().is_none(),
+                "a notification must not register a Control"
+            );
+            assert!(session.pending.is_none());
+            assert!(active.approval.lock().unwrap().is_none());
+            assert!(saved.record.agent.as_ref().unwrap().approval.is_none());
+            assert_eq!(serde_json::to_vec(&saved).unwrap(), receipt_before);
+        }
+        let messages = node.wide_log(crate::wide::BROADCAST).unwrap().0.messages;
+        assert_eq!(messages.len(), messages_before);
+        assert!(messages.iter().all(|m| !matches!(&m.body, crate::MsgBody::Text(text) if text=="notification-must-not-be-posted")));
+        // An explicitly present null id is different from an absent id.
+        let pong = session
+            .message(
+                node.root(),
+                &mut saved,
+                &active,
+                &json!({"jsonrpc":"2.0","id":null,"method":"ping"}),
+            )
+            .unwrap()
+            .unwrap();
+        assert!(pong.get("id").unwrap().is_null());
+        assert_eq!(pong["result"], json!({}));
+    }
+
+    #[test]
+    #[ignore = "requires the exact newly built CLI via KHOR_TEST_MCP_EXECUTABLE"]
+    fn cancelling_one_worker_cannot_cancel_or_answer_a_later_request() {
+        let scratch = crate::testdir::TempTree::fresh("mcp-worker-request-generation");
+        let node = Node::open_as(scratch.join("store"), "worker-generation").unwrap();
+        let account = node
+            .register_account(
+                "fixture",
+                crate::Provider::Newapi,
+                crate::AccountKind::Bill,
+                Some("http://127.0.0.1:1"),
+                "synthetic-unused-fixture-key",
+                None,
+            )
+            .unwrap();
+        node.khor_agent_here(Action::Configure {
+            account: account.id,
+            model: "fixture".into(),
+        })
+        .unwrap();
+        let active = Running::new("worker-generation-fixture".into());
+        let mut saved = Saved {
+            fingerprint: "fixture".into(),
+            record: CommandRecord {
+                id: active.id.clone(),
+                agent: Some(AgentTurn {
+                    model: "fixture".into(),
+                    approval: None,
+                    updated_at_ms: 0,
+                    updates: vec![],
+                    updates_truncated: false,
+                }),
+                ..Default::default()
+            },
+        };
+        let request = |id| json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"devices","arguments":{}}});
+        let cancel = |id| json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":id}});
+        let mut session = McpSession::default();
+        assert!(
+            session
+                .message(node.root(), &mut saved, &active, &request(7))
+                .unwrap()
+                .is_none()
+        );
+        session
+            .message(node.root(), &mut saved, &active, &cancel(7))
+            .unwrap();
+        assert!(session.operation.is_none());
+        assert!(active.worker.lock().unwrap().is_none());
+        assert!(
+            session
+                .message(node.root(), &mut saved, &active, &request(8))
+                .unwrap()
+                .is_none()
+        );
+        session
+            .message(node.root(), &mut saved, &active, &cancel(7))
+            .unwrap();
+        let by = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let answer = loop {
+            if let Some(answer) = session.poll(node.root(), &mut saved, &active).unwrap() {
+                break answer;
+            }
+            assert!(
+                std::time::Instant::now() < by,
+                "new worker did not complete"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert_eq!(answer["id"], 8);
+        assert_eq!(answer["result"]["isError"], false);
+        assert!(session.operation.is_none());
+        active.request_stop();
+        assert_eq!(
+            session
+                .message(node.root(), &mut saved, &active, &request(9))
+                .unwrap()
+                .unwrap()["result"]["isError"],
+            true
+        );
+        assert!(active.worker.lock().unwrap().is_none());
+    }
+
+    #[test]
     fn cancelled_or_stopped_mcp_requests_cannot_consume_a_later_approval() {
         let root = std::env::temp_dir().join(format!(
             "khor-mcp-approval-{}",
@@ -945,6 +1322,8 @@ mod tests {
             id: "agent-approval-fixture".into(),
             input: Mutex::new(None),
             process: Arc::default(),
+            worker: Mutex::new(None),
+            path: OnceLock::new(),
             stopped: AtomicBool::new(false),
             approval: Mutex::new(None),
         };

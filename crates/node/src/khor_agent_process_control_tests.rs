@@ -1,6 +1,18 @@
 use super::*;
 
 #[test]
+fn one_shot_termination_has_no_pi_grace_and_cannot_be_revoked() {
+    let control = Control::default();
+    control.terminate_now();
+    let first = control.0.lock().unwrap().terminal_deadline.unwrap();
+    assert!(first <= Instant::now());
+    assert!(control.is_cancelled());
+    control.stop();
+    assert_eq!(control.0.lock().unwrap().terminal_deadline, Some(first));
+    assert!(control.begin_operation().is_none());
+}
+
+#[test]
 fn an_old_ack_cannot_clear_a_new_operations_deadline() {
     let control = Control::default();
     let first = control.begin_operation().unwrap();

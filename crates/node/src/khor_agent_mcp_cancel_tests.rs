@@ -25,6 +25,9 @@ impl Drop for Worker {
 
 #[test]
 fn stopping_during_a_real_mcp_request_retires_the_executor_after_pi_exits() {
+    let executable = std::env::var_os("KHOR_TEST_MCP_EXECUTABLE")
+        .expect("this regression requires the exact newly built Khor CLI worker executable");
+    assert!(Path::new(&executable).is_absolute() && Path::new(&executable).is_file());
     let scratch = Scratch(std::env::temp_dir().join(format!(
         "khor-mcp-cancel-{}",
         crate::link::fresh_hex().unwrap()
@@ -61,6 +64,7 @@ fn stopping_during_a_real_mcp_request_retires_the_executor_after_pi_exits() {
                 "--test-threads=1",
             ])
             .env("KHOR_AGENT_SIDECAR", sidecar)
+            .env("KHOR_TEST_MCP_EXECUTABLE", executable)
             .env("KHOR_MCP_CANCEL_ROOT", &scratch.0)
             .env("KHOR_PATH", "/usr/bin:/bin")
             .stdout(output.try_clone().unwrap())
@@ -289,7 +293,15 @@ fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<(), St
         return Err("setup: invalid owned Pi PID".into());
     }
     let stopped = Instant::now();
+    let sweeps_before = crate::mcp_worker::SWEEPS_STARTED.load(Ordering::SeqCst);
     node.khor_agent_here(Action::Stop { run: run.clone() })?;
+    for _ in 1..16 {
+        // Repeated Stop must share the same local owner; a finished run may
+        // already have retired by the last call.
+        let _ = node.khor_agent_here(Action::Stop { run: run.clone() });
+    }
+    // Checked after map/claim retirement below, when the single sweep has been
+    // admitted. No snapshot of a source-level flag substitutes for this count.
     if stopped.elapsed() >= Duration::from_secs(1) {
         return Err("Stop admission blocked".into());
     }
@@ -342,6 +354,13 @@ fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<(), St
     }
     // Keep the first IPC gate held: a next prompt must not depend on the test
     // supplying a late reply to the cancelled operation.
+    let sweeps_after = crate::mcp_worker::SWEEPS_STARTED.load(Ordering::SeqCst);
+    if sweeps_after != sweeps_before + 1 {
+        return Err(format!(
+            "16 Stop calls admitted {} sweep owners, expected one",
+            sweeps_after - sweeps_before
+        ));
+    }
     fs::write(scratch.join("sidecar.mode"), "finish").map_err(|e| e.to_string())?;
     let second = node
         .khor_agent_here(Action::Prompt {
@@ -380,6 +399,13 @@ fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<(), St
         return Err("next prompt published completion before Pi reap".into());
     }
     println!("next prompt finished while original IPC gate held; pid={second_pid}: ESRCH");
+    cleanup.ipc.release_and_join()?;
+    let after_late_reply: Saved =
+        serde_json::from_slice(&fs::read(file(&cleanup.root, &second)).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    if after_late_reply.record.status != "done" {
+        return Err("old held IPC retirement changed the next prompt receipt".into());
+    }
     cleanup.run = None;
     Ok(())
 }

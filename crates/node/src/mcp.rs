@@ -361,13 +361,29 @@ pub(crate) fn call_with_parent(
                     agent: s("agent"),
                     task: s("task"),
                 },
-                "task_answer" => Action::Answer {
-                    agent: s("agent"),
-                    task: s("task"),
-                    ask: s("ask")
+                "task_answer" => {
+                    let ask = s("ask")
                         .parse()
-                        .map_err(|_| msg::agent_arguments().to_owned())?,
-                    option: optional("option"),
+                        .map_err(|_| msg::agent_arguments().to_owned())?;
+                    if let Some(parent) = &parent {
+                        // Answer can resume an already-known task before its
+                        // reply arrives. Retiring this worker must not erase
+                        // the parent's ability to find/cancel that work.
+                        crate::delegation::track_child(
+                            root,
+                            parent,
+                            &s("machine"),
+                            &s("agent"),
+                            &format!("task:{}", s("task")),
+                            Some(&s("task")),
+                        )?;
+                    }
+                    Action::Answer {
+                        agent: s("agent"),
+                        task: s("task"),
+                        ask,
+                        option: optional("option"),
+                    }
                 },
                 "task_list" => Action::List {
                     agent: s("agent"),

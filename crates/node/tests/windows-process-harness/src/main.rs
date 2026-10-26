@@ -3,6 +3,9 @@
 mod supervised;
 
 #[cfg(windows)]
+use supervised::SpawnProfile;
+
+#[cfg(windows)]
 #[path = "../../../src/khor_agent_process_windows.rs"]
 mod process;
 
@@ -87,6 +90,30 @@ fn fixture() {
         "sleep" => loop {
             std::thread::sleep(std::time::Duration::from_secs(1));
         },
+        "durable" => {
+            use std::os::windows::process::CommandExt;
+            use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
+            let mut temporary = std::process::Command::new(std::env::current_exe().unwrap());
+            temporary.arg("--fixture").env("KHOR_PROCESS_MODE", "sleep");
+            let temporary = temporary.spawn().unwrap();
+            let durable = std::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--fixture")
+                .env("KHOR_PROCESS_MODE", "sleep")
+                .creation_flags(CREATE_BREAKAWAY_FROM_JOB)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            let Ok(durable) = durable else {
+                println!("refused");
+                return;
+            };
+            println!("{} {}", temporary.id(), durable.id());
+            std::io::stdout().flush().unwrap();
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
         mode => panic!("unknown fixture mode {mode}"),
     }
 }
@@ -109,7 +136,10 @@ mod checks {
     use windows_sys::Win32::{
         Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT},
         Security::SECURITY_ATTRIBUTES,
-        System::Threading::{CreateEventW, OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject},
+        System::Threading::{
+            CreateEventW, OpenProcess, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess,
+            WaitForSingleObject,
+        },
     };
 
     pub(super) fn wide_hex(value: &OsStr) -> String {
@@ -175,7 +205,63 @@ mod checks {
         );
         supervised_deadline();
         println!("PASS supervisor deadline progresses through blocked stdin and repeated Stop");
-        println!("PASS 8 Windows runtime groups");
+        durable_worker_profile();
+        println!(
+            "PASS only the MCP worker profile permits explicit durable breakaway; temporary child is terminated"
+        );
+        println!("PASS 9 Windows runtime groups");
+    }
+
+    fn durable_worker_profile() {
+        for profile in [
+            supervised::SpawnProfile::Contained,
+            supervised::SpawnProfile::McpWorker,
+        ] {
+            let control = std::sync::Arc::new(supervised::Control::default());
+            let (mut session, pipes) =
+                supervised::Session::spawn_with_profile(command("durable"), control, profile)
+                    .unwrap();
+            let mut output = BufReader::new(pipes.stdout);
+            let mut line = String::new();
+            output.read_line(&mut line).unwrap();
+            if matches!(profile, supervised::SpawnProfile::Contained) {
+                assert_eq!(
+                    line.trim(),
+                    "refused",
+                    "default jobs must not permit breakaway"
+                );
+                session.finish(true).unwrap();
+                continue;
+            }
+            let pids: Vec<u32> = line
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            assert_eq!(pids.len(), 2);
+            let temporary = process_handle(pids[0]);
+            let handle =
+                unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, 0, pids[1]) };
+            assert!(!handle.is_null());
+            struct Durable(OwnedHandle);
+            impl Drop for Durable {
+                fn drop(&mut self) {
+                    unsafe {
+                        TerminateProcess(self.0.as_raw_handle(), 0);
+                        WaitForSingleObject(self.0.as_raw_handle(), 5_000);
+                    }
+                }
+            }
+            let durable = Durable(unsafe { OwnedHandle::from_raw_handle(handle) });
+            session.finish(true).unwrap();
+            assert_eq!(
+                unsafe { WaitForSingleObject(temporary.as_raw_handle(), 0) },
+                WAIT_OBJECT_0
+            );
+            assert_eq!(
+                unsafe { WaitForSingleObject(durable.0.as_raw_handle(), 0) },
+                WAIT_TIMEOUT
+            );
+        }
     }
 
     fn echo_roundtrip(scratch: &Scratch) {

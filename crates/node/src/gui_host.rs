@@ -663,6 +663,7 @@ fn spawn_ghost_context(
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
+    crate::mcp_worker::prepare_durable_child(&mut c);
     #[cfg(unix)]
     unsafe {
         use std::os::unix::process::CommandExt;

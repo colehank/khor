@@ -64,6 +64,7 @@ mod relay;
 /// Process entry hook for terminal sessions created by the slash interface.
 /// Each native binary supports its own commands; no companion CLI is required.
 pub fn console_main_if_requested(start_web: fn(&std::path::Path)) -> Option<i32> {
+    if let Some(code) = khor_node::mcp_worker::main_if_requested() { return Some(code); }
     // All native faces enter here before GUI cwd pinning or console dispatch.
     // A relative `codex` symlink must resolve from the caller's directory.
     khor_node::legacy_codex::main_if_shim();

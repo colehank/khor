@@ -1,4 +1,4 @@
-use super::Pipes;
+use super::{Pipes, SpawnProfile};
 use std::{
     cmp::Ordering,
     ffi::{OsStr, OsString},
@@ -33,7 +33,7 @@ use windows_sys::Win32::{
     System::{
         IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED},
         JobObjects::{
-            CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            CreateJobObjectW, JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
             JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
             JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
             QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
@@ -129,6 +129,13 @@ impl Drop for Process {
 /// The caller supplies an env_clear command with regular args. Only explicit env entries
 /// are used; this adapter deliberately never inherits the GUI's environment or invokes a shell.
 pub(super) fn spawn(command: Command) -> io::Result<(Process, Pipes)> {
+    spawn_with_profile(command, SpawnProfile::Contained)
+}
+
+pub(super) fn spawn_with_profile(
+    command: Command,
+    profile: SpawnProfile,
+) -> io::Result<(Process, Pipes)> {
     let environment = explicit_environment(&command)?;
     let executable = resolve_executable(command.get_program(), &environment)?;
     let application = wide_z(executable.as_os_str())?;
@@ -142,6 +149,9 @@ pub(super) fn spawn(command: Command) -> io::Result<(Process, Pipes)> {
     let job = owned(unsafe { CreateJobObjectW(null(), null()) })?;
     let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
     limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if matches!(profile, SpawnProfile::McpWorker) {
+        limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    }
     check(unsafe {
         SetInformationJobObject(
             job.as_raw_handle(),

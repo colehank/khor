@@ -18,6 +18,12 @@ pub(super) struct Pipes {
     pub stdout: Box<dyn Read + Send>,
     pub stderr: Box<dyn Read + Send>,
 }
+#[derive(Clone, Copy)]
+pub(super) enum SpawnProfile {
+    Contained,
+    /// Only explicitly designated durable Khor hosts may leave this job.
+    McpWorker,
+}
 #[derive(Clone, Debug)]
 pub(super) struct Operation {
     owner: Arc<()>,
@@ -43,6 +49,7 @@ struct Requests {
     generation: u64,
     finish: bool,
     terminating: bool,
+    cancelled: bool,
 }
 impl Requests {
     fn expired(&mut self, now: Instant) -> bool {
@@ -64,6 +71,20 @@ impl Requests {
 #[derive(Default)]
 pub(super) struct Control(Mutex<Requests>);
 impl Control {
+    pub(super) fn terminate_now(&self) {
+        let mut requests = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        requests.cancelled = true;
+        requests.finish = true;
+        let deadline = Instant::now();
+        requests.terminal_deadline = Some(
+            requests
+                .terminal_deadline
+                .map_or(deadline, |was| was.min(deadline)),
+        );
+    }
+    pub(super) fn is_cancelled(&self) -> bool {
+        self.0.lock().unwrap_or_else(|p| p.into_inner()).cancelled
+    }
     pub(super) fn stop(&self) {
         self.request_terminal(EXIT_GRACE, false);
     }
@@ -150,10 +171,21 @@ pub(super) struct Session {
     control: Arc<Control>,
     supervisor: Option<JoinHandle<io::Result<ExitStatus>>>,
     exit: Option<mpsc::Receiver<io::Result<ExitStatus>>>,
+    #[cfg(all(test, unix))]
+    pid: u32,
 }
 impl Session {
     pub(super) fn spawn(command: Command, control: Arc<Control>) -> io::Result<(Self, Pipes)> {
-        let (mut process, pipes) = platform::spawn(command)?;
+        Self::spawn_with_profile(command, control, SpawnProfile::Contained)
+    }
+    pub(super) fn spawn_with_profile(
+        command: Command,
+        control: Arc<Control>,
+        profile: SpawnProfile,
+    ) -> io::Result<(Self, Pipes)> {
+        let (mut process, pipes) = platform::spawn_with_profile(command, profile)?;
+        #[cfg(all(test, unix))]
+        let pid = process.id();
         let requests = control.clone();
         let (exit_tx, exit_rx) = mpsc::sync_channel(1);
         let supervisor = std::thread::Builder::new()
@@ -203,6 +235,8 @@ impl Session {
                 control,
                 supervisor: Some(supervisor),
                 exit: Some(exit_rx),
+                #[cfg(all(test, unix))]
+                pid,
             },
             pipes,
         ))
@@ -224,6 +258,10 @@ impl Session {
                 )))
             }
         }
+    }
+    #[cfg(all(test, unix))]
+    pub(super) fn pid(&self) -> u32 {
+        self.pid
     }
     pub(super) fn finish(&mut self, force: bool) -> io::Result<ExitStatus> {
         self.control.finish(force);
