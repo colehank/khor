@@ -28,7 +28,7 @@
 | --- | --- | --- |
 | root | wave1@767aa23d；plan总账；store-owner-recovery fix/quality-current-gui-protocol@13a9459f clean | 集成/公共接口/最终验收；Q033小片已集成，无该片进程。负责独审Gen与R1。catalog host-gui-protocol两行已冻结，后续en/zh写权移交N1新增Pending键。 |
 | node_transfer_owner | recovery `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery` fix/quality-node-doc-transfer@5f2d5cf7+N1 WIP | 已审真红fixtures保存dd60fc5d/audit/node-transfer-n0-red-20261027，再仅cherry库lookup686f为5f2d5cf7。N1正常Node完整接线已授权：link/proto/lib、新link_doc_transfer/doc_transfer_state私有模块、定向tests；catalog仅normal Pending对应键。不可再按旧表禁止N1。目标真实25MB/公平SeenPin/no Loaded跨await/固定plan+checked receipt/ACK，删正常旧Sync/Synced/base64；巨大Pair/Vouch恢复N2仍必须后续。暂不Cargo。 |
-| remote_cancel_owner | agent-protocol fix/quality-remote-cancel@f0104d73+19源03冻结 | R1 4net+1meta有限owned Worker、独立intent/receipt、绑定身份/Status/Retry。公共link/proto/lib保01原patch且已移交后续写权给Node/root；不能再修改。当前获唯一槽：03实际CLI→libtest no-run→R0先exact，绿后其余18父清单。03尚无业务结果，编译/失败按实际记录。 |
+| remote_cancel_owner | agent-protocol fix/quality-remote-cancel@f0104d73+19源03冻结 | R1 4net+1meta有限owned Worker、独立intent/receipt、绑定身份/Status/Retry。公共link/proto/lib保01原patch且已移交后续写权给Node/root；不能再修改。当前获唯一槽：03实际CLI→libtest no-run→R0先exact，绿后其余18父清单。03已actual CLI+libtest编译，原R0与auth/parent两普通父通过；working_ack在historical_run缺runs目录前置setup失败，后16未执行。04仅test helper mkdir已授权，复用生产相同03CLI、重编test后只续16，不充数重跑前2。 |
 | node_test_review（Gen实现作者） | native-io fix/quality-generated-bindings@686f2e42+3源02冻结 | 已从只读转Gen作者，root独审不能自审。完整stage/inventory/lock/journal发布恢复，保原71根；rootB1数量预算前置已02修。11普通父+1实际子worker未编/未运行，未Cargo/gen。该agent独立完成Q033最终19审与Node首红审，相关已结束卡可提交。 |
 
 上述四树复用已有目录，不新建worktree/target。旧库作者/其他历史角色已交还源，无活槽。send_message不唤醒已completed agent；新行动用followup_task或明确新派发，先核现场。
@@ -63,3 +63,7 @@
 ## 完整目标仍缺
 
 Node/N1真实大差集收敛、Pair/Vouch/N2恢复、R1/R2远端取消、Q033完整原生GUI链、Q035实际borrow lease、P1剩余模块深审、P4格式/职责/错误/历史/工具链治理、P5最终同源App全流程。当前only受测源码树集成，不声称最终App通过。物理iPhone/IME/Windowsruntime仍明确未知，不把metadata当跨平台runtime。main/ship不在本轮授权。
+
+## R1最新真实执行增量
+
+03 focused-candidate03-20261026T195317Z：CLI66.583s/libtest53.513s绿；原R0 exact1父5.771s真正红→绿，四held Cancel/四CLI活→释放回收→第五六真实Cancel全部到齐，全部本地runtime/MCP/IPC清理先于primary断言。auth/parent helper0.971s绿。随后working_ack在fixture historical_run::save之前因runs目录缺失ENOENT失败，非产品红；后15case未运行。2350源稳/所有观察组空/fallback空/无guard或IO，总130.581s/min外6,037,106,688B。03源码/历史不改；root授权04仅newtests历史记录helper建真实file.parent，完整freeze后重编libtest并只续剩16。03CLI生产未变须核实际SHA/size/mtime复用，不重复CLI/normalcheck/前2。唯一槽仍该owner，Gen11准备好未launch。
