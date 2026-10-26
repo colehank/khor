@@ -13,7 +13,7 @@ use base64::Engine;
 use khor_catalog::msg;
 use loro::VersionVector;
 
-use crate::store::{BlockStore, Doc};
+use crate::store::{BlockStore, Doc, MergeReport};
 
 /// Raw bytes (pre-base64) one sync may carry per direction. The control
 /// stream is serial — a huge frame blocks keys and events queued behind
@@ -150,14 +150,18 @@ pub fn changes_since_b64<D: Doc>(store: &mut BlockStore, doc: &D, theirs: &str) 
 /// Merges what the far side sent. Empty = nothing for me, not an error.
 /// Idempotent: the same segment twice equals once.
 pub fn merge_b64<D: Doc>(doc: &D, changes: &str) -> Result<(), String> {
+    merge_b64_report(doc, changes).map(|_| ())
+}
+
+fn merge_b64_report<D: Doc>(doc: &D, changes: &str) -> Result<MergeReport, String> {
     if changes.is_empty() {
-        return Ok(());
+        return Ok(MergeReport::default());
     }
     let bytes = B64.decode(changes).map_err(msg::delta_not_base64)?;
     if bytes.len() > MAX_BYTES {
         return Err(msg::inbound_too_big(bytes.len() / 1024, MAX_BYTES / 1024));
     }
-    doc.merge(&bytes)
+    doc.merge_report(&bytes)
 }
 
 /// base64 → version vector, refused across epochs ([`unspell`]). Empty =
@@ -264,7 +268,8 @@ impl Peer {
         // What they sent counts in the epoch they say they are in.
         decode_version(store, &reply.version)?;
         let before = doc.version();
-        merge_b64(doc, &reply.changes)?;
+        let report = merge_b64_report(doc, &reply.changes)?;
+        store.record_import(&report);
         store.took_in(&before, doc);
         store.flush(doc)?;
         self.their = reply.version;
@@ -319,7 +324,8 @@ pub fn answer<D: Doc>(
     decode_version(store, have)?;
     let out = changes_since_b64(store, doc, have);
     let before = doc.version();
-    merge_b64(doc, changes)?;
+    let report = merge_b64_report(doc, changes)?;
+    store.record_import(&report);
     store.took_in(&before, doc);
     store.flush(doc)?;
     let out = out?;

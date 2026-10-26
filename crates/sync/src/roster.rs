@@ -151,8 +151,8 @@ impl Doc for RosterDoc {
         glue::snapshot(&self.inner)
     }
 
-    fn merge(&self, bytes: &[u8]) -> Result<(), String> {
-        glue::merge(&self.inner, bytes)
+    fn merge_report(&self, bytes: &[u8]) -> Result<crate::store::MergeReport, String> {
+        glue::merge_report(&self.inner, bytes)
     }
 
     fn items(&self) -> usize {

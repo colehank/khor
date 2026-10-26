@@ -12,6 +12,7 @@
 //! Loro increments merge in any order, so "immutable files + merge them
 //! all" is the entire consistency story.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -46,6 +47,23 @@ const EPOCH_FILE: &str = ".epoch";
 /// stays epoch 0 for good.
 pub const EPOCH: u32 = 1;
 
+/// One writer's half-open operation range reported by Loro import.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportSpan {
+    pub writer: u64,
+    pub start: i32,
+    pub end: i32,
+}
+
+/// Loro's actual applied/pending ranges for this import. Ranges are not full
+/// version vectors or exact counts; applied may include earlier pending ops
+/// whose dependencies this batch supplied.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MergeReport {
+    pub applied: Vec<ImportSpan>,
+    pub pending: Vec<ImportSpan>,
+}
+
 /// What the block store and the wire need from a CRDT document. One
 /// implementation per replicated table (chat, devices, …).
 pub trait Doc: Sized {
@@ -56,8 +74,12 @@ pub trait Doc: Sized {
     /// frame or a file, both work.
     fn changes_since(&self, theirs: &VersionVector) -> Result<Vec<u8>, String>;
     fn snapshot(&self) -> Result<Vec<u8>, String>;
-    /// Idempotent: the same bytes twice equal once.
-    fn merge(&self, bytes: &[u8]) -> Result<(), String>;
+    fn merge_report(&self, bytes: &[u8]) -> Result<MergeReport, String>;
+    /// Idempotent; ordinary block recovery may legitimately park pending ops
+    /// until a later block supplies their dependencies.
+    fn merge(&self, bytes: &[u8]) -> Result<(), String> {
+        self.merge_report(bytes).map(|_| ())
+    }
     /// Item count for humans (messages, devices, …).
     fn items(&self) -> usize;
 }
@@ -87,6 +109,9 @@ pub struct BlockStore {
     pen: Option<(PathBuf, u64)>,
     /// The name [`BlockStore::took_in`] retired, for the caller to say.
     retired: Option<u64>,
+    /// Highest pending end per writer, from block reads or live imports.
+    /// Repeated reports do not grow this map; current VV decides resolution.
+    pending: BTreeMap<u64, i32>,
 }
 
 /// What `load` returns.
@@ -683,6 +708,7 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
     let loaded: Loaded<D> = load_inner(dir, lease, base)?;
     if !before.is_empty()
         && fingerprint(dir).is_ok_and(|after| after == before)
+        && !loaded.store.has_unresolved_imports(&loaded.doc)
         && let Ok(snapshot) = loaded.doc.snapshot()
     {
         KEPT.lock().unwrap_or_else(|p| p.into_inner()).insert(
@@ -714,7 +740,10 @@ fn kept_copy<D: Doc + 'static>(dir: &Path, lease: Lease, listing: &Fingerprint) 
     let Ok(doc) = D::open(lease.peer) else {
         return Err(lease);
     };
-    if doc.merge(&snapshot).is_err() {
+    if !doc
+        .merge_report(&snapshot)
+        .is_ok_and(|report| report.pending.is_empty())
+    {
         return Err(lease);
     }
     KEPT_HITS.fetch_add(1, Ordering::Relaxed);
@@ -734,6 +763,7 @@ fn kept_copy<D: Doc + 'static>(dir: &Path, lease: Lease, listing: &Fingerprint) 
         stamp: false,
         pen: lease.pen_file(),
         retired: None,
+        pending: BTreeMap::new(),
     };
     Ok(Loaded { store, doc, broken, lease })
 }
@@ -799,8 +829,12 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<(Lo
     let mut grew = false;
     let mut held = std::collections::BTreeSet::new();
     let mut kept = std::collections::BTreeSet::new();
+    let mut pending = BTreeMap::new();
     if let Some(base) = base {
-        if doc.merge(&base.snapshot).is_err() {
+        if !doc
+            .merge_report(&base.snapshot)
+            .is_ok_and(|report| report.pending.is_empty())
+        {
             return read_once(dir, lease, None);
         }
         held = base
@@ -820,14 +854,16 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<(Lo
         }
         imported += 1;
         match fs::read(&p) {
-            Ok(bytes) => {
-                if doc.merge(&bytes).is_err() {
-                    broken.push(p);
-                } else if let Some(n) = file_name(&p) {
-                    grew |= ledger.insert(&n);
-                    held.insert(n);
+            Ok(bytes) => match doc.merge_report(&bytes) {
+                Err(_) => broken.push(p),
+                Ok(report) => {
+                    remember_pending(&mut pending, &report);
+                    if let Some(n) = file_name(&p) {
+                        grew |= ledger.insert(&n);
+                        held.insert(n);
+                    }
                 }
-            }
+            },
             // Only a missing file is a compaction; anything else is a
             // block this reader genuinely could not read, and those are
             // what `broken` is for.
@@ -851,6 +887,7 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<(Lo
         stamp: false,
         pen: lease.pen_file(),
         retired: None,
+        pending,
     };
     // Only write the ledger if the directory exists (an empty document
     // should leave nothing on disk) **and if this read learned a block
@@ -875,7 +912,56 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<(Lo
     Ok((Loaded { store, doc, broken, lease }, vanished))
 }
 
+fn remember_pending(pending: &mut BTreeMap<u64, i32>, report: &MergeReport) {
+    for span in &report.pending {
+        pending.entry(span.writer).and_modify(|end| *end = (*end).max(span.end)).or_insert(span.end);
+    }
+}
+
+#[cfg(test)]
+mod pending_reports {
+    use super::*;
+    use crate::pins::PinDoc;
+
+    #[test]
+    fn repeated_live_reports_keep_one_end_per_writer_and_resolve_after_dependency() {
+        let dir = crate::testutil::tmpdir("pending-report-bound");
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+        let cleanup = Cleanup(dir.clone());
+        let source = PinDoc::new(0x3920).unwrap();
+        source.set("dependency", true).unwrap();
+        let after_dependency = source.version();
+        let dependency = source.changes_since(&Default::default()).unwrap();
+        source.set("edit", true).unwrap();
+        let edit = source.changes_since(&after_dependency).unwrap();
+        let mut loaded = load::<PinDoc>(&dir, 0x3921).unwrap();
+        let report = loaded.doc.merge_report(&edit).unwrap();
+        assert!(!report.pending.is_empty());
+        for _ in 0..4096 { loaded.store.record_import(&report); }
+        assert_eq!(loaded.store.pending.len(), 1, "message count must not grow store metadata");
+        assert!(loaded.store.compact(&loaded.doc).is_err());
+        let resolved = loaded.doc.merge_report(&dependency).unwrap();
+        loaded.store.record_import(&resolved);
+        assert!(loaded.doc.pinned("dependency") && loaded.doc.pinned("edit"));
+        loaded.store.compact(&loaded.doc).unwrap();
+        drop(loaded); drop(cleanup);
+    }
+}
+
 impl BlockStore {
+    /// Register the real report after an import into this store's document,
+    /// before flush/compaction. This does not mint ops or claim target coverage.
+    pub fn record_import(&mut self, report: &MergeReport) {
+        remember_pending(&mut self.pending, report);
+    }
+
+    fn has_unresolved_imports<D: Doc>(&self, doc: &D) -> bool {
+        let version = doc.version();
+        self.pending
+            .iter()
+            .any(|(writer, end)| version.get(writer).copied().unwrap_or(0) < *end)
+    }
     /// My side of the books, for [`crate::plan::plan`].
     pub fn side(&self) -> Result<Side, String> {
         Ok(Side::new(
@@ -1049,6 +1135,9 @@ impl BlockStore {
     /// listing and not in the snapshot, and deleting it lost its writes
     /// for good (`store::tests::a_block_written_while_compacting_is_not_deleted_unread`).
     pub fn compact<D: Doc>(&mut self, doc: &D) -> Result<PathBuf, String> {
+        if self.has_unresolved_imports(doc) {
+            return Err("cannot compact unresolved CRDT imports".to_owned());
+        }
         self.make_dir()?;
         let old: Vec<PathBuf> = blocks(&self.dir)?
             .into_iter()
@@ -1242,8 +1331,8 @@ impl Doc for AnyDoc {
     fn snapshot(&self) -> Result<Vec<u8>, String> {
         crate::glue::snapshot(&self.0)
     }
-    fn merge(&self, bytes: &[u8]) -> Result<(), String> {
-        crate::glue::merge(&self.0, bytes)
+    fn merge_report(&self, bytes: &[u8]) -> Result<crate::store::MergeReport, String> {
+        crate::glue::merge_report(&self.0, bytes)
     }
     fn items(&self) -> usize {
         0
