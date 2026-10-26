@@ -323,6 +323,7 @@ pub struct Handle {
     facts: Facts,
     settings: Settings,
     close: Arc<CloseGate>,
+    event_fence: EventFence,
 }
 
 impl Drop for Handle {
@@ -332,6 +333,13 @@ impl Drop for Handle {
 }
 
 impl Handle {
+    /// Forward the finite batch of events already accepted before this call.
+    /// Call after an RPC response before publishing its UI completion. This is
+    /// independent of close admission: a delivered response remains delivered.
+    pub async fn fence_events(&self) -> Result<(), String> {
+        self.event_fence.wait().await
+    }
+
     pub fn request_shutdown(&self) {
         self.close.request();
     }
@@ -473,10 +481,10 @@ impl Handle {
     }
 
     /// Replays the whole conversation so far: every replayed update
-    /// arrives as [`Event::Note`], and **all of them are already on the
-    /// receiver when this resolves** — the protocol sends them before
-    /// the `session/load` response, and the connection delivers the
-    /// stream in order, so a caller may drain without waiting.
+    /// arrives as [`Event::Note`]. The SDK dispatches notifications before the
+    /// following response; callers must then await [`Handle::fence_events`]
+    /// before taking a finite snapshot of the public receiver. That fence also
+    /// crosses this crate's separate event-forwarding task.
     ///
     /// Loading a session that is live on this very connection works
     /// (probed on the real adapter, 2026-08-17: a second load answers
@@ -800,6 +808,77 @@ pub async fn start_configured_on(
     }
 }
 
+struct EventFence {
+    requests: mpsc::UnboundedSender<oneshot::Sender<()>>,
+    completed: tokio::sync::watch::Receiver<Option<Result<(), String>>>,
+}
+impl EventFence {
+    async fn wait(&self) -> Result<(), String> {
+        let (ack, received) = oneshot::channel();
+        if self.requests.send(ack).is_ok() && received.await.is_ok() {
+            return Ok(());
+        }
+        let mut completed = self.completed.clone();
+        loop {
+            if let Some(result) = completed.borrow_and_update().clone() { return result; }
+            completed.changed().await
+                .map_err(|_| "ACP event forwarder ended without confirmation".to_owned())?;
+        }
+    }
+}
+struct ForwarderCompletion(tokio::sync::watch::Sender<Option<Result<(), String>>>);
+impl Drop for ForwarderCompletion {
+    fn drop(&mut self) {
+        if self.0.borrow().is_none() {
+            self.0.send_replace(Some(Err("ACP event forwarder was cancelled".into())));
+        }
+    }
+}
+fn start_event_forwarder(
+    mut source: mpsc::UnboundedReceiver<Event>,
+    target: mpsc::UnboundedSender<Event>,
+) -> EventFence {
+    let (requests, mut barriers) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
+    let (done, completed) = tokio::sync::watch::channel(None);
+    // Construct outside the future so dropping an unpolled task also confirms failure.
+    let completion = ForwarderCompletion(done);
+    tokio::spawn(async move {
+        let mut barriers_open = true;
+        let result = loop {
+            tokio::select! {
+                biased;
+                barrier = barriers.recv(), if barriers_open => {
+                    let Some(ack) = barrier else { barriers_open = false; continue; };
+                    // SDK 3.5 completes each notification handler before routing
+                    // the following response. Cross our second queue with one
+                    // finite snapshot; later traffic cannot extend this fence.
+                    let pending = source.len();
+                    let mut failure = None;
+                    for _ in 0..pending {
+                        match source.try_recv() {
+                            Ok(event) => {
+                                if target.send(event).is_err() { failure = Some("ACP event receiver closed".to_owned()); break; }
+                            }
+                            Err(_) => { failure = Some("ACP event source changed during its fence".to_owned()); break; }
+                        }
+                    }
+                    if let Some(error) = failure { break Err(error); }
+                    let _ = ack.send(());
+                }
+                event = source.recv() => {
+                    let Some(event) = event else { break Ok(()); };
+                    if target.send(event).is_err() { break Err("ACP event receiver closed".into()); }
+                }
+            }
+        };
+        completion.0.send_replace(Some(result));
+    });
+    EventFence { requests, completed }
+}
+#[cfg(test)]
+#[path = "event_fence_tests.rs"]
+mod event_fence_tests;
+
 async fn start_transport(
     agent: impl agent_client_protocol::ConnectTo<Client>,
     lifecycle: Option<TransportLifecycle>,
@@ -930,13 +1009,7 @@ async fn start_transport(
     let _ = forward.send(Event::Ready {
         session: session.clone(),
     });
-    tokio::spawn(async move {
-        while let Some(event) = events_rx.recv().await {
-            if forward.send(event).is_err() {
-                break;
-            }
-        }
-    });
+    let event_fence = start_event_forwarder(events_rx, forward);
     Ok((
         Handle {
             conn,
@@ -946,6 +1019,7 @@ async fn start_transport(
             facts,
             settings,
             close: opening.0.take().expect("opening owns its close gate"),
+            event_fence,
         },
         receiver,
     ))
