@@ -1,6 +1,8 @@
 //! Outbound contracts use real Loro documents, block flushes and byte stages.
 use khor_sync::{
-    doc_transfer::{self, Descriptor, Encoding, Outbound, OutboundError, PrepareSpec, Prepared},
+    doc_transfer::{
+        self, BodyError, Descriptor, Encoding, Outbound, OutboundError, PrepareSpec, Prepared,
+    },
     pins::PinDoc,
     store::{self, ApplySpec, Doc, MergeReport},
     transfer::{CHUNK_BYTES, Cancelled, Error, MAX_METADATA_BYTES, Progress, TransferStore},
@@ -479,10 +481,13 @@ fn changing_versions_corrupt_bytes_and_wrong_or_shallow_modes_never_stage() {
             Behavior::MutateFlush | Behavior::MutateExport => {
                 assert!(matches!(result, Err(OutboundError::VersionChanged)))
             }
-            Behavior::Corrupt => assert!(matches!(result, Err(OutboundError::InvalidBody(_)))),
+            Behavior::Corrupt => assert!(matches!(
+                result,
+                Err(OutboundError::Body(BodyError::InvalidLoro(_)))
+            )),
             Behavior::WrongMode | Behavior::Shallow => assert!(matches!(
                 result,
-                Err(OutboundError::EncodingMismatch { .. })
+                Err(OutboundError::Body(BodyError::EncodingMismatch { .. }))
             )),
             Behavior::Normal => unreachable!(),
         }

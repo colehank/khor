@@ -2,9 +2,9 @@
 
 use std::{fmt, io};
 
-use loro::{EncodedBlobMode, LoroDoc, VersionVector};
+use loro::VersionVector;
 
-use super::{Descriptor, Encoding};
+use super::{BodyError, Descriptor, Encoding, body::validate_body};
 use crate::{
     store::{Doc, Loaded},
     transfer::{
@@ -39,11 +39,7 @@ pub enum OutboundError {
     Flush(String),
     Export(String),
     VersionChanged,
-    InvalidBody(String),
-    EncodingMismatch {
-        expected: Encoding,
-        actual: EncodedBlobMode,
-    },
+    Body(BodyError),
     /// The exact manifest permits explicit resume/cancel after a staging error.
     Staging {
         manifest: Manifest,
@@ -64,10 +60,7 @@ impl fmt::Display for OutboundError {
             Self::Flush(why) => write!(f, "outbound flush: {why}"),
             Self::Export(why) => write!(f, "outbound export: {why}"),
             Self::VersionChanged => f.write_str("document changed during outbound preparation"),
-            Self::InvalidBody(why) => write!(f, "invalid outbound Loro body: {why}"),
-            Self::EncodingMismatch { expected, actual } => {
-                write!(f, "outbound encoding {actual} differs from {expected:?}")
-            }
+            Self::Body(why) => fmt::Display::fmt(why, f),
             Self::Transfer(why) => fmt::Display::fmt(why, f),
             Self::Staging { manifest, cause } => {
                 write!(f, "outbound staging {:?}: {cause}", manifest.id())
@@ -76,7 +69,20 @@ impl fmt::Display for OutboundError {
     }
 }
 
-impl std::error::Error for OutboundError {}
+impl std::error::Error for OutboundError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Body(why) => Some(why),
+            Self::Transfer(why) | Self::Staging { cause: why, .. } => Some(why),
+            _ => None,
+        }
+    }
+}
+impl From<BodyError> for OutboundError {
+    fn from(why: BodyError) -> Self {
+        Self::Body(why)
+    }
+}
 impl From<transfer::Error> for OutboundError {
     fn from(why: transfer::Error) -> Self {
         Self::Transfer(why)
@@ -202,51 +208,6 @@ pub fn prepare<D: Doc>(
         sink,
         store: store.clone(),
     }))
-}
-
-/// Byte/format validation only. Complete target coverage and pending imports
-/// must still be checked by the receiver's Doc apply boundary.
-pub(crate) fn validate_body(
-    descriptor: &Descriptor,
-    manifest: &Manifest,
-    body: &[u8],
-) -> Result<(), OutboundError> {
-    if body.len() as u64 > MAX_BLOB_BYTES {
-        return Err(transfer::Error::ResourceLimit("document body exceeds 64 MiB").into());
-    }
-    if descriptor.bind(
-        manifest.source,
-        manifest.recipient,
-        manifest.total_bytes,
-        manifest.digest,
-    )? != *manifest
-    {
-        return Err(
-            transfer::Error::InvalidManifest("document descriptor differs from manifest").into(),
-        );
-    }
-    if body.len() as u64 != manifest.total_bytes {
-        return Err(
-            transfer::Error::InvalidStage("document body length differs from manifest").into(),
-        );
-    }
-    if blake3::hash(body).as_bytes() != &manifest.digest {
-        return Err(transfer::Error::DigestMismatch.into());
-    }
-    let meta = LoroDoc::decode_import_blob_meta(body, true)
-        .map_err(|why| OutboundError::InvalidBody(why.to_string()))?;
-    if !matches!(
-        (descriptor.encoding, meta.mode),
-        (Encoding::Updates, EncodedBlobMode::Updates)
-            | (Encoding::Snapshot, EncodedBlobMode::Snapshot)
-    ) {
-        return Err(OutboundError::EncodingMismatch {
-            expected: descriptor.encoding,
-            actual: meta.mode,
-        });
-    }
-    // Metadata VVs cover only exported writers; they are not a complete target.
-    Ok(())
 }
 
 fn stage(store: &TransferStore, manifest: &Manifest, body: &[u8]) -> transfer::Result<Sink> {

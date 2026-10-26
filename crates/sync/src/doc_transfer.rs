@@ -8,8 +8,14 @@ use loro::VersionVector;
 
 use crate::transfer::{Error, MAX_METADATA_BYTES, Manifest, Result};
 
+mod body;
 mod outbound;
+mod receive;
+mod version;
+pub use body::BodyError;
 pub use outbound::{Outbound, OutboundError, PrepareSpec, Prepared, prepare};
+pub use receive::{ReceiveError, ReceiveSpec, apply_staged};
+pub use version::DocumentVersion;
 
 const MAGIC: &[u8] = b"khor-doc-v1\0";
 const VERSION_ENTRY_BYTES: usize = 12;
