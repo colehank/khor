@@ -191,10 +191,17 @@ type Item =
 type Painting = {
   past: Item[];
   arriving: ChatFrame[];
+  replayFailed: boolean;
   live: Item[];
 };
 
-const BLANK: Painting = { past: [], arriving: [], live: [] };
+const BLANK: Painting = { past: [], arriving: [], replayFailed: false, live: [] };
+
+function discardReplay(paint: Painting): Painting {
+  return paint.arriving.length || paint.replayFailed
+    ? { ...paint, arriving: [], replayFailed: false }
+    : paint;
+}
 
 /** One `ToolCallContent`, the protocol's three-tag union. */
 type ToolContent = {
@@ -597,22 +604,30 @@ function BusyFor({ since }: { since: number }) {
 /** One poll's worth of frames, folded into the picture. Answers the
     same object when nothing was painted, so React stops there. */
 function absorb(paint: Painting, frames: ChatFrame[], readOnly = false): Painting {
-  let { past, arriving, live } = paint;
+  let { past, arriving, replayFailed, live } = paint;
   let moved = false;
   for (const f of frames) {
     if (f.kind === "history") {
+      if (replayFailed) continue;
       if (arriving === paint.arriving) arriving = arriving.slice();
       arriving.push(f);
       continue;
     }
-    if (f.kind === "history_end") {
-      // The replacement. A replay that arrived empty replaces with an
-      // empty past, which is the honest answer for a conversation with
-      // no record — not a reason to keep painting the old one.
-      const rebuilt: Item[] = [];
-      for (const h of arriving) eat(rebuilt, h, true);
-      past = rebuilt;
+    if (f.kind === "control_result" && f.operation === "replay" && f.error !== null) {
+      replayFailed = true;
       arriving = [];
+      continue;
+    }
+    if (f.kind === "history_end") {
+      // Failure and cancellation also close with history_end. Only a
+      // successful replay, including an empty one, replaces known history.
+      if (!replayFailed) {
+        const rebuilt: Item[] = [];
+        for (const h of arriving) eat(rebuilt, h, true);
+        past = rebuilt;
+      }
+      arriving = [];
+      replayFailed = false;
       moved = true;
       continue;
     }
@@ -633,7 +648,7 @@ function absorb(paint: Painting, frames: ChatFrame[], readOnly = false): Paintin
     if (eat(live, f, readOnly)) moved = true;
   }
   if (!moved && arriving === paint.arriving) return paint;
-  return { past, arriving, live };
+  return { past, arriving, replayFailed, live };
 }
 
 /**
@@ -867,6 +882,7 @@ export function ChatView({
     let draftOwner = chatDraftOwner(id);
     const reading = {};
     reader.current = reading;
+    setPaint(discardReplay);
     setLoaded(false);
     setInteractions([]);setProtocol(null);setNotice(null);setControlError(null);setSettings(null);setUsage(null);
     let cursor = 0;
@@ -1101,7 +1117,10 @@ export function ChatView({
             }
             setPaint((prev) => absorb(prev, batch.frames));
           }
-          if (retired) setGone(true);
+          if (retired) {
+            setPaint(discardReplay);
+            setGone(true);
+          }
           outcome = retired ? "ended" : "live";
         })
         .catch(() => {
