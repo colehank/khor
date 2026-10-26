@@ -4,6 +4,7 @@ mod util;
 
 use khor_node::Node;
 use khor_sync::{
+    accounts::{AccountDoc, accounts_dir},
     devices::{DeviceDoc, devices_dir},
     pins::{PinDoc, pins_dir},
     seen::{SeenDoc, seen_dir},
@@ -120,6 +121,16 @@ fn an_oversized_devices_gap_reports_failure_but_seen_and_pins_still_sync() {
 #[test]
 fn a_different_devices_epoch_stays_apart_but_seen_and_pins_still_sync() {
     run_worker("epoch");
+}
+
+#[test]
+fn a_local_inventory_load_failure_reports_error_but_seen_and_pins_still_sync() {
+    run_worker("inventory-local");
+}
+
+#[test]
+fn a_remote_inventory_load_failure_reports_error_but_seen_and_pins_still_sync() {
+    run_worker("inventory-remote");
 }
 
 /// A failing assertion or timeout aborts this fixture's own resident. Worker
@@ -370,11 +381,147 @@ async fn exercise(root: &Path, case: &str) {
     serving.stop().await;
 }
 
+async fn exercise_inventory(root: &Path, case: &str) {
+    let receiver = root.join("receiver");
+    let sender = root.join("sender");
+    util::hermetic(&receiver);
+    util::hermetic(&sender);
+    let resident = Node::open_hosting(receiver.clone(), "isolation-receiver", false).unwrap();
+    assert!(!resident.relays_n0());
+    assert_eq!(resident.relay_map().len(), 1);
+    let serving = Serving(tokio::spawn(resident.serve()));
+    listening(&receiver, &serving).await;
+    let issuer = Node::open_hosting(receiver.clone(), "isolation-receiver", false).unwrap();
+    let client = Node::open_hosting(sender.clone(), "isolation-sender", false).unwrap();
+    assert!(!client.relays_n0());
+    assert_eq!(client.relay_map().len(), 1);
+    assert_eq!(
+        timeout(OPERATION_BY, client.pair(&issuer.invite().unwrap()))
+            .await
+            .expect("inventory fixture pairing deadline")
+            .expect("real pairing succeeds before introducing a store fault"),
+        "isolation-receiver"
+    );
+    assert_eq!(client.devices().unwrap().len(), 2);
+    assert_eq!(issuer.devices().unwrap().len(), 2);
+
+    let faulty_home = if case == "inventory-local" {
+        &sender
+    } else {
+        &receiver
+    };
+    let faulty_accounts = accounts_dir(faulty_home);
+    // First create/load/compact a genuine, empty AccountDoc pile. No account
+    // provider or credential is registered. Only after pairing, replace this
+    // fixture's persisted directory with an ordinary file.
+    fs::create_dir_all(&faulty_accounts).unwrap();
+    {
+        let mut valid = store::load_pile::<AccountDoc>(&faulty_accounts, 0x3930).unwrap();
+        assert!(valid.broken.is_empty());
+        assert!(valid.doc.all().is_empty());
+        let snapshot = valid.store.compact(&valid.doc).unwrap();
+        assert!(snapshot.is_file());
+    }
+    let saved_accounts = root.join("valid-accounts-before-inventory-fault");
+    fs::rename(&faulty_accounts, &saved_accounts).unwrap();
+    fs::write(
+        &faulty_accounts,
+        b"Q039: owned account directory replaced by a file",
+    )
+    .unwrap();
+    assert!(faulty_accounts.is_file() && saved_accounts.is_dir());
+    let io_error = fs::read_dir(&faulty_accounts)
+        .err()
+        .expect("real directory I/O must reject an ordinary file");
+    let expected_reason = khor_catalog::msg::cant_list_dir(faulty_accounts.display(), io_error);
+    let preflight_error = store::load_pile::<AccountDoc>(&faulty_accounts, 0x3931)
+        .err()
+        .expect("the actual AccountDoc load must fail");
+    assert_eq!(preflight_error, expected_reason);
+
+    {
+        let mut seen = store::load_pile::<SeenDoc>(&seen_dir(&sender), 0x3932).unwrap();
+        seen.doc.mark(SESSION, 123).unwrap();
+        seen.store.flush(&seen.doc).unwrap();
+        let mut pins = store::load_pile::<PinDoc>(&pins_dir(&sender), 0x3933).unwrap();
+        pins.doc.set(SESSION, true).unwrap();
+        pins.store.flush(&pins.doc).unwrap();
+    }
+    assert_eq!(
+        store::load_pile::<SeenDoc>(&seen_dir(&receiver), 0x3934)
+            .unwrap()
+            .doc
+            .watermark(SESSION),
+        0
+    );
+    assert!(
+        !store::load_pile::<PinDoc>(&pins_dir(&receiver), 0x3935)
+            .unwrap()
+            .doc
+            .pinned(SESSION)
+    );
+    assert!(
+        !serving.0.is_finished(),
+        "the real receiver must still be serving"
+    );
+    eprintln!(
+        "[Q039-INVENTORY] paired case={case} faulty_accounts={} expected_reason={expected_reason} baseline_seen=0 baseline_pin=false",
+        faulty_accounts.display()
+    );
+
+    // The sender has no resident. Only this one real Node round may push its
+    // independent docs. A Refused response's current fallback policy is not
+    // simulated here; observed Err/Ok and actual disk contents decide the case.
+    let outcomes = timeout(OPERATION_BY, client.sync_now())
+        .await
+        .expect("the inventory round must not hang")
+        .expect("sync_now must return per-device outcomes");
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].0, "isolation-receiver");
+    let verdict = &outcomes[0].1;
+    let seen = store::load_pile::<SeenDoc>(&seen_dir(&receiver), 0x3936)
+        .unwrap()
+        .doc
+        .watermark(SESSION);
+    let pinned = store::load_pile::<PinDoc>(&pins_dir(&receiver), 0x3937)
+        .unwrap()
+        .doc
+        .pinned(SESSION);
+    eprintln!(
+        "[Q039-INVENTORY] outcome case={case} verdict={verdict:?} seen={seen} pinned={pinned}"
+    );
+    if let Err(why) = verdict {
+        assert!(
+            why.contains(&expected_reason),
+            "an unrelated dial/transport failure is not the inventory business case: {why}"
+        );
+    }
+    assert!(
+        faulty_accounts.is_file() && saved_accounts.is_dir(),
+        "sync must not erase the fixture's damaged or preserved store"
+    );
+    assert_eq!(
+        seen, 123,
+        "an accounts inventory load error must not suppress independent Seen"
+    );
+    assert!(
+        pinned,
+        "an accounts inventory load error must not suppress independent Pins"
+    );
+    verdict.as_ref().expect_err(
+        "a concrete selected accounts load failure must remain visible as a round error",
+    );
+    serving.stop().await;
+}
+
 #[test]
-#[ignore = "dedicated process fixture, actually launched by both isolation parents"]
+#[ignore = "dedicated process fixture, actually launched by the four ordinary parents"]
 fn node_doc_isolation_worker() {
     let case = std::env::var("KHOR_NODE_ISOLATION_CASE").expect("parent supplies its fixture case");
-    assert!(matches!(case.as_str(), "oversize" | "epoch"));
+    assert!(matches!(
+        case.as_str(),
+        "oversize" | "epoch" | "inventory-local" | "inventory-remote"
+    ));
     let root = PathBuf::from(
         std::env::var_os("KHOR_NODE_ISOLATION_ROOT").expect("parent owns this scratch root"),
     );
@@ -385,9 +532,15 @@ fn node_doc_isolation_worker() {
         .build()
         .unwrap();
     runtime.block_on(async {
-        timeout(WORKER_BY, exercise(&root, &case))
-            .await
-            .expect("the complete Node fixture must finish within its total deadline");
+        timeout(WORKER_BY, async {
+            if case.starts_with("inventory-") {
+                exercise_inventory(&root, &case).await;
+            } else {
+                exercise(&root, &case).await;
+            }
+        })
+        .await
+        .expect("the complete Node fixture must finish within its total deadline");
     });
     runtime.shutdown_timeout(Duration::from_secs(2));
     eprintln!("[Q039-NODE] passed case={case}");
