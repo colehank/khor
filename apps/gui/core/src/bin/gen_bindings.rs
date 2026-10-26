@@ -1,153 +1,165 @@
-//! Prints the frontend's TS types from the Rust structs. Run by the
-//! npm `gen` script; the output directory is git-ignored — generated
-//! files are never a second source of truth.
+//! Generate the complete frontend bindings from one Rust root inventory.
 
-use ts_rs::TS;
+#[path = "gen_bindings/managed.rs"]
+mod managed;
 
-fn main() {
-    // **Read at run time, never baked in at compile time.** This used
-    // to be `env!("CARGO_MANIFEST_DIR")`, which is the path of whichever
-    // checkout *compiled* the binary — and `scripts/build-on.sh` runs
-    // `cargo run` from a throwaway export of HEAD against the shared
-    // target dir, where cargo happily reuses a binary compiled from an
-    // earlier export. So on 2026-09-16 `npm run gen` in a fresh export
-    // wrote its 75 files into `$TMPDIR/khor-build-on.52819/…`, a tree
-    // left by an interrupted run days before, and the export it was
-    // run in got nothing; tsc then failed on the missing modules and
-    // two of the three machines refused the install. `cargo run` sets
-    // `CARGO_MANIFEST_DIR` for the process it starts, so the run-time
-    // value names the crate the person is actually standing in. An
-    // explicit first argument wins over both, for anybody driving this
-    // without cargo.
-    let dir = match std::env::args().nth(1) {
-        Some(given) => std::path::PathBuf::from(given),
+use std::{
+    any::TypeId,
+    collections::{BTreeSet, HashSet},
+    path::Path,
+};
+use ts_rs::{TS, TypeVisitor};
+
+// Both preflight and export visit this one list, including standalone answers
+// that no other root embeds. Dependencies are walked by ts-rs in both passes.
+macro_rules! roots {
+    ($visit:ident) => {
+        $visit!(khor_gui_core::console::ConsoleCommand);
+        $visit!(khor_gui_core::console_complete::Completion);
+        $visit!(khor_gui_core::SeenMessage);
+        $visit!(khor_gui_core::launch::LaunchPreset);
+        $visit!(khor_gui_core::SessionRow);
+        $visit!(khor_gui_core::term::EndedPage);
+        $visit!(khor_gui_core::DeviceRow);
+        $visit!(khor_gui_core::import::CandidateRow);
+        $visit!(khor_gui_core::FindHit);
+        $visit!(khor_gui_core::DayRun);
+        $visit!(khor_gui_core::FaceChoices);
+        $visit!(khor_gui_core::KhorAgentView);
+        $visit!(khor_gui_core::RelayChoices);
+        $visit!(khor_gui_core::RelayWant);
+        $visit!(khor_gui_core::RoadShare);
+        $visit!(khor_gui_core::Connections);
+        $visit!(khor_gui_core::ReachReport);
+        $visit!(khor_gui_core::ProxyLine);
+        $visit!(khor_gui_core::JournalLine);
+        $visit!(khor_gui_core::add::AddAsk);
+        $visit!(khor_gui_core::add::AddRun);
+        $visit!(khor_gui_core::add::LoginAsk);
+        $visit!(khor_gui_core::RecognitionEntry);
+        $visit!(khor_gui_core::HooksState);
+        $visit!(khor_gui_core::Ticket);
+        $visit!(khor_gui_core::About);
+        $visit!(khor_gui_core::LeaveOutcome);
+        $visit!(khor_gui_core::Waiting);
+        $visit!(khor_gui_core::SyncOutcome);
+        $visit!(khor_gui_core::DoctorRow);
+        $visit!(khor_gui_core::LockFacts);
+        $visit!(khor_gui_core::ConfigRow);
+        $visit!(khor_gui_core::AgentRow);
+        $visit!(khor_gui_core::workspaces::WorkspaceRow);
+        $visit!(khor_gui_core::files::FileText);
+        $visit!(khor_gui_core::file_handoff::FileHandoff);
+        $visit!(khor_gui_core::files::FileStat);
+        $visit!(khor_gui_core::files::DirWatch);
+        $visit!(khor_gui_core::git::GitStatus);
+        $visit!(khor_gui_core::git::GitDiff);
+        $visit!(khor_gui_core::git::GitLog);
+        $visit!(khor_gui_core::git::GitBlame);
+        $visit!(khor_gui_core::git::GitShow);
+        $visit!(khor_gui_core::git::GitCommitShow);
+        $visit!(khor_gui_core::files::Wrote);
+        $visit!(khor_gui_core::files::Merged);
+        $visit!(khor_gui_core::code::CodeAt);
+        $visit!(khor_gui_core::code::Editor);
+        $visit!(khor_gui_core::files::Preview);
+        $visit!(khor_gui_core::files::Found);
+        $visit!(khor_gui_core::AccountRing);
+        $visit!(khor_gui_core::subscriptions::SubscriptionCandidate);
+        $visit!(khor_gui_core::agents::KnownAgent);
+        $visit!(khor_gui_core::agents::AgentSaid);
+        $visit!(khor_node::Usage);
+        $visit!(khor_core::Load);
+        $visit!(khor_gui_core::QuotaAnswer);
+        $visit!(khor_gui_core::chat::ChatBatch);
+        $visit!(khor_gui_core::MachineLog);
+        $visit!(khor_gui_core::files::DirListing);
+        $visit!(khor_gui_core::recents::RecentRow);
+        $visit!(khor_gui_core::web::WebBorrow);
+        $visit!(khor_gui_core::tabs::TabsOpen);
+        $visit!(khor_gui_core::tabs::TabRow);
+        $visit!(khor_gui_core::term::TermStart);
+        $visit!(khor_gui_core::term::TermChunk);
+        $visit!(khor_gui_core::term::DropEnd);
+        $visit!(khor_gui_core::term::DropItem);
+        $visit!(khor_gui_core::miss::Miss);
+        $visit!(khor_gui_core::term::PaneHistory);
+        $visit!(khor_gui_core::term::HistoryRow);
+    };
+}
+
+#[derive(Default)]
+struct Paths {
+    seen: HashSet<TypeId>,
+    files: BTreeSet<String>,
+    error: Option<String>,
+}
+impl TypeVisitor for Paths {
+    fn visit<T: TS + 'static + ?Sized>(&mut self) {
+        if self.error.is_some() || !self.seen.insert(TypeId::of::<T>()) {
+            return;
+        }
+        let Some(path) = T::output_path() else { return };
+        match managed::type_name(path) {
+            Ok(name) => {
+                self.files.insert(name);
+            }
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        }
+        T::visit_dependencies(self);
+    }
+}
+fn planned_files() -> Result<BTreeSet<String>, String> {
+    let mut paths = Paths::default();
+    macro_rules! inspect {
+        ($ty:ty) => {
+            paths.visit::<$ty>();
+        };
+    }
+    roots!(inspect);
+    match paths.error {
+        Some(error) => Err(error),
+        None => Ok(paths.files),
+    }
+}
+fn export(dir: &Path) -> Result<(), String> {
+    macro_rules! emit {
+        ($ty:ty) => {
+            <$ty>::export_all_to(dir)
+                .map_err(|error| format!("export {}: {error}", stringify!($ty)))?;
+        };
+    }
+    roots!(emit);
+    Ok(())
+}
+fn run() -> Result<(), String> {
+    let mut args = std::env::args_os().skip(1);
+    let given = args.next();
+    if args.next().is_some() {
+        return Err("expected at most one bindings output directory".into());
+    }
+    let default_output = given.is_none();
+    // Cargo sets this at execution time. A shared-target binary must never
+    // write into the checkout that happened to compile it (2026-09-16).
+    let dir = match given {
+        Some(path) => path.into(),
         None => std::path::PathBuf::from(
-            std::env::var("CARGO_MANIFEST_DIR")
-                .unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string()),
+            std::env::var_os("CARGO_MANIFEST_DIR")
+                .ok_or("set CARGO_MANIFEST_DIR or pass an explicit output directory")?,
         )
         .join("../src/gen/bindings"),
     };
-    khor_gui_core::console::ConsoleCommand::export_all_to(&dir).expect("export ConsoleCommand");
-    khor_gui_core::console_complete::Completion::export_all_to(&dir).expect("export Completion");
-    khor_gui_core::SeenMessage::export_all_to(&dir).expect("export SeenMessage");
-    khor_gui_core::launch::LaunchPreset::export_all_to(&dir).expect("export LaunchPreset");
-    khor_gui_core::SessionRow::export_all_to(&dir).expect("export SessionRow");
-    khor_gui_core::term::EndedPage::export_all_to(&dir).expect("export EndedPage");
-    khor_gui_core::DeviceRow::export_all_to(&dir).expect("export DeviceRow");
-    khor_gui_core::import::CandidateRow::export_all_to(&dir).expect("export CandidateRow");
-    khor_gui_core::FindHit::export_all_to(&dir).expect("export FindHit");
-    // Asked for on its own beat and keyed by session id, so no row
-    // embeds it and `export_all_to` would never walk into it. Walks into
-    // `DayMark` from here.
-    khor_gui_core::DayRun::export_all_to(&dir).expect("export DayRun");
-    khor_gui_core::FaceChoices::export_all_to(&dir).expect("export FaceChoices");
-    khor_gui_core::KhorAgentView::export_all_to(&dir).expect("export KhorAgentView");
-    khor_gui_core::RelayChoices::export_all_to(&dir).expect("export RelayChoices");
-    // What a relay write sends; embedded in no answer.
-    khor_gui_core::RelayWant::export_all_to(&dir).expect("export RelayWant");
-    // 网络's 直连占比: asked on its own when the page opens.
-    khor_gui_core::RoadShare::export_all_to(&dir).expect("export RoadShare");
-    khor_gui_core::Connections::export_all_to(&dir).expect("export Connections");
-    // 全网谁够得着: asked by one press, embedded in nothing. Walks into
-    // `ReachRow` and `ReachOutcome` from here.
-    khor_gui_core::ReachReport::export_all_to(&dir).expect("export ReachReport");
-    // 经由's copy line: asked by one screen, embedded in nothing.
-    khor_gui_core::ProxyLine::export_all_to(&dir).expect("export ProxyLine");
-    // 连接记录: asked by the machine page, embedded in nothing.
-    khor_gui_core::JournalLine::export_all_to(&dir).expect("export JournalLine");
-    khor_gui_core::add::AddAsk::export_all_to(&dir).expect("export AddAsk");
-    khor_gui_core::add::AddRun::export_all_to(&dir).expect("export AddRun");
-    khor_gui_core::add::LoginAsk::export_all_to(&dir).expect("export LoginAsk");
-    khor_gui_core::RecognitionEntry::export_all_to(&dir).expect("export RecognitionEntry");
-    khor_gui_core::HooksState::export_all_to(&dir).expect("export HooksState");
-    khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
-    // The identity card's foot: asked for on its own, embedded in no row.
-    khor_gui_core::About::export_all_to(&dir).expect("export About");
-    // What 离开这张网 answers with (docs/MORE.md 离开): asked once, by
-    // one press, and embedded in nothing.
-    khor_gui_core::LeaveOutcome::export_all_to(&dir).expect("export LeaveOutcome");
-    // 待批's answer: asked on its own beat by the devices list, embedded
-    // in nothing. Walks into `PendingRow` from here.
-    khor_gui_core::Waiting::export_all_to(&dir).expect("export Waiting");
-    // A pull's sync round (`sync_now`), one per machine.
-    khor_gui_core::SyncOutcome::export_all_to(&dir).expect("export SyncOutcome");
-    // 诊断's rows: asked on their own beat, embedded in nothing.
-    khor_gui_core::DoctorRow::export_all_to(&dir).expect("export DoctorRow");
-    // 安全's own facts: asked by the lock screen before anything else is
-    // drawn, embedded in nothing.
-    khor_gui_core::LockFacts::export_all_to(&dir).expect("export LockFacts");
-    // 设置's rows: asked on their own beat by two pages, embedded in
-    // nothing. Walks into `ConfigChoice` from here.
-    khor_gui_core::ConfigRow::export_all_to(&dir).expect("export ConfigRow");
-    // Not reachable through any row above: the wizard asks for the
-    // agent list on its own, so nothing embeds it.
-    khor_gui_core::AgentRow::export_all_to(&dir).expect("export AgentRow");
-    // The workspace landing asks per machine on its own beat; no row
-    // embeds it either.
-    khor_gui_core::workspaces::WorkspaceRow::export_all_to(&dir).expect("export WorkspaceRow");
-    // One file's text, asked for when a file is opened; no row embeds it.
-    khor_gui_core::files::FileText::export_all_to(&dir).expect("export FileText");
-    khor_gui_core::file_handoff::FileHandoff::export_all_to(&dir).expect("export FileHandoff");
-    khor_gui_core::files::FileStat::export_all_to(&dir).expect("export FileStat");
-    khor_gui_core::files::DirWatch::export_all_to(&dir).expect("export DirWatch");
-    khor_gui_core::git::GitStatus::export_all_to(&dir).expect("export GitStatus");
-    khor_gui_core::git::GitDiff::export_all_to(&dir).expect("export GitDiff");
-    khor_gui_core::git::GitLog::export_all_to(&dir).expect("export GitLog");
-    khor_gui_core::git::GitBlame::export_all_to(&dir).expect("export GitBlame");
-    khor_gui_core::git::GitShow::export_all_to(&dir).expect("export GitShow");
-    khor_gui_core::git::GitCommitShow::export_all_to(&dir).expect("export GitCommitShow");
-    khor_gui_core::files::Wrote::export_all_to(&dir).expect("export Wrote");
-    // The answer to a refused save's third exit; nothing embeds it.
-    khor_gui_core::files::Merged::export_all_to(&dir).expect("export Merged");
-    khor_gui_core::code::CodeAt::export_all_to(&dir).expect("export CodeAt");
-    khor_gui_core::code::Editor::export_all_to(&dir).expect("export Editor");
-    khor_gui_core::files::Preview::export_all_to(&dir).expect("export Preview");
-    // What the box at the head of the tree gets back (工作区第六轮 第 47
-    // 条); nothing embeds it, and it walks into `SearchHit` from here.
-    khor_gui_core::files::Found::export_all_to(&dir).expect("export Found");
-    // The 额度 page asks for its rings on its own beat; no row embeds
-    // them. Walks into `AccountReading` and `Strain` from here.
-    khor_gui_core::AccountRing::export_all_to(&dir).expect("export AccountRing");
-    khor_gui_core::subscriptions::SubscriptionCandidate::export_all_to(&dir).expect("export SubscriptionCandidate");
-    // Same: the registry snapshot and one agent's recorded
-    // conversations are each asked for on their own beat, so no row
-    // embeds either. `AgentSaid` walks into `SeenSession` from here.
-    khor_gui_core::agents::KnownAgent::export_all_to(&dir).expect("export KnownAgent");
-    khor_gui_core::agents::AgentSaid::export_all_to(&dir).expect("export AgentSaid");
-    // Not reachable through any row above: the spending answer is asked
-    // for on its own, so nothing embeds it and `export_all_to` would
-    // never walk into it.
-    khor_node::Usage::export_all_to(&dir).expect("export Usage");
-    // The machine card's process top and CPU day: the `load` op's
-    // answer, a `khor_core` type no row embeds.
-    khor_core::Load::export_all_to(&dir).expect("export Load");
-    // Same reason as the spending answer above: the subscription is
-    // asked for on its own and no row embeds it, so nothing would walk
-    // into it.
-    khor_gui_core::QuotaAnswer::export_all_to(&dir).expect("export QuotaAnswer");
-    khor_gui_core::chat::ChatBatch::export_all_to(&dir).expect("export ChatBatch");
-    // Asked for on its own by the machine-conversation pane; no row
-    // embeds it.
-    khor_gui_core::MachineLog::export_all_to(&dir).expect("export MachineLog");
-    khor_gui_core::files::DirListing::export_all_to(&dir).expect("export DirListing");
-    // Asked for on its own by each landing's recent list; no row embeds
-    // it, so `export_all_to` would never walk into it.
-    khor_gui_core::recents::RecentRow::export_all_to(&dir).expect("export RecentRow");
-    khor_gui_core::web::WebBorrow::export_all_to(&dir).expect("export WebBorrow");
-    // The browsing tabs (docs/SHELL.md 第 2 条). `TabsOpen` embeds
-    // `TabRow`, and `export_all_to` walks into it — but the row is
-    // named here as well, because the face reads a single tab in places
-    // where it never holds the whole list.
-    khor_gui_core::tabs::TabsOpen::export_all_to(&dir).expect("export TabsOpen");
-    khor_gui_core::tabs::TabRow::export_all_to(&dir).expect("export TabRow");
-    khor_gui_core::term::TermStart::export_all_to(&dir).expect("export TermStart");
-    khor_gui_core::term::TermChunk::export_all_to(&dir).expect("export TermChunk");
-    // A failure in parts (NOTICE-BRIEF): `TermChunk` and `ChatBatch` walk
-    // into it, `DropEnd` too; named so the face can hold one alone.
-    khor_gui_core::term::DropEnd::export_all_to(&dir).expect("export DropEnd");
-    khor_gui_core::term::DropItem::export_all_to(&dir).expect("export DropItem");
-    khor_gui_core::miss::Miss::export_all_to(&dir).expect("export Miss");
-    khor_gui_core::term::PaneHistory::export_all_to(&dir).expect("export PaneHistory");
-    khor_gui_core::term::HistoryRow::export_all_to(&dir).expect("export HistoryRow");
+    let files = planned_files()?;
+    managed::generate(&dir, default_output, &files, export)?;
     println!("bindings -> {}", dir.display());
+    Ok(())
+}
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("bindings: {error}");
+        std::process::exit(1);
+    }
 }
