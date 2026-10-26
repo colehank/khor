@@ -1,8 +1,8 @@
 //! Shared checks for a complete current-format document body, not an apply proof.
 use super::{Descriptor, Encoding};
-use crate::transfer::{self, MAX_BLOB_BYTES, Manifest};
+use crate::transfer::{self, CHUNK_BYTES, MAX_BLOB_BYTES, Manifest, Progress, Sink};
 use loro::{EncodedBlobMode, LoroDoc};
-use std::fmt;
+use std::{fmt, io};
 
 #[derive(Debug)]
 pub enum BodyError {
@@ -81,4 +81,35 @@ pub(super) fn validate_body(
     }
     // Metadata VVs cover only exported writers; they are not a complete target.
     Ok(())
+}
+
+/// Read only a verified complete body. The full Vec is local; each file read
+/// is bounded to 256 KiB and short reads must fill it or fail with EOF.
+pub(super) fn read_verified_body(sink: &mut Sink) -> transfer::Result<Vec<u8>> {
+    if !matches!(sink.progress()?, Progress::VerifiedComplete { .. }) {
+        return Err(transfer::Error::InvalidStage(
+            "document stage is incomplete",
+        ));
+    }
+    let total = sink.manifest().total_bytes;
+    if total > MAX_BLOB_BYTES {
+        return Err(transfer::Error::ResourceLimit(
+            "document body exceeds 64 MiB",
+        ));
+    }
+    let mut body = vec![0; total as usize];
+    let mut at = 0;
+    while at < body.len() {
+        let end = (at + CHUNK_BYTES).min(body.len());
+        let count = sink.read_verified(at as u64, &mut body[at..end])?;
+        if count == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "verified document body was truncated",
+            )
+            .into());
+        }
+        at += count;
+    }
+    Ok(body)
 }

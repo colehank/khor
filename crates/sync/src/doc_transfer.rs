@@ -13,7 +13,7 @@ mod outbound;
 mod receive;
 mod version;
 pub use body::BodyError;
-pub use outbound::{Outbound, OutboundError, PrepareSpec, Prepared, prepare};
+pub use outbound::{Outbound, OutboundError, PrepareSpec, Prepared, prepare, resume};
 pub use receive::{ReceiveError, ReceiveSpec, apply_staged};
 pub use version::DocumentVersion;
 

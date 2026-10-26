@@ -4,7 +4,10 @@ use std::{fmt, io};
 
 use loro::VersionVector;
 
-use super::{BodyError, Descriptor, Encoding, body::validate_body};
+use super::{
+    BodyError, Descriptor, Encoding,
+    body::{read_verified_body, validate_body},
+};
 use crate::{
     store::{Doc, Loaded},
     transfer::{
@@ -45,6 +48,11 @@ pub enum OutboundError {
         manifest: Manifest,
         cause: transfer::Error,
     },
+    /// Retained bytes remain available for explicit cleanup after validation.
+    StagingBody {
+        manifest: Manifest,
+        cause: BodyError,
+    },
     Transfer(transfer::Error),
 }
 
@@ -65,6 +73,9 @@ impl fmt::Display for OutboundError {
             Self::Staging { manifest, cause } => {
                 write!(f, "outbound staging {:?}: {cause}", manifest.id())
             }
+            Self::StagingBody { manifest, cause } => {
+                write!(f, "outbound staged body {:?}: {cause}", manifest.id())
+            }
         }
     }
 }
@@ -72,7 +83,7 @@ impl fmt::Display for OutboundError {
 impl std::error::Error for OutboundError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Body(why) => Some(why),
+            Self::Body(why) | Self::StagingBody { cause: why, .. } => Some(why),
             Self::Transfer(why) | Self::Staging { cause: why, .. } => Some(why),
             _ => None,
         }
@@ -142,6 +153,40 @@ impl Outbound {
         drop(self);
         store.cancel(&manifest)
     }
+}
+
+/// Reopen an exact retained spool without loading/exporting a Doc or choosing
+/// a new target. Missing returns None. Incomplete/invalid retained stages are
+/// reported with their manifest and kept for explicit resume/cleanup policy.
+/// Revalidation still uses a local full Vec, not a bounded Loro/RSS claim.
+pub fn resume(
+    store: &TransferStore,
+    manifest: &Manifest,
+) -> Result<Option<Outbound>, OutboundError> {
+    let descriptor = Descriptor::from_manifest(manifest)?;
+    let Some(mut sink) = store
+        .open_existing(manifest)
+        .map_err(|cause| OutboundError::Staging {
+            manifest: manifest.clone(),
+            cause,
+        })?
+    else {
+        return Ok(None);
+    };
+    let body = read_verified_body(&mut sink).map_err(|cause| OutboundError::Staging {
+        manifest: manifest.clone(),
+        cause,
+    })?;
+    validate_body(&descriptor, manifest, &body).map_err(|cause| OutboundError::StagingBody {
+        manifest: manifest.clone(),
+        cause,
+    })?;
+    drop(body);
+    Ok(Some(Outbound {
+        descriptor,
+        sink,
+        store: store.clone(),
+    }))
 }
 
 /// Capture, flush, export, validate and stage synchronously. Callers must not

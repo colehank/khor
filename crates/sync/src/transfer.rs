@@ -278,6 +278,14 @@ impl TransferStore {
         self.reservations().map(|(bytes, _)| bytes)
     }
 
+    /// List all retained purpose bindings under the existing metadata/quota
+    /// gate. Opaque bindings are returned without document interpretation.
+    pub fn retained_manifests(&self) -> Result<Vec<Manifest>> {
+        let _gate = self.gate()?;
+        self.reservations()
+            .map(|(_, stages)| stages.into_values().collect())
+    }
+
     fn reservations(&self) -> Result<(u64, BTreeMap<TransferId, Manifest>)> {
         let mut bytes = 0u64;
         let mut stages = BTreeMap::new();
@@ -322,10 +330,27 @@ impl TransferStore {
 
     /// First-frame bytes use `Sink::append(0, first)` exactly like later chunks.
     pub fn receive(&self, manifest: Manifest) -> Result<Sink> {
+        self.open_stage(manifest, true)?
+            .ok_or(Error::InvalidStage("new stage was not initialized"))
+    }
+
+    /// Open only this already retained stage, with the ordinary owner and
+    /// checkpoint recovery rules. Missing does not create/reserve a stage or
+    /// occupy an owner. The gate may initialize its control file or reconcile
+    /// an abandoned legal `.initializing` directory before this lookup.
+    pub fn open_existing(&self, manifest: &Manifest) -> Result<Option<Sink>> {
+        manifest.validate()?;
+        self.open_stage(manifest.clone(), false)
+    }
+
+    fn open_stage(&self, manifest: Manifest, create_missing: bool) -> Result<Option<Sink>> {
         let id = manifest.id()?;
         let mut gate = self.gate()?;
         let (reserved, stages) = self.reservations()?;
         let exists = stages.contains_key(&id);
+        if !exists && !create_missing {
+            return Ok(None);
+        }
         if !exists && reserved + manifest.total_bytes > MAX_RESERVED_BYTES {
             return Err(Error::ResourceLimit("retained stages would exceed 128 MiB"));
         }
@@ -352,7 +377,7 @@ impl TransferStore {
         gate.local.insert(owner_path.clone(), id);
         // Nothing fallible after insertion: Owner Drop cannot recurse into a
         // gate still held by a failed receive.
-        Ok(Sink {
+        Ok(Some(Sink {
             manifest,
             id,
             body,
@@ -364,7 +389,7 @@ impl TransferStore {
                 path: owner_path,
                 file: Some(owner_file),
             },
-        })
+        }))
     }
 
     /// Explicitly release an idle stage and its reservation. The complete

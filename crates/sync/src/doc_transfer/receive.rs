@@ -1,10 +1,13 @@
 //! Bind a verified stage to an authorized document, then use its strict apply.
-use super::{BodyError, Descriptor, body::validate_body};
+use super::{
+    BodyError, Descriptor,
+    body::{read_verified_body, validate_body},
+};
 use crate::{
     store::{ApplyError, ApplySpec, Doc, FlushedImport, Loaded},
-    transfer::{self, CHUNK_BYTES, MAX_BLOB_BYTES, Progress, Sink},
+    transfer::{self, Progress, Sink},
 };
-use std::{fmt, io};
+use std::fmt;
 
 /// Authenticated identities and authorized document selected by Node dispatch.
 #[derive(Clone, Debug)]
@@ -94,23 +97,7 @@ pub fn apply_staged<D: Doc>(
         return Err(ReceiveError::Incomplete { next_offset });
     }
     let manifest = sink.manifest().clone();
-    if manifest.total_bytes > MAX_BLOB_BYTES {
-        return Err(transfer::Error::ResourceLimit("document body exceeds 64 MiB").into());
-    }
-    let mut body = vec![0; manifest.total_bytes as usize];
-    let mut at = 0;
-    while at < body.len() {
-        let end = (at + CHUNK_BYTES).min(body.len());
-        let count = sink.read_verified(at as u64, &mut body[at..end])?;
-        if count == 0 {
-            return Err(transfer::Error::from(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "verified document body was truncated",
-            ))
-            .into());
-        }
-        at += count;
-    }
+    let body = read_verified_body(sink)?;
     validate_body(&descriptor, &manifest, &body)?;
     let result = loaded
         .apply_checked(
