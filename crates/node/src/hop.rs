@@ -7,7 +7,7 @@
 //! # The asker (X), the middle (B), the far end (Y)
 //!
 //! - **X**, about to dial Y with no link to it and no recent direct road
-//!   ([`Node::hop_ahead`]), picks a middle from the roadbook ([`middles`])
+//!   ([`Node::hop_ahead`]), picks a middle from the roadbook ([`middles_with_cost`])
 //!   and opens a stream on its tunnel wire to B asking `hop <Y>`.
 //! - **B** checks the gate (the switch, both ends on its roster and not
 //!   paused, its own road to Y not itself a hop), opens a stream on its
@@ -204,29 +204,6 @@ impl Ask {
     }
 }
 
-/// **The middles for a hop from `me` to `to`, best first** (pure, for the
-/// roadbook rules): a machine that is not either end, not a satellite and
-/// not paused here, whose own written road to `to` is direct or its ssh
-/// (it carries `to`, round ROAD-2), and that `me` reaches itself — the
-/// rule before a dial ([`Legs::Dial`]).
-///
-/// - `me` must reach the middle directly — or through the relay when the
-///   middle carries `to` over ssh: then nothing else reaches `to` at all.
-/// - Neither leg may be a hop itself (`via`): one hop only.
-/// - Order: a direct first leg first, then the two legs' round trips.
-///
-/// `rows` are (id, satellite, paused); `mine(b)` is this machine's road
-/// to `b`; `theirs(b)` is `b`'s written road to `to`.
-pub(crate) fn middles(
-    me: &str,
-    to: &str,
-    rows: &[(String, bool, bool)],
-    mine: impl Fn(&str) -> Option<Road>,
-    theirs: impl Fn(&str) -> Option<Road>,
-) -> Vec<String> {
-    middles_with_cost(me, to, rows, mine, theirs, Legs::Dial).into_iter().map(|(b, _)| b).collect()
-}
-
 /// Which legs a middle may stand on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Legs {
@@ -252,10 +229,11 @@ pub(crate) enum Legs {
     ToNoRelay,
 }
 
-/// [`middles`] with each one's cost: its two legs' round trips added, in
-/// ms (`u16::MAX` for a leg with none written) — the measure a hop is
-/// held against the relay by ([`worth_a_hop`]). With [`Legs::Measured`]
-/// the order is the cost alone.
+/// Eligible intermediates and their total two-leg round trips, in milliseconds.
+/// Neither endpoint, satellites, paused machines, nor recursive hops qualify.
+/// The leg policy controls relay eligibility; measured routes sort by cost,
+/// while other policies prefer a direct first leg. An unmeasured leg costs
+/// `u16::MAX` for comparison by [`worth_a_hop`].
 pub(crate) fn middles_with_cost(
     me: &str,
     to: &str,
@@ -651,6 +629,19 @@ async fn splice(a: (SendStream, RecvStream), b: (SendStream, RecvStream)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn middles(
+        me: &str,
+        to: &str,
+        rows: &[(String, bool, bool)],
+        mine: impl Fn(&str) -> Option<Road>,
+        theirs: impl Fn(&str) -> Option<Road>,
+    ) -> Vec<String> {
+        middles_with_cost(me, to, rows, mine, theirs, Legs::Dial)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
 
     fn road(to: &str, k: RoadKind, ms: u16) -> Road {
         Road::own(to, k, None, Some(ms))
