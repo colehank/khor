@@ -20,6 +20,7 @@ pub mod roster;
 pub mod seen;
 pub mod store;
 pub mod titles;
+pub mod transfer;
 pub mod webpins;
 pub mod wire;
 pub mod workspaces;
