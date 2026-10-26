@@ -1,4 +1,4 @@
-> 最新root检查点：core2211→fdeda、pending ed460→9543、当前inventory1d2640d2已进入集成；下面原阶段过程保留历史。严格Doc apply/持久Applied/Node真正chunk与Pair仍未实施，最新状态读STATE。旧Khor兼容不恢复。
+> 最新root检查点：集成HEAD92742250含core、pending、当前inventory与严格Doc apply；187相关Rust及独立审已通过精确作者源。持久网络Applied/Node真正chunk与Pair仍未实施。初始化crash恢复在Q-039-transfer-init.md准备真红，最新执行读STATE。下文原阶段过程为历史，旧Khor兼容不恢复。
 
 # Q039：统一当前文档传输契约（设计待root接口确认）
 
