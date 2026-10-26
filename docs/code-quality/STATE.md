@@ -11,7 +11,7 @@
 
 ## 集成与已验证事实
 
-集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，分支 `integrate/code-quality-wave1`，当前HEAD **9543b233**，另有root当前inventory候选4文件dirty（link/proto/catalog en+zh），尚未运行，不计绿。GUI replay正式gate已独立审查并提交ee51fd54；Q045 8a22→31b1991f、a162→53ade1c2；blob core2211→fdeda78b；Q041c f7c12ae3→76db834b已进入集成。Q041c新scripts已在精确76db root17/17/source稳定；最终Rust组合仍待精确运行。ed460 pending修→9543b233也已集成。
+集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，分支 `integrate/code-quality-wave1`，当前HEAD **1d2640d2**，tracked clean。已集成GUI replay/gate ee51、Q045 31b/53ad、blob core fdeda、Q041c 76db、pending完整性9543、inventory测试34ef和当前inventory修复1d2640d2。当前未接Node完整chunk/Pair，不把inventory收口等于大差集已收敛。
 
 | 范围 | 当前结论与证据边界 |
 | --- | --- |
@@ -29,10 +29,10 @@
 
 | 所有者 | 路径 / 分支 / 固定源 | 当前任务与下一步 |
 | --- | --- | --- |
-| root | wave1集成、plan总账；内盘 `.../recovery/khor-quality-store-owner-recovery`，fix/quality-install-integrity HEADa723bbba | Q041c root四源已提交clean：onset7611d688、build56d83b00、onset test07c9dbd6、bundle test654aa4d6。先准备目标Pi再Cargo、private输出/target目录/dry-run本地完整预检；非作者发现serve-up验证过晚真红，已前移并固定副本，最终独立17/17/source稳定。Q041c f7c→76db已集成，root精确17/17；真实Bun Darwin arm64编译通过，3/3无凭据独立制品smoke，source/providers稳定；Rust嵌入/Linux/musl/onset全链仍待。 |
-| fanout_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，fix/quality-ssh-lifecycle HEADa1625c7f clean冻结 | Q045 8a22cfdb+a1625c7f交付待root集成。单次reaped回执、并行有界I/O、统一deadline含stdin、finite SSH不建持久master；阻塞200ms旧3.036s真红→约226.6ms，双pipe/取消/超限/尾部/独立sentinel等135相关测试通过，36fixture ESRCH。Windows/真实SSH master/远端lease仍未验。MCP审计已交付；当前fix/quality-mcp-cancel@a162仅3文件测试fixture/cfg接线，未运行，等非作者审与槽。同步MCP可能阻断execute/claim是静态风险，尚未取红。 |
-| native_helpers | `/Volumes/disk0/Khor/worktrees/current/khor-quality-native-io`，fix/quality-sync-chunked HEAD2211daa9；唯一untracked pending_cache.rs 首次SHA336ee2f3 | 当前协议blob core5文件已交付未集成：固定manifest/摘要、256KiB chunk、持久offset、进程owner锁与cancel配额释放；12 integration+146lib通过，源码稳定。Stored/VerifiedComplete不冒充Applied，无Node/Pair/Doc接线，初始化中断可留InvalidStage须处理。Doc merge_report草图已写；真实pending-cache2例已实际1绿1红：cache hit后creation到达，create=true/edit=false/target=false。compact另有真实红（snapshot后删唯一edit block）；最小修复ed460→9543已集成，真实report13Doc、cache安全判据、compact guard、2live登记、每writer maxend归并。6业务+147lib+12transfer通过/source稳定。当前只准备真实Node inventory加载失败2回归，生产归root，等待授新槽。 |
-| store_owner | 只读wave1 root四文件 | Q041c审查已完成并交还源码权；GUI gate及真实Pi编译已交付。当前inventory首轮审交回：typedgate收窄、文档清理、local/remote inventory load提前终止待真实Node红；现只读审MCP首红fixture，不Cargo/改源。 |
+| root | wave1 integrate/code-quality-wave1 **1d2640d2 clean**；plan总账 | 当前inventory/166相关Rust/最终26+types/producer均收口。主分支8704clean不动；维护公共接口、独立审、集成、恢复。唯一Cargo槽当前空闲，所有新执行须排槽。 |
+| mcp_worker_owner（新干净上下文） | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，fix/quality-mcp-cancel **7550e4f0 clean** | 旧作者首红测试25478已保留audit/mcp-cancel-red-20261026，root将该测试重放在1d2上。现只提精确worker/Running Control/hidden hook/Windows typed durable handoff方案与allowlist；未授生产或Cargo。新卡Q037-mcp-worker由其独占。 |
+| doc_apply_owner（新干净上下文） | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，fix/quality-sync-apply **1d2640d2** | 旧store_owner确认无半成品，root快进后移交。获store.rs最小module/helper、新store_apply.rs、新tests/doc_apply.rs写权，准备真实candidate/fence/checked pen/flush API与测试；不Node/proto/锁/依赖，不Cargo，先冻结/排槽。新Q039-doc-apply-owner卡独占。 |
+| fanout_owner / store_owner / native_helpers（旧长上下文） | 所有旧源码/卡已交回、无自有PID/构建 | capacity错误后停止，不自动重试长任务；保留原始证据/refs。native_helpers已完成最终inventory限定证据审，无新增阻断；新工作只向新owners派发。 |
 
 ## 下一批依赖与仍开放事项
 
@@ -43,7 +43,7 @@
 
 ## 资源、证据与恢复
 
-- 唯一Cargo/native槽当前 **空闲**；native_helpers准备inventory两红，fanout_owner准备MCP红（等非作者审）。任何新编译须root明确派发；其余不编译。所有治理Cargo/gen显式 `CARGO_TARGET_DIR=/Volumes/disk0/Khor/caches/rust/khor-quality-target`，jobs2，主发布target不动。跨worktree曾实际复用陈旧第一方artifact，故切树必须更新选定第一方mtime、确认SHA不变并核实际重编。
+- 唯一Cargo/native槽当前 **空闲**；root最终26/normalcheck/GUItypes已结束，下一批MCP worker和strict Doc apply先准备/源审，未授编译。任何新编译须root明确派发；其余不编译。所有治理Cargo/gen显式 `CARGO_TARGET_DIR=/Volumes/disk0/Khor/caches/rust/khor-quality-target`，jobs2，主发布target不动。跨worktree曾实际复用陈旧第一方artifact，故切树必须更新选定第一方mtime、确认SHA不变并核实际重编。
 - 外盘风扇坏/SMART不可读，用户允许继续。内外盘可用须>=5GiB；掉盘/连续3I/O错误只停自己的PGID。最近core验证最小外6,805,020,672B、内11,059,986,432B，下次构建重新量测。清理必须新manifest并确认归属；源码/日志/App/archives/主release不清。
 - 证据 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`。已结束自有质量App/23840/23841不得误作活动；用户主App/服务不动。iOS质量模拟器FE04AC7C-B375-4F2E-AE7E-B6F8F5608947可保留booted。
 - 内盘恢复入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/RESUME.md` 与 `current-code-quality-docs`。恢复先读用户指令→本STATE/PLAN→实际HEAD/diff/agents/PIDs→源SHA/日志。未提交源以现场为准，不按摘要覆盖。
@@ -55,3 +55,21 @@
 - Q039 `pending-green-01`：6/147/12，51.42s/source46稳定；147含新增1unit，不重复计。最低外6,257,414,144B/内10,952,970,240B。三own PGID已结束，scratch空。root独立审见Q-039-pending-root-review。
 - Q041 `real-bundle-darwin-02`：私有锁SHA cache npm ci成功，Bun1.3.14真实3084modules编译；MachO ARM64 76,474,082B SHAaf9555409de4af93cf166aeedc4b88f19196b5848dc89dd496ea0c650b79d646，三binary smoke全过。26agent tracked源/providers稳定，ignored依赖link恢复，19 observed PID全结束。首次npm config双/dev/null配置故障保留为setup失败。Rust嵌入/Linux未验，不外推。
 - 当前inventory4源尚未类型/运行：删legacy fallback、typed InventoryNotAdmitted仅Versions触发Vouch，selected doc交换失败均报告；但opening/answer_versions加载提前失败仍待新增真实回归与修复。宏?控制流已纠正：远端已知doc load会整体Err，而非elsecontinue静默；unknown doc名称才有静默skip。不能把静态猜测当运行红。
+
+
+## 最新收口：当前inventory已经集成（优先于上方历史角色描述）
+
+- 用户最新“继续”，完整治理活跃；本轮仍没有main合并/ship授权。main基线8704保持，最终现场再核。
+- native_helpers已交真实inventory测试78e978a8→34ef67c3。原effbb fixture两红：local accounts文件冲突报具体Err却Seen0/Pinfalse；remote整体inventory失败后client旧fallback吞optional错误最终Ok2160/Seen123/Pintrue。不能仅用macro?静态分析猜最终outcome。
+- root修复1d2640d2：当前Versions单路径，移除sync_everything/legacy全量回退；只有Versions真实admit失败InventoryNotAdmitted允许一次签名Vouch+重试同inventory。普通API/Watch拒绝语义保留。双方inventory闭包捕获每doc load的?，typed DocumentInventory Version/Failed明确返回；client按原names顺序继续+首错，epoch隔离明确部分同步。新两类why走本地化，unknown OS诊断保留。
+- `Q039/current-inventory-green-01`正常Node libcheck+166不同Rust通过（135Q045相关+6current+20proto+4realNode+1table_lost，子worker不重复），完整scripts入口nested31 OK、outer52=51pass+1skip。342.78s/source1060稳定；最低外8,357,208,064B/内5,834,117,120B。4 realNode包含新两红同fixture转绿、原25MB cap隔离及epoch隔离；table_lost签名自愈过。大差集本体仍cap拒绝。
+- 非作者source审后仅修两proto注释，真实catalog gen_ts成功（355959B SHAa91e9c41…）并与ignored GUI生成文件逐字一致。`current-inventory-final-01`当前source重验normalcheck+6current+20proto+GUItypes全部exit0，1063源稳定含gen。重复26不另外计。当前proto e071，早期f67仅两注释差异有独立逆向还原精确SHA证明，明确不是当时快照。完整源审store_owner/限定证据审native_helpers均无新增阻断，卡已交回。
+- MCP首红真实成立：`Q037/mcp-cancel/first-red-01`旧Rust同步MCP→真实IPC扣reply，Stop后Pi24.579ms ESRCH，但13.001s Saved仍running/map=true/claim_busy=true。失败前已显式释放socket+join fixture+确认production claim/map收口，未留300s等待。源码21份稳定，exit101/目标红，非setup/guard。当前3源fixture/cfg接线未生产修，Windows job继承对durable host的风险已核，不能简单把全部MCP套默认tree而杀掉成功创建的host。
+- 原长上下文agent出现服务capacity错误，均停止代码/编译并交接：store_owner已确认新fix/quality-sync-apply@34ef树clean、无源码半成品；fanout_owner只保留MCP红fixture3源/设计部分待短交接；native_helpers已交完全部inventory证据/卡，无PID。新执行者须用本STATE/PLAN+具体卡/实际diff继续，不重造实验或凭摘要覆盖源。
+- strict Doc apply仍仅方案，未生产实现。已确认before和on_disk covers base；candidate no-pending+before∨base∨target，保local并发/live旧pending，不替换Doc；FlushedImport不是Applied。shared+stamp Missing fail-closed，None须真实有界fence；pen退休失败需checked并在live导入前处理可预测的own-writer推进。Windows可用窄cfg FFI FileIdInfo完整identity比较，root已查官方来源，不能用mtime假身份。实施前仍核精确类型/失败阶段。
+
+## 本轮资源整理回执
+
+- storage-audit-20261026-7：新manifest确认无Rust compiler/open handles，删除13,343个quality-target闭合单链接第一方rcgu对象5,121,151,640B；630 archives/bin元数据保持，主release/source/App/logs不动。
+- 外盘恢复约10.7GB后内盘后台可用降至4.72GB触守卫，所有新编译停止；vm.swapusage观测used10.37GB但不声称它是全部原因。
+- storage-audit-20261026-8：仅自身internal incremental旧6个Node根内闭合单链接1724文件4,898,055,041B；保留最近2 Node根/884多链接/其它crate缓存与所有archives/bin。回执内盘4.72→9.62GB。后续统一CARGO_INCREMENTAL=0减少本治理新增内盘incremental，仍共用quality-target/jobs2；可用持续变化，每次重测，低于5GiB只停ownPGID。禁止动用户主App/服务/系统swap。
