@@ -105,9 +105,20 @@ jobs:
           $processCheckExit = $LASTEXITCODE
           Get-Content "$env:RUNNER_TEMP/agent-process.log"
           exit $processCheckExit
+      - name: Verify bounded GUI socket writers on Windows
+        shell: pwsh
+        run: |
+          rustc --edition=2024 --test crates/node/tests/fanout_harness.rs -o "$env:RUNNER_TEMP/gui-fanout-tests.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:RUNNER_TEMP/gui-fanout-tests.exe" --nocapture --test-threads=1 *> "$env:RUNNER_TEMP/gui-fanout.log"
+          $fanoutCheckExit = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/gui-fanout.log"
+          exit $fanoutCheckExit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: windows-agent-process-evidence
-          path: ${{ runner.temp }}/agent-process.log
+          path: |
+            ${{ runner.temp }}/agent-process.log
+            ${{ runner.temp }}/gui-fanout.log
           if-no-files-found: warn
