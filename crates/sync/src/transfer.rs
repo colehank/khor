@@ -19,6 +19,8 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
+mod platform;
+
 pub const CHUNK_BYTES: usize = 256 * 1024;
 pub const MAX_METADATA_BYTES: usize = 64 * 1024;
 pub const MAX_BLOB_BYTES: u64 = 64 * 1024 * 1024;
@@ -31,6 +33,7 @@ const MAGIC: &[u8; 8] = b"khor-x01";
 const HEADER_BYTES: usize = 8 + 32 + 32 + 8 + 8 + 32;
 const RECORD_BYTES: usize = 8 + 32 + 32;
 const MAX_RECORDS: usize = (MAX_BLOB_BYTES as usize / CHUNK_BYTES) + 1;
+const INITIALIZING: &str = ".initializing";
 
 /// Every field, including opaque purpose binding, participates in the id.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -220,10 +223,52 @@ impl TransferStore {
             .map_err(|_| Error::InvalidStage("owner table poisoned"))?;
         let file = private_file(&self.root.join("gate"), true)?;
         try_lock(&file)?;
-        Ok(Gate {
+        let gate = Gate {
             local,
             file: Some(file),
-        })
+        };
+        self.reconcile_initialization(&gate)?;
+        Ok(gate)
+    }
+
+    fn reconcile_initialization(&self, _held: &Gate<'_>) -> Result<()> {
+        clear_initialization(&self.root.join(INITIALIZING))
+    }
+
+    fn initialize_unpublished(
+        &self,
+        _held: &Gate<'_>,
+        manifest: &Manifest,
+        id: TransferId,
+    ) -> Result<()> {
+        let dir = self.root.join(INITIALIZING);
+        #[cfg(test)]
+        tests::pause_initialization(&dir, "before_mkdir");
+        // Only a successful mkdir grants cleanup authority over this exact
+        // reserved namespace. Published ids never enter this cleanup path.
+        create_stage(&dir, manifest, id)?;
+        let final_dir = self.root.join(id.to_string());
+        let publish = (|| {
+            let entries = initialization_entries(&dir)?
+                .ok_or(Error::InvalidStage("initializer disappeared"))?;
+            if entries.len() != 3
+                || read_manifest(&dir)? != *manifest
+                || fs::read(dir.join("offsets"))?
+                    != checkpoint(id, 0, *blake3::hash(&[]).as_bytes())
+            {
+                return Err(Error::InvalidStage("initializer binding changed"));
+            }
+            #[cfg(test)]
+            tests::pause_initialization(&dir, "before_publish");
+            platform::publish_no_replace(&dir, &final_dir)?;
+            Ok(())
+        })();
+        if let Err(cause) = publish {
+            return Err(initialization_error(&dir, cause));
+        }
+        #[cfg(test)]
+        tests::pause_initialization(&final_dir, "after_publish");
+        Ok(())
     }
 
     /// All retained stages reserve their declared size, including idle stages.
@@ -292,7 +337,7 @@ impl TransferStore {
         let (owner_path, mut owner_file) = self.available_owner(id, &gate)?;
         let dir = self.root.join(id.to_string());
         if !exists {
-            create_stage(&dir, &manifest, id)?;
+            self.initialize_unpublished(&gate, &manifest, id)?;
         }
         if read_manifest(&dir)? != manifest {
             return Err(Error::InvalidStage("manifest changed"));
@@ -571,32 +616,141 @@ fn recover(
 }
 
 fn create_stage(dir: &Path, manifest: &Manifest, id: TransferId) -> Result<()> {
-    // Only successful mkdir proves ownership. A process crash during the
-    // following initialization is explicit InvalidStage until reconciliation.
     create_dir(dir)?;
+    #[cfg(test)]
+    tests::pause_after_stage_mkdir(dir);
     if let Err(why) = initialize(dir, manifest, id) {
-        if let Err(cleanup) = fs::remove_dir_all(dir)
-            && cleanup.kind() != io::ErrorKind::NotFound
-        {
-            return Err(Error::Cleanup {
-                cause: Box::new(why),
-                cleanup,
-            });
-        }
-        return Err(why);
+        return Err(initialization_error(dir, why));
     }
     Ok(())
 }
 
 fn initialize(dir: &Path, manifest: &Manifest, id: TransferId) -> Result<()> {
     let mut meta = new_file(&dir.join("manifest"))?;
-    meta.write_all(&manifest.encode())?;
+    let encoded = manifest.encode();
+    #[cfg(test)]
+    tests::partial_control(&mut meta, &encoded, dir, "manifest_partial")?;
+    meta.write_all(&encoded)?;
     meta.sync_all()?;
-    new_file(&dir.join("body"))?.sync_all()?;
+    #[cfg(test)]
+    tests::pause_initialization(dir, "manifest_synced");
+    drop(meta);
+    let body = new_file(&dir.join("body"))?;
+    #[cfg(test)]
+    tests::pause_initialization(dir, "body_created");
+    body.sync_all()?;
+    drop(body);
     let mut journal = new_file(&dir.join("offsets"))?;
-    journal.write_all(&checkpoint(id, 0, *blake3::hash(&[]).as_bytes()))?;
+    let initial = checkpoint(id, 0, *blake3::hash(&[]).as_bytes());
+    #[cfg(test)]
+    tests::partial_control(&mut journal, &initial, dir, "offsets_partial")?;
+    journal.write_all(&initial)?;
     journal.sync_all()?;
+    #[cfg(test)]
+    tests::pause_initialization(dir, "offsets_synced");
     Ok(())
+}
+
+fn initialization_error(dir: &Path, cause: Error) -> Error {
+    match clear_initialization(dir) {
+        Ok(()) => cause,
+        Err(cleanup) => Error::Cleanup {
+            cause: Box::new(cause),
+            cleanup: io::Error::other(cleanup),
+        },
+    }
+}
+
+// Validate the complete, bounded listing before any unlink. Interrupted
+// cleanup is another legal subset; unexpected bytes/names always survive.
+fn clear_initialization(dir: &Path) -> Result<()> {
+    let Some(entries) = initialization_entries(dir)? else {
+        return Ok(());
+    };
+    #[cfg(test)]
+    tests::pause_initialization(dir, "cleanup_before_unlink");
+    for path in entries {
+        fs::remove_file(path)?;
+        #[cfg(test)]
+        tests::pause_initialization(dir, "cleanup_after_unlink");
+    }
+    fs::remove_dir(dir)?;
+    Ok(())
+}
+
+fn initialization_entries(dir: &Path) -> Result<Option<Vec<PathBuf>>> {
+    if dir.file_name() != Some(std::ffi::OsStr::new(INITIALIZING)) {
+        return Err(Error::InvalidStage(
+            "cleanup requires exact initializer namespace",
+        ));
+    }
+    let metadata = match fs::symlink_metadata(dir) {
+        Ok(meta) => meta,
+        Err(why) if why.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(why) => return Err(why.into()),
+    };
+    if !metadata.is_dir() || is_link(&metadata) {
+        return Err(Error::InvalidStage("initializer is not a plain directory"));
+    }
+    let root = fs::symlink_metadata(
+        dir.parent()
+            .ok_or(Error::InvalidStage("initializer has no parent"))?,
+    )?;
+    check_initialization_private(&metadata, &root)?;
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(dir)?.take(4) {
+        let entry = entry?;
+        if paths.len() == 3 {
+            return Err(Error::InvalidStage("initializer has excess controls"));
+        }
+        let limit = match entry.file_name().to_str() {
+            Some("manifest") => MAX_METADATA_BYTES as u64,
+            Some("body") => 0,
+            Some("offsets") => RECORD_BYTES as u64,
+            _ => return Err(Error::InvalidStage("unknown initializer control")),
+        };
+        let path = entry.path();
+        let meta = fs::symlink_metadata(&path)?;
+        if !meta.is_file() || is_link(&meta) {
+            return Err(Error::InvalidStage(
+                "initializer control is not a plain file",
+            ));
+        }
+        check_initialization_private(&meta, &root)?;
+        let file = File::open(&path)?;
+        platform::check_control_file(&file)?;
+        let held = file.metadata()?;
+        check_initialization_private(&held, &root)?;
+        if held.len() > limit {
+            return Err(Error::InvalidStage("initializer control exceeds its bound"));
+        }
+        paths.push(path);
+    }
+    Ok(Some(paths))
+}
+
+fn check_initialization_private(meta: &fs::Metadata, root: &fs::Metadata) -> Result<()> {
+    check_private(meta)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.uid() != root.uid() {
+            return Err(Error::InvalidStage("initializer owner differs from root"));
+        }
+    }
+    let _ = root;
+    Ok(())
+}
+
+fn is_link(meta: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x400 != 0 {
+            return true;
+        }
+    }
+    meta.file_type().is_symlink()
 }
 
 fn read_manifest(dir: &Path) -> Result<Manifest> {
@@ -692,6 +846,713 @@ fn private_file(path: &Path, create: bool) -> Result<File> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Compiled only into this unit-test executable. The owned child alone has
+    // these environment variables; ordinary tests and production have no hook.
+    pub(super) fn pause_after_stage_mkdir(dir: &Path) {
+        let fault = std::env::var("KHOR_TRANSFER_INIT_FAULT").unwrap_or_default();
+        if selected_root(dir) && matches!(fault.as_str(), "existing_manifest" | "unknown_control") {
+            // A real create_new collision inside our successfully-created
+            // namespace exercises ordinary I/O-error cleanup.
+            new_file(&dir.join("manifest")).unwrap();
+            if fault == "unknown_control" {
+                new_file(&dir.join("keep"))
+                    .unwrap()
+                    .write_all(b"sentinel")
+                    .unwrap();
+            }
+        }
+        pause_initialization(dir, "after_mkdir");
+    }
+
+    fn selected_root(dir: &Path) -> bool {
+        let Some(root) = std::env::var_os("KHOR_TRANSFER_INIT_PAUSE_ROOT") else {
+            return false;
+        };
+        dir.parent() == Some(Path::new(&root))
+    }
+
+    fn selected_phase(dir: &Path, phase: &str) -> bool {
+        selected_root(dir)
+            && std::env::var("KHOR_TRANSFER_INIT_PHASE").unwrap_or_else(|_| "after_mkdir".into())
+                == phase
+    }
+
+    pub(super) fn partial_control(
+        file: &mut File,
+        bytes: &[u8],
+        dir: &Path,
+        phase: &str,
+    ) -> io::Result<()> {
+        if selected_phase(dir, phase) {
+            file.write_all(&bytes[..bytes.len() / 2])?;
+            pause_initialization(dir, phase);
+            file.seek(SeekFrom::Start(0))?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn pause_initialization(dir: &Path, phase: &str) {
+        if !selected_phase(dir, phase) {
+            return;
+        }
+        let ready = PathBuf::from(
+            std::env::var_os("KHOR_TRANSFER_INIT_READY").expect("owned initializer ready path"),
+        );
+        let temporary = ready.with_extension("preparing");
+        fs::write(&temporary, dir.file_name().unwrap().as_encoded_bytes()).unwrap();
+        fs::rename(&temporary, &ready).unwrap();
+        // Fuse only: the parent must kill/reap while create_stage still owns
+        // the real gate and slot, before manifest initialization can run.
+        std::thread::sleep(std::time::Duration::from_secs(30));
+    }
+
+    struct InitScratch(PathBuf);
+    impl InitScratch {
+        fn new() -> Self {
+            let base = std::env::var_os("KHOR_TRANSFER_SCRATCH")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
+            fs::create_dir_all(&base).unwrap();
+            let root = base.join(format!(
+                "khor-transfer-init-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            create_dir(&root).unwrap();
+            Self(root)
+        }
+    }
+    impl Drop for InitScratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    struct InitWorker(Option<std::process::Child>);
+    impl Drop for InitWorker {
+        fn drop(&mut self) {
+            if let Some(child) = &mut self.0 {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+
+    fn init_manifest(binding: &[u8], body: &[u8]) -> Manifest {
+        Manifest {
+            source: [41; 32],
+            recipient: [42; 32],
+            binding: binding.to_vec(),
+            total_bytes: body.len() as u64,
+            digest: *blake3::hash(body).as_bytes(),
+        }
+    }
+
+    #[test]
+    fn a_crashed_initializer_does_not_block_new_reservations() {
+        use std::{
+            process::{Command, Stdio},
+            time::{Duration, Instant},
+        };
+        let scratch = InitScratch::new();
+        let root = scratch.0.join("stages");
+        let store = TransferStore::open(&root).unwrap();
+        let retained_body = b"retained user bytes";
+        let retained = init_manifest(b"retained control", retained_body);
+        let mut existing = store.receive(retained.clone()).unwrap();
+        existing.append(0, retained_body).unwrap();
+        drop(existing);
+        let retained_dir = root.join(retained.id().unwrap().to_string());
+        let before: Vec<_> = ["manifest", "body", "offsets"]
+            .into_iter()
+            .map(|name| (name, fs::read(retained_dir.join(name)).unwrap()))
+            .collect();
+        let ready = scratch.0.join("init-ready");
+        let log = File::create(scratch.0.join("initializer.log")).unwrap();
+        let mut worker = InitWorker(Some(
+            Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "transfer::tests::initialization_crash_worker",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("KHOR_TRANSFER_INIT_PAUSE_ROOT", &root)
+                .env("KHOR_TRANSFER_INIT_READY", &ready)
+                .stdout(Stdio::from(log.try_clone().unwrap()))
+                .stderr(Stdio::from(log))
+                .spawn()
+                .unwrap(),
+        ));
+        let child_pid = worker.0.as_ref().unwrap().id();
+        let start = Instant::now();
+        while !ready.exists() {
+            assert!(
+                worker.0.as_mut().unwrap().try_wait().unwrap().is_none(),
+                "initializer exited before the real mkdir barrier"
+            );
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "owned initializer did not reach create_stage mkdir barrier"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let actual_name = fs::read_to_string(&ready).unwrap();
+        assert_eq!(Path::new(&actual_name).components().count(), 1);
+        let actual = root.join(&actual_name);
+        assert!(actual.is_dir());
+        assert_eq!(
+            fs::read_dir(&actual).unwrap().count(),
+            0,
+            "the worker must be paused before manifest creation"
+        );
+        assert!(
+            matches!(store.reserved_bytes(), Err(Error::Busy)),
+            "the actual initializer must retain the global OS gate"
+        );
+        worker.0.as_mut().unwrap().kill().unwrap();
+        let status = worker.0.as_mut().unwrap().wait().unwrap();
+        assert!(
+            !status.success(),
+            "worker must be killed, not finish initialization"
+        );
+        worker.0 = None;
+        for slot in 0..MAX_OWNERS {
+            let file = private_file(&root.join(format!("owner-{slot}")), false).unwrap();
+            assert!(
+                file.try_lock().is_ok(),
+                "killed initializer must release its real owner slot"
+            );
+        }
+        let reserved = store.reserved_bytes();
+        let fresh_body = b"new transfer after real initialization crash";
+        let fresh = store
+            .receive(init_manifest(b"fresh after crash", fresh_body))
+            .and_then(|mut sink| sink.append(0, fresh_body));
+        eprintln!(
+            "[Q039-INIT] killed_pid={child_pid} status={status} actual_created={actual_name} reserved={reserved:?} fresh={fresh:?}"
+        );
+        for (name, bytes) in &before {
+            assert_eq!(
+                fs::read(retained_dir.join(name)).unwrap(),
+                *bytes,
+                "recovery must preserve published retained {name}"
+            );
+        }
+        assert!(
+            fresh.is_ok(),
+            "a new reservation must recover after the real initializer crash without manual removal: {fresh:?}"
+        );
+        assert_eq!(reserved.unwrap(), retained_body.len() as u64);
+        assert!(matches!(fresh.unwrap(), Progress::VerifiedComplete { .. }));
+        let resumed = store.receive(retained).unwrap();
+        assert!(matches!(
+            resumed.progress().unwrap(),
+            Progress::VerifiedComplete { .. }
+        ));
+    }
+
+    #[test]
+    #[ignore = "actually spawned, killed and reaped by the initialization parent"]
+    fn initialization_crash_worker() {
+        let root = PathBuf::from(
+            std::env::var_os("KHOR_TRANSFER_INIT_PAUSE_ROOT").expect("owned initializer root"),
+        );
+        let store = TransferStore::open(&root).unwrap();
+        let received = store.receive(init_manifest(
+            b"initializer to kill",
+            b"never received body bytes",
+        ));
+        match std::env::var("KHOR_TRANSFER_INIT_FAULT").as_deref() {
+            Ok("existing_manifest") => assert!(
+                matches!(received, Err(Error::Io(why)) if why.kind() == io::ErrorKind::AlreadyExists)
+            ),
+            Ok("unknown_control") => match received {
+                Err(Error::Cleanup { cause, cleanup }) => {
+                    assert!(
+                        matches!(*cause, Error::Io(why) if why.kind() == io::ErrorKind::AlreadyExists)
+                    );
+                    assert!(cleanup.to_string().contains("unknown initializer control"));
+                }
+                _ => panic!("initialization must retain both errors"),
+            },
+            _ => drop(received.unwrap()),
+        }
+    }
+
+    fn phase_worker(root: &Path, phase: &str, fault: &str) -> (InitWorker, PathBuf, PathBuf) {
+        use std::process::{Command, Stdio};
+        let ready = root
+            .parent()
+            .unwrap()
+            .join(format!("{phase}-{fault}-ready"));
+        let log_path = ready.with_extension("log");
+        let log = File::create(&log_path).unwrap();
+        let child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "transfer::tests::initialization_crash_worker",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("KHOR_TRANSFER_INIT_PAUSE_ROOT", root)
+            .env("KHOR_TRANSFER_INIT_READY", &ready)
+            .env("KHOR_TRANSFER_INIT_PHASE", phase)
+            .env("KHOR_TRANSFER_INIT_FAULT", fault)
+            .stdout(Stdio::from(log.try_clone().unwrap()))
+            .stderr(Stdio::from(log))
+            .spawn()
+            .unwrap();
+        (InitWorker(Some(child)), ready, log_path)
+    }
+
+    fn kill_at(root: &Path, phase: &str) -> PathBuf {
+        use std::time::{Duration, Instant};
+        let (mut worker, ready, log) = phase_worker(root, phase, "");
+        let start = Instant::now();
+        while !ready.exists() {
+            assert!(
+                worker.0.as_mut().unwrap().try_wait().unwrap().is_none(),
+                "worker exited: {}",
+                fs::read_to_string(&log).unwrap()
+            );
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "worker missed {phase} barrier"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let actual = root.join(fs::read_to_string(ready).unwrap());
+        assert!(matches!(
+            TransferStore::open(root).unwrap().reserved_bytes(),
+            Err(Error::Busy)
+        ));
+        let pid = worker.0.as_ref().unwrap().id();
+        worker.0.as_mut().unwrap().kill().unwrap();
+        let status = worker.0.as_mut().unwrap().wait().unwrap();
+        assert!(!status.success());
+        worker.0 = None;
+        for slot in 0..MAX_OWNERS {
+            assert!(
+                private_file(&root.join(format!("owner-{slot}")), false)
+                    .unwrap()
+                    .try_lock()
+                    .is_ok()
+            );
+        }
+        eprintln!(
+            "[Q039-INIT-PHASE] phase={phase} killed_pid={pid} status={status} actual={}",
+            actual.display()
+        );
+        actual
+    }
+
+    #[test]
+    fn every_initialization_crash_phase_releases_gate_and_recovers() {
+        for phase in [
+            "before_mkdir",
+            "manifest_partial",
+            "manifest_synced",
+            "body_created",
+            "offsets_partial",
+            "offsets_synced",
+            "before_publish",
+            "after_publish",
+        ] {
+            let scratch = InitScratch::new();
+            let root = scratch.0.join("stages");
+            let store = TransferStore::open(&root).unwrap();
+            let retained = init_manifest(b"retain through phases", b"retained bytes");
+            let mut sink = store.receive(retained.clone()).unwrap();
+            sink.append(0, b"retained bytes").unwrap();
+            drop(sink);
+            let published = root.join(retained.id().unwrap().to_string());
+            let before: Vec<_> = ["manifest", "body", "offsets"]
+                .map(|name| fs::read(published.join(name)).unwrap())
+                .into();
+            let actual = kill_at(&root, phase);
+            match phase {
+                "before_mkdir" => assert!(!actual.exists()),
+                "manifest_partial" => assert!(
+                    fs::metadata(actual.join("manifest")).unwrap().len() < HEADER_BYTES as u64
+                ),
+                "body_created" => assert_eq!(fs::metadata(actual.join("body")).unwrap().len(), 0),
+                "offsets_partial" => assert_eq!(
+                    fs::metadata(actual.join("offsets")).unwrap().len(),
+                    (RECORD_BYTES / 2) as u64
+                ),
+                "after_publish" => assert_eq!(
+                    actual.file_name().unwrap(),
+                    init_manifest(b"initializer to kill", b"never received body bytes")
+                        .id()
+                        .unwrap()
+                        .to_string()
+                        .as_str()
+                ),
+                _ => assert!(actual.is_dir()),
+            }
+            let expected = b"retained bytes".len() as u64
+                + if phase == "after_publish" {
+                    b"never received body bytes".len() as u64
+                } else {
+                    0
+                };
+            assert_eq!(store.reserved_bytes().unwrap(), expected, "{phase}");
+            assert!(!root.join(INITIALIZING).exists());
+            for (name, bytes) in ["manifest", "body", "offsets"].into_iter().zip(before) {
+                assert_eq!(
+                    fs::read(published.join(name)).unwrap(),
+                    bytes,
+                    "{phase}/{name}"
+                );
+            }
+            let mut fresh = store
+                .receive(init_manifest(b"fresh phases", b"new"))
+                .unwrap();
+            assert!(matches!(
+                fresh.append(0, b"new").unwrap(),
+                Progress::VerifiedComplete { .. }
+            ));
+            drop(fresh);
+            assert!(matches!(
+                store.receive(retained).unwrap().progress().unwrap(),
+                Progress::VerifiedComplete { .. }
+            ));
+            if phase == "after_publish" {
+                let mut resumed = store
+                    .receive(init_manifest(
+                        b"initializer to kill",
+                        b"never received body bytes",
+                    ))
+                    .unwrap();
+                assert_eq!(resumed.next_offset(), 0);
+                assert!(matches!(
+                    resumed.append(0, b"never received body bytes").unwrap(),
+                    Progress::VerifiedComplete { .. }
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn a_second_crash_during_cleanup_recovers_the_remaining_controls() {
+        let scratch = InitScratch::new();
+        let root = scratch.0.join("stages");
+        let store = TransferStore::open(&root).unwrap();
+        kill_at(&root, "offsets_synced");
+        assert_eq!(fs::read_dir(root.join(INITIALIZING)).unwrap().count(), 3);
+        kill_at(&root, "cleanup_after_unlink");
+        assert_eq!(fs::read_dir(root.join(INITIALIZING)).unwrap().count(), 2);
+        assert_eq!(store.reserved_bytes().unwrap(), 0);
+        let mut fresh = store
+            .receive(init_manifest(b"after cleanup crash", b"ok"))
+            .unwrap();
+        assert!(matches!(
+            fresh.append(0, b"ok").unwrap(),
+            Progress::VerifiedComplete { .. }
+        ));
+    }
+
+    #[test]
+    fn normal_initialization_io_failure_cleans_only_valid_owned_controls() {
+        use std::time::{Duration, Instant};
+        for fault in ["existing_manifest", "unknown_control"] {
+            let scratch = InitScratch::new();
+            let root = scratch.0.join("stages");
+            let store = TransferStore::open(&root).unwrap();
+            let (mut worker, _, log) = phase_worker(&root, "disabled", fault);
+            let start = Instant::now();
+            let status = loop {
+                if let Some(status) = worker.0.as_mut().unwrap().try_wait().unwrap() {
+                    break status;
+                }
+                assert!(start.elapsed() < Duration::from_secs(5));
+                std::thread::sleep(Duration::from_millis(5));
+            };
+            worker.0 = None;
+            assert!(status.success(), "{}", fs::read_to_string(log).unwrap());
+            if fault == "unknown_control" {
+                assert!(store.reserved_bytes().is_err());
+                assert_eq!(
+                    fs::read(root.join(INITIALIZING).join("keep")).unwrap(),
+                    b"sentinel"
+                );
+                assert_eq!(
+                    fs::read(root.join(INITIALIZING).join("manifest")).unwrap(),
+                    b""
+                );
+            } else {
+                assert!(!root.join(INITIALIZING).exists());
+                assert_eq!(store.reserved_bytes().unwrap(), 0);
+                // Both actual owner slots are available after ordinary error.
+                let first = store
+                    .receive(init_manifest(b"first owner", b"one"))
+                    .unwrap();
+                let second = store
+                    .receive(init_manifest(b"second owner", b"two"))
+                    .unwrap();
+                assert_eq!(store.reserved_bytes().unwrap(), 6);
+                drop((first, second));
+            }
+        }
+    }
+
+    fn namespace_bytes(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut entries: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| {
+                let path = entry.unwrap().path();
+                let meta = fs::symlink_metadata(&path).unwrap();
+                let bytes = if meta.file_type().is_symlink() {
+                    fs::read_link(&path)
+                        .unwrap()
+                        .as_os_str()
+                        .as_encoded_bytes()
+                        .to_vec()
+                } else if meta.is_file() {
+                    fs::read(&path).unwrap()
+                } else {
+                    Vec::new()
+                };
+                (path, bytes)
+            })
+            .collect();
+        entries.sort();
+        entries
+    }
+
+    #[test]
+    fn unsafe_initializer_controls_are_preserved_before_any_unlink() {
+        for control in [
+            "unknown",
+            "fourth",
+            "nested",
+            "body_bytes",
+            "large_manifest",
+            "large_offsets",
+        ] {
+            let scratch = InitScratch::new();
+            let root = scratch.0.join("stages");
+            let store = TransferStore::open(&root).unwrap();
+            let dir = root.join(INITIALIZING);
+            create_dir(&dir).unwrap();
+            new_file(&dir.join("manifest"))
+                .unwrap()
+                .write_all(b"bounded partial metadata")
+                .unwrap();
+            match control {
+                "unknown" => {
+                    new_file(&dir.join("keep"))
+                        .unwrap()
+                        .write_all(b"sentinel")
+                        .unwrap();
+                }
+                "fourth" => {
+                    for name in ["body", "offsets", "keep"] {
+                        new_file(&dir.join(name)).unwrap();
+                    }
+                }
+                "nested" => create_dir(&dir.join("body")).unwrap(),
+                "body_bytes" => {
+                    new_file(&dir.join("body"))
+                        .unwrap()
+                        .write_all(b"must not erase body bytes")
+                        .unwrap();
+                }
+                "large_manifest" => new_file(&dir.join("body")).unwrap().set_len(0).unwrap(),
+                "large_offsets" => new_file(&dir.join("offsets"))
+                    .unwrap()
+                    .set_len(RECORD_BYTES as u64 + 1)
+                    .unwrap(),
+                _ => unreachable!(),
+            }
+            if control == "large_manifest" {
+                file_options()
+                    .open(dir.join("manifest"))
+                    .unwrap()
+                    .set_len(MAX_METADATA_BYTES as u64 + 1)
+                    .unwrap();
+            }
+            let before = namespace_bytes(&dir);
+            assert!(store.reserved_bytes().is_err(), "{control}");
+            assert_eq!(namespace_bytes(&dir), before, "{control}");
+            assert!(
+                store
+                    .receive(init_manifest(b"refuse unsafe cleanup", b"new"))
+                    .is_err()
+            );
+            assert_eq!(namespace_bytes(&dir), before);
+            assert!(store.cancel(&init_manifest(b"absent", b"")).is_err());
+            assert_eq!(namespace_bytes(&dir), before);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn initializer_links_and_nonprivate_entries_keep_their_targets_and_modes() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        for control in [
+            "file_link",
+            "hardlink",
+            "directory_link",
+            "directory_mode",
+            "file_mode",
+        ] {
+            let scratch = InitScratch::new();
+            let root = scratch.0.join("stages");
+            let store = TransferStore::open(&root).unwrap();
+            let sentinel = scratch.0.join("sentinel");
+            new_file(&sentinel)
+                .unwrap()
+                .write_all(b"retained sentinel")
+                .unwrap();
+            let dir = root.join(INITIALIZING);
+            if control == "directory_link" {
+                symlink(&scratch.0, &dir).unwrap();
+            } else {
+                create_dir(&dir).unwrap();
+                match control {
+                    "file_link" => symlink(&sentinel, dir.join("manifest")).unwrap(),
+                    "hardlink" => fs::hard_link(&sentinel, dir.join("manifest")).unwrap(),
+                    "directory_mode" => {
+                        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap()
+                    }
+                    "file_mode" => {
+                        new_file(&dir.join("manifest")).unwrap();
+                        fs::set_permissions(
+                            dir.join("manifest"),
+                            fs::Permissions::from_mode(0o644),
+                        )
+                        .unwrap();
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            assert!(store.reserved_bytes().is_err(), "{control}");
+            assert!(fs::symlink_metadata(&dir).is_ok());
+            assert_eq!(fs::read(&sentinel).unwrap(), b"retained sentinel");
+            match control {
+                "directory_link" => assert_eq!(fs::read_link(&dir).unwrap(), scratch.0),
+                "file_link" => assert_eq!(fs::read_link(dir.join("manifest")).unwrap(), sentinel),
+                "hardlink" => assert_eq!(
+                    fs::read(dir.join("manifest")).unwrap(),
+                    b"retained sentinel"
+                ),
+                "directory_mode" => assert_eq!(
+                    fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+                    0o755
+                ),
+                "file_mode" => assert_eq!(
+                    fs::metadata(dir.join("manifest"))
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o644
+                ),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn initializer_file_owner_must_match_the_supplied_root_owner() {
+        use std::os::unix::fs::MetadataExt;
+        let scratch = InitScratch::new();
+        let file = new_file(&scratch.0.join("manifest")).unwrap();
+        let actual = file.metadata().unwrap();
+        let system_root = fs::metadata("/").unwrap();
+        if actual.uid() != system_root.uid() {
+            assert!(matches!(
+                check_initialization_private(&actual, &system_root),
+                Err(Error::InvalidStage("initializer owner differs from root"))
+            ));
+        }
+        assert!(check_initialization_private(&actual, &fs::metadata(&scratch.0).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn publication_never_replaces_an_existing_file_or_directory() {
+        for target in ["empty_directory", "sentinel_directory", "file"] {
+            let scratch = InitScratch::new();
+            let source = scratch.0.join(INITIALIZING);
+            create_dir(&source).unwrap();
+            new_file(&source.join("manifest"))
+                .unwrap()
+                .write_all(b"source control")
+                .unwrap();
+            let destination = scratch.0.join("published");
+            if target == "file" {
+                new_file(&destination)
+                    .unwrap()
+                    .write_all(b"target file")
+                    .unwrap();
+            } else {
+                create_dir(&destination).unwrap();
+                if target == "sentinel_directory" {
+                    new_file(&destination.join("keep"))
+                        .unwrap()
+                        .write_all(b"target sentinel")
+                        .unwrap();
+                }
+            }
+            assert!(
+                platform::publish_no_replace(&source, &destination).is_err(),
+                "{target}"
+            );
+            assert_eq!(
+                fs::read(source.join("manifest")).unwrap(),
+                b"source control"
+            );
+            match target {
+                "file" => assert_eq!(fs::read(destination).unwrap(), b"target file"),
+                "empty_directory" => assert_eq!(fs::read_dir(destination).unwrap().count(), 0),
+                _ => assert_eq!(
+                    fs::read(destination.join("keep")).unwrap(),
+                    b"target sentinel"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn damaged_published_stages_are_never_initializer_cleanup_targets() {
+        for state in ["empty", "corrupt", "sentinel"] {
+            let scratch = InitScratch::new();
+            let root = scratch.0.join("stages");
+            let store = TransferStore::open(&root).unwrap();
+            let manifest = init_manifest(b"existing incomplete final", b"body");
+            let final_dir = root.join(manifest.id().unwrap().to_string());
+            create_dir(&final_dir).unwrap();
+            if state == "sentinel" {
+                new_file(&final_dir.join("keep"))
+                    .unwrap()
+                    .write_all(b"final sentinel")
+                    .unwrap();
+            }
+            if state == "corrupt" {
+                new_file(&final_dir.join("manifest"))
+                    .unwrap()
+                    .write_all(b"broken published metadata")
+                    .unwrap();
+                new_file(&final_dir.join("body"))
+                    .unwrap()
+                    .write_all(b"published user bytes")
+                    .unwrap();
+            }
+            let before = namespace_bytes(&final_dir);
+            assert!(store.reserved_bytes().is_err());
+            assert!(store.receive(manifest.clone()).is_err());
+            assert!(store.cancel(&manifest).is_err());
+            assert!(final_dir.is_dir());
+            assert_eq!(namespace_bytes(&final_dir), before);
+        }
+    }
 
     #[test]
     fn a_failed_stage_mkdir_never_cleans_an_existing_directory() {
