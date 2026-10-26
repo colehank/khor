@@ -1,20 +1,22 @@
 // Controlled component diagnosis; no native keyboard or Safari acceptance.
 import assert from 'node:assert/strict';
 import {spawn,execFileSync} from 'node:child_process';
-import {readFileSync,writeFileSync,mkdirSync,statfsSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,mkdtempSync,statfsSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {chromium,webkit} from 'playwright-core';
 
 const gui=fileURLToPath(new URL('..',import.meta.url));
-const transitionsOnly=process.env.COMPOSE_SCENARIOS==='transitions';
-assert(!process.env.COMPOSE_SCENARIOS||transitionsOnly,'Unknown COMPOSE_SCENARIOS');
-const out=process.env.COMPOSE_OUT;
-assert(out,'COMPOSE_OUT must name an isolated evidence directory');mkdirSync(out,{recursive:true});
+const scenarios=process.env.COMPOSE_SCENARIOS??'all';
+assert(['all','parent','transitions'].includes(scenarios),'Unknown COMPOSE_SCENARIOS');
+const transitionsOnly=scenarios==='transitions';
 const port=Number(process.env.COMPOSE_PORT??23844),base=`http://127.0.0.1:${port}`;
 const engines=(process.env.COMPOSE_ENGINES??'chrome,webkit').split(',');
 for(const engine of engines)assert(['chrome','webkit'].includes(engine),`Unknown engine ${engine}`);
+assert.equal(new Set(engines).size,engines.length,'Duplicate engines');
+const out=process.env.COMPOSE_OUT??mkdtempSync(join(tmpdir(),'khor-compose-'));mkdirSync(out,{recursive:true});
 const files=['src/hooks/use-compose-layout.ts','src/hooks/use-chat-scroll.ts','src/views/Composer.tsx','src/components/SessionBar.tsx','src/styles/session-layout.css','lab/scroll-compose.tsx','lab/scroll-compose.html','scripts/check-scroll-compose.mjs'];
 const hashes=()=>Object.fromEntries(files.map(file=>[file,createHash('sha256').update(readFileSync(join(gui,file))).digest('hex')]));
 const report={head:execFileSync('git',['rev-parse','HEAD'],{cwd:gui,encoding:'utf8'}).trim(),files:hashes(),boundary:'Real production components/CSS; fixed parent epoch, stable/fresh log reference; browser component diagnosis only. No synthetic keyboard or native Safari claim.',results:[]};
@@ -28,7 +30,7 @@ try{
   for(const stream of [server.stdout,server.stderr])stream.on('data',chunk=>{log+=chunk;});
   const deadline=Date.now()+30000;while(!log.includes('COMPOSE_READY')){assert(server.exitCode===null&&Date.now()<deadline,log);await new Promise(resolve=>setTimeout(resolve,100));}
   for(const engine of engines){
-    browser=await(engine==='chrome'?chromium:webkit).launch({headless:true,...(engine==='chrome'?{channel:'chrome'}:{})});
+    browser=await(engine==='chrome'?chromium:webkit).launch({headless:true,...(engine==='chrome'?{channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined}:{})});
     for(const probe of (transitionsOnly?[]:[false,true]))for(const long of [false,true])for(const reader of [false,true])for(const changeRevision of [false,true]){
       free();const context=await browser.newContext({viewport:{width:402,height:714},hasTouch:true,isMobile:false});const page=await context.newPage();
       const result={engine,version:browser.version(),probe,long,reader,changeRevision,errors:[]};report.results.push(result);page.on('pageerror',error=>result.errors.push(error.message));
@@ -49,7 +51,7 @@ try{
       }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} probe=${probe} long=${long} reader=${reader} freshRevision=${changeRevision}`);save();await context.close();}
     }
-    for(const reader of (transitionsOnly?[false,true]:[])){
+    for(const reader of (scenarios!=='parent'?[false,true]:[])){
       const context=await browser.newContext({viewport:{width:402,height:714},hasTouch:true});
       const page=await context.newPage();
       const result={engine,scenario:'draft-and-width-transitions',reader,errors:[],steps:[]};report.results.push(result);

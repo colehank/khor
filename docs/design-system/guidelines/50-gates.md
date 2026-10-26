@@ -780,3 +780,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 
 `npm run native-events`：生产hear与真实锁定Tauri SDK/core/event快照的注册/清理时序，Chrome/WebKit22组覆盖迟到eval、关闭owner、部分拒绝、重复cleanup、同event重装与web noop。加入 `test:interaction`，`NATIVE_EVENTS_CHECK_DIR`保存源指纹/资源计数；CI空 `PLAYWRIGHT_CHROMIUM_CHANNEL` 使用已安装Chromium。IPC时序由fixture控制，真实App的Rust listener与JS callback释放另验；不能由零unhandled推断所有资源释放。依赖更新须复核快照契约。
+
+
+`npm run scroll-compose`：真实SessionScreen/Composer/useChatScroll与样式，Chrome/WebKit共36组检查稳定/更新消息引用的父重绘、长短草稿、阅读锚点、清空与宽度变化；测量不得缩小消息scroll range，不得遗留inline min-height或ResizeObserver错误。`COMPOSE_OUT`保存逐帧/源指纹（默认独立临时目录）；`COMPOSE_SCENARIOS=parent|transitions|all`选择32/4/36组，`COMPOSE_ENGINES`选引擎，非法选择拒绝。加入test:interaction；浏览器组件不冒充UIKit/Safari真实系统键盘验收。
