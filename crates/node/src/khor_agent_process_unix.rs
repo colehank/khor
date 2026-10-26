@@ -138,20 +138,36 @@ impl Process {
                 return Ok(());
             }
             #[cfg(target_os = "macos")]
-            if error.raw_os_error() == Some(libc::EPERM) && self.exited()? {
-                // Darwin skips zombies when signalling a group and returns
-                // EPERM if none remain. Accept only our unreaped leader alone;
-                // a full/truncated list or any other member keeps the error.
-                let mut members = [0 as libc::pid_t; 2];
-                let count = unsafe {
-                    libc::proc_listpgrppids(
-                        self.child.id() as libc::pid_t,
-                        members.as_mut_ptr().cast(),
-                        std::mem::size_of_val(&members) as libc::c_int,
-                    )
-                };
-                if count == 1 && members[0] == self.child.id() as libc::pid_t {
-                    return Ok(());
+            if error.raw_os_error() == Some(libc::EPERM) {
+                // Darwin can make an exiting group unsignalable before waitid
+                // exposes its exit. Keep our unreaped PID anchor and briefly
+                // wait for that evidence; EPERM itself is never confirmation.
+                let deadline = std::time::Instant::now() + Duration::from_millis(100);
+                loop {
+                    match self.exited() {
+                        Ok(true) => {
+                            // A full/truncated list or any other member retains
+                            // the original permission error; do not guess that
+                            // descendants have exited merely because we did.
+                            let mut members = [0 as libc::pid_t; 2];
+                            let count = unsafe {
+                                libc::proc_listpgrppids(
+                                    self.child.id() as libc::pid_t,
+                                    members.as_mut_ptr().cast(),
+                                    std::mem::size_of_val(&members) as libc::c_int,
+                                )
+                            };
+                            if count == 1 && members[0] == self.child.id() as libc::pid_t {
+                                return Ok(());
+                            }
+                            break;
+                        }
+                        Ok(false) => {}
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                        Err(error) => return Err(error),
+                    }
+                    if std::time::Instant::now() >= deadline { break; }
+                    std::thread::sleep(Duration::from_millis(1));
                 }
             }
             return Err(error);
@@ -176,3 +192,7 @@ impl Drop for Process {
         }
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+#[path = "khor_agent_process_unix_tests.rs"]
+mod tests;
