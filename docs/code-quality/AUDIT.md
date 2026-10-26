@@ -15,11 +15,11 @@
 | Q025/036/032/040 | FIFO写完成/连接owner、输入预算、canonical cache/once弱锁回收已集成且c371后端实跑 | 相邻registry及余下生命周期按任务边界审 |
 | Q030/030b/031/038 | 脱敏、A2A caller隔离续聊、事件预算/stderr drain已集成 | 全MCP与远端取消链未闭环 |
 | Q033/034/035 | 上传cancel receipt/GUI恢复、poll退避/gone、native page owner/LRU已集成 | Q033 GUI→Rust真实上传取消、Q035 borrow lease仍待；HTTP mock不代替 |
-| Q037 | Pi及ACP阶段1已集成；阶段2发现并复现slow-drip取消和Darwin退出可见窗口 | Unix窄修/固定source全回归/非作者审/阶段2集成；Windows仅cross-compile |
-| Q039 | 合法25MB差集使后续Seen/Pins饥饿真红→真实Node2例绿；失败隔离test/生产已进wave1@8f55 | 精确集成回归；大差集本身分块恢复/legacy兼容未完成 |
-| Q041 | 安装摘要/不可变selection/canonical函数源已提交59da；Shell31绿，Rust诊断前8绿；mirror/site真红与19个修后用例绿 | 最终Rust诊断源复跑；b独立审/提交/集成；D04完整Pi构建与工具/产物来源仍开放 |
+| Q037 | 阶段2已集成，精确5845相关120 Rust/全scripts绿；GUI失败replay保留完整历史与gate已集成，root双引擎26绿 | MCP同步执行/远端取消未闭环；Windows runtime和最终App待验 |
+| Q039 | 失败隔离已集成且5845真实Node2例绿；blob core2211→fdeda78b。另真实pending cache及compact均数据丢失真红，正在修 | 统一当前Node/Doc/Pair分块收敛；不做旧Khor兼容，core不是Applied |
+| Q041 | a1/b已集成并精确5845回归；31installer/13mirror/7site。onset构建预检c独立17绿、f7c→76db834b集成且root精确17绿 | 真实Pi编译/Rust嵌入、工具/产物来源与远端全链仍开放 |
 | Q043 | native事件adapter/helpers已集成；真实native listener/unlisten与child WK title证据齐 | OS drag/windowclose/fullscreen值与最终App整体验收 |
-| Q045 | 新登记SSH同步stdin/延迟drain/计时与回执不确定风险 | 先自有进程真红，后owner/deadline/清理协议；未实施 |
+| Q045 | 本地SSH deadline并行I/O与reaped回执已先红后135相关绿，8a22/a162→31b/53ad集成，非作者源审过 | 精确新集成组合运行；真实SSH/master、远端lease与GUI取消API待验 |
 | P4/P5 | 模块边界已按风险分批提取，尚未进入全仓规则/深入口最终治理 | 工具链与生成来源、代码风格/职责、全用户流程仍在原目标内 |
 
 没有把首轮文件清单当逐行深审，没有把局部回归当全仓完成；main未合并/发布。
@@ -56,7 +56,7 @@
 | 2 · 验证结果可信 | V-03/V-04/V-06 | netlab 传播失败退出码；定义PR最小交互检查；mobile静态普查与编译拆分，修正10项漂移并核对实际等待语义。不得用删除失败断言制造全绿。 |
 | 3 · Agent 互通与可取消性 | B-02/B-03/B-05；GUI-A05 | A2A Message context 可续聊且隔离caller；空key安全脱敏；长轮询结束停止、失败退避；取消请求与执行结束有明确期限及状态。 |
 | 4 · 生命周期所有权 | GUI-A04/R01；B-07 | 迟到的网页取得按当前owner释放；资源计数和旧owner竞态回归；once锁有边界地回收。再按owner提取 attachment/native-page/navigation模块。 |
-| 5 · 协议与输入边界 | B-04/B-06 | 大于4 MiB同步缺口的恢复/兼容设计；认证JSON请求的大小、读取失败和非法JSON处理。先定义行为与旧端兼容，再改协议。 |
+| 5 · 协议与输入边界 | B-04/B-06 | 大于4 MiB同步缺口的统一当前协议恢复；认证JSON请求的大小、读取失败和非法JSON处理。按最新用户决定移除旧Khor兼容与双路径，先固定当前契约再实现。 |
 | 6 · 可复现构建与分批结构整理 | V-05/V-07/V-08/V-09；GUI-R02；B-R8/R9 | 按功能拆大型测试；锁定/记录工具链与产物来源；镜像同release原子切换和checksum；Lab维护分类；随后按职责整理大入口和失效历史注释。 |
 
 《Clean Code》的项目落点是意图、状态所有者、副作用和失败语义。此次两个滚动故障来自布局/用户意图及焦点所有权混淆，自动保存来自摘要/代次和取消所有权混淆。先把这些规则及回归建立起来，再按独立改变理由拆模块。函数行数与注释数量不作为成绩；必要平台、协议和并发约束保留，失效的实现历史迁入决策记录。
