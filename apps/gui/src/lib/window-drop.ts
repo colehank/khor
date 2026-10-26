@@ -24,7 +24,15 @@ export function dropPoint(position: { x: number; y: number }, platform: string, 
 
 const handlers = new Set<(d: WindowDrop) => void>();
 let stopListening: (() => void) | undefined;
-const deliver = (drop: WindowDrop) => { for (const handler of handlers) handler(drop); };
+const deliver = (drop: WindowDrop) => {
+  for (const handler of handlers) {
+    try { handler(drop); }
+    catch {
+      // A consumer's error text may itself contain dropped paths.
+      console.error("khor: window drop handler failed");
+    }
+  }
+};
 
 /** One native listener resolves the source once, then every pane checks
  * its active state and bounds. A hidden retained terminal cannot consume

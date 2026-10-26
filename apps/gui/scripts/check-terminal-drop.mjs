@@ -30,5 +30,20 @@ try {
  d=drag();enter();emit({type:'drop',paths:['/tmp/Finder'],position:point});assert.deepEqual(seen.pop().paths,['/tmp/Finder']);drop();assert.equal(seen.length,0,'OS file paths never inherit a remote source');
  d=drag();enter();assert.deepEqual(mod.droppedPath(d),{machine:'far',path:'/srv/x y.txt'});drop();assert.equal(seen.length,0,'DOM then native is once');
  off();offHidden();assert.equal(unlistened,1);assert.deepEqual(hidden,[]);
- console.log('terminal drop: Mac/GTK logical coordinates, Windows scale, native event/dragend ordering, source machines, cancellation, fresh drag, expiry, dedup and retained-pane fanout passed');
+ // One native subscription fans out to active consumers. A failed pane must
+ // not suppress another pane, and diagnostics must not expose dropped paths.
+ const delivered=[],diagnostics=[],errorBefore=console.error;
+ const broken=mod.onWindowDrop(()=>{throw Error('synthetic-private-drop-path')});
+ const healthy=mod.onWindowDrop(drop=>delivered.push(drop));
+ console.error=(...args)=>diagnostics.push(args);
+ try {
+  let escaped=false;
+  try {emit({type:'drop',paths:['/synthetic-private-drop-path'],position:point});} catch {escaped=true;}
+  assert.deepEqual(delivered,[{paths:['/synthetic-private-drop-path'],from:null,...point}],'the next active consumer still receives the original drop');
+  assert.equal(escaped,false,'a failed consumer must not escape the shared native callback');
+  assert.equal(diagnostics.length,1,'consumer failure must be diagnosed once');
+  assert.match(String(diagnostics[0][0]),/window drop.*failed/);
+  assert(!JSON.stringify(diagnostics).includes('synthetic-private-drop-path'),'diagnostic must not include payload or thrown path text');
+ } finally {console.error=errorBefore;broken();healthy();}
+ console.log('terminal drop: Mac/GTK logical coordinates, Windows scale, native event/dragend ordering, source machines, cancellation, fresh drag, expiry, dedup, retained-pane fanout and failed-consumer isolation passed');
 } finally {delete globalThis.__listenDrop;for(const [k,v] of Object.entries(saved))Object.defineProperty(globalThis,k,{configurable:true,writable:true,value:v});}
