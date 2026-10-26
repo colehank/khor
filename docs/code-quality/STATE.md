@@ -6,7 +6,7 @@
 ## 执行边界与权威入口
 
 - main `/Users/zgh/Desktop/working/khor` = `8704a503a27b36ad58f922690de50e766f8bd485`，本次现场tracked clean。本轮没有main合并/发布授权。已ship的`target/release/khor-gui`包含前端可直接启动，SHA9c3e078f…；不能用旧binary证明本轮实现。
-- 权威文档仅本目录 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-plan/docs/code-quality`（plan/code-quality）；其他树同名副本为快照。当前集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1`，HEAD **d20d7121**。
+- 权威文档仅本目录 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-plan/docs/code-quality`（plan/code-quality）；其他树同名副本为快照。当前集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1`，HEAD **8f55002b**（新增Q039 test/生产集成，待精确集成运行）。
 - 外盘资料统一在`/Volumes/disk0/Khor`，复用已有工作副本，不新建散落khor目录。内盘Git对象保存所有已提交refs；未提交外盘源另快照，不能按摘要覆盖。外盘离线先读`/Users/zgh/Library/Caches/khor-code-quality/recovery/RESUME.md`及current-code-quality-docs。
 - 旧完整批次账已移入history/STATE-before-completion-fairness-20261026.md；此前native/集成状态为历史，下面现场状态优先。
 
@@ -63,4 +63,4 @@ Q037 ACP阶段2与同步MCP/远端取消；Q039合法25.4MB差集超过4MiB反�
 
 用户再次“继续”，完整目标活跃，未获得main合并/发布授权。main8704 clean；集成d20 clean。root实读STATE/PLAN与现场diff，Q041完整shell30/30已结束，无并行Cargo。最后核容量外盘约10GiB、内盘约8.9GiB，继续保留5GiB停止线；此前空间突变来源未证实，不将恢复可用量说成根因已解决。root接管Q041，旧store_owner不可恢复写入；native_helpers只读独立审。Q037无诊断Close复现仍为开放风险，不能由诊断轮偶然通过关闭任务。
 
-root后续记录：Q039最终源62eb与testdbfd稳定，正常库集成测试真实2父/2专用worker通过，生产已提交8d87af99；尚未cherry进wave1，等最后小差异非作者复核。Q041 join8/8真实组件测试通过含并发两个PUSH_ARCHIVE_SH及cat失败清理；不等于真实SSH。Shell31/31已含非作者loader两变体×两入口的真红→绿；镜像10/10与site5/5测试调用实际脚本，仅网络/SSH/rsync/build在private scratch中适配，site旧--delete实际删除旧reader真红已保留，第一次mock未递归删除曾误绿已修fixture并重取真红，不冒充真实远端部署。a1/b均未提交/集成；不能由这些结果关闭全部Q041或全仓目标。
+root后续记录：Q039最终源62eb与testdbfd稳定，正常库集成测试真实2父/2专用worker通过，生产已提交8d87af99；最终小差异已获非作者复核，已cherry进wave1为0da/8f55，等精确集成运行。Q041 join8/8真实组件测试通过含并发两个PUSH_ARCHIVE_SH及cat失败清理；不等于真实SSH。Shell31/31已含非作者loader两变体×两入口的真红→绿；镜像10/10与site5/5测试调用实际脚本，仅网络/SSH/rsync/build在private scratch中适配，site旧--delete实际删除旧reader真红已保留，第一次mock未递归删除曾误绿已修fixture并重取真红，不冒充真实远端部署。a1/b均未提交/集成；不能由这些结果关闭全部Q041或全仓目标。
