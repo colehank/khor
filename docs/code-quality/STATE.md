@@ -27,16 +27,16 @@
 | owner | 实际树 / baseline | 当前权限与行动 |
 | --- | --- | --- |
 | root | wave1@670347d7；plan总账 | 集成、独审、公共接口与最终验收。Gen小片完成；已独审N1 raw红绿/03 unit11，Q052仅源码审无阻断；负责R1后续证据。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，fix/quality-node-doc-transfer@**5f2d5cf7**+13源 | 当前冻结**candidate04**（typed Busy三处修正）。已有13源及link/proto/lib/Pending catalog写权；正在依据独审提出**05 flow计量/Pending/真实观察与crash窗口方案**，新增cfgtest观察点须先交root确认，不Cargo。不能按旧表排02/03或04自动跑。 |
-| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，fix/quality-remote-cancel@**8242b5bda383b456a0122fc2613ca4e274620187**+paired02/Stop诊断tests WIP | R1原18 focused已过；buffered Stop诊断同父外/内两次过，旧5.27s失败未解释。剩24 runtime已过15、在output fixture旧projection断言失败，后8未跑。只获**output_tests单源当前fixture适配与回收**源码授权，先freeze不Cargo。原生产仍不改；link/proto/lib未来写权已N1/root。R2仅契约未实现。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，fix/quality-node-doc-transfer@**5f2d5cf7**+13源 | 当前冻结**candidate04**（typed Busy三处修正）。已有13源及link/proto/lib/Pending catalog写权；root已批准新增私有doc_transfer_flow_tests.rs及link/doc_transfer_state窄cfgtest真实wire/gate观察点，先冻结04生产加4父red候选，不作功能修复、不Cargo；postflush/prereceipt实际kill另闭环。不能按旧表排02/03或04自动跑。 |
+| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，fix/quality-remote-cancel@**8242b5bda383b456a0122fc2613ca4e274620187**+paired02/Stop诊断tests WIP | R1原18 focused已过；buffered Stop诊断同父外/内两次过，旧5.27s失败未解释。剩24先过15在旧output fixture失败；适配后last9已过6、GUI真实tool completed失败，后GUI restart/paired未跑。root核真实App已有worker入口，GUI integration默认libtest无入口；现获core/Cargo.toml与tests/khor_agent.rs最小harness=false/custom main修订及GUI2+paired1 runner准备权，先freeze不Cargo。原生产仍不改；link/proto/lib未来写权已N1/root。R2仅契约未实现。 |
 | node_test_review | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，fix/quality-terminal-current@**13a9459f**+Q052候选01 | Q052作者，12变化路径/1921inputs/28双盘file已冻结，23父runner准备未运行；源码/实施卡已交root，不能自审。独立N1 followup审已交root，确认计量/部分Exchange两问题。无Cargo或源写活动。 |
 
 已复用原worktree，不新建target。send_message不唤醒completed agent，动作需followup_task。作者不能自审；活动源按实际diff/hash优先，不能从摘要覆盖。
 
 ## 当前构建槽与资源
 
-- **当前槽空**。最近R1 remaining24-runtime-20261026T215820Z / exec14089 / runner2791已因首错停，root现场ps确认无该进程、无本轮内盘R1运行进程和cargo/rustc。下一步先按N1新flow方案/R1 output fixture修订冻结，root另授槽，不自动续旧清单。
-- 最新R1 runtime-only只执行原24清单，0 Cargo，15 exact父各1/0/0，case16失败、后8未跑；不能称24过或paired已验。R1作者补after-stop receipt。上两次诊断比较exec74870/95645也已结束，所有记录组退。
+- **当前槽空**。最近R1 output-fixture-and-last9-20261026T221818Z / exec93250 / runner13546 / Cargo13559已经结束，root现场未见runner或cargo/rustc。下一仅GUI测试入口修订冻结后另授槽，不自动续旧清单。
+- 最新必要Node libtest编译51.464s成功；last9中4个Node父和2个agentwire父绿，GUI network父因真实devices tool未completed失败，GUI restart与paired未运行。源2350前后稳定，记录组退出/TMP清理齐；旧15绿和Stop两次诊断通过不累加为全部完成。
 - 统一target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`；jobs1/incremental0/lockedoffline，短独占TMP/明确STEP-TOTAL-MIN AST与实际引用/源前后/实际binary/有限TERM-KILL group drain/双盘。内外最低5GiB=5,368,709,120B；掉盘/越线/连续3IO只停自有组。用户已允许在外盘风扇损坏条件下继续。
 - R1首次25组构建阶段GUI触资源线5,304,504,320B自动停；stub与agentwire编译成功保留，paired/25父没跑。后资源恢复只续GUI Cargo0+paired Cargo0，未重编已成stub/agentwire；actual GUI fresh=true仅因同源partial fresh=false事件+完整binary hash匹配且本次Cargo0才认可，不回填历史。
 - storage-audit-11：精确3已完Q033 test缓存320,048,608B；12：精确21闲置gui-core/seen_snapshot/console_receipts test缓存，Cargo depinfo/UID/nlink/inode/SHA/lsof0齐，逻辑4,240,794,944B但实际只增加约0.6GB，不能说物理回收4.24GB；13：保N103两个实际exe到内盘后移除共享副本431,509,448B。源码/证据/App/release/依赖rlib未动，不重放旧清单删新文件。
@@ -60,7 +60,7 @@
 - 02 unit构建暴露旧cfgtest一个str→ByteBuf期望漏改，原编译失败保留；03仅同内容byte vec一行修订。**03 compile+11不同exact父通过**，root逐raw/144双盘file/1083前后稳/真实exe保留独审。编码实测最大request590,328B/response721,546B，canonical chunk262,144B。
 - 03原N0实际Pair与25,447,938B准备成功，首visit约30s后硬 `document transfer state busy`，停在不接纳无关错误的前置断言，未读首Seen/Pin/最终VV，不能称旧cap红或收敛绿。root确认三处BUSY(&str).into误成Invalid，04仅3×Error::busy()+删常量，未编/未运行04。
 - 独立followup另确认两生产缺口（见Q-039-node-n1-followup-review）：已收发body后的Busy/本地错误会丢bytes/chunks预算，初Exchange可能在剩1块时发双向2块；初Exchange提前started=true后receipt Busy，纯pull尚未记录就可能Work.done且缺Pending。下一次Versions可恢复，不声称永久丢数据；仍须修复本visit真假完成。
-- root已授权N1先提出05最小Step计量/typed结果及部分Exchange Pending修复，真实quiet1Versions、双向多Doc实际wire trace含Busy和剩1块边界、receipt gate Busy→Pending→释放重开public sync完成的红绿；允许提出一个私有flow test源与窄cfgtest观察点，生产无env故障后门/新依赖/通用框架，新增hook先root确认。
+- root已批准N1先实现04生产加窄cfgtest真实wire观察和4个red父候选，独审及真实红后再最小Step计量/typed结果与部分Exchange Pending修复；真实quiet1Versions、双向多Doc实际wire trace含Busy和剩1块边界、receipt gate Busy→Pending→释放重开public sync完成的红绿；限定新doc_transfer_flow_tests.rs与link/doc_transfer_state中的私有cfgtest观察点，生产无env故障后门/新依赖/通用框架。实际wire tag排除内部直接dispatch，真实gate/IO制造Busy，按root有界记录并RAII释放。
 - postflush/prereceipt实际kill/reopen也须闭合：旧11只在Complete已持久后重开，不能代替该窗口。原N0 max4/25MB/VV/content/SeenPin、visit30s/32MiB、chunk256KiB/body64MiB均不放宽；05修闭再重冻后排适用验证，04 runner保历史不自发运行。
 
 ## R1 / R2 当前事实
@@ -70,6 +70,7 @@
 - 第一次相关runtime首原MCP Stop父出现5.27s `Stop admission blocked`，0/25；原raw没有逐call数据，不定性fixture或生产根因。诊断01在critical window打印，16 calls实际约161ms但日志/调度间隙总1.356s又触门，该诊断不能当纯生产延迟。
 - 诊断02改为32条有界内存、原cleanup完成后才输出，原16calls与1s门/全部后续期限不动；同新binary同父外盘原CLI→内盘copy两attempt均过，分别276ms/213ms、Persist owner各1、Pi/claim/map/nextPrompt/lateReply全部原oracle齐。distinct只1父，旧5.27s仍未解释，不能以两次pass抹掉。source2350/64日志/10PID/两CLI+新binary/双盘齐。
 - 剩24 runtime-only **15父绿、case16输出fixture失败、后8未跑**。root实读确认旧测试强求Saved.data_json.remoteCancellation pending/confirmed，而R1已按契约移至独立intent/receipt；fixtureSaved.owner也未设真实Node。主4组脱敏/空key/Unicode/redact-once及已有metadata保留oracle必须保；root只授权该test源机械适配真实owner、验证无旧竞争projection、bounded回收local_retired元数据owner后退出，若读cancel状态须走真实authority，不伪造。先delta/freeze，不自动编或续。
+- output fixture机械适配已冻结并编译：Saved.owner设真实Node，旧竞争projection确认不存在，bounded回收metadata owner，保4组原脱敏与oversize oracles。last9前6父通过；GUI network失败于devices-1 tool completed断言（模型仍回network ready）。只读根因：Node normal依赖self-exec GUI integration默认libtest，而其缺_mcp_worker入口；真实CLI/App已有console→mcp worker分支。因此授权仅core/Cargo.toml的khor_agent harness=false与该test自定义main先调真实worker入口、严格两父选择，原body/断言不放宽。新候选/GUI2+paired1验证待审待跑，不能称GUI或paired绿。
 - **R2未知首次Send task发现/lateSend fence未实现**。已有只读契约：native按Binding/caller/agent/message及原parent直接lookup+与Store.accept原子fence；HTTP无远端能力时诚实Unknown，不重放Send/Answer或从List起点无限扫描。实现待R1收尾另授。
 - 集成R1须先原R0 seed f0104d73，再固定生产8242及后续必要test；N1三公共源另由root合并意图，不copy整棵旧树。main/ship仍无授权。
 
