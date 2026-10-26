@@ -19,5 +19,16 @@ export function useComposeLayout(ref:RefObject<HTMLDivElement|null>,enabled:bool
     }finally{root.style.minHeight=minHeight;measuring.current=false;}
   };
   useLayoutEffect(measure);
-  useEffect(()=>{const root=ref.current;if(!enabled||!root)return;const observer=new ResizeObserver(measure);observer.observe(root);root.addEventListener('input',measure);return()=>{observer.disconnect();root.removeEventListener('input',measure);};},[enabled]);
+  useEffect(()=>{
+    const root=ref.current;if(!enabled||!root)return;
+    let frame:number|null=null;
+    // Measuring can resize the observed capsule. Leave the observer's delivery
+    // cycle before writing its dimensions; input and React layout stay synchronous.
+    const observer=new ResizeObserver(()=>{
+      if(frame!==null)return;
+      frame=requestAnimationFrame(()=>{frame=null;measure();});
+    });
+    observer.observe(root);root.addEventListener('input',measure);
+    return()=>{observer.disconnect();if(frame!==null)cancelAnimationFrame(frame);root.removeEventListener('input',measure);};
+  },[enabled]);
 }
