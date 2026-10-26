@@ -185,6 +185,12 @@ REMOTE
     exit 0
 fi
 
+# Pin and validate the companion script before discovery, build or any remote
+# file changes. The exact validated copy is the one sent with the executable.
+serve_up_text > "$STAGE/khor-serve-up"
+[ -s "$STAGE/khor-serve-up" ] || { echo "onset: could not cut khor-serve-up out of scripts/install.sh" >&2; exit 1; }
+sh -n "$STAGE/khor-serve-up" || { echo "onset: khor-serve-up is not valid shell" >&2; exit 1; }
+
 # ── what the target is ───────────────────────────────────
 ARCH=$(ssh_ 'uname -m' | tr -d '\r')
 # An empty answer is a connection that dropped, not a CPU nobody
@@ -211,7 +217,6 @@ fi
 # scp does not expand the remote shell's variables, so the home is
 # asked for rather than spelled. Asked once, up here: every source
 # below lands the binary under it.
-ssh_ 'mkdir -p "$HOME/.local/bin"'
 REMOTE_HOME=$(ssh_ 'printf %s "$HOME"' | tr -d '\r')
 [ -n "$REMOTE_HOME" ] || { echo "onset: $HOST did not say where its home is" >&2; exit 1; }
 STAGED="$REMOTE_HOME/.local/bin/.khor.onset$$"
@@ -224,9 +229,20 @@ build)
     # homes are on NFS, and a toolchain install is a gigabyte of
     # somebody else's disk. (`build-on.sh` is the deliberate exception,
     # for a box that already carries a toolchain and *is* the floor.)
-    BIN="$REPO/target/$TARGET/release/khor"
+    # Each attempt owns its Pi component, so concurrent target builds cannot
+    # silently embed whichever shared dist/khor-agent was written last.
+    AGENT_BUNDLE="$STAGE/khor-agent"
+    say "onset: preparing Pi for $TARGET"
+    ( cd "$REPO" && node apps/agent/build.mjs "$TARGET" "$AGENT_BUNDLE" )
+    [ -f "$AGENT_BUNDLE" ] && [ -s "$AGENT_BUNDLE" ] || { echo "onset: no standalone Pi component" >&2; exit 1; }
+    case "${CARGO_TARGET_DIR:-}" in
+        '') BUILD_TARGET_DIR="$REPO/target" ;;
+        /*) BUILD_TARGET_DIR="$CARGO_TARGET_DIR" ;;
+        *) BUILD_TARGET_DIR="$REPO/$CARGO_TARGET_DIR" ;;
+    esac
+    BIN="$BUILD_TARGET_DIR/$TARGET/release/khor"
     say "onset: building $ZIGTARGET (this machine)"
-    ( cd "$REPO" && cargo zigbuild -q -p khor-cli --bin khor --target "$ZIGTARGET" --release )
+    ( cd "$REPO" && KHOR_AGENT_BUNDLE="$AGENT_BUNDLE" cargo zigbuild -q --locked -p khor-cli --bin khor --target "$ZIGTARGET" --release )
     [ -f "$BIN" ] || { echo "onset: no binary at $BIN" >&2; exit 1; }
     ;;
 release)
@@ -277,10 +293,17 @@ if [ -n "$BIN" ]; then
         gnu-*dynamically\ linked*) : ;;
         *) echo "onset: $BIN is not a $LIBC build" >&2; exit 1 ;;
     esac
-    if [ "$DRY" = yes ]; then
+fi
+if [ "$DRY" = yes ]; then
+    if [ -n "$BIN" ]; then
         say "onset: dry run — $BIN is ready ($(wc -c < "$BIN" | tr -d ' ') bytes, $(shasum -a 256 "$BIN" | cut -c1-12)…); nothing sent to $HOST"
-        exit 0
+    else
+        say "onset: dry run — would install $ONTARGET on $HOST; nothing touched"
     fi
+    exit 0
+fi
+ssh_ 'mkdir -p "$HOME/.local/bin"'
+if [ -n "$BIN" ]; then
     say "onset: sending $(wc -c < "$BIN" | tr -d ' ') bytes"
     # **Landed next to its destination, not in /tmp.** `mv` is only
     # atomic within one filesystem; across two it degrades to
@@ -291,17 +314,11 @@ if [ -n "$BIN" ]; then
     # is still running it.
     scp_ "$BIN" "$STAGED"
 else
-    if [ "$DRY" = yes ]; then
-        say "onset: dry run — would install $ONTARGET on $HOST; nothing touched"
-        exit 0
-    fi
     say "onset: taking $ONTARGET as the staged binary"
     ssh_ "mv -f '$ONTARGET' '$STAGED'"
 fi
 # The pull-up script travels beside the binary and lands the same way.
 STAGED_UP="$REMOTE_HOME/.local/bin/.khor-serve-up.onset$$"
-serve_up_text > "$STAGE/khor-serve-up"
-[ -s "$STAGE/khor-serve-up" ] || { echo "onset: could not cut khor-serve-up out of scripts/install.sh" >&2; exit 1; }
 scp_ "$STAGE/khor-serve-up" "$STAGED_UP"
 
 # ── install ──────────────────────────────────────────────
