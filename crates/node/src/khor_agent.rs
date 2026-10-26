@@ -1034,5 +1034,9 @@ mod output_tests;
 mod cancel_tests;
 
 #[cfg(all(test, unix))]
+#[path = "khor_agent_mcp_cancel_tests.rs"]
+mod mcp_cancel_tests;
+
+#[cfg(all(test, unix))]
 #[path = "khor_agent_lifecycle_tests.rs"]
 mod lifecycle_tests;
