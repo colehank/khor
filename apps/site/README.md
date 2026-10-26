@@ -36,5 +36,9 @@ caddy run --config deploy/Caddyfile         # 或者挂成服务
 deploy/push.sh <ssh主机>
 ```
 
-它构建、把最新发行版同步进 `.mirror/`（`scripts/mirror-sync.sh`），再把两样都 rsync 过去。
-出了新发行版也跑这一条，镜像才跟上。
+它构建页面，把一个已选定发行版同步进 `.mirror/releases/<tag>/`，再上传到远端独占暂存目录。
+远端重新校验压缩归档摘要、gzip 和程序头；完整目录落位后才原子切换 `/dl/VERSION`。
+既有版本保留，已选旧版本的客户端可以继续下载。页面同步保护 `/dl`，不删除它的历史版本。
+部署端需要支持 `--protect-args` 的 rsync，远端需要 sh、gzip、SHA256 工具与基础文件命令。
+出了新发行版也跑这一条，镜像才跟上。布局、失败恢复和旧镜像迁移见
+[镜像维护](../../scripts/release-mirror.md)。

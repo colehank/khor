@@ -13,7 +13,7 @@
 set -eu
 KHOR_MIRROR="${KHOR_MIRROR:-https://khor.cloud/dl}"
 export KHOR_MIRROR
-TMP="${TMPDIR:-/tmp}/khor-install.$$"
+TMP=$(mktemp "${TMPDIR:-/tmp}/khor-install.XXXXXXXX")
 trap 'rm -f "$TMP"' EXIT
 if command -v curl >/dev/null 2>&1; then
     curl -fsSL "$KHOR_MIRROR/install.sh" -o "$TMP"

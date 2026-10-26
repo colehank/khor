@@ -13,8 +13,8 @@ http://khor.cloud:8787, http://www.khor.cloud:8787 {
 
 	# Hashed by the build, so they never change under one name.
 	header /_astro/* Cache-Control "public, max-age=31536000, immutable"
-	# The mirror carries one version under fixed names; a long edge
-	# cache would keep serving the release before last.
+	# VERSION and the bootstrap can change; immutable generations stay
+	# available for clients that already selected an earlier release.
 	header /dl/* Cache-Control "public, max-age=300"
 	header /install.sh Cache-Control "public, max-age=300"
 

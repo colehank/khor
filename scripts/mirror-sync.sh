@@ -1,38 +1,33 @@
 #!/bin/sh
-# Sync a khor install mirror from GitHub — run this on the one box that
-# has real internet (a cheap cloud VM is plenty: the mirror is static
-# files and a curl every few minutes). The fleet's no-DNS machines then
-# install with:
-#
-#   curl -fsSL http://<mirror-ip>/khor/install.sh | KHOR_MIRROR=http://<mirror-ip>/khor sh
-#
-# Binaries are pinned to the latest release; install.sh is refreshed
-# from main afterwards so installer fixes reach the mirror without
-# waiting for a tag (the raw.githubusercontent worry in install.sh's
-# header is about the *target* machines — this script runs where GitHub
-# is reachable, or it would have nothing to sync at all). Every landing
-# is tmp + mv: nobody downloads a half-written file.
+# Publish a complete immutable release, then atomically select it with VERSION.
+# Existing releases and legacy flat assets are retained for pinned readers.
 set -eu
 REPO="${KHOR_REPO:-colehank/khor}"
 DIR="${KHOR_MIRROR_DIR:-/var/www/html/khor}"
-API="https://api.github.com/repos/$REPO/releases/latest"
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$HERE/onset-lib.sh"
+khor_install_components "$HERE/install.sh" "$HERE/install-components.sh" >/dev/null
+. "$HERE/install-components.sh"
+. "$HERE/mirror-lib.sh"
 mkdir -p "$DIR"
-TAG=$(curl -fsSL "$API" | grep -m1 '"tag_name"' | cut -d'"' -f4)
-[ -n "$TAG" ] || { echo "khor-mirror: no tag from $API" >&2; exit 1; }
-# install.sh refreshes on every run, unconditionally — its whole point
-# is reaching the mirror without waiting for a tag, so it must not sit
-# behind the same-tag early exit below (that exact bug shipped first:
-# the mirror served a frozen installer while main moved on).
-if curl -fsSL "https://raw.githubusercontent.com/$REPO/main/scripts/install.sh" -o "$DIR/.tmp.install.sh"; then
-    mv -f "$DIR/.tmp.install.sh" "$DIR/install.sh"
-fi
-if [ -f "$DIR/VERSION" ] && [ "$(cat "$DIR/VERSION")" = "$TAG" ]; then
-    exit 0
-fi
-curl -fsSL "$API" | grep '"browser_download_url"' | cut -d'"' -f4 | while read -r url; do
-    name=$(basename "$url")
-    curl -fsSL "$url" -o "$DIR/.tmp.$name"
-    mv -f "$DIR/.tmp.$name" "$DIR/$name"
+mkdir "$DIR/.sync.lock" 2>/dev/null || { echo "khor-mirror: another writer holds the publication lock" >&2; exit 1; }
+STAGE=""
+trap '[ -z "$STAGE" ] || rm -rf "$STAGE"; rmdir "$DIR/.sync.lock"' EXIT
+STAGE=$(mktemp -d "$DIR/.release.XXXXXXXX")
+SELECTED=$(khor_select_release "$REPO" "${KHOR_VERSION:-latest}" "" khor-linux-x86_64)
+TAG=$(printf '%s\n' "$SELECTED" | head -n 1)
+ENCODED_TAG=$(printf '%s' "$TAG" | sed 's/+/%2B/g')
+BASE="https://github.com/$REPO/releases/download/$ENCODED_TAG"
+for ASSET in khor-linux-x86_64 khor-linux-aarch64 khor-macos-arm64 khor-macos-x86_64; do
+    khor_download "$BASE/$ASSET.gz" "$STAGE/$ASSET.gz"
+    khor_download "$BASE/$ASSET.gz.sha256" "$STAGE/$ASSET.gz.sha256" 512
 done
-printf '%s\n' "$TAG" > "$DIR/VERSION"
+khor_download "$BASE/install.sh" "$STAGE/install.sh" 262144
+# Only publish installers that implement the matching immutable layout. This
+# checks declarations; it never executes the downloaded installer or helpers.
+grep -qx '# KHOR_MIRROR_LAYOUT=versioned-v1' "$STAGE/install.sh" || {
+    echo "khor-mirror: release installer predates the versioned mirror contract" >&2; exit 1;
+}
+/bin/sh -n "$STAGE/install.sh"
+khor_commit_mirror_release "$DIR" "$STAGE" "$TAG"
 echo "khor-mirror: synced $TAG"
