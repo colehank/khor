@@ -67,6 +67,8 @@ jobs:
           EDITOR_OVERWRITE_WEBKIT: '1'
           CHAT_POLL_WEBKIT: '1'
           CHAT_CANCEL_WEBKIT: '1'
+          CHAT_REPLAY_WEBKIT: '1'
+          CHAT_REPLAY_CHECK_DIR: ${{ runner.temp }}/quality-chat-replay
           COMPOSE_OUT: ${{ runner.temp }}/quality-compose
           NATIVE_HELPERS_CHECK_DIR: ${{ runner.temp }}/quality-native-helpers
           NATIVE_EVENTS_CHECK_DIR: ${{ runner.temp }}/quality-native-events
@@ -86,6 +88,7 @@ jobs:
             ${{ runner.temp }}/quality-overwrite
             ${{ runner.temp }}/quality-chat-poll
             ${{ runner.temp }}/quality-chat-cancel
+            ${{ runner.temp }}/quality-chat-replay
             ${{ runner.temp }}/quality-pages
             ${{ runner.temp }}/quality-native-events
             ${{ runner.temp }}/quality-native-helpers

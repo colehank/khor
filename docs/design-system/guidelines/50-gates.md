@@ -786,3 +786,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 
 `npm run native-helpers`：真实锁定SDK Window/Webview/PhysicalPosition/CloseRequestedEvent与owned adapter，双引擎38组检查精确target、页面onReady/过滤、窗口关闭prevent/异步owner退役、fullscreen在途查询、四drag订阅形状/部分失败/回滚、throwing peer。纳入test:interaction；`NATIVE_HELPERS_CHECK_DIR`保存源/资源报告，`NATIVE_HELPERS_SCENARIOS`支持严格选择。terminal-drop原业务门另验共享consumer异常隔离且诊断不包含路径。浏览器native runtime为真实SDK+可控IPC时序，OS窗口/拖放/真实App另验。
+
+
+`npm run chat-replay`：真实ChatView与api.ts的成功/失败/取消回放提交边界，跨poll错误与结束、断连/重连/owner退役、成功空回放与live/普通control独立。加入test:interaction；`CHAT_REPLAY_WEBKIT=1`覆盖WebKit，`CHAT_REPLAY_CHECK_DIR`保存源指纹与报告（默认OS临时目录），`CHAT_REPLAY_SCENARIOS`严格选择。失败回放保留已知完整past，未完成片段不作历史；页面/console错误均失败。可控Tauri poll fixture不替代真实host/native链验收。
