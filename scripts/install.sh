@@ -34,38 +34,14 @@
 #                      | KHOR_MIRROR=http://<mirror>/khor sh
 #                  The mirror is plain static files — any box that can
 #                  reach GitHub can host one (scripts/mirror-sync.sh).
-set -eu
 
-REPO="${KHOR_REPO:-colehank/khor}"
-VERSION="${KHOR_VERSION:-latest}"
-BIN_DIR="$HOME/.local/bin"
-
-case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64) ASSET=khor-linux-x86_64 ;;
-    Linux-aarch64|Linux-arm64) ASSET=khor-linux-aarch64 ;;
-    Darwin-arm64) ASSET=khor-macos-arm64 ;;
-    Darwin-x86_64) ASSET=khor-macos-x86_64 ;;
-    *) echo "khor: no build for $(uname -s)-$(uname -m) yet" >&2; exit 1 ;;
-esac
-
-# Compressed on the wire: the release ships `.gz` because the download
-# is the slow half of an install (measured at ~95 KB/s from the machines
-# this runs on — 8.9 MB instead of 29.7).
-if [ -n "${KHOR_MIRROR:-}" ]; then
-    # The mirror carries exactly one version (whatever its sync last
-    # pulled), so KHOR_VERSION means nothing here — the checks below
-    # (gzip, magic bytes) still stand between a bad mirror and $BIN_DIR.
-    URL="${KHOR_MIRROR%/}/$ASSET.gz"
-elif [ "$VERSION" = latest ]; then
-    URL="https://github.com/$REPO/releases/latest/download/$ASSET.gz"
-else
-    URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET.gz"
-fi
-
-mkdir -p "$BIN_DIR"
-if [ -n "${KHOR_SKIP_FETCH:-}" ] && [ -x "$BIN_DIR/khor" ]; then
-    :
-else
+# KHOR_INSTALL_DECLARATIONS_BEGIN
+khor_fetch_verify_place() (
+    set -eu
+    URL="$1"
+    BIN_DIR="$2"
+    ASSET="$3"
+    VERSION="$4"
 echo "khor: fetching $ASSET ($VERSION)"
 # Downloaded **next to its destination**, then renamed: `mv` is only
 # atomic within one filesystem, and across two it degrades to
@@ -102,6 +78,42 @@ esac
 chmod +x "$TMP"
 mv -f "$TMP" "$BIN_DIR/khor"
 trap - EXIT
+)
+
+khor_install_main() {
+set -eu
+
+REPO="${KHOR_REPO:-colehank/khor}"
+VERSION="${KHOR_VERSION:-latest}"
+BIN_DIR="$HOME/.local/bin"
+
+case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) ASSET=khor-linux-x86_64 ;;
+    Linux-aarch64|Linux-arm64) ASSET=khor-linux-aarch64 ;;
+    Darwin-arm64) ASSET=khor-macos-arm64 ;;
+    Darwin-x86_64) ASSET=khor-macos-x86_64 ;;
+    *) echo "khor: no build for $(uname -s)-$(uname -m) yet" >&2; exit 1 ;;
+esac
+
+# Compressed on the wire: the release ships `.gz` because the download
+# is the slow half of an install (measured at ~95 KB/s from the machines
+# this runs on — 8.9 MB instead of 29.7).
+if [ -n "${KHOR_MIRROR:-}" ]; then
+    # The mirror carries exactly one version (whatever its sync last
+    # pulled), so KHOR_VERSION means nothing here — the checks below
+    # (gzip, magic bytes) still stand between a bad mirror and $BIN_DIR.
+    URL="${KHOR_MIRROR%/}/$ASSET.gz"
+elif [ "$VERSION" = latest ]; then
+    URL="https://github.com/$REPO/releases/latest/download/$ASSET.gz"
+else
+    URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET.gz"
+fi
+
+mkdir -p "$BIN_DIR"
+if [ -n "${KHOR_SKIP_FETCH:-}" ] && [ -x "$BIN_DIR/khor" ]; then
+    :
+else
+    khor_fetch_verify_place "$URL" "$BIN_DIR" "$ASSET" "$VERSION"
 fi
 
 if ! grep -qs 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null; then
@@ -370,3 +382,6 @@ else
     exit 1
 fi
 echo "khor: done. join the mesh with — khor pair <ticket>"
+}
+# KHOR_INSTALL_DECLARATIONS_END
+khor_install_main "$@"
