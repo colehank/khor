@@ -1,6 +1,6 @@
 # Q-043 helpers：剩余原生事件的资源归属
 
-状态：review；两提交均已独立源审，作者固定源回归完成；尚未真实 native 验收或集成。
+状态：integrated；两提交已独立源审、38项集成回归及真实native七注册/七撤销/child WK title过；OS drag/windowclose/fullscreen值与最终App待。
 
 ## 任务契约
 

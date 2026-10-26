@@ -1,7 +1,28 @@
-# 首轮代码治理审计与批次
+# 代码治理审计与批次
 
 基线：main `8704a503a27b36ad58f922690de50e766f8bd485`，2026-10-25。
 此表是首轮结构巡检和重点流程审查的结论，不是全仓逐行深审或所有功能已经通过。
+
+## 当前处置索引（2026-10-26）
+
+本节是首轮问题的后续处置，确切版本/活动所有者仍读STATE；后面的首轮表保留原证据边界。
+
+| 问题/范围 | 当前事实 | 仍需处理 |
+| --- | --- | --- |
+| Q010/11/15 | 已集成；run11同源真实Tauri iOS键盘/历史锚点/commit连续跳转，后续Safari长稿占位与RO调度也有真红绿 | 最终全部Rust/JS同源App重建；物理iPhone/IME未验 |
+| Q020/020b/020c、Q021/021b | 自动保存、显式覆盖digest假冲突、锁刷新均已集成并有独立回归/源审；下方“覆盖尚未修”是首轮历史，不是当前遗留 | 最终整合用户流程 |
+| Q022/023/023b | 身份原子首建、store/purge目标范围与真实owner已集成 | 断电目录项/Windows runtime未承诺 |
+| Q025/036/032/040 | FIFO写完成/连接owner、输入预算、canonical cache/once弱锁回收已集成且c371后端实跑 | 相邻registry及余下生命周期按任务边界审 |
+| Q030/030b/031/038 | 脱敏、A2A caller隔离续聊、事件预算/stderr drain已集成 | 全MCP与远端取消链未闭环 |
+| Q033/034/035 | 上传cancel receipt/GUI恢复、poll退避/gone、native page owner/LRU已集成 | Q033 GUI→Rust真实上传取消、Q035 borrow lease仍待；HTTP mock不代替 |
+| Q037 | Pi及ACP阶段1已集成；阶段2发现并复现slow-drip取消和Darwin退出可见窗口 | Unix窄修/固定source全回归/非作者审/阶段2集成；Windows仅cross-compile |
+| Q039 | 合法25MB差集使后续Seen/Pins饥饿真红→真实Node2例绿；失败隔离test/生产已进wave1@8f55 | 精确集成回归；大差集本身分块恢复/legacy兼容未完成 |
+| Q041 | 安装摘要/不可变selection/canonical函数源已提交59da；Shell31绿，Rust诊断前8绿；mirror/site真红与19个修后用例绿 | 最终Rust诊断源复跑；b独立审/提交/集成；D04完整Pi构建与工具/产物来源仍开放 |
+| Q043 | native事件adapter/helpers已集成；真实native listener/unlisten与child WK title证据齐 | OS drag/windowclose/fullscreen值与最终App整体验收 |
+| Q045 | 新登记SSH同步stdin/延迟drain/计时与回执不确定风险 | 先自有进程真红，后owner/deadline/清理协议；未实施 |
+| P4/P5 | 模块边界已按风险分批提取，尚未进入全仓规则/深入口最终治理 | 工具链与生成来源、代码风格/职责、全用户流程仍在原目标内 |
+
+没有把首轮文件清单当逐行深审，没有把局部回归当全仓完成；main未合并/发布。
 
 ## 覆盖与证据
 
@@ -42,7 +63,7 @@
 
 ## 审查追加项
 
-Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史digest却被推进到旧head的假冲突（P2）。这是既有显式覆盖入口问题，未在当前提交修复；下一批在FileView.mine与新pin来源契约下处理，不能让所有asked保存绕过compare-and-write。证据见 [Q020审查](tasks/Q-020-review.md)。
+Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史digest却被推进到旧head的假冲突（P2）。这是首轮提交时的既有显式覆盖入口问题，后续已在Q020c按FileView.mine与新pin来源契约修复并集成；原审查记录仍保留，不能让所有asked保存绕过compare-and-write。证据见 [Q020审查](tasks/Q-020-review.md)。
 
 ## 持续执行与上下文恢复
 
