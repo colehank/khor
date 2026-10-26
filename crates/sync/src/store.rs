@@ -23,6 +23,10 @@ use loro::VersionVector;
 
 use crate::plan::{Ledger, Side};
 
+#[path = "store_apply.rs"]
+mod apply;
+pub use apply::{ApplyError, ApplySpec, FlushedImport};
+
 /// Block file extension.
 const EXT: &str = "loro";
 
@@ -978,7 +982,8 @@ impl BlockStore {
     /// merged that never was; it is never pulled again and a slice of
     /// data goes permanently missing, with no error anywhere.
     pub fn absorb<D: Doc>(&mut self, doc: &D, name: &str, bytes: &[u8]) -> Result<(), String> {
-        doc.merge(bytes)?;
+        let report = doc.merge_report(bytes)?;
+        self.record_import(&report);
         self.make_dir()?;
         write_atomic(&self.dir.join(name), bytes)?;
         self.ledger.insert(name);
