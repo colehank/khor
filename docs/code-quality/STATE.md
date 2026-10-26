@@ -24,44 +24,61 @@
 
 ## 当前所有者与写权
 
-| owner | worktree / branch / baseline | 当前行动 |
+| owner | 实际树 / baseline | 当前权限与行动 |
 | --- | --- | --- |
-| root | wave1@670347d7；plan总账；native-io Gen c89aa135源码已交还 | 集成、独审、公共接口协调和最终验收。Gen小片已完成；负责N1 delta、R1 paired与后续terminal独审。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，fix/quality-node-doc-transfer@**5f2d5cf7**+N1 13源 | 正常DocTransfer接线01已normal check15.307s，1083输入稳；独审确认B1真实raw1MiB门漏、C1测试proof方向。02已修并冻，仅5源delta。B1真实raw父已真红→绿，root逐原日志/35+36双盘file/两个fresh=false实际artifact独审通过。源已恢复冻结02。link/proto/lib及Pending catalog en/zh仍归其本片；只准备11unit/相关/N0，不Cargo，先让R1复用05 libtest。 |
-| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，fix/quality-remote-cancel@**8242b5bda383b456a0122fc2613ca4e274620187**，19源checkpoint已commit；仅delegation_wire新增WIP | R1 18 focused不同父已过且root证据独审；已知child可靠取消片尚需旧受影响24+真paired Bound父。paired01 root发现Unix libc helper破坏Windows编译，02已最小guard修好并root审。现获唯一槽24相关+新paired1；原19生产保持冻结。R2未知task/lateSend仅设计，生产不动。原link/proto/lib保01原patch，后续写权已交N1/root。 |
-| node_test_review（现terminal作者） | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，fix/quality-terminal-current@**13a9459f**+Q052 WIP | Gen实现/卡已交root，不能自审；N1独审已交root。当前实现Q052终端current-only清理：host/GUI term与必要commands/CLI/测试调用机械适配，无UI/依赖/公共link/proto/lib/catalog写权；只源码/定向测试及freeze，不Cargo。 |
+| root | wave1@670347d7；plan总账 | 集成、独审、公共接口与最终验收。Gen小片完成；已独审N1 raw红绿/03 unit11，Q052仅源码审无阻断；负责R1后续证据。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，fix/quality-node-doc-transfer@**5f2d5cf7**+13源 | 当前冻结**candidate04**（typed Busy三处修正）。已有13源及link/proto/lib/Pending catalog写权；正在依据独审提出**05 flow计量/Pending/真实观察与crash窗口方案**，新增cfgtest观察点须先交root确认，不Cargo。不能按旧表排02/03或04自动跑。 |
+| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，fix/quality-remote-cancel@**8242b5bda383b456a0122fc2613ca4e274620187**+paired02/Stop诊断tests WIP | R1原18 focused已过；buffered Stop诊断同父外/内两次过，旧5.27s失败未解释。剩24 runtime已过15、在output fixture旧projection断言失败，后8未跑。只获**output_tests单源当前fixture适配与回收**源码授权，先freeze不Cargo。原生产仍不改；link/proto/lib未来写权已N1/root。R2仅契约未实现。 |
+| node_test_review | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，fix/quality-terminal-current@**13a9459f**+Q052候选01 | Q052作者，12变化路径/1921inputs/28双盘file已冻结，23父runner准备未运行；源码/实施卡已交root，不能自审。独立N1 followup审已交root，确认计量/部分Exchange两问题。无Cargo或源写活动。 |
 
-所有树均复用旧目录，不增worktree。send_message不唤醒completed agent；有动作须followup_task。旧库作者源权已归还root。作者不能自审自己的片。
+已复用原worktree，不新建target。send_message不唤醒completed agent，动作需followup_task。作者不能自审；活动源按实际diff/hash优先，不能从摘要覆盖。
 
-## 当前唯一槽与真实运行
+## 当前构建槽与资源
 
-- **唯一Cargo/native/gen槽：remote_cancel_owner，24相关+新paired1**。related-and-paired-20261026T205804Z，runner70875 / exec52297；最新现场确认agent-wire Cargo71066/rustc71257 live。只stub必要build与3相关testtarget构建、复用05 libtest/03 CLI，再顺序25exact，失败停报。实际是否仍live以handle/ps为准，不能据timeout重启。N1两B1段已完成归还槽，原red/green记录保留。
-- N1两runner STEP300/TOTAL420、当前R1 STEP300/TOTAL720，MIN5368709120，jobs1/locked/offline/incremental0，统一target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`，短独占TMP、源前后/实际binary/有限group drain/双盘回执。跨树必须核当前firstparty source与fresh=false实际产物；不得把后续被覆盖binary哈希回填旧记录。
-- 外内可用都≥5GiB；掉盘/越线/连续3IO只停自有组。外盘风扇坏/SMART不可读，用户已允许继续。最新R1启动外6,020,411,392B/内13,216,579,584B，动态测。
-- storage-audit-10已凭精确SHA/uid/nlink/inode/lsof0回收5个已退自有test缓存约1.004GB；11同法精确回收3个已完成Q033 test exe共320,048,608B，外盘回到6.018GB，保R1 05 libtest/CLI及N1 agents_wire。源码/证据/App没动，历史结果不因缓存删除失效，不复用旧清单删新文件。
+- **当前槽空**。最近R1 remaining24-runtime-20261026T215820Z / exec14089 / runner2791已因首错停，root现场ps确认无该进程、无本轮内盘R1运行进程和cargo/rustc。下一步先按N1新flow方案/R1 output fixture修订冻结，root另授槽，不自动续旧清单。
+- 最新R1 runtime-only只执行原24清单，0 Cargo，15 exact父各1/0/0，case16失败、后8未跑；不能称24过或paired已验。R1作者补after-stop receipt。上两次诊断比较exec74870/95645也已结束，所有记录组退。
+- 统一target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`；jobs1/incremental0/lockedoffline，短独占TMP/明确STEP-TOTAL-MIN AST与实际引用/源前后/实际binary/有限TERM-KILL group drain/双盘。内外最低5GiB=5,368,709,120B；掉盘/越线/连续3IO只停自有组。用户已允许在外盘风扇损坏条件下继续。
+- R1首次25组构建阶段GUI触资源线5,304,504,320B自动停；stub与agentwire编译成功保留，paired/25父没跑。后资源恢复只续GUI Cargo0+paired Cargo0，未重编已成stub/agentwire；actual GUI fresh=true仅因同源partial fresh=false事件+完整binary hash匹配且本次Cargo0才认可，不回填历史。
+- storage-audit-11：精确3已完Q033 test缓存320,048,608B；12：精确21闲置gui-core/seen_snapshot/console_receipts test缓存，Cargo depinfo/UID/nlink/inode/SHA/lsof0齐，逻辑4,240,794,944B但实际只增加约0.6GB，不能说物理回收4.24GB；13：保N103两个实际exe到内盘后移除共享副本431,509,448B。源码/证据/App/release/依赖rlib未动，不重放旧清单删新文件。
+- 当前最近外5.74GB/内11.3GB，须每run动态测；正常artifact后续覆盖不回填旧SHA，缓存清理不否认历史结果。
 
-## N1/N2实况与下一步
+## 已保留的实际运行制品（避免共享target覆盖迫使重复编译）
 
-- 真N0：dd60fc5d/audit ref保存原测试；真实Node+relay、合法4096×64地址历史，差集25,447,954B，旧4次public sync不收敛但Seen123/Pintrue持久前进，1普通父业务红。原oracle完整保留。
-- 真Pair04：合法12288×64历史，Snapshot29,224,082B首次回包过cap且票已消费、同caller重试badinvite，1普通父业务红。02/03之前只是准备失败，不能另算产品红。巨大Pair/Vouch/可恢复claim为**N2仍open**。
-- N1当前单DocTransfer1MiB encoded/256KiB chunks、quiet一次Versions、每doc双向合计4chunk/1MiB quantum、visit32MiB/30s、固定Preparing/Ready、checked flush→durable receipt→Applied与exact ACK/GC。删正常旧Sync/Synced/base64，不留兼容fallback。源码01独审除B1/C1无新增确认阻断；实际性能/收敛未验。
-- B1新增父使用真实Pair身份、同连接2MiB普通Versions admission正对照、padded canonicalWrite/Confirm、合法256KiB Exchange Stored正对照。01必须显式出现原Missing/Confirmed及创建transfer dirs才算业务红；02必须exact cap Refused且无state副作用，正常chunk仍可用。
-- 冻结：external Q039/node-transfer-n1-b1-red-candidate-01、node-transfer-n1-candidate-02，internal recovery同名（不带Q039层），各19files/1083inputs。test-only另4files。源当前运行状态优先，不按“02已冻”覆盖red测试中的四源。
-- B1实际红69.753s/绿56.155s：同测试旧padded Missing/Confirmed并创建state，修后专用Refused且无state，两段正常256KiB Stored对照都过；原raw/source/artifact/cleanup已root独审（Q039/node-n1-b1-root-audit）。R1本轮先复用05 libtest，后再授N1 11新unit、原normalPair/agents/knownhost/inventory/epoch/64MiB隔离和N0实际收敛；quiet1Versions、fairness与postflush/prereceipt reopen需实证。任务卡Q-039-node-transfer、Q-039-node-n1-review。
+内盘 `/Users/zgh/Library/Caches/khor-code-quality/recovery/runtime-artifacts/`：
 
-## R1/R2实况与下一步
+- `R1-8242b5bd/manifest.json`：03 CLI、05 libtest、实际stub/agentwire/GUIagent/paired六个origin→copy SHA/size/mtime核齐，debug/deps布局保留；旧05原件不覆盖。
+- `R1-stopdiag02/manifest.json`：新增buffered诊断02 actual libtest **759961a3195e639ca515650493ad823da536c534d0d3bde414d9ebee088d0cd3** /236,377,752B，另五copy引用前一manifest。剩24已实际按这些copy env/path运行，不假指sharedtarget。
+- `N1-candidate03/manifest.json`：实际unit11 libtest356acc6b…/234,023,624B及N0 exe两份，旧source/run receipt不改。下一源码不能直接冒旧binary绿。
 
-- R0真六Prompt/Stop，四held实际Cancel释放后旧实现第五六永不投递；现修复真正送达。原R0是受控peer/真实local runtime/IPC，非外部ACP全终态证明。
-- R1 4有限网络Worker+1metadata lane、durable intent/child receipts、stable native/HTTP binding、明确Durability/ACK/Terminal状态、坏记录隔离、退避/公平/暂停均已实现。01独审五项及root03两项已修。
-- 03执行原R0/auth-parent两父通过；随后fixture缺runs目录setup失败。04建目录后前五新父过，Completed fixture误把合法Refused当服务错误而停。05只修该测试共享reply harness，16新父全通过；总**18不同父**，不累计04重复。root逐rawlog/source2350/19源/双盘/2binary/161PID独审通过；生产相对03无变化。checkpoint **8242b5bd**=受测19源，未集成。
-- 当前新paired父必须真实ResolveBinding→BoundSend/Get→actualACP permission；错caller/home/反向绑定走真实认证transport拒绝，原任务保持，再validCancel→freshGet Canceled、原parent/单Task不变，cleanup先断言。不得拿旧裸Send/Get/Cancel的旧paired测试替代。paired02平台guard已源码审闭合，原默认测试保留；新父explicit selector不nested Cargo，正排真实执行。
-- 后续最小相关清单24旧不同父+新paired1（20lib、wire2、GUI2、paired1），需要当前stub provenance及相关必要test targets；只复用05真实libtest不冒充重跑18。方案/runner在Q037/remote-r1/paired-candidate02-20261026T205304Z（runner SHA330bdb1e…12737b1），20冻结源/2350frame已launch核齐；原18不重跑不充数。
-- **R2未知首次Send task lookup/lateSend fence仍open**，不得重放Send/Answer、从List起点无限扫描或将未知标全取消。集成顺序先R0 seed f0104d73，再R1固定提交及新test；三公共源与N1意图由root整合。任务卡Q-037-remote-r1/root-review。
+各manifest在外盘同任务证据有副本；复制件的运行path单记，不篡改原制品历史path/mtime。产物只作确切源码的有限验证，不能当最终App。
 
-## 完整目标剩余
+## N1 / N2 当前事实
 
-N1大差集真实收敛、N2 Pair/Vouch恢复、R1剩余验证/集成与R2、Q052终端当前协议、Q033真GUI→Rust上传、Q035实际borrow lease、P1余下模块深审、P4命名/职责/错误/失效历史/工具链治理、P5最终同源App全流程。Q041剩fresh onset/远程/Linux/musl/Rust嵌入；Q045真实SSH/master/远端lease等按任务卡继续。物理iPhone/IME/Windowsruntime未知，不把元数据或类型检查当平台runtime。main/ship不在本轮授权。
+- 原N0真红：合法4096×64设备地址历史，25,447,954B差集，旧4次public sync cap不收敛但Seen123/Pintrue推进；fixture commit dd60fc5d与audit ref保留。原Pair04真29,224,082B回包失败并烧票，同caller retry badinvite，1普通父红；之前Pair02/03仅准备失败。**巨大Pair/Vouch与可恢复claim N2未实现。**
+- N1单DocTransfer1MiB encoded/256KiB块，Doc registry统一、准备/固定Ready、checked flush→durable receipt→Applied/ACK已有实现；normal check01过15.307s，除后续列出问题不声称已收敛。旧正常Sync/Synced/base64已在候选中删，尚未集成。
+- 01独审raw入站1MiB漏门与最大request proof方向已02修。实际B1同一真实Node父先红（padded Write/Confirm被接受并创建state）再绿（exact cap Refused且state未创建），两段正常256KiB Stored对照均过；root核35/36双盘file、1083source、actual normal/test fresh=false、PGID/TMP齐，收据Q039/node-n1-b1-root-audit。
+- 02 unit构建暴露旧cfgtest一个str→ByteBuf期望漏改，原编译失败保留；03仅同内容byte vec一行修订。**03 compile+11不同exact父通过**，root逐raw/144双盘file/1083前后稳/真实exe保留独审。编码实测最大request590,328B/response721,546B，canonical chunk262,144B。
+- 03原N0实际Pair与25,447,938B准备成功，首visit约30s后硬 `document transfer state busy`，停在不接纳无关错误的前置断言，未读首Seen/Pin/最终VV，不能称旧cap红或收敛绿。root确认三处BUSY(&str).into误成Invalid，04仅3×Error::busy()+删常量，未编/未运行04。
+- 独立followup另确认两生产缺口（见Q-039-node-n1-followup-review）：已收发body后的Busy/本地错误会丢bytes/chunks预算，初Exchange可能在剩1块时发双向2块；初Exchange提前started=true后receipt Busy，纯pull尚未记录就可能Work.done且缺Pending。下一次Versions可恢复，不声称永久丢数据；仍须修复本visit真假完成。
+- root已授权N1先提出05最小Step计量/typed结果及部分Exchange Pending修复，真实quiet1Versions、双向多Doc实际wire trace含Busy和剩1块边界、receipt gate Busy→Pending→释放重开public sync完成的红绿；允许提出一个私有flow test源与窄cfgtest观察点，生产无env故障后门/新依赖/通用框架，新增hook先root确认。
+- postflush/prereceipt实际kill/reopen也须闭合：旧11只在Complete已持久后重开，不能代替该窗口。原N0 max4/25MB/VV/content/SeenPin、visit30s/32MiB、chunk256KiB/body64MiB均不放宽；05修闭再重冻后排适用验证，04 runner保历史不自发运行。
 
-## 恢复与证据
+## R1 / R2 当前事实
 
-证据根 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`；内盘 `/Users/zgh/Library/Caches/khor-code-quality/recovery`。掉盘先读该处RESUME/current-code-quality-docs/current-worktree-refs.json，原外盘未提交内容不能据摘要覆盖。Gen集成证据Q041/bindings-integration-670347d7；其余精确SHA/细节进入各任务卡及历史，不将局部count累加为全仓通过数。
+- 已知child投递R0原六Prompt/Stop、四held Cancel释放后第五六不达真红→修绿。03原R0+auth两父、05新16父共18不同focused父通过，root逐2350源/19冻结源/raw/双盘/两binary/161PID独审；checkpoint8242b5bd=受测19源，未集成。
+- paired02新真实接受父源码已root审：ResolveBinding→BoundSend/Get→actualACP permission，错caller/home/反向绑定走真实认证transport，原Task不变；有效Cancel→freshGet Canceled，原parent/单Task保持，cleanup先断言。Unix helper guard已修，非Unix明确unsupported不假pass。**目前该父只编译，仍未运行。**
+- 第一次相关runtime首原MCP Stop父出现5.27s `Stop admission blocked`，0/25；原raw没有逐call数据，不定性fixture或生产根因。诊断01在critical window打印，16 calls实际约161ms但日志/调度间隙总1.356s又触门，该诊断不能当纯生产延迟。
+- 诊断02改为32条有界内存、原cleanup完成后才输出，原16calls与1s门/全部后续期限不动；同新binary同父外盘原CLI→内盘copy两attempt均过，分别276ms/213ms、Persist owner各1、Pi/claim/map/nextPrompt/lateReply全部原oracle齐。distinct只1父，旧5.27s仍未解释，不能以两次pass抹掉。source2350/64日志/10PID/两CLI+新binary/双盘齐。
+- 剩24 runtime-only **15父绿、case16输出fixture失败、后8未跑**。root实读确认旧测试强求Saved.data_json.remoteCancellation pending/confirmed，而R1已按契约移至独立intent/receipt；fixtureSaved.owner也未设真实Node。主4组脱敏/空key/Unicode/redact-once及已有metadata保留oracle必须保；root只授权该test源机械适配真实owner、验证无旧竞争projection、bounded回收local_retired元数据owner后退出，若读cancel状态须走真实authority，不伪造。先delta/freeze，不自动编或续。
+- **R2未知首次Send task发现/lateSend fence未实现**。已有只读契约：native按Binding/caller/agent/message及原parent直接lookup+与Store.accept原子fence；HTTP无远端能力时诚实Unknown，不重放Send/Answer或从List起点无限扫描。实现待R1收尾另授。
+- 集成R1须先原R0 seed f0104d73，再固定生产8242及后续必要test；N1三公共源另由root合并意图，不copy整棵旧树。main/ship仍无授权。
+
+## Q052 与剩余完整目标
+
+Q052 terminal current candidate01：host精确khor-host/5+首Version5，绝对整frame deadline，删Attached/versioned wrapper/Term版本降级；保当前snapshot/nomodelring/tmux/history/rendererReady/Forget/reconnect。3生产+tests 12路径，1921inputs/28双盘file，root独立源码审无确认阻断；计划23不同普通父，native_handoff仅compile，tmux无skip才记绿。runner准备但**未编译/运行/集成**，不把旧兼容测试删除当新绿。实施卡已交root，validation-plan卡另有冻结准备。
+
+完整剩余N1/05真实同步及N2、R1相关收尾/集成及R2、Q052运行、Q033真GUI→Tauri→Rust上传、Q035真实borrow lease、P1余下模块深审、P4命名/职责/错误/失效历史/工具链治理、P5最终同源App全流程；Q041剩fresh onset/远程/Linux/musl/Rust嵌入，Q045 SSH/master/远端lease依任务卡继续。物理iPhone/IME/Windowsruntime未知，不以类型/元数据冒runtime，不关闭完整目标。
+
+## 恢复入口
+
+外盘证据 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`；内盘 `/Users/zgh/Library/Caches/khor-code-quality/recovery`。掉盘先读RESUME/current-code-quality-docs/current-worktree-refs.json，再核现场；源WIP不能按摘要覆盖。详细来源见对应任务卡与历史，不累加局部test count当全仓通过数。
