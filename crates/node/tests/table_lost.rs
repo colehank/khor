@@ -61,14 +61,14 @@ async fn a_machine_whose_table_lost_its_rows_is_brought_back_by_the_next_round()
     let (ra, rb) = (root("a"), root("b"));
     let mut serves = Vec::new();
     for (r, name) in [(&ra, "alpha"), (&rb, "beta")] {
-        let n = Node::open_as(r.to_path_buf(), name).unwrap();
+        let n = Node::open_hosting(r.to_path_buf(), name, false).unwrap();
         serves.push(tokio::spawn(async move { n.serve().await }));
     }
     for r in [&ra, &rb] {
         wait_for_endpoint_file(r).await;
     }
-    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
-    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    let a = Node::open_hosting(ra.to_path_buf(), "alpha", false).unwrap();
+    let b = Node::open_hosting(rb.to_path_buf(), "beta", false).unwrap();
     timeout(Duration::from_secs(60), b.pair(&a.invite().unwrap()))
         .await
         .expect("pairing must not hang")
@@ -92,7 +92,7 @@ async fn a_machine_whose_table_lost_its_rows_is_brought_back_by_the_next_round()
             std::fs::remove_file(e.path()).unwrap();
         }
     }
-    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    let b = Node::open_hosting(rb.to_path_buf(), "beta", false).unwrap();
     assert_eq!(names(&b), ["beta"], "only its own row is left");
     assert_eq!(b.standing_of(b.device_str()), Standing::Pending, "and no roster");
 

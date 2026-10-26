@@ -1,74 +1,13 @@
-//! Wire frames between nodes. msgpack: field order is wire order, new
-//! fields go at the tail with serde defaults, `skip_serializing_if` is
-//! banned — a mid-frame optional desyncs the array on every older end.
+//! Current-version msgpack frames between Khor nodes.
 //!
-//! **That rule buys one direction, not two, and the second half was
-//! measured rather than assumed** (`a_tail_field_reaches_an_older_peer_
-//! one_way_only`). A tail default lets *this* end read an older peer's
-//! shorter frame. It does not let an older peer read this end's longer
-//! one: it refuses the whole frame. So appending a field is safe for
-//! the reader and a break for the writer, and the machine that suffers
-//! is the one that has not upgraded — which is the ordinary state of a
-//! network people update one machine at a time.
-//!
-//! **That one-way property is pinned once, for the whole tree**, in the
-//! test named above. It is a fact about this codec and not about any
-//! one frame, so a second copy of it on a second type would catch
-//! nothing the first does not — and one fact written four times rots
-//! at three of them.
-//!
-//! # Which of the three ways a shape change goes
-//!
-//! **First ask whether the *request* can change words.** A peer that
-//! asks in new words has told you what it can read, and the answer
-//! never reaches an old one at all — [`Response::PathSlice`] exists
-//! instead of a field on [`Response::Slice`] for exactly that. It is
-//! better than either choice below, and it is the one people skip
-//! because appending is quicker to type.
-//!
-//! Otherwise the question is **not how much the new field matters**.
-//! An older peer does not lose the field, it refuses the whole frame —
-//! so what to weigh is the frame's absence, not the field's:
-//!
-//! > **When an older peer refuses this whole frame, is what it then
-//! > shows any different from what it shows on success?**
-//!
-//! Answer it by walking every consumer of that request down to its
-//! error branch and naming what that branch paints:
-//!
-//! - **Different** — a reading whose age keeps climbing, an empty
-//!   state, a refusal a person reads — then a tail default is fine.
-//!   The loss lands somewhere that already knows how to say "I cannot
-//!   tell".
-//! - **The same** — a default painted as fact, a swallowed error that
-//!   leaves a stale value looking current, a count that quietly stays
-//!   zero — then it needs a new variant. Appending there builds a
-//!   silent failure, which is the shape most of this tree's rules
-//!   exist to prevent.
-//!
-//! Note which way that cuts: a *request/response* failure is loud (the
-//! verb reports it) and a *broadcast* failure is quiet, so sorting by
-//! frame class would protect the one that protects itself. What saves
-//! khor's broadcasts is not their class but that they ride a freshness
-//! axis (docs/SESSION.md), which makes the silence visible — and that
-//! is a property of the consumer, which is why the question asks about
-//! the consumer.
-//!
-//! **Say the answer before appending: name the consumer's error branch
-//! and what it paints. A sentence that will not come is not a small
-//! thing to skip — it is the check not having happened.**
-//!
-//! And say it *beforehand*, because **this debt cannot be repaid, only
-//! avoided**: a field removed later breaks the newer peers instead, so
-//! an append has no retreat, only a second break.
+//! Structs are positional arrays: keep optional fields present on the wire.
+//! Development builds upgrade together; protocol changes do not carry an old
+//! Khor fallback. Inventory admission failures have a distinct response so
+//! roster repair cannot be triggered by a general operation refusal.
 
 use serde::{Deserialize, Serialize};
 
-/// One frame's byte cap — above the sync payload cap
-/// (`khor_sync::wire::MAX_BYTES` base64'd, 4/3 of it) with headroom.
-/// Raised with it from 512 KiB (NET-DIRECT): a khor before that refuses
-/// a frame this size, so a catch-up larger than its cap waits until both
-/// ends run this build.
+/// Maximum encoded frame size, including payload and envelope.
 pub const MAX_FRAME: usize = 6 * 1024 * 1024;
 
 /// One payload slice per request: stays under [`MAX_FRAME`] and makes
@@ -77,19 +16,8 @@ pub const SLICE: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
-    /// Join: burn the one-time token, record me, hand me the network.
-    ///
-    /// `roster` is the asker's newest signed roster, empty when it has
-    /// none (docs/CONNECT.md 身份): the issuer settles whose root the
-    /// network is before it burns the token (`khor_net::trust::settle`).
-    ///
-    /// **A tail field, and an older issuer refuses the whole frame** —
-    /// by the rule at the head of this file it is the consumer's error
-    /// branch that decides whether that is acceptable: `Node::pair_with`
-    /// answers `Response::Refused`'s sentence, which the CLI prints and
-    /// the join dialog paints as its error. A person reads a refusal,
-    /// never a success; nothing is merged and no row is written. That is
-    /// the 2026-08-17 rule's intended break (证书一上全网一起升).
+    /// Join with a one-time token and the asker's signed roster.
+    /// The issuer settles the network root before burning the token.
     Pair {
         token: String,
         name: String,
@@ -196,22 +124,11 @@ pub enum Request {
     /// answers [`Response::Refused`], read as "no reading" — the same
     /// fallback every tail-appended op leans on.
     SatVitals { sat: String },
-    /// [`Request::Ls`], run on a satellite: the sponsor lists the
-    /// directory over ssh and answers the ordinary [`Response::Dir`].
-    /// A new variant, not a tail field on `Ls` — a `sat: None` tail
-    /// would lengthen the frame under every older peer for the plain
-    /// listings too, breaking exactly the case that has no satellite in
-    /// it (the module head's first question: change the words instead).
-    /// These words only ever go to a sponsor, and a machine that
-    /// sponsors anything runs code that knows them.
+    /// List a satellite directory over SSH through its sponsor.
+    /// Answers with the ordinary directory response.
     SatLs { sat: String, path: String },
-    /// The directories that machine's row asks it to watch, each with
-    /// the volume it is on (2026-09-06 关注目录). **A new op, not a sixth
-    /// field on `Vitals`**: the head of this file measures what a
-    /// tail-append costs an older peer (the whole reading), and an op it
-    /// never heard of costs it nothing — it answers `Refused`, and the
-    /// asker paints no rows. The list itself travels on the device
-    /// table; only the machine named can say which volume a path is on.
+    /// Read watched directories and their volumes from the machine watching
+    /// them. The watched list itself is replicated on the device document.
     Watched,
     /// [`Request::FetchPath`], off a satellite: the sponsor stages the
     /// file down over scp on the first slice and serves the rest from
@@ -568,21 +485,10 @@ pub enum Request {
     ///
     /// A new variant for [`Request::SatLs`]'s reason.
     SatCheckout { sat: String, path: String },
-    /// **A round's opening question: what differs?** (round NET-3.) Each
-    /// document the asker syncs, with a digest of its version
-    /// (`khor_sync::wire::version_canonical`, blake3, 16 bytes); each
-    /// reading it keeps of the answering machine (`sessions`, `vitals`,
-    /// `watched`, `days`, `quotas`, `usage`, `sat/<id>`), with a digest
-    /// of the answer it last got (empty: none). The day reading is asked
-    /// as `days@<minute>`, the last minute of the asker's copy, so the
-    /// answer can be the minutes since ([`Response::DaySince`]).
-    /// Answered as [`Response::Versions`].
-    ///
-    /// **A new variant, the request changing words** (this file's first
-    /// rule): a khor that predates it refuses the frame, and the asker
-    /// then syncs the way it always did — every document in two
-    /// exchanges, every reading asked — so an older peer shows exactly
-    /// what it showed before, at the old price.
+    /// Compare document version digests and cached readings.
+    /// The response contains changed document versions and readings.
+    /// An inventory admission failure permits one signed roster repair;
+    /// other failures never fall back to a second sync protocol.
     Versions {
         docs: Vec<(String, serde_bytes::ByteBuf)>,
         readings: Vec<(String, serde_bytes::ByteBuf)>,
@@ -628,13 +534,8 @@ pub enum Request {
     /// questions**, so an older khor refuses it once, which the asker
     /// says as `msg::git_predates()`.
     Git { ask: crate::git::GitAsk },
-    /// [`Request::Open`], **made at most once per `token`** (round NET-7,
-    /// `crate::once`): asked again with the same token — a retry after an
-    /// answer that never arrived — it answers the session the first ask
-    /// made instead of starting another. New words rather than a field on
-    /// `Open`, so an older khor refuses this one by name and the asker
-    /// falls back to `Open` (this module's head: an older peer refuses a
-    /// longer frame whole).
+    /// Open a session at most once per token.
+    /// A retry returns the session created by the first request.
     OpenOnce {
         token: String,
         kind: String,
@@ -787,6 +688,14 @@ pub enum Request {
     Delegation { #[serde(with = "crate::delegation::wire_json")] action: crate::delegation::Action },
 }
 
+/// One selected document's inventory result. A failed document remains in the
+/// response so it cannot be mistaken for an unchanged version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DocumentInventory {
+    Version { version: String },
+    Failed { why: String },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
     /// Pairing done on the issuer's side; `devices` is its table snapshot
@@ -813,6 +722,11 @@ pub enum Response {
         items: u64,
     },
     Refused {
+        why: String,
+    },
+    /// The inventory authentication gate rejected this caller before dispatch.
+    /// Only this result permits a signed roster repair and one inventory retry.
+    InventoryNotAdmitted {
         why: String,
     },
     /// One slice. `total` rides on every slice so the fetcher can show
@@ -894,9 +808,8 @@ pub enum Response {
         vitals: khor_core::Vitals,
         age_ms: u64,
     },
-    /// [`Request::Watched`]'s answer: one row per path on that machine's
-    /// `watch` list, in the list's order, each in one of the three
-    /// shapes `khor_core::WatchedDir` keeps apart.
+    /// Read each directory watched on the asked machine, including its volume.
+    /// The watched list is replicated; this reading is specific to that machine.
     Watched {
         rows: Vec<khor_core::WatchedDir>,
     },
@@ -1041,12 +954,9 @@ pub enum Response {
     },
     /// [`Request::Versions`]'s answer: only what differs.
     ///
-    /// - `docs`: each asked document whose version is not the asker's,
-    ///   with this machine's version (`khor_sync::wire::version_b64`) —
-    ///   the asker syncs those alone, each in one exchange
-    ///   (`khor_sync::wire::Peer::knowing`). A document at the same
-    ///   version is not named; a name this khor does not know is not
-    ///   named either (it would refuse the sync).
+    /// - `docs`: changed document versions, plus an explicit failure for
+    ///   every document that could not be loaded or whose name is unknown.
+    ///   Only an unchanged, successfully read document is omitted.
     /// - `readings`: each asked reading whose answer is not the one the
     ///   asker holds, as that whole answer's frame (`proto::encode` of
     ///   the [`Response`] the reading's own request gets) — or, for a
@@ -1054,7 +964,7 @@ pub enum Response {
     ///   is inside the record; empty bytes for a reading this machine
     ///   refused. A reading not named is the one the asker already holds.
     Versions {
-        docs: Vec<(String, String)>,
+        docs: Vec<(String, DocumentInventory)>,
         readings: Vec<(String, serde_bytes::ByteBuf)>,
     },
     /// A day reading as the minutes since the asker's copy ended
@@ -1399,23 +1309,92 @@ pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, String> {
     rmp_serde::from_slice(bytes).map_err(khor_catalog::msg::cant_decode_frame)
 }
 
-/// **A far machine's answer, as this machine reads it** (round NET-9): a
-/// refusal is the far machine's sentence in the far machine's language,
-/// and it is said again here in this one's (`khor_catalog::reword`). A
-/// sentence the catalog never said — an OS error, a variant an older
-/// khor does not know — is kept as it came.
+/// Decode remote errors in this machine's language; preserve unknown OS text.
 pub fn answer(bytes: &[u8]) -> Result<Response, String> {
-    decode::<Response>(bytes).map(|r| match r {
-        Response::Refused { why } => Response::Refused {
-            why: khor_catalog::reword(&why).unwrap_or(why),
-        },
-        other => other,
-    })
+    fn reword(why: &mut String) {
+        if let Some(local) = khor_catalog::reword(why) {
+            *why = local;
+        }
+    }
+
+    let mut response = decode::<Response>(bytes)?;
+    match &mut response {
+        Response::Refused { why } | Response::InventoryNotAdmitted { why } => reword(why),
+        Response::Versions { docs, .. } => {
+            for (_, inventory) in docs {
+                if let DocumentInventory::Failed { why } = inventory {
+                    reword(why);
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(response)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inventory_errors_use_local_words_and_keep_unknown_diagnostics() {
+        for remote_reason in [
+            "This machine isn't in the machine table — pair first",
+            "这台机器不在机器列表中，需要先配对",
+        ] {
+            let expected = khor_catalog::msg::not_paired();
+            let admission = Response::InventoryNotAdmitted {
+                why: remote_reason.into(),
+            };
+            let decoded = answer(&encode(&admission).unwrap()).unwrap();
+            assert!(matches!(decoded, Response::InventoryNotAdmitted { why } if why == expected));
+            let inventory = Response::Versions {
+                docs: vec![
+                    (
+                        "accounts".into(),
+                        DocumentInventory::Failed {
+                            why: remote_reason.into(),
+                        },
+                    ),
+                    (
+                        "pins".into(),
+                        DocumentInventory::Version {
+                            version: "a-version".into(),
+                        },
+                    ),
+                    (
+                        "seen".into(),
+                        DocumentInventory::Failed {
+                            why: "unrecognized OS diagnostic".into(),
+                        },
+                    ),
+                ],
+                readings: Vec::new(),
+            };
+            let Response::Versions { docs, .. } = answer(&encode(&inventory).unwrap()).unwrap()
+            else {
+                panic!("wrong response")
+            };
+            assert_eq!(
+                docs[0].1,
+                DocumentInventory::Failed {
+                    why: expected.into()
+                }
+            );
+            assert_eq!(
+                docs[1].1,
+                DocumentInventory::Version {
+                    version: "a-version".into()
+                }
+            );
+            assert_eq!(
+                docs[2].1,
+                DocumentInventory::Failed {
+                    why: "unrecognized OS diagnostic".into()
+                }
+            );
+        }
+    }
 
     /// **An older khor refuses a word it does not know by its name**
     /// (round NET-7): the asker of `OpenOnce` falls back to `Open` when
@@ -2374,123 +2353,6 @@ mod tests {
             r.io_bytes, None,
             "and an unsent disk total is absent, not 「一个字节都没动」"
         );
-    }
-
-    /// **A tail-appended field reaches an older peer one way only**, and
-    /// this pins both halves — the half that is a guarantee and the half
-    /// that is not.
-    ///
-    /// The rule at the top of this file says new fields ride the tail
-    /// with a serde default. Measured, that buys exactly one direction:
-    /// this end reads an older peer's frame and defaults what is
-    /// missing. The other direction does not decode at all —
-    /// `rmp_serde` answers `array had incorrect length, expected 1` and
-    /// the whole frame is refused.
-    ///
-    /// **What that costs is worth saying plainly, because the act still
-    /// happens.** An older asker tells a newer machine to accept: the
-    /// files really move, and then the answer is unreadable to the one
-    /// who asked. It is told the transfer failed, and it is wrong.
-    /// Loud rather than silent — nothing is misread as something else —
-    /// but not compatible, and the doc comments on `Vitals::disk`,
-    /// `Vitals::gpu` and `Vitals::version` (three tail-appends already
-    /// shipped) each say only the half that works.
-    ///
-    /// The way out, when that cost has to go, is written a few variants
-    /// up: [`Response::PathSlice`] exists rather than a field on
-    /// `Slice` precisely so a changed shape only ever reaches a peer
-    /// that asked in the new words. That is a bigger move than a
-    /// default, and this test is here so the choice is made with the
-    /// measurement in hand rather than from the rule alone.
-    ///
-    /// **The template's first step does not transfer, and copying it
-    /// would have made this test unfailable.** `the_avatar_nonce_…` in
-    /// mandala proves its sample is genuinely old by asserting the
-    /// field's *name* is absent from the bytes. This codec never writes
-    /// field names — a struct is a msgpack array and position is the
-    /// only thing carrying identity — so `!bytes.contains("landed")` is
-    /// true of every frame this program can build, the new one
-    /// included. What proves the sample old here is that its array is
-    /// one element shorter, so that is what is asserted.
-    #[test]
-    fn a_tail_field_reaches_an_older_peer_one_way_only() {
-        /// What `Acted` was before the landing paths — spelled out
-        /// rather than borrowed, because a sample built from today's
-        /// type is today's type tested against itself. The variants
-        /// before it ride along so this enum is what khor shipped,
-        /// whichever way the codec identifies a variant.
-        #[derive(Debug, Serialize, Deserialize)]
-        enum OlderResponse {
-            Paired {
-                name: String,
-                devices: String,
-            },
-            Synced {
-                version: String,
-                changes: String,
-                items: u64,
-            },
-            Refused {
-                why: String,
-            },
-            Slice {
-                total: u64,
-                bytes: serde_bytes::ByteBuf,
-            },
-            SessionRows {
-                rows: Vec<khor_core::Session>,
-            },
-            Acted {
-                moved: u64,
-            },
-        }
-
-        let old = encode(&OlderResponse::Acted { moved: 7 }).unwrap();
-        let new = encode(&Response::Acted {
-            moved: 7,
-            landed: Vec::new(),
-        })
-        .unwrap();
-        assert!(
-            old.len() < new.len(),
-            "the old sample must be a shorter frame, or it is not the old shape at all"
-        );
-
-        // ① The guarantee: an older peer's frame decodes here, the
-        // absent field reads as nothing said, and `moved` still lands
-        // in `moved` — the part a desynced array would take out.
-        match decode::<Response>(&old).expect("an older peer's frame must still decode") {
-            Response::Acted { moved, landed } => {
-                assert_eq!(moved, 7);
-                assert!(
-                    landed.is_empty(),
-                    "a peer that said nothing must read as nothing said"
-                );
-            }
-            other => panic!("decoded wrong: {other:?}"),
-        }
-
-        // ② The half that is not a guarantee. Asserted rather than
-        // assumed: the day this codec is made tolerant of a long array,
-        // this line goes red and the rule at the top of the file can be
-        // rewritten to promise both directions.
-        let mine = encode(&Response::Acted {
-            moved: 9,
-            landed: vec!["/home/a/files/ab12-notes.txt".to_owned()],
-        })
-        .unwrap();
-        let refused = decode::<OlderResponse>(&mine);
-        assert!(
-            refused.is_err(),
-            "if an older peer can now read a longer frame, the tail rule promises more than it did: {refused:?}"
-        );
-        // And the same peer's own frame still decodes, so the failure
-        // above is about the extra element and not about these two
-        // enums having drifted apart in some other way.
-        assert!(matches!(
-            decode::<OlderResponse>(&old),
-            Ok(OlderResponse::Acted { moved: 7 })
-        ));
     }
 
     /// A spending answer survives the round trip whole, **including the

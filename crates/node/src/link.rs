@@ -14,7 +14,7 @@ use khor_sync::devices::DeviceInfo;
 use khor_sync::store::Doc;
 use khor_sync::{chat, wire};
 
-use crate::proto::{self, MAX_FRAME, Request, Response};
+use crate::proto::{self, DocumentInventory, MAX_FRAME, Request, Response};
 use crate::{Node, ipc, wires};
 #[path = "link_tree.rs"]
 mod tree;
@@ -55,58 +55,56 @@ macro_rules! with_doc {
     }};
 }
 
-/// The documents a round syncs, in the order it syncs them; the
-/// khor-wide conversations follow (`Node::known_wide`). The first three
-/// and the broadcast must sync for the round to count; the rest are best
-/// effort — a peer that predates a table refuses it by name, and that
-/// must not cost the rounds behind it.
+/// Global documents in sync order, followed by the selected conversations.
+/// A document failure is reported after the remaining documents are visited.
 const ROUND_DOCS: [&str; 11] = [
     "devices", "seen", "pins", "roster", "dirpins", "workspaces", "webpins", "recents",
     "agents", "accounts", "titles",
 ];
 
-/// Whether a failed sync of this document fails the round
-/// (`ROUND_DOCS`).
-fn doc_must_sync(name: &str) -> bool {
-    matches!(name, "devices" | "seen" | "pins") || name == crate::wide::BROADCAST
-}
-
-enum DocSyncStart {
-    Bootstrap,
-    Known(String),
-}
-
-enum DocSyncError {
-    Load(String),
-    Exchange(String),
-}
-impl DocSyncError {
-    fn reason(&self) -> &str {
-        match self {
-            Self::Load(why) | Self::Exchange(why) => why,
-        }
-    }
+struct RoundOpening {
+    request: Request,
+    kinds: Vec<String>,
+    names: Vec<String>,
+    failures: Vec<(String, String)>,
 }
 
 #[derive(Default)]
 struct SyncProgress {
     moved: usize,
+    apart: Vec<String>,
     first_failure: Option<String>,
 }
+
+struct SyncSummary {
+    moved: usize,
+    apart: Vec<String>,
+}
+
+impl SyncSummary {
+    fn description(self) -> String {
+        if !self.apart.is_empty() {
+            msg::sync_partly_apart(self.moved, self.apart.join(", "))
+        } else if self.moved == 0 {
+            msg::nothing_to_move().into()
+        } else {
+            msg::moved_bytes(self.moved)
+        }
+    }
+}
+
 impl SyncProgress {
     fn fail(&mut self, why: String) {
         self.first_failure.get_or_insert(why);
     }
-    fn merge(&mut self, other: Self) {
-        self.moved += other.moved;
-        if let Some(why) = other.first_failure {
-            self.fail(why);
-        }
-    }
-    fn finish(self) -> Result<usize, String> {
+
+    fn finish(self) -> Result<SyncSummary, String> {
         match self.first_failure {
             Some(why) => Err(why),
-            None => Ok(self.moved),
+            None => Ok(SyncSummary {
+                moved: self.moved,
+                apart: self.apart,
+            }),
         }
     }
 }
@@ -245,14 +243,12 @@ fn drop_answer(s: crate::drops::DropState) -> Response {
 
 /// What a [`Response::Versions`] carries: the documents whose versions
 /// differ, with the far version, and the readings that changed.
-type VersionsAnswer = (Vec<(String, String)>, Vec<(String, serde_bytes::ByteBuf)>);
+type VersionsAnswer = (Vec<(String, DocumentInventory)>, Vec<(String, serde_bytes::ByteBuf)>);
 
-/// A [`Response::Versions`], or `None` for a khor that predates the
-/// question (it refuses the frame whole).
-fn versions_answer(answer: Response) -> Result<Option<VersionsAnswer>, String> {
+fn versions_answer(answer: Response) -> Result<VersionsAnswer, String> {
     match answer {
-        Response::Versions { docs, readings } => Ok(Some((docs, readings))),
-        Response::Refused { .. } => Ok(None),
+        Response::Versions { docs, readings } => Ok((docs, readings)),
+        Response::Refused { why } | Response::InventoryNotAdmitted { why } => Err(why),
         other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
     }
 }
@@ -3637,7 +3633,11 @@ impl Node {
             // through another, whose row this one has not been sent yet
             // — and with no face here the next round is QUIET_PACE away.
             self.nudge(ep, false);
-            return Err(e);
+            return if matches!(&req, Request::Versions { .. }) {
+                Ok(Response::InventoryNotAdmitted { why: e })
+            } else {
+                Err(e)
+            };
         }
         match req {
             Request::Pair {
@@ -10341,8 +10341,8 @@ impl Node {
         // **The round's opening question rides a redial's handshake**
         // (`Node::ask_early`): it is a reading, so after a wake or a
         // dropped wire the round's first answer comes a round trip sooner.
-        let (kinds, opening) = self.opening(d)?;
-        let early = match self.ask_early(ep, d, &opening, None).await {
+        let opening = self.opening(d);
+        let early = match self.ask_early(ep, d, &opening.request, None).await {
             Early::Answered(resp) => Some(resp),
             Early::Failed(e) => return Err(unreached(e)),
             Early::NotTaken => None,
@@ -10351,23 +10351,23 @@ impl Node {
             .line_to(ep, d, wires::Proto::Main)
             .await
             .map_err(unreached)?;
-        let moved = match self.sync_what_changed(&line, d, &kinds, &opening, early).await? {
-            Some(moved) => moved,
-            // Refused at the door by a machine this one's roster admits:
-            // its table may have lost this machine (round NET-10).
-            None if self.vouch_to(&line, d).await => {
-                match self.sync_what_changed(&line, d, &kinds, &opening, None).await? {
-                    Some(moved) => moved,
-                    None => self.sync_everything(&line, d).await?,
-                }
-            }
-            None => self.sync_everything(&line, d).await?,
+        let mut answer = match early {
+            Some(answer) => answer,
+            None => self
+                .exchange_on(&line, &opening.request)
+                .await
+                .map_err(Miss::words)?,
         };
-        Ok(if moved == 0 {
-            msg::nothing_to_move().into()
-        } else {
-            msg::moved_bytes(moved)
-        })
+        if matches!(&answer, Response::InventoryNotAdmitted { .. }) && self.vouch_to(&line, d).await
+        {
+            answer = self
+                .exchange_on(&line, &opening.request)
+                .await
+                .map_err(Miss::words)?;
+        }
+        self.sync_what_changed(&line, d, opening, answer)
+            .await
+            .map(SyncSummary::description)
     }
 
     /// **Vouches for this machine to one that refused a round's
@@ -10376,10 +10376,8 @@ impl Node {
     /// request is most often one whose table lost its rows, and it cannot
     /// bring them back by itself (`Node::take_vouch` has the case).
     ///
-    /// At most once per [`VOUCH_EVERY`] for each machine: a refusal for
-    /// any other reason — an older khor that does not know the opening,
-    /// a revocation this side has not heard of — costs one small frame
-    /// per interval, not one per round.
+    /// Only a typed admission failure triggers this repair. At most once
+    /// per [`VOUCH_EVERY`] for each machine; revocation still cannot be bypassed.
     async fn vouch_to(&self, line: &Line, d: &DeviceInfo) -> bool {
         {
             let mut last = self.vouched.lock().unwrap_or_else(|p| p.into_inner());
@@ -10415,38 +10413,36 @@ impl Node {
     /// restart, a rejoin or a second asker cannot leave a stale marker
     /// that under-sends.
     ///
-    /// `None` when that machine's khor predates the question: the round
-    /// is then [`Node::sync_everything`], as before.
     async fn sync_what_changed(
         &self,
         line: &Line,
         d: &DeviceInfo,
-        kinds: &[String],
-        opening: &Request,
-        early: Option<Response>,
-    ) -> Result<Option<usize>, String> {
-        let answer = match early {
-            Some(answer) => answer,
-            None => self.exchange_on(line, opening).await.map_err(Miss::words)?,
-        };
-        let Some((differ, changed)) = versions_answer(answer)? else {
-            return Ok(None);
-        };
-        self.take_readings(line, d, kinds, changed).await;
-
-        let docs = differ
-            .into_iter()
-            .map(|(name, have)| (name, DocSyncStart::Known(have)))
+        opening: RoundOpening,
+        answer: Response,
+    ) -> Result<SyncSummary, String> {
+        let (mut differ, changed) = versions_answer(answer)?;
+        self.take_readings(line, d, &opening.kinds, changed).await;
+        differ.extend(
+            opening
+                .failures
+                .into_iter()
+                .map(|(name, why)| (name, DocumentInventory::Failed { why })),
+        );
+        let order: std::collections::BTreeMap<_, _> = opening
+            .names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| (name.as_str(), index))
             .collect();
-        let mut progress = self.sync_documents(line, d, docs).await;
+        differ.sort_by_key(|(name, _)| order.get(name.as_str()).copied().unwrap_or(usize::MAX));
+        let mut progress = self.sync_documents(line, d, differ).await;
         // Readings can depend on documents that did advance, even in a partial round.
         if progress.moved > 0 {
             let refreshed = async {
-                let again = self.versions_request(d, kinds, Vec::new());
+                let again = self.versions_request(d, &opening.kinds, Vec::new());
                 let answer = self.exchange_on(line, &again).await.map_err(Miss::words)?;
-                if let Some((_, changed)) = versions_answer(answer)? {
-                    self.take_readings(line, d, kinds, changed).await;
-                }
+                let (_, changed) = versions_answer(answer)?;
+                self.take_readings(line, d, &opening.kinds, changed).await;
                 Ok::<(), String>(())
             }
             .await;
@@ -10454,70 +10450,49 @@ impl Node {
                 progress.fail(why);
             }
         }
-        progress.finish().map(Some)
+        progress.finish()
     }
 
-    /// Load failures remain errors even for optional documents. A refusal from
-    /// an older peer is still best effort for optional documents.
-    async fn sync_document(
-        &self,
-        line: &Line,
-        name: &str,
-        start: DocSyncStart,
-    ) -> Result<usize, DocSyncError> {
-        let loaded: Result<Result<usize, String>, String> = async {
-            with_doc!(self, name, |loaded| Ok(match start {
-                DocSyncStart::Bootstrap => self.rounds(line, name, loaded).await,
-                DocSyncStart::Known(have) =>
-                    self.rounds_from(line, name, loaded, wire::Peer::knowing(have), 1)
-                        .await,
-            }))
-        }
-        .await;
-        loaded
-            .map_err(DocSyncError::Load)?
-            .map_err(DocSyncError::Exchange)
+    async fn sync_document(&self, line: &Line, name: &str, have: String) -> Result<usize, String> {
+        with_doc!(self, name, |loaded| {
+            self.rounds_from(line, name, loaded, wire::Peer::knowing(have), 1)
+                .await
+        })
     }
 
     async fn sync_documents(
         &self,
         line: &Line,
         device: &DeviceInfo,
-        docs: Vec<(String, DocSyncStart)>,
+        docs: Vec<(String, DocumentInventory)>,
     ) -> SyncProgress {
         let mut progress = SyncProgress::default();
-        for (name, start) in docs {
-            let bootstrap = matches!(&start, DocSyncStart::Bootstrap);
-            let synced = self.sync_document(line, &name, start).await;
-            let apart =
-                matches!(&synced, Err(DocSyncError::Exchange(why)) if wire::other_epoch(why));
-            let local_failure = matches!(&synced, Err(DocSyncError::Load(_)));
-            if (doc_must_sync(&name) || apart || local_failure)
-                && let Some(note) = crate::journal::sync_failed(
-                    &device.id,
-                    &name,
-                    synced.as_ref().err().map(DocSyncError::reason),
-                )
-            {
+        for (name, inventory) in docs {
+            let synced = match inventory {
+                DocumentInventory::Version { version } => {
+                    self.sync_document(line, &name, version).await
+                }
+                DocumentInventory::Failed { why } => Err(why),
+            };
+            if let Some(note) = crate::journal::sync_failed(
+                &device.id,
+                &name,
+                synced.as_ref().err().map(String::as_str),
+            ) {
                 self.wires.note(Some(&device.id), note);
             }
             match synced {
                 Ok(bytes) => {
                     progress.moved += bytes;
-                    if name == "devices" && (bootstrap || bytes > 0) {
+                    if name == "devices" && bytes > 0 {
                         self.follow_after_sync();
                     }
-                    if !bootstrap && name == crate::wide::BROADCAST && bytes > 0 {
+                    if name == crate::wide::BROADCAST && bytes > 0 {
                         self.take_arrived();
                     }
                 }
-                Err(error) => {
-                    // Keep modern epoch isolation and legacy error reporting;
-                    // neither may prevent the next independent document's round.
-                    if local_failure || (doc_must_sync(&name) && (bootstrap || !apart)) {
-                        progress.fail(error.reason().to_owned());
-                    }
-                }
+                Err(why) if wire::other_epoch(&why) => progress.apart.push(name),
+                Err(why) => progress.fail(why),
             }
         }
         progress
@@ -10525,15 +10500,21 @@ impl Node {
 
     /// A round's opening [`Request::Versions`] for `d`: every document's
     /// digest and every reading held, and the readings' kinds.
-    fn opening(&self, d: &DeviceInfo) -> Result<(Vec<String>, Request), String> {
+    fn opening(&self, d: &DeviceInfo) -> RoundOpening {
         let mut names: Vec<String> = ROUND_DOCS.iter().map(|n| (*n).to_owned()).collect();
         names.extend(self.known_wide());
         let mut docs = Vec::with_capacity(names.len());
+        let mut failures = Vec::new();
         for name in &names {
-            let digest = with_doc!(self, name.as_str(), |loaded| Ok::<_, String>(version_digest(
-                loaded
-            )))?;
-            docs.push((name.clone(), serde_bytes::ByteBuf::from(digest)));
+            let digest = (|| {
+                with_doc!(self, name.as_str(), |loaded| Ok::<_, String>(
+                    version_digest(loaded)
+                ))
+            })();
+            match digest {
+                Ok(digest) => docs.push((name.clone(), serde_bytes::ByteBuf::from(digest))),
+                Err(why) => failures.push((name.clone(), why)),
+            }
         }
         let mut kinds: Vec<String> = ["sessions", "vitals", "watched", "days", "quotas", "usage"]
             .iter()
@@ -10546,10 +10527,9 @@ impl Node {
         if self
             .workspaces_loaded()
             .map(|l| {
-                l.doc
-                    .all()
-                    .into_iter()
-                    .any(|(k, _)| khor_sync::workspaces::split(&k).is_some_and(|(dev, _)| dev == d.id))
+                l.doc.all().into_iter().any(|(k, _)| {
+                    khor_sync::workspaces::split(&k).is_some_and(|(dev, _)| dev == d.id)
+                })
             })
             .unwrap_or(false)
         {
@@ -10562,8 +10542,13 @@ impl Node {
                     .map(|s| format!("sat/{}", s.id)),
             );
         }
-        let opening = self.versions_request(d, &kinds, docs);
-        Ok((kinds, opening))
+        let request = self.versions_request(d, &kinds, docs);
+        RoundOpening {
+            request,
+            kinds,
+            names,
+            failures,
+        }
     }
 
     /// A [`Request::Versions`]: these documents' digests and the digests
@@ -10705,8 +10690,7 @@ impl Node {
         }
     }
 
-    /// One reading of a machine, into the cache its kind is read from —
-    /// what [`Node::sync_everything`] does with each answer, one place.
+    /// Store each reading in the cache for its own kind and freshness clock.
     fn keep_reading(&self, d: &DeviceInfo, kind: &str, answer: &Response) {
         match answer {
             Response::SessionRows { rows } => {
@@ -10749,14 +10733,18 @@ impl Node {
     ) -> Result<Response, String> {
         let mut differ = Vec::new();
         for (name, theirs) in docs {
-            let Ok((mine, version)) = with_doc!(self, name.as_str(), |loaded| Ok::<_, String>((
-                version_digest(loaded),
-                wire::version_b64(&loaded.store, &loaded.doc)
-            ))) else {
-                continue;
-            };
-            if mine[..] != theirs[..] {
-                differ.push((name, version));
+            let inventory = (|| {
+                with_doc!(self, name.as_str(), |loaded| Ok::<_, String>((
+                    version_digest(loaded),
+                    wire::version_b64(&loaded.store, &loaded.doc)
+                )))
+            })();
+            match inventory {
+                Ok((mine, version)) if mine[..] != theirs[..] => {
+                    differ.push((name, DocumentInventory::Version { version }));
+                }
+                Ok(_) => {}
+                Err(why) => differ.push((name, DocumentInventory::Failed { why })),
             }
         }
         let by_change = readings.iter().any(|(k, _)| k == ROWS_BY_CHANGE);
@@ -10839,98 +10827,6 @@ impl Node {
             docs: differ,
             readings: changed,
         })
-    }
-
-    /// **A round the way it ran before round NET-3**: every document in
-    /// two exchanges, every reading asked. For a machine whose khor does
-    /// not know [`Request::Versions`].
-    async fn sync_everything(&self, line: &Line, d: &DeviceInfo) -> Result<usize, String> {
-        let docs = ROUND_DOCS
-            .iter()
-            .map(|name| ((*name).to_owned(), DocSyncStart::Bootstrap))
-            .collect();
-        let mut progress = self.sync_documents(line, d, docs).await;
-        // Discover boards after the global documents, as in legacy rounds.
-        let boards = self
-            .known_wide()
-            .into_iter()
-            .filter(|name| chat::wide_dir(self.root(), name).is_some())
-            .map(|name| (name, DocSyncStart::Bootstrap))
-            .collect();
-        progress.merge(self.sync_documents(line, d, boards).await);
-        // Remember what the far side reports about its own sessions:
-        // when it goes unreachable, its last word plus the report's age
-        // is all the UI may honestly show. Best effort — a failure here
-        // only means older information.
-        if let Ok(Response::SessionRows { rows }) = self.exchange_on(line, &Request::Sessions).await {
-            let _ = self.cache_peer_rows(&d.id, &d.name, &rows);
-        }
-        // And what it is doing right now, on the same visit. Kept apart
-        // from the rows above rather than folded into one record: the two
-        // requests fail independently, so one round losing vitals would
-        // wipe a reading the rows knew nothing about, and one shared
-        // timestamp would make a stale reading look as fresh as the rows
-        // beside it. Best effort, same as the rows — a peer running a khor
-        // that has no such op simply has no reading here.
-        if let Ok(Response::Vitals { vitals }) = self.exchange_on(line, &Request::Vitals).await {
-            let _ = self.cache_peer_vitals(&d.id, &vitals);
-        }
-        // Its watched directories, on the same visit and in a record of
-        // their own (2026-09-06 关注目录): the sync round just above
-        // carried our copy of its `watch` list over, so what comes back
-        // is already about that list. An older khor refuses the op and
-        // simply has no rows here — never empty ones.
-        if let Ok(Response::Watched { rows }) = self.exchange_on(line, &Request::Watched).await {
-            let _ = self.cache_peer_watched(&d.id, &rows);
-        }
-        // Its day, on the same beat as its rows: the strips under a
-        // peer's rows are read from this, and a `Refused` from an older
-        // khor leaves the last cached day standing, aging like a report.
-        if let Ok(Response::Days { day }) = self.exchange_on(line, &Request::Days).await {
-            let _ = self.cache_peer_day(&d.id, &day);
-        }
-        // Its accounts' readings, on the same beat: the 额度 page draws
-        // every machine's rings from this, and an older khor's Refused
-        // leaves the last carried answer standing, aging like a report.
-        if let Ok(Response::Quotas { readings }) = self.exchange_on(line, &Request::Quotas).await {
-            let _ = self.cache_peer_quotas(&d.id, &readings);
-        }
-        // …and the readings of every satellite this device sponsors, on
-        // the same visit (附属机器批): satellites cannot be dialed, so
-        // their numbers ride the road to the one machine that samples
-        // them. Best effort per satellite; the age crosses too, so a
-        // reading keeps its true birth instead of the arrival's
-        // freshness. An older sponsor refuses the op, which reads as
-        // "no reading" — the row stays on the offline axis.
-        if let Ok(devs) = self.devices() {
-            for sat in devs
-                .iter()
-                .filter(|s| s.sponsor.as_deref() == Some(d.id.as_str()))
-            {
-                if let Ok(Response::SatVitals { vitals, age_ms }) = self.exchange_on(
-                    line,
-                    &Request::SatVitals {
-                        sat: sat.id.clone(),
-                    },
-                )
-                .await
-                {
-                    let _ = self.cache_peer_vitals_aged(&sat.id, &vitals, age_ms);
-                }
-            }
-        }
-        // And what it has spent, on the same visit and kept in its own
-        // record for the same reason. **Asked every round like the two
-        // above, which is affordable because the answering side keeps its
-        // answer**: a peer that has written nothing since the last round
-        // replies from a cache it validated with one directory walk
-        // (`crate::usage::Meters::tally` has the figures). Best effort —
-        // a peer running a khor with no such op simply has no spending
-        // here, which reads as "never asked" rather than as zero.
-        if let Ok(Response::Usage { usage }) = self.exchange_on(line, &Request::Usage).await {
-            let _ = self.cache_peer_usage(&d.id, &usage);
-        }
-        progress.finish()
     }
 
     /// A pen retired while taking in what `peer` sent
@@ -12202,5 +12098,100 @@ mod handoff_recovery {
                 .unwrap_err();
             assert_eq!(error.kind(), kind);
         }
+    }
+}
+
+#[cfg(test)]
+mod current_inventory {
+    use super::*;
+
+    #[test]
+    fn a_general_refusal_remains_an_error_with_its_reason() {
+        let why = "invalid document inventory";
+        let error = versions_answer(Response::Refused { why: why.into() }).unwrap_err();
+        assert_eq!(error, why);
+    }
+
+    #[test]
+    fn only_an_inventory_answer_supplies_document_versions() {
+        let sent = Response::Versions {
+            docs: vec![(
+                "pins".into(),
+                DocumentInventory::Version {
+                    version: "current-vector".into(),
+                },
+            )],
+            readings: vec![("sessions".into(), serde_bytes::ByteBuf::from(vec![1, 2, 3]))],
+        };
+        let decoded = proto::decode(&proto::encode(&sent).unwrap()).unwrap();
+        let (docs, readings) = versions_answer(decoded).unwrap();
+        assert_eq!(
+            docs,
+            [(
+                "pins".into(),
+                DocumentInventory::Version {
+                    version: "current-vector".into()
+                }
+            )]
+        );
+        assert_eq!(readings[0].1.as_ref(), [1, 2, 3]);
+        assert!(versions_answer(Response::Vouched).is_err());
+    }
+
+    #[test]
+    fn inventory_failure_crosses_the_wire_with_its_document_and_reason() {
+        let sent = Response::Versions {
+            docs: vec![(
+                "accounts".into(),
+                DocumentInventory::Failed {
+                    why: "cannot read accounts".into(),
+                },
+            )],
+            readings: Vec::new(),
+        };
+        let decoded = proto::decode(&proto::encode(&sent).unwrap()).unwrap();
+        let (docs, _) = versions_answer(decoded).unwrap();
+        assert_eq!(
+            docs,
+            [(
+                "accounts".into(),
+                DocumentInventory::Failed {
+                    why: "cannot read accounts".into()
+                }
+            )]
+        );
+    }
+
+    #[test]
+    fn admission_failure_has_a_distinct_wire_response() {
+        let sent = Response::InventoryNotAdmitted {
+            why: "caller is outside the roster".into(),
+        };
+        let decoded = proto::decode(&proto::encode(&sent).unwrap()).unwrap();
+        assert!(
+            matches!(&decoded, Response::InventoryNotAdmitted { why } if why == "caller is outside the roster")
+        );
+        assert_eq!(
+            versions_answer(decoded).unwrap_err(),
+            "caller is outside the roster"
+        );
+    }
+
+    #[test]
+    fn separated_epochs_cannot_describe_a_round_as_up_to_date() {
+        let mut progress = SyncProgress::default();
+        progress.apart.push("devices".into());
+        let description = progress.finish().unwrap().description();
+        assert_eq!(description, msg::sync_partly_apart(0, "devices"));
+        assert_ne!(description, msg::nothing_to_move());
+    }
+
+    #[test]
+    fn independent_failures_keep_the_first_reason() {
+        let mut progress = SyncProgress::default();
+        progress.fail("devices failed".into());
+        progress.moved += 12;
+        progress.fail("titles failed".into());
+        assert_eq!(progress.finish().err().as_deref(), Some("devices failed"));
     }
 }
