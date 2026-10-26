@@ -2,6 +2,30 @@
 
 日期：2026-10-27。审查者：`node_test_review`，非测试作者。仅写本卡；未改 Rust、未 Cargo/typecheck/运行、未提交或合并。先读中央 STATE、PLAN、Q-039-node-transfer。
 
+## 最新 Pair04：有限证据独审确认真实产品红
+
+本节覆盖下文Pair02仍仅setup失败的历史进度；02/03原失败均保留。审查者未编译/测试/改源/清目录，仅核已执行的 `Q039/pair-bootstrap-first-red-04`。原始raw（含Cargo JSON与实际libtest输出）、runner、compiler artifacts、source/binary/guard/cleanup与final audit已完整读取/逐项解析；不只照抄assessment分类。
+
+固定 recovery `fix/quality-node-doc-transfer@67927fcfacb84fe260553e31614d8c1e2fd1cd5c`，Pair04保存/live/candidate源SHA均为 **`e7dbda3c9c74c757f31663ea82d6d4f16dd1ae3399f29efd4fb0c24f1a512e4f`**；N0仍 **`76495a0b1a47c92abbd58996a94f3710836a961b1c4ba4d9b080c3f88ab0d4fa`**。独立逐diff核03→04仅合法既有issuer id地址历史 loop **4096→12288** 与一行说明；仍64项/轮、末尾恢复真实hints、不加假设备。没有改 `snapshot >24MiB`、`>MAX_FRAME`、`<=64MiB`、epoch/target/content/root、same-caller retry或third身份exact bad-invite门。此数据delta已由root批准，不是降低oracle。03实际snapshot日志为9,742,899B，故原24MiB准备失败有明确Snapshot/Updates差异，未被改写成产品红。
+
+**04 raw直接支持1个普通父产品红**：
+
+- 真host/relay/public Pair fixture准备成功：`snapshot_bytes=29224082 epoch=1 ticket_present=true`，实际29,224,082B超过24MiB/6MiB且在共享64MiB内。
+- 首次public Pair返回 `msg.no-answer`，保留redacted具体原因 **`stream too long`**，同时 `issuer_has_caller=true ticket_consumed=true`。这次有原始具体stream长度拒绝原因，结合已审当前Paired全snapshot/base64→client read_to_end(6MiB)路径，足以归因为巨大应答被有界reader拒绝后的半入网；不是仅凭row/burn猜frame cap。
+- 同caller同票重试：`retry_ok=false retry_error_key=Some("msg.bad-invite")`。另fresh identity同票明确 `other_error_key=Some("msg.bad-invite")`，不是dial/任意Err假拒绝；其root/row与issuer仍2rows等前置断言均已越过。
+- 最终重新load/reopen的诊断：`target_covered=false content_matches=false epoch=1/1 rows=1 same_root=false holds=true`，caller仍持自己的lone root（standing trusted只是该lone root下的本地状态，不表示已加入issuer）。worker停止resident后在`:330` samecaller retry必须恢复的业务断言失败。**后面的target/content/root assert因前面panic未执行**；它们的未收敛由已计算raw诊断支持，不假称每条assert分别运行失败。
+- 普通父因真实worker exit101失败；raw两条FAILED summary分别为父和它spawn的ignored worker，合计只算**一个ordinary产品红**。这是Pair巨大bootstrap+spent-ticket retry缺陷首红，没有lostreply注入/kill窗口、claim恢复或新协议收敛证明。
+
+source inventory核：**1075**个root/phase before=after=current全同；与真正执行过的03 source-after相比，只有该Pair测试一源变化，其他1074输入相同。03 raw明确曾从当前recovery路径编译Node/test；04不再touch依赖mtime。04原Cargo JSON共700 compiler-artifact记录，current-tree `khor_node` manifest/src路径正确、features=[]、**fresh=true**（复用同树同生产输入库），Pair test路径正确、features=[]、**fresh=false**（新编测试）。不能将fresh=true说成04重编整个生产库，也不拿别树/main图覆盖当当前来源。此1075选择仍不是所有ignored frontend/generated输入的穷尽证明。
+
+实际test binary来自同raw Cargo artifact与Running行：`pair_bootstrap_large-70bb126099e049fc`，191,761,640B，mtime_ns1793039865224841749，SHA **`541fdf8539728425bffd3a4e7bb873567496c60db97f4e1c2267258404af6e0c`**。与run前03 binary SHA c856cd…不同；actual=after，独审时current SHA/size/mtime也三项一致。后续共享target合法覆盖仍不能替换此历史收据。
+
+实际runner AST与launcher/preflight/final一致：**STEP300s/TOTAL420s/MIN5,368,709,120B**，loop分别使用，locked/offline/jobs1、incremental0、quality-target与短owned TMP明确；源/HEAD/相对03唯一delta prechecks均在launch前assert。仅跑exact Pair04，没有重跑N0/normal check或不相关全库。phase25.1067s、总25.627044s，worker/父13.20/13.23s；无guard触发。采样minimum free外盘 **6,131,322,880B**、内盘 **14,772,289,536B**，均>5GiB。
+
+Cargo PGID **89713**当前独立signal0为ESRCH；scratch `/Volumes/disk0/Khor/caches/tmp/pred-04`当前不存在。phase cleanup receipt为零files/3空目录，root为零files/1空目录；这是原receipt+当前absence，不宣称审查者亲见清理前列表或亲自回收。外盘run与 internal `/Users/zgh/Library/Caches/khor-code-quality/recovery/pair-bootstrap-first-red-04` relative sets及全部 **24 files** SHA/bytes逐项相同，finalaudit已齐；`execution_complete=true`仅指该单父首红实验完成，不是业务绿。
+
+结论：Pair04首红源与有限证据**无阻断**，可作为后续修复的独立Pair基线；连同之前N0，是两不同普通父在不同run各自取得产品红，绝不把任何父/ignored child双计。Node生产N1/Pair实现授权另由root派发，本审查没有新设计或实施授权扩张。
+
 ## 最新首跑证据独审：N0产品红，N0b仅准备失败
 
 本节覆盖下文“尚未运行”的历史状态。审查范围只为已执行的 `Q039/node-transfer-first-red-01`；未启动任何编译/测试/gen，未改源码或清目录。完整读取normal/N0/N0b raw logs、实际runner、preflight/launcher AST、全部phase source/binary/results/cleanup与final audit，不只接受runner分类字符串。
