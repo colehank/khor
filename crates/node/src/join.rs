@@ -27,7 +27,9 @@
 //! pairing ticket travels on the pair command's stdin and is never
 //! printed, logged, or put on a command line (a command line is in
 //! `ps` on both machines).
-use std::io::{Read, Write};
+use std::io::Read;
+#[cfg(test)]
+use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -303,43 +305,37 @@ fn own_asset() -> Option<&'static str> {
     asset_for(system, machine)
 }
 
-/// One ssh run with `stdin` fed and both outputs kept, bounded by
-/// `wait` (killed past it — by its own pid).
+#[path = "join_process.rs"]
+mod process;
+
+/// One finite local SSH command, including input and concurrent output drains.
+/// Confirming local cleanup does not confirm remote execution has stopped.
 fn run(to: &Dest, command: &str, stdin: &[u8], wait: Duration) -> Result<(bool, String, String), String> {
-    let mut child = to
-        .command("ssh")
+    let mut command_line = to.finite_ssh_command();
+    command_line
         .args(["-o", "ConnectTimeout=8"])
         .arg(&to.host)
-        .arg(command)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(msg::ssh_wont_run)?;
-    if let Some(mut w) = child.stdin.take() {
-        // A far side that never reads (a refused login) closes the pipe:
-        // its words are on stderr, not here.
-        let _ = w.write_all(stdin);
+        .arg(command);
+    let out = process::run(command_line, stdin, wait).map_err(msg::ssh_wont_run)?;
+    let mut stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if out.stderr_truncated {
+        stderr.insert_str(0, "[SSH stderr truncated to its last 262144 bytes]\n");
     }
-    let start = Instant::now();
-    loop {
-        if child.try_wait().map_err(msg::ssh_wont_run)?.is_some() {
-            break;
-        }
-        if start.elapsed() > wait {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok((false, String::new(), msg::add_timed_out(wait.as_secs())));
-        }
-        std::thread::sleep(Duration::from_millis(100));
+    if out.timed_out {
+        if !stderr.is_empty() && !stderr.ends_with('\n') { stderr.push('\n'); }
+        stderr.push_str(&msg::add_timed_out(wait.as_secs()));
+        return Ok((false, String::new(), stderr));
     }
-    let out = child.wait_with_output().map_err(msg::ssh_wont_run)?;
     Ok((
         out.status.success(),
         String::from_utf8_lossy(&out.stdout).into_owned(),
-        String::from_utf8_lossy(&out.stderr).into_owned(),
+        stderr,
     ))
 }
+
+#[cfg(all(test, unix))]
+#[path = "join_process_tests.rs"]
+mod process_tests;
 
 fn archive_digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))

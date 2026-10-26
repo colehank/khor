@@ -198,6 +198,16 @@ impl Dest {
         c
     }
 
+    /// A finite, owned command may reuse an existing ControlPath master, but
+    /// must not create a persistent master or fork its command into background.
+    pub(crate) fn finite_ssh_command(&self) -> Command {
+        let mut c = Command::new("ssh");
+        // The Windows owned adapter consumes explicit environment entries.
+        c.env_clear().envs(std::env::vars_os()).envs(self.env())
+            .args(self.road_for(true));
+        c
+    }
+
     /// The environment a password road needs: ssh asks this very
     /// program for the password ([`crate::secret::answer_askpass_if_asked`])
     /// instead of a terminal, and is never allowed to fall back to one.
@@ -231,7 +241,23 @@ impl Dest {
     /// would have prompted. Spelled out, the jump gets BatchMode and the
     /// same timeout as the hop behind it.
     pub fn road(&self) -> Vec<String> {
+        self.road_for(false)
+    }
+
+    fn road_for(&self, finite: bool) -> Vec<String> {
         let mut v = Vec::new();
+        let mut owned = String::new();
+        if finite {
+            // This config key was added in OpenSSH 8.7. Earlier clients cannot
+            // request it via config and we never pass -f. Keep this narrowly
+            // ordered exception before the key, not a blanket IgnoreUnknown.
+            for option in ["IgnoreUnknown=ForkAfterAuthentication", "ControlMaster=no", "ControlPersist=no", "ForkAfterAuthentication=no"] {
+                v.extend(["-o".to_owned(), option.to_owned()]);
+                owned.push_str("-o ");
+                owned.push_str(option);
+                owned.push(' ');
+            }
+        }
         let mut cfg = String::new();
         if let Some(dir) = ssh_dir() {
             let path = dir.join("config").display().to_string();
@@ -263,7 +289,7 @@ impl Dest {
         if let Some(j) = &self.jump {
             v.push("-o".to_owned());
             v.push(format!(
-                "ProxyCommand=ssh {cfg}-o BatchMode=yes -o ConnectTimeout=8 -W %h:%p {}",
+                "ProxyCommand=ssh {cfg}{owned}-o BatchMode=yes -o ConnectTimeout=8 -W %h:%p {}",
                 sh_quote(j)
             ));
         }
