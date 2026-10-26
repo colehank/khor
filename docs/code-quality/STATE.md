@@ -2,6 +2,14 @@
 
 更新2026-10-27。完整全仓功能/代码治理active，尚未完成。先读本文件、PLAN与对应任务卡，再核actual HEAD/diff/agents/PID/SHA。详细上一检查点保[历史](history/STATE-before-current-767aa-20261027.md)，不可据旧角色表重获写权。
 
+## 最新检查点（2026-10-27，本段替代下文旧 owner/构建槽/03–04 执行状态）
+
+- main 现场仍为8704a503且clean；wave1仍为767aa23d且clean，未合并main、未发布。
+- R1作者交付candidate05：03原R0与auth/parent两个父通过，05全部16新父通过，共18个不同父；第五、六取消实际投递的原故障已红→绿。05没有生产修订，仅fixture修正；此前fixture失败原记录保留。作者收据记录161PID全退/2350inputs稳定/双盘一致；root最终收据独审、原相关组合与真实双Node回归仍待，不称整个Q037完成。R2未知task/lateSend仍open。R1已归还槽，源码继续冻结。
+- N1 normal Node libcheck已通过15.307s，1083inputs稳定，未执行N0收敛测试。独审收口卡Q-039-node-n1-review确认真实incoming DocTransfer缺raw1MiB门(B1)，以及最大request proof方向测试需校正(C1)。已重新派发原owner仅修这两项并冻结candidate02，暂不Cargo；N2巨大Pair/Vouch恢复仍open。
+- Gen02源码独审已闭合，可进入定向验证。现场无cargo/rustc/gen_bindings；外盘6,148,280,320B/内盘13,276,237,824B。唯一构建槽现已正式授予node_test_review作为Gen作者，执行已准备bindings-execution-plan-01：先核SHA/AST/source，11普通父→actual normal build→fresh/reused/runtime/显式参数producer→标准gen/types；root独审。当前只是授予执行，尚无运行通过结论。
+- 全目标仍在P3后端/协议逐批治理，P4剩余工程治理和P5最终同源App验收未完成。首批两个GUI故障已修集成，不把这些局部通过当全仓完成。
+
 ## 用户决定与发布边界
 
 - 用户要求全仓审计、分批功能修复/重构、工程规范与最终App验收，多智能体及压缩恢复已授权；“做完此目标后再结束”。首批或库基座不能代替完整目标。误发AEC研究已撤回。
