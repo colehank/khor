@@ -2,6 +2,35 @@
 
 日期：2026-10-27。审查者：`node_test_review`，非测试作者。仅写本卡；未改 Rust、未 Cargo/typecheck/运行、未提交或合并。先读中央 STATE、PLAN、Q-039-node-transfer。
 
+## 最新首跑证据独审：N0产品红，N0b仅准备失败
+
+本节覆盖下文“尚未运行”的历史状态。审查范围只为已执行的 `Q039/node-transfer-first-red-01`；未启动任何编译/测试/gen，未改源码或清目录。完整读取normal/N0/N0b raw logs、实际runner、preflight/launcher AST、全部phase source/binary/results/cleanup与final audit，不只接受runner分类字符串。
+
+固定运行树为 recovery `fix/quality-node-doc-transfer@67927fcfacb84fe260553e31614d8c1e2fd1cd5c`。保存的实际测试源 N0 SHA **`76495a0b1a47c92abbd58996a94f3710836a961b1c4ba4d9b080c3f88ab0d4fa`**，Pair N0b02 SHA **`0f21a85006a32a22fe2a8b4473c2f47828c2072ace1de7a234472a2f82616a84`**，均等于先前独审冻结。现场HEAD仍67927fcf，当前1075输入中唯Pair测试已合法进入后续03日志前移修订；不把当前Pair bytes或新诊断运行替代此02记录。
+
+| 实际phase | 直接证据与结论 |
+| --- | --- |
+| normal-lib | 标准默认 `cargo check --locked --offline -j1 -p khor-node --lib` exit0；raw明确从当前recovery树检查Node/依赖。是正常库编译，不计ordinary test。 |
+| N0 exact ordinary parent | exit101，raw先编译实际测试、再spawn真正ignored worker；准备完成 `raw_gap=25447954 old_cap=4194304 epoch=1/1`，baseline Seen0/Pinfalse。四次真实public Node sync visit均明确旧cap Err，且每次 `seen=123 pinned=true target_covered=false content_matches=false cap_rejections=1/2/3/4`。最终worker在`:679`的固定target/receive-dir必须收敛业务断言失败；父再因worker exit101失败。**确认1个普通父的真实收敛产品红**，没有relay/setup/无关transport原因替代。 |
+| N0b02 exact ordinary parent | exit101，raw只有started，worker在`:218` `retain the full 25.4 MB history` 的snapshot大小准备断言失败。代码顺序与保存源证明此时尚未执行第一次public pair；raw也没有prepared/first_ok/retry日志。**fixture/setup失败，Pair产品红尚未取得**；不能推论burn、巨大Paired frame cap、same-caller retry或third-identity拒绝已运行。 |
+
+N0的真实relay/nonhosting/public pair/sync及fresh persisted-read依据前面的精确源审，实际raw已越过配对/size/baseline门，恰完成四visit再落最终目标断言。Seen/Pin首visit已先推进，不能把它们的成功称devices已同步；name/addrs诊断不参与最终等值。N0两条失败summary分别是同一ordinary父与它实际spawn的ignored worker，**不计两条产品红**。N0b同样只是一个ordinary父的setup失败；没有两组产品红，也没有任何收敛绿。
+
+所有1075个明示related输入的whole-run before=after，normal/N0/N0b各自before/after也逐项完全相同；保存源hash与当时manifest一致。独审重算当前1075仅Pair源不同，说明后续源演进而非首跑中漂移。365个first-party source/manifest mtime刷新有记录，原raw实际编译路径正确；这1075选择不声称覆盖所有ignored frontend/generated构建输入。
+
+两份原实际binary记录均与对应binary-after的SHA/size/mtime相同：
+
+- N0 `sync_doc_isolation-862f65292cd2f541`，191,836,544B，SHA `c22d409e25ad1bb61f52d3f89a9fd1dd0599e030e1f1d08b0c3d3764c4e26b41`；与run前旧binary SHA不同，原raw Cargo Running指向此精确路径。
+- N0b `pair_bootstrap_large-70bb126099e049fc`，191,761,640B，SHA `9fa42435cf508c3eca345acfe75204c678419b2deeab918742c628f8d624e438`；run前无此binary，raw Running一致。
+
+本次独审时两binary当前仍三项匹配；后续共享target合法覆盖不回填首跑历史收据。仅二binary/test源码编译不能扩称全部Node测试通过。
+
+独立解析实际run.py AST，与launcher/preflight/final一致：**STEP300s、TOTAL720s、MIN5,368,709,120B**；实际loop分开引用，不借计划中240/420等其它阈值作护栏信用。launcher记录parsed_before_launch，但没有该launcher中的script SHA字段；不额外宣称拥有不存在的launch-hash收据。precheck为assert，源码/路径错误会阻止launch；locked/offline/jobs1、incremental0、quality-target及每phase短owned TMP明确。连续3次IO/资源/deadline只停自有新session PGID。本run三phase无guard触发，总129.282751875s，N0 worker/父实际9.45/9.49s，Pair worker/父1.68/1.73s；余时间主要编译。
+
+记录minimum free外盘 **6,257,033,216B**、内盘 **12,829,810,688B**，均超5GiB。这是runner采样记录。三个Cargo PGID **74525/74769/75710** 当前独立signal0均ESRCH，父等待worker exit有raw/source证据；没有把Rust thread id冒充OS child PID。各phase cleanup为零remaining files、只删1/3/3空目录，最终owned scratch `/Volumes/disk0/Khor/caches/tmp/nt-red-01` 当前不存在。审查者未亲见清理前目录，准确归属为原cleanup receipts + 当前absence，未自行删任何文件。
+
+外盘证据与 `/Users/zgh/Library/Caches/khor-code-quality/recovery/node-transfer-first-red-01` 的relative sets及全部 **35 files** bytes/SHA逐一相同。final `all_planned_steps_executed=true` 而 `execution_complete=false` 与Pair setup失败一致，不把总runner非零误说N0无法归因。N0首红证据无阻断，可作为后续生产修复前基线；Pair必须保原失败，分析真实Snapshot/Updates体积后另冻合法新fixture及新run，不能降低断言凑Pair红。
+
 ## 最新 delta 结论：N0b candidate02
 
 本节覆盖下文 candidate01 的阻断状态；保留下文为历史独审记录。作者仅补 B1/B2 与 token 借用，当前 N0b SHA **`0f21a85006a32a22fe2a8b4473c2f47828c2072ace1de7a234472a2f82616a84`**。独立逐 delta 核：第三 caller 必须 `expect_err` 且 catalog key 精确为 `msg.bad-invite`，真实 transport/IO Err 不再假绿；首次完整 why 先替换完整 ticket、再替换 raw token 为 `[redacted]` 才打印，保 catalog key。原 row/root/固定 target/epoch/content 断言未弱化。

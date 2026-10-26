@@ -34,7 +34,7 @@
 | root | wave1@686f2e42 clean；plan总账 | 集成、公共协议/接口、独立审、恢复。root6792组合22/1074已绿并独审。lookup8ffe→686f已集成，root49/1076源稳/29.402s/6binary/17PGID收尾已完，Q051限定独审通过。维护Q041/P4/P5。 |
 | remote_cancel_owner（新干净上下文接管） | agent-protocol，fix/quality-remote-cancel@f0104d73 +R1 WIP | 原mcp_worker_owner已交R0/契约后退出；root先前send_message未唤醒，实际查树clean后已spawn本owner开始生产。R1 async here/on/with、4net+1meta、独立truth、Status/Retry/flat BoundAction/stableBinding按root授权实现；暂不Cargo。新卡Q-037-remote-r1.md。R0 fixture未并wave1直到修绿，audit ref保留。 |
 | doc_outbound_owner | native-io，fix/quality-doc-transfer@8ffe6aa2 clean | lookup/resume candidate02（transfer50e71755）已normalSync+49不同普通绿/1072稳/28.725s；6binary/fingerprints/17PGID+11kill子/AST240/600/5GiB/双盘53file最终独审无阻断。已commit8ffe6aa2→root686f，7源码匹配；源码写权归还root，无PID/slot。卡Q-039-transfer-lookup。 |
-| node_transfer_owner | recovery，fix/quality-node-doc-transfer@67927fcf，恰2测试dirty | N0 candidate02 SHA76495a0b与Pair N0b candidate02 SHA0f21a850已独审并实际首跑：normalNode check绿；N0真业务红（25,447,954B差集，4次public sync均旧cap、Seen123/Pintrue保留但VV/receive_dir不收敛）；N0b在首次Pair前snapshot大小准备断言失败，无配对故障结论。source1075稳定、总129.283s、3Cargo PGID已退，作者收尾核binary/双盘中。不得改oracle假绿；先分析Snapshot与Updates差异，再定合法大快照准备。未Node生产；link/proto写权仍R1，禁N1并改。 |
+| node_transfer_owner | recovery，fix/quality-node-doc-transfer@67927fcf，恰2测试dirty | N0 candidate02 SHA76495a0b与Pair N0b candidate02 SHA0f21a850已独审并实际首跑：normalNode check绿；N0真业务红（25,447,954B差集，4次public sync均旧cap、Seen123/Pintrue保留但VV/receive_dir不收敛）；N0b在首次Pair前snapshot大小准备断言失败，无配对故障结论。source1075稳定、总129.283s、3Cargo PGID已退，35file双盘/两binary/cleanup最终核齐；03仅前移安全snapshot日志，SHAf9de265a，未运行。不得改oracle假绿；先分析Snapshot与Updates差异，再定合法大快照准备。未Node生产；link/proto写权仍R1，禁N1并改。 |
 | receive_review | 只读固定库源，独占receive review卡 | receiver源码+22真实证据已审，无阻断；commit exactblob与root组合最终核对可另派。 |
 | doc_apply_review | 只读各固定源/独占review卡 | MCP106/delivery、R0真红、Doc/descriptor/init/outbound及root4493/f721/5da审完成。R0非ACP终态证明；后续R1与lookup需再次派审。 |
 | 旧长上下文owners | 已交源/卡，无PID | capacity失败不自动反复重试；新分工按本表，所有dirty以现场为准，禁摘要覆盖。 |
@@ -50,7 +50,7 @@
 
 - Q041 installer31/mirror13/site7及真实Darwin Bun artifact af955540…三smoke已过；Linux/musl/Rust嵌入/完整fresh onset/远程部署未实跑。Q041d缺同源GUI prerequisite与Q041e旧gen遗留待修：root4493现存435输出=155当前gen+3旧gen(PlaceRow/QuotaWindowKind/Wheel)+277dist，不能称435全fresh；原字节/mtime保留，未为审查删除。
 - root4493 source2230稳定/正常构建+62不同父；第一次SUN_LEN是root嵌套TMPDIR过长、SSH broker bind前失败，改短ownedTMP同source/binary才完整绿。一次runner SyntaxError在执行前，原失败脚本保留；没有隐藏业务失败/削弱断言。Q047/048/049独立卡记录实际计数与共享artifact被后续合法编译覆盖，不拿当前新binary冒充历史。
-- 唯一Cargo/native/gen槽必须root明确派发。root6792与作者/root lookup49均已结束并收尾；Node N0/N0b首跑刚结束并归还槽，作者收尾中，当前未授下一轮Cargo。其他未授权不编译。统一quality-target、CARGO_INCREMENTAL=0、jobs1(上限2)。切树mtime字节不变+actual compile来源检查，禁止新散落target/动主release。
+- 唯一Cargo/native/gen槽必须root明确派发。root6792与作者/root lookup49均已结束并收尾；Node N0/N0b首跑刚结束并归还槽，作者收尾中，R1 candidate01 normalNode/CLI/libtest no-run均成功且归槽，已知setup问题导致原R0未执行。Node03诊断已结束归槽，实际Snapshot9,742,899B（完整history，KV LZ4压缩，与Updates25.45MB不同），仍是体积准备失败；已授权最小04固定12288×64同设备历史后exact，保原>24MiB/<=64MiB及Pair断言。R1作者修candidate02，无Cargo。其他未授权不编译。统一quality-target、CARGO_INCREMENTAL=0、jobs1(上限2)。切树mtime字节不变+actual compile来源检查，禁止新散落target/动主release。
 - 内外可用每次≥5GiB=5,368,709,120B；掉盘/连续3I/O错误/越线只停ownPGID。风扇坏/SMART不可读，用户已允许继续。最近min内约12.85GB/外6.59GB，仍动态重测。不动用户App/服务/系统swap。cleanup7/8/9精确自身缓存回执在证据；不复用旧manifest清新文件。
 - 验证runner使用独立命名的STEP/TOTAL常数，launch前AST解析并核真实值；precheck/source失败必须check=True立即停止，不能shell继续变更。构建/setup/cleanup失败与业务红分开保原始日志，不为了已正常短时完成的超时常数偏差重复无关测试。
 - 证据 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`，应急 `/Users/zgh/Library/Caches/khor-code-quality/recovery/{RESUME.md,current-code-quality-docs}`。备份不代表全部dirty已覆盖；外盘未提交源只能按真实diff/SHA恢复。
@@ -63,3 +63,11 @@
 ## 当前并行收口（2026-10-27 更新）
 
 remote_cancel_owner实际18路径WIP、rustfmt解析及diff检查通过，但尚未编译/运行；计划candidate01冻结后独审。proto仅Bound Send保40s已登记，agent_accounts为既有helper async机械适配；不借此扩大功能。node_test_review已完成N0/N0b候选源码与Q051证据独审，当前只读定界Q041e生成目录完整更新/失败安全方案，不运行生成器、不删除3遗留类型。N0b准备失败保留原日志，后续新源新证据，不计Pair真红。
+
+## R1 candidate01 当前独审与构建边界
+
+冻结18源及1916 tracked输入双盘：Q037/remote-r1/candidate01-20261026T181911Z。normal libcheck 15.104s/2349 runtime输入稳/current Node实际recompile/ownPGID gone，非测试绿。CLI build已成功，libtest no-run进行中，不执行原R0（独审发现fixture task建在controlled-peer-store，ResolveBinding却查真实node Store，须先修setup）。源码独审node_test_review已确认known-task delegate续输入before-send漏task、单坏child使合法兄弟饥饿；root另确认100ms空CLI重启不遵守资源层backoff的成本问题。统一审查卡后做candidate02，01不覆盖、不称已修绿。Q041e最小完整生成目录方案已只读完成，尚未实施。
+
+## 当前独审交付与下一步
+
+Q-037-remote-r1-review已完整交付：known-task delegate预写task、单坏child兄弟饥饿、R0 Store setup、100ms空CLI成本退避、坏metadata Reply分类共五项有阻断。root已授权作者最小修订及必要定向case；bad pending仅允许当前有界marker页按合法hash直定位同hash权威intent，保护原件、显式issue、不卡合法run，不扫历史。candidate01源码/normal编译/CLI与libtest no-run三段仅是编译证据，不是业务绿。Q-039-node-n0-review已独立核首跑35file/1075/两binary/3PGID：N0一普通父真业务红，Pair02仅准备失败。Q041e最小方案定界完成未实施；reviewer现只读Q033 current protocol旧host分支删除与最终原生上传验收计划，不改源码/不占槽。
