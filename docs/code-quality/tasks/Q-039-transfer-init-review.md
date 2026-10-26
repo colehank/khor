@@ -1,6 +1,6 @@
 # Q039 transfer initialization — independent design/first-red fixture review
 
-Reviewer `doc_apply_review`, not the author. **No blocker found for scheduling the exact prepared first-red parent.** The singleton unpublished-stage design is reasonable within its stated contract; it is not implemented or behaviorally verified. No Cargo/gen/native fixture execution or production edit by reviewer. Only this central card is written; no main merge/ship.
+Reviewer `doc_apply_review`, not the author. **No source/evidence blocker found in production candidate-01 (ba762514/05c2b296). Exact normal sync check and 23 different parent tests now pass; nine platform-leaf metadata checks also pass with the limitations below.** The original real-crash red and unchanged oracle's green are independently recorded. No Cargo/gen/native fixture execution or production edit by reviewer. Only this central card is written; no main merge/ship. Earlier design/prepared-only checkpoints below remain historical.
 
 ## Exact input and method
 
@@ -22,7 +22,7 @@ No runtime red has been observed by this reviewer. First run still needs root's 
 
 ## Design review and implementation conditions
 
-The proposed one exact reserved `.initializing` namespace fits gate serialization: an acquired real gate proves no cooperating initializer remains, while active Sinks are only published final IDs. No chunk is admitted before publication. A complete synchronized-but-unpublished initializer can be discarded/retried because only its empty body and bounded controls exist; declared network body bytes are never valid there. This does not authorize cleaning damaged final64hex directories.
+The proposed one exact reserved `.initializing` namespace fits gate serialization: an acquired real gate proves no cooperating initializer remains, while active Sinks are only published final IDs. No chunk is admitted before publication. A complete synchronized-but-unpublished initializer can be discarded/retried because only its empty body and bounded controls exist; declared network body bytes are never valid there. This does not authorize cleaning damaged final 64hex directories.
 
 The safety conditions in the design should remain explicit in implementation:
 
@@ -47,3 +47,73 @@ The initial fixture covers one mkdir-before-manifest crash, not all future init 
 ## Handoff
 
 Root may schedule the exact one parent `transfer::tests::a_crashed_initializer_does_not_block_new_reservations` when the unique Cargo slot is free. No source-review blocker prevents that first-red run. After actual business red, production scope and platform primitive choice remain root decisions; a new implementation frame requires source/evidence review. Do not label this design or prepared test as recovered/green, or as full Q039 completion.
+
+## Production candidate-01 independent source review
+
+Root requested this separate review after actual first red and production authorization. Tree remains fix/quality-transfer-initialization@927422502316576b75405a7b65b140b4dc535fd9. Exactly two changed/new paths, no Doc/Node/proto/dependency/API changes:
+
+| File | SHA256 |
+| --- | --- |
+| crates/sync/src/transfer.rs | ba7625143caa261f366b5acc88202d6447d5a4effa80dd48d90dc8aae5fa5cd4 |
+| crates/sync/src/transfer/platform.rs | 05c2b2964e9bda636956d497a45882ececb6d10f5b32dc26b845dcc55af82c37 |
+
+Actual current files, external frozen source copies and `all-inputs.json` match. All **1,907** inputs match at beginning and end of this source review. Integration tests remain b301ee73777d5a8133f6aa83b3aa11face3da14b1acf9617786b70c8c998eb2b; existing Doc three hashes remain fixed. Graph minimal/detect/affected/tests_for/impact again sees old 1d2640d2 and no new transfer symbols/platform file, so actual source fallback was necessary; zero flow is not evidence. Read full production delta, platform module and all added fixtures. No Cargo or test execution by reviewer.
+
+Actual `transfer-init-red-01/cargo.log` shows owned worker 65863 killed with SIGKILL after real mkdir and both public reserved/fresh returning Io(NotFound), then 0 passed/1 failed at the intended no-manual-removal assertion. The original parent function from signature to next ignored-test attribute is **byte-identical** between 477b prepared source and this candidate (SHA256 `c58af1bb1d5d712ad149d441bcf2b361fcbd697d911f9ae6041a17d917d99bf2`). The ignored child has expanded phase/fault support, but the original parent's business oracle was not weakened.
+
+### Source findings: no blocking defect identified
+
+- gate() constructs LOCAL+actual locked gate then calls reconcile before returning. All three public gate entrants (reserved_bytes/receive/cancel) therefore reconcile first, with no independent unguarded admission route. receive preserves existing quota and owner-slot admission before new initialization; no LOCAL owner insertion moves before fallible I/O.
+- initialize_unpublished operates only at root/.initializing; successful mkdir is still the point granting error-cleanup authority. A failed mkdir returns without deleting a pre-existing target. Published 64hex names never enter clear_initialization: the helper itself rejects any basename other than the exact reserved singleton.
+- initialization_entries checks directory type/link/private/root UID before inspecting at most four entries. It rejects a fourth entry, unknown names, nested directories, symlink/reparse, mode/owner failure, nonregular or multiple-link file and manifest/body/offset bounds before returning the path list. clear_initialization performs no unlink until this full validation returns. File handles check actual metadata/link count and are dropped before deletion/publication. Accepted deletion is exact remove_file for the validated subset followed by remove-empty-dir; no recursive or prefix cleanup.
+- Ordinary initialization and publication failures invoke that same bounded validated cleanup and retain original cause plus cleanup error. An unexpected sibling survives even when a known control was already created; no partial safe-sibling unlink occurs on validation refusal. If an unlink itself fails or a process dies after a prior unlink, remaining accepted controls are a legal subset for later reconciliation.
+- Manifest/body/initial-checkpoint writes are synced; explicit meta/body drops and journal's function-return drop close their handles before publication. The completed namespace must have exactly three legal controls, exact original Manifest and exact 72-byte initial checkpoint. Body bound 0 is checked through actual file metadata. Temporary read handles are gone before the OS directory move.
+- Publication is a single no-replace platform call. Failure cleanup only targets the unpublished source; existing final file/empty dir/sentinel is untouched. After successful move there is no later fallible action inside publication cleanup scope. A subsequent receive/owner-binding failure leaves a complete charged final stage. Existing manifest/recover/owner write+sync/LOCAL insertion order remains, with no fallible action after insertion.
+- Quotas keep original 64MiB blob/128MiB reservation/64stage/2owner policy. The unpublished namespace can hold only bounded controls and empty body, never an admitted Sink/chunk. A post-publication crash reserves declared bytes exactly once; owner/gate OS locks are released by process exit and next public receive can resume. No directory power-loss transaction or Applied/Doc assertion is introduced.
+
+### Platform implementation review
+
+Apple uses NUL-checked Unix CStrings, exact renamex_np unsigned flag 4 and direct error propagation, matching the independently checked official userspace header. Windows uses NUL-checked UTF16 MoveFileExW with flags 0, no replace/copy/delay fallback; source handles are closed before moving. Held-file checks reject reparse attribute 0x400 and query FileStandardInfo class 1, requiring one link, not-directory and not-delete-pending. Repr(C) uses two i64/u32/two u8 BOOLEANs (native 24-byte FILE_STANDARD_INFO layout), rather than BOOL-sized fields. Query failure rejects cleanup. Caller-owned private Windows root remains a precondition; ACL enforcement and Windows runtime are not claimed.
+
+Linux/Android selects renameat2 syscall only for exact arch/pointer/ABI combinations: x86_64/64→316, aarch64/64→276, x86/32→353, ARM/32 EABI/eabihf→382. Scalars are native c_long and CString pointers live through libc syscall. x32/ILP32/unproven ARM ABI and other arches fail Unsupported before any syscall. The saved primary AOSP UAPI bodies match those numbers; ARM base is 0, and Bionic stdio's renameat2 wrapper is API30 while the generic syscall declaration is available. Thus the implementation avoids adding that wrapper startup dependency for the existing older Android floor. No fallback to flags 0/std rename/check-then-overwrite exists. This is static ABI/source inspection, **not** Linux/Android/Windows compile/runtime evidence or filesystem capability proof. Prior primary references and saved-source URLs remain the authority, not third-party guesses.
+
+### New fixture validity and honest coverage
+
+Eight additional ordinary tests plus the unchanged original first-red parent are prepared; the pre-existing two unit tests and 12 integration controls are not weakened. Unit fixtures use the same exact ignored child and child-only environment, real create/write/sync/rename/unlink operations and owned kill+wait barriers. No parent/global environment mutation or fake successful filesystem operation is used.
+
+The phase test covers before mkdir, half manifest, synced manifest, body creation, half checkpoint, synced checkpoint, before publish and after publish. It confirms actual gate Busy before kill, non-success wait, owner-slot availability, observed file sizes/name, retained published bytes unchanged, public reconciliation/quota and fresh VerifiedComplete. The after-publish case additionally counts declared bytes, reopens at offset 0 and appends the actual body through public Sink. The original parent covers after-mkdir. Phase hooks only pause after the real operation named by the phase; none simply returns the desired status.
+
+A second-crash test first kills after synced controls, then kills a new worker immediately after the first real cleanup unlink; it requires three→two entries before public reconciliation and successful fresh append. Ordinary-error children induce a real create_new collision after successful owned mkdir; one case cleans legal controls and restores two-owner availability, the other retains unknown sentinel and both cause/cleanup errors. Their normal exit is waited and checked separately from crash children.
+
+Refusal fixtures snapshot actual sibling bytes and exercise all three public gate paths for unknown/fourth/nested/oversize/nonempty controls. Unix links/modes use actual symlink/hardlink and permission objects and verify sentinel targets/modes survive. UID mismatch uses real file metadata against supplied system-root metadata; it is a validator-level control and conditional on distinct UIDs, not a public foreign-owned entry or privileged chown claim. No-replace conflict test exercises the actual OS helper against existing empty/sentinel dir and file; public damaged-final tests separately require all API failures preserve final contents. Together with source tracing they cover the intended policy, without pretending a cooperative same-gate race occurred.
+
+No new assertion has run for this frame yet. Child 30s fuses, parent 5s readiness and RAII kill/wait bound ordinary fixture failures; scratch removal remains final cleanup after the oracle. No source blocker requires a new frame at this point. Root may schedule normal sync check and scoped current transfer unit/integration checks with frozen source/binary/freshness/resource evidence. Platform limitations, noncooperating path-mutation exclusion and full Q039/Node adoption remain open; do not infer green from fixture availability.
+
+## Independent candidate green evidence audit
+
+Read actual `Q039/transfer-init-green-01` run.py, 24 phase command/launch/result records, all three behavioral logs, normal-sync-check log, source/freshness/target/catalog records, platform_harness.rs and relevant cfg/metadata logs. No Cargo or test rerun by reviewer. Author tree still HEAD92742250 with only the two reviewed source paths dirty; author has not committed at this check.
+
+All **1,907** before/after inputs equal the frozen candidate all-input map and every actual current file still matches. The two full production SHA values remain ba7625143caa261f366b5acc88202d6447d5a4effa80dd48d90dc8aae5fa5cd4 and 05c2b2964e9bda636956d497a45882ececb6d10f5b32dc26b845dcc55af82c37; integration b301 and Doc three sources remain unchanged. Freshness record refreshes sync/catalog .rs/.toml with exact unchanged hashes; actual first-parent log compiles both catalog and sync in this recovery tree. Unit/integration artifacts are newer than the touch, and actual current hashes match saved receipts:
+
+| Executed artifact | SHA256 |
+| --- | --- |
+| quality-target/debug/deps/khor_sync-6bc0f9688422d392 | b65b54e9057705ed972d417516ceca131d2f6359da0f3e8295e628c1fae8c805 |
+| quality-target/debug/deps/transfer-ebd3cc272a00feb9 | 706b8002b7abedfdc72f9293a9de65597edf0e96cbaca5026182cbf29ea9739f |
+
+Actual ordinary default sync lib check exits 0. First-red parent is run separately and passes 1; remaining-unit command explicitly skips both that exact parent and the ignored child, and passes 10; unchanged transfer integration passes 12 with 1 ignored child entry. Reviewer independently extracts names and obtains **23 different ordinary parents**. Lists, cfg printing, metadata compilation and actual subordinate workers add zero to 23. No original parent rerun is double-counted.
+
+The unchanged first-red parent now logs owned child 82203 `signal:9(SIGKILL)`, actual_created=.initializing, public `reserved=Ok(19)` and `fresh=Ok(VerifiedComplete { bytes:44, ... })`, then passes. This is the earlier Io(NotFound) public oracle becoming green without manual stage removal. Source assertions still verify real gate Busy before kill, owner locks afterward, unrelated manifest/body/offset bytes unchanged, reservation amount and retained verified resume.
+
+Remaining-unit actual traces show 10 further killed PIDs: 82250/82251 for synced-controls→cleanup-after-first-unlink, and 82255/82256/82259/82260/82261/82262/82269/82270 for before-mkdir/partial-manifest/synced-manifest/body-created/partial-offsets/synced-offsets/before-publish/after-publish. Every trace is SIGKILL; the after-publish path is the actual final 64hex ID rather than `.initializing`. Passing inspected assertions establish corresponding file shapes, public recovery, retained bytes, after-publish reservation/offset 0/full-body resume, refusal preservation and normal-error/double-error behavior. These are executed assertions; logs do not independently dump every internal byte comparison, so this review does not invent extra telemetry.
+
+All 24 phases exit0 with no stop reason. Saved groups are empty both before and after runner cleanup; reviewer independently finds all 24 phase PGIDs absent and all 11 logged killed-child PIDs ESRCH. No group needed a post-phase signal cleanup to make that receipt empty. Runner removes only its dedicated scratch/TMPDIR after all API oracles; scratch-after-tests is actually empty before removal, and both paths are currently absent. Total 23.450s, minimum external 6,625,415,168B/internal 12,784,816,128B, above 5GiB. External and internal green evidence each contain 69 files with identical full relative-file SHA maps. No artifact or process was removed/signalled by reviewer.
+
+### Exact nine-target scope
+
+There are six normal check/list/behavior phases plus nine `rustc --print cfg --target …` and nine **`rustc --edition 2024 --target … --emit metadata -o … platform_harness.rs`** phases. The std-only harness imports the actual absolute frozen platform.rs and type-checks both publish_no_replace/check_control_file function items. It does not substitute an implementation or copy the functions. Installed targets are aarch64-apple-darwin, aarch64-apple-ios, aarch64-apple-ios-sim, aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android, x86_64-pc-windows-msvc, x86_64-unknown-linux-gnu and x86_64-unknown-linux-musl. Actual ARM cfg includes target_abi=eabi/arch=arm/pointer_width32, selecting the intended supported ARM condition.
+
+These successful artifacts establish platform-leaf Rust metadata/type checking for those targets. **They do not establish native symbol linking, Android startup/minSdk behavior, kernel/filesystem no-replace semantics on non-Darwin, Windows reparse/ACL runtime, or a complete cross-target khor-sync/Node build.** x8632, Linux ARM eabihf, x32/ILP32 and other ABIs did not run in this matrix; supported/unsupported branches retain their earlier static review status. The Darwin ordinary publication/conflict/refusal tests provide actual host runtime coverage; no other target is presented as runtime-tested.
+
+### Updated handoff
+
+The exact two production paths are independently acceptable for root-authorized source commit and subsequent root integration validation. No remaining source delta or reviewed-evidence blocker requires delaying that commit. Recheck the eventual commit blobs against these same hashes; a new source change needs a new frame. This author-tree 23-test green is not the integrated4493 combination with init applied, full Q039 completion, power-loss durability or Node transport/receipt adoption. No main merge/ship authorization is inferred.
