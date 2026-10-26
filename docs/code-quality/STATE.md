@@ -11,9 +11,9 @@
 
 ## 集成事实
 
-集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，分支 `integrate/code-quality-wave1`，HEAD **927422502316576b75405a7b65b140b4dc535fd9**，本次 tracked clean。
+集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，分支 `integrate/code-quality-wave1`，HEAD **4493ed3c54f18cd562759a396f3cce90191ea795**，本次 tracked clean。
 
-本次新增集成：当前 inventory `1d2640d2`、P4 test-only hop helper `5fe7869a`、严格 Doc apply `6e82847f → 92742250`。此前 GUI replay/gate、Q045 SSH 生命周期、blob core、Q041c、pending 完整性等保持。作者分支绿仅适用于其精确输入；9274 全组合尚未重新验证。
+本次新增集成：当前 inventory1d2640、P4 helper5fe、严格Doc apply9274、canonical descriptor263df47d→d16d83df、MCP回归fixture7550→e0c6abec与生产3e676325→4493ed3c。当前4493正常frontend/CLI/stub/Node及62不同相关父测试通过，独立证据审进行。作者106/187等历史绿不当成当前全仓组合绿。
 
 | 范围 | 已确认事实与边界 |
 | --- | --- |
@@ -31,10 +31,10 @@
 
 | 所有者 | worktree / branch / 基线 | 当前任务 |
 | --- | --- | --- |
-| root | wave1@92742250；plan总账 | 公共接口、独立审、集成与恢复。源码集成后按影响范围验证，主发布版保持。维护Q041d fresh build缺失GUI prerequisite。 |
-| mcp_worker_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，fix/quality-mcp-cancel@7550e4f0 +16源dirty | Q037 owned MCP worker/Running Control/hidden CLI+GUI hook、remote sweep、Windows typed durable handoff。当前唯一Cargo/gen槽。冻结145036源，2047输入含同源frontend/dist。CLI/stub/normalcheck/test compile通过，原真实IPC取消回归1父通过；worker/generation/approval/no-id/default进程检查继续。卡Q-037-mcp-worker.md。 |
-| doc_apply_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，fix/quality-transfer-initialization@92742250 +transfer.rs test-only | strict apply已交付。现Q039初始化crash恢复设计+首红fixture477b88e6，生产prefix未改。single exact .initializing、全gate、白名单控制、atomic no-replace方向认可，平台primitive待核。无Cargo槽，未授生产。卡Q-039-transfer-init.md。 |
-| doc_apply_review | 只读同上固定源；独占review卡 | MCP145036源审无阻断，原queued approval/cancel次序阻断已修。transfer init首红fixture/设计独审无阻断，写Q-039-transfer-init-review.md；不编译。MCP真实结果最终复核仍需派发。 |
+| root | wave1@4493ed3c clean；plan总账 | 当前组合62相关父+正常构建通过，维护集成、独立审、恢复及Q039 Node/outbound接口。Q041d单源fresh build仍待实施；main不动。 |
+| mcp_worker_owner | agent-protocol fix/quality-mcp-cancel@3e676325 clean | 106父与Windows harness typecheck、最终delivery/cleanup已独审并集成。现只读Q037远端取消持久意图/公平pump/可查询receipt方案，新卡Q-037-remote-receipts.md；不源码不Cargo。 |
+| transfer_init_owner（接替capacity退出的doc_apply_owner） | recovery fix/quality-transfer-initialization@92742250 +2源dirty | 真实477b红已成立（SIGKILL后reserved/fresh均IoNotFound）。生产candidate01 transfer ba762514/platform05c2b296，1907输入双盘冻结，原父oracle不变，源独审无阻断。当前唯一Cargo槽，按原父exact→normalcheck→其余unit→integration12/已装平台metadata验证。尚无候选绿。 |
+| doc_apply_review | 固定源只读；独占review卡 | MCP最终106/delivery/commit审完成；descriptor5/commit审完成；init candidate01源审无阻断。现独立审root4493组合62及真实producer/输入/故障归因，后续init运行证据。 |
 | 旧fanout_owner/store_owner/native_helpers | 已交回源/卡/PID，无活动编译 | 大上下文capacity错误后停止，不自动重试。已有原始证据/refs保留。新派发使用最小上下文。 |
 
 ### Q037 当前精确证据
@@ -48,15 +48,24 @@
 
 ## 仍开放的完整目标
 
-1. Q037完成真实worker/批准取消/默认ACP-Pi-host/进程检查及独立证据审，再commit、集成及精确组合验证；远端取消receipt/fairness继续。
+1. Q037本地owned-worker批次已完成106作者父/独审/提交/集成，4493受影响组合62通过；远端取消receipt/fairness只读方案继续，整体Q037仍开放。
 2. Q039真实初始化中断红→恢复实现；当前DocTransfer descriptor/canonical VV/outbound spool/Node chunk、公平轮转、25MB真实收敛及Pair bootstrap。Stored和FlushedImport不能冒充网络Applied；不抬帧上限绕过。
 3. Q041完整fresh-source构建与制品来源；Q033 native上传取消、Q035 borrow lease；P1其余深审、P4工程约定与历史代码分类、P5最终同源App/用户流程。
 4. 每个任务关闭须满足PLAN规定的实现、适用检查、独立审、集成验证和必要App验收。中间基座不替代全仓完成；物理iPhone/IME/Windows/远程部署未知项明确保留。
 
 ## 资源与恢复
 
-- 唯一Cargo/native/gen槽属于mcp_worker_owner，其余不编译。统一quality-target，CARGO_INCREMENTAL=0；当前jobs1降低峰值，平时上限2。切树更新第一方mtime并核SHA不变/日志真实重编，防共享target陈旧artifact。
+- 唯一Cargo/native/gen槽属于transfer_init_owner，其余不编译。统一quality-target，CARGO_INCREMENTAL=0；当前jobs1降低峰值，平时上限2。切树更新第一方mtime并核SHA不变/日志真实重编，防共享target陈旧artifact。
 - 内外盘可用每次须≥5GiB（5,368,709,120B），掉盘/连续3I/O错误/容量越线只停自有PGID。外盘风扇坏/SMART不可读，用户允许继续；不动主App/服务/release/system swap。
 - 新storage-audit-20261026-9精确清理治理internal incremental：6805单链接+2518全部link均在同一managed cache的hardlink组，共11841paths/4,283,499,880 unique bytes；逐stat/link/无compiler与open handles核对。内盘3,915,485,184→8,224,882,688B。源码、证据、archives/binaries、用户服务未动。旧7/8回执仍保留；清理须新manifest，不复用旧授权路径。
-- 本次构建测得最低内约7.12GB/外约6.99GB；可用会变化，下次重新量。vm.swapusage曾used10.37GB只是观测，不当成所有容量变化原因。
+- root4493组合测得最低内12,795,060,224B/外6,611,914,752B；init接槽fresh内12,791,906,304B/外6,646,956,032B。可用会变化，下次重新量。vm.swapusage曾used10.37GB只是观测，不当成所有容量变化原因。
 - 全证据 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`，活动任务另有内盘源快照。恢复入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/RESUME.md` 与current-code-quality-docs只做应急副本；外盘dirty source不得按摘要覆盖。
+
+## 当前4493组合与Q039 descriptor
+
+- descriptor263df47d→d16d83df两源逐字匹配：doc_transfer687179dd/lib275a12d0。canonical domain+严格有序正counter/零省略/负拒绝、完整metadata预算与identity绑定；允许base-target并发。新codec不是bug不造red。正常Sync check+5单测、独立源码/日志/二进制审通过；仍未接outbound spool/Node wire，不能关闭25MB目标。
+- MCP最终3e676325恰16freeze源、7550是必需的三源首红fixture提交。root最初只取生产导致modify/delete测试冲突，完整abort后按7550→3e重放，未手工折衷测试。e0c6abec+4493ed3c源17文件（含Python fixture）逐字同作者交付。无main/ship。
+- 作者最终106不同父，2047普通/2048Windows输入稳定；Windows只harness交叉typecheck。全部登记PID消失，专属tmp264文件3,364,028B仅归属清理后空，delivery最终58文件约2.24MB双盘。见MCP作者/review卡和commit-source-receipt。
+- root `integrated-4493-final-01/02` 正常npm offline prebuild/gen/tsc/Vite、CLI/stub build、normalNode check与**62不同普通父**：原IPC1+worker9+session4+hop9+Doc22+codec5+core integration12。子worker与run01已过8case不重复计。2230输入含155生成与277dist一致，三实际二进制前后匹配；总216.083s、12ownPGID全退。
+- run01唯一worker组失败在SSH broker bind前：root使用的嵌套TMPDIR过长触Darwin SUN_LEN，非生产取消或SSH策略失败。run02只改为短run-owned Khor cache TMPDIR，源码/断言/三binary完全相同即全绿；原失败完整保留。run02初版runner SyntaxError发生在执行前，也单独保存setup失败并修正解析，不计业务红。
+- root只清这两run自己创建的tmp：250单链接files/3,363,128B，先manifest/stat/owner/hash/lsof0后逐文件删；短TMP本已空。候选binary进程0，主App/服务不动。root集成证据独审进行，详Q-047；当前未知项与全仓未完成边界不变。
