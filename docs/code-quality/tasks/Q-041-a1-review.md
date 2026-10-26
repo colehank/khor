@@ -96,3 +96,13 @@ root已明确接收边界：随后补transfer/receipt失败的回收不确定诊
 已修loader阻断可关闭；当前固定a1摘要/来源/新canonical边界可继续集成前收口。root按上述SSH失败不确定/cleanup诊断追加小补丁后，应对应复审/回归并在Q045保留真实协议缺口；没有将它们伪装“全失败已释放”。
 
 作者临时test写权已交还，之后仅本卡写入；未改其他生产源，STATE未碰。最终七项SHA如上，root可在此边界继续。没有本任务Cargo/SSH/安装/服务进程；安全loader窄回归scratch由TemporaryDirectory回收。
+
+## 最终追加差异复审（2026-10-26）
+
+上方固定帧保留为历史。root已将a1七文件保存为 **59da27746e56693e7c3d95df9bae73edb03c1171**；本次只读复审以下后续差异，无新增阻断：
+
+- `join.rs` **d6947bc420e6d515f093d3c06e19155b0874cbb1c5c3d1c907d94d83938b61fa**：transfer run错误/非零和receipt解析失败均追加“传输未确认，可能存在未认领归档”；已知path安装失败后若精确cleanup未成功，保留原run错误或原stderr末行，再追加cleanup未确认。没有声称诊断即完成回收。真实SSH超时/丢receipt归属Q045，仍开放。
+- `check-release-install.py` **2f9b7c64c9107b6aff00599a3e7b77e26f18ed17bb707ddf8f481617d987714f** 与generator **6be81621a7da711809c156ba49291a4b393eb69cc7277721caa3a2c7700d9586**：installer与canonical改为`read_bytes().decode("utf-8")`，generator写回`write_bytes`，不再由通用换行转换把CRLF差异抹平。root将CRLF mutation加入既有门；`Q041/a1-final-byte-shell.log`明确实际31 tests/31通过，外层1 test是包装运行，不另算32条组件。
+- install/canonical/onset/onset-lib内容SHA仍分别为上表d303/a285/8c0e/2d3c，未借字节API调整更改产品helpers。
+
+验证边界：旧`a1-join-green-01`的8/8对应 **c377** join；**不能借给d694诊断后源**。本次没有Cargo槽/没有编译，d694等待root精确源回归。Shell31/31是root日志的核验，本审查未重复运行整个安装门。a1源写权仍在root，作者只补本卡；b镜像另见[Q-041-b-review.md](Q-041-b-review.md)。
