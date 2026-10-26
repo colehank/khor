@@ -71,6 +71,46 @@ fn doc_must_sync(name: &str) -> bool {
     matches!(name, "devices" | "seen" | "pins") || name == crate::wide::BROADCAST
 }
 
+enum DocSyncStart {
+    Bootstrap,
+    Known(String),
+}
+
+enum DocSyncError {
+    Load(String),
+    Exchange(String),
+}
+impl DocSyncError {
+    fn reason(&self) -> &str {
+        match self {
+            Self::Load(why) | Self::Exchange(why) => why,
+        }
+    }
+}
+
+#[derive(Default)]
+struct SyncProgress {
+    moved: usize,
+    first_failure: Option<String>,
+}
+impl SyncProgress {
+    fn fail(&mut self, why: String) {
+        self.first_failure.get_or_insert(why);
+    }
+    fn merge(&mut self, other: Self) {
+        self.moved += other.moved;
+        if let Some(why) = other.first_failure {
+            self.fail(why);
+        }
+    }
+    fn finish(self) -> Result<usize, String> {
+        match self.first_failure {
+            Some(why) => Err(why),
+            None => Ok(self.moved),
+        }
+    }
+}
+
 /// A document's version, as a [`Request::Versions`] digest: blake3 of
 /// its canonical spelling, 16 bytes.
 fn version_digest<D: Doc>(loaded: &khor_sync::store::Loaded<D>) -> Vec<u8> {
@@ -10394,49 +10434,93 @@ impl Node {
         };
         self.take_readings(line, d, kinds, changed).await;
 
-        let mut moved = 0usize;
-        for (name, theirs) in differ {
-            let synced = with_doc!(self, name.as_str(), |loaded| self
-                .rounds_from(line, &name, loaded, wire::Peer::knowing(theirs), 1)
-                .await);
-            // **Two epochs of one pile do not stop the round**
-            // (`khor_sync::store::load_pile`): the machine that has not
-            // re-seeded yet stays apart in that pile until it does, and
-            // everything else syncs as before. Said once, like a failure.
-            let apart = synced.as_ref().err().is_some_and(|why| wire::other_epoch(why));
-            if (doc_must_sync(&name) || apart)
-                && let Some(w) = crate::journal::sync_failed(&d.id, &name, synced.as_ref().err().map(String::as_str))
+        let docs = differ
+            .into_iter()
+            .map(|(name, have)| (name, DocSyncStart::Known(have)))
+            .collect();
+        let mut progress = self.sync_documents(line, d, docs).await;
+        // Readings can depend on documents that did advance, even in a partial round.
+        if progress.moved > 0 {
+            let refreshed = async {
+                let again = self.versions_request(d, kinds, Vec::new());
+                let answer = self.exchange_on(line, &again).await.map_err(Miss::words)?;
+                if let Some((_, changed)) = versions_answer(answer)? {
+                    self.take_readings(line, d, kinds, changed).await;
+                }
+                Ok::<(), String>(())
+            }
+            .await;
+            if let Err(why) = refreshed {
+                progress.fail(why);
+            }
+        }
+        progress.finish().map(Some)
+    }
+
+    /// Load failures remain errors even for optional documents. A refusal from
+    /// an older peer is still best effort for optional documents.
+    async fn sync_document(
+        &self,
+        line: &Line,
+        name: &str,
+        start: DocSyncStart,
+    ) -> Result<usize, DocSyncError> {
+        let loaded: Result<Result<usize, String>, String> = async {
+            with_doc!(self, name, |loaded| Ok(match start {
+                DocSyncStart::Bootstrap => self.rounds(line, name, loaded).await,
+                DocSyncStart::Known(have) =>
+                    self.rounds_from(line, name, loaded, wire::Peer::knowing(have), 1)
+                        .await,
+            }))
+        }
+        .await;
+        loaded
+            .map_err(DocSyncError::Load)?
+            .map_err(DocSyncError::Exchange)
+    }
+
+    async fn sync_documents(
+        &self,
+        line: &Line,
+        device: &DeviceInfo,
+        docs: Vec<(String, DocSyncStart)>,
+    ) -> SyncProgress {
+        let mut progress = SyncProgress::default();
+        for (name, start) in docs {
+            let bootstrap = matches!(&start, DocSyncStart::Bootstrap);
+            let synced = self.sync_document(line, &name, start).await;
+            let apart =
+                matches!(&synced, Err(DocSyncError::Exchange(why)) if wire::other_epoch(why));
+            let local_failure = matches!(&synced, Err(DocSyncError::Load(_)));
+            if (doc_must_sync(&name) || apart || local_failure)
+                && let Some(note) = crate::journal::sync_failed(
+                    &device.id,
+                    &name,
+                    synced.as_ref().err().map(DocSyncError::reason),
+                )
             {
-                self.wires.note(Some(&d.id), w);
+                self.wires.note(Some(&device.id), note);
             }
             match synced {
-                Ok(n) => {
-                    moved += n;
-                    if name == "devices" && n > 0 {
+                Ok(bytes) => {
+                    progress.moved += bytes;
+                    if name == "devices" && (bootstrap || bytes > 0) {
                         self.follow_after_sync();
                     }
-                    if n > 0 && name == crate::wide::BROADCAST {
+                    if !bootstrap && name == crate::wide::BROADCAST && bytes > 0 {
                         self.take_arrived();
                     }
                 }
-                Err(why) if doc_must_sync(&name) && !apart => return Err(why),
-                Err(_) => {}
+                Err(error) => {
+                    // Keep modern epoch isolation and legacy error reporting;
+                    // neither may prevent the next independent document's round.
+                    if local_failure || (doc_must_sync(&name) && (bootstrap || !apart)) {
+                        progress.fail(error.reason().to_owned());
+                    }
+                }
             }
         }
-        // **Readings that the documents just moved can change are asked
-        // again.** Over there a row's word is derived from documents this
-        // round carries — a watermark this machine just pushed is what
-        // turns 完成 into 空闲 — and the readings above were taken before
-        // it arrived. Only after a round that moved something: a quiet
-        // round stays the one exchange.
-        if moved > 0 {
-            let again = self.versions_request(d, kinds, Vec::new());
-            let answer = self.exchange_on(line, &again).await.map_err(Miss::words)?;
-            if let Some((_, changed)) = versions_answer(answer)? {
-                self.take_readings(line, d, kinds, changed).await;
-            }
-        }
-        Ok(Some(moved))
+        progress
     }
 
     /// A round's opening [`Request::Versions`] for `d`: every document's
@@ -10761,121 +10845,19 @@ impl Node {
     /// two exchanges, every reading asked. For a machine whose khor does
     /// not know [`Request::Versions`].
     async fn sync_everything(&self, line: &Line, d: &DeviceInfo) -> Result<usize, String> {
-        let mut moved = 0usize;
-        {
-            let mut loaded = self.devices_loaded()?;
-            moved += self.rounds(line, "devices", &mut loaded).await?;
-        }
-        self.follow_after_sync();
-        {
-            let mut loaded = self.seen_loaded()?;
-            moved += self.rounds(line, "seen", &mut loaded).await?;
-        }
-        // Pins ride the same pump as the read watermark, and for the same
-        // reason: both say something about a session that belongs to the
-        // session rather than to the screen looking at it.
-        {
-            let mut loaded = self.pins_loaded()?;
-            moved += self.rounds(line, "pins", &mut loaded).await?;
-        }
-        // What is on the session list (docs/SHELL.md 第八轮): an import
-        // on one machine is a row on every machine. Best effort — an
-        // older peer refuses the doc by name, and that must not cost the
-        // rounds behind it; what it costs is that peer's list still
-        // showing whatever it found on its own.
-        {
-            let mut loaded = self.roster_loaded()?;
-            if let Ok(n) = self.rounds(line, "roster", &mut loaded).await {
-                moved += n;
-            }
-        }
-        // Directory pins too — a shortcut chosen on the phone must be
-        // there when the desk opens the same machine's disk. Best
-        // effort, unlike the two above: a peer that predates the table
-        // refuses the doc by name, and that refusal must not cost the
-        // chat rounds behind it — it only means older shortcuts there.
-        {
-            let mut loaded = self.dirpins_loaded()?;
-            if let Ok(n) = self.rounds(line, "dirpins", &mut loaded).await {
-                moved += n;
-            }
-        }
-        // The workspaces, on the same best-effort footing: a workspace
-        // declared on the desk must be on the phone's list, and a peer
-        // that predates the table refuses the doc by name — which must
-        // not cost the rounds behind it. What it costs instead is a
-        // shorter list over there, never a wrong one.
-        {
-            let mut loaded = self.workspaces_loaded()?;
-            if let Ok(n) = self.rounds(line, "workspaces", &mut loaded).await {
-                moved += n;
-            }
-        }
-        // Web pins, same best-effort footing as directory pins and for
-        // the same reason: an older peer refuses the doc by name, and that
-        // must not cost the rounds behind it.
-        {
-            let mut loaded = self.webpins_loaded()?;
-            if let Ok(n) = self.rounds(line, "webpins", &mut loaded).await {
-                moved += n;
-            }
-        }
-        // Where this person has been, on the same best-effort footing
-        // and for the same reason: an older peer refuses the doc by
-        // name, and that must not cost the rounds behind it. What it
-        // costs instead is a phone whose suggestion list stops at what
-        // that phone itself has opened — no wrong answer, a shorter one.
-        {
-            let mut loaded = self.recents_loaded()?;
-            if let Ok(n) = self.rounds(line, "recents", &mut loaded).await {
-                moved += n;
-            }
-        }
-        // The agent registry (批⑥): an agent named on one machine is
-        // offerable on every machine, which is the whole reason it is a
-        // document. Best effort on the same footing as the two pin
-        // tables above — a peer that predates the registry refuses the
-        // doc by name, and that refusal must not cost the rounds behind
-        // it; it only means that machine offers what it was told
-        // locally.
-        {
-            let mut loaded = self.agents_loaded()?;
-            if let Ok(n) = self.rounds(line, "agents", &mut loaded).await {
-                moved += n;
-            }
-        }
-        // Registered API accounts — descriptions only, the keys never
-        // leave the machine that holds them (`khor_sync::accounts`).
-        // Same best-effort footing: an older peer refuses the doc by
-        // name and the rounds behind it still run.
-        {
-            let mut loaded = self.accounts_loaded()?;
-            if let Ok(n) = self.rounds(line, "accounts", &mut loaded).await {
-                moved += n;
-            }
-        }
-        // Session names, on the same best-effort footing as the tables
-        // above and for the same reason: a peer that predates the table
-        // refuses the doc by name, and that refusal must not cost the
-        // chat rounds behind it — it only means older names there.
-        {
-            let mut loaded = self.titles_loaded()?;
-            if let Ok(n) = self.rounds(line, "titles", &mut loaded).await {
-                moved += n;
-            }
-        }
-        for board in self.known_wide() {
-            if let Some(dir) = chat::wide_dir(self.root(), &board) {
-                let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
-                // The broadcast must sync for the round to count
-                // (`doc_must_sync`); any other board is best effort.
-                match self.rounds(line, &board, &mut loaded).await {
-                    Ok(n) => moved += n,
-                    Err(why) if doc_must_sync(&board) => return Err(why),
-                    Err(_) => {}
-                }
-            }
-        }
+        let docs = ROUND_DOCS
+            .iter()
+            .map(|name| ((*name).to_owned(), DocSyncStart::Bootstrap))
+            .collect();
+        let mut progress = self.sync_documents(line, d, docs).await;
+        // Discover boards after the global documents, as in legacy rounds.
+        let boards = self
+            .known_wide()
+            .into_iter()
+            .filter(|name| chat::wide_dir(self.root(), name).is_some())
+            .map(|name| (name, DocSyncStart::Bootstrap))
+            .collect();
+        progress.merge(self.sync_documents(line, d, boards).await);
         // Remember what the far side reports about its own sessions:
         // when it goes unreachable, its last word plus the report's age
         // is all the UI may honestly show. Best effort — a failure here
@@ -10948,7 +10930,7 @@ impl Node {
         if let Ok(Response::Usage { usage }) = self.exchange_on(line, &Request::Usage).await {
             let _ = self.cache_peer_usage(&d.id, &usage);
         }
-        Ok(moved)
+        progress.finish()
     }
 
     /// A pen retired while taking in what `peer` sent
