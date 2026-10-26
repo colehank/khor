@@ -54,6 +54,8 @@ jobs:
           cache: npm
           cache-dependency-path: apps/gui/package-lock.json
       - run: npm ci
+      - run: cargo check --locked -j 2 -p khor-node --lib
+        working-directory: .
       - run: npm test
       - run: npm run gates && npm run mobile:static
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit

@@ -9,6 +9,7 @@ khor-a2a.workspace = true
 a2a-client = { package = "a2a-client-lf", version = "=0.2.9" }
 khor-acp = { path = "../acp" }
 agent-client-protocol = { version = "3.5", features = ["process", "stdio"] }
+futures = "0.3"
 khor-core.workspace = true
 vt100.workspace = true
 khor-catalog.workspace = true
@@ -135,10 +136,9 @@ dispatch2 = "0.3"
 [dev-dependencies]
 tiny_http = "0.12"
 # Independent official HTTP server for native-agent interoperability tests.
-# Apache-2.0; axum is MIT, futures is MIT OR Apache-2.0.
+# Apache-2.0; axum is MIT.
 a2a-server = { package = "a2a-server-lf", version = "=0.5.3", default-features = false }
 axum = "0.8"
-futures = "0.3"
 # The tests' own relay (`tests/util`'s `hermetic`): iroh-relay's server
 # in plain HTTP on loopback, the one `khor relay --dev` embeds — already
 # in the tree under the CLI, so no new package. Every scratch home binds
