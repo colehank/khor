@@ -777,3 +777,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 
 质量 CI 的 `windows-agent-process` 在真正 Windows runner 上运行 `cargo run --locked --manifest-path crates/node/tests/windows-process-harness/Cargo.toml`：生产 Job/管道后端的 argv/env/UTF16、创建时纳管、子孙、Drop 即刻终止、阻塞 I/O 独立取消与公共监督器首次 Stop 期限。macOS 的交叉 `cargo check` 只证明编译，不能替代该 job 的执行结果；本地非 Windows 运行 harness 会明确失败。
+
+
+`npm run native-events`：生产hear与真实锁定Tauri SDK/core/event快照的注册/清理时序，Chrome/WebKit22组覆盖迟到eval、关闭owner、部分拒绝、重复cleanup、同event重装与web noop。加入 `test:interaction`，`NATIVE_EVENTS_CHECK_DIR`保存源指纹/资源计数；CI空 `PLAYWRIGHT_CHROMIUM_CHANNEL` 使用已安装Chromium。IPC时序由fixture控制，真实App的Rust listener与JS callback释放另验；不能由零unhandled推断所有资源释放。依赖更新须复核快照契约。
