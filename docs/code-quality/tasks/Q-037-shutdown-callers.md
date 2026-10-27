@@ -42,3 +42,13 @@ root已确认管理setup是本轮正常退出必须覆盖的producer，并批准
 - Source02新增两父：`shutdown_joins_pi_and_acp_setup_readers_and_canceled_waiter_cannot_allow_late_credentials`（真实Pi/ACP同Root setup，native reap后仍hold Rust cleanup，取消shutdown waiter保seal，释放后实际Closed、late credential和Root不重建）；`shutdown_preserves_credentials_and_account_committed_before_setup_process_exit`（真实credential已写、Node已commit account而native stdout仍开，shutdown需join且保数据）。连同上节4父共6 distinct业务父，内部worker不额外计数。
 - Source-only历史source01六payload已双盘保全；当前coherent source02十payload亦双盘保全，外盘 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q037/shutdown-lifecycle-source02`，内盘 `/Users/zgh/Library/Caches/khor-code-quality/recovery/Q037/shutdown-lifecycle-source02`；manifest SHA256 `4f079e4d86c5956c4ba1d3c1bd2d660e630a4a05364bde323a1f93925b9eca7f`。含逐payload SHA与tracked.patch（新增runtime.rs以payload保存）；基线ec404、dirty未提交。
 - 已做静态：十payload Rust解析、git diff --check、Python fixture AST、6父selector唯一性、Q055两个helpers与R2 remote_cancel/delegation逐字节仍等于HEAD。**Cargo=0、native功能父=0、App真实Exit=0。** 原R1/close/paired断言未删/未放松，需后续同源build、新6父＋适用旧R1/close/ACP setup回归、GUI正常构建及真正App Exit。当前不使用共享native槽，由root调度、独立只读审查与集成；不标done，不commit中央卡。
+
+## 2026-10-28 root独审修订：最后stop与代次reservation（source03，未运行）
+
+用户最新范围：已经开始的本轮做完，后续新独立问题只记录下一轮；本轮不扩其它owner、一般NodeIO或新功能。source02保留为历史恢复快照，已按root独审意见继续修订，不将快照冻结等同全任务暂停。
+
+root确认既定代次契约的一项阻断：原Serve::Drop先serving=false，锁外才按Root stop；本代已retired时，新serve可插入转代并启动producer，随后旧Drop误停新代。source03仅改2路径：`khor_agent_runtime.rs`在seal后始终保留serving reservation，锁外完成最后stop后才在匹配generation时释放；不依赖debug_assert保证安全。原启动失败无terminal seal与正常stop后新owner重开契约保留。
+
+原restart业务父中加入同一真实serve最终Drop屏障：正常drain已ack、旧owner尚未执行最后stop时，显式新owner lease必须Busy；释放屏障并等旧serve实际完成后，原后续真实新Node/新serve启动与旧Node拒绝断言继续执行。没有新增专项父/矩阵，仍6业务父。source02其余8payload逐字节保留，Root/producer边界未扩。
+
+source03双盘：外盘 `Q037/shutdown-lifecycle-source03`、内盘同相对目录；manifest SHA256 `4e682bd69dc369a5fe96ba61ff8ea9b11ad021a86f669f28abe75162af2e0d01`。两个变更Rust解析、diff-check、严格两路径差异与6父数量检查已过；Cargo/native/App仍0，等待root既定独审及授槽。本卡未提交中央index；源树仍dirty未提交，source01/02完整保留。

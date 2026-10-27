@@ -922,3 +922,10 @@ root独核B11真实收敛后明确授权提交，已提交 **d7a4192dfde6e589005
 N1 source11/crash14、trust15与root Q054都已集成；组合run04的正常CLI/Node＋61 distinct实际通过（333.684s/81dual，root核），包含原flow quiet/Busy/purepull、crash sole业务父及trust18。paired另target、真实release32MiB边界和整App不在该61中。
 
 node_transfer_owner已返唯一native槽，现回作者树 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery@27093f4a4ff94afcdffa36aa4cd6143e11ecaaad` 实作本卡已批准N2完整契约：大Pair04与烧票恢复、durable caller/issuer claim-intent/root fence、bounded devices与signedRoster/Vouch，旧Khor wire无fallback。不得用另一轮纯types/plan提取代替垂直修复。允许Node link/proto/trust/lib/doc_transfer_state(+io/registry)/link_doc_transfer及必要private pairing模块/tests；不改a2a/R2/GUI/依赖，Q054 typed gate行为保留。先coherent源+原红oracle/恢复fixtures，root独审后统一授Cargo/native，不先运行或扩大热/磁盘负荷。R2由另一owner在R1树独立实施。
+
+
+## N2 candidate16已交源码独审（root）
+
+作者树27093f4a上9tracked+3new共12路径，双盘29文件，patch SHA256 `9c36f7fa102a8e160fa0b712d8185dc54666ff8c51a32fca507aa863365ac9dc`，manifest `73a27f9e4b4e3c996b07c65bc12b533aa89a0a2145354d34a6de216dee2f36e7`。外盘 `Q039/node-pair-vouch-candidate16`。完整Pair/Vouch已启动垂直路径及恢复fixtures交审，12源Rust解析/diffcheck过；Cargo/native/commit为0，不标N2修复。shutdown_owner非作者独审；作者只准备既定验证入口，不launch。2普通+3ignored新业务父、1helper不计父，原29,224,082B Pair04 90s门、原pairing语义保留，只invite文件定位由token转tokenHash。
+
+沿现有State/TransferStore/worker与N1 pump，没有whole-table/inline roster fallback。Pair设备bootstrap用现有canonical Snapshot以保原Pair04数据/64MiB门，normal N1仍Updates。863 git-listed frame不是实际native closure，后续用Q055实际selected/ignored来源。独立新问题如已有normal devices plan冲突仅登记下一轮，不安全删除plan、不扩本轮范围；用户明确已开始做完，后续只记录。

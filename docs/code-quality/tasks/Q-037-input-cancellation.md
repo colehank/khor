@@ -1,6 +1,6 @@
 # Q037 R2：未知Native input的原子取消与晚到fence
 
-状态：working，源码与fixture实现已授node_test_review；无native槽。作者树 `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，基线 `8292e6543d26b323e99e7bc99e65ad2524a9bf12` clean。root独审/统一集成；main与用户App不动。R1当前31回归不可弱化，HTTP无能力继续Unknown。
+状态：已提交并集成；作者当前源码59父已验证，集成组合/App仍待。作者树 `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，基线 `8292e6543d26b323e99e7bc99e65ad2524a9bf12` clean。root独审/统一集成；main与用户App不动。R1当前31回归不可弱化，HTTP无能力继续Unknown。
 
 ## 已批准最小接口
 
@@ -27,3 +27,14 @@ source01 11路径/2354输入候选（20dual历史快照）尚未native。root先
 02冻结 `Q037/remote-r2/input-cancel-candidate02-20261027T103735Z`，11源/2354输入、21dual由root逐file核；manifest5f6d6b71…44c3d、patchd3b756ad…b5e3。仅delegation/remote_cancel/new私测三路径相对01改变。collect现合并有界source/receipt inventory并共用identity校验，scan_complete后缺receipt不再漏计；坏/丢scope不允许task-wide Cancel且保原字节。original_parent短gate、bounded existing read+caller/opaque校验、首次file/dir sync，gate释放后再links.lock。新增CLI负面恢复父和真实双thread/坏index普通父，root已读，无新功能阻断。
 
 已授node_test_review：先等价移入ec404 receipt Peer blocking两行并删未用参数，冻结03保留01/02；再唯一槽做当前normalCLI/Node/A2A delegation libtest/acp-stub/delegation_wire五必要build及新10＋R1旧31＋A2A旧ordinary14=预期55 distinct。actual inventory核数，helper不充父；原多summary/条件保持，worker/stub仅test child env，来源/5GiB/300/720/owned/短TMP/dual沿既有控制。当前仅授权，尚无这轮实际结果；产品失败需停报，不因source审通过标done。
+
+
+## R2 run05同源59父完成与提交集成（root）
+
+当前实现提交 `828fbd3167732c27fc4bb1718474a41961882279`，root cherry-pick至 `aa9f80caab8128f648c7e99e8222de3a76494985`。12源payload已核：非proto 11文件字节相同，proto新增测试块相同且保留N1已有增加；作者/集成树均clean。不含deps/locks/生成物/文档。尚未把作者树结果冒集成App绿。
+
+source01/02两审查缺口已修；最后P1 sticky input-scoped修复让首次Unknown在receipt前持久source标记，normal Send迟到补task仍保exact input，坏/丢receipt不降级task-wide，links.lock Busy有限Deferred留cursor。新增负面父实际允许错误task Cancel到达peer并检查新turn状态，覆盖正常出版、Retry、坏/丢记录与锁重试，不能仅靠mock拒绝坏请求制造绿。
+
+run05五个必要产物正常build/require-provenance全过：CLI65.530s、Node66.810s、A2A0.549s、stub0.445s、wire45.602s（A2A/stub复用同key有实际来源证明）。59 distinct=既定58+已开始P1父，70阶段全0，311.918628s。helper成功summary不另计业务父，SSH环境内外summary合为1父。完整2354输入before=after=current、94双盘文件逐SHA，root已读59个真实raw及result并实核288 owned groups消失、TMP无、cleanup/guard/forced空。最小外12238622720B/内8644415488B。槽已归还。
+
+外盘证据 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q037/remote-r2/input-cancel-validation-run05`；内盘 `recovery/inflight-source/Q037-REMOTE-R2/input-cancel-validation-run05`。原run01 wire私有fixture编译失败0父；run02新9绿但wire自重执行缺hook清理红；run03新10+旧26绿后fixture首entry误读links.lock失败；run04只受控中断编译0父。均保留，不回填。用户收口约定：已开始做到既定验收，后续独立问题只记下一轮，不扩当前矩阵。HTTP无能力继续Unknown，全远端停止与真正App退出均未由本片证明。
