@@ -982,3 +982,10 @@ diag06同单Node＋原恢复父已启动，session16191/runner72396，Cargo72491
 `node-pair-vouch21-diag-run06`实际Node build0/104.10s，原恢复父1 distinct绿（2helper＋外父3个1/0/0不充父），anchor/flushed两次真实SIGKILL9、fresh Node::open/固定target/并发Pin、第一次续配及第二次同caller Pair、wrongcaller认证拒绝与leave保留全部原断言过。113.668577s/18dual/1932输入稳定，5组/runner72396全退、TMP无、cleanup/guard空；root逐raw/18dual/实际PGID核。Node receipt SHA `46d136f2a2a755e1a016e8c07d5ad69729965e1a13a44e6dea9e63df1e8f1856`。
 
 原47完整验收full07已接续，未重编Node：既有require_provenance实际核同源diag06 receipt并记node_build_origin，不冒本run Node build；正常Node/Pair04和pairing两个integration target实际build/proof与三产物inventory均过。runner `a4f929bebf6b8f69e55adb4d85fb4f652d37b933063ae325cd9eedeea4448df6`，data `e70e3c1e315f0fa7543656c2826090920bb656275dae7ce3885510b0e00115aa`，7dual/1932/原3007205GiB，session3224/runner76765。当前前8父真绿，case09原Pair04在跑；原90s、12288×64、>24MiB/<=64MiB、samecaller/thirdcaller/VV/root等原oracle不变，尚不能称Pair04/47全绿。唯一槽仍N2，shutdown plan02 READY等完整归槽。
+
+
+### full07原Pair04真90s红，改用既有同源单父观察；槽转shutdown
+
+原Pair04已实际到prepared Snapshot29,223,920B/epoch1（>24MiB/<=64MiB）；first public Pair在原OPERATION=90s内未返回，worker95.00s/外父95.09s报Elapsed。不是旧inline cap错误；当前raw只prepared→超时，不能归因CPU/IO/网络/epoch/某具体phase，不升预算、不减12288×64数据或放松oracle。原raw SHA `b938e14c1b758e07a8cf70763b25132eb85ca0a57a90635e65174b258d5c552e`。整run189.664275s，8 distinct绿、Pair04失败、38未跑；35dual/1932前后current一致，三actual产物稳、18PGID与runner76765全退、/tmp/n2f21无、guard/cleanup空，root核raw/全部双盘SHA/实际PGID。
+
+唯一槽已明确归还并转node_test_review运行已就绪shutdown37/Tauri。node_transfer_owner只读准备当前same-source Pair04 binary+receipt的单原父重放，既有require_provenance复用，无Cargo/新fixture；计划由root在下一独占运行只对确切owned helper PID做一次5s /usr/bin/sample及必要private文件size/phase观察，先区分CPU重复load/export、网络/锁等待或Pending空转。此时只准备，不native、不猜改生产、不新性能框架/矩阵；新独立问题留下一轮。source21仍dirty12原样，原47剩余验收保持。

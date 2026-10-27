@@ -67,3 +67,8 @@ node_test_review未launch已归还槽，N2先实际运行；避免环境准备�
 ### shutdown plan02 READY（37父＋normal Tauri，未launch）
 
 入口 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q037/shutdown-validation-plan02/run.py`，runner SHA `2bc5ee7cfbbfd58e78411a6db718a81122d5db76d1d05b90098a7c6554094c42`，data `addb46fde7ed7de1805d1451050c2e051e86df9b2a17968a44f884d497a2e66c`，5dual。沿原controller最小换2378当前输入/434ignored/normalCLI+Node两build，new6先跑（各外内summary不另计父）＋原R1 Node30＋真实accounts原1=37，最后正常Tauri caller check。独立ACP旧全矩阵不加，manage_on同义wrapper原driverbody不改且新6含实际initialize/authenticate/reap。root已读plan01全runner，并要求plan02仅两guard行显式target外盘持续5GiB（ROOT现内盘不可只查两内盘路径），原300/720/5GiB/owned/proof/资源门全保。当前READY无native，N2唯一槽未归还；source03仍未编译/运行/App验收。
+
+
+### plan02实际启动（未有业务结果）
+
+N2 full07 terminal归槽后，root正式授node_test_review唯一native槽。已启动session39349/controller86640，source03十payload/current2378与runner2bc5ee…94c42预核一致，metadata0/1.15s，现build-cli。仍normalCLI+Node两build/新6+旧R1 Node30+真实accounts1=37、normalTauri callercheck；未称App Exit绿。N2仅并行只读准备原Pair04同源单父采样，不会再启动native/编译。原双盘5GiB与有限/owned/proof/dual门不变。
