@@ -989,3 +989,14 @@ diag06同单Node＋原恢复父已启动，session16191/runner72396，Cargo72491
 原Pair04已实际到prepared Snapshot29,223,920B/epoch1（>24MiB/<=64MiB）；first public Pair在原OPERATION=90s内未返回，worker95.00s/外父95.09s报Elapsed。不是旧inline cap错误；当前raw只prepared→超时，不能归因CPU/IO/网络/epoch/某具体phase，不升预算、不减12288×64数据或放松oracle。原raw SHA `b938e14c1b758e07a8cf70763b25132eb85ca0a57a90635e65174b258d5c552e`。整run189.664275s，8 distinct绿、Pair04失败、38未跑；35dual/1932前后current一致，三actual产物稳、18PGID与runner76765全退、/tmp/n2f21无、guard/cleanup空，root核raw/全部双盘SHA/实际PGID。
 
 唯一槽已明确归还并转node_test_review运行已就绪shutdown37/Tauri。node_transfer_owner只读准备当前same-source Pair04 binary+receipt的单原父重放，既有require_provenance复用，无Cargo/新fixture；计划由root在下一独占运行只对确切owned helper PID做一次5s /usr/bin/sample及必要private文件size/phase观察，先区分CPU重复load/export、网络/锁等待或Pending空转。此时只准备，不native、不猜改生产、不新性能框架/矩阵；新独立问题留下一轮。source21仍dirty12原样，原47剩余验收保持。
+
+
+### run08真实单父采样与单函数最小优化已授
+
+单原Pair04 runtime-only plan08（无Cargo/源码或mtime变动）require同源receipt `216023c0c0609c4fb054ccd4f67def800fa2646159b3ce4668f0e49ff3ce7be4`，再次firstPair90s超时/0父，97.663s/16dual/1932输入稳定/3组与controller2807、父2932、helper2934全退、/tmp/n2p21清。raw SHA `123a53259a0bd44a8ca41d100d1e7e34050b887f320b78615e28a490c595f242`。原红不回填。
+
+root独立核PID2934的exe/start/PPID2932/PGID2932与exact helper参数、真实prepared后，仅一次/usr/bin/sample5s（sampler4662/exit0，组已退），输出独立sibling `node-pair-vouch21-pairdiag-root-observation08`，6dual闭合。实际栈read_outgoing1269→outbound::resume936→body::validate_body619→Loro metadata decode564；open_existing/recover/hash约330。嵌套计数不相加为CPU百分比。caller body4194304→4718592B、offsets1224→1368，仅两256KiB片；source完整29226805B仅mtime变不冒进度。未读/打印payload、票或签名。证据支持反复全body解析，不能仅凭sample宣称预计提速。
+
+owner/root核当前Ready只能来自outbound::prepare在stage前已完整validate_body的本地spool（含Preparing恢复），网络不能创建此outbound Ready；每次core.open_existing仍作owner/gate/recover/full digest/progress校验。root批准source22只改State::read_outgoing：原auth/source/dst/binding/exact Ready/fresh epoch、offset/EOF/256KiB门保留；改core.open_existing→显式VerifiedComplete→read_verified填满合法shortread，返回owned bytes前drop Sink。普通库resume与接收apply_checked不变，无跨await Sink/Loaded、无全局cache/框架；不是O(chunk)宣称。
+
+下一唯一槽已授owner做normalNode+原Pair04一个integration build/来源＋原case09一个父，原90s/数据/3007205GiB/owned/dual，CLI/libtest/pairing不构；先交source22 delta与实际launch，若仍红按实报，不扩其它优化。shutdown已3707→dc98提交整合，独立Q055 GUI env缺口只记下轮。

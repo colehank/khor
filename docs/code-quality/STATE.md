@@ -6,7 +6,7 @@
 
 - 完成全仓功能审计、按风险修复/重构、Clean Code工程治理和最终同源App验收；多智能体协作与压缩恢复贯穿全程。任一首批或库基座不能代替完整目标。
 - 未上线，不保旧Khor端fallback/迁移矩阵；统一当前协议。认证、epoch、数据完整性、实际支持平台及外部ACP声明能力仍保留。
-- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@aa9f80caab8128f648c7e99e8222de3a76494985`，两树最近核对均clean。用户既有App/服务/release不动。
+- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@dc98d327a5c218bd8b1fa1ac4f1d6a6aca2bfebb`，两树最近核对均clean。用户既有App/服务/release不动。
 - 权威协调目录是本目录；实现树同名文档为历史副本。外盘新资料放 `/Volumes/disk0/Khor` 对应分类。
 
 ## 当前收口约定
@@ -27,11 +27,11 @@
 | owner | 实现树 / baseline | 当前状态 |
 | --- | --- | --- |
 | root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至b196992a（含取消31回归、Q055闭包输入修复、trust18提取）；现又集成Q054＋fixture至ec404，组合CLI/Node及61功能父已过，真正App/其余target待。 |
-| node_test_review | shutdown树 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery@ec404dd7` dirty10（R2作者828f已集成aa9） | source03独审无阻断；实际执行plan02唯一槽，session39349/86640，CLI+Node两build/新6＋旧30＋真实accounts1=37与normalTauri check；尚0业务父。 |
+| node_test_review | shutdown源树 `fix/quality-shutdown-lifecycle@3707c1fd` clean；已集成dc98d327 | CLI/Node来源与37distinct实际过，normalTauri Cargo check0；整run自动producer proof因两GUI env未知保持非绿，独立工具缺口只记下一轮。Root核61dual/239组清并提交exact10。 |
 | shutdown_owner | 复用Q055旧树 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-shutdown-lifecycle@ec404dd7` dirty10 | source03修复最后stop前释放代次reservation的已确认竞态，6业务父仅源码。现作为非作者只读审N2 candidate16；不改源、无native。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@27093f4a` dirty12 | N2 candidate16双审无阻断；run01编译类型错误0父，已最小修candidate17；run02三build过/新2绿后原小Pair发现空hint回归；source19 run04三build过/7父绿，恢复父helper失败后diag05定位双向archive同key覆盖；source21 recipient key四点修后diag06恢复父真绿；full07 8真绿＋原Pair04 90s超时/38未跑，保持source21，准备同源单父采样，现无native，不扩范围。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@27093f4a` dirty12 | N2 candidate16双审无阻断；run01编译类型错误0父，已最小修candidate17；run02三build过/新2绿后原小Pair发现空hint回归；source19 run04三build过/7父绿，恢复父helper失败后diag05定位双向archive同key覆盖；source21 recipient key四点修后diag06恢复父真绿；full07 8真绿＋原Pair04 90s超时/38未跑，保持source21，采样已证重复全body Loro校验，批准只改read_outgoing已Ready路径，source22待交/单Pair04定向，不新cache/框架，不扩范围。 |
 
-**当前唯一native槽已授node_test_review执行shutdown source03/plan02（session39349/controller86640，metadata0后build-cli）。N2 full07已terminal归槽：8绿＋原Pair04真实90s超时＋38未跑；作者只读准备同源单Pair04采样诊断，不改源/不启动。R2 run05已terminal并归槽。** R2作者828fbd→集成aa9f80ca，12 payload已逐字节核（proto保留N1并核R2测试块），两树clean。当前集成aa9尚未组合native/App验收；待已开始的N2/shutdown集成后针对受影响链路作一次组合，不逐commit无变化重跑。上一ec404的61父原绿仅适用当时版本。
+**当前native无活编译/测试；下一唯一槽已授node_transfer_owner对N2 source22单函数修做单原Pair04定向（尚等实际launch）。shutdown run02已terminal归槽，37实际绿＋normalTauri check0，自动GUI完整producer proof未知env保原非绿，仅记下一轮，不重跑37/改Q055。N2 run08单原Pair04仍90s红，已做一次5s exact owned worker sample，记录6dual/组清。** R2作者828fbd→集成aa9f80ca，12 payload已逐字节核（proto保留N1并核R2测试块），两树clean。当前集成aa9尚未组合native/App验收；待已开始的N2/shutdown集成后针对受影响链路作一次组合，不逐commit无变化重跑。上一ec404的61父原绿仅适用当时版本。
 
 R2 run05：正常CLI/Node/A2A/acp-stub/wire五产物来源验证＋59 distinct，70阶段全0，311.919s/94双盘文件；2354完整输入before/after/current一致，288 owned groups全部实际消失、TMP `/tmp/r2i5`不存在，无forced/guard/残留。root核全部raw、双盘SHA、当前输入及实际PGID。HTTP不支持仍Unknown，不宣称所有远端停止。历史run01–04失败保持。证据 `Q037/remote-r2/input-cancel-validation-run05`。
 

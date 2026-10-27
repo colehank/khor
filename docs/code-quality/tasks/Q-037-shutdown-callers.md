@@ -1,6 +1,6 @@
 # Q037 调用方关闭边界审计
 
-状态：已确认缺口、待设计/修复/实际验收。Owner root。依据 R1 c81/8292 源码与集成8395同一调用面；node_transfer_owner完成只读追踪，未改代码。不能把底层 runtime-close 测试通过写成全部 App/serve 退出已干净。
+状态：source03已提交3707c1fd并集成dc98d327；37定向过/normalTauri编译过，组合及真正App Exit待。Owner root。依据 R1 c81/8292 源码与集成8395同一调用面；node_transfer_owner完成只读追踪，未改代码。不能把底层 runtime-close 测试通过写成全部 App/serve 退出已干净。
 
 - 当前 commands/CLI 没有单数 `agent` 命令，也没有 `khor_agent_on` 调用；`retry` 是文件接收的另一业务。因此不存在已审的 `khor agent … Stop/Retry` 一次性 CLI 命令尾留案例，不新增该命令。
 - 真入口 GUI core→`Node::khor_agent_on`，先经 resident IPC，无 endpoint 可本机 `khor_agent_here`；不能假定总经 resident。本机 Stop 需要本进程 running executor，RetryCancellation 可自行准入 metadata。
@@ -72,3 +72,12 @@ node_test_review未launch已归还槽，N2先实际运行；避免环境准备�
 ### plan02实际启动（未有业务结果）
 
 N2 full07 terminal归槽后，root正式授node_test_review唯一native槽。已启动session39349/controller86640，source03十payload/current2378与runner2bc5ee…94c42预核一致，metadata0/1.15s，现build-cli。仍normalCLI+Node两build/新6+旧R1 Node30+真实accounts1=37、normalTauri callercheck；未称App Exit绿。N2仅并行只读准备原Pair04同源单父采样，不会再启动native/编译。原双盘5GiB与有限/owned/proof/dual门不变。
+
+
+## source03已提交整合，37真实绿；新GUI环境proof缺口只记下一轮
+
+run02两正常build/provenance、37 distinct父全过（新6各内外summary计1父、原R1 Node30、真实Pi accounts1）；normalTauri actual Cargo check0/26.384s、khor_gui row fresh=false且manifest/src_path为本树。整run309.581s在verify-tauri-check被Q055保守拒绝未记录TAURI_CONFIG（另实际声明REMOVE_UNUSED_COMMANDS），**原run green=false保留**，不将其说成整批来源绿或真正App Exit。root核37原raw/61dual/2378前后current、239组实际全退、TMP/helper/dist/真实bundle稳定、无forced/guard/cleanup。
+
+按用户“后续新独立问题只记录下一轮”，不修改Q055、不monkeypatch context、不重跑37或GUIcheck；两个GUI环境输入覆盖进入AUDIT下一轮。当前事实拆清：功能37与CLI/Node正常来源已过，caller实际编译已过，自动完整GUI producer proof未过，App实际Exit未验。与源审和当前实际fresh GUI caller row合看，不让新工具治理成为本功能提交的无限前置。
+
+root逐manifest核exact10、基线ec404/dirty范围，提交 `3707c1fdeadc1cb6ef2c6285d51a843577d97267`（作者树clean），cherry-pick `dc98d327a5c218bd8b1fa1ac4f1d6a6aca2bfebb`（集成clean），10payload SHA完全source03；main8704未动，无ship。当前集成还未与R2/N2作组合native/App；本片不宣称全部NodeIO或durable GUI hosts退出清理。
