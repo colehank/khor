@@ -26,6 +26,7 @@ SUITES = {
 }
 TIMEOUT_SECONDS = 300
 MIN_FREE_BYTES = 5 * 1024 * 1024 * 1024
+MAX_OBSERVED_PROCESSES = 512
 
 
 def digest(path):
@@ -81,7 +82,7 @@ def observe(rows, parent, owned):
         selected.update(children)
     for pid in selected & rows.keys():
         owned.setdefault(pid, rows[pid])
-    if len(owned) > 512:
+    if len(owned) > MAX_OBSERVED_PROCESSES:
         raise RuntimeError("Native process ownership inventory exceeded its bound")
 
 
@@ -142,7 +143,11 @@ def run(binary, arguments, log_path, root):
         except BaseException as error:
             timed_out = isinstance(error, subprocess.TimeoutExpired)
             interruption = repr(error)
-        observe(processes(), process.pid, owned)
+        try:
+            observe(processes(), process.pid, owned)
+        except BaseException as error:
+            if interruption is None:
+                interruption = repr(error)
         forced = group_exists(process.pid) or bool(remaining(processes(), owned))
         if forced:
             stop_observed_groups(process, owned)
