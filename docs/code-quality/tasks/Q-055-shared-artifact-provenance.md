@@ -19,3 +19,14 @@ N1 F1 `node-transfer-n1-flow-red-05-control02` 首次编译失败，四个业务
 5. 与最终整合App验证入口对齐；旧收据不回填、缓存合法覆盖/退休单记，不把元数据/类型检查冒同源App实测。
 
 本卡是P4真实新增构建缺口；不阻止已限定依赖重建后的N1功能修复，也不因此扩大重跑或降低当前业务标准。
+
+
+## 2026-10-27接口与candidate01
+
+node_test_review只读调查已交，root接受prepare_build/verify_build与现有run分离的窄接口，授权在复用terminal树的fix/quality-native-provenance@dd9c45ca隔离分支实现。第一方source名单/SHA、manifest/lock/config、变体/相关环境/嵌入root、实际artifact与配对rustc.d、生成输入及实际产物共同决定复用；变化/无法证明同源才精确刷新对应入口/build/geninputs，第三方与.fingerprint不动。原run/PGID/资源/清理沿既有控制，不复制框架。
+
+primary实现资料：[Cargo fingerprint](https://github.com/rust-lang/cargo/blob/f2d3ce0bd/src/cargo/core/compiler/fingerprint/mod.rs)、[dep-info](https://github.com/rust-lang/cargo/blob/f2d3ce0bd/src/cargo/core/compiler/output_depinfo.rs)、[JSON build-script输出](https://doc.rust-lang.org/cargo/reference/external-tools.html#build-script-output)、[manifest目录环境](https://doc.rust-lang.org/cargo/reference/environment-variables.html)。workspace-relative路径与mtime机制符合现象，但历史缺fingerprint trace，不定性Cargo bug；build-script-executed可为缓存输出，不能单独证明刚执行。
+
+candidate01已交root独审：外盘Q055/native-provenance-candidate01、内盘recovery同名，13文件双盘；5实现路径、1933完整inputs，patch07b1b8bf277b90c04f375d21d682c4abce994ac4a5b6ae5fc38a76dbb084e6e5。作者15纯Python父通过，现有native除main外11函数AST保留，CI同批prepare/verify normalCLI与Node并提供真实worker收据。root尚未源码独审/接受实现；未真实Cargo/native或共享target修改，未commit。
+
+下一步仍按原完成要求：root独审、同一target真实A→B→同源B→A及生成输入/嵌入路径/旧顶层.d对照，再接实际CI/native/最终整合App验证；纯控结果不能替代这些。
