@@ -9,6 +9,10 @@
 - **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@ec404dd71df62c15703c818f65fabb699be1877b`，两树最近核对均clean。用户既有App/服务/release不动。
 - 权威协调目录是本目录；实现树同名文档为历史副本。外盘新资料放 `/Volumes/disk0/Khor` 对应分类。
 
+## 当前收口约定
+
+用户最新明确“不用冻结，开始了的做完，后面只记录不新增，再有问题给下一个轮次”。已启动R2/N2/退出治理照做；后续独立问题只登记下一轮，不扩本轮范围或矩阵。root已撤回对N2的短暂冻结通知，WIP保留继续。当前没有活compiler（现场已核），R2在收口已启动的sticky修复；新native需先满足原5GiB双盘门，不能重放旧session。
+
 ## 已集成的成果
 
 - 首批GUI键盘/最新消息与commit文件跳转已修，已有浏览器、真实Tauri iOS与MobileSafari/UIKit验证；物理iPhone/IME及最终同源App未全验。
@@ -23,11 +27,11 @@
 | owner | 实现树 / baseline | 当前状态 |
 | --- | --- | --- |
 | root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至b196992a（含取消31回归、Q055闭包输入修复、trust18提取）；现又集成Q054＋fixture至ec404，组合CLI/Node及61功能父已过，真正App/其余target待。 |
-| node_test_review | 当前R2树 `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@8292e654`；Q055旧分支28ed5bee保留 | 复用原terminal树做Q055，Q05505已fc592fdb→0a888f24集成，20纯控、real03五对照及真实R1 CLI/Node来源接线过；先前容量错误已恢复；现接R2 Native input原子取消/fence，仅源与fixture、无native，见Q-037-input-cancellation；R1 driver与fixture07已8292→8395提交集成，31distinct全过；Q055 closure06已28ed→bdb689c2提交集成，22纯控及真实无dist Node-only构建/来源接线过，Q055树clean；当前R2 source02的11路径/2354输入已独审（21dual），两处collect/source及original_parent竞态已源修；source03已等价纳fixture两行并去未用参数（22dual），正按单槽plan01做五build＋预期55 distinct，实际尚待。 |
+| node_test_review | R2树 `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@8292e654`，12路径WIP | 已过的阶段不冒整批绿：run01 wire私有方法fixture编译失败/0父；run02新9过但wire自重执行漏hook清理红；run03新10＋旧26过，目录首entry读到links.lock失败；run04在源审P1要求下只中断编译/0父。两测试文件已最小适配，当前正验证已开始的sticky input scope P1（source先持久，正常Send补task不降级，Busy Deferred），既定58＋该父=59，无新增范围。 |
 | shutdown_owner | 复用Q055旧树 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-shutdown-lifecycle@ec404dd7` | 新owner仅正常serve/GUI退出源与fixtures，见Q-037-shutdown-callers；无native。原Q055分支28ed5bee保留，来源工具不改。 |
 | node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@27093f4a` | N1 crash与source11原17/N0已过；trust提取candidate15真实新3+原15全部过，fdfb→b196提交集成，树clean。Q055 closure06也已提交集成。作者树现27093f4a clean，root的Q054三路径已提交集成；组合61已过/槽归；现N2完整Pair/Vouch实现，见Q-039-node-transfer；大Pair04/claim/wire及优化构建32MiB边界仍待。 |
 
-**当前唯一Cargo/native槽已授node_test_review，R2 source03冻结后五必要build＋预期55 distinct（新10+旧R1 31+旧A2A ordinary14），实际尚待；禁止其他native。组合run04/session9898已green退出333.684s：确切2378输入上的正常CLI/Node两构建与61 distinct功能父全过，root独核81dual/所有raw summary/源与实际产物SHA/269组和TMP均清。前run03的case23 EAGAIN失败原件保留；已用本机accept/fcntl诊断并仅修测试Peer显式blocking两行，ec404dd7已提交。没有追加paired另target、真实release32MiB压力父或App测试。node_test_review做R2源码与fixtures，node_transfer_owner已回27093作者树做N2完整Pair/Vouch恢复实现；N2未授native，R2按上述单槽执行。** 授槽/启动后须核现场，不据旧active.json重启。Q052/R1/N1三个检查点均已集成，组合CLI/Node编译及本次61功能父已过，其余target/App尚待；R1调用方关闭/R2、N1实际32MiB边界/N2等仍未完成。
+**当前唯一Cargo/native槽已明确授node_test_review：plan05执行既定R2 P1定向及59父，其他owner不启动native。现场无旧活compiler/controller；此前run04已受控中断并清理、0父。内盘仅余5.60GB时未放宽5GiB门：root已可逆归档本任务历史编译副本3.076GB，逐成员SHA核后仅移除内部大副本，源码/日志/WIP保留，内盘回到8.67GB。归档索引见STORAGE。本轮新独立发现只记下一轮，不扩矩阵。此前集成ec404的组合61已完整通过（333.684s/81dual/269组与TMP清），其结果不冒R2/N2/退出新改动绿。** 授槽/启动后须核现场，不据旧active.json重启。Q052/R1/N1三个检查点均已集成，组合CLI/Node编译及本次61功能父已过，其余target/App尚待；R1调用方关闭/R2、N1实际32MiB边界/N2等仍未完成。
 
 ## Q052：终端当前协议与清屏
 

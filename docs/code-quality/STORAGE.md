@@ -24,3 +24,9 @@
 ## 内盘工作副本归位（2026-10-25）
 
 `/Users/zgh/Desktop/working` 下只保留主仓 khor。内盘需要保留的独立工作副本统一在 `/Users/zgh/Developer/Khor/worktrees`，其中 recovery/ 保留外盘中断期间的 4 个恢复分支，history/ 保留 3 个旧功能分支。迁移未删除工作副本或源码；恢复分支待实际整合后再撤销。备份与映射在 `/Users/zgh/khor-backups/working-20261025`。
+
+## 2026-10-27：历史编译副本可逆归档
+
+内盘可用5.597GB、距既定5GiB门仅约228MB，不启动新编译。确认本任务recovery/runtime-artifacts下23个文件均owned regular files、lsof无持有后，归档到 `/Volumes/disk0/Khor/evidence/archives/runtime-artifacts-20261027/historical-binaries.zip`，SHA256 `94ce0218b7ea5e6dc42e33f535e40aaf41f18097c4129852c32f40434b25a8f3`。逐成员解压流SHA与原字节核齐，二次核原inode/mtime/size/SHA后，只移除14个>50MB的内盘历史编译副本，释放3,076,318,184B；9个小metadata原件保留，所有源码/日志/WIP不动。实测内盘可用8,672,993,280B。
+
+完整23成员SHA、原mode/mtime与位置在同目录manifest.json；内盘原runtime-artifacts/ARCHIVE.json指向该档案。需要旧原始可执行文件时按manifest恢复指定成员及mode/mtime；归档不冒新的编译来源证明。现役shared quality-target、用户App/release未动，本次没有创建新工作副本或放宽资源门。

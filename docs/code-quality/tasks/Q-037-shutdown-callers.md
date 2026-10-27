@@ -16,3 +16,29 @@
 实际实现位于 `crates/node/src/link.rs::serve_as`（不是lib.rs）；graph旧快照只作定位，实际源码已读。入口先acquire，然后bind/publish/listener等多处可早返；非resumable endpoint accept返回None是正常break，循环尾当前直接Ok。连接handler/本地handoff/pump等异步任务另有Arc，不能只在尾部加close便宣称所有入口停止。`remote_cancel::acquire`允许显式新工作重开已Closed的Root；closing期间会拒绝，CloseGuard结束后新工作可重开，符合当前API用途，但说明退出要先停止/收拢调用方，不能把Closed当进程永久退出闸。Tauri真正Exit当前close的Busy只记录日志；不提供整个运行中executor已停止的保证。
 
 下一实现仍需沿现有服务owner确定正常drain与强制watchdog的边界；当前没有在未收拢服务入口时添加假关闭，也没有把强制恢复改成可能无限等待。此为已确认待修调用方风险，未提交生产修改。
+
+## 2026-10-27 shutdown_owner 源码候选（未编译/未运行）
+
+- 实现树 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-shutdown-lifecycle`，基线 `ec404dd71df62c15703c818f65fabb699be1877b`。截至本记录有未提交源码；只改 Node `khor_agent.rs`、`link.rs`、`lib.rs`、原 `khor_agent_runtime_close_tests.rs`、新增私有 `khor_agent_runtime.rs` 及 Tauri Exit 调用。来源工具/Q055 helpers未改；未使用Cargo/native/生成器，未碰App/服务/未知PID。
+- 小型本进程 Root registry 持有 agent API futures 的准入、实际executor JoinHandle 和serve lease；Node私有OnceLock首次API/显式serve绑定代次，普通Node::open不acquire。正常serve stop只关闭本代，真实close成功、calls/handles/drain/旧serve lease全退后，新Node新serve owner才可开新代；旧Node/迟到handler不能借新代重开。Tauri真正Exit另加terminal，阻止所有新代。
+- 新 `link::stop_serving` 是正常可重启停止，`link::shutdown` 是最终Exit；均先seal再发真实serve stop door，只有实际循环清理/agent drain后的ack可返回Closed。无serve的真实API local fallback由同一drain处理。`Node::shutdown_agent_runtime` 请求本地executor停止、收拢已准入API（包括登记Running之前的Prompt）、实际join后才调用原close。Busy/错误/取消waiter均保seal及Root；原close/acquire独立语义保留。启动bind/publish/handoff失败只放本次lease，不terminal seal已有API；重复serve不接管其它owner。watchdog/orphan/deaf process::exit及native fuse未改。
+- serve本地JoinSet持有直接sampler/pump/connection/IPC/wake任务，正常退出seal→关listener/endpoint→abort/join直接任务→agent drain。已有endpoint watchers随closed结束；不把NodeIO子任务、durable GUI hosts当作agent close对象，不能据本片宣称整个Root任意IO均join。
+- 新增4个ignored acceptance父，均在原runtime_close_tests模块，内部隔离worker：`final_shutdown_joins_actual_fallback_and_fences_admitted_and_late_calls`；`canceling_final_shutdown_waiter_keeps_the_seal_and_actual_executor_owner`；`normal_serve_stop_restarts_with_a_new_owner_and_rejects_the_old_node`；`early_serve_publish_failure_does_not_seal_an_existing_fallback_owner`。前二真实API无endpoint fallback启动自有Python Pi，实际retry-record writer屏障，并发late Read/Prompt/Retry/acquire拒绝、PID/PGID ESRCH、native metadata intent/claim/Root不晚写；后两实际serve生命周期/代次与bind后真实filesystem publish失败。内部worker不是额外业务父；这些是fixture/native进程，绝非Tauri真实App Exit验收。
+- 仅 `rustfmt --emit stdout` 解析与 `git diff --check` 已过。graph只覆盖main旧快照，detect_changes仍返回main/SHIP，不能作为本候选影响证据。四父、既有R1/close/paired、正常GUI构建及真正App Exit均未验；槽由root协调，未自行使用。
+
+### 额外已确认的管理producer缺口（不能以本候选掩盖）
+
+`Action::Manage` 还可启动provider setup与ACP setup。`agent_accounts.rs::manage_agent` 的16-job表持有raw Child、stdin、detached stdout thread，结果与失败cleanup可重新Node::open并写credential/account/config；旧10分钟清理不是normal join，也不全在原CloseClaim内。`acp_management.rs` 的setup thread经 `khor_acp::manage`，当前 `crates/acp/src/management.rs::Management::drop` 仅abort SDK driver，无TransportLifecycle ProcessReaped收据。`acp_open` 的 `spawn_gui_host_context` 则是明确durable host，不能误杀。
+
+当前候选能阻止新Manage准入，但没有把已启动的上述管理producer写成已join；全agent正常关闭仍需其owner接入/真实回归。已向root报告最小额外文件范围并等待范围协调；中央STATE仍由root维护。本卡不标done，当前源码未冻结/未提交。
+
+## 2026-10-27 Management 扩展与 source02 冻结（仍未编译/未运行）
+
+root已确认管理setup是本轮正常退出必须覆盖的producer，并批准最小扩展 `agent_accounts.rs`、`acp_management.rs`、`crates/acp/src/management.rs` 与ACP lib同义re-export。上节管理缺口是发现时事实；当前源码已实现下面收拢，但不能写成验收通过。
+
+- Pi setup Job 复用已有 `agent_process::Session/Control` 与有限Input writer，spawn前登记可停止Job；初始stdin write在owned reader线程内。Session/native进程组、stdout reader、Input writer、stderr drain和实际account/config commit/failure credential cleanup全部在producer JoinHandle内，shutdown实际join后才退Root。terminal状态poll不会提前移除尚未完成的Job；expired/取消均请求Control，不新建daemon。cold shutdown不初始化原有15s jobs清理线程。
+- setup spawn/工厂错误由本次Registration/Setup RAII回收，未确认process/IO收据latch本Root为unconfirmed，Busy保seal。已完成result/账户提交后的shutdown不将已提交credential伪装回滚；已有原Pi完整账户测试仅末尾新增真实shutdown清理，原业务断言保留。
+- ACP setup复用既有 `acp_process::spawn` 的owned streams和TransportLifecycle。库增加 `manage_on` 并同义re-export，复用原initialize/authenticate/elicitation driver。Node退setup前drop driver、request_shutdown并等待真实confirmed_exit；5s仍未确认则latch Root，不能用SDK driver abort或Rust线程结束冒Native reaped。`acp_open` durable GUI host明确排除，未修改其进程契约。
+- Source02新增两父：`shutdown_joins_pi_and_acp_setup_readers_and_canceled_waiter_cannot_allow_late_credentials`（真实Pi/ACP同Root setup，native reap后仍hold Rust cleanup，取消shutdown waiter保seal，释放后实际Closed、late credential和Root不重建）；`shutdown_preserves_credentials_and_account_committed_before_setup_process_exit`（真实credential已写、Node已commit account而native stdout仍开，shutdown需join且保数据）。连同上节4父共6 distinct业务父，内部worker不额外计数。
+- Source-only历史source01六payload已双盘保全；当前coherent source02十payload亦双盘保全，外盘 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q037/shutdown-lifecycle-source02`，内盘 `/Users/zgh/Library/Caches/khor-code-quality/recovery/Q037/shutdown-lifecycle-source02`；manifest SHA256 `4f079e4d86c5956c4ba1d3c1bd2d660e630a4a05364bde323a1f93925b9eca7f`。含逐payload SHA与tracked.patch（新增runtime.rs以payload保存）；基线ec404、dirty未提交。
+- 已做静态：十payload Rust解析、git diff --check、Python fixture AST、6父selector唯一性、Q055两个helpers与R2 remote_cancel/delegation逐字节仍等于HEAD。**Cargo=0、native功能父=0、App真实Exit=0。** 原R1/close/paired断言未删/未放松，需后续同源build、新6父＋适用旧R1/close/ACP setup回归、GUI正常构建及真正App Exit。当前不使用共享native槽，由root调度、独立只读审查与集成；不标done，不commit中央卡。
