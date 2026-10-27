@@ -51,10 +51,7 @@ pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
             .ok_or("ACP setup is no longer pending")?;
         if operation == "acp_cancel" {
             let mut state = job.state.lock().map_err(|e| e.to_string())?;
-            if !matches!(
-                state["status"].as_str(),
-                Some("done" | "failed" | "cancelled")
-            ) {
+            if !crate::agent_setup::is_terminal(state["status"].as_str()) {
                 job.cancel.store(true, Ordering::SeqCst);
                 *state = json!({"status":"cancelled"});
             }

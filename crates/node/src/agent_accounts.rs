@@ -88,10 +88,7 @@ impl Job {
             }
         }
         if let Ok(mut state) = self.state.try_lock() {
-            if !matches!(
-                state["status"].as_str(),
-                Some("done" | "failed" | "cancelled")
-            ) {
+            if !crate::agent_setup::is_terminal(state["status"].as_str()) {
                 *state = json!({"status":"cancelled"});
             }
         }
@@ -247,10 +244,7 @@ impl Node {
                 .ok_or_else(|| msg::agent_not_running().to_owned())?;
             if operation == "cancel" {
                 let mut state = job.state.lock().map_err(|e| e.to_string())?;
-                if !matches!(
-                    state["status"].as_str(),
-                    Some("done" | "failed" | "cancelled")
-                ) {
+                if !crate::agent_setup::is_terminal(state["status"].as_str()) {
                     *state = json!({"status":"cancelled"});
                     drop(state);
                     job.stop();
@@ -279,10 +273,7 @@ impl Node {
             }
             let result = job.state.lock().map_err(|e| e.to_string())?.clone();
             if job.finished.load(Ordering::SeqCst)
-                && matches!(
-                    result["status"].as_str(),
-                    Some("done" | "failed" | "cancelled")
-                )
+                && crate::agent_setup::is_terminal(result["status"].as_str())
             {
                 jobs()
                     .lock()

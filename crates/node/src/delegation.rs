@@ -887,6 +887,9 @@ pub(crate) struct ChildLink {
     #[serde(default, alias = "input_recovered")]
     pub(crate) input_scoped: bool,
 }
+fn input_scope_after_update(previous: Option<&ChildLink>, requested: bool) -> bool {
+    requested || previous.is_some_and(|link| link.input_scoped)
+}
 pub(crate) fn children_dir(root: &Path, run: &str) -> std::path::PathBuf {
     root.join(".khor/agent/children")
         .join(blake3::hash(run.as_bytes()).to_hex().as_str())
@@ -1015,7 +1018,7 @@ fn track_child_inner(
     }
     let input_parent =
         input_parent.or_else(|| prior.as_ref().and_then(|prior| prior.input_parent.clone()));
-    let input_scoped = scoped || prior.as_ref().is_some_and(|prior| prior.input_scoped);
+    let input_scoped = input_scope_after_update(prior.as_ref(), scoped);
     let link = ChildLink {
         input_parent,
         input_scoped,

@@ -102,6 +102,11 @@ struct ChildReceipt {
     safe_error_code: Option<String>,
     revision: u64,
 }
+impl ChildReceipt {
+    fn requires_input_scope(&self) -> bool {
+        self.input.is_some() || self.task.is_none()
+    }
+}
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "state", deny_unknown_fields)]
 pub(crate) enum Durability {
@@ -513,7 +518,7 @@ fn discover_child(node: &Node, intent: &Intent, child: &str) -> Result<ChildRece
             // Existing committed scope with a missing/mismatched input is
             // corruption, not permission to downgrade to task-wide Cancel.
             validate_child_receipt(intent, child, &receipt, &link, &input)?;
-            let input_mode = receipt.input.is_some() || receipt.task.is_none();
+            let input_mode = receipt.requires_input_scope();
             if input_mode && !link.input_scoped {
                 if let Some(identity) = input.clone() {
                     (link, input) = scope_child(node, intent, child, link, &identity)?;
@@ -602,9 +607,8 @@ fn collect(node: &Node, intent: &Intent, persist_errors: bool) -> Result<Collect
             let receipt =
                 read::<ChildReceipt>(&receipt_path(node.root(), &intent.run, &child), SMALL)?;
             validate_child_receipt(intent, &child, &receipt, &link, &input)?;
-            let needs_scope = !link.input_scoped
-                && input.is_some()
-                && (receipt.input.is_some() || receipt.task.is_none());
+            let needs_scope =
+                !link.input_scoped && input.is_some() && receipt.requires_input_scope();
             if needs_scope && !persist_errors {
                 return Err("InputScopeUncommitted".into());
             }

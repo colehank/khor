@@ -20,6 +20,7 @@ pub(crate) mod acp_process;
 pub mod adaptor;
 #[path = "khor_agent_process.rs"]
 pub(crate) mod agent_process;
+mod agent_setup;
 pub mod answers;
 pub mod backup;
 pub(crate) mod beside;
