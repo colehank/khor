@@ -21,7 +21,7 @@
 
 Rust 采用官方 rustfmt 默认风格并尊重各 manifest edition；ACP 是2021，其余 workspace成员继承2024。格式迁移与功能修改分别提交。
 
-第一方范围包含根workspace、独立Windows harness及测试/probe模板；vendor补丁和具有原文SHA契约的第三方快照分别归其上游适配边界。根命令的成功不能直接代表独立源码已检查。实际清单、固定工具版本及共同检查入口在[Q053](tasks/Q-053-format-baseline.md)登记；当前迁移未完成，不能把旧基线差异算成新功能回归。
+第一方范围包含根workspace、独立Windows harness及测试/probe模板；vendor补丁和具有原文SHA契约的第三方快照分别归其上游适配边界。使用Python 3.11+；共同入口是 `python3 scripts/check-rust-format.py --check`，显式 `--write`执行排版；本地与quality.yml的scripts job使用同一入口。固定Rust 1.95.0／rustfmt 1.9.0-stable，按各manifest分别确定parser和style edition，独立模板通过stdin处理。清单和排除以脚本为准，迁移证据见[Q053](tasks/Q-053-format-baseline.md)。工具缺失或版本不符明确报错，安装和工具链选择由开发者显式完成。
 
 生成结果从producer修正：Rust的OUT_DIR输出归各build.rs，GUI bindings/catalog归原gen命令。前端沿用现有编码风格和门禁；引入新formatter属于单独工程决定。
 

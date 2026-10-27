@@ -22,3 +22,14 @@ scope只读准备产物已独审后保存双镜像：外`P4/Q053-format-scope-pr
 
 
 模板处理只读核实：已查Rust 1.95.0自带[rustfmt formatting.rs](https://github.com/rust-lang/rust/blob/1.95.0/src/tools/rustfmt/src/formatting.rs#L124)与[modules.rs](https://github.com/rust-lang/rust/blob/1.95.0/src/tools/rustfmt/src/modules.rs#L120)，stdin输入明确关闭out-of-line module递归；官方[配置说明](https://github.com/rust-lang/rustfmt#rusts-editions)区分parser edition和style edition。后续可以逐文件stdin/stdout按manifest明确两edition，覆盖第一方独立模板而不解析其尚未生成模块、不借nightly skip_children/ignore。这里只确认上游代码行为，尚未实测本地格式器或更改迁移入口；实施时以固定1.95真实工具做一次实际模板/完整清单检查，第三方SHA仍核前后不变。没有新增Rustup组件、依赖或源改动。
+
+
+## 2026-10-28 实施与独立审查结果
+
+N2已14931整合后，实际范围841 Rust=449第一方+392第三方。使用原1.95.0真实rustfmt1.9.0（显式RUSTFMT、禁代理安装）与draft02共同入口：check前216差异→write216→check后0，全部392第三方SHA稳；9文件dual P4/format-migration-14931。非作者node_test_review独立逐SHA核全部after、216before与14931 blob精确匹配、216路径即Git rs diff，未见混逻辑/输出。root只暂存216 rs，单独提交d26e608fbae7ec9915827fd3d0b906b5b22ffa3f（机械排版，不代替Clean Code）。
+
+用户随后重申Clean Code关键；现有功能边界内部整理单独18c0a9d1/3e5e25a4/357c7070提交，详AUDIT收口表，不混纯格式。共同入口也由node_test_review按原执行序列仅改main/显式root，逆变换能byteexact恢复draft02；带--write的受限import探针禁所有工具/文件写仍成功、0副作用。脚本SHA bd9e0b8f84d2a401671373e8a218c527b9f8ecaef6c9673b0e09841c3afa893a。
+
+新增private agent_setup使最终范围842 Rust=450第一方+392排除。所有writer交接后仅一次共同write(2处内部新增排版)→check0，dual P4/clean-code-final-format，第三方仍全稳，未运行Cargo代替业务验收。root将脚本/config/CI/两文档入口及统一ENGINEERING指南单独33c8bc1254d26335ddc5ea409d215a8b426bd30a提交；本地与现quality scripts job共用，job显式Rust1.95.0/rustfmt组件，无新增job/matrix/依赖。dtolnay @版本的选择语义已核其官方README。Windows只做关闭文件后replace/chmod路径兼容设计，未实跑不冒已测。
+
+格式/入口本身已收口；整体P4仍按ENGINEERING结构和行为准则、最终组合/App证据核定，不以文件/行/注释数量计完成。当前集成33c8 clean，原npm构建已0（TMP Node缓存原门非绿另postcleanup），后续native正在一次最终网络边界，不因格式重复作者树LTO。

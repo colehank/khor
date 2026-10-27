@@ -82,3 +82,20 @@ Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史
 | source24原case11 setup Node重打开Busy候选 | dev diag17在pairing.rs492尚未Pair就Busy；recover与bootstrap gate都可返回该文案，未捕获唯一分支。runtime19不改父/代码，仅一次同产物重放完整通过。 | 下一轮核公共Node打开的并发准入契约；本轮不新建锁/owner治理或改原父重试。 |
 | 原配对fixture setup失败后的晚写残留 | diag17原cleanup门非绿，2个私有usage文件在Scratch Drop后出现；进程全退，root另作dual归档/postcleanup，原非绿不回填。 | 下一轮整理fixture serve任务先停/join再删Root，保原业务断言。 |
 | Q033原Fixture构造前setup owner gap | 与HEAD比对，原先已spawn host再等待ready，Self构造前panic缺本层owner guard；驻留新增部分不扩大该路径。 | 下一轮治理既有setup路径；当前最终App helper必须现owned-entry外层300s/PGID回收，setup失败不计绿。 |
+| Node26前端工具TMP cache分类 | 原npm build0/99.915s、源码/锁稳，但受控TMP留250编译缓存文件，原frontend run保cleanup非绿；root按原stat/hash双盘ZIP归档、独立postcleanup后移除，原结果未改。 | 下一轮若统一工具清理策略再处理；本轮不改Q055/f7或重复构建。 |
+
+
+## 2026-10-28 已改边界的Clean Code收口
+
+此节是原任务的代码质量准则，不是新增功能专项。以下均为内部整理，现仅静态独审通过，等待最终同源编译/既定回归。
+
+| 范围 | 具体理解/维护成本 | 收口与保留约束 |
+| --- | --- | --- |
+| Pair settlement | 平铺参数与dialed布尔让调用点看不出邀请双方角色 | runtime请求结构与Issuer/Joiner；不改serialized dialed、journal布局或原settlement副作用顺序 |
+| Pair/normal边界 | 废弃devices_only分支仍暗示错误Pair scope；固定base规则两处重复 | 删无调用支、共享纯谓词；保两处enforcement/各错误上下文和exact operation helpers |
+| R2 input取消 | discover/collect重复input模式规则，sticky merge的业务意图隐藏 | 命名纯getter/merge；publish/锁/re-read与严格拒绝分支保 |
+| Pi/ACP setup | 两Job重复解释相同JSON终态 | 私有只读终态规则；wire字符串、取消专用判断、native join/资源owner分离保 |
+| Q033 fixture | session初始化同时承担relay线程/socket/gate细节 | UploadRelay集中网络资源归属与有限join、for_app构造；业务断言/时限/网络块保；Drop对owned poisoned Vec可清理，worker/join错误不转绿 |
+| P4检查入口 | import阶段解析CLI并可执行工具/写源，隐式root全局 | main入口、显式root；带--write受限import探针无副作用，既有执行序列可逆恢复 |
+
+不以文件数、行数、注释数量作为质量分；必要平台/协议/并发约束保留，独立新缺陷仍归上一节下一轮清单。

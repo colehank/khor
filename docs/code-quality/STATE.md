@@ -1,60 +1,56 @@
 # 当前代码治理状态
 
-更新：2026-10-28，N2 source24 原case11 runtime19通过，接既有state父。完整目标 **active、未完成**。继续先读本页与[PLAN](PLAN.md)，核实际refs/diff/agents/PID；旧长状态完整保留在[历史快照](history/STATE-before-n2-read22-20261027.md)，任务细节看原任务卡/原始收据，不能按摘要覆盖WIP或重启旧进程。
+更新：2026-10-28，已整合功能批与独立纯格式批，进行已改边界Clean Code收口。完整目标active、未完成。继续先读本页与[PLAN](PLAN.md)，核实际refs/diff/agents/PID；历史收据与失败保留在任务卡和[上一状态](history/STATE-before-clean-code-closeout-20261028.md)。禁止按摘要覆盖源码或重启旧handle。
 
-## 用户决定
+## 用户决定与目标
 
-- 完成全仓功能审计、风险修复/重构、Clean Code工程治理和最终同源App验收；不把任何局部里程碑当全目标。
-- **“不用冻结，开始了的做完，后面只记录不新增，再有问题给下一个轮次。”** 当前R2/N2/退出治理与既定验收继续；此后独立问题只记下一轮，不扩实现/矩阵/工具专项。先定向、再一次组合，无变化不重复跑。
-- 未上线，统一当前Khor协议；不做旧端fallback/迁移矩阵。认证、epoch、数据完整性、实际平台与外部ACP声明能力保留。
-- **无本轮main合并/ship授权。** main `/Users/zgh/Desktop/working/khor@8704a503a27b36ad58f922690de50e766f8bd485` clean；用户App/服务/release不动。
+- Clean Code贯穿功能修复与工程治理：命名、职责、规则一处、状态/资源owner、副作用、失败/取消与必要约束。原始目标是全仓审计与分批治理，不把格式统计或局部测试当完成；稳定准则见[ENGINEERING](ENGINEERING.md)。
+- 最新边界：**不用冻结，开始了的做完；之后新独立问题只记录下一轮。** 当前只收口已经修改的边界和既定验收，不追加模块改造、功能或矩阵。
+- 未上线，统一当前Khor协议；无旧端fallback/迁移矩阵。认证、epoch、完整性和真实平台/ACP能力保留。
+- **无main合并/ship授权。** main `/Users/zgh/Desktop/working/khor@8704a503a27b36ad58f922690de50e766f8bd485` 保既有基线，用户App/服务/release不动。
 
-## 当前实际代码与验证
+## 当前实际代码
 
-治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`：`integrate/code-quality-wave1@a3a7cbdebd125fa1145c73f399ad5992e42601cd` clean；Q033既定App test-only驻留helper source03已提交，静态独审通过，未编译/运行。权威协调目录是本目录，作者树同名文档只是历史副本。
+治理集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`：`integrate/code-quality-wave1@33c8bc1254d26335ddc5ea409d215a8b426bd30a` clean。内部整理与格式入口已分批提交，实际前端/绑定构建通过；当前唯一native槽正在最终四网络边界。
 
-| 工作 | 当前事实 | 尚缺 |
+- R2精确input取消：作者828fbd31→aa9f80ca已整合，原59 distinct实绿、311.919s/94dual；HTTP无能力仍Unknown。
+- 正常serve/GUI agent退出：source03作者3707c1fd→dc98d327已整合，原37 distinct实绿、normalTauri check0；自动GUI producer因环境输入缺口保非绿，仅记录下一轮，不改Q055补门冒全绿。
+- N2 Pair/Vouch：作者树 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery@130fb99788ca9dd8f3d5b69c5a24a6225ec6b728` clean，source24 exact13已整合14931af7。root核13路径增删完全匹配、10整文件相同，lib/link/proto其余R2/退出增删全部保留；无冲突。
+- N2 source24原清单46/47已真绿（state18 1、runtime19 1、runtime20 44，helper不充父）。runtime20 114.582s/58dual/45组与TMP清，root逐原raw/summary/双盘/source/PGID核；**当前整合大Pair04已实绿；原N0、两真实32MiB边界仍待。** source22安装优化Pair04曾21s绿，不继承给新源；dev90s红和各setup/cleanup原非绿不回填。
+- Q033既定真实App上传验收前置：test-only驻留host source03已a3a7cbde提交，普通业务断言保留；尚未编译或App绿。
+- 纯Rust格式已单独d26e608f提交：实际check1→write0→check0，449第一方中216需调整，392第三方SHA全稳；9dual `P4/format-migration-14931`，非作者已核841当前after/216 before精确匹配。此后新结构修改需一次共同check。
+
+## Clean Code收口：只审已改边界
+
+| 范围/所有者 | 实际内部整理与不变量 | 当前状态 |
 | --- | --- | --- |
-| R2精确input取消 | 作者828fbd3167732c27fc4bb1718474a41961882279→集成aa9f80ca；12payload已核。run05五必要产物正常来源+59 distinct实际全过，311.919s/94dual，2354输入稳、288组与TMP清。sticky scope/late Send/坏丢receipt不退task-wide已验。 | 当前集成组合/App；HTTP无能力仍Unknown，不能宣称所有远端停止。详[任务卡](tasks/Q-037-input-cancellation.md)。 |
-| 正常serve/GUI agent退出 | source03 exact10已3707c1fdeadc1cb6ef2c6285d51a843577d97267→dc98d327；作者树3707 clean。CLI/Node正常来源+37 distinct实际全过，normalTauri Cargo check0且currentROOT/freshfalse。61dual/2378输入稳、239组与TMP清。 | 自动GUI producer proof因TAURI_CONFIG/REMOVE_UNUSED_COMMANDS未覆盖保原非绿，独立工具问题仅记下一轮；不重跑37/改Q055。组合及真正App Exit仍待；不宣称一般NodeIO/durable hosts全部join。[任务卡](tasks/Q-037-shutdown-callers.md)。 |
-| N2 Pair/Vouch | 作者 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@27093f4a4ff94afcdffa36aa4cd6143e11ecaaad` dirty12。bounded claim/intent/settlement/Vouch/devices完整路径在source22；未提交。source21已实际8父过与双SIGKILL恢复幂等过，原Pair04仍90s红。source22仅read_outgoing复用已prepare canonical本地Ready，仍完整core digest/epoch/auth验证，普通resume/receiver不改。 | source22 run09真实29MiB Pair04仍90s超时；runtime-only run10重复观察同红，0父/97.262s、清理空。原47尚未整体过（source21为8绿/Pair04红/38未跑），不能给source22继承全绿。 |
+| N2，shutdown_owner实现、原作者独审 | runtime SettlementRequest/Issuer-Joiner表达替代平铺实参和true/false；删除废弃devices_only支；固定devices/epoch/base纯规则共享但两处enforcement/错误/owner顺序保。serialized structs、原settlement body和exact-op helpers保。 | 4源18c0a9d1dccbca6f8161df92d28bda2c2dbc642a；原作者独审通过，最终native待。 |
+| R2/SH，node_transfer_owner实现、shutdown_owner独审 | ChildReceipt input纯判定与sticky合并一处；5行private agent_setup只共享JSON终态判定。publication/re-read、JSON字段、cancelled-only guards与native join归属不变。 | 6payload 3e5e25a40a9e23e301c1d1e0972de57c6fbb1c6f；独立逆展开5旧源byteexact，最终native待。 |
+| Q033，root实现、node_test_review独审 | UploadRelay集中网络/线程/socket/gate归属，Fixture负责session/host；for_app命名构造。network block原样、业务tail仅relay字段资格；停止/Close/有限join顺序保。新增Drop的poison锁二次panic已窄修，join失败仍失败。 | 单源357c70707ab674825c90572aea8abf7b0754ef98；原网络块/业务tail语义保，poison窄修独审通过，实际fixture/App待。 |
+| P4入口，shutdown_owner草稿、node_test_review整理、root审 | 默认check/显式write、workspace edition/独立模板/第三方排除、真实formatter禁auto-install；main入口与显式root，import --write探针无I/O副作用。 | 33c8bc1254d26335ddc5ea409d215a8b426bd30a；实际450第一方共同check0/392第三方稳，import探针0副作用，CI接同入口。 |
 
-## native槽与立即下一步
+**当前唯一Cargo/native槽：node_transfer_owner，Pair01已完成，后验后顺序转N0。** Pair01原session67536/controller23369/Cargo23438已退出，禁止重启。ROOT clean33c8/fullframe2388（含gen157/dist277/锁），runner999c2b0e24fbcd7cf77421491e312027c28a36b375ab4d11d8311d59ddd15174/data06c36164…6bf8。OUT Q039/integration-final-network-pair-run01，result SHA2326207322fdf29ecca97961e257fc9bb31cd5c4f297d17b8887b585ed89163e；22dual root逐hash核、source before=after/cleanup空/TMP清。metadata1.10s/build621.07s/原Pair父19.00s（helper18.97s，只计1父），总646.454s，约29,223,902B/原90s/首次与重试/VV/content/epoch1/1/2rows/sameRoot/trusted/第三方拒绝全部通过。预算1200/300/1500、双盘5GiB/8192全保。normalNode与selected local opt3来源由owner完成后验才接下一批，root不并发Cargo/App。
 
-**当前仅N2 owner持有下一native授权。** source24 runtime19已完成归槽：复用dev diag17确切binary/完整current producer proof，0Cargo/源/mtime变化，原case11恰1父绿/5.93s，原两次Pair、quiet后第三peer与全部原断言完整达到。14dual、1932输入/13payload stable、2组/TMP清，root核。root已授source24 dev state diag18下一批，只Node libtest必要build＋原a_recreated…父，300/300/720/5GiB/default512/真实工具pin；待owner实际handle，不接原49/其它父。
+已授权同一owner依次仅四既定父/三个local targets：大Pair04→原N0→Node libtest两个真实32MiB边界。每批完整绿/后验才下一；失败立即停，不自动修源/重启/加时/扩大。当前正常Node/selected须freshfalse opt3，后续freshtrue仅同源真实producer reuse；fcb/f7不改。最终Node local libtest receipt将复用给后续受影响组合，避免另编dev Node libtest。
 
-source24已冻13payload/1932、20dual/current13 root核，root+shutdown_owner四path窄审无确认阻断；Snapshot active mismatch typed Busy保normal plan，Pair proof/ack/回包/pending按本operation.devices_in/out exact，normal与grant/trust/epoch/VV原义保留。delta2c61bb91…b8e0a。source23迟到Complete处理仍在，既有state父尚未实际运行；不能用case11绿代替该分支断言。
+前置原npm run build（gen→tsc→Vite）99.915s exit0，当前33c8 tracked/source1954不变；gen157/tree a5f8941e…30c82，dist277/tree5c487ed4…d135e，非正常CLI/Node producer声明。整run因250个Node26 compile-cache TMP文件保非绿；root在全部组退出/Lsof空/原inode与SHA核后dual ZIP归档3.36MB并移除私有TMP，仅postcleanup，原result不变。外/内Q055/integration-final-frontend-run01及独立postcleanup01。
 
-历史diag17 dev build0/58.819s，父第一次Pair前Node::open_as492 Busy/0.48s，0父，state18未接；63.034s、20dual/13payload stable、6组消失，但TMP因两晚写私有文件原非绿。root已核并双盘归档2文件至Q039/node-pair-vouch24-dev-pairing-postcleanup17（3files），Lsof空+原stat/全部旧组核后只移除其文件和空tmux目录；独立postcleanup，原run17非绿不改。Node-open Busy分支来源不凭文案断言，构造/teardown候选仅记下一轮，不开新锁治理或改原父。
+P5外部Q033 observer/driver/qualityconfig三文件已静态准备，真实invoke仅旁观/原Promise/无fake；未启动服务、App或浏览器，不抢native槽。后续组合纯清单已去重：R2/SH+Q033共69父，Node46复用最终local libtest，A2A18/wire2/core3和正常CLI/ACP-stub用defaultdev；大四完成后才冻结执行，GUI实际build覆盖caller编译不重复check。此处尚不宣称组合或App绿。
 
-Q033 source03只test helper，a3a7cbde已提交：resident-only capabilities、普通Drop cleanup Err失败传播、已成功join不因先前Close失败误判，root/非作者源审通过；原普通父/断言完整。helper非业务父，未native/App绿；下一最终同源App沿现owned-entry300s/PGID。原Self构造前setup gap仅下轮。
+## 原完整目标余项
 
-已完成local13原Pair04唯一父：构建976.241s、父21.416s、总1002.443s；原90s/数据/全部断言保留。root已核原raw、20双盘SHA及manifest、来源profile/正常Node、before=after、6个进程组消失与TMP清，local13旧handle已结束不得重启。source22单函数非作者node_test_review实际窄审无新增阻断：prepare canonical校验先于stage/Ready，open_existing完整digest/owner/epoch授权、短读/EOF、RAII/drop及普通resume/receiver边界保留。
+- 首两故障及autosave/冲突/锁、身份/预算/脱敏、上传收据、poll、页面owner/事件、SSH本地deadline等已有分批实现与独审；详[AUDIT](AUDIT.md)/任务卡。原Q010真实Tauri iOS/Safari已有证据，最终全部同源App仍待，物理iPhone/IME未全验。
+- 原P5仍保：Q033真实ChatView→Tauri→host→独立ACP上传Stop和同socket后续输入；Q035 borrow lease；Q043 OS拖放/正常Quit/全屏；Q045真SSH/master/remote lease；Q041 fresh onset/嵌入提取/Linux/真实remote链；当前组合正常producer与App Exit。类型/fixture/旧分支通过不当全部App/平台通过。
+- 原P1结构清单和未知项仍在，不冒逐行深审；P4规则/职责/历史注释的收口依已改范围，必要协议/平台/并发注释保留，不追行数/注释数。
 
-local13 receipt外盘`Q039/node-pair-vouch22-local-run13`，内盘`recovery/Q039`同名；source1932/12payload冻结。actual Pair04 exe SHA bb0dc0b4…a47e5，provenance b450504e…62eb0，normalNode和selected均opt3/freshfalse。只计1父，helper不充数；source22 dev90s红保留，不以优化绿回填。后续real RUSTC/RUSTDOC/PATH固定1.95，绝对RUSTUP_TOOLCHAIN/AUTO_INSTALL0、有限owned历史8192冷编门、双盘5GiB不变。
+## 仅记录下一轮
 
-- run11因未pin编译器代理触发proc-macro2依赖cwd要求rust-src，rustup开始升级卸载原stable；已停机/0父。原642份事务备份按14组件reverse manifest独审映射630项，root已恢复628原文件硬链接+原docs目录+初始components字节。Cargo/Rustc原SHA精确相同，仍1.95.0/LLVM22.1.2，真实版本及依赖cwd探针通过，未升级/加组件/改settings/触1.89。恢复receipt `Q039/rustup-incident-recovery-20261027/restore-result.json` complete=true；不得重复恢复或运行rustup。
-- run12因监视器累计记录512个历史进程耗尽，第二次observe异常跳过cleanup；root/owner已只对已知组有限TERM排空，原非绿与late raw/postcleanup分开保留。当前必要边界修仅entry默认512改可有限设置、末次observe异常仍走原有drain；2真实私有进程树检查/独审过，已提交3a0104a9，0新增产品父、不改provenance模块/GUI env。冻结entry f7ff0426…085e1，冷编显式8192。
+AUDIT末节：Q055 TAURI_CONFIG/REMOVE_UNUSED_COMMANDS输入覆盖；Node重打开Busy与fixture setup失败后晚写；Q033既有Self构造前setup owner gap。没有为此新增锁/owner框架。run17两私有残留已dual归档postcleanup17后移除，原非绿保留。最初normal/Pair候选中已被原case11实际阻断的部分在N2 source24必要修，未把未证实候选冒作已修。
 
-- root已正核exact owned helper并仅一次5s sample source21、一次5s sample source22；sibling evidence `Q039/node-pair-vouch21-pairdiag-root-observation08`（6dual已闭合）与 `node-pair-vouch22-pairdiag-root-observation10`（6dual已闭合）。不读payload、票或签名。
-- source21热点resume→validate_body→Loro整body解码已在source22移除；新sample剩read_outgoing→open_existing→recover/BLAKE3(681)、Context.version/load_pile(252)，嵌套计数不是CPU百分比。caller约6.0→8.1MiB推进，仍未满足90s。不能为赶门删完整性验证或猜造缓存。
-- 原合同未额外限定dev profile90s；实际本机安装脚本用既有`profile.local`，继承release/CGU16/保symbols，dev实际opt0。source22 dev run09/run10仍红且不回填；local13使用同原父/原数据/90s、actual opt3正常Node与exe路径来源需验证。此前无warm local，只自然复用本任务部分缓存，不删fingerprints/不造旧producer。
-- N2既定收口：原Pair04数据12288×64、>24MiB/<=64MiB/90s、samecaller/thirdcaller/VV/root不变；过后完成原47（当前同源已过父无变化可复用既有provenance）、原N0与已登记优化网络边界，提交整合，再一次受影响组合。
+## 恢复与执行资源
 
-## 已有里程碑及原目标余项
+唯一共享target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`；唯一Cargo/native槽、jobs1/incremental0/lockedoffline/短独占TMP；内外盘均>=5368709120B，actual源码/producer/artifact、owned PID/PGID全成员、有限TERM/KILL/reap和dual。常规300/720；已登记冷编local仅1200/300/1500与有限8192历史门，产品90s/30s/原数据断言不放宽。禁止全局clean/重放旧cleanup/碰用户进程。
 
-- GUI键盘/最新消息、commit文件跳转已修，有浏览器、真实Tauri iOS、MobileSafari/UIKit验证；最终全部同源App仍待，物理iPhone/IME未全验。
-- autosave/冲突/锁、身份/资源owner、脱敏/A2A/预算、上传receipt/poll、SSH生命周期等已分批独审集成，详[AUDIT](AUDIT.md)与各卡。
-- Q052 current khor-host/5与清屏：28实际功能回归、tmux专门2过，95428→8d1033bb集成；当前组合native待。
-- R1正常取消/owned close/自主driver已集成；真实2s慢metadata Stop由2123ms降至约1ms且最终durable，source07原31过。旧5.27s outlier原证据保留，不倒推单根因。
-- N1 source11原17与25,447,950B/max4固定VV+内容收敛、crash14真实postflush/prereceipt SIGKILL fresh恢复均已过并集成；Q054 typed gate与trust18也已集成。ec404组合CLI/Node+61 distinct实际过333.684s/81dual，不能冒dc98/N2/App绿。
-- Q055既有22纯控与real A→B→B→A→relocation实际5build/5native、closure06选择输入已过并集成；复用现入口，不另建framework。新GUI环境覆盖见下一轮记录。
-- **原完整目标余项仍保留：** Q033真GUI→Tauri→Rust→host→ACP上传、Q035 borrow lease、Q043 OS拖放/主动退出/全屏、Q045真SSH/master/远端lease、Q041 fresh onset/远程/Linux musl/真实嵌入、余下P1覆盖与P4规范/职责/工具入口、P5全部同源App流程。Q053原205第一方Rust fmt差异尚未迁移，功能集成后单独纯格式批。类型/fixture不代替实际平台；Windows等未实测不冒已完成。
+真实原1.95工具链已从事务备份完整恢复，restore-result complete=true；不得重复restore或运行rustup升级/增组件。后续RUSTC/RUSTDOC/PATH固定 `/Users/zgh/.rustup/toolchains/stable-aarch64-apple-darwin/bin` 真文件，绝对RUSTUP_TOOLCHAIN、AUTO_INSTALL0，核实际SHA；formatter显式真实RUSTFMT，禁代理自动安装。Q055模块fcbf4fe1…0ef8不改；安全entry f7ff0426…085e1，默认历史512。
 
-## 恢复与资源纪律
-
-统一Cargo target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`；jobs1/incremental0/lockedoffline/短独占TMP；**唯一槽、内外盘各>=5368709120B**，有限STEP300/TOTAL720与owned PID/PGID全成员、actual source/producer/artifact、dual、有限TERM/KILL/reap。仅精确任务资源可清理，用户进程/App/release不动，不重放旧cleanup清单。
-
-权威plan在本目录；外盘证据 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`，内盘 `/Users/zgh/Library/Caches/khor-code-quality/recovery`。掉盘先读RESUME及镜像，再核真实WIP/refs/PID，禁止按摘要覆盖源码。runtime-artifacts历史14大Rust副本已可逆归档，旧路径不能直接复用，见[STORAGE](STORAGE.md)/ARCHIVE.json。
-
-本轮后续新独立问题仅见[AUDIT下一轮](AUDIT.md)：Q055 GUI env输入覆盖、尚未复现的normal devices plan协调候选。它们不扩当前实现或矩阵。
+权威本目录；外证据 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`，内恢复 `/Users/zgh/Library/Caches/khor-code-quality/recovery`。掉盘先RESUME及镜像再核现场refs/WIP/agents/PID，不按摘要覆盖源码。历史14大Rust副本已可逆归档，见STORAGE/ARCHIVE.json，旧binary路径不可直接复用。
