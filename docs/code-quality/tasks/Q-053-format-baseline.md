@@ -16,3 +16,9 @@
 2026-10-27，非作者shutdown_owner graph-first后核实际源码，未运行Cargo/rustfmt/native、未写源。14个workspace成员中ACP为2021，其余继承2024；格式迁移和检查须保持manifest edition。为严格排vendor，使用14个显式包选择，不将根--all当全部第一方或排path补丁的证明。独立Windows harness另有workspace；还有terminal-color-answers、editor-history/native-menu两个probe lib模板、native-io/native-paste两个fixture共五份standalone/template，须在实施时验证模板处理，避免递归找不存在模块。native-events/tauri-2.11.5/event-mod.rs为第三方原文SHA契约，明确排除。
 
 Rust OUT_DIR输出归catalog/detect/web build.rs，TS归catalog gen_ts与gui-core gen_bindings；只格式化producer，不手改生成结果。最小接线复用quality.yml scripts job和现README/KHOR规范入口，无新job/matrix/依赖。当前447份tracked非vendor Rust含第三方原文，N2集成后刷新，旧205差异不冒当前数量。先N2集成、再纯格式批、共同检查、最终一次整合验收。模板处理尚未实测；不借此开新功能专项。稳定工程约定已提取到[ENGINEERING](../ENGINEERING.md)，PLAN仅指向同一出处。
+
+
+scope只读准备产物已独审后保存双镜像：外`P4/Q053-format-scope-preparation/manifest.json`/内recovery/P4同名，150402B，SHA3e161d686cc418331346c97dd887f959eab1921538e8d601fed6fc6f39f8ea66，root核双盘逐字节一致。基于integration3a0104a9：838 tracked Rust=root包440+独立harness1+五standalone/template+vendor391+Tauri第三方SHA快照1，第一方446，未归类0。清单含14实际package/edition、逐源SHA/模板前置/producer；只是准备，未执行formatter/Cargo/SDK产物，N2新文件集成后刷新，不能把此数量直接冒当前最终覆盖。
+
+
+模板处理只读核实：已查Rust 1.95.0自带[rustfmt formatting.rs](https://github.com/rust-lang/rust/blob/1.95.0/src/tools/rustfmt/src/formatting.rs#L124)与[modules.rs](https://github.com/rust-lang/rust/blob/1.95.0/src/tools/rustfmt/src/modules.rs#L120)，stdin输入明确关闭out-of-line module递归；官方[配置说明](https://github.com/rust-lang/rustfmt#rusts-editions)区分parser edition和style edition。后续可以逐文件stdin/stdout按manifest明确两edition，覆盖第一方独立模板而不解析其尚未生成模块、不借nightly skip_children/ignore。这里只确认上游代码行为，尚未实测本地格式器或更改迁移入口；实施时以固定1.95真实工具做一次实际模板/完整清单检查，第三方SHA仍核前后不变。没有新增Rustup组件、依赖或源改动。

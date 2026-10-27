@@ -70,3 +70,10 @@ Shared terminal协议另仍有真实旧Khor路径：`host.rs:161` advertised空/
 | Cargo.lock | `4436a386ad74fdceec35dbfcb67ecbb32d593bfff56badfc92e9d5f5437bf9e6` |
 
 表中node前缀为crates/node/src、gui前缀为apps/gui；指纹属于686f现场，不复制旧Q033作者binary来源。实施候选allowlist先限gui_host/chat/chat_send及定向tests，GUI只改已失效说明/必要断言，catalog/schema尽量不动；生成器Q041e、onset Q041d和terminal current-only后续分别由root安排。当前仅方案，无新增运行红/绿或完整Q033关闭结论。
+
+
+## 既定P5驻留接线source01（root协调记录）
+
+node_test_review已在integration3a0104a9只改原chat_upload_cancel.rs/upload-agent.py两test文件，未提交/编译/启动。普通cancel_upload与三ordinary父尾部逐字保留；新增ignored app_upload_host仅驻留helper不计业务父，复用正常Node/gui_host/现首Part gate、私有0700控制目录与0600 ready/wire/ACP元数据文件，真实App自行第1连接、同Root本机session。helper270s驻留+有限close/join，总<=300s；实际App外层由现owned-entry记录/控制全部组，setup/未到gate不计绿。
+
+双盘Q033/app-upload-helper-source01四文件（2源/complete.patch/receipt），patch f7dbbf6060a894db3fe94a4150d4751758a805e5fb119be421e4444dc6384b11，Rust1c9deb4f899eef7203b9f7b9c517e80e0559082679cf5c678e54a8983ef32cc9，Python1b7fd357638c400d7a19d0db51cbba555f051a0e442a05200f6f95292f901f48。root/shutdown_owner源审中：新capabilities须仅驻留redacted分支，不改默认ordinary初始化；新增bounded cleanup未确认不能仅打印而默认父成功。其余原setup构造前owner gap先比HEAD，若原已有独立缺口只记下一轮，不借验收新建框架。无生产权限/API/服务或新普通测试变化，尚无实际运行证据。

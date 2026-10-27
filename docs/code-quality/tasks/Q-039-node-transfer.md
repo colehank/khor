@@ -1056,3 +1056,12 @@ root授权最小source23：accept_sent显式sent与proof.manifest严格相等、
 node_test_review独立实际三path/候选副本窄审无确认阻断：sent来自真实Work.push而非proof自造、共享proof/角色/epoch/target全校验先于写；同State内仅补非active NeedAck，原64条/192KiB row/整image/canonical/重复id/单active门都保留，不碰其它manifest；后续精确ACK flush可结束远端pending而无需赌另泵时机。原父append保全部旧断言、无新父。只源审，不充实际绿。
 
 root授权两个原父定向（不先49），顺序pairing→state；入口各6dual/AST预算齐，runner1b5e85f5a2134d20dd9e4f475e536c730b3918a0c29ec3d3a9f902bc0162c591。diag15 plan/node-pair-vouch23-local-pairing-diag-plan15 data0ecec303…1ca26已launch，session22591/runner27898/Cargo27947，metadata0后当前normalNode23+pairing重编，唯一原case11。diag16/node-pair-vouch23-local-state-diag-plan16 data b2c89082…fa64c仅既有a_recreated…父，只有15产品/清理全绿才接。source23与22不同，旧13 receipt不冒整份current require；只作既有prepare_build prior由matching package_key/same_files筛未变上游unit，当前Node必须重编。原1200/300/1500/5GiB/8192及工具pin/单槽/owned/双盘均保；失败立即停、不自改重启。
+
+
+### diag15仍红于固定base；source24统一现有normal/Pair owner边界（无新专项）
+
+source23 diag15正常Node/Pairing current freshfalse/opt3 build0/575.002s，原case11第一次c.pair496在0.98s报pair_receive“pairing incoming base or epoch changed”，0父，state16未launch/构建，原49未续。总580.238925s/22dual/source1932和13payload stable/0forced/cleanup空，owned27918/27947/45667/45687/45713及runner27898全部ESRCH，TMP n2l26无；root核原raw/全双盘/SHA/before=after/6组。actual binary762766cee89d70f95900783718b3c902ba6aeb01a025466f08cd7984909c2dc8，receipt5b6f177dcce5394145391f3bc19da7559b1f9e6a8bcc901f6ad79f758c45a0de，result e1676b9ec5f2aece08e4af4585d75c8f021daf2730b61eb3476c8fe90ee4c5b8，raw d0937ee1c9da82b994d8999844261f73ba7635c395eeeb60535857ffa3703c72。来源Q039/node-pair-vouch23-local-pairing-diag-run15双盘。旧unknown完成错此次未现不等于source23分支已实证绿。
+
+联合只读因果：Pair header固定双方have，pair_receive严格devices/epoch/base；offer_encoded却仅peer+doc选Ready/Preparing，不比requested Snapshot/have，所以合法normal并行创建的不同base可被Pair复用。单加Busy还不足：packet/flush的devices_only会携无关normal receipts，被authorize_devices exact拒；Finish/replay/localfinal全peer pending也会误挡无关新代。run15无逐frame，不冒捕获唯一时序。root+owner+非作者shutdown_owner确认共同最小方案，原4path必要修source24已授：Snapshot mismatch typed Busy保normal旧plan；Pair proof仅本operation.devices_in、ack仅devices_out；pending仅这两个exact id并保peer/方向/devices、未知operation报错。普通scope/normal Updates原义不变，固定grant/epoch/VV目标不放松，不删除plan，不新wire/store/缓存/跨await锁。保source23correlated修。
+
+actor先实现冻结delta供窄审，不自行native。后续原case11和既有state父用dev定向，BUILD300/TEST300/TOTAL720原控制；这些小数据功能无需每次local十分钟链接，最终Pair04和两压力边界仍local。原数据/业务限时/断言不改，不新父/矩阵，不先重跑49。
