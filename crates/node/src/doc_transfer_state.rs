@@ -679,6 +679,8 @@ impl State {
         let (version, changed, retired_pen) =
             context.apply(&descriptor.document, remote, &mut sink)?;
         drop(sink);
+        #[cfg(all(test, unix))]
+        crash_tests::after_flush(context, &chunk.manifest, self);
         let proof = DocProof {
             manifest: chunk.manifest.clone(),
             persisted_version: version.encode().map_err(Error::from_std)?.into(),
@@ -969,6 +971,8 @@ fn validate_records(bytes: &[u8], local: [u8; 32]) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(all(test, unix))]
+mod crash_tests;
 #[cfg(test)]
 mod tests;
 
