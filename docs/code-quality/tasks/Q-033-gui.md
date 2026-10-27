@@ -1,5 +1,7 @@
 # Q033 GUI：停止上传后的草稿、附件与重新连接
 
+最新状态：当前协议实现、集成与真实GUI验收完成；原运行器非绿与独立补验边界见本卡末尾P5记录。早期状态按历史保留。
+
 状态：implemented，等待root非作者复核/串行集成；所有者 store_owner；后端/token/API由agent_redaction独占，App接线/catalog由root独占。
 工作副本：`/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，分支 `fix/quality-upload-cancel-gui`。从精确集成 `d5ff206ca9009c04d4246f3ccccd107a2ec74cd2` 起步；此前从b732创建的同名新branch没有实现内容，核对clean后按root指示重新指向该基线。root文案127e2798已cherry为f8c8a034（仅两TOML各4词），使用既有catalog build-script同源生成ignored TS，无Cargo。
 
@@ -82,3 +84,13 @@ agent_redaction独立审查在固定8da候选取得Chrome/WebKit各1真红，证
 ## root最终集成检查点
 
 作者3f2b8b18/8da0d063/7746378f按序集成e56eef64/87674beb/bd58566a；root门85a78fe9。精确该运行源码gen成功、完整双引擎56/56、types/unit/gates101脚本94条通过，旧poll双引擎22/22也过；report14项指纹逐项与集成源一致，见Q033/integrated-gui/root-checks.json、report.json和integrated-poll。独立审查捕捉4类过期retry及旧cancel撤新notice的真红→绿均保留，不只认作者全矩阵。真实native GUI/Rust取消全链仍待，不能把组件HTTP/IPC mock说成App验收。后续Node/CI集成未更改这些GUI源，当前HEAD c37151a1。
+
+## P5最终当前协议验收（2026-10-28，root与独立审查）
+
+本节替代上文按时间保留的“等待集成/最终App待验”状态。集成`495d096d54ea083304031423ca052f87dd9bc75e`，完整2388输入frame`36f15241f5524d1e900d9b160087eb26b512a5db3f217c0713a869500efaf07e`，正常GUI executable`f76302af7b61b59c1d01172ee4209c1c9cb6c80bd6381ee760468527624c865d`。当前协议统一已集成；用户“未上线，不考虑旧Khor端兼容”替代历史mixed-version要求，旧兼容证据仅保历史。此前固定后端/组件回归及最终原115组合的确切版本映射见STATE，不冒称旧binary覆盖后续入口。
+
+`P5/Q033-real-app-owned-run05`由root通过CUA实际系统文件选择器逐张加入4张PNG，合计base64 23,048,528B；原稿A上传首Part后真实Interrupt，30s门内explicit release，取消收据reconnectfalse、无commit，正文与4附件恢复后捕a（ACP prompt0）；不改稿不重选直接B，独立新token、正文547B SHA和4图片hash/order均与A一致，同连接commit→真实Allow/chat_answer→EndTurn，捕b（prompt1）；C无附件15B小消息commit→Ask→真实Stop→新Cancelled（prompt2）。真实会话配置选bold和two，原native mode/option成功、新settings/wire/ACP齐；完整原raw matcher确认后CUA CmdQ，实际App45305 return0、launcher未发App信号，host此后才stop，helper45282 return0、connections1、elapsed181608ms。全程未reopen/leave，非bridge。
+
+保原运行**nongreen**：result`64428402c1b965c35f9dc1b2400063b12040d0adf8e4ed95b1b453cecf38c806`/189.108s，唯一末尾harness断言漏当前Vite正常TERM返回143（128+15），只认0/-15。独立审查`P5/Q033-real-app-run05-postreview01/report.json`，SHA`e6c297f0eebd31d713ceb6e85bf6b9fcff68a7c2152cda0b3cb2dab1c6fd075b`，42项补验实过：原纯check_q033、9snapshot长度SHA及live前缀、全部最终raw无晚A commit/unsent、当前source/helper/5producer/GUI/core、132PID/44group全退、原TMP清、双盘908条manifest。正常observer143的代码来源单列，未修改原result/退出政策，未重跑UI或伪造整体green；原5s内poll已由到达该断言证明，当前owner检查不冒称重现历史5s时序。GUI自动来源Q055的TAURI_CONFIG缺口另保nongreen。
+
+当前Q033功能与当前协议真实GUI验收已完成，运行器问题记下一轮；main/ship未授权。Q035/Q043及embedded Pi仍按STATE继续，不能以本项代替整轮完成。UI准确值bold/two由root CUA观察，旁观raw刻意省略值，只独立证明命令/新状态；两种证据边界分别保留。

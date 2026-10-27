@@ -11,19 +11,21 @@
 
 集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1@495d096d54ea083304031423ca052f87dd9bc75e` clean。完整 2388 输入 frame SHA `36f15241f5524d1e900d9b160087eb26b512a5db3f217c0713a869500efaf07e`，含 gen157/dist277/模块锁。生产与21b1一致；56bde只有原030失败 snapshot diagnostic，495d只有 Peer fixture 精确 Busy→Refused；全部原测试体不变。N2作者130fb、R2作者828f、退出作者3707均已集成，恢复仍核真实 refs。
 
-## 当前执行槽空：真实App原流程待完整闭环
+## 当前执行槽空：Q033当前协议验收完成，接续Q035/Q043
 
-**当前无native/Cargo/App/服务，App run03 session77772和run04 session31945都已exit1并有限清理；不能重启旧handle。** GUI/core实际producer仍如下，未重新编译。真实Q033已执行两次，原结果均非绿：
-- run03 278.611s：系统文件选择/多次CUA往返耗时，helper270.07s deadline101；A23MB首Part→真实Stop/显式release→原稿4图恢复，checkpoint-a已捕；B/C/normalQuit未达。首次会话open Busy→UI Retry成功，原4图并发put两rejected，经UI补齐；保真实问题归已有Node打开准入下一轮。source/helpers/dist/bundle稳、guard空/owned和TMP清，未伪造accepted。
-- run04 277.263s，resultaf91822399463c5e69450ddb5ec8651ca71e9fadd4722fcbf5dc1a70379ce373：四图逐张正常加入；A/B同547B文本SHA与四PNG hash/order完全相同，A取消reconnectfalse/无commit；B新tokencommit→真实Allow/chat_answer→EndTurn、checkpoint-b恰1prompt；C无附件小消息commit→Ask→Stop/Cancelled；option/model two成功，新Settings实存，单连接。mode与最终oracle/正常Quit未达，helper270.06 deadline后原outer清理，source/helper/dist/bundle稳、guard空/owned-TMP清。独立app_runtime_review逐raw核过，不能称完整成功。
+原App run03/run04分别278.611/277.263s因root CUA往返耗时达到原helper270s；保原nongreen，不能回填。run03完成A，run04完成A/B/C和option但未达mode/最终oracle/正常Quit。首次open Busy与并发多图Busy已登记下一轮，详细事实保历史与AUDIT。
 
-为纠正执行层约50次工具往返超时，仅root CUA把已观测确定的文件选择步骤在单调用内串行执行，每一步都fresh AX唯一真实元素定位后click/setValue/pressKey；不使用driver UI脚本、DOM/IPC伪操作，不增加原270/30/外300时限。`P5/Q033-real-app-owned-plan06`6dual，run/launcher与04/05逐字同、data72850c645e8ee0ff3eccd939842665dd754712802c825d24a91c5655b309b0b7仅4路径key改新run05/q033ui5，root和app_runtime_review短审通过，可仅此接续一次完整原流程。原capture A/B/最终raw与CUA正常Quit全保，真实producer五SHA齐。下一次直接该计划，不重编/重跑115/改源或加时。
+已独审plan06→新run05实际执行189.108s，session8833已exit1，**原result64428402c1b965c35f9dc1b2400063b12040d0adf8e4ed95b1b453cecf38c806仍nongreen**。root CUA真实完成四图逐张选择、A上传中Stop/explicit release→原稿四图恢复/capture-a、B同稿同图同连接重发→Allow/EndTurn/capture-b、C无附件小消息→Ask/Stop/Cancelled、mode bold与model two实际更新、原业务oracle ack、CUA CmdQ。实际App45305 return0、helper45282 return0/stop_requestedtrue/connections1/elapsed181608ms，所有owned/TMP已清；source/helper/dist/bundle稳定、guard空、无forced_cleanup。未修改源码或构建。
+
+唯一末尾失败是observer45266受控TERM实际返回143，原launcher断言只认0/-15。独立app_runtime_review定位当前Vite config.js SIGTERM handler先await server.close再设置128+signal退出，因此143=128+15符合该路径；不是产品或UI失败。独立补验原337–355及原纯check_q033等42项全部通过，report e6c297f0eebd31d713ceb6e85bf6b9fcff68a7c2152cda0b3cb2dab1c6fd075b，双盘P5/Q033-real-app-run05-postreview01，保原run05所有bytes/非绿。**不重跑已完成UI，不改helper/原launcher或扩大矩阵。** Q033三张主卡已追加最终当前协议证据；接续既定Q035/Q043同artifact验收。
+
+run05初次paste后的AX遇LaunchServices旧run04注册，root仅注销两个历史私有App注册并reset CUA，随后绑定owned run05精确路径；原App45305始终存活、没有reopen或第二连接。无用户App/设置被更改；旧注册清理不算产品修改或成功UI证据。
 
 core-helper-run02 producer已完成81.979s/24dual/来源true/所有owned-TMP清，result89715726663ccd10094d09039c62232e556725c58c1541a5cab94a79a00e0d4f，core-provenance8115c4d2b35760839818aa80e8b0f9b1a8629954689d7423455126e195b12d2b；exe chat_upload_cancel-a98ef2c294b70f0c SHAfa77eac90f78bc7df46506d24a982bda54c42d9aa3051756cf25cd924d8d0552。原1320已exit0。
 
 core04与已独审03 runner逐字同，仅3个OUT/internal/TMP字段改run02；data8b40397ff350355ffcc40caf6f84a8e741fc3129eec66333131dde204816688e。标准无GUI embed环境、真实当前来源，不能将GUI自动proof缺口传播为伪core receipt。
 
-**无需再规划或编译。下一步用已短审 `P5/Q033-real-app-owned-plan06/run.py` 完成本页上述原Q033。** 五个必需实际producer path+SHA已在双盘 `P5/Q033-real-app-actual-producers01.json` 逐项固定（status明确App尚未启动）。恢复6582五pin，外层PATH仅去掉恰好首个toolbin:，原App04 prepend后等于core实际环境；原外层自己设置CARGO_*并清runtime helper变量，TAURI_CONFIG/REMOVE/KHOR_AGENT_BUNDLE保持unset。先CUA文档/只读inventory准备好，再按既定唯一owned launcher启动；不要由getApp先行无隔离启动，也不重跑原115/构建或重启旧handle。
+**无需再规划或编译。plan06已实际执行，原结果与独立补验见上；不得重复启动该旧handle。** 五个必需实际producer path+SHA已在双盘 `P5/Q033-real-app-actual-producers01.json` 逐项固定（status明确App尚未启动）。恢复6582五pin，外层PATH仅去掉恰好首个toolbin:，原App04 prepend后等于core实际环境；原外层自己设置CARGO_*并清runtime helper变量，TAURI_CONFIG/REMOVE/KHOR_AGENT_BUNDLE保持unset。先CUA文档/只读inventory准备好，再按既定唯一owned launcher启动；不要由getApp先行无隔离启动，也不重跑原115/构建或重启旧handle。
 
 ## 正常GUI已产出，空间中断原件保留
 
@@ -61,9 +63,9 @@ d26e608f仅216 Rust机械格式；33c8bc12把共同检查放main/显式root、�
 
 ## 接下来：既定真实 App 验收收口
 
-1. GUI-run02与core-helper-run02均已实际完成并独核归槽，不重编译。Q033 run03/run04均已真实执行但未完整通过；下一次使用已独审plan06，输出新run05。
-2. root CUA逐步fresh AX批量执行确定的文件选择，减少往返；原helper270/firstPart30/outer300及全套原raw oracle保持，mode和option、正常Quit均需实际完成。
-3. 完成A上传中Stop/release→capture-a→B同稿四图Allow/EndTurn→capture-b→smallC Stop→mode bold/model two→最终oracle ack→CUA CmdQ→accepted。失败保原证据，不用人工marker替代业务判断。
+1. GUI/core与Q033 run05完整真实UI均已实际完成，不重编译/重跑。Q033末尾原raw检查独审42项通过、任务卡已登记。
+2. Q033原helper270/firstPart30/outer300未放宽，所有业务及正常Quit已真实完成；observer143的原harness失败保持原结果，补验单列。
+3. 不启动新的Q033重试；直接接续同GUI artifact的既定Q035/Q043，补齐真实App清单。
 4. 同一正常artifact完成Q035实际page/双私有peer借网/最后owner释放；Q043真实OS拖放、全屏、window-close、正常Quit。私有relay须两新Root首次open前非空only_mine配置；仅KHOR_RELAY仍追加public tier。Q035原4 native程序化资源场景使用已审端口替换plan01，单列程序化证据。
 5. 任务卡/STATE/AUDIT末尾按真实结果对齐，保留失败/未验/旧版本复用边界；Q010/011真实iOS/Safari已有确切版本与影响映射，不新开物理机/IME/Safari矩阵。无main/ship。
 

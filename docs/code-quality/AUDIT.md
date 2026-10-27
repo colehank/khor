@@ -107,3 +107,7 @@ Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史
 | P4检查入口 | import阶段解析CLI并可执行工具/写源，隐式root全局 | main入口、显式root；带--write受限import探针无副作用，既有执行序列可逆恢复 |
 
 不以文件数、行数、注释数量作为质量分；必要平台/协议/并发约束保留，独立新缺陷仍归上一节下一轮清单。
+
+### 下一轮记录：Vite受控TERM退出码
+
+Q033 run05全部实际UI与业务及正常App/helper退出已完成，但现有一次性launcher只认observer0/-15，当前Vite SIGTERM handler server.close后以128+15=143退出，原运行保nongreen。来源与原未到达末尾42项独立补验见双盘P5/Q033-real-app-run05-postreview01，原result/launcher未改，当前产品无新增实现。未来维护该运行入口时统一受控TERM语义；本轮不重跑已完成UI或扩建工具治理。
