@@ -10,3 +10,9 @@
 下一步：沿实际 serve/GUI teardown 找出正常退出与强制恢复边界；确定停止新准入、仍允许运行中 owner 完成、Root closing/closed 与 transport 关闭的顺序。现 runtime close 只管理本进程 agent producers/取消 owners，不等于整个 Node IO shutdown；不要把全部异步服务清理塞进它或用网络结果冒根目录写入回收证明。正常退出验收须包含真实 API local fallback、并发已准入请求、所有 owned Native PID/PGID/claim 与 Root 不再晚写；强制退出的保证另列，不能伪称正常 drain。
 
 本卡不阻止已完成的source07取消检查点提交；是完整P1/P5仍未关闭的明确调用方风险。
+
+## 当前源码进一步核对（集成36e3918f，root）
+
+实际实现位于 `crates/node/src/link.rs::serve_as`（不是lib.rs）；graph旧快照只作定位，实际源码已读。入口先acquire，然后bind/publish/listener等多处可早返；非resumable endpoint accept返回None是正常break，循环尾当前直接Ok。连接handler/本地handoff/pump等异步任务另有Arc，不能只在尾部加close便宣称所有入口停止。`remote_cancel::acquire`允许显式新工作重开已Closed的Root；closing期间会拒绝，CloseGuard结束后新工作可重开，符合当前API用途，但说明退出要先停止/收拢调用方，不能把Closed当进程永久退出闸。Tauri真正Exit当前close的Busy只记录日志；不提供整个运行中executor已停止的保证。
+
+下一实现仍需沿现有服务owner确定正常drain与强制watchdog的边界；当前没有在未收拢服务入口时添加假关闭，也没有把强制恢复改成可能无限等待。此为已确认待修调用方风险，未提交生产修改。
