@@ -128,3 +128,6 @@ OS run01最终b4a3…f831非绿/helper原270s期限；0 drag/fullscreen回调/gu
 
 
 2026-10-28后续可信红：test-only a663b374在原libtest单父实际持same-root控制lease，另一线程正常Node打开立即返回Busy并触发业务断言（非setup/编译红）；原result8df725e9…2bac保nongreen、113.900s/来源清理与20dual过。这证明已改准入的普通打开冲突契约缺口，不定位Pi/OS唯一gate。按既有N1授权窄实现，候选待交付；具体设计与非作者审查见STATE/Q039卡，不把静态设计或红算修复完成。
+
+
+2026-10-28 OS分类补足：不能仅因ACL/conf与main相同就把未观察到fullscreen回调整体排出本轮。非作者核实main已有同挂载/resize时机win.isFullscreen与同SDK权限需求；本轮listenNativeEvent生命周期确有修改，仍须原真实App验收。默认权限继承已实际展开：core默认集合包含查询，但项目capability均未引用其default或具体grant，所以静态缺授权候选成立；未捕实际SDK拒绝原因，不能归唯一原因。此为已开始验收边界的只读分类纠正，未加权限/运行/探针；独立旧授权问题继续按用户边界记录下一轮。

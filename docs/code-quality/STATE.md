@@ -71,7 +71,7 @@ plan01→`Q035-borrow-owned-run01`/54361，11.464s，resultd1d338aaae1214333ee0f
 
 `Q043-os-owned-run01`/4638已exit1，278.010s，result **b4a3af15757bf194874ffa38010265ca42f7bdad811a2ea7f0c61d82af34f831**。root真实CUA系统左右排列后两次Finder跨窗drag未产生可观测drop；CtrlCmdF窗口控件实际消失/回来，但成功fullscreen回调raw为0；NewSession Machine无候选/Directory及Create disabled/Busy，未建Shell/开guard文件，write_text0。不能归因工具/产品或当pass。任务Finder新窗已关闭；末尾切app缺fresh state被工具拒绝，随后原helper270.076s期限101，App/observer由原失败路径回收，**无正常Quit**。source/helper/dist/bundle/guard/owned/TMP均稳清，非业务绿。
 
-独审P5/Q043-os-run01-review01/report SHA45dfed0482394a780d5e1465968eebbe512577922ed81699d7f0bb14c3cee048，32项证据检查，0 OS行为晋升pass。default capability与main逐字同SHA2415f799409b0aef20c60aca95b3325478bd69983de6afcc6e40b8d4272450c6，无allow-is-fullscreen；quality无override，属main既有静态候选下一轮，实际SDK拒绝原因未捕，不扩权限。API transform已生效，0回调仅说明未观察到成功值；drag hook执行无单独runtime证明，不凭0事件定位。
+独审P5/Q043-os-run01-review01/report SHA45dfed0482394a780d5e1465968eebbe512577922ed81699d7f0bb14c3cee048，32项证据检查，0 OS行为晋升pass。default capability与main逐字同SHA2415f799409b0aef20c60aca95b3325478bd69983de6afcc6e40b8d4272450c6，无allow-is-fullscreen；quality无override，缺授权本身属main既有静态候选下一轮，实际SDK拒绝原因未捕，不扩权限；本轮listenNativeEvent注册/回收仍是已改边界，不能借此免除真实App验收。API transform已生效，0回调仅说明未观察到成功值；drag hook执行无单独runtime证明，不凭0事件定位。
 
 原内盘871条全manifest匹配，外盘870旧项匹配、仅runtime/.DS_Store晚写且新增postrun root-ui-abort.json；双版本metadata和描述已另双盘保存，postdelta SHAb490ef0d6744dbe28f5df09eb67ad71e35a4c584959936e9ec54a57526d8ad48。原manifest/result不回填。历史重复stage已按实际f763/lsof及该差异集归档，索引P5/Q043-staged-gui-archive08；恢复exe也不自动消除外盘元数据差异。
 
@@ -100,3 +100,5 @@ E `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`；I `/Users/zgh
 内盘恢复RESUME与current-code-quality-docs每次关键事实后镜像；掉盘先读RESUME，逐SHA核再恢复，不能按摘要覆盖未提交源。
 
 红run完成的唯一Node libtest exe（275818216B/SHA1b7b418a299a3a2df72dc2174c5b888db8cd9434e4e99a6decef2bce33fe0e37）已在root+非作者检查actual binary/depinfo及20dual、无lsof后可逆归档，避免下轮链接双份触5GiB门。索引P5/node-open-red-binary-archive01/index.json；ZIP I/node-open-red-a663b374-libtest.zip，66276089B/SHA67e1bf2f5e46073553e48deb732b2e6afbc974947f60d87786f6ad68ad7faca5。只unlink该exe，depinfo/原receipt/result/log/source、normalGUI/core/CLI/deps都保；现在不能冒称原full producer receipt当前完整，恢复bytes/mode/mtime才可重新核，inode是历史。外盘约5.97GB/内约8.39GB，启动再核门。
+
+Fullscreen分类补核（只读）：main8704与495d的App挂载及resize都调用同一win.isFullscreen，@tauri-apps/api2.11.1锁一致；本轮仅改成listenNativeEvent注册/回收，因此OS回调0不能整体当旧问题。已展开固定Tauri2.11.5生成ACL的core:default→core:window:default→allow-is-fullscreen：若引用default会授权，但当前三个capability均未引用该default或具体permission；tauri-utils2.9.3只展开明确引用集合，无隐式grant。故“静态缺授权”候选有依据，但不是原run唯一原因证明，也不免验新listener生命周期。未修改权限/新增运行或探针；停止该源审，原OS结果非绿保持。
