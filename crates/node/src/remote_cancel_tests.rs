@@ -525,6 +525,17 @@ async fn metadata_lock_failure_still_requests_local_stop_and_history_can_retry()
         .unwrap();
     let requested = active.stopped.load(Ordering::SeqCst);
     running().lock().unwrap().remove(node.root());
+    // Keep the real OS fault in place until the admitted producer reports it;
+    // the fast Stop snapshot alone does not prove that it reached metadata.lock.
+    let blocked_retry = node
+        .khor_agent_here(Action::RetryCancellation { run: run.clone() })
+        .await
+        .unwrap();
+    let intent_absent = !directory
+        .join(blake3::hash(run.as_bytes()).to_hex().as_str())
+        .join("intent.json")
+        .try_exists()
+        .unwrap();
     drop(lock);
     let retry = node
         .khor_agent_here(Action::RetryCancellation { run: run.clone() })
@@ -544,7 +555,18 @@ async fn metadata_lock_failure_still_requests_local_stop_and_history_can_retry()
     };
     assert!(cleanup.is_ok(), "cleanup={cleanup:?}");
     assert!(requested);
-    assert_eq!(report.data.unwrap()["durability"]["state"], "NotPersisted");
+    let initial = report.data.unwrap();
+    assert!(
+        (initial["durability"]["state"] == "NotPersisted"
+            && initial["durability"]["code"] == "Busy")
+            || (initial["durability"]["state"] == "PersistenceUnknown"
+                && initial["durability"]["code"] == "MetadataOutcomeUnknown"),
+        "initial Stop snapshot: {initial}"
+    );
+    let blocked = blocked_retry.data.unwrap();
+    assert_eq!(blocked["durability"]["state"], "NotPersisted");
+    assert_eq!(blocked["durability"]["code"], "Busy");
+    assert!(intent_absent, "the locked producer must not publish an intent");
     assert_eq!(retry.data.unwrap()["durability"]["state"], "DurablyQueued");
     assert_eq!(query.data.unwrap()["durability"]["state"], "DurablyQueued");
 }
@@ -1270,6 +1292,12 @@ async fn committed_intent_with_invalid_reply_remains_unknown_until_real_status()
         .unwrap();
     let requested = active.stopped.load(Ordering::SeqCst);
     running().lock().unwrap().remove(node.root());
+    // Await the actual producer before using its committed Status reply as the
+    // decoder fixture. Stop may honestly return before that commit finishes.
+    let retried = node
+        .khor_agent_here(Action::RetryCancellation { run: run.clone() })
+        .await
+        .unwrap();
     // The actual metadata worker committed the intent. Inject only at the
     // production reply decoder, without fabricating a file or a successful ACK.
     let committed = worker(
@@ -1304,10 +1332,14 @@ async fn committed_intent_with_invalid_reply_remains_unknown_until_real_status()
     let retired = drain(&node).await;
     assert!(retired.is_ok(), "workers={retired:?}");
     assert!(requested);
-    assert_eq!(
-        stopped.data.unwrap()["durability"]["state"],
-        "DurablyQueued"
+    let initial = stopped.data.unwrap();
+    assert!(
+        initial["durability"]["state"] == "DurablyQueued"
+            || (initial["durability"]["state"] == "PersistenceUnknown"
+                && initial["durability"]["code"] == "MetadataOutcomeUnknown"),
+        "initial Stop snapshot: {initial}"
     );
+    assert_eq!(retried.data.unwrap()["durability"]["state"], "DurablyQueued");
     for (persist, query) in decoded {
         assert_eq!(persist["durability"]["state"], "PersistenceUnknown");
         assert_eq!(query["durability"]["state"], "Unavailable");
@@ -1482,11 +1514,15 @@ async fn known_delegate_continuation_survives_lost_reply_and_stop_cancels_exact_
         task,
         "known task is durable before the actual Send reply"
     );
-    assert_eq!(
-        stopped.data.unwrap()["durability"]["state"],
-        "DurablyQueued"
+    let initial = stopped.data.unwrap();
+    assert!(
+        initial["durability"]["state"] == "DurablyQueued"
+            || (initial["durability"]["state"] == "PersistenceUnknown"
+                && initial["durability"]["code"] == "MetadataOutcomeUnknown"),
+        "initial Stop snapshot: {initial}"
     );
     assert!(events.contains(&(task.clone(), true)));
+    assert_eq!(snapshot["durability"]["state"], "DurablyQueued");
     assert_eq!(snapshot["counts"]["ConfirmedCanceled"], 1);
     let DelegationAnswer::Task { record } = current.unwrap() else {
         panic!("no actual owned task after Stop");

@@ -1,5 +1,6 @@
-//! Durable, bounded cancellation of known children. No resident means no
-//! progress guarantee; the next normal entry resumes the private pending set.
+//! Durable, bounded cancellation of known children. One process-owned driver
+//! advances admitted work while this process lives. After exit, the next normal
+//! entry resumes the private pending set; progress across process exit is not promised.
 use crate::{
     Node,
     agent_process::Control,
@@ -13,7 +14,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::Read,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Condvar, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -968,6 +969,83 @@ fn scheduler() -> &'static Mutex<Scheduler> {
     static STATE: OnceLock<Mutex<Scheduler>> = OnceLock::new();
     STATE.get_or_init(Default::default)
 }
+
+#[derive(Default)]
+struct DriverSignal {
+    pending: Mutex<bool>,
+    changed: Condvar,
+}
+fn driver_signal() -> &'static DriverSignal {
+    static SIGNAL: OnceLock<DriverSignal> = OnceLock::new();
+    SIGNAL.get_or_init(Default::default)
+}
+fn wake_driver() {
+    let signal = driver_signal();
+    *signal.pending.lock().unwrap_or_else(|p| p.into_inner()) = true;
+    signal.changed.notify_one();
+}
+struct Driver {
+    // Process lifetime, not a Root job. Root close joins only its existing owners.
+    _owner: std::thread::JoinHandle<()>,
+}
+fn ensure_driver() -> Result<(), String> {
+    static DRIVER: OnceLock<Mutex<Option<Driver>>> = OnceLock::new();
+    // Callers already hold Scheduler. The loop never holds this mutex while
+    // taking Scheduler, and only a finished handle may be joined here.
+    let mut driver = DRIVER
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if driver.as_ref().is_some_and(|d| d._owner.is_finished()) {
+        let finished = driver.take().expect("finished driver owner");
+        let _ = finished._owner.join();
+    }
+    if driver.is_none() {
+        let owner = std::thread::Builder::new()
+            .name("remote-cancel-driver".into())
+            .spawn(drive_admitted)
+            .map_err(|_| "DriverUnavailable".to_owned())?;
+        *driver = Some(Driver { _owner: owner });
+    }
+    Ok(())
+}
+fn drive_admitted() {
+    let signal = driver_signal();
+    let mut next = None::<Instant>;
+    loop {
+        let mut pending = signal.pending.lock().unwrap_or_else(|p| p.into_inner());
+        while !*pending {
+            if let Some(at) = next {
+                let delay = at.saturating_duration_since(Instant::now());
+                if delay.is_zero() {
+                    break;
+                }
+                let (guard, result) = signal
+                    .changed
+                    .wait_timeout(pending, delay)
+                    .unwrap_or_else(|p| p.into_inner());
+                pending = guard;
+                if result.timed_out() {
+                    break;
+                }
+            } else {
+                pending = signal
+                    .changed
+                    .wait(pending)
+                    .unwrap_or_else(|p| p.into_inner());
+            }
+        }
+        *pending = false;
+        drop(pending); // Never acquire Scheduler while holding the control lock.
+        let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+        state.pump(false); // Already admitted work only; never Discover/Root scans.
+        next = state.driver_deadline(Instant::now());
+        // Mutations notify under Scheduler. This pump has consumed all preceding
+        // mutations; discard its own start/enqueue notifications before unlocking.
+        // In particular, a failed retired Persist must wait rather than self-spin.
+        *signal.pending.lock().unwrap_or_else(|p| p.into_inner()) = false;
+    }
+}
 #[cfg(all(test, unix))]
 pub(crate) fn test_close_state(root: &Path) -> (bool, bool, usize, bool, usize) {
     let state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
@@ -1049,6 +1127,8 @@ pub(crate) fn test_reap_metadata() -> bool {
 fn start(root: PathBuf, operation: Operation) -> Result<OwnedWorker, String> {
     // A finite owner keeps polling/reaping while the caller awaits another
     // event. The process and its I/O retain Worker's original absolute budget.
+    ensure_driver()?;
+    wake_driver();
     #[cfg(test)]
     let traced = match &operation {
         Operation::CancelStep { run } => Some((root.clone(), run.clone())),
@@ -1128,6 +1208,7 @@ impl Scheduler {
             at,
             failures,
         });
+        wake_driver();
     }
     fn start_metadata(&mut self, root: PathBuf, operation: Metadata) -> Result<Completion, String> {
         if self.closing.contains(&root) {
@@ -1158,7 +1239,7 @@ impl Scheduler {
         });
         Ok(completion)
     }
-    fn pump(&mut self, background: bool) {
+    fn pump(&mut self, discover: bool) {
         if let Some(result) = self.metadata.as_mut().and_then(|m| m.worker.poll()) {
             let owner = self.metadata.take().expect("metadata owner");
             if let Ok(raw) = &result {
@@ -1239,7 +1320,7 @@ impl Scheduler {
                 index += 1;
             }
         }
-        if background && self.metadata.is_none() && !self.closing_metadata {
+        if self.metadata.is_none() && !self.closing_metadata {
             if let Some(index) = self
                 .retired
                 .iter()
@@ -1258,7 +1339,7 @@ impl Scheduler {
                 {
                     self.retired.push_back((root, run));
                 }
-            } else if let Some(root) = self.next_home() {
+            } else if discover && let Some(root) = self.next_home() {
                 let home = self.homes.get_mut(&root).expect("known home");
                 let operation = Metadata::Discover {
                     after: home.cursor.clone(),
@@ -1308,6 +1389,34 @@ impl Scheduler {
             }
         }
     }
+    fn driver_deadline(&self, now: Instant) -> Option<Instant> {
+        if self.metadata.is_some() || !self.steps.is_empty() {
+            return Some(now + Duration::from_millis(5));
+        }
+        let mut next = None;
+        // Retired entries are already admitted. A failed native start retries
+        // with a finite delay; an idle process never starts a discovery scan.
+        if !self.closing_metadata
+            && self
+                .retired
+                .iter()
+                .any(|(root, _)| !self.closing.contains(root) && !self.closed.contains(root))
+        {
+            next = Some(now + Duration::from_secs(1));
+        }
+        if self.steps.len() + self.closing_steps < 4 {
+            for item in &self.ready {
+                if !self.closing.contains(&item.root)
+                    && !self.closed.contains(&item.root)
+                    && self.homes.get(&item.root).is_some_and(|home| home.allowed)
+                {
+                    let at = item.at.max(now);
+                    next = Some(next.map_or(at, |prior: Instant| prior.min(at)));
+                }
+            }
+        }
+        next
+    }
     fn next_home(&mut self) -> Option<PathBuf> {
         for _ in 0..self.home_order.len() {
             let root = self.home_order.pop_front()?;
@@ -1328,6 +1437,7 @@ impl Scheduler {
 /// The reactor supplies cached pause/rest state. This function scans no files.
 pub(crate) fn pump(root: &Path, allowed: bool) {
     let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+    wake_driver();
     if state.closing.contains(root) || state.closed.contains(root) {
         state.pump(true);
         return;
@@ -1371,6 +1481,7 @@ pub(crate) fn acquire(root: &Path) -> Result<(), String> {
             },
         );
     }
+    wake_driver();
     Ok(())
 }
 pub(crate) fn check_admission(root: &Path) -> Result<(), String> {
@@ -1402,6 +1513,7 @@ impl Drop for CloseGuard {
         if self.metadata {
             state.closing_metadata = false;
         }
+        wake_driver();
     }
 }
 /// Fence before probing a cold Root's existing locks, so even a Missing lock
@@ -1415,6 +1527,7 @@ pub(crate) fn begin_close(root: &Path) -> Result<Option<CloseGuard>, String> {
         return Ok(None);
     }
     state.closing.insert(root.into());
+    wake_driver();
     Ok(Some(CloseGuard {
         root: root.into(),
         steps: 0,
@@ -1552,6 +1665,7 @@ pub(crate) fn local_retired(root: PathBuf, run: String) {
     {
         state.retired.push_back((root, run));
     }
+    wake_driver();
     state.pump(!known);
 }
 #[cfg(test)]
@@ -1571,6 +1685,7 @@ pub(crate) fn release_test_root(root: &Path) -> Result<(), String> {
     state.durable.retain(|(r, _, _)| r != root);
     state.homes.remove(root);
     state.home_order.retain(|r| r != root);
+    wake_driver();
     Ok(())
 }
 pub(crate) async fn request(
@@ -1622,6 +1737,7 @@ pub(crate) async fn request(
                 },
             );
         }
+        wake_driver();
         state.pump(false);
         // Reap before admission, without starting a periodic metadata scan.
         if !state.homes.contains_key(root) {
@@ -1664,6 +1780,11 @@ pub(crate) async fn request(
                 if let Some(result) = completion.lock().unwrap_or_else(|p| p.into_inner()).clone() {
                     break result;
                 }
+                // Stop has admitted a finite owned producer, but cannot claim
+                // persistence before that producer reports its actual result.
+                if persist && !retry {
+                    break Err("MetadataOutcomeUnknown".into());
+                }
                 if Instant::now() >= deadline {
                     break Err("MetadataOutcomeUnknown".into());
                 }
@@ -1672,4 +1793,86 @@ pub(crate) async fn request(
         }
     };
     decode_metadata_result(run, persist, result)
+}
+
+#[cfg(test)]
+mod driver_tests {
+    use super::*;
+
+    fn ready_state(at: Instant) -> (Scheduler, PathBuf) {
+        let root = PathBuf::from("/driver-policy-only");
+        let mut state = Scheduler::default();
+        state.homes.insert(
+            root.clone(),
+            Home {
+                cursor: None,
+                next_scan: Instant::now(),
+                allowed: true,
+            },
+        );
+        state.ready.push_back(Ready {
+            root: root.clone(),
+            run: "policy-only".into(),
+            at,
+            failures: 0,
+        });
+        (state, root)
+    }
+
+    #[test]
+    fn future_ready_waits_for_its_deadline_and_paused_or_fenced_work_idles() {
+        let now = Instant::now();
+        let due = now + Duration::from_secs(30);
+        let (mut state, root) = ready_state(due);
+        assert_eq!(state.driver_deadline(now), Some(due));
+        state.homes.get_mut(&root).unwrap().allowed = false;
+        assert_eq!(state.driver_deadline(now), None);
+        state.homes.get_mut(&root).unwrap().allowed = true;
+        state.closing.insert(root.clone());
+        assert_eq!(state.driver_deadline(now), None);
+        state.closing.clear();
+        state.closed.insert(root);
+        assert_eq!(state.driver_deadline(now), None);
+    }
+
+    #[test]
+    fn joining_quotas_do_not_busy_poll_and_retired_persist_does_not_discover() {
+        let now = Instant::now();
+        let (mut state, root) = ready_state(now);
+        state.closing_steps = 4;
+        assert_eq!(state.driver_deadline(now), None);
+        state.retired.push_back((root, "policy-only".into()));
+        state.closing_metadata = true;
+        assert_eq!(state.driver_deadline(now), None);
+        state.closing_metadata = false;
+        assert_eq!(
+            state.driver_deadline(now),
+            Some(now + Duration::from_secs(1))
+        );
+        state.retired.clear();
+        state.ready.clear();
+        // A due Home scan does not create a driver deadline or periodic IO.
+        assert_eq!(state.driver_deadline(now), None);
+    }
+
+    #[test]
+    fn an_owned_worker_gets_finite_polling_until_its_real_thread_is_joined() {
+        let now = Instant::now();
+        let mut state = Scheduler::default();
+        state.metadata = Some(MetadataOwner {
+            root: PathBuf::from("/driver-policy-only"),
+            operation: Metadata::Status {
+                run: "policy-only".into(),
+            },
+            worker: OwnedWorker(Some(std::thread::spawn(|| Ok(String::new())))),
+            completion: Arc::new(Mutex::new(None)),
+        });
+        assert_eq!(
+            state.driver_deadline(now),
+            Some(now + Duration::from_millis(5))
+        );
+        let mut owner = state.metadata.take().unwrap();
+        assert!(owner.worker.join().is_ok());
+        assert_eq!(state.driver_deadline(now), None);
+    }
 }

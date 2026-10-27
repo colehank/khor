@@ -295,6 +295,7 @@ fn local_retired(root: &Path, run: &str) -> Result<bool, String> {
 
 async fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String> {
     let store = node.delegation_store()?;
+    let mut runs = Vec::new();
     let mut tasks = Vec::new();
     let mut executions = Vec::new();
     let mut cancels = HashSet::new();
@@ -382,9 +383,13 @@ async fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String
             serde_json::from_slice(&fs::read(file(node.root(), &run)).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
         let data = stopped.data.ok_or("setup: no cancellation snapshot")?;
-        if data["durability"]["state"] != "DurablyQueued" {
+        if data["run"] != run
+            || !(data["durability"]["state"] == "DurablyQueued"
+                || (data["durability"]["state"] == "PersistenceUnknown"
+                    && data["durability"]["code"] == "MetadataOutcomeUnknown"))
+        {
             return Err(format!(
-                "setup: Stop did not durably queue cancellation: {data}"
+                "setup: Stop did not admit its owned cancellation metadata: {data}"
             ));
         }
         println!(
@@ -406,6 +411,7 @@ async fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String
             native_workers.extend(worker_pids()?);
         }
         tasks.push(task);
+        runs.push(run);
     }
     if held_since.unwrap().elapsed() >= Duration::from_secs(4)
         || worker_pids()?.len() != 4
@@ -452,6 +458,46 @@ async fn exercise(node: &Node, scratch: &Path, peer: &Peer) -> Result<(), String
             "BUSINESS RED R0: after four owners retired and normal Read/startup reconciliation, later cancellations never reached actual IPC: {missed:?}"
         ));
     }
+    // The six/four-held/fifth-sixth delivery barrier is already proved. Only
+    // now query actual metadata; awaiting Status earlier would serialize it.
+    tokio::time::timeout(Duration::from_secs(8), async {
+        for run in &runs {
+            loop {
+                let report = node
+                    .khor_agent_here(Action::CancellationStatus { run: run.clone() })
+                    .await?;
+                let data = report.data.ok_or("no final actual cancellation Status")?;
+                if report.run.as_deref() != Some(run.as_str()) || data["run"] != *run {
+                    return Err("final cancellation Status changed run identity".to_owned());
+                }
+                if data["durability"]["state"] == "DurablyQueued" {
+                    let path = node
+                        .root()
+                        .join(".khor/agent/cancellations")
+                        .join(blake3::hash(run.as_bytes()).to_hex().to_string())
+                        .join("intent.json");
+                    if fs::metadata(&path).map_err(|e| e.to_string())?.len() > 4096 {
+                        return Err("final actual cancellation intent exceeded its budget".into());
+                    }
+                    let intent: serde_json::Value =
+                        serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
+                            .map_err(|_| "invalid final actual cancellation intent")?;
+                    if intent["version"] != 1
+                        || intent["run"] != *run
+                        || intent["execution_home"] != serde_json::to_value(node.device()).unwrap()
+                    {
+                        return Err("final actual cancellation intent changed identity".into());
+                    }
+                    println!("final Stop intent durable: actual Status and intent match run={run}");
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|_| "final actual cancellation Status did not prove all six intents".to_owned())??;
     Ok(())
 }
 

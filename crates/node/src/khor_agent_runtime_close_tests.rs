@@ -317,9 +317,17 @@ async fn native_metadata_join_fences_passive_reopen_and_preserves_other_root_pro
     let mut held = HeldRun::new(&node, &run);
     let request_root = node.root().clone();
     let request_run = run.clone();
-    let requested = tokio::spawn(async move {
-        remote_cancel::request(&request_root, &request_run, true, true, false).await
-    });
+    let admitted = remote_cancel::request(&request_root, &request_run, true, true, false).await;
+    // Stop now returns while its real worker owns the FIFO. An explicit Retry
+    // joins that same owner and still waits for its original native result.
+    let mut requested = Box::pin(remote_cancel::request(
+        &request_root,
+        &request_run,
+        true,
+        true,
+        true,
+    ));
+    let requested_pending = futures::poll!(&mut requested).is_pending();
     let connected = until(|| held.connected()).await;
     let closing_root = node.root().clone();
     let closing = tokio::spawn(async move { Node::close_agent_runtime(&closing_root).await });
@@ -346,12 +354,14 @@ async fn native_metadata_join_fences_passive_reopen_and_preserves_other_root_pro
     let retirement_retained = remote_cancel::test_close_state(other.root()).4;
     held.release();
     let closed = closing.await.unwrap().unwrap();
-    let actual = requested.await.unwrap();
+    let actual = requested.await;
     // Reap the other Root before any primary outcome assertions or fixture drop.
     let other_closed = close_after_progress(&other).await;
     assert_retired(&observed);
     assert_retired(&other_observed);
-    assert!(connected && fenced && held_close_pending && other_progressed);
+    assert!(connected && requested_pending && fenced && held_close_pending && other_progressed);
+    assert_eq!(admitted["durability"]["state"], "PersistenceUnknown");
+    assert_eq!(admitted["durability"]["code"], "MetadataOutcomeUnknown");
     assert_eq!(refused["durability"]["code"], "RuntimeClosing");
     assert_eq!(busy["durability"]["code"], "Busy");
     assert!(quotas.2 <= 4 && quotas.3);
@@ -398,9 +408,15 @@ async fn canceling_a_close_waiter_keeps_finite_owner_and_quota_until_real_join()
     let mut held = HeldRun::new(&node, &run);
     let request_root = node.root().clone();
     let request_run = run.clone();
-    let request = tokio::spawn(async move {
-        remote_cancel::request(&request_root, &request_run, true, true, false).await
-    });
+    let admitted = remote_cancel::request(&request_root, &request_run, true, true, false).await;
+    let mut request = Box::pin(remote_cancel::request(
+        &request_root,
+        &request_run,
+        true,
+        true,
+        true,
+    ));
+    let request_pending = futures::poll!(&mut request).is_pending();
     let connected = until(|| held.connected()).await;
     let close_root = node.root().clone();
     let close = tokio::spawn(async move { Node::close_agent_runtime(&close_root).await });
@@ -410,11 +426,13 @@ async fn canceling_a_close_waiter_keeps_finite_owner_and_quota_until_real_join()
     let while_held = Node::close_agent_runtime(node.root()).await.unwrap();
     let quota = remote_cancel::test_close_state(node.root());
     held.release();
-    let actual = request.await.unwrap();
+    let actual = request.await;
     let finished = until(|| !remote_cancel::test_close_state(node.root()).0).await;
     let closed = Node::close_agent_runtime(node.root()).await.unwrap();
     assert_retired(&observed);
-    assert!(connected && fenced && finished);
+    assert!(connected && request_pending && fenced && finished);
+    assert_eq!(admitted["durability"]["state"], "PersistenceUnknown");
+    assert_eq!(admitted["durability"]["code"], "MetadataOutcomeUnknown");
     assert_eq!(while_held, RuntimeClose::Busy);
     assert!(quota.0 && quota.3);
     assert_eq!(actual["durability"]["state"], "DurablyQueued");

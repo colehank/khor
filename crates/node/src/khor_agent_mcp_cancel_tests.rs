@@ -12,7 +12,9 @@ use std::{
 struct Scratch(PathBuf);
 impl Drop for Scratch {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        if self.0.join("runtime.closed").is_file() {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
 }
 struct Worker(Child);
@@ -25,6 +27,22 @@ impl Drop for Worker {
 
 #[test]
 fn stopping_during_a_real_mcp_request_retires_the_executor_after_pi_exits() {
+    exercise_fixture(None);
+}
+
+#[test]
+#[ignore = "isolated metadata startup acceptance: requires verified actual CLI"]
+fn zero_metadata_startup_adapter_preserves_actual_stop_admission() {
+    exercise_fixture(Some(0));
+}
+
+#[test]
+#[ignore = "isolated metadata startup acceptance: requires verified actual CLI"]
+fn slow_metadata_startup_cannot_block_actual_stop_admission() {
+    exercise_fixture(Some(2000));
+}
+
+fn exercise_fixture(startup_delay_ms: Option<u64>) {
     let executable = std::env::var_os("KHOR_TEST_MCP_EXECUTABLE")
         .expect("this regression requires the exact newly built Khor CLI worker executable");
     assert!(Path::new(&executable).is_absolute() && Path::new(&executable).is_file());
@@ -53,25 +71,50 @@ fn stopping_during_a_real_mcp_request_retires_the_executor_after_pi_exits() {
     .unwrap();
     fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(scratch.0.join("sidecar.mode"), "blocked-mcp").unwrap();
+    let worker_executable = if let Some(delay_ms) = startup_delay_ms {
+        let adapter = scratch.0.join("metadata-start.py");
+        fs::write(&adapter, include_str!("fixtures/mcp-metadata-start.py")).unwrap();
+        let entry = scratch.0.join("metadata-start");
+        fs::write(
+            &entry,
+            format!(
+                "#!/bin/sh\nexec {} -I -S {} {} {} {} {} \"$@\"\n",
+                quote(&python),
+                quote(&adapter),
+                quote(Path::new(&executable)),
+                quote(&scratch.0.join("store")),
+                quote(&scratch.0.join("metadata.events")),
+                delay_ms,
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&entry, fs::Permissions::from_mode(0o700)).unwrap();
+        entry.into_os_string()
+    } else {
+        executable
+    };
     let output = File::create(scratch.0.join("worker.log")).unwrap();
-    let mut worker = Worker(
-        Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "khor_agent::mcp_cancel_tests::mcp_cancel_worker",
-                "--ignored",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env("KHOR_AGENT_SIDECAR", sidecar)
-            .env("KHOR_TEST_MCP_EXECUTABLE", executable)
-            .env("KHOR_MCP_CANCEL_ROOT", &scratch.0)
-            .env("KHOR_PATH", "/usr/bin:/bin")
-            .stdout(output.try_clone().unwrap())
-            .stderr(output)
-            .spawn()
-            .unwrap(),
-    );
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "khor_agent::mcp_cancel_tests::mcp_cancel_worker",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("KHOR_AGENT_SIDECAR", sidecar)
+        .env("KHOR_TEST_MCP_EXECUTABLE", worker_executable)
+        .env("KHOR_MCP_CANCEL_ROOT", &scratch.0)
+        .env("KHOR_PATH", "/usr/bin:/bin")
+        .stdout(output.try_clone().unwrap())
+        .stderr(output);
+    if let Some(delay_ms) = startup_delay_ms {
+        command.env("KHOR_MCP_METADATA_DELAY_MS", delay_ms.to_string());
+    } else {
+        command.env_remove("KHOR_MCP_METADATA_DELAY_MS");
+    }
+    let mut worker = Worker(command.spawn().unwrap());
     let deadline = Instant::now() + Duration::from_secs(40);
     let status = loop {
         if let Some(status) = worker.0.try_wait().unwrap() {
@@ -268,6 +311,167 @@ impl Drop for Cleanup {
 fn absent(pid: i32) -> bool {
     (unsafe { libc::kill(pid, 0) }) == -1
         && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+}
+
+async fn close_fixture_runtime(node: &Node) -> Result<(), String> {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            match Node::close_agent_runtime(node.root()).await? {
+                RuntimeClose::Closed => return Ok::<(), String>(()),
+                RuntimeClose::Busy => {
+                    node.reconcile_agent()?;
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| "fixture runtime close exceeded its deadline".to_owned())?
+}
+
+fn first_fixture_run(node: &Node) -> String {
+    format!(
+        "agent-{}-mcp-cancel-first-fixture",
+        &node.device_str()[..16]
+    )
+}
+
+async fn observe_startup_persistence(node: &Node, diagnostics: &[Value]) -> Result<Value, String> {
+    let Some(delay) = std::env::var_os("KHOR_MCP_METADATA_DELAY_MS") else {
+        return Ok(Value::Null);
+    };
+    let first = diagnostics
+        .iter()
+        .find(|event| event["index"] == 0 && event["phase"] == "end")
+        .ok_or("first actual Stop result was not recorded")?;
+    if delay.to_str() == Some("2000")
+        && first["call_elapsed_ms"]
+            .as_u64()
+            .is_some_and(|ms| ms < 1000)
+        && (first["durability_state"] != "PersistenceUnknown"
+            || first["durability_code"] != "MetadataOutcomeUnknown")
+    {
+        return Err("fast Stop did not report its still-pending metadata honestly".into());
+    }
+    let run = first_fixture_run(node);
+    let started = Instant::now();
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let report = node
+                .khor_agent_here(Action::CancellationStatus { run: run.clone() })
+                .await?;
+            let data = report.data.ok_or("actual Status returned no projection")?;
+            if report.run.as_deref() != Some(run.as_str()) || data["run"] != run {
+                return Err("actual Status returned a different run".into());
+            }
+            if data["durability"]["state"] == "DurablyQueued" {
+                let as_of = data["as_of_ms"]
+                    .as_i64()
+                    .ok_or("actual Status returned no observation time")?;
+                return Ok(json!({"durability_state":"DurablyQueued",
+                    "as_of_ms":as_of,"observed_after_ms":started.elapsed().as_millis()}));
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .map_err(|_| "actual Status did not observe persistence before its deadline".to_owned())?
+}
+
+fn startup_evidence(
+    node: &Node,
+    scratch: &Path,
+    diagnostics: &[Value],
+) -> Result<Vec<Value>, String> {
+    let pid: i32 = fs::read_to_string(scratch.join("sidecar.pid"))
+        .map_err(|e| e.to_string())?
+        .parse()
+        .map_err(|_| "invalid actual Pi PID")?;
+    if !absent(pid) {
+        return Err("actual Pi remains after runtime close".into());
+    }
+    let Some(delay_ms) = std::env::var_os("KHOR_MCP_METADATA_DELAY_MS") else {
+        return Ok(Vec::new());
+    };
+    let delay_ms: u64 = delay_ms
+        .to_str()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| matches!(*value, 0 | 2000))
+        .ok_or("invalid fixture startup delay")?;
+    let path = scratch.join("metadata.events");
+    if fs::metadata(&path).map_err(|e| e.to_string())?.len() > 2048 {
+        return Err("startup events exceeded their byte budget".into());
+    }
+    let events = fs::read_to_string(path)
+        .map_err(|e| e.to_string())?
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "invalid bounded startup event")?;
+    if events.is_empty() || events.len() > 8 || events.len() % 2 != 0 {
+        return Err("actual metadata Persist startup was not observed".into());
+    }
+    for pair in events.chunks_exact(2) {
+        for event in pair {
+            let object = event.as_object().ok_or("invalid startup event object")?;
+            if object.len() != 4
+                || object.keys().any(|key| {
+                    !matches!(key.as_str(), "phase" | "pid" | "monotonic_ns" | "delay_ms")
+                })
+                || event["delay_ms"].as_u64() != Some(delay_ms)
+            {
+                return Err("startup event fields differ from the fixture".into());
+            }
+        }
+        let pid = pair[0]["pid"]
+            .as_i64()
+            .and_then(|pid| i32::try_from(pid).ok())
+            .filter(|pid| *pid > 0)
+            .ok_or("invalid actual metadata PID")?;
+        let start = pair[0]["monotonic_ns"].as_u64().ok_or("no gate time")?;
+        let exec = pair[1]["monotonic_ns"].as_u64().ok_or("no exec time")?;
+        if pair[0]["phase"] != "gate_enter"
+            || pair[1]["phase"] != "pre_exec"
+            || pair[0]["pid"] != pair[1]["pid"]
+            || exec
+                .checked_sub(start)
+                .is_none_or(|ns| ns < delay_ms * 1_000_000)
+            || !absent(pid)
+        {
+            return Err("actual startup delay or metadata reap was not proved".into());
+        }
+    }
+    // The adapter never returns a reply. Require the actual native producer's
+    // independently persisted intent after close, including on the timing red.
+    let run = first_fixture_run(node);
+    let path = node
+        .root()
+        .join(".khor/agent/cancellations")
+        .join(blake3::hash(run.as_bytes()).to_hex().to_string())
+        .join("intent.json");
+    if fs::metadata(&path).map_err(|e| e.to_string())?.len() > 4096 {
+        return Err("actual intent exceeds its byte budget".into());
+    }
+    let intent: Value = serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
+        .map_err(|_| "invalid actual intent")?;
+    if intent["version"] != 1
+        || intent["run"] != run
+        || intent["execution_home"] != serde_json::to_value(node.device()).unwrap()
+    {
+        return Err("actual native metadata intent identity differs".into());
+    }
+    let first = diagnostics
+        .iter()
+        .find(|event| event["index"] == 0 && event["phase"] == "end")
+        .ok_or("first actual Stop result was not recorded")?;
+    if first["durability_state"] == "DurablyQueued"
+        && first["call_elapsed_ms"]
+            .as_u64()
+            .is_none_or(|ms| ms < delay_ms)
+    {
+        return Err("Stop claimed durable persistence before actual metadata startup".into());
+    }
+    Ok(events)
 }
 
 async fn exercise(
@@ -505,13 +709,50 @@ async fn mcp_cancel_worker() {
     // Preserve the product assertion, but retire the held socket and observe
     // actual executor release before failing. Never leave its 300s call behind.
     let cleanup_result = cleanup.finish();
+    let status_result = if cleanup_result.is_ok() {
+        observe_startup_persistence(&node, &diagnostics).await
+    } else {
+        Err("actual Status observation requires completed IPC/map/claim cleanup".into())
+    };
+    let runtime_result = close_fixture_runtime(&node).await;
+    let startup_result =
+        if cleanup_result.is_ok() && status_result.is_ok() && runtime_result.is_ok() {
+            startup_evidence(&node, &scratch, &diagnostics)
+        } else {
+            Err("startup evidence requires completed actual cleanup".into())
+        };
+    if let Ok(events) = &startup_result {
+        for event in events {
+            println!("metadata_startup_event {event}");
+        }
+        fs::write(scratch.join("runtime.closed"), "closed").unwrap();
+    }
     println!("explicit IPC release+fixture join and execute/map/claim drain: {cleanup_result:?}");
+    if let Ok(snapshot) = &status_result {
+        println!("fresh_cancellation_status {snapshot}");
+    }
+    println!(
+        "actual runtime close: {runtime_result:?}; startup evidence: {:?}",
+        startup_result.as_ref().map(Vec::len)
+    );
     for record in diagnostics {
         println!("stop_diagnostic {record}");
     }
     assert!(
         cleanup_result.is_ok(),
         "{cleanup_result:?}; primary={outcome:?}"
+    );
+    assert!(
+        runtime_result.is_ok(),
+        "{runtime_result:?}; primary={outcome:?}"
+    );
+    assert!(
+        status_result.is_ok(),
+        "{status_result:?}; primary={outcome:?}"
+    );
+    assert!(
+        startup_result.is_ok(),
+        "{startup_result:?}; primary={outcome:?}"
     );
     assert!(outcome.is_ok(), "{outcome:?}");
 }
