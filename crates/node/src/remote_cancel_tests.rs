@@ -572,8 +572,16 @@ async fn metadata_lock_failure_still_requests_local_stop_and_history_can_retry()
         intent_absent,
         "the locked producer must not publish an intent"
     );
-    assert_eq!(retry.data.unwrap()["durability"]["state"], "DurablyQueued");
-    assert_eq!(query.data.unwrap()["durability"]["state"], "DurablyQueued");
+    let retry = retry.data.unwrap();
+    assert_eq!(
+        retry["durability"]["state"], "DurablyQueued",
+        "retry snapshot: {retry}"
+    );
+    let query = query.data.unwrap();
+    assert_eq!(
+        query["durability"]["state"], "DurablyQueued",
+        "status snapshot: {query}; preceding retry snapshot: {retry}"
+    );
 }
 
 #[test]
