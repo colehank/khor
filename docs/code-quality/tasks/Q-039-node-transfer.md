@@ -1065,3 +1065,14 @@ source23 diag15正常Node/Pairing current freshfalse/opt3 build0/575.002s，原c
 联合只读因果：Pair header固定双方have，pair_receive严格devices/epoch/base；offer_encoded却仅peer+doc选Ready/Preparing，不比requested Snapshot/have，所以合法normal并行创建的不同base可被Pair复用。单加Busy还不足：packet/flush的devices_only会携无关normal receipts，被authorize_devices exact拒；Finish/replay/localfinal全peer pending也会误挡无关新代。run15无逐frame，不冒捕获唯一时序。root+owner+非作者shutdown_owner确认共同最小方案，原4path必要修source24已授：Snapshot mismatch typed Busy保normal旧plan；Pair proof仅本operation.devices_in、ack仅devices_out；pending仅这两个exact id并保peer/方向/devices、未知operation报错。普通scope/normal Updates原义不变，固定grant/epoch/VV目标不放松，不删除plan，不新wire/store/缓存/跨await锁。保source23correlated修。
 
 actor先实现冻结delta供窄审，不自行native。后续原case11和既有state父用dev定向，BUILD300/TEST300/TOTAL720原控制；这些小数据功能无需每次local十分钟链接，最终Pair04和两压力边界仍local。原数据/业务限时/断言不改，不新父/矩阵，不先重跑49。
+
+
+### dev17准备Busy保非绿；runtime19一次完整原case11真绿，下一只state18
+
+source24 dev diag17正常Node/Pairing actual freshfalse/opt0 build0/58.819s，父在pairing.rs492 open_as(gamma)就Busy/.48s，未进入493第一次Pair，0父，不给Pair修复算产品红/绿。总63.034s/20dual/source1932/13candidate stable，6组56402/56412/56441/57986/57997/58011全退；TMP门发现third-c58011/.khor/day.json2933B和history/cpu68B晚写残留，原cleanup失败保非绿。root核raw/双盘/source/组。actual debug pairing SHA dc00835b133183860b0214f032cc94106934bd1f0c8403e9b7d7bb38531b4988、201635576B，receipt ad300c81cfe458a4527f750fc6cc788f91b097902da1cb5bfce88ecbafdd9ebc，result7a4239f9e9a9ee6364a5e64bedebfe63fb734d18f3eb05274edd887794caa4da，raw27ae7abfe6c419fbfb6b7464b409de441fe5f61d1b59149f4382273b76776488。
+
+独立候选不扩本轮：open_as新增recover/随后bootstrap fence均可同文Busy，needs_recovery false时不拿recover gate，原raw无分支trace，不能认定唯一来源。fixture setup失败后resident在Scratch Drop后晚写是候选，不更改原父/造重试逻辑。root只授一次runtime-only重放（原父不变、0Cargo/metadata/mtime/源码）：plan19 runner34f037a7ac9cf6ebecc453bbe5b470ad679d4687c8822ca967a2e622aba68a77，data b7f52b04360db194f39a5e788f486a3084436239390d544e8e6cde3767c3c8b4，6dual/AST3007205GiB512与full current require(ad300c)齐。session30735/runner63943/parent63961，TMPn2r30。
+
+runtime19原case11实际1passed/0failed/0ignored，5.93s，整个父末尾两次Pair/quiet/第三peer与原12s内业务断言全部达到；总7.692665s。14dual/source1932/13candidate+同actualbinary/proof/三工具SHA稳，2组63943/63961全部ESRCH、TMPn2r30无、cleanup/forced全空，root独立逐raw/双盘/source/组核。result468f31c54acc4b9a8bbfeaa82edc4c8ae7b511be94eaf6ec4ec589851445cf44，raw e84bbf355fe7a7620c693e1b57ae26a2ba4297859f39ef7a669cfe547e410083。外Q039/node-pair-vouch24-dev-pairing-runtime-run19/内同名，原17失败不回填。actor归槽，root授下一仅dev state18一build/既有a_recreated父，300/300/720/512/5GiB，不接其它39/压力/target。
+
+旧n2d28由root独立postcleanup处理：原PGID均退、Lsof1无输出，2文件按原tmp-inventory的dev/ino/uid/size并实际SHA双盘保留，2已录空tmux目录按原inode核后rmdir；首次root rmdir因这两个空目录停止，后续复核完成。3file双盘Q039/node-pair-vouch24-dev-pairing-postcleanup17，原resultSHA保留，未回写run17。只是整理私有残留，不给原失败变绿。

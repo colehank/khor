@@ -1,6 +1,6 @@
 # 当前代码治理状态
 
-更新：2026-10-27，N2 source22 local13 原Pair04通过并归槽。完整目标 **active、未完成**。继续先读本页与[PLAN](PLAN.md)，核实际refs/diff/agents/PID；旧长状态完整保留在[历史快照](history/STATE-before-n2-read22-20261027.md)，任务细节看原任务卡/原始收据，不能按摘要覆盖WIP或重启旧进程。
+更新：2026-10-28，N2 source24 原case11 runtime19通过，接既有state父。完整目标 **active、未完成**。继续先读本页与[PLAN](PLAN.md)，核实际refs/diff/agents/PID；旧长状态完整保留在[历史快照](history/STATE-before-n2-read22-20261027.md)，任务细节看原任务卡/原始收据，不能按摘要覆盖WIP或重启旧进程。
 
 ## 用户决定
 
@@ -11,7 +11,7 @@
 
 ## 当前实际代码与验证
 
-治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`：`integrate/code-quality-wave1@3a0104a9`，当前dirty2仅Q033既定App验收test-only驻留接线，未提交/运行。权威协调目录是本目录，作者树同名文档只是历史副本。
+治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`：`integrate/code-quality-wave1@a3a7cbdebd125fa1145c73f399ad5992e42601cd` clean；Q033既定App test-only驻留helper source03已提交，静态独审通过，未编译/运行。权威协调目录是本目录，作者树同名文档只是历史副本。
 
 | 工作 | 当前事实 | 尚缺 |
 | --- | --- | --- |
@@ -21,11 +21,13 @@
 
 ## native槽与立即下一步
 
-**当前无Cargo/native活动槽。** source23 diag15已停并归槽：normalNode23+pairing build0/575.002s，但原case11第一次c.pair在496实际0.98s报“pairing incoming base or epoch changed”；0父通过，state16未构/跑，原49未继续。source23迟到完成修尚未被实际断言全验绿，不能用本次未再报旧错替代证明。22dual、1932源/13payload稳、5owned组+runner/TMP清，root核原raw/双盘/source与6组消失。
+**当前仅N2 owner持有下一native授权。** source24 runtime19已完成归槽：复用dev diag17确切binary/完整current producer proof，0Cargo/源/mtime变化，原case11恰1父绿/5.93s，原两次Pair、quiet后第三peer与全部原断言完整达到。14dual、1932输入/13payload stable、2组/TMP清，root核。root已授source24 dev state diag18下一批，只Node libtest必要build＋原a_recreated…父，300/300/720/5GiB/default512/真实工具pin；待owner实际handle，不接原49/其它父。
 
-source24必要小修由node_transfer_owner执行，**最后冻结仍source23，勿按候选覆盖WIP**。root/owner/shutdown_owner联合窄核同一normal/Pair计划归属冲突：Snapshot请求可能复用不同epoch/base/encoding的活动normal计划；Pair receipt只按devices筛会混入其它operation；三个完成检查也会把无关normal代判成未完成。已授权原4path一次最小闭环：Snapshot不匹配active时typed Busy并保原plan；复用本operation.devices_in/out严格筛Pair proof/ack和pending，保role/trust/epoch/fixed-target所有校验与normal行为，不新wire/store/跨await锁/删plan。先冻结delta再非作者窄审，不native。随后两个小数据原父改dev定向（300/300/720），大数据性能边界仍实际安装local，避免重复十分钟LTO；旧红/绿不回填。
+source24已冻13payload/1932、20dual/current13 root核，root+shutdown_owner四path窄审无确认阻断；Snapshot active mismatch typed Busy保normal plan，Pair proof/ack/回包/pending按本operation.devices_in/out exact，normal与grant/trust/epoch/VV原义保留。delta2c61bb91…b8e0a。source23迟到Complete处理仍在，既有state父尚未实际运行；不能用case11绿代替该分支断言。
 
-Q033原P5接线由node_test_review完成test-only helper source01（dirty2）；root/shutdown_owner源审中，需最小纠正resident-only capabilities、普通fixture cleanup未确认时失败传播。未编译/启动，非业务父，不冒实际App绿。实际App须现owned-entry外层控制和同源隔离Root，现有setup预存gap只登记下一轮，不另建owner框架。
+历史diag17 dev build0/58.819s，父第一次Pair前Node::open_as492 Busy/0.48s，0父，state18未接；63.034s、20dual/13payload stable、6组消失，但TMP因两晚写私有文件原非绿。root已核并双盘归档2文件至Q039/node-pair-vouch24-dev-pairing-postcleanup17（3files），Lsof空+原stat/全部旧组核后只移除其文件和空tmux目录；独立postcleanup，原run17非绿不改。Node-open Busy分支来源不凭文案断言，构造/teardown候选仅记下一轮，不开新锁治理或改原父。
+
+Q033 source03只test helper，a3a7cbde已提交：resident-only capabilities、普通Drop cleanup Err失败传播、已成功join不因先前Close失败误判，root/非作者源审通过；原普通父/断言完整。helper非业务父，未native/App绿；下一最终同源App沿现owned-entry300s/PGID。原Self构造前setup gap仅下轮。
 
 已完成local13原Pair04唯一父：构建976.241s、父21.416s、总1002.443s；原90s/数据/全部断言保留。root已核原raw、20双盘SHA及manifest、来源profile/正常Node、before=after、6个进程组消失与TMP清，local13旧handle已结束不得重启。source22单函数非作者node_test_review实际窄审无新增阻断：prepare canonical校验先于stage/Ready，open_existing完整digest/owner/epoch授权、短读/EOF、RAII/drop及普通resume/receiver边界保留。
 
