@@ -86,6 +86,10 @@ Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史
 | 取消状态即时查询偶发Unavailable | 21b1原case030在Retry已DurablyQueued后Query返回Unavailable；raw缺code。仅增强原断言diagnostic后同生产源码一次通过，未定位/未改产品，不据此回填原红。 | 下一轮若再现从新snapshot.code定位；本轮不反复重跑、猜测回滚或另开状态服务专项。 |
 | 原取消siblings夹具将Node打开Busy提升为父失败 | run04原case038 peerErr=document transfer state busy，respond:334 Node::open?在answer→Refused前返回；生产IPC路径会封Refused，不退出resident。raw无具体gate，后续siblings强断言尚未执行。 | Node准入治理留下一轮。随后run05原039同一夹具提前失败；按PLAN既定验收必要接线，仅fixture将精确Busy封Refused，immutable home保全部身份/操作校验，其他错误硬失败、全部原测试体/强断言/时限保持。草案root与非作者独审通过，待apply/原038与039定向；两个旧run保失败不计pass，不加sleep/retry。 |
 
+| 原取消重试deadline时间断言失败 | run06原040在remote_cancel_tests.rs1311 `run_starts.iter().skip(1).all(|(_,_,at)| *at >= due)`红，0新过/余72未跑。raw无at/due值，未定位产品/夹具/时钟原因；source/helpers稳/51dual/50组101owner全退/TMP清，原失败保。 | 遵用户边界下一轮定位，不加诊断/重试/改源码或时限；本轮继续其余既定72，不将该父计pass。 |
+
+| 原normal serve重启夹具Node打开Busy | run07原062 helper在runtime_close_tests1051 Node::open unwrap Busy，父789 restart失败；raw无具体gate。63累计过/本父失败/余50未执行；57dual/source稳/99组402owner全退/TMP清。 | 归已有Node打开并发准入候选下一轮，不新增源码/诊断/重试，不将helper另计父或充pass。 |
+
 
 ## 2026-10-28 已改边界的Clean Code收口
 
