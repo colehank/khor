@@ -57,3 +57,10 @@ root实际 `Q055/native-provenance-real03` 以收紧后的控制运行，exit0/5
 R1 run02仅metadata离线解析要求未缓存Android依赖而exit101，0build/0业务父；改用实际rustc host过滤，保resolve/locked/offline后run03 metadata过、CLI build0/73.08s，verify保守拒绝Node未配置的包外compile-time输入。root扫描实际所有workspace rustc.d一次列齐仅providers.json与scripts/install.sh。candidate05只在khor-node extras显式纳这两文件tree(file)及Node/dependents key，verify和未知输入拒绝不放宽，20纯控过。CI/doc host过滤9229→16a86已集成；05 exact2 fc592→0a888已集成。
 
 run04实际normalCLI0/69.34s、Node0/66.30s，并通过完整verify/require来源；zero/slow+close6合计8个业务父过，但R0第一run进度红，整run非绿。源码/entry/module/dist稳、owned组/TMP清，28dual由root独读逐SHA核。证明来源模块已接上真正Khor入口；R1行为红不被误计成来源工具失败，也不标全R1/P5完成。原各setup/verify/产品失败都独立保留。
+
+
+## Node-only闭包输入检查点
+
+真实N1 worktree没有apps/gui/dist；旧build_state无条件遍历全部workspace包而要求未选web的dist，阻挡合法Node-only准备。closure06只对请求包的依赖closure构states/keys/extra，prepare/verify核同selected域；完整source/context与actual第一方rows覆盖门及未知输入拒绝不放宽。原20＋2新增纯控共22过，选web仍在prepare/verify拒绝缺dist。
+
+root实际node-pair-settlement15-run01在无dist树prepare/build/verify成功，8selected=8states=8keys，18个trust父真实过、109.281s/34dual/资源清理无遗留。这验证真正Node-only使用，不凭纯控代替编译。作者28ed5beed5736fc8bf2ba42e469fdb363317c356，集成bdb689c2b29de0381a554afda623ee50437d3265，exact2输入脚本，公共接口保持。最终整合App/前端产物producer/远端CI仍未验，不标全Q055 done。

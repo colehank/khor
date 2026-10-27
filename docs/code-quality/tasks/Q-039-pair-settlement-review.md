@@ -1,6 +1,6 @@
 # Q039 N2 settlement 第一小步
 
-状态：source review，未编译/运行/提交/集成。实现 node_transfer_owner；root 已源码独审，无确认行为阻断。实现树 `fix/quality-node-doc-transfer@8f2f1d1b`，仅 `crates/node/src/trust.rs` dirty；candidate15 位于外盘 `Q039/node-pair-settlement-candidate-15` 及 recovery 同名内盘备份，8dual/1085 inputs，其他1084个输入逐字不变。
+状态：第一步检查点已实际验收并集成，N2整体未完成。实现 node_transfer_owner；root 已源码独审，无确认行为阻断。实现树 `fix/quality-node-doc-transfer@8f2f1d1b`，仅 `crates/node/src/trust.rs` dirty；candidate15 位于外盘 `Q039/node-pair-settlement-candidate-15` 及 recovery 同名内盘备份，8dual/1085 inputs，其他1084个输入逐字不变。
 
 先前 Pair04 已证实29,224,082B回包失败、票据已消耗、同 caller 重试 badinvite，尚未修复。issuer 的 `settle_with` 在 burn 前就可能改 anchor/旧 key/roster，因此未来可恢复 intent 必须先于 settlement mutation；不能只在 burn 后补 claim。
 
@@ -9,3 +9,8 @@
 这不是 durable intent：没有 mine roster 预期指纹、共享 root fence、stale-plan 重验、幂等 replay 或重启恢复。apply 只允许原调用在同一 Loaded 下立即消费；源码注释已明确范围。大 Pair/Vouch wire 分块、可恢复 nonce/tokenHash/caller claim、bootstrap 前 reconcile 等仍待后续接口审查和实现，不得把这一步标 N2 done。未知 caller/被 leave/revoked 的权限不得因完成 claim replay 复活；第一请求仍须验证真实 token，hash 不是新凭据。
 
 当前保持候选冻结；N1 owner 暂做 R1 driver 非作者审查，R1 之后再授 N2 必要类型与真实回归验证。无 main/ship 授权。
+
+
+root实际执行node-pair-settlement15-plan01：真实host-filtered lockedoffline metadata→closure06 Node-only prepare（真实apps/gui/dist不存在）→唯一Node libtest构建及verify→实际inventory严格对应18个普通trust父（新3先、原15随后）。全部各1/0/0，整run green/109.281s，1929完整proof输入/1085候选域/助手SHA稳定，所有owned组/footprint/TMP清，无forced；root独读18raw并逐SHA核34dual。模块states/keys/selected均8且未读取未选web输入。
+
+作者fdfb6d0bdf31e5558c4f16c6e985227169019ab3、root集成b196992a09499d384afb97f321820a2bd89d6c51，exact trust.rs且SHA=d23481bb55bea7fa6109f337a6e50a15d4e1ff0c82dc9001dc75f19d8b490c83。作者与集成当前clean，组合native/App仍待。原Pair04问题未修，不因分层验收通过标N2 done。

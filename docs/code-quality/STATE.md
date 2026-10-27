@@ -6,7 +6,7 @@
 
 - 完成全仓功能审计、按风险修复/重构、Clean Code工程治理和最终同源App验收；多智能体协作与压缩恢复贯穿全程。任一首批或库基座不能代替完整目标。
 - 未上线，不保旧Khor端fallback/迁移矩阵；统一当前协议。认证、epoch、数据完整性、实际支持平台及外部ACP声明能力仍保留。
-- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@0a888f24c0e20e6233192b93df05618c883bf0ea`，两树最近核对均clean。用户既有App/服务/release不动。
+- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@b196992a09499d384afb97f321820a2bd89d6c51`，两树最近核对均clean。用户既有App/服务/release不动。
 - 权威协调目录是本目录；实现树同名文档为历史副本。外盘新资料放 `/Volumes/disk0/Khor` 对应分类。
 
 ## 已集成的成果
@@ -22,12 +22,12 @@
 
 | owner | 实现树 / baseline | 当前状态 |
 | --- | --- | --- |
-| root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至0a888f24（含真实SIGKILL验收与Q055来源入口/host及Node嵌入输入）；共同lib/link/proto组合native及App待。 |
-| node_test_review | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-native-provenance@fc592fdb` | 复用原terminal树做Q055，Q05505已fc592fdb→0a888f24集成，20纯控、real03五对照及真实R1 CLI/Node来源接线过；现转R1 driver实现owner，源04保留，仅remote_cancel.rs/必要策略回归，无native授权。 |
-| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@c81d0a18` | 已c81→dd9检查点集成；真实2s metadata阻塞Stop已红，source04已实际编验：zero/slow+close6共8父过；R0第0run无自主pump真实红。原owner额度错误停；node_test_review接driver实现、root与N1 owner独审，原source04不覆盖。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@8f2f1d1b` | source08纯policy实际0/1/0精确红；已返槽。source11完整17+原N0已过，d7a→c13提交集成；crash14实际1个业务父全绿，8f2f1d1b→3a2bb9bf已提交集成；47dual/1085，真实postflush SIGKILL+fresh-open/错误ACK保stage/精确GC均过。N2 candidate15仅trust纯plan/apply提取+3回归源冻结，root源码审无阻断，未编验/commit；8dual/1085，其他1084不变。保持冻结，兼任R1 driver非作者独审；优化构建32MiB边界仍待。 |
+| root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至b196992a（含取消31回归、Q055闭包输入修复、trust18提取）；共同lib/link/proto组合native及App待。 |
+| node_test_review | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-native-provenance@28ed5bee` | 复用原terminal树做Q055，Q05505已fc592fdb→0a888f24集成，20纯控、real03五对照及真实R1 CLI/Node来源接线过；容量错误已停；R1 driver与fixture07已8292→8395提交集成，31distinct全过；Q055 closure06已28ed→bdb689c2提交集成，22纯控及真实无dist Node-only构建/来源接线过，当前clean。 |
+| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@c81d0a18` | 已c81→dd9检查点集成；真实2s metadata阻塞Stop已红，原owner额度错误停；现8292e654 clean，source07实测31父全过并8395集成；旧04/06/各失败均保留。正常Tauri/组合App仍待，不把R1全部/R2标done。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@fdfb6d0b` | N1 crash与source11原17/N0已过；trust提取candidate15真实新3+原15全部过，fdfb→b196提交集成，树clean。Q055 closure06也已提交集成。现仅准备b196组合构建入口，尚无新native授权；大Pair04/claim/wire及优化构建32MiB边界仍待。 |
 
-**当前唯一Cargo/native槽空。R1 run04已完成归槽：新CLI/Node来源构建过、8父过，但R0实际红，整体非绿；仅新driver源码授权，未再授执行。** 授槽/启动后须核现场，不据旧active.json重启。Q052/R1/N1三个检查点均已集成，组合native/App尚待；R1后续慢Stop/R2、N1实际32MiB边界/N2等仍未完成。
+**当前唯一Cargo/native槽空。N2 trust15 run01/session6954已经退出：metadata/无dist prepare/唯一Node构建及18父全绿，109.281s，34dual/所有owned组和TMP清；root独核。当前仅授权准备b196组合构建，未授执行。** 授槽/启动后须核现场，不据旧active.json重启。Q052/R1/N1三个检查点均已集成，组合native/App尚待；R1调用方关闭/R2、N1实际32MiB边界/N2等仍未完成。
 
 ## Q052：终端当前协议与清屏
 
@@ -57,7 +57,7 @@
 
 source02只两fixture路径27payload/2353输入；原source01的DeviceId.id编译错误已最小删.id，旧compile101/0父20dual保留。`metadata-startup-red-run-20261027T050904Z` 实际正常libtest63.730s过；zero内外父各1/0/0，16Stop567ms；真实2s启动下slow内外父各0/1/0、first2123ms/16calls2124ms，唯一primary Stop admission blocked，真实gate→exec2.0097135s/同PID/原CLI最终DurablyQueued。实际intent身份、正常close、Pi/metadata ESRCH均过，50dual/10PID/9PGID/TMP清。root已独读result，明确是本次产品红，不倒推旧5.27。
 
-已授权最小生产fix：仅persist&&!retry的Stop登记准入owned metadata后不再等启动/落盘，已完成照实decode、未完成诚实PersistenceUnknown，owner/claim/quota持续持有；Status/显式Retry语义保留、原1s门/exercise不改，补真实Status观察持久化完成。source04已交（27/2353，生产仅5行Stop fast分支，慢fixture真实Status及原R0/两close等待者最小适配），root及node_test_review非作者独审通过；R0真实Status+intent在原六/four-held/5,6 delivery之后，close以同owner显式Retry实际Pending，原owner/claim/quota/fence oracle保留。run04已实际新CLI/Node构建及来源验证过，zero/2s+close6共8父绿，slow Stop由原2123ms降至1ms且最后真实durable。R0第0run原2秒内未到实际Cancel，定位metadata完成结果无自主pump；整个run非绿。原source04/28dual保留，driver最小源码修复及后续完整回归待；不能给fixture加Read/Status来驱动，R2不混入。详见Q-037-cancel-driver。
+已授权最小生产fix：仅persist&&!retry的Stop登记准入owned metadata后不再等启动/落盘，已完成照实decode、未完成诚实PersistenceUnknown，owner/claim/quota持续持有；Status/显式Retry语义保留、原1s门/exercise不改，补真实Status观察持久化完成。source04已交（27/2353，生产仅5行Stop fast分支，慢fixture真实Status及原R0/两close等待者最小适配），root及node_test_review非作者独审通过；R0真实Status+intent在原六/four-held/5,6 delivery之后，close以同owner显式Retry实际Pending，原owner/claim/quota/fence oracle保留。run04已实际新CLI/Node构建及来源验证过，zero/2s+close6共8父绿，slow Stop由原2123ms降至1ms且最后真实durable。R0第0run原2秒内未到实际Cancel，定位metadata完成结果无自主pump；整个run非绿。原source04/28dual保留，source06单一process-owned driver双审过，run05实际两build+原9父全部绿，原R0六/fourheld/5,6delivery不改且通过。随后同二进制tail01策略3+旧receipt2过，旧锁fixture初始Unknown≠NotPersisted断言红：其过早drop锁未等实际producer尝试，源06生产冻结，正source07仅3处旧fixture适配真实故障观察后，新两build+原9父run06再次全过、同新binary的21项tail02全过、必要新stub+paired父run09过，共31distinct；8292→8395 exact6已提交集成，2353源稳/无forced/owned组与TMP清。不能给R0加Read/Status驱动，R2不混入。详见Q-037-cancel-driver。
 
 ## N1 / N2：Node文档同步
 
@@ -73,7 +73,7 @@ source02只两fixture路径27payload/2353输入；原source01的DeviceId.id编�
 
 - Q053全仓fmt基线205个第一方Rust文件差异，尚未迁移；功能集成后独立纯格式批次。
 - Q054私有IO gate typed错误边界待N1后，去除按英文文案识Busy；不建全仓错误框架。
-- Q055 candidate04已859b9f7d→d49d88c3提交集成。root独审及真实小型编译先后抓到包外输入未入producer key、hyphen bin名配对、回A漏刷新生成器三处缺口，均保原失败后最小修复。19纯控及real03真实A→B→同源B→A→relocation的5build/5native全过；同源3artifact全fresh/empty refresh，变化正确重建、生成内容与嵌入root正确，66dual/owned组全退/TMP清。R1实际host metadata发现离线全平台依赖问题后CI/doc显式host过滤（9229→16a86），actual CLI rustc.d又确认Node包含providers.json/install.sh，05显式纳key而不放开未知输入（fc592→0a888）。20纯控及真实R1 normalCLI/Node完整来源验证已过；最终整合App与CI远端运行仍待，后续复用入口不复制runner。实际Sync/catalog反例证明fresh=true与manifest路径不足，精确refresh只是临时措施，未定性Cargo bug。
+- Q055 candidate04已859b9f7d→d49d88c3提交集成。root独审及真实小型编译先后抓到包外输入未入producer key、hyphen bin名配对、回A漏刷新生成器三处缺口，均保原失败后最小修复。19纯控及real03真实A→B→同源B→A→relocation的5build/5native全过；同源3artifact全fresh/empty refresh，变化正确重建、生成内容与嵌入root正确，66dual/owned组全退/TMP清。R1实际host metadata发现离线全平台依赖问题后CI/doc显式host过滤（9229→16a86），actual CLI rustc.d又确认Node包含providers.json/install.sh，05显式纳key而不放开未知输入（fc592→0a888）。20纯控及真实R1 normalCLI/Node完整来源验证已过；最终整合App与CI远端运行仍待；现又确认Node-only树无dist却被未选web输入阻挡，closure06按request闭包读取states/keys/extra（22纯控过），已在真实N1无dist树成功构建并完整证明Node产物，28ed→bdb689c2 exact2集成，后续复用入口不复制runner。实际Sync/catalog反例证明fresh=true与manifest路径不足，精确refresh只是临时措施，未定性Cargo bug。
 - 仍需Q033真实GUI上传、Q035真实borrow lease、Q043 OS拖放/主动退出/全屏、Q045真实SSH/master/remote lease、Q041 fresh onset/远程/Linux musl/嵌入；余下P1审计、P4规范与工具入口、P5最终同源App全流程。物理iPhone/IME/Windows runtime没有全部证明，类型检查不等于运行通过。
 
 ## 构建资源与恢复
@@ -81,3 +81,7 @@ source02只两fixture路径27payload/2353输入；原source01的DeviceId.id编�
 统一target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`，jobs1/incremental0/lockedoffline、短独占TMP；内外盘各至少5,368,709,120B，有界STEP/TOTAL/连续3IO、owned PGID全members/有限TERM-KILL-reap/source实际产物/双盘门。用户已允许外盘风扇坏条件下继续，不增加警告或触碰用户进程。
 
 外盘证据 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`（其下直接Q052/Q037/Q039，无recovery前缀）；内盘镜像 `/Users/zgh/Library/Caches/khor-code-quality/recovery`。最新RESUME/文档manifest须同步。掉盘先读RESUME并核现场；不能按摘要覆盖dirty源码。精确缓存cleanup11–16旧清单不重放。原失败与历史二进制不回填成新源码绿。
+
+调用方新明确风险：[Q037 shutdown callers](tasks/Q-037-shutdown-callers.md)。实际无单数agent CLI命令，GUI/Node API可local fallback；serve_as仅acquire，Tauri Exit已有close；强制exit只有child5s fuse不等于join。完整App/serve关闭仍待，不能据底层31回归声称全App退出已清理。
+
+N2仅trust分层第一步完成：candidate15新3＋原15 trust父实际全绿（18distinct），fdfb6d0b→b196992a exact1集成；原29,224,082B Pair04烧票、可恢复claim/intents/fence/wire/bootstrap仍未实现。后续优先组合当前N1/R1/trust并完成bindings/frontend/App验证，不把各作者树结果冒整合App。
