@@ -116,6 +116,61 @@ class ProvenanceTests(unittest.TestCase):
         self.assertTrue(all(u["reuse"] for u in reused["units"]))
         p.require_provenance(reused, self.root, rows[1])
 
+    def add_web(self):
+        self.put("web/Cargo.toml", "[package]\nname='khor-web'\nversion='0.1.0'\n")
+        source = self.put("web/src/lib.rs", "pub fn web() {}\n")
+        self.metadata["workspace_members"].append("web")
+        self.metadata["packages"].append(
+            {"id": "web", "name": "khor-web", "manifest_path": str(self.root / "web/Cargo.toml"),
+             "targets": [{"name": "web", "kind": ["lib"], "edition": "2024",
+                          "src_path": str(source)}]})
+        self.metadata["resolve"]["nodes"].append({"id": "web", "dependencies": ["dep"]})
+
+    def test_unselected_web_missing_dist_allows_app_and_node_closure_and_reuse(self):
+        self.add_web()
+        self.metadata["packages"][0]["name"] = "khor-node"
+        self.put("dep/Cargo.toml", "[package]\nname='khor-node'\nversion='0.1.0'\n[lib]\nname='dep'\n")
+        self.put("apps/agent/providers.json", '{"provider":"fixture"}\n')
+        self.put("scripts/install.sh", "#!/bin/sh\n")
+        self.assertFalse((self.root / "apps/gui/dist").exists())
+        for request in (self.request.copy(),
+                        {"package": "khor-node", "name": "dep", "kind": ["lib"], "test": False}):
+            with self.subTest(package=request["package"]):
+                self.request = request
+                prepared = self.prepare()
+                self.assertNotIn("web", prepared["states"])
+                self.assertEqual(set(prepared["states"]), set(prepared["selected"]))
+                self.assertEqual(set(prepared["package_keys"]), set(prepared["selected"]))
+                self.assertIn("web/src/lib.rs", prepared["source"])
+                rows = [row for row in self.rows()
+                        if row.get("package_id") in prepared["selected"]
+                        or row["reason"] == "build-finished"]
+                receipt = p.verify_build(prepared, rows)
+                self.assertNotIn("apps/gui/dist", receipt["extra_inputs"])
+                reused = self.prepare([receipt])
+                self.assertEqual(reused["refresh_plan"], [])
+                for row in rows[:-1]:
+                    row["fresh"] = True
+                verified = p.verify_build(reused, rows)
+                self.assertTrue(all(unit["reuse"] for unit in verified["units"]))
+                if request["test"]:
+                    p.require_provenance(verified, self.root, verified["selected"]["row"])
+
+    def test_selected_web_still_requires_dist_during_prepare_and_verify(self):
+        self.add_web()
+        self.request = {"package": "khor-web", "name": "web", "kind": ["lib"], "test": False}
+        with self.assertRaises(FileNotFoundError) as missing:
+            self.prepare()
+        self.assertEqual(Path(missing.exception.filename), self.root / "apps/gui/dist")
+        dist = self.put("apps/gui/dist/index.html", "current frontend\n")
+        prepared = self.prepare()
+        rows = [row for row in self.rows()
+                if row.get("package_id") in prepared["selected"] or row["reason"] == "build-finished"]
+        dist.unlink()
+        dist.parent.rmdir()
+        with self.assertRaises(FileNotFoundError):
+            p.verify_build(prepared, rows)
+
     def test_prepare_verify_cli_round_trip_and_preserve_previous_receipts(self):
         metadata = self.base / "metadata.json"
         metadata.write_text(json.dumps(self.metadata))

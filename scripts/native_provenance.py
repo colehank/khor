@@ -116,13 +116,18 @@ def closure(graph, start):
         selected = expanded
 
 
-def build_state(root, metadata, tools):
+def build_state(root, metadata, tools, request):
     source = source_frame(root)
     pkgs, graph = packages(root, metadata)
+    requested = [p for p, v in pkgs.items() if v["name"] == request["package"]]
+    if len(requested) != 1:
+        raise ValueError("Expected one requested workspace package")
+    selected = closure(graph, requested[0])
     common = context(root, tools)
     common["vendored_sources"] = {n: v for n, v in source.items() if n.startswith("vendor/")}
     states = {}
-    for ident, package in pkgs.items():
+    for ident in sorted(selected):
+        package = pkgs[ident]
         directory = Path(package["manifest_path"]).parent
         prefix = str(directory.relative_to(root)) + "/"
         inputs = {n: v for n, v in source.items() if n.startswith(prefix)}
@@ -142,7 +147,7 @@ def build_state(root, metadata, tools):
                          "inputs": inputs, "extra_inputs": extras, "embedded_root": str(root)}
     keys = {p: key({"context": common,
                     "packages": {states[d]["manifest"]: states[d] for d in closure(graph, p)}})
-            for p in pkgs}
+            for p in selected}
     return source, common, pkgs, graph, states, keys
 
 
@@ -186,11 +191,8 @@ def prepare_build(root, target_dir, metadata, request, tools, prior_receipts=(),
     root, target_dir = Path(root).resolve(), Path(target_dir).resolve()
     if len(tools) < 2:
         raise ValueError("Record the actual Cargo and rustc binaries")
-    source, common, pkgs, graph, states, keys = build_state(root, metadata, tools)
-    selected = [p for p, v in pkgs.items() if v["name"] == request["package"]]
-    if len(selected) != 1:
-        raise ValueError("Expected one requested workspace package")
-    selected = closure(graph, selected[0])
+    source, common, pkgs, _, states, keys = build_state(root, metadata, tools, request)
+    selected = set(states)
     refresh = {}
     for ident in sorted(selected):
         for target in pkgs[ident]["targets"]:
@@ -404,9 +406,11 @@ def generated_output(row, prepared, package, priors):
 def verify_build(prepared, messages):
     """Verify a successful guarded Cargo build. Does not launch Cargo or tests."""
     root = Path(prepared["root"])
-    source, common, pkgs, _, states, keys = build_state(root, prepared["metadata"], prepared["tools"])
+    source, common, pkgs, _, states, keys = build_state(
+        root, prepared["metadata"], prepared["tools"], prepared["request"])
     if (source != prepared["source"] or common != prepared["context"]
-            or states != prepared["states"] or keys != prepared["package_keys"]):
+            or states != prepared["states"] or keys != prepared["package_keys"]
+            or sorted(states) != prepared["selected"]):
         raise ValueError("Build inputs changed after preparation")
     if [m.get("success") for m in messages if m.get("reason") == "build-finished"] != [True]:
         raise ValueError("Expected one successful actual Cargo build")
