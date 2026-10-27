@@ -522,6 +522,9 @@ pub struct Node {
     /// stream answered concurrently) outlive the call that started it.
     /// Empty on a node that is not serving.
     pub(crate) me: std::sync::OnceLock<std::sync::Weak<Node>>,
+    // Bound on first agent API use or explicit resident acquisition. Opening
+    // a Node alone never acquires a process-local agent runtime.
+    pub(crate) agent_generation: std::sync::OnceLock<u64>,
     /// The endpoint the resident answers on now; replaced with fresh
     /// ears. What a long-lived task reads instead of an endpoint it
     /// captured, which may since have been closed.
@@ -1088,6 +1091,7 @@ impl Node {
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             wires: Arc::default(),
             me: std::sync::OnceLock::new(),
+            agent_generation: std::sync::OnceLock::new(),
             ears: Mutex::new(None),
             app_resident: std::sync::atomic::AtomicBool::new(false),
             root_born: false,

@@ -85,7 +85,7 @@ pub use lifecycle::{ProcessExit, ShutdownOutcome, TransportLifecycle};
 use std::sync::Arc;
 mod management;
 pub use interaction::validate_elicitation;
-pub use management::{manage, Management};
+pub use management::{manage, manage_on, Management};
 
 /// What the handshake said about the agent on the other end.
 ///

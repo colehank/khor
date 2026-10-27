@@ -508,6 +508,10 @@ impl Node {
 
 /// What a resumable serve is asked from outside its loop.
 enum Wake {
+    /// Final process-local stop, acknowledged only after agent owners retire.
+    Shutdown {
+        done: tokio::sync::oneshot::Sender<Result<crate::khor_agent::RuntimeClose, String>>,
+    },
     /// New ears, then a round at once. `ears` answers when the new
     /// endpoint is the one answering, `synced` with the round's outcomes;
     /// either may have nobody listening (the deaf watch asks for none).
@@ -610,13 +614,68 @@ type Doors = std::sync::Mutex<
     std::collections::HashMap<std::path::PathBuf, tokio::sync::mpsc::UnboundedSender<Wake>>,
 >;
 
-/// The resumable serves running in this process, by the home they hold.
+/// Every serve's final-stop door, including non-resumable foreground serves.
 ///
 /// **Process-global and keyed by home**, because what calls [`resume`]
 /// is not the code that started the serve: on a phone it is the app's
 /// lifecycle handler on the main thread, and the serve is a `Node` that
 /// was moved into its own runtime on another thread long before. The
 /// home is the one name both sides already have (`Node::root_from_env`).
+fn shutdown_doors() -> &'static Doors {
+    static DOORS: std::sync::OnceLock<Doors> = std::sync::OnceLock::new();
+    DOORS.get_or_init(Default::default)
+}
+
+#[cfg(test)]
+pub(crate) fn serving_for_test(root: &std::path::Path) -> bool {
+    shutdown_doors()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .contains_key(root)
+}
+
+/// Stop this resident's agent generation. A new Node may start a new resident
+/// once the previous serve and its admitted agent owners have fully retired.
+pub async fn stop_serving(
+    root: &std::path::Path,
+) -> Result<crate::khor_agent::RuntimeClose, String> {
+    stop_resident(root, false).await
+}
+
+/// Final process exit: stop the resident and seal all later agent generations.
+/// A suspended resident should use `suspending` instead.
+pub async fn shutdown(root: &std::path::Path) -> Result<crate::khor_agent::RuntimeClose, String> {
+    stop_resident(root, true).await
+}
+
+async fn stop_resident(
+    root: &std::path::Path,
+    terminal: bool,
+) -> Result<crate::khor_agent::RuntimeClose, String> {
+    crate::khor_agent::runtime::seal(root, terminal)?;
+    let sender = shutdown_doors()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(root)
+        .cloned();
+    if let Some(sender) = sender {
+        let (done, retired) = tokio::sync::oneshot::channel();
+        if sender.send(Wake::Shutdown { done }).is_ok() {
+            return match tokio::time::timeout(Duration::from_secs(15), retired).await {
+                Ok(Ok(result)) => result,
+                // A canceled serve drops its receiver. The generation is
+                // still sealed, so a fallback owner can finish its drain.
+                Ok(Err(_)) => Node::retire_agent_runtime(root, terminal).await,
+                // The terminal/generation seal survives the waiter and the
+                // owner retains the Root. No timeout is reported as a join.
+                _ => Ok(crate::khor_agent::RuntimeClose::Busy),
+            };
+        }
+    }
+    Node::retire_agent_runtime(root, terminal).await
+}
+
+/// Resumable serves only: background/resume never stops a resident.
 fn doors() -> &'static Doors {
     static DOORS: std::sync::OnceLock<Doors> = std::sync::OnceLock::new();
     DOORS.get_or_init(Default::default)
@@ -630,11 +689,21 @@ struct Listed {
 }
 
 impl Listed {
-    fn new(root: &std::path::Path, door: tokio::sync::mpsc::UnboundedSender<Wake>) -> Self {
-        doors()
+    fn new(
+        root: &std::path::Path,
+        door: tokio::sync::mpsc::UnboundedSender<Wake>,
+        resumable: bool,
+    ) -> Self {
+        shutdown_doors()
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(|p| p.into_inner())
             .insert(root.to_path_buf(), door.clone());
+        if resumable {
+            doors()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(root.to_path_buf(), door.clone());
+        }
         Self {
             root: root.to_path_buf(),
             door,
@@ -644,8 +713,20 @@ impl Listed {
 
 impl Drop for Listed {
     fn drop(&mut self) {
-        let mut doors = doors().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if doors.get(&self.root).is_some_and(|d| d.same_channel(&self.door)) {
+        let mut stops = shutdown_doors().lock().unwrap_or_else(|p| p.into_inner());
+        if stops
+            .get(&self.root)
+            .is_some_and(|d| d.same_channel(&self.door))
+        {
+            stops.remove(&self.root);
+        }
+        let mut doors = doors()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if doors
+            .get(&self.root)
+            .is_some_and(|d| d.same_channel(&self.door))
+        {
             doors.remove(&self.root);
         }
     }
@@ -1300,6 +1381,7 @@ impl Node {
     }
 
     async fn serve_as(self, resumable: bool) -> Result<(), String> {
+        let mut owner = crate::khor_agent::runtime::serve(self.root(), &self.agent_generation)?;
         Self::acquire_agent_runtime(self.root())?;
         self.app_resident
             .store(resumable, std::sync::atomic::Ordering::Relaxed);
@@ -1310,6 +1392,8 @@ impl Node {
             .map_err(msg::cant_open_handoff_port)?;
         let cookie = fresh_hex()?;
         self.write_endpoint_file(&ep, &handoffs, &cookie)?;
+
+        owner.listening()?;
 
         // Borrow rows left by a previous serve point at ports this
         // process does not hold; clear them before answering anyone.
@@ -1345,6 +1429,8 @@ impl Node {
         // and the CPU day all read what it last wrote down.
         crate::vitals::local::start(self.root());
 
+        let mut services = tokio::task::JoinSet::new();
+
         // One task per connection: a client that vanishes without
         // closing must not block the accept loop until QUIC times out.
         let node = std::sync::Arc::new(self);
@@ -1369,13 +1455,13 @@ impl Node {
         // not inherit that weight.
         {
             let n = node.clone();
-            tokio::spawn(async move { n.satellite_sampler().await });
+            services.spawn(async move { n.satellite_sampler().await });
         }
         // The carrier (round ROAD-2, khor inside ssh): an ssh session up to
         // every member this machine carries.
         if node.carry_on() && node.carrying().is_some() {
             let n = node.clone();
-            tokio::spawn(async move { n.carrier().await });
+            services.spawn(async move { n.carrier().await });
         }
         // The day strip's sampler (`crates/node/src/day.rs`), on the same
         // footing and for the same reason: one sample is a whole
@@ -1387,7 +1473,7 @@ impl Node {
         // 不知道 rather than inventing a word for.
         {
             let n = node.clone();
-            tokio::spawn(async move { n.day_sampler().await });
+            services.spawn(async move { n.day_sampler().await });
         }
         // The CPU day's recorder (`crates/node/src/history.rs`): the
         // same footing again — one reading a minute into a file, so the
@@ -1395,7 +1481,7 @@ impl Node {
         // this process (its own test restarts to prove it).
         {
             let n = node.clone();
-            tokio::spawn(async move { n.cpu_recorder().await });
+            services.spawn(async move { n.cpu_recorder().await });
         }
         // 暂停 (docs/MORE.md), read **off this loop**. The file stays the
         // one truth — `khor pause` writes it from another process and
@@ -1411,7 +1497,7 @@ impl Node {
             let flag = paused.clone();
             let root = node.root().clone();
             let n = node.clone();
-            tokio::spawn(async move {
+            services.spawn(async move {
                 let mut beat = tokio::time::interval(PAUSE_POLL);
                 // A process that was stopped (a phone in the background:
                 // `tokio`'s clock keeps running while nothing here does)
@@ -1442,7 +1528,13 @@ impl Node {
         }
         let deaf = std::sync::Arc::new(std::sync::Mutex::new(DeafWatch::new()));
         let net_round = NetRound::default();
-        let _listed = resumable.then(|| Listed::new(node.root(), wake.clone()));
+        let _listed = Listed::new(node.root(), wake.clone(), resumable);
+        // Exit may have sealed the Root while startup was binding its ears.
+        // Enqueue the stop once its door exists, before another loop turn.
+        if crate::khor_agent::runtime::enter(node.root(), &node.agent_generation).is_err() {
+            let (done, _retired) = tokio::sync::oneshot::channel();
+            let _ = wake.send(Wake::Shutdown { done });
+        }
         // **The wire watch** (`crate::wires`): once a second, what each
         // wire has heard, which road it is on, and the silent ones
         // retired. The same beat notices a sleep: the monotonic clock
@@ -1454,7 +1546,7 @@ impl Node {
             let n = node.clone();
             let wake = wake.clone();
             let paused = paused.clone();
-            tokio::spawn(async move {
+            services.spawn(async move {
                 let mut beat = tokio::time::interval(wires::TICK);
                 beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 let mut mono = std::time::Instant::now();
@@ -1507,7 +1599,9 @@ impl Node {
             Result<std::sync::Arc<iroh::Endpoint>, String>,
             std::time::Instant,
         )>();
+        let mut shutdown_reply = None;
         loop {
+            while services.try_join_next().is_some() {}
             tokio::select! {
                 incoming = ep.accept(), if hearing => {
                     let Some(incoming) = incoming else {
@@ -1532,7 +1626,7 @@ impl Node {
                     let n = node.clone();
                     let e = ep.clone();
                     let resting = resting.clone();
-                    tokio::spawn(async move {
+                    services.spawn(async move {
                         let Ok(accepting) = incoming.accept() else { return };
                         // **Early data is taken** (round NET-3): a machine
                         // redialling with a ticket from an earlier wire
@@ -1627,7 +1721,7 @@ impl Node {
                             let n = node.clone();
                             let e = ep.clone();
                             let c = cookie.clone();
-                            tokio::spawn(async move {
+                            services.spawn(async move {
                                 let _ = n.handle_handoff(stream, &e, &c).await;
                             });
                         }
@@ -1649,6 +1743,7 @@ impl Node {
                     }
                 }
                 Some(asked) = woken.recv() => match asked {
+                    Wake::Shutdown { done } => { shutdown_reply = Some(done); break; },
                     // The test's stand-in for what a suspension does to a
                     // phone's endpoint: closed under the serve, nothing
                     // heard, nothing sent (`deafen`).
@@ -1669,7 +1764,7 @@ impl Node {
                     }
                     Wake::Cut { done } => {
                         let (n, e) = (node.clone(), ep.clone());
-                        tokio::spawn(async move {
+                        services.spawn(async move {
                             n.cut_pushes_on(&e).await;
                             let _ = done.send(());
                         });
@@ -1718,7 +1813,7 @@ impl Node {
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                         eprintln!("{}", msg::serve_network_changed(&stamp));
                         let e = ep.clone();
-                        tokio::spawn(async move { e.network_change().await });
+                        services.spawn(async move { e.network_change().await });
                         // Once the wires that are going to answer have
                         // answered, and the rest are retired: a visit to
                         // everyone, the backed-off included — the network
@@ -1772,7 +1867,7 @@ impl Node {
                             let begun = std::time::Instant::now();
                             node.wires.network_changed();
                             let (n, e, deaf) = (node.clone(), ep.clone(), deaf.clone());
-                            tokio::spawn(async move {
+                            services.spawn(async move {
                                 e.network_change_major().await;
                                 if let Some(ears) = ears {
                                     let _ = ears.send(Ok(()));
@@ -1793,7 +1888,7 @@ impl Node {
                         resuming = Some(vec![(ears, synced, each)]);
                         let n = node.clone();
                         let back = bound_tx.clone();
-                        tokio::spawn(async move {
+                        services.spawn(async move {
                             let begun = std::time::Instant::now();
                             let fresh = n.fresh_ears().await;
                             let _ = back.send((fresh, begun));
@@ -1813,7 +1908,7 @@ impl Node {
                             // Closed off the loop: a graceful close waits
                             // on its connections, and the new ears are
                             // already the ones answering.
-                            tokio::spawn(async move { old.close().await });
+                            services.spawn(async move { old.close().await });
                             match node.publish_roads(&ep) {
                                 Ok(()) => {
                                     let _ = node.write_endpoint_file(&ep, &handoffs, &cookie);
@@ -1864,7 +1959,7 @@ impl Node {
                     let n = node.clone();
                     let e = ep.clone();
                     let deaf = deaf.clone();
-                    tokio::spawn(async move {
+                    services.spawn(async move {
                         let out = n.sync_peers_telling(&e, true, &told_to).await;
                         let _ = n.trust_tick();
                         let heard = if n.self_admitted() { out.as_slice() } else { &[] };
@@ -1924,7 +2019,7 @@ impl Node {
                     let e = ep.clone();
                     let deaf = deaf.clone();
                     let wake = wake.clone();
-                    tokio::spawn(async move {
+                    services.spawn(async move {
                         // Reap borrows whose rows were closed since the
                         // last tick, freeing their ports, before syncing.
                         n.reap_borrows().await;
@@ -2064,7 +2159,38 @@ impl Node {
                 }
             }
         }
-        Ok(())
+        // Fence delayed handlers before dropping either listener. The seal
+        // also survives cancellation of this waiter; all agent API routes
+        // share it, including a GUI request falling back to this process.
+        crate::khor_agent::runtime::seal(node.root(), false)?;
+        drop(handoffs);
+        ep.close().await;
+        services.abort_all();
+        // Aborted handlers release their API admissions. Their separately
+        // owned native producers are joined by retire_agent_runtime below.
+        let services_retired = tokio::time::timeout(Duration::from_secs(2), async {
+            while services.join_next().await.is_some() {}
+        })
+        .await
+        .is_ok();
+        if !services_retired {
+            crate::khor_agent::runtime::unconfirmed(node.root());
+        }
+        let retired = Self::retire_agent_runtime(node.root(), false).await;
+        let retired = if services_retired {
+            retired
+        } else {
+            Ok(crate::khor_agent::RuntimeClose::Busy)
+        };
+        if let Some(done) = shutdown_reply {
+            let _ = done.send(retired.clone());
+        }
+        match retired? {
+            crate::khor_agent::RuntimeClose::Closed => Ok(()),
+            crate::khor_agent::RuntimeClose::Busy => {
+                Err("Agent runtime shutdown is busy; Root retained".into())
+            }
+        }
     }
 
     async fn handle_handoff(
@@ -6113,6 +6239,7 @@ impl Node {
         machine: &str,
         action: crate::khor_agent::Action,
     ) -> Result<crate::khor_agent::Report, String> {
+        let _call = crate::khor_agent::runtime::enter(self.root(), &self.agent_generation)?;
         if machine.trim().is_empty() && !matches!(action, crate::khor_agent::Action::Read) {
             return Err(msg::agent_not_configured().into());
         }
@@ -6158,6 +6285,7 @@ impl Node {
         machine: &str,
         action: crate::khor_agent::Action,
     ) -> Result<crate::khor_agent::Report, String> {
+        let _call = crate::khor_agent::runtime::enter(self.root(), &self.agent_generation)?;
         let (channel, home) = self.recognition_target(machine)?;
         if home == self.device() {
             return self.khor_agent_here(action).await;

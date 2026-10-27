@@ -3,7 +3,7 @@ use crate::Node;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
@@ -17,11 +17,26 @@ struct Job {
     since: Instant,
 }
 type Jobs = HashMap<(PathBuf, String), Arc<Job>>;
-fn jobs() -> &'static Mutex<Jobs> {
+fn job_store() -> &'static OnceLock<Mutex<Jobs>> {
     static JOBS: OnceLock<Mutex<Jobs>> = OnceLock::new();
-    JOBS.get_or_init(Default::default)
+    &JOBS
+}
+fn jobs() -> &'static Mutex<Jobs> {
+    job_store().get_or_init(Default::default)
+}
+pub(crate) fn stop_jobs(root: &Path) {
+    let Some(jobs) = job_store().get() else {
+        return;
+    };
+    let Ok(jobs) = jobs.try_lock() else { return };
+    for ((path, _), job) in jobs.iter() {
+        if path == root {
+            job.cancel.store(true, Ordering::SeqCst);
+        }
+    }
 }
 pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
+    let _call = crate::khor_agent::runtime::enter(node.root(), &node.agent_generation)?;
     let operation = request["operation"]
         .as_str()
         .ok_or("Missing ACP operation")?;
@@ -35,9 +50,13 @@ pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
             .cloned()
             .ok_or("ACP setup is no longer pending")?;
         if operation == "acp_cancel" {
-            let mut state=job.state.lock().map_err(|e|e.to_string())?;
-            if !matches!(state["status"].as_str(),Some("done"|"failed"|"cancelled")){
-                job.cancel.store(true, Ordering::SeqCst);*state=json!({"status":"cancelled"});
+            let mut state = job.state.lock().map_err(|e| e.to_string())?;
+            if !matches!(
+                state["status"].as_str(),
+                Some("done" | "failed" | "cancelled")
+            ) {
+                job.cancel.store(true, Ordering::SeqCst);
+                *state = json!({"status":"cancelled"});
             }
         }
         if operation == "acp_reply" {
@@ -173,37 +192,92 @@ pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
         {
             return Err("Too many ACP setup operations".into());
         }
-        map.insert((root, id.clone()), job.clone());
+        map.insert((root.clone(), id.clone()), job.clone());
     }
-    std::thread::spawn(move || {
-        let result=tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e|e.to_string()).and_then(|rt|rt.block_on(async{
-            let mut setup=khor_acp::manage(&command,method)?;let mut next=0u64;let mut pending:Option<(u64,khor_acp::Elicitation)>=None;let mut tick=tokio::time::interval(Duration::from_millis(100));
-            loop{tokio::select!{
-                event=setup.events.recv()=>match event{
-                    Some(khor_acp::Event::Elicit(question))=>{
-                        if pending.is_some(){drop(question);continue;}
-                        next+=1;*job.state.lock().unwrap()=json!({"status":"waiting","ask":next,"request":question.request});pending=Some((next,question));
-                    },
-                    Some(khor_acp::Event::ElicitDone(id))=>{
-                        if pending.as_ref().is_some_and(|(_,q)|serde_json::to_value(&q.request).is_ok_and(|v|v["mode"]=="url"&&v["elicitationId"]==id)){
-                            let(_,q)=pending.take().unwrap();if let Ok(response)=q.validate(&json!({"action":"accept"})){let _=q.answer(response);}*job.state.lock().unwrap()=json!({"status":"running"});
+    let owner_root = root.clone();
+    let owner = std::thread::Builder::new().name("acp-setup".into()).spawn(move || {
+        let result = tokio::runtime::Builder::new_current_thread().enable_all().build()
+            .map_err(|e|e.to_string()).and_then(|rt| rt.block_on(async {
+                if job.cancel.load(Ordering::SeqCst) { return Err("Cancelled".into()); }
+                let transport = crate::acp_process::spawn(&command)?;
+                let lifecycle = transport.lifecycle;
+                let mut setup = khor_acp::manage_on(transport.streams, method);
+                let mut next = 0u64;
+                let mut pending: Option<(u64, khor_acp::Elicitation)> = None;
+                let mut tick = tokio::time::interval(Duration::from_millis(100));
+                let mut events_open = true;
+                let result = loop {
+                    tokio::select! {
+                        event = setup.events.recv(), if events_open => match event {
+                            Some(khor_acp::Event::Elicit(question)) => {
+                                if pending.is_some() { drop(question); continue; }
+                                next += 1;
+                                *job.state.lock().unwrap() = json!({"status":"waiting","ask":next,"request":question.request});
+                                pending = Some((next,question));
+                            }
+                            Some(khor_acp::Event::ElicitDone(id)) => {
+                                if pending.as_ref().is_some_and(|(_,q)|serde_json::to_value(&q.request).is_ok_and(|v|v["mode"]=="url"&&v["elicitationId"]==id)) {
+                                    let (_,q) = pending.take().unwrap();
+                                    if let Ok(response) = q.validate(&json!({"action":"accept"})) { let _ = q.answer(response); }
+                                    *job.state.lock().unwrap() = json!({"status":"running"});
+                                }
+                            }
+                            None => events_open = false,
+                            _ => {}
+                        },
+                        answer = rx.recv() => if let Some((ask,value)) = answer {
+                            if let Some((id,question)) = &pending {
+                                if *id == ask {
+                                    match question.validate(&value) {
+                                        Ok(response) => {
+                                            let (_,question) = pending.take().unwrap();
+                                            let _ = question.answer(response);
+                                            *job.state.lock().unwrap() = json!({"status":"running"});
+                                        }
+                                        Err(error) => {
+                                            let mut state = job.state.lock().unwrap();
+                                            state["status"] = json!("waiting"); state["error"] = json!(error);
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        result = &mut setup.result => break result.map_err(|e|e.to_string()).and_then(|result|result),
+                        _ = tick.tick() => if job.cancel.load(Ordering::SeqCst) || job.since.elapsed()>Duration::from_secs(600) {
+                            break Err("Cancelled".into());
                         }
-                    },
-                    _=>{}
-                },
-                answer=rx.recv()=>if let Some((ask,value))=answer{
-                    if let Some((id,question))=&pending{if *id==ask{match question.validate(&value){Ok(response)=>{let(_,question)=pending.take().unwrap();let _=question.answer(response);*job.state.lock().unwrap()=json!({"status":"running"});},Err(error)=>{let mut state=job.state.lock().unwrap();state["status"]=json!("waiting");state["error"]=json!(error);}}}}
-                },
-                result=&mut setup.result=>return result.map_err(|e|e.to_string())?,
-                _=tick.tick()=>if job.cancel.load(Ordering::SeqCst)||job.since.elapsed()>Duration::from_secs(600){return Err("Cancelled".into());}
-            }}
-        }));
-        *job.state.lock().unwrap() = if job.cancel.load(Ordering::SeqCst){json!({"status":"cancelled"})}else{match result {
-            Ok(value) => json!({"status":"done","result":value}),
-            Err(error) => {
-                json!({"status":if job.cancel.load(Ordering::SeqCst){"cancelled"}else{"failed"},"error":error})
+                    }
+                };
+                drop(pending);
+                drop(setup);
+                lifecycle.request_shutdown();
+                match tokio::time::timeout(Duration::from_secs(5), lifecycle.confirmed_exit()).await {
+                    Ok(Ok(_)) => result,
+                    _ => {
+                        crate::khor_agent::runtime::unconfirmed(&root);
+                        Err("ACP setup process cleanup is unconfirmed".into())
+                    }
+                }
+            }));
+        *job.state.lock().unwrap() = if job.cancel.load(Ordering::SeqCst) {
+            json!({"status":"cancelled"})
+        } else {
+            match result {
+                Ok(value) => json!({"status":"done","result":value}),
+                Err(error) => json!({"status":"failed","error":error}),
             }
-        }};
+        };
     });
+    let owner = match owner {
+        Ok(owner) => owner,
+        Err(error) => {
+            jobs()
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(&(owner_root.clone(), id.clone()));
+            return Err(error.to_string());
+        }
+    };
+    crate::khor_agent::runtime::register_producer(&owner_root, owner);
     Ok(json!({"job":id,"status":"running"}))
 }

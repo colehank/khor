@@ -5043,7 +5043,7 @@ pub fn run() {
             }
             if let tauri::RunEvent::Exit = event {
                 let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-                match tauri::async_runtime::block_on(Node::close_agent_runtime(&agent_runtime_root)) {
+                match tauri::async_runtime::block_on(khor_node::link::shutdown(&agent_runtime_root)) {
                     Ok(khor_node::khor_agent::RuntimeClose::Closed) => {
                         eprintln!("[{stamp}] khor app: agent runtime closed");
                     }

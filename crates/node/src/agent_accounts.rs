@@ -1,5 +1,6 @@
 //! Provider-owned setup runs only on the chosen credential home.
-use super::{directory, sidecar};
+use super::{directory, input, runtime, sidecar};
+use crate::agent_process::{Control, Session};
 use crate::{Account, AccountKind, Node, Provider};
 use khor_catalog::msg;
 use khor_sync::accounts::Inference;
@@ -7,10 +8,14 @@ use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    process::{Child, ChildStdin, Stdio},
-    sync::{Arc, Mutex, OnceLock},
+    process::ExitStatus,
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
@@ -68,35 +73,128 @@ fn account_info(node: &Node, account: &Account) -> Value {
         "auth_type":account.inference.as_ref().map(|i|i.auth_type.clone()),"configured":inference_ready(node,account)})
 }
 struct Job {
-    child: Arc<Mutex<Child>>,
-    input: Mutex<Option<ChildStdin>>,
+    control: Arc<Control>,
+    input: Mutex<Option<input::Input>>,
+    finished: AtomicBool,
     state: Mutex<Value>,
     since: Instant,
 }
-impl Drop for Job {
-    fn drop(&mut self) {
-        if let Ok(mut child) = self.child.lock() {
-            let _ = child.kill();
-            let _ = child.wait();
+impl Job {
+    fn stop(&self) {
+        self.control.terminate_now();
+        if let Ok(input) = self.input.try_lock() {
+            if let Some(input) = input.as_ref() {
+                input.close();
+            }
+        }
+        if let Ok(mut state) = self.state.try_lock() {
+            if !matches!(
+                state["status"].as_str(),
+                Some("done" | "failed" | "cancelled")
+            ) {
+                *state = json!({"status":"cancelled"});
+            }
         }
     }
 }
+impl Drop for Job {
+    fn drop(&mut self) {
+        self.control.terminate_now();
+    }
+}
+struct Registration {
+    root: PathBuf,
+    id: String,
+    job: Arc<Job>,
+    committed: bool,
+}
+impl Drop for Registration {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.job.stop();
+            let mut jobs = jobs().lock().unwrap_or_else(|p| p.into_inner());
+            let key = (self.root.clone(), self.id.clone());
+            if jobs
+                .get(&key)
+                .is_some_and(|job| Arc::ptr_eq(job, &self.job))
+            {
+                jobs.remove(&key);
+            }
+        }
+    }
+}
+struct Setup {
+    root: PathBuf,
+    child: Option<Session>,
+    input: input::Input,
+    writer: Option<JoinHandle<()>>,
+    drain: Option<JoinHandle<()>>,
+}
+impl Setup {
+    fn finish(&mut self, force: bool) -> Result<ExitStatus, String> {
+        self.input.close();
+        let status = self
+            .child
+            .take()
+            .expect("setup process owner")
+            .finish(force)
+            .map_err(|e| e.to_string());
+        let mut error = None;
+        for thread in [&mut self.writer, &mut self.drain] {
+            if let Some(thread) = thread.take() {
+                if thread.join().is_err() {
+                    error = Some("Setup I/O owner panicked".to_owned());
+                }
+            }
+        }
+        match (status, error) {
+            (Ok(status), None) => Ok(status),
+            (Err(error), _) | (_, Some(error)) => {
+                runtime::unconfirmed(&self.root);
+                Err(error)
+            }
+        }
+    }
+}
+impl Drop for Setup {
+    fn drop(&mut self) {
+        if self.child.is_some() {
+            let _ = self.finish(true);
+        }
+    }
+}
+pub(super) fn stop_jobs(root: &Path) {
+    let Some(jobs) = job_store().get() else {
+        return;
+    };
+    let Ok(jobs) = jobs.try_lock() else { return };
+    let owned: Vec<_> = jobs
+        .iter()
+        .filter(|((path, _), _)| path == root)
+        .map(|(_, job)| job.clone())
+        .collect();
+    drop(jobs);
+    for job in owned {
+        job.stop();
+    }
+}
 type Jobs = HashMap<(PathBuf, String), Arc<Job>>;
-fn jobs() -> &'static Mutex<Jobs> {
+fn job_store() -> &'static OnceLock<Mutex<Jobs>> {
     static JOBS: OnceLock<Mutex<Jobs>> = OnceLock::new();
-    JOBS.get_or_init(|| {
+    &JOBS
+}
+fn jobs() -> &'static Mutex<Jobs> {
+    job_store().get_or_init(|| {
         std::thread::spawn(|| {
             loop {
                 std::thread::sleep(Duration::from_secs(15));
-                if let Some(map) = JOBS.get() {
+                if let Some(map) = job_store().get() {
                     if let Ok(mut map) = map.lock() {
                         map.retain(|_, job| {
                             if job.since.elapsed() < Duration::from_secs(600) {
                                 return true;
                             }
-                            if let Ok(mut child) = job.child.lock() {
-                                let _ = child.kill();
-                            }
+                            job.stop();
                             false
                         });
                     }
@@ -132,6 +230,7 @@ fn address(value: &str) -> bool {
 }
 impl Node {
     pub(super) fn manage_agent(&self, request: Value) -> Result<Value, String> {
+        let _call = runtime::enter(self.root(), &self.agent_generation)?;
         self.refuse_unless_hosting()?;
         let operation = text(&request, "operation")?;
         if operation.starts_with("acp_") {
@@ -154,9 +253,7 @@ impl Node {
                 ) {
                     *state = json!({"status":"cancelled"});
                     drop(state);
-                    if let Ok(mut child) = job.child.lock() {
-                        let _ = child.kill();
-                    }
+                    job.stop();
                 }
             } else if operation == "reply" {
                 let mut state = job.state.lock().map_err(|e| e.to_string())?;
@@ -171,21 +268,22 @@ impl Node {
                 let input = input
                     .as_mut()
                     .ok_or_else(|| msg::agent_not_running().to_owned())?;
-                writeln!(
-                    input,
-                    "{}",
-                    json!({"type":"auth_reply","ask":request["ask"],"value":value})
+                let mut bytes = serde_json::to_vec(
+                    &json!({"type":"auth_reply","ask":request["ask"],"value":value}),
                 )
-                .and_then(|_| input.flush())
                 .map_err(|e| e.to_string())?;
+                bytes.push(b'\n');
+                input.send(bytes)?;
                 state["status"] = json!("running");
                 state.as_object_mut().unwrap().remove("prompt");
             }
             let result = job.state.lock().map_err(|e| e.to_string())?.clone();
-            if matches!(
-                result["status"].as_str(),
-                Some("done" | "failed" | "cancelled")
-            ) {
+            if job.finished.load(Ordering::SeqCst)
+                && matches!(
+                    result["status"].as_str(),
+                    Some("done" | "failed" | "cancelled")
+                )
+            {
                 jobs()
                     .lock()
                     .map_err(|e| e.to_string())?
@@ -383,20 +481,66 @@ impl Node {
                 command.env(name, value);
             }
         }
-        command
-            .env("PATH", Node::user_path())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        let mut child = command.spawn().map_err(|e| msg::agent_runtime_failed(e))?;
-        let mut input = child
-            .stdin
-            .take()
-            .ok_or_else(|| msg::agent_runtime_missing().to_owned())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| msg::agent_runtime_missing().to_owned())?;
+        command.env("PATH", Node::user_path());
+        let control = Arc::new(Control::default());
+        let job_id = crate::link::fresh_hex()?;
+        let job = Arc::new(Job {
+            control: control.clone(),
+            finished: AtomicBool::new(false),
+            input: Mutex::new(None),
+            state: Mutex::new(json!({"status":"running"})),
+            since: Instant::now(),
+        });
+        {
+            let mut jobs = jobs().lock().map_err(|e| e.to_string())?;
+            jobs.retain(|_, j| {
+                if j.since.elapsed() < Duration::from_secs(600) {
+                    true
+                } else {
+                    j.stop();
+                    false
+                }
+            });
+            if jobs.len() >= 16 {
+                return Err(msg::agent_busy().into());
+            }
+            jobs.insert((root.clone(), job_id.clone()), job.clone());
+        }
+        let mut registration = Registration {
+            root: root.clone(),
+            id: job_id.clone(),
+            job: job.clone(),
+            committed: false,
+        };
+        let (mut child, pipes) =
+            Session::spawn(command, control.clone()).map_err(|e| msg::agent_runtime_failed(e))?;
+        let (input, writer) = match input::Input::spawn(pipes.stdin) {
+            Ok(input) => input,
+            Err(error) => {
+                if child.finish(true).is_err() {
+                    runtime::unconfirmed(&root);
+                }
+                return Err(error.to_string());
+            }
+        };
+        if control.is_cancelled() {
+            input.close();
+        }
+        *job.input.lock().unwrap() = Some(input.clone());
+        let stdout = pipes.stdout;
+        let mut setup = Setup {
+            root: root.clone(),
+            child: Some(child),
+            input: input.clone(),
+            writer: Some(writer),
+            drain: None,
+        };
+        setup.drain = Some(
+            std::thread::Builder::new()
+                .name("setup-stderr".into())
+                .spawn(move || super::io::drain_stderr(pipes.stderr))
+                .map_err(|e| e.to_string())?,
+        );
         let mut start = json!({"type":"manage","operation":operation,"account":seat,"credentialPath":path,"authType":auth_type,"deviceId":self.device_str()});
         if let Some(config) = &session_config {
             start["model"] = json!(config.model);
@@ -404,31 +548,15 @@ impl Node {
             start["configId"] = request["configId"].clone();
             start["value"] = request["value"].clone();
         }
-        if let Err(error) = writeln!(input, "{start}").and_then(|_| input.flush()) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(error.to_string());
-        }
+        let mut bytes = serde_json::to_vec(&start).map_err(|e| e.to_string())?;
+        bytes.push(b'\n');
         let is_new = existing.is_none();
         let operation = operation.to_owned();
-        let job_id = crate::link::fresh_hex()?;
-        let job = Arc::new(Job {
-            child: Arc::new(Mutex::new(child)),
-            input: Mutex::new(Some(input)),
-            state: Mutex::new(json!({"status":"running"})),
-            since: Instant::now(),
-        });
-        {
-            let mut jobs = jobs().lock().map_err(|e| e.to_string())?;
-            jobs.retain(|_, j| j.since.elapsed() < Duration::from_secs(600));
-            if jobs.len() >= 16 {
-                return Err(msg::agent_busy().into());
-            }
-            jobs.insert((root.clone(), job_id.clone()), job.clone());
-        }
         let work = job.clone();
-        std::thread::spawn(move || {
+        let owner_root = root.clone();
+        let owner = std::thread::Builder::new().name("agent-setup".into()).spawn(move || {
             let result = (|| -> Result<(), String> {
+                setup.input.send(bytes)?;
                 for line in BufReader::new(stdout).lines() {
                     let line = line.map_err(|e| e.to_string())?;
                     if line.len() > 2 * 1024 * 1024 {
@@ -532,17 +660,22 @@ impl Node {
                         _ => {}
                     }
                 }
-                let status = work
-                    .child
-                    .lock()
-                    .map_err(|e| e.to_string())?
-                    .wait()
-                    .map_err(|e| e.to_string())?;
-                if !status.success() || work.state.lock().unwrap()["status"] != "done" {
+                Ok(())
+            })();
+            let reaped = setup
+                .finish(result.is_err() || work.state.lock().unwrap()["status"] == "cancelled");
+            if reaped.is_err() {
+                runtime::unconfirmed(&root);
+            }
+            let result = result.and_then(|()| {
+                let status = reaped?;
+                if (!status.success() && !work.control.is_cancelled())
+                    || work.state.lock().unwrap()["status"] != "done"
+                {
                     return Err(msg::agent_runtime_missing().into());
                 }
                 Ok(())
-            })();
+            });
             if let Err(error) = result {
                 let mut state = work.state.lock().unwrap();
                 if state["status"] != "cancelled" {
@@ -550,16 +683,23 @@ impl Node {
                 }
             }
             work.input.lock().unwrap().take();
+            #[cfg(all(test, unix))]
+            super::runtime_close_tests::producer_point(&root, "setup-cleanup");
             if is_new && work.state.lock().unwrap()["status"] != "done" {
                 let registered = Node::open(root.clone())
                     .and_then(|node| node.accounts())
                     .is_ok_and(|accounts| accounts.iter().any(|a| a.id == account.id));
                 if !registered {
-                    let _ =
-                        fs::remove_dir_all(credential_path(&root, &account.id).parent().unwrap());
+                    let _ = fs::remove_dir_all(
+                        credential_path(&root, &account.id).parent().unwrap(),
+                    );
                 }
             }
-        });
+            work.finished.store(true, Ordering::SeqCst);
+        })
+        .map_err(|e| e.to_string())?;
+        runtime::register_producer(&owner_root, owner);
+        registration.committed = true;
         Ok(json!({"job":job_id,"status":"running"}))
     }
 }
@@ -730,6 +870,7 @@ mod tests {
                 .any(|a| a.name == "cancelled draft")
         );
         drop(_running);
+        assert_eq!(Node::shutdown_agent_runtime(&root).await.unwrap(), super::super::RuntimeClose::Closed);
         drop(node);
         let _ = fs::remove_dir_all(root);
     }

@@ -667,3 +667,566 @@ async fn running_token_retry_is_idempotent_and_its_record_writer_blocks_close() 
     assert!(!running_retry_gate.expired.load(Ordering::SeqCst));
     assert!(!observed.hook.gate.expired.load(Ordering::SeqCst));
 }
+
+// These are real API / serve lifecycle fixtures, not a Tauri App-exit test.
+// Each parent owns one isolated process so sidecar/PATH settings never touch
+// another test or the user's resident. No cancellation response is fabricated.
+struct ShutdownFixtureChild(Child);
+impl Drop for ShutdownFixtureChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn shutdown_fixture(case: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let tree = crate::testdir::TempTree::fresh(&format!("agent-shutdown-{case}"));
+    let python = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|path| path.join("python3"))
+        .find(|path| path.is_file())
+        .map(|path| fs::canonicalize(path).unwrap())
+        .expect("python3 is required for the owned sidecar fixture");
+    fs::write(tree.join("fixture.case"), case).unwrap();
+    fs::write(
+        tree.join("fixture.python"),
+        python.as_os_str().as_encoded_bytes(),
+    )
+    .unwrap();
+    let sidecar = tree.join("sidecar");
+    let script = tree.join("sidecar.py");
+    fs::write(
+        &script,
+        r#"import json, os, pathlib, signal, sys, time
+signal.alarm(25)
+root = pathlib.Path(__file__).parent
+case = (root / 'fixture.case').read_text()
+def emit(value): print(json.dumps(value), flush=True)
+def identity(name, **extra):
+    (root / name).write_text(json.dumps({'pid': os.getpid(), 'pgid': os.getpgrp(), **extra}))
+start = json.loads(sys.stdin.readline())
+if start.get('method') == 'initialize':
+    emit({'jsonrpc':'2.0', 'id':start['id'], 'result':{'protocolVersion':1,'agentCapabilities':{},'authMethods':[{'id':'fixture','name':'Fixture','type':'agent'}],'agentInfo':{'name':'shutdown-setup','version':'1'}}})
+    for line in sys.stdin:
+        message = json.loads(line)
+        if message.get('method') == 'authenticate': break
+    else: raise AssertionError('actual authenticate was not received')
+    identity('acp.identity')
+    while not (root / 'release-credential').exists(): time.sleep(.01)
+    (root / 'store' / 'acp-late-write').write_text('must never happen after shutdown')
+    sys.exit(0)
+if start.get('type') == 'manage':
+    assert start['operation'] == 'login'
+    credential = pathlib.Path(start['credentialPath'])
+    identity('setup.identity', credential=str(credential))
+    if case == 'setup-committed':
+        credential.write_text(json.dumps({'anthropic':{'type':'api_key','key':'fixture-setup-key'}}))
+        emit({'type':'result','value':{'credentialType':'api_key'}})
+        while True: time.sleep(.01)  # Hold real stdout open after actual account commit.
+    emit({'type':'auth_prompt','ask':1,'prompt':{'type':'secret'}})
+    while not (root / 'release-credential').exists(): time.sleep(.01)
+    credential.parent.mkdir(parents=True,exist_ok=True)
+    credential.write_text('must never be written after shutdown')
+    sys.exit(0)
+assert start['type'] == 'start' and start['protocol'] == 1
+identity('sidecar.identity')
+for line in sys.stdin:
+    if json.loads(line).get('type') == 'abort':
+        emit({'type':'done'})
+        break
+"#,
+    )
+    .unwrap();
+    let quote = |path: &Path| format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"));
+    fs::write(
+        &sidecar,
+        format!(
+            "#!/bin/sh\nexec {} -I -S {}\n",
+            quote(&python),
+            quote(&script)
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
+    let executable = std::env::var_os("KHOR_TEST_MCP_EXECUTABLE")
+        .expect("shutdown acceptance requires the verified actual CLI worker");
+    assert!(Path::new(&executable).is_absolute() && Path::new(&executable).is_file());
+    let log = File::create(tree.join("worker.log")).unwrap();
+    let mut child = ShutdownFixtureChild(
+        Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "khor_agent::runtime_close_tests::shutdown_worker",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("KHOR_SHUTDOWN_CASE", case)
+            .env("KHOR_SHUTDOWN_ROOT", tree.path())
+            .env("KHOR_AGENT_SIDECAR", &sidecar)
+            .env("KHOR_TEST_MCP_EXECUTABLE", executable)
+            .env("KHOR_NO_MDNS", "1")
+            .env("KHOR_PATH", "/usr/bin:/bin")
+            .stdout(log.try_clone().unwrap())
+            .stderr(log)
+            .spawn()
+            .unwrap(),
+    );
+    let by = Instant::now() + Duration::from_secs(40);
+    let status = loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= by {
+            let _ = child.0.kill();
+            let _ = child.0.wait();
+            panic!("owned shutdown fixture exceeded its deadline: {case}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let log = fs::read_to_string(tree.join("worker.log")).unwrap();
+    println!("{log}");
+    assert!(status.success(), "shutdown fixture {case} failed: {status}");
+}
+
+#[test]
+#[ignore = "isolated native acceptance: verified actual CLI worker required"]
+fn final_shutdown_joins_actual_fallback_and_fences_admitted_and_late_calls() {
+    shutdown_fixture("fallback");
+}
+
+#[test]
+#[ignore = "isolated native acceptance: verified actual CLI worker required"]
+fn canceling_final_shutdown_waiter_keeps_the_seal_and_actual_executor_owner() {
+    shutdown_fixture("canceled-waiter");
+}
+
+#[test]
+#[ignore = "isolated native acceptance: verified actual CLI worker required"]
+fn normal_serve_stop_restarts_with_a_new_owner_and_rejects_the_old_node() {
+    shutdown_fixture("restart");
+}
+
+#[test]
+#[ignore = "isolated native acceptance: verified actual CLI worker required"]
+fn early_serve_publish_failure_does_not_seal_an_existing_fallback_owner() {
+    shutdown_fixture("startup-error");
+}
+
+#[test]
+#[ignore = "isolated native acceptance: verified actual CLI worker required"]
+fn shutdown_joins_pi_and_acp_setup_readers_and_canceled_waiter_cannot_allow_late_credentials() {
+    shutdown_fixture("setup-pending");
+}
+
+#[test]
+#[ignore = "isolated native acceptance: verified actual CLI worker required"]
+fn shutdown_preserves_credentials_and_account_committed_before_setup_process_exit() {
+    shutdown_fixture("setup-committed");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "internal isolated shutdown fixture worker"]
+async fn shutdown_worker() {
+    let scratch = PathBuf::from(std::env::var_os("KHOR_SHUTDOWN_ROOT").unwrap());
+    match std::env::var("KHOR_SHUTDOWN_CASE").unwrap().as_str() {
+        "fallback" => shutdown_fallback(&scratch, false).await,
+        "canceled-waiter" => shutdown_fallback(&scratch, true).await,
+        "setup-pending" => shutdown_setup(&scratch, false).await,
+        "setup-committed" => shutdown_setup(&scratch, true).await,
+        "restart" => shutdown_restart(&scratch, false).await,
+        "startup-error" => shutdown_restart(&scratch, true).await,
+        other => panic!("unknown owned shutdown case: {other}"),
+    }
+}
+
+async fn shutdown_fallback(scratch: &Path, cancel_waiter: bool) {
+    let node = Node::open_as(scratch.join("store"), "shutdown-fallback").unwrap();
+    let account = node
+        .register_account(
+            "fixture",
+            crate::Provider::Newapi,
+            crate::AccountKind::Bill,
+            Some("http://127.0.0.1:9"),
+            "shutdown-fixture-key",
+            None,
+        )
+        .unwrap();
+    node.chat
+        .set_agent_config(&AgentConfig {
+            home: node.device_str().into(),
+            account: account.id,
+            model: "fixture".into(),
+            options: Default::default(),
+        })
+        .unwrap();
+    assert!(
+        !node.root().join(".khor/endpoint.json").exists(),
+        "this must exercise actual local fallback"
+    );
+    let token = "shutdown-real-fallback-1234";
+    let text = "owned local fixture";
+    let first = node
+        .khor_agent_on(
+            node.name(),
+            Action::Prompt {
+                token: token.into(),
+                text: text.into(),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        until(|| fs::read(scratch.join("sidecar.identity"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .is_some())
+        .await,
+        "actual sidecar did not read start"
+    );
+    let identity: Value =
+        serde_json::from_slice(&fs::read(scratch.join("sidecar.identity")).unwrap()).unwrap();
+    let pid = u32::try_from(identity["pid"].as_u64().unwrap()).unwrap();
+    let pgid = u32::try_from(identity["pgid"].as_u64().unwrap()).unwrap();
+    assert_eq!(pid, pgid, "contained fixture must own its process group");
+    assert!(!no_process(pid));
+    let observed = ObservedRoot::new(node.root(), "retry-record", false);
+    let root = node.root().clone();
+    let retry = std::thread::spawn(move || {
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(async move {
+                let node = Node::open(root).unwrap();
+                node.khor_agent_on(
+                    node.name(),
+                    Action::Prompt {
+                        token: token.into(),
+                        text: text.into(),
+                    },
+                )
+                .await
+            })
+    });
+    assert!(until(|| observed.hook.gate.entered.load(Ordering::SeqCst)).await);
+    let root = node.root().clone();
+    let mut shutdown = tokio::spawn(async move { crate::link::shutdown(&root).await });
+    assert!(until(|| runtime::enter(node.root(), &node.agent_generation).is_err()).await);
+    assert!(
+        !shutdown.is_finished(),
+        "the admitted receipt writer must remain owned"
+    );
+    if cancel_waiter {
+        shutdown.abort();
+        assert!(shutdown.await.unwrap_err().is_cancelled());
+        let root = node.root().clone();
+        shutdown = tokio::spawn(async move { crate::link::shutdown(&root).await });
+    }
+    for action in [
+        Action::Read,
+        Action::Prompt {
+            token: "late-shutdown-token-1234".into(),
+            text: text.into(),
+        },
+        Action::RetryCancellation {
+            run: first.run.clone().unwrap(),
+        },
+    ] {
+        assert_eq!(
+            node.khor_agent_on(node.name(), action).await.unwrap_err(),
+            "RuntimeShutDown"
+        );
+    }
+    assert_eq!(
+        Node::acquire_agent_runtime(node.root()).unwrap_err(),
+        "RuntimeShutDown"
+    );
+    observed.hook.gate.release();
+    assert_eq!(retry.join().unwrap().unwrap().run, first.run);
+    assert_eq!(shutdown.await.unwrap().unwrap(), RuntimeClose::Closed);
+    assert!(!observed.hook.gate.expired.load(Ordering::SeqCst));
+    assert!(no_process(pid), "actual sidecar PID survived shutdown");
+    assert_eq!(unsafe { libc::kill(-(pgid as i32), 0) }, -1);
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ESRCH)
+    );
+    assert!(
+        !observed.pids().is_empty(),
+        "actual native metadata was not observed"
+    );
+    assert_retired(&observed);
+    assert!(runtime::idle(node.root()));
+    assert!(!running().lock().unwrap().contains_key(node.root()));
+    assert!(matches!(
+        close_claim(node.root(), false).unwrap(),
+        CloseClaim::Held(_)
+    ));
+    let final_run: Saved = serde_json::from_slice(
+        &fs::read(file(node.root(), first.run.as_deref().unwrap())).unwrap(),
+    )
+    .unwrap();
+    assert!(final_run.record.ended_at_ms.is_some());
+    assert_eq!(final_run.record.status, "cancelled");
+    let run = first.run.as_deref().unwrap();
+    let intent: Value = serde_json::from_slice(
+        &fs::read(
+            node.root()
+                .join(".khor/agent/cancellations")
+                .join(blake3::hash(run.as_bytes()).to_hex().to_string())
+                .join("intent.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(intent["run"], run);
+    assert_eq!(
+        intent["execution_home"],
+        serde_json::to_value(node.device()).unwrap()
+    );
+    fs::remove_dir_all(node.root()).unwrap();
+    node.reconcile_agent().unwrap();
+    remote_cancel::pump(node.root(), true);
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(
+        !node.root().exists(),
+        "joined agent owners must not recreate the released Root"
+    );
+    println!(
+        "actual fallback shutdown joined sidecar PID={pid} PGID={pgid}; Root absent after passive ticks"
+    );
+}
+
+async fn shutdown_restart(scratch: &Path, startup_error: bool) {
+    let root = scratch.join("store");
+    fs::create_dir_all(root.join(".khor")).unwrap();
+    fs::write(
+        root.join(".khor/relays.json"),
+        r#"{"relays":[{"url":"http://127.0.0.1:9"}],"only_mine":true}"#,
+    )
+    .unwrap();
+    let old = Node::open_hosting(root.clone(), "shutdown-resident", false).unwrap();
+    old.khor_agent_on(old.name(), Action::Read).await.unwrap();
+    if startup_error {
+        // A real filesystem publish error after endpoint bind, before any
+        // resident work is admitted. It cannot tear down the existing API owner.
+        fs::create_dir(root.join(".khor/endpoint.json")).unwrap();
+        let server = Node::open_hosting(root.clone(), "shutdown-resident", false).unwrap();
+        assert!(server.serve_resumable().await.is_err());
+        old.khor_agent_on(old.name(), Action::Read).await.unwrap();
+        Node::acquire_agent_runtime(&root).unwrap();
+        fs::remove_dir(root.join(".khor/endpoint.json")).unwrap();
+    }
+    let dropping = (!startup_error).then(|| ObservedRoot::new(&root, "serve-final-stop", false));
+    let server = Node::open_hosting(root.clone(), "shutdown-resident", false).unwrap();
+    let serving = tokio::spawn(server.serve_resumable());
+    assert!(
+        until(|| crate::link::serving_for_test(&root)).await,
+        "serve did not register its real lifecycle door"
+    );
+    assert_eq!(
+        crate::link::stop_serving(&root).await.unwrap(),
+        RuntimeClose::Closed
+    );
+    if let Some(observed) = &dropping {
+        assert!(until(|| observed.hook.gate.entered.load(Ordering::SeqCst)).await);
+        // The real serve has sent its successful drain acknowledgement but
+        // its final root-scoped stop has not run. A new explicit owner must
+        // still be refused before bind or any new producer can start.
+        let during_drop = runtime::serve(&root, &OnceLock::new());
+        observed.hook.gate.release();
+        assert!(matches!(during_drop, Err(error) if error == "AgentResidentBusy"));
+        assert!(!observed.hook.gate.expired.load(Ordering::SeqCst));
+    }
+    serving.await.unwrap().unwrap();
+    drop(dropping);
+    assert_eq!(
+        old.khor_agent_on(old.name(), Action::Read)
+            .await
+            .unwrap_err(),
+        "RuntimeShutDown"
+    );
+    let next = Node::open_hosting(root.clone(), "shutdown-resident", false).unwrap();
+    let serving = tokio::spawn(next.serve_resumable());
+    assert!(until(|| crate::link::serving_for_test(&root)).await);
+    let fresh = Node::open_hosting(root.clone(), "shutdown-resident", false).unwrap();
+    fresh
+        .khor_agent_on(fresh.name(), Action::Read)
+        .await
+        .unwrap();
+    assert_eq!(
+        old.khor_agent_here(Action::Read).await.unwrap_err(),
+        "RuntimeShutDown",
+        "old handlers cannot borrow the new generation"
+    );
+    assert_eq!(
+        crate::link::shutdown(&root).await.unwrap(),
+        RuntimeClose::Closed
+    );
+    serving.await.unwrap().unwrap();
+    assert!(
+        Node::open_hosting(root.clone(), "shutdown-resident", false)
+            .unwrap()
+            .serve_resumable()
+            .await
+            .is_err()
+    );
+    println!(
+        "real serve stop/restart advanced owner generation; final shutdown refused another resident; startup_error={startup_error}"
+    );
+}
+
+async fn setup_action(node: &Node, request: Value) -> Value {
+    node.khor_agent_on(node.name(), Action::Manage { request })
+        .await
+        .unwrap()
+        .data
+        .unwrap()
+}
+async fn setup_status(node: &Node, id: &str, expected: &str) -> Value {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let value = setup_action(node, json!({"operation":"poll","job":id})).await;
+            if value["status"] == expected {
+                return value;
+            }
+            assert_ne!(value["status"], "failed", "actual setup failed: {value}");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("actual setup status did not arrive")
+}
+async fn identity_at(path: &Path) -> Value {
+    assert!(
+        until(|| fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .is_some())
+        .await,
+        "actual native setup identity did not arrive: {}",
+        path.display()
+    );
+    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+}
+fn assert_native_identity_retired(identity: &Value) {
+    let pid = u32::try_from(identity["pid"].as_u64().unwrap()).unwrap();
+    let pgid = i32::try_from(identity["pgid"].as_i64().unwrap()).unwrap();
+    assert_eq!(pid as i32, pgid);
+    assert!(no_process(pid), "actual setup PID {pid} survived shutdown");
+    assert_eq!(unsafe { libc::kill(-pgid, 0) }, -1);
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ESRCH)
+    );
+    println!("actual setup PID={pid} PGID={pgid} reaped");
+}
+async fn shutdown_setup(scratch: &Path, committed: bool) {
+    let node = Node::open_as(scratch.join("store"), "shutdown-setup").unwrap();
+    assert!(!node.root().join(".khor/endpoint.json").exists());
+    let observed = ObservedRoot::new(node.root(), "setup-cleanup", false);
+    let started=setup_action(&node,json!({"operation":"login","provider":"anthropic","authType":"api_key","name":"owned shutdown credential"})).await;
+    let id = started["job"].as_str().unwrap();
+    let setup_identity = identity_at(&scratch.join("setup.identity")).await;
+    let credential = PathBuf::from(setup_identity["credential"].as_str().unwrap());
+    let done = setup_status(&node, id, if committed { "done" } else { "waiting" }).await;
+    let committed_bytes = if committed {
+        Some(fs::read(&credential).unwrap())
+    } else {
+        None
+    };
+    let acp_identity = if committed {
+        None
+    } else {
+        let python = fs::read_to_string(scratch.join("fixture.python")).unwrap();
+        node.register_agent(
+            "fixture",
+            &[
+                python,
+                "-I".into(),
+                "-S".into(),
+                scratch.join("sidecar.py").display().to_string(),
+            ],
+        )
+        .unwrap();
+        let started = setup_action(
+            &node,
+            json!({"operation":"acp_authenticate","agent":"fixture","methodId":"fixture"}),
+        )
+        .await;
+        assert!(started["job"].as_str().is_some());
+        Some(identity_at(&scratch.join("acp.identity")).await)
+    };
+    let root = node.root().clone();
+    let mut shutdown = tokio::spawn(async move { crate::link::shutdown(&root).await });
+    assert!(
+        until(|| observed.hook.gate.entered.load(Ordering::SeqCst)).await,
+        "real setup reader did not reach owned final commit/cleanup tail"
+    );
+    assert!(
+        !shutdown.is_finished(),
+        "reader tail must remain owned after native reap"
+    );
+    assert_native_identity_retired(&setup_identity);
+    if !committed {
+        shutdown.abort();
+        assert!(shutdown.await.unwrap_err().is_cancelled());
+        assert_eq!(
+            Node::acquire_agent_runtime(node.root()).unwrap_err(),
+            "RuntimeShutDown"
+        );
+        let root = node.root().clone();
+        shutdown = tokio::spawn(async move { crate::link::shutdown(&root).await });
+    }
+    assert_eq!(
+        node.khor_agent_on(
+            node.name(),
+            Action::Manage {
+                request: json!({"operation":"login","provider":"anthropic","authType":"api_key"})
+            }
+        )
+        .await
+        .unwrap_err(),
+        "RuntimeShutDown"
+    );
+    observed.hook.gate.release();
+    assert_eq!(shutdown.await.unwrap().unwrap(), RuntimeClose::Closed);
+    assert!(!observed.hook.gate.expired.load(Ordering::SeqCst));
+    if let Some(identity) = acp_identity {
+        assert_native_identity_retired(&identity);
+    }
+    assert!(runtime::idle(node.root()));
+    if committed {
+        let account = done["account"].as_str().unwrap();
+        assert!(
+            node.accounts()
+                .unwrap()
+                .iter()
+                .any(|item| item.id == account && item.inference.is_some())
+        );
+        assert_eq!(
+            fs::read(&credential).unwrap(),
+            committed_bytes.unwrap(),
+            "already committed credentials must remain intact"
+        );
+    } else {
+        assert!(!credential.exists());
+        assert!(
+            !node
+                .accounts()
+                .unwrap()
+                .iter()
+                .any(|item| item.name == "owned shutdown credential")
+        );
+        fs::remove_dir_all(node.root()).unwrap();
+        fs::write(
+            scratch.join("release-credential"),
+            "after confirmed shutdown",
+        )
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(
+            !node.root().exists(),
+            "retired setup child/reader recreated the released Root"
+        );
+    }
+}

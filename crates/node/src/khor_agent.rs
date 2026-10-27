@@ -13,6 +13,8 @@ mod io;
 #[path = "khor_agent_output.rs"]
 mod output;
 use crate::agent_process as process;
+#[path = "khor_agent_runtime.rs"]
+pub(crate) mod runtime;
 #[path = "khor_agent_updates.rs"]
 mod updates;
 use output::TextStream;
@@ -173,6 +175,18 @@ fn running() -> &'static Mutex<HashMap<PathBuf, Arc<Running>>> {
     static RUNS: OnceLock<Mutex<HashMap<PathBuf, Arc<Running>>>> = OnceLock::new();
     RUNS.get_or_init(Default::default)
 }
+fn stop_local_producers(root: &Path) {
+    accounts::stop_jobs(root);
+    crate::acp_management::stop_jobs(root);
+    let active = running()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(root)
+        .cloned();
+    if let Some(active) = active {
+        active.request_stop();
+    }
+}
 fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -294,7 +308,42 @@ impl Node {
     /// Explicitly acquire this process's cancellation runtime for new work.
     /// Ordinary reads and resident ticks never reopen a successfully closed Root.
     pub fn acquire_agent_runtime(root: &Path) -> Result<(), String> {
+        let _call = runtime::enter(root, &OnceLock::new())?;
         crate::remote_cancel::acquire(root)
+    }
+    /// Seal agent API admission for this process, stop/join its executor and
+    /// provider/ACP setup producers, then retire its cancellation owners. A Busy result retains the terminal seal
+    /// and the Root; the owner may retry. Remote cancellation can remain pending.
+    /// Durable GUI hosts and unrelated Node I/O keep their separate owners.
+    pub async fn shutdown_agent_runtime(root: &Path) -> Result<RuntimeClose, String> {
+        Self::retire_agent_runtime(root, true).await
+    }
+    pub(crate) async fn retire_agent_runtime(
+        root: &Path,
+        terminal: bool,
+    ) -> Result<RuntimeClose, String> {
+        let Some(_drain) = runtime::drain(root, terminal)? else {
+            return Ok(RuntimeClose::Busy);
+        };
+        let by = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            // Repeat while admitted calls retire: a Prompt may have crossed
+            // admission just before the seal and not installed Running yet.
+            stop_local_producers(root);
+            if runtime::idle(root) {
+                match Self::close_agent_runtime(root).await? {
+                    RuntimeClose::Closed => {
+                        runtime::retired(root);
+                        return Ok(RuntimeClose::Closed);
+                    }
+                    RuntimeClose::Busy => {}
+                }
+            }
+            if tokio::time::Instant::now() >= by {
+                return Ok(RuntimeClose::Busy);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
     }
     /// Quiesce this Root's local agent runtime before its owner releases it.
     /// Busy callers retain the Root; durable cancellation files remain on disk.
@@ -386,6 +435,7 @@ impl Node {
 
     /// Only called on the selected home, through the authenticated node route.
     pub(crate) async fn khor_agent_here(&self, action: Action) -> Result<Report, String> {
+        let _call = runtime::enter(self.root(), &self.agent_generation)?;
         if let Action::Stop { run } = &action {
             let active = running()
                 .lock()
@@ -576,21 +626,24 @@ impl Node {
                         .unwrap_or_else(|p| p.into_inner())
                         .remove(&root);
                 });
-                if let Err(error) = spawned {
-                    running()
-                        .lock()
-                        .unwrap_or_else(|p| p.into_inner())
-                        .remove(&recovery_root);
-                    let mut saved: Saved = serde_json::from_slice(
-                        &fs::read(file(&recovery_root, &recovery_id)).map_err(|e| e.to_string())?,
-                    )
-                    .map_err(|e| e.to_string())?;
-                    saved.record.status = "failed".into();
-                    saved.record.error = Some(error.to_string());
-                    saved.record.ended_at_ms = Some(now());
-                    #[cfg(all(test, unix))]
-                    runtime_close_tests::producer_point(&recovery_root, "spawn-failure-save");
-                    save(&recovery_root, &saved)?;
+                match spawned {
+                    Ok(executor) => runtime::register_producer(&recovery_root, executor),
+                    Err(error) => {
+                        running()
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .remove(&recovery_root);
+                        let mut saved: Saved = serde_json::from_slice(
+                            &fs::read(file(&recovery_root, &recovery_id)).map_err(|e| e.to_string())?,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        saved.record.status = "failed".into();
+                        saved.record.error = Some(error.to_string());
+                        saved.record.ended_at_ms = Some(now());
+                        #[cfg(all(test, unix))]
+                        runtime_close_tests::producer_point(&recovery_root, "spawn-failure-save");
+                        save(&recovery_root, &saved)?;
+                    }
                 }
                 report.run = Some(id);
             }
@@ -629,6 +682,9 @@ impl Node {
     }
 
     pub fn reconcile_agent(&self) -> Result<(), String> {
+        let Ok(_call) = runtime::enter(self.root(), &self.agent_generation) else {
+            return Ok(());
+        };
         if crate::remote_cancel::is_closed(self.root()) {
             return Ok(());
         }

@@ -11,6 +11,15 @@ impl Drop for Management {
 }
 pub fn manage(command: &str, method: Option<String>) -> Result<Management, String> {
     let agent = AcpAgent::from_str(command).map_err(|e| e.to_string())?;
+    Ok(manage_on(agent, method))
+}
+
+/// Run setup through caller-owned streams. The caller retains its process
+/// lifecycle and confirms native exit after dropping this driver.
+pub fn manage_on(
+    agent: impl agent_client_protocol::ConnectTo<Client>,
+    method: Option<String>,
+) -> Management {
     let (tx, events) = mpsc::unbounded_channel();
     let result = tokio::spawn(async move {
         let elicits = tx.clone();
@@ -39,5 +48,5 @@ pub fn manage(command: &str, method: Option<String>) -> Result<Management, Strin
             .await
             .map_err(|_| "The agent ended before answering".to_owned())?
     });
-    Ok(Management { events, result })
+    Management { events, result }
 }
