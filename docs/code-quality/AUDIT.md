@@ -3,26 +3,26 @@
 基线：main `8704a503a27b36ad58f922690de50e766f8bd485`，2026-10-25。
 此表是首轮结构巡检和重点流程审查的结论，不是全仓逐行深审或所有功能已经通过。
 
-## 当前处置索引（2026-10-26）
+## 当前处置索引（2026-10-28）
 
-本节是首轮问题的后续处置，确切版本/活动所有者仍读STATE；后面的首轮表保留原证据边界。
+本节只记录已开始范围的当前处置；确切源码、证据与剩余验收读[STATE](STATE.md)。首轮巡检表及下面按时间记录保留历史，不代表当前尚未实施。
 
-| 问题/范围 | 当前事实 | 仍需处理 |
+| 问题/范围 | 当前事实 | 边界与剩余 |
 | --- | --- | --- |
-| Q010/11/15 | 已集成；run11同源真实Tauri iOS键盘/历史锚点/commit连续跳转，后续Safari长稿占位与RO调度也有真红绿 | 最终全部Rust/JS同源App重建；物理iPhone/IME未验 |
-| Q020/020b/020c、Q021/021b | 自动保存、显式覆盖digest假冲突、锁刷新均已集成并有独立回归/源审；下方“覆盖尚未修”是首轮历史，不是当前遗留 | 最终整合用户流程 |
-| Q022/023/023b | 身份原子首建、store/purge目标范围与真实owner已集成 | 断电目录项/Windows runtime未承诺 |
-| Q025/036/032/040 | FIFO写完成/连接owner、输入预算、canonical cache/once弱锁回收已集成且c371后端实跑 | 相邻registry及余下生命周期按任务边界审 |
-| Q030/030b/031/038 | 脱敏、A2A caller隔离续聊、事件预算/stderr drain已集成 | 全MCP与远端取消链未闭环 |
-| Q033/034/035 | 上传cancel receipt/GUI恢复、poll退避/gone、native page owner/LRU已集成 | Q033 GUI→Rust真实上传取消、Q035 borrow lease仍待；HTTP mock不代替 |
-| Q037 | 阶段2已集成，精确5845相关120 Rust/全scripts绿；GUI失败replay保留完整历史与gate已集成，root双引擎26绿 | MCP同步执行/远端取消未闭环；Windows runtime和最终App待验 |
-| Q039 | 失败隔离已集成且5845真实Node2例绿；blob core2211→fdeda78b。另真实pending cache及compact均数据丢失真红，正在修 | 统一当前Node/Doc/Pair分块收敛；不做旧Khor兼容，core不是Applied |
-| Q041 | a1/b已集成并精确5845回归；31installer/13mirror/7site。onset构建预检c独立17绿、f7c→76db834b集成且root精确17绿 | 真实Pi编译/Rust嵌入、工具/产物来源与远端全链仍开放 |
-| Q043 | native事件adapter/helpers已集成；真实native listener/unlisten与child WK title证据齐 | OS drag/windowclose/fullscreen值与最终App整体验收 |
-| Q045 | 本地SSH deadline并行I/O与reaped回执已先红后135相关绿，8a22/a162→31b/53ad集成，非作者源审过 | 精确新集成组合运行；真实SSH/master、远端lease与GUI取消API待验 |
-| P4/P5 | 模块边界已按风险分批提取，尚未进入全仓规则/深入口最终治理 | 工具链与生成来源、代码风格/职责、全用户流程仍在原目标内 |
+| Q010/11/15 | 两项用户故障已修复集成；run11真实Tauri iOS键盘/历史锚点/连续commit跳转、Safari长稿占位与RO调度均有真红绿；后续按源码影响映射复用 | 不新增物理iPhone/IME矩阵，不把模拟器称真机 |
+| Q020/020b/020c、Q021/021b | 自动保存、显式覆盖digest假冲突、锁刷新均已集成并有独立回归/源审 | 原失败证据不回填；并发失败分层记录 |
+| Q022/023/023b | 身份原子首建、store/purge目标范围与真实owner已集成 | 不宣称断电目录项/Windows runtime验证 |
+| Q025/036/032/040 | FIFO写完成/连接owner、输入预算、canonical cache/once弱锁回收均已集成；既定组合已执行 | 确切旧版本/当前版本覆盖分别见STATE |
+| Q030/030b/031/038、Q037 | 脱敏、A2A caller隔离续聊、输入/事件预算、stderr drain、Pi/ACP/MCP/远端取消与退出已按已启动任务集成并完成既定组合 | 原040 deadline与062 Node Busy真实失败归下一轮；Windows runtime/真实SSH等不新增本轮矩阵 |
+| Q033/034 | 当前协议、取消收据/GUI恢复、poll退避/gone均已集成；最终f763 GUI实际四图A取消→B重发Allow/EndTurn→C取消、mode/option和正常Quit已独立补验 | 原run05因观察服务143被一次性harness漏认而nongreen，42项独审补验另列，不伪造旧green；Q055另保缺口 |
+| Q035 | native page owner/LRU已集成，模块及Chrome/WebKit行为已验 | 剩原四native程序化资源场景，以及生产UI双owner/真实私有双peer代理最后释放 |
+| Q039 | 统一当前Node/Doc/Pair分块、pending cache/compact数据保护与恢复已集成；真实大数据及bootstrap守卫证据与版本映射齐 | 新Node打开Busy/fixture晚写等只登记下一轮，不新建锁或矩阵 |
+| Q041 | 真实Darwin Pi bundle已编译/嵌入当前GUI，安装/镜像/来源入口已集成；normal GUI/core产物已完成 | Q055自动环境输入覆盖保持非绿；Pi账户页catalog不启动sidecar，剩现有连接入口运行至secret提示前的提取/启动/取消实证，不做provider登录 |
+| Q043 | native adapter/helpers及shared consumer异常隔离已集成；38项回归和真实七注册/撤销/child WK title证据齐 | 剩OS拖放、全屏值、window-close与最终App，不能用旧native Rust或browser fixture代替 |
+| Q045 | 本地SSH deadline/I/O/reaped回执已修，源审/定向及既定组合按确切版本完成 | 真实SSH/master及remote lease不新增本轮前置 |
+| P4/P5 | Clean Code已改边界结构收口完成并独审，机械格式216 Rust/共同入口单独提交；原115父全部执行（113过、2失败下一轮） | 正在完成上述既定真实App剩余流程，最后对齐任务卡和交付；main/ship未授权 |
 
-没有把首轮文件清单当逐行深审，没有把局部回归当全仓完成；main未合并/发布。
+没有把首轮文件清单当逐行深审，没有把局部回归或113通过称全仓全绿。
 
 ## 覆盖与证据
 
@@ -95,7 +95,7 @@ Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史
 
 ## 2026-10-28 已改边界的Clean Code收口
 
-此节是原任务的代码质量准则，不是新增功能专项。以下均为内部整理并已独审；既定115父现已全部执行，113过、2个新失败记录下一轮，确切版本映射见STATE。Q033资源owner的真实App验收仍待，不把fixture结构整理称整个产品架构重构。
+此节是原任务的代码质量准则，不是新增功能专项。以下均为内部整理并已独审；既定115父现已全部执行，113过、2个新失败记录下一轮，确切版本映射见STATE。Q033当前协议真实App及正常Quit已完成并独审；Q035/Q043仍待，不把fixture结构整理称整个产品架构重构。
 
 | 范围 | 具体理解/维护成本 | 收口与保留约束 |
 | --- | --- | --- |

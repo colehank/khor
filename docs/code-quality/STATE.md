@@ -27,6 +27,16 @@ core04与已独审03 runner逐字同，仅3个OUT/internal/TMP字段改run02；d
 
 **无需再规划或编译。plan06已实际执行，原结果与独立补验见上；不得重复启动该旧handle。** 五个必需实际producer path+SHA已在双盘 `P5/Q033-real-app-actual-producers01.json` 逐项固定（status明确App尚未启动）。恢复6582五pin，外层PATH仅去掉恰好首个toolbin:，原App04 prepend后等于core实际环境；原外层自己设置CARGO_*并清runtime helper变量，TAURI_CONFIG/REMOVE/KHOR_AGENT_BUNDLE保持unset。先CUA文档/只读inventory准备好，再按既定唯一owned launcher启动；不要由getApp先行无隔离启动，也不重跑原115/构建或重启旧handle。
 
+## Q035原四native资源场景：首次启动失败，接线修正中
+
+root已独审`P5/Q035-native-owned-plan02`，outer仅多retention合同键，原300/720/5GiB及全source/producer/owned/TMP/dual门保持。`Q035-native-owned-run01`实际9.481s/session82454 exit1，result`3d01dba87041a73934313f10c9d4585b4571bcfe6859511e2d90fb761364f745`；**未完成业务case，不是产品真红或通过**。原server optimizeDeps.entries=[]冷扫描后reload，main报React resolveDispatcher().useEffect null；当前GUI额外menu webview也加载该fixture出现第二start。source/helper/dist/bundle稳、guard空、原owned/TMP全清，失败证据保双盘。
+
+completion_audit只修既定验收接线，新plan03→run02：原TSX四cases/After真实结果不改，HTML仅真实main窗口加载fixture、Vite显式准备实际依赖避免冷重载/双React；不改生产vite/产品/原时限，不复用失败run缓存。旧run11三条rejection已证均是旧unregisterListener handlerId缺失，不是有意业务拒绝；零未处理异常门保。
+
+CUA在首次run01失败退场后被root选中getApp而重新唤起57591，已真实CmdQ并ps缺失；它不是原App57453，不算验收Quit。后续getApp之前须先ps核ready PID和精确可执行路径仍活；inventory失真/false时不得无条件访问历史句柄。
+
+app_runtime_review仅静态准备Q035生产UI双owner/真实私有双peer代理释放计划；q043_app_acceptance仅静态准备OS与embedded Pi分开的原验收。均不执行，由root唯一槽调度；catalog只读本地providers，Pi必须真App resident新Root通过既有Connect至secret提示即取消，不能让非embedded Python helper代管并冒称提取。
+
 ## 正常GUI已产出，空间中断原件保留
 
 `P5/Q033-quality-gui-build-run02` 已正常完成（session23822 exit1仅自动proof拒绝）：metadata/build均0，102.620s，29dual、source/gen/dist/helper与bundle稳、owned/TMP清。root独核实际selected freshfalse/testfalse/opt0/features仅devtools、当前manifest/main.rs，GUI executable SHA **f76302af7b61b59c1d01172ee4209c1c9cb6c80bd6381ee760468527624c865d**、374,932,072B；result SHA **ec56eb347c058b1a167e5fd8807fdd7cf1a57891cc93cae9e6d3f1019385e2bf**。实际选择/完整stat见 `gui-selected-actual.json`。真实App已实际执行，完整闭环尚未通过，见上。
@@ -84,3 +94,7 @@ d26e608f仅216 Rust机械格式；33c8bc12把共同检查放main/显式root、�
 run03/run04双盘原manifest所有条目逐SHA核过，四份同SHAf763/374932072B的历史staged GUI executable已可逆归档，原日志/results/manifest及其余bundle文件保持。ZIP在内恢复根q033-historical-staged-gui-f76302af.zip，102641293B/SHA8a9bf6443392b6a2e71faf473c069bcab8d00211349f997faf2ccaba62f56c30，恢复索引双盘P5/Q033-historical-staged-gui-archive01/archive.json。恢复原4路径前，历史全树manifest不可直接声称当前完整；bytes/mode/mtime可恢复、inode不可恢复。归档后外盘6479036416B、内盘9085059072B，未降低5GiB门。
 
 发现工具在run04已清理后重新唤起私有历史App37569（05:27:43/ppid1，原owned App为30087）；root已CUA CmdQ并ps确认缺失。它不是原流程正常Quit证据，未回填run04结果；无用户App被退出。避免旧handle再次访问，第三次只绑定owned launcher已启动的新run05精确App路径。
+
+### 追加完成运行staged GUI归档（2026-10-28）
+
+Q033-run05和Q035-native-run01双盘4份同f763历史staged executable，已在原manifest全部现存条目SHA核过、无lsof打开后归档复用前述同ZIP；索引双盘P5/Q033-Q035-staged-gui-archive02/archive.json。原日志/result/manifest与其余bundle不变，恢复exe前原全树manifest不再直接成立。Q033独审42项的全树检查是归档前事实，未回填旧收据；normal current GUI/Core/CLI仍在。
