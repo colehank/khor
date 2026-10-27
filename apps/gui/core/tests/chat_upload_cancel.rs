@@ -16,67 +16,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-struct Fixture {
-    root: PathBuf,
-    id: String,
-    addr: String,
-    cookie: String,
-    host: Option<std::thread::JoinHandle<Result<(), String>>>,
+struct UploadRelay {
+    port: u16,
     stop: Arc<AtomicBool>,
     accepted: Arc<AtomicUsize>,
     first_part: mpsc::Receiver<()>,
     release: mpsc::Sender<()>,
-    relay: Option<std::thread::JoinHandle<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
     streams: Arc<Mutex<Vec<TcpStream>>>,
-    control: Option<PathBuf>,
-    finished: bool,
 }
-impl Fixture {
-    fn new() -> Self {
-        Self::start(None)
-    }
-    fn start(control: Option<PathBuf>) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "khor-upload-{}",
-            khor_node::link::fresh_hex().unwrap()
-        ));
-        let root = control
-            .as_ref()
-            .map(|dir| dir.join("store"))
-            .unwrap_or(root);
-        std::fs::create_dir(&root).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
-        let ready = root.join("ready");
-        let mut command = vec![
-            "python3".into(),
-            format!(
-                "{}/tests/fixtures/upload-agent.py",
-                env!("CARGO_MANIFEST_DIR")
-            ),
-            root.join("requests.jsonl").to_str().unwrap().into(),
-        ];
-        if control.is_some() {
-            drop(private_file(&root.join("requests.jsonl")));
-            command.push("--redacted".into());
-        }
-        let rr = root.clone();
-        let rd = ready.clone();
-        let thread =
-            std::thread::spawn(move || gui_host_main(rr, rd, "upload fixture".into(), command));
-        let until = Instant::now() + Duration::from_secs(20);
-        while !ready.exists() {
-            assert!(Instant::now() < until, "host did not initialize");
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        let id = std::fs::read_to_string(ready).unwrap().trim().to_owned();
-        let node = Node::open(root.clone()).unwrap();
-        let dir = node.session_dir(&SessionId(id.clone())).unwrap();
-        let file = host::read_host_file(&dir).unwrap();
-        let addr = format!("127.0.0.1:{}", file.port);
+impl UploadRelay {
+    fn start(addr: String, control: Option<PathBuf>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -182,6 +132,115 @@ impl Fixture {
                 worker.join().unwrap();
             }
         });
+        Self {
+            port,
+            stop,
+            accepted,
+            first_part,
+            release,
+            thread: Some(relay),
+            streams,
+        }
+    }
+    fn stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+        let _ = self.release.send(());
+    }
+    fn disconnect_clients(&self) {
+        for stream in self
+            .streams
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+        {
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+    }
+    fn is_finished(&self) -> bool {
+        self.thread
+            .as_ref()
+            .is_none_or(|thread| thread.is_finished())
+    }
+    fn join_finished(&mut self) -> Result<(), String> {
+        if !self.is_finished() {
+            return Err("upload relay cleanup is unconfirmed".into());
+        }
+        match self.thread.take() {
+            Some(thread) => thread
+                .join()
+                .map_err(|_| "upload relay thread panicked".into()),
+            None => Ok(()),
+        }
+    }
+}
+impl Drop for UploadRelay {
+    fn drop(&mut self) {
+        self.stop();
+        self.disconnect_clients();
+    }
+}
+
+struct Fixture {
+    root: PathBuf,
+    id: String,
+    addr: String,
+    cookie: String,
+    host: Option<std::thread::JoinHandle<Result<(), String>>>,
+    relay: UploadRelay,
+    control: Option<PathBuf>,
+    finished: bool,
+}
+impl Fixture {
+    fn new() -> Self {
+        Self::start(None)
+    }
+    fn for_app(control: PathBuf) -> Self {
+        Self::start(Some(control))
+    }
+    fn start(control: Option<PathBuf>) -> Self {
+        let root = std::env::temp_dir().join(format!(
+            "khor-upload-{}",
+            khor_node::link::fresh_hex().unwrap()
+        ));
+        let root = control
+            .as_ref()
+            .map(|dir| dir.join("store"))
+            .unwrap_or(root);
+        std::fs::create_dir(&root).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let ready = root.join("ready");
+        let mut command = vec![
+            "python3".into(),
+            format!(
+                "{}/tests/fixtures/upload-agent.py",
+                env!("CARGO_MANIFEST_DIR")
+            ),
+            root.join("requests.jsonl").to_str().unwrap().into(),
+        ];
+        if control.is_some() {
+            drop(private_file(&root.join("requests.jsonl")));
+            command.push("--redacted".into());
+        }
+        let rr = root.clone();
+        let rd = ready.clone();
+        let thread =
+            std::thread::spawn(move || gui_host_main(rr, rd, "upload fixture".into(), command));
+        let until = Instant::now() + Duration::from_secs(20);
+        while !ready.exists() {
+            assert!(Instant::now() < until, "host did not initialize");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let id = std::fs::read_to_string(ready).unwrap().trim().to_owned();
+        let node = Node::open(root.clone()).unwrap();
+        let dir = node.session_dir(&SessionId(id.clone())).unwrap();
+        let file = host::read_host_file(&dir).unwrap();
+        let addr = format!("127.0.0.1:{}", file.port);
+        let relay = UploadRelay::start(addr.clone(), control.clone());
+        let port = relay.port;
         let path = host::host_file_path(&dir);
         let mut json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -193,12 +252,7 @@ impl Fixture {
             addr,
             cookie: file.cookie,
             host: Some(thread),
-            stop,
-            accepted,
-            first_part,
-            release,
-            relay: Some(relay),
-            streams,
+            relay,
             control,
             finished: false,
         };
@@ -252,14 +306,11 @@ impl Fixture {
             return Ok(());
         }
         self.finished = true;
-        self.stop.store(true, Ordering::Relaxed);
-        let _ = self.release.send(());
+        self.relay.stop();
         if self.control.is_none() {
             let _ = chat::chat_leave(&self.id);
         }
-        for stream in self.streams.lock().unwrap().iter() {
-            let _ = stream.shutdown(Shutdown::Both);
-        }
+        self.relay.disconnect_clients();
         let close = match khor_node::gui_host::connect_at(&self.addr, &self.cookie) {
             Ok(mut attached) => {
                 let _ = attached
@@ -272,18 +323,13 @@ impl Fixture {
         let close_error = close.err();
         let mut error = None;
         let until = Instant::now() + Duration::from_secs(10);
-        while (self.relay.as_ref().is_some_and(|h| !h.is_finished())
-            || self.host.as_ref().is_some_and(|h| !h.is_finished()))
+        while (!self.relay.is_finished() || self.host.as_ref().is_some_and(|h| !h.is_finished()))
             && Instant::now() < until
         {
             std::thread::sleep(Duration::from_millis(10));
         }
-        if let Some(relay) = self.relay.take() {
-            if !relay.is_finished() {
-                error.get_or_insert("upload relay cleanup is unconfirmed".into());
-            } else if relay.join().is_err() {
-                error.get_or_insert("upload relay thread panicked".into());
-            }
+        if let Err(why) = self.relay.join_finished() {
+            error.get_or_insert(why);
         }
         if let Some(host) = self.host.take() {
             if !host.is_finished() {
@@ -422,7 +468,7 @@ fn app_upload_host() {
         .create(&control)
         .expect("control directory must not already exist");
     drop(private_file(&control.join("wire.jsonl")));
-    let mut fixture = Fixture::start(Some(control.clone()));
+    let mut fixture = Fixture::for_app(control.clone());
     let node = Node::open(fixture.root.clone()).unwrap();
     let sid = SessionId(fixture.id.clone());
     assert!(node.far_machine(&sid).unwrap().is_none());
@@ -448,7 +494,7 @@ fn app_upload_host() {
     publish_private(
         &control.join("finished.json"),
         &serde_json::json!({
-            "stop_requested":requested, "connections":fixture.accepted.load(Ordering::Relaxed),
+            "stop_requested":requested, "connections":fixture.relay.accepted.load(Ordering::Relaxed),
             "elapsed_ms":began.elapsed().as_millis()
         }),
     );
@@ -474,11 +520,12 @@ fn cancel_upload() {
     )
     .unwrap();
     fixture
+        .relay
         .first_part
         .recv_timeout(Duration::from_secs(5))
         .unwrap();
     let stop = chat::submit_control(&fixture.id, Control::Stop).unwrap();
-    fixture.release.send(()).unwrap();
+    fixture.relay.release.send(()).unwrap();
     stop.wait().unwrap();
     assert!(turn.wait().is_err());
     fixture.until(|frame|matches!(frame,ChatFrame::SendCancelled{token:Some(token),reconnect} if token=="draft-1" && !*reconnect));
@@ -510,7 +557,7 @@ fn cancel_upload() {
     fixture.finish_prompt();
     assert_eq!(fixture.prompt_count(), 1);
     assert_eq!(
-        fixture.accepted.load(Ordering::Relaxed),
+        fixture.relay.accepted.load(Ordering::Relaxed),
         1,
         "cancelling an upload must keep the original connection"
     );
@@ -600,5 +647,5 @@ fn a_committed_small_turn_uses_agent_stop_and_keeps_the_attachment() {
             .any(|frame| matches!(frame, ChatFrame::SendCancelled { .. }))
     );
     assert_eq!(fixture.prompt_count(), 1);
-    assert_eq!(fixture.accepted.load(Ordering::Relaxed), 1);
+    assert_eq!(fixture.relay.accepted.load(Ordering::Relaxed), 1);
 }
