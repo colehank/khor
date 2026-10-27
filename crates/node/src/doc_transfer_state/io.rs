@@ -532,4 +532,80 @@ mod tests {
             fs::remove_file(&target).unwrap();
         }
     }
+    #[test]
+    fn ordinary_open_waits_for_a_same_root_control_lease_then_reuses_its_anchor() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let fixture = Fixture::new();
+        let first = crate::Node::open_hosting(fixture.0.clone(), "ordinary-open", false).unwrap();
+        assert!(first.root_born());
+        let anchor = fs::read(fixture.0.join(".khor/root.pub")).unwrap();
+        assert!(!anchor.is_empty());
+        drop(first);
+
+        let control = root_gate(&fixture.0).unwrap();
+        let root = fixture.0.clone();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (proceed_tx, proceed_rx) = mpsc::channel();
+        let (attempting_tx, attempting_rx) = mpsc::channel();
+        let (returned_tx, returned_rx) = mpsc::channel();
+        let handshake = Duration::from_secs(2);
+        let worker = std::thread::spawn(move || {
+            let _ = started_tx.send(());
+            if proceed_rx.recv_timeout(handshake).is_err() {
+                return Err("ordinary-open worker did not receive its start handshake".to_owned());
+            }
+            let _ = attempting_tx.send(());
+            let opened =
+                crate::Node::open_hosting(root.clone(), "ordinary-open", false).and_then(|node| {
+                    let anchor =
+                        fs::read(root.join(".khor/root.pub")).map_err(|error| error.to_string())?;
+                    Ok((node.root_born(), anchor))
+                });
+            let _ = returned_tx.send(opened.clone());
+            opened
+        });
+
+        let started = started_rx.recv_timeout(handshake).is_ok();
+        let proceeded = started && proceed_tx.send(()).is_ok();
+        drop(proceed_tx);
+        let attempting = proceeded && attempting_rx.recv_timeout(handshake).is_ok();
+        let early = if attempting {
+            Some(returned_rx.recv_timeout(Duration::from_millis(100)))
+        } else {
+            None
+        };
+        // Always release the actual owner and join before any assertion can unwind.
+        drop(control);
+        let joined = worker.join();
+        match &early {
+            Some(Ok(Err(error))) => eprintln!("Q039_EARLY_OPEN_ERROR: {error}"),
+            Some(Ok(Ok(_))) => eprintln!("Q039_EARLY_OPEN_RETURNED_OK"),
+            Some(Err(mpsc::RecvTimeoutError::Timeout)) => {
+                eprintln!("Q039_HELD_WINDOW_TIMEOUT_AFTER_ATTEMPT_HANDSHAKE");
+            }
+            Some(Err(mpsc::RecvTimeoutError::Disconnected)) => {
+                eprintln!("Q039_OPEN_WORKER_DISCONNECTED");
+            }
+            None => eprintln!("Q039_OPEN_ATTEMPT_HANDSHAKE_MISSING"),
+        }
+        assert!(
+            started && proceeded && attempting,
+            "ordinary-open handshake did not complete"
+        );
+        assert!(
+            matches!(early, Some(Err(mpsc::RecvTimeoutError::Timeout))),
+            "ordinary Node open returned while the same-root control lease was held: {early:?}"
+        );
+        let (born, reopened_anchor) = joined
+            .expect("ordinary-open worker panicked")
+            .expect("ordinary Node open failed after the control lease was released");
+        assert!(!born, "ordinary reopening must not create another root");
+        assert_eq!(
+            reopened_anchor, anchor,
+            "ordinary reopening changed the trust anchor"
+        );
+    }
 }
