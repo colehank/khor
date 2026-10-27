@@ -1,6 +1,6 @@
 # Q055 共享构建缓存的内容来源校验
 
-状态：ready，未实现。Owner：root（P4）；用户已授权全仓功能与构建治理。main/ship边界不变。
+状态：working，候选实现及纯控已完成，真实编译对照已暴露并在修正准备逻辑；尚未集成或用于整合App。Owner：root（P4）；用户已授权全仓功能与构建治理。main/ship边界不变。
 
 ## 已证实的问题
 
@@ -30,3 +30,23 @@ primary实现资料：[Cargo fingerprint](https://github.com/rust-lang/cargo/blo
 candidate01已交root独审：外盘Q055/native-provenance-candidate01、内盘recovery同名，13文件双盘；5实现路径、1933完整inputs，patch07b1b8bf277b90c04f375d21d682c4abce994ac4a5b6ae5fc38a76dbb084e6e5。作者15纯Python父通过，现有native除main外11函数AST保留，CI同批prepare/verify normalCLI与Node并提供真实worker收据。root尚未源码独审/接受实现；未真实Cargo/native或共享target修改，未commit。
 
 下一步仍按原完成要求：root独审、同一target真实A→B→同源B→A及生成输入/嵌入路径/旧顶层.d对照，再接实际CI/native/最终整合App验证；纯控结果不能替代这些。
+
+
+## 2026-10-27 root独审与真实对照（进行中）
+
+root实际复现01盲点：包外shared-input内容改变并保mtime，producer key不变、旧生成物仍被接受。02将generated rerun及普通rustc dep-info输入限制为对应producer key闭包/common/extras已覆盖路径；未知输入拒绝，不为README变化全仓失效。root重跑17纯控过。
+
+首次真实小型std两包实测 `Q055/native-provenance-real01`：实际Cargo A build0，verify拒绝hyphen published bin，因为rustc hashed名使用underscore。03仅补Cargo target.name的crate名映射，保完整SHA/size/mtime/唯一配对/rustc.d强校验，新增回归后18纯控过。旧01失败未回写。
+
+`Q055/native-provenance-real02`：A、B的实际编译及原生输出/嵌入root均正确；保旧mtime的新module/API/生成输入变化触发重建；故意把旧A消息标fresh仍被拒绝。同源B refresh=[]、实际3个firstparty artifact均fresh=true且原生输出正确，旧顶层summary.d未代替配对rustc.d。回A实际Cargo0但verify正确拒绝旧B生成输出：prepare只刷新app/src/main.rs，script fresh=true、dep/app fresh=false；prepare误以包内任一buildscript artifact仍匹配旧A就够，未强制生成器再运行。root授权逐target及实际generated-files匹配的最小修复，不放宽verify/不改fixture名/不重跑伪绿。原02结果保留，relocation阶段尚未执行。
+
+两次actual controller已终止、所记录各owned PGID空、TMP清、moduleSHA稳定，总耗时分别1.975/2.792秒。独审另外发现controller的forced-drain、最终PGID/TMP、最终moduleSHA/TOTAL门缺口；下次独立03收紧，历史01/02不改。两次都不是全Q055绿，更不是Khor正常CLI/原生入口或最终App验证。唯一共享target继续使用，不造新target/worktree。
+
+
+## 真实real03闭环与实现提交
+
+候选04逐target判断对应当前artifact的匹配，custom-build另核其producer key的真实generated inventory/content与output marker内容。脚本字节相同不能代替生成物来源；verify完全未放宽。19纯Python回归全部过，root再次运行确认。
+
+root实际 `Q055/native-provenance-real03` 以收紧后的控制运行，exit0/5.542s：A→B→sameB→returnA→relocatedA 共5次真实Cargo build及5次真实native输出均正确，所有changed producer实际fresh=false，sameB的3个artifact全fresh=true且refresh=[]。保旧mtime的新module/API/生成输入变化没有错复用；旧A消息在B状态被拒；故意陈旧顶层summary.d未代替配对rustc.d；回A触发脚本重新生成old值；relocation实际env!(CARGO_MANIFEST_DIR)为新root。root逐SHA核66dual并独读全部receipt/actualstdout。moduleSHA bef186f76c5184e8a0bf57784b417610817be32acb4a7d673eb75da22c22a9b5稳定，所有owned groups gone/leaderreaped，无forced/cleanup error，TMP清，最终module/TOTAL/镜像门均通过。原01/02失败保留。
+
+作者exact5提交859b9f7d5d962d117f516184dce45050b1ff1896，root集成d49d88c3ec5be3ade695138308f716402d89fed6。这建立可用的第一方来源校验入口，并验证真实小型workspace的正反对照；Khor自身正常CLI/原生入口、CI实际运行及最终App同源接线仍要验，不能把本段标全Q055/P5 done。下一批R1先接当前正常CLI+Node build及9个必要业务父，复用现有process controls而不是复制runner。
