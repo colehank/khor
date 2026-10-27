@@ -29,9 +29,9 @@
 | root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至b196992a（含取消31回归、Q055闭包输入修复、trust18提取）；现又集成Q054＋fixture至ec404，组合CLI/Node及61功能父已过，真正App/其余target待。 |
 | node_test_review | R2树 `fix/quality-remote-cancel@828fbd3167732c27fc4bb1718474a41961882279` clean | R2 run05实际59 distinct全过，已集成aa9f80ca；shutdown source03独审无确认阻断，已归还未启动的槽（真实accounts sidecar前提待准备）；先完成CLI/Node＋6新/30旧入口，无native。 |
 | shutdown_owner | 复用Q055旧树 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-shutdown-lifecycle@ec404dd7` dirty10 | source03修复最后stop前释放代次reservation的已确认竞态，6业务父仅源码。现作为非作者只读审N2 candidate16；不改源、无native。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@27093f4a` dirty12 | N2 candidate16双审无阻断；run01编译类型错误0父，已最小修candidate17；run02三build过/新2绿后原小Pair发现空hint回归；source19 run04三build过/7父绿，恢复父helper失败后diag05定位双向archive同key覆盖；source21仅recipient key四点修，diag06单Node/单恢复父运行，不扩47矩阵，不扩范围。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@27093f4a` dirty12 | N2 candidate16双审无阻断；run01编译类型错误0父，已最小修candidate17；run02三build过/新2绿后原小Pair发现空hint回归；source19 run04三build过/7父绿，恢复父helper失败后diag05定位双向archive同key覆盖；source21 recipient key四点修后diag06恢复父真绿，full07前8真绿/原Pair04正在跑，不扩47矩阵，不扩范围。 |
 
-**当前唯一native槽已授node_transfer_owner运行N2 source21/diag06单Node＋单恢复父（session16191/runner72396）。shutdown未launch已明确归槽，继续并行准备CLI/Node＋新6/旧30及真实accounts/Tauri前提，不占槽。R2 run05已terminal并归槽。** R2作者828fbd→集成aa9f80ca，12 payload已逐字节核（proto保留N1并核R2测试块），两树clean。当前集成aa9尚未组合native/App验收；待已开始的N2/shutdown集成后针对受影响链路作一次组合，不逐commit无变化重跑。上一ec404的61父原绿仅适用当时版本。
+**当前唯一native槽已授node_transfer_owner运行N2 source21/full07原47（session3224/runner76765；同源Node复用diag06，两个integration实际build）。shutdown未launch已明确归槽，继续并行准备CLI/Node＋新6/旧30及真实accounts/Tauri前提，不占槽。R2 run05已terminal并归槽。** R2作者828fbd→集成aa9f80ca，12 payload已逐字节核（proto保留N1并核R2测试块），两树clean。当前集成aa9尚未组合native/App验收；待已开始的N2/shutdown集成后针对受影响链路作一次组合，不逐commit无变化重跑。上一ec404的61父原绿仅适用当时版本。
 
 R2 run05：正常CLI/Node/A2A/acp-stub/wire五产物来源验证＋59 distinct，70阶段全0，311.919s/94双盘文件；2354完整输入before/after/current一致，288 owned groups全部实际消失、TMP `/tmp/r2i5`不存在，无forced/guard/残留。root核全部raw、双盘SHA、当前输入及实际PGID。HTTP不支持仍Unknown，不宣称所有远端停止。历史run01–04失败保持。证据 `Q037/remote-r2/input-cancel-validation-run05`。
 

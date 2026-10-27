@@ -975,3 +975,10 @@ source20仅失败日志输出delta `c847f53098acb67cb01e85996040c7dde4a6927e8abf
 根因双方共用claim id，issuer在pair_archive(id)存caller输入，caller同key存issuer输入；replicated devices map双向Snapshot后LWW覆盖不同原始roster，重复Pair精确digest校验失败。root/owner独立确认后只授权trust.rs四处source21：key=claim＋local recipient；apply(context.local)、release(self.my_id())和completed-only GC本owner key一致；另一端档案由其自己的owner过期回收。保rawlen/digest、第二次Pair/leave/原父断言，没加wire/fallback/store/新用例。delta SHA `96448882cfa5dab47b71d6f18c12100cfb6b86dc833963f6526a3cf202ff4893`，34dual，root读四处源后无额外阻断。
 
 diag06同单Node＋原恢复父已启动，session16191/runner72396，Cargo72491/rustc72621。runner `57fd6aa805bdfa736ddf8fb9ceec1714e0dfd03f0e32e5de0d4b7701471eaaee`，data `2c7159710132c2a8cf144f164947e37825805a8a1ebf86fc19d33c79051df96b`。定向绿后仅既有require_provenance复用同源Node给原47完整验收，其余39/Pair04尚未跑。shutdown37/Tauri plan02 READY仍无槽，本轮无新增scope。
+
+
+### source21恢复父真绿，full07前8真绿/原Pair04运行
+
+`node-pair-vouch21-diag-run06`实际Node build0/104.10s，原恢复父1 distinct绿（2helper＋外父3个1/0/0不充父），anchor/flushed两次真实SIGKILL9、fresh Node::open/固定target/并发Pin、第一次续配及第二次同caller Pair、wrongcaller认证拒绝与leave保留全部原断言过。113.668577s/18dual/1932输入稳定，5组/runner72396全退、TMP无、cleanup/guard空；root逐raw/18dual/实际PGID核。Node receipt SHA `46d136f2a2a755e1a016e8c07d5ad69729965e1a13a44e6dea9e63df1e8f1856`。
+
+原47完整验收full07已接续，未重编Node：既有require_provenance实际核同源diag06 receipt并记node_build_origin，不冒本run Node build；正常Node/Pair04和pairing两个integration target实际build/proof与三产物inventory均过。runner `a4f929bebf6b8f69e55adb4d85fb4f652d37b933063ae325cd9eedeea4448df6`，data `e70e3c1e315f0fa7543656c2826090920bb656275dae7ce3885510b0e00115aa`，7dual/1932/原3007205GiB，session3224/runner76765。当前前8父真绿，case09原Pair04在跑；原90s、12288×64、>24MiB/<=64MiB、samecaller/thirdcaller/VV/root等原oracle不变，尚不能称Pair04/47全绿。唯一槽仍N2，shutdown plan02 READY等完整归槽。
