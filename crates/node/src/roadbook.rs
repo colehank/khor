@@ -84,7 +84,16 @@ struct Written {
 #[derive(Debug, Default)]
 pub(crate) struct RoadBook {
     written: HashMap<String, Written>,
-    waiting: HashMap<String, (RoadKind, Option<String>, Option<Leg>, Option<String>, Instant)>,
+    waiting: HashMap<
+        String,
+        (
+            RoadKind,
+            Option<String>,
+            Option<Leg>,
+            Option<String>,
+            Instant,
+        ),
+    >,
     started: bool,
     /// What ssh's words said broke on each satellite's last failed
     /// sample (`satellite::broken`), by satellite id; cleared by a sample
@@ -127,11 +136,23 @@ impl RoadBook {
             // Never written: the first reading that holds is the first
             // write, by the same settling rule — but `none` only once it
             // has held [`FIRST_NONE`].
-            let hold = if seen.road == RoadKind::None { FIRST_NONE } else { SETTLE };
-            return self.settle(to, &seen, now, hold).then(|| self.wrote(to, &seen, now, road(&seen)));
+            let hold = if seen.road == RoadKind::None {
+                FIRST_NONE
+            } else {
+                SETTLE
+            };
+            return self
+                .settle(to, &seen, now, hold)
+                .then(|| self.wrote(to, &seen, now, road(&seen)));
         };
-        if w.road != seen.road || w.relay != seen.relay || w.broken != seen.broken || w.via != seen.via {
-            return self.settle(to, &seen, now, SETTLE).then(|| self.wrote(to, &seen, now, road(&seen)));
+        if w.road != seen.road
+            || w.relay != seen.relay
+            || w.broken != seen.broken
+            || w.via != seen.via
+        {
+            return self
+                .settle(to, &seen, now, SETTLE)
+                .then(|| self.wrote(to, &seen, now, road(&seen)));
         }
         self.waiting.remove(to);
         let moved = match (w.ms, seen.ms) {
@@ -150,7 +171,11 @@ impl RoadBook {
 
     /// A satellite's sample came back (`None`) or failed, with what
     /// ssh's words said broke and the words themselves (`Some(reading)`).
-    pub(crate) fn sampled(&mut self, sat: &str, failed: Option<(Option<crate::satellite::Broken>, Option<String>)>) {
+    pub(crate) fn sampled(
+        &mut self,
+        sat: &str,
+        failed: Option<(Option<crate::satellite::Broken>, Option<String>)>,
+    ) {
         match failed {
             None => self.sat_broken.remove(sat),
             Some(b) => self.sat_broken.insert(sat.to_owned(), b),
@@ -167,14 +192,23 @@ impl RoadBook {
     fn settle(&mut self, to: &str, seen: &Seen, now: Instant, hold: Duration) -> bool {
         match self.waiting.get(to) {
             Some((road, relay, broken, via, since))
-                if *road == seen.road && *relay == seen.relay && *broken == seen.broken && *via == seen.via =>
+                if *road == seen.road
+                    && *relay == seen.relay
+                    && *broken == seen.broken
+                    && *via == seen.via =>
             {
                 now.duration_since(*since) >= hold
             }
             _ => {
                 self.waiting.insert(
                     to.to_owned(),
-                    (seen.road, seen.relay.clone(), seen.broken.clone(), seen.via.clone(), now),
+                    (
+                        seen.road,
+                        seen.relay.clone(),
+                        seen.broken.clone(),
+                        seen.via.clone(),
+                        now,
+                    ),
                 );
                 false
             }
@@ -223,10 +257,19 @@ impl crate::Node {
             // **A sponsor's road to each of its satellites** (round ROAD-1):
             // its ssh, up while the last sample is fresh. Never sampled
             // yet is no reading, as an idle wire is.
-            for d in all.iter().filter(|d| d.sponsor.as_deref() == Some(me.as_str())) {
+            for d in all
+                .iter()
+                .filter(|d| d.sponsor.as_deref() == Some(me.as_str()))
+            {
                 match self.satellite_road_in(&book, &d.id) {
                     Some(r) => {
-                        let seen = Seen { road: r.road, relay: None, ms: None, broken: r.broken, via: None };
+                        let seen = Seen {
+                            road: r.road,
+                            relay: None,
+                            ms: None,
+                            broken: r.broken,
+                            via: None,
+                        };
                         if let Some(w) = book.note(&d.id, seen, now) {
                             due.push(w);
                         }
@@ -239,9 +282,13 @@ impl crate::Node {
                 // Through a middle (the peer hop, round ROAD-3): the road
                 // is the first leg's, to the middle, with `via`.
                 let via = match d.id.parse().ok().and_then(|p| self.carry.last_carrier(&p)) {
-                    Some(khor_net::carry::Carrier::Hop { via }) if r.road == Some(khor_net::path::PathKind::Carried) => {
+                    Some(khor_net::carry::Carrier::Hop { via })
+                        if r.road == Some(khor_net::path::PathKind::Carried) =>
+                    {
                         let first = self.wires.link(&via.to_string());
-                        r.road = first.road.filter(|k| *k != khor_net::path::PathKind::Carried);
+                        r.road = first
+                            .road
+                            .filter(|k| *k != khor_net::path::PathKind::Carried);
                         r.relay = first.relay;
                         Some(via.to_string())
                     }
@@ -252,7 +299,9 @@ impl crate::Node {
                     Some(khor_net::path::PathKind::Relay) => RoadKind::Relay,
                     // This machine's own ssh session to it (khor inside
                     // ssh, round ROAD-2).
-                    Some(khor_net::path::PathKind::Carried) if self.carried_hop(&d.id) == khor_core::Hop::Ssh => {
+                    Some(khor_net::path::PathKind::Carried)
+                        if self.carried_hop(&d.id) == khor_core::Hop::Ssh =>
+                    {
                         RoadKind::Ssh
                     }
                     _ if r.down.is_some() => RoadKind::None,
@@ -265,11 +314,16 @@ impl crate::Node {
                     road,
                     broken: None,
                     via,
-                    relay: if road == RoadKind::Relay { r.relay } else { None },
+                    relay: if road == RoadKind::Relay {
+                        r.relay
+                    } else {
+                        None
+                    },
                     ms: if road == RoadKind::None {
                         None
                     } else {
-                        r.rtt.map(|t| t.as_micros().div_ceil(1000).min(u128::from(u16::MAX)) as u16)
+                        r.rtt
+                            .map(|t| t.as_micros().div_ceil(1000).min(u128::from(u16::MAX)) as u16)
                     },
                 };
                 if let Some(w) = book.note(&d.id, seen, now) {
@@ -280,10 +334,16 @@ impl crate::Node {
         if due.is_empty() {
             return;
         }
-        let Ok(loaded) = self.devices_loaded() else { return };
+        let Ok(loaded) = self.devices_loaded() else {
+            return;
+        };
         let mut wrote = 0;
         for w in &due {
-            if loaded.doc.set_road(&me, &w.to, &to_json(w)).unwrap_or(false) {
+            if loaded
+                .doc
+                .set_road(&me, &w.to, &to_json(w))
+                .unwrap_or(false)
+            {
                 wrote += 1;
             }
         }
@@ -313,12 +373,35 @@ impl crate::Node {
         use crate::satellite::Broken;
         let (broke, said) = book.sat_broken.get(sat).cloned().unwrap_or_default();
         let leg = match broke {
-            Some(Broken::ToJump) => Leg { from: me, to: None, leg: LegKind::ToJump, said },
-            Some(Broken::JumpToTarget) => Leg { from: None, to: them, leg: LegKind::JumpToTarget, said },
-            Some(Broken::PasswordOnly) => Leg { from: me, to: them, leg: LegKind::Auth, said },
-            None => Leg { from: me, to: them, leg: LegKind::Ssh, said },
+            Some(Broken::ToJump) => Leg {
+                from: me,
+                to: None,
+                leg: LegKind::ToJump,
+                said,
+            },
+            Some(Broken::JumpToTarget) => Leg {
+                from: None,
+                to: them,
+                leg: LegKind::JumpToTarget,
+                said,
+            },
+            Some(Broken::PasswordOnly) => Leg {
+                from: me,
+                to: them,
+                leg: LegKind::Auth,
+                said,
+            },
+            None => Leg {
+                from: me,
+                to: them,
+                leg: LegKind::Ssh,
+                said,
+            },
         };
-        Some(Road { broken: Some(leg), ..Road::own(sat, RoadKind::None, None, None) })
+        Some(Road {
+            broken: Some(leg),
+            ..Road::own(sat, RoadKind::None, None, None)
+        })
     }
 
     /// **This machine's roads to its own satellites**, read live (the
@@ -370,7 +453,8 @@ impl crate::Node {
 /// How old a satellite's last sample may be and its ssh still count as
 /// up: two and a half of the sampler's rounds, so one slow round is not
 /// a broken road.
-pub const SAT_FRESH: Duration = Duration::from_millis(crate::satellite::SAMPLE_EVERY.as_millis() as u64 * 5 / 2);
+pub const SAT_FRESH: Duration =
+    Duration::from_millis(crate::satellite::SAMPLE_EVERY.as_millis() as u64 * 5 / 2);
 
 /// The machine in the middle of every road to `d` from the others: a
 /// satellite's sponsor, or a carried member's carrier (round ROAD-4).
@@ -405,15 +489,25 @@ pub fn through_sponsors(
             ..Road::own(s, RoadKind::None, None, None)
         };
         let road = match (first, second) {
-            (Some(f), _) if f.road == RoadKind::None => {
-                broken(Leg { from: Some(x.to_owned()), to: Some(p.clone()), leg: LegKind::ToSponsor, said: None })
-            }
+            (Some(f), _) if f.road == RoadKind::None => broken(Leg {
+                from: Some(x.to_owned()),
+                to: Some(p.clone()),
+                leg: LegKind::ToSponsor,
+                said: None,
+            }),
             // The sponsor's own reading of its ssh says which leg; a
             // sponsor that wrote none says only that its ssh broke.
-            (_, Some(r)) if r.road == RoadKind::None => broken(
-                r.broken.unwrap_or(Leg { from: Some(p.clone()), to: Some(s.clone()), leg: LegKind::Ssh, said: None }),
-            ),
-            (Some(f), Some(r)) if r.road == RoadKind::Ssh => Road { to: s.clone(), via: Some(p.clone()), ..f },
+            (_, Some(r)) if r.road == RoadKind::None => broken(r.broken.unwrap_or(Leg {
+                from: Some(p.clone()),
+                to: Some(s.clone()),
+                leg: LegKind::Ssh,
+                said: None,
+            })),
+            (Some(f), Some(r)) if r.road == RoadKind::Ssh => Road {
+                to: s.clone(),
+                via: Some(p.clone()),
+                ..f
+            },
             _ => continue,
         };
         x_roads.push(road);
@@ -461,7 +555,10 @@ pub fn own_roads(links: &[(String, khor_core::Link)]) -> Vec<Road> {
 }
 
 fn roads_in(d: &khor_sync::devices::DeviceInfo) -> Vec<Road> {
-    d.roads.iter().filter_map(|(to, json)| from_json(to, json)).collect()
+    d.roads
+        .iter()
+        .filter_map(|(to, json)| from_json(to, json))
+        .collect()
 }
 
 /// A road as its register holds it (`khor_sync::devices`' `F_ROAD`):
@@ -473,7 +570,8 @@ pub(crate) fn to_json(r: &Road) -> String {
 /// A register back into a road; `None` for one this build cannot read.
 pub(crate) fn from_json(to: &str, json: &str) -> Option<Road> {
     let mut v: serde_json::Value = serde_json::from_str(json).ok()?;
-    v.as_object_mut()?.insert("to".into(), serde_json::Value::String(to.to_owned()));
+    v.as_object_mut()?
+        .insert("to".into(), serde_json::Value::String(to.to_owned()));
     serde_json::from_value(v).ok()
 }
 
@@ -482,7 +580,13 @@ mod tests {
     use super::*;
 
     fn seen(road: RoadKind, ms: Option<u16>) -> Seen {
-        Seen { road, relay: None, ms, broken: None, via: None }
+        Seen {
+            road,
+            relay: None,
+            ms,
+            broken: None,
+            via: None,
+        }
     }
 
     /// A flap inside the settling window writes nothing; a kind that
@@ -494,12 +598,26 @@ mod tests {
         b.start_from(&[Road::own("a", RoadKind::Direct, None, Some(20))], t0);
         let s = |n: u64| t0 + Duration::from_secs(n);
         assert_eq!(b.note("a", seen(RoadKind::Relay, Some(90)), s(1)), None);
-        assert_eq!(b.note("a", seen(RoadKind::Direct, Some(20)), s(5)), None, "flapped back: nothing");
+        assert_eq!(
+            b.note("a", seen(RoadKind::Direct, Some(20)), s(5)),
+            None,
+            "flapped back: nothing"
+        );
         assert_eq!(b.note("a", seen(RoadKind::Relay, Some(90)), s(6)), None);
-        assert_eq!(b.note("a", seen(RoadKind::Relay, Some(90)), s(12)), None, "held 6 s");
-        let w = b.note("a", seen(RoadKind::Relay, Some(90)), s(18)).expect("held 12 s: written");
+        assert_eq!(
+            b.note("a", seen(RoadKind::Relay, Some(90)), s(12)),
+            None,
+            "held 6 s"
+        );
+        let w = b
+            .note("a", seen(RoadKind::Relay, Some(90)), s(18))
+            .expect("held 12 s: written");
         assert_eq!((w.road, w.ms), (RoadKind::Relay, Some(90)));
-        assert_eq!(b.note("a", seen(RoadKind::Relay, Some(90)), s(40)), None, "once");
+        assert_eq!(
+            b.note("a", seen(RoadKind::Relay, Some(90)), s(40)),
+            None,
+            "once"
+        );
         // Unreachable: `none` once.
         assert_eq!(b.note("a", seen(RoadKind::None, None), s(41)), None);
         assert!(b.note("a", seen(RoadKind::None, None), s(53)).is_some());
@@ -514,12 +632,29 @@ mod tests {
         let mut b = RoadBook::default();
         b.start_from(&[Road::own("a", RoadKind::Direct, None, Some(38))], t0);
         let m = |n: u64| t0 + Duration::from_secs(n * 60);
-        assert_eq!(b.note("a", seen(RoadKind::Direct, Some(50)), m(5)), None, "38 -> 50 inside the floor: no");
-        assert_eq!(b.note("a", seen(RoadKind::Direct, Some(41)), m(11)), None, "38 -> 41: no");
-        let w = b.note("a", seen(RoadKind::Direct, Some(50)), m(11)).expect("38 -> 50 after it: yes");
+        assert_eq!(
+            b.note("a", seen(RoadKind::Direct, Some(50)), m(5)),
+            None,
+            "38 -> 50 inside the floor: no"
+        );
+        assert_eq!(
+            b.note("a", seen(RoadKind::Direct, Some(41)), m(11)),
+            None,
+            "38 -> 41: no"
+        );
+        let w = b
+            .note("a", seen(RoadKind::Direct, Some(50)), m(11))
+            .expect("38 -> 50 after it: yes");
         assert_eq!(w.ms, Some(50));
-        assert_eq!(b.note("a", seen(RoadKind::Direct, Some(200)), m(15)), None, "the floor again");
-        assert!(b.note("a", seen(RoadKind::Direct, Some(200)), m(22)).is_some());
+        assert_eq!(
+            b.note("a", seen(RoadKind::Direct, Some(200)), m(15)),
+            None,
+            "the floor again"
+        );
+        assert!(
+            b.note("a", seen(RoadKind::Direct, Some(200)), m(22))
+                .is_some()
+        );
     }
 
     /// A machine never written is not written `none` for the round or
@@ -531,14 +666,33 @@ mod tests {
         let mut b = RoadBook::default();
         b.start_from(&[], t0);
         assert_eq!(b.note("new", seen(RoadKind::None, None), s(0)), None);
-        assert_eq!(b.note("new", seen(RoadKind::None, None), s(30)), None, "30 s without a wire: not yet");
-        assert!(b.note("new", seen(RoadKind::Direct, Some(1)), s(31)).is_none());
-        assert!(b.note("new", seen(RoadKind::Direct, Some(1)), s(43)).is_some(), "its first road");
-        assert_eq!(b.note("new", seen(RoadKind::Direct, Some(2)), s(43 + 3600)), None, "1 -> 2 ms: nothing");
+        assert_eq!(
+            b.note("new", seen(RoadKind::None, None), s(30)),
+            None,
+            "30 s without a wire: not yet"
+        );
+        assert!(
+            b.note("new", seen(RoadKind::Direct, Some(1)), s(31))
+                .is_none()
+        );
+        assert!(
+            b.note("new", seen(RoadKind::Direct, Some(1)), s(43))
+                .is_some(),
+            "its first road"
+        );
+        assert_eq!(
+            b.note("new", seen(RoadKind::Direct, Some(2)), s(43 + 3600)),
+            None,
+            "1 -> 2 ms: nothing"
+        );
         let mut lone = RoadBook::default();
         lone.start_from(&[], t0);
         lone.note("gone", seen(RoadKind::None, None), s(0));
-        assert!(lone.note("gone", seen(RoadKind::None, None), s(120)).is_some(), "none, once it held two minutes");
+        assert!(
+            lone.note("gone", seen(RoadKind::None, None), s(120))
+                .is_some(),
+            "none, once it held two minutes"
+        );
     }
 
     /// An idle wire is no road (round NET-13): the beat notes nothing for
@@ -553,8 +707,16 @@ mod tests {
         // The wire closes idle for a minute: nothing is noted, so nothing
         // can be written — and the relay reading 60 s ago held nothing.
         b.idle("a");
-        assert_eq!(b.note("a", seen(RoadKind::Relay, Some(90)), s(61)), None, "settles from the new reading");
-        assert!(b.note("a", seen(RoadKind::Relay, Some(90)), s(73)).is_some(), "and is written once it held");
+        assert_eq!(
+            b.note("a", seen(RoadKind::Relay, Some(90)), s(61)),
+            None,
+            "settles from the new reading"
+        );
+        assert!(
+            b.note("a", seen(RoadKind::Relay, Some(90)), s(73))
+                .is_some(),
+            "and is written once it held"
+        );
     }
 
     /// This machine's row: a hop is drawn as its first leg with the
@@ -581,25 +743,60 @@ mod tests {
         ];
         let roads = own_roads(&links);
         let y = roads.iter().find(|r| r.to == "y").expect("the hop's road");
-        assert_eq!((y.road, y.via.as_deref(), y.relay.as_deref(), y.ms), (RoadKind::Relay, Some("b"), Some("r.example"), Some(7)));
-        assert_eq!(roads.iter().find(|r| r.to == "m").map(|r| r.road), Some(RoadKind::Ssh));
+        assert_eq!(
+            (y.road, y.via.as_deref(), y.relay.as_deref(), y.ms),
+            (RoadKind::Relay, Some("b"), Some("r.example"), Some(7))
+        );
+        assert_eq!(
+            roads.iter().find(|r| r.to == "m").map(|r| r.road),
+            Some(RoadKind::Ssh)
+        );
         assert!(roads.iter().all(|r| r.to != "q"), "idle is no road");
     }
 
     #[test]
     fn a_register_reads_back_as_the_road_it_was() {
-        let r = Road::own("ab", RoadKind::Relay, Some("relay.khor.cloud".into()), Some(180));
+        let r = Road::own(
+            "ab",
+            RoadKind::Relay,
+            Some("relay.khor.cloud".into()),
+            Some(180),
+        );
         assert_eq!(from_json("ab", &to_json(&r)), Some(r));
         let ssh = Road::own("ab", RoadKind::Ssh, None, None);
-        assert_eq!(from_json("ab", &to_json(&ssh)), Some(ssh), "a sponsor's road to its satellite");
+        assert_eq!(
+            from_json("ab", &to_json(&ssh)),
+            Some(ssh),
+            "a sponsor's road to its satellite"
+        );
         let auth = Road {
-            broken: Some(Leg { from: Some("p".into()), to: Some("ab".into()), leg: LegKind::Auth, said: None }),
+            broken: Some(Leg {
+                from: Some("p".into()),
+                to: Some("ab".into()),
+                leg: LegKind::Auth,
+                said: None,
+            }),
             ..Road::own("ab", RoadKind::None, None, None)
         };
-        assert_eq!(from_json("ab", &to_json(&auth)), Some(auth), "the leg that broke rides the register");
-        let hop = Road { via: Some("m".into()), ..Road::own("ab", RoadKind::Direct, None, Some(4)) };
-        assert_eq!(from_json("ab", &to_json(&hop)), Some(hop), "a peer hop's middle rides it too");
-        assert_eq!(from_json("ab", "{\"road\":\"sideways\"}"), None, "a kind this build does not know");
+        assert_eq!(
+            from_json("ab", &to_json(&auth)),
+            Some(auth),
+            "the leg that broke rides the register"
+        );
+        let hop = Road {
+            via: Some("m".into()),
+            ..Road::own("ab", RoadKind::Direct, None, Some(4))
+        };
+        assert_eq!(
+            from_json("ab", &to_json(&hop)),
+            Some(hop),
+            "a peer hop's middle rides it too"
+        );
+        assert_eq!(
+            from_json("ab", "{\"road\":\"sideways\"}"),
+            None,
+            "a kind this build does not know"
+        );
     }
 
     /// A satellite is reached through its sponsor: both legs up is the
@@ -614,29 +811,75 @@ mod tests {
         let to_p = |k| vec![Road::own("p", k, None, Some(9))];
 
         let r = through_sponsors("x", to_p(RoadKind::Relay), &sats, up);
-        let s = r.iter().find(|r| r.to == "s").expect("a road to the satellite");
-        assert_eq!((s.road, s.via.as_deref(), s.ms, &s.broken), (RoadKind::Relay, Some("p"), Some(9), &None));
+        let s = r
+            .iter()
+            .find(|r| r.to == "s")
+            .expect("a road to the satellite");
+        assert_eq!(
+            (s.road, s.via.as_deref(), s.ms, &s.broken),
+            (RoadKind::Relay, Some("p"), Some(9), &None)
+        );
 
         let r = through_sponsors("x", to_p(RoadKind::None), &sats, up);
         let s = r.iter().find(|r| r.to == "s").unwrap();
         assert_eq!(s.road, RoadKind::None);
-        assert_eq!(s.broken, Some(Leg { from: Some("x".into()), to: Some("p".into()), leg: LegKind::ToSponsor, said: None }));
+        assert_eq!(
+            s.broken,
+            Some(Leg {
+                from: Some("x".into()),
+                to: Some("p".into()),
+                leg: LegKind::ToSponsor,
+                said: None
+            })
+        );
 
         let r = through_sponsors("x", to_p(RoadKind::Direct), &sats, down);
         let s = r.iter().find(|r| r.to == "s").unwrap();
-        assert_eq!(s.broken, Some(Leg { from: Some("p".into()), to: Some("s".into()), leg: LegKind::Ssh, said: None }));
+        assert_eq!(
+            s.broken,
+            Some(Leg {
+                from: Some("p".into()),
+                to: Some("s".into()),
+                leg: LegKind::Ssh,
+                said: None
+            })
+        );
         // The sponsor's own reading names a jump's leg, whose far end is
         // no device.
-        let jump = Leg { from: Some("p".into()), to: None, leg: LegKind::ToJump, said: None };
-        let at_jump = |_: &str, _: &str| Some(Road { broken: Some(jump.clone()), ..Road::own("s", RoadKind::None, None, None) });
+        let jump = Leg {
+            from: Some("p".into()),
+            to: None,
+            leg: LegKind::ToJump,
+            said: None,
+        };
+        let at_jump = |_: &str, _: &str| {
+            Some(Road {
+                broken: Some(jump.clone()),
+                ..Road::own("s", RoadKind::None, None, None)
+            })
+        };
         let r = through_sponsors("x", to_p(RoadKind::Direct), &sats, at_jump);
         assert_eq!(r.iter().find(|r| r.to == "s").unwrap().broken, Some(jump));
 
-        assert!(through_sponsors("x", to_p(RoadKind::Direct), &sats, unread).iter().all(|r| r.to != "s"));
-        assert!(through_sponsors("x", vec![], &sats, up).iter().all(|r| r.to != "s"), "no road to the sponsor read");
-        assert!(through_sponsors("p", vec![], &sats, up).is_empty(), "the sponsor's own road is its ssh, not this");
         assert!(
-            through_sponsors("s", to_p(RoadKind::Direct), &sats, up).iter().all(|r| r.to != "s"),
+            through_sponsors("x", to_p(RoadKind::Direct), &sats, unread)
+                .iter()
+                .all(|r| r.to != "s")
+        );
+        assert!(
+            through_sponsors("x", vec![], &sats, up)
+                .iter()
+                .all(|r| r.to != "s"),
+            "no road to the sponsor read"
+        );
+        assert!(
+            through_sponsors("p", vec![], &sats, up).is_empty(),
+            "the sponsor's own road is its ssh, not this"
+        );
+        assert!(
+            through_sponsors("s", to_p(RoadKind::Direct), &sats, up)
+                .iter()
+                .all(|r| r.to != "s"),
             "no road to itself: a carried member's own row reads its roads, not one through its carrier"
         );
     }

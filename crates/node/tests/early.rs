@@ -98,8 +98,16 @@ async fn bare(key: iroh::SecretKey) -> iroh::Endpoint {
 /// Sends `req` as early data on a resumed connection. With `finish`,
 /// lets the handshake complete and returns the answer; without, leaves
 /// it (the road is one way) and gives the early data a moment to land.
-async fn early(ep: &iroh::Endpoint, to: iroh::EndpointAddr, req: &Request, finish: bool) -> Option<Response> {
-    let connecting = ep.connect_with_opts(to, ALPN, Default::default()).await.unwrap();
+async fn early(
+    ep: &iroh::Endpoint,
+    to: iroh::EndpointAddr,
+    req: &Request,
+    finish: bool,
+) -> Option<Response> {
+    let connecting = ep
+        .connect_with_opts(to, ALPN, Default::default())
+        .await
+        .unwrap();
     let early = connecting
         .into_0rtt()
         .unwrap_or_else(|_| panic!("a ticket from the first connection makes 0-RTT possible"));
@@ -158,10 +166,16 @@ async fn an_early_write_waits_for_a_handshake_that_a_replay_never_completes() {
     let listing = Request::Ls {
         path: ra.display().to_string(),
     };
-    send.write_all(&proto::encode(&listing).unwrap()).await.unwrap();
+    send.write_all(&proto::encode(&listing).unwrap())
+        .await
+        .unwrap();
     send.finish().unwrap();
-    let first = proto::decode::<Response>(&recv.read_to_end(proto::MAX_FRAME).await.unwrap()).unwrap();
-    assert!(matches!(first, Response::Dir { .. }), "the paired key is answered: {first:?}");
+    let first =
+        proto::decode::<Response>(&recv.read_to_end(proto::MAX_FRAME).await.unwrap()).unwrap();
+    assert!(
+        matches!(first, Response::Dir { .. }),
+        "the paired key is answered: {first:?}"
+    );
     // The session ticket follows the handshake in its own packet.
     tokio::time::sleep(Duration::from_millis(500)).await;
     conn.close(0u32.into(), b"done");
@@ -203,7 +217,10 @@ async fn an_early_write_waits_for_a_handshake_that_a_replay_never_completes() {
         true,
     )
     .await;
-    assert!(made.is_dir(), "the early write did not run after the handshake: {answer:?}");
+    assert!(
+        made.is_dir(),
+        "the early write did not run after the handshake: {answer:?}"
+    );
     ep.close().await;
     serve_a.abort();
 }

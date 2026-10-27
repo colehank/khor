@@ -13,22 +13,22 @@ pub mod add;
 pub mod agents;
 pub mod api;
 pub mod chat;
+pub mod code;
 pub mod command_queue;
 mod connection;
-pub mod code;
 pub mod console;
 pub mod console_complete;
-pub mod files;
 pub mod file_handoff;
+pub mod files;
 pub mod git;
 pub mod import;
-pub mod subscriptions;
+mod landing;
 pub mod launch;
 pub mod miss;
-mod landing;
 pub mod qr;
 pub mod recents;
 pub mod rejoin;
+pub mod subscriptions;
 pub mod tabs;
 pub mod term;
 pub mod web;
@@ -383,14 +383,21 @@ pub fn journal_report(root: &Path, minutes: u64) -> Result<String, String> {
 pub fn proxy_line(machine: &str, host: &str, port: Option<u16>) -> ProxyLine {
     let (config_line, command) =
         khor_node::pipe::proxy_line(machine, host, khor_node::reach::port_or_ssh(port));
-    ProxyLine { config_line, command }
+    ProxyLine {
+        config_line,
+        command,
+    }
 }
 
 /// Every machine's try at `host:port` (`Node::reach_probe`); `port`
 /// `None` is ssh's 22. With no resident it binds an endpoint of its own
 /// and still asks everyone; an error is a probe that could not run at
 /// all (no address given, the resident's hand-off failed).
-pub async fn reach_probe(root: &Path, host: String, port: Option<u16>) -> Result<ReachReport, String> {
+pub async fn reach_probe(
+    root: &Path,
+    host: String,
+    port: Option<u16>,
+) -> Result<ReachReport, String> {
     let at = root.to_path_buf();
     let n = tokio::task::spawn_blocking(move || open(&at))
         .await
@@ -409,7 +416,12 @@ pub async fn reach_probe(root: &Path, host: String, port: Option<u16>) -> Result
         .rows
         .iter()
         .filter_map(|(_, s)| s.host_key.as_deref())
-        .find_map(|k| devices.iter().find(|d| d.id == k).map(|d| d.shown().to_owned()));
+        .find_map(|k| {
+            devices
+                .iter()
+                .find(|d| d.id == k)
+                .map(|d| d.shown().to_owned())
+        });
     Ok(ReachReport {
         rows: view
             .rows
@@ -497,7 +509,10 @@ pub async fn connections(root: &Path) -> Result<Connections, String> {
                 .peers
                 .into_iter()
                 .map(|p| PeerRow {
-                    shown: names.get(&p.id).cloned().unwrap_or_else(|| p.id.chars().take(8).collect()),
+                    shown: names
+                        .get(&p.id)
+                        .cloned()
+                        .unwrap_or_else(|| p.id.chars().take(8).collect()),
                     id: p.id,
                     hop: p.hop.key().to_owned(),
                     heard_ms: p.heard_ms,
@@ -1108,7 +1123,11 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 id: v.session.id.0,
                 kind: v.session.kind.0,
                 title: v.session.title,
-                word: if state_known { v.session.state.state.key().to_owned() } else { String::new() },
+                word: if state_known {
+                    v.session.state.state.key().to_owned()
+                } else {
+                    String::new()
+                },
                 at_ms: if state_known { v.session.state.at.0 } else { 0 },
                 unread: v.session.unread,
                 source: v
@@ -2417,9 +2436,17 @@ pub async fn khor_agent(
         })
         .map(|a| KhorAgentAccount {
             provider: khor_node::khor_agent::account_provider(&a),
-            default_model: a.inference.as_ref().map(|i| i.default_model.clone()).unwrap_or_default(),
+            default_model: a
+                .inference
+                .as_ref()
+                .map(|i| i.default_model.clone())
+                .unwrap_or_default(),
             configured: khor_node::khor_agent::account_ready(&n, &a),
-            base_url: a.inference.as_ref().and_then(|i| i.base_url.clone()).or_else(|| a.base_url.clone()),
+            base_url: a
+                .inference
+                .as_ref()
+                .and_then(|i| i.base_url.clone())
+                .or_else(|| a.base_url.clone()),
             auth_type: a.inference.as_ref().map(|i| i.auth_type.clone()),
             id: a.id,
             name: a.name,
@@ -2458,8 +2485,11 @@ fn wide_log(root: &Path, n: &khor_node::Node, id: &str) -> Result<MachineLog, St
     let (mut log, faces) = n.wide_log(id)?;
     console::reconcile(root, n, &mut log.messages);
     let me = n.device_str().to_owned();
-    let names: std::collections::HashMap<String, String> =
-        n.devices()?.into_iter().map(|d| (d.id.clone(), d.shown().to_owned())).collect();
+    let names: std::collections::HashMap<String, String> = n
+        .devices()?
+        .into_iter()
+        .map(|d| (d.id.clone(), d.shown().to_owned()))
+        .collect();
     let messages = log
         .messages
         .into_iter()
@@ -2469,33 +2499,49 @@ fn wide_log(root: &Path, n: &khor_node::Node, id: &str) -> Result<MachineLog, St
                 khor_node::MsgBody::Text(t) => (Some(t), None, None),
                 khor_node::MsgBody::Files(fs) => (
                     None,
-                    Some(fs.into_iter().map(|f| ChatFileRow { name: f.name, size: f.size }).collect()),
+                    Some(
+                        fs.into_iter()
+                            .map(|f| ChatFileRow {
+                                name: f.name,
+                                size: f.size,
+                            })
+                            .collect(),
+                    ),
                     None,
                 ),
                 khor_node::MsgBody::Unknown(k) => (None, None, Some(k)),
             };
             let here = face.as_ref().and_then(|f| f.here.clone());
-            let named = |id: &str| names.get(id).cloned().unwrap_or_else(|| id.chars().take(8).collect());
-            let to: Vec<ChatTarget> = m
-                .to
-                .iter()
-                .map(|t| {
-                    let fate = m.fates.get(&t.device);
-                    ChatTarget {
-                        device: t.device.clone(),
-                        name: named(&t.device),
-                        path: Some(t.path.clone()).filter(|p| !p.is_empty()),
-                        step: fate.map(|f| f.step.key().to_owned()),
-                        why: fate.map(|f| f.why.clone()).filter(|w| !w.is_empty()),
-                        landed: fate.map(|f| f.landed.clone()).unwrap_or_default(),
-                    }
-                })
-                .collect();
+            let named = |id: &str| {
+                names
+                    .get(id)
+                    .cloned()
+                    .unwrap_or_else(|| id.chars().take(8).collect())
+            };
+            let to: Vec<ChatTarget> =
+                m.to.iter()
+                    .map(|t| {
+                        let fate = m.fates.get(&t.device);
+                        ChatTarget {
+                            device: t.device.clone(),
+                            name: named(&t.device),
+                            path: Some(t.path.clone()).filter(|p| !p.is_empty()),
+                            step: fate.map(|f| f.step.key().to_owned()),
+                            why: fate.map(|f| f.why.clone()).filter(|w| !w.is_empty()),
+                            landed: fate.map(|f| f.landed.clone()).unwrap_or_default(),
+                        }
+                    })
+                    .collect();
             let pushed = m.to.iter().any(|t| t.device == me);
             let via = here
                 .as_ref()
                 .filter(|f| !f.via.is_empty() && f.via != m.from.id)
-                .map(|f| names.get(&f.via).cloned().unwrap_or_else(|| f.via.chars().take(8).collect()));
+                .map(|f| {
+                    names
+                        .get(&f.via)
+                        .cloned()
+                        .unwrap_or_else(|| f.via.chars().take(8).collect())
+                });
             ChatMsgRow {
                 at_ms: m.at,
                 from_me: m.from.id == me,
@@ -2509,7 +2555,10 @@ fn wide_log(root: &Path, n: &khor_node::Node, id: &str) -> Result<MachineLog, St
                 step: here.as_ref().map(|f| f.step.key().to_owned()),
                 moved: here.as_ref().map_or(0, |f| f.moved),
                 landed: here.as_ref().map(|f| f.landed.clone()).unwrap_or_default(),
-                why: here.as_ref().map(|f| f.why.clone()).filter(|w| !w.is_empty()),
+                why: here
+                    .as_ref()
+                    .map(|f| f.why.clone())
+                    .filter(|w| !w.is_empty()),
                 got: face.as_ref().map(|f| f.got),
                 of: face.as_ref().map(|f| f.of),
                 via,
@@ -2655,7 +2704,14 @@ pub fn drop_stage_args(query: &str) -> Option<String> {
 
 /// A directory upload's token and child path, percent-decoded.
 pub fn drop_stage_into_args(query: &str) -> Option<(String, String)> {
-    let arg = |name: &str| query.split('&').filter_map(|p| p.split_once('=')).find(|(k, _)| *k == name).and_then(|(_, v)| percent_decode(v)).filter(|v| !v.is_empty());
+    let arg = |name: &str| {
+        query
+            .split('&')
+            .filter_map(|p| p.split_once('='))
+            .find(|(k, _)| *k == name)
+            .and_then(|(_, v)| percent_decode(v))
+            .filter(|v| !v.is_empty())
+    };
     Some((arg("folder")?, arg("path")?))
 }
 
@@ -2692,7 +2748,11 @@ fn percent_decode(s: &str) -> Option<String> {
 /// on. A refused post keeps it: the draft and its files stay for the
 /// next try (a draft abandoned leaves its staged copy under
 /// `.khor/uploads`).
-pub fn stage_upload(root: &Path, name: &str, body: &mut dyn std::io::Read) -> Result<String, String> {
+pub fn stage_upload(
+    root: &Path,
+    name: &str,
+    body: &mut dyn std::io::Read,
+) -> Result<String, String> {
     save_upload(root, name, body).map(|p| p.display().to_string())
 }
 
@@ -2874,8 +2934,16 @@ pub async fn sync_now(root: &Path) -> Result<Vec<SyncOutcome>, String> {
         .await?
         .into_iter()
         .map(|(machine, verdict)| match verdict {
-            Ok(said) => SyncOutcome { machine, ok: true, said },
-            Err(said) => SyncOutcome { machine, ok: false, said },
+            Ok(said) => SyncOutcome {
+                machine,
+                ok: true,
+                said,
+            },
+            Err(said) => SyncOutcome {
+                machine,
+                ok: false,
+                said,
+            },
         })
         .collect())
 }
@@ -3057,8 +3125,8 @@ mod wizard_agent_tests {
         n.register_agent("zed", &["some-acp-agent".to_owned()])
             .unwrap();
 
-        let why =
-            wait(open_session(&r, "~", "", "chat", "zedd", "", None)).expect_err("no such registration");
+        let why = wait(open_session(&r, "~", "", "chat", "zedd", "", None))
+            .expect_err("no such registration");
         assert_eq!(
             why,
             n.agent_or_refuse("zedd").unwrap_err(),
@@ -3092,9 +3160,18 @@ mod wizard_agent_tests {
         // A valid directory reaches the registered launch path. The absolute,
         // absent command makes the result independent of the machine's PATH.
         let spec = n.agent_or_refuse("zed").unwrap();
-        let expected = khor_node::Node::agent_launch(&spec).expect_err("no installed fixture command");
-        let sched = wait(open_session(&r, r.to_str().unwrap(), "", "agent", "zed", "", None))
-            .expect_err("the registered scheduler command is absent");
+        let expected =
+            khor_node::Node::agent_launch(&spec).expect_err("no installed fixture command");
+        let sched = wait(open_session(
+            &r,
+            r.to_str().unwrap(),
+            "",
+            "agent",
+            "zed",
+            "",
+            None,
+        ))
+        .expect_err("the registered scheduler command is absent");
         assert_eq!(sched, expected);
     }
 

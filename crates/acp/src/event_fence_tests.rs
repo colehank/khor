@@ -1,6 +1,6 @@
 use super::*;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 fn marker(n: usize) -> Event {

@@ -117,7 +117,9 @@ impl Fixture {
                 }
                 thread::sleep(Duration::from_millis(5));
             }
-            serving.join().map_err(|_| "fixture HTTP owner failed".to_owned())?;
+            serving
+                .join()
+                .map_err(|_| "fixture HTTP owner failed".to_owned())?;
         }
         Ok(())
     }
@@ -152,7 +154,10 @@ impl Drop for Fixture {
             }
         }
         if !thread::panicking() {
-            assert!(!self.root.exists(), "fixture root was not explicitly closed and is retained");
+            assert!(
+                !self.root.exists(),
+                "fixture root was not explicitly closed and is retained"
+            );
         }
     }
 }
@@ -336,8 +341,23 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
     let blocked = receipt(&node, &second_id, "blocked");
     let ask = blocked.agent.unwrap().approval.unwrap();
     assert_eq!(ask.tool, "close");
-    rt.block_on(khor_gui_core::khor_agent(&root,home,"configure",&configure)).unwrap();
-    assert_eq!(receipt(&node,&second_id,"blocked").agent.unwrap().approval.unwrap().id,ask.id,"a model choice must not dismiss the active approval");
+    rt.block_on(khor_gui_core::khor_agent(
+        &root,
+        home,
+        "configure",
+        &configure,
+    ))
+    .unwrap();
+    assert_eq!(
+        receipt(&node, &second_id, "blocked")
+            .agent
+            .unwrap()
+            .approval
+            .unwrap()
+            .id,
+        ask.id,
+        "a model choice must not dismiss the active approval"
+    );
     assert!(
         rt.block_on(khor_gui_core::khor_agent(
             &root,
@@ -405,9 +425,22 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
         assert!(Instant::now() < until);
         thread::sleep(Duration::from_millis(20));
     }
-    rt.block_on(khor_gui_core::khor_agent(&root, home, "configure", &json!({"account":account.id,"model":"fixture-next"}))).unwrap();
-    assert_eq!(receipt(&node,&third_id,"running").agent.unwrap().model,"fixture","switching must leave the active request unchanged");
-    assert_eq!(node.khor_agent_config().unwrap().unwrap().model,"fixture-next");
+    rt.block_on(khor_gui_core::khor_agent(
+        &root,
+        home,
+        "configure",
+        &json!({"account":account.id,"model":"fixture-next"}),
+    ))
+    .unwrap();
+    assert_eq!(
+        receipt(&node, &third_id, "running").agent.unwrap().model,
+        "fixture",
+        "switching must leave the active request unchanged"
+    );
+    assert_eq!(
+        node.khor_agent_config().unwrap().unwrap().model,
+        "fixture-next"
+    );
     rt.block_on(khor_gui_core::khor_agent(
         &root,
         home,
@@ -422,7 +455,14 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
     // acceptance entry answers the same real worker protocol as a native app;
     // these mapping checks still do not treat routing as a remote ACK.
     for action in ["cancel_status", "cancel_retry"] {
-        let view = rt.block_on(khor_gui_core::khor_agent(&root, home, action, &json!({"run":third_id}))).unwrap();
+        let view = rt
+            .block_on(khor_gui_core::khor_agent(
+                &root,
+                home,
+                action,
+                &json!({"run":third_id}),
+            ))
+            .unwrap();
         assert_eq!(view.run.as_deref(), Some(third_id.as_str()));
         let data = view.data.unwrap();
         assert_eq!(data["run"], third_id);

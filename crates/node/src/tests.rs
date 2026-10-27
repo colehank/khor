@@ -77,7 +77,13 @@ fn a_forgotten_machines_rows_leave_the_list() {
     // One reported row each — a clone of a real row rather than a
     // literal, so this test does not have to know every Session field.
     let local = n.open_ephemeral(khor_core::kind::SHELL, "a build").unwrap();
-    let mut template = n.sessions().unwrap().into_iter().find(|v| v.session.id == local).unwrap().session;
+    let mut template = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|v| v.session.id == local)
+        .unwrap()
+        .session;
     // A kind that lists without an import (`listed`): a reported agent's.
     template.kind = khor_core::Kind(khor_core::kind::GUI.to_owned());
     template.id = SessionId("shell/on-keeper".into());
@@ -148,7 +154,10 @@ fn a_pinned_row_leads_the_list_and_goes_back_when_unpinned() {
         .into_iter()
         .map(|v| v.pinned)
         .collect();
-    assert!(pinned[0] && pinned[1..].iter().all(|p| !p), "and only it wears the flag: {pinned:?}");
+    assert!(
+        pinned[0] && pinned[1..].iter().all(|p| !p),
+        "and only it wears the flag: {pinned:?}"
+    );
 
     n.pin_session(&last, false).unwrap();
     assert_eq!(
@@ -1351,24 +1360,53 @@ mod recents_tests {
         }
         n.forget_device("old-machine").unwrap();
         assert!(!n.devices().unwrap().iter().any(|d| d.id == gone));
-        assert!(n.resolve(&gone).is_err(), "remote routing still requires a known machine");
-        assert!(n.forget_recent(PlaceKind::Page, "old-machine", places[0]).is_err(), "old named calls retain their contract");
+        assert!(
+            n.resolve(&gone).is_err(),
+            "remote routing still requires a known machine"
+        );
+        assert!(
+            n.forget_recent(PlaceKind::Page, "old-machine", places[0])
+                .is_err(),
+            "old named calls retain their contract"
+        );
         for (&kind, place) in kinds.iter().zip(places) {
-            assert_eq!(n.recents(kind, 10).unwrap().len(), 2, "removing a machine keeps its ledger");
-            n.forget_recent_by_device(kind, &gone.to_uppercase(), place).unwrap();
-            let left = Node::open(r.to_path_buf()).unwrap().recents(kind, 10).unwrap();
+            assert_eq!(
+                n.recents(kind, 10).unwrap().len(),
+                2,
+                "removing a machine keeps its ledger"
+            );
+            n.forget_recent_by_device(kind, &gone.to_uppercase(), place)
+                .unwrap();
+            let left = Node::open(r.to_path_buf())
+                .unwrap()
+                .recents(kind, 10)
+                .unwrap();
             assert_eq!(left.len(), 1, "dismissal survives reopening the node");
-            assert_eq!(left[0].machine, sibling, "the same place on another device is untouched");
+            assert_eq!(
+                left[0].machine, sibling,
+                "the same place on another device is untouched"
+            );
             n.forget_recent_by_device(kind, &gone, place).unwrap();
-            assert_eq!(n.recents(kind, 10).unwrap().len(), 1, "repeat dismissal is idempotent");
+            assert_eq!(
+                n.recents(kind, 10).unwrap().len(),
+                1,
+                "repeat dismissal is idempotent"
+            );
         }
         for bad in ["", "old-machine", &gone[..8], &"zz".repeat(32)] {
-            assert!(n.forget_recent_by_device(PlaceKind::Page, bad, places[0]).is_err());
+            assert!(
+                n.forget_recent_by_device(PlaceKind::Page, bad, places[0])
+                    .is_err()
+            );
         }
         put_devices("returned-machine");
         for (&kind, place) in kinds.iter().zip(places) {
             n.recent_visit(kind, "returned-machine", place).unwrap();
-            assert_eq!(n.recents(kind, 10).unwrap().len(), 2, "a fresh visit restores this device's record");
+            assert_eq!(
+                n.recents(kind, 10).unwrap().len(),
+                2,
+                "a fresh visit restores this device's record"
+            );
         }
     }
 
@@ -2332,7 +2370,11 @@ fn every_config_name_has_a_word_and_every_word_names_something() {
     // in `khor config list` with its word; a page's word is a name
     // somebody can reach too.
     for (page, _) in config::grouped(&scratch("config-pages")) {
-        assert_ne!(khor_catalog::config::word(page), page, "page {page} holds keys and has no word");
+        assert_ne!(
+            khor_catalog::config::word(page),
+            page,
+            "page {page} holds keys and has no word"
+        );
     }
     named.extend(config::PAGES.iter().copied());
     for key in khor_catalog::config::KEYS {
@@ -2401,10 +2443,23 @@ fn settings_group_into_the_seven_pages_and_keep_their_values() {
     let r = scratch("config-seven");
     assert_eq!(
         config::PAGES,
-        &["appearance", "terminal", "session", "workspace", "connection", "security", "about"]
+        &[
+            "appearance",
+            "terminal",
+            "session",
+            "workspace",
+            "connection",
+            "security",
+            "about"
+        ]
     );
     for s in config::SECTIONS {
-        assert!(config::PAGES.contains(&s.page), "section {} is drawn on {}, not one of the seven", s.name, s.page);
+        assert!(
+            config::PAGES.contains(&s.page),
+            "section {} is drawn on {}, not one of the seven",
+            s.name,
+            s.page
+        );
     }
     // A store written before the regrouping: the same file, the same keys.
     std::fs::create_dir_all(r.join(".khor")).unwrap();
@@ -2414,7 +2469,16 @@ fn settings_group_into_the_seven_pages_and_keep_their_values() {
     )
     .unwrap();
     let pages: Vec<&str> = config::grouped(&r).iter().map(|(p, _)| *p).collect();
-    assert_eq!(pages, ["appearance", "session", "workspace", "connection", "security"]);
+    assert_eq!(
+        pages,
+        [
+            "appearance",
+            "session",
+            "workspace",
+            "connection",
+            "security"
+        ]
+    );
     let on = |page: &str| -> Vec<(&str, &str)> {
         config::grouped(&r)
             .into_iter()
@@ -2422,14 +2486,25 @@ fn settings_group_into_the_seven_pages_and_keep_their_values() {
             .map(|(_, rows)| rows.into_iter().map(|(k, v)| (k.name, v)).collect())
             .unwrap_or_default()
     };
-    assert_eq!(on("session"), [("tabs-limit", "7"), ("session-form", "term")]);
+    assert_eq!(
+        on("session"),
+        [("tabs-limit", "7"), ("session-form", "term")]
+    );
     assert_eq!(on("workspace"), [("files-click", "pin")]);
     // 连接 (round ROAD-2): the two carried roads, on by default.
     assert_eq!(on("connection"), [("ssh-carry", "on"), ("peer-hop", "on")]);
-    assert_eq!(on("security"), [("confirm-takeover", "on"), ("confirm-delete", "off")]);
+    assert_eq!(
+        on("security"),
+        [("confirm-takeover", "on"), ("confirm-delete", "off")]
+    );
     assert_eq!(
         on("appearance"),
-        [("theme", "dark"), ("kind-mark", "face"), ("corner-is", "kind"), ("lang", "auto")]
+        [
+            ("theme", "dark"),
+            ("kind-mark", "face"),
+            ("corner-is", "kind"),
+            ("lang", "auto")
+        ]
     );
     assert_eq!(config::tabs_limit(&r), Some(7));
 }
@@ -2507,7 +2582,13 @@ fn a_network_of_three(root: &Path) -> (Node, String, String) {
         store.flush(&loaded.doc).unwrap();
     }
     let local = n.open_ephemeral(khor_core::kind::SHELL, "a build").unwrap();
-    let mut template = n.sessions().unwrap().into_iter().find(|v| v.session.id == local).unwrap().session;
+    let mut template = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|v| v.session.id == local)
+        .unwrap()
+        .session;
     // A kind that lists without an import (`listed`): a reported agent's.
     template.kind = khor_core::Kind(khor_core::kind::GUI.to_owned());
     template.id = SessionId("shell/on-alpha".into());
@@ -2581,9 +2662,7 @@ fn leaving_empties_the_table_down_to_this_machine() {
         .map(|v| v.session.id.0.clone())
         .collect();
     assert!(
-        !after
-            .iter()
-            .any(|i| i.ends_with("-alpha")),
+        !after.iter().any(|i| i.ends_with("-alpha")),
         "a row derived through the table leaves with the table: {after:?}"
     );
     assert!(
@@ -3218,8 +3297,14 @@ fn a_machine_that_cannot_host_says_so_and_refuses_before_any_row_exists() {
     let no = msg::machine_cannot_host("phone");
     let before = n.sessions().unwrap().len();
     let sh = ["/bin/sh".to_owned()];
-    assert_eq!(n.open_persistent("shell", "t", &sh, (80, 24)), Err(no.clone()));
-    assert_eq!(n.open_persistent_at(&r, "shell", "t", &sh, (80, 24)), Err(no.clone()));
+    assert_eq!(
+        n.open_persistent("shell", "t", &sh, (80, 24)),
+        Err(no.clone())
+    );
+    assert_eq!(
+        n.open_persistent_at(&r, "shell", "t", &sh, (80, 24)),
+        Err(no.clone())
+    );
     assert_eq!(n.open_ephemeral("shell", "t"), Err(no.clone()));
     assert_eq!(n.open_gui("t", &sh), Err(no.clone()));
     assert_eq!(n.start_session("", "t", "chat", "claude"), Err(no.clone()));
@@ -3323,7 +3408,9 @@ fn a_phones_checklist_is_the_computers_minus_what_is_not_there() {
         .collect();
     assert_eq!(
         phone,
-        ["identity", "store", "serve", "relays", "peers", "roster", "roads", "disk", "terminal"],
+        [
+            "identity", "store", "serve", "relays", "peers", "roster", "roads", "disk", "terminal"
+        ],
         "a phone keeps what is about itself and the network"
     );
 }
@@ -3343,12 +3430,19 @@ fn a_sandboxed_store_takes_a_new_vendor_id() {
 
     // The id moved under the store, the name did not.
     let refused = stamp_store(&r, "localhost", Some("testflight-id".into()), false);
-    assert!(refused.is_err(), "unsandboxed, another id is another machine");
+    assert!(
+        refused.is_err(),
+        "unsandboxed, another id is another machine"
+    );
 
     stamp_store(&r, "localhost", Some("testflight-id".into()), true)
         .expect("sandboxed, the store is this device's");
     let now = Owner::parse(&fs::read_to_string(r.join(".khor").join("owner")).unwrap());
-    assert_eq!(now.machine.as_deref(), Some("testflight-id"), "the stamp follows the new id");
+    assert_eq!(
+        now.machine.as_deref(),
+        Some("testflight-id"),
+        "the stamp follows the new id"
+    );
     stamp_store(&r, "localhost", Some("testflight-id".into()), false)
         .expect("and once rewritten it is mine by the ordinary rule");
 }
@@ -3364,13 +3458,38 @@ fn an_old_machine_conversation_on_disk_is_not_on_the_list() {
     let dir = khor_sync::chat::channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
     let old = khor_sync::chat::ChatDoc::new(0xA1).unwrap();
-    old.tell(&khor_sync::chat::Sender { id: "dev-old".into(), name: "old".into() }, "a line from before").unwrap();
-    fs::write(dir.join("u-00000000000000a1-00000000.loro"), old.snapshot().unwrap()).unwrap();
+    old.tell(
+        &khor_sync::chat::Sender {
+            id: "dev-old".into(),
+            name: "old".into(),
+        },
+        "a line from before",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("u-00000000000000a1-00000000.loro"),
+        old.snapshot().unwrap(),
+    )
+    .unwrap();
     let shell = n.open_ephemeral(khor_core::kind::SHELL, "a build").unwrap();
-    let ids: Vec<String> = n.sessions().unwrap().into_iter().map(|v| v.session.id.0).collect();
-    assert!(ids.contains(&shell.0), "control: this home lists its rows: {ids:?}");
-    assert!(!ids.iter().any(|i| i.starts_with("chat/")), "no machine conversation is listed: {ids:?}");
-    assert!(n.log(n.name()).is_err(), "and a machine's name is not a board to read");
+    let ids: Vec<String> = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .map(|v| v.session.id.0)
+        .collect();
+    assert!(
+        ids.contains(&shell.0),
+        "control: this home lists its rows: {ids:?}"
+    );
+    assert!(
+        !ids.iter().any(|i| i.starts_with("chat/")),
+        "no machine conversation is listed: {ids:?}"
+    );
+    assert!(
+        n.log(n.name()).is_err(),
+        "and a machine's name is not a board to read"
+    );
 }
 
 /// A read is local first, even while the peer keeps reporting the old badge.
@@ -3383,42 +3502,104 @@ fn a_local_read_clears_a_cached_remote_badge_before_sync() {
     loaded.doc.upsert(&peer, "remote", &[]).unwrap();
     let mut store = loaded.store;
     store.flush(&loaded.doc).unwrap();
-    let local = n.open_ephemeral(khor_core::kind::SHELL, "template").unwrap();
-    let mut row = n.sessions().unwrap().into_iter().find(|v| v.session.id == local).unwrap().session;
+    let local = n
+        .open_ephemeral(khor_core::kind::SHELL, "template")
+        .unwrap();
+    let mut row = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|v| v.session.id == local)
+        .unwrap()
+        .session;
     row.kind = khor_core::Kind(khor_core::kind::GUI.to_owned());
     row.id = SessionId("shell/remote-read".into());
     row.state.state = State::Done;
     row.state.at.0 = 100;
     row.unread = 1;
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
-    let shown = || n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session;
+    let shown = || {
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == row.id)
+            .unwrap()
+            .session
+    };
     assert_eq!(shown().unread, 1);
     n.seen(&row.id).unwrap();
     assert_eq!(shown().unread, 0, "do not wait for a network round trip");
     assert_eq!(shown().state.state, State::Idle);
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
-    assert_eq!(shown().unread, 0, "a stale peer report cannot revive a badge");
+    assert_eq!(
+        shown().unread,
+        0,
+        "a stale peer report cannot revive a badge"
+    );
     row.state.at.0 = 200;
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
-    let fresh = n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session;
+    let fresh = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|v| v.session.id == row.id)
+        .unwrap()
+        .session;
     assert_eq!(fresh.unread, 1, "a newer completion is still unread");
     n.seen_through(&row.id, 100).unwrap();
-    assert_eq!(n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session.unread, 1,
-        "a delayed GUI receipt cannot clear a later completion");
+    assert_eq!(
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == row.id)
+            .unwrap()
+            .session
+            .unread,
+        1,
+        "a delayed GUI receipt cannot clear a later completion"
+    );
     n.seen_through(&row.id, 200).unwrap();
-    assert_eq!(n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session.unread, 0);
+    assert_eq!(
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == row.id)
+            .unwrap()
+            .session
+            .unread,
+        0
+    );
     assert!(n.seen_through(&row.id, -1).is_err());
     row.state.state = State::Busy;
     row.state.at.0 = 300;
     row.unread = 0;
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
     n.seen_through(&row.id, 999).unwrap();
-    assert_eq!(n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session.state.state, State::Busy,
-        "reading must not change a running session's state");
+    assert_eq!(
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == row.id)
+            .unwrap()
+            .session
+            .state
+            .state,
+        State::Busy,
+        "reading must not change a running session's state"
+    );
     row.state.state = State::Done;
     row.state.at.0 = 400;
     row.unread = 1;
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
-    assert_eq!(n.sessions().unwrap().into_iter().find(|v| v.session.id == row.id).unwrap().session.unread, 1,
-        "future receipts are clamped to the currently known row");
+    assert_eq!(
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == row.id)
+            .unwrap()
+            .session
+            .unread,
+        1,
+        "future receipts are clamped to the currently known row"
+    );
 }

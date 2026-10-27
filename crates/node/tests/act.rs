@@ -117,10 +117,13 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
     let payload: Vec<u8> = (0..400_000u32).map(|i| (i % 249) as u8).collect();
     let src = ra.join("plan.pdf");
     fs::write(&src, &payload).unwrap();
-    let id = timeout(Duration::from_secs(PATIENCE), a.post("@beta the plan", std::slice::from_ref(&src)))
-        .await
-        .expect("a post must not hang")
-        .unwrap();
+    let id = timeout(
+        Duration::from_secs(PATIENCE),
+        a.post("@beta the plan", std::slice::from_ref(&src)),
+    )
+    .await
+    .expect("a post must not hang")
+    .unwrap();
     let tid = khor_node::transfer::TransferKind::session_id(&id);
     timeout(Duration::from_secs(PATIENCE), b.sync_now())
         .await
@@ -147,8 +150,18 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
         "a replicated document is derived here, not reported: {:?}",
         view.source
     );
-    let m = g.log(khor_node::wide::BROADCAST).unwrap().messages.into_iter().find(|m| m.id == id).unwrap();
-    assert_eq!((m.note.as_str(), m.to.len()), ("the plan", 1), "the words and the one target travel with it");
+    let m = g
+        .log(khor_node::wide::BROADCAST)
+        .unwrap()
+        .messages
+        .into_iter()
+        .find(|m| m.id == id)
+        .unwrap();
+    assert_eq!(
+        (m.note.as_str(), m.to.len()),
+        ("the plan", 1),
+        "the words and the one target travel with it"
+    );
 
     // Nobody presses anything: beta's resident pulls the payload off
     // alpha as the push lands the message (STORE-BRIEF phase 5).
@@ -160,7 +173,9 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
                 .flatten()
                 .map(|e| e.path())
                 .find(|p| !p.file_name().unwrap().to_string_lossy().starts_with('.'));
-            if let Some(p) = found.filter(|p| fs::metadata(p).is_ok_and(|m| m.len() == payload.len() as u64)) {
+            if let Some(p) =
+                found.filter(|p| fs::metadata(p).is_ok_and(|m| m.len() == payload.len() as u64))
+            {
                 break p;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -168,7 +183,11 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
     })
     .await
     .expect("the payload should land on beta with nobody asked");
-    assert_eq!(fs::read(&landed).unwrap(), payload, "bytes verbatim on the recipient");
+    assert_eq!(
+        fs::read(&landed).unwrap(),
+        payload,
+        "bytes verbatim on the recipient"
+    );
 
     // **Every device reads the same state**: beta wrote the landing on
     // the message, and a sync carries it to gamma, which has no such
@@ -195,7 +214,11 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
         .unwrap();
     let seen = read_fate(&g).expect("the landing travels to the third device");
     assert_eq!(seen.step, khor_sync::chat::Step::Landed);
-    assert_eq!(seen.landed, vec![landed.display().to_string()], "beta's own path, read on gamma");
+    assert_eq!(
+        seen.landed,
+        vec![landed.display().to_string()],
+        "beta's own path, read on gamma"
+    );
 
     // gamma takes the offer for itself: its own copy, pulled from alpha
     // or from beta, which holds it now, into gamma's receive location.
@@ -204,8 +227,15 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
         .expect("a take must not hang")
         .unwrap();
     let mine = rg.join("khor-drop").join("plan.pdf");
-    assert_eq!((moved, said), (payload.len() as u64, vec![mine.display().to_string()]));
-    assert_eq!(fs::read(&mine).unwrap(), payload, "gamma's own copy, verbatim");
+    assert_eq!(
+        (moved, said),
+        (payload.len() as u64, vec![mine.display().to_string()])
+    );
+    assert_eq!(
+        fs::read(&mine).unwrap(),
+        payload,
+        "gamma's own copy, verbatim"
+    );
     assert!(
         g.sessions()
             .unwrap()

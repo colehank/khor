@@ -221,7 +221,14 @@ pub enum Hop {
 }
 
 impl Hop {
-    pub const ALL: [Hop; 6] = [Hop::Direct, Hop::Relay, Hop::Idle, Hop::NoServe, Hop::Ssh, Hop::Forwarded];
+    pub const ALL: [Hop; 6] = [
+        Hop::Direct,
+        Hop::Relay,
+        Hop::Idle,
+        Hop::NoServe,
+        Hop::Ssh,
+        Hop::Forwarded,
+    ];
 
     /// Wire and catalog key.
     pub const fn key(self) -> &'static str {
@@ -367,7 +374,13 @@ pub enum GitOperation {
 impl GitSegment {
     /// Equal but for the time: the segment did not change.
     pub fn same(&self, other: &GitSegment) -> bool {
-        GitSegment { since_ms: 0, ..self.clone() } == GitSegment { since_ms: 0, ..other.clone() }
+        GitSegment {
+            since_ms: 0,
+            ..self.clone()
+        } == GitSegment {
+            since_ms: 0,
+            ..other.clone()
+        }
     }
 }
 
@@ -1073,8 +1086,20 @@ pub struct Road {
 
 impl Road {
     /// A road of its own: no hop, nothing broken.
-    pub fn own(to: impl Into<String>, road: RoadKind, relay: Option<String>, ms: Option<u16>) -> Self {
-        Road { to: to.into(), road, relay, ms, via: None, broken: None }
+    pub fn own(
+        to: impl Into<String>,
+        road: RoadKind,
+        relay: Option<String>,
+        ms: Option<u16>,
+    ) -> Self {
+        Road {
+            to: to.into(),
+            road,
+            relay,
+            ms,
+            via: None,
+            broken: None,
+        }
     }
 }
 
@@ -1214,7 +1239,11 @@ impl ReachView {
         let mut keys = self.rows.iter().filter_map(|(_, s)| s.host_key.as_deref());
         let first = keys.next();
         self.disagree = first.is_some_and(|k| keys.any(|o| o != k));
-        let mine = self.rows.iter().find(|(id, _)| id == me).and_then(|(_, s)| s.host_key.clone());
+        let mine = self
+            .rows
+            .iter()
+            .find(|(id, _)| id == me)
+            .and_then(|(_, s)| s.host_key.clone());
         let disagree = self.disagree;
         self.entrance = self
             .rows
@@ -1233,7 +1262,14 @@ mod reach_tests {
     use super::{ReachOutcome, ReachSeen, ReachView};
 
     fn seen(outcome: ReachOutcome, ms: Option<u32>, key: Option<&str>) -> ReachSeen {
-        ReachSeen { outcome, ms, addr: None, banner: None, host_key: key.map(Into::into), why: None }
+        ReachSeen {
+            outcome,
+            ms,
+            addr: None,
+            banner: None,
+            host_key: key.map(Into::into),
+            why: None,
+        }
     }
 
     fn view(rows: Vec<(&str, ReachSeen)>) -> ReachView {
@@ -1266,7 +1302,11 @@ mod reach_tests {
             ("me", seen(ReachOutcome::Silent, Some(1), None)),
             ("a", seen(ReachOutcome::Reached, Some(40), None)),
         ]);
-        assert_eq!(silent.entrance.as_deref(), Some("a"), "a connect with no ssh line is never the entrance");
+        assert_eq!(
+            silent.entrance.as_deref(),
+            Some("a"),
+            "a connect with no ssh line is never the entrance"
+        );
     }
 
     #[test]
@@ -1276,7 +1316,10 @@ mod reach_tests {
             ("a", seen(ReachOutcome::Reached, Some(2), Some("aa"))),
             ("b", seen(ReachOutcome::Reached, Some(2), None)),
         ]);
-        assert!(!same.disagree, "one key, and a machine that holds none, agree");
+        assert!(
+            !same.disagree,
+            "one key, and a machine that holds none, agree"
+        );
         let two = view(vec![
             ("me", seen(ReachOutcome::Reached, Some(1), Some("aa"))),
             ("a", seen(ReachOutcome::Timeout, None, Some("bb"))),
@@ -3065,11 +3108,17 @@ impl Session {
     /// usable. Also normalizes snapshots from peers using the old limited form.
     /// Keep the terminal's command, directory, notifications and attachment ID.
     pub fn fallback_unbound_terminal(&mut self) {
-        if !self.term || !self.doing.as_ref().is_some_and(|d| d.thread_unbound) { return; }
+        if !self.term || !self.doing.as_ref().is_some_and(|d| d.thread_unbound) {
+            return;
+        }
         let doing = self.doing.as_mut().unwrap();
         self.kind = Kind(kind::SHELL.to_owned());
         self.category = Some(category::SHELL.to_owned());
-        self.state.state = if doing.running { State::Busy } else { State::Idle };
+        self.state.state = if doing.running {
+            State::Busy
+        } else {
+            State::Idle
+        };
         doing.thread_unbound = false;
         self.last = None;
         self.unread = 0;
@@ -3209,10 +3258,16 @@ mod tests {
     fn old_peer_unbound_terminal_falls_back_without_losing_shell_activity() {
         let mut row = a_session(kind::TUI);
         row.category = Some("codex".into());
-        row.doing = Some(Doing { thread_unbound: true, running: true,
-            command: Some("codex resume".into()), cwd: Some("/current".into()),
-            notice: Some("upload finished".into()), notice_ms: 20, bell_ms: 30,
-            ..Default::default() });
+        row.doing = Some(Doing {
+            thread_unbound: true,
+            running: true,
+            command: Some("codex resume".into()),
+            cwd: Some("/current".into()),
+            notice: Some("upload finished".into()),
+            notice_ms: 20,
+            bell_ms: 30,
+            ..Default::default()
+        });
         let mut row: Session = rmp_serde::from_slice(&rmp_serde::to_vec(&row).unwrap()).unwrap();
         row.fallback_unbound_terminal();
         assert_eq!(row.id.0, "dev0/demo/1");

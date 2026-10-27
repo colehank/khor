@@ -27,7 +27,10 @@ use tokio::time::timeout;
 /// What alpha reads for gamma.
 async fn read(alpha: &Node, gamma: &str) -> Option<khor_core::Link> {
     let links = alpha.links().await.ok()?;
-    links.into_iter().find(|(id, _)| id == gamma).map(|(_, l)| l)
+    links
+        .into_iter()
+        .find(|(id, _)| id == gamma)
+        .map(|(_, l)| l)
 }
 
 /// Polls `alpha`'s word for `gamma` until `want` holds; every change of
@@ -55,19 +58,31 @@ async fn until_word(
                 );
                 last = Some(now);
             }
-            assert_ne!(l.hop, Hop::Ssh, "nothing here rides ssh: a hop that ends reads as the hop, then the relay");
+            assert_ne!(
+                l.hop,
+                Hop::Ssh,
+                "nothing here rides ssh: a hop that ends reads as the hop, then the relay"
+            );
             if want(&l) {
                 return (started.elapsed(), l);
             }
         }
-        assert!(started.elapsed() < within, "{what} within {within:?}: last read {last:?}");
+        assert!(
+            started.elapsed() < within,
+            "{what} within {within:?}: last read {last:?}"
+        );
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn a_hop_through_a_middle_beats_a_slow_relay_and_the_relay_takes_back_when_it_stalls() {
-    let (ra, rb, rc, rr) = (scratch("hop3-a"), scratch("hop3-b"), scratch("hop3-c"), scratch("hop3-r"));
+    let (ra, rb, rc, rr) = (
+        scratch("hop3-a"),
+        scratch("hop3-b"),
+        scratch("hop3-c"),
+        scratch("hop3-r"),
+    );
     let (_relay, direct_url) = local_relay(&rr.0);
     let to: std::net::SocketAddr = direct_url
         .trim_start_matches("http://")
@@ -87,7 +102,11 @@ async fn a_hop_through_a_middle_beats_a_slow_relay_and_the_relay_takes_back_when
     for r in [&ra, &rb, &rc] {
         home_on(&r.0, &url);
     }
-    let _a = serve_with(&ra.0, "alpha", &[(khor_net::endpoint::BIND_IP_ENV, "127.0.0.1")]);
+    let _a = serve_with(
+        &ra.0,
+        "alpha",
+        &[(khor_net::endpoint::BIND_IP_ENV, "127.0.0.1")],
+    );
     let b = serve(&rb.0, "beta");
     let _c = serve_with(&rc.0, "gamma", &[(khor_net::endpoint::BIND_IP_ENV, "::1")]);
     stood_up(&[&ra.0, &rb.0, &rc.0]).await;
@@ -113,28 +132,43 @@ async fn a_hop_through_a_middle_beats_a_slow_relay_and_the_relay_takes_back_when
     let ids = [&alpha, &beta, &gamma].map(|n| n.device_str().to_owned());
     let [_, b_id, c_id] = ids.clone();
     let began = Instant::now();
-    while ![&alpha, &beta, &gamma]
-        .iter()
-        .all(|n| n.devices().is_ok_and(|known| ids.iter().all(|id| known.iter().any(|d| &d.id == id))))
-    {
-        assert!(began.elapsed() < Duration::from_secs(90), "every machine knows the other two");
+    while ![&alpha, &beta, &gamma].iter().all(|n| {
+        n.devices()
+            .is_ok_and(|known| ids.iter().all(|id| known.iter().any(|d| &d.id == id)))
+    }) {
+        assert!(
+            began.elapsed() < Duration::from_secs(90),
+            "every machine knows the other two"
+        );
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
     // The control: alpha's wire to gamma is on the slow relay.
-    let (_, on_relay) = until_word(&alpha, &c_id, Duration::from_secs(90), "alpha reaches gamma by the relay", |l| {
-        l.hop == Hop::Relay && l.rtt_ms.is_some()
-    })
+    let (_, on_relay) = until_word(
+        &alpha,
+        &c_id,
+        Duration::from_secs(90),
+        "alpha reaches gamma by the relay",
+        |l| l.hop == Hop::Relay && l.rtt_ms.is_some(),
+    )
     .await;
     let relay_ms = on_relay.rtt_ms.unwrap();
 
     // The hop: opened by the 30 s compare once beta's row says it reaches
     // gamma directly.
-    let (took, hopped) = until_word(&alpha, &c_id, Duration::from_secs(150), "alpha's wire to gamma goes through beta", |l| {
-        l.hop == Hop::Forwarded
-    })
+    let (took, hopped) = until_word(
+        &alpha,
+        &c_id,
+        Duration::from_secs(150),
+        "alpha's wire to gamma goes through beta",
+        |l| l.hop == Hop::Forwarded,
+    )
     .await;
-    assert_eq!(hopped.via.as_deref(), Some(b_id.as_str()), "the middle is beta");
+    assert_eq!(
+        hopped.via.as_deref(),
+        Some(b_id.as_str()),
+        "the middle is beta"
+    );
     // Settled: iroh's own round trip on the hop, against the relay's.
     tokio::time::sleep(Duration::from_secs(5)).await;
     let settled = read(&alpha, &c_id).await.expect("a link to gamma");
@@ -155,9 +189,13 @@ async fn a_hop_through_a_middle_beats_a_slow_relay_and_the_relay_takes_back_when
     signal(pid, "-STOP");
     let back = timeout(
         Duration::from_secs(90),
-        until_word(&alpha, &c_id, Duration::from_secs(90), "alpha's wire to gamma back on the relay", |l| {
-            l.hop == Hop::Relay
-        }),
+        until_word(
+            &alpha,
+            &c_id,
+            Duration::from_secs(90),
+            "alpha's wire to gamma back on the relay",
+            |l| l.hop == Hop::Relay,
+        ),
     )
     .await;
     signal(pid, "-CONT");
@@ -168,6 +206,9 @@ async fn a_hop_through_a_middle_beats_a_slow_relay_and_the_relay_takes_back_when
         "a frozen middle hands back to the relay in about 13 s, not iroh's 15 s path idle: {took_back:?}"
     );
     let after = read(&alpha, &c_id).await.expect("a link to gamma");
-    assert!(after.down_ms.is_none(), "the wire never went down: {after:?}");
+    assert!(
+        after.down_ms.is_none(),
+        "the wire never went down: {after:?}"
+    );
     drop(b);
 }

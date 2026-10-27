@@ -568,7 +568,10 @@ async fn metadata_lock_failure_still_requests_local_stop_and_history_can_retry()
     let blocked = blocked_retry.data.unwrap();
     assert_eq!(blocked["durability"]["state"], "NotPersisted");
     assert_eq!(blocked["durability"]["code"], "Busy");
-    assert!(intent_absent, "the locked producer must not publish an intent");
+    assert!(
+        intent_absent,
+        "the locked producer must not publish an intent"
+    );
     assert_eq!(retry.data.unwrap()["durability"]["state"], "DurablyQueued");
     assert_eq!(query.data.unwrap()["durability"]["state"], "DurablyQueued");
 }
@@ -1029,7 +1032,10 @@ async fn a_bad_source_or_receipt_stays_unresolved_while_valid_siblings_cancel() 
             let mut paths: Vec<_> = fs::read_dir(folder)
                 .unwrap()
                 .map(|entry| entry.unwrap().path())
-                .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
+                .filter(|path| {
+                    path.extension()
+                        .is_some_and(|extension| extension == "json")
+                })
                 .collect();
             assert_eq!(paths.len(), 3, "all three business links must exist");
             paths.sort();
@@ -1343,7 +1349,10 @@ async fn committed_intent_with_invalid_reply_remains_unknown_until_real_status()
                 && initial["durability"]["code"] == "MetadataOutcomeUnknown"),
         "initial Stop snapshot: {initial}"
     );
-    assert_eq!(retried.data.unwrap()["durability"]["state"], "DurablyQueued");
+    assert_eq!(
+        retried.data.unwrap()["durability"]["state"],
+        "DurablyQueued"
+    );
     for (persist, query) in decoded {
         assert_eq!(persist["durability"]["state"], "PersistenceUnknown");
         assert_eq!(query["durability"]["state"], "Unavailable");

@@ -147,13 +147,19 @@ mod mac_blur {
 pub fn sync_frame(app: &AppHandle, force: bool) {
     use std::sync::atomic::{AtomicU8, Ordering};
     static LAST: AtomicU8 = AtomicU8::new(u8::MAX);
-    let Some(window) = app.get_window("main") else { return; };
+    let Some(window) = app.get_window("main") else {
+        return;
+    };
     let full = window.is_fullscreen().unwrap_or(false);
     let square = full || window.is_maximized().unwrap_or(false);
     let flags = u8::from(full) | (u8::from(square) << 1);
-    if LAST.swap(flags, Ordering::Relaxed) == flags && !force { return; }
+    if LAST.swap(flags, Ordering::Relaxed) == flags && !force {
+        return;
+    }
     if let Some(view) = app.get_webview("main") {
-        let script = format!("document.documentElement.toggleAttribute('data-window-fullscreen',{full});document.documentElement.toggleAttribute('data-window-square',{square});");
+        let script = format!(
+            "document.documentElement.toggleAttribute('data-window-fullscreen',{full});document.documentElement.toggleAttribute('data-window-square',{square});"
+        );
         let _ = view.eval(script);
     }
 }

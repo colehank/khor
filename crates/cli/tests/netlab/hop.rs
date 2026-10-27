@@ -54,15 +54,27 @@ async fn f_two_strict_nats_meet_through_a_public_middle_and_fall_back_when_it_fr
 
     // The legs: M reaches each directly.
     let legs = [
-        x.until(&m, Duration::from_secs(120), |l| l.hop == Hop::Direct).await,
-        y.until(&m, Duration::from_secs(120), |l| l.hop == Hop::Direct).await,
+        x.until(&m, Duration::from_secs(120), |l| l.hop == Hop::Direct)
+            .await,
+        y.until(&m, Duration::from_secs(120), |l| l.hop == Hop::Direct)
+            .await,
     ];
     let leg_words: Vec<String> = legs
         .iter()
-        .map(|l| l.as_ref().map_or("never direct".into(), |(t, l)| format!("{} after {t:.1?}", word(l))))
+        .map(|l| {
+            l.as_ref().map_or("never direct".into(), |(t, l)| {
+                format!("{} after {t:.1?}", word(l))
+            })
+        })
         .collect();
-    let relay_first = x.until(&y, Duration::from_secs(90), |l| l.hop == Hop::Relay && l.rtt_ms.is_some()).await;
-    let hopped = x.until(&y, Duration::from_secs(150), |l| l.hop == Hop::Forwarded).await;
+    let relay_first = x
+        .until(&y, Duration::from_secs(90), |l| {
+            l.hop == Hop::Relay && l.rtt_ms.is_some()
+        })
+        .await;
+    let hopped = x
+        .until(&y, Duration::from_secs(150), |l| l.hop == Hop::Forwarded)
+        .await;
     let Some((took, through)) = hopped else {
         let now = x.link(&y).await;
         result(
@@ -72,7 +84,9 @@ async fn f_two_strict_nats_meet_through_a_public_middle_and_fall_back_when_it_fr
                 "legs x–m {}, y–m {}; x→y on the relay {}; never through m in 150 s (now {})",
                 leg_words[0],
                 leg_words[1],
-                relay_first.as_ref().map_or("never".into(), |(_, l)| word(l)),
+                relay_first
+                    .as_ref()
+                    .map_or("never".into(), |(_, l)| word(l)),
                 now.as_ref().map_or("nothing".into(), word),
             ),
         );
@@ -82,12 +96,16 @@ async fn f_two_strict_nats_meet_through_a_public_middle_and_fall_back_when_it_fr
     let settled = x.link(&y).await.expect("a link");
 
     m.freeze();
-    let back = x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Relay).await;
+    let back = x
+        .until(&y, Duration::from_secs(60), |l| l.hop == Hop::Relay)
+        .await;
     let after = x.link(&y).await;
     m.thaw();
     let ok = through.via.as_deref() == Some(m.id.as_str())
         && settled.hop == Hop::Forwarded
-        && back.as_ref().is_some_and(|(t, _)| *t < Duration::from_secs(16))
+        && back
+            .as_ref()
+            .is_some_and(|(t, _)| *t < Duration::from_secs(16))
         && after.as_ref().is_some_and(|l| l.down_ms.is_none());
     result(
         s,
@@ -96,15 +114,31 @@ async fn f_two_strict_nats_meet_through_a_public_middle_and_fall_back_when_it_fr
             "legs x–m {}, y–m {}; relay {}; through m after {took:.1?}, settled {}; m frozen → relay {}",
             leg_words[0],
             leg_words[1],
-            relay_first.as_ref().map_or("never".into(), |(_, l)| word(l)),
+            relay_first
+                .as_ref()
+                .map_or("never".into(), |(_, l)| word(l)),
             word(&settled),
-            back.as_ref().map_or("never in 60 s".into(), |(t, l)| format!("after {t:.1?} ({})", word(l))),
+            back.as_ref()
+                .map_or("never in 60 s".into(), |(t, l)| format!(
+                    "after {t:.1?} ({})",
+                    word(l)
+                )),
         ),
     );
-    assert_eq!(through.via.as_deref(), Some(m.id.as_str()), "the middle is m");
+    assert_eq!(
+        through.via.as_deref(),
+        Some(m.id.as_str()),
+        "the middle is m"
+    );
     assert_eq!(settled.hop, Hop::Forwarded, "the hop holds once open");
-    assert!(back.is_some_and(|(t, _)| t < Duration::from_secs(16)), "a frozen middle hands back to the relay in under 16 s");
-    assert!(after.is_some_and(|l| l.down_ms.is_none()), "the wire never went down");
+    assert!(
+        back.is_some_and(|(t, _)| t < Duration::from_secs(16)),
+        "a frozen middle hands back to the relay in under 16 s"
+    );
+    assert!(
+        after.is_some_and(|l| l.down_ms.is_none()),
+        "the wire never went down"
+    );
 }
 
 /// Drops every packet between `dev` and `ip`, both ways, with nft.
@@ -131,7 +165,12 @@ fn nft(dev: &patchbay::Device, rules: &str) {
     let mut cmd = Command::new("nft");
     cmd.args(["-f", "-"]).stdin(Stdio::piped());
     let mut child = dev.spawn_command_sync(cmd).unwrap();
-    child.stdin.take().unwrap().write_all(rules.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(rules.as_bytes())
+        .unwrap();
     assert!(child.wait().unwrap().success(), "nft took:\n{rules}");
 }
 
@@ -139,7 +178,14 @@ fn nft(dev: &patchbay::Device, rules: &str) {
 fn tc(dev: &patchbay::Device, args: &str) {
     let mut cmd = std::process::Command::new("tc");
     cmd.args(args.split_whitespace());
-    assert!(dev.spawn_command_sync(cmd).unwrap().wait().unwrap().success(), "tc {args}");
+    assert!(
+        dev.spawn_command_sync(cmd)
+            .unwrap()
+            .wait()
+            .unwrap()
+            .success(),
+        "tc {args}"
+    );
 }
 
 /// Out of `dev`'s first interface: `extra` more one way on what goes to
@@ -151,14 +197,38 @@ async fn delay_to(dev: &patchbay::Device, ip: std::net::Ipv4Addr, base: u32, ext
     match extra {
         Some(extra) => {
             tc(dev, &format!("qdisc del dev {ifname} root"));
-            tc(dev, &format!("qdisc add dev {ifname} root handle 1: prio bands 3 priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"));
-            tc(dev, &format!("qdisc add dev {ifname} parent 1:2 handle 20: netem delay {base}ms limit 10000"));
-            tc(dev, &format!("qdisc add dev {ifname} parent 1:3 handle 30: netem delay {}ms limit 10000", base + extra));
-            tc(dev, &format!("filter add dev {ifname} parent 1:0 protocol ip prio 1 u32 match ip dst {ip}/32 flowid 1:3"));
+            tc(
+                dev,
+                &format!(
+                    "qdisc add dev {ifname} root handle 1: prio bands 3 priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+                ),
+            );
+            tc(
+                dev,
+                &format!(
+                    "qdisc add dev {ifname} parent 1:2 handle 20: netem delay {base}ms limit 10000"
+                ),
+            );
+            tc(
+                dev,
+                &format!(
+                    "qdisc add dev {ifname} parent 1:3 handle 30: netem delay {}ms limit 10000",
+                    base + extra
+                ),
+            );
+            tc(
+                dev,
+                &format!(
+                    "filter add dev {ifname} parent 1:0 protocol ip prio 1 u32 match ip dst {ip}/32 flowid 1:3"
+                ),
+            );
         }
         None => {
             iface
-                .set_condition(patchbay::LinkCondition::new().latency_ms(base), patchbay::LinkDirection::Egress)
+                .set_condition(
+                    patchbay::LinkCondition::new().latency_ms(base),
+                    patchbay::LinkDirection::Egress,
+                )
                 .await
                 .unwrap();
         }
@@ -166,12 +236,19 @@ async fn delay_to(dev: &patchbay::Device, ip: std::net::Ipv4Addr, base: u32, ext
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64
+    std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
 }
 
 /// `n`'s path lines about `peer` since `since` (ms since the epoch): when,
 /// the change (`selected`, `started`, `opened`), the road.
-fn path_lines(n: &crate::lab::LabNode, peer: &crate::lab::LabNode, since: u64) -> Vec<(u64, String, String)> {
+fn path_lines(
+    n: &crate::lab::LabNode,
+    peer: &crate::lab::LabNode,
+    since: u64,
+) -> Vec<(u64, String, String)> {
     n.journal(Some(peer))
         .into_iter()
         .filter(|e| e["e"] == "path" && e["at"].as_u64().is_some_and(|t| t >= since))
@@ -194,9 +271,22 @@ const F4_RELAY_ONE_WAY: u32 = 22;
 /// carried road through M to X and held it for 10 s.
 async fn f4_lab(
     s: &str,
-) -> (Lab, crate::lab::Relay, patchbay::Router, crate::lab::LabNode, crate::lab::LabNode, crate::lab::LabNode) {
+) -> (
+    Lab,
+    crate::lab::Relay,
+    patchbay::Router,
+    crate::lab::LabNode,
+    crate::lab::LabNode,
+    crate::lab::LabNode,
+) {
     let lab = Lab::new().await.unwrap();
-    let r = relay(&lab, s, "relay", Some(Duration::from_millis(2 * F4_RELAY_ONE_WAY as u64))).await;
+    let r = relay(
+        &lab,
+        s,
+        "relay",
+        Some(Duration::from_millis(2 * F4_RELAY_ONE_WAY as u64)),
+    )
+    .await;
     let (rx, ry, rm) = (
         router(&lab, "natx", Net::Strict).await,
         router(&lab, "naty", Net::Strict).await,
@@ -213,9 +303,18 @@ async fn f4_lab(
     let m = node(s, dm, "m", &[&r], &[]).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
     mesh(&[&m, &x, &y]).await;
-    let hopped = y.until(&x, Duration::from_secs(180), |l| l.hop == Hop::Forwarded).await;
+    let hopped = y
+        .until(&x, Duration::from_secs(180), |l| l.hop == Hop::Forwarded)
+        .await;
     if hopped.is_none() {
-        result(s, false, format!("y never through m to x in 180 s (now {})", y.link(&x).await.as_ref().map_or("nothing".into(), word)));
+        result(
+            s,
+            false,
+            format!(
+                "y never through m to x in 180 s (now {})",
+                y.link(&x).await.as_ref().map_or("nothing".into(), word)
+            ),
+        );
         panic!("{s}: y reaches x through m");
     }
     // Held: 10 s on the hop, both ways.
@@ -225,8 +324,10 @@ async fn f4_lab(
         let held = y.link(&x).await.is_some_and(|l| l.hop == Hop::Forwarded)
             && x.link(&y).await.is_some_and(|l| l.hop == Hop::Forwarded);
         if !held {
-            y.until(&x, Duration::from_secs(60), |l| l.hop == Hop::Forwarded).await;
-            x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Forwarded).await;
+            y.until(&x, Duration::from_secs(60), |l| l.hop == Hop::Forwarded)
+                .await;
+            x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Forwarded)
+                .await;
         }
     }
     (lab, r, rx, x, y, m)
@@ -252,7 +353,17 @@ async fn f4_lab(
 /// the middle go.
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
-    f4_stall("f4", Stall { black: 3000, relay_black: 1500, late: 1700, both: false, typing: 12 }).await;
+    f4_stall(
+        "f4",
+        Stall {
+            black: 3000,
+            relay_black: 1500,
+            late: 1700,
+            both: false,
+            typing: 12,
+        },
+    )
+    .await;
 }
 
 /// f4s (carry, 2026-10-23): **f4 on a relay whose round trip is over the
@@ -268,7 +379,17 @@ async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
 /// and the relay at 450 ms is taken over it for up to 27 s.
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn f4s_a_stalled_carried_road_is_taken_again_off_a_relay_slower_than_the_confirmation() {
-    f4_stall("f4s", Stall { black: 8000, relay_black: 0, late: 2500, both: true, typing: 3 }).await;
+    f4_stall(
+        "f4s",
+        Stall {
+            black: 8000,
+            relay_black: 0,
+            late: 2500,
+            both: true,
+            typing: 3,
+        },
+    )
+    .await;
 }
 
 /// One f4 stall: X's leg to M black `black` ms; its leg to the relay black
@@ -284,7 +405,13 @@ struct Stall {
 }
 
 async fn f4_stall(s: &str, st: Stall) {
-    let Stall { black, relay_black, late, both, typing: typing_s } = st;
+    let Stall {
+        black,
+        relay_black,
+        late,
+        both,
+        typing: typing_s,
+    } = st;
     let (_lab, r, rx, x, y, m) = f4_lab(s).await;
     let relay_ip = r.dev.ip().expect("the relay has IPv4");
     let m_ip = m.dev.ip().expect("m has IPv4");
@@ -325,7 +452,11 @@ async fn f4_stall(s: &str, st: Stall) {
         tokio::time::sleep(Duration::from_millis(black)).await;
         let began = std::time::Instant::now();
         loop {
-            if m.link(&x).await.and_then(|l| l.heard_ms).is_some_and(|h| h < 250) {
+            if m.link(&x)
+                .await
+                .and_then(|l| l.heard_ms)
+                .is_some_and(|h| h < 250)
+            {
                 break Some(now_ms());
             }
             if began.elapsed() > Duration::from_secs(30) {
@@ -349,13 +480,24 @@ async fn f4_stall(s: &str, st: Stall) {
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
     };
-    let (uncut_at, slowest, (), leg) = tokio::join!(stall, typing(&y, &x, typing_until), watch, leg_back);
+    let (uncut_at, slowest, (), leg) =
+        tokio::join!(stall, typing(&y, &x, typing_until), watch, leg_back);
     let answers = leg.unwrap_or(uncut_at);
 
-    let lines: Vec<(u64, String, String)> =
-        path_lines(&y, &x, t).into_iter().filter(|(_, c, _)| c == "selected").collect();
-    let on_relay = lines.iter().find(|(_, _, r)| r == "relay").map(|(at, _, _)| *at);
-    let back = on_relay.and_then(|left| lines.iter().find(|(at, _, r)| *at >= left && r == "carried").map(|(at, _, _)| *at));
+    let lines: Vec<(u64, String, String)> = path_lines(&y, &x, t)
+        .into_iter()
+        .filter(|(_, c, _)| c == "selected")
+        .collect();
+    let on_relay = lines
+        .iter()
+        .find(|(_, _, r)| r == "relay")
+        .map(|(at, _, _)| *at);
+    let back = on_relay.and_then(|left| {
+        lines
+            .iter()
+            .find(|(at, _, r)| *at >= left && r == "carried")
+            .map(|(at, _, _)| *at)
+    });
     // The longest stretch on the relay, to the end of the watch if it never left.
     let end = now_ms();
     let mut longest = 0u64;
@@ -376,7 +518,12 @@ async fn f4_stall(s: &str, st: Stall) {
     }
     let after_answer = back.map(|b| b.saturating_sub(answers));
     // Back on the carried road, it stays: no move to the relay within 30 s.
-    let fell = back.and_then(|b| lines.iter().find(|(at, _, r)| *at > b && r == "relay").map(|(at, _, _)| *at - b));
+    let fell = back.and_then(|b| {
+        lines
+            .iter()
+            .find(|(at, _, r)| *at > b && r == "relay")
+            .map(|(at, _, _)| *at - b)
+    });
     let stayed = back.is_none_or(|b| fell.is_none_or(|f| f >= 30_000) && now_ms() >= b + 30_000);
     let now = y.link(&x).await;
     let x_lines: Vec<String> = path_lines(&x, &y, t)
@@ -399,23 +546,47 @@ async fn f4_stall(s: &str, st: Stall) {
             back.map_or("never".into(), secs),
             after_answer.map_or("—".into(), |ms| format!("{:.1}s", ms as f64 / 1000.0)),
             leg.map_or(format!("never; uncut at {}", secs(uncut_at)), secs),
-            fell.map_or("never".into(), |f| format!("{:.1}s after", f as f64 / 1000.0)),
+            fell.map_or("never".into(), |f| format!(
+                "{:.1}s after",
+                f as f64 / 1000.0
+            )),
             longest as f64 / 1000.0,
-            lines.iter().map(|(at, _, r)| format!("{r}@{}", secs(*at))).collect::<Vec<_>>(),
+            lines
+                .iter()
+                .map(|(at, _, r)| format!("{r}@{}", secs(*at)))
+                .collect::<Vec<_>>(),
             now.as_ref().map_or("nothing".into(), word),
         ),
     );
-    assert!(longest < 20_000, "no rest on the relay: {:.1}s", longest as f64 / 1000.0);
-    assert!(stayed, "back on the carried road, no move to the relay for 30 s: fell back {fell:?} ms after");
+    assert!(
+        longest < 20_000,
+        "no rest on the relay: {:.1}s",
+        longest as f64 / 1000.0
+    );
+    assert!(
+        stayed,
+        "back on the carried road, no move to the relay for 30 s: fell back {fell:?} ms after"
+    );
     if on_relay.is_some() {
-        assert!(after_answer.is_some_and(|ms| ms <= 1500), "back within 1.5 s of the leg answering: {after_answer:?} ms");
+        assert!(
+            after_answer.is_some_and(|ms| ms <= 1500),
+            "back within 1.5 s of the leg answering: {after_answer:?} ms"
+        );
     }
-    assert_eq!(now.map(|l| l.hop), Some(Hop::Forwarded), "y ends on the carried road");
+    assert_eq!(
+        now.map(|l| l.hop),
+        Some(Hop::Forwarded),
+        "y ends on the carried road"
+    );
 }
 
 /// Echoes from `n` to `peer` (a listing of /tmp, as a keystroke's round
 /// trip) one after another, 200 ms apart, until `until`; the slowest.
-async fn typing(n: &crate::lab::LabNode, peer: &crate::lab::LabNode, until: std::time::Instant) -> Duration {
+async fn typing(
+    n: &crate::lab::LabNode,
+    peer: &crate::lab::LabNode,
+    until: std::time::Instant,
+) -> Duration {
     let mut slowest = Duration::ZERO;
     while std::time::Instant::now() < until {
         let began = std::time::Instant::now();
@@ -447,16 +618,24 @@ async fn f4i_a_new_connection_does_not_write_its_first_road_as_a_move() {
     let t = now_ms();
     // Both ends let their wires go, so the next round is a new connection.
     let yname = y.name.clone();
-    x.with(move |n| async move { n.let_go_of(&yname).await.ok() }).await.expect("x lets go of y");
+    x.with(move |n| async move { n.let_go_of(&yname).await.ok() })
+        .await
+        .expect("x lets go of y");
     let xname = x.name.clone();
-    y.with(move |n| async move { n.let_go_of(&xname).await.ok() }).await.expect("y lets go of x");
+    y.with(move |n| async move { n.let_go_of(&xname).await.ok() })
+        .await
+        .expect("y lets go of x");
     // As long as a phone in the background, and as unreachable: iroh's
     // actor for the remote stops after a minute with no connection
     // (`ACTOR_MAX_IDLE_TIMEOUT`), and the next connection has no carried
     // path to begin on. Reachable, the two redial within 15 s and the new
     // connection begins where the actor still is.
     cut_as(&x.dev, m.dev.ip().expect("m has IPv4"), "away_m");
-    cut_as(&x.dev, r.dev.ip().expect("the relay has IPv4"), "away_relay");
+    cut_as(
+        &x.dev,
+        r.dev.ip().expect("the relay has IPv4"),
+        "away_relay",
+    );
     tokio::time::sleep(Duration::from_secs(75)).await;
     // Back with the relay first and m a little later (the phone's new
     // network reaches the relay before the hop is found): the new
@@ -464,46 +643,98 @@ async fn f4i_a_new_connection_does_not_write_its_first_road_as_a_move() {
     uncut(&x.dev, "away_relay");
     let u = now_ms();
     let yname = y.name.clone();
-    x.with(move |n| async move { n.visit(&yname).await.ok() }).await.expect("x visits y");
-    let on_relay = x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Relay && l.rtt_ms.is_some()).await;
-    eprintln!("[netlab] f4i on the relay {:?}", on_relay.as_ref().map(|(t, _)| t));
+    x.with(move |n| async move { n.visit(&yname).await.ok() })
+        .await
+        .expect("x visits y");
+    let on_relay = x
+        .until(&y, Duration::from_secs(60), |l| {
+            l.hop == Hop::Relay && l.rtt_ms.is_some()
+        })
+        .await;
+    eprintln!(
+        "[netlab] f4i on the relay {:?}",
+        on_relay.as_ref().map(|(t, _)| t)
+    );
     uncut(&x.dev, "away_m");
-    let back = x.until(&y, Duration::from_secs(120), |l| l.hop == Hop::Forwarded && l.rtt_ms.is_some()).await;
+    let back = x
+        .until(&y, Duration::from_secs(120), |l| {
+            l.hop == Hop::Forwarded && l.rtt_ms.is_some()
+        })
+        .await;
     tokio::time::sleep(Duration::from_secs(15)).await;
     let (xl, yl) = (path_lines(&x, &y, t), path_lines(&y, &x, t));
     let fmt = |l: &[(u64, String, String)]| {
-        l.iter().map(|(at, c, r)| format!("{c} {r}@{:.1}s", at.saturating_sub(t) as f64 / 1000.0)).collect::<Vec<_>>()
+        l.iter()
+            .map(|(at, c, r)| format!("{c} {r}@{:.1}s", at.saturating_sub(t) as f64 / 1000.0))
+            .collect::<Vec<_>>()
     };
     let since_t = |n: &crate::lab::LabNode, peer: &crate::lab::LabNode| {
         n.journal(Some(peer))
             .into_iter()
             .filter(|e| e["at"].as_u64().is_some_and(|a| a >= t))
-            .map(|e| format!("{}@{:.1}s", e["e"].as_str().unwrap_or("?"), e["at"].as_u64().unwrap_or(t).saturating_sub(t) as f64 / 1000.0))
+            .map(|e| {
+                format!(
+                    "{}@{:.1}s",
+                    e["e"].as_str().unwrap_or("?"),
+                    e["at"].as_u64().unwrap_or(t).saturating_sub(t) as f64 / 1000.0
+                )
+            })
             .collect::<Vec<_>>()
     };
-    eprintln!("[netlab] f4i x's lines {:?}; y's {:?}", since_t(&x, &y), since_t(&y, &x));
+    eprintln!(
+        "[netlab] f4i x's lines {:?}; y's {:?}",
+        since_t(&x, &y),
+        since_t(&y, &x)
+    );
     // Back in reach: the new connection's first road line, on either end,
     // says where it began, and no line after `u` is a move to the relay.
-    let after: Vec<(u64, String, String)> =
-        xl.iter().chain(&yl).filter(|(at, c, _)| *at >= u && c != "opened").cloned().collect();
+    let after: Vec<(u64, String, String)> = xl
+        .iter()
+        .chain(&yl)
+        .filter(|(at, c, _)| *at >= u && c != "opened")
+        .cloned()
+        .collect();
     let first = after.iter().min_by_key(|(at, _, _)| *at).cloned();
-    let to_relay = after.iter().filter(|(_, c, r)| c == "selected" && r == "relay").count();
-    let ok = back.is_some() && first.as_ref().is_some_and(|(_, c, _)| c == "started") && to_relay == 0;
+    let to_relay = after
+        .iter()
+        .filter(|(_, c, r)| c == "selected" && r == "relay")
+        .count();
+    let ok =
+        back.is_some() && first.as_ref().is_some_and(|(_, c, _)| c == "started") && to_relay == 0;
     result(
         s,
         ok,
         format!(
             "both let go, x away 75 s, x visited y: back through m {}; first line back {}; x's lines {:?}, y's {:?}",
-            back.as_ref().map_or("never in 120 s".into(), |(t, l)| format!("after {t:.1?} ({})", word(l))),
-            first.as_ref().map_or("none".into(), |(at, c, r)| format!("{c} {r}@{:.1}s", at.saturating_sub(t) as f64 / 1000.0)),
+            back.as_ref()
+                .map_or("never in 120 s".into(), |(t, l)| format!(
+                    "after {t:.1?} ({})",
+                    word(l)
+                )),
+            first.as_ref().map_or("none".into(), |(at, c, r)| format!(
+                "{c} {r}@{:.1}s",
+                at.saturating_sub(t) as f64 / 1000.0
+            )),
             fmt(&xl),
             fmt(&yl),
         ),
     );
     assert!(back.is_some(), "x is back through m");
     let (_, change, _) = first.expect("a road line for the new connection");
-    assert_eq!(change, "started", "the new connection's first road is where it began, not a move: x {:?}, y {:?}", fmt(&xl), fmt(&yl));
-    assert_eq!(to_relay, 0, "no 「改走中继」 once back: x {:?}, y {:?}", fmt(&xl), fmt(&yl));
+    assert_eq!(
+        change,
+        "started",
+        "the new connection's first road is where it began, not a move: x {:?}, y {:?}",
+        fmt(&xl),
+        fmt(&yl)
+    );
+    assert_eq!(
+        to_relay,
+        0,
+        "no 「改走中继」 once back: x {:?}, y {:?}",
+        fmt(&xl),
+        fmt(&yl)
+    );
 }
 
 /// How long f2 watches the settled wire for moves.
@@ -517,7 +748,10 @@ async fn f2_a_relay_leg_through_a_middle_beats_a_far_home() {
     // 200 ms each way on the relay's own link: X ↔ Y through it is about
     // 800 ms, aps1 from Beijing on a bad evening.
     let far = relay(&lab, s, "far", Some(Duration::from_millis(400))).await;
-    let (rx, rl) = (router(&lab, "natx", Net::Strict).await, router(&lab, "lan", Net::Strict).await);
+    let (rx, rl) = (
+        router(&lab, "natx", Net::Strict).await,
+        router(&lab, "lan", Net::Strict).await,
+    );
     let dx = lab.add_device("x").uplink(rx.id()).build().await.unwrap();
     let db = lab.add_device("b").uplink(rl.id()).build().await.unwrap();
     let dy = lab.add_device("y").uplink(rl.id()).build().await.unwrap();
@@ -535,15 +769,31 @@ async fn f2_a_relay_leg_through_a_middle_beats_a_far_home() {
 
     // The legs: X to B on the near relay, B to Y on the LAN.
     let legs = [
-        x.until(&b, Duration::from_secs(120), |l| l.hop == Hop::Relay && l.rtt_ms.is_some()).await,
-        b.until(&y, Duration::from_secs(120), |l| l.hop == Hop::Direct && l.rtt_ms.is_some()).await,
+        x.until(&b, Duration::from_secs(120), |l| {
+            l.hop == Hop::Relay && l.rtt_ms.is_some()
+        })
+        .await,
+        b.until(&y, Duration::from_secs(120), |l| {
+            l.hop == Hop::Direct && l.rtt_ms.is_some()
+        })
+        .await,
     ];
     let leg_words: Vec<String> = legs
         .iter()
-        .map(|l| l.as_ref().map_or("never".into(), |(t, l)| format!("{} after {t:.1?}", word(l))))
+        .map(|l| {
+            l.as_ref().map_or("never".into(), |(t, l)| {
+                format!("{} after {t:.1?}", word(l))
+            })
+        })
         .collect();
-    let relay_first = x.until(&y, Duration::from_secs(120), |l| l.hop == Hop::Relay && l.rtt_ms.is_some()).await;
-    let hopped = x.until(&y, Duration::from_secs(150), |l| l.hop == Hop::Forwarded).await;
+    let relay_first = x
+        .until(&y, Duration::from_secs(120), |l| {
+            l.hop == Hop::Relay && l.rtt_ms.is_some()
+        })
+        .await;
+    let hopped = x
+        .until(&y, Duration::from_secs(150), |l| l.hop == Hop::Forwarded)
+        .await;
     let Some((took, through)) = hopped else {
         let now = x.link(&y).await;
         let back = y.link(&x).await;
@@ -554,7 +804,9 @@ async fn f2_a_relay_leg_through_a_middle_beats_a_far_home() {
                 "legs x–b {}, b–y {}; x→y on the relay {}; never through b in 150 s (x→y now {}, y→x now {})",
                 leg_words[0],
                 leg_words[1],
-                relay_first.as_ref().map_or("never".into(), |(_, l)| word(l)),
+                relay_first
+                    .as_ref()
+                    .map_or("never".into(), |(_, l)| word(l)),
                 now.as_ref().map_or("nothing".into(), word),
                 back.as_ref().map_or("nothing".into(), word),
             ),
@@ -585,8 +837,15 @@ async fn f2_a_relay_leg_through_a_middle_beats_a_far_home() {
     // Who asked: both ends compare the same relay, and of two hops
     // between them the lower id's stands (`hop::Asking`).
     let asks = |n: &crate::lab::LabNode, peer: &crate::lab::LabNode| {
-        let all: Vec<_> = n.journal(Some(peer)).into_iter().filter(|e| e["e"] == "hop").collect();
-        (all.iter().filter(|e| e["via"].is_string()).count(), all.len())
+        let all: Vec<_> = n
+            .journal(Some(peer))
+            .into_iter()
+            .filter(|e| e["e"] == "hop")
+            .collect();
+        (
+            all.iter().filter(|e| e["via"].is_string()).count(),
+            all.len(),
+        )
     };
     let (xa, ya) = (asks(&x, &y), asks(&y, &x));
     let lower = if x.id < y.id { "x" } else { "y" };
@@ -601,7 +860,9 @@ async fn f2_a_relay_leg_through_a_middle_beats_a_far_home() {
             "legs x–b {}, b–y {}; relay {}; through b after {took:.1?}; over {SETTLED:?} {moves} moves, median {} ms, worst {worst} ms; now x→y {}, y→x {}; hops up/asked x {}/{}, y {}/{} (lower id {lower})",
             leg_words[0],
             leg_words[1],
-            relay_first.as_ref().map_or("never".into(), |(_, l)| word(l)),
+            relay_first
+                .as_ref()
+                .map_or("never".into(), |(_, l)| word(l)),
             median.map_or("?".into(), |m| m.to_string()),
             word(&there),
             word(&back),
@@ -611,7 +872,11 @@ async fn f2_a_relay_leg_through_a_middle_beats_a_far_home() {
             ya.1,
         ),
     );
-    assert_eq!(through.via.as_deref(), Some(b.id.as_str()), "the middle is b");
+    assert_eq!(
+        through.via.as_deref(),
+        Some(b.id.as_str()),
+        "the middle is b"
+    );
     assert_eq!(there.hop, Hop::Forwarded, "x → y holds on the hop");
     assert_eq!(back.hop, Hop::Forwarded, "y → x rides the same hop");
     assert_eq!(moves, 0, "no moves once through b");
@@ -628,7 +893,10 @@ async fn f3_a_machine_with_no_relay_goes_out_through_a_middle() {
     let s = "f3";
     let lab = Lab::new().await.unwrap();
     let r = relay(&lab, s, "relay", None).await;
-    let (rl, ry) = (router(&lab, "lan", Net::Strict).await, router(&lab, "naty", Net::Strict).await);
+    let (rl, ry) = (
+        router(&lab, "lan", Net::Strict).await,
+        router(&lab, "naty", Net::Strict).await,
+    );
     let dx = lab.add_device("x").uplink(rl.id()).build().await.unwrap();
     let db = lab.add_device("b").uplink(rl.id()).build().await.unwrap();
     let dy = lab.add_device("y").uplink(ry.id()).build().await.unwrap();
@@ -644,26 +912,44 @@ async fn f3_a_machine_with_no_relay_goes_out_through_a_middle() {
 
     let began = std::time::Instant::now();
     let (said, said_at) = loop {
-        let at = x.journal(None).into_iter().find(|e| e["e"] == "no-relay" && e["none"] == true);
+        let at = x
+            .journal(None)
+            .into_iter()
+            .find(|e| e["e"] == "no-relay" && e["none"] == true);
         if at.is_some() || began.elapsed() > Duration::from_secs(13 * 60) {
-            break (at.as_ref().map(|_| began.elapsed()), at.and_then(|e| e["at"].as_u64()).unwrap_or(u64::MAX));
+            break (
+                at.as_ref().map(|_| began.elapsed()),
+                at.and_then(|e| e["at"].as_u64()).unwrap_or(u64::MAX),
+            );
         }
         tokio::time::sleep(Duration::from_secs(5)).await;
     };
-    let hopped = x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Forwarded).await;
+    let hopped = x
+        .until(&y, Duration::from_secs(60), |l| l.hop == Hop::Forwarded)
+        .await;
     let x_id = x.id.clone();
     let seen_by_y = y
-        .with(move |n| async move { n.devices().ok()?.into_iter().find(|d| d.id == x_id).map(|d| d.no_relay) })
+        .with(move |n| async move {
+            n.devices()
+                .ok()?
+                .into_iter()
+                .find(|d| d.id == x_id)
+                .map(|d| d.no_relay)
+        })
         .await;
     // X's failed dials to Y once it knew: none waits out the relays.
     let late: Vec<u64> = x
         .journal(Some(&y))
         .into_iter()
-        .filter(|e| e["e"] == "dial" && e["won"].is_null() && e["at"].as_u64().is_some_and(|t| t > said_at))
+        .filter(|e| {
+            e["e"] == "dial" && e["won"].is_null() && e["at"].as_u64().is_some_and(|t| t > said_at)
+        })
         .filter_map(|e| e["ms"].as_u64())
         .collect();
     let ok = said.is_some()
-        && hopped.as_ref().is_some_and(|(_, l)| l.via.as_deref() == Some(b.id.as_str()))
+        && hopped
+            .as_ref()
+            .is_some_and(|(_, l)| l.via.as_deref() == Some(b.id.as_str()))
         && seen_by_y == Some(true)
         && late.iter().all(|ms| *ms <= 5_000);
     result(
@@ -672,12 +958,20 @@ async fn f3_a_machine_with_no_relay_goes_out_through_a_middle() {
         format!(
             "no relay said after {}; y reads it {seen_by_y:?}; x→y through b {}; failed dials since {late:?} ms",
             said.map_or("never in 13 min".into(), |t| format!("{t:.0?}")),
-            hopped.as_ref().map_or("never in 60 s".into(), |(t, l)| format!("after {t:.1?} ({})", word(l))),
+            hopped
+                .as_ref()
+                .map_or("never in 60 s".into(), |(t, l)| format!(
+                    "after {t:.1?} ({})",
+                    word(l)
+                )),
         ),
     );
     assert!(said.is_some(), "x says it has no relay");
     assert_eq!(seen_by_y, Some(true), "y reads it in x's row");
     let (_, l) = hopped.expect("x reaches y through b");
     assert_eq!(l.via.as_deref(), Some(b.id.as_str()), "the middle is b");
-    assert!(late.iter().all(|ms| *ms <= 5_000), "no dial waits out the relays: {late:?}");
+    assert!(
+        late.iter().all(|ms| *ms <= 5_000),
+        "no dial waits out the relays: {late:?}"
+    );
 }

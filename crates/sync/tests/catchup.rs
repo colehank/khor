@@ -17,7 +17,11 @@ fn rss_mb() -> u64 {
         .args(["-o", "rss=", "-p", &std::process::id().to_string()])
         .output()
         .unwrap();
-    String::from_utf8_lossy(&out.stdout).trim().parse::<u64>().unwrap_or(0) / 1024
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse::<u64>()
+        .unwrap_or(0)
+        / 1024
 }
 
 fn id(i: usize) -> String {
@@ -27,11 +31,24 @@ fn id(i: usize) -> String {
 /// One machine's write: its row's addresses (ports churn) and a road to
 /// each other machine.
 fn write(doc: &DeviceDoc, me: usize, round: usize) {
-    let addrs: Vec<String> = (0..8).map(|k| format!("219.142.45.{}:{}", 200 + me, 40000 + (round * 7 + k) % 20000)).collect();
-    doc.upsert(&id(me), &format!("machine-{me}"), &addrs).unwrap();
+    let addrs: Vec<String> = (0..8)
+        .map(|k| {
+            format!(
+                "219.142.45.{}:{}",
+                200 + me,
+                40000 + (round * 7 + k) % 20000
+            )
+        })
+        .collect();
+    doc.upsert(&id(me), &format!("machine-{me}"), &addrs)
+        .unwrap();
     for to in 0..5 {
         if to != me {
-            let json = format!(r#"{{"road":"direct","ms":{},"at":{}}}"#, (round + to) % 50, 1_791_500_000_000u64 + round as u64 * 60_000);
+            let json = format!(
+                r#"{{"road":"direct","ms":{},"at":{}}}"#,
+                (round + to) % 50,
+                1_791_500_000_000u64 + round as u64 * 60_000
+            );
             doc.set_road(&id(me), &id(to), &json).unwrap();
         }
     }
@@ -53,8 +70,13 @@ fn sync(a: &DeviceDoc, b: &DeviceDoc) {
 #[test]
 #[ignore = "a measurement; run by hand"]
 fn a_large_devices_catch_up_is_cheap_enough() {
-    let rounds: usize = std::env::var("CATCHUP_ROUNDS").ok().and_then(|r| r.parse().ok()).unwrap_or(1500);
-    let docs: Vec<DeviceDoc> = (0..5).map(|i| DeviceDoc::new(100 + i as u64).unwrap()).collect();
+    let rounds: usize = std::env::var("CATCHUP_ROUNDS")
+        .ok()
+        .and_then(|r| r.parse().ok())
+        .unwrap_or(1500);
+    let docs: Vec<DeviceDoc> = (0..5)
+        .map(|i| DeviceDoc::new(100 + i as u64).unwrap())
+        .collect();
     let phone = 4;
     let cut = rounds / 10;
     let began = Instant::now();
@@ -71,7 +93,11 @@ fn a_large_devices_catch_up_is_cheap_enough() {
             sync(&docs[me], &docs[next]);
         }
     }
-    eprintln!("[catchup] built {rounds} rounds in {:?}, rss {} MB", began.elapsed(), rss_mb());
+    eprintln!(
+        "[catchup] built {rounds} rounds in {:?}, rss {} MB",
+        began.elapsed(),
+        rss_mb()
+    );
 
     let (mac, ph) = (&docs[0], &docs[phone]);
     let to_phone = delta(mac, ph);
@@ -84,14 +110,27 @@ fn a_large_devices_catch_up_is_cheap_enough() {
     );
     let t = Instant::now();
     ph.merge(&to_phone).unwrap();
-    eprintln!("[catchup] phone merges: {:?}, rss {} MB", t.elapsed(), rss_mb());
+    eprintln!(
+        "[catchup] phone merges: {:?}, rss {} MB",
+        t.elapsed(),
+        rss_mb()
+    );
     let t = Instant::now();
     mac.merge(&to_mac).unwrap();
-    eprintln!("[catchup] mac merges: {:?}, rss {} MB", t.elapsed(), rss_mb());
+    eprintln!(
+        "[catchup] mac merges: {:?}, rss {} MB",
+        t.elapsed(),
+        rss_mb()
+    );
     let t = Instant::now();
     let rows = ph.all().len();
     eprintln!("[catchup] phone reads all rows ({rows}): {:?}", t.elapsed());
     let t = Instant::now();
     let snap = ph.snapshot().unwrap();
-    eprintln!("[catchup] phone snapshot {} KiB: {:?}, rss {} MB", snap.len() / 1024, t.elapsed(), rss_mb());
+    eprintln!(
+        "[catchup] phone snapshot {} KiB: {:?}, rss {} MB",
+        snap.len() / 1024,
+        t.elapsed(),
+        rss_mb()
+    );
 }

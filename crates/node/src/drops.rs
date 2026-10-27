@@ -56,7 +56,7 @@ impl DropState {
     }
 }
 
-pub use crate::road::{cancelled, job, stop, Job};
+pub use crate::road::{Job, cancelled, job, stop};
 
 /// Where a dropped file lands in `dir`, and the part file it grows in.
 ///
@@ -80,7 +80,11 @@ pub fn landing(dir: &Path, name: &str) -> Result<crate::files::Landing, String> 
             continue;
         }
         let part = dir.join(format!(".khor-pull-{candidate}"));
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&part) {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&part)
+        {
             Ok(_) => return Ok(crate::files::Landing { part, dest }),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e.to_string()),
@@ -116,7 +120,12 @@ pub fn named_dir(dir: &str) -> Result<PathBuf, String> {
 /// does not leave behind. A file already in `dir` stays as it is and is
 /// the answer.
 pub fn copy_into(src: &Path, dir: &Path, job: &Job) -> Result<PathBuf, String> {
-    let same = |a: &Path, b: &Path| a.canonicalize().ok().zip(b.canonicalize().ok()).is_some_and(|(a, b)| a == b);
+    let same = |a: &Path, b: &Path| {
+        a.canonicalize()
+            .ok()
+            .zip(b.canonicalize().ok())
+            .is_some_and(|(a, b)| a == b)
+    };
     if src.parent().is_some_and(|p| same(p, dir)) {
         return Ok(src.to_path_buf());
     }
@@ -134,7 +143,13 @@ pub fn copy_into(src: &Path, dir: &Path, job: &Job) -> Result<PathBuf, String> {
     // it ran is honoured before the rename, so nothing lands.
     let copied = std::fs::copy(src, &at.part)
         .map_err(|e| e.to_string())
-        .and_then(|_| if job.is_stopped() { Err(cancelled()) } else { Ok(()) })
+        .and_then(|_| {
+            if job.is_stopped() {
+                Err(cancelled())
+            } else {
+                Ok(())
+            }
+        })
         .and_then(|()| std::fs::rename(&at.part, &at.dest).map_err(|e| e.to_string()));
     if let Err(why) = copied {
         let _ = std::fs::remove_file(&at.part);
@@ -155,17 +170,18 @@ pub fn dir_for(root: &Path) -> PathBuf {
 mod tests {
     #[test]
     fn a_directory_drop_preserves_nested_files_empty_directories_and_taken_names() {
-        let root=crate::testdir::TempTree::fresh("drop-tree");
-        let source=root.join("data"); let dest=root.join("receive");
+        let root = crate::testdir::TempTree::fresh("drop-tree");
+        let source = root.join("data");
+        let dest = root.join("receive");
         std::fs::create_dir_all(source.join("nested/empty")).unwrap();
-        std::fs::write(source.join("nested/a.txt"),b"abc").unwrap();
+        std::fs::write(source.join("nested/a.txt"), b"abc").unwrap();
         std::fs::create_dir_all(dest.join("data")).unwrap();
-        std::fs::write(dest.join("data/original"),b"keep").unwrap();
-        let landed=super::copy_into(&source,&dest,&super::Job::default()).unwrap();
-        assert_eq!(landed,dest.join("data-2"));
+        std::fs::write(dest.join("data/original"), b"keep").unwrap();
+        let landed = super::copy_into(&source, &dest, &super::Job::default()).unwrap();
+        assert_eq!(landed, dest.join("data-2"));
         assert!(landed.join("nested/empty").is_dir());
-        assert_eq!(std::fs::read(landed.join("nested/a.txt")).unwrap(),b"abc");
-        assert_eq!(std::fs::read(dest.join("data/original")).unwrap(),b"keep");
+        assert_eq!(std::fs::read(landed.join("nested/a.txt")).unwrap(), b"abc");
+        assert_eq!(std::fs::read(dest.join("data/original")).unwrap(), b"keep");
     }
     use super::*;
 
@@ -182,14 +198,20 @@ mod tests {
         let plain = landing(&dir, "Makefile").unwrap();
         assert_eq!(plain.dest, dir.join("Makefile"));
         std::fs::write(dir.join("Makefile"), b"x").unwrap();
-        assert_eq!(landing(&dir, "Makefile").unwrap().dest, dir.join("Makefile-2"));
+        assert_eq!(
+            landing(&dir, "Makefile").unwrap().dest,
+            dir.join("Makefile-2")
+        );
     }
 
     #[test]
     fn the_drop_directory_is_the_homes_only_for_the_homes_own_store() {
         let home = std::env::home_dir().unwrap();
         assert_eq!(dir_for(&home), home.join("khor-drop"));
-        assert_eq!(dir_for(&home.join(".khor-hosts").join("box")), home.join("khor-drop"));
+        assert_eq!(
+            dir_for(&home.join(".khor-hosts").join("box")),
+            home.join("khor-drop")
+        );
         let scratch = std::env::temp_dir().join("khor-scratch-home");
         assert_eq!(dir_for(&scratch), scratch.join("khor-drop"));
     }
@@ -203,7 +225,15 @@ mod tests {
         a.moved.store(7, Ordering::Relaxed);
         assert_eq!(b.state().unwrap().moved, 7);
         b.finish(Ok("/x".into()));
-        assert_eq!(a.state().unwrap(), DropState { moved: 7, total: 0, dest: "/x".into(), done: true });
+        assert_eq!(
+            a.state().unwrap(),
+            DropState {
+                moved: 7,
+                total: 0,
+                dest: "/x".into(),
+                done: true
+            }
+        );
     }
 
     /// **A cancel reaches the job its token names, and only that one**
@@ -218,7 +248,10 @@ mod tests {
         assert!(!other.is_stopped(), "another drop goes on");
         stop("drops-test-token-stop-early");
         let (early, fresh) = job("drops-test-token-stop-early");
-        assert!(!fresh, "the ask after the cancel finds it and starts nothing");
+        assert!(
+            !fresh,
+            "the ask after the cancel finds it and starts nothing"
+        );
         assert_eq!(early.state(), Err(cancelled()));
     }
 
@@ -234,6 +267,10 @@ mod tests {
         let j = Job::default();
         j.stopped.store(true, Ordering::Relaxed);
         assert_eq!(copy_into(&src, &into, &j), Err(cancelled()));
-        assert_eq!(std::fs::read_dir(&into).unwrap().count(), 0, "no file and no part file");
+        assert_eq!(
+            std::fs::read_dir(&into).unwrap().count(),
+            0,
+            "no file and no part file"
+        );
     }
 }

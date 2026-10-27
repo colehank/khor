@@ -45,7 +45,12 @@ async fn wait_for_endpoint_file(root: &Path) {
 }
 
 async fn hop(n: &Node, id: &str) -> Option<Hop> {
-    n.links().await.ok()?.into_iter().find(|(i, _)| i == id).map(|(_, l)| l.hop)
+    n.links()
+        .await
+        .ok()?
+        .into_iter()
+        .find(|(i, _)| i == id)
+        .map(|(_, l)| l.hop)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -72,10 +77,17 @@ async fn a_machine_its_relay_saw_leave_is_said_gone_at_once() {
     let dir = ra.0.display().to_string();
     let began = Instant::now();
     while b.ls_of("alpha", &dir).await.is_err() {
-        assert!(began.elapsed() < Duration::from_secs(60), "beta reaches alpha");
+        assert!(
+            began.elapsed() < Duration::from_secs(60),
+            "beta reaches alpha"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    assert_eq!(hop(&b, &alpha_id).await, Some(Hop::Relay), "through the relay");
+    assert_eq!(
+        hop(&b, &alpha_id).await,
+        Some(Hop::Relay),
+        "through the relay"
+    );
     // **And which relay** (round NET-8 addendum, UX-16's map): the
     // tests' own, by host and port.
     let named = b
@@ -85,8 +97,15 @@ async fn a_machine_its_relay_saw_leave_is_said_gone_at_once() {
         .into_iter()
         .find(|(id, _)| *id == alpha_id)
         .and_then(|(_, l)| l.relay);
-    let want = util::loop_relay().trim_start_matches("http://").trim_end_matches('/').to_owned();
-    assert_eq!(named, Some(want), "the link names the relay it goes through");
+    let want = util::loop_relay()
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .to_owned();
+    assert_eq!(
+        named,
+        Some(want),
+        "the link names the relay it goes through"
+    );
 
     // Alpha's ears close: the relay sees it leave and says so.
     assert!(link::deafen(&ra.0).await, "alpha's resident deafens");
@@ -103,7 +122,10 @@ async fn a_machine_its_relay_saw_leave_is_said_gone_at_once() {
     let asked = Instant::now();
     assert!(b.ls_of("alpha", &dir).await.is_err(), "alpha is not there");
     let ask_took = asked.elapsed();
-    assert!(ask_took < Duration::from_secs(6), "the ask took {ask_took:?}");
+    assert!(
+        ask_took < Duration::from_secs(6),
+        "the ask took {ask_took:?}"
+    );
 
     // **And the pump leaves it alone** (round NET-6): it will dial when
     // it is back. Beta's face is on, so its pump beats every 5 s; before,
@@ -115,20 +137,35 @@ async fn a_machine_its_relay_saw_leave_is_said_gone_at_once() {
     let before_face = b.wire_counts().await.unwrap().dial_failed;
     b.face_is_here(true).await.unwrap();
     let faced = Instant::now();
-    while b.wire_counts().await.unwrap().dial_failed == before_face && faced.elapsed() < Duration::from_secs(8) {
+    while b.wire_counts().await.unwrap().dial_failed == before_face
+        && faced.elapsed() < Duration::from_secs(8)
+    {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let failed = b.wire_counts().await.unwrap().dial_failed;
-    assert!(failed - before_face <= 1, "the face's round dialled alpha once at most");
+    assert!(
+        failed - before_face <= 1,
+        "the face's round dialled alpha once at most"
+    );
     tokio::time::sleep(link::SYNC_EVERY * 3 + Duration::from_secs(1)).await;
     let pump_failed = b.wire_counts().await.unwrap().dial_failed - failed;
-    assert_eq!(pump_failed, 0, "beta's pump dialled the machine its relay said left");
+    assert_eq!(
+        pump_failed, 0,
+        "beta's pump dialled the machine its relay said left"
+    );
 
     // The control: alpha's ears back, and it answers again.
-    link::resume(&ra.0).expect("resumable").synced().await.unwrap();
+    link::resume(&ra.0)
+        .expect("resumable")
+        .synced()
+        .await
+        .unwrap();
     let back = Instant::now();
     while b.ls_of("alpha", &dir).await.is_err() {
-        assert!(back.elapsed() < Duration::from_secs(30), "beta reaches alpha again");
+        assert!(
+            back.elapsed() < Duration::from_secs(30),
+            "beta reaches alpha again"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     eprintln!(

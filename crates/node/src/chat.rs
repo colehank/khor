@@ -96,10 +96,21 @@ impl ChatKind {
     /// both (`row_and_log`). Handed a document it would re-derive the
     /// message list a second time, which is the cheap half of the same
     /// mistake `row` used to make with the expensive one.
-    pub(crate) fn row_from(&self, channel: &str, home: DeviceId, msgs: &[Message], watermark: i64, snapshots: Option<&khor_sync::seen::SeenDoc>) -> Session {
+    pub(crate) fn row_from(
+        &self,
+        channel: &str,
+        home: DeviceId,
+        msgs: &[Message],
+        watermark: i64,
+        snapshots: Option<&khor_sync::seen::SeenDoc>,
+    ) -> Session {
         let unread = msgs
             .iter()
-            .filter(|m| m.at > watermark && !snapshots.is_some_and(|s| s.message_seen(channel, &m.id, m.at)) && !self.i_offered(m))
+            .filter(|m| {
+                m.at > watermark
+                    && !snapshots.is_some_and(|s| s.message_seen(channel, &m.id, m.at))
+                    && !self.i_offered(m)
+            })
             .count() as u64;
         let at = msgs.last().map(|m| m.at.max(0) as u64).unwrap_or(0);
         Session {
@@ -246,13 +257,22 @@ impl ChatKind {
         store.flush(&loaded.doc).map(|_| ())
     }
 
-    pub fn command(&self, channel: &str, record: &khor_sync::chat::CommandRecord) -> Result<String, String> {
+    pub fn command(
+        &self,
+        channel: &str,
+        record: &khor_sync::chat::CommandRecord,
+    ) -> Result<String, String> {
         // Receipt ids are stable, unlike appended messages. Serialize the
         // local find-or-insert across GUI, serve, and retried requests.
         let dir = self.dir(channel)?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let lock = std::fs::OpenOptions::new().create(true).truncate(false).read(true).write(true)
-            .open(dir.join(".command-lock")).map_err(|e| e.to_string())?;
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(dir.join(".command-lock"))
+            .map_err(|e| e.to_string())?;
         lock.lock().map_err(|e| e.to_string())?;
         let loaded = self.load(channel)?;
         let id = loaded.doc.command(&self.me, record)?;

@@ -104,8 +104,26 @@ pub fn list(root: &Path, kind: &str) -> TabsOpen {
 /// be empty — that is the fresh tab the 「+」 mints.
 /// `after`, where given, is the tab it opens beside (a page's new
 /// window, UX-42 §15).
-pub fn open(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str, view: Option<&str>, request: Option<&str>) -> Result<String, String> {
-    tabs::open_requested(root, kind, device, url, session, after, view, request.unwrap_or(""))
+pub fn open(
+    root: &Path,
+    kind: &str,
+    device: &str,
+    url: &str,
+    session: &str,
+    after: &str,
+    view: Option<&str>,
+    request: Option<&str>,
+) -> Result<String, String> {
+    tabs::open_requested(
+        root,
+        kind,
+        device,
+        url,
+        session,
+        after,
+        view,
+        request.unwrap_or(""),
+    )
 }
 
 /// Points an open tab somewhere and names it. Refused by name for a tab

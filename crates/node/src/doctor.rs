@@ -216,7 +216,11 @@ pub fn name(key: &str) -> &str {
 /// (`check_vscode`'s reason). Dropped rows, not green ones: a row that
 /// said 「正常」 about a CLI that does not exist would be a lie.
 pub fn applies(key: &str, hosts: bool) -> bool {
-    hosts || !matches!(key, "version" | "web" | "hooks" | "agents" | "vscode" | "launcher")
+    hosts
+        || !matches!(
+            key,
+            "version" | "web" | "hooks" | "agents" | "vscode" | "launcher"
+        )
 }
 
 /// The whole checklist.
@@ -259,7 +263,11 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed_if(run("store"), "store", check_store(root.clone())),
         timed_if(run("serve"), "serve", check_serve(node)),
         timed_if(run("web"), "web", check_web(root.clone())),
-        timed_if(run("relays"), "relays", check_relays(node.relays().to_vec())),
+        timed_if(
+            run("relays"),
+            "relays",
+            check_relays(node.relays().to_vec())
+        ),
         timed_if(run("peers"), "peers", check_peers(node)),
         timed_if(run("roster"), "roster", check_roster(node)),
         timed_if(run("roads"), "roads", check_roads(node)),
@@ -293,7 +301,11 @@ async fn timed_if(
     key: &str,
     work: impl Future<Output = (Health, String, Option<String>)>,
 ) -> Option<Check> {
-    if run { Some(timed(key, work).await) } else { None }
+    if run {
+        Some(timed(key, work).await)
+    } else {
+        None
+    }
 }
 
 /// One check, under the budget. A check that overruns answers 未量 with
@@ -340,7 +352,10 @@ pub fn note_face(root: &Path, line: &str) -> std::io::Result<()> {
     let path = face_notes_path(root);
     let stamp = jiff::Zoned::now().strftime("%m-%d %H:%M:%S").to_string();
     let line: String = line.chars().filter(|c| *c != '\n').take(400).collect();
-    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
     writeln!(f, "{stamp} {line}")?;
     if f.metadata()?.len() as usize > FACE_NOTES_CAP {
         let text = std::fs::read_to_string(&path).unwrap_or_default();
@@ -358,7 +373,10 @@ const TERMINAL_SWIPES: usize = 3;
 
 /// Which terminal a face note is about: `term <id>: …`.
 fn terminal_of(line: &str) -> Option<&str> {
-    line.split_once(" term ")?.1.split_once(": ").map(|(id, _)| id)
+    line.split_once(" term ")?
+        .1
+        .split_once(": ")
+        .map(|(id, _)| id)
 }
 
 /// The newest terminals entered, as the face noted them: for each, its
@@ -378,16 +396,29 @@ async fn check_terminal(root: PathBuf) -> (Health, String, Option<String>) {
         if !line.contains(" attach ") {
             continue;
         }
-        let Some(id) = terminal_of(line) else { continue };
+        let Some(id) = terminal_of(line) else {
+            continue;
+        };
         if seen.contains(&id) {
             continue;
         }
         seen.push(id);
         let mine = |l: &&&str| terminal_of(l) == Some(id);
-        let after = |word: &str| lines[at + 1..].iter().find(|l| l.contains(word) && mine(l)).copied();
+        let after = |word: &str| {
+            lines[at + 1..]
+                .iter()
+                .find(|l| l.contains(word) && mine(l))
+                .copied()
+        };
         // The fit is noted 1.5 s after the pane is made: usually after the
         // attach, before it when the open was slow.
-        let fit = after(": fit at ").or_else(|| lines[..at].iter().rev().find(|l| l.contains(": fit at ") && mine(l)).copied());
+        let fit = after(": fit at ").or_else(|| {
+            lines[..at]
+                .iter()
+                .rev()
+                .find(|l| l.contains(": fit at ") && mine(l))
+                .copied()
+        });
         let touch = after(" first touch ");
         // A touch before the attach had landed (item 51) is noted at its
         // lift, which can come before the attach's own line: looked for
@@ -406,7 +437,15 @@ async fn check_terminal(root: PathBuf) -> (Health, String, Option<String>) {
             .copied()
             .collect();
         swipes.reverse();
-        said.push(std::iter::once(*line).chain(fit).chain(early).chain(touch).chain(swipes).collect::<Vec<_>>().join(" · "));
+        said.push(
+            std::iter::once(*line)
+                .chain(fit)
+                .chain(early)
+                .chain(touch)
+                .chain(swipes)
+                .collect::<Vec<_>>()
+                .join(" · "),
+        );
         if said.len() == TERMINAL_ENTRIES {
             break;
         }
@@ -542,7 +581,9 @@ async fn check_serve(node: &Node) -> (Health, String, Option<String>) {
     // not a refusal — a machine that has paired with nobody has no rows
     // to answer with.
     let answered = match node.links().await {
-        Ok(links) => links.is_empty() || links.iter().any(|(_, l)| l.hop != khor_core::Hop::NoServe),
+        Ok(links) => {
+            links.is_empty() || links.iter().any(|(_, l)| l.hop != khor_core::Hop::NoServe)
+        }
         Err(_) => false,
     };
     if answered {
@@ -768,7 +809,9 @@ async fn check_peers(node: &Node) -> (Health, String, Option<String>) {
             Some(roads) => khor_catalog::hop::word(
                 match roads.iter().find(|(id, _)| id == &d.id).map(|(_, l)| l) {
                     // No live wire is 不通 only when the last attempt failed.
-                    Some(l) if l.hop == khor_core::Hop::Idle && l.down_ms.is_some() => khor_core::Link::DOWN_KEY,
+                    Some(l) if l.hop == khor_core::Hop::Idle && l.down_ms.is_some() => {
+                        khor_core::Link::DOWN_KEY
+                    }
                     Some(l) => l.hop.key(),
                     None => khor_core::Hop::Idle.key(),
                 },
@@ -1173,48 +1216,111 @@ mod face_note_tests {
         };
         assert_eq!(row().1, cli::doctor_terminal_none());
         note_face(&root, "term a: attach 10B; alternate; mouse drag").unwrap();
-        note_face(&root, "term a: first touch drag after 900 ms: wheel to the program, 6 wheels, 0 reports").unwrap();
+        note_face(
+            &root,
+            "term a: first touch drag after 900 ms: wheel to the program, 6 wheels, 0 reports",
+        )
+        .unwrap();
         note_face(&root, "term b: attach 20B; normal; mouse none").unwrap();
         let (state, said, fix) = row();
         assert_eq!((state, fix), (Health::Ok, None));
-        assert!(said.starts_with(&cli::doctor_terminal_last("")) && said.contains("term b: attach"), "{said}");
-        assert!(said.lines().nth(1).is_some_and(|l| l.contains("term a: attach 10B") && l.contains("6 wheels")), "{said}");
+        assert!(
+            said.starts_with(&cli::doctor_terminal_last("")) && said.contains("term b: attach"),
+            "{said}"
+        );
+        assert!(
+            said.lines()
+                .nth(1)
+                .is_some_and(|l| l.contains("term a: attach 10B") && l.contains("6 wheels")),
+            "{said}"
+        );
         note_face(&root, "term b: first touch tap after 300 ms: keyboard up").unwrap();
         assert!(row().1.contains("term b: first touch tap"), "{}", row().1);
         // Per terminal (item 45): b's attach and touch on one line, a's on
         // the next; a touch after another terminal's attach is still its own.
         note_face(&root, "term a: attach 30B; normal; mouse none").unwrap();
-        note_face(&root, "term b: first touch drag after 2000 ms: native, moved 100 px").unwrap();
-        note_face(&root, "term a: fit at 9 ms (44x48), range > 0 at never ms, last range 0").unwrap();
+        note_face(
+            &root,
+            "term b: first touch drag after 2000 ms: native, moved 100 px",
+        )
+        .unwrap();
+        note_face(
+            &root,
+            "term a: fit at 9 ms (44x48), range > 0 at never ms, last range 0",
+        )
+        .unwrap();
         note_face(&root, "term a: first touch tap after 500 ms: keyboard up").unwrap();
         let said = row().1;
         let rows: Vec<&str> = said.lines().collect();
         assert_eq!(rows.len(), 2, "{said}");
-        assert!(rows[0].contains("term a: attach 30B") && rows[0].contains("term a: fit at 9 ms") && rows[0].contains("term a: first touch tap after 500"), "{said}");
-        assert!(rows[1].contains("term b: attach 20B") && rows[1].contains("term b: first touch tap after 300"), "{said}");
-        assert!(!said.contains("term a: attach 10B") && !said.contains("drag after 2000"), "{said}");
+        assert!(
+            rows[0].contains("term a: attach 30B")
+                && rows[0].contains("term a: fit at 9 ms")
+                && rows[0].contains("term a: first touch tap after 500"),
+            "{said}"
+        );
+        assert!(
+            rows[1].contains("term b: attach 20B")
+                && rows[1].contains("term b: first touch tap after 300"),
+            "{said}"
+        );
+        assert!(
+            !said.contains("term a: attach 10B") && !said.contains("drag after 2000"),
+            "{said}"
+        );
         // A touch before the attach, noted before it (item 51), is its
         // terminal's too; one before an earlier attach is not.
-        note_face(&root, "term d: first touch before the attach, 90 ms into the pane: drag").unwrap();
+        note_face(
+            &root,
+            "term d: first touch before the attach, 90 ms into the pane: drag",
+        )
+        .unwrap();
         note_face(&root, "term d: attach 1B").unwrap();
-        note_face(&root, "term e: first touch before the attach, 10 ms into the pane: tap").unwrap();
+        note_face(
+            &root,
+            "term e: first touch before the attach, 10 ms into the pane: tap",
+        )
+        .unwrap();
         note_face(&root, "term e: attach 1B").unwrap();
         note_face(&root, "term e: attach 2B").unwrap();
         let said = row().1;
-        assert!(said.lines().any(|l| l.contains("term d: attach 1B") && l.contains("term d: first touch before the attach, 90 ms")), "{said}");
+        assert!(
+            said.lines().any(|l| l.contains("term d: attach 1B")
+                && l.contains("term d: first touch before the attach, 90 ms")),
+            "{said}"
+        );
         // A terminal's newest swipes, oldest of them first (item 61); not
         // another terminal's, not one before its attach.
         note_face(&root, "term e: swipe down 30 px, before").unwrap();
         note_face(&root, "term e: attach 3B").unwrap();
         for i in 0..5 {
-            note_face(&root, &format!("term e: swipe down {i}0 px; nothing: down {i}0 of 48")).unwrap();
+            note_face(
+                &root,
+                &format!("term e: swipe down {i}0 px; nothing: down {i}0 of 48"),
+            )
+            .unwrap();
         }
         note_face(&root, "term d: swipe up 40 px; told unfold").unwrap();
         let said = row().1;
-        let e = said.lines().find(|l| l.contains("term e: attach 3B")).unwrap_or_default();
-        assert!(e.contains("swipe down 20 px") && e.contains("swipe down 40 px") && e.find("down 20 px") < e.find("down 40 px"), "{said}");
-        assert!(!e.contains("swipe down 10 px") && !e.contains("before") && !e.contains("told unfold"), "{said}");
-        assert!(said.lines().any(|l| l.contains("term d: attach 1B") && l.contains("term d: swipe up 40 px")), "{said}");
+        let e = said
+            .lines()
+            .find(|l| l.contains("term e: attach 3B"))
+            .unwrap_or_default();
+        assert!(
+            e.contains("swipe down 20 px")
+                && e.contains("swipe down 40 px")
+                && e.find("down 20 px") < e.find("down 40 px"),
+            "{said}"
+        );
+        assert!(
+            !e.contains("swipe down 10 px") && !e.contains("before") && !e.contains("told unfold"),
+            "{said}"
+        );
+        assert!(
+            said.lines()
+                .any(|l| l.contains("term d: attach 1B") && l.contains("term d: swipe up 40 px")),
+            "{said}"
+        );
         assert!(!said.contains("term e: first touch before"), "{said}");
         for i in 0..8 {
             note_face(&root, &format!("term t{i}: attach 1B")).unwrap();
@@ -1227,7 +1333,10 @@ mod face_note_tests {
         let text = std::fs::read_to_string(face_notes_path(&root)).unwrap();
         assert!(text.len() <= FACE_NOTES_CAP, "{}", text.len());
         assert!(text.lines().last().unwrap().contains("attach 4999;"));
-        assert!(text.lines().next().unwrap().contains("term c: attach"), "cut at a line's start");
+        assert!(
+            text.lines().next().unwrap().contains("term c: attach"),
+            "cut at a line's start"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

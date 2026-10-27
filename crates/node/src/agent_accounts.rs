@@ -554,150 +554,153 @@ impl Node {
         let operation = operation.to_owned();
         let work = job.clone();
         let owner_root = root.clone();
-        let owner = std::thread::Builder::new().name("agent-setup".into()).spawn(move || {
-            let result = (|| -> Result<(), String> {
-                setup.input.send(bytes)?;
-                for line in BufReader::new(stdout).lines() {
-                    let line = line.map_err(|e| e.to_string())?;
-                    if line.len() > 2 * 1024 * 1024 {
-                        return Err(msg::agent_arguments().into());
-                    }
-                    let event: Value = serde_json::from_str(&line)
-                        .map_err(|_| msg::agent_arguments().to_owned())?;
-                    let mut state = work.state.lock().map_err(|e| e.to_string())?;
-                    if state["status"] == "cancelled" {
-                        return Ok(());
-                    }
-                    match event["type"].as_str() {
-                        Some("auth_prompt") => {
-                            state["status"] = json!("waiting");
-                            state["ask"] = event["ask"].clone();
-                            state["prompt"] = event["prompt"].clone();
+        let owner = std::thread::Builder::new()
+            .name("agent-setup".into())
+            .spawn(move || {
+                let result = (|| -> Result<(), String> {
+                    setup.input.send(bytes)?;
+                    for line in BufReader::new(stdout).lines() {
+                        let line = line.map_err(|e| e.to_string())?;
+                        if line.len() > 2 * 1024 * 1024 {
+                            return Err(msg::agent_arguments().into());
                         }
-                        Some("auth_event") => {
-                            let mut events =
-                                state["events"].as_array().cloned().unwrap_or_default();
-                            events.push(event["event"].clone());
-                            if events.len() > 4 {
-                                events.remove(0);
+                        let event: Value = serde_json::from_str(&line)
+                            .map_err(|_| msg::agent_arguments().to_owned())?;
+                        let mut state = work.state.lock().map_err(|e| e.to_string())?;
+                        if state["status"] == "cancelled" {
+                            return Ok(());
+                        }
+                        match event["type"].as_str() {
+                            Some("auth_prompt") => {
+                                state["status"] = json!("waiting");
+                                state["ask"] = event["ask"].clone();
+                                state["prompt"] = event["prompt"].clone();
                             }
-                            state["events"] = events.into();
-                        }
-                        Some("result") => {
-                            if operation == "session_set_option" {
-                                let _configuration=super::configuration_lock(&root)?;
-                                let node = Node::open(root.clone())?;
-                                if node.khor_agent_config()? != session_config {
-                                    return Err(msg::agent_arguments().into());
+                            Some("auth_event") => {
+                                let mut events =
+                                    state["events"].as_array().cloned().unwrap_or_default();
+                                events.push(event["event"].clone());
+                                if events.len() > 4 {
+                                    events.remove(0);
                                 }
-                                let mut config = session_config
-                                    .clone()
-                                    .ok_or_else(|| msg::agent_not_configured().to_owned())?;
-                                config.model = event["value"]["model"]
+                                state["events"] = events.into();
+                            }
+                            Some("result") => {
+                                if operation == "session_set_option" {
+                                    let _configuration = super::configuration_lock(&root)?;
+                                    let node = Node::open(root.clone())?;
+                                    if node.khor_agent_config()? != session_config {
+                                        return Err(msg::agent_arguments().into());
+                                    }
+                                    let mut config = session_config
+                                        .clone()
+                                        .ok_or_else(|| msg::agent_not_configured().to_owned())?;
+                                    config.model = event["value"]["model"]
+                                        .as_str()
+                                        .filter(|m| !m.is_empty() && clean_model(m))
+                                        .ok_or_else(|| msg::agent_arguments().to_owned())?
+                                        .to_owned();
+                                    config.options =
+                                        serde_json::from_value(event["value"]["options"].clone())
+                                            .map_err(|_| msg::agent_arguments().to_owned())?;
+                                    if config.options.len() > 32
+                                        || config.options.iter().any(|(id, value)| {
+                                            id.len() > 256
+                                                || !(value.is_string() || value.is_boolean())
+                                                || value.to_string().len() > 512
+                                        })
+                                    {
+                                        return Err(msg::agent_arguments().into());
+                                    }
+                                    node.chat.set_agent_config(&config)?;
+                                    let _ = node.emit_row_of(&crate::SessionId(
+                                        crate::wide::BROADCAST.into(),
+                                    ));
+                                }
+                                if operation == "login" {
+                                    let node = Node::open(root.clone())?;
+                                    let mut account = node
+                                        .accounts()?
+                                        .into_iter()
+                                        .find(|a| a.id == account.id)
+                                        .unwrap_or(account.clone());
+                                    let stored: Value = serde_json::from_slice(
+                                        &fs::read(credential_path(&root, &account.id))
+                                            .map_err(|e| e.to_string())?,
+                                    )
+                                    .map_err(|_| msg::agent_key_missing().to_owned())?;
+                                    if stored[&metadata.provider]["type"].as_str()
+                                        != event["value"]["credentialType"].as_str()
+                                    {
+                                        return Err(msg::agent_key_missing().into());
+                                    }
+                                    let mut inference = metadata.clone();
+                                    // Another device may have changed the default
+                                    // while this provider's login was pending.
+                                    if let Some(latest) = &account.inference {
+                                        inference.default_model = latest.default_model.clone();
+                                    }
+                                    inference.auth_type = event["value"]["credentialType"]
+                                        .as_str()
+                                        .unwrap_or(&inference.auth_type)
+                                        .into();
+                                    account.name = name.clone();
+                                    account.inference = Some(inference);
+                                    node.commit_account(account.clone())?;
+                                    state["account"] = json!(account.id);
+                                    state["accountInfo"] = account_info(&node, &account);
+                                }
+                                state["status"] = json!("done");
+                                state["result"] = event["value"].clone();
+                                state.as_object_mut().unwrap().remove("prompt");
+                            }
+                            Some("failed") => {
+                                return Err(event["error"]
                                     .as_str()
-                                    .filter(|m| !m.is_empty() && clean_model(m))
-                                    .ok_or_else(|| msg::agent_arguments().to_owned())?
-                                    .to_owned();
-                                config.options =
-                                    serde_json::from_value(event["value"]["options"].clone())
-                                        .map_err(|_| msg::agent_arguments().to_owned())?;
-                                if config.options.len() > 32
-                                    || config.options.iter().any(|(id, value)| {
-                                        id.len() > 256
-                                            || !(value.is_string() || value.is_boolean())
-                                            || value.to_string().len() > 512
-                                    })
-                                {
-                                    return Err(msg::agent_arguments().into());
-                                }
-                                node.chat.set_agent_config(&config)?;
-                                let _ = node
-                                    .emit_row_of(&crate::SessionId(crate::wide::BROADCAST.into()));
+                                    .unwrap_or(msg::agent_arguments())
+                                    .into());
                             }
-                            if operation == "login" {
-                                let node = Node::open(root.clone())?;
-                                let mut account = node
-                                    .accounts()?
-                                    .into_iter()
-                                    .find(|a| a.id == account.id)
-                                    .unwrap_or(account.clone());
-                                let stored: Value = serde_json::from_slice(
-                                    &fs::read(credential_path(&root, &account.id))
-                                        .map_err(|e| e.to_string())?,
-                                )
-                                .map_err(|_| msg::agent_key_missing().to_owned())?;
-                                if stored[&metadata.provider]["type"].as_str()
-                                    != event["value"]["credentialType"].as_str()
-                                {
-                                    return Err(msg::agent_key_missing().into());
-                                }
-                                let mut inference = metadata.clone();
-                                // Another device may have changed the default
-                                // while this provider's login was pending.
-                                if let Some(latest) = &account.inference {
-                                    inference.default_model = latest.default_model.clone();
-                                }
-                                inference.auth_type = event["value"]["credentialType"]
-                                    .as_str()
-                                    .unwrap_or(&inference.auth_type)
-                                    .into();
-                                account.name = name.clone();
-                                account.inference = Some(inference);
-                                node.commit_account(account.clone())?;
-                                state["account"] = json!(account.id);
-                                state["accountInfo"] = account_info(&node, &account);
-                            }
-                            state["status"] = json!("done");
-                            state["result"] = event["value"].clone();
-                            state.as_object_mut().unwrap().remove("prompt");
+                            _ => {}
                         }
-                        Some("failed") => {
-                            return Err(event["error"]
-                                .as_str()
-                                .unwrap_or(msg::agent_arguments())
-                                .into());
-                        }
-                        _ => {}
+                    }
+                    Ok(())
+                })();
+                let reaped = setup
+                    .finish(result.is_err() || work.state.lock().unwrap()["status"] == "cancelled");
+                if reaped.is_err() {
+                    runtime::unconfirmed(&root);
+                }
+                let result = result.and_then(|()| {
+                    let status = reaped?;
+                    if (!status.success() && !work.control.is_cancelled())
+                        || work.state.lock().unwrap()["status"] != "done"
+                    {
+                        return Err(msg::agent_runtime_missing().into());
+                    }
+                    Ok(())
+                });
+                if let Err(error) = result {
+                    let mut state = work.state.lock().unwrap();
+                    if state["status"] != "cancelled" {
+                        *state = json!({"status":"failed","error":error});
                     }
                 }
-                Ok(())
-            })();
-            let reaped = setup
-                .finish(result.is_err() || work.state.lock().unwrap()["status"] == "cancelled");
-            if reaped.is_err() {
-                runtime::unconfirmed(&root);
-            }
-            let result = result.and_then(|()| {
-                let status = reaped?;
-                if (!status.success() && !work.control.is_cancelled())
-                    || work.state.lock().unwrap()["status"] != "done"
-                {
-                    return Err(msg::agent_runtime_missing().into());
+                work.input.lock().unwrap().take();
+                #[cfg(all(test, unix))]
+                super::runtime_close_tests::producer_point(&root, "setup-cleanup");
+                if is_new && work.state.lock().unwrap()["status"] != "done" {
+                    let registered = Node::open(root.clone())
+                        .and_then(|node| node.accounts())
+                        .is_ok_and(|accounts| accounts.iter().any(|a| a.id == account.id));
+                    if !registered {
+                        let _ = fs::remove_dir_all(
+                            credential_path(&root, &account.id).parent().unwrap(),
+                        );
+                    }
                 }
-                Ok(())
-            });
-            if let Err(error) = result {
-                let mut state = work.state.lock().unwrap();
-                if state["status"] != "cancelled" {
-                    *state = json!({"status":"failed","error":error});
-                }
-            }
-            work.input.lock().unwrap().take();
-            #[cfg(all(test, unix))]
-            super::runtime_close_tests::producer_point(&root, "setup-cleanup");
-            if is_new && work.state.lock().unwrap()["status"] != "done" {
-                let registered = Node::open(root.clone())
-                    .and_then(|node| node.accounts())
-                    .is_ok_and(|accounts| accounts.iter().any(|a| a.id == account.id));
-                if !registered {
-                    let _ = fs::remove_dir_all(
-                        credential_path(&root, &account.id).parent().unwrap(),
-                    );
-                }
-            }
-            work.finished.store(true, Ordering::SeqCst);
-        })
-        .map_err(|e| e.to_string())?;
+                work.finished.store(true, Ordering::SeqCst);
+            })
+            .map_err(|e| e.to_string())?;
         runtime::register_producer(&owner_root, owner);
         registration.committed = true;
         Ok(json!({"job":job_id,"status":"running"}))
@@ -870,7 +873,10 @@ mod tests {
                 .any(|a| a.name == "cancelled draft")
         );
         drop(_running);
-        assert_eq!(Node::shutdown_agent_runtime(&root).await.unwrap(), super::super::RuntimeClose::Closed);
+        assert_eq!(
+            Node::shutdown_agent_runtime(&root).await.unwrap(),
+            super::super::RuntimeClose::Closed
+        );
         drop(node);
         let _ = fs::remove_dir_all(root);
     }

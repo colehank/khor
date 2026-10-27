@@ -34,7 +34,10 @@ use khor_node::{Hop, Node};
 use scratch::*;
 
 fn env_u64(k: &str, d: u64) -> u64 {
-    std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+    std::env::var(k)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(d)
 }
 
 async fn word(n: &Node, id: &str) -> String {
@@ -85,9 +88,18 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
     // SAFETY: before any endpoint in this process binds.
     unsafe { std::env::set_var("KHOR_RELAY_ONLY", "1") };
     own_tmux();
-    let (rm, rf, rp, rr) = (scratch("diag-mac"), scratch("diag-far"), scratch("diag-phone"), scratch("diag-relay"));
+    let (rm, rf, rp, rr) = (
+        scratch("diag-mac"),
+        scratch("diag-far"),
+        scratch("diag-phone"),
+        scratch("diag-relay"),
+    );
     let (_relay, direct) = local_relay(&rr.0);
-    let to: std::net::SocketAddr = direct.trim_start_matches("http://").trim_end_matches('/').parse().unwrap();
+    let to: std::net::SocketAddr = direct
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .parse()
+        .unwrap();
     let (at, _road) = slow_road(to, impair).await;
     let url = format!("http://{at}");
     for h in [&rm.0, &rf.0, &rp.0] {
@@ -124,14 +136,20 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
     let (mac_id, far_id) = (mac.device_str().to_owned(), far.device_str().to_owned());
     // Everybody meets everybody through the Mac's table.
     let met = until(Duration::from_secs(90), || async {
-        phone.devices().map(|d| d.iter().any(|x| x.id == far_id)).unwrap_or(false)
+        phone
+            .devices()
+            .map(|d| d.iter().any(|x| x.id == far_id))
+            .unwrap_or(false)
     })
     .await;
     eprintln!("[diag] the phone learned of the far machine in {met:?}");
     let dir = rf.0.join("tree");
     std::fs::create_dir_all(&dir).unwrap();
     let dir = dir.display().to_string();
-    let first = until(Duration::from_secs(90), || async { phone.ls_of("far", &dir).await.is_ok() }).await;
+    let first = until(Duration::from_secs(90), || async {
+        phone.ls_of("far", &dir).await.is_ok()
+    })
+    .await;
     eprintln!("[diag] the phone's first listing on the far machine answered after {first:?}");
     tokio::time::sleep(Duration::from_secs(10)).await;
 
@@ -157,9 +175,14 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
         mac.wire_counts().await.unwrap(),
         far.wire_counts().await.unwrap(),
     );
-    let quiet_rounds = (p1.rounds - p0.rounds, m1.rounds - m0.rounds, f1.rounds - f0.rounds);
+    let quiet_rounds = (
+        p1.rounds - p0.rounds,
+        m1.rounds - m0.rounds,
+        f1.rounds - f0.rounds,
+    );
     let per_min = |a: &khor_core::WireCounts, b: &khor_core::WireCounts| {
-        ((b.sent_bytes - a.sent_bytes + b.received_bytes - a.received_bytes) as f64 * 60.0 / quiet as f64) as u64
+        ((b.sent_bytes - a.sent_bytes + b.received_bytes - a.received_bytes) as f64 * 60.0
+            / quiet as f64) as u64
     };
     let retired = |a: &khor_core::WireCounts, b: &khor_core::WireCounts| {
         (b.retired_silent + b.retired_unanswered + b.retired_closed + b.retired_network)
@@ -239,11 +262,18 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
 
     // B: the phone backgrounded 20 s, then back.
     let pb0 = phone.wire_counts().await.unwrap();
-    assert!(khor_node::link::suspending(&rp.0).await, "the phone's resident suspends");
+    assert!(
+        khor_node::link::suspending(&rp.0).await,
+        "the phone's resident suspends"
+    );
     let mut while_away = Vec::new();
     for _ in 0..4 {
         tokio::time::sleep(Duration::from_secs(5)).await;
-        while_away.push(format!("{}/{}", word(&phone, &mac_id).await, word(&phone, &far_id).await));
+        while_away.push(format!(
+            "{}/{}",
+            word(&phone, &mac_id).await,
+            word(&phone, &far_id).await
+        ));
     }
     let pb1 = phone.wire_counts().await.unwrap();
     eprintln!(
@@ -255,18 +285,29 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
     let mut resuming = khor_node::link::resume(&rp.0).expect("a resumable resident");
     let ears = resuming.ears().await.map(|_| began.elapsed());
     let synced = resuming.synced().await.map(|o| (began.elapsed(), o));
-    let listed = until(Duration::from_secs(60), || async { phone.ls_of("far", &dir).await.is_ok() })
-        .await
-        .map(|_| began.elapsed());
+    let listed = until(Duration::from_secs(60), || async {
+        phone.ls_of("far", &dir).await.is_ok()
+    })
+    .await
+    .map(|_| began.elapsed());
     let mut after = Vec::new();
     for _ in 0..10 {
-        after.push(format!("{}/{}", word(&phone, &mac_id).await, word(&phone, &far_id).await));
+        after.push(format!(
+            "{}/{}",
+            word(&phone, &mac_id).await,
+            word(&phone, &far_id).await
+        ));
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     eprintln!(
         "[diag] B backgrounded 20s, words meanwhile (mac/far) {while_away:?}; resumed: ears {ears:?}, round {:?}, \
          a far listing answered by {listed:?}; words over the next 5 s {after:?}",
-        synced.as_ref().map(|(d, o)| (d, o.iter().map(|(n, r)| (n.clone(), r.is_ok())).collect::<Vec<_>>())),
+        synced.as_ref().map(|(d, o)| (
+            d,
+            o.iter()
+                .map(|(n, r)| (n.clone(), r.is_ok()))
+                .collect::<Vec<_>>()
+        )),
     );
 
     // C: the far machine gone.
@@ -274,15 +315,24 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
     drop(far_serve.take());
     // The words first, asked of nothing: how long the phone keeps saying
     // the far machine is there with no ask to find out otherwise.
-    let word_alone = until(Duration::from_secs(60), || async { word(&phone, &far_id).await != "中继" }).await;
+    let word_alone = until(Duration::from_secs(60), || async {
+        word(&phone, &far_id).await != "中继"
+    })
+    .await;
     eprintln!("[diag] C far stopped: the phone's word left 中继 on its own after {word_alone:?}");
     let ls_gone = {
         let began = Instant::now();
         let r = phone.ls_of("far", &dir).await;
         (began.elapsed(), r.err())
     };
-    let phone_says = until(Duration::from_secs(120), || async { word(&phone, &far_id).await != "中继" }).await;
-    let mac_says = until(Duration::from_secs(120), || async { word(&mac, &far_id).await != "中继" }).await;
+    let phone_says = until(Duration::from_secs(120), || async {
+        word(&phone, &far_id).await != "中继"
+    })
+    .await;
+    let mac_says = until(Duration::from_secs(120), || async {
+        word(&mac, &far_id).await != "中继"
+    })
+    .await;
     eprintln!(
         "[diag] C far stopped: a listing right after took {:?} ({:?}); the phone stopped saying 中继 after {:?} \
          (from the stop: {:?}), the Mac after {:?}; now phone says {}",
@@ -297,8 +347,14 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
     // D: the far machine back.
     let back_at = Instant::now();
     far_serve = Some(serve_with(&rf.0, "far", &env));
-    let listed = until(Duration::from_secs(120), || async { phone.ls_of("far", &dir).await.is_ok() }).await;
-    let worded = until(Duration::from_secs(120), || async { word(&phone, &far_id).await == "中继" }).await;
+    let listed = until(Duration::from_secs(120), || async {
+        phone.ls_of("far", &dir).await.is_ok()
+    })
+    .await;
+    let worded = until(Duration::from_secs(120), || async {
+        word(&phone, &far_id).await == "中继"
+    })
+    .await;
     eprintln!(
         "[diag] D far back: a listing from the phone answered after {listed:?}, the phone's word 中继 after {worded:?} \
          (from the start: {:?})",
@@ -317,7 +373,11 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
          words {}/{}",
         retired(&p2, &p3),
         p3.retired_network - p2.retired_network,
-        if through.is_ok() { "answered" } else { "FAILED" },
+        if through.is_ok() {
+            "answered"
+        } else {
+            "FAILED"
+        },
         began.elapsed(),
         word(&phone, &mac_id).await,
         word(&phone, &far_id).await,

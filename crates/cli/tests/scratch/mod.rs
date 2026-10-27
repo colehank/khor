@@ -431,7 +431,9 @@ pub async fn cuttable_road(
     impair: Impair,
 ) -> (std::net::SocketAddr, Cut, tokio::task::JoinHandle<()>) {
     let cut = Cut::default();
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
     let at = listener.local_addr().unwrap();
     let held = cut.clone();
     let task = tokio::spawn(async move {
@@ -448,9 +450,23 @@ pub async fn cuttable_road(
             let (ir, iw) = inbound.into_split();
             let (or, ow) = outbound.into_split();
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            tokio::spawn(hold(ir, ow, impair, seed, &ROAD_TO_RELAY, Some(held.clone())));
+            tokio::spawn(hold(
+                ir,
+                ow,
+                impair,
+                seed,
+                &ROAD_TO_RELAY,
+                Some(held.clone()),
+            ));
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            tokio::spawn(hold(or, iw, impair, seed, &ROAD_FROM_RELAY, Some(held.clone())));
+            tokio::spawn(hold(
+                or,
+                iw,
+                impair,
+                seed,
+                &ROAD_FROM_RELAY,
+                Some(held.clone()),
+            ));
         }
     });
     (at, cut, task)

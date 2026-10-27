@@ -58,7 +58,10 @@ pub async fn router(lab: &Lab, name: &str, net: Net) -> Router {
         Net::Home => b.nat(Nat::Moderate).ip_support(IpSupport::V4Only),
         Net::Open => b.nat(Nat::Open).ip_support(IpSupport::V4Only),
         Net::Strict => b.nat(Nat::Strict).ip_support(IpSupport::V4Only),
-        Net::Campus => b.nat(Nat::Strict).ip_support(IpSupport::DualStack).public_v6(),
+        Net::Campus => b
+            .nat(Nat::Strict)
+            .ip_support(IpSupport::DualStack)
+            .public_v6(),
         Net::Cellular => b.preset(RouterPreset::IspCgnatSymmetric).public_v6(),
     };
     b.build().await.unwrap()
@@ -86,7 +89,10 @@ async fn two(scenario: &str, left: Net, right: Net, want: Want) {
 
 async fn two_on(scenario: &str, near: Near, left: Net, right: Net, want: Want) {
     let lab = Lab::new().await.unwrap();
-    let (ra, rb) = (router(&lab, "left", left).await, router(&lab, "right", right).await);
+    let (ra, rb) = (
+        router(&lab, "left", left).await,
+        router(&lab, "right", right).await,
+    );
     let da = lab.add_device("a").uplink(ra.id()).build().await.unwrap();
     let db = lab.add_device("b").uplink(rb.id()).build().await.unwrap();
     let (a, b, _plain, _qad) = match near {
@@ -109,9 +115,15 @@ async fn two_on(scenario: &str, near: Near, left: Net, right: Net, want: Want) {
     tokio::time::sleep(Duration::from_secs(3)).await;
     mesh(&[&a, &b]).await;
 
-    let first = a.until(&b, Duration::from_secs(60), |l| l.rtt_ms.is_some()).await;
+    let first = a
+        .until(&b, Duration::from_secs(60), |l| l.rtt_ms.is_some())
+        .await;
     let Some((took, first)) = first else {
-        result(scenario, false, format!("{left:?} × {right:?}: no road with a round trip in 60 s"));
+        result(
+            scenario,
+            false,
+            format!("{left:?} × {right:?}: no road with a round trip in 60 s"),
+        );
         panic!("{scenario}: alpha reaches beta");
     };
     let direct = a.until(&b, PUNCH, |l| l.hop == Hop::Direct).await;
@@ -128,26 +140,46 @@ async fn two_on(scenario: &str, near: Near, left: Net, right: Net, want: Want) {
         format!(
             "{near:?} relay, {left:?} × {right:?}: first {} after {took:.1?}; direct {}; now {}; dials {}/{} failed, slowest {} ms",
             word(&first),
-            direct.as_ref().map_or("never".into(), |(t, l)| format!("after {t:.1?} ({})", word(l))),
+            direct.as_ref().map_or("never".into(), |(t, l)| format!(
+                "after {t:.1?} ({})",
+                word(l)
+            )),
             word(&last),
             failed + failed_b,
             n_a + n_b,
             slowest.max(slowest_b),
         ),
     );
-    assert!(slowest.max(slowest_b) <= STUCK, "{scenario}: no dial over {STUCK} ms");
+    assert!(
+        slowest.max(slowest_b) <= STUCK,
+        "{scenario}: no dial over {STUCK} ms"
+    );
     match want {
-        Want::Direct => assert!(direct.is_some(), "{scenario}: {left:?} × {right:?} goes direct"),
-        Want::Carried => assert!(last.rtt_ms.is_some(), "{scenario}: {left:?} × {right:?} is carried"),
+        Want::Direct => assert!(
+            direct.is_some(),
+            "{scenario}: {left:?} × {right:?} goes direct"
+        ),
+        Want::Carried => assert!(
+            last.rtt_ms.is_some(),
+            "{scenario}: {left:?} × {right:?} is carried"
+        ),
     }
 }
 
 /// Dials `from` made to `to` (journal `dial` lines): how many, how many
 /// failed, the slowest in ms.
 fn dials(from: &LabNode, to: &LabNode) -> (usize, usize, u64) {
-    let lines: Vec<_> = from.journal(Some(to)).into_iter().filter(|e| e["e"] == "dial").collect();
+    let lines: Vec<_> = from
+        .journal(Some(to))
+        .into_iter()
+        .filter(|e| e["e"] == "dial")
+        .collect();
     let failed = lines.iter().filter(|e| e["won"].is_null()).count();
-    let slowest = lines.iter().filter_map(|e| e["ms"].as_u64()).max().unwrap_or(0);
+    let slowest = lines
+        .iter()
+        .filter_map(|e| e["ms"].as_u64())
+        .max()
+        .unwrap_or(0);
     (lines.len(), failed, slowest)
 }
 

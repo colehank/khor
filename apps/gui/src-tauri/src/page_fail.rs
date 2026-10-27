@@ -33,7 +33,9 @@ pub unsafe fn word(error: *mut AnyObject) -> Option<String> {
     let code: isize = msg_send![error, code];
     let domain: Option<Retained<NSString>> = msg_send![error, domain];
     let domain = domain.map(|d| d.to_string()).unwrap_or_default();
-    if (domain == "NSURLErrorDomain" && code == -999) || (domain == "WebKitErrorDomain" && code == 102) {
+    if (domain == "NSURLErrorDomain" && code == -999)
+        || (domain == "WebKitErrorDomain" && code == 102)
+    {
         return None;
     }
     let said: Option<Retained<NSString>> = msg_send![error, localizedDescription];
@@ -86,7 +88,12 @@ mod mac {
     }
     fn book() -> &'static Mutex<Book> {
         static B: OnceLock<Mutex<Book>> = OnceLock::new();
-        B.get_or_init(|| Mutex::new(Book { views: HashMap::new(), failed: HashMap::new() }))
+        B.get_or_init(|| {
+            Mutex::new(Book {
+                views: HashMap::new(),
+                failed: HashMap::new(),
+            })
+        })
     }
 
     /// Hears `made`'s failed loads from now on, for `tab` on `face`.
@@ -104,7 +111,8 @@ mod mac {
                 // failure (measured 2026-10-06, the scratch app).
                 let delegate: *mut AnyObject = msg_send![view, navigationDelegate];
                 if !delegate.is_null() {
-                    let _: () = msg_send![view, setNavigationDelegate: std::ptr::null::<AnyObject>()];
+                    let _: () =
+                        msg_send![view, setNavigationDelegate: std::ptr::null::<AnyObject>()];
                     let _: () = msg_send![view, setNavigationDelegate: delegate];
                 }
             }
@@ -126,7 +134,12 @@ mod mac {
     /// last asked: what 重试 goes to (a reload would load the page before
     /// it, the one that is still there).
     pub fn take_failed(tab: &str) -> Option<String> {
-        book().lock().ok()?.failed.remove(tab).filter(|u| !u.is_empty())
+        book()
+            .lock()
+            .ok()?
+            .failed
+            .remove(tab)
+            .filter(|u| !u.is_empty())
     }
 
     /// Adds the two failure methods to the class of `view`'s navigation
@@ -171,18 +184,39 @@ mod mac {
 
     /// The exit machine `tab`'s page goes through (`""`: direct).
     fn exit_of(tab: &str) -> String {
-        crate::page_exits().lock().ok().and_then(|m| m.get(&crate::page_label(tab)).map(|(e, _)| e.clone())).unwrap_or_default()
+        crate::page_exits()
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&crate::page_label(tab)).map(|(e, _)| e.clone()))
+            .unwrap_or_default()
     }
 
-    unsafe extern "C-unwind" fn challenged(_this: *mut AnyObject, _cmd: Sel, view: *mut AnyObject, challenge: *mut AnyObject, done: *mut block2::Block<dyn Fn(isize, *mut AnyObject)>) {
-        let tab = book().lock().ok().and_then(|b| b.views.get(&(view as usize)).map(|(_, t)| t.clone()));
+    unsafe extern "C-unwind" fn challenged(
+        _this: *mut AnyObject,
+        _cmd: Sel,
+        view: *mut AnyObject,
+        challenge: *mut AnyObject,
+        done: *mut block2::Block<dyn Fn(isize, *mut AnyObject)>,
+    ) {
+        let tab = book()
+            .lock()
+            .ok()
+            .and_then(|b| b.views.get(&(view as usize)).map(|(_, t)| t.clone()));
         let exit = tab.as_deref().map(exit_of);
         // SAFETY: WebKit hands a live challenge and its handler.
         unsafe { crate::page_trust::answer(exit.as_deref(), challenge, &*done) };
     }
 
-    unsafe extern "C-unwind" fn failed(_this: *mut AnyObject, _cmd: Sel, view: *mut AnyObject, _nav: *mut AnyObject, error: *mut AnyObject) {
-        let Some(text) = (unsafe { super::word(error) }) else { return };
+    unsafe extern "C-unwind" fn failed(
+        _this: *mut AnyObject,
+        _cmd: Sel,
+        view: *mut AnyObject,
+        _nav: *mut AnyObject,
+        error: *mut AnyObject,
+    ) {
+        let Some(text) = (unsafe { super::word(error) }) else {
+            return;
+        };
         let Some(app) = APP.get() else { return };
         let Some((face, tab)) = book().lock().ok().and_then(|mut b| {
             let at = b.views.get(&(view as usize)).cloned()?;
@@ -195,7 +229,14 @@ mod mac {
         // SAFETY: a live NSError.
         unsafe { crate::page_trust::offered(&tab, &exit_of(&tab), error) };
         // The load is over: the light goes out, then the word.
-        let _ = app.emit_to(face.clone(), "page:load", PageWord { tab: tab.clone(), text: "finished".into() });
+        let _ = app.emit_to(
+            face.clone(),
+            "page:load",
+            PageWord {
+                tab: tab.clone(),
+                text: "finished".into(),
+            },
+        );
         let _ = app.emit_to(face, "page:fail", PageWord { tab, text });
     }
 }

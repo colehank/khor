@@ -160,10 +160,13 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
     fs::write(&src, &payload).unwrap();
     // An offer in the broadcast (STORE-BRIEF phase 5), to nobody in
     // particular: nothing pushes it, so the race stands as it did.
-    let id = timeout(Duration::from_secs(45), a.post("", std::slice::from_ref(&src)))
-        .await
-        .expect("a post must not hang")
-        .unwrap();
+    let id = timeout(
+        Duration::from_secs(45),
+        a.post("", std::slice::from_ref(&src)),
+    )
+    .await
+    .expect("a post must not hang")
+    .unwrap();
     let tid = khor_node::transfer::TransferKind::session_id(&id);
 
     // The race, witnessed. One probe, one id, one instant, two
@@ -264,4 +267,3 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
 
     serve.abort();
 }
-

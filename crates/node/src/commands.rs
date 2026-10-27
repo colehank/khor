@@ -247,7 +247,11 @@ impl Tail {
         if self.held {
             return None;
         }
-        let line = if blank(&self.line) { &self.last } else { &self.line };
+        let line = if blank(&self.line) {
+            &self.last
+        } else {
+            &self.line
+        };
         let text = String::from_utf8_lossy(line);
         let text = text.trim();
         (!text.is_empty()).then(|| text.chars().take(LAST_LINE_MAX).collect())
@@ -559,7 +563,11 @@ impl Ledger {
             "9" if rest.starts_with("4;") => {
                 let mut f = rest[2..].split(';');
                 let state = f.next().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0);
-                let pct = f.next().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0).min(100);
+                let pct = f
+                    .next()
+                    .and_then(|v| v.parse::<u8>().ok())
+                    .unwrap_or(0)
+                    .min(100);
                 let (progress, failed) = match state {
                     0 => (None, false),
                     1 | 4 => (Some(pct), false),
@@ -573,7 +581,10 @@ impl Ledger {
                 }
             }
             // ConEmu's other `9;n;…` verbs are not notifications.
-            "9" if rest.split(';').next().is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit())) => {}
+            "9" if rest
+                .split(';')
+                .next()
+                .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit())) => {}
             // iTerm2's notification: `9;text`.
             "9" => self.notify(rest, now),
             // urxvt's and Ghostty's: `777;notify;title;body`.
@@ -698,7 +709,9 @@ impl Ledger {
         c.ended_ms = Some(now);
         c.exit = exit;
         c.end_at = Some(self.offset);
-        c.last_line = std::mem::take(&mut self.tail).said().filter(|_| !self.through_tmux());
+        c.last_line = std::mem::take(&mut self.tail)
+            .said()
+            .filter(|_| !self.through_tmux());
         // A finished command's progress is over, whatever it last said.
         self.progress = None;
         self.progress_failed = false;
@@ -738,7 +751,12 @@ impl Ledger {
 
     /// One context's reading: its running command, else the last one it
     /// finished, and its directory.
-    fn reading(&self, pane: Option<&str>, running: Option<&Command>, cwd: Option<&String>) -> Doing {
+    fn reading(
+        &self,
+        pane: Option<&str>,
+        running: Option<&Command>,
+        cwd: Option<&String>,
+    ) -> Doing {
         let c = running.or_else(|| self.recent.iter().rev().find(|c| c.pane.as_deref() == pane));
         Doing {
             command: c.and_then(|c| c.text.as_ref()).map(|t| one_line(t)),
@@ -747,7 +765,9 @@ impl Ledger {
             ended_ms: c.and_then(|c| c.ended_ms),
             exit: c.and_then(|c| c.exit),
             cwd: cwd.cloned(),
-            last_line: c.filter(|_| running.is_none()).and_then(|c| c.last_line.clone()),
+            last_line: c
+                .filter(|_| running.is_none())
+                .and_then(|c| c.last_line.clone()),
             ..Doing::default()
         }
     }
@@ -759,10 +779,12 @@ impl Ledger {
         if self.tmux {
             return BTreeMap::new();
         }
-        let here = self
-            .pane
-            .as_deref()
-            .map(|p| (p, self.reading(Some(p), self.running.as_ref(), self.cwd.as_ref())));
+        let here = self.pane.as_deref().map(|p| {
+            (
+                p,
+                self.reading(Some(p), self.running.as_ref(), self.cwd.as_ref()),
+            )
+        });
         let parked = self.parked.iter().filter_map(|(p, k)| {
             let p = p.as_deref()?;
             Some((p, self.reading(Some(p), k.running.as_ref(), k.cwd.as_ref())))
@@ -785,7 +807,11 @@ impl Ledger {
             notice: self.notice.as_ref().map(|(t, _)| t.clone()),
             notice_ms: self.notice.as_ref().map_or(0, |(_, at)| *at),
             bell_ms: self.bell,
-            ..self.reading(self.pane.as_deref(), self.running.as_ref(), self.cwd.as_ref())
+            ..self.reading(
+                self.pane.as_deref(),
+                self.running.as_ref(),
+                self.cwd.as_ref(),
+            )
         }
     }
 
@@ -815,7 +841,8 @@ impl Ledger {
 fn front_pane(title: &str) -> Option<(&str, &str)> {
     let (pane, rest) = title.split_once(' ').unwrap_or((title, ""));
     let digits = pane.strip_prefix('%')?;
-    (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())).then_some((pane, rest.trim()))
+    (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+        .then_some((pane, rest.trim()))
 }
 
 /// `commands.json` beside a session.
@@ -927,11 +954,7 @@ pub const HISTORY_HITS: usize = 200;
 /// atuin's search show the same. Fed by every session's ledger
 /// ([`append_history`]), so it spans sessions.
 pub fn search_history(file: &Path, ask: &HistoryAsk) -> Vec<HistoryHit> {
-    let words: Vec<String> = ask
-        .text
-        .split_whitespace()
-        .map(str::to_lowercase)
-        .collect();
+    let words: Vec<String> = ask.text.split_whitespace().map(str::to_lowercase).collect();
     let dir = ask.dir.trim_end_matches('/');
     let mut out: Vec<HistoryHit> = Vec::new();
     let mut seen = std::collections::HashMap::<String, usize>::new();
@@ -942,7 +965,9 @@ pub fn search_history(file: &Path, ask: &HistoryAsk) -> Vec<HistoryHit> {
             continue;
         }
         if !dir.is_empty() {
-            let Some(cwd) = c.cwd.as_deref() else { continue };
+            let Some(cwd) = c.cwd.as_deref() else {
+                continue;
+            };
             if cwd != dir && !cwd.starts_with(&format!("{dir}/")) {
                 continue;
             }
@@ -1079,26 +1104,69 @@ mod tests {
             pane: None,
             last_line: None,
         };
-        append_history(&file, "shell/a", &[c(1, "cargo test -p khor-node", "/w/khor", 0), c(2, "git status", "/w/khor", 0)]);
-        append_history(&file, "shell/b", &[c(3, "cargo build", "/w/khor-net", 101), c(4, "Cargo Test -p khor-node", "/w/khor/crates", 1)]);
-        append_history(&file, "shell/a", &[c(5, "cargo test -p khor-node", "/w/khor", 0)]);
+        append_history(
+            &file,
+            "shell/a",
+            &[
+                c(1, "cargo test -p khor-node", "/w/khor", 0),
+                c(2, "git status", "/w/khor", 0),
+            ],
+        );
+        append_history(
+            &file,
+            "shell/b",
+            &[
+                c(3, "cargo build", "/w/khor-net", 101),
+                c(4, "Cargo Test -p khor-node", "/w/khor/crates", 1),
+            ],
+        );
+        append_history(
+            &file,
+            "shell/a",
+            &[c(5, "cargo test -p khor-node", "/w/khor", 0)],
+        );
         let ask = |text: &str, dir: &str, failed: bool| {
-            search_history(&file, &HistoryAsk { text: text.into(), dir: dir.into(), failed })
-                .into_iter()
-                .map(|h| (h.text, h.runs))
-                .collect::<Vec<_>>()
+            search_history(
+                &file,
+                &HistoryAsk {
+                    text: text.into(),
+                    dir: dir.into(),
+                    failed,
+                },
+            )
+            .into_iter()
+            .map(|h| (h.text, h.runs))
+            .collect::<Vec<_>>()
         };
         assert_eq!(
             ask("", "", false),
-            [("cargo test -p khor-node".into(), 2), ("Cargo Test -p khor-node".into(), 1), ("cargo build".into(), 1), ("git status".into(), 1)]
+            [
+                ("cargo test -p khor-node".into(), 2),
+                ("Cargo Test -p khor-node".into(), 1),
+                ("cargo build".into(), 1),
+                ("git status".into(), 1)
+            ]
         );
-        assert_eq!(ask("TEST node", "", false).len(), 2, "words in any case and order");
+        assert_eq!(
+            ask("TEST node", "", false).len(),
+            2,
+            "words in any case and order"
+        );
         assert_eq!(
             ask("cargo", "/w/khor", false),
-            [("cargo test -p khor-node".into(), 2), ("Cargo Test -p khor-node".into(), 1)],
+            [
+                ("cargo test -p khor-node".into(), 2),
+                ("Cargo Test -p khor-node".into(), 1)
+            ],
             "under the directory, not khor-net beside it"
         );
-        assert_eq!(ask("", "", true), [("Cargo Test -p khor-node".into(), 1), ("cargo build".into(), 1)]);
+        assert_eq!(
+            ask("", "", true),
+            [
+                ("Cargo Test -p khor-node".into(), 1),
+                ("cargo build".into(), 1)
+            ]
+        );
         assert!(search_history(&dir.join("none.jsonl"), &HistoryAsk::default()).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1137,7 +1205,8 @@ mod tests {
     #[test]
     fn a_finished_command_keeps_the_last_line_it_printed() {
         let run = |cmd: &str, out: &[u8], exit: i32| {
-            let mut s = format!("\x1b]133;A\x07$ \x1b]133;B\x07\x1b]633;E;{cmd}\x07\x1b]133;C\x07").into_bytes();
+            let mut s = format!("\x1b]133;A\x07$ \x1b]133;B\x07\x1b]633;E;{cmd}\x07\x1b]133;C\x07")
+                .into_bytes();
             s.extend_from_slice(out);
             s.extend_from_slice(format!("\x1b]133;D;{exit}\x07\x1b]133;A\x07$ ").as_bytes());
             s
@@ -1153,18 +1222,36 @@ mod tests {
             Some("100% done"),
             "a rewritten line is its last rewrite"
         );
-        assert_eq!(last(&run("printf", b"no newline", 0)).as_deref(), Some("no newline"), "a line not ended yet");
-        assert_eq!(last(&run("typo", b"abX\x08c\r\n", 1)).as_deref(), Some("abc"), "a backspace takes one back");
+        assert_eq!(
+            last(&run("printf", b"no newline", 0)).as_deref(),
+            Some("no newline"),
+            "a line not ended yet"
+        );
+        assert_eq!(
+            last(&run("typo", b"abX\x08c\r\n", 1)).as_deref(),
+            Some("abc"),
+            "a backspace takes one back"
+        );
         assert_eq!(last(&run("true", b"", 0)), None, "printed nothing");
-        assert_eq!(last(&run("vim", b"\x1b[?1049hdrawn\r\n\x1b[?1049l", 0)), None, "a full-screen program says no line");
+        assert_eq!(
+            last(&run("vim", b"\x1b[?1049hdrawn\r\n\x1b[?1049l", 0)),
+            None,
+            "a full-screen program says no line"
+        );
         let long = "x".repeat(LAST_LINE_MAX + 50);
-        assert_eq!(last(&run("yes", long.as_bytes(), 0)).map(|l| l.chars().count()), Some(LAST_LINE_MAX));
+        assert_eq!(
+            last(&run("yes", long.as_bytes(), 0)).map(|l| l.chars().count()),
+            Some(LAST_LINE_MAX)
+        );
         // Running: no last line yet, and a new command starts empty.
         let mut s = run("echo a", b"a\r\n", 0);
         s.extend_from_slice(b"\x1b]133;B\x07\x1b]633;E;sleep 9\x07\x1b]133;C\x07");
         let l = fed(&s);
         assert!(l.doing().running && l.doing().last_line.is_none());
-        assert_eq!(l.recent.back().and_then(|c| c.last_line.as_deref()), Some("a"));
+        assert_eq!(
+            l.recent.back().and_then(|c| c.last_line.as_deref()),
+            Some("a")
+        );
     }
 
     #[test]
@@ -1211,7 +1298,10 @@ mod tests {
         }
         let d = l.doing();
         assert_eq!(d.title.as_deref(), Some("left"));
-        assert_eq!((d.command.as_deref(), d.running, d.exit), (Some("make"), false, Some(2)));
+        assert_eq!(
+            (d.command.as_deref(), d.running, d.exit),
+            (Some("make"), false, Some(2))
+        );
         assert_eq!(d.cwd.as_deref(), Some("/a"));
         // A mark from the pane beside it is that pane's, and the row
         // stays on the one in front.
@@ -1226,20 +1316,35 @@ mod tests {
         assert_eq!((d.command.as_deref(), d.running), (Some("sleep 9"), true));
         assert_eq!(d.cwd.as_deref(), Some("/b2"));
         // Still wrapped, as a tmux nested in this one passes it on.
-        l.feed(b"\x1bPtmux;\x1b\x1b]633;P;KhorPane=%1\x07\x1b\x1b]633;E;ls\x07\x1b\\\
-            \x1bPtmux;\x1b\x1b]633;P;KhorPane=%1\x07\x1b\x1b]133;C\x07\x1b\\", 5500);
+        l.feed(
+            b"\x1bPtmux;\x1b\x1b]633;P;KhorPane=%1\x07\x1b\x1b]633;E;ls\x07\x1b\\\
+            \x1bPtmux;\x1b\x1b]633;P;KhorPane=%1\x07\x1b\x1b]133;C\x07\x1b\\",
+            5500,
+        );
         assert_eq!(l.doing().command.as_deref(), Some("sleep 9"));
         l.feed(wrap("%2", "133;D;0").as_bytes(), 6000);
         let d = l.doing();
-        assert_eq!((d.command.as_deref(), d.running, d.exit), (Some("sleep 9"), false, Some(0)));
+        assert_eq!(
+            (d.command.as_deref(), d.running, d.exit),
+            (Some("sleep 9"), false, Some(0))
+        );
         // Out of sight, a pane's end and next prompt are dropped: its next
         // command closes the last one, end unknown, and is its own.
-        l.feed(format!("{}{}", wrap("%2", "633;E;sleep 1"), wrap("%2", "133;C")).as_bytes(), 6500);
-        l.feed(format!("{}{}", wrap("%2", "633;E;date"), wrap("%2", "133;C")).as_bytes(), 6600);
+        l.feed(
+            format!("{}{}", wrap("%2", "633;E;sleep 1"), wrap("%2", "133;C")).as_bytes(),
+            6500,
+        );
+        l.feed(
+            format!("{}{}", wrap("%2", "633;E;date"), wrap("%2", "133;C")).as_bytes(),
+            6600,
+        );
         let d = l.doing();
         assert_eq!((d.command.as_deref(), d.running), (Some("date"), true));
         let lost = l.take_finished();
-        assert_eq!(lost.last().map(|c| (c.text.as_deref(), c.exit)), Some((Some("sleep 1"), None)));
+        assert_eq!(
+            lost.last().map(|c| (c.text.as_deref(), c.exit)),
+            Some((Some("sleep 1"), None))
+        );
         // A pane that never marked shows nothing of the others'.
         l.feed(b"\x1b]2;%7 vim\x07", 7000);
         assert_eq!(l.doing().command, None);
@@ -1273,10 +1378,17 @@ mod tests {
         l.feed(b"\x1b]9;build done\x07", 4);
         assert_eq!(l.doing().notice.as_deref(), Some("build done"));
         assert_eq!(l.doing().notice_ms, 4);
-        l.feed(b"\x1b]9;1;500\x07\x1b]777;notify;make;all tests passed\x07", 5);
+        l.feed(
+            b"\x1b]9;1;500\x07\x1b]777;notify;make;all tests passed\x07",
+            5,
+        );
         assert_eq!(l.doing().notice.as_deref(), Some("make: all tests passed"));
         l.feed(b"\x1b]133;D;0\x07", 6);
-        assert_eq!(l.doing().progress, None, "a finished command's progress is over");
+        assert_eq!(
+            l.doing().progress,
+            None,
+            "a finished command's progress is over"
+        );
     }
 
     /// **The bell is recorded with its time** (item 67): a BEL in the

@@ -83,11 +83,17 @@ impl Feed {
     /// (`khor_node::host::ClientOp::Forget`), so a face that starts over
     /// from this feed is not handed what was cleared either.
     fn forget(&mut self) {
-        let keep = self.bytes.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+        let keep = self
+            .bytes
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map_or(0, |i| i + 1);
         let gone: Vec<u8> = self.bytes.drain(..keep).collect();
         self.head.feed(&gone);
         while self.head.mid_sequence() {
-            let Some(b) = self.bytes.pop_front() else { break };
+            let Some(b) = self.bytes.pop_front() else {
+                break;
+            };
             self.head.feed(&[b]);
         }
     }
@@ -259,7 +265,12 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
         let _ = term_resize(id, cols, rows);
         if let Ok(term) = term_of(id) {
             let target = term.clone();
-            term.commands.submit(move || { keep_history(&target, history); Ok(()) })?.wait()?;
+            term.commands
+                .submit(move || {
+                    keep_history(&target, history);
+                    Ok(())
+                })?
+                .wait()?;
         }
         return Ok(());
     }
@@ -301,7 +312,10 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
         history: AtomicU32::new(0),
     });
     let target = term.clone();
-    let initial = term.commands.submit(move || { keep_history(&target, history); Ok(()) })?;
+    let initial = term.commands.submit(move || {
+        keep_history(&target, history);
+        Ok(())
+    })?;
     let reader = term.clone();
     let root = root.to_path_buf();
     std::thread::spawn(move || {
@@ -340,7 +354,9 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
                         break;
                     };
                     let Ok(again) = conn.try_clone() else { break };
-                    if reader.conn.replace(conn).is_err() { break; }
+                    if reader.conn.replace(conn).is_err() {
+                        break;
+                    }
                     keep_history(&reader, reader.history.load(Ordering::Relaxed));
                     reading = again;
                     fresh = true;
@@ -581,7 +597,9 @@ fn forget_feed(parser: &Mutex<vt100::Parser>, feed: &Mutex<Feed>, fed: &AtomicU6
     let mut g = plock(feed);
     khor_node::host::forget_parser(&mut screen, 0);
     g.forget();
-    g.life = g.life.max(fed.load(Ordering::Relaxed) - g.bytes.len() as u64);
+    g.life = g
+        .life
+        .max(fed.load(Ordering::Relaxed) - g.bytes.len() as u64);
 }
 
 /// The bytes from `since` to the end — or, with `reset` raised:
@@ -655,7 +673,10 @@ pub fn submit_ready(id: &str) -> Result<crate::command_queue::Pending<()>, Strin
     })
 }
 
-fn submit<T: Send + 'static>(id: &str, work: impl FnOnce(Arc<Term>) -> Result<T, String> + Send + 'static) -> Result<crate::command_queue::Pending<T>, String> {
+fn submit<T: Send + 'static>(
+    id: &str,
+    work: impl FnOnce(Arc<Term>) -> Result<T, String> + Send + 'static,
+) -> Result<crate::command_queue::Pending<T>, String> {
     let term = term_of(id)?;
     let target = term.clone();
     term.commands.submit(move || work(target))
@@ -743,15 +764,20 @@ pub struct HistoryRow {
 /// **A machine's commands, searched** (roadmap 2.6): words in the line,
 /// the directory it ran in or under, only the failed ones — asked of the
 /// machine that keeps them (`khor_node::Node::history`), newest first.
-pub async fn history(root: &Path, machine: &str, text: &str, dir: &str, failed: bool) -> Result<Vec<HistoryRow>, String> {
+pub async fn history(
+    root: &Path,
+    machine: &str,
+    text: &str,
+    dir: &str,
+    failed: bool,
+) -> Result<Vec<HistoryRow>, String> {
     let n = Node::open(root.to_path_buf())?;
     let ask = khor_node::commands::HistoryAsk {
         text: text.to_owned(),
         dir: dir.to_owned(),
         failed,
     };
-    Ok(n
-        .history(machine, &ask)
+    Ok(n.history(machine, &ask)
         .await?
         .into_iter()
         .map(|h| HistoryRow {
@@ -815,11 +841,21 @@ pub struct PaneHistory {
 
 /// **A tmux row's front pane history from an anchor on** (item 31,
 /// `khor_node::Node::pane_history_anywhere`): what the phone scrolls.
-pub async fn pane_history(root: &Path, id: &str, since: Option<PaneAnchor>) -> Result<PaneHistory, String> {
+pub async fn pane_history(
+    root: &Path,
+    id: &str,
+    since: Option<PaneAnchor>,
+) -> Result<PaneHistory, String> {
     use khor_node::adaptor::tmux::HistoryAnchor;
     let n = Node::open(root.to_path_buf())?;
-    let since = since.map(|a| HistoryAnchor { pane: a.pane, size: a.size as usize, tail: a.tail });
-    let h = n.pane_history_anywhere(&SessionId(id.to_owned()), since).await?;
+    let since = since.map(|a| HistoryAnchor {
+        pane: a.pane,
+        size: a.size as usize,
+        tail: a.tail,
+    });
+    let h = n
+        .pane_history_anywhere(&SessionId(id.to_owned()), since)
+        .await?;
     Ok(PaneHistory {
         pane: h.pane,
         alternate: h.alternate,
@@ -861,7 +897,11 @@ pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
 /// more, and up to 50, for the next beat. A face in the app now holds one
 /// of these open at a time (the bridge's HTTP loop serves one request at
 /// a time, so the browser face keeps the beat).
-pub async fn term_wait(id: &str, since: u64, longest: std::time::Duration) -> Result<TermChunk, String> {
+pub async fn term_wait(
+    id: &str,
+    since: u64,
+    longest: std::time::Duration,
+) -> Result<TermChunk, String> {
     let term = term_of(id)?;
     let woke = term.arrived.notified();
     tokio::pin!(woke);
@@ -923,11 +963,19 @@ fn write_input(conn: &mut (impl std::io::Write + ?Sized), bytes: &[u8]) -> Resul
 /// gesture itself, so no face calls this over the wire any more. The
 /// one caller left is [`term_drop`] — a dropped file is a paste, and
 /// the wrapping decision still lives where the DECSET 2004 fact is.
-fn term_paste(term: Arc<Term>, text: String, stopped: Arc<AtomicBool>) -> Result<crate::command_queue::Pending<()>, String> {
+fn term_paste(
+    term: Arc<Term>,
+    text: String,
+    stopped: Arc<AtomicBool>,
+) -> Result<crate::command_queue::Pending<()>, String> {
     let target = term.clone();
     term.commands.submit(move || {
-        if stopped.load(Ordering::Relaxed) { return Err(khor_node::drops::cancelled()); }
-        if target.left.load(Ordering::Relaxed) { return Err("attachment is closed".into()); }
+        if stopped.load(Ordering::Relaxed) {
+            return Err(khor_node::drops::cancelled());
+        }
+        if target.left.load(Ordering::Relaxed) {
+            return Err("attachment is closed".into());
+        }
         paste(&target, &text, &stopped)
     })
 }
@@ -974,9 +1022,10 @@ pub fn shell_quote(path: &str) -> String {
     // only past the first character, where zsh's `=cmd` cannot start.
     let plain = !path.is_empty()
         && !path.starts_with('=')
-        && path
-            .chars()
-            .all(|c| c.is_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+' | ',' | '@' | '%' | ':' | '='));
+        && path.chars().all(|c| {
+            c.is_alphanumeric()
+                || matches!(c, '/' | '.' | '_' | '-' | '+' | ',' | '@' | '%' | ':' | '=')
+        });
     if plain {
         return path.to_owned();
     }
@@ -1005,8 +1054,18 @@ pub fn shell_quote(path: &str) -> String {
 /// [`reach_blocking`] spells out: this is called from a tauri command,
 /// which is already async, and a nested runtime panics instead of
 /// returning something a person can read.
-pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String], into: &str) -> Result<Vec<String>, String> {
-    let (root, machine, paths, into) = (root.to_path_buf(), machine.to_owned(), paths.to_vec(), into.to_owned());
+pub(crate) fn deliver_blocking(
+    root: &Path,
+    machine: &str,
+    paths: &[String],
+    into: &str,
+) -> Result<Vec<String>, String> {
+    let (root, machine, paths, into) = (
+        root.to_path_buf(),
+        machine.to_owned(),
+        paths.to_vec(),
+        into.to_owned(),
+    );
     std::thread::spawn(move || -> Result<Vec<String>, String> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1087,33 +1146,55 @@ pub struct DropJob {
 }
 
 pub fn begin_drop(id: &str) -> DropJob {
-    DropJob { held: Held::begin(id), attachment: term_of(id) }
+    DropJob {
+        held: Held::begin(id),
+        attachment: term_of(id),
+    }
 }
 
 impl DropJob {
-    pub fn run_paths(self, root: &Path, paths: &[String], from: Option<&str>, into: Option<&str>) -> DropEnd {
-        let items = paths.iter().map(|path| DropItem {
-            path: path.clone(), from: from.map(str::to_owned), keep: false,
-        }).collect::<Vec<_>>();
+    pub fn run_paths(
+        self,
+        root: &Path,
+        paths: &[String],
+        from: Option<&str>,
+        into: Option<&str>,
+    ) -> DropEnd {
+        let items = paths
+            .iter()
+            .map(|path| DropItem {
+                path: path.clone(),
+                from: from.map(str::to_owned),
+                keep: false,
+            })
+            .collect::<Vec<_>>();
         self.run(root, &items, into)
     }
 
     pub fn run(self, root: &Path, items: &[DropItem], into: Option<&str>) -> DropEnd {
         let id = &self.held.id;
-        let ended = drop_items_text(root, id, items, into, &self.held).and_then(|(landed, text)| {
-            if !text.is_empty() {
-                term_paste(self.attachment.clone()?, text, self.held.stopped.clone())?.wait()?;
-            }
-            Ok(landed)
-        });
+        let ended =
+            drop_items_text(root, id, items, into, &self.held).and_then(|(landed, text)| {
+                if !text.is_empty() {
+                    term_paste(self.attachment.clone()?, text, self.held.stopped.clone())?
+                        .wait()?;
+                }
+                Ok(landed)
+            });
         match ended {
             Ok(landed) => DropEnd { landed, miss: None },
             Err(why) => {
-                let far = Node::open(root.to_path_buf()).ok()
+                let far = Node::open(root.to_path_buf())
+                    .ok()
                     .and_then(|n| n.far_machine(&SessionId(id.to_owned())).ok().flatten());
                 let mut miss = crate::miss::read(&why, far.as_deref());
-                if miss.kind == MissKind::Cancelled { miss.raw.clear(); }
-                DropEnd { landed: Vec::new(), miss: Some(miss) }
+                if miss.kind == MissKind::Cancelled {
+                    miss.raw.clear();
+                }
+                DropEnd {
+                    landed: Vec::new(),
+                    miss: Some(miss),
+                }
             }
         }
     }
@@ -1239,7 +1320,9 @@ const STAGED_FOR: std::time::Duration = std::time::Duration::from_secs(3600);
 fn staged_dir(root: &Path, path: &str) -> Option<std::path::PathBuf> {
     let p = Path::new(path);
     use std::path::Component;
-    if p.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)) {
+    if p.components()
+        .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+    {
         return None;
     }
     let dir = p.parent()?;
@@ -1253,7 +1336,11 @@ fn staged_dir(root: &Path, path: &str) -> Option<std::path::PathBuf> {
 /// name the session's machine lands it under. Capped at the drop's cap
 /// as it is written, and a refused or broken write leaves nothing.
 /// Answers the path, for [`term_drop`].
-pub fn term_drop_stage(root: &Path, name: &str, body: &mut dyn std::io::Read) -> Result<String, String> {
+pub fn term_drop_stage(
+    root: &Path,
+    name: &str,
+    body: &mut dyn std::io::Read,
+) -> Result<String, String> {
     use std::io::Write;
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let base = stage_root(root);
@@ -1275,7 +1362,11 @@ pub fn term_drop_stage(root: &Path, name: &str, body: &mut dyn std::io::Read) ->
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let dir = base.join(format!("{stamp}-{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)));
+    let dir = base.join(format!(
+        "{stamp}-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let name = khor_node::transfer::safe_name(name);
     let path = dir.join(&name);
@@ -1290,7 +1381,10 @@ pub fn term_drop_stage(root: &Path, name: &str, body: &mut dyn std::io::Read) ->
             }
             taken += n as u64;
             if taken > khor_node::drops::CAP {
-                return Err(khor_catalog::msg::drop_too_big(khor_node::drops::CAP >> 20, &name));
+                return Err(khor_catalog::msg::drop_too_big(
+                    khor_node::drops::CAP >> 20,
+                    &name,
+                ));
             }
             f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
         }
@@ -1361,7 +1455,10 @@ impl Drop for Held {
         let mut all = plock(dropping());
         // Its own entry only: a face never starts a second drop on one
         // terminal before the first is over, and this keeps it so.
-        if all.get(&self.id).is_some_and(|d| Arc::ptr_eq(&d.stopped, &self.stopped)) {
+        if all
+            .get(&self.id)
+            .is_some_and(|d| Arc::ptr_eq(&d.stopped, &self.stopped))
+        {
             all.remove(&self.id);
         }
     }
@@ -1470,7 +1567,10 @@ fn drop_items_blocking(
 pub fn term_forget(id: &str, redraw: bool) -> Result<bool, String> {
     submit_forget(id, redraw)?.wait()
 }
-pub fn submit_forget(id: &str, redraw: bool) -> Result<crate::command_queue::Pending<bool>, String> {
+pub fn submit_forget(
+    id: &str,
+    redraw: bool,
+) -> Result<crate::command_queue::Pending<bool>, String> {
     submit(id, move |term| forget(&term, redraw))
 }
 fn forget(term: &Term, redraw: bool) -> Result<bool, String> {
@@ -1491,7 +1591,11 @@ fn forget(term: &Term, redraw: bool) -> Result<bool, String> {
 pub fn term_resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
     submit_resize(id, cols, rows)?.wait()
 }
-pub fn submit_resize(id: &str, cols: u16, rows: u16) -> Result<crate::command_queue::Pending<()>, String> {
+pub fn submit_resize(
+    id: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<crate::command_queue::Pending<()>, String> {
     submit(id, move |term| resize(&term, cols, rows))
 }
 fn resize(term: &Term, cols: u16, rows: u16) -> Result<(), String> {
@@ -1548,7 +1652,11 @@ mod tests {
         while (read.position() as usize) < read.get_ref().len() {
             match khor_node::host::read_frame::<ClientOp>(&mut read).unwrap() {
                 ClientOp::Input(piece) => {
-                    assert!(piece.len() <= INPUT_FRAME, "a frame of {} bytes", piece.len());
+                    assert!(
+                        piece.len() <= INPUT_FRAME,
+                        "a frame of {} bytes",
+                        piece.len()
+                    );
                     back.extend_from_slice(&piece);
                 }
                 _ => panic!("only input was written"),
@@ -1668,7 +1776,11 @@ mod tests {
         push_feed(&feed, &fed, &vec![b'Q'; 4096]);
         push_feed(&feed, &fed, b"\x07after the picture\r\n");
         let (bytes, end) = take_all(&feed, &fed);
-        assert!(bytes.starts_with(b"after the picture"), "{:?}", &bytes[..24]);
+        assert!(
+            bytes.starts_with(b"after the picture"),
+            "{:?}",
+            &bytes[..24]
+        );
         assert_eq!(end, fed.load(Ordering::Relaxed));
         assert_eq!(
             end - plock(&feed).bytes.len() as u64,
@@ -1698,8 +1810,15 @@ mod tests {
         assert_eq!(plock(&feed).bytes.len(), FEED_CAP, "the feed is capped");
         let (bytes, end, reset) = take_since(&parser, &feed, &fed, 0);
         assert!(reset, "cursor 0 fell off the trimmed head");
-        assert!(bytes.len() < 8 * 1024, "the screen, not the feed: {} bytes", bytes.len());
-        assert!(bytes.starts_with(b"\x1b[?1h"), "in the modes the stream had reached");
+        assert!(
+            bytes.len() < 8 * 1024,
+            "the screen, not the feed: {} bytes",
+            bytes.len()
+        );
+        assert!(
+            bytes.starts_with(b"\x1b[?1h"),
+            "in the modes the stream had reached"
+        );
         let mut face = vt100::Parser::new(24, 80, 0);
         face.process(&bytes);
         assert_eq!(
@@ -1707,8 +1826,15 @@ mod tests {
             plock(&parser).screen().contents(),
             "…and drawn, it is the screen the program left"
         );
-        assert_eq!(face.screen().cursor_position(), plock(&parser).screen().cursor_position());
-        assert_eq!(end, fed.load(Ordering::Relaxed), "the face tails from the end");
+        assert_eq!(
+            face.screen().cursor_position(),
+            plock(&parser).screen().cursor_position()
+        );
+        assert_eq!(
+            end,
+            fed.load(Ordering::Relaxed),
+            "the face tails from the end"
+        );
         let (tail, _, reset) = take_since(&parser, &feed, &fed, end - 13);
         assert!(!reset, "a cursor still on the feed streams on");
         assert_eq!(tail, b"the very last");
@@ -1746,16 +1872,24 @@ mod tests {
         khor_node::host::resize_screen(&mut plock(&parser), 24, 79);
         let mut redraw = Vec::new();
         for r in 1..=6 {
-            redraw.extend_from_slice(format!("\x1b[{r};1H{}\x1b[K", "\u{6587}".repeat(39)).as_bytes());
+            redraw.extend_from_slice(
+                format!("\x1b[{r};1H{}\x1b[K", "\u{6587}".repeat(39)).as_bytes(),
+            );
         }
         redraw.extend_from_slice(b"\x1b[7;1HREDRAWN\x1b[K");
         paint(&acs, &parser, &feed, &fed, &redraw);
-        assert!(plock(&parser).screen().bracketed_paste(), "the oracle still knows the program asked for bracketed paste");
+        assert!(
+            plock(&parser).screen().bracketed_paste(),
+            "the oracle still knows the program asked for bracketed paste"
+        );
         let (bytes, _, reset) = take_since(&parser, &feed, &fed, 0);
         assert!(reset, "cursor 0 fell off the trimmed head");
         let mut face = vt100::Parser::new(24, 79, 0);
         face.process(&bytes);
-        assert!(face.screen().alternate_screen(), "the face is on the program's screen");
+        assert!(
+            face.screen().alternate_screen(),
+            "the face is on the program's screen"
+        );
         assert_eq!(
             face.screen().rows(0, 79).nth(6).unwrap().trim_end(),
             "REDRAWN",
@@ -1777,15 +1911,27 @@ mod tests {
         let (_, caught_up) = take_all(&feed, &fed);
         restart_feed(&feed, &fed);
         let (bytes, end, reset) = take_since(&parser, &feed, &fed, caught_up);
-        assert!(reset, "a face that had read everything is told to start over");
+        assert!(
+            reset,
+            "a face that had read everything is told to start over"
+        );
         assert!(bytes.is_empty(), "with nothing of the old life: {bytes:?}");
         push_feed(&feed, &fed, b"ring again");
         let (bytes, _, reset) = take_since(&parser, &feed, &fed, caught_up);
-        assert!(reset && bytes == b"ring again", "a face still in the old life gets the new one whole");
+        assert!(
+            reset && bytes == b"ring again",
+            "a face still in the old life gets the new one whole"
+        );
         let (bytes, _, reset) = take_since(&parser, &feed, &fed, end);
-        assert!(!reset && bytes == b"ring again", "a face already in the new life streams on");
+        assert!(
+            !reset && bytes == b"ring again",
+            "a face already in the new life streams on"
+        );
         let (all, _) = take_all(&feed, &fed);
-        assert_eq!(all, b"ring again", "and the old modes are not the new life's");
+        assert_eq!(
+            all, b"ring again",
+            "and the old modes are not the new life's"
+        );
     }
 
     /// **A replay of a trimmed feed opens in the modes its head set** —
@@ -1805,7 +1951,10 @@ mod tests {
         let end = fed.load(Ordering::Relaxed);
         plock(&feed).forget();
         let (all, _) = take_all(&feed, &fed);
-        assert_eq!(all, b"\x1b[?2004h$ ls", "the modes, then the line the cursor is on");
+        assert_eq!(
+            all, b"\x1b[?2004h$ ls",
+            "the modes, then the line the cursor is on"
+        );
         push_feed(&feed, &fed, b"\r\nafter");
         let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
         let (tail, _, reset) = take_since(&parser, &feed, &fed, end);
@@ -1907,7 +2056,8 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (mut host, _) = listener.accept().unwrap();
-        host.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+        host.set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .unwrap();
         let term = Arc::new(Term {
             conn: crate::connection::Connection::new(conn).unwrap(),
             commands: Default::default(),
@@ -1926,13 +2076,21 @@ mod tests {
         plock(terms()).insert(id.clone(), term.clone());
 
         term_open(Path::new("/nonexistent"), &id, 46, 30, 0).unwrap();
-        assert_eq!(term.holds.load(Ordering::Relaxed), 2, "held, not attached again");
+        assert_eq!(
+            term.holds.load(Ordering::Relaxed),
+            2,
+            "held, not attached again"
+        );
         match khor_node::host::read_frame::<ClientOp>(&mut host) {
             Ok(ClientOp::Resize { cols, rows }) => assert_eq!((cols, rows), (46, 30)),
             Ok(_) => panic!("something other than a resize reached the host"),
             Err(e) => panic!("no resize reached the host: {e}"),
         }
-        assert_eq!(plock(&term.parser).screen().size(), (30, 46), "the mode oracle follows");
+        assert_eq!(
+            plock(&term.parser).screen().size(),
+            (30, 46),
+            "the mode oracle follows"
+        );
 
         plock(terms()).remove(&id);
     }
@@ -1972,7 +2130,9 @@ mod tests {
                 feeder.arrived.notify_waiters();
                 at
             });
-            let chunk = term_wait(&id, since, std::time::Duration::from_secs(2)).await.unwrap();
+            let chunk = term_wait(&id, since, std::time::Duration::from_secs(2))
+                .await
+                .unwrap();
             let answered = std::time::Instant::now();
             let at = arrives.join().unwrap();
             assert_eq!(B64.decode(chunk.bytes.as_bytes()).unwrap(), b"x");
@@ -1980,13 +2140,18 @@ mod tests {
         }
         lags.sort();
         let median = lags[lags.len() / 2];
-        eprintln!("[wait] arrival -> answer median {median:?}, worst {:?} (the beat it replaces: 0-50 ms, 25 on average)", lags[lags.len() - 1]);
+        eprintln!(
+            "[wait] arrival -> answer median {median:?}, worst {:?} (the beat it replaces: 0-50 ms, 25 on average)",
+            lags[lags.len() - 1]
+        );
         assert!(median < std::time::Duration::from_millis(5), "{lags:?}");
 
         // Nothing new: it waits, then answers with nothing.
         let since = term.fed.load(Ordering::Relaxed);
         let began = std::time::Instant::now();
-        let chunk = term_wait(&id, since, std::time::Duration::from_millis(200)).await.unwrap();
+        let chunk = term_wait(&id, since, std::time::Duration::from_millis(200))
+            .await
+            .unwrap();
         assert!(began.elapsed() >= std::time::Duration::from_millis(190));
         assert!(chunk.bytes.is_empty());
 
@@ -2044,10 +2209,24 @@ mod quoting_tests {
     /// or a character the shell reads would change it.
     #[test]
     fn a_plain_path_goes_in_bare() {
-        for path in ["/tmp/plain.txt", "/Users/a/khor-drop/b-2.tar.gz", "/tmp/中文.txt", "a@b:c,d+e=f%"] {
+        for path in [
+            "/tmp/plain.txt",
+            "/Users/a/khor-drop/b-2.tar.gz",
+            "/tmp/中文.txt",
+            "a@b:c,d+e=f%",
+        ] {
             assert_eq!(shell_quote(path), path);
         }
-        for path in ["/tmp/a b", "~/x", "/tmp/a#b", "/tmp/a!b", "/tmp/[x]", "/tmp/a{b}", "=ls", ""] {
+        for path in [
+            "/tmp/a b",
+            "~/x",
+            "/tmp/a#b",
+            "/tmp/a!b",
+            "/tmp/[x]",
+            "/tmp/a{b}",
+            "=ls",
+            "",
+        ] {
             assert!(shell_quote(path).starts_with('\''), "{path:?} is quoted");
         }
     }
@@ -2126,10 +2305,22 @@ mod burst_tests {
             let chunk = b"y\r\n".repeat(8192 / 3);
             let mut sent = 0;
             while sent < 4 << 20 {
-                paint(&producer.acs, &producer.parser, &producer.feed, &producer.fed, &chunk);
+                paint(
+                    &producer.acs,
+                    &producer.parser,
+                    &producer.feed,
+                    &producer.fed,
+                    &chunk,
+                );
                 sent += chunk.len();
             }
-            paint(&producer.acs, &producer.parser, &producer.feed, &producer.fed, b"\x1b[1mDONE\x1b[m\r\n$ ");
+            paint(
+                &producer.acs,
+                &producer.parser,
+                &producer.feed,
+                &producer.fed,
+                b"\x1b[1mDONE\x1b[m\r\n$ ",
+            );
             finished.store(true, Ordering::SeqCst);
             std::time::Instant::now()
         });
@@ -2153,7 +2344,9 @@ mod burst_tests {
             since = chunk.seq;
             // The face's own time on what it got: xterm at `BURST_FACE_MBPS`
             // (default 20, about the audit's Mac; a phone is slower).
-            std::thread::sleep(std::time::Duration::from_secs_f64(bytes.len() as f64 / face_rate));
+            std::thread::sleep(std::time::Duration::from_secs_f64(
+                bytes.len() as f64 / face_rate,
+            ));
             if done.load(Ordering::SeqCst) && since == term.fed.load(Ordering::SeqCst) {
                 break;
             }
@@ -2223,8 +2416,14 @@ mod stage_tests {
         let base = stage_root(&root);
         let climbs = format!("{}/x/../../../a.txt", base.display());
         assert_eq!(staged_dir(&root, &climbs), None);
-        assert_eq!(staged_dir(&root, &base.join("a.txt").display().to_string()), None);
-        assert_eq!(staged_dir(&root, &root.join("x/a.txt").display().to_string()), None);
+        assert_eq!(
+            staged_dir(&root, &base.join("a.txt").display().to_string()),
+            None
+        );
+        assert_eq!(
+            staged_dir(&root, &root.join("x/a.txt").display().to_string()),
+            None
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2237,19 +2436,48 @@ mod stage_tests {
         let a = term_drop_stage(&root, "a.png", &mut &b"one"[..]).unwrap();
         let b = term_drop_stage(&root, "b.png", &mut &b"two"[..]).unwrap();
         let held = Held::begin("stage-test/cancel");
-        assert_eq!(term_drop_progress("stage-test/cancel"), Some(0.0), "held from the start");
+        assert_eq!(
+            term_drop_progress("stage-test/cancel"),
+            Some(0.0),
+            "held from the start"
+        );
         term_drop_cancel(&root, "stage-test/cancel", &[]);
-        let out = drop_text(&root, "stage-test/cancel", &[a.clone(), b.clone()], None, None, &held);
-        assert_eq!(out, Err(khor_node::drops::cancelled()), "the cancel, not a paste");
-        assert!(!Path::new(&a).exists() && !Path::new(&b).exists(), "the staged files went");
-        assert!(!khor_node::drops::dir_for(&root).join("a.png").exists(), "nothing landed");
+        let out = drop_text(
+            &root,
+            "stage-test/cancel",
+            &[a.clone(), b.clone()],
+            None,
+            None,
+            &held,
+        );
+        assert_eq!(
+            out,
+            Err(khor_node::drops::cancelled()),
+            "the cancel, not a paste"
+        );
+        assert!(
+            !Path::new(&a).exists() && !Path::new(&b).exists(),
+            "the staged files went"
+        );
+        assert!(
+            !khor_node::drops::dir_for(&root).join("a.png").exists(),
+            "nothing landed"
+        );
         drop(held);
-        assert_eq!(term_drop_progress("stage-test/cancel"), None, "gone when it returns");
+        assert_eq!(
+            term_drop_progress("stage-test/cancel"),
+            None,
+            "gone when it returns"
+        );
         // Uncancelled, the same road gives the paste.
         let c = term_drop_stage(&root, "c.png", &mut &b"three"[..]).unwrap();
         let held = Held::begin("stage-test/cancel");
-        let (landed, text) = drop_text(&root, "stage-test/cancel", &[c], None, None, &held).unwrap();
-        let at = khor_node::drops::dir_for(&root).join("c.png").display().to_string();
+        let (landed, text) =
+            drop_text(&root, "stage-test/cancel", &[c], None, None, &held).unwrap();
+        let at = khor_node::drops::dir_for(&root)
+            .join("c.png")
+            .display()
+            .to_string();
         assert_eq!(text, at);
         // Where it landed, for the face's trees (UX-43 §1).
         assert_eq!(landed, vec![at]);
@@ -2330,9 +2558,19 @@ mod stage_tests {
         let a = term_drop_stage(&root, "a.png", &mut &b"one"[..]).unwrap();
         let beside = root.join("keep.txt");
         std::fs::write(&beside, b"x").unwrap();
-        term_drop_cancel(&root, "stage-test/none", &[a.clone(), beside.display().to_string()]);
-        assert!(!Path::new(&a).parent().unwrap().exists(), "the staged file's directory went");
-        assert!(beside.exists(), "a path the face did not stage is not taken for one");
+        term_drop_cancel(
+            &root,
+            "stage-test/none",
+            &[a.clone(), beside.display().to_string()],
+        );
+        assert!(
+            !Path::new(&a).parent().unwrap().exists(),
+            "the staged file's directory went"
+        );
+        assert!(
+            beside.exists(),
+            "a path the face did not stage is not taken for one"
+        );
     }
 
     /// Over the drop's cap: refused with the cap in the sentence, and
@@ -2340,9 +2578,21 @@ mod stage_tests {
     #[test]
     fn over_the_cap_is_refused_and_leaves_nothing() {
         let root = fresh("cap");
-        let why = term_drop_stage(&root, "big.mov", &mut std::io::repeat(7).take(khor_node::drops::CAP + 1)).unwrap_err();
-        assert!(why.contains(&(khor_node::drops::CAP >> 20).to_string()), "{why}");
-        assert_eq!(std::fs::read_dir(stage_root(&root)).unwrap().count(), 0, "no staged file, no directory");
+        let why = term_drop_stage(
+            &root,
+            "big.mov",
+            &mut std::io::repeat(7).take(khor_node::drops::CAP + 1),
+        )
+        .unwrap_err();
+        assert!(
+            why.contains(&(khor_node::drops::CAP >> 20).to_string()),
+            "{why}"
+        );
+        assert_eq!(
+            std::fs::read_dir(stage_root(&root)).unwrap().count(),
+            0,
+            "no staged file, no directory"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2354,8 +2604,14 @@ mod stage_tests {
         let a = term_drop_stage(&root, "a b.png", &mut &b"one"[..]).unwrap();
         let b = term_drop_stage(&root, "a b.png", &mut &b"two"[..]).unwrap();
         let drop_dir = khor_node::drops::dir_for(&root);
-        assert_eq!(land_staged(&root, &a).unwrap(), drop_dir.join("a b.png").display().to_string());
-        assert_eq!(land_staged(&root, &b).unwrap(), drop_dir.join("a b-2.png").display().to_string());
+        assert_eq!(
+            land_staged(&root, &a).unwrap(),
+            drop_dir.join("a b.png").display().to_string()
+        );
+        assert_eq!(
+            land_staged(&root, &b).unwrap(),
+            drop_dir.join("a b-2.png").display().to_string()
+        );
         let mut names: Vec<_> = std::fs::read_dir(&drop_dir)
             .unwrap()
             .flatten()

@@ -142,7 +142,8 @@ async fn the_dialling_resident_reports_first_reply_time_and_where_its_dials_sett
     let _a = serve(&ra.0, "alpha");
     let _b = serve(&rb.0, "beta");
     timeout(Duration::from_secs(60), async {
-        while !(ra.0.join(".khor/endpoint.json").exists() && rb.0.join(".khor/endpoint.json").exists())
+        while !(ra.0.join(".khor/endpoint.json").exists()
+            && rb.0.join(".khor/endpoint.json").exists())
         {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -162,7 +163,9 @@ async fn the_dialling_resident_reports_first_reply_time_and_where_its_dials_sett
     assert_eq!(doctor_row(&rb.0, "roads")["state"], "unmeasured");
 
     let a = Node::open_as(ra.0.clone(), "alpha").unwrap();
-    let ticket = a.invite().expect("alpha mints a ticket through its resident");
+    let ticket = a
+        .invite()
+        .expect("alpha mints a ticket through its resident");
     let started = Instant::now();
     let peer = timeout(Duration::from_secs(90), b.pair(&ticket))
         .await
@@ -188,7 +191,9 @@ async fn the_dialling_resident_reports_first_reply_time_and_where_its_dials_sett
         );
         tokio::time::sleep(Duration::from_millis(250)).await;
     };
-    let ms = tally.first_reply_ms.expect("a dial that came back has a time");
+    let ms = tally
+        .first_reply_ms
+        .expect("a dial that came back has a time");
     assert!(
         ms > 0 && u128::from(ms) <= pairing_took.as_millis(),
         "the first reply ({ms}ms) came inside the pairing that made it ({pairing_took:?})"

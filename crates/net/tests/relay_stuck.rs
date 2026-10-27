@@ -23,7 +23,14 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 
 fn clear_proxies() {
-    for k in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"] {
+    for k in [
+        "http_proxy",
+        "https_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
         // SAFETY: set before any endpoint reads the environment; nothing
         // else in this binary writes it meanwhile.
         unsafe { std::env::remove_var(k) };
@@ -32,8 +39,13 @@ fn clear_proxies() {
 
 async fn plain_relay() -> iroh_relay::server::Server {
     let mut cfg = iroh_relay::server::ServerConfig::default();
-    cfg.relay = Some(iroh_relay::server::RelayConfig::new((std::net::Ipv4Addr::LOCALHOST, 0)));
-    iroh_relay::server::Server::spawn(cfg).await.expect("the relay spawns")
+    cfg.relay = Some(iroh_relay::server::RelayConfig::new((
+        std::net::Ipv4Addr::LOCALHOST,
+        0,
+    )));
+    iroh_relay::server::Server::spawn(cfg)
+        .await
+        .expect("the relay spawns")
 }
 
 /// The length of the websocket frame at the head of `buf`, once all of it
@@ -65,7 +77,9 @@ async fn swallowing_road(to: std::net::SocketAddr) -> (u16, Arc<AtomicU64>) {
     let count = swallowed.clone();
     tokio::spawn(async move {
         while let Ok((inbound, _)) = listener.accept().await {
-            let Ok(outbound) = TcpStream::connect(to).await else { continue };
+            let Ok(outbound) = TcpStream::connect(to).await else {
+                continue;
+            };
             let (mut ir, mut iw) = inbound.into_split();
             let (mut or, mut ow) = outbound.into_split();
             let frozen = Arc::new(tokio::sync::Notify::new());
@@ -81,7 +95,9 @@ async fn swallowing_road(to: std::net::SocketAddr) -> (u16, Arc<AtomicU64>) {
                     };
                     buf.extend_from_slice(&chunk[..n]);
                     if !upgraded {
-                        let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") else { continue };
+                        let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") else {
+                            continue;
+                        };
                         if ow.write_all(&buf[..end + 4]).await.is_err() {
                             break;
                         }
@@ -150,27 +166,36 @@ fn answer_echoes(ep: &iroh::Endpoint) {
 /// One echo from `from` to `to` through the relay at `url`.
 async fn echo(from: &iroh::Endpoint, to: &iroh::Endpoint, url: &str) -> Result<Duration, String> {
     let began = Instant::now();
-    let addr = endpoint::dial_addr(&to.addr().id.to_string(), &[], &[url.to_string()]).map_err(|e| e.to_string())?;
+    let addr = endpoint::dial_addr(&to.addr().id.to_string(), &[], &[url.to_string()])
+        .map_err(|e| e.to_string())?;
     let conn = tokio::time::timeout(Duration::from_secs(10), from.connect(addr, endpoint::ALPN))
         .await
         .map_err(|_| "dial timed out".to_string())?
         .map_err(|e| e.to_string())?;
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-    send.write_all(b"still there").await.map_err(|e| e.to_string())?;
+    send.write_all(b"still there")
+        .await
+        .map_err(|e| e.to_string())?;
     send.finish().map_err(|e| e.to_string())?;
     let back = tokio::time::timeout(Duration::from_secs(10), recv.read_to_end(1024))
         .await
         .map_err(|_| "no answer within 10 s".to_string())?
         .map_err(|e| e.to_string())?;
     conn.close(0u32.into(), b"done");
-    (back == b"still there").then_some(began.elapsed()).ok_or_else(|| format!("came back as {back:?}"))
+    (back == b"still there")
+        .then_some(began.elapsed())
+        .ok_or_else(|| format!("came back as {back:?}"))
 }
 
 /// A relay-only endpoint homed on `home`.
 async fn on(home: &str) -> iroh::Endpoint {
-    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay::bare(home.to_owned())], false)
-        .await
-        .unwrap();
+    let ep = endpoint::bind_with(
+        iroh::SecretKey::generate(),
+        &[Relay::bare(home.to_owned())],
+        false,
+    )
+    .await
+    .unwrap();
     answer_echoes(&ep);
     ep
 }
@@ -183,7 +208,11 @@ async fn a_relay_that_never_answers_its_close_stops_no_other_relay() {
         std::env::set_var("KHOR_RELAY_ONLY", "1");
         std::env::set_var(endpoint::NO_MDNS_ENV, "1");
     }
-    let (r1, r2, r3) = (plain_relay().await, plain_relay().await, plain_relay().await);
+    let (r1, r2, r3) = (
+        plain_relay().await,
+        plain_relay().await,
+        plain_relay().await,
+    );
     let url = |s: &iroh_relay::server::Server| format!("http://{}", s.http_addr().unwrap());
     let (port, swallowed) = swallowing_road(r2.http_addr().unwrap()).await;
     let through_road = format!("http://127.0.0.1:{port}");
@@ -197,7 +226,12 @@ async fn a_relay_that_never_answers_its_close_stops_no_other_relay() {
     let delta = on(&url(&r1)).await;
     for ep in [&alpha, &beta, &gamma, &delta] {
         tokio::time::timeout(Duration::from_secs(20), async {
-            while !ep.addr().addrs.iter().any(|a| matches!(a, iroh::TransportAddr::Relay(_))) {
+            while !ep
+                .addr()
+                .addrs
+                .iter()
+                .any(|a| matches!(a, iroh::TransportAddr::Relay(_)))
+            {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         })
@@ -207,17 +241,25 @@ async fn a_relay_that_never_answers_its_close_stops_no_other_relay() {
 
     // Alpha reaches beta through the road: a connection to beta's relay
     // that is not alpha's home.
-    let took = echo(&alpha, &beta, &through_road).await.expect("alpha reaches beta through the road");
+    let took = echo(&alpha, &beta, &through_road)
+        .await
+        .expect("alpha reaches beta through the road");
     eprintln!("[stuck] alpha → beta through the road: {took:?}");
 
     // That connection idles out after 60 s and closes; the road swallows the
     // Close and holds the connection open, silent.
     let began = Instant::now();
     while swallowed.load(Ordering::Relaxed) == 0 {
-        assert!(began.elapsed() < Duration::from_secs(90), "alpha never closed its connection to beta's relay");
+        assert!(
+            began.elapsed() < Duration::from_secs(90),
+            "alpha never closed its connection to beta's relay"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    eprintln!("[stuck] alpha closed the idle connection {:?} later; the road swallowed it", began.elapsed());
+    eprintln!(
+        "[stuck] alpha closed the idle connection {:?} later; the road swallowed it",
+        began.elapsed()
+    );
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Alpha must still reach gamma, on a relay it holds no connection to.
@@ -228,7 +270,10 @@ async fn a_relay_that_never_answers_its_close_stops_no_other_relay() {
     let back = echo(&delta, &alpha, &url(&r1)).await;
     eprintln!("[stuck] delta → alpha on alpha's home: {back:?}");
     assert!(reached.is_ok(), "alpha reaches gamma: {reached:?}");
-    assert!(back.is_ok(), "delta reaches alpha on alpha's home: {back:?}");
+    assert!(
+        back.is_ok(),
+        "delta reaches alpha on alpha's home: {back:?}"
+    );
 
     for ep in [alpha, beta, gamma, delta] {
         ep.close().await;

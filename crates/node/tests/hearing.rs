@@ -26,7 +26,12 @@ fn answering(ep: &iroh::Endpoint) {
 
 async fn homed(ep: &iroh::Endpoint) {
     tokio::time::timeout(Duration::from_secs(30), async {
-        while !ep.addr().addrs.iter().any(|t| matches!(t, iroh::TransportAddr::Relay(_))) {
+        while !ep
+            .addr()
+            .addrs
+            .iter()
+            .any(|t| matches!(t, iroh::TransportAddr::Relay(_)))
+        {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
@@ -41,20 +46,39 @@ async fn ears_that_work_echo_and_closed_ones_do_not() {
     let map = vec![Relay::bare(url.clone())];
     let relays = vec![url];
 
-    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &map, false).await.unwrap();
+    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &map, false)
+        .await
+        .unwrap();
     answering(&ep);
     homed(&ep).await;
-    assert_eq!(ears_heard(&ep, &map, false, &relays, true).await, Hearing::Echoed, "healthy ears");
+    assert_eq!(
+        ears_heard(&ep, &map, false, &relays, true).await,
+        Hearing::Echoed,
+        "healthy ears"
+    );
 
     // Closed under it, the relay still up: what new ears cure.
     ep.close().await;
-    assert_eq!(ears_heard(&ep, &map, false, &relays, true).await, Hearing::Unheard, "closed ears, relay up");
+    assert_eq!(
+        ears_heard(&ep, &map, false, &relays, true).await,
+        Hearing::Unheard,
+        "closed ears, relay up"
+    );
 
     // Nothing answers on the road out: not deafness, the network.
     let dead = vec![Relay::bare("http://127.0.0.1:9")];
-    let lone = endpoint::bind_with(iroh::SecretKey::generate(), &dead, false).await.unwrap();
+    let lone = endpoint::bind_with(iroh::SecretKey::generate(), &dead, false)
+        .await
+        .unwrap();
     assert_eq!(
-        ears_heard(&lone, &dead, false, &["http://127.0.0.1:9".to_owned()], false).await,
+        ears_heard(
+            &lone,
+            &dead,
+            false,
+            &["http://127.0.0.1:9".to_owned()],
+            false
+        )
+        .await,
         Hearing::NoRelay,
         "no relay answers"
     );

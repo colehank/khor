@@ -36,8 +36,8 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use iroh::endpoint::transports::{
-    AddrKind, CustomEndpoint, CustomSender, CustomTransport, FourTuple, PathSelection, PathSelectionContext,
-    PathSelector, RecvInfo, Transmit,
+    AddrKind, CustomEndpoint, CustomSender, CustomTransport, FourTuple, PathSelection,
+    PathSelectionContext, PathSelector, RecvInfo, Transmit,
 };
 use iroh::{EndpointId, TransportAddr};
 use iroh_base::CustomAddr;
@@ -155,8 +155,14 @@ impl Links {
     ///
     /// [`carrier`]: Links::carrier
     pub fn last_carrier(&self, peer: &EndpointId) -> Option<Carrier> {
-        self.carrier(peer)
-            .or_else(|| self.0.last.lock().unwrap_or_else(|p| p.into_inner()).get(peer).copied())
+        self.carrier(peer).or_else(|| {
+            self.0
+                .last
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .get(peer)
+                .copied()
+        })
     }
 
     /// Every machine with a link up, and what it rides.
@@ -192,8 +198,19 @@ impl Links {
     {
         let (out, out_rx) = mpsc::channel::<Bytes>(QUEUE);
         let serial = self.0.serial.fetch_add(1, Relaxed);
-        self.lock().insert(peer, Link { out, carrier, serial });
-        self.0.last.lock().unwrap_or_else(|p| p.into_inner()).insert(peer, carrier);
+        self.lock().insert(
+            peer,
+            Link {
+                out,
+                carrier,
+                serial,
+            },
+        );
+        self.0
+            .last
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(peer, carrier);
         let (done, gone) = oneshot::channel();
         let links = self.clone();
         tokio::spawn(async move {
@@ -221,7 +238,12 @@ impl Links {
             if r.read_exact(&mut frame).await.is_err() {
                 return;
             }
-            let inbox = self.0.inbox.lock().unwrap_or_else(|p| p.into_inner()).clone();
+            let inbox = self
+                .0
+                .inbox
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
             // No endpoint bound yet, or one that closed: a datagram to a
             // socket nobody reads.
             let Some(inbox) = inbox else { continue };
@@ -289,7 +311,9 @@ impl CustomEndpoint for Bound {
         while n < bufs.len() {
             let (from, data) = match self.inbox.poll_recv(cx) {
                 Poll::Ready(Some(p)) => p,
-                Poll::Ready(None) => return Poll::Ready(Err(io::Error::other("carried links closed"))),
+                Poll::Ready(None) => {
+                    return Poll::Ready(Err(io::Error::other("carried links closed")));
+                }
                 Poll::Pending if n > 0 => break,
                 Poll::Pending => return Poll::Pending,
             };
@@ -387,7 +411,11 @@ pub const DIRECT_DWELL: Duration = Duration::from_secs(60);
 /// is more; within [`DIRECT_DWELL`] of the last move (`settling`), twice
 /// that margin or half of `rtt`.
 pub fn direct_margin(rtt: Duration, settling: bool) -> Duration {
-    if settling { (DIRECT_MARGIN * 2).max(rtt / 2) } else { DIRECT_MARGIN.max(rtt / 4) }
+    if settling {
+        (DIRECT_MARGIN * 2).max(rtt / 2)
+    } else {
+        DIRECT_MARGIN.max(rtt / 4)
+    }
 }
 
 /// **Between a carried road and the relay, the margin the faster must
@@ -478,7 +506,9 @@ pub struct RoadOrder {
 
 impl Default for RoadOrder {
     fn default() -> Self {
-        RoadOrder { spare: Spare::from_env() }
+        RoadOrder {
+            spare: Spare::from_env(),
+        }
     }
 }
 
@@ -532,7 +562,11 @@ impl PathSelector for RoadOrder {
         // The path that will carry the connection: the new choice, or the
         // one in use staying.
         let carrying = match chosen {
-            Some(i) => Some((candidates[i].0.network_path().clone(), candidates[i].1, candidates[i].2)),
+            Some(i) => Some((
+                candidates[i].0.network_path().clone(),
+                candidates[i].1,
+                candidates[i].2,
+            )),
             None => current.and_then(|(t, r)| ctx.current().map(|c| (c.clone(), t, r))),
         };
         if let Some((path, tier, rtt)) = carrying
@@ -542,7 +576,9 @@ impl PathSelector for RoadOrder {
                 .iter()
                 .map(|(p, t, r)| (*t == Tier::Direct && *p.network_path() != path, *r))
                 .collect();
-            let held = candidates.iter().position(|(p, _, _)| Some(p.network_path()) == ctx.backup());
+            let held = candidates
+                .iter()
+                .position(|(p, _, _)| Some(p.network_path()) == ctx.backup());
             if let Some(i) = spare(self.spare, rtt, &others, held) {
                 selection.set_backup(&candidates[i].0);
             }
@@ -564,7 +600,12 @@ pub fn rides_out(stall: Duration, fastest: Option<Duration>) -> bool {
 /// among them. The one held stays while it qualifies and is no more than
 /// [`DIRECT_MARGIN`] behind the fastest that does (no trading places on
 /// noise); otherwise the fastest that qualifies.
-pub fn spare(policy: Spare, rtt: Duration, others: &[(bool, Duration)], held: Option<usize>) -> Option<usize> {
+pub fn spare(
+    policy: Spare,
+    rtt: Duration,
+    others: &[(bool, Duration)],
+    held: Option<usize>,
+) -> Option<usize> {
     let ok = |r: Duration| match policy {
         Spare::Off => false,
         Spare::Near => r <= rtt + SPARE_NEAR,
@@ -577,7 +618,11 @@ pub fn spare(policy: Spare, rtt: Duration, others: &[(bool, Duration)], held: Op
         .min_by_key(|(_, (_, r))| *r)
         .map(|(i, _)| i)?;
     match held {
-        Some(h) if others[h].0 && ok(others[h].1) && others[h].1 <= others[best].1 + DIRECT_MARGIN => Some(h),
+        Some(h)
+            if others[h].0 && ok(others[h].1) && others[h].1 <= others[best].1 + DIRECT_MARGIN =>
+        {
+            Some(h)
+        }
         _ => Some(best),
     }
 }
@@ -608,7 +653,9 @@ pub fn choose_settling(
     };
     match (tier, best_tier) {
         // Up to direct at any time; within direct, only past the margin.
-        (Tier::Direct, Tier::Direct) => (best_rtt + direct_margin(rtt, settling) <= rtt).then_some(best),
+        (Tier::Direct, Tier::Direct) => {
+            (best_rtt + direct_margin(rtt, settling) <= rtt).then_some(best)
+        }
         (_, Tier::Direct) => Some(best),
         // Off direct only when it broke, and then `current` is `None`.
         (Tier::Direct, _) => None,
@@ -625,11 +672,23 @@ mod tests {
 
     #[test]
     fn direct_first_then_the_faster_of_carried_and_relay() {
-        let all = [(Tier::Relay, MS(5)), (Tier::Carried, MS(40)), (Tier::Direct, MS(90))];
+        let all = [
+            (Tier::Relay, MS(5)),
+            (Tier::Carried, MS(40)),
+            (Tier::Direct, MS(90)),
+        ];
         assert_eq!(choose(None, &all), Some(2), "direct, however slow");
-        assert_eq!(choose(None, &all[..2]), Some(0), "the relay, faster than the carried road");
+        assert_eq!(
+            choose(None, &all[..2]),
+            Some(0),
+            "the relay, faster than the carried road"
+        );
         let hop = [(Tier::Relay, MS(58)), (Tier::Carried, MS(29))];
-        assert_eq!(choose(None, &hop), Some(1), "the hop, faster than the relay");
+        assert_eq!(
+            choose(None, &hop),
+            Some(1),
+            "the hop, faster than the relay"
+        );
         assert_eq!(choose(None, &all[..1]), Some(0));
         assert_eq!(choose(None, &[]), None);
     }
@@ -639,25 +698,55 @@ mod tests {
     #[test]
     fn a_carried_road_and_the_relay_trade_places_by_ten_ms() {
         let iphone_maclab = [(Tier::Relay, MS(58)), (Tier::Carried, MS(29))];
-        assert_eq!(choose(Some((Tier::Relay, MS(58))), &iphone_maclab), Some(1), "29 ms through turing beats 58 ms");
-        assert_eq!(choose(Some((Tier::Carried, MS(29))), &iphone_maclab), None, "and holds");
+        assert_eq!(
+            choose(Some((Tier::Relay, MS(58))), &iphone_maclab),
+            Some(1),
+            "29 ms through turing beats 58 ms"
+        );
+        assert_eq!(
+            choose(Some((Tier::Carried, MS(29))), &iphone_maclab),
+            None,
+            "and holds"
+        );
         let close = [(Tier::Relay, MS(30)), (Tier::Carried, MS(22))];
-        assert_eq!(choose(Some((Tier::Relay, MS(30))), &close), None, "8 ms is not enough");
+        assert_eq!(
+            choose(Some((Tier::Relay, MS(30))), &close),
+            None,
+            "8 ms is not enough"
+        );
         assert_eq!(choose(Some((Tier::Carried, MS(22))), &close), None);
         let degraded = [(Tier::Relay, MS(30)), (Tier::Carried, MS(90))];
-        assert_eq!(choose(Some((Tier::Carried, MS(90))), &degraded), Some(0), "a hop whose leg degraded gives way");
+        assert_eq!(
+            choose(Some((Tier::Carried, MS(90))), &degraded),
+            Some(0),
+            "a hop whose leg degraded gives way"
+        );
         // Broken: the one in use is gone, so there is no current.
-        assert_eq!(choose(None, &degraded[..1]), Some(0), "the carried road broke: the relay");
+        assert_eq!(
+            choose(None, &degraded[..1]),
+            Some(0),
+            "the carried road broke: the relay"
+        );
     }
 
     #[test]
     fn direct_takes_over_at_any_time_and_is_left_only_when_it_breaks() {
         let open = [(Tier::Carried, MS(40)), (Tier::Direct, MS(60))];
         assert_eq!(choose(Some((Tier::Carried, MS(40))), &open), Some(1));
-        assert_eq!(choose(Some((Tier::Relay, MS(40))), &[(Tier::Relay, MS(40)), (Tier::Direct, MS(60))]), Some(1));
+        assert_eq!(
+            choose(
+                Some((Tier::Relay, MS(40))),
+                &[(Tier::Relay, MS(40)), (Tier::Direct, MS(60))]
+            ),
+            Some(1)
+        );
         assert_eq!(choose(Some((Tier::Direct, MS(60))), &open), None);
         let two = [(Tier::Direct, MS(60)), (Tier::Direct, MS(57))];
-        assert_eq!(choose(Some((Tier::Direct, MS(60))), &two), None, "within the margin");
+        assert_eq!(
+            choose(Some((Tier::Direct, MS(60))), &two),
+            None,
+            "within the margin"
+        );
         let two = [(Tier::Direct, MS(60)), (Tier::Direct, MS(20))];
         assert_eq!(choose(Some((Tier::Direct, MS(60))), &two), Some(1));
     }
@@ -667,8 +756,14 @@ mod tests {
     /// faster than the stall, it is left.
     #[test]
     fn a_stall_shorter_than_the_other_road_is_ridden_out() {
-        assert!(rides_out(MS(300), Some(MS(500))), "300 ms stalled, the relay 500 ms away: stay");
-        assert!(!rides_out(MS(500), Some(MS(500))), "the relay's round trip: go");
+        assert!(
+            rides_out(MS(300), Some(MS(500))),
+            "300 ms stalled, the relay 500 ms away: stay"
+        );
+        assert!(
+            !rides_out(MS(500), Some(MS(500))),
+            "the relay's round trip: go"
+        );
         assert!(!rides_out(MS(300), Some(MS(9))), "a spare at 9 ms: go");
         assert!(!rides_out(MS(300), None), "nowhere to go: nothing to hold");
     }
@@ -680,15 +775,35 @@ mod tests {
     #[test]
     fn a_move_between_direct_roads_holds_for_a_minute() {
         let loaded = [(Tier::Direct, MS(8)), (Tier::Direct, MS(1))];
-        assert_eq!(choose_settling(Some((Tier::Direct, MS(8))), &loaded, true), None, "settling: 7 ms is not enough");
-        assert_eq!(choose_settling(Some((Tier::Direct, MS(8))), &loaded, false), Some(1), "settled: it is");
+        assert_eq!(
+            choose_settling(Some((Tier::Direct, MS(8))), &loaded, true),
+            None,
+            "settling: 7 ms is not enough"
+        );
+        assert_eq!(
+            choose_settling(Some((Tier::Direct, MS(8))), &loaded, false),
+            Some(1),
+            "settled: it is"
+        );
         let slowed = [(Tier::Direct, MS(21)), (Tier::Direct, MS(1))];
-        assert_eq!(choose_settling(Some((Tier::Direct, MS(21))), &slowed, true), Some(1), "p2: at once");
+        assert_eq!(
+            choose_settling(Some((Tier::Direct, MS(21))), &slowed, true),
+            Some(1),
+            "p2: at once"
+        );
         assert_eq!(direct_margin(MS(1), false), MS(5));
-        assert_eq!(direct_margin(MS(60), false), MS(15), "a quarter of a slow road");
+        assert_eq!(
+            direct_margin(MS(60), false),
+            MS(15),
+            "a quarter of a slow road"
+        );
         assert_eq!(direct_margin(MS(60), true), MS(30));
         let far = [(Tier::Direct, MS(60)), (Tier::Direct, MS(48))];
-        assert_eq!(choose(Some((Tier::Direct, MS(60))), &far), None, "12 ms on 60 is noise");
+        assert_eq!(
+            choose(Some((Tier::Direct, MS(60))), &far),
+            None,
+            "12 ms on 60 is noise"
+        );
     }
 
     /// vendor/iroh patch 18: the spare beside a direct path in use.
@@ -696,22 +811,54 @@ mod tests {
     fn a_spare_is_a_direct_road_of_about_one_speed_and_stays() {
         // (another direct path?, rtt): the relay, a second network, a far one.
         let others = [(false, MS(20)), (true, MS(3)), (true, MS(40))];
-        assert_eq!(spare(Spare::Off, MS(1), &others, None), None, "off keeps none");
-        assert_eq!(spare(Spare::Near, MS(1), &others, None), Some(1), "the second network, 2 ms behind");
-        assert_eq!(spare(Spare::Near, MS(1), &others[..1], None), None, "the relay is never the spare");
-        assert_eq!(spare(Spare::Near, MS(1), &[(true, MS(40))], None), None, "39 ms behind is no spare");
-        assert_eq!(spare(Spare::On, MS(1), &[(true, MS(40))], None), Some(0), "unless asked for any");
+        assert_eq!(
+            spare(Spare::Off, MS(1), &others, None),
+            None,
+            "off keeps none"
+        );
+        assert_eq!(
+            spare(Spare::Near, MS(1), &others, None),
+            Some(1),
+            "the second network, 2 ms behind"
+        );
+        assert_eq!(
+            spare(Spare::Near, MS(1), &others[..1], None),
+            None,
+            "the relay is never the spare"
+        );
+        assert_eq!(
+            spare(Spare::Near, MS(1), &[(true, MS(40))], None),
+            None,
+            "39 ms behind is no spare"
+        );
+        assert_eq!(
+            spare(Spare::On, MS(1), &[(true, MS(40))], None),
+            Some(0),
+            "unless asked for any"
+        );
         let two = [(true, MS(4)), (true, MS(2))];
-        assert_eq!(spare(Spare::Near, MS(1), &two, Some(0)), Some(0), "the one held stays within the margin");
+        assert_eq!(
+            spare(Spare::Near, MS(1), &two, Some(0)),
+            Some(0),
+            "the one held stays within the margin"
+        );
         let two = [(true, MS(9)), (true, MS(2))];
-        assert_eq!(spare(Spare::Near, MS(1), &two, Some(0)), Some(1), "and gives way past it");
+        assert_eq!(
+            spare(Spare::Near, MS(1), &two, Some(0)),
+            Some(1),
+            "and gives way past it"
+        );
     }
 
     #[test]
     fn a_carried_address_names_its_machine() {
         let id = iroh::SecretKey::generate().public();
         assert_eq!(id_of(&addr_of(&id)), Some(id));
-        assert_eq!(id_of(&CustomAddr::from((7u64, &id.as_bytes()[..]))), None, "another transport's");
+        assert_eq!(
+            id_of(&CustomAddr::from((7u64, &id.as_bytes()[..]))),
+            None,
+            "another transport's"
+        );
         assert_eq!(id_of(&CustomAddr::from((CARRY, &[1u8, 2][..]))), None);
     }
 
@@ -721,7 +868,10 @@ mod tests {
     #[tokio::test]
     async fn an_ended_link_is_remembered_by_what_it_rode() {
         let links = Links::new(iroh::SecretKey::generate().public());
-        let (peer, via) = (iroh::SecretKey::generate().public(), iroh::SecretKey::generate().public());
+        let (peer, via) = (
+            iroh::SecretKey::generate().public(),
+            iroh::SecretKey::generate().public(),
+        );
         assert_eq!(links.last_carrier(&peer), None);
         let (here, there) = tokio::io::duplex(64);
         let (r, w) = tokio::io::split(here);
@@ -730,6 +880,10 @@ mod tests {
         drop(there);
         attached.ended().await;
         assert_eq!(links.carrier(&peer), None, "the link is gone");
-        assert_eq!(links.last_carrier(&peer), Some(Carrier::Hop { via }), "and is remembered as the hop");
+        assert_eq!(
+            links.last_carrier(&peer),
+            Some(Carrier::Hop { via }),
+            "and is remembered as the hop"
+        );
     }
 }

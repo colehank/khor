@@ -248,7 +248,11 @@ fn gen_rust(rs: &mut String, section: &str, zh: &toml::Table, en: &toml::Table) 
 const SAID_ACROSS: [&str; 2] = ["msg", "cli"];
 
 fn gen_templates(rs: &mut String, zh: &toml::Table, en: &toml::Table) {
-    writeln!(rs, "/// `(section.key, zh, en)` for every entry of {SAID_ACROSS:?}.").unwrap();
+    writeln!(
+        rs,
+        "/// `(section.key, zh, en)` for every entry of {SAID_ACROSS:?}."
+    )
+    .unwrap();
     writeln!(rs, "pub static TEMPLATES: &[(&str, &str, &str)] = &[").unwrap();
     for section in SAID_ACROSS {
         let (z, e) = (table(zh, section, "zh.toml"), table(en, section, "en.toml"));

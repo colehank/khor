@@ -61,7 +61,11 @@ impl Server {
 
     fn until_shown(&self, line: &str) {
         let deadline = Instant::now() + Duration::from_secs(20);
-        while !self.tmux(&["capture-pane", "-p", "-t", "one"]).lines().any(|l| l == line) {
+        while !self
+            .tmux(&["capture-pane", "-p", "-t", "one"])
+            .lines()
+            .any(|l| l == line)
+        {
             assert!(Instant::now() < deadline, "{line} was never shown");
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -80,7 +84,12 @@ fn numbers(lines: &[String]) -> Vec<u32> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_phone_reads_a_far_tmux_pane_whole_then_from_its_anchor_and_an_unpaired_key_is_refused() {
-    if Command::new("tmux").arg("-V").stdout(Stdio::null()).status().is_err() {
+    if Command::new("tmux")
+        .arg("-V")
+        .stdout(Stdio::null())
+        .status()
+        .is_err()
+    {
         println!("skipped: no tmux on this machine");
         return;
     }
@@ -93,7 +102,19 @@ async fn a_phone_reads_a_far_tmux_pane_whole_then_from_its_anchor_and_an_unpaire
         std::env::set_var("KHOR_TMUX_SOCKET", &sock);
     }
     let s = Server(sock);
-    s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "60", "-y", "20", "/bin/sh"]);
+    s.tmux(&[
+        "-f",
+        "/dev/null",
+        "new-session",
+        "-d",
+        "-s",
+        "one",
+        "-x",
+        "60",
+        "-y",
+        "20",
+        "/bin/sh",
+    ]);
     s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
     s.tmux(&["send-keys", "-t", "one", "clear; seq 1 300", "Enter"]);
     s.until_shown("300");
@@ -116,26 +137,40 @@ async fn a_phone_reads_a_far_tmux_pane_whole_then_from_its_anchor_and_an_unpaire
         .expect("pairing must not hang")
         .unwrap();
 
-    let first = timeout(Duration::from_secs(60), b.pane_history("alpha", "shell/9-9", None))
-        .await
-        .expect("the read must not hang")
-        .unwrap();
+    let first = timeout(
+        Duration::from_secs(60),
+        b.pane_history("alpha", "shell/9-9", None),
+    )
+    .await
+    .expect("the read must not hang")
+    .unwrap();
     assert!(first.refill && !first.alternate, "{first:?}");
     let mut seen = numbers(&first.lines);
     seen.extend(numbers(&first.screen));
-    assert_eq!(seen, (1..=300).collect::<Vec<_>>(), "alpha's pane, history and screen, once");
+    assert_eq!(
+        seen,
+        (1..=300).collect::<Vec<_>>(),
+        "alpha's pane, history and screen, once"
+    );
 
     s.tmux(&["send-keys", "-t", "one", "seq 301 400", "Enter"]);
     s.until_shown("400");
-    let next = timeout(Duration::from_secs(60), b.pane_history("alpha", "shell/9-9", Some(first.anchor.clone())))
-        .await
-        .expect("must not hang")
-        .unwrap();
+    let next = timeout(
+        Duration::from_secs(60),
+        b.pane_history("alpha", "shell/9-9", Some(first.anchor.clone())),
+    )
+    .await
+    .expect("must not hang")
+    .unwrap();
     assert!(!next.refill, "{next:?}");
     let mut held = numbers(&first.lines);
     held.extend(numbers(&next.lines));
     held.extend(numbers(&next.screen));
-    assert_eq!(held, (1..=400).collect::<Vec<_>>(), "only what followed crossed");
+    assert_eq!(
+        held,
+        (1..=400).collect::<Vec<_>>(),
+        "only what followed crossed"
+    );
 
     // The phone itself has no tmux: asked of itself, it says so.
     assert!(b.pane_history("", "shell/9-9", None).await.is_err());

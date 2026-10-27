@@ -29,7 +29,11 @@ async fn a_relay_outage_is_journalled_and_the_report_holds_no_secret() {
             .and_then(|s| s.parse().ok())
             .unwrap_or(45),
     );
-    let (ra, rb, rr) = (scratch("journal-a"), scratch("journal-b"), scratch("journal-r"));
+    let (ra, rb, rr) = (
+        scratch("journal-a"),
+        scratch("journal-b"),
+        scratch("journal-r"),
+    );
     let (_relay, url) = local_relay(&rr.0);
     let to: std::net::SocketAddr = url
         .trim_start_matches("http://")
@@ -100,7 +104,10 @@ async fn a_relay_outage_is_journalled_and_the_report_holds_no_secret() {
             khor_node::journal::read(h, None, 0)
                 .iter()
                 .rev()
-                .find(|e| e.peer.is_none() && matches!(&e.what, What::Home { state, .. } if state == "connected"))
+                .find(|e| {
+                    e.peer.is_none()
+                        && matches!(&e.what, What::Home { state, .. } if state == "connected")
+                })
                 .map(|e| e.at)
                 .expect("each home relay connected again")
         })
@@ -119,8 +126,13 @@ async fn a_relay_outage_is_journalled_and_the_report_holds_no_secret() {
         .min()
         .expect("a dial after the relay came back");
     let late = dialled_back.saturating_sub(homes_back);
-    eprintln!("[journal] the later home relay connected again; the first dial through came {late} ms after");
-    assert!(late < 5_000, "the dial came {late} ms after the relay was back");
+    eprintln!(
+        "[journal] the later home relay connected again; the first dial through came {late} ms after"
+    );
+    assert!(
+        late < 5_000,
+        "the dial came {late} ms after the relay was back"
+    );
     // **A redial that carries its request is one round trip** (net-g): a
     // client sent OBSERVED_ADDRESS in 0-RTT, the far side closed on it,
     // and every such dial waited ~6 s for the closed connection to drain
@@ -131,13 +143,20 @@ async fn a_relay_outage_is_journalled_and_the_report_holds_no_secret() {
         .iter()
         .flat_map(|h| khor_node::journal::read(h, None, 0))
         .filter_map(|e| match e.what {
-            What::Dial { won: Some(khor_node::journal::Won::Early), ms, .. } => Some(ms),
+            What::Dial {
+                won: Some(khor_node::journal::Won::Early),
+                ms,
+                ..
+            } => Some(ms),
             _ => None,
         })
         .collect();
     eprintln!("[journal] dials that carried their request: {early:?} ms");
     assert!(!early.is_empty(), "a dial carried its request");
-    assert!(early.iter().all(|ms| *ms < 3_000), "a dial that carried its request took {early:?} ms");
+    assert!(
+        early.iter().all(|ms| *ms < 3_000),
+        "a dial that carried its request took {early:?} ms"
+    );
     // On the side that forgave: the other may have been dialled first.
     assert!(
         [&ra.0, &rb.0].iter().any(|h| {
@@ -164,7 +183,14 @@ async fn a_relay_outage_is_journalled_and_the_report_holds_no_secret() {
         "the wire the outage killed"
     );
     assert!(
-        has(&|w| matches!(w, What::Dial { won: None, retry_s: Some(_), .. })),
+        has(&|w| matches!(
+            w,
+            What::Dial {
+                won: None,
+                retry_s: Some(_),
+                ..
+            }
+        )),
         "a failed dial with the backoff it left"
     );
     assert!(
@@ -176,7 +202,11 @@ async fn a_relay_outage_is_journalled_and_the_report_holds_no_secret() {
         .args(["journal", "--report", "--minutes", "30"])
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let said = String::from_utf8_lossy(&out.stdout);
     let path = said
         .split_once(['：', ':'])
@@ -213,7 +243,11 @@ async fn measure_one_side_losing_its_relay() {
             .and_then(|s| s.parse().ok())
             .unwrap_or(120),
     );
-    let (ra, rb, rr) = (scratch("journal1-a"), scratch("journal1-b"), scratch("journal1-r"));
+    let (ra, rb, rr) = (
+        scratch("journal1-a"),
+        scratch("journal1-b"),
+        scratch("journal1-r"),
+    );
     let (_relay, url) = local_relay(&rr.0);
     let to: std::net::SocketAddr = url
         .trim_start_matches("http://")
@@ -293,7 +327,9 @@ async fn a_face_arriving_and_a_page_opened_dial_past_the_wait() {
             .into_iter()
             .find_map(|e| match e.what {
                 // When it started: an entry is written as its dial ends.
-                What::Dial { by: By::Forced, ms, .. } if e.at.saturating_sub(ms) + 100 >= since => {
+                What::Dial {
+                    by: By::Forced, ms, ..
+                } if e.at.saturating_sub(ms) + 100 >= since => {
                     Some(e.at.saturating_sub(ms).saturating_sub(since))
                 }
                 _ => None,
@@ -329,13 +365,20 @@ async fn a_face_arriving_and_a_page_opened_dial_past_the_wait() {
     }
     eprintln!("[journal] a face arrived at beta: a dial to alpha started {faced:?} ms after");
     // Both measured before either is judged: the numbers are the point.
-    assert!(paged.is_some_and(|ms| ms < 2_000), "the page's dial: {paged:?}");
-    assert!(faced.is_some_and(|ms| ms < 2_000), "the face's dial: {faced:?}");
+    assert!(
+        paged.is_some_and(|ms| ms < 2_000),
+        "the page's dial: {paged:?}"
+    );
+    assert!(
+        faced.is_some_and(|ms| ms < 2_000),
+        "the face's dial: {faced:?}"
+    );
 
     let all = khor_node::journal::read(&p.rb.0, Some(&alpha_id), 0);
     for by in ["page", "face"] {
         assert!(
-            all.iter().any(|e| matches!(&e.what, What::Person { by: b } if b == by)),
+            all.iter()
+                .any(|e| matches!(&e.what, What::Person { by: b } if b == by)),
             "the {by} is journalled"
         );
     }
@@ -348,11 +391,22 @@ async fn a_face_arriving_and_a_page_opened_dial_past_the_wait() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_far_journal_is_read_from_here() {
     let p = pair("journal-on").await;
-    let (alpha_id, beta_id) = (p.alpha.device_str().to_owned(), p.beta.device_str().to_owned());
+    let (alpha_id, beta_id) = (
+        p.alpha.device_str().to_owned(),
+        p.beta.device_str().to_owned(),
+    );
     until_reads(&p.beta, &alpha_id, Hop::Direct, Duration::from_secs(60)).await;
     let began = Instant::now();
-    let lines = p.beta.journal_on("alpha", Some(&beta_id), 60).await.expect("alpha answers");
-    eprintln!("[journal] alpha's journal read at beta in {:?}: {} lines", began.elapsed(), lines.len());
+    let lines = p
+        .beta
+        .journal_on("alpha", Some(&beta_id), 60)
+        .await
+        .expect("alpha answers");
+    eprintln!(
+        "[journal] alpha's journal read at beta in {:?}: {} lines",
+        began.elapsed(),
+        lines.len()
+    );
     for l in &lines {
         eprintln!("[journal]   {} {}\t{}", l.when, l.machine, l.text);
     }
@@ -362,9 +416,15 @@ async fn the_far_journal_is_read_from_here() {
         "the lines alpha holds of beta and of itself, in order"
     );
     assert!(
-        lines.iter().any(|l| l.peer.is_none() && l.machine == "alpha"),
+        lines
+            .iter()
+            .any(|l| l.peer.is_none() && l.machine == "alpha"),
         "alpha's own events, named alpha"
     );
-    assert!(lines.iter().all(|l| l.peer.as_deref().is_none_or(|id| id == beta_id)));
+    assert!(
+        lines
+            .iter()
+            .all(|l| l.peer.as_deref().is_none_or(|id| id == beta_id))
+    );
     assert!(khor_node::journal::lines_since(&p.ra.0, Some("../journal/here"), 0).is_empty());
 }

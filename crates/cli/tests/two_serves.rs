@@ -185,9 +185,12 @@ fn a_second_serve_on_one_store_stands_down() {
     )
     .unwrap();
     let first = keeper(&home.0, "box-a");
-    wait_for("the first serve to stand up", 30, || inner_pid(&home.0).is_some());
+    wait_for("the first serve to stand up", 30, || {
+        inner_pid(&home.0).is_some()
+    });
     let inner = inner_pid(&home.0);
-    let pid_file = || fs::read_to_string(home.0.join(".khor").join("serve.pid")).unwrap_or_default();
+    let pid_file =
+        || fs::read_to_string(home.0.join(".khor").join("serve.pid")).unwrap_or_default();
     assert_eq!(pid_file().trim(), first.0.id().to_string());
 
     let mut second = Keeper(
@@ -210,7 +213,18 @@ fn a_second_serve_on_one_store_stands_down() {
     });
     assert!(status.unwrap().success());
     let said = fs::read_to_string(home.0.join("second.log")).unwrap();
-    assert!(said.contains(&first.0.id().to_string()), "it names the serve in the way: {said}");
-    assert_eq!(pid_file().trim(), first.0.id().to_string(), "serve.pid still names the keeper");
-    assert_eq!(inner_pid(&home.0), inner, "and the resident is the one that was there");
+    assert!(
+        said.contains(&first.0.id().to_string()),
+        "it names the serve in the way: {said}"
+    );
+    assert_eq!(
+        pid_file().trim(),
+        first.0.id().to_string(),
+        "serve.pid still names the keeper"
+    );
+    assert_eq!(
+        inner_pid(&home.0),
+        inner,
+        "and the resident is the one that was there"
+    );
 }

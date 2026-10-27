@@ -34,7 +34,9 @@ fn known_hosts_with_key(dir: &Path, name: &str) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn every_machine_tries_the_address_and_two_keys_mean_two_machines() {
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         while let Ok((mut s, _)) = listener.accept().await {
@@ -70,16 +72,31 @@ async fn every_machine_tries_the_address_and_two_keys_mean_two_machines() {
     for (id, s) in &view.rows {
         assert_eq!(s.outcome, ReachOutcome::Reached, "{id}: {s:?}");
         assert_eq!(s.banner.as_deref(), Some("SSH-2.0-OpenSSH_9.9 scratch"));
-        assert!(s.host_key.as_deref().is_some_and(|k| k.len() == 64), "{id} read its known_hosts: {s:?}");
+        assert!(
+            s.host_key.as_deref().is_some_and(|k| k.len() == 64),
+            "{id} read its known_hosts: {s:?}"
+        );
     }
     assert!(view.disagree, "two keys for one name are two machines");
-    assert!(view.entrance.is_some(), "a machine that got through is the entrance");
+    assert!(
+        view.entrance.is_some(),
+        "a machine that got through is the entrance"
+    );
 
     // A port nobody holds: every machine says refused, and there is no
     // entrance.
-    let closed = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    let closed = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     let view = beta.reach_probe("127.0.0.1", closed).await.unwrap();
-    assert!(view.rows.iter().all(|(_, s)| s.outcome == ReachOutcome::Refused), "{view:?}");
+    assert!(
+        view.rows
+            .iter()
+            .all(|(_, s)| s.outcome == ReachOutcome::Refused),
+        "{view:?}"
+    );
     assert_eq!(view.entrance, None);
 
     // The verb: one line per machine, the entrance, the warning.
@@ -93,6 +110,12 @@ async fn every_machine_tries_the_address_and_two_keys_mean_two_machines() {
     eprintln!("{text}{}", String::from_utf8_lossy(&out.stderr));
     assert!(out.status.success());
     assert!(text.contains("alpha") && text.contains("beta"), "{text}");
-    assert!(text.contains("SSH-2.0-OpenSSH_9.9") && text.contains("SHA256:"), "{text}");
-    assert!(text.contains("Entrance:") && text.contains("different keys"), "{text}");
+    assert!(
+        text.contains("SSH-2.0-OpenSSH_9.9") && text.contains("SHA256:"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Entrance:") && text.contains("different keys"),
+        "{text}"
+    );
 }

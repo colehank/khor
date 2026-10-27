@@ -26,7 +26,10 @@ use khor_node::Node;
 use scratch::*;
 
 fn env_u64(k: &str, d: u64) -> u64 {
-    std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+    std::env::var(k)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(d)
 }
 
 /// A shell loop that marks one command a second, as a shell with khor's
@@ -40,8 +43,17 @@ fn open_on(home: &std::path::Path, title: &str, cmd: &[&str]) -> String {
         .env("KHOR_NAME", "desk")
         .output()
         .unwrap();
-    let sid = String::from_utf8_lossy(&out.stdout).trim().lines().last().unwrap_or_default().to_owned();
-    assert!(sid.contains('/'), "a session id: {sid:?} {}", String::from_utf8_lossy(&out.stderr));
+    let sid = String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        sid.contains('/'),
+        "a session id: {sid:?} {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     sid
 }
 
@@ -75,10 +87,26 @@ async fn what_a_busy_session_and_an_absent_phone_cost_with_nobody_looking() {
     // SAFETY: before any endpoint in this process binds.
     unsafe { std::env::set_var("KHOR_RELAY_ONLY", "1") };
     own_tmux();
-    let (rd, rp, rr) = (scratch("cost-desk"), scratch("cost-phone"), scratch("cost-relay"));
+    let (rd, rp, rr) = (
+        scratch("cost-desk"),
+        scratch("cost-phone"),
+        scratch("cost-relay"),
+    );
     let (_relay, direct) = local_relay(&rr.0);
-    let to: std::net::SocketAddr = direct.trim_start_matches("http://").trim_end_matches('/').parse().unwrap();
-    let (at, _road) = slow_road(to, Impair { rtt, loss_pct: 0, stall: rtt }).await;
+    let to: std::net::SocketAddr = direct
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .parse()
+        .unwrap();
+    let (at, _road) = slow_road(
+        to,
+        Impair {
+            rtt,
+            loss_pct: 0,
+            stall: rtt,
+        },
+    )
+    .await;
     let url = format!("http://{at}");
     for h in [&rd.0, &rp.0] {
         home_on(h, &url);
@@ -115,8 +143,14 @@ async fn what_a_busy_session_and_an_absent_phone_cost_with_nobody_looking() {
 
     let busy_min = minute(&phone, span).await;
     let after = doing(&phone);
-    eprintln!("[cost] S busy session, nobody watching, {}s: {busy_min}; its row now says {after:?}", span.as_secs());
-    let _ = khor(&rd.0).args(["close", &busy]).env("KHOR_NAME", "desk").output();
+    eprintln!(
+        "[cost] S busy session, nobody watching, {}s: {busy_min}; its row now says {after:?}",
+        span.as_secs()
+    );
+    let _ = khor(&rd.0)
+        .args(["close", &busy])
+        .env("KHOR_NAME", "desk")
+        .output();
     tokio::time::sleep(Duration::from_secs(10)).await;
     let idle_min = minute(&phone, span).await;
     eprintln!("[cost] S all idle, {}s: {idle_min}", span.as_secs());
@@ -133,7 +167,8 @@ async fn what_a_busy_session_and_an_absent_phone_cost_with_nobody_looking() {
         let began = Instant::now();
         while began.elapsed() < span {
             let _ = desk.face_is_here(face).await;
-            tokio::time::sleep(Duration::from_secs(10).min(span.saturating_sub(began.elapsed()))).await;
+            tokio::time::sleep(Duration::from_secs(10).min(span.saturating_sub(began.elapsed())))
+                .await;
         }
         let c1 = desk.wire_counts().await.unwrap();
         let per = |b: u64| b as f64 * 60.0 / span.as_secs_f64() / 1024.0;
@@ -153,10 +188,20 @@ async fn what_a_busy_session_and_an_absent_phone_cost_with_nobody_looking() {
         );
     }
     let log = std::fs::read_to_string(rd.0.join("serve.log")).unwrap_or_default();
-    for line in log.lines().rev().take(12).collect::<Vec<_>>().into_iter().rev() {
+    for line in log
+        .lines()
+        .rev()
+        .take(12)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
         eprintln!("[cost] desk log: {line}");
     }
     for sid in idle {
-        let _ = khor(&rd.0).args(["close", &sid]).env("KHOR_NAME", "desk").output();
+        let _ = khor(&rd.0)
+            .args(["close", &sid])
+            .env("KHOR_NAME", "desk")
+            .output();
     }
 }

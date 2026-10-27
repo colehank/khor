@@ -79,7 +79,11 @@ async fn pausing_closes_what_is_open_and_dials_nothing() {
 
     // Control: answered, on a wire beta now holds.
     assert!(ask().await.is_ok(), "control: alpha answers beta");
-    assert_eq!(watch.is_open("alpha").await, Some(true), "control: beta holds a wire to alpha");
+    assert_eq!(
+        watch.is_open("alpha").await,
+        Some(true),
+        "control: beta holds a wire to alpha"
+    );
 
     // alpha pauses: the wire beta holds is closed from alpha's side.
     khor_node::pause::set_on(&ra.0, true).unwrap();
@@ -89,7 +93,10 @@ async fn pausing_closes_what_is_open_and_dials_nothing() {
         }
     })
     .await;
-    assert!(closed.is_ok(), "a paused alpha let go of the wire beta already held");
+    assert!(
+        closed.is_ok(),
+        "a paused alpha let go of the wire beta already held"
+    );
     assert!(ask().await.is_err(), "and does not answer on a new one");
 
     khor_node::pause::set_on(&ra.0, false).unwrap();
@@ -112,7 +119,11 @@ async fn pausing_closes_what_is_open_and_dials_nothing() {
         why.contains(khor_catalog::msg::paused_no_dial()),
         "a paused machine does not dial, and says so: {why}"
     );
-    assert_eq!(watch.is_open("alpha").await, Some(false), "and the wire it held is let go");
+    assert_eq!(
+        watch.is_open("alpha").await,
+        Some(false),
+        "and the wire it held is let go"
+    );
 
     serve_a.abort();
     serve_b.abort();

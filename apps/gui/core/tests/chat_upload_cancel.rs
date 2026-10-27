@@ -40,7 +40,10 @@ impl Fixture {
             "khor-upload-{}",
             khor_node::link::fresh_hex().unwrap()
         ));
-        let root = control.as_ref().map(|dir| dir.join("store")).unwrap_or(root);
+        let root = control
+            .as_ref()
+            .map(|dir| dir.join("store"))
+            .unwrap_or(root);
         std::fs::create_dir(&root).unwrap();
         #[cfg(unix)]
         {
@@ -259,7 +262,9 @@ impl Fixture {
         }
         let close = match khor_node::gui_host::connect_at(&self.addr, &self.cookie) {
             Ok(mut attached) => {
-                let _ = attached.stream.set_write_timeout(Some(Duration::from_secs(2)));
+                let _ = attached
+                    .stream
+                    .set_write_timeout(Some(Duration::from_secs(2)));
                 write_frame(&mut attached.stream, &GuiOp::Close)
             }
             Err(error) => Err(error),
@@ -286,8 +291,12 @@ impl Fixture {
             } else {
                 match host.join() {
                     Ok(Ok(())) => (),
-                    Ok(Err(why)) => { error.get_or_insert(why); }
-                    Err(_) => { error.get_or_insert("upload host thread panicked".into()); }
+                    Ok(Err(why)) => {
+                        error.get_or_insert(why);
+                    }
+                    Err(_) => {
+                        error.get_or_insert("upload host thread panicked".into());
+                    }
                 }
             }
         }
@@ -339,9 +348,16 @@ fn app_event(control: &Option<PathBuf>, mut value: serde_json::Value) {
     if let Some(dir) = control {
         static LOG: Mutex<()> = Mutex::new(());
         let _log = LOG.lock().unwrap();
-        value["unix_ms"] = serde_json::json!(std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
-        let mut file = std::fs::OpenOptions::new().append(true).open(dir.join("wire.jsonl")).unwrap();
+        value["unix_ms"] = serde_json::json!(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(dir.join("wire.jsonl"))
+            .unwrap();
         serde_json::to_writer(&mut file, &value).unwrap();
         file.write_all(b"\n").unwrap();
         file.sync_all().unwrap();
@@ -354,9 +370,16 @@ fn op_event(connection: usize, op: &GuiOp) -> serde_json::Value {
         GuiOp::Parts => ("Parts", 0),
         GuiOp::Stop => ("Stop", 0),
         GuiOp::Say(text) => ("Say", text.len()),
-        GuiOp::SayWith { text, images, files } => ("SayWith", text.len()
-            + images.iter().map(|(_, data)| data.len()).sum::<usize>()
-            + files.iter().map(|(_, text)| text.len()).sum::<usize>()),
+        GuiOp::SayWith {
+            text,
+            images,
+            files,
+        } => (
+            "SayWith",
+            text.len()
+                + images.iter().map(|(_, data)| data.len()).sum::<usize>()
+                + files.iter().map(|(_, text)| text.len()).sum::<usize>(),
+        ),
         GuiOp::Answer { .. } => ("Answer", 0),
         GuiOp::Close => ("Close", 0),
         GuiOp::Replay => ("Replay", 0),
@@ -379,44 +402,64 @@ fn op_event(connection: usize, op: &GuiOp) -> serde_json::Value {
 #[ignore = "bounded resident fixture for the final real App upload acceptance"]
 fn app_upload_host() {
     let began = Instant::now();
-    let control = PathBuf::from(std::env::var_os("KHOR_UPLOAD_APP_DIR").expect("KHOR_UPLOAD_APP_DIR"));
-    assert!(control.is_absolute(), "use an absolute private control directory");
-    assert!(!control.to_str().unwrap().chars().any(char::is_whitespace),
-        "the fixture command requires a control path without whitespace");
+    let control =
+        PathBuf::from(std::env::var_os("KHOR_UPLOAD_APP_DIR").expect("KHOR_UPLOAD_APP_DIR"));
+    assert!(
+        control.is_absolute(),
+        "use an absolute private control directory"
+    );
+    assert!(
+        !control.to_str().unwrap().chars().any(char::is_whitespace),
+        "the fixture command requires a control path without whitespace"
+    );
     let mut builder = std::fs::DirBuilder::new();
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
         builder.mode(0o700);
     }
-    builder.create(&control).expect("control directory must not already exist");
+    builder
+        .create(&control)
+        .expect("control directory must not already exist");
     drop(private_file(&control.join("wire.jsonl")));
     let mut fixture = Fixture::start(Some(control.clone()));
     let node = Node::open(fixture.root.clone()).unwrap();
     let sid = SessionId(fixture.id.clone());
     assert!(node.far_machine(&sid).unwrap().is_none());
     let session_dir = node.session_dir(&sid).unwrap();
-    publish_private(&control.join("ready.json"), &serde_json::json!({
-        "pid":std::process::id(), "root":fixture.root, "session":fixture.id,
-        "session_dir":session_dir, "host_file":host::host_file_path(&session_dir),
-        "upstream_addr":fixture.addr,
-        "relay_addr":format!("127.0.0.1:{}", host::read_host_file(&session_dir).unwrap().port),
-        "first_part":control.join("first-part.json"), "release":control.join("release"),
-        "stop":control.join("stop"), "wire_log":control.join("wire.jsonl"),
-        "acp_log":fixture.root.join("requests.jsonl"), "limit_seconds":300,
-        "scope":"real local GUI host and deterministic Python ACP; App must attach itself"
-    }));
+    publish_private(
+        &control.join("ready.json"),
+        &serde_json::json!({
+            "pid":std::process::id(), "root":fixture.root, "session":fixture.id,
+            "session_dir":session_dir, "host_file":host::host_file_path(&session_dir),
+            "upstream_addr":fixture.addr,
+            "relay_addr":format!("127.0.0.1:{}", host::read_host_file(&session_dir).unwrap().port),
+            "first_part":control.join("first-part.json"), "release":control.join("release"),
+            "stop":control.join("stop"), "wire_log":control.join("wire.jsonl"),
+            "acp_log":fixture.root.join("requests.jsonl"), "limit_seconds":300,
+            "scope":"real local GUI host and deterministic Python ACP; App must attach itself"
+        }),
+    );
     while !control.join("stop").is_file() && began.elapsed() < Duration::from_secs(270) {
         std::thread::sleep(Duration::from_millis(20));
     }
     let requested = control.join("stop").is_file();
     fixture.finish().expect("owned host/relay cleanup");
-    publish_private(&control.join("finished.json"), &serde_json::json!({
-        "stop_requested":requested, "connections":fixture.accepted.load(Ordering::Relaxed),
-        "elapsed_ms":began.elapsed().as_millis()
-    }));
-    assert!(requested, "resident fixture reached its deadline without stop");
-    assert!(began.elapsed() <= Duration::from_secs(300), "fixture cleanup exceeded total deadline");
+    publish_private(
+        &control.join("finished.json"),
+        &serde_json::json!({
+            "stop_requested":requested, "connections":fixture.accepted.load(Ordering::Relaxed),
+            "elapsed_ms":began.elapsed().as_millis()
+        }),
+    );
+    assert!(
+        requested,
+        "resident fixture reached its deadline without stop"
+    );
+    assert!(
+        began.elapsed() <= Duration::from_secs(300),
+        "fixture cleanup exceeded total deadline"
+    );
 }
 
 fn cancel_upload() {

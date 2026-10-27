@@ -145,8 +145,13 @@ pub fn was_added(path: &Path) -> bool {
             .map(|d| d.as_millis() as i64)
             .ok()
     };
-    let Ok(m) = std::fs::metadata(path) else { return false };
-    match (m.created().ok().and_then(ms), m.modified().ok().and_then(ms)) {
+    let Ok(m) = std::fs::metadata(path) else {
+        return false;
+    };
+    match (
+        m.created().ok().and_then(ms),
+        m.modified().ok().and_then(ms),
+    ) {
         (Some(born), Some(changed)) => (changed - born).abs() <= ADDED_WITHIN_MS,
         _ => false,
     }
@@ -202,7 +207,9 @@ fn newest_into(dir: &Path, names: &mut std::collections::HashSet<String>) -> Opt
             return best;
         }
         seen += 1;
-        let Some(name) = e.file_name().to_str().map(str::to_owned) else { continue };
+        let Some(name) = e.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
         if name.starts_with('.') {
             continue;
         }
@@ -218,13 +225,17 @@ fn newest_into(dir: &Path, names: &mut std::collections::HashSet<String>) -> Opt
         }
     }
     for (top, d) in below {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for e in rd.flatten() {
             if seen >= MOST_NEWEST {
                 return best;
             }
             seen += 1;
-            let Some(name) = e.file_name().to_str().map(str::to_owned) else { continue };
+            let Some(name) = e.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
             if name.starts_with('.') || !e.file_type().is_ok_and(|k| k.is_file()) {
                 continue;
             }
@@ -350,9 +361,16 @@ mod tests {
             std::fs::write(tmp.join(p), "x").unwrap();
             stamp(&tmp.join(p), t);
         }
-        assert_eq!(newest_file(&tmp), Some(("notes/b.md".to_owned(), 2_000_000)));
+        assert_eq!(
+            newest_file(&tmp),
+            Some(("notes/b.md".to_owned(), 2_000_000))
+        );
         stamp(&tmp.join("a.txt"), 3_000);
-        assert_eq!(newest_file(&tmp), Some(("a.txt".to_owned(), 3_000_000)), "the top level counts the same");
+        assert_eq!(
+            newest_file(&tmp),
+            Some(("a.txt".to_owned(), 3_000_000)),
+            "the top level counts the same"
+        );
     }
 
     /// **Made or edited** (UX-51): a file just written is made; one whose
@@ -364,7 +382,11 @@ mod tests {
         let f = tmp.join("new.txt");
         std::fs::write(&f, "x").unwrap();
         let born = std::fs::metadata(&f).unwrap().created().ok();
-        assert_eq!(was_added(&f), born.is_some(), "just written: made, where a birth time is kept");
+        assert_eq!(
+            was_added(&f),
+            born.is_some(),
+            "just written: made, where a birth time is kept"
+        );
         if let Some(b) = born {
             std::fs::File::open(&f)
                 .unwrap()

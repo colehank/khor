@@ -26,8 +26,8 @@
 //! by design, so a key that synced would mean pairing a laptop silently
 //! handed it the keys to every face in the fleet.
 
-use std::path::{Path, PathBuf};
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 
 use khor_catalog::msg;
 

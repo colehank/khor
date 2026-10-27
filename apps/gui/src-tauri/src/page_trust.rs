@@ -48,7 +48,12 @@ struct Book {
 
 fn book() -> &'static Mutex<Book> {
     static B: OnceLock<Mutex<Book>> = OnceLock::new();
-    B.get_or_init(|| Mutex::new(Book { offered: HashMap::new(), passed: HashMap::new() }))
+    B.get_or_init(|| {
+        Mutex::new(Book {
+            offered: HashMap::new(),
+            passed: HashMap::new(),
+        })
+    })
 }
 
 /// The host of an address, lower-cased.
@@ -56,7 +61,11 @@ fn host_of(url: &str) -> Option<String> {
     let rest = url.split_once("://")?.1;
     let auth = rest.split(['/', '?', '#']).next()?;
     let auth = auth.rsplit_once('@').map_or(auth, |(_, h)| h);
-    let host = if let Some(v6) = auth.strip_prefix('[') { v6.split(']').next()? } else { auth.rsplit_once(':').map_or(auth, |(h, _)| h) };
+    let host = if let Some(v6) = auth.strip_prefix('[') {
+        v6.split(']').next()?
+    } else {
+        auth.rsplit_once(':').map_or(auth, |(h, _)| h)
+    };
     (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
@@ -145,7 +154,15 @@ pub unsafe fn offered(tab: &str, exit: &str, error: *mut AnyObject) {
     } else {
         unsafe { leaf_of(trust) }
     };
-    b.offered.insert(tab.to_owned(), Offer { exit: exit.to_owned(), host, url, leaf });
+    b.offered.insert(
+        tab.to_owned(),
+        Offer {
+            exit: exit.to_owned(),
+            host,
+            url,
+            leaf,
+        },
+    );
 }
 
 /// 「仍然访问」: `tab`'s offer passed for this run; answers the address to
@@ -172,7 +189,11 @@ pub fn forget(tab: &str) {
 /// # Safety
 /// `challenge` is a live `NSURLAuthenticationChallenge` and `done` its
 /// completion handler; called once.
-pub unsafe fn answer(exit: Option<&str>, challenge: *mut AnyObject, done: &block2::Block<dyn Fn(isize, *mut AnyObject)>) {
+pub unsafe fn answer(
+    exit: Option<&str>,
+    challenge: *mut AnyObject,
+    done: &block2::Block<dyn Fn(isize, *mut AnyObject)>,
+) {
     let cred = exit.and_then(|exit| unsafe { credential(exit, challenge) });
     match cred {
         Some(c) => done.call((0, Retained::as_ptr(&c) as *mut AnyObject)),
@@ -195,7 +216,12 @@ unsafe fn credential(exit: &str, challenge: *mut AnyObject) -> Option<Retained<A
     }
     let host: Option<Retained<NSString>> = unsafe { msg_send![space, host] };
     let host = host?.to_string().to_ascii_lowercase();
-    let passed = book().lock().ok()?.passed.get(&(exit.to_owned(), host)).cloned()?;
+    let passed = book()
+        .lock()
+        .ok()?
+        .passed
+        .get(&(exit.to_owned(), host))
+        .cloned()?;
     let trust: *mut AnyObject = unsafe { msg_send![space, serverTrust] };
     if trust.is_null() {
         return None;
@@ -216,9 +242,18 @@ mod tests {
 
     #[test]
     fn the_host_is_read_from_any_address_form() {
-        assert_eq!(host_of("https://Box.local:8443/a?b#c").as_deref(), Some("box.local"));
-        assert_eq!(host_of("https://user:pw@10.0.0.2/").as_deref(), Some("10.0.0.2"));
-        assert_eq!(host_of("https://[fe80::1]:443/").as_deref(), Some("fe80::1"));
+        assert_eq!(
+            host_of("https://Box.local:8443/a?b#c").as_deref(),
+            Some("box.local")
+        );
+        assert_eq!(
+            host_of("https://user:pw@10.0.0.2/").as_deref(),
+            Some("10.0.0.2")
+        );
+        assert_eq!(
+            host_of("https://[fe80::1]:443/").as_deref(),
+            Some("fe80::1")
+        );
         assert_eq!(host_of("about:blank"), None);
     }
 
@@ -226,8 +261,14 @@ mod tests {
     fn only_certificate_failures_are_passable() {
         assert!(passable("NSURLErrorDomain", -1202));
         assert!(passable("NSURLErrorDomain", -1201));
-        assert!(!passable("NSURLErrorDomain", -1200), "a failed handshake is not a certificate to pass");
-        assert!(!passable("NSURLErrorDomain", -1206), "a client certificate is not passed");
+        assert!(
+            !passable("NSURLErrorDomain", -1200),
+            "a failed handshake is not a certificate to pass"
+        );
+        assert!(
+            !passable("NSURLErrorDomain", -1206),
+            "a client certificate is not passed"
+        );
         assert!(!passable("WebKitErrorDomain", -1202));
     }
 
@@ -235,11 +276,30 @@ mod tests {
     fn a_pass_is_one_offer_once() {
         book().lock().unwrap().offered.insert(
             "t1".into(),
-            Offer { exit: "m".into(), host: "box.local".into(), url: "https://box.local/".into(), leaf: Some(vec![1, 2]) },
+            Offer {
+                exit: "m".into(),
+                host: "box.local".into(),
+                url: "https://box.local/".into(),
+                leaf: Some(vec![1, 2]),
+            },
         );
         assert_eq!(pass("t1").as_deref(), Some("https://box.local/"));
         assert_eq!(pass("t1"), None, "the offer is taken");
-        assert_eq!(book().lock().unwrap().passed.get(&("m".into(), "box.local".into())), Some(&Some(vec![1, 2])));
-        assert!(!book().lock().unwrap().passed.contains_key(&("other".into(), "box.local".into())), "another machine's host is not passed");
+        assert_eq!(
+            book()
+                .lock()
+                .unwrap()
+                .passed
+                .get(&("m".into(), "box.local".into())),
+            Some(&Some(vec![1, 2]))
+        );
+        assert!(
+            !book()
+                .lock()
+                .unwrap()
+                .passed
+                .contains_key(&("other".into(), "box.local".into())),
+            "another machine's host is not passed"
+        );
     }
 }

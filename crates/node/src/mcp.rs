@@ -150,11 +150,15 @@ const TOOLS: &[Tool] = &[
         schema: || json!({"type":"object","properties":{"machine":{"type":"string"}},"additionalProperties":false}),
     },
     Tool {
-        name: "agent_connect", reads:false, about:msg::mcp_agent_connect,
+        name: "agent_connect",
+        reads: false,
+        about: msg::mcp_agent_connect,
         schema: || json!({"type":"object","properties":{"machine":{"type":"string"},"agent":{"type":"string"},"url":{"type":"string"}},"required":["agent","url"],"additionalProperties":false}),
     },
     Tool {
-        name: "agent_disconnect", reads:false, about:msg::mcp_agent_disconnect,
+        name: "agent_disconnect",
+        reads: false,
+        about: msg::mcp_agent_disconnect,
         schema: || json!({"type":"object","properties":{"machine":{"type":"string"},"agent":{"type":"string"}},"required":["agent"],"additionalProperties":false}),
     },
     Tool {
@@ -308,8 +312,8 @@ pub(crate) fn call_with_parent(
     };
     let n = Node::open(root.to_path_buf())?;
     match name {
-        "agents" | "agent_connect" | "agent_disconnect" | "delegate" | "task_status" | "task_wait" | "task_cancel" | "task_answer"
-        | "task_list" => {
+        "agents" | "agent_connect" | "agent_disconnect" | "delegate" | "task_status"
+        | "task_wait" | "task_cancel" | "task_answer" | "task_list" => {
             use crate::delegation::{
                 Action,
                 protocol::{Message, Part, Role},
@@ -319,9 +323,13 @@ pub(crate) fn call_with_parent(
                 if value.is_empty() { None } else { Some(value) }
             };
             let binding = if matches!(name, "delegate" | "task_answer") {
-                let answer = runtime()?.block_on(n.delegation_on(&s("machine"), Action::ResolveBinding {
-                    agent: s("agent"), task: optional("task"),
-                }))?;
+                let answer = runtime()?.block_on(n.delegation_on(
+                    &s("machine"),
+                    Action::ResolveBinding {
+                        agent: s("agent"),
+                        task: optional("task"),
+                    },
+                ))?;
                 let crate::delegation::Answer::Binding { binding } = answer else {
                     return Err("Delegation returned no binding".into());
                 };
@@ -329,11 +337,16 @@ pub(crate) fn call_with_parent(
                     return Err("Delegation binding identity mismatch".into());
                 }
                 Some(binding)
-            } else { None };
+            } else {
+                None
+            };
             let action = match name {
                 "agents" => Action::Agents,
-                "agent_connect" => Action::Connect {agent:s("agent"),url:s("url")},
-                "agent_disconnect" => Action::Disconnect {agent:s("agent")},
+                "agent_connect" => Action::Connect {
+                    agent: s("agent"),
+                    url: s("url"),
+                },
+                "agent_disconnect" => Action::Disconnect { agent: s("agent") },
                 "delegate" => {
                     let mut message = Message::new(Role::User, vec![Part::text(s("prompt"))]);
                     message.message_id = s("request");
@@ -355,7 +368,17 @@ pub(crate) fn call_with_parent(
                     Action::Send {
                         agent: s("agent"),
                         message,
-                        parent: parent.as_ref().map(|parent| crate::delegation::original_parent(root, parent, binding.as_ref().expect("resolved delegate binding"), &s("request"))).transpose()?,
+                        parent: parent
+                            .as_ref()
+                            .map(|parent| {
+                                crate::delegation::original_parent(
+                                    root,
+                                    parent,
+                                    binding.as_ref().expect("resolved delegate binding"),
+                                    &s("request"),
+                                )
+                            })
+                            .transpose()?,
                     }
                 }
                 "task_status" => Action::Get {
@@ -396,7 +419,7 @@ pub(crate) fn call_with_parent(
                         ask,
                         option: optional("option"),
                     }
-                },
+                }
                 "task_list" => Action::List {
                     agent: s("agent"),
                     context: optional("context"),
@@ -406,12 +429,21 @@ pub(crate) fn call_with_parent(
             };
             let action = if let Some(binding) = &binding {
                 let action = match action {
-                    Action::Send { message, parent, .. } => crate::delegation::BoundAction::Send { message, parent },
-                    Action::Answer { task, ask, option, .. } => crate::delegation::BoundAction::Answer { task, ask, option },
+                    Action::Send {
+                        message, parent, ..
+                    } => crate::delegation::BoundAction::Send { message, parent },
+                    Action::Answer {
+                        task, ask, option, ..
+                    } => crate::delegation::BoundAction::Answer { task, ask, option },
                     _ => unreachable!("binding only for side effects"),
                 };
-                Action::Bound { binding: binding.clone(), action }
-            } else { action };
+                Action::Bound {
+                    binding: binding.clone(),
+                    action,
+                }
+            } else {
+                action
+            };
             let answer = runtime()?.block_on(n.delegation_on(&s("machine"), action))?;
             if name == "delegate" || name == "task_answer" {
                 if let (Some(parent), crate::delegation::Answer::Task { record }) =
@@ -422,7 +454,11 @@ pub(crate) fn call_with_parent(
                         parent,
                         &s("machine"),
                         binding.as_ref().expect("resolved side effect binding"),
-                        &if name == "delegate" { s("request") } else { format!("task:{}", record.task.id) },
+                        &if name == "delegate" {
+                            s("request")
+                        } else {
+                            format!("task:{}", record.task.id)
+                        },
                         Some(&record.task.id),
                     )?;
                 }
@@ -603,8 +639,20 @@ mod tests {
         assert!(super::validate("open", &json!({"machine":"lab","command":42})).is_err());
         assert!(super::validate("open", &json!({"machine":"","command":"echo"})).is_err());
         assert!(super::validate("_host", &json!({})).is_err());
-        assert!(super::validate("agent_connect", &json!({"agent":"local","url":"http://localhost:9000"})).is_ok());
-        assert!(super::validate("agent_connect", &json!({"agent":"local","url":"http://localhost:9000","token":"secret"})).is_err());
+        assert!(
+            super::validate(
+                "agent_connect",
+                &json!({"agent":"local","url":"http://localhost:9000"})
+            )
+            .is_ok()
+        );
+        assert!(
+            super::validate(
+                "agent_connect",
+                &json!({"agent":"local","url":"http://localhost:9000","token":"secret"})
+            )
+            .is_err()
+        );
         assert!(super::validate("delegate", &json!({"agent":"a2a:local","prompt":"reply","request":"unique","task":"task-id","context":"context-id"})).is_ok());
     }
 

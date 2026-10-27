@@ -92,7 +92,10 @@ fn window_answer(question: u16) -> Option<u8> {
 
 /// A CSI's first numeric parameter.
 fn first_param(params: &[u8]) -> Option<u16> {
-    let end = params.iter().position(|&c| c == b';').unwrap_or(params.len());
+    let end = params
+        .iter()
+        .position(|&c| c == b';')
+        .unwrap_or(params.len());
     std::str::from_utf8(&params[..end]).ok()?.parse().ok()
 }
 
@@ -125,10 +128,22 @@ fn sequence(b: &[u8]) -> Option<(Seq<'_>, usize)> {
             let mut i = 2;
             while i < b.len() {
                 if b[1] == b']' && b[i] == 0x07 {
-                    return Some((Seq::String { kind: b[1], body: &b[2..i] }, i + 1));
+                    return Some((
+                        Seq::String {
+                            kind: b[1],
+                            body: &b[2..i],
+                        },
+                        i + 1,
+                    ));
                 }
                 if b[i] == 0x1b {
-                    return (b.get(i + 1) == Some(&b'\\')).then_some((Seq::String { kind: b[1], body: &b[2..i] }, i + 2));
+                    return (b.get(i + 1) == Some(&b'\\')).then_some((
+                        Seq::String {
+                            kind: b[1],
+                            body: &b[2..i],
+                        },
+                        i + 2,
+                    ));
                 }
                 i += 1;
             }
@@ -139,7 +154,11 @@ fn sequence(b: &[u8]) -> Option<(Seq<'_>, usize)> {
 }
 
 enum Seq<'a> {
-    Csi { params: &'a [u8], inter: &'a [u8], fin: u8 },
+    Csi {
+        params: &'a [u8],
+        inter: &'a [u8],
+        fin: u8,
+    },
     /// OSC (`]`) or DCS (`P`) with its body.
     String { kind: u8, body: &'a [u8] },
 }
@@ -180,15 +199,21 @@ fn answer(s: &Seq<'_>) -> Option<Kind> {
             (b'n', b"") if *params == b"0" || *params == b"3" => Some(Kind::Dsr5),
             (b'y', b"$") => Some(Kind::Decrqm),
             // `CSI ? flags u`; a key in that protocol never has the `?`.
-            (b'u', b"") if params.len() > 1 && params[0] == b'?' && params[1..].iter().all(u8::is_ascii_digit) => {
+            (b'u', b"")
+                if params.len() > 1
+                    && params[0] == b'?'
+                    && params[1..].iter().all(u8::is_ascii_digit) =>
+            {
                 Some(Kind::KittyFlags)
             }
             // `CSI 4 ; h ; w t` and its kin: three parameters, the first the
             // report's own number. A key never ends in `t`.
-            (b't', b"") if params.iter().filter(|&&c| c == b';').count() == 2 => match first_param(params)? {
-                n @ (3 | 4 | 6 | 8 | 9) => Some(Kind::Window(n as u8)),
-                _ => None,
-            },
+            (b't', b"") if params.iter().filter(|&&c| c == b';').count() == 2 => {
+                match first_param(params)? {
+                    n @ (3 | 4 | 6 | 8 | 9) => Some(Kind::Window(n as u8)),
+                    _ => None,
+                }
+            }
             _ => None,
         },
         Seq::String { kind: b']', body } => {
@@ -198,7 +223,11 @@ fn answer(s: &Seq<'_>) -> Option<Kind> {
                 _ => None,
             }
         }
-        Seq::String { kind: b'P', body } if body.starts_with(b"1$r") || body.starts_with(b"0$r") => Some(Kind::Decrqss),
+        Seq::String { kind: b'P', body }
+            if body.starts_with(b"1$r") || body.starts_with(b"0$r") =>
+        {
+            Some(Kind::Decrqss)
+        }
         _ => None,
     }
 }
@@ -232,7 +261,8 @@ const MOUSE_MODES: [u16; 4] = [9, 1000, 1002, 1003];
 /// into the stream when a program left mouse tracking on and the shell has
 /// the terminal back. Not focus events: fish 4 turns those on for itself at
 /// its prompt (its `fish_focus_in` events).
-pub const MOUSE_OFF: &[u8] = b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l";
+pub const MOUSE_OFF: &[u8] =
+    b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l";
 
 /// What kind of report an input sequence is, if it is one: a mouse event
 /// in any of xterm's encodings, or a focus change. `len` is the whole
@@ -261,7 +291,9 @@ fn report(bytes: &[u8], s: &Seq<'_>, n: usize) -> Option<(bool, usize)> {
             (at <= bytes.len()).then_some((true, at))
         }
         // urxvt (1015): `CSI b ; x ; y M`. No key ends that way.
-        b'M' if params.iter().filter(|&&c| c == b';').count() == 2 && params.iter().all(|&c| c.is_ascii_digit() || c == b';') => {
+        b'M' if params.iter().filter(|&&c| c == b';').count() == 2
+            && params.iter().all(|&c| c.is_ascii_digit() || c == b';') =>
+        {
             Some((true, n))
         }
         // Focus (1004).
@@ -388,7 +420,8 @@ impl Ledger {
     }
 
     fn expire(&mut self, now: Instant) {
-        self.pending.retain(|(_, at)| now.duration_since(*at) <= ANSWER_MAX_AGE);
+        self.pending
+            .retain(|(_, at)| now.duration_since(*at) <= ANSWER_MAX_AGE);
     }
 }
 
@@ -397,7 +430,9 @@ fn unfinished(b: &[u8]) -> bool {
     match b.get(1) {
         None => true,
         Some(b'[') => b[2..].iter().all(|&c| (0x20..=0x3f).contains(&c)),
-        Some(b']') | Some(b'P') => !b[2..].contains(&0x07) && !b[2..].windows(2).any(|w| w == b"\x1b\\"),
+        Some(b']') | Some(b'P') => {
+            !b[2..].contains(&0x07) && !b[2..].windows(2).any(|w| w == b"\x1b\\")
+        }
         _ => false,
     }
 }
@@ -460,7 +495,11 @@ mod tests {
         l.saw_output(b"\x1b[14t\x1b[16t\x1b[18t", t);
         let first = b"\x1b[4;736;920t\x1b[6;16;8t\x1b[8;46;115t";
         assert_eq!(l.take_input(first, t), first);
-        assert_eq!(l.take_input(b"\x1b[4;752;384t\x1b[6;16;8t\x1b[8;47;48t", t), b"", "the second face's");
+        assert_eq!(
+            l.take_input(b"\x1b[4;752;384t\x1b[6;16;8t\x1b[8;47;48t", t),
+            b"",
+            "the second face's"
+        );
         assert_eq!(l.take_input(b"\x1b[8;24;80t", t), b"", "nothing pending");
         assert_eq!(l.take_input(b"abc\x1b[A", t), b"abc\x1b[A", "keys pass");
     }
@@ -472,7 +511,10 @@ mod tests {
         l.saw_output(b"\x1b[>1u\x1b[?u\x1b[c", t);
         assert_eq!(l.take_input(b"\x1b[?1u", t), b"\x1b[?1u");
         assert_eq!(l.take_input(b"\x1b[?1u", t), b"", "the second face's copy");
-        assert_eq!(l.take_input(b"\x1b[13;2u\x1b[27u\x1b[105;5u", t), b"\x1b[13;2u\x1b[27u\x1b[105;5u");
+        assert_eq!(
+            l.take_input(b"\x1b[13;2u\x1b[27u\x1b[105;5u", t),
+            b"\x1b[13;2u\x1b[27u\x1b[105;5u"
+        );
         // No face: the DA1 sentinel is answered, the flags are not.
         let mut l = Ledger::default();
         l.saw_output(b"\x1b[?u\x1b[c", t);
@@ -487,7 +529,10 @@ mod tests {
         let a = l.take_input(b"\x1b]11;rgb:0000/0000/0000\x1b\\\x1b[?1;2c", now);
         let b = l.take_input(b"\x1b]11;rgb:0000/0000/0000\x1b\\\x1b[?1;2c", now);
         assert_eq!(a, b"\x1b]11;rgb:0000/0000/0000\x1b\\\x1b[?1;2c");
-        assert!(b.is_empty(), "the second face's copy reached the pty: {b:?}");
+        assert!(
+            b.is_empty(),
+            "the second face's copy reached the pty: {b:?}"
+        );
     }
 
     /// T-5: an answer older than its question's patience is dropped.
@@ -505,7 +550,16 @@ mod tests {
     fn keys_pass_whole() {
         let now = t0();
         let mut l = Ledger::default();
-        for key in [&b"ls -la\r"[..], b"\x1b[A", b"\x1b[1;5D", b"\x1bOP", b"\x1b[15~", b"\x1b", b"\x1bx", b"\x1b[200~text\x1b[201~"] {
+        for key in [
+            &b"ls -la\r"[..],
+            b"\x1b[A",
+            b"\x1b[1;5D",
+            b"\x1bOP",
+            b"\x1b[15~",
+            b"\x1b",
+            b"\x1bx",
+            b"\x1b[200~text\x1b[201~",
+        ] {
             assert_eq!(l.take_input(key, now), key);
         }
         // A mouse report is a key while the program asked for the mouse
@@ -526,7 +580,10 @@ mod tests {
         let now = t0();
         let mut l = Ledger::default();
         l.saw_output(b"\x1b[c\x1b[>c\x1b[?2004$p", now);
-        assert!(l.fallback(now).is_empty(), "the host answered before the faces had their chance");
+        assert!(
+            l.fallback(now).is_empty(),
+            "the host answered before the faces had their chance"
+        );
         let later = now + FALLBACK_AFTER;
         assert_eq!(l.fallback(later), b"\x1b[?1;2c\x1b[>0;276;0c");
         // The face's answer, after the host's, is a copy.
@@ -541,7 +598,10 @@ mod tests {
         l.saw_output(b"\x1b]11;?\x07", now);
         l.take_input(b"\x1b]11;rgb:f4f4/f4f4/efef\x1b\\", now);
         l.saw_output(b"\x1b]11;?\x07", now);
-        assert_eq!(l.fallback(now + FALLBACK_AFTER), b"\x1b]11;rgb:f4f4/f4f4/efef\x1b\\");
+        assert_eq!(
+            l.fallback(now + FALLBACK_AFTER),
+            b"\x1b]11;rgb:f4f4/f4f4/efef\x1b\\"
+        );
     }
 
     /// A question split across two reads of the pty is still seen.
@@ -551,6 +611,9 @@ mod tests {
         let mut l = Ledger::default();
         l.saw_output(b"text\x1b]1", now);
         l.saw_output(b"1;?\x1b\\more", now);
-        assert_eq!(l.take_input(b"\x1b]11;rgb:0/0/0\x1b\\", now), b"\x1b]11;rgb:0/0/0\x1b\\");
+        assert_eq!(
+            l.take_input(b"\x1b]11;rgb:0/0/0\x1b\\", now),
+            b"\x1b]11;rgb:0/0/0\x1b\\"
+        );
     }
 }

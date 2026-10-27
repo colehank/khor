@@ -12,28 +12,30 @@
 #[cfg(test)]
 extern crate self as khor_node;
 
+pub mod a2a_http;
 pub mod accounts;
-pub mod subscriptions;
-pub mod answers;
-pub mod commands;
-pub mod integration;
+mod acp_management;
+mod acp_mcp;
+pub(crate) mod acp_process;
 pub mod adaptor;
+#[path = "khor_agent_process.rs"]
+pub(crate) mod agent_process;
+pub mod answers;
 pub mod backup;
 pub(crate) mod beside;
 pub mod cagent;
 pub mod carry;
 pub mod chat;
 pub mod code;
-pub mod codexagent;
 mod codex_process;
-pub mod legacy_codex;
 pub mod codex_terminal;
-pub mod recognition;
+pub mod codexagent;
+pub mod commands;
 pub mod config;
 pub mod cwd;
 pub mod day;
 pub mod delegation;
-pub mod a2a_http;
+mod doc_transfer_state;
 pub mod doctor;
 pub mod drops;
 pub(crate) mod egress;
@@ -46,44 +48,43 @@ pub mod hardware;
 pub mod history;
 pub(crate) mod hop;
 pub mod host;
-pub mod shell_start;
+pub mod integration;
 pub mod ipc;
+pub mod join;
+pub mod journal;
 pub mod keeper;
-#[path = "khor_agent_process.rs"]
-pub(crate) mod agent_process;
 pub mod khor_agent;
-pub(crate) mod acp_process;
-mod acp_management;
-mod acp_mcp;
+pub mod legacy_codex;
 pub mod link;
-mod doc_transfer_state;
 pub mod list;
 pub mod live;
 pub mod lock;
 pub mod mcp;
 pub mod mcp_worker;
-pub(crate) mod remote_cancel;
 pub mod merge;
 pub mod modes;
 pub(crate) mod once;
 pub mod pause;
-pub mod post;
 pub mod pictures;
 pub mod pipe;
 pub mod place;
+pub mod post;
 pub mod preview;
 pub mod proto;
 pub mod quota;
 pub mod reach;
 pub mod reactor;
+pub mod recognition;
+pub(crate) mod remote_cancel;
 pub mod road;
+pub mod roadbook;
 pub(crate) mod roads;
 pub mod satellite;
 pub mod secret;
-pub mod join;
-pub mod journal;
 pub mod serves;
-pub mod roadbook;
+pub mod shell_start;
+mod store_owner;
+pub mod subscriptions;
 pub mod tabs;
 #[cfg(test)]
 pub(crate) mod testdir;
@@ -96,24 +97,26 @@ pub mod usage;
 pub mod vitals;
 pub mod watch;
 pub mod wide;
-pub mod workspace;
-mod store_owner;
-pub(crate) mod wsfacts;
 pub(crate) mod wires;
+pub mod workspace;
+pub(crate) mod wsfacts;
 
 pub use khor_core::avatar::{
     Avatar, AvatarSeed, AvatarStyle, FaceShape, PRESETS, Palette, Preset, Variant, avatar, preset,
 };
 pub use khor_core::{
-    CpuDay, Fill, Hop, Leg, LegKind, Link, Load, ReachOutcome, ReachSeen, ReachView, Road, RoadKind, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
-    WireCounts,
-    UsageDay, Vitals, kind,
+    CpuDay, Fill, Hop, Leg, LegKind, Link, Load, ReachOutcome, ReachSeen, ReachView, Road,
+    RoadKind, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage, UsageDay, Vitals,
+    WireCounts, kind,
 };
-pub use khor_sync::chat::{AgentApproval, AgentConfig, AgentTurn, CommandRecord, Fate, FileRef, Message, MsgBody, Step as FateStep};
-pub use khor_sync::devices::DeviceInfo;
-pub use trust::{PendingRow, RootState, Standing};
 /// A relay and the key it admits by — what [`Node::set_relays`] takes.
 pub use khor_net::endpoint::Relay;
+pub use khor_sync::chat::{
+    AgentApproval, AgentConfig, AgentTurn, CommandRecord, Fate, FileRef, Message, MsgBody,
+    Step as FateStep,
+};
+pub use khor_sync::devices::DeviceInfo;
+pub use trust::{PendingRow, RootState, Standing};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -172,8 +175,8 @@ use khor_sync::pins::{PinDoc, pins_dir};
 pub use khor_sync::recents::Kind as PlaceKind;
 use khor_sync::recents::{RecentDoc, recents_dir};
 use khor_sync::roster::{RosterDoc, roster_dir};
-use khor_sync::seen::{SeenDoc, seen_dir};
 pub use khor_sync::seen::SeenMessage;
+use khor_sync::seen::{SeenDoc, seen_dir};
 use khor_sync::store::{Loaded, load_pile};
 use khor_sync::titles::{TitleDoc, titles_dir};
 use khor_sync::webpins::{WebPinDoc, webpins_dir};
@@ -430,7 +433,8 @@ pub struct Node {
     /// kind), with the digest it hands back next round so an unchanged
     /// reading does not cross again (round NET-3, `Request::Versions`).
     /// Memory only: after a restart the first round asks for everything.
-    pub(crate) readings_held: Arc<Mutex<std::collections::HashMap<(String, String), link::HeldReading>>>,
+    pub(crate) readings_held:
+        Arc<Mutex<std::collections::HashMap<(String, String), link::HeldReading>>>,
     /// The day this node last got from each machine's `Load`, by device
     /// id, with its stamp — handed back on the next ask so an unchanged
     /// day does not cross again (round NET-4, `Request::LoadSince`).
@@ -593,7 +597,11 @@ impl WireWatch {
 
     /// Whether the wire held for that machine is up.
     pub async fn is_open(&self, channel: &str) -> Option<bool> {
-        let id = self.1.iter().find(|(_, n)| n == channel).map(|(i, _)| i.clone())?;
+        let id = self
+            .1
+            .iter()
+            .find(|(_, n)| n == channel)
+            .map(|(i, _)| i.clone())?;
         Some(self.0.held().contains(&id))
     }
 
@@ -767,7 +775,12 @@ fn claim_store(root: &std::path::Path) -> Result<(), String> {
 /// check: there the store is a directory any machine on the mount can open.
 fn claim_store_stamp(root: &std::path::Path) -> Result<(), String> {
     let here = gethostname::gethostname().to_string_lossy().to_string();
-    stamp_store(root, &here, hardware::fingerprint(), cfg!(target_os = "ios"))
+    stamp_store(
+        root,
+        &here,
+        hardware::fingerprint(),
+        cfg!(target_os = "ios"),
+    )
 }
 
 /// [`claim_store_stamp`] with what it asks of the machine handed in:
@@ -1210,15 +1223,27 @@ impl Node {
         Self::avatar_style_in(&loaded, device)
     }
 
-    fn avatar_style_in(loaded: &Loaded<DeviceDoc>, device: &str) -> Result<Option<AvatarStyle>, String> {
+    fn avatar_style_in(
+        loaded: &Loaded<DeviceDoc>,
+        device: &str,
+    ) -> Result<Option<AvatarStyle>, String> {
         if !loaded.broken.is_empty() {
-            return Err(format!("Cannot read avatar style: {} unreadable device block(s)", loaded.broken.len()));
+            return Err(format!(
+                "Cannot read avatar style: {} unreadable device block(s)",
+                loaded.broken.len()
+            ));
         }
-        let row = loaded.doc.get(device).ok_or_else(|| msg::no_such_machine(device, String::new()))?;
-        row.style.as_deref().map(|text| {
-            serde_json::from_str::<AvatarStyle>(text)
-                .map_err(|e| format!("Cannot read avatar style for {device}: {e}"))
-        }).transpose()
+        let row = loaded
+            .doc
+            .get(device)
+            .ok_or_else(|| msg::no_such_machine(device, String::new()))?;
+        row.style
+            .as_deref()
+            .map(|text| {
+                serde_json::from_str::<AvatarStyle>(text)
+                    .map_err(|e| format!("Cannot read avatar style for {device}: {e}"))
+            })
+            .transpose()
     }
 
     /// Sets a complete style in its sole register. The audit stamp is
@@ -1228,7 +1253,13 @@ impl Node {
     pub fn set_avatar_style_of(&self, device: &str, style: &AvatarStyle) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
         let previous = Self::avatar_style_in(&loaded, device)?;
-        self.write_avatar_style(loaded, device, previous.as_ref(), style, AvatarChangeOrigin::Api)
+        self.write_avatar_style(
+            loaded,
+            device,
+            previous.as_ref(),
+            style,
+            AvatarChangeOrigin::Api,
+        )
     }
 
     fn write_avatar_style(
@@ -1386,9 +1417,13 @@ impl Node {
         // The preference survives an edit of the list while its relay is
         // still on it (`Node::set_preferred_relay`).
         let preferred = chosen_relays(&self.root).preferred.filter(|p| {
-            kept.iter().any(|k| k.url == *p) || khor_net::endpoint::configured_relays().iter().any(|k| k.url == *p)
+            kept.iter().any(|k| k.url == *p)
+                || khor_net::endpoint::configured_relays()
+                    .iter()
+                    .any(|k| k.url == *p)
         });
-        let doc = serde_json::json!({ "relays": rows, "only_mine": only_mine, "preferred": preferred });
+        let doc =
+            serde_json::json!({ "relays": rows, "only_mine": only_mine, "preferred": preferred });
         // 0600, beside the identity key: the keys in it are shared
         // secrets, and the file is the only place they are kept.
         link::write_private(&relay_prefs_path(&self.root), doc.to_string().as_bytes())?;
@@ -1672,10 +1707,14 @@ impl Node {
     /// Store selection alone can return an unclaimed or foreign fallback path.
     pub fn verify_store_owner(root: &std::path::Path) -> Result<(), String> {
         let here = gethostname::gethostname().to_string_lossy().to_string();
-        store_owner::verify(root, &here, hardware::fingerprint().as_deref()).map_err(|error| match error {
-            store_owner::VerificationError::Io(error) => error.to_string(),
-            store_owner::VerificationError::Invalid(reason) => reason.to_owned(),
-            store_owner::VerificationError::Foreign(theirs) => msg::store_belongs_to(&theirs, &here),
+        store_owner::verify(root, &here, hardware::fingerprint().as_deref()).map_err(|error| {
+            match error {
+                store_owner::VerificationError::Io(error) => error.to_string(),
+                store_owner::VerificationError::Invalid(reason) => reason.to_owned(),
+                store_owner::VerificationError::Foreign(theirs) => {
+                    msg::store_belongs_to(&theirs, &here)
+                }
+            }
         })
     }
 
@@ -2150,7 +2189,9 @@ impl Node {
         let Some(d) = self.devices_loaded()?.doc.by_name(&channel) else {
             return Ok(None);
         };
-        let Some(sp) = d.sponsor.clone() else { return Ok(None) };
+        let Some(sp) = d.sponsor.clone() else {
+            return Ok(None);
+        };
         if sp != self.device_str() {
             let sponsor_name = self
                 .devices_loaded()?
@@ -2160,7 +2201,8 @@ impl Node {
                 .unwrap_or(sp);
             return Err(msg::sat_send_elsewhere(&channel, sponsor_name));
         }
-        crate::satellite::Dest::of(&d).map(Some)
+        crate::satellite::Dest::of(&d)
+            .map(Some)
             .ok_or_else(|| msg::sat_no_ssh_host(&channel))
     }
 
@@ -2873,7 +2915,11 @@ impl Node {
         // **An ACP conversation is reopened on this machine**
         // (`resume_agent_session`), so a phone offers none (docs/IOS.md):
         // every one of them would be refused at the press.
-        let agents = if self.hosts { self.agents()? } else { Vec::new() };
+        let agents = if self.hosts {
+            self.agents()?
+        } else {
+            Vec::new()
+        };
         for (name, _) in agents {
             let Some(khor_sync::agents::Answer::Sessions { rows }) = self.agent_seen(&name)? else {
                 continue;
@@ -3042,8 +3088,13 @@ impl Node {
                 .filter(|v| v.source.is_none() && v.session.state_known())
                 .map(|v| (v.session.id.0.clone(), v.session.state.state)),
         );
-        record.unavailable(now, views.into_iter()
-            .filter(|v| v.source.is_none() && !v.session.state_known()).map(|v| v.session.id.0));
+        record.unavailable(
+            now,
+            views
+                .into_iter()
+                .filter(|v| v.source.is_none() && !v.session.state_known())
+                .map(|v| v.session.id.0),
+        );
         record.save(&self.root)
     }
 
@@ -3598,7 +3649,12 @@ impl Node {
     /// Dismisses a ledger entry by its immutable device identity. The
     /// device need not remain in the device table: this writes a local,
     /// replicated tombstone and never opens a route to that machine.
-    pub fn forget_recent_by_device(&self, kind: PlaceKind, device: &str, place: &str) -> Result<(), String> {
+    pub fn forget_recent_by_device(
+        &self,
+        kind: PlaceKind,
+        device: &str,
+        place: &str,
+    ) -> Result<(), String> {
         let home = device_id_from_hex(device)?;
         let loaded = self.recents_loaded()?;
         loaded
@@ -3741,7 +3797,10 @@ impl Node {
 
     /// The names of the secrets this machine's ssh roads still ask for:
     /// what the sweep keeps ([`crate::secret::sweep`]).
-    pub(crate) fn secrets_in_use(&self, devs: &[khor_sync::devices::DeviceInfo]) -> std::collections::HashSet<String> {
+    pub(crate) fn secrets_in_use(
+        &self,
+        devs: &[khor_sync::devices::DeviceInfo],
+    ) -> std::collections::HashSet<String> {
         devs.iter()
             .filter(|d| self.logs_in_to(d))
             .filter_map(satellite::Dest::of)
@@ -3993,7 +4052,8 @@ impl Node {
                 };
                 // Off the runtime: a sample is an ssh dial plus a
                 // one-second on-host measurement.
-                let taken = tokio::task::spawn_blocking(move || satellite::sample_read(&host)).await;
+                let taken =
+                    tokio::task::spawn_blocking(move || satellite::sample_read(&host)).await;
                 // What broke is kept for the road to it (round ROAD-1).
                 let mut book = self.roadbook.lock().unwrap_or_else(|p| p.into_inner());
                 match taken {
@@ -4193,7 +4253,6 @@ impl Node {
         Ok(f)
     }
 
-
     /// The file message behind `transfer/<msg_id>`, with its board: a
     /// khor-wide conversation (the broadcast).
     pub(crate) fn find_transfer(&self, msg_id: &str) -> Result<(String, Message), String> {
@@ -4283,9 +4342,14 @@ impl Node {
     pub fn seen_snapshot(&self, id: &SessionId, messages: &[SeenMessage]) -> Result<(), String> {
         wide::board(&id.0)?;
         let log = self.chat.log(&id.0)?;
-        let current: std::collections::HashMap<_, _> = log.messages.iter().map(|m| (m.id.as_str(), m.at)).collect();
+        let current: std::collections::HashMap<_, _> =
+            log.messages.iter().map(|m| (m.id.as_str(), m.at)).collect();
         for message in messages {
-            if message.at_ms < 0 || !current.get(message.id.as_str()).is_some_and(|at| message.at_ms <= *at) {
+            if message.at_ms < 0
+                || !current
+                    .get(message.id.as_str())
+                    .is_some_and(|at| message.at_ms <= *at)
+            {
                 return Err("invalid rendered message version".to_owned());
             }
         }
@@ -4840,20 +4904,33 @@ impl Node {
             .then(|| adaptor::codex::Codex::at(adaptor::codex_home(&self.root)));
         // A khor-owned terminal explicitly running `codex resume <uuid>` is
         // also exact ownership evidence, including before its first OSC title.
-        let owned_resume = codex_store.is_some() && self.live.dir_of(id)
-            .and_then(|dir| host::read_host_file(&dir).ok())
-            .is_some_and(|host| {
-                if !link::pid_running(host.host_pid) { return false; }
-                let procs = adaptor::Procs::snapshot();
-                procs.held_by(&[host.child_pid]).into_iter().any(|pid| {
-                    crate::codex_terminal::scoped(&procs, pid) && procs.command(pid).is_some_and(|argv| {
-                        let args = argv.iter().skip(1).map(std::ffi::OsString::from).collect::<Vec<_>>();
-                        crate::codex_process::resuming(&args, &full)
+        let owned_resume = codex_store.is_some()
+            && self
+                .live
+                .dir_of(id)
+                .and_then(|dir| host::read_host_file(&dir).ok())
+                .is_some_and(|host| {
+                    if !link::pid_running(host.host_pid) {
+                        return false;
+                    }
+                    let procs = adaptor::Procs::snapshot();
+                    procs.held_by(&[host.child_pid]).into_iter().any(|pid| {
+                        crate::codex_terminal::scoped(&procs, pid)
+                            && procs.command(pid).is_some_and(|argv| {
+                                let args = argv
+                                    .iter()
+                                    .skip(1)
+                                    .map(std::ffi::OsString::from)
+                                    .collect::<Vec<_>>();
+                                crate::codex_process::resuming(&args, &full)
+                            })
                     })
-                })
-            });
+                });
         if let Some(store) = &codex_store {
-            if store.has_writer(&full)? && !owned_resume && sighting.as_ref().is_none_or(|(_, pids)| pids.is_empty()) {
+            if store.has_writer(&full)?
+                && !owned_resume
+                && sighting.as_ref().is_none_or(|(_, pids)| pids.is_empty())
+            {
                 return Err(msg::takeover_writer_busy(&id.0));
             }
         }
@@ -5000,8 +5077,11 @@ impl Node {
         };
         let named = &resume[0];
         let path = crate::spawn_path(named);
-        let bin = crate::find_program(named, &path).ok_or_else(|| msg::command_not_found(named, &path))?;
-        if resume.get(1).is_some_and(|arg| arg == "resume") && crate::codex_process::supports_no_daemon(std::path::Path::new(&bin), &path) {
+        let bin = crate::find_program(named, &path)
+            .ok_or_else(|| msg::command_not_found(named, &path))?;
+        if resume.get(1).is_some_and(|arg| arg == "resume")
+            && crate::codex_process::supports_no_daemon(std::path::Path::new(&bin), &path)
+        {
             resume.insert(1, "--no-daemon".into());
         }
         if !cwd.is_dir() {
@@ -5101,8 +5181,8 @@ impl Node {
         // and is not asked to read host files to say so.
         self.hosts
             && self.live.dir_of(id).is_some_and(|d| {
-            host::read_host_file(&d).is_ok_and(|hf| link::pid_running(hf.host_pid))
-        })
+                host::read_host_file(&d).is_ok_and(|hf| link::pid_running(hf.host_pid))
+            })
     }
 
     /// A process reporting its own word — the hook door. 失败 is refused

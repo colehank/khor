@@ -374,10 +374,22 @@ async fn a_backgrounded_resident_does_not_redial_until_it_resumes() {
         .expect("a round must come back")
         .unwrap();
 
-    assert_eq!(link::resting(&ra.0).await, Some(false), "awake before it suspends");
-    assert_eq!(link::resting(&rb.0).await, None, "beta's serve is not resumable");
+    assert_eq!(
+        link::resting(&ra.0).await,
+        Some(false),
+        "awake before it suspends"
+    );
+    assert_eq!(
+        link::resting(&rb.0).await,
+        None,
+        "beta's serve is not resumable"
+    );
     assert!(link::suspending(&ra.0).await, "alpha's resident suspends");
-    assert_eq!(link::resting(&ra.0).await, Some(true), "and says it is resting");
+    assert_eq!(
+        link::resting(&ra.0).await,
+        Some(true),
+        "and says it is resting"
+    );
     let before = a.wire_counts().await.unwrap().dialed;
     tokio::time::sleep(link::SYNC_EVERY * 2 + Duration::from_secs(1)).await;
     let during = a.wire_counts().await.unwrap().dialed;
@@ -388,16 +400,30 @@ async fn a_backgrounded_resident_does_not_redial_until_it_resumes() {
     let asked = timeout(Duration::from_secs(30), a.ls_of("beta", ""))
         .await
         .expect("an ask must come back");
-    assert!(asked.is_err(), "a resting phone asks nobody: it was answered");
-    assert_eq!(a.wire_counts().await.unwrap().dialed, during, "a person's ask dialled while resting");
+    assert!(
+        asked.is_err(),
+        "a resting phone asks nobody: it was answered"
+    );
+    assert_eq!(
+        a.wire_counts().await.unwrap().dialed,
+        during,
+        "a person's ask dialled while resting"
+    );
 
     // Asked right after a resume is sent, before its ears are bound: the
     // question waits behind it, so the phone does not resume twice.
     let resuming = link::resume(&ra.0).expect("resumable");
-    assert_eq!(link::resting(&ra.0).await, Some(false), "a resume just sent reads as awake");
+    assert_eq!(
+        link::resting(&ra.0).await,
+        Some(false),
+        "a resume just sent reads as awake"
+    );
     let out = resuming.synced().await.unwrap();
     assert!(beta_heard(&out), "the resume's round reaches beta: {out:?}");
-    assert!(a.wire_counts().await.unwrap().dialed > during, "and that round dialled");
+    assert!(
+        a.wire_counts().await.unwrap().dialed > during,
+        "and that round dialled"
+    );
 }
 
 /// **The pump keeps the quiet pace while no face is on screen**
@@ -425,12 +451,19 @@ async fn the_pump_beats_slowly_with_no_face_and_at_once_when_one_arrives() {
     // A face arrives: a round now, not at the next quiet beat.
     a.face_is_here(true).await.unwrap();
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert_eq!(rounds().await, quiet + 1, "a face arriving gets a round at once");
+    assert_eq!(
+        rounds().await,
+        quiet + 1,
+        "a face arriving gets a round at once"
+    );
 
     // And while it stays, a round a beat.
     let here = rounds().await;
     tokio::time::sleep(link::SYNC_EVERY * 2 + Duration::from_secs(1)).await;
-    assert!(rounds().await >= here + 2, "a face on screen keeps the 5 s beat");
+    assert!(
+        rounds().await >= here + 2,
+        "a face on screen keeps the 5 s beat"
+    );
 
     // It leaves: back to the quiet pace.
     a.face_is_here(false).await.unwrap();
@@ -477,7 +510,10 @@ async fn a_resume_keeps_the_ears_and_the_far_machine_reaches_it_at_once() {
     let away = timeout(Duration::from_secs(30), b.ls_of("alpha", &path))
         .await
         .expect("an ask must come back");
-    assert!(away.is_err(), "control: a resting alpha refuses beta: {away:?}");
+    assert!(
+        away.is_err(),
+        "control: a resting alpha refuses beta: {away:?}"
+    );
 
     // Back in front, and beta asks at once.
     let begun = Instant::now();
@@ -488,7 +524,11 @@ async fn a_resume_keeps_the_ears_and_the_far_machine_reaches_it_at_once() {
         let asked = timeout(Duration::from_secs(30), b.ls_of("alpha", &path))
             .await
             .expect("an ask must come back");
-        asks.push((at.duration_since(begun), at.elapsed(), asked.as_ref().err().cloned()));
+        asks.push((
+            at.duration_since(begun),
+            at.elapsed(),
+            asked.as_ref().err().cloned(),
+        ));
         if asked.is_ok() || begun.elapsed() > Duration::from_secs(20) {
             break begun.elapsed();
         }
@@ -501,9 +541,15 @@ async fn a_resume_keeps_the_ears_and_the_far_machine_reaches_it_at_once() {
     println!("[front] beta reached alpha {reached:?} after the resume; asks: {asks:?}");
     println!("[front] alpha's round: {out:?}");
     let after = endpoint_json(&ra.0);
-    assert_eq!(after["addrs"], before["addrs"], "the same ears, on the same ports");
+    assert_eq!(
+        after["addrs"], before["addrs"],
+        "the same ears, on the same ports"
+    );
     assert!(beta_heard(&out), "the resume's round reaches beta: {out:?}");
-    assert!(reached < Duration::from_secs(2), "beta reached alpha {reached:?} after the resume: {asks:?}");
+    assert!(
+        reached < Duration::from_secs(2),
+        "beta reached alpha {reached:?} after the resume: {asks:?}"
+    );
     assert!(
         asks.iter().all(|(_, _, e)| e.is_none()),
         "nothing refused or timed out after the resume: {asks:?}"
@@ -565,7 +611,14 @@ async fn a_resume_tells_each_answer_before_the_slowest() {
     let out = resuming.synced().await.unwrap();
     let whole = begun.elapsed();
     println!("[each] answers {answers:?}; round whole in {whole:?}: {out:?}");
-    let beta = answers.iter().find(|(n, ok, _)| n == "beta" && *ok).expect("beta answered");
-    assert!(beta.2 < Duration::from_secs(2), "beta's answer came {:?} after the resume", beta.2);
+    let beta = answers
+        .iter()
+        .find(|(n, ok, _)| n == "beta" && *ok)
+        .expect("beta answered");
+    assert!(
+        beta.2 < Duration::from_secs(2),
+        "beta's answer came {:?} after the resume",
+        beta.2
+    );
     assert_eq!(answers.len(), out.len(), "every machine of the round told");
 }

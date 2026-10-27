@@ -706,7 +706,12 @@ impl DeviceDoc {
     /// session to it by `road` and bridges its resident's endpoint
     /// through it. `None` stops carrying it; the road is left as it was,
     /// a decision rather than a credential, for the next time.
-    pub fn set_carried(&self, id: &str, carrier: Option<&str>, road: Option<&SshRoad<'_>>) -> Result<(), String> {
+    pub fn set_carried(
+        &self,
+        id: &str,
+        carrier: Option<&str>,
+        road: Option<&SshRoad<'_>>,
+    ) -> Result<(), String> {
         let mut dirty = false;
         let carrier = carrier.unwrap_or("");
         if self.flat_str(id, F_CARRIER).unwrap_or_default() != carrier {
@@ -857,7 +862,9 @@ impl DeviceDoc {
                 ssh_jump: self.str_field(&id, F_SSH_JUMP).filter(|j| !j.is_empty()),
                 ssh_port: self.str_field(&id, F_SSH_PORT).and_then(|p| p.parse().ok()),
                 ssh_password: self.bool_field(&id, F_SSH_PASSWORD),
-                ssh_identity: self.str_field(&id, F_SSH_IDENTITY).filter(|k| !k.is_empty()),
+                ssh_identity: self
+                    .str_field(&id, F_SSH_IDENTITY)
+                    .filter(|k| !k.is_empty()),
                 ssh_passphrase: self.bool_field(&id, F_SSH_PASSPHRASE),
                 sat_tmux: match self.field(&id, F_SAT_TMUX) {
                     Some(LoroValue::Bool(b)) => Some(b),
@@ -1045,7 +1052,8 @@ impl DeviceDoc {
     /// op, when the register already holds `json`.
     pub fn set_road(&self, id: &str, to: &str, json: &str) -> Result<bool, String> {
         let key = fkey(id, &format!("{F_ROAD}{to}"));
-        if let Some(LoroValue::String(have)) = self.map().get(&key).and_then(|v| v.into_value().ok())
+        if let Some(LoroValue::String(have)) =
+            self.map().get(&key).and_then(|v| v.into_value().ok())
             && have.as_str() == json
         {
             return Ok(false);
@@ -1173,29 +1181,53 @@ mod tests {
         let a = DeviceDoc::new(1).unwrap();
         let b = DeviceDoc::new(2).unwrap();
         a.upsert("cc", "turing", &[]).unwrap();
-        assert_eq!(a.get("cc").unwrap().receive_dir, None, "unset is the default");
+        assert_eq!(
+            a.get("cc").unwrap().receive_dir,
+            None,
+            "unset is the default"
+        );
         a.set_receive_dir("cc", "~/inbox").unwrap();
         a.set_receive_at("cc", "/home/t/inbox").unwrap();
-        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
         let got = b.get("cc").unwrap();
         assert_eq!(got.receive_dir.as_deref(), Some("~/inbox"));
         assert_eq!(got.receive_at.as_deref(), Some("/home/t/inbox"));
-        b.upsert("cc", "turing", &["10.0.0.9:11204".into()]).unwrap();
-        assert_eq!(b.get("cc").unwrap().receive_dir.as_deref(), Some("~/inbox"), "an upsert must not clear it");
+        b.upsert("cc", "turing", &["10.0.0.9:11204".into()])
+            .unwrap();
+        assert_eq!(
+            b.get("cc").unwrap().receive_dir.as_deref(),
+            Some("~/inbox"),
+            "an upsert must not clear it"
+        );
         b.set_receive_dir("cc", "").unwrap();
-        a.merge(&b.changes_since(&Default::default()).unwrap()).unwrap();
-        assert_eq!(a.get("cc").unwrap().receive_dir, None, "clearing travels back");
-        assert_eq!(a.get("cc").unwrap().receive_at.as_deref(), Some("/home/t/inbox"));
+        a.merge(&b.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert_eq!(
+            a.get("cc").unwrap().receive_dir,
+            None,
+            "clearing travels back"
+        );
+        assert_eq!(
+            a.get("cc").unwrap().receive_at.as_deref(),
+            Some("/home/t/inbox")
+        );
         // What the machine resolved, and why it fell back, ride beside.
         a.set_receive_resolved("cc", "~/inbox", "no room").unwrap();
-        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
         let got = b.get("cc").unwrap();
         assert_eq!(got.receive_for.as_deref(), Some("~/inbox"));
         assert_eq!(got.receive_why.as_deref(), Some("no room"));
         a.set_receive_resolved("cc", "", "").unwrap();
-        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
         let got = b.get("cc").unwrap();
-        assert_eq!((got.receive_for, got.receive_why), (None, None), "cleared, both read as absent");
+        assert_eq!(
+            (got.receive_for, got.receive_why),
+            (None, None),
+            "cleared, both read as absent"
+        );
     }
 
     fn d_items(d: &DeviceDoc) -> usize {
@@ -1696,13 +1728,18 @@ mod tests {
         assert_eq!(lab.version(), before, "saying it again writes nothing");
         let desk = DeviceDoc::new(2).unwrap();
         desk.upsert("aa", "mac", &[]).unwrap();
-        desk.merge(&lab.changes_since(&Default::default()).unwrap()).unwrap();
+        desk.merge(&lab.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert!(desk.get("ll").unwrap().no_relay, "it crosses the network");
         assert!(!desk.get("aa").unwrap().no_relay, "a row that never said");
         desk.upsert("ll", "lecun", &["10.0.0.7:1".into()]).unwrap();
-        assert!(desk.get("ll").unwrap().no_relay, "an upsert leaves it alone");
+        assert!(
+            desk.get("ll").unwrap().no_relay,
+            "an upsert leaves it alone"
+        );
         lab.set_no_relay("ll", false).unwrap();
-        desk.merge(&lab.changes_since(&Default::default()).unwrap()).unwrap();
+        desk.merge(&lab.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert!(!desk.get("ll").unwrap().no_relay, "and the way back");
     }
 
@@ -1739,7 +1776,12 @@ mod tests {
         // every peer) must not take the answer back.
         desk.upsert("bb", "phone", &["10.0.0.7:1".into()]).unwrap();
         assert!(!desk.get("bb").unwrap().hosts, "an upsert leaves it alone");
-        let nested = desk.inner.get_map(DEVICES).get("bb").and_then(as_map).unwrap();
+        let nested = desk
+            .inner
+            .get_map(DEVICES)
+            .get("bb")
+            .and_then(as_map)
+            .unwrap();
         assert!(
             nested.get(F_HOSTS).is_none(),
             "flat only — nothing new in the old mirror"
@@ -1789,7 +1831,11 @@ mod tests {
         assert_eq!(sat.ssh_jump.as_deref(), Some("bastion"), "…and its jump");
         assert_eq!(sat.ssh_port, Some(2222), "…and its port");
         assert!(sat.ssh_password, "…and that it logs in with a password");
-        assert_eq!(sat.ssh_identity.as_deref(), Some("~/.ssh/lab_key"), "…and its key file's path");
+        assert_eq!(
+            sat.ssh_identity.as_deref(),
+            Some("~/.ssh/lab_key"),
+            "…and its key file's path"
+        );
         assert!(sat.ssh_passphrase, "…and that the key's passphrase is kept");
         assert_eq!(sat.sat_tmux, Some(true), "…and the tmux probe");
         let plain = far.get("aa").expect("the sponsor itself crossed");

@@ -656,7 +656,12 @@ impl Node {
         // gateway were 16 s every time — where it is now the slowest.
         // Each account keeps its own cache file, so none write over
         // another's.
-        Ok(link::join_all(mine.iter().map(|account| self.read_one(account, now)).collect()).await)
+        Ok(link::join_all(
+            mine.iter()
+                .map(|account| self.read_one(account, now))
+                .collect(),
+        )
+        .await)
     }
 
     /// **What a far machine is answered with** (fix/front): every
@@ -2671,7 +2676,8 @@ mod tests {
     /// - **an id nobody has is refused by name**.
     #[test]
     fn a_renamed_account_reads_its_new_name_on_the_board_and_keeps_the_rest() {
-        let root = std::env::temp_dir().join(format!("khor-accounts-rename-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("khor-accounts-rename-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let n = Node::open(root.clone()).unwrap();
@@ -2685,8 +2691,15 @@ mod tests {
                 Some(50.0),
             )
             .unwrap();
-        n.update_account(&a.id, "gw", Some("http://127.0.0.1:1"), None, Some(50.0), Some("RMB"))
-            .unwrap();
+        n.update_account(
+            &a.id,
+            "gw",
+            Some("http://127.0.0.1:1"),
+            None,
+            Some(50.0),
+            Some("RMB"),
+        )
+        .unwrap();
         let mut read = bare(&a, None, crate::live::now_ms());
         read.spent = Some(12.5);
         n.cache_reading(
@@ -2708,10 +2721,23 @@ mod tests {
             board[0].0.name, "网关二号",
             "the board reads the account's name, trimmed, not the name the cached reading was taken under"
         );
-        assert_eq!(board[0].0.spent, Some(12.5), "the cached figure is still the figure");
-        let kept = n.accounts().unwrap().into_iter().find(|x| x.id == a.id).unwrap();
+        assert_eq!(
+            board[0].0.spent,
+            Some(12.5),
+            "the cached figure is still the figure"
+        );
+        let kept = n
+            .accounts()
+            .unwrap()
+            .into_iter()
+            .find(|x| x.id == a.id)
+            .unwrap();
         assert_eq!(kept.budget, Some(50.0), "the budget stays");
-        assert_eq!(kept.base_url.as_deref(), Some("http://127.0.0.1:1"), "the address stays");
+        assert_eq!(
+            kept.base_url.as_deref(),
+            Some("http://127.0.0.1:1"),
+            "the address stays"
+        );
         assert_eq!(kept.unit.as_deref(), Some("RMB"), "the unit stays");
 
         assert_eq!(
@@ -2719,8 +2745,15 @@ mod tests {
             Err(msg::account_name_blank().to_string()),
             "a blank name is refused, not stored"
         );
-        assert_eq!(n.accounts().unwrap()[0].name, "网关二号", "and the refusal wrote nothing");
-        assert!(n.rename_account("no-such", "x").is_err(), "an id nobody has is refused");
+        assert_eq!(
+            n.accounts().unwrap()[0].name,
+            "网关二号",
+            "and the refusal wrote nothing"
+        );
+        assert!(
+            n.rename_account("no-such", "x").is_err(),
+            "an id nobody has is refused"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3495,16 +3528,29 @@ mod tests {
         let n = Node::open(root.clone()).unwrap();
         let gw = slow_gateway(Duration::from_secs(1), Duration::ZERO).await;
         for name in ["one", "two"] {
-            n.register_account(name, Provider::Newapi, AccountKind::Bill, Some(&gw), "sk-x", None)
-                .unwrap();
+            n.register_account(
+                name,
+                Provider::Newapi,
+                AccountKind::Bill,
+                Some(&gw),
+                "sk-x",
+                None,
+            )
+            .unwrap();
         }
         let begun = std::time::Instant::now();
         let got = n.quota_readings().await.unwrap();
         let took = begun.elapsed();
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(got.len(), 2);
-        assert!(got.iter().all(|r| r.trouble.is_none()), "both read: {got:?}");
-        assert!(took < Duration::from_millis(1800), "two accounts took {took:?}");
+        assert!(
+            got.iter().all(|r| r.trouble.is_none()),
+            "both read: {got:?}"
+        );
+        assert!(
+            took < Duration::from_millis(1800),
+            "two accounts took {took:?}"
+        );
     }
 
     /// **The chart's road does not cost the reading its time**
@@ -3517,11 +3563,16 @@ mod tests {
         let mut account = wallet(Provider::Newapi, None);
         account.base_url = Some(gw);
         let begun = std::time::Instant::now();
-        let r = fetch_newapi(&account, "sk-x", 0).await.expect("the gateway answered");
+        let r = fetch_newapi(&account, "sk-x", 0)
+            .await
+            .expect("the gateway answered");
         let took = begun.elapsed();
         assert_eq!(r.fill, Some(0.5), "the figures are the reading's");
         assert!(r.days.is_empty(), "the chart is empty, not made up");
-        assert!(took < Duration::from_secs(5), "the read waited {took:?} on the chart's road");
+        assert!(
+            took < Duration::from_secs(5),
+            "the read waited {took:?} on the chart's road"
+        );
     }
 
     /// **A reading *file* written before the token report still

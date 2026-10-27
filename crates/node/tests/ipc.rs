@@ -126,10 +126,13 @@ async fn one_shot_verbs_ride_the_resident_serve() {
     let payload: Vec<u8> = (0..600_000u32).map(|i| (i % 253) as u8).collect();
     let src = ra.join("bundle.bin");
     fs::write(&src, &payload).unwrap();
-    let id = timeout(Duration::from_secs(60), a.post("@beta", std::slice::from_ref(&src)))
-        .await
-        .expect("a routed post must not hang")
-        .unwrap();
+    let id = timeout(
+        Duration::from_secs(60),
+        a.post("@beta", std::slice::from_ref(&src)),
+    )
+    .await
+    .expect("a routed post must not hang")
+    .unwrap();
     let landed = rb.join("khor-drop").join("bundle.bin");
     timeout(Duration::from_secs(60), async {
         while fs::read(&landed).ok().as_deref() != Some(&payload[..]) {

@@ -51,8 +51,11 @@ fn history() -> LoroDoc {
         let w = LoroDoc::new();
         w.set_peer_id(1000 + p).unwrap();
         w.import(&stale).unwrap();
-        w.get_map("devices").insert(&format!("k{}", p % 90), p as i64).unwrap();
-        a.import(&w.export(ExportMode::updates(&a.oplog_vv())).unwrap()).unwrap();
+        w.get_map("devices")
+            .insert(&format!("k{}", p % 90), p as i64)
+            .unwrap();
+        a.import(&w.export(ExportMode::updates(&a.oplog_vv())).unwrap())
+            .unwrap();
         if p % 3 == 0 {
             stale = a.export(ExportMode::Snapshot).unwrap();
         }
@@ -85,7 +88,10 @@ fn a_sync_round_keeps_little() {
         round(i);
     }
     let per_round = (live_kb() - before) / 20;
-    assert!(per_round < 200, "{per_round} KB kept per round with {PEERS} peers");
+    assert!(
+        per_round < 200,
+        "{per_round} KB kept per round with {PEERS} peers"
+    );
 }
 
 /// The first concurrent import on a doc loaded from a snapshot computes
@@ -106,7 +112,10 @@ fn the_first_merge_after_a_load_stays_small() {
     let before = live_kb();
     b.import(&delta).unwrap();
     let grew = live_kb() - before;
-    assert!(grew < 32 * 1024, "{grew} KB for the first concurrent import with {PEERS} peers");
+    assert!(
+        grew < 32 * 1024,
+        "{grew} KB for the first concurrent import with {PEERS} peers"
+    );
 }
 
 /// The table behind the numbers above (docstat's synthetic loop, which
@@ -124,8 +133,11 @@ fn kept_per_round_by_peers() {
             let w = LoroDoc::new();
             w.set_peer_id(1000 + p).unwrap();
             w.import(&a.export(ExportMode::Snapshot).unwrap()).unwrap();
-            w.get_map("devices").insert(&format!("k{}", p % 90), p as i64).unwrap();
-            a.import(&w.export(ExportMode::updates(&a.oplog_vv())).unwrap()).unwrap();
+            w.get_map("devices")
+                .insert(&format!("k{}", p % 90), p as i64)
+                .unwrap();
+            a.import(&w.export(ExportMode::updates(&a.oplog_vv())).unwrap())
+                .unwrap();
         }
         let b = LoroDoc::new();
         b.set_peer_id(7_000_002).unwrap();
@@ -146,7 +158,10 @@ fn kept_per_round_by_peers() {
             a.import(&to_a).unwrap();
             b.import(&to_b).unwrap();
         }
-        println!("peers {peers:>5}: {:.1} KB kept per round", (live_kb() - before) as f64 / 100.0);
+        println!(
+            "peers {peers:>5}: {:.1} KB kept per round",
+            (live_kb() - before) as f64 / 100.0
+        );
     }
 }
 
@@ -178,16 +193,25 @@ fn reseed_before_and_after() {
         w.merge(&stale).unwrap();
         let row = format!("{:064x}", p % 12);
         for k in 0..3 {
-            w.upsert(&row, &format!("m{}", p % 12), &[format!("10.0.{}.{k}:{}", p % 7, 40000 + p)]).unwrap();
+            w.upsert(
+                &row,
+                &format!("m{}", p % 12),
+                &[format!("10.0.{}.{k}:{}", p % 7, 40000 + p)],
+            )
+            .unwrap();
         }
-        all.merge(&w.changes_since(&all.version()).unwrap()).unwrap();
+        all.merge(&w.changes_since(&all.version()).unwrap())
+            .unwrap();
         if p % 3 == 0 {
             stale = all.snapshot().unwrap();
         }
     }
     let snap = all.snapshot().unwrap();
     std::fs::write(pile.join("snap-0000000000000001-00000000.loro"), &snap).unwrap();
-    eprintln!("synthetic pile: {PEERS_RESEED} writers, snapshot {} KB", snap.len() / 1024);
+    eprintln!(
+        "synthetic pile: {PEERS_RESEED} writers, snapshot {} KB",
+        snap.len() / 1024
+    );
 
     let measure = |label: &str, open: &dyn Fn(&std::path::Path, u64) -> Loaded<DeviceDoc>| {
         // Another machine's copy: the blocks, not this machine's pens.
@@ -205,8 +229,13 @@ fn reseed_before_and_after() {
         let h1 = live_kb();
         let there = open(&far, 0xBB);
         let have = version_b64(&here.store, &here.doc);
-        here.doc.upsert(&"aa".repeat(32), "here", &["10.9.9.9:1".to_owned()]).unwrap();
-        there.doc.upsert(&"bb".repeat(32), "there", &["10.9.9.8:1".to_owned()]).unwrap();
+        here.doc
+            .upsert(&"aa".repeat(32), "here", &["10.9.9.9:1".to_owned()])
+            .unwrap();
+        there
+            .doc
+            .upsert(&"bb".repeat(32), "there", &["10.9.9.8:1".to_owned()])
+            .unwrap();
         let delta = there.doc.changes_since(&here.doc.version()).unwrap();
         let h2 = live_kb();
         let t = std::time::Instant::now();
@@ -250,19 +279,33 @@ fn reseed_before_and_after() {
                 let w = DeviceDoc::open(peer).unwrap();
                 w.merge(&state.snapshot().unwrap()).unwrap();
                 let v = w.version();
-                w.upsert(&format!("{:064x}", i % 12), "w", &[format!("10.8.8.{i}:1")]).unwrap();
-                std::fs::write(dir.join(format!("u-{peer:016x}-00000000.loro")), w.changes_since(&v).unwrap()).unwrap();
+                w.upsert(&format!("{:064x}", i % 12), "w", &[format!("10.8.8.{i}:1")])
+                    .unwrap();
+                std::fs::write(
+                    dir.join(format!("u-{peer:016x}-00000000.loro")),
+                    w.changes_since(&v).unwrap(),
+                )
+                .unwrap();
             }
             let t = std::time::Instant::now();
             let l = load::<DeviceDoc>(&dir, 0xF1).unwrap();
-            eprintln!("{label}: fresh read of the pile + {k:>2} concurrent blocks: {:>8.1?} ({} names)", t.elapsed(), l.doc.version().len());
+            eprintln!(
+                "{label}: fresh read of the pile + {k:>2} concurrent blocks: {:>8.1?} ({} names)",
+                t.elapsed(),
+                l.doc.version().len()
+            );
         }
     };
     fresh("before");
     measure("before", &|d, p| load::<DeviceDoc>(d, p).unwrap());
     let t = std::time::Instant::now();
     let l = load_pile::<DeviceDoc>(&pile, 0xCC).unwrap();
-    eprintln!("re-seed: {:.1?}, epoch {}, names {}", t.elapsed(), l.store.epoch(), l.doc.version().len());
+    eprintln!(
+        "re-seed: {:.1?}, epoch {}, names {}",
+        t.elapsed(),
+        l.store.epoch(),
+        l.doc.version().len()
+    );
     assert_eq!(l.doc.version().len(), 1);
     drop(l);
     measure("after ", &|d, p| load_pile::<DeviceDoc>(d, p).unwrap());

@@ -289,10 +289,15 @@ pub enum Op {
     /// afresh; answered with the counters after. A diagnostic, and what
     /// `crates/cli/tests/redial.rs` measures a redial with (round NET-3).
     /// Tail-appended.
-    LetGo { machine: String },
+    LetGo {
+        machine: String,
+    },
     /// [`crate::proto::Request::Stat`] through the resident: what a file
     /// on that machine is now, without its bytes. Tail-appended.
-    StatOn { machine: String, path: String },
+    StatOn {
+        machine: String,
+        path: String,
+    },
     /// Which of these directories on that machine changed since `since`
     /// (`crate::watch::Watches`), held up to `wait_ms` (at most
     /// [`WATCH_WAIT`]) for one to — 0 asks without waiting, which is what
@@ -320,7 +325,9 @@ pub enum Op {
     /// a face arriving gets a round at once (round NET-6,
     /// `link::QUIET_PACE`). Sent again every [`FACE_BEAT`] while visible.
     /// Answered [`Reply::Noted`]. Tail-appended.
-    FaceHere { visible: bool },
+    FaceHere {
+        visible: bool,
+    },
     /// An `Act` on a session on another machine other than closing it
     /// (`Act` "prompt-up" / "prompt-down", item 21); answered with
     /// [`Reply::Accepted`]. Tail-appended.
@@ -359,18 +366,27 @@ pub enum Op {
     /// **The drop named by `token` cancelled** (item 71): the machine
     /// `to`, which pulls it, is told to stop. Answered with
     /// [`Reply::Noted`]. Tail-appended.
-    DropStop { token: String, to: String },
+    DropStop {
+        token: String,
+        to: String,
+    },
     /// **Every machine's try at `host:port`** (round ROAD-1, `khor
     /// reach`): the resident asks them all at once
     /// (`proto::Request::Probe`). Answered [`Reply::ReachProbe`].
     /// Tail-appended.
-    ReachProbe { host: String, port: u16 },
+    ReachProbe {
+        host: String,
+        port: u16,
+    },
     /// **A pipe to `target` (`host:port`) through `machine`'s network**
     /// (round ROAD-1, `khor pipe`): the resident dials the exit's stream
     /// and binds a loopback port that hands it to the one connection
     /// that says the cookie first (`crate::pipe`). Answered
     /// [`Reply::Piping`]. Tail-appended.
-    PipeOn { machine: String, target: String },
+    PipeOn {
+        machine: String,
+        target: String,
+    },
     /// [`crate::proto::Request::AddOverSsh`] asked of `machine` by the
     /// resident. Answered with [`Reply::Adding`]. Tail-appended.
     AddOn {
@@ -387,7 +403,9 @@ pub enum Op {
     /// resident binds a loopback port that takes the one connection saying
     /// the cookie first and makes it the carried link to `carrier`
     /// (`crate::carry`). Answered [`Reply::Piping`]. Tail-appended.
-    CarryIn { carrier: String },
+    CarryIn {
+        carrier: String,
+    },
     /// **The add flow's carry** (round ROAD-3, `Node::carry_for`): an ssh
     /// session to `id`, not paired yet, by this road, so its pairing can
     /// ride it. Answered [`Reply::Noted`] once it has held. Tail-appended.
@@ -404,21 +422,42 @@ pub enum Op {
     /// it now, past its backoff — the restart a person would otherwise
     /// reach for. At most once a `link::SYNC_EVERY` per machine.
     /// Answered [`Reply::Noted`] at once; the round runs on. Tail-appended.
-    Visit { machine: String },
+    Visit {
+        machine: String,
+    },
     /// [`crate::proto::Request::Journal`] asked of `machine` (net-r):
     /// answered [`Reply::Journal`]. Tail-appended.
-    JournalOn { machine: String, peer: Option<String>, since: u64 },
+    JournalOn {
+        machine: String,
+        peer: Option<String>,
+        since: u64,
+    },
     /// **A message composed into the broadcast** (`Node::post`): the
     /// typed form and this machine's files, resolved, checked and written
     /// by the serve, which then pushes to each target on its own time.
     /// Answered [`Reply::Posted`] once the message is written, or
     /// refused before anything is. Tail-appended.
-    Post { typed: String, files: Vec<String> },
+    Post {
+        typed: String,
+        files: Vec<String>,
+    },
     /// Literal console prose; only explicit slash submissions execute.
-    Note { text: String, files: Vec<String> },
-    RecognitionOn { machine: String, action: crate::recognition::Action },
-    OpenShellOn { machine: String, start: crate::shell_start::ShellStart },
-    SubscriptionsOn { machine: String, action: crate::subscriptions::Action },
+    Note {
+        text: String,
+        files: Vec<String>,
+    },
+    RecognitionOn {
+        machine: String,
+        action: crate::recognition::Action,
+    },
+    OpenShellOn {
+        machine: String,
+        start: crate::shell_start::ShellStart,
+    },
+    SubscriptionsOn {
+        machine: String,
+        action: crate::subscriptions::Action,
+    },
     KhorAgent {
         machine: String,
         action: crate::khor_agent::Action,
@@ -644,7 +683,9 @@ pub enum Reply {
         digest: String,
     },
     /// Tail-appended with [`Op::WatchOn`].
-    DirsChanged { changes: crate::watch::DirChanges },
+    DirsChanged {
+        changes: crate::watch::DirChanges,
+    },
     /// Tail-appended with [`Op::GitStatusOn`]: the branch, the marked
     /// paths, and whether the list was cut.
     GitStatus {
@@ -741,7 +782,9 @@ pub enum Reply {
         hits: Vec<crate::commands::HistoryHit>,
     },
     /// Tail-appended with [`Op::GitOn`].
-    Git { answer: crate::git::GitAnswer },
+    Git {
+        answer: crate::git::GitAnswer,
+    },
     /// Tail-appended with [`Op::FaceHere`]: noted.
     Noted,
     /// Tail-appended with [`Op::PaneHistoryOn`].
@@ -749,20 +792,37 @@ pub enum Reply {
         history: crate::adaptor::tmux::PaneHistory,
     },
     /// Tail-appended with [`Op::DropOn`].
-    DropFile { state: crate::drops::DropState },
+    DropFile {
+        state: crate::drops::DropState,
+    },
     /// Tail-appended with [`Op::ReachProbe`].
-    ReachProbe { view: khor_core::ReachView },
+    ReachProbe {
+        view: khor_core::ReachView,
+    },
     /// Tail-appended with [`Op::PipeOn`]: where to connect, and the
     /// cookie to say first.
-    Piping { addr: String, cookie: String },
+    Piping {
+        addr: String,
+        cookie: String,
+    },
     /// Tail-appended with [`Op::AddOn`].
-    Adding { run: crate::join::Run },
+    Adding {
+        run: crate::join::Run,
+    },
     /// Tail-appended with [`Op::JournalOn`]: the far journal's lines.
-    Journal { lines: Vec<String> },
+    Journal {
+        lines: Vec<String>,
+    },
     /// Tail-appended with [`Op::Post`]: the written message's id.
-    Posted { id: String },
-    Recognition { report: crate::recognition::Report },
-    Subscriptions { answer: crate::subscriptions::Answer },
+    Posted {
+        id: String,
+    },
+    Recognition {
+        report: crate::recognition::Report,
+    },
+    Subscriptions {
+        answer: crate::subscriptions::Answer,
+    },
     KhorAgent {
         report: crate::khor_agent::Report,
     },

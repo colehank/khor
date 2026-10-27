@@ -66,7 +66,8 @@ async fn blocking<T: Send + 'static>(
         let value = job(context, &mut state)?;
         let notices = state.notice_ids(context)?;
         Ok((value, notices))
-    }).await
+    })
+    .await
 }
 
 pub(super) async fn on_worker<T: Send + 'static>(
@@ -105,7 +106,11 @@ impl Node {
         self.deliver_doc_notices(context, notices).await?;
         Ok(value)
     }
-    pub(super) async fn deliver_doc_notices(&self, context: Context, notices: Vec<Notice>) -> Result<(), Error> {
+    pub(super) async fn deliver_doc_notices(
+        &self,
+        context: Context,
+        notices: Vec<Notice>,
+    ) -> Result<(), Error> {
         for Notice {
             id,
             document: name,
@@ -192,12 +197,14 @@ impl Node {
         let request = match route {
             None => Request::DocTransfer { action },
             Some((claim, nonce)) => Request::Pair {
-                action: crate::proto::PairAction::Devices { claim, nonce, action },
+                action: crate::proto::PairAction::Devices {
+                    claim,
+                    nonce,
+                    action,
+                },
             },
         };
-        let response = self
-            .exchange_doc_on(line, &request, &mut attempt)
-            .await;
+        let response = self.exchange_doc_on(line, &request, &mut attempt).await;
         // Preserve both directions before transport/decode/role/shape/local
         // errors can return. Every repeated application request counts again.
         if attempt.request_written {
@@ -212,7 +219,12 @@ impl Node {
         }
         let reply = match (route, response.map_err(super::Miss::words)?) {
             (None, Response::DocTransfer { reply }) => reply,
-            (Some((expected, _)), Response::Paired { reply: crate::proto::PairReply::Devices { claim, reply } }) if claim == expected => reply,
+            (
+                Some((expected, _)),
+                Response::Paired {
+                    reply: crate::proto::PairReply::Devices { claim, reply },
+                },
+            ) if claim == expected => reply,
             (_, Response::Refused { why }) => return Err(why.into()),
             _ => return Err("unexpected document route or response".into()),
         };
@@ -297,12 +309,24 @@ impl Node {
         self.transfer_documents_route(line, docs, None).await
     }
     pub(super) async fn transfer_pair_documents(
-        &self, line: &Line, version: serde_bytes::ByteBuf, claim: [u8; 32], nonce: [u8; 32],
+        &self,
+        line: &Line,
+        version: serde_bytes::ByteBuf,
+        claim: [u8; 32],
+        nonce: [u8; 32],
     ) -> SyncProgress {
-        self.transfer_documents_route(line, vec![("devices".into(), DocumentInventory::Version { version })], Some((claim, nonce))).await
+        self.transfer_documents_route(
+            line,
+            vec![("devices".into(), DocumentInventory::Version { version })],
+            Some((claim, nonce)),
+        )
+        .await
     }
     async fn transfer_documents_route(
-        &self, line: &Line, docs: Vec<(String, DocumentInventory)>, route: PairRoute,
+        &self,
+        line: &Line,
+        docs: Vec<(String, DocumentInventory)>,
+        route: PairRoute,
     ) -> SyncProgress {
         let Some(remote) = khor_net::trust::id_from_hex(&line.id) else {
             let mut p = SyncProgress::default();
@@ -432,7 +456,13 @@ impl Node {
         }
         progress
     }
-    async fn transfer_step(&self, line: &Line, remote: [u8; 32], work: &mut Work, route: PairRoute) -> StepOutcome {
+    async fn transfer_step(
+        &self,
+        line: &Line,
+        remote: [u8; 32],
+        work: &mut Work,
+        route: PairRoute,
+    ) -> StepOutcome {
         let mut usage = Usage::default();
         let result = self
             .transfer_step_inner(line, remote, work, &mut usage, route)
@@ -457,7 +487,12 @@ impl Node {
                 .doc_step(move |context, state| {
                     let local = context.version(&name)?;
                     let offer = if local.epoch == have.epoch {
-                        match route { Some((operation, _)) => state.pair_offer(context, remote, operation, &have)?, None => state.offer(context, remote, &name, &have)? }
+                        match route {
+                            Some((operation, _)) => {
+                                state.pair_offer(context, remote, operation, &have)?
+                            }
+                            None => state.offer(context, remote, &name, &have)?,
+                        }
                     } else {
                         None
                     };
@@ -541,14 +576,24 @@ impl Node {
             let mut needs_exchange = matches!(&received, Some(TransferState::Missing));
             #[cfg(test)]
             flow_tests::before_receipts(self.root(), &work.name).await;
-            self.take_receipt_answers(remote, proof_acknowledgements, acknowledgement_results, route)
-                .await?;
+            self.take_receipt_answers(
+                remote,
+                proof_acknowledgements,
+                acknowledgement_results,
+                route,
+            )
+            .await?;
             if let Some(received) = received {
                 self.take_push_state(remote, work, received).await?;
             }
             if let Some(chunk) = offer {
                 let state = self
-                    .doc_step(move |context, state| match route { Some((operation, _)) => state.pair_receive(context, remote, operation, &chunk, true), None => state.receive(context, remote, &chunk, true) })
+                    .doc_step(move |context, state| match route {
+                        Some((operation, _)) => {
+                            state.pair_receive(context, remote, operation, &chunk, true)
+                        }
+                        None => state.receive(context, remote, &chunk, true),
+                    })
                     .await?;
                 needs_exchange |= matches!(&state, TransferState::Missing);
                 take_pull_state(work, state)?;
@@ -615,7 +660,12 @@ impl Node {
                 return Err("read answered a different manifest or offset".into());
             }
             let state = self
-                .doc_step(move |context, state| match route { Some((operation, _)) => state.pair_receive(context, remote, operation, &chunk, false), None => state.receive(context, remote, &chunk, false) })
+                .doc_step(move |context, state| match route {
+                    Some((operation, _)) => {
+                        state.pair_receive(context, remote, operation, &chunk, false)
+                    }
+                    None => state.receive(context, remote, &chunk, false),
+                })
                 .await?;
             take_pull_state(work, state)?;
             return Ok(());
@@ -714,17 +764,15 @@ impl Node {
                 return Err(Error::busy());
             }
             let (proofs, acks) = self
-                .doc_step(move |_, state| {
-                    match route {
-                        Some((operation, _)) => Ok((
-                            state.pair_document_proofs(remote, operation, 2)?,
-                            state.pair_document_acknowledgements(remote, operation, 2)?,
-                        )),
-                        None => Ok((
-                            state.pending_proofs(remote, 2),
-                            state.pending_acknowledgements(remote, 2)?,
-                        )),
-                    }
+                .doc_step(move |_, state| match route {
+                    Some((operation, _)) => Ok((
+                        state.pair_document_proofs(remote, operation, 2)?,
+                        state.pair_document_acknowledgements(remote, operation, 2)?,
+                    )),
+                    None => Ok((
+                        state.pending_proofs(remote, 2),
+                        state.pending_acknowledgements(remote, 2)?,
+                    )),
                 })
                 .await?;
             if proofs.is_empty() && acks.is_empty() {
@@ -848,7 +896,13 @@ pub(super) fn handle(
 ) -> Result<Reply, Error> {
     handle_pair(context, state, remote, action, None)
 }
-pub(super) fn handle_pair(context: &Context, state: &mut State, remote: [u8;32], action: Action, operation: Option<[u8;32]>) -> Result<Reply, Error> {
+pub(super) fn handle_pair(
+    context: &Context,
+    state: &mut State,
+    remote: [u8; 32],
+    action: Action,
+    operation: Option<[u8; 32]>,
+) -> Result<Reply, Error> {
     match action {
         Action::Exchange {
             document,
@@ -880,7 +934,10 @@ pub(super) fn handle_pair(context: &Context, state: &mut State, remote: [u8;32],
                         why: "exchange first chunk does not bind its document".into(),
                     };
                 }
-                match match operation { Some(id) => state.pair_receive(context, remote, id, &chunk, true), None => state.receive(context, remote, &chunk, true) } {
+                match match operation {
+                    Some(id) => state.pair_receive(context, remote, id, &chunk, true),
+                    None => state.receive(context, remote, &chunk, true),
+                } {
                     Ok(reply) => reply,
                     Err(error) => TransferState::Failed {
                         kind: error.kind,
@@ -891,7 +948,10 @@ pub(super) fn handle_pair(context: &Context, state: &mut State, remote: [u8;32],
             let have = DocumentVersion::decode(&have).map_err(|e| e.to_string())?;
             let local = context.version(&document)?;
             let offer = if have.epoch == local.epoch {
-                match operation { Some(id) => state.pair_offer(context, remote, id, &have)?, None => state.offer(context, remote, &document, &have)? }
+                match operation {
+                    Some(id) => state.pair_offer(context, remote, id, &have)?,
+                    None => state.offer(context, remote, &document, &have)?,
+                }
             } else {
                 None
             };
@@ -906,7 +966,10 @@ pub(super) fn handle_pair(context: &Context, state: &mut State, remote: [u8;32],
         }
         Action::Write { chunk } => {
             let manifest = chunk.manifest.clone();
-            let state = match operation { Some(id) => state.pair_receive(context, remote, id, &chunk, false)?, None => state.receive(context, remote, &chunk, false)? };
+            let state = match operation {
+                Some(id) => state.pair_receive(context, remote, id, &chunk, false)?,
+                None => state.receive(context, remote, &chunk, false)?,
+            };
             Ok(Reply::State { manifest, state })
         }
         Action::Read { manifest, offset } => Ok(Reply::Chunk {
@@ -1089,7 +1152,11 @@ pub(crate) fn validate_reply(reply: &Reply) -> Result<(), Error> {
     Ok(())
 }
 
-pub(super) fn validate_roles(action: &Action, receiver: [u8; 32], sender: [u8; 32]) -> Result<(), Error> {
+pub(super) fn validate_roles(
+    action: &Action,
+    receiver: [u8; 32],
+    sender: [u8; 32],
+) -> Result<(), Error> {
     match action {
         Action::Exchange {
             document,

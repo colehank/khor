@@ -19,8 +19,8 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use khor_node::journal::{By, What};
 use khor_node::Node;
+use khor_node::journal::{By, What};
 use tokio::time::timeout;
 
 struct Scratch(std::path::PathBuf);
@@ -88,7 +88,12 @@ async fn a_refused_dial_is_resting_and_the_machine_is_visited_when_it_dials_back
     let roads = timeout(Duration::from_secs(60), async {
         loop {
             let a_now = Node::open_as(ra.0.clone(), "alpha").unwrap();
-            if a_now.devices().unwrap_or_default().iter().any(|d| d.id == beta_id && !d.addrs.is_empty()) {
+            if a_now
+                .devices()
+                .unwrap_or_default()
+                .iter()
+                .any(|d| d.id == beta_id && !d.addrs.is_empty())
+            {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(300)).await;
@@ -102,8 +107,15 @@ async fn a_refused_dial_is_resting_and_the_machine_is_visited_when_it_dials_back
     let t = std::time::Instant::now();
     let why = ask().await.unwrap_err();
     eprintln!("[refused] {:?}: {why}", t.elapsed());
-    assert!(t.elapsed() < Duration::from_secs(8), "a refusal is heard at once, not waited out: {:?}", t.elapsed());
-    assert!(why.contains(khor_catalog::msg::peer_resting()), "said as resting: {why}");
+    assert!(
+        t.elapsed() < Duration::from_secs(8),
+        "a refusal is heard at once, not waited out: {:?}",
+        t.elapsed()
+    );
+    assert!(
+        why.contains(khor_catalog::msg::peer_resting()),
+        "said as resting: {why}"
+    );
 
     let dials: Vec<What> = khor_node::journal::read(&rb.0, Some(&alpha_id), 0)
         .into_iter()
@@ -113,12 +125,29 @@ async fn a_refused_dial_is_resting_and_the_machine_is_visited_when_it_dials_back
     assert!(!dials.is_empty(), "the refused dial is written");
     for d in &dials {
         assert!(
-            matches!(d, What::Dial { asleep: true, retry_s: None, .. }),
+            matches!(
+                d,
+                What::Dial {
+                    asleep: true,
+                    retry_s: None,
+                    ..
+                }
+            ),
             "written as refused, with no backoff: {d:?}"
         );
     }
-    let row = b.links().await.unwrap().into_iter().find(|(id, _)| *id == alpha_id).map(|(_, l)| l);
-    assert_eq!(row.and_then(|l| l.down_ms), None, "resting is not unreachable");
+    let row = b
+        .links()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|(id, _)| *id == alpha_id)
+        .map(|(_, l)| l);
+    assert_eq!(
+        row.and_then(|l| l.down_ms),
+        None,
+        "resting is not unreachable"
+    );
 
     // alpha resumes: its pump dials beta, and beta answers with a round of
     // its own at once — not ten minutes later.
@@ -135,9 +164,16 @@ async fn a_refused_dial_is_resting_and_the_machine_is_visited_when_it_dials_back
                 .collect();
             let inbound = after.iter().position(|w| matches!(w, What::Inbound));
             if let Some(i) = inbound
-                && after[i..]
-                    .iter()
-                    .any(|w| matches!(w, What::Dial { by: By::Forced, won: Some(_), .. }))
+                && after[i..].iter().any(|w| {
+                    matches!(
+                        w,
+                        What::Dial {
+                            by: By::Forced,
+                            won: Some(_),
+                            ..
+                        }
+                    )
+                })
             {
                 return;
             }
@@ -148,7 +184,11 @@ async fn a_refused_dial_is_resting_and_the_machine_is_visited_when_it_dials_back
     if back.is_err() {
         for (who, r, peer) in [("beta", &rb.0, &alpha_id), ("alpha", &ra.0, &beta_id)] {
             for e in khor_node::journal::read(r, Some(peer), since) {
-                eprintln!("[{who}] +{}ms {}", e.at.saturating_sub(since), khor_node::journal::words(&e, &|s| s.to_owned()));
+                eprintln!(
+                    "[{who}] +{}ms {}",
+                    e.at.saturating_sub(since),
+                    khor_node::journal::words(&e, &|s| s.to_owned())
+                );
             }
         }
     }

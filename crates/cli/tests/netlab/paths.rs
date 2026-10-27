@@ -53,12 +53,20 @@ use crate::lab::{LabNode, mesh, node, qad_relays_dual, relay, result};
 use crate::scratch::Reaped;
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
 }
 
 /// A network of its own subnet behind a home router (v4).
 async fn network(lab: &Lab, name: &str) -> Router {
-    lab.add_router(name).nat(Nat::Moderate).ip_support(IpSupport::V4Only).build().await.unwrap()
+    lab.add_router(name)
+        .nat(Nat::Moderate)
+        .ip_support(IpSupport::V4Only)
+        .build()
+        .await
+        .unwrap()
 }
 
 /// A machine with a leg on each network: `eth0` on `lan` (the default
@@ -79,7 +87,10 @@ async fn delay(dev: &Device, ifname: &str, one_way: u32, dir: LinkDirection) {
     if one_way == 0 {
         iface.clear_condition(dir).await.unwrap();
     } else {
-        iface.set_condition(LinkCondition::new().latency_ms(one_way), dir).await.unwrap();
+        iface
+            .set_condition(LinkCondition::new().latency_ms(one_way), dir)
+            .await
+            .unwrap();
     }
 }
 
@@ -88,7 +99,11 @@ async fn delay(dev: &Device, ifname: &str, one_way: u32, dir: LinkDirection) {
 fn selections(n: &LabNode, peer: &LabNode, since: u64) -> Vec<(u64, String, String)> {
     n.journal(Some(peer))
         .into_iter()
-        .filter(|e| e["e"] == "path" && e["change"] == "selected" && e["at"].as_u64().is_some_and(|t| t >= since))
+        .filter(|e| {
+            e["e"] == "path"
+                && e["change"] == "selected"
+                && e["at"].as_u64().is_some_and(|t| t >= since)
+        })
         .map(|e| {
             (
                 e["at"].as_u64().unwrap(),
@@ -104,7 +119,11 @@ fn selections(n: &LabNode, peer: &LabNode, since: u64) -> Vec<(u64, String, Stri
 fn leg(dev: &Device, addr: &str) -> String {
     let ip = addr.rsplit_once(':').map_or(addr, |(ip, _)| ip);
     for (ifname, name) in [("eth0", "lan"), ("eth1", "second")] {
-        if dev.iface(ifname).and_then(|i| i.ip()).is_some_and(|v4| v4.to_string() == ip) {
+        if dev
+            .iface(ifname)
+            .and_then(|i| i.ip())
+            .is_some_and(|v4| v4.to_string() == ip)
+        {
             return name.to_owned();
         }
     }
@@ -128,10 +147,20 @@ fn current(n: &LabNode, peer: &LabNode) -> Option<String> {
         })
         .last();
     let (_, road, addr) = match (selected, settled) {
-        (Some(a), Some(b)) => if b.0 > a.0 { b } else { a },
+        (Some(a), Some(b)) => {
+            if b.0 > a.0 {
+                b
+            } else {
+                a
+            }
+        }
         (a, b) => a.or(b)?,
     };
-    Some(if road == "direct" { leg(&peer.dev, &addr) } else { road })
+    Some(if road == "direct" {
+        leg(&peer.dev, &addr)
+    } else {
+        road
+    })
 }
 
 /// Selections since `since`, as legs with seconds from `since`.
@@ -139,7 +168,11 @@ fn moves(n: &LabNode, peer: &LabNode, since: u64) -> Vec<String> {
     selections(n, peer, since)
         .into_iter()
         .map(|(at, road, addr)| {
-            let what = if road == "direct" { leg(&peer.dev, &addr) } else { road };
+            let what = if road == "direct" {
+                leg(&peer.dev, &addr)
+            } else {
+                road
+            };
             format!("{what}@{:.0}s", (at - since) as f64 / 1000.0)
         })
         .collect()
@@ -158,14 +191,23 @@ fn lines(n: &LabNode, peer: Option<&LabNode>, e: &str, since: u64) -> Vec<serde_
 fn wire_traffic(dev: &Device) -> (u64, u64) {
     let mut cmd = Command::new("cat");
     cmd.arg("/proc/net/dev").stdout(Stdio::piped());
-    let out = dev.spawn_command_sync(cmd).unwrap().wait_with_output().unwrap();
+    let out = dev
+        .spawn_command_sync(cmd)
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
     let (mut packets, mut bytes) = (0, 0);
     for l in String::from_utf8_lossy(&out.stdout).lines().skip(2) {
-        let Some((name, cols)) = l.split_once(':') else { continue };
+        let Some((name, cols)) = l.split_once(':') else {
+            continue;
+        };
         if name.trim() == "lo" {
             continue;
         }
-        let n: Vec<u64> = cols.split_whitespace().filter_map(|c| c.parse().ok()).collect();
+        let n: Vec<u64> = cols
+            .split_whitespace()
+            .filter_map(|c| c.parse().ok())
+            .collect();
         // rx bytes, rx packets … (8 columns), tx bytes, tx packets.
         if n.len() >= 10 {
             bytes += n[0] + n[8];
@@ -177,7 +219,13 @@ fn wire_traffic(dev: &Device) -> (u64, u64) {
 
 /// The rounds of hole punching this machine has started, toward anyone.
 async fn punch_rounds(n: &LabNode) -> u64 {
-    n.with(|node| async move { node.wire_counts().await.map(|c| c.punch_rounds).unwrap_or(0) }).await
+    n.with(|node| async move {
+        node.wire_counts()
+            .await
+            .map(|c| c.punch_rounds)
+            .unwrap_or(0)
+    })
+    .await
 }
 
 /// Two machines with a leg on each of two networks, on one plain relay,
@@ -206,12 +254,22 @@ async fn pair(s: &str, before: impl AsyncFnOnce(&Device, &Device)) -> Pair {
             .await
             .unwrap_or_else(|| panic!("{} goes direct to {}", x.name, y.name));
     }
-    Pair { _lab: lab, _relay: r, a, b }
+    Pair {
+        _lab: lab,
+        _relay: r,
+        a,
+        b,
+    }
 }
 
 /// Ten minutes; `NETLAB_LONG_S` shortens it for a look at the setup.
 fn long() -> Duration {
-    Duration::from_secs(std::env::var("NETLAB_LONG_S").ok().and_then(|v| v.parse().ok()).unwrap_or(10 * 60))
+    Duration::from_secs(
+        std::env::var("NETLAB_LONG_S")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10 * 60),
+    )
 }
 
 /// Both roads `one_way` ms out of each machine (`jitter` ms either side),
@@ -228,7 +286,11 @@ async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
         for d in [da, db] {
             for i in ["eth0", "eth1"] {
                 let cond = LinkCondition::new().latency_ms(one_way).jitter_ms(jitter);
-                d.iface(i).unwrap().set_condition(cond, LinkDirection::Egress).await.unwrap();
+                d.iface(i)
+                    .unwrap()
+                    .set_condition(cond, LinkDirection::Egress)
+                    .await
+                    .unwrap();
             }
         }
     })
@@ -243,16 +305,28 @@ async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
         let began = Instant::now();
         while began.elapsed() < long() {
             tokio::time::sleep(Duration::from_secs(30)).await;
-            let cond = LinkCondition::new().latency_ms(one_way + 300).jitter_ms(jitter);
+            let cond = LinkCondition::new()
+                .latency_ms(one_way + 300)
+                .jitter_ms(jitter);
             for i in ["eth0", "eth1"] {
-                p.a.dev.iface(i).unwrap().set_condition(cond, LinkDirection::Egress).await.unwrap();
+                p.a.dev
+                    .iface(i)
+                    .unwrap()
+                    .set_condition(cond, LinkDirection::Egress)
+                    .await
+                    .unwrap();
             }
             let typed = echo(&p.a);
             let calm = async {
                 tokio::time::sleep(Duration::from_millis(300)).await;
                 let cond = LinkCondition::new().latency_ms(one_way).jitter_ms(jitter);
                 for i in ["eth0", "eth1"] {
-                    p.a.dev.iface(i).unwrap().set_condition(cond, LinkDirection::Egress).await.unwrap();
+                    p.a.dev
+                        .iface(i)
+                        .unwrap()
+                        .set_condition(cond, LinkDirection::Egress)
+                        .await
+                        .unwrap();
                 }
             };
             let ((took, _), ()) = tokio::join!(typed, calm);
@@ -265,7 +339,8 @@ async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
     let (ma, mb) = (moves(&p.a, &p.b, since), moves(&p.b, &p.a, since));
     let rounds = punch_rounds(&p.a).await - rounds0;
     let traffic = wire_traffic(&p.a.dev);
-    let retired = lines(&p.a, Some(&p.b), "retired", since).len() + lines(&p.b, Some(&p.a), "retired", since).len();
+    let retired = lines(&p.a, Some(&p.b), "retired", since).len()
+        + lines(&p.b, Some(&p.a), "retired", since).len();
     let changes = lines(&p.a, None, "network", since).len();
     let worst = ma.len().max(mb.len());
     let ok = worst <= 1 && retired == 0;
@@ -276,7 +351,13 @@ async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
             "{}±{} ms each way{}, over {:?}: alpha moved {} {ma:?}, beta {} {mb:?}; retired {retired}; alpha: {changes} network changes, {rounds} punch rounds, {} packets {} bytes",
             one_way,
             jitter,
-            if stalls { format!(", {spikes} spikes of 300 ms (slowest keystroke {slowest:.1?}), one busy CPU") } else { String::new() },
+            if stalls {
+                format!(
+                    ", {spikes} spikes of 300 ms (slowest keystroke {slowest:.1?}), one busy CPU"
+                )
+            } else {
+                String::new()
+            },
             long(),
             ma.len(),
             mb.len(),
@@ -284,7 +365,10 @@ async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
             traffic.1 - traffic0.1,
         ),
     );
-    assert!(worst <= 1, "at most one move in ten minutes: alpha {ma:?}, beta {mb:?}");
+    assert!(
+        worst <= 1,
+        "at most one move in ten minutes: alpha {ma:?}, beta {mb:?}"
+    );
     assert_eq!(retired, 0, "no wire retired");
 }
 
@@ -319,7 +403,10 @@ fn busy_beside(nodes: &[&LabNode]) -> Vec<Reaped> {
     let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
     let cpu = (std::process::id() as usize % cpus).to_string();
     for n in nodes {
-        let _ = Command::new("taskset").args(["-a", "-p", "-c", &cpu, &n.pid().to_string()]).stdout(Stdio::null()).status();
+        let _ = Command::new("taskset")
+            .args(["-a", "-p", "-c", &cpu, &n.pid().to_string()])
+            .stdout(Stdio::null())
+            .status();
     }
     (0..2)
         .filter_map(|_| {
@@ -358,7 +445,10 @@ async fn p5_a_short_stall_rides_out_and_punches_nothing() {
     }
     tokio::time::sleep(Duration::from_secs(30)).await;
     let ip_b = b.dev.ip().unwrap().to_string();
-    let drops: u32 = std::env::var("NETLAB_P5_DROPS").ok().and_then(|v| v.parse().ok()).unwrap_or(4);
+    let drops: u32 = std::env::var("NETLAB_P5_DROPS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
     let mut short_ok = true;
     let mut said = vec![];
     for stall in [150u64, 300, 600] {
@@ -378,10 +468,16 @@ async fn p5_a_short_stall_rides_out_and_punches_nothing() {
         }
         tokio::time::sleep(Duration::from_secs(5)).await;
         let relayed = |n: &LabNode, peer: &LabNode| {
-            selections(n, peer, since).into_iter().filter(|(_, road, _)| road == "relay").count()
+            selections(n, peer, since)
+                .into_iter()
+                .filter(|(_, road, _)| road == "relay")
+                .count()
         };
         let (ra, rb) = (relayed(&a, &b), relayed(&b, &a));
-        let rounds = (punch_rounds(&a).await - rounds0.0, punch_rounds(&b).await - rounds0.1);
+        let rounds = (
+            punch_rounds(&a).await - rounds0.0,
+            punch_rounds(&b).await - rounds0.1,
+        );
         if stall < 500 {
             short_ok &= ra == 0 && rb == 0 && rounds == (0, 0);
         }
@@ -393,7 +489,10 @@ async fn p5_a_short_stall_rides_out_and_punches_nothing() {
         ));
     }
     result(s, short_ok, said.join("; "));
-    assert!(short_ok, "a stall shorter than the relay's round trip moves nothing and punches nothing: {said:?}");
+    assert!(
+        short_ok,
+        "a stall shorter than the relay's round trip moves nothing and punches nothing: {said:?}"
+    );
 }
 
 /// Drops (`on`) or stops dropping everything between `dev` and `ip` (nft,
@@ -410,7 +509,12 @@ fn drop_between(dev: &Device, ip: &str, on: bool) {
     cmd.args(["-f", "-"]).stdin(Stdio::piped());
     let mut child = dev.spawn_command_sync(cmd).unwrap();
     use std::io::Write;
-    child.stdin.take().unwrap().write_all(rules.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(rules.as_bytes())
+        .unwrap();
     assert!(child.wait().unwrap().success(), "nft took:\n{rules}");
 }
 
@@ -445,10 +549,21 @@ async fn p2i_the_road_in_use_slows_while_idle() {
 async fn slows(s: &str, typing: bool) {
     // The LAN slow at first (30 ms), so the connection lands on the
     // second road.
-    let p = pair(s, async |da, _| delay(da, "eth0", 15, LinkDirection::Both).await).await;
+    let p = pair(s, async |da, _| {
+        delay(da, "eth0", 15, LinkDirection::Both).await
+    })
+    .await;
     let began = Instant::now();
-    while [current(&p.a, &p.b), current(&p.b, &p.a)].iter().any(|c| c.as_deref() != Some("second")) {
-        assert!(began.elapsed() < Duration::from_secs(90), "both on the second road: {:?} {:?}", current(&p.a, &p.b), current(&p.b, &p.a));
+    while [current(&p.a, &p.b), current(&p.b, &p.a)]
+        .iter()
+        .any(|c| c.as_deref() != Some("second"))
+    {
+        assert!(
+            began.elapsed() < Duration::from_secs(90),
+            "both on the second road: {:?} {:?}",
+            current(&p.a, &p.b),
+            current(&p.b, &p.a)
+        );
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
     // Both roads the same again; the connection may stay where it is.
@@ -462,7 +577,10 @@ async fn slows(s: &str, typing: bool) {
     delay(&p.b.dev, "eth1", 1, LinkDirection::Egress).await;
     let (mut back, mut echoes) = (None, 0);
     while slowed.elapsed() < Duration::from_secs(90) {
-        if [current(&p.a, &p.b), current(&p.b, &p.a)].iter().all(|c| c.as_deref() == Some("lan")) {
+        if [current(&p.a, &p.b), current(&p.b, &p.a)]
+            .iter()
+            .all(|c| c.as_deref() == Some("lan"))
+        {
             back = Some(slowed.elapsed());
             break;
         }
@@ -475,14 +593,19 @@ async fn slows(s: &str, typing: bool) {
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
     }
-    let retired = lines(&p.a, Some(&p.b), "retired", since).len() + lines(&p.b, Some(&p.a), "retired", since).len();
+    let retired = lines(&p.a, Some(&p.b), "retired", since).len()
+        + lines(&p.b, Some(&p.a), "retired", since).len();
     let ok = back.is_some_and(|b| b <= Duration::from_secs(10)) && retired == 0;
     result(
         s,
         ok,
         format!(
             "held {held:?} at equal speed; {} after the slowdown both on the LAN {}; alpha {:?}, beta {:?}; retired {retired}",
-            if typing { format!("typing ({echoes} echoes),") } else { "idle,".to_owned() },
+            if typing {
+                format!("typing ({echoes} echoes),")
+            } else {
+                "idle,".to_owned()
+            },
             back.map_or("not within 90 s".into(), |b| format!("after {b:.1?}")),
             moves(&p.a, &p.b, since),
             moves(&p.b, &p.a, since),
@@ -490,7 +613,10 @@ async fn slows(s: &str, typing: bool) {
     );
     assert_eq!(retired, 0, "no wire retired");
     if typing {
-        assert!(back.is_some_and(|b| b <= Duration::from_secs(10)), "back on the LAN within 10 s, took {back:?}");
+        assert!(
+            back.is_some_and(|b| b <= Duration::from_secs(10)),
+            "back on the LAN within 10 s, took {back:?}"
+        );
     }
 }
 
@@ -503,8 +629,16 @@ fn blackhole(dev: &Device, ip: &str) {
     cmd.args(["-f", "-"]).stdin(Stdio::piped());
     let mut child = dev.spawn_command_sync(cmd).unwrap();
     use std::io::Write;
-    child.stdin.take().unwrap().write_all(rules.as_bytes()).unwrap();
-    assert!(child.wait().unwrap().success(), "nft took the blackhole:\n{rules}");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(rules.as_bytes())
+        .unwrap();
+    assert!(
+        child.wait().unwrap().success(),
+        "nft took the blackhole:\n{rules}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -513,10 +647,17 @@ async fn p3_the_road_in_use_goes_black_and_nothing_waits() {
     // The second road 8 ms slower, past the 5 ms it takes to move between
     // direct roads, so the LAN is the road in use; within the 10 ms a
     // spare may be behind, so the second road is kept as the spare.
-    let p = pair(s, async |da, _| delay(da, "eth1", 4, LinkDirection::Both).await).await;
+    let p = pair(s, async |da, _| {
+        delay(da, "eth1", 4, LinkDirection::Both).await
+    })
+    .await;
     let began = Instant::now();
     while current(&p.a, &p.b).as_deref() != Some("lan") {
-        assert!(began.elapsed() < Duration::from_secs(90), "alpha on the LAN: {:?}", current(&p.a, &p.b));
+        assert!(
+            began.elapsed() < Duration::from_secs(90),
+            "alpha on the LAN: {:?}",
+            current(&p.a, &p.b)
+        );
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
     tokio::time::sleep(Duration::from_secs(10)).await;
@@ -540,11 +681,19 @@ async fn p3_the_road_in_use_goes_black_and_nothing_waits() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     let worst = waits.iter().max().copied().unwrap_or_default();
-    let slow: Vec<String> = waits.iter().filter(|w| **w > Duration::from_millis(300)).map(|w| format!("{w:.1?}")).collect();
+    let slow: Vec<String> = waits
+        .iter()
+        .filter(|w| **w > Duration::from_millis(300))
+        .map(|w| format!("{w:.1?}"))
+        .collect();
     let retired: Vec<String> = lines(&p.a, Some(&p.b), "retired", since)
         .into_iter()
         .map(|l| format!("alpha:{}", l["why"]))
-        .chain(lines(&p.b, Some(&p.a), "retired", since).into_iter().map(|l| format!("beta:{}", l["why"])))
+        .chain(
+            lines(&p.b, Some(&p.a), "retired", since)
+                .into_iter()
+                .map(|l| format!("beta:{}", l["why"])),
+        )
         .collect();
     let ok = worst <= Duration::from_secs(1) && failed == 0 && retired.is_empty();
     result(
@@ -558,7 +707,10 @@ async fn p3_the_road_in_use_goes_black_and_nothing_waits() {
             moves(&p.b, &p.a, since),
         ),
     );
-    assert!(worst <= Duration::from_secs(1), "no echo waits more than 1 s: worst {worst:?}");
+    assert!(
+        worst <= Duration::from_secs(1),
+        "no echo waits more than 1 s: worst {worst:?}"
+    );
     assert_eq!(failed, 0, "every echo answered");
     assert!(retired.is_empty(), "no wire retired: {retired:?}");
 }
@@ -572,29 +724,56 @@ async fn p4_an_address_both_interface_and_qad_is_no_network_change() {
     // Public routers, no NAT: each machine's public addresses are its
     // interface's own, and the QAD stand-in reports those same addresses.
     let (ra, rb) = (
-        lab.add_router("left").preset(RouterPreset::Public).build().await.unwrap(),
-        lab.add_router("right").preset(RouterPreset::Public).build().await.unwrap(),
+        lab.add_router("left")
+            .preset(RouterPreset::Public)
+            .build()
+            .await
+            .unwrap(),
+        lab.add_router("right")
+            .preset(RouterPreset::Public)
+            .build()
+            .await
+            .unwrap(),
     );
     let da = lab.add_device("a").uplink(ra.id()).build().await.unwrap();
     let db = lab.add_device("b").uplink(rb.id()).build().await.unwrap();
     let ca = qad.ca.to_string_lossy().into_owned();
-    let env = [(khor_net::endpoint::PUBLIC_RELAYS_ENV, qad.env.as_str()), (khor_net::endpoint::RELAY_CA_ENV, ca.as_str())];
+    let env = [
+        (khor_net::endpoint::PUBLIC_RELAYS_ENV, qad.env.as_str()),
+        (khor_net::endpoint::RELAY_CA_ENV, ca.as_str()),
+    ];
     let a = node(s, da, "alpha", &[&r], &env).await;
     let b = node(s, db, "beta", &[&r], &env).await;
     tokio::time::sleep(Duration::from_secs(3)).await;
     mesh(&[&a, &b]).await;
-    a.until(&b, Duration::from_secs(90), |l| l.hop == Hop::Direct).await.expect("alpha goes direct");
+    a.until(&b, Duration::from_secs(90), |l| l.hop == Hop::Direct)
+        .await
+        .expect("alpha goes direct");
     tokio::time::sleep(Duration::from_secs(30)).await;
     let since = now_ms();
     let (rounds0, traffic0) = (punch_rounds(&a).await, wire_traffic(&a.dev));
     tokio::time::sleep(long()).await;
-    let changed = |n: &LabNode| lines(n, None, "network", since).into_iter().filter(|l| l["source"] == "addrs").count();
+    let changed = |n: &LabNode| {
+        lines(n, None, "network", since)
+            .into_iter()
+            .filter(|l| l["source"] == "addrs")
+            .count()
+    };
     let (ca_, cb_) = (changed(&a), changed(&b));
     let rounds = punch_rounds(&a).await - rounds0;
     let traffic = wire_traffic(&a.dev);
-    let learnt: Vec<String> = lines(&a, None, "learnt", 0).iter().map(|l| format!("v4 {} v6 {} from {}", l["v4"], l["v6"], l["from"])).collect();
-    let homes: Vec<String> = lines(&a, None, "home", 0).iter().map(|l| format!("{} {}", l["url"], l["state"])).collect();
-    let addrs: Vec<String> = lines(&a, None, "addrs", 0).iter().map(|l| format!("{}", l["addrs"])).collect();
+    let learnt: Vec<String> = lines(&a, None, "learnt", 0)
+        .iter()
+        .map(|l| format!("v4 {} v6 {} from {}", l["v4"], l["v6"], l["from"]))
+        .collect();
+    let homes: Vec<String> = lines(&a, None, "home", 0)
+        .iter()
+        .map(|l| format!("{} {}", l["url"], l["state"]))
+        .collect();
+    let addrs: Vec<String> = lines(&a, None, "addrs", 0)
+        .iter()
+        .map(|l| format!("{}", l["addrs"]))
+        .collect();
     eprintln!("[netlab] p4 alpha homes {homes:?}; addrs {addrs:?}");
     let v4 = format!("{:?} {:?}", a.dev.ip(), a.dev.ip6());
     let ok = ca_ == 0 && cb_ == 0;
@@ -609,5 +788,9 @@ async fn p4_an_address_both_interface_and_qad_is_no_network_change() {
             selections(&a, &b, since).len(),
         ),
     );
-    assert_eq!((ca_, cb_), (0, 0), "no interface change when no interface moved");
+    assert_eq!(
+        (ca_, cb_),
+        (0, 0),
+        "no interface change when no interface moved"
+    );
 }

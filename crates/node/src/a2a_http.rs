@@ -63,9 +63,8 @@ impl Ledger {
         if endpoint.name != agent {
             return false;
         }
-        let same_service = |saved: &Endpoint| {
-            saved.name == agent && saved.card_url == endpoint.card_url
-        };
+        let same_service =
+            |saved: &Endpoint| saved.name == agent && saved.card_url == endpoint.card_url;
         if self.tasks.values().any(|receipt| {
             receipt.record.caller == caller
                 && receipt.record.target.agent == agent
@@ -723,7 +722,12 @@ pub(crate) fn handle_bound(
     runtime()?.block_on(async {
         tokio::time::timeout(
             Duration::from_secs(12),
-            handle_async(node, caller, action.into_action(agent.into())?, Some(digest)),
+            handle_async(
+                node,
+                caller,
+                action.into_action(agent.into())?,
+                Some(digest),
+            ),
         )
         .await
         .map_err(|_| "A2A bound operation outcome is unknown".to_owned())?
@@ -735,7 +739,12 @@ pub(crate) fn handle(node: &Node, caller: DeviceId, action: Action) -> Result<An
             .map_err(|_|"A2A operation timed out; a send may have been accepted. Read its receipt before retrying".to_owned())?
     })
 }
-async fn handle_async(node: &Node, caller: DeviceId, action: Action, expected: Option<&str>) -> Result<Answer, String> {
+async fn handle_async(
+    node: &Node,
+    caller: DeviceId,
+    action: Action,
+    expected: Option<&str>,
+) -> Result<Answer, String> {
     let agent = match &action {
         Action::Send { agent, .. }
         | Action::Get { agent, .. }

@@ -202,8 +202,9 @@ const PENS: usize = 64;
 
 /// Pens out in this process, per directory: a second open of a locked
 /// file in the same process is not refused on every platform.
-static PENS_OUT: std::sync::Mutex<std::collections::BTreeMap<PathBuf, std::collections::BTreeSet<usize>>> =
-    std::sync::Mutex::new(std::collections::BTreeMap::new());
+static PENS_OUT: std::sync::Mutex<
+    std::collections::BTreeMap<PathBuf, std::collections::BTreeSet<usize>>,
+> = std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 /// For each directory and caller's name: every name lent for it, and
 /// whether it is out.
@@ -278,7 +279,11 @@ impl Lease {
             }
         }
         let give_back = |r| {
-            if let Some(ks) = PENS_OUT.lock().unwrap_or_else(|p| p.into_inner()).get_mut(dir) {
+            if let Some(ks) = PENS_OUT
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .get_mut(dir)
+            {
                 ks.remove(&k);
             }
             r
@@ -310,13 +315,19 @@ impl Lease {
                 peer
             }
         };
-        Some(Ok(Lease { peer, held: Held::Pen(slot, file), pile: None }))
+        Some(Ok(Lease {
+            peer,
+            held: Held::Pen(slot, file),
+            pile: None,
+        }))
     }
 
     fn spare(dir: &Path, peer: u64) -> Lease {
         let key = (dir.to_path_buf(), peer);
         let mut lent = LENT.lock().unwrap_or_else(|p| p.into_inner());
-        let names = lent.entry(key.clone()).or_insert_with(|| vec![(peer, false)]);
+        let names = lent
+            .entry(key.clone())
+            .or_insert_with(|| vec![(peer, false)]);
         let peer = match names.iter_mut().find(|(_, out)| !out) {
             Some((name, out)) => {
                 *out = true;
@@ -328,7 +339,11 @@ impl Lease {
                 name
             }
         };
-        Lease { peer, held: Held::Spare(key), pile: None }
+        Lease {
+            peer,
+            held: Held::Spare(key),
+            pile: None,
+        }
     }
 }
 
@@ -358,7 +373,11 @@ impl Drop for Lease {
     fn drop(&mut self) {
         match &self.held {
             Held::Pen((dir, k), _) => {
-                if let Some(ks) = PENS_OUT.lock().unwrap_or_else(|p| p.into_inner()).get_mut(dir) {
+                if let Some(ks) = PENS_OUT
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .get_mut(dir)
+                {
                     ks.remove(k);
                 }
             }
@@ -519,13 +538,20 @@ fn reseed(dir: &Path) -> bool {
     // A change whose ancestors are in no block is not in the state, and
     // the rebuild would delete the only copy of it.
     let have = old.oplog_vv();
-    if pending.iter().flat_map(|r| r.iter()).any(|(peer, (_, end))| have.get(peer).copied().unwrap_or(0) < *end) {
+    if pending
+        .iter()
+        .flat_map(|r| r.iter())
+        .any(|(peer, (_, end))| have.get(peer).copied().unwrap_or(0) < *end)
+    {
         return false;
     }
     let name = fresh_name();
     let new = loro::LoroDoc::new();
     if !read.is_empty() {
-        if new.set_peer_id(name).is_err() || copy_doc(&old, &new).is_none() || old.get_deep_value() != new.get_deep_value() {
+        if new.set_peer_id(name).is_err()
+            || copy_doc(&old, &new).is_none()
+            || old.get_deep_value() != new.get_deep_value()
+        {
             return false;
         }
         let Ok(snap) = new.export(loro::ExportMode::Snapshot) else {
@@ -542,7 +568,12 @@ fn reseed(dir: &Path) -> bool {
         for (p, _) in &pens {
             let _ = fs::remove_file(p);
         }
-        if write_atomic(&dir.join(format!("{PEN}0")), format!("{name:016x}\n").as_bytes()).is_err() {
+        if write_atomic(
+            &dir.join(format!("{PEN}0")),
+            format!("{name:016x}\n").as_bytes(),
+        )
+        .is_err()
+        {
             return false;
         }
         RESEEDS.fetch_add(1, Ordering::Relaxed);
@@ -582,15 +613,18 @@ fn copy_map(from: &loro::LoroMap, to: &loro::LoroMap) -> Option<()> {
         }
         ok = match v {
             ValueOrContainer::Value(v) => to.insert(k, v).ok(),
-            ValueOrContainer::Container(Container::Map(m)) => {
-                to.insert_container(k, LoroMap::new()).ok().and_then(|n| copy_map(&m, &n))
-            }
-            ValueOrContainer::Container(Container::List(l)) => {
-                to.insert_container(k, LoroList::new()).ok().and_then(|n| copy_list(&l, &n))
-            }
-            ValueOrContainer::Container(Container::Text(t)) => {
-                to.insert_container(k, LoroText::new()).ok().and_then(|n| n.insert(0, &t.to_string()).ok())
-            }
+            ValueOrContainer::Container(Container::Map(m)) => to
+                .insert_container(k, LoroMap::new())
+                .ok()
+                .and_then(|n| copy_map(&m, &n)),
+            ValueOrContainer::Container(Container::List(l)) => to
+                .insert_container(k, LoroList::new())
+                .ok()
+                .and_then(|n| copy_list(&l, &n)),
+            ValueOrContainer::Container(Container::Text(t)) => to
+                .insert_container(k, LoroText::new())
+                .ok()
+                .and_then(|n| n.insert(0, &t.to_string()).ok()),
             ValueOrContainer::Container(_) => None,
         };
     });
@@ -606,15 +640,18 @@ fn copy_list(from: &loro::LoroList, to: &loro::LoroList) -> Option<()> {
         }
         ok = match v {
             ValueOrContainer::Value(v) => to.push(v).ok(),
-            ValueOrContainer::Container(Container::Map(m)) => {
-                to.push_container(LoroMap::new()).ok().and_then(|n| copy_map(&m, &n))
-            }
-            ValueOrContainer::Container(Container::List(l)) => {
-                to.push_container(LoroList::new()).ok().and_then(|n| copy_list(&l, &n))
-            }
-            ValueOrContainer::Container(Container::Text(t)) => {
-                to.push_container(LoroText::new()).ok().and_then(|n| n.insert(0, &t.to_string()).ok())
-            }
+            ValueOrContainer::Container(Container::Map(m)) => to
+                .push_container(LoroMap::new())
+                .ok()
+                .and_then(|n| copy_map(&m, &n)),
+            ValueOrContainer::Container(Container::List(l)) => to
+                .push_container(LoroList::new())
+                .ok()
+                .and_then(|n| copy_list(&l, &n)),
+            ValueOrContainer::Container(Container::Text(t)) => to
+                .push_container(LoroText::new())
+                .ok()
+                .and_then(|n| n.insert(0, &t.to_string()).ok()),
             ValueOrContainer::Container(_) => None,
         };
     });
@@ -631,7 +668,12 @@ fn fingerprint(dir: &Path) -> Result<Fingerprint, String> {
         .into_iter()
         .filter_map(|p| {
             let meta = fs::metadata(&p).ok()?;
-            let at = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
+            let at = meta
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_nanos();
             Some((file_name(&p)?, meta.len(), at))
         })
         .collect())
@@ -689,7 +731,12 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
         Ok(hit) => return Ok(hit),
         Err(lease) => lease,
     };
-    let gate = READING.lock().unwrap_or_else(|p| p.into_inner()).entry(dir.to_path_buf()).or_default().clone();
+    let gate = READING
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .entry(dir.to_path_buf())
+        .or_default()
+        .clone();
     let _reading = gate.lock().unwrap_or_else(|p| p.into_inner());
     // Whoever held the gate may have just read and kept this very list.
     let before = fingerprint(dir)?;
@@ -706,9 +753,17 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
         .get(dir)
         .filter(|k| {
             k.kind == kind
-                && k.fingerprint.iter().all(|e| before.binary_search_by(|b| b.0.cmp(&e.0)).is_ok_and(|i| before[i] == *e))
+                && k.fingerprint.iter().all(|e| {
+                    before
+                        .binary_search_by(|b| b.0.cmp(&e.0))
+                        .is_ok_and(|i| before[i] == *e)
+                })
         })
-        .map(|k| Base { snapshot: k.snapshot.clone(), names: k.fingerprint.iter().map(|e| e.0.clone()).collect(), broken: k.broken.clone() });
+        .map(|k| Base {
+            snapshot: k.snapshot.clone(),
+            names: k.fingerprint.iter().map(|e| e.0.clone()).collect(),
+            broken: k.broken.clone(),
+        });
     let loaded: Loaded<D> = load_inner(dir, lease, base)?;
     if !before.is_empty()
         && fingerprint(dir).is_ok_and(|after| after == before)
@@ -717,7 +772,12 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
     {
         KEPT.lock().unwrap_or_else(|p| p.into_inner()).insert(
             dir.to_path_buf(),
-            Kept { fingerprint: before, kind, snapshot: std::sync::Arc::new(snapshot), broken: loaded.broken.clone() },
+            Kept {
+                fingerprint: before,
+                kind,
+                snapshot: std::sync::Arc::new(snapshot),
+                broken: loaded.broken.clone(),
+            },
         );
     }
     Ok(loaded)
@@ -730,7 +790,11 @@ static READING: std::sync::LazyLock<
 
 /// A copy from what was kept, when it was kept from exactly `listing`;
 /// the lease back otherwise.
-fn kept_copy<D: Doc + 'static>(dir: &Path, lease: Lease, listing: &Fingerprint) -> Result<Loaded<D>, Lease> {
+fn kept_copy<D: Doc + 'static>(
+    dir: &Path,
+    lease: Lease,
+    listing: &Fingerprint,
+) -> Result<Loaded<D>, Lease> {
     let kind = std::any::TypeId::of::<D>();
     let Some((snapshot, broken)) = KEPT
         .lock()
@@ -756,7 +820,11 @@ fn kept_copy<D: Doc + 'static>(dir: &Path, lease: Lease, listing: &Fingerprint) 
     let held = listing
         .iter()
         .map(|(name, _, _)| name.clone())
-        .filter(|name| !broken.iter().any(|b| file_name(b).as_deref() == Some(name.as_str())))
+        .filter(|name| {
+            !broken
+                .iter()
+                .any(|b| file_name(b).as_deref() == Some(name.as_str()))
+        })
         .collect();
     let store = BlockStore {
         dir: dir.to_path_buf(),
@@ -769,7 +837,12 @@ fn kept_copy<D: Doc + 'static>(dir: &Path, lease: Lease, listing: &Fingerprint) 
         retired: None,
         pending: BTreeMap::new(),
     };
-    Ok(Loaded { store, doc, broken, lease })
+    Ok(Loaded {
+        store,
+        doc,
+        broken,
+        lease,
+    })
 }
 
 /// Where a read starts when part of the directory was kept: that part as
@@ -782,14 +855,20 @@ struct Base {
 
 /// Per directory: passes over its blocks ([`read_once`]), and blocks
 /// imported from files by them.
-static READS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, (u64, u64)>>> =
-    std::sync::LazyLock::new(Default::default);
+static READS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, (u64, u64)>>,
+> = std::sync::LazyLock::new(Default::default);
 
 /// How many passes over `dir`'s blocks this process made, and how many
 /// blocks those passes imported: what a kept read saves, counted per
 /// directory so a test is not counting its neighbours'.
 pub fn reads_of(dir: &Path) -> (u64, u64) {
-    READS.lock().unwrap_or_else(|p| p.into_inner()).get(dir).copied().unwrap_or_default()
+    READS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(dir)
+        .copied()
+        .unwrap_or_default()
 }
 
 fn load_inner<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<Loaded<D>, String> {
@@ -823,7 +902,11 @@ fn load_inner<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<Lo
 /// listing was gone by the time we read it」 — see [`load_inner`].
 /// From `base` when part of it was kept: its snapshot, then only the
 /// blocks it was not made of.
-fn read_once<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<(Loaded<D>, bool), String> {
+fn read_once<D: Doc>(
+    dir: &Path,
+    lease: Lease,
+    base: Option<Base>,
+) -> Result<(Loaded<D>, bool), String> {
     let doc = D::open(lease.peer)?;
     let mut broken = Vec::new();
     let mut ledger = read_ledger(dir);
@@ -844,7 +927,12 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<(Lo
         held = base
             .names
             .iter()
-            .filter(|n| !base.broken.iter().any(|b| file_name(b).as_deref() == Some(n.as_str())))
+            .filter(|n| {
+                !base
+                    .broken
+                    .iter()
+                    .any(|b| file_name(b).as_deref() == Some(n.as_str()))
+            })
             .cloned()
             .collect();
         broken = base.broken;
@@ -913,12 +1001,23 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<(Lo
     if dir.exists() && grew {
         store.save_ledger()?;
     }
-    Ok((Loaded { store, doc, broken, lease }, vanished))
+    Ok((
+        Loaded {
+            store,
+            doc,
+            broken,
+            lease,
+        },
+        vanished,
+    ))
 }
 
 fn remember_pending(pending: &mut BTreeMap<u64, i32>, report: &MergeReport) {
     for span in &report.pending {
-        pending.entry(span.writer).and_modify(|end| *end = (*end).max(span.end)).or_insert(span.end);
+        pending
+            .entry(span.writer)
+            .and_modify(|end| *end = (*end).max(span.end))
+            .or_insert(span.end);
     }
 }
 
@@ -931,7 +1030,11 @@ mod pending_reports {
     fn repeated_live_reports_keep_one_end_per_writer_and_resolve_after_dependency() {
         let dir = crate::testutil::tmpdir("pending-report-bound");
         struct Cleanup(PathBuf);
-        impl Drop for Cleanup { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
         let cleanup = Cleanup(dir.clone());
         let source = PinDoc::new(0x3920).unwrap();
         source.set("dependency", true).unwrap();
@@ -942,14 +1045,21 @@ mod pending_reports {
         let mut loaded = load::<PinDoc>(&dir, 0x3921).unwrap();
         let report = loaded.doc.merge_report(&edit).unwrap();
         assert!(!report.pending.is_empty());
-        for _ in 0..4096 { loaded.store.record_import(&report); }
-        assert_eq!(loaded.store.pending.len(), 1, "message count must not grow store metadata");
+        for _ in 0..4096 {
+            loaded.store.record_import(&report);
+        }
+        assert_eq!(
+            loaded.store.pending.len(),
+            1,
+            "message count must not grow store metadata"
+        );
         assert!(loaded.store.compact(&loaded.doc).is_err());
         let resolved = loaded.doc.merge_report(&dependency).unwrap();
         loaded.store.record_import(&resolved);
         assert!(loaded.doc.pinned("dependency") && loaded.doc.pinned("edit"));
         loaded.store.compact(&loaded.doc).unwrap();
-        drop(loaded); drop(cleanup);
+        drop(loaded);
+        drop(cleanup);
     }
 }
 
@@ -1009,7 +1119,10 @@ impl BlockStore {
         make_dir(&self.dir)?;
         if self.stamp {
             if !self.dir.join(EPOCH_FILE).exists() {
-                write_atomic(&self.dir.join(EPOCH_FILE), format!("{}\n", self.epoch).as_bytes())?;
+                write_atomic(
+                    &self.dir.join(EPOCH_FILE),
+                    format!("{}\n", self.epoch).as_bytes(),
+                )?;
             }
             self.stamp = false;
         }
@@ -1118,14 +1231,24 @@ impl BlockStore {
     /// every name, so a number counted against it is never reused.
     fn next_number(&self, prefix: &str) -> u32 {
         let number = |name: &str| {
-            u32::from_str_radix(name.strip_prefix(prefix)?.strip_suffix(&format!(".{EXT}"))?, 16).ok()
+            u32::from_str_radix(
+                name.strip_prefix(prefix)?
+                    .strip_suffix(&format!(".{EXT}"))?,
+                16,
+            )
+            .ok()
         };
         let on_disk = fs::read_dir(&self.dir)
             .into_iter()
             .flatten()
             .flatten()
             .filter_map(|e| number(&e.file_name().to_string_lossy()));
-        let ledgered = self.ledger.names().iter().filter_map(|n| number(n)).collect::<Vec<_>>();
+        let ledgered = self
+            .ledger
+            .names()
+            .iter()
+            .filter_map(|n| number(n))
+            .collect::<Vec<_>>();
         on_disk.chain(ledgered).max().map_or(0, |m| m + 1)
     }
 
@@ -1152,7 +1275,9 @@ impl BlockStore {
         // The writer in the name as well as the number, as increments
         // have it: two writers' snapshots never share a name.
         let prefix = format!("snap-{:016x}-", doc.peer_id());
-        let path = self.dir.join(format!("{prefix}{:08x}.{EXT}", self.next_number(&prefix)));
+        let path = self
+            .dir
+            .join(format!("{prefix}{:08x}.{EXT}", self.next_number(&prefix)));
         write_atomic(&path, &snap)?;
         for p in old.into_iter().filter(|p| *p != path) {
             if let Some(n) = file_name(&p) {

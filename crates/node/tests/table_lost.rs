@@ -74,7 +74,11 @@ async fn a_machine_whose_table_lost_its_rows_is_brought_back_by_the_next_round()
         .expect("pairing must not hang")
         .unwrap();
     assert_eq!(names(&b), ["alpha", "beta"]);
-    assert_eq!(b.standing_of(b.device_str()), Standing::Trusted, "alpha holds the root and signed beta in");
+    assert_eq!(
+        b.standing_of(b.device_str()),
+        Standing::Trusted,
+        "alpha holds the root and signed beta in"
+    );
     // Alpha's resident goes: the round below is the one under test, not
     // one its pump happens to run first, and it starts from no vouch
     // sent (a vouch in the pairing's own race would hold the next one
@@ -94,7 +98,11 @@ async fn a_machine_whose_table_lost_its_rows_is_brought_back_by_the_next_round()
     }
     let b = Node::open_hosting(rb.to_path_buf(), "beta", false).unwrap();
     assert_eq!(names(&b), ["beta"], "only its own row is left");
-    assert_eq!(b.standing_of(b.device_str()), Standing::Pending, "and no roster");
+    assert_eq!(
+        b.standing_of(b.device_str()),
+        Standing::Pending,
+        "and no roster"
+    );
 
     // Alpha's next round, from a one-shot node: refused at beta's door,
     // then let in.
@@ -106,9 +114,23 @@ async fn a_machine_whose_table_lost_its_rows_is_brought_back_by_the_next_round()
     for s in serves {
         s.abort();
     }
-    assert!(healed, "beta's table after alpha's round: {:?} (round: {outcomes:?})", names(&b));
-    assert_eq!(b.standing_of(b.device_str()), Standing::Trusted, "the roster came back with the rows");
+    assert!(
+        healed,
+        "beta's table after alpha's round: {:?} (round: {outcomes:?})",
+        names(&b)
+    );
+    assert_eq!(
+        b.standing_of(b.device_str()),
+        Standing::Trusted,
+        "the roster came back with the rows"
+    );
     assert_eq!(b.standing_of(a.device_str()), Standing::Trusted);
-    let outcome = outcomes.into_iter().find(|(n, _)| n == "beta").map(|(_, o)| o);
-    assert!(matches!(outcome, Some(Ok(_))), "and the round itself went through: {outcome:?}");
+    let outcome = outcomes
+        .into_iter()
+        .find(|(n, _)| n == "beta")
+        .map(|(_, o)| o);
+    assert!(
+        matches!(outcome, Some(Ok(_))),
+        "and the round itself went through: {outcome:?}"
+    );
 }

@@ -286,7 +286,11 @@ mod tests {
         let mut h = CpuHistory::open(&d);
         h.record(t0, reading);
         let s0 = h.stamp(t0 + 10_000);
-        assert_eq!(s0, CpuHistory::open(&d).stamp(t0 + 50_000), "nothing recorded, the same stamp");
+        assert_eq!(
+            s0,
+            CpuHistory::open(&d).stamp(t0 + 50_000),
+            "nothing recorded, the same stamp"
+        );
         h.record(t0 + 60_000, reading);
         let s1 = h.stamp(t0 + 61_000);
         assert_ne!(s0, s1, "a reading landed");

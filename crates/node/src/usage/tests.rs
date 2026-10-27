@@ -1471,7 +1471,10 @@ fn each_meter_names_the_model_where_the_sample_it_reads_has_one() {
         // The vendor's own names, as the vendor wrote them.
         (
             "claude-third-party",
-            vec![Some("claude-fable-5-1-medium"), Some("opus-5-thinking-high")],
+            vec![
+                Some("claude-fable-5-1-medium"),
+                Some("opus-5-thinking-high"),
+            ],
         ),
         ("cline", vec![None]),
         ("codex", vec![Some("a-model"), Some("b-model")]),
@@ -1627,10 +1630,30 @@ fn a_deleted_transcript_keeps_its_history_in_every_zone() {
     let (home, file, ledger) = ledger_home(
         "deleted",
         &[
-            claude_line_at(&official('A'), "2026-08-17T06:00:00Z", "m", tokens(1, 10, 100, 1000)),
-            claude_line_at(&official('B'), "2026-08-17T16:30:00Z", "m", tokens(2, 20, 200, 2000)),
-            claude_line_at(&official('C'), "2026-08-17T18:20:00Z", "m", tokens(3, 30, 300, 3000)),
-            claude_line_at("msg_yHvendorVVVVVVVVVVVVVVVV", "2026-08-17T07:00:00Z", "claude-fable-5-1-medium", tokens(4, 0, 0, 40)),
+            claude_line_at(
+                &official('A'),
+                "2026-08-17T06:00:00Z",
+                "m",
+                tokens(1, 10, 100, 1000),
+            ),
+            claude_line_at(
+                &official('B'),
+                "2026-08-17T16:30:00Z",
+                "m",
+                tokens(2, 20, 200, 2000),
+            ),
+            claude_line_at(
+                &official('C'),
+                "2026-08-17T18:20:00Z",
+                "m",
+                tokens(3, 30, 300, 3000),
+            ),
+            claude_line_at(
+                "msg_yHvendorVVVVVVVVVVVVVVVV",
+                "2026-08-17T07:00:00Z",
+                "claude-fable-5-1-medium",
+                tokens(4, 0, 0, 40),
+            ),
         ],
     );
     let now = at("2026-10-07T00:00:00Z");
@@ -1641,7 +1664,11 @@ fn a_deleted_transcript_keeps_its_history_in_every_zone() {
     let before: Vec<_> = zones.iter().map(|z| cut(meters.tally_at(z, now))).collect();
     assert!(ledger.exists(), "settled buckets were written down");
     assert_eq!(
-        day(&meters.tally_at(&plus_five_forty_five(), now), "2026-08-18", "claude"),
+        day(
+            &meters.tally_at(&plus_five_forty_five(), now),
+            "2026-08-18",
+            "claude"
+        ),
         Some(tokens(3, 30, 300, 3000)),
         "18:20Z is 00:05 in Nepal"
     );
@@ -1660,14 +1687,19 @@ fn a_deleted_transcript_keeps_its_history_in_every_zone() {
             "a new registry reading only the ledger, in {z:?}"
         );
     }
-    let gone = Meters::at(&home).with_ledger(ledger.clone()).tally_at(&TimeZone::UTC, now);
+    let gone = Meters::at(&home)
+        .with_ledger(ledger.clone())
+        .tally_at(&TimeZone::UTC, now);
     assert_eq!(
         day(&gone, "2026-08-17", "claude-third-party"),
         Some(tokens(4, 0, 0, 40)),
         "the third party's reply is still the third party's"
     );
     let without = Meters::at(&home).tally_at(&TimeZone::UTC, now);
-    assert!(without.days.is_empty(), "the control: the files alone say nothing now");
+    assert!(
+        without.days.is_empty(),
+        "the control: the files alone say nothing now"
+    );
 }
 
 /// **A bucket is recorded only once its replies are final**, and the
@@ -1679,12 +1711,23 @@ fn a_deleted_transcript_keeps_its_history_in_every_zone() {
 fn a_bucket_too_new_to_be_final_is_not_recorded_yet() {
     let (home, _file, ledger) = ledger_home(
         "settle",
-        &[claude_line_at(&official('A'), "2026-08-17T06:00:00Z", "m", tokens(0, 0, 0, 5))],
+        &[claude_line_at(
+            &official('A'),
+            "2026-08-17T06:00:00Z",
+            "m",
+            tokens(0, 0, 0, 5),
+        )],
     );
     let meters = Meters::at(&home).with_ledger(ledger.clone());
     let (usage, due) = meters.fold(&TimeZone::UTC, at("2026-08-17T06:30:00Z"));
-    assert_eq!(day(&usage, "2026-08-17", "claude").map(|t| t.output), Some(5));
-    assert!(!ledger.exists(), "a bucket still inside the settle window was written");
+    assert_eq!(
+        day(&usage, "2026-08-17", "claude").map(|t| t.output),
+        Some(5)
+    );
+    assert!(
+        !ledger.exists(),
+        "a bucket still inside the settle window was written"
+    );
     assert_eq!(
         due,
         Some(at("2026-08-17T08:15:00Z")),
@@ -1704,23 +1747,41 @@ fn a_bucket_too_new_to_be_final_is_not_recorded_yet() {
 /// ledger rise.
 #[test]
 fn the_ledger_never_lowers_a_past_period() {
-    let big = claude_line_at(&official('A'), "2026-08-17T06:00:00Z", "m", tokens(5, 50, 500, 5000));
+    let big = claude_line_at(
+        &official('A'),
+        "2026-08-17T06:00:00Z",
+        "m",
+        tokens(5, 50, 500, 5000),
+    );
     let (home, file, ledger) = ledger_home("lower", std::slice::from_ref(&big));
     let now = at("2026-10-07T00:00:00Z");
     let meters = Meters::at(&home).with_ledger(ledger.clone());
-    let first = day(&meters.tally_at(&TimeZone::UTC, now), "2026-08-17", "claude");
+    let first = day(
+        &meters.tally_at(&TimeZone::UTC, now),
+        "2026-08-17",
+        "claude",
+    );
     assert_eq!(first, Some(tokens(5, 50, 500, 5000)));
 
     std::fs::write(
         &file,
         format!(
             "{}\n",
-            claude_line_at(&official('A'), "2026-08-17T06:00:00Z", "m", tokens(5, 50, 500, 50))
+            claude_line_at(
+                &official('A'),
+                "2026-08-17T06:00:00Z",
+                "m",
+                tokens(5, 50, 500, 50)
+            )
         ),
     )
     .unwrap();
     assert_eq!(
-        day(&meters.tally_at(&TimeZone::UTC, now), "2026-08-17", "claude"),
+        day(
+            &meters.tally_at(&TimeZone::UTC, now),
+            "2026-08-17",
+            "claude"
+        ),
         first,
         "a smaller reading in the files does not lower what was recorded"
     );
@@ -1731,13 +1792,22 @@ fn the_ledger_never_lowers_a_past_period() {
         &file,
         format!(
             "{big}\n{}\n",
-            claude_line_at(&official('B'), "2026-08-17T06:05:00Z", "m", tokens(1, 1, 1, 1))
+            claude_line_at(
+                &official('B'),
+                "2026-08-17T06:05:00Z",
+                "m",
+                tokens(1, 1, 1, 1)
+            )
         ),
     )
     .unwrap();
     let meters = Meters::at(&home).with_ledger(ledger.clone());
     assert_eq!(
-        day(&meters.tally_at(&TimeZone::UTC, now), "2026-08-17", "claude"),
+        day(
+            &meters.tally_at(&TimeZone::UTC, now),
+            "2026-08-17",
+            "claude"
+        ),
         Some(tokens(6, 51, 501, 5001)),
         "a reply that arrived later raises it"
     );
@@ -1768,18 +1838,31 @@ fn a_ledger_that_cannot_be_read_reads_as_empty() {
     ] {
         let (home, _file, ledger) = ledger_home(
             tag,
-            &[claude_line_at(&official('A'), "2026-08-17T06:00:00Z", "m", tokens(0, 0, 0, 7))],
+            &[claude_line_at(
+                &official('A'),
+                "2026-08-17T06:00:00Z",
+                "m",
+                tokens(0, 0, 0, 7),
+            )],
         );
         std::fs::create_dir_all(ledger.parent().unwrap()).unwrap();
         std::fs::write(&ledger, &junk).unwrap();
         let meters = Meters::at(&home).with_ledger(ledger.clone());
         assert_eq!(
-            day(&meters.tally_at(&TimeZone::UTC, now), "2026-08-17", "claude").map(|t| t.output),
+            day(
+                &meters.tally_at(&TimeZone::UTC, now),
+                "2026-08-17",
+                "claude"
+            )
+            .map(|t| t.output),
             Some(7),
             "{tag}: the files' answer, nothing from the ledger"
         );
         let text = std::fs::read_to_string(&ledger).unwrap();
-        assert_ne!(text, junk, "{tag}: the write replaced what could not be read");
+        assert_ne!(
+            text, junk,
+            "{tag}: the write replaced what could not be read"
+        );
         assert!(
             serde_json::from_str::<serde_json::Value>(&text).is_ok(),
             "{tag}: …with a ledger that reads"
@@ -1795,11 +1878,21 @@ fn two_writers_on_one_ledger_keep_each_others_records() {
     let now = at("2026-10-07T00:00:00Z");
     let (home_a, _a, ledger) = ledger_home(
         "two-a",
-        &[claude_line_at(&official('A'), "2026-08-17T06:00:00Z", "m", tokens(0, 0, 0, 1))],
+        &[claude_line_at(
+            &official('A'),
+            "2026-08-17T06:00:00Z",
+            "m",
+            tokens(0, 0, 0, 1),
+        )],
     );
     let (home_b, _b, _) = ledger_home(
         "two-b",
-        &[claude_line_at(&official('B'), "2026-08-18T06:00:00Z", "m", tokens(0, 0, 0, 2))],
+        &[claude_line_at(
+            &official('B'),
+            "2026-08-18T06:00:00Z",
+            "m",
+            tokens(0, 0, 0, 2),
+        )],
     );
     let a = Meters::at(&home_a).with_ledger(ledger.clone());
     let b = Meters::at(&home_b).with_ledger(ledger.clone());
@@ -1808,7 +1901,15 @@ fn two_writers_on_one_ledger_keep_each_others_records() {
     let _ = b.tally_at(&TimeZone::UTC, at("2026-08-17T00:00:00Z"));
     let _ = a.tally_at(&TimeZone::UTC, now);
     let _ = b.tally_at(&TimeZone::UTC, now);
-    let both = Meters::empty().with_ledger(ledger).tally_at(&TimeZone::UTC, now);
-    assert_eq!(day(&both, "2026-08-17", "claude").map(|t| t.output), Some(1));
-    assert_eq!(day(&both, "2026-08-18", "claude").map(|t| t.output), Some(2));
+    let both = Meters::empty()
+        .with_ledger(ledger)
+        .tally_at(&TimeZone::UTC, now);
+    assert_eq!(
+        day(&both, "2026-08-17", "claude").map(|t| t.output),
+        Some(1)
+    );
+    assert_eq!(
+        day(&both, "2026-08-18", "claude").map(|t| t.output),
+        Some(2)
+    );
 }

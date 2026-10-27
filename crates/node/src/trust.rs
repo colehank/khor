@@ -131,7 +131,10 @@ struct PendingNote {
 /// the same `seq` (two holders at once) do not overwrite each other.
 fn roster_key(r: &Roster) -> String {
     let b = r.bytes();
-    let tail: String = b[b.len() - 8..].iter().map(|x| format!("{x:02x}")).collect();
+    let tail: String = b[b.len() - 8..]
+        .iter()
+        .map(|x| format!("{x:02x}"))
+        .collect();
     format!("{:020}-{tail}", r.seq)
 }
 
@@ -272,11 +275,17 @@ impl Node {
     }
 
     /// The root this machine verifies with, or `None` (Legacy).
-    pub(crate) fn anchor(&self) -> Option<iroh::PublicKey> { anchor_at(self.root()) }
+    pub(crate) fn anchor(&self) -> Option<iroh::PublicKey> {
+        anchor_at(self.root())
+    }
 
-    fn set_anchor(&self, root: &iroh::PublicKey) -> Result<(), String> { set_anchor_at(self.root(), root) }
+    fn set_anchor(&self, root: &iroh::PublicKey) -> Result<(), String> {
+        set_anchor_at(self.root(), root)
+    }
 
-    fn root_secret(&self) -> Result<Option<iroh::SecretKey>, String> { root_secret_at(self.root()) }
+    fn root_secret(&self) -> Result<Option<iroh::SecretKey>, String> {
+        root_secret_at(self.root())
+    }
 
     /// Whether this machine holds the network's root.
     pub fn holds_root(&self) -> bool {
@@ -342,7 +351,9 @@ impl Node {
     }
 
     /// Stores a verified roster, and drops the versions it replaces.
-    fn store_roster(&self, doc: &DeviceDoc, r: &Roster) -> Result<(), String> { store_roster_at(doc, r) }
+    fn store_roster(&self, doc: &DeviceDoc, r: &Roster) -> Result<(), String> {
+        store_roster_at(doc, r)
+    }
 
     /// Signs the next roster with this machine's root and stores it. A
     /// holder with no roster yet (a recovered root, a table that lost it)
@@ -352,7 +363,9 @@ impl Node {
         doc: &DeviceDoc,
         next: impl FnOnce(&Roster, &iroh::SecretKey, u64) -> Vec<u8>,
     ) -> Result<Roster, String> {
-        let key = self.root_secret()?.ok_or_else(|| msg::root_not_here().to_owned())?;
+        let key = self
+            .root_secret()?
+            .ok_or_else(|| msg::root_not_here().to_owned())?;
         let now = crate::now_ms();
         let cur = match newest_in(doc, &key.public()) {
             Some(c) => (*c).clone(),
@@ -362,7 +375,8 @@ impl Node {
             )
             .map_err(|e| e.to_string())?,
         };
-        let r = nt::verify_roster(&next(&cur, &key, now), &key.public()).map_err(|e| e.to_string())?;
+        let r =
+            nt::verify_roster(&next(&cur, &key, now), &key.public()).map_err(|e| e.to_string())?;
         self.store_roster(doc, &r)?;
         Ok(r)
     }
@@ -457,7 +471,8 @@ impl Node {
             .filter_map(|e| {
                 let id = e.file_name().to_string_lossy().to_string();
                 nt::id_from_hex(&id)?;
-                let note: PendingNote = serde_json::from_slice(&std::fs::read(e.path()).ok()?).ok()?;
+                let note: PendingNote =
+                    serde_json::from_slice(&std::fs::read(e.path()).ok()?).ok()?;
                 Some((id, note))
             })
             .collect()
@@ -596,8 +611,12 @@ impl Node {
         let typed = machine.trim();
         // By id first, including a machine already shown the door; then
         // by either name, the way every other verb resolves one.
-        let (id, name) = if nt::id_from_hex(typed).is_some() && loaded.doc.name_of(typed).is_some() {
-            (typed.to_owned(), loaded.doc.name_of(typed).unwrap_or_default())
+        let (id, name) = if nt::id_from_hex(typed).is_some() && loaded.doc.name_of(typed).is_some()
+        {
+            (
+                typed.to_owned(),
+                loaded.doc.name_of(typed).unwrap_or_default(),
+            )
         } else {
             let (_, dev) = self.resolve(typed)?;
             let id = dev.hex();
@@ -645,7 +664,12 @@ impl Node {
     /// holder, noted as waiting anywhere else (CONNECT.md 卫星也进名单).
     /// The subject is its host-key fingerprint and the sponsor is this
     /// machine. Nothing happens in a network from before roots.
-    pub(crate) fn enroll_satellite(&self, doc: &DeviceDoc, id: &str, name: &str) -> Result<(), String> {
+    pub(crate) fn enroll_satellite(
+        &self,
+        doc: &DeviceDoc,
+        id: &str,
+        name: &str,
+    ) -> Result<(), String> {
         if self.anchor().is_none() {
             return Ok(());
         }
@@ -663,7 +687,9 @@ impl Node {
     /// roster, or nothing in a network from before roots.
     #[cfg(test)]
     pub(crate) fn roster_offer(&self) -> Vec<u8> {
-        self.roster().map(|r| r.bytes().to_vec()).unwrap_or_default()
+        self.roster()
+            .map(|r| r.bytes().to_vec())
+            .unwrap_or_default()
     }
 
     /// [`Node::roster_offer`] from a table already in hand — the issuer
@@ -771,7 +797,8 @@ impl Node {
                 // The row carries the roster's certificate, not one a
                 // merge left there from a root this machine gave up.
                 if let (Some(a), Some(idb)) = (self.anchor(), nt::id_from_hex(id))
-                    && let Some(c) = newest_in(doc, &a).and_then(|r| r.signed_cert(&idb).map(<[u8]>::to_vec))
+                    && let Some(c) =
+                        newest_in(doc, &a).and_then(|r| r.signed_cert(&idb).map(<[u8]>::to_vec))
                 {
                     doc.set_cert(id, &c)?;
                 }
@@ -800,7 +827,11 @@ impl Node {
         if !r.admits(&self.my_id(), crate::now_ms()) {
             return None;
         }
-        let addrs = loaded.doc.get(self.device_str()).map(|d| d.addrs).unwrap_or_default();
+        let addrs = loaded
+            .doc
+            .get(self.device_str())
+            .map(|d| d.addrs)
+            .unwrap_or_default();
         Some((self.name().to_owned(), addrs, r.bytes().to_vec()))
     }
 
@@ -831,9 +862,22 @@ impl Node {
     /// - this table shows the asker the door (`set_gone`): a person
     ///   decided that here.
     #[cfg(test)]
-    pub(crate) fn take_vouch(&self, remote: &str, name: &str, addrs: &[String], roster: &[u8]) -> Result<(), String> {
-        PairTrust::new(crate::doc_transfer_state::Context { root: self.root().clone(), writer: self.writer_peer(), local: self.my_id() }, self.name().into())
-            .take_vouch(remote, name, addrs, roster)
+    pub(crate) fn take_vouch(
+        &self,
+        remote: &str,
+        name: &str,
+        addrs: &[String],
+        roster: &[u8],
+    ) -> Result<(), String> {
+        PairTrust::new(
+            crate::doc_transfer_state::Context {
+                root: self.root().clone(),
+                writer: self.writer_peer(),
+                local: self.my_id(),
+            },
+            self.name().into(),
+        )
+        .take_vouch(remote, name, addrs, roster)
     }
 
     // ── keeping it alive ────────────────────────────────────────────
@@ -976,7 +1020,9 @@ impl Node {
     /// machine's name; the app makes them press a button). Showing them
     /// is what the unshown mark was waiting for, so it goes.
     pub fn root_words(&self) -> Result<String, String> {
-        let key = self.root_secret()?.ok_or_else(|| msg::root_not_here().to_owned())?;
+        let key = self
+            .root_secret()?
+            .ok_or_else(|| msg::root_not_here().to_owned())?;
         let _ = std::fs::remove_file(self.khor_file(UNSHOWN));
         Ok(khor_net::root::to_words(&key))
     }
@@ -1064,7 +1110,9 @@ impl Node {
             members.push(Member::device(self.my_id()));
         }
         let key_path = self.khor_file(ROOT_KEY);
-        if !khor_net::root::create(&key_path, &khor_net::root::generate()).map_err(|e| e.to_string())? {
+        if !khor_net::root::create(&key_path, &khor_net::root::generate())
+            .map_err(|e| e.to_string())?
+        {
             return Err(msg::root_already(format_args!("{}", key_path.display())));
         }
         let key = khor_net::root::load(&key_path)
@@ -1103,19 +1151,32 @@ impl Node {
 }
 
 impl Node {
-    pub(crate) fn root_mutation_guard(&self) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
+    pub(crate) fn root_mutation_guard(
+        &self,
+    ) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
         root_mutation_at(self.root(), self.my_id())
     }
 
     pub(crate) fn recover_pairing_before_bootstrap(&self) -> Result<(), String> {
         use crate::doc_transfer_state::{Context, State, pairing};
-        if !pairing::needs_recovery(self.root(), self.my_id()).map_err(String::from)? { return Ok(()); }
+        if !pairing::needs_recovery(self.root(), self.my_id()).map_err(String::from)? {
+            return Ok(());
+        }
         let _guard = pairing::root_fence(self.root()).map_err(String::from)?;
-        let context = Context { root: self.root().clone(), writer: self.writer_peer(), local: self.my_id() };
-        State::open(&context).map_err(String::from)?.recover_pairing(&PairTrust::new(context.clone(), self.name().into()), &context).map_err(String::from)
+        let context = Context {
+            root: self.root().clone(),
+            writer: self.writer_peer(),
+            local: self.my_id(),
+        };
+        State::open(&context)
+            .map_err(String::from)?
+            .recover_pairing(
+                &PairTrust::new(context.clone(), self.name().into()),
+                &context,
+            )
+            .map_err(String::from)
     }
-
- }
+}
 
 pub(crate) struct PairTrust {
     context: crate::doc_transfer_state::Context,
@@ -1125,60 +1186,127 @@ pub(crate) struct PairTrust {
 impl PairTrust {
     pub(crate) fn new(context: crate::doc_transfer_state::Context, name: String) -> Self {
         let local_hex = nt::id_hex(&context.local);
-        Self { context, name, local_hex }
+        Self {
+            context,
+            name,
+            local_hex,
+        }
     }
-    fn root(&self) -> &PathBuf { &self.context.root }
-    fn my_id(&self) -> Id { self.context.local }
-    fn device_str(&self) -> &str { &self.local_hex }
-    fn khor_file(&self, name: &str) -> PathBuf { self.root().join(".khor").join(name) }
+    fn root(&self) -> &PathBuf {
+        &self.context.root
+    }
+    fn my_id(&self) -> Id {
+        self.context.local
+    }
+    fn device_str(&self) -> &str {
+        &self.local_hex
+    }
+    fn khor_file(&self, name: &str) -> PathBuf {
+        self.root().join(".khor").join(name)
+    }
     fn devices_loaded(&self) -> Result<khor_sync::store::Loaded<DeviceDoc>, String> {
-        khor_sync::store::load_pile(&khor_sync::devices::devices_dir(self.root()), self.context.writer)
+        khor_sync::store::load_pile(
+            &khor_sync::devices::devices_dir(self.root()),
+            self.context.writer,
+        )
     }
-    fn anchor(&self) -> Option<iroh::PublicKey> { anchor_at(self.root()) }
-    fn set_anchor(&self, root: &iroh::PublicKey) -> Result<(), String> { set_anchor_at(self.root(), root) }
-    fn root_secret(&self) -> Result<Option<iroh::SecretKey>, String> { root_secret_at(self.root()) }
+    fn anchor(&self) -> Option<iroh::PublicKey> {
+        anchor_at(self.root())
+    }
+    fn set_anchor(&self, root: &iroh::PublicKey) -> Result<(), String> {
+        set_anchor_at(self.root(), root)
+    }
+    fn root_secret(&self) -> Result<Option<iroh::SecretKey>, String> {
+        root_secret_at(self.root())
+    }
     fn standing_in(&self, doc: &DeviceDoc, id: &str, now: u64) -> Standing {
-        let Some(id) = nt::id_from_hex(id) else { return Standing::Pending; };
+        let Some(id) = nt::id_from_hex(id) else {
+            return Standing::Pending;
+        };
         let anchor = self.anchor();
         let roster = anchor.as_ref().and_then(|a| newest_in(doc, a));
-        standing(roster.as_deref(), anchor.as_ref(), &id, doc.cert_of(&nt::id_hex(&id)).as_deref(), now)
+        standing(
+            roster.as_deref(),
+            anchor.as_ref(),
+            &id,
+            doc.cert_of(&nt::id_hex(&id)).as_deref(),
+            now,
+        )
     }
-    fn store_roster(&self, doc: &DeviceDoc, roster: &Roster) -> Result<(), String> { store_roster_at(doc, roster) }
+    fn store_roster(&self, doc: &DeviceDoc, roster: &Roster) -> Result<(), String> {
+        store_roster_at(doc, roster)
+    }
     fn root_mutation_guard(&self) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
         root_mutation_at(self.root(), self.my_id())
     }
-    fn pair_invite_hash_path(&self, hash: Id) -> PathBuf { self.root().join(".khor/invites").join(nt::id_hex(&hash)) }
-    pub(crate) fn name(&self) -> &str { &self.name }
-    pub(crate) fn anchor_id(&self) -> Option<Id> { self.anchor().map(|key| *key.as_bytes()) }
+    fn pair_invite_hash_path(&self, hash: Id) -> PathBuf {
+        self.root().join(".khor/invites").join(nt::id_hex(&hash))
+    }
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+    pub(crate) fn anchor_id(&self) -> Option<Id> {
+        self.anchor().map(|key| *key.as_bytes())
+    }
     pub(crate) fn roster_offer(&self) -> Result<Vec<u8>, String> {
         let loaded = self.devices_loaded()?;
-        Ok(self.anchor().and_then(|a| newest_in(&loaded.doc, &a)).map(|r| r.bytes().to_vec()).unwrap_or_default())
+        Ok(self
+            .anchor()
+            .and_then(|a| newest_in(&loaded.doc, &a))
+            .map(|r| r.bytes().to_vec())
+            .unwrap_or_default())
     }
-    pub(crate) fn collect_pairing(&self, context: &crate::doc_transfer_state::Context, state: &mut crate::doc_transfer_state::State) -> Result<(), crate::doc_transfer_state::Error> {
+    pub(crate) fn collect_pairing(
+        &self,
+        context: &crate::doc_transfer_state::Context,
+        state: &mut crate::doc_transfer_state::State,
+    ) -> Result<(), crate::doc_transfer_state::Error> {
         let now = crate::now_ms();
         let retired = state.expired_pair_ids(now);
         if !retired.is_empty() {
             let _guard = crate::doc_transfer_state::pairing::root_fence(&context.root)?;
             state.recover_pairing(self, context)?;
             let mut loaded = self.devices_loaded()?;
-            let keys: Vec<_> = retired.into_iter().map(|id| pair_archive(id, self.my_id())).collect();
+            let keys: Vec<_> = retired
+                .into_iter()
+                .map(|id| pair_archive(id, self.my_id()))
+                .collect();
             loaded.doc.drop_rosters(&keys)?;
             loaded.store.flush(&loaded.doc)?;
         }
         state.collect_pairing(now)
     }
-    pub(crate) fn fixed_roster_bytes(&self, manifest: &crate::proto::DocManifest) -> Result<Vec<u8>, String> {
+    pub(crate) fn fixed_roster_bytes(
+        &self,
+        manifest: &crate::proto::DocManifest,
+    ) -> Result<Vec<u8>, String> {
         let loaded = self.devices_loaded()?;
-        loaded.doc.rosters().into_iter().map(|(_, bytes)| bytes)
-            .find(|bytes| bytes.len() as u64 == manifest.total_bytes && blake3::hash(bytes).as_bytes() == &manifest.digest)
+        loaded
+            .doc
+            .rosters()
+            .into_iter()
+            .map(|(_, bytes)| bytes)
+            .find(|bytes| {
+                bytes.len() as u64 == manifest.total_bytes
+                    && blake3::hash(bytes).as_bytes() == &manifest.digest
+            })
             .ok_or_else(|| "fixed roster preparation needs reconciliation".into())
     }
-    pub(crate) fn release_local_settlement_output(&self, state: &mut crate::doc_transfer_state::State, id: Id) -> Result<(), crate::doc_transfer_state::Error> {
+    pub(crate) fn release_local_settlement_output(
+        &self,
+        state: &mut crate::doc_transfer_state::State,
+        id: Id,
+    ) -> Result<(), crate::doc_transfer_state::Error> {
         let plan = state.pair_settlement(id).ok_or("missing settlement")?;
-        if !plan.finished || !plan.dialed { return Err("uncommitted local settlement output".into()); }
+        if !plan.finished || !plan.dialed {
+            return Err("uncommitted local settlement output".into());
+        }
         if let Some(manifest) = &plan.desired_roster {
             let loaded = self.devices_loaded()?;
-            if !loaded.doc.rosters().iter().any(|(_, raw)| raw.len() as u64 == manifest.total_bytes && blake3::hash(raw).as_bytes() == &manifest.digest) {
+            if !loaded.doc.rosters().iter().any(|(_, raw)| {
+                raw.len() as u64 == manifest.total_bytes
+                    && blake3::hash(raw).as_bytes() == &manifest.digest
+            }) {
                 return Err("local settlement roster is not present on disk".into());
             }
             drop(loaded);
@@ -1188,40 +1316,86 @@ impl PairTrust {
     }
 
     #[cfg(test)]
-    pub(crate) fn take_vouch(&self, remote: &str, name: &str, addrs: &[String], roster: &[u8]) -> Result<(), String> {
-        self.take_vouch_inner(remote, name, addrs, roster, None).map_err(String::from)
+    pub(crate) fn take_vouch(
+        &self,
+        remote: &str,
+        name: &str,
+        addrs: &[String],
+        roster: &[u8],
+    ) -> Result<(), String> {
+        self.take_vouch_inner(remote, name, addrs, roster, None)
+            .map_err(String::from)
     }
-    pub(crate) fn apply_vouch(&self, state: &mut crate::doc_transfer_state::State, row: &mut crate::doc_transfer_state::pairing::Vouch) -> Result<(), crate::doc_transfer_state::Error> {
+    pub(crate) fn apply_vouch(
+        &self,
+        state: &mut crate::doc_transfer_state::State,
+        row: &mut crate::doc_transfer_state::pairing::Vouch,
+    ) -> Result<(), crate::doc_transfer_state::Error> {
         let bytes = state.load_roster_blob(&row.manifest)?;
-        let remote = nt::id_hex(&row.remote); let name = row.name.clone(); let addrs = row.addrs.clone();
+        let remote = nt::id_hex(&row.remote);
+        let name = row.name.clone();
+        let addrs = row.addrs.clone();
         self.take_vouch_inner(&remote, &name, &addrs, &bytes, Some((state, row)))
     }
-    fn take_vouch_inner(&self, remote: &str, name: &str, addrs: &[String], roster: &[u8], mut pending: Option<(&mut crate::doc_transfer_state::State, &mut crate::doc_transfer_state::pairing::Vouch)>) -> Result<(), crate::doc_transfer_state::Error> {
-        use khor_sync::doc_transfer::DocumentVersion;
+    fn take_vouch_inner(
+        &self,
+        remote: &str,
+        name: &str,
+        addrs: &[String],
+        roster: &[u8],
+        mut pending: Option<(
+            &mut crate::doc_transfer_state::State,
+            &mut crate::doc_transfer_state::pairing::Vouch,
+        )>,
+    ) -> Result<(), crate::doc_transfer_state::Error> {
         use crate::doc_transfer_state::Error;
+        use khor_sync::doc_transfer::DocumentVersion;
         let _trust = self.root_mutation_guard()?;
         let refused = || msg::vouch_refused().to_owned();
         let anchor = self.anchor().ok_or_else(refused)?;
         let r = nt::verify_roster(roster, &anchor).map_err(|_| refused())?;
         let them = id_of(remote)?;
         let now = crate::now_ms();
-        if r.is_stale(now) || !r.admits(&them, now) || !r.admits(&self.my_id(), now) { return Err(refused().into()); }
+        if r.is_stale(now) || !r.admits(&them, now) || !r.admits(&self.my_id(), now) {
+            return Err(refused().into());
+        }
         let mut loaded = self.devices_loaded()?;
         if newest_in(&loaded.doc, &anchor).is_some_and(|mine| mine.seq > r.seq)
-            || loaded.doc.gone_ids().iter().any(|g| g == remote) { return Err(refused().into()); }
-        let target = pending.as_ref().and_then(|(_, row)| row.target.as_ref())
-            .map(|v| DocumentVersion::decode(v).map_err(Error::from_std)).transpose()?;
+            || loaded.doc.gone_ids().iter().any(|g| g == remote)
+        {
+            return Err(refused().into());
+        }
+        let target = pending
+            .as_ref()
+            .and_then(|(_, row)| row.target.as_ref())
+            .map(|v| DocumentVersion::decode(v).map_err(Error::from_std))
+            .transpose()?;
         if let Some(target) = &target {
-            if target.epoch != loaded.store.epoch() { return Err("Vouch document epoch changed".into()); }
-            if loaded.doc.version().includes_vv(&target.version) { return Ok(()); }
+            if target.epoch != loaded.store.epoch() {
+                return Err("Vouch document epoch changed".into());
+            }
+            if loaded.doc.version().includes_vv(&target.version) {
+                return Ok(());
+            }
         }
         self.store_roster(&loaded.doc, &r)?;
         loaded.doc.upsert(remote, name, addrs)?;
         for id in [remote, self.device_str()] {
-            if let Some(c) = nt::id_from_hex(id).and_then(|b| r.signed_cert(&b).map(<[u8]>::to_vec)) { loaded.doc.set_cert(id, &c)?; }
+            if let Some(c) = nt::id_from_hex(id).and_then(|b| r.signed_cert(&b).map(<[u8]>::to_vec))
+            {
+                loaded.doc.set_cert(id, &c)?;
+            }
         }
         if let Some((state, row)) = pending.as_mut() {
-            row.target = Some(DocumentVersion { epoch: loaded.store.epoch(), version: loaded.doc.version() }.encode().map_err(Error::from_std)?.into());
+            row.target = Some(
+                DocumentVersion {
+                    epoch: loaded.store.epoch(),
+                    version: loaded.doc.version(),
+                }
+                .encode()
+                .map_err(Error::from_std)?
+                .into(),
+            );
             state.save_vouch((**row).clone())?;
         }
         loaded.store.flush(&loaded.doc)?;
@@ -1232,17 +1406,33 @@ impl PairTrust {
     /// trust mutation occurs until the complete desired signed bytes are staged
     /// and the Ready intent has reached the shared journal.
     pub(crate) fn prepare_pair_settlement(
-        &self, context: &crate::doc_transfer_state::Context,
+        &self,
+        context: &crate::doc_transfer_state::Context,
         state: &mut crate::doc_transfer_state::State,
-        id: Id, remote: Id, dialed: bool, name: String, addrs: Vec<String>,
+        id: Id,
+        remote: Id,
+        dialed: bool,
+        name: String,
+        addrs: Vec<String>,
         input: Option<crate::proto::DocManifest>,
-    ) -> Result<crate::doc_transfer_state::pairing::Settlement, crate::doc_transfer_state::Error> {
-        use crate::doc_transfer_state::{Error, pairing::{self, Settlement}};
+    ) -> Result<crate::doc_transfer_state::pairing::Settlement, crate::doc_transfer_state::Error>
+    {
+        use crate::doc_transfer_state::{
+            Error,
+            pairing::{self, Settlement},
+        };
         if let Some(mut saved) = state.pair_settlement(id) {
-            if saved.ready { return Ok(saved); }
+            if saved.ready {
+                return Ok(saved);
+            }
             if let Some(manifest) = &saved.desired_roster {
-                if matches!(state.roster_progress(manifest)?, Some(khor_sync::transfer::Progress::VerifiedComplete { .. })) {
-                    saved.ready = true; state.save_settlement(saved.clone())?; return Ok(saved);
+                if matches!(
+                    state.roster_progress(manifest)?,
+                    Some(khor_sync::transfer::Progress::VerifiedComplete { .. })
+                ) {
+                    saved.ready = true;
+                    state.save_settlement(saved.clone())?;
+                    return Ok(saved);
                 }
                 // An unpublished Preparing body may be replaced. Errors and
                 // unknown stages remain errors; only this exact owned id goes.
@@ -1250,12 +1440,23 @@ impl PairTrust {
             }
             state.remove_unready_settlement(id)?;
         }
-        let raw = input.as_ref().map(|m| state.load_roster_blob(m)).transpose()?.unwrap_or_default();
+        let raw = input
+            .as_ref()
+            .map(|m| state.load_roster_blob(m))
+            .transpose()?
+            .unwrap_or_default();
         let theirs = verified_settlement_roster(&raw)?;
         let loaded = self.devices_loaded()?;
         let anchor = self.anchor();
         let mine = anchor.as_ref().and_then(|a| newest_in(&loaded.doc, a));
-        let decision = plan_settlement(anchor.as_ref().map(|a| *a.as_bytes()), mine.as_deref(), &self.my_id(), theirs.clone(), &nt::id_hex(&remote), dialed)?;
+        let decision = plan_settlement(
+            anchor.as_ref().map(|a| *a.as_bytes()),
+            mine.as_deref(),
+            &self.my_id(),
+            theirs.clone(),
+            &nt::id_hex(&remote),
+            dialed,
+        )?;
         let desired_anchor = match decision.action {
             SettlementAction::Adopt => theirs.as_ref().map(|r| r.root),
             SettlementAction::Keep => decision.anchor,
@@ -1265,47 +1466,99 @@ impl PairTrust {
             SettlementAction::Keep => {
                 let offered = theirs.filter(|r| Some(r.root) == desired_anchor);
                 match (mine.as_deref(), offered) {
-                    (Some(a), Some(b)) if (a.seq, a.issued_ms, a.bytes()) > (b.seq, b.issued_ms, b.bytes()) => Some(a.clone()),
+                    (Some(a), Some(b))
+                        if (a.seq, a.issued_ms, a.bytes()) > (b.seq, b.issued_ms, b.bytes()) =>
+                    {
+                        Some(a.clone())
+                    }
                     (_, Some(b)) => Some(b),
                     (Some(a), None) => Some(a.clone()),
                     _ => None,
                 }
             }
         };
-        if let Some(key) = self.root_secret()? && Some(*key.public().as_bytes()) == desired_anchor {
+        if let Some(key) = self.root_secret()?
+            && Some(*key.public().as_bytes()) == desired_anchor
+        {
             let now = crate::now_ms();
             let mut roster = match desired {
                 Some(roster) => roster,
-                None => nt::verify_roster(&nt::genesis(&key, now, &[Member::device(self.my_id())]), &key.public()).map_err(Error::from_std)?,
+                None => nt::verify_roster(
+                    &nt::genesis(&key, now, &[Member::device(self.my_id())]),
+                    &key.public(),
+                )
+                .map_err(Error::from_std)?,
             };
             for party in [remote, self.my_id()] {
                 let cert = loaded.doc.cert_of(&nt::id_hex(&party));
-                if standing(Some(&roster), Some(&key.public()), &party, cert.as_deref(), now) != Standing::Trusted {
-                    roster = nt::verify_roster(&roster.admit(&key, now, &Member::device(party)), &key.public()).map_err(Error::from_std)?;
+                if standing(
+                    Some(&roster),
+                    Some(&key.public()),
+                    &party,
+                    cert.as_deref(),
+                    now,
+                ) != Standing::Trusted
+                {
+                    roster = nt::verify_roster(
+                        &roster.admit(&key, now, &Member::device(party)),
+                        &key.public(),
+                    )
+                    .map_err(Error::from_std)?;
                 }
             }
             desired = Some(roster);
         }
-        if let Some(key) = khor_net::root::load(&self.khor_file(ROOT_KEY)).map_err(|e| Error::from(e.to_string()))?
+        if let Some(key) = khor_net::root::load(&self.khor_file(ROOT_KEY))
+            .map_err(|e| Error::from(e.to_string()))?
             && Some(*key.public().as_bytes()) != desired_anchor
-            && newest_in(&loaded.doc, &key.public()).is_some_and(|r| !r.lone(&self.my_id())) {
+            && newest_in(&loaded.doc, &key.public()).is_some_and(|r| !r.lone(&self.my_id()))
+        {
             return Err(msg::pair_two_roots().into());
         }
         let bytes = desired.as_ref().map_or(&[][..], |r| r.bytes());
-        let manifest = if bytes.is_empty() { None } else {
-            Some(pairing::roster_manifest(id, if dialed { pairing::LOCAL_SETTLEMENT } else { pairing::ISSUER_ROSTER }, context.local, remote, bytes)?)
+        let manifest = if bytes.is_empty() {
+            None
+        } else {
+            Some(pairing::roster_manifest(
+                id,
+                if dialed {
+                    pairing::LOCAL_SETTLEMENT
+                } else {
+                    pairing::ISSUER_ROSTER
+                },
+                context.local,
+                remote,
+                bytes,
+            )?)
         };
         let settlement = Settlement {
-            id, remote, dialed, before_anchor: anchor.map(|a| *a.as_bytes()),
+            id,
+            remote,
+            dialed,
+            before_anchor: anchor.map(|a| *a.as_bytes()),
             before_roster: mine.as_ref().map(|r| *blake3::hash(r.bytes()).as_bytes()),
-            before_key: khor_net::root::load(&self.khor_file(ROOT_KEY)).map_err(|e| Error::from(e.to_string()))?.map(|k| *k.public().as_bytes()),
-            desired_anchor, desired_roster: manifest.clone(), epoch: loaded.store.epoch(),
-            target: None, ready: false, finished: false, remote_name: name, remote_addrs: addrs,
-            row_before: loaded.doc.get(&nt::id_hex(&remote)).map(|r| (r.name, r.addrs)), input_roster: input,
+            before_key: khor_net::root::load(&self.khor_file(ROOT_KEY))
+                .map_err(|e| Error::from(e.to_string()))?
+                .map(|k| *k.public().as_bytes()),
+            desired_anchor,
+            desired_roster: manifest.clone(),
+            epoch: loaded.store.epoch(),
+            target: None,
+            ready: false,
+            finished: false,
+            remote_name: name,
+            remote_addrs: addrs,
+            row_before: loaded
+                .doc
+                .get(&nt::id_hex(&remote))
+                .map(|r| (r.name, r.addrs)),
+            input_roster: input,
         };
         drop(loaded);
         state.save_settlement(settlement.clone())?;
-        if let Some(manifest) = &manifest { state.prepare_roster_blob(manifest, bytes)?; }
+        if let Some(manifest) = &manifest {
+            state.prepare_roster_blob(manifest, bytes)?;
+        }
         let mut settlement = settlement;
         settlement.ready = true;
         state.save_settlement(settlement.clone())?;
@@ -1313,39 +1566,83 @@ impl PairTrust {
     }
 
     pub(crate) fn apply_pair_settlement(
-        &self, context: &crate::doc_transfer_state::Context,
-        state: &mut crate::doc_transfer_state::State, id: Id,
+        &self,
+        context: &crate::doc_transfer_state::Context,
+        state: &mut crate::doc_transfer_state::State,
+        id: Id,
     ) -> Result<(), crate::doc_transfer_state::Error> {
         use crate::{doc_transfer_state::Error, proto::PairPhase};
         use khor_sync::doc_transfer::DocumentVersion;
-        let mut plan = state.pair_settlement(id).ok_or("missing settlement intent")?;
-        if !plan.ready { return Err("settlement body is still Preparing".into()); }
-        if plan.finished { return Ok(()); }
+        let mut plan = state
+            .pair_settlement(id)
+            .ok_or("missing settlement intent")?;
+        if !plan.ready {
+            return Err("settlement body is still Preparing".into());
+        }
+        if plan.finished {
+            return Ok(());
+        }
         let mut loaded = self.devices_loaded()?;
-        if loaded.store.epoch() != plan.epoch { return Err("settlement document epoch changed".into()); }
+        if loaded.store.epoch() != plan.epoch {
+            return Err("settlement document epoch changed".into());
+        }
         let current_anchor = self.anchor().map(|a| *a.as_bytes());
-        if current_anchor != plan.before_anchor && current_anchor != plan.desired_anchor { return Err("settlement root changed".into()); }
-        let covered = plan.target.as_ref().map(|bytes| DocumentVersion::decode(bytes).map_err(Error::from_std)).transpose()?
-            .is_some_and(|target| target.epoch == loaded.store.epoch() && loaded.doc.version().includes_vv(&target.version));
-        let current_key = khor_net::root::load(&self.khor_file(ROOT_KEY)).map_err(|e| Error::from(e.to_string()))?.map(|key| *key.public().as_bytes());
-        if current_key != plan.before_key && !(covered && current_key.is_none()) { return Err("settlement private-key identity changed".into()); }
+        if current_anchor != plan.before_anchor && current_anchor != plan.desired_anchor {
+            return Err("settlement root changed".into());
+        }
+        let covered = plan
+            .target
+            .as_ref()
+            .map(|bytes| DocumentVersion::decode(bytes).map_err(Error::from_std))
+            .transpose()?
+            .is_some_and(|target| {
+                target.epoch == loaded.store.epoch()
+                    && loaded.doc.version().includes_vv(&target.version)
+            });
+        let current_key = khor_net::root::load(&self.khor_file(ROOT_KEY))
+            .map_err(|e| Error::from(e.to_string()))?
+            .map(|key| *key.public().as_bytes());
+        if current_key != plan.before_key && !(covered && current_key.is_none()) {
+            return Err("settlement private-key identity changed".into());
+        }
         if !covered {
-            let roster = plan.desired_roster.as_ref().map(|m| state.load_roster_blob(m)).transpose()?.unwrap_or_default();
+            let roster = plan
+                .desired_roster
+                .as_ref()
+                .map(|m| state.load_roster_blob(m))
+                .transpose()?
+                .unwrap_or_default();
             let desired = verified_settlement_roster(&roster)?;
-            if desired.as_ref().is_some_and(|r| Some(r.root) != plan.desired_anchor) { return Err("settlement signed root differs from intent".into()); }
+            if desired
+                .as_ref()
+                .is_some_and(|r| Some(r.root) != plan.desired_anchor)
+            {
+                return Err("settlement signed root differs from intent".into());
+            }
             // Publishing the desired anchor precedes the document flush. On
             // restart the disk may still contain only the old signed roster;
             // validate it under the saved old public identity, not the newly
             // published anchor. Either exact before/desired bytes are safe.
-            let old = plan.before_anchor.and_then(|a| iroh::PublicKey::from_bytes(&a).ok()).and_then(|a| newest_in(&loaded.doc, &a));
-            let next = plan.desired_anchor.and_then(|a| iroh::PublicKey::from_bytes(&a).ok()).and_then(|a| newest_in(&loaded.doc, &a));
+            let old = plan
+                .before_anchor
+                .and_then(|a| iroh::PublicKey::from_bytes(&a).ok())
+                .and_then(|a| newest_in(&loaded.doc, &a));
+            let next = plan
+                .desired_anchor
+                .and_then(|a| iroh::PublicKey::from_bytes(&a).ok())
+                .and_then(|a| newest_in(&loaded.doc, &a));
             let old_digest = old.as_ref().map(|r| *blake3::hash(r.bytes()).as_bytes());
             let next_digest = next.as_ref().map(|r| *blake3::hash(r.bytes()).as_bytes());
-            let desired_digest = desired.as_ref().map(|r| *blake3::hash(r.bytes()).as_bytes());
+            let desired_digest = desired
+                .as_ref()
+                .map(|r| *blake3::hash(r.bytes()).as_bytes());
             if old_digest != plan.before_roster && next_digest != desired_digest {
                 return Err("settlement roster changed".into());
             }
-            if next_digest.is_some() && next_digest != desired_digest && plan.before_anchor != plan.desired_anchor {
+            if next_digest.is_some()
+                && next_digest != desired_digest
+                && plan.before_anchor != plan.desired_anchor
+            {
                 return Err("desired network roster changed".into());
             }
             if !plan.dialed {
@@ -1364,31 +1661,54 @@ impl PairTrust {
             crate::link::pairing::tests::checkpoint(context, id, "anchor");
             if let Some(desired) = &desired {
                 if plan.before_anchor != plan.desired_anchor {
-                    let old: Vec<_> = loaded.doc.rosters().into_iter().map(|(key, _)| key)
-                        .filter(|key| !key.starts_with("pair-archive:")).collect();
+                    let old: Vec<_> = loaded
+                        .doc
+                        .rosters()
+                        .into_iter()
+                        .map(|(key, _)| key)
+                        .filter(|key| !key.starts_with("pair-archive:"))
+                        .collect();
                     loaded.doc.drop_rosters(&old)?;
                 }
                 self.store_roster(&loaded.doc, desired)?;
             }
             let remote = nt::id_hex(&plan.remote);
             let current = loaded.doc.get(&remote);
-            let concurrent = current.as_ref().map(|r| (&r.name, &r.addrs)) != plan.row_before.as_ref().map(|r| (&r.0, &r.1));
+            let concurrent = current.as_ref().map(|r| (&r.name, &r.addrs))
+                != plan.row_before.as_ref().map(|r| (&r.0, &r.1));
             let (name, addrs) = if concurrent {
-                current.as_ref().map(|r| (r.name.as_str(), r.addrs.as_slice())).unwrap_or((plan.remote_name.as_str(), plan.remote_addrs.as_slice()))
-            } else { (plan.remote_name.as_str(), plan.remote_addrs.as_slice()) };
+                current
+                    .as_ref()
+                    .map(|r| (r.name.as_str(), r.addrs.as_slice()))
+                    .unwrap_or((plan.remote_name.as_str(), plan.remote_addrs.as_slice()))
+            } else {
+                (plan.remote_name.as_str(), plan.remote_addrs.as_slice())
+            };
             loaded.doc.upsert(&remote, name, addrs)?;
             loaded.doc.set_gone(&remote, false)?;
             if let Some(desired) = &desired {
                 for party in [plan.remote, context.local] {
-                    if let Some(cert) = desired.signed_cert(&party) { loaded.doc.set_cert(&nt::id_hex(&party), cert)?; }
+                    if let Some(cert) = desired.signed_cert(&party) {
+                        loaded.doc.set_cert(&nt::id_hex(&party), cert)?;
+                    }
                 }
             }
             if let Some(input) = &plan.input_roster {
                 let raw = state.load_roster_blob(input)?;
                 verified_settlement_roster(&raw)?;
-                loaded.doc.put_roster(&pair_archive(id, context.local), &raw)?;
+                loaded
+                    .doc
+                    .put_roster(&pair_archive(id, context.local), &raw)?;
             }
-            plan.target = Some(DocumentVersion { epoch: loaded.store.epoch(), version: loaded.doc.version() }.encode().map_err(Error::from_std)?.into());
+            plan.target = Some(
+                DocumentVersion {
+                    epoch: loaded.store.epoch(),
+                    version: loaded.doc.version(),
+                }
+                .encode()
+                .map_err(Error::from_std)?
+                .into(),
+            );
             state.save_settlement(plan.clone())?;
             loaded.store.flush(&loaded.doc)?;
             #[cfg(test)]
@@ -1396,57 +1716,111 @@ impl PairTrust {
         }
         // Flush and its saved target precede retirement. Never delete a new
         // key, even if another owner restored a different root after a crash.
-        if let Some(old) = plan.before_key && Some(old) != plan.desired_anchor {
+        if let Some(old) = plan.before_key
+            && Some(old) != plan.desired_anchor
+        {
             let path = self.khor_file(ROOT_KEY);
-            if let Some(key) = khor_net::root::load(&path).map_err(|e| Error::from(e.to_string()))? {
-                if key.public().as_bytes() != &old { return Err("root key changed before retirement".into()); }
+            if let Some(key) =
+                khor_net::root::load(&path).map_err(|e| Error::from(e.to_string()))?
+            {
+                if key.public().as_bytes() != &old {
+                    return Err("root key changed before retirement".into());
+                }
                 if newest_in(&loaded.doc, &key.public()).is_some_and(|r| !r.lone(&self.my_id())) {
                     return Err(msg::pair_two_roots().into());
                 }
                 std::fs::remove_file(&path).map_err(Error::from_std)?;
             }
             match std::fs::remove_file(self.khor_file(UNSHOWN)) {
-                Ok(()) => (), Err(e) if e.kind() == std::io::ErrorKind::NotFound => (), Err(e) => return Err(Error::from_std(e)),
+                Ok(()) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                Err(e) => return Err(Error::from_std(e)),
             }
         }
-        for (party, name) in [(plan.remote, plan.remote_name.as_str()), (context.local, self.name.as_str())] {
+        for (party, name) in [
+            (plan.remote, plan.remote_name.as_str()),
+            (context.local, self.name.as_str()),
+        ] {
             let hex = nt::id_hex(&party);
             let path = self.root().join(".khor/pending").join(&hex);
             if self.standing_in(&loaded.doc, &hex, crate::now_ms()) == Standing::Trusted {
-                match std::fs::remove_file(&path) { Ok(()) => (), Err(e) if e.kind() == std::io::ErrorKind::NotFound => (), Err(e) => return Err(Error::from_std(e)), }
+                match std::fs::remove_file(&path) {
+                    Ok(()) => (),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                    Err(e) => return Err(Error::from_std(e)),
+                }
             } else if self.anchor().is_some() && !path.exists() {
-                let note = PendingNote { name: name.into(), kind: Kind::Device.key().into(), sponsor: None, since_ms: crate::now_ms() };
+                let note = PendingNote {
+                    name: name.into(),
+                    kind: Kind::Device.key().into(),
+                    sponsor: None,
+                    since_ms: crate::now_ms(),
+                };
                 std::fs::create_dir_all(path.parent().unwrap()).map_err(Error::from_std)?;
-                std::fs::write(&path, serde_json::to_vec(&note).map_err(Error::from_std)?).map_err(Error::from_std)?;
+                std::fs::write(&path, serde_json::to_vec(&note).map_err(Error::from_std)?)
+                    .map_err(Error::from_std)?;
             }
         }
         drop(loaded);
         if let Some(mut claim) = state.pair_claim(id) {
-            claim.phase = PairPhase::AdmissionFlushed; claim.anchor = plan.desired_anchor;
+            claim.phase = PairPhase::AdmissionFlushed;
+            claim.anchor = plan.desired_anchor;
             claim.roster_out = plan.desired_roster.clone();
-            claim.devices_have = context.version("devices")?.encode().map_err(Error::from_std)?.into();
+            claim.devices_have = context
+                .version("devices")?
+                .encode()
+                .map_err(Error::from_std)?
+                .into();
             state.save_claim(claim)?;
         } else if let Some(mut local) = state.pair_local(id) {
-            local.phase = PairPhase::AdmissionFlushed; local.anchor = plan.desired_anchor; state.save_local(local)?;
-        } else { return Err("settlement owner disappeared".into()); }
+            local.phase = PairPhase::AdmissionFlushed;
+            local.anchor = plan.desired_anchor;
+            state.save_local(local)?;
+        } else {
+            return Err("settlement owner disappeared".into());
+        }
         plan.finished = true;
         state.save_settlement(plan)?;
         Ok(())
     }
 
-    pub(crate) fn pair_replay_allowed(&self, remote: Id, anchor: Option<Id>) -> Result<bool, String> {
-        if self.anchor().map(|a| *a.as_bytes()) != anchor { return Ok(false); }
+    pub(crate) fn pair_replay_allowed(
+        &self,
+        remote: Id,
+        anchor: Option<Id>,
+    ) -> Result<bool, String> {
+        if self.anchor().map(|a| *a.as_bytes()) != anchor {
+            return Ok(false);
+        }
         let loaded = self.devices_loaded()?;
         let remote = nt::id_hex(&remote);
-        Ok(loaded.doc.get(&remote).is_some() && loaded.doc.get(self.device_str()).is_some()
-            && !loaded.doc.gone_ids().iter().any(|id| id == &remote || id == self.device_str())
+        Ok(loaded.doc.get(&remote).is_some()
+            && loaded.doc.get(self.device_str()).is_some()
+            && !loaded
+                .doc
+                .gone_ids()
+                .iter()
+                .any(|id| id == &remote || id == self.device_str())
             && self.standing_in(&loaded.doc, &remote, crate::now_ms()) != Standing::Revoked
-            && self.standing_in(&loaded.doc, self.device_str(), crate::now_ms()) != Standing::Revoked)
+            && self.standing_in(&loaded.doc, self.device_str(), crate::now_ms())
+                != Standing::Revoked)
     }
-    pub(crate) fn release_pair_input(&self, state: &mut crate::doc_transfer_state::State, id: Id, manifest: &crate::proto::DocManifest) -> Result<(), crate::doc_transfer_state::Error> {
+    pub(crate) fn release_pair_input(
+        &self,
+        state: &mut crate::doc_transfer_state::State,
+        id: Id,
+        manifest: &crate::proto::DocManifest,
+    ) -> Result<(), crate::doc_transfer_state::Error> {
         let loaded = self.devices_loaded()?;
-        let archive = loaded.doc.rosters().into_iter().find(|(key, _)| key == &pair_archive(id, self.my_id()));
-        if !archive.is_some_and(|(_, bytes)| bytes.len() as u64 == manifest.total_bytes && blake3::hash(&bytes).as_bytes() == &manifest.digest) {
+        let archive = loaded
+            .doc
+            .rosters()
+            .into_iter()
+            .find(|(key, _)| key == &pair_archive(id, self.my_id()));
+        if !archive.is_some_and(|(_, bytes)| {
+            bytes.len() as u64 == manifest.total_bytes
+                && blake3::hash(&bytes).as_bytes() == &manifest.digest
+        }) {
             return Err("settled roster archive is missing or changed".into());
         }
         drop(loaded);
@@ -1455,16 +1829,28 @@ impl PairTrust {
     pub(crate) fn vouch_certificate(&self) -> Option<Vec<u8>> {
         let anchor = self.anchor()?;
         let loaded = self.devices_loaded().ok()?;
-        newest_in(&loaded.doc, &anchor)?.signed_cert(&self.my_id()).map(Vec::from)
+        newest_in(&loaded.doc, &anchor)?
+            .signed_cert(&self.my_id())
+            .map(Vec::from)
     }
-    pub(crate) fn authorize_vouch_header(&self, remote: Id, certificate: &[u8]) -> Result<Id, String> {
+    pub(crate) fn authorize_vouch_header(
+        &self,
+        remote: Id,
+        certificate: &[u8],
+    ) -> Result<Id, String> {
         let refused = || msg::vouch_refused().to_owned();
-        if certificate.len() > 1024 { return Err(refused()); }
+        if certificate.len() > 1024 {
+            return Err(refused());
+        }
         let anchor = self.anchor().ok_or_else(refused)?;
         let cert = nt::verify_cert(certificate, &anchor).map_err(|_| refused())?;
-        if cert.subject != remote || !cert.live_at(crate::now_ms()) { return Err(refused()); }
+        if cert.subject != remote || !cert.live_at(crate::now_ms()) {
+            return Err(refused());
+        }
         let loaded = self.devices_loaded()?;
-        if loaded.doc.gone_ids().contains(&nt::id_hex(&remote)) { return Err(refused()); }
+        if loaded.doc.gone_ids().contains(&nt::id_hex(&remote)) {
+            return Err(refused());
+        }
         Ok(*anchor.as_bytes())
     }
 }
@@ -1477,16 +1863,29 @@ fn set_anchor_at(root: &std::path::Path, anchor: &iroh::PublicKey) -> Result<(),
     crate::doc_transfer_state::publish_anchor(root, format!("{anchor}\n").as_bytes())
 }
 fn root_secret_at(root: &std::path::Path) -> Result<Option<iroh::SecretKey>, String> {
-    let Some(key) = khor_net::root::load(&root.join(".khor").join(ROOT_KEY)).map_err(|e| e.to_string())? else { return Ok(None); };
+    let Some(key) =
+        khor_net::root::load(&root.join(".khor").join(ROOT_KEY)).map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
     Ok((anchor_at(root) == Some(key.public())).then_some(key))
 }
 fn store_roster_at(doc: &DeviceDoc, r: &Roster) -> Result<(), String> {
     doc.put_roster(&roster_key(r), r.bytes())?;
-    let older: Vec<_> = doc.rosters().into_iter().map(|(key, _)| key)
-        .filter(|key| !key.starts_with("pair-archive:") && key_seq(key).is_none_or(|seq| seq < r.seq)).collect();
+    let older: Vec<_> = doc
+        .rosters()
+        .into_iter()
+        .map(|(key, _)| key)
+        .filter(|key| {
+            !key.starts_with("pair-archive:") && key_seq(key).is_none_or(|seq| seq < r.seq)
+        })
+        .collect();
     doc.drop_rosters(&older)
 }
-fn root_mutation_at(root: &std::path::Path, local: Id) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
+fn root_mutation_at(
+    root: &std::path::Path,
+    local: Id,
+) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
     let guard = crate::doc_transfer_state::pairing::root_fence(root).map_err(String::from)?;
     if crate::doc_transfer_state::pairing::needs_recovery(root, local).map_err(String::from)? {
         return Err("trust settlement recovery is pending".into());
@@ -1494,7 +1893,13 @@ fn root_mutation_at(root: &std::path::Path, local: Id) -> Result<crate::doc_tran
     Ok(guard)
 }
 
-fn pair_archive(id: Id, recipient: Id) -> String { format!("pair-archive:{}:{}", nt::id_hex(&id), nt::id_hex(&recipient)) }
+fn pair_archive(id: Id, recipient: Id) -> String {
+    format!(
+        "pair-archive:{}:{}",
+        nt::id_hex(&id),
+        nt::id_hex(&recipient)
+    )
+}
 
 #[cfg(test)]
 mod tests {
@@ -1522,10 +1927,22 @@ mod tests {
         let r = roster(&key, &[Member::device(id(1)), Member::device(id(2))], NOW);
         let r = nt::verify_roster(&r.revoke(&key, NOW, &id(2)), &key.public()).unwrap();
         let a = key.public();
-        assert_eq!(standing(Some(&r), Some(&a), &id(1), None, NOW), Standing::Trusted);
-        assert_eq!(standing(Some(&r), Some(&a), &id(2), None, NOW), Standing::Revoked);
-        assert_eq!(standing(Some(&r), Some(&a), &id(3), None, NOW), Standing::Pending);
-        assert_eq!(standing(None, Some(&a), &id(1), None, NOW), Standing::Pending);
+        assert_eq!(
+            standing(Some(&r), Some(&a), &id(1), None, NOW),
+            Standing::Trusted
+        );
+        assert_eq!(
+            standing(Some(&r), Some(&a), &id(2), None, NOW),
+            Standing::Revoked
+        );
+        assert_eq!(
+            standing(Some(&r), Some(&a), &id(3), None, NOW),
+            Standing::Pending
+        );
+        assert_eq!(
+            standing(None, Some(&a), &id(1), None, NOW),
+            Standing::Pending
+        );
     }
 
     /// B6: a presented certificate newer than the roster counts while
@@ -1539,7 +1956,8 @@ mod tests {
         let old = roster(&key, &[Member::device(id(1))], NOW);
         // Signed later, elsewhere: a roster this machine has not seen yet,
         // whose certificate for id(5) rides id(5)'s row.
-        let newer = nt::verify_roster(&old.admit(&key, NOW + 1, &Member::device(id(5))), &a).unwrap();
+        let newer =
+            nt::verify_roster(&old.admit(&key, NOW + 1, &Member::device(id(5))), &a).unwrap();
         let presented = newer.signed_cert(&id(5)).unwrap().to_vec();
 
         let fresh = NOW + nt::FRESH_DAYS * nt::DAY_MS;
@@ -1712,8 +2130,8 @@ mod tests {
     // ── on a real store (no network) ────────────────────────────────
 
     use crate::testdir::TempTree;
-    use khor_sync::store::Doc;
     use khor_catalog::cli;
+    use khor_sync::store::Doc;
 
     fn node(t: &TempTree, name: &str) -> Node {
         Node::open_as(t.path(), name).unwrap()
@@ -1752,13 +2170,21 @@ mod tests {
     fn the_first_machine_makes_its_root_once_and_waits_to_show_the_words() {
         let t = TempTree::fresh("trust-born");
         let a = node(&t, "alpha");
-        assert!(a.root_born(), "alone and without a root: this is the first machine");
+        assert!(
+            a.root_born(),
+            "alone and without a root: this is the first machine"
+        );
         assert!(a.holds_root());
-        let key = khor_net::root::load(&t.join(".khor/root.key")).unwrap().unwrap();
+        let key = khor_net::root::load(&t.join(".khor/root.key"))
+            .unwrap()
+            .unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(t.join(".khor/root.key")).unwrap().permissions().mode();
+            let mode = std::fs::metadata(t.join(".khor/root.key"))
+                .unwrap()
+                .permissions()
+                .mode();
             assert_eq!(mode & 0o777, 0o600);
         }
         let st = a.root_state();
@@ -1774,7 +2200,10 @@ mod tests {
 
         let words = a.root_words().unwrap();
         assert_eq!(words.split(' ').count(), khor_net::root::WORDS);
-        assert_eq!(khor_net::root::from_words(&words).unwrap().public(), key.public());
+        assert_eq!(
+            khor_net::root::from_words(&words).unwrap().public(),
+            key.public()
+        );
         assert!(!a.root_state().unshown, "shown once is shown");
     }
 
@@ -1800,12 +2229,18 @@ mod tests {
         let t = TempTree::fresh("trust-words");
         let a = node(&t, "alpha");
         let shown = a.shown_name();
-        assert_eq!(a.root_words_confirmed("  ").unwrap_err(), msg::words_need_confirm(&shown));
+        assert_eq!(
+            a.root_words_confirmed("  ").unwrap_err(),
+            msg::words_need_confirm(&shown)
+        );
         assert_eq!(
             a.root_words_confirmed("somebody").unwrap_err(),
             msg::words_names_another("somebody", &shown)
         );
-        assert_eq!(a.root_words_confirmed("alpha").unwrap(), a.root_words().unwrap());
+        assert_eq!(
+            a.root_words_confirmed("alpha").unwrap(),
+            a.root_words().unwrap()
+        );
     }
 
     /// B1: the words bring the same root back on another machine; a
@@ -1839,19 +2274,31 @@ mod tests {
         let d = node(&td, "delta");
         let ld = d.devices_loaded().unwrap();
         ld.doc.upsert(&fake_id(9), "nine", &[]).unwrap();
-        assert!(d.enroll_after_pair(&ld.doc, &[(&fake_id(9), "nine")]).unwrap());
+        assert!(
+            d.enroll_after_pair(&ld.doc, &[(&fake_id(9), "nine")])
+                .unwrap()
+        );
         let mut sd = ld.store;
         sd.flush(&ld.doc).unwrap();
         let theirs = d.anchor().unwrap();
-        assert_eq!(d.root_recover(&words).unwrap_err(), msg::recover_other_network(theirs));
-        assert!(!d.root_state().root.unwrap().eq(&root), "d keeps its network");
+        assert_eq!(
+            d.root_recover(&words).unwrap_err(),
+            msg::recover_other_network(theirs)
+        );
+        assert!(
+            !d.root_state().root.unwrap().eq(&root),
+            "d keeps its network"
+        );
     }
 
     /// B4 without the wire: a machine joining through one without the
     /// root waits — on both sides — and the holder's approval lets it in.
     #[test]
     fn joining_through_a_member_waits_until_the_holder_approves() {
-        let (ta, tb) = (TempTree::fresh("trust-join-a"), TempTree::fresh("trust-join-b"));
+        let (ta, tb) = (
+            TempTree::fresh("trust-join-a"),
+            TempTree::fresh("trust-join-b"),
+        );
         let a = node(&ta, "alpha");
         let b = node(&tb, "beta");
         assert!(b.root_born(), "b starts as a network of its own");
@@ -1864,16 +2311,26 @@ mod tests {
         assert_eq!(a.standing_of(b.device_str()), Standing::Pending);
         let waiting = a.pending().unwrap();
         assert_eq!(waiting.len(), 1, "{waiting:?}");
-        assert_eq!((waiting[0].name.as_str(), waiting[0].kind.as_str()), ("beta", "device"));
+        assert_eq!(
+            (waiting[0].name.as_str(), waiting[0].kind.as_str()),
+            ("beta", "device")
+        );
 
-        assert_eq!(b.approve_here("beta").unwrap_err(), msg::approve_needs_root());
+        assert_eq!(
+            b.approve_here("beta").unwrap_err(),
+            msg::approve_needs_root()
+        );
         let (name, seq) = a.approve_here("beta").unwrap();
         assert_eq!(name, "beta");
         assert_eq!(a.roster().unwrap().seq, seq);
         assert_eq!(a.standing_of(b.device_str()), Standing::Trusted);
         assert!(a.pending().unwrap().is_empty());
         carry(&a, &b);
-        assert_eq!(b.standing_of(b.device_str()), Standing::Trusted, "the roster travels");
+        assert_eq!(
+            b.standing_of(b.device_str()),
+            Standing::Trusted,
+            "the roster travels"
+        );
         assert!(b.pending().unwrap().is_empty(), "and the note is cleared");
         assert_eq!(
             a.approve_here("beta").unwrap_err(),
@@ -1886,12 +2343,23 @@ mod tests {
     /// signs it as the adopter's.
     #[test]
     fn a_satellite_is_signed_on_the_holder_and_waits_anywhere_else() {
-        let (ta, tb) = (TempTree::fresh("trust-sat-a"), TempTree::fresh("trust-sat-b"));
+        let (ta, tb) = (
+            TempTree::fresh("trust-sat-a"),
+            TempTree::fresh("trust-sat-b"),
+        );
         let a = node(&ta, "alpha");
         let sat = fake_id(0x51);
-        a.enter_satellite(&sat, "box", &crate::satellite::Dest::new("box.example", None), false).unwrap();
+        a.enter_satellite(
+            &sat,
+            "box",
+            &crate::satellite::Dest::new("box.example", None),
+            false,
+        )
+        .unwrap();
         let r = a.roster().unwrap();
-        let c = r.cert(&nt::id_from_hex(&sat).unwrap()).expect("signed on the holder");
+        let c = r
+            .cert(&nt::id_from_hex(&sat).unwrap())
+            .expect("signed on the holder");
         assert_eq!(c.kind, Kind::Satellite);
         assert_eq!(c.sponsor, nt::id_from_hex(a.device_str()));
         assert!(a.pending().unwrap().is_empty());
@@ -1901,38 +2369,67 @@ mod tests {
         a.approve_here("beta").unwrap();
         carry(&a, &b);
         let sat2 = fake_id(0x52);
-        b.enter_satellite(&sat2, "box2", &crate::satellite::Dest::new("box2.example", None), true).unwrap();
+        b.enter_satellite(
+            &sat2,
+            "box2",
+            &crate::satellite::Dest::new("box2.example", None),
+            true,
+        )
+        .unwrap();
         let waiting = b.pending().unwrap();
         assert!(
-            waiting.iter().any(|w| w.id == sat2 && w.kind == "satellite"),
+            waiting
+                .iter()
+                .any(|w| w.id == sat2 && w.kind == "satellite"),
             "{waiting:?}"
         );
-        assert!(!b.roster().unwrap().admits(&nt::id_from_hex(&sat2).unwrap(), crate::now_ms()));
+        assert!(
+            !b.roster()
+                .unwrap()
+                .admits(&nt::id_from_hex(&sat2).unwrap(), crate::now_ms())
+        );
         carry(&b, &a);
         a.approve_here("box2").unwrap();
-        let c2 = a.roster().unwrap().cert(&nt::id_from_hex(&sat2).unwrap()).cloned().unwrap();
+        let c2 = a
+            .roster()
+            .unwrap()
+            .cert(&nt::id_from_hex(&sat2).unwrap())
+            .cloned()
+            .unwrap();
         assert_eq!(c2.kind, Kind::Satellite);
-        assert_eq!(c2.sponsor, nt::id_from_hex(b.device_str()), "the adopter speaks for it");
+        assert_eq!(
+            c2.sponsor,
+            nt::id_from_hex(b.device_str()),
+            "the adopter speaks for it"
+        );
     }
 
     /// `forget` on the holder revokes; anywhere else the removal waits
     /// for the holder, and approving it is the revocation.
     #[test]
     fn forgetting_revokes_on_the_holder_and_waits_elsewhere() {
-        let (ta, tb) = (TempTree::fresh("trust-fgt-a"), TempTree::fresh("trust-fgt-b"));
+        let (ta, tb) = (
+            TempTree::fresh("trust-fgt-a"),
+            TempTree::fresh("trust-fgt-b"),
+        );
         let a = node(&ta, "alpha");
         let (x, y) = (fake_id(0x0a), fake_id(0x0b));
         {
             let la = a.devices_loaded().unwrap();
             la.doc.upsert(&x, "xray", &[]).unwrap();
             la.doc.upsert(&y, "yoke", &[]).unwrap();
-            a.enroll_after_pair(&la.doc, &[(&x, "xray"), (&y, "yoke")]).unwrap();
+            a.enroll_after_pair(&la.doc, &[(&x, "xray"), (&y, "yoke")])
+                .unwrap();
             let mut s = la.store;
             s.flush(&la.doc).unwrap();
         }
         a.forget_device("xray").unwrap();
         assert_eq!(a.standing_of(&x), Standing::Revoked);
-        assert!(a.roster().unwrap().is_revoked(&nt::id_from_hex(&x).unwrap()));
+        assert!(
+            a.roster()
+                .unwrap()
+                .is_revoked(&nt::id_from_hex(&x).unwrap())
+        );
 
         let b = node(&tb, "beta");
         join_through_a_member(&a, &b);
@@ -1941,16 +2438,33 @@ mod tests {
         b.forget_device("yoke").unwrap();
         assert_eq!(b.standing_of(&y), Standing::Trusted, "b cannot revoke");
         let waiting = b.pending().unwrap();
-        assert!(waiting.iter().any(|w| w.id == y && w.kind == "leave"), "{waiting:?}");
+        assert!(
+            waiting.iter().any(|w| w.id == y && w.kind == "leave"),
+            "{waiting:?}"
+        );
         carry(&b, &a);
-        assert!(a.pending().unwrap().iter().any(|w| w.id == y && w.kind == "leave"));
+        assert!(
+            a.pending()
+                .unwrap()
+                .iter()
+                .any(|w| w.id == y && w.kind == "leave")
+        );
         a.approve_here("yoke").unwrap();
         assert_eq!(a.standing_of(&y), Standing::Revoked);
         assert!(a.pending().unwrap().is_empty());
         assert_eq!(a.revoke_here("beta").map(|(n, _)| n), Ok("beta".to_owned()));
-        assert_eq!(a.revoke_here("beta").unwrap_err(), msg::already_revoked("beta"));
-        assert_eq!(a.revoke_here("alpha").unwrap_err(), msg::cant_revoke_holder());
-        assert_eq!(b.revoke_here("alpha").unwrap_err(), msg::revoke_needs_root());
+        assert_eq!(
+            a.revoke_here("beta").unwrap_err(),
+            msg::already_revoked("beta")
+        );
+        assert_eq!(
+            a.revoke_here("alpha").unwrap_err(),
+            msg::cant_revoke_holder()
+        );
+        assert_eq!(
+            b.revoke_here("alpha").unwrap_err(),
+            msg::revoke_needs_root()
+        );
     }
 
     /// Empties a table on disk the way hinton's was found (round NET-10):
@@ -1984,31 +2498,62 @@ mod tests {
         let old = a.vouch_offer().expect("a member on the roster vouches");
 
         let b = lose_the_table(&tb, "beta");
-        let names = |n: &Node| n.devices().unwrap().into_iter().map(|d| d.name).collect::<Vec<_>>();
+        let names = |n: &Node| {
+            n.devices()
+                .unwrap()
+                .into_iter()
+                .map(|d| d.name)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(names(&b), ["beta"], "only its own row is left");
         assert_eq!(b.admit(a.device_str()).unwrap_err(), msg::not_paired());
-        assert_eq!(b.standing_of(b.device_str()), Standing::Pending, "and no roster");
+        assert_eq!(
+            b.standing_of(b.device_str()),
+            Standing::Pending,
+            "and no roster"
+        );
 
         // Another network's roster, and a roster that does not name the asker.
         let c = node(&tc, "gamma");
         let (cn, ca, cr) = c.vouch_offer().unwrap();
-        assert_eq!(b.take_vouch(c.device_str(), &cn, &ca, &cr).unwrap_err(), msg::vouch_refused());
+        assert_eq!(
+            b.take_vouch(c.device_str(), &cn, &ca, &cr).unwrap_err(),
+            msg::vouch_refused()
+        );
         let stranger = fake_id(0x5e);
-        assert_eq!(b.take_vouch(&stranger, "x", &[], &old.2).unwrap_err(), msg::vouch_refused());
+        assert_eq!(
+            b.take_vouch(&stranger, "x", &[], &old.2).unwrap_err(),
+            msg::vouch_refused()
+        );
         assert_eq!(names(&b), ["beta"], "a refusal writes nothing");
 
-        b.take_vouch(a.device_str(), &old.0, &old.1, &old.2).unwrap();
+        b.take_vouch(a.device_str(), &old.0, &old.1, &old.2)
+            .unwrap();
         assert_eq!(b.admit(a.device_str()), Ok(()));
         assert_eq!(b.standing_of(b.device_str()), Standing::Trusted);
         carry(&a, &b);
-        assert_eq!(names(&b), ["alpha", "beta"], "the round after brings the rest");
+        assert_eq!(
+            names(&b),
+            ["alpha", "beta"],
+            "the round after brings the rest"
+        );
 
         // An older roster cannot undo a newer one, and a machine shown
         // the door here is not let back in by vouching for itself.
-        a.enter_satellite(&fake_id(0x51), "box", &crate::satellite::Dest::new("box.example", None), false).unwrap();
+        a.enter_satellite(
+            &fake_id(0x51),
+            "box",
+            &crate::satellite::Dest::new("box.example", None),
+            false,
+        )
+        .unwrap();
         carry(&a, &b);
         assert!(b.roster().unwrap().seq > old_seq(&old.2, &a));
-        assert_eq!(b.take_vouch(a.device_str(), &old.0, &old.1, &old.2).unwrap_err(), msg::vouch_refused());
+        assert_eq!(
+            b.take_vouch(a.device_str(), &old.0, &old.1, &old.2)
+                .unwrap_err(),
+            msg::vouch_refused()
+        );
         let (n, ad, r) = a.vouch_offer().unwrap();
         {
             let lb = b.devices_loaded().unwrap();
@@ -2016,11 +2561,16 @@ mod tests {
             let mut s = lb.store;
             s.flush(&lb.doc).unwrap();
         }
-        assert_eq!(b.take_vouch(a.device_str(), &n, &ad, &r).unwrap_err(), msg::vouch_refused());
+        assert_eq!(
+            b.take_vouch(a.device_str(), &n, &ad, &r).unwrap_err(),
+            msg::vouch_refused()
+        );
     }
 
     fn old_seq(roster: &[u8], under: &Node) -> u64 {
-        nt::verify_roster(roster, &under.anchor().unwrap()).unwrap().seq
+        nt::verify_roster(roster, &under.anchor().unwrap())
+            .unwrap()
+            .seq
     }
 
     /// B6: a roster past its date is said by `khor doctor` in days, and
@@ -2029,13 +2579,18 @@ mod tests {
     fn a_stale_roster_is_said_in_days_and_the_holder_refreshes_it() {
         let t = TempTree::fresh("trust-stale");
         let a = node(&t, "alpha");
-        let key = khor_net::root::load(&t.join(".khor/root.key")).unwrap().unwrap();
+        let key = khor_net::root::load(&t.join(".khor/root.key"))
+            .unwrap()
+            .unwrap();
         let cur = a.roster().unwrap();
         let old_at = crate::now_ms() - 40 * nt::DAY_MS;
         // The same members, signed forty days ago with a later seq — what
         // a machine holds when the holder has been away that long.
-        let old = nt::verify_roster(&cur.admit(&key, old_at, &Member::device(a.my_id())), &key.public())
-            .unwrap();
+        let old = nt::verify_roster(
+            &cur.admit(&key, old_at, &Member::device(a.my_id())),
+            &key.public(),
+        )
+        .unwrap();
         let old = nt::verify_roster(&old.refresh(&key, old_at), &key.public()).unwrap();
         {
             let l = a.devices_loaded().unwrap();
@@ -2064,7 +2619,10 @@ mod tests {
     /// the root up on its next beat.
     #[test]
     fn a_network_from_before_roots_gets_one_and_its_machines_take_it_up() {
-        let (ta, tb) = (TempTree::fresh("trust-init-a"), TempTree::fresh("trust-init-b"));
+        let (ta, tb) = (
+            TempTree::fresh("trust-init-a"),
+            TempTree::fresh("trust-init-b"),
+        );
         let a = node(&ta, "alpha");
         let b = node(&tb, "beta");
         // Both back to the shape an older khor left: no root anywhere.
@@ -2080,15 +2638,27 @@ mod tests {
         carry(&b, &a);
         carry(&a, &b);
         let sat = fake_id(0x5a);
-        a.enter_satellite(&sat, "box", &crate::satellite::Dest::new("box.example", None), false).unwrap();
+        a.enter_satellite(
+            &sat,
+            "box",
+            &crate::satellite::Dest::new("box.example", None),
+            false,
+        )
+        .unwrap();
         assert_eq!(a.standing_of(b.device_str()), Standing::Legacy);
-        assert!(a.pending().unwrap().is_empty(), "nobody to ask before roots");
+        assert!(
+            a.pending().unwrap().is_empty(),
+            "nobody to ask before roots"
+        );
 
         let (root, count) = a.root_init().unwrap();
         assert_eq!(count, 3, "alpha, beta and the satellite");
         assert!(a.holds_root());
         let r = a.roster().unwrap();
-        assert_eq!(r.cert(&nt::id_from_hex(&sat).unwrap()).unwrap().kind, Kind::Satellite);
+        assert_eq!(
+            r.cert(&nt::id_from_hex(&sat).unwrap()).unwrap().kind,
+            Kind::Satellite
+        );
         assert!(r.admits(&nt::id_from_hex(b.device_str()).unwrap(), crate::now_ms()));
         assert_eq!(a.root_init().unwrap_err(), msg::root_already(&root));
 

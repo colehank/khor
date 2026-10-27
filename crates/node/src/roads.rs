@@ -188,7 +188,8 @@ struct Openings(HashMap<(String, String), (u32, std::time::Instant)>);
 
 impl Openings {
     fn opened(&mut self, id: &str, addr: &str, now: std::time::Instant) -> bool {
-        self.0.retain(|_, (count, last)| *count > 0 || now.duration_since(*last) < REOPEN_QUIET);
+        self.0
+            .retain(|_, (count, last)| *count > 0 || now.duration_since(*last) < REOPEN_QUIET);
         match self.0.get_mut(&(id.to_owned(), addr.to_owned())) {
             Some((count, last)) => {
                 *count += 1;
@@ -218,12 +219,16 @@ impl Openings {
 
 /// Counts a direct path to `addr` opening; whether it is news.
 fn opened_is_news(id: &str, addr: &str) -> bool {
-    OPEN.lock().unwrap_or_else(|p| p.into_inner()).opened(id, addr, std::time::Instant::now())
+    OPEN.lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .opened(id, addr, std::time::Instant::now())
 }
 
 /// Counts a direct path to `addr` closing (or its connection ending).
 fn closed(id: &str, addr: &str) {
-    OPEN.lock().unwrap_or_else(|p| p.into_inner()).closed(id, addr, std::time::Instant::now());
+    OPEN.lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .closed(id, addr, std::time::Instant::now());
 }
 
 /// **Every path change of a connection, for its whole life** (NET-DIRECT):
@@ -241,8 +246,8 @@ fn follow(
 ) {
     let id = id.to_owned();
     tokio::spawn(async move {
-        use n0_future::StreamExt;
         use iroh::endpoint::PathEvent;
+        use n0_future::StreamExt;
         tokio::pin!(events);
         // This connection's open direct paths, handed back when it ends.
         let mut mine: HashMap<iroh::endpoint::PathId, String> = HashMap::new();
@@ -266,7 +271,9 @@ fn follow(
             let (change, path_id, remote) = if let Some(now) = first.take() {
                 now
             } else {
-                let Some(event) = events.next().await else { break };
+                let Some(event) = events.next().await else {
+                    break;
+                };
                 match event {
                     // **Dropped events leave a trace** (vendor/iroh patch
                     // 21): how many, then the selection as it stands, so the
@@ -276,8 +283,16 @@ fn follow(
                         let Some(now) = selected_now() else { continue };
                         now
                     }
-                    PathEvent::Opened { id: pid, remote_addr, .. } if remote_addr.is_ip() => ("opened", pid, remote_addr),
-                    PathEvent::Selected { id: pid, remote_addr, .. } => ("selected", pid, remote_addr),
+                    PathEvent::Opened {
+                        id: pid,
+                        remote_addr,
+                        ..
+                    } if remote_addr.is_ip() => ("opened", pid, remote_addr),
+                    PathEvent::Selected {
+                        id: pid,
+                        remote_addr,
+                        ..
+                    } => ("selected", pid, remote_addr),
                     PathEvent::Closed { id: pid, .. } => {
                         if let Some(addr) = mine.remove(&pid) {
                             closed(&id, &addr);
@@ -319,7 +334,14 @@ fn follow(
                 // Where a connection began and where it moved are the one
                 // road of the machine's, deduplicated together.
                 let mut written = WRITTEN.lock().unwrap_or_else(|p| p.into_inner());
-                let key = (id.clone(), if change == "started" { "selected" } else { change });
+                let key = (
+                    id.clone(),
+                    if change == "started" {
+                        "selected"
+                    } else {
+                        change
+                    },
+                );
                 if written.get(&key) == Some(&addr) {
                     continue;
                 }
@@ -379,11 +401,20 @@ mod tests {
     #[test]
     fn a_direct_path_is_written_once_per_address() {
         let id = "net-i-once";
-        assert!(opened_is_news(id, "10.0.0.1:1"), "the first opening is news");
-        assert!(!opened_is_news(id, "10.0.0.1:1"), "the other connection's path to it is not");
+        assert!(
+            opened_is_news(id, "10.0.0.1:1"),
+            "the first opening is news"
+        );
+        assert!(
+            !opened_is_news(id, "10.0.0.1:1"),
+            "the other connection's path to it is not"
+        );
         closed(id, "10.0.0.1:1");
         closed(id, "10.0.0.1:1");
-        assert!(!opened_is_news(id, "10.0.0.1:1"), "closed and opened again at once is not");
+        assert!(
+            !opened_is_news(id, "10.0.0.1:1"),
+            "closed and opened again at once is not"
+        );
         assert!(opened_is_news(id, "[2001:db8::1]:1"), "another address is");
     }
 
@@ -401,7 +432,11 @@ mod tests {
         assert_eq!(open.0.len(), 1, "the closed one is gone");
         assert!(open.opened("m", "10.0.0.1:1", later), "and is news again");
         open.closed("m", "10.0.0.2:1", later + REOPEN_QUIET);
-        assert_eq!(open.0.len(), 1, "a close after the quiet removes it at once");
+        assert_eq!(
+            open.0.len(),
+            1,
+            "a close after the quiet removes it at once"
+        );
     }
 
     /// The tally keeps the last [`REMEMBERED`] settled dials, drops the

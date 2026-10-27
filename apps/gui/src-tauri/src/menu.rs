@@ -274,7 +274,11 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let next_command = item("next-command", m::next_command(), Some("CmdOrCtrl+Down"))?;
     // ⌘⇧;: the machine's commands, searched (roadmap 2.6) — iTerm2's key
     // for its Command History.
-    let command_history = item("command-history", m::command_history(), Some("CmdOrCtrl+Shift+Semicolon"))?;
+    let command_history = item(
+        "command-history",
+        m::command_history(),
+        Some("CmdOrCtrl+Shift+Semicolon"),
+    )?;
     // ⌘+ ⌘− ⌘0: the terminal's type size a point at a time (item 22;
     // Terminal.app's View › Bigger, Smaller, Default Font Size).
     let term_bigger = item("term-bigger", m::term_bigger(), Some("CmdOrCtrl+Equal"))?;
@@ -539,8 +543,10 @@ pub fn follow_lang(_app: &AppHandle) {}
 /// bar went quiet once 浏览器 had been used. The editor windows hold one
 /// webview each and are still found the old way.
 pub fn on_event(app: &AppHandle, id: &str) {
-    #[cfg(target_os="macos")]
-    if crate::quick_look::menu(id) {return;}
+    #[cfg(target_os = "macos")]
+    if crate::quick_look::menu(id) {
+        return;
+    }
     #[cfg(target_os = "macos")]
     if id == "edit-undo" || id == "edit-redo" {
         native_edit::run(app, id == "edit-redo");
@@ -549,7 +555,9 @@ pub fn on_event(app: &AppHandle, id: &str) {
     let editor = app
         .webview_windows()
         .into_iter()
-        .find(|(label, w)| (label.starts_with("code:") || label == "settings") && w.is_focused().unwrap_or(false))
+        .find(|(label, w)| {
+            (label.starts_with("code:") || label == "settings") && w.is_focused().unwrap_or(false)
+        })
         .map(|(_, w)| w);
     // An editor window in front (`open_code_window`), or the settings
     // window, is a window of its own: its ⌘W and ⇧⌘W close it, and

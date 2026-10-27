@@ -77,7 +77,10 @@ async fn an_idle_wire_is_not_down_a_failed_dial_is_and_a_byte_heard_clears_it() 
     let dir_b = rb.0.display().to_string();
     let began = Instant::now();
     while b.ls_of("alpha", &dir_a).await.is_err() {
-        assert!(began.elapsed() < Duration::from_secs(60), "beta reaches alpha");
+        assert!(
+            began.elapsed() < Duration::from_secs(60),
+            "beta reaches alpha"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     let up = link_to(&b, &alpha_id).await;
@@ -87,14 +90,23 @@ async fn an_idle_wire_is_not_down_a_failed_dial_is_and_a_byte_heard_clears_it() 
     b.let_go_of("alpha").await.unwrap();
     let idle = link_to(&b, &alpha_id).await;
     assert_eq!(idle.hop, Hop::Idle, "no live wire");
-    assert_eq!(idle.down_ms, None, "a wire that closed idle is not an unreachable machine");
-    assert!(idle.last_rtt_ms.is_some(), "the last round trip outlives the wire");
+    assert_eq!(
+        idle.down_ms, None,
+        "a wire that closed idle is not an unreachable machine"
+    );
+    assert!(
+        idle.last_rtt_ms.is_some(),
+        "the last round trip outlives the wire"
+    );
 
     // Down: alpha's ears close, and beta's next attempt fails.
     assert!(link::deafen(&ra.0).await, "alpha's resident deafens");
     let left = Instant::now();
     while b.ls_of("alpha", &dir_a).await.is_ok() {
-        assert!(left.elapsed() < Duration::from_secs(10), "alpha stops answering");
+        assert!(
+            left.elapsed() < Duration::from_secs(10),
+            "alpha stops answering"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     let down = link_to(&b, &alpha_id).await;
@@ -107,10 +119,17 @@ async fn an_idle_wire_is_not_down_a_failed_dial_is_and_a_byte_heard_clears_it() 
     // not what clears it: its relay said alpha left, so its pump leaves
     // alpha alone until alpha is heard.
     let dialled = b.wire_counts().await.unwrap().dialed;
-    link::resume(&ra.0).expect("resumable").synced().await.unwrap();
+    link::resume(&ra.0)
+        .expect("resumable")
+        .synced()
+        .await
+        .unwrap();
     let back = Instant::now();
     while a.ls_of("beta", &dir_b).await.is_err() {
-        assert!(back.elapsed() < Duration::from_secs(30), "alpha reaches beta again");
+        assert!(
+            back.elapsed() < Duration::from_secs(30),
+            "alpha reaches beta again"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     let heard = link_to(&b, &alpha_id).await;

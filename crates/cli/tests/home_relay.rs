@@ -55,7 +55,10 @@ async fn restart(dir: &Path, name: &str, env: &[(&str, &str)], was: Reaped) -> R
     drop(was);
     signal(pid, "-TERM");
     until(Duration::from_secs(20), "the resident stops", || async {
-        !Command::new("kill").args(["-0", &pid.to_string()]).status().is_ok_and(|s| s.success())
+        !Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .is_ok_and(|s| s.success())
     })
     .await;
     let _ = std::fs::remove_file(dir.join(".khor/endpoint.json"));
@@ -72,16 +75,24 @@ async fn a_machine_homed_on_a_relay_in_no_list_publishes_it_and_is_reached() {
     for r in [&ra, &rb] {
         home_on(&r.0, DEAD);
     }
-    let env = [("KHOR_RELAY_ONLY", "1"), (khor_net::endpoint::PUBLIC_RELAYS_ENV, public.as_str())];
+    let env = [
+        ("KHOR_RELAY_ONLY", "1"),
+        (khor_net::endpoint::PUBLIC_RELAYS_ENV, public.as_str()),
+    ];
     let a = serve_with(&ra.0, "alpha", &env);
     let b = serve_with(&rb.0, "beta", &env);
     stood_up(&[&ra.0, &rb.0]).await;
     for (r, who) in [(&ra, "alpha"), (&rb, "beta")] {
-        let took = until(Duration::from_secs(60), &format!("{who} publishes its home first"), || async {
-            published(&r.0).first() == Some(&public)
-        })
+        let took = until(
+            Duration::from_secs(60),
+            &format!("{who} publishes its home first"),
+            || async { published(&r.0).first() == Some(&public) },
+        )
         .await;
-        eprintln!("[home] {who} published {:?} {took:?} after it stood up", published(&r.0));
+        eprintln!(
+            "[home] {who} published {:?} {took:?} after it stood up",
+            published(&r.0)
+        );
     }
 
     let alpha = Node::open_as(ra.0.clone(), "alpha").unwrap();
@@ -92,12 +103,16 @@ async fn a_machine_homed_on_a_relay_in_no_list_publishes_it_and_is_reached() {
         .expect("pairing must not hang")
         .expect("pairing succeeds over the published home");
     let a_id = alpha.device_str().to_owned();
-    until(Duration::from_secs(60), "beta's table has alpha's row with its home first", || async {
-        beta.devices()
-            .ok()
-            .and_then(|all| all.into_iter().find(|d| d.id == a_id))
-            .is_some_and(|d| d.addrs.iter().find(|r| r.starts_with("http")) == Some(&public))
-    })
+    until(
+        Duration::from_secs(60),
+        "beta's table has alpha's row with its home first",
+        || async {
+            beta.devices()
+                .ok()
+                .and_then(|all| all.into_iter().find(|d| d.id == a_id))
+                .is_some_and(|d| d.addrs.iter().find(|r| r.starts_with("http")) == Some(&public))
+        },
+    )
     .await;
 
     // Nothing remembered: each reaches the other by the row alone.

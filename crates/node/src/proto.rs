@@ -664,14 +664,21 @@ pub enum Request {
     /// The same snapshot on an SSH satellite through its sponsor.
     SatFetchTree { sat: String, path: String },
     /// Atomic shell creation plus initial input; old peers refuse this word.
-    OpenShellOnce { start: crate::shell_start::ShellStart },
+    OpenShellOnce {
+        start: crate::shell_start::ShellStart,
+    },
     /// Logins on the asked machine, or an explicit import there. No secrets.
-    Subscriptions { action: crate::subscriptions::Action },
+    Subscriptions {
+        action: crate::subscriptions::Action,
+    },
     /// Authenticated agent control; never executed as replayable early data.
     KhorAgent { action: crate::khor_agent::Action },
     /// Canonical A2A data over khor's authenticated binding. Old peers refuse
     /// this new word; callers display that refusal and do not replay a send.
-    Delegation { #[serde(with = "crate::delegation::wire_json")] action: crate::delegation::Action },
+    Delegation {
+        #[serde(with = "crate::delegation::wire_json")]
+        action: crate::delegation::Action,
+    },
 }
 
 /// Smaller than the general business frame, including all serde envelopes.
@@ -703,51 +710,127 @@ pub struct PairHeader {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PairPhase { Receiving, AdmissionFlushed, BootstrapComplete }
+pub enum PairPhase {
+    Receiving,
+    AdmissionFlushed,
+    BootstrapComplete,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PairAction {
-    Start { token: String, nonce: [u8; 32], header: PairHeader, roster: Option<DocChunk> },
-    Resume { claim: [u8; 32], nonce: [u8; 32] },
-    WriteRoster { claim: [u8; 32], nonce: [u8; 32], chunk: DocChunk },
-    ReadRoster { claim: [u8; 32], nonce: [u8; 32], manifest: DocManifest, offset: u64 },
-    Commit { claim: [u8; 32], nonce: [u8; 32] },
-    TrustAccepted { claim: [u8; 32], nonce: [u8; 32], roster: Option<DocManifest> },
-    Devices { claim: [u8; 32], nonce: [u8; 32], action: DocTransferAction },
-    Finish { claim: [u8; 32], nonce: [u8; 32], have: serde_bytes::ByteBuf, target: serde_bytes::ByteBuf },
-    Abort { claim: [u8; 32], nonce: [u8; 32] },
+    Start {
+        token: String,
+        nonce: [u8; 32],
+        header: PairHeader,
+        roster: Option<DocChunk>,
+    },
+    Resume {
+        claim: [u8; 32],
+        nonce: [u8; 32],
+    },
+    WriteRoster {
+        claim: [u8; 32],
+        nonce: [u8; 32],
+        chunk: DocChunk,
+    },
+    ReadRoster {
+        claim: [u8; 32],
+        nonce: [u8; 32],
+        manifest: DocManifest,
+        offset: u64,
+    },
+    Commit {
+        claim: [u8; 32],
+        nonce: [u8; 32],
+    },
+    TrustAccepted {
+        claim: [u8; 32],
+        nonce: [u8; 32],
+        roster: Option<DocManifest>,
+    },
+    Devices {
+        claim: [u8; 32],
+        nonce: [u8; 32],
+        action: DocTransferAction,
+    },
+    Finish {
+        claim: [u8; 32],
+        nonce: [u8; 32],
+        have: serde_bytes::ByteBuf,
+        target: serde_bytes::ByteBuf,
+    },
+    Abort {
+        claim: [u8; 32],
+        nonce: [u8; 32],
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PairReply {
     Progress {
-        claim: [u8; 32], phase: PairPhase, name: String,
+        claim: [u8; 32],
+        phase: PairPhase,
+        name: String,
         devices_have: serde_bytes::ByteBuf,
-        roster_manifest: Option<DocManifest>, roster: Option<DocChunk>,
+        roster_manifest: Option<DocManifest>,
+        roster: Option<DocChunk>,
         roster_received: u64,
     },
-    Roster { claim: [u8; 32], chunk: DocChunk },
-    Devices { claim: [u8; 32], reply: DocTransferReply },
-    Aborted { claim: [u8; 32] },
-    Uncommitted { claim: [u8;32], why: String },
+    Roster {
+        claim: [u8; 32],
+        chunk: DocChunk,
+    },
+    Devices {
+        claim: [u8; 32],
+        reply: DocTransferReply,
+    },
+    Aborted {
+        claim: [u8; 32],
+    },
+    Uncommitted {
+        claim: [u8; 32],
+        why: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum VouchAction {
-    Start { name: String, addrs: Vec<String>, certificate: serde_bytes::ByteBuf, roster: DocChunk },
-    Write { operation: [u8; 32], chunk: DocChunk },
-    Status { operation: [u8; 32] },
-    Finish { operation: [u8; 32] },
+    Start {
+        name: String,
+        addrs: Vec<String>,
+        certificate: serde_bytes::ByteBuf,
+        roster: DocChunk,
+    },
+    Write {
+        operation: [u8; 32],
+        chunk: DocChunk,
+    },
+    Status {
+        operation: [u8; 32],
+    },
+    Finish {
+        operation: [u8; 32],
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum VouchPhase { Stored { next_offset: u64 }, VerifiedBlob, Vouched }
+pub enum VouchPhase {
+    Stored { next_offset: u64 },
+    VerifiedBlob,
+    Vouched,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VouchReply { pub operation: [u8; 32], pub phase: VouchPhase }
+pub struct VouchReply {
+    pub operation: [u8; 32],
+    pub phase: VouchPhase,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DocProofKind { Applied, AlreadyHaveEquivalent }
+pub enum DocProofKind {
+    Applied,
+    AlreadyHaveEquivalent,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DocProof {
@@ -764,22 +847,44 @@ pub struct DocAcknowledgement {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DocAckResult {
-    Released { acknowledgement: DocAcknowledgement },
-    Absent { acknowledgement: DocAcknowledgement },
+    Released {
+        acknowledgement: DocAcknowledgement,
+    },
+    Absent {
+        acknowledgement: DocAcknowledgement,
+    },
     /// A late Exchange recreated an equivalent receipt after old ACK GC.
-    Reconfirm { proof: DocProof },
+    Reconfirm {
+        proof: DocProof,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DocTransferFailure { Busy, Invalid, Storage, Apply, ResourceLimit }
+pub enum DocTransferFailure {
+    Busy,
+    Invalid,
+    Storage,
+    Apply,
+    ResourceLimit,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DocTransferState {
     Missing,
-    Stored { next_offset: u64 },
-    Complete { proof: DocProof },
-    Apart { expected: u32, actual: u32 },
-    Failed { kind: DocTransferFailure, why: String },
+    Stored {
+        next_offset: u64,
+    },
+    Complete {
+        proof: DocProof,
+    },
+    Apart {
+        expected: u32,
+        actual: u32,
+    },
+    Failed {
+        kind: DocTransferFailure,
+        why: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -791,11 +896,22 @@ pub enum DocTransferAction {
         proofs: Vec<DocProof>,
         acknowledgements: Vec<DocAcknowledgement>,
     },
-    Write { chunk: DocChunk },
-    Read { manifest: DocManifest, offset: u64 },
-    Status { manifest: DocManifest },
-    Confirm { proofs: Vec<DocProof> },
-    Acknowledge { acknowledgements: Vec<DocAcknowledgement> },
+    Write {
+        chunk: DocChunk,
+    },
+    Read {
+        manifest: DocManifest,
+        offset: u64,
+    },
+    Status {
+        manifest: DocManifest,
+    },
+    Confirm {
+        proofs: Vec<DocProof>,
+    },
+    Acknowledge {
+        acknowledgements: Vec<DocAcknowledgement>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -808,28 +924,48 @@ pub enum DocTransferReply {
         proof_acknowledgements: Vec<DocAcknowledgement>,
         acknowledgement_results: Vec<DocAckResult>,
     },
-    State { manifest: DocManifest, state: DocTransferState },
-    Chunk { chunk: DocChunk },
-    Confirmed { acknowledgements: Vec<DocAcknowledgement> },
-    Acknowledged { results: Vec<DocAckResult> },
-    Failed { kind: DocTransferFailure, why: String },
+    State {
+        manifest: DocManifest,
+        state: DocTransferState,
+    },
+    Chunk {
+        chunk: DocChunk,
+    },
+    Confirmed {
+        acknowledgements: Vec<DocAcknowledgement>,
+    },
+    Acknowledged {
+        results: Vec<DocAckResult>,
+    },
+    Failed {
+        kind: DocTransferFailure,
+        why: String,
+    },
 }
 
 /// One selected document's inventory result. A failed document remains in the
 /// response so it cannot be mistaken for an unchanged version.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DocumentInventory {
-    Version { version: serde_bytes::ByteBuf },
+    Version {
+        version: serde_bytes::ByteBuf,
+    },
     /// The requested name is continued in a smaller docs-only page.
     Deferred,
-    Failed { why: String },
+    Failed {
+        why: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
     /// One bounded recoverable pairing step. No full document or roster inline.
-    Paired { reply: PairReply },
-    DocTransfer { reply: DocTransferReply },
+    Paired {
+        reply: PairReply,
+    },
+    DocTransfer {
+        reply: DocTransferReply,
+    },
     /// A changed reading did not fit beside the document inventory.
     ReadingDeferred,
     Refused {
@@ -1114,13 +1250,17 @@ pub enum Response {
     },
     /// One burst of changes on a [`Request::Watch`] stream: the watched
     /// directories whose listings changed.
-    Changed { dirs: Vec<String> },
+    Changed {
+        dirs: Vec<String>,
+    },
     /// The answer to [`Request::History`], newest first.
     History {
         hits: Vec<crate::commands::HistoryHit>,
     },
     /// The answer to [`Request::Git`], variant for variant.
-    Git { answer: crate::git::GitAnswer },
+    Git {
+        answer: crate::git::GitAnswer,
+    },
     /// **The sessions reading as what changed** (round NET-6): the rows'
     /// ids in order **only when the order changed** (empty: the order the
     /// asker holds), the rows that differ from what this machine last sent
@@ -1139,10 +1279,14 @@ pub enum Response {
         history: crate::adaptor::tmux::PaneHistory,
     },
     /// [`Request::WorkspaceFacts`]'s answer, by path.
-    WorkspaceFacts { facts: Vec<khor_core::WorkspaceFact> },
+    WorkspaceFacts {
+        facts: Vec<khor_core::WorkspaceFact>,
+    },
     /// [`Request::Vouch`] taken: the asker's row and the roster are in
     /// the answerer's table.
-    Vouched { reply: VouchReply },
+    Vouched {
+        reply: VouchReply,
+    },
     /// [`Request::DropFile`]'s job so far: bytes landed of `total` (0
     /// until the source has said), and once `done`, the absolute path
     /// the file landed at on the answering machine.
@@ -1155,12 +1299,18 @@ pub enum Response {
     /// [`Request::DropStop`] taken.
     DropStopped,
     /// [`Request::Probe`]'s try.
-    Probed { seen: khor_core::ReachSeen },
+    Probed {
+        seen: khor_core::ReachSeen,
+    },
     /// [`Request::AddOverSsh`]'s run as it stands.
-    Adding { run: crate::join::Run },
+    Adding {
+        run: crate::join::Run,
+    },
     /// [`Request::Journal`]: each entry as the journal file holds it, one
     /// JSON line, oldest first.
-    Journal { lines: Vec<String> },
+    Journal {
+        lines: Vec<String>,
+    },
     /// [`Request::Offer`]'s answer: the file's name, size and digest; its
     /// bytes are served by digest (`Request::Fetch`) from now on.
     Offered {
@@ -1175,7 +1325,9 @@ pub enum Response {
     Tree {
         manifest: Option<crate::tree::Manifest>,
     },
-    Subscriptions { answer: crate::subscriptions::Answer },
+    Subscriptions {
+        answer: crate::subscriptions::Answer,
+    },
     KhorAgent {
         report: crate::khor_agent::Report,
     },
@@ -1355,7 +1507,9 @@ impl Request {
                 | Request::Versions { .. }
                 | Request::LoadSince { .. }
                 | Request::Stat { .. }
-                | Request::Recognition { action: crate::recognition::Action::Read }
+                | Request::Recognition {
+                    action: crate::recognition::Action::Read
+                }
                 | Request::Journal { .. }
         )
     }
@@ -1385,7 +1539,8 @@ impl Request {
             | Request::Fetch { .. }
             | Request::FetchPath { .. }
             | Request::SatFetchPath { .. }
-            | Request::Pair { .. } | Request::Vouch { .. } => Duration::from_secs(30),
+            | Request::Pair { .. }
+            | Request::Vouch { .. } => Duration::from_secs(30),
             Request::SatVitals { .. }
             | Request::SatLs { .. }
             | Request::SatRemove { .. }
@@ -1401,10 +1556,13 @@ impl Request {
             | Request::SatCheckout { .. } => Duration::from_secs(30),
             Request::Delegation {
                 action: crate::delegation::Action::Send { .. },
-            } | Request::Delegation {
-                action: crate::delegation::Action::Bound {
-                    action: crate::delegation::BoundAction::Send { .. }, ..
-                },
+            }
+            | Request::Delegation {
+                action:
+                    crate::delegation::Action::Bound {
+                        action: crate::delegation::BoundAction::Send { .. },
+                        ..
+                    },
             } => Duration::from_secs(40),
             Request::Open { .. }
             | Request::OpenAgent { .. }
@@ -1428,7 +1586,11 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, String> {
         _ => (),
     }
     let bytes = encode(request)?;
-    if matches!(request, Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+    if matches!(
+        request,
+        Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }
+    ) && bytes.len() > DOC_TRANSFER_FRAME_BYTES
+    {
         return Err("document transfer request exceeds 1 MiB".into());
     }
     Ok(bytes)
@@ -1440,7 +1602,11 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, String> {
         _ => (),
     }
     let bytes = encode(response)?;
-    if matches!(response, Response::DocTransfer { .. } | Response::Paired { .. } | Response::Vouched { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+    if matches!(
+        response,
+        Response::DocTransfer { .. } | Response::Paired { .. } | Response::Vouched { .. }
+    ) && bytes.len() > DOC_TRANSFER_FRAME_BYTES
+    {
         return Err("document transfer response exceeds 1 MiB".into());
     }
     Ok(bytes)
@@ -1454,7 +1620,11 @@ pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, String> {
 /// The decoder can leave trailing bytes, so re-encoding cannot enforce this cap.
 pub fn question(bytes: &[u8]) -> Result<Request, String> {
     let request = decode::<Request>(bytes)?;
-    if matches!(&request, Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+    if matches!(
+        &request,
+        Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }
+    ) && bytes.len() > DOC_TRANSFER_FRAME_BYTES
+    {
         return Err("document transfer request exceeds 1 MiB".into());
     }
     match &request {
@@ -1490,17 +1660,31 @@ fn answer_inner(bytes: &[u8], body_bytes: Option<&mut Option<usize>>) -> Result<
     if let Some(body_bytes) = body_bytes {
         *body_bytes = Some(match &response {
             Response::DocTransfer {
-                reply: DocTransferReply::Exchanged { offer: Some(chunk), .. }
+                reply:
+                    DocTransferReply::Exchanged {
+                        offer: Some(chunk), ..
+                    }
                     | DocTransferReply::Chunk { chunk },
             }
-            | Response::Paired { reply: PairReply::Devices {
-                reply: DocTransferReply::Exchanged { offer: Some(chunk), .. }
-                    | DocTransferReply::Chunk { chunk }, ..
-            } } => chunk.bytes.len(),
+            | Response::Paired {
+                reply:
+                    PairReply::Devices {
+                        reply:
+                            DocTransferReply::Exchanged {
+                                offer: Some(chunk), ..
+                            }
+                            | DocTransferReply::Chunk { chunk },
+                        ..
+                    },
+            } => chunk.bytes.len(),
             _ => 0,
         });
     }
-    if matches!(&response, Response::DocTransfer { .. } | Response::Paired { .. } | Response::Vouched { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+    if matches!(
+        &response,
+        Response::DocTransfer { .. } | Response::Paired { .. } | Response::Vouched { .. }
+    ) && bytes.len() > DOC_TRANSFER_FRAME_BYTES
+    {
         return Err("document transfer response exceeds 1 MiB".into());
     }
     match &response {
@@ -1510,7 +1694,9 @@ fn answer_inner(bytes: &[u8], body_bytes: Option<&mut Option<usize>>) -> Result<
     }
     match &mut response {
         Response::Refused { why } | Response::InventoryNotAdmitted { why } => reword(why),
-        Response::Paired { reply: PairReply::Uncommitted { why, .. } } => reword(why),
+        Response::Paired {
+            reply: PairReply::Uncommitted { why, .. },
+        } => reword(why),
         Response::Versions { docs, .. } => {
             for (_, inventory) in docs {
                 if let DocumentInventory::Failed { why } = inventory {
@@ -1518,10 +1704,19 @@ fn answer_inner(bytes: &[u8], body_bytes: Option<&mut Option<usize>>) -> Result<
                 }
             }
         }
-        Response::DocTransfer { reply } | Response::Paired { reply: PairReply::Devices { reply, .. } } => match reply {
+        Response::DocTransfer { reply }
+        | Response::Paired {
+            reply: PairReply::Devices { reply, .. },
+        } => match reply {
             DocTransferReply::Failed { why, .. }
-            | DocTransferReply::State { state: DocTransferState::Failed { why, .. }, .. } => reword(why),
-            DocTransferReply::Exchanged { received: Some(DocTransferState::Failed { why, .. }), .. } => reword(why),
+            | DocTransferReply::State {
+                state: DocTransferState::Failed { why, .. },
+                ..
+            } => reword(why),
+            DocTransferReply::Exchanged {
+                received: Some(DocTransferState::Failed { why, .. }),
+                ..
+            } => reword(why),
             _ => {}
         },
         _ => {}
@@ -1702,17 +1897,28 @@ mod tests {
         }
         let frame = encode(&Newer::OpenTwiceOrMore { token: "t".into() }).unwrap();
         let why = decode::<Request>(&frame).expect_err("an unknown word is refused");
-        assert!(why.contains("OpenTwiceOrMore"), "the refusal names it: {why}");
+        assert!(
+            why.contains("OpenTwiceOrMore"),
+            "the refusal names it: {why}"
+        );
         // And the two new words are not inside each other's names.
         assert!(!"OpenAgentOnce".contains("OpenOnce"));
     }
 
     #[test]
     fn a_frame_round_trips_and_names_its_op() {
-        let req = Request::DocTransfer { action: DocTransferAction::Confirm { proofs: Vec::new() } };
+        let req = Request::DocTransfer {
+            action: DocTransferAction::Confirm { proofs: Vec::new() },
+        };
         let bytes = encode_request(&req).unwrap();
-        assert!(bytes.windows(b"DocTransfer".len()).any(|w| w == b"DocTransfer"));
-        assert!(matches!(decode::<Request>(&bytes).unwrap(), Request::DocTransfer { action: DocTransferAction::Confirm { proofs } } if proofs.is_empty()));
+        assert!(
+            bytes
+                .windows(b"DocTransfer".len())
+                .any(|w| w == b"DocTransfer")
+        );
+        assert!(
+            matches!(decode::<Request>(&bytes).unwrap(), Request::DocTransfer { action: DocTransferAction::Confirm { proofs } } if proofs.is_empty())
+        );
     }
 
     /// **A new op must be unreadable to an older peer, not readable as a
@@ -1996,7 +2202,12 @@ mod tests {
                 },
                 &b"DropFileInto"[..],
             ),
-            (Request::DropStop { token: String::new() }, &b"DropStop"[..]),
+            (
+                Request::DropStop {
+                    token: String::new(),
+                },
+                &b"DropStop"[..],
+            ),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(
@@ -2831,12 +3042,26 @@ mod tests {
     #[test]
     fn a_pane_history_question_and_answer_round_trip() {
         use crate::adaptor::tmux::{HistoryAnchor, PaneHistory};
-        let anchor = HistoryAnchor { pane: "%3".into(), size: 300, tail: vec!["298".into(), "299".into(), "300".into()] };
+        let anchor = HistoryAnchor {
+            pane: "%3".into(),
+            size: 300,
+            tail: vec!["298".into(), "299".into(), "300".into()],
+        };
         let since = Some(anchor.clone());
-        let bytes = encode(&Request::PaneHistory { session: "shell/1-0".into(), since: since.clone() }).unwrap();
-        assert!(bytes.windows(11).any(|w| w == b"PaneHistory"), "the name is on the wire");
+        let bytes = encode(&Request::PaneHistory {
+            session: "shell/1-0".into(),
+            since: since.clone(),
+        })
+        .unwrap();
+        assert!(
+            bytes.windows(11).any(|w| w == b"PaneHistory"),
+            "the name is on the wire"
+        );
         match decode::<Request>(&bytes).unwrap() {
-            Request::PaneHistory { session, since: got } => {
+            Request::PaneHistory {
+                session,
+                since: got,
+            } => {
                 assert_eq!(session, "shell/1-0");
                 assert_eq!(got, since);
             }
@@ -2855,7 +3080,10 @@ mod tests {
             mouse: true,
             window: "132x39".into(),
         };
-        let bytes = encode(&Response::PaneHistory { history: history.clone() }).unwrap();
+        let bytes = encode(&Response::PaneHistory {
+            history: history.clone(),
+        })
+        .unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::PaneHistory { history: got } => assert_eq!(got, history),
             other => panic!("decoded wrong: {other:?}"),
@@ -2870,7 +3098,10 @@ mod tests {
             failed: true,
         };
         let bytes = encode(&Request::History { ask: ask.clone() }).unwrap();
-        assert!(bytes.windows(7).any(|w| w == b"History"), "the name is on the wire");
+        assert!(
+            bytes.windows(7).any(|w| w == b"History"),
+            "the name is on the wire"
+        );
         match decode::<Request>(&bytes).unwrap() {
             Request::History { ask: got } => assert_eq!(got, ask),
             other => panic!("decoded wrong: {other:?}"),
@@ -2884,7 +3115,10 @@ mod tests {
             exit: Some(101),
             runs: 3,
         };
-        let bytes = encode(&Response::History { hits: vec![hit.clone()] }).unwrap();
+        let bytes = encode(&Response::History {
+            hits: vec![hit.clone()],
+        })
+        .unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::History { hits } => assert_eq!(hits, [hit]),
             other => panic!("decoded wrong: {other:?}"),
@@ -2900,7 +3134,10 @@ mod tests {
             rev: "0".repeat(40),
         };
         let bytes = encode(&Request::Git { ask: ask.clone() }).unwrap();
-        assert!(bytes.windows(4).any(|w| w == b"Show"), "the question's name is on the wire");
+        assert!(
+            bytes.windows(4).any(|w| w == b"Show"),
+            "the question's name is on the wire"
+        );
         match decode::<Request>(&bytes).unwrap() {
             Request::Git { ask: got } => assert_eq!(got, ask),
             other => panic!("decoded wrong: {other:?}"),
@@ -2914,7 +3151,11 @@ mod tests {
         };
         let answer = crate::git::GitAnswer::Blame {
             commits: vec![commit.clone()],
-            runs: vec![crate::git::BlameRun { start: 0, len: 3, commit: 0 }],
+            runs: vec![crate::git::BlameRun {
+                start: 0,
+                len: 3,
+                commit: 0,
+            }],
         };
         let bytes = encode(&Response::Git { answer }).unwrap();
         match decode::<Response>(&bytes).unwrap() {

@@ -177,8 +177,17 @@ fn the_child_is_told_what_terminal_it_is_in_not_what_the_opener_had() {
         seen.contains("TERM=[xterm-256color]"),
         "the child must be told khor's own screen model, not the opener's: {seen}"
     );
-    for field in ["COLORTERM=[truecolor]", "NO_COLOR=[unset]", "FORCE_COLOR=[unset]", "CLICOLOR=[unset]", "CLICOLOR_FORCE=[unset]"] {
-        assert!(seen.contains(field), "PTY must own its color capability, missing {field}: {seen}");
+    for field in [
+        "COLORTERM=[truecolor]",
+        "NO_COLOR=[unset]",
+        "FORCE_COLOR=[unset]",
+        "CLICOLOR=[unset]",
+        "CLICOLOR_FORCE=[unset]",
+    ] {
+        assert!(
+            seen.contains(field),
+            "PTY must own its color capability, missing {field}: {seen}"
+        );
     }
     assert!(
         khor(&home)
@@ -513,17 +522,41 @@ fn a_private_host_does_not_inherit_an_unrelated_native_agent_store() {
     let out = khor(&home)
         .env("CODEX_HOME", "/unrelated-codex")
         .env("CLAUDE_CONFIG_DIR", "/unrelated-claude")
-        .args(["open", "-d", "--", "sh", "-c",
-            "printf 'codex=%s;claude=%s;done\\n' \"$CODEX_HOME\" \"$CLAUDE_CONFIG_DIR\"; sleep 30"])
-        .output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        .args([
+            "open",
+            "-d",
+            "--",
+            "sh",
+            "-c",
+            "printf 'codex=%s;claude=%s;done\\n' \"$CODEX_HOME\" \"$CLAUDE_CONFIG_DIR\"; sleep 30",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let sid = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     let dir = home.join(".khor/sessions").join(sid.replace('/', "-"));
     let hf = host::read_host_file(&dir).unwrap();
     let _reap = Reaper(hf.host_pid);
     let mut stream = host::connect(&dir, 80, 24).unwrap();
     let shown = read_until(&mut stream, ";done", 10);
-    assert!(shown.contains(&format!("codex={};claude={};done", home.join(".codex").display(), home.join(".claude").display())), "wrong store: {shown}");
-    assert!(khor(&home).args(["close", &sid]).status().unwrap().success());
+    assert!(
+        shown.contains(&format!(
+            "codex={};claude={};done",
+            home.join(".codex").display(),
+            home.join(".claude").display()
+        )),
+        "wrong store: {shown}"
+    );
+    assert!(
+        khor(&home)
+            .args(["close", &sid])
+            .status()
+            .unwrap()
+            .success()
+    );
     let _ = std::fs::remove_dir_all(home);
 }

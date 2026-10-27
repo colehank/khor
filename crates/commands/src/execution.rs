@@ -549,7 +549,9 @@ mod tests {
         let fingerprint = khor_node::hardware::fingerprint();
         let owner = format!(
             "machine {}\nname previous-name\n",
-            fingerprint.as_deref().unwrap_or("unverifiable-test-machine")
+            fingerprint
+                .as_deref()
+                .unwrap_or("unverifiable-test-machine")
         );
         std::fs::write(store.join("owner"), &owner).unwrap();
         let args = ["root".into(), "--verify-owner".into()];
@@ -592,7 +594,10 @@ mod tests {
         let denied = execute(&root, &args, None);
         assert!(denied.error.is_some());
         assert!(denied.stdout.is_empty());
-        assert_eq!(std::fs::read_to_string(store.join("owner")).unwrap(), foreign);
+        assert_eq!(
+            std::fs::read_to_string(store.join("owner")).unwrap(),
+            foreign
+        );
         assert!(!store.join("identity.key").exists());
         std::fs::remove_file(store.join("owner")).unwrap();
         let missing = execute(&root, &args, None);

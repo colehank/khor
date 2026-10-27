@@ -18,7 +18,14 @@ use std::time::{Duration, Instant};
 use iroh::Watcher as _;
 use khor_net::endpoint::{self, Relay};
 
-const PROXY_VARS: [&str; 6] = ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"];
+const PROXY_VARS: [&str; 6] = [
+    "http_proxy",
+    "https_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "all_proxy",
+];
 
 struct Scratch(PathBuf);
 
@@ -58,7 +65,10 @@ fn relay(home: &Path, args: &[&str]) -> (Running, String) {
     let mut banner = String::new();
     while !banner.contains("relay-stats.json") {
         let Some(Ok(line)) = lines.next() else {
-            panic!("khor relay said nothing more: {}", std::fs::read_to_string(home.join("relay.log")).unwrap_or_default());
+            panic!(
+                "khor relay said nothing more: {}",
+                std::fs::read_to_string(home.join("relay.log")).unwrap_or_default()
+            );
         };
         banner.push_str(&line);
         banner.push('\n');
@@ -68,11 +78,19 @@ fn relay(home: &Path, args: &[&str]) -> (Running, String) {
 }
 
 fn free_tcp() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 fn free_udp() -> u16 {
-    std::net::UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    std::net::UdpSocket::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// A TCP port that takes each connection and closes it at once.
@@ -142,8 +160,14 @@ fn plain_with_qad(home: &Path, cert: &Path, key: &Path) -> (Running, String, u16
             key.to_str().unwrap(),
         ],
     );
-    assert!(banner.contains(&format!("UDP 127.0.0.1:{quic}")), "the banner names the QAD port:\n{banner}");
-    assert!(banner.contains(&format!("http://127.0.0.1:{port}")), "the relay itself stays plain:\n{banner}");
+    assert!(
+        banner.contains(&format!("UDP 127.0.0.1:{quic}")),
+        "the banner names the QAD port:\n{banner}"
+    );
+    assert!(
+        banner.contains(&format!("http://127.0.0.1:{port}")),
+        "the relay itself stays plain:\n{banner}"
+    );
     (relay, format!("http://127.0.0.1:{port}"), quic)
 }
 
@@ -168,38 +192,75 @@ async fn the_plain_relay_answers_qad_under_its_own_url_and_stays_home() {
 
     // A certificate beside --dev is QUIC's alone: without --quic it is two
     // modes, and --quic without one has nothing to serve with.
-    assert!(refused(&s.0, &["--dev", "--quic", "127.0.0.1:0"]), "--dev --quic with no certificate");
-    assert!(refused(&s.0, &["--dev", "--tls-cert", c, "--tls-key", k]), "--dev with a certificate and no --quic");
+    assert!(
+        refused(&s.0, &["--dev", "--quic", "127.0.0.1:0"]),
+        "--dev --quic with no certificate"
+    );
+    assert!(
+        refused(&s.0, &["--dev", "--tls-cert", c, "--tls-key", k]),
+        "--dev with a certificate and no --quic"
+    );
 
     let (_plain, url, quic) = plain_with_qad(&s.0.join("plain"), &cert, &key);
-    let entry = Relay { url: url.clone(), qad: Some(quic), ..Relay::default() };
-    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[entry], false).await.unwrap();
+    let entry = Relay {
+        url: url.clone(),
+        qad: Some(quic),
+        ..Relay::default()
+    };
+    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[entry], false)
+        .await
+        .unwrap();
     let began = Instant::now();
     let seen = learnt(&ep, Duration::from_secs(20)).await;
-    assert_eq!(*seen.ip(), std::net::Ipv4Addr::LOCALHOST, "the relay saw this machine on loopback");
-    eprintln!("[qad] learnt {seen} from {url} (QAD on UDP {quic}) after {:?}", began.elapsed());
+    assert_eq!(
+        *seen.ip(),
+        std::net::Ipv4Addr::LOCALHOST,
+        "the relay saw this machine on loopback"
+    );
+    eprintln!(
+        "[qad] learnt {seen} from {url} (QAD on UDP {quic}) after {:?}",
+        began.elapsed()
+    );
     while home(&ep).as_deref() != Some(url.as_str()) {
-        assert!(began.elapsed() < Duration::from_secs(20), "not homed on the plain relay: {:?}", home(&ep));
+        assert!(
+            began.elapsed() < Duration::from_secs(20),
+            "not homed on the plain relay: {:?}",
+            home(&ep)
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     // Two periodic reports (20–26 s each) after the first: the QAD
     // connection keeps the home measured, and it stays.
     let held = Instant::now();
     while held.elapsed() < Duration::from_secs(55) {
-        assert_eq!(home(&ep).as_deref(), Some(url.as_str()), "the home moved off the plain relay");
+        assert_eq!(
+            home(&ep).as_deref(),
+            Some(url.as_str()),
+            "the home moved off the plain relay"
+        );
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
     ep.close().await;
 
     // The same relay with no QAD port in its entry is asked none: the
     // home still comes, and no address is learnt from it.
-    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay::bare(&url)], false).await.unwrap();
+    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay::bare(&url)], false)
+        .await
+        .unwrap();
     let began = Instant::now();
     while home(&ep).as_deref() != Some(url.as_str()) {
-        assert!(began.elapsed() < Duration::from_secs(20), "not homed without QAD: {:?}", home(&ep));
+        assert!(
+            began.elapsed() < Duration::from_secs(20),
+            "not homed without QAD: {:?}",
+            home(&ep)
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    assert_eq!(ep.net_report().get().and_then(|r| r.global_v4), None, "no QAD asked, none answered");
+    assert_eq!(
+        ep.net_report().get().and_then(|r| r.global_v4),
+        None,
+        "no QAD asked, none answered"
+    );
     ep.close().await;
 }
 
@@ -218,7 +279,10 @@ async fn a_relay_reached_only_by_qad_does_not_win_home() {
     let plain_home = s.0.join("plain");
     std::fs::create_dir_all(&plain_home).unwrap();
     let plain_port = free_tcp();
-    let (_plain, _) = relay(&plain_home, &["--dev", "--bind", &format!("127.0.0.1:{plain_port}")]);
+    let (_plain, _) = relay(
+        &plain_home,
+        &["--dev", "--bind", &format!("127.0.0.1:{plain_port}")],
+    );
     let plain = format!("http://127.0.0.1:{plain_port}");
     // The QAD server seen through a TCP port that is dead: QAD answers on
     // UDP, the relay never does.
@@ -226,7 +290,14 @@ async fn a_relay_reached_only_by_qad_does_not_win_home() {
     eprintln!("[qad] plain {plain}, walled {walled} (QAD on UDP {quic})");
     let ep = endpoint::bind_with(
         iroh::SecretKey::generate(),
-        &[Relay::bare(&plain), Relay { url: walled.clone(), qad: Some(quic), ..Relay::default() }],
+        &[
+            Relay::bare(&plain),
+            Relay {
+                url: walled.clone(),
+                qad: Some(quic),
+                ..Relay::default()
+            },
+        ],
         false,
     )
     .await
@@ -239,7 +310,10 @@ async fn a_relay_reached_only_by_qad_does_not_win_home() {
     while began.elapsed() < Duration::from_secs(60) {
         let now = home(&ep);
         if now != last {
-            eprintln!("[qad] {:>5.1} s home {now:?}", began.elapsed().as_secs_f64());
+            eprintln!(
+                "[qad] {:>5.1} s home {now:?}",
+                began.elapsed().as_secs_f64()
+            );
             last = now.clone();
         }
         if now.as_deref() == Some(walled.as_str()) {
@@ -249,5 +323,9 @@ async fn a_relay_reached_only_by_qad_does_not_win_home() {
     }
     eprintln!("[qad] homed on the walled relay for {walled_for:?} of 60 s");
     ep.close().await;
-    assert_eq!(walled_for, Duration::ZERO, "a relay reached only by QAD became home");
+    assert_eq!(
+        walled_for,
+        Duration::ZERO,
+        "a relay reached only by QAD became home"
+    );
 }

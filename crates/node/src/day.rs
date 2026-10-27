@@ -313,9 +313,13 @@ impl Day {
     /// The row exists, but no source could identify its current state.
     pub fn unavailable(&mut self, now_ms: i64, ids: impl IntoIterator<Item = String>) {
         self.roll(minute(now_ms));
-        let Some(i) = self.slot(minute(now_ms)) else { return; };
+        let Some(i) = self.slot(minute(now_ms)) else {
+            return;
+        };
         for id in ids {
-            if !self.rows.contains_key(&id) { self.make_room(); }
+            if !self.rows.contains_key(&id) {
+                self.make_room();
+            }
             self.rows.entry(id).or_insert_with(|| blank(ABSENT))[i] = UNWATCHED;
         }
     }
@@ -377,7 +381,9 @@ impl Day {
         if self.watched[i] != WATCHED {
             return DayCell::Unwatched;
         }
-        if row.is_some_and(|cells| cells[i] == UNWATCHED) { return DayCell::Unwatched; }
+        if row.is_some_and(|cells| cells[i] == UNWATCHED) {
+            return DayCell::Unwatched;
+        }
         match row.and_then(|cells| word_of(cells[i])) {
             Some(word) => DayCell::Word(word),
             None => DayCell::Absent,
@@ -487,7 +493,11 @@ impl Day {
         Some(DaySince {
             from: self.from,
             watched: tail(&self.watched),
-            rows: self.rows.iter().map(|(id, cells)| (id.clone(), tail(cells))).collect(),
+            rows: self
+                .rows
+                .iter()
+                .map(|(id, cells)| (id.clone(), tail(cells)))
+                .collect(),
         })
     }
 
@@ -545,8 +555,14 @@ mod tests {
         day.unavailable(now, ["unknown".into()]);
         let restored = Day::from_stored(day.to_stored()).unwrap();
         let i = restored.slot(minute(now)).unwrap();
-        assert_eq!(restored.cell_at(restored.rows.get("known"), i), DayCell::Word(State::Busy));
-        assert_eq!(restored.cell_at(restored.rows.get("unknown"), i), DayCell::Unwatched);
+        assert_eq!(
+            restored.cell_at(restored.rows.get("known"), i),
+            DayCell::Word(State::Busy)
+        );
+        assert_eq!(
+            restored.cell_at(restored.rows.get("unknown"), i),
+            DayCell::Unwatched
+        );
     }
 
     /// **The minutes since an asker's copy rebuild the record exactly**
@@ -561,7 +577,13 @@ mod tests {
         let mut day = Day::empty(t0);
         for m in 0..30 {
             let at = t0 - (30 - m) * CELL_MS;
-            day.observe(at, [("a".to_owned(), State::Busy), ("gone".to_owned(), State::Idle)]);
+            day.observe(
+                at,
+                [
+                    ("a".to_owned(), State::Busy),
+                    ("gone".to_owned(), State::Idle),
+                ],
+            );
         }
         day.observe(t0, [("a".to_owned(), State::Busy)]);
         let copy = day.to_wire();
@@ -571,16 +593,31 @@ mod tests {
         // would.
         day.observe(t0 + 30_000, [("a".to_owned(), State::Blocked)]);
         for m in 1..=7 {
-            day.observe(t0 + m * CELL_MS, [("a".to_owned(), State::Idle), ("new".to_owned(), State::Busy)]);
+            day.observe(
+                t0 + m * CELL_MS,
+                [
+                    ("a".to_owned(), State::Idle),
+                    ("new".to_owned(), State::Busy),
+                ],
+            );
         }
         day.rows.remove("gone");
-        let since = day.since(held_end).expect("the copy's end is in the window");
+        let since = day
+            .since(held_end)
+            .expect("the copy's end is in the window");
         let rebuilt = apply_since(&copy, &since).expect("they fit");
         assert_eq!(rebuilt, day.to_wire(), "byte for byte the record");
         let delta = serde_json::to_string(&since).unwrap().len();
-        assert!(delta * 20 < day.to_wire().len(), "{delta} B against {}", day.to_wire().len());
+        assert!(
+            delta * 20 < day.to_wire().len(),
+            "{delta} B against {}",
+            day.to_wire().len()
+        );
 
-        assert!(day.since(held_end - MINUTES as i64 * 2).is_none(), "a copy from another day is sent whole");
+        assert!(
+            day.since(held_end - MINUTES as i64 * 2).is_none(),
+            "a copy from another day is sent whole"
+        );
     }
 
     /// **Over the wire and rolled forward.** A record a peer sent

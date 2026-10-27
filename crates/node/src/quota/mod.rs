@@ -651,10 +651,20 @@ mod tests {
 
         write_cache_at(&cache, 1_000, &quota_at(4.0));
         let later = 1_000 + 10 * CACHE_TTL;
-        let got = rt().block_on(peek_in(&chain, &state, &cache, later)).unwrap().unwrap();
-        assert!((got.windows[0].used_pct - 4.0).abs() < 1e-6, "an expired reading answers");
+        let got = rt()
+            .block_on(peek_in(&chain, &state, &cache, later))
+            .unwrap()
+            .unwrap();
+        assert!(
+            (got.windows[0].used_pct - 4.0).abs() < 1e-6,
+            "an expired reading answers"
+        );
         assert_eq!(got.as_of, Some(1_000), "…stamped with when it was taken");
-        assert_eq!(asked.load(Ordering::SeqCst), 0, "and the endpoint is never asked");
+        assert_eq!(
+            asked.load(Ordering::SeqCst),
+            0,
+            "and the endpoint is never asked"
+        );
 
         let (local, _) = counted("local", Step::Local, true, Ok(quota_at(6.0)));
         let (remote, _) = counted("remote", Step::Remote, true, Ok(quota_at(9.0)));

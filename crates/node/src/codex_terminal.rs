@@ -16,26 +16,46 @@ struct TitleClients {
 fn client_contracts(root: &Path, home: &Path, procs: &Procs) -> TitleClients {
     let home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
     let mut known: TitleClients = std::fs::read(root.join(".khor/codex-title-clients.json"))
-        .ok().and_then(|s| serde_json::from_slice(&s).ok())
-        .filter(|k: &TitleClients| k.home == home).unwrap_or_default();
+        .ok()
+        .and_then(|s| serde_json::from_slice(&s).ok())
+        .filter(|k: &TitleClients| k.home == home)
+        .unwrap_or_default();
     known.home = home;
-    known.clients.retain(|pid, since| *since > 0 && scoped(procs, *pid)
-        && procs.get(*pid).is_some_and(|p| p.started_ms == *since));
+    known.clients.retain(|pid, since| {
+        *since > 0 && scoped(procs, *pid) && procs.get(*pid).is_some_and(|p| p.started_ms == *since)
+    });
     known
 }
 
 fn remember_clients(root: &Path, known: &TitleClients, procs: &Procs) {
     let dir = root.join(".khor");
-    if std::fs::create_dir_all(&dir).is_err() { return; }
-    let Ok(lock) = std::fs::OpenOptions::new().create(true).truncate(false)
-        .read(true).write(true).open(dir.join("codex-title-clients.lock")) else { return };
-    if lock.try_lock().is_err() { return; }
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let Ok(lock) = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(dir.join("codex-title-clients.lock"))
+    else {
+        return;
+    };
+    if lock.try_lock().is_err() {
+        return;
+    }
     // Merge concurrently verified clients, but prune all dead/recycled ones.
     let mut merged = client_contracts(root, &known.home, procs);
-    merged.clients.extend(known.clients.iter().map(|(p, s)| (*p, *s)));
-    let Ok(bytes) = serde_json::to_vec(&merged) else { return };
+    merged
+        .clients
+        .extend(known.clients.iter().map(|(p, s)| (*p, *s)));
+    let Ok(bytes) = serde_json::to_vec(&merged) else {
+        return;
+    };
     let path = dir.join("codex-title-clients.json");
-    if std::fs::read(&path).ok().as_deref() == Some(bytes.as_slice()) { return; }
+    if std::fs::read(&path).ok().as_deref() == Some(bytes.as_slice()) {
+        return;
+    }
     let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
     if crate::link::write_private(&tmp, &bytes).is_ok() {
         let _ = std::fs::rename(&tmp, &path);
@@ -85,7 +105,12 @@ fn selected<'a>(title: &str, threads: &'a [String]) -> Option<&'a str> {
 }
 
 pub(crate) fn scoped(procs: &Procs, pid: u32) -> bool {
-    if procs.get(pid).is_none_or(|p| !crate::adaptor::process_name_matches(&p.name, "codex")) { return false; }
+    if procs
+        .get(pid)
+        .is_none_or(|p| !crate::adaptor::process_name_matches(&p.name, "codex"))
+    {
+        return false;
+    }
     let Some(argv) = procs.command(pid) else {
         return false;
     };
@@ -96,8 +121,13 @@ pub(crate) fn scoped(procs: &Procs, pid: u32) -> bool {
 /// Assign live scoped TUI clients before LiveKind seats vendor rows in hosts.
 /// tmux pane metadata outranks the enclosing host's possibly stale OSC title.
 pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
-    let location = found.codex_title_root.clone().zip(found.codex_title_home.clone());
-    let mut known = location.as_ref().map(|(root, home)| client_contracts(root, home, &found.procs));
+    let location = found
+        .codex_title_root
+        .clone()
+        .zip(found.codex_title_home.clone());
+    let mut known = location
+        .as_ref()
+        .map(|(root, home)| client_contracts(root, home, &found.procs));
     let clients: BTreeSet<_> = found
         .procs
         .named("codex")
@@ -108,7 +138,9 @@ pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
     // A missing, malformed, changed or ambiguous native title must clear any
     // former birth/cwd guess for this scoped client before it can wear a row.
     for row in &mut found.rows {
-        if row.category == "codex" && (!found.codex_threads.is_empty() || !found.codex_pending.is_empty()) {
+        if row.category == "codex"
+            && (!found.codex_threads.is_empty() || !found.codex_pending.is_empty())
+        {
             row.sighting.pids.retain(|p| !clients.contains(p));
         }
     }
@@ -130,11 +162,32 @@ pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
             .iter()
             .filter(|pid| held.contains(pid) && !found.procs.suspended(**pid));
         let pid = *here.next()?;
-        if here.next().is_some() { return None; }
-        let args: Vec<_> = found.procs.command(pid)?.iter().skip(1).map(std::ffi::OsString::from).collect();
-        let configured = known.as_ref().is_some_and(|k| k.clients.contains_key(&pid)) || found.codex_title_home.as_deref().zip(found.codex_title_root.as_deref()).is_some_and(|(home, root)| {
-            found.procs.get(pid).is_some_and(|p| crate::recognition::native_title_for(root, home, p.cwd.as_deref(), p.started_ms, &args))
-        });
+        if here.next().is_some() {
+            return None;
+        }
+        let args: Vec<_> = found
+            .procs
+            .command(pid)?
+            .iter()
+            .skip(1)
+            .map(std::ffi::OsString::from)
+            .collect();
+        let configured = known.as_ref().is_some_and(|k| k.clients.contains_key(&pid))
+            || found
+                .codex_title_home
+                .as_deref()
+                .zip(found.codex_title_root.as_deref())
+                .is_some_and(|(home, root)| {
+                    found.procs.get(pid).is_some_and(|p| {
+                        crate::recognition::native_title_for(
+                            root,
+                            home,
+                            p.cwd.as_deref(),
+                            p.started_ms,
+                            &args,
+                        )
+                    })
+                });
         crate::codex_process::selection_title_or(&args, configured).then_some(pid)
     };
     for pane in found.multiplexed.iter().flat_map(|m| &m.panes) {
@@ -198,7 +251,9 @@ pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
         }
         if let Some(known) = &mut known {
             let started_ms = found.procs.get(pid).unwrap().started_ms;
-            if started_ms > 0 { known.clients.insert(pid, started_ms); }
+            if started_ms > 0 {
+                known.clients.insert(pid, started_ms);
+            }
         }
     }
     if let (Some((root, _)), Some(known)) = (location, known) {
@@ -276,9 +331,26 @@ mod tests {
         assert_eq!(next.rows[1].sighting.pids, vec![11]);
         let mut replacement = reading();
         replacement.procs = Procs::of([
-            (10, Proc { name: "zsh".into(), started_ms: 100, cwd: None, ppid: None }),
-            (11, Proc { name: "codex".into(), started_ms: 200, cwd: None, ppid: Some(10) }),
-        ]).with_commands([(11, vec!["codex".into()])]);
+            (
+                10,
+                Proc {
+                    name: "zsh".into(),
+                    started_ms: 100,
+                    cwd: None,
+                    ppid: None,
+                },
+            ),
+            (
+                11,
+                Proc {
+                    name: "codex".into(),
+                    started_ms: 200,
+                    cwd: None,
+                    ppid: Some(10),
+                },
+            ),
+        ])
+        .with_commands([(11, vec!["codex".into()])]);
         select(&mut replacement, &[(10, Some(title(A)))]);
         assert!(replacement.rows.iter().all(|r| r.sighting.pids.is_empty()));
         let mut wrong_home = reading();
@@ -374,9 +446,17 @@ mod tests {
     fn native_snapshot_distinguishes_stopped_and_resumed_jobs_without_losing_liveness() {
         struct Child(std::process::Child);
         impl Drop for Child {
-            fn drop(&mut self) { let _ = self.0.kill(); let _ = self.0.wait(); }
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
         }
-        let child = Child(std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap());
+        let child = Child(
+            std::process::Command::new("/bin/sleep")
+                .arg("30")
+                .spawn()
+                .unwrap(),
+        );
         let pid = child.0.id();
         // SAFETY: signal only the child owned and reaped by this test.
         assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGSTOP) }, 0);
@@ -384,8 +464,13 @@ mod tests {
         loop {
             let snapshot = Procs::snapshot();
             assert!(snapshot.get(pid).is_some(), "stopped jobs remain alive");
-            if snapshot.suspended(pid) { break; }
-            assert!(std::time::Instant::now() < deadline, "OS snapshot did not see SIGSTOP");
+            if snapshot.suspended(pid) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "OS snapshot did not see SIGSTOP"
+            );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         // SAFETY: same owned child; no user process is signalled.
@@ -394,8 +479,13 @@ mod tests {
         loop {
             let snapshot = Procs::snapshot();
             assert!(snapshot.get(pid).is_some());
-            if !snapshot.suspended(pid) { break; }
-            assert!(std::time::Instant::now() < deadline, "OS snapshot did not see SIGCONT");
+            if !snapshot.suspended(pid) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "OS snapshot did not see SIGCONT"
+            );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
     }
@@ -409,17 +499,28 @@ mod tests {
             (10, found.procs.get(10).unwrap().clone()),
             (11, current.clone()),
             (12, current),
-        ]).with_commands([(11, argv.clone()), (12, argv)]).with_suspended([11]);
+        ])
+        .with_commands([(11, argv.clone()), (12, argv)])
+        .with_suspended([11]);
         found.rows[0].sighting.pids.push(11);
         select(&mut found, &[(10, Some(title(B)))]);
-        assert!(found.rows[0].sighting.pids.is_empty(), "the stopped client's stale seat clears");
+        assert!(
+            found.rows[0].sighting.pids.is_empty(),
+            "the stopped client's stale seat clears"
+        );
         assert_eq!(found.rows[1].sighting.pids, vec![12]);
 
         // The same rule applies inside a tmux pane. A stopped job does not
         // override the active pane title or make the pane look ambiguous.
         found.multiplexed.push(Multiplexed {
-            found: row("mux"), holds: vec![10, 11, 12], running: None,
-            panes: vec![PaneReading { pid: 10, title: Some(title(A)), ..Default::default() }],
+            found: row("mux"),
+            holds: vec![10, 11, 12],
+            running: None,
+            panes: vec![PaneReading {
+                pid: 10,
+                title: Some(title(A)),
+                ..Default::default()
+            }],
         });
         select(&mut found, &[(10, Some(title(B)))]);
         assert_eq!(found.rows[0].sighting.pids, vec![12]);
@@ -433,10 +534,16 @@ mod tests {
 
         found.procs = found.procs.clone().with_suspended([]);
         select(&mut found, &[]);
-        assert!(found.rows.iter().all(|r| r.sighting.pids.is_empty()), "two runnable clients stay ambiguous");
+        assert!(
+            found.rows.iter().all(|r| r.sighting.pids.is_empty()),
+            "two runnable clients stay ambiguous"
+        );
         found.procs = found.procs.clone().with_suspended([11, 12]);
         select(&mut found, &[]);
-        assert!(found.rows.iter().all(|r| r.sighting.pids.is_empty()), "a stopped-only terminal cannot reuse a stale title");
+        assert!(
+            found.rows.iter().all(|r| r.sighting.pids.is_empty()),
+            "a stopped-only terminal cannot reuse a stale title"
+        );
     }
 
     #[test]

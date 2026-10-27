@@ -44,7 +44,10 @@ async fn a_far_refusal_reads_in_this_machines_language() {
         .await
         .expect("a refusal must not hang")
         .unwrap_err();
-    assert!(why.contains(msg::not_paired()), "alpha's refusal, in Chinese: {why}");
+    assert!(
+        why.contains(msg::not_paired()),
+        "alpha's refusal, in Chinese: {why}"
+    );
     set(Lang::En);
     let theirs = msg::not_paired().to_owned();
     set(Lang::Zh);

@@ -126,7 +126,8 @@ pub struct AddRun {
 }
 
 /// The runs this app holds, by token; the oldest finished ones go.
-static RUNS: LazyLock<Mutex<VecDeque<(String, AddRun)>>> = LazyLock::new(|| Mutex::new(VecDeque::new()));
+static RUNS: LazyLock<Mutex<VecDeque<(String, AddRun)>>> =
+    LazyLock::new(|| Mutex::new(VecDeque::new()));
 const RUNS_KEPT: usize = 8;
 
 fn with_run(token: &str, f: impl FnOnce(&mut AddRun)) {
@@ -144,7 +145,9 @@ fn make_run(token: &str) -> bool {
         return false;
     }
     while runs.iter().filter(|(_, r)| r.done.is_some()).count() >= RUNS_KEPT {
-        let Some(i) = runs.iter().position(|(_, r)| r.done.is_some()) else { break };
+        let Some(i) = runs.iter().position(|(_, r)| r.done.is_some()) else {
+            break;
+        };
         runs.remove(i);
     }
     runs.push_back((token.to_owned(), AddRun::default()));
@@ -166,10 +169,17 @@ fn note(token: &str, step: Step, mark: Mark) {
         Mark::Failed(n) => (StepState::Failed, n, None),
         Mark::Refused(r, n) => (StepState::Failed, n, Some(r.into())),
     };
-    let m = AddMark { step, state, note, refusal };
-    with_run(token, |r| match r.marks.iter_mut().find(|x| x.step == step) {
-        Some(was) => *was = m,
-        None => r.marks.push(m),
+    let m = AddMark {
+        step,
+        state,
+        note,
+        refusal,
+    };
+    with_run(token, |r| {
+        match r.marks.iter_mut().find(|x| x.step == step) {
+            Some(was) => *was = m,
+            None => r.marks.push(m),
+        }
     });
 }
 
@@ -220,7 +230,11 @@ pub fn add_start(root: &Path, token: String, ask: AddAsk) -> Result<(), String> 
         let on_step = |s: Step, m: Mark| note(&token, s, m);
         let out = (|| {
             let n = khor_node::Node::open(root)?;
-            match ask.on.as_deref().filter(|m| !m.is_empty() && *m != n.name()) {
+            match ask
+                .on
+                .as_deref()
+                .filter(|m| !m.is_empty() && *m != n.name())
+            {
                 Some(machine) => {
                     let to = match ask.secret {
                         Some(_) if to.identity.is_some() => to.with_passphrase(true),
@@ -252,7 +266,8 @@ pub fn promote_start(root: &Path, token: String, machine: String) -> Result<(), 
     }
     let root = root.to_path_buf();
     std::thread::spawn(move || {
-        let out = khor_node::Node::open(root).and_then(|n| n.promote(&machine, &mut |s, m| note(&token, s, m)));
+        let out = khor_node::Node::open(root)
+            .and_then(|n| n.promote(&machine, &mut |s, m| note(&token, s, m)));
         end(&token, out);
     });
     Ok(())
@@ -319,7 +334,11 @@ mod tests {
         assert!(make_run(t));
         assert!(!make_run(t));
         note(t, Step::Connect, Mark::Live);
-        note(t, Step::Connect, Mark::Refused(Refusal::Key, "refused".into()));
+        note(
+            t,
+            Step::Connect,
+            Mark::Refused(Refusal::Key, "refused".into()),
+        );
         end(t, Err("refused".into()));
         let run = add_read(t).unwrap();
         assert_eq!(run.marks.len(), 1);

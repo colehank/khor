@@ -14,7 +14,10 @@ use scratch::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn a_window_return_asks_what_the_file_is_not_what_it_says() {
-    let rtt: u64 = std::env::var("RETURN_RTT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(200);
+    let rtt: u64 = std::env::var("RETURN_RTT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
     let (p, _road) = pair_on(
         "return",
         Some(Impair {
@@ -24,15 +27,24 @@ async fn a_window_return_asks_what_the_file_is_not_what_it_says() {
         }),
     )
     .await;
-    let text: String = (0..4000).map(|i| format!("line {i} of a file somebody is reading\n")).collect();
+    let text: String = (0..4000)
+        .map(|i| format!("line {i} of a file somebody is reading\n"))
+        .collect();
     let file = p.ra.0.join("notes.md");
     std::fs::write(&file, &text).unwrap();
     let file = file.display().to_string();
-    let (_, _, first) = p.beta.read_head("alpha", &file).await.expect("a first read");
+    let (_, _, first) = p
+        .beta
+        .read_head("alpha", &file)
+        .await
+        .expect("a first read");
     let held = khor_node::files::digest(&first);
 
     let n = 8u32;
-    let measure = |label: &'static str, c0: khor_core::WireCounts, c1: khor_core::WireCounts, took: Duration| {
+    let measure = |label: &'static str,
+                   c0: khor_core::WireCounts,
+                   c1: khor_core::WireCounts,
+                   took: Duration| {
         eprintln!(
             "[return] added RTT {rtt} ms, a {} KB file, {label}: per check {:.0} B out + {:.0} B in, {:?}",
             text.len() / 1000,

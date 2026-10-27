@@ -115,7 +115,9 @@ pub fn remembered() -> Option<Lights> {
 /// own and nothing here reaches outside it.
 #[cfg(target_os = "macos")]
 fn kept_path() -> std::path::PathBuf {
-    khor_node::Node::root_from_env().join(".khor").join("traffic.json")
+    khor_node::Node::root_from_env()
+        .join(".khor")
+        .join("traffic.json")
 }
 
 /// One kept measurement and what it is true of.
@@ -141,7 +143,10 @@ fn system() -> String {
 #[cfg(target_os = "macos")]
 pub fn lights() -> Option<Lights> {
     let system = system();
-    if let Some(kept) = std::fs::read(kept_path()).ok().and_then(|b| kept_for(&b, &system)) {
+    if let Some(kept) = std::fs::read(kept_path())
+        .ok()
+        .and_then(|b| kept_for(&b, &system))
+    {
         return Some(kept);
     }
     let lights = measure()?;

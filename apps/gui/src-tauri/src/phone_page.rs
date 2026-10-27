@@ -48,7 +48,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{AnyObject, NSObject};
-use objc2::{class, define_class, msg_send, ClassType};
+use objc2::{ClassType, class, define_class, msg_send};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use tauri::{Emitter, Manager};
 
@@ -255,7 +255,12 @@ unsafe fn downloads(response: *mut AnyObject) -> bool {
     }
     let key = NSString::from_str("Content-Disposition");
     let v: Option<Retained<NSString>> = unsafe { msg_send![r, valueForHTTPHeaderField: &*key] };
-    v.is_some_and(|v| v.to_string().trim_start().to_ascii_lowercase().starts_with("attachment"))
+    v.is_some_and(|v| {
+        v.to_string()
+            .trim_start()
+            .to_ascii_lowercase()
+            .starts_with("attachment")
+    })
 }
 
 thread_local! {
@@ -267,13 +272,23 @@ thread_local! {
 fn tab_of(view: *mut AnyObject) -> Option<String> {
     PAGES.with(|pages| {
         let pages = pages.try_borrow().ok()?;
-        pages.iter().find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view).map(|(t, _)| t.clone())
+        pages
+            .iter()
+            .find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view)
+            .map(|(t, _)| t.clone())
     })
 }
 
 fn tell_download(tab: &str, text: String) {
     if let Some(app) = APP.get() {
-        let _ = app.emit_to("main", "page:download", PageWord { tab: tab.to_owned(), text });
+        let _ = app.emit_to(
+            "main",
+            "page:download",
+            PageWord {
+                tab: tab.to_owned(),
+                text,
+            },
+        );
     }
 }
 
@@ -284,9 +299,16 @@ fn download_place(download: *mut AnyObject, suggested: &str) -> Option<std::path
     // SAFETY: a live WKDownload; `webView` is weak and may be gone.
     let view: *mut AnyObject = unsafe { msg_send![download, webView] };
     let tab = tab_of(view)?;
-    let name = std::path::Path::new(suggested).file_name().and_then(|n| n.to_str()).filter(|n| !n.is_empty()).unwrap_or("download").to_owned();
+    let name = std::path::Path::new(suggested)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .unwrap_or("download")
+        .to_owned();
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let dir = std::env::temp_dir().join("khor-downloads").join(N.fetch_add(1, Ordering::Relaxed).to_string());
+    let dir = std::env::temp_dir()
+        .join("khor-downloads")
+        .join(N.fetch_add(1, Ordering::Relaxed).to_string());
     let _ = std::fs::remove_dir_all(&dir);
     if std::fs::create_dir_all(&dir).is_err() {
         tell_download(&tab, format!("failed|{name}"));
@@ -294,7 +316,10 @@ fn download_place(download: *mut AnyObject, suggested: &str) -> Option<std::path
     }
     let path = dir.join(&name);
     tell_download(&tab, format!("started|{name}"));
-    DOWNS.with(|d| d.borrow_mut().insert(download as usize, (tab, path.clone())));
+    DOWNS.with(|d| {
+        d.borrow_mut()
+            .insert(download as usize, (tab, path.clone()))
+    });
     Some(path)
 }
 
@@ -303,8 +328,13 @@ fn download_place(download: *mut AnyObject, suggested: &str) -> Option<std::path
 /// once the sheet is done; a failure, or no screen to offer it on, is
 /// said on the page's line.
 fn download_over(download: *mut AnyObject, ok: bool) {
-    let Some((tab, path)) = DOWNS.with(|d| d.borrow_mut().remove(&(download as usize))) else { return };
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let Some((tab, path)) = DOWNS.with(|d| d.borrow_mut().remove(&(download as usize))) else {
+        return;
+    };
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let dir = path.parent().map(std::path::Path::to_path_buf);
     let shown = ok && {
         let view = PAGES.with(|p| p.borrow().get(&tab).map(|p| p.view.clone()));
@@ -327,7 +357,11 @@ fn download_over(download: *mut AnyObject, ok: bool) {
 /// Main thread; `view` is a live UIView.
 unsafe fn front_controller(view: *mut AnyObject) -> *mut AnyObject {
     let window: *mut AnyObject = unsafe { msg_send![view, window] };
-    let mut top: *mut AnyObject = if window.is_null() { std::ptr::null_mut() } else { unsafe { msg_send![window, rootViewController] } };
+    let mut top: *mut AnyObject = if window.is_null() {
+        std::ptr::null_mut()
+    } else {
+        unsafe { msg_send![window, rootViewController] }
+    };
     while !top.is_null() {
         let next: *mut AnyObject = unsafe { msg_send![top, presentedViewController] };
         if next.is_null() {
@@ -341,9 +375,13 @@ unsafe fn front_controller(view: *mut AnyObject) -> *mut AnyObject {
 /// Browser downloads own their temporary directory until the native
 /// sheet finishes. File handoffs use the same presenter with a cache.
 unsafe fn share(view: &AnyObject, path: &std::path::Path, dir: Option<std::path::PathBuf>) -> bool {
-    unsafe { crate::phone_share::show(view, path, move |_| {
-        if let Some(dir) = &dir { let _ = std::fs::remove_dir_all(dir); }
-    }) }
+    unsafe {
+        crate::phone_share::show(view, path, move |_| {
+            if let Some(dir) = &dir {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        })
+    }
 }
 
 define_class!(
@@ -415,7 +453,11 @@ fn ask(
         // 1: UIAlertControllerStyleAlert.
         let alert: Retained<AnyObject> = msg_send![class!(UIAlertController), alertControllerWithTitle: std::ptr::null::<AnyObject>(), message: message, preferredStyle: 1isize];
         if let Some(text) = field {
-            let text = if text.is_null() { None } else { Some(Retained::retain(text).unwrap()) };
+            let text = if text.is_null() {
+                None
+            } else {
+                Some(Retained::retain(text).unwrap())
+            };
             let fill = block2::RcBlock::new(move |f: *mut AnyObject| {
                 if let Some(t) = &text {
                     let _: () = msg_send![f, setText: &**t];
@@ -429,7 +471,11 @@ fn ask(
             let handler = block2::RcBlock::new(move |_a: *mut AnyObject| {
                 let said = if ok {
                     let fields: *mut AnyObject = msg_send![weak, textFields];
-                    let first: *mut AnyObject = if fields.is_null() { std::ptr::null_mut() } else { msg_send![fields, firstObject] };
+                    let first: *mut AnyObject = if fields.is_null() {
+                        std::ptr::null_mut()
+                    } else {
+                        msg_send![fields, firstObject]
+                    };
                     if first.is_null() {
                         None
                     } else {
@@ -466,8 +512,16 @@ fn popped(view: *mut AnyObject, action: *mut AnyObject) {
     // SAFETY: WebKit hands a live WKNavigationAction on the main thread.
     let url = unsafe {
         let req: *mut AnyObject = msg_send![action, request];
-        let u: *mut AnyObject = if req.is_null() { std::ptr::null_mut() } else { msg_send![req, URL] };
-        let s: Option<Retained<NSString>> = if u.is_null() { None } else { msg_send![u, absoluteString] };
+        let u: *mut AnyObject = if req.is_null() {
+            std::ptr::null_mut()
+        } else {
+            msg_send![req, URL]
+        };
+        let s: Option<Retained<NSString>> = if u.is_null() {
+            None
+        } else {
+            msg_send![u, absoluteString]
+        };
         s.map(|s| s.to_string()).unwrap_or_default()
     };
     if url.is_empty() || url == "about:blank" {
@@ -484,30 +538,48 @@ fn popped(view: *mut AnyObject, action: *mut AnyObject) {
 fn failed(view: *mut AnyObject, error: *mut AnyObject) {
     let Some(app) = APP.get() else { return };
     // SAFETY: WebKit hands a live NSError.
-    let Some(text) = (unsafe { crate::page_fail::word(error) }) else { return };
+    let Some(text) = (unsafe { crate::page_fail::word(error) }) else {
+        return;
+    };
     let found = PAGES.with(|pages| {
         let mut pages = pages.try_borrow_mut().ok()?;
-        let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view)?;
+        let (tab, page) = pages
+            .iter_mut()
+            .find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view)?;
         page.loading = false;
         Some((tab.clone(), page.proxy.clone(), page.exit.clone()))
     });
-    let Some((tab, proxy, exit)) = found else { return };
+    let Some((tab, proxy, exit)) = found else {
+        return;
+    };
     // SAFETY: a live NSError.
     unsafe { crate::page_trust::offered(&tab, &exit, error) };
     let mut parts = text.splitn(4, '|');
-    let (code, domain, _, url) = (parts.next(), parts.next(), parts.next(), parts.next().unwrap_or_default().to_owned());
+    let (code, domain, _, url) = (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next().unwrap_or_default().to_owned(),
+    );
     // **A loopback address the page went to on its own** (a link, a
     // redirect; UX-38 §1): refused because it went to the phone's own
     // port. Piped to the machine's, then asked again, once per port.
     if let (Some(proxy), Some((host, port))) = (&proxy, khor_gui_core::web::loopback_of(&url)) {
-        if domain == Some("NSURLErrorDomain") && code == Some("-1004") && !khor_gui_core::web::loopback_held(port) {
+        if domain == Some("NSURLErrorDomain")
+            && code == Some("-1004")
+            && !khor_gui_core::web::loopback_held(port)
+        {
             let (proxy, app, tab) = (proxy.clone(), app.clone(), tab.clone());
             tauri::async_runtime::spawn(async move {
-                if khor_gui_core::web::hold_loopback(&host, port, &proxy).await.is_err() {
+                if khor_gui_core::web::hold_loopback(&host, port, &proxy)
+                    .await
+                    .is_err()
+                {
                     return;
                 }
                 let _ = app.run_on_main_thread(move || {
-                    if let Some(page) = PAGES.with(|p| p.borrow().get(&tab).map(|p| p.view.clone())) {
+                    if let Some(page) = PAGES.with(|p| p.borrow().get(&tab).map(|p| p.view.clone()))
+                    {
                         // SAFETY: main thread, a live view.
                         unsafe { load(&page, &url) };
                     }
@@ -520,12 +592,23 @@ fn failed(view: *mut AnyObject, error: *mut AnyObject) {
     // times and then says the connection was lost (measured: -1005 on
     // every status a proxy answers), which is the route's failure, not
     // the site's.
-    let text = if proxy.is_some() && domain == Some("NSURLErrorDomain") && code == Some("-1005") && khor_gui_core::web::loopback_of(&url).is_none() {
+    let text = if proxy.is_some()
+        && domain == Some("NSURLErrorDomain")
+        && code == Some("-1005")
+        && khor_gui_core::web::loopback_of(&url).is_none()
+    {
         format!("route|khor||{url}")
     } else {
         text
     };
-    let _ = app.emit_to("main", "page:load", PageWord { tab: tab.clone(), text: "finished".into() });
+    let _ = app.emit_to(
+        "main",
+        "page:load",
+        PageWord {
+            tab: tab.clone(),
+            text: "finished".into(),
+        },
+    );
     let _ = app.emit_to("main", "page:fail", PageWord { tab, text });
 }
 
@@ -545,13 +628,18 @@ fn load_heard(view: usize, now: Option<bool>) {
     let Some(app) = APP.get() else { return };
     let word = PAGES.with(|pages| {
         let mut pages = pages.try_borrow_mut().ok()?;
-        let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as usize == view)?;
+        let (tab, page) = pages
+            .iter_mut()
+            .find(|(_, p)| Retained::as_ptr(&p.view) as usize == view)?;
         let loading: bool = now.unwrap_or_else(|| unsafe { msg_send![&*page.view, isLoading] });
         if loading == page.loading {
             return None;
         }
         page.loading = loading;
-        Some(PageWord { tab: tab.clone(), text: if loading { "started" } else { "finished" }.into() })
+        Some(PageWord {
+            tab: tab.clone(),
+            text: if loading { "started" } else { "finished" }.into(),
+        })
     });
     if let Some(w) = word {
         let _ = app.emit_to("main", "page:load", w);
@@ -1057,7 +1145,9 @@ unsafe fn store_for(exit: &str) -> Option<Retained<AnyObject>> {
     // hasher may change between releases, and a changed id is a store
     // whose cookies are silently gone.
     let fnv = |seed: u64, bytes: &[u8]| {
-        bytes.iter().fold(seed, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3))
+        bytes.iter().fold(seed, |h, b| {
+            (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3)
+        })
     };
     let key = format!("khor-page:{exit}");
     let mut b = [0u8; 16];
@@ -1065,7 +1155,22 @@ unsafe fn store_for(exit: &str) -> Option<Retained<AnyObject>> {
     b[8..].copy_from_slice(&fnv(0x6c62_272e_07bb_0142, key.as_bytes()).to_le_bytes());
     let id = format!(
         "{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
-        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+        b[0],
+        b[1],
+        b[2],
+        b[3],
+        b[4],
+        b[5],
+        b[6],
+        b[7],
+        b[8],
+        b[9],
+        b[10],
+        b[11],
+        b[12],
+        b[13],
+        b[14],
+        b[15]
     );
     let text = NSString::from_str(&id);
     let a: Allocated<AnyObject> = unsafe { msg_send![class!(NSUUID), alloc] };
@@ -1112,16 +1217,19 @@ pub fn open(
         });
         if reused {
             deck_follows(tab);
-    crate::menu_overlay::ios::raise();
+            crate::menu_overlay::ios::raise();
             return Ok(());
         }
         let store = store_for(exit).ok_or_else(|| "no data store".to_string())?;
         if let Some(addr) = &wiring.proxy {
-            let can: bool = msg_send![&*store, respondsToSelector: objc2::sel!(setProxyConfigurations:)];
+            let can: bool =
+                msg_send![&*store, respondsToSelector: objc2::sel!(setProxyConfigurations:)];
             if !can {
                 return Err(khor_catalog::msg::page_needs_desktop().into());
             }
-            let (host, port) = addr.rsplit_once(':').ok_or_else(|| format!("not an address: {addr}"))?;
+            let (host, port) = addr
+                .rsplit_once(':')
+                .ok_or_else(|| format!("not an address: {addr}"))?;
             let host = std::ffi::CString::new(host).map_err(|e| e.to_string())?;
             let port = std::ffi::CString::new(port).map_err(|e| e.to_string())?;
             let ep = nw_endpoint_create_host(host.as_ptr(), port.as_ptr());
@@ -1129,7 +1237,10 @@ pub fn open(
                 return Err(format!("not an address: {addr}"));
             }
             let ep: Retained<AnyObject> = Retained::from_raw(ep).ok_or("endpoint")?;
-            let pc = nw_proxy_config_create_http_connect(Retained::as_ptr(&ep) as *mut AnyObject, std::ptr::null_mut());
+            let pc = nw_proxy_config_create_http_connect(
+                Retained::as_ptr(&ep) as *mut AnyObject,
+                std::ptr::null_mut(),
+            );
             let pc: Retained<AnyObject> = Retained::from_raw(pc).ok_or("proxy config")?;
             let list: Retained<AnyObject> = msg_send![class!(NSArray), arrayWithObject: &*pc];
             let _: () = msg_send![&*store, setProxyConfigurations: &*list];
@@ -1161,7 +1272,7 @@ pub fn open(
         let _: () = msg_send![&*view, setHidden: !crate::page_is_wanted(tab)];
         let parent: *mut AnyObject = msg_send![face, superview];
         let _: () = msg_send![parent, addSubview: &*view];
-            crate::menu_overlay::ios::raise();
+        crate::menu_overlay::ios::raise();
         let scroll: Retained<AnyObject> = msg_send![&*view, scrollView];
         WATCH.with(|w| {
             let pan:*mut AnyObject=msg_send![&*scroll,panGestureRecognizer];
@@ -1191,7 +1302,9 @@ pub fn open(
                     scroll,
                     told_y: 0.0,
                     told_at: None,
-                    sheet: SHEET_CONFIG.with(|c|c.borrow().get(tab).copied()).map(|(h,f)|SheetPan::new(h,f)),
+                    sheet: SHEET_CONFIG
+                        .with(|c| c.borrow().get(tab).copied())
+                        .map(|(h, f)| SheetPan::new(h, f)),
                 },
             );
         });
@@ -1221,12 +1334,21 @@ pub fn hide(tab: &str, hidden: bool) {
                     cancelled = s.cancel();
                 }
             }
-            unsafe { let _: () = msg_send![&*page.view, setHidden: hidden]; }
+            unsafe {
+                let _: () = msg_send![&*page.view, setHidden: hidden];
+            }
         }
     });
     if cancelled {
         if let Some(app) = APP.get() {
-            let _ = app.emit_to("main", "page:sheet", PageWord { tab: tab.to_owned(), text: "cancel,0,0".into() });
+            let _ = app.emit_to(
+                "main",
+                "page:sheet",
+                PageWord {
+                    tab: tab.to_owned(),
+                    text: "cancel,0,0".into(),
+                },
+            );
         }
     }
     deck_follows(tab);
@@ -1269,7 +1391,9 @@ pub fn close(tab: &str) {
 /// hint — and told to the face as `page:ground` (`r,g,b`, a colour the
 /// face can read, or empty: nothing known, a white page's ground).
 pub fn ground(tab: &str, y: f64) {
-    let Some(app) = APP.get().cloned() else { return };
+    let Some(app) = APP.get().cloned() else {
+        return;
+    };
     let view = PAGES.with(|p| p.borrow().get(tab).map(|p| p.view.clone()));
     let Some(view) = view else { return };
     let js = format!(
@@ -1287,7 +1411,14 @@ pub fn ground(tab: &str, y: f64) {
             let s: Option<Retained<NSString>> = unsafe { msg_send![result, description] };
             s.map(|s| s.to_string()).unwrap_or_default()
         };
-        let _ = app.emit_to("main", "page:ground", PageWord { tab: tab.clone(), text });
+        let _ = app.emit_to(
+            "main",
+            "page:ground",
+            PageWord {
+                tab: tab.clone(),
+                text,
+            },
+        );
     });
     unsafe {
         let _: () = msg_send![&*view, evaluateJavaScript: &*NSString::from_str(&js), completionHandler: &*done];
@@ -1297,10 +1428,14 @@ pub fn ground(tab: &str, y: f64) {
 /// Main-thread snapshot, including an unchanged history whose last poll
 /// event happened before the current DOM owner subscribed.
 pub fn steps(tab: &str) -> Option<crate::page_history::PageSteps> {
-    PAGES.with(|pages| pages.borrow().get(tab).map(|page| {
-        // SAFETY: PAGES holds the live WKWebView and all callers run on main.
-        unsafe { crate::page_history::webkit(&*page.view as *const AnyObject as *mut AnyObject) }
-    }))
+    PAGES.with(|pages| {
+        pages.borrow().get(tab).map(|page| {
+            // SAFETY: PAGES holds the live WKWebView and all callers run on main.
+            unsafe {
+                crate::page_history::webkit(&*page.view as *const AnyObject as *mut AnyObject)
+            }
+        })
+    })
 }
 
 pub fn step(tab: &str, way: &str) {
@@ -1363,7 +1498,13 @@ fn tell(app: &tauri::AppHandle) {
                 if loading != page.loading {
                     page.loading = loading;
                     let word = if loading { "started" } else { "finished" };
-                    words.push(("page:load", PageWord { tab: tab.clone(), text: word.into() }));
+                    words.push((
+                        "page:load",
+                        PageWord {
+                            tab: tab.clone(),
+                            text: word.into(),
+                        },
+                    ));
                 }
                 let title: Option<Retained<NSString>> = msg_send![&*page.view, title];
                 let title = title.map(|t| t.to_string()).unwrap_or_default();
@@ -1372,9 +1513,21 @@ fn tell(app: &tauri::AppHandle) {
                     // The borrow's own page for an address the machine
                     // could not reach (UX-22): a failed load, not a title.
                     if title == khor_node::tunnel::PAGE_FAILED_TITLE {
-                        words.push(("page:fail", PageWord { tab: tab.clone(), text: format!("route|khor||{}", page.url) }));
+                        words.push((
+                            "page:fail",
+                            PageWord {
+                                tab: tab.clone(),
+                                text: format!("route|khor||{}", page.url),
+                            },
+                        ));
                     } else {
-                        words.push(("page:title", PageWord { tab: tab.clone(), text: title }));
+                        words.push((
+                            "page:title",
+                            PageWord {
+                                tab: tab.clone(),
+                                text: title,
+                            },
+                        ));
                     }
                 }
                 // Whether there is a page behind and ahead, as two digits
@@ -1384,7 +1537,13 @@ fn tell(app: &tauri::AppHandle) {
                 if page.told_steps != Some((back, forward)) {
                     page.told_steps = Some((back, forward));
                     let text = format!("{}{}", u8::from(back), u8::from(forward));
-                    words.push(("page:steps", PageWord { tab: tab.clone(), text }));
+                    words.push((
+                        "page:steps",
+                        PageWord {
+                            tab: tab.clone(),
+                            text,
+                        },
+                    ));
                 }
                 // Where it is, once a load has ended — as the desktop
                 // reports on arrival, never on departure.
@@ -1399,7 +1558,13 @@ fn tell(app: &tauri::AppHandle) {
                         if !at.is_empty() && at != "about:blank" && at != page.told_url {
                             page.told_url = at.clone();
                             page.url = at.clone();
-                            words.push(("page:went", PageWord { tab: tab.clone(), text: at }));
+                            words.push((
+                                "page:went",
+                                PageWord {
+                                    tab: tab.clone(),
+                                    text: at,
+                                },
+                            ));
                         }
                     }
                 }
@@ -1571,8 +1736,10 @@ struct Insets {
 
 // SAFETY: four CGFloats (f64 on every iOS this builds for), UIKit's layout.
 unsafe impl objc2::Encode for Insets {
-    const ENCODING: objc2::Encoding =
-        objc2::Encoding::Struct("UIEdgeInsets", &[f64::ENCODING, f64::ENCODING, f64::ENCODING, f64::ENCODING]);
+    const ENCODING: objc2::Encoding = objc2::Encoding::Struct(
+        "UIEdgeInsets",
+        &[f64::ENCODING, f64::ENCODING, f64::ENCODING, f64::ENCODING],
+    );
 }
 
 define_class!(
@@ -1627,7 +1794,9 @@ define_class!(
 fn said(deck: *mut AnyObject, text: &str) {
     let Some(app) = APP.get() else { return };
     let tag: isize = unsafe { msg_send![deck, tag] };
-    let Some(tab) = DECK_TABS.with(|t| t.borrow().get(tag as usize).cloned()) else { return };
+    let Some(tab) = DECK_TABS.with(|t| t.borrow().get(tag as usize).cloned()) else {
+        return;
+    };
     let _ = app.emit_to(
         "main",
         "page:deck",
@@ -1643,14 +1812,22 @@ unsafe fn color(text: &str) -> Retained<AnyObject> {
     let t = text.trim();
     let (mut r, mut g, mut b, mut a) = (0.1, 0.1, 0.08, 1.0);
     if let Some(hex) = t.strip_prefix('#') {
-        let hex = if hex.len() == 3 { hex.chars().flat_map(|c| [c, c]).collect::<String>() } else { hex.to_owned() };
+        let hex = if hex.len() == 3 {
+            hex.chars().flat_map(|c| [c, c]).collect::<String>()
+        } else {
+            hex.to_owned()
+        };
         if let Ok(v) = u32::from_str_radix(&hex[..6.min(hex.len())], 16) {
             r = f64::from((v >> 16) & 0xff) / 255.0;
             g = f64::from((v >> 8) & 0xff) / 255.0;
             b = f64::from(v & 0xff) / 255.0;
         }
     } else if let Some(inner) = t.strip_prefix("rgba(").or_else(|| t.strip_prefix("rgb(")) {
-        let n: Vec<f64> = inner.trim_end_matches(')').split(',').filter_map(|p| p.trim().parse().ok()).collect();
+        let n: Vec<f64> = inner
+            .trim_end_matches(')')
+            .split(',')
+            .filter_map(|p| p.trim().parse().ok())
+            .collect();
         if n.len() >= 3 {
             (r, g, b) = (n[0] / 255.0, n[1] / 255.0, n[2] / 255.0);
             a = n.get(3).copied().unwrap_or(1.0);
@@ -1694,7 +1871,8 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         let _: () = msg_send![&*view, setTag: tag as isize];
         // 1 light, 2 dark: the glass and the system font follow khor's
         // theme, not the phone's.
-        let _: () = msg_send![&*view, setOverrideUserInterfaceStyle: if dr.dark { 2isize } else { 1isize }];
+        let _: () =
+            msg_send![&*view, setOverrideUserInterfaceStyle: if dr.dark { 2isize } else { 1isize }];
         let hidden: bool = msg_send![&*page, isHidden];
         let _: () = msg_send![&*view, setHidden: hidden];
         // **The DOM glass, drawn natively** (UX-38 §5, the owner: the two
@@ -1732,9 +1910,11 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         for im in &dr.images {
             let text = NSString::from_str(&im.png);
             let a: Allocated<AnyObject> = msg_send![class!(NSData), alloc];
-            let data: Option<Retained<AnyObject>> = msg_send![a, initWithBase64EncodedString: &*text, options: 0usize];
+            let data: Option<Retained<AnyObject>> =
+                msg_send![a, initWithBase64EncodedString: &*text, options: 0usize];
             let Some(data) = data else { continue };
-            let img: Option<Retained<AnyObject>> = msg_send![class!(UIImage), imageWithData: &*data, scale: scale];
+            let img: Option<Retained<AnyObject>> =
+                msg_send![class!(UIImage), imageWithData: &*data, scale: scale];
             let Some(img) = img else { continue };
             let a: Allocated<AnyObject> = msg_send![class!(UIImageView), alloc];
             let iv: Retained<AnyObject> = msg_send![a, initWithImage: &*img];
@@ -1754,7 +1934,8 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
                 550..=649 => 0.3,
                 _ => 0.4,
             };
-            let font: Retained<AnyObject> = msg_send![class!(UIFont), systemFontOfSize: l.size, weight: w];
+            let font: Retained<AnyObject> =
+                msg_send![class!(UIFont), systemFontOfSize: l.size, weight: w];
             let _: () = msg_send![&*lab, setFont: &*font];
             let ink = color(&l.color);
             let _: () = msg_send![&*lab, setTextColor: &*ink];
@@ -1818,7 +1999,14 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
             }
         }
         DECKS.with(|d| {
-            d.borrow_mut().insert(tab.to_owned(), Deck { view, h: dr.h, pill });
+            d.borrow_mut().insert(
+                tab.to_owned(),
+                Deck {
+                    view,
+                    h: dr.h,
+                    pill,
+                },
+            );
         });
     }
     inset(tab, dr.inset);
@@ -1843,8 +2031,14 @@ unsafe fn unveil(fx: &AnyObject) {
         let n: usize = msg_send![&*subs, count];
         for i in 0..n {
             let sub: *mut AnyObject = msg_send![&*subs, objectAtIndex: i];
-            let name = std::ffi::CStr::from_ptr(objc2::ffi::class_getName(objc2::ffi::object_getClass(sub)));
-            if name.to_bytes().windows(19).any(|w| w == b"VisualEffectSubview") {
+            let name = std::ffi::CStr::from_ptr(objc2::ffi::class_getName(
+                objc2::ffi::object_getClass(sub),
+            ));
+            if name
+                .to_bytes()
+                .windows(19)
+                .any(|w| w == b"VisualEffectSubview")
+            {
                 let _: () = msg_send![sub, setHidden: true];
             }
         }
@@ -1876,7 +2070,12 @@ unsafe fn rim_on(layer: *mut AnyObject, g: &DeckGlass, rim: &DeckRim) {
         let a = rim.angle.to_radians();
         let (dx, dy) = (a.sin(), -a.cos());
         let len = (g.w * dx).abs() + (g.h * dy).abs();
-        let p = |k: f64| NSPoint::new((g.w / 2.0 + k * dx * len / 2.0) / g.w.max(1.0), (g.h / 2.0 + k * dy * len / 2.0) / g.h.max(1.0));
+        let p = |k: f64| {
+            NSPoint::new(
+                (g.w / 2.0 + k * dx * len / 2.0) / g.w.max(1.0),
+                (g.h / 2.0 + k * dy * len / 2.0) / g.h.max(1.0),
+            )
+        };
         let _: () = msg_send![&*grad, setStartPoint: p(-1.0)];
         let _: () = msg_send![&*grad, setEndPoint: p(1.0)];
         let ring: Retained<AnyObject> = msg_send![class!(CAShapeLayer), layer];
@@ -1932,10 +2131,15 @@ unsafe fn view_shadow(deck: &AnyObject, g: &DeckGlass, sh: &DeckShadow) {
 /// Safari's — until a reading comes without it. The DOM pill is the
 /// source of truth; this draws what it read.
 unsafe fn run_line(deck: &AnyObject, tab: &str, p: &DeckProgress) {
-    let since = RUNS.with(|r| *r.borrow_mut().entry(tab.to_owned()).or_insert_with(std::time::Instant::now));
+    let since = RUNS.with(|r| {
+        *r.borrow_mut()
+            .entry(tab.to_owned())
+            .or_insert_with(std::time::Instant::now)
+    });
     unsafe {
         let a: Allocated<AnyObject> = msg_send![class!(UIView), alloc];
-        let clip: Retained<AnyObject> = msg_send![a, initWithFrame: rect(p.clip.x, p.clip.y, p.clip.w, p.clip.h)];
+        let clip: Retained<AnyObject> =
+            msg_send![a, initWithFrame: rect(p.clip.x, p.clip.y, p.clip.w, p.clip.h)];
         let _: () = msg_send![&*clip, setClipsToBounds: true];
         let _: () = msg_send![&*clip, setUserInteractionEnabled: false];
         let layer: *mut AnyObject = msg_send![&*clip, layer];
@@ -1951,7 +2155,8 @@ unsafe fn run_line(deck: &AnyObject, tab: &str, p: &DeckProgress) {
         let _: () = msg_send![&*line, setFrame: rect(p.x - p.clip.x, p.y - p.clip.y, p.w, p.h)];
         if p.ms > 0.0 {
             let key = NSString::from_str("transform.scale.x");
-            let anim: Retained<AnyObject> = msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key];
+            let anim: Retained<AnyObject> =
+                msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key];
             let from: Retained<AnyObject> = msg_send![class!(NSNumber), numberWithDouble: 0.0f64];
             let to: Retained<AnyObject> = msg_send![class!(NSNumber), numberWithDouble: 1.0f64];
             let _: () = msg_send![&*anim, setFromValue: &*from];
@@ -1985,7 +2190,12 @@ unsafe fn run_line(deck: &AnyObject, tab: &str, p: &DeckProgress) {
 fn inset(tab: &str, bottom: f64) {
     PAGES.with(|p| {
         if let Some(page) = p.borrow().get(tab) {
-            let e = Insets { top: 0.0, left: 0.0, bottom, right: 0.0 };
+            let e = Insets {
+                top: 0.0,
+                left: 0.0,
+                bottom,
+                right: 0.0,
+            };
             unsafe {
                 let _: () = msg_send![&*page.scroll, setContentInset: e];
                 let _: () = msg_send![&*page.scroll, setVerticalScrollIndicatorInsets: e];
@@ -1996,8 +2206,16 @@ fn inset(tab: &str, bottom: f64) {
 
 /// The deck follows its page: moved with it, hidden with it, gone with it.
 fn deck_follows(tab: &str) {
-    let frame = PAGES.with(|p| p.borrow().get(tab).map(|p| unsafe { msg_send![&*p.view, frame] }));
-    let hidden = PAGES.with(|p| p.borrow().get(tab).map(|p| unsafe { msg_send![&*p.view, isHidden] }));
+    let frame = PAGES.with(|p| {
+        p.borrow()
+            .get(tab)
+            .map(|p| unsafe { msg_send![&*p.view, frame] })
+    });
+    let hidden = PAGES.with(|p| {
+        p.borrow()
+            .get(tab)
+            .map(|p| unsafe { msg_send![&*p.view, isHidden] })
+    });
     DECKS.with(|d| {
         let d = d.borrow();
         let Some(k) = d.get(tab) else { return };

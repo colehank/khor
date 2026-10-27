@@ -31,7 +31,10 @@ impl Drop for RootGate {
     fn drop(&mut self) {
         // Release the OS lease before admitting another in-process mutator.
         self._file.take();
-        ROOTS.lock().unwrap_or_else(|p| p.into_inner()).retain(|p| p != &self.root);
+        ROOTS
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .retain(|p| p != &self.root);
     }
 }
 pub(crate) fn root_gate(root: &Path) -> Result<RootGate, Error> {
@@ -44,7 +47,10 @@ pub(crate) fn root_gate(root: &Path) -> Result<RootGate, Error> {
     }
     roots.push(root.into());
     drop(roots);
-    let mut owned = RootGate { root: root.into(), _file: None };
+    let mut owned = RootGate {
+        root: root.into(),
+        _file: None,
+    };
     let directory = root.join(".khor/trust-mutation");
     private_dir(&directory)?;
     for (count, entry) in fs::read_dir(&directory).map_err(error)?.enumerate() {
@@ -83,15 +89,20 @@ pub(crate) fn publish_anchor(root: &Path, bytes: &[u8]) -> Result<(), String> {
             return Err("unknown anchor publication; reconciliation required".into());
         }
     }
-    let mut file = if prefix.is_some() { open(&next, false)? }
-        else { options().create_new(true).open(&next).map_err(error)? };
+    let mut file = if prefix.is_some() {
+        open(&next, false)?
+    } else {
+        options().create_new(true).open(&next).map_err(error)?
+    };
     file.write_all(bytes).map_err(error)?;
     file.sync_all().map_err(error)?;
     drop(file);
     check_file(&next)?;
     let target = root.join(".khor/root.pub");
     match fs::symlink_metadata(&target) {
-        Ok(metadata) if !metadata.is_file() || metadata.file_type().is_symlink() => return Err("unsafe public anchor target".into()),
+        Ok(metadata) if !metadata.is_file() || metadata.file_type().is_symlink() => {
+            return Err("unsafe public anchor target".into());
+        }
         Ok(_) => (),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
         Err(e) => return Err(error(e)),
@@ -101,7 +112,10 @@ pub(crate) fn publish_anchor(root: &Path, bytes: &[u8]) -> Result<(), String> {
 
 pub(super) fn has_publication(root: &Path) -> Result<bool, String> {
     match fs::symlink_metadata(root.join("registry.next")) {
-        Ok(_) => { check_file(&root.join("registry.next"))?; Ok(true) }
+        Ok(_) => {
+            check_file(&root.join("registry.next"))?;
+            Ok(true)
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(error(e)),
     }
@@ -122,7 +136,12 @@ pub(super) fn peek(root: &Path) -> Result<Option<Vec<u8>>, String> {
     }
     for (count, entry) in fs::read_dir(root).map_err(error)?.enumerate() {
         let entry = entry.map_err(error)?;
-        if count >= 3 || !matches!(entry.file_name().to_str(), Some("gate" | "registry" | "registry.next")) {
+        if count >= 3
+            || !matches!(
+                entry.file_name().to_str(),
+                Some("gate" | "registry" | "registry.next")
+            )
+        {
             return Err("unrecognized transfer metadata file; reconciliation required".into());
         }
         check_file(&entry.path())?;

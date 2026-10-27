@@ -28,18 +28,26 @@ async fn main() {
     }
     let server: SocketAddr = args[0].parse().expect("server ip:port");
     let name = args[1].clone();
-    let bind: std::net::IpAddr = args.get(3).map_or("0.0.0.0", String::as_str).parse().expect("bind ip");
+    let bind: std::net::IpAddr = args
+        .get(3)
+        .map_or("0.0.0.0", String::as_str)
+        .parse()
+        .expect("bind ip");
     let count: u32 = args.get(4).map_or(Ok(3), |c| c.parse()).expect("count");
 
     let mut roots = rustls::RootCertStore::empty();
     for c in CertificateDer::pem_file_iter(&args[2]).expect("ca.pem") {
-        roots.add(c.expect("a certificate")).expect("a usable certificate");
+        roots
+            .add(c.expect("a certificate"))
+            .expect("a usable certificate");
     }
-    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-        .with_safe_default_protocol_versions()
-        .expect("TLS 1.3")
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("TLS 1.3")
+    .with_root_certificates(roots)
+    .with_no_client_auth();
 
     for i in 0..count {
         // A fresh socket each time, as the net report opens one per
@@ -49,7 +57,10 @@ async fn main() {
         let client = iroh_relay::quic::QuicClient::new(ep.clone(), tls.clone());
         let began = Instant::now();
         let outcome = tokio::time::timeout(Duration::from_secs(10), async {
-            let conn = client.create_conn(server, &name).await.map_err(|e| format!("{e:#}"))?;
+            let conn = client
+                .create_conn(server, &name)
+                .await
+                .map_err(|e| format!("{e:#}"))?;
             let seen = conn
                 .observed_external_addr()
                 .next()
@@ -62,7 +73,10 @@ async fn main() {
         .await;
         let took = began.elapsed().as_millis();
         match outcome {
-            Ok(Ok((seen, rtt))) => println!("{i} from {local}: seen as {seen}, rtt {} ms, {took} ms", rtt.as_millis()),
+            Ok(Ok((seen, rtt))) => println!(
+                "{i} from {local}: seen as {seen}, rtt {} ms, {took} ms",
+                rtt.as_millis()
+            ),
             Ok(Err(e)) => println!("{i} from {local}: failed after {took} ms: {e}"),
             Err(_) => println!("{i} from {local}: no answer in 10 s"),
         }

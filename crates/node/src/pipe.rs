@@ -90,15 +90,30 @@ fn sh_quote(s: &str) -> String {
 
 fn proxy_line_with(khor: &str, via: &str, host: &str, port: u16) -> (String, String) {
     let value = format!("{} pipe --via {} %h %p", sh_quote(khor), sh_quote(via));
-    let port = if port == crate::reach::SSH_PORT { String::new() } else { format!(" -p {port}") };
-    let command = format!("ssh -o {}{port} {}", sh_quote(&format!("ProxyCommand={value}")), sh_quote(host));
+    let port = if port == crate::reach::SSH_PORT {
+        String::new()
+    } else {
+        format!(" -p {port}")
+    };
+    let command = format!(
+        "ssh -o {}{port} {}",
+        sh_quote(&format!("ProxyCommand={value}")),
+        sh_quote(host)
+    );
     (format!("ProxyCommand {value}"), command)
 }
 
 impl crate::Node {
     /// **The pipe through `via` to `host:port`**, spliced to `input` and
     /// `output` until the far end hangs up.
-    pub async fn pipe_via<I, O>(&self, via: &str, host: &str, port: u16, input: I, output: O) -> Result<(), String>
+    pub async fn pipe_via<I, O>(
+        &self,
+        via: &str,
+        host: &str,
+        port: u16,
+        input: I,
+        output: O,
+    ) -> Result<(), String>
     where
         I: AsyncRead + Unpin,
         O: AsyncWrite + Unpin,
@@ -139,9 +154,13 @@ impl crate::Node {
             splice(input, output, r, w).await;
             return Ok(());
         }
-        let ep = khor_net::endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
-            .await
-            .map_err(|e| e.to_string())?;
+        let ep = khor_net::endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
         let out = async {
             let conn = self.pipe_line(&ep, via).await?;
             let (send, recv) = crate::tunnel::dial(&conn, &to).await?;
@@ -155,7 +174,11 @@ impl crate::Node {
 
     /// The tunnel connection to `via`, refusing a satellite in words: it
     /// is not khor, and ssh's own `-J` through it is the road there.
-    async fn pipe_line(&self, ep: &iroh::Endpoint, via: &str) -> Result<iroh::endpoint::Connection, String> {
+    async fn pipe_line(
+        &self,
+        ep: &iroh::Endpoint,
+        via: &str,
+    ) -> Result<iroh::endpoint::Connection, String> {
         self.refuse_satellite(via)?;
         self.dial_tunnel(ep, via).await
     }
@@ -182,7 +205,10 @@ impl crate::Node {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .map_err(|e| e.to_string())?;
-        let addr = listener.local_addr().map_err(|e| e.to_string())?.to_string();
+        let addr = listener
+            .local_addr()
+            .map_err(|e| e.to_string())?
+            .to_string();
         let cookie = crate::link::fresh_hex()?;
         let want = cookie.clone();
         tokio::spawn(async move {
@@ -197,7 +223,9 @@ impl crate::Node {
                     let mut said = vec![0u8; want.len() + 1];
                     // A connection that does not say the cookie is not
                     // the verb: dropped, and the port waits on.
-                    if sock.read_exact(&mut said).await.is_ok() && said == format!("{want}\n").as_bytes() {
+                    if sock.read_exact(&mut said).await.is_ok()
+                        && said == format!("{want}\n").as_bytes()
+                    {
                         return Some(sock);
                     }
                 }
@@ -223,17 +251,35 @@ mod tests {
     #[test]
     fn the_proxy_line_survives_a_shell() {
         let (config, command) = proxy_line_with("/opt/khor app/khor", "lab's box", "gpu-box", 2222);
-        assert_eq!(config, r"ProxyCommand '/opt/khor app/khor' pipe --via 'lab'\''s box' %h %p");
+        assert_eq!(
+            config,
+            r"ProxyCommand '/opt/khor app/khor' pipe --via 'lab'\''s box' %h %p"
+        );
         let out = std::process::Command::new("sh")
             .arg("-c")
-            .arg(format!("printf '%s\\n' {}", command.trim_start_matches("ssh ")))
+            .arg(format!(
+                "printf '%s\\n' {}",
+                command.trim_start_matches("ssh ")
+            ))
             .output()
             .unwrap();
-        let args: Vec<String> = String::from_utf8_lossy(&out.stdout).lines().map(str::to_owned).collect();
+        let args: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::to_owned)
+            .collect();
         assert_eq!(args[0], "-o");
-        assert_eq!(args[1], format!("ProxyCommand={}", config.trim_start_matches("ProxyCommand ")));
+        assert_eq!(
+            args[1],
+            format!(
+                "ProxyCommand={}",
+                config.trim_start_matches("ProxyCommand ")
+            )
+        );
         assert_eq!(&args[2..], ["-p", "2222", "gpu-box"]);
-        assert!(!proxy_line_with("khor", "lab", "box", 22).1.contains("-p"), "22 is ssh's own");
+        assert!(
+            !proxy_line_with("khor", "lab", "box", 22).1.contains("-p"),
+            "22 is ssh's own"
+        );
     }
 
     #[test]

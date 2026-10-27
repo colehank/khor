@@ -36,21 +36,37 @@ fn scratch(tag: &str) -> Scratch {
     Scratch(p)
 }
 
-const PROXY_VARS: [&str; 6] = ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"];
+const PROXY_VARS: [&str; 6] = [
+    "http_proxy",
+    "https_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "all_proxy",
+];
 
 /// A self-signed certificate for `names`, written as `<stem>.pem` and
 /// `<stem>.key`; the certificate is its own root, so trusting it is
 /// trusting the relay.
 fn self_signed(dir: &Path, stem: &str, names: &[&str]) -> (PathBuf, PathBuf) {
-    let made = rcgen::generate_simple_self_signed(names.iter().map(|n| n.to_string()).collect::<Vec<_>>()).unwrap();
-    let (cert, key) = (dir.join(format!("{stem}.pem")), dir.join(format!("{stem}.key")));
+    let made =
+        rcgen::generate_simple_self_signed(names.iter().map(|n| n.to_string()).collect::<Vec<_>>())
+            .unwrap();
+    let (cert, key) = (
+        dir.join(format!("{stem}.pem")),
+        dir.join(format!("{stem}.key")),
+    );
     std::fs::write(&cert, made.cert.pem()).unwrap();
     std::fs::write(&key, made.signing_key.serialize_pem()).unwrap();
     (cert, key)
 }
 
 fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// A running `khor relay`, killed by pid however the test leaves; what it
@@ -92,11 +108,20 @@ fn relay(home: &Path, args: &[&str]) -> Running {
         }
     });
     let began = Instant::now();
-    while !std::fs::read_to_string(&out).unwrap_or_default().contains("relay-stats.json") {
+    while !std::fs::read_to_string(&out)
+        .unwrap_or_default()
+        .contains("relay-stats.json")
+    {
         if let Ok(Some(status)) = child.try_wait() {
-            panic!("khor relay exited ({status}): {}", std::fs::read_to_string(home.join("relay.log")).unwrap_or_default());
+            panic!(
+                "khor relay exited ({status}): {}",
+                std::fs::read_to_string(home.join("relay.log")).unwrap_or_default()
+            );
         }
-        assert!(began.elapsed() < Duration::from_secs(30), "no banner from khor relay");
+        assert!(
+            began.elapsed() < Duration::from_secs(30),
+            "no banner from khor relay"
+        );
         std::thread::sleep(Duration::from_millis(50));
     }
     Running { child, out }
@@ -120,7 +145,11 @@ async fn until_home(ep: &iroh::Endpoint, want: &str, within: Duration) -> Durati
     ep.network_change().await;
     let mut nudged = Instant::now();
     loop {
-        let connected = ep.home_relay_status().get().iter().any(|s| s.is_connected());
+        let connected = ep
+            .home_relay_status()
+            .get()
+            .iter()
+            .any(|s| s.is_connected());
         if home(ep).as_deref() == Some(want) && connected {
             return began.elapsed();
         }
@@ -157,17 +186,22 @@ fn answer_echoes(ep: &iroh::Endpoint) {
 
 /// One echo from `from` to `to` through `to`'s relay at `url`.
 async fn echo(from: &iroh::Endpoint, to: &iroh::Endpoint, url: &str) -> Result<(), String> {
-    let addr = endpoint::dial_addr(&to.addr().id.to_string(), &[], &[url.to_string()]).map_err(|e| e.to_string())?;
+    let addr = endpoint::dial_addr(&to.addr().id.to_string(), &[], &[url.to_string()])
+        .map_err(|e| e.to_string())?;
     let conn = tokio::time::timeout(Duration::from_secs(10), from.connect(addr, endpoint::ALPN))
         .await
         .map_err(|_| "dial timed out".to_string())?
         .map_err(|e| e.to_string())?;
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-    send.write_all(b"over https").await.map_err(|e| e.to_string())?;
+    send.write_all(b"over https")
+        .await
+        .map_err(|e| e.to_string())?;
     send.finish().map_err(|e| e.to_string())?;
     let back = recv.read_to_end(1024).await.map_err(|e| e.to_string())?;
     conn.close(0u32.into(), b"done");
-    (back == b"over https").then_some(()).ok_or_else(|| format!("came back as {back:?}"))
+    (back == b"over https")
+        .then_some(())
+        .ok_or_else(|| format!("came back as {back:?}"))
 }
 
 /// A relay-only endpoint of this build with `relays` and their successors.
@@ -175,7 +209,9 @@ async fn bind(relays: &[Relay]) -> iroh::Endpoint {
     // SAFETY: tests here set the environment before any endpoint reads it
     // and nothing else in this binary writes it meanwhile.
     unsafe { std::env::set_var("KHOR_RELAY_ONLY", "1") };
-    let ep = endpoint::bind_preferring(iroh::SecretKey::generate(), relays, false, None).await.unwrap();
+    let ep = endpoint::bind_preferring(iroh::SecretKey::generate(), relays, false, None)
+        .await
+        .unwrap();
     answer_echoes(&ep);
     ep
 }
@@ -195,15 +231,32 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
     std::fs::create_dir_all(&plain_home).unwrap();
     std::fs::create_dir_all(&tls_home).unwrap();
     let plain_port = free_port();
-    let _plain = relay(&plain_home, &["--dev", "--bind", &format!("127.0.0.1:{plain_port}"), "--token", "plain-key"]);
+    let _plain = relay(
+        &plain_home,
+        &[
+            "--dev",
+            "--bind",
+            &format!("127.0.0.1:{plain_port}"),
+            "--token",
+            "plain-key",
+        ],
+    );
     let plain = format!("http://127.0.0.1:{plain_port}");
     let tls_port = free_port();
     let tls = format!("https://127.0.0.1:{tls_port}");
     // SAFETY: as in `bind`.
     unsafe { std::env::set_var(endpoint::RELAY_SUCCESSOR_ENV, format!("{plain}|{tls}")) };
     let relays = [
-        Relay { url: plain.clone(), token: Some("plain-key".into()), ..Relay::default() },
-        Relay { url: tls.clone(), token: Some("tls-key".into()), ..Relay::default() },
+        Relay {
+            url: plain.clone(),
+            token: Some("plain-key".into()),
+            ..Relay::default()
+        },
+        Relay {
+            url: tls.clone(),
+            token: Some("tls-key".into()),
+            ..Relay::default()
+        },
     ];
 
     // The TLS relay not up yet: home on the plain one, as before.
@@ -240,9 +293,20 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
     );
     let moved = until_home(&near, &tls, Duration::from_secs(60)).await;
     until_home(&far, &tls, Duration::from_secs(60)).await;
-    eprintln!("[https] moved to the TLS relay {moved:?} after it started ({:?} with its start)", started.elapsed());
-    assert_eq!(echo(&near, &far, &tls).await, Ok(()), "two of this build meet on the TLS relay");
-    assert_eq!(echo(&near, &old, &plain).await, Ok(()), "and reach an older khor where it is");
+    eprintln!(
+        "[https] moved to the TLS relay {moved:?} after it started ({:?} with its start)",
+        started.elapsed()
+    );
+    assert_eq!(
+        echo(&near, &far, &tls).await,
+        Ok(()),
+        "two of this build meet on the TLS relay"
+    );
+    assert_eq!(
+        echo(&near, &old, &plain).await,
+        Ok(()),
+        "and reach an older khor where it is"
+    );
     // The other way is not asserted: an older khor holds no key for the
     // TLS relay, and reaches a machine homed there only through the plain
     // relay while that machine is still connected to it — which it was
@@ -255,10 +319,22 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
     let (cert2, key2) = self_signed(&s.0, "second", &["127.0.0.1"]);
     std::fs::copy(&cert2, &cert).unwrap();
     std::fs::copy(&key2, &key).unwrap();
-    assert!(Command::new("kill").args(["-HUP", &pid.to_string()]).status().unwrap().success());
+    assert!(
+        Command::new("kill")
+            .args(["-HUP", &pid.to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
     let began = Instant::now();
-    while !std::fs::read_to_string(&tls_relay.out).unwrap_or_default().contains(&cert.display().to_string()) {
-        assert!(began.elapsed() < Duration::from_secs(10), "the relay never said it read the certificate again");
+    while !std::fs::read_to_string(&tls_relay.out)
+        .unwrap_or_default()
+        .contains(&cert.display().to_string())
+    {
+        assert!(
+            began.elapsed() < Duration::from_secs(10),
+            "the relay never said it read the certificate again"
+        );
         std::thread::sleep(Duration::from_millis(50));
     }
     // What the relay serves now is the second certificate: an endpoint
@@ -267,8 +343,16 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
     unsafe { std::env::set_var(endpoint::RELAY_CA_ENV, &cert2) };
     let fresh = bind(&relays).await;
     until_home(&fresh, &tls, Duration::from_secs(30)).await;
-    assert_eq!(echo(&near, &fresh, &tls).await, Ok(()), "a wire made after the renewal");
-    assert_eq!(echo(&far, &near, &tls).await, Ok(()), "and the ones from before it");
+    assert_eq!(
+        echo(&near, &fresh, &tls).await,
+        Ok(()),
+        "a wire made after the renewal"
+    );
+    assert_eq!(
+        echo(&far, &near, &tls).await,
+        Ok(()),
+        "and the ones from before it"
+    );
     assert_eq!(tls_relay.child.id(), pid);
 
     // The TLS relay stops: back to the plain one.
@@ -286,10 +370,16 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
     loop {
         match echo(&near, &far, &plain).await {
             Ok(()) => break,
-            Err(e) => assert!(began.elapsed() < Duration::from_secs(35), "and they meet there again: {e}"),
+            Err(e) => assert!(
+                began.elapsed() < Duration::from_secs(35),
+                "and they meet there again: {e}"
+            ),
         }
     }
-    eprintln!("[https] met again on the plain relay {:?} after both were home there", began.elapsed());
+    eprintln!(
+        "[https] met again on the plain relay {:?} after both were home there",
+        began.elapsed()
+    );
     for ep in [near, far, old, fresh] {
         ep.close().await;
     }
@@ -299,18 +389,41 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
 /// relay: a mismatch would be a relay nobody of this build can enter.
 #[test]
 fn the_script_admits_by_the_key_khor_carries() {
-    let script = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/relay-https.sh")).unwrap();
+    let script = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scripts/relay-https.sh"
+    ))
+    .unwrap();
     let carried = endpoint::KHOR_RELAYS
         .iter()
         .find(|(url, _, _)| *url == endpoint::BEIJING_TLS)
         .and_then(|(_, _, key)| *key)
         .unwrap();
-    assert!(script.contains(&format!("TOKEN=\"{carried}\"")), "the script's TOKEN is not khor's");
-    let (domain, port) = endpoint::BEIJING_TLS.trim_start_matches("https://").split_once(':').unwrap();
-    assert!(script.contains(&format!("KHOR_RH_DOMAIN:-{domain}")), "the script's domain is not khor's");
-    assert!(script.contains(&format!("KHOR_RH_PORT:-{port}")), "the script's port is not khor's");
-    let qad = endpoint::khor_tier().into_iter().find(|r| r.url == endpoint::BEIJING_TLS).and_then(|r| r.qad).unwrap();
-    assert!(script.contains(&format!("KHOR_RH_QUIC:-[::]:{qad}")), "the script's QAD port is not khor's");
+    assert!(
+        script.contains(&format!("TOKEN=\"{carried}\"")),
+        "the script's TOKEN is not khor's"
+    );
+    let (domain, port) = endpoint::BEIJING_TLS
+        .trim_start_matches("https://")
+        .split_once(':')
+        .unwrap();
+    assert!(
+        script.contains(&format!("KHOR_RH_DOMAIN:-{domain}")),
+        "the script's domain is not khor's"
+    );
+    assert!(
+        script.contains(&format!("KHOR_RH_PORT:-{port}")),
+        "the script's port is not khor's"
+    );
+    let qad = endpoint::khor_tier()
+        .into_iter()
+        .find(|r| r.url == endpoint::BEIJING_TLS)
+        .and_then(|r| r.qad)
+        .unwrap();
+    assert!(
+        script.contains(&format!("KHOR_RH_QUIC:-[::]:{qad}")),
+        "the script's QAD port is not khor's"
+    );
 }
 
 /// A stand-in `acme.sh`: `--install-cert` copies the certificate it holds
@@ -362,12 +475,26 @@ esac
 
 fn run_script(root: &Path, env: &[(&str, String)]) -> (bool, String) {
     let out = Command::new("bash")
-        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/relay-https.sh"))
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scripts/relay-https.sh"
+        ))
         .envs(env.iter().map(|(k, v)| (*k, v.as_str())))
-        .env("PATH", format!("{}:{}", root.join("bin").display(), std::env::var("PATH").unwrap()))
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                root.join("bin").display(),
+                std::env::var("PATH").unwrap()
+            ),
+        )
         .output()
         .unwrap();
-    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
     (out.status.success(), text)
 }
 
@@ -375,7 +502,11 @@ fn curl_ping(ca: &Path, domain: &str, port: u16) -> bool {
     Command::new("curl")
         .args(["-fsS", "--max-time", "3", "--cacert"])
         .arg(ca)
-        .args(["--resolve", &format!("{domain}:{port}:127.0.0.1"), &format!("https://{domain}:{port}/ping")])
+        .args([
+            "--resolve",
+            &format!("{domain}:{port}:127.0.0.1"),
+            &format!("https://{domain}:{port}/ping"),
+        ])
         .env_remove("https_proxy")
         .env_remove("HTTPS_PROXY")
         .env_remove("all_proxy")
@@ -406,7 +537,14 @@ fn script_round(domain: &str) {
     }
     let write_exe = |p: PathBuf, text: &str| {
         std::fs::write(&p, text).unwrap();
-        assert!(Command::new("chmod").arg("+x").arg(&p).status().unwrap().success());
+        assert!(
+            Command::new("chmod")
+                .arg("+x")
+                .arg(&p)
+                .status()
+                .unwrap()
+                .success()
+        );
     };
     write_exe(bin.join("acme.sh"), FAKE_ACME);
     write_exe(bin.join("systemctl"), FAKE_SYSTEMCTL);
@@ -420,8 +558,14 @@ fn script_round(domain: &str) {
     std::fs::copy(&cert, src.join("fullchain.pem")).unwrap();
     std::fs::copy(&key, src.join("key.pem")).unwrap();
     let port = free_port();
-    let user = String::from_utf8(Command::new("id").arg("-un").output().unwrap().stdout).unwrap().trim().to_owned();
-    let group = String::from_utf8(Command::new("id").arg("-gn").output().unwrap().stdout).unwrap().trim().to_owned();
+    let user = String::from_utf8(Command::new("id").arg("-un").output().unwrap().stdout)
+        .unwrap()
+        .trim()
+        .to_owned();
+    let group = String::from_utf8(Command::new("id").arg("-gn").output().unwrap().stdout)
+        .unwrap()
+        .trim()
+        .to_owned();
     let env = [
         ("KHOR_RH_ROOT", root.display().to_string()),
         ("KHOR_RH_DOMAIN", domain.to_owned()),
@@ -448,16 +592,32 @@ fn script_round(domain: &str) {
     eprintln!("[script] first run:\n{first}");
     if !ok {
         stop();
-        panic!("the first run failed:\n{first}\n{}", std::fs::read_to_string(root.join("relay.log")).unwrap_or_default());
+        panic!(
+            "the first run failed:\n{first}\n{}",
+            std::fs::read_to_string(root.join("relay.log")).unwrap_or_default()
+        );
     }
-    assert!(first.contains("在本机答了"), "the relay answered on this machine");
+    assert!(
+        first.contains("在本机答了"),
+        "the relay answered on this machine"
+    );
     let pid = std::fs::read_to_string(root.join("relay.pid")).unwrap();
-    assert!(curl_ping(&cert, domain, port), "and answers a client that trusts the certificate");
+    assert!(
+        curl_ping(&cert, domain, port),
+        "and answers a client that trusts the certificate"
+    );
 
     let (ok, second) = run_script(&root, &env);
     eprintln!("[script] second run:\n{second}");
-    assert!(ok && second.contains("什么都没改"), "a second run changes nothing:\n{second}");
-    assert_eq!(std::fs::read_to_string(root.join("relay.pid")).unwrap(), pid, "nor restarts the relay");
+    assert!(
+        ok && second.contains("什么都没改"),
+        "a second run changes nothing:\n{second}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("relay.pid")).unwrap(),
+        pid,
+        "nor restarts the relay"
+    );
 
     // A renewal, as acme.sh's cron runs one: new files, the hook, no restart.
     let (cert2, key2) = self_signed(&s.0, "renewed", &[domain]);
@@ -466,24 +626,51 @@ fn script_round(domain: &str) {
     let renew = Command::new(bin.join("acme.sh"))
         .arg("--cron")
         .envs(env.iter().map(|(k, v)| (*k, v.as_str())))
-        .env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()))
+        .env(
+            "PATH",
+            format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+        )
         .output()
         .unwrap();
-    let said = format!("{}{}", String::from_utf8_lossy(&renew.stdout), String::from_utf8_lossy(&renew.stderr));
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&renew.stdout),
+        String::from_utf8_lossy(&renew.stderr)
+    );
     let began = Instant::now();
     while !curl_ping(&cert2, domain, port) {
         if began.elapsed() > Duration::from_secs(10) {
             stop();
-            panic!("the renewed certificate is not served: {said}\n{}", std::fs::read_to_string(root.join("relay.out")).unwrap_or_default());
+            panic!(
+                "the renewed certificate is not served: {said}\n{}",
+                std::fs::read_to_string(root.join("relay.out")).unwrap_or_default()
+            );
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    assert!(!curl_ping(&cert, domain, port), "and the old one no longer is");
-    assert_eq!(std::fs::read_to_string(root.join("relay.pid")).unwrap(), pid, "without a restart");
-    let unit = std::fs::read_to_string(root.join("etc/systemd/system/khor-relay-https.service")).unwrap();
-    assert!(unit.contains("ExecReload=/bin/kill -HUP $MAINPID"), "{unit}");
-    assert!(unit.contains("--quic 127.0.0.1:0 "), "the unit answers QAD:\n{unit}");
+    assert!(
+        !curl_ping(&cert, domain, port),
+        "and the old one no longer is"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("relay.pid")).unwrap(),
+        pid,
+        "without a restart"
+    );
+    let unit =
+        std::fs::read_to_string(root.join("etc/systemd/system/khor-relay-https.service")).unwrap();
+    assert!(
+        unit.contains("ExecReload=/bin/kill -HUP $MAINPID"),
+        "{unit}"
+    );
+    assert!(
+        unit.contains("--quic 127.0.0.1:0 "),
+        "the unit answers QAD:\n{unit}"
+    );
     let said = std::fs::read_to_string(root.join("relay.out")).unwrap_or_default();
-    assert!(said.contains("UDP 127.0.0.1:"), "and the relay it runs listens for QAD:\n{said}");
+    assert!(
+        said.contains("UDP 127.0.0.1:"),
+        "and the relay it runs listens for QAD:\n{said}"
+    );
     stop();
 }

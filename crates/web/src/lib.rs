@@ -23,8 +23,8 @@
 //! sends `Access-Control-Allow-Origin: *` and is loopback-only for
 //! exactly that reason.
 
-pub mod key;
 mod json_request;
+pub mod key;
 
 mod assets {
     include!(concat!(env!("OUT_DIR"), "/assets.rs"));
@@ -82,7 +82,7 @@ pub fn port() -> u16 {
     khor_node::face::web_port()
 }
 
-pub use khor_node::face::{link, best_address, answers_at};
+pub use khor_node::face::{answers_at, best_address, link};
 
 /// Starts the face on every interface this machine has.
 ///
@@ -259,7 +259,8 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
                     return Reply::refused(400, msg::upload_needs_machine_and_name().to_owned());
                 };
                 let into = khor_gui_core::into_arg(query);
-                return match khor_gui_core::chat::chat_put(root, &id, &name, &into, req.as_reader()) {
+                return match khor_gui_core::chat::chat_put(root, &id, &name, &into, req.as_reader())
+                {
                     Ok(path) => Reply {
                         code: 200,
                         kind: "application/json",
@@ -273,15 +274,33 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             // part 3): the same raw body, staged where this machine's
             // node serves it.
             if cmd == "term_drop_stage_into" {
-                let Some((folder,path))=khor_gui_core::drop_stage_into_args(query) else { return Reply::refused(400,"term_drop_stage_into needs folder and path".to_owned()); };
-                return match khor_gui_core::term::term_drop_stage_into(root,&folder,&path,req.as_reader()) {
-                    Ok(path)=>Reply {code:200,kind:"application/json",body:serde_json::to_vec(&path).unwrap_or_default(),remember:None},
-                    Err(why)=>Reply::refused(400,why),
+                let Some((folder, path)) = khor_gui_core::drop_stage_into_args(query) else {
+                    return Reply::refused(
+                        400,
+                        "term_drop_stage_into needs folder and path".to_owned(),
+                    );
+                };
+                return match khor_gui_core::term::term_drop_stage_into(
+                    root,
+                    &folder,
+                    &path,
+                    req.as_reader(),
+                ) {
+                    Ok(path) => Reply {
+                        code: 200,
+                        kind: "application/json",
+                        body: serde_json::to_vec(&path).unwrap_or_default(),
+                        remember: None,
+                    },
+                    Err(why) => Reply::refused(400, why),
                 };
             }
             if cmd == "term_drop_stage" {
                 let Some(name) = khor_gui_core::drop_stage_args(query) else {
-                    return Reply::refused(400, "term_drop_stage needs a name query arg".to_owned());
+                    return Reply::refused(
+                        400,
+                        "term_drop_stage needs a name query arg".to_owned(),
+                    );
                 };
                 return match khor_gui_core::term::term_drop_stage(root, &name, req.as_reader()) {
                     Ok(path) => Reply {
@@ -479,7 +498,11 @@ mod tests {
     #[test]
     fn the_frontend_really_got_embedded() {
         assert!(super::ui_revision().starts_with("khor-ui-assets:/assets/index-"));
-        assert!(assets::ASSETS.iter().any(|(p, _)| p.ends_with(".js") && super::ui_revision().contains(*p)));
+        assert!(
+            assets::ASSETS
+                .iter()
+                .any(|(p, _)| p.ends_with(".js") && super::ui_revision().contains(*p))
+        );
         assert!(
             assets::ASSETS.iter().any(|(p, _)| *p == "/index.html"),
             "no /index.html in the embedded table: {:?}",

@@ -12,9 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use iroh::Watcher as _;
-use iroh_relay::server::{
-    Access, AccessControl, ClientRequest, RelayConfig, Server, ServerConfig,
-};
+use iroh_relay::server::{Access, AccessControl, ClientRequest, RelayConfig, Server, ServerConfig};
 use khor_net::endpoint::{self, ALPN, Relay};
 use n0_future::StreamExt as _;
 use tokio::time::timeout;

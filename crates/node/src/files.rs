@@ -1233,13 +1233,20 @@ mod write_tests {
         let landed: Vec<usize> = (0..n).filter(|&i| outs[i].is_ok()).collect();
         assert_eq!(landed.len(), 1, "exactly one writer lands: {outs:?}");
         let on_disk = std::fs::read(&path).unwrap();
-        assert_eq!(on_disk, bodies[landed[0]], "and the file is that writer's bytes, whole");
+        assert_eq!(
+            on_disk, bodies[landed[0]],
+            "and the file is that writer's bytes, whole"
+        );
         assert_eq!(outs[landed[0]].as_ref().unwrap().1, digest(&on_disk));
         let left: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(left, vec!["a.txt".to_owned()], "no temporary left beside it");
+        assert_eq!(
+            left,
+            vec!["a.txt".to_owned()],
+            "no temporary left beside it"
+        );
     }
 
     /// The editor's own road: each save pins to the digest the last one
@@ -1257,7 +1264,11 @@ mod write_tests {
         let (_, d2) = write_whole(p, b"0\n1\n2\n", &d1).expect("second save");
         assert_eq!(std::fs::read(&path).unwrap(), b"0\n1\n2\n");
         write_whole(p, b"0\nstale\n", &d1).expect_err("pinned to a digest the file left behind");
-        assert_eq!(std::fs::read(&path).unwrap(), b"0\n1\n2\n", "and nothing moved");
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"0\n1\n2\n",
+            "and nothing moved"
+        );
         write_whole(p, b"0\n1\n2\n3\n", &d2).expect("the current link still lands");
     }
 

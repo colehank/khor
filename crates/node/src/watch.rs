@@ -76,7 +76,9 @@ async fn read_frame(recv: &mut iroh::endpoint::RecvStream) -> Result<Response, S
         return Err(khor_catalog::msg::frame_too_big(len));
     }
     let mut body = vec![0u8; len];
-    recv.read_exact(&mut body).await.map_err(|e| e.to_string())?;
+    recv.read_exact(&mut body)
+        .await
+        .map_err(|e| e.to_string())?;
     proto::answer(&body)
 }
 
@@ -111,7 +113,9 @@ pub(crate) async fn serve(dirs: Vec<String>, mut send: iroh::endpoint::SendStrea
             let path = std::path::Path::new(&dir);
             if path.is_absolute()
                 && path.is_dir()
-                && watcher.watch(path, notify::RecursiveMode::NonRecursive).is_ok()
+                && watcher
+                    .watch(path, notify::RecursiveMode::NonRecursive)
+                    .is_ok()
             {
                 taken.push(dir);
             }
@@ -148,10 +152,7 @@ pub(crate) async fn serve(dirs: Vec<String>, mut send: iroh::endpoint::SendStrea
         // the watched (renamed, removed), else its parent (a name inside
         // it came, went or was written).
         let dir_of = |p: &std::path::Path| -> Option<String> {
-            known
-                .get(p)
-                .or_else(|| known.get(p.parent()?))
-                .cloned()
+            known.get(p).or_else(|| known.get(p.parent()?)).cloned()
         };
         loop {
             tokio::select! {
@@ -273,7 +274,8 @@ impl Watches {
             let now = Instant::now();
             // Let go of what nobody asked about for a while: a stream
             // whose every directory is stale ends.
-            m.dirs.retain(|d, dir| dirs.contains(d) || now.duration_since(dir.wanted) < KEEP);
+            m.dirs
+                .retain(|d, dir| dirs.contains(d) || now.duration_since(dir.wanted) < KEEP);
             let live: HashSet<u64> = m.dirs.values().map(|d| d.stream).collect();
             m.streams.retain(|n, task| {
                 let keep = live.contains(n);
@@ -473,18 +475,43 @@ mod tests {
         assert_eq!(started, 1, "one stream for both");
         w.took("m", 0, &dirs, &[]);
         // Everything is news to a face that holds nothing.
-        let all = w.wait("m", &dirs, 0, Duration::from_millis(50), |_, _| unreachable!()).await;
+        let all = w
+            .wait(
+                "m",
+                &dirs,
+                0,
+                Duration::from_millis(50),
+                |_, _| unreachable!(),
+            )
+            .await;
         assert_eq!(all.dirs.len(), 2);
         assert!(all.unreported.is_empty(), "a local disk hears every change");
         let since = all.seq;
         // Quiet: nothing changed since.
-        let quiet = w.wait("m", &dirs, since, Duration::from_millis(50), |_, _| unreachable!()).await;
+        let quiet = w
+            .wait(
+                "m",
+                &dirs,
+                since,
+                Duration::from_millis(50),
+                |_, _| unreachable!(),
+            )
+            .await;
         assert!(quiet.dirs.is_empty());
         // One changed, and only it is named.
         let waiter = {
             let w = w.clone();
             let dirs = dirs.clone();
-            tokio::spawn(async move { w.wait("m", &dirs, since, Duration::from_secs(5), |_, _| unreachable!()).await })
+            tokio::spawn(async move {
+                w.wait(
+                    "m",
+                    &dirs,
+                    since,
+                    Duration::from_secs(5),
+                    |_, _| unreachable!(),
+                )
+                .await
+            })
         };
         tokio::time::sleep(Duration::from_millis(20)).await;
         w.changed("m", vec!["/b".to_owned()]);
@@ -503,14 +530,42 @@ mod tests {
         // Taken again, `/b` now on a network mount: said with every answer
         // that asks about it, and only it.
         w.took("m", 1, &dirs, &["/b".to_owned()]);
-        let after = w.wait("m", &dirs, one.seq, Duration::from_millis(50), |_, _| unreachable!()).await;
-        assert_eq!(after.dirs.len(), 2, "watched again only since after `since`: both may have changed");
+        let after = w
+            .wait(
+                "m",
+                &dirs,
+                one.seq,
+                Duration::from_millis(50),
+                |_, _| unreachable!(),
+            )
+            .await;
+        assert_eq!(
+            after.dirs.len(),
+            2,
+            "watched again only since after `since`: both may have changed"
+        );
         assert_eq!(after.unreported, vec!["/b".to_owned()]);
-        let only_a = w.wait("m", &dirs[..1], after.seq, Duration::from_millis(20), |_, _| unreachable!()).await;
+        let only_a = w
+            .wait(
+                "m",
+                &dirs[..1],
+                after.seq,
+                Duration::from_millis(20),
+                |_, _| unreachable!(),
+            )
+            .await;
         assert!(only_a.unreported.is_empty(), "not asked about, not said");
         // A machine that cannot watch.
         w.ended("m", 1, true);
-        let no = w.wait("m", &dirs, after.seq, Duration::from_millis(50), |_, _| unreachable!()).await;
+        let no = w
+            .wait(
+                "m",
+                &dirs,
+                after.seq,
+                Duration::from_millis(50),
+                |_, _| unreachable!(),
+            )
+            .await;
         assert!(no.unavailable && no.dirs.len() == 2);
     }
 }

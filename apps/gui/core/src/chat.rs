@@ -98,10 +98,16 @@ pub enum ChatFrame {
     /// transcript and offers 重试 / 取消 on the session's pill. ⚠️ 墓碑:
     /// a `Refused` frame carrying the write's own error, which the face
     /// read as 「当前没有进行中的回合」.
-    Unsent { miss: crate::miss::Miss, token: Option<String> },
+    Unsent {
+        miss: crate::miss::Miss,
+        token: Option<String>,
+    },
     /// An admitted input was cancelled before reaching the agent. The optional
     /// client token correlates the retained draft without keeping its payload.
-    SendCancelled { token: Option<String>, reconnect: bool },
+    SendCancelled {
+        token: Option<String>,
+        reconnect: bool,
+    },
     /// The complete input was written, including its final commit frame.
     /// This is not an acknowledgement of remote execution or agent completion.
     SendCommitted { token: String },
@@ -475,7 +481,11 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
             let Some(machine) = far.as_deref().filter(|_| crate::rejoin::is_on()) else {
                 break;
             };
-            *reader.stall.lock().unwrap() = Some(crate::miss::Miss::new(crate::miss::MissKind::Unreached, Some(machine), ""));
+            *reader.stall.lock().unwrap() = Some(crate::miss::Miss::new(
+                crate::miss::MissKind::Unreached,
+                Some(machine),
+                "",
+            ));
             reader.arrived.notify_waiters();
             let told = |miss: crate::miss::Miss| {
                 *reader.stall.lock().unwrap() = Some(miss);
@@ -498,7 +508,9 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
             *reader.stall.lock().unwrap() = None;
             // The write half first, so the history a face asks for on
             // seeing `lost` goes down the new attachment.
-            if reader.conn.replace(conn).is_err() { break; }
+            if reader.conn.replace(conn).is_err() {
+                break;
+            }
             reader.frames.lock().unwrap().restart();
             reader.arrived.notify_waiters();
             reading = again;
@@ -518,7 +530,10 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
 /// The connection [`chat_open`] attaches with, and the far machine it
 /// came through (`None` when the conversation is hosted here). No lock
 /// is held: a far one waits on the network.
-fn attach(root: &Path, id: &str) -> Result<(khor_node::gui_host::Attached, Option<String>), String> {
+fn attach(
+    root: &Path,
+    id: &str,
+) -> Result<(khor_node::gui_host::Attached, Option<String>), String> {
     let n = Node::open(root.to_path_buf())?;
     let sid = SessionId(id.to_owned());
     // **An ended conversation says so, in its own words** (UX-4, decided):
@@ -526,8 +541,7 @@ fn attach(root: &Path, id: &str) -> Result<(khor_node::gui_host::Attached, Optio
     // reaching for it answered a terminal's sentence from the far machine
     // (「没有可连接的终端：tui/…」) or a command line's from this one.
     // Read off the row both machines already share, so no wire changes.
-    if n
-        .sessions()?
+    if n.sessions()?
         .iter()
         .any(|v| v.session.id == sid && v.session.state.state == khor_core::State::Failed)
     {
@@ -601,7 +615,11 @@ pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
 /// waited on average half a beat more. The app's face holds one of these
 /// open at a time instead; the bridge answers one request at a time, so
 /// the browser face keeps the beat.
-pub async fn chat_wait(id: &str, since: u64, longest: std::time::Duration) -> Result<ChatBatch, String> {
+pub async fn chat_wait(
+    id: &str,
+    since: u64,
+    longest: std::time::Duration,
+) -> Result<ChatBatch, String> {
     let chat = chat_of(id)?;
     let woke = chat.arrived.notified();
     tokio::pin!(woke);
@@ -772,11 +790,24 @@ fn send_turn(
 
 /// Controls share one FIFO; whole turns deliberately use another one.
 pub enum Control {
-    Answer { ask: u64, option: Option<String> },
-    Respond { ask: u64, response: serde_json::Value },
-    Operation { token: String, operation: String, payload: serde_json::Value },
+    Answer {
+        ask: u64,
+        option: Option<String>,
+    },
+    Respond {
+        ask: u64,
+        response: serde_json::Value,
+    },
+    Operation {
+        token: String,
+        operation: String,
+        payload: serde_json::Value,
+    },
     SetMode(String),
-    SetOption { option: String, value: serde_json::Value },
+    SetOption {
+        option: String,
+        value: serde_json::Value,
+    },
     Stop,
     Replay,
 }
@@ -885,7 +916,10 @@ fn submit_stop(id: &str) -> Result<crate::command_queue::Pending<()>, String> {
 }
 
 /// Validate before enqueueing, retaining the core errors used by every skin.
-pub fn submit_control(id: &str, command: Control) -> Result<crate::command_queue::Pending<()>, String> {
+pub fn submit_control(
+    id: &str,
+    command: Control,
+) -> Result<crate::command_queue::Pending<()>, String> {
     if matches!(command, Control::Stop) {
         return submit_stop(id);
     }
@@ -893,24 +927,45 @@ pub fn submit_control(id: &str, command: Control) -> Result<crate::command_queue
         Control::Answer { ask, option } => GuiOp::Answer { ask, option },
         Control::Respond { ask, response } => {
             let response = serde_json::to_string(&response).map_err(|e| e.to_string())?;
-            if response.len() > 128 * 1024 { return Err("Interaction response is too large".into()); }
+            if response.len() > 128 * 1024 {
+                return Err("Interaction response is too large".into());
+            }
             GuiOp::ElicitAnswer { ask, response }
         }
-        Control::Operation { token, operation, payload } => {
-            if token.is_empty() || token.len() > 128
-                || !matches!(operation.as_str(), "close" | "delete" | "authenticate" | "logout") {
+        Control::Operation {
+            token,
+            operation,
+            payload,
+        } => {
+            if token.is_empty()
+                || token.len() > 128
+                || !matches!(
+                    operation.as_str(),
+                    "close" | "delete" | "authenticate" | "logout"
+                )
+            {
                 return Err("Invalid session operation".into());
             }
             let payload = payload.to_string();
-            if payload.len() > 16 * 1024 { return Err("Session operation is too large".into()); }
-            GuiOp::Control { token, operation, payload }
+            if payload.len() > 16 * 1024 {
+                return Err("Session operation is too large".into());
+            }
+            GuiOp::Control {
+                token,
+                operation,
+                payload,
+            }
         }
         Control::SetMode(mode) => GuiOp::SetMode(mode),
         Control::SetOption { option, value } => {
             let value = match value {
                 serde_json::Value::String(v) => Choice::Value(v),
                 serde_json::Value::Bool(on) => Choice::Switch(on),
-                other => return Err(format!("an option is set to a word or a switch, not {other}")),
+                other => {
+                    return Err(format!(
+                        "an option is set to a word or a switch, not {other}"
+                    ));
+                }
             };
             GuiOp::SetOption { id: option, value }
         }
@@ -919,7 +974,8 @@ pub fn submit_control(id: &str, command: Control) -> Result<crate::command_queue
     };
     let chat = chat_of(id)?;
     let target = chat.clone();
-    chat.commands.submit(move || write_frame(&mut *target.conn.lock().unwrap(), &op))
+    chat.commands
+        .submit(move || write_frame(&mut *target.conn.lock().unwrap(), &op))
 }
 
 /// Chosen option id, or None to refuse. Synchronous bridge callers still wait
@@ -928,10 +984,30 @@ pub fn chat_answer(id: &str, ask: u64, option: Option<String>) -> Result<(), Str
     submit_control(id, Control::Answer { ask, option })?.wait()
 }
 pub fn chat_respond(id: &str, ask: u64, response: &serde_json::Value) -> Result<(), String> {
-    submit_control(id, Control::Respond { ask, response: response.clone() })?.wait()
+    submit_control(
+        id,
+        Control::Respond {
+            ask,
+            response: response.clone(),
+        },
+    )?
+    .wait()
 }
-pub fn chat_control(id: &str, token: &str, operation: &str, payload: &serde_json::Value) -> Result<(), String> {
-    submit_control(id, Control::Operation { token: token.into(), operation: operation.into(), payload: payload.clone() })?.wait()
+pub fn chat_control(
+    id: &str,
+    token: &str,
+    operation: &str,
+    payload: &serde_json::Value,
+) -> Result<(), String> {
+    submit_control(
+        id,
+        Control::Operation {
+            token: token.into(),
+            operation: operation.into(),
+            payload: payload.clone(),
+        },
+    )?
+    .wait()
 }
 /// The agent's Settings/Refused frame carries the outcome; this result says
 /// only that the op left, as it did before commands acquired a queue.
@@ -939,7 +1015,14 @@ pub fn chat_set_mode(id: &str, mode: &str) -> Result<(), String> {
     submit_control(id, Control::SetMode(mode.into()))?.wait()
 }
 pub fn chat_set_option(id: &str, option: &str, value: &serde_json::Value) -> Result<(), String> {
-    submit_control(id, Control::SetOption { option: option.into(), value: value.clone() })?.wait()
+    submit_control(
+        id,
+        Control::SetOption {
+            option: option.into(),
+            value: value.clone(),
+        },
+    )?
+    .wait()
 }
 /// Ends the running turn, not the session; never waits for a whole turn's queue.
 pub fn chat_stop(id: &str) -> Result<(), String> {
@@ -1159,7 +1242,11 @@ mod frame_cap_tests {
         f.push(numbered(100));
         let (from, lost) = f.since(caught_up);
         assert!(lost);
-        assert_eq!(stop_of(&f.held[from]), "100", "and it gets the new life's frames");
+        assert_eq!(
+            stop_of(&f.held[from]),
+            "100",
+            "and it gets the new life's frames"
+        );
         let (_, lost) = f.since(0);
         assert!(lost, "a face from the very start rebuilds too");
     }
@@ -1193,15 +1280,31 @@ mod old_host_tests {
     #[allow(dead_code)]
     enum OldNote {
         Note(String),
-        Ask { ask: u64, title: String, options: Vec<(String, String)> },
+        Ask {
+            ask: u64,
+            title: String,
+            options: Vec<(String, String)>,
+        },
         Turn(String),
         Gone,
         History(String),
         HistoryEnd,
         Turning,
-        Answered { ask: u64, option: Option<String> },
-        Agent { name: Option<String>, replays: bool, images: bool, embeds: bool, lists: bool, needs_login: bool },
-        Refused { why: String },
+        Answered {
+            ask: u64,
+            option: Option<String>,
+        },
+        Agent {
+            name: Option<String>,
+            replays: bool,
+            images: bool,
+            embeds: bool,
+            lists: bool,
+            needs_login: bool,
+        },
+        Refused {
+            why: String,
+        },
         Settings(String),
     }
 
@@ -1209,7 +1312,8 @@ mod old_host_tests {
     fn over_the_wire(old: &OldNote) -> ChatFrame {
         let mut bytes = Vec::new();
         write_frame(&mut bytes, old).expect("encode");
-        let note: GuiNote = read_frame(&mut bytes.as_slice()).expect("the new reader takes the old frame");
+        let note: GuiNote =
+            read_frame(&mut bytes.as_slice()).expect("the new reader takes the old frame");
         frame_of(note)
     }
 
@@ -1227,7 +1331,17 @@ mod old_host_tests {
             lists: false,
             needs_login: false,
         });
-        assert!(matches!(agent, ChatFrame::Agent { replays: true, images: true, .. }), "{agent:?}");
+        assert!(
+            matches!(
+                agent,
+                ChatFrame::Agent {
+                    replays: true,
+                    images: true,
+                    ..
+                }
+            ),
+            "{agent:?}"
+        );
 
         // The old `settings_json`: modes and options, nothing else.
         let old_settings = serde_json::json!({
@@ -1245,7 +1359,10 @@ mod old_host_tests {
         match over_the_wire(&OldNote::Settings(old_settings)) {
             ChatFrame::Settings { settings } => {
                 assert_eq!(settings["modes"]["currentModeId"], "default");
-                assert!(settings.get("model").is_none(), "an old host names no model: {settings}");
+                assert!(
+                    settings.get("model").is_none(),
+                    "an old host names no model: {settings}"
+                );
             }
             other => panic!("not a settings frame: {other:?}"),
         }
@@ -1255,20 +1372,47 @@ mod old_host_tests {
             "update": { "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "hello" } }
         })
         .to_string();
-        assert!(matches!(over_the_wire(&OldNote::Note(said.clone())), ChatFrame::Note { .. }));
-        assert!(matches!(over_the_wire(&OldNote::History(said)), ChatFrame::History { .. }));
-        assert!(matches!(over_the_wire(&OldNote::HistoryEnd), ChatFrame::HistoryEnd));
-        assert!(matches!(over_the_wire(&OldNote::Turning), ChatFrame::Turning));
-        assert!(matches!(over_the_wire(&OldNote::Turn("end_turn".into())), ChatFrame::Turn { .. }));
         assert!(matches!(
-            over_the_wire(&OldNote::Ask { ask: 1, title: "Run".into(), options: vec![("y".into(), "Yes".into())] }),
+            over_the_wire(&OldNote::Note(said.clone())),
+            ChatFrame::Note { .. }
+        ));
+        assert!(matches!(
+            over_the_wire(&OldNote::History(said)),
+            ChatFrame::History { .. }
+        ));
+        assert!(matches!(
+            over_the_wire(&OldNote::HistoryEnd),
+            ChatFrame::HistoryEnd
+        ));
+        assert!(matches!(
+            over_the_wire(&OldNote::Turning),
+            ChatFrame::Turning
+        ));
+        assert!(matches!(
+            over_the_wire(&OldNote::Turn("end_turn".into())),
+            ChatFrame::Turn { .. }
+        ));
+        assert!(matches!(
+            over_the_wire(&OldNote::Ask {
+                ask: 1,
+                title: "Run".into(),
+                options: vec![("y".into(), "Yes".into())]
+            }),
             ChatFrame::Ask { ask: 1, .. }
         ));
         assert!(matches!(
-            over_the_wire(&OldNote::Answered { ask: 1, option: Some("y".into()) }),
+            over_the_wire(&OldNote::Answered {
+                ask: 1,
+                option: Some("y".into())
+            }),
             ChatFrame::Answered { ask: 1, .. }
         ));
-        assert!(matches!(over_the_wire(&OldNote::Refused { why: "no-turn".into() }), ChatFrame::Refused { .. }));
+        assert!(matches!(
+            over_the_wire(&OldNote::Refused {
+                why: "no-turn".into()
+            }),
+            ChatFrame::Refused { .. }
+        ));
         assert!(matches!(over_the_wire(&OldNote::Gone), ChatFrame::Gone));
     }
 }
@@ -1313,7 +1457,9 @@ mod wait_tests {
                 feeder.arrived.notify_waiters();
                 at
             });
-            let batch = chat_wait(&id, n, std::time::Duration::from_secs(2)).await.unwrap();
+            let batch = chat_wait(&id, n, std::time::Duration::from_secs(2))
+                .await
+                .unwrap();
             let answered = std::time::Instant::now();
             let at = arrives.join().unwrap();
             assert_eq!((batch.frames.len(), batch.next), (1, n + 1));
@@ -1321,13 +1467,20 @@ mod wait_tests {
         }
         lags.sort();
         let median = lags[lags.len() / 2];
-        eprintln!("[chat-wait] arrival -> answer median {median:?}, worst {:?} (the beat it replaces: 0-50 ms in a turn, 0-500 between)", lags[lags.len() - 1]);
+        eprintln!(
+            "[chat-wait] arrival -> answer median {median:?}, worst {:?} (the beat it replaces: 0-50 ms in a turn, 0-500 between)",
+            lags[lags.len() - 1]
+        );
         assert!(median < std::time::Duration::from_millis(5), "{lags:?}");
 
         // Nothing new: it waits, then answers with nothing.
         let began = std::time::Instant::now();
-        let batch = chat_wait(&id, 20, std::time::Duration::from_millis(200)).await.unwrap();
-        assert!(batch.frames.is_empty() && began.elapsed() >= std::time::Duration::from_millis(190));
+        let batch = chat_wait(&id, 20, std::time::Duration::from_millis(200))
+            .await
+            .unwrap();
+        assert!(
+            batch.frames.is_empty() && began.elapsed() >= std::time::Duration::from_millis(190)
+        );
         chats().lock().unwrap().remove(&id);
     }
 }
@@ -1353,7 +1506,12 @@ mod wait_tests {
 /// paths), put where the conversation's machine keeps them, or into the
 /// directory `into` names on it (empty: its receive directory). Answers
 /// each one's path **on that machine**, in order.
-pub fn chat_put_paths(root: &Path, id: &str, paths: &[String], into: &str) -> Result<Vec<String>, String> {
+pub fn chat_put_paths(
+    root: &Path,
+    id: &str,
+    paths: &[String],
+    into: &str,
+) -> Result<Vec<String>, String> {
     let n = Node::open(root.to_path_buf())?;
     if let Some(machine) = n.far_machine(&SessionId(id.to_owned()))? {
         return crate::term::deliver_blocking(root, &machine, paths, into);
@@ -1369,11 +1527,15 @@ pub fn chat_put_paths(root: &Path, id: &str, paths: &[String], into: &str) -> Re
         let src = Path::new(p);
         let (digest, size) = khor_node::transfer::digest_file(src)?;
         // The same bytes are the same file: kept, not copied again.
-        if let Some(r) = khor_node::road::receipt(root, &digest).filter(|r| r.path.parent() == Some(dir.as_path())) {
+        if let Some(r) = khor_node::road::receipt(root, &digest)
+            .filter(|r| r.path.parent() == Some(dir.as_path()))
+        {
             out.push(r.path.display().to_string());
             continue;
         }
-        let name = khor_node::transfer::safe_name(src.file_name().and_then(|n| n.to_str()).unwrap_or("file"));
+        let name = khor_node::transfer::safe_name(
+            src.file_name().and_then(|n| n.to_str()).unwrap_or("file"),
+        );
         let at = khor_node::drops::landing(&dir, &name)?;
         let copied = std::fs::copy(src, &at.part)
             .map_err(|e| khor_catalog::msg::cant_read(src.display(), e))
@@ -1414,7 +1576,9 @@ pub fn chat_put(
     let staged = crate::save_upload(root, name, body)?;
     // Placed under its own name, not the staging one's stamp.
     let named = staged.with_file_name(khor_node::transfer::safe_name(name));
-    let named = if named.exists() { staged.clone() } else {
+    let named = if named.exists() {
+        staged.clone()
+    } else {
         std::fs::rename(&staged, &named).map_err(|e| e.to_string())?;
         named
     };
@@ -1423,7 +1587,9 @@ pub fn chat_put(
     // answers): either way the staged bytes are read by nobody now.
     let out = chat_put_paths(root, id, &[named.display().to_string()], into);
     let _ = std::fs::remove_file(&named);
-    out?.into_iter().next().ok_or_else(|| "nothing placed".to_owned())
+    out?.into_iter()
+        .next()
+        .ok_or_else(|| "nothing placed".to_owned())
 }
 
 #[cfg(test)]

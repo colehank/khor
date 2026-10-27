@@ -329,16 +329,28 @@ mod tests {
         assert_eq!(a.origin_of(&k).as_deref(), Some("tui/one"));
         a.visit_from(&k, 200, None).unwrap();
         assert_eq!(a.visited_at(&k), 200, "control: the visit moved");
-        assert_eq!(a.origin_of(&k).as_deref(), Some("tui/one"), "a visit from nowhere keeps the origin");
+        assert_eq!(
+            a.origin_of(&k).as_deref(),
+            Some("tui/one"),
+            "a visit from nowhere keeps the origin"
+        );
         a.visit_from(&k, 300, Some("tui/two")).unwrap();
         assert_eq!(a.origin_of(&k).as_deref(), Some("tui/two"));
         let b = RecentDoc::new(2).unwrap();
         b.merge(&a.snapshot().unwrap()).unwrap();
         assert_eq!(b.visited_at(&k), 300);
-        assert_eq!(b.origin_of(&k).as_deref(), Some("tui/two"), "the origin travels with the visit");
+        assert_eq!(
+            b.origin_of(&k).as_deref(),
+            Some("tui/two"),
+            "the origin travels with the visit"
+        );
         let other = key(Kind::Page, "abc123", "https://example.com/");
         b.visit(&other, 50).unwrap();
-        assert_eq!(b.origin_of(&other), None, "control: a plain visit says no session");
+        assert_eq!(
+            b.origin_of(&other),
+            None,
+            "control: a plain visit says no session"
+        );
     }
 
     /// A kind word this version does not know is skipped, never guessed

@@ -89,7 +89,10 @@ impl Egress {
 mod tests {
     use super::*;
 
-    const DARK: Seen = Seen { home: false, answered: false };
+    const DARK: Seen = Seen {
+        home: false,
+        answered: false,
+    };
 
     /// lecun's day: nothing, beat after beat, until [`ENTER_AFTER`]; out
     /// at the first answer.
@@ -109,7 +112,17 @@ mod tests {
         let (s, at) = said.expect("said once");
         assert!(s && at >= ENTER_AFTER && at < ENTER_AFTER + beat, "{at:?}");
         assert!(e.none());
-        assert_eq!(e.saw(Seen { home: false, answered: true }, t), Some(false), "one answer is enough");
+        assert_eq!(
+            e.saw(
+                Seen {
+                    home: false,
+                    answered: true
+                },
+                t
+            ),
+            Some(false),
+            "one answer is enough"
+        );
         assert_eq!(e.saw(DARK, t + beat), None, "and the clock starts again");
     }
 
@@ -120,7 +133,10 @@ mod tests {
         let t0 = Instant::now();
         let mut e = Egress::default();
         assert_eq!(e.saw(DARK, t0), None, "not yet known");
-        let lit = Seen { home: true, answered: true };
+        let lit = Seen {
+            home: true,
+            answered: true,
+        };
         assert_eq!(e.saw(lit, t0 + Duration::from_secs(5)), Some(false));
         assert_eq!(e.saw(lit, t0 + Duration::from_secs(10)), None);
     }
@@ -133,7 +149,16 @@ mod tests {
         let mut e = Egress::default();
         assert_eq!(e.saw(DARK, t0), None);
         assert_eq!(e.saw(DARK, t0 + ENTER_AFTER - Duration::from_secs(1)), None);
-        assert_eq!(e.saw(Seen { home: true, answered: false }, t0 + ENTER_AFTER), Some(false));
+        assert_eq!(
+            e.saw(
+                Seen {
+                    home: true,
+                    answered: false
+                },
+                t0 + ENTER_AFTER
+            ),
+            Some(false)
+        );
         assert_eq!(e.saw(DARK, t0 + ENTER_AFTER + Duration::from_secs(5)), None);
         assert!(!e.none());
     }
@@ -145,8 +170,14 @@ mod tests {
         let t0 = Instant::now();
         let mut e = Egress::default();
         for i in 0..400 {
-            let seen = Seen { home: true, answered: i % 2 == 0 };
-            assert_eq!(e.saw(seen, t0 + Duration::from_secs(5 * i)), (i == 0).then_some(false));
+            let seen = Seen {
+                home: true,
+                answered: i % 2 == 0,
+            };
+            assert_eq!(
+                e.saw(seen, t0 + Duration::from_secs(5 * i)),
+                (i == 0).then_some(false)
+            );
         }
         assert!(!e.none());
     }
@@ -159,11 +190,23 @@ impl crate::Node {
     /// machine's own row.
     pub(crate) fn look_for_relays(&self, ep: &iroh::Endpoint) {
         use iroh::Watcher;
-        let home = ep.home_relay_status().get().iter().any(|r| r.is_connected());
-        let answered = ep.net_report().get().is_some_and(|r| r.relay_latency.iter().next().is_some());
-        let changed = self.egress.lock().unwrap_or_else(|p| p.into_inner()).saw(Seen { home, answered }, Instant::now());
+        let home = ep
+            .home_relay_status()
+            .get()
+            .iter()
+            .any(|r| r.is_connected());
+        let answered = ep
+            .net_report()
+            .get()
+            .is_some_and(|r| r.relay_latency.iter().next().is_some());
+        let changed = self
+            .egress
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .saw(Seen { home, answered }, Instant::now());
         let Some(none) = changed else { return };
-        self.wires.note(None, crate::journal::What::NoRelay { none });
+        self.wires
+            .note(None, crate::journal::What::NoRelay { none });
         // The roads to try changed: a machine waiting out a dial that the
         // relays failed is dialled again at once, the other way.
         self.wires.forgive_all();

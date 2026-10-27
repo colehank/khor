@@ -19,7 +19,10 @@ use scratch::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn a_far_tree_is_told_what_changed_and_a_remount_asks_nothing() {
-    let rtt: u64 = std::env::var("WATCH_RTT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(200);
+    let rtt: u64 = std::env::var("WATCH_RTT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
     let (p, _road) = pair_on(
         "watch",
         Some(Impair {
@@ -60,14 +63,21 @@ async fn a_far_tree_is_told_what_changed_and_a_remount_asks_nothing() {
             dirs.clone(),
             first.seq,
         );
-        tokio::spawn(async move { beta.dirs_changed("alpha", &dirs, since, Duration::from_secs(20)).await })
+        tokio::spawn(async move {
+            beta.dirs_changed("alpha", &dirs, since, Duration::from_secs(20))
+                .await
+        })
     };
     tokio::time::sleep(Duration::from_millis(500)).await;
     let made = Instant::now();
     std::fs::write(std::path::Path::new(&dirs[3]).join("new.txt"), b"hello").unwrap();
     let told = waiting.await.unwrap().expect("the wait answers");
     let heard = made.elapsed();
-    assert_eq!(told.dirs, vec![dirs[3].clone()], "only the level that changed");
+    assert_eq!(
+        told.dirs,
+        vec![dirs[3].clone()],
+        "only the level that changed"
+    );
 
     // Coming back to the tree: before, every open level asked again.
     let c0 = p.beta.wire_counts().await.unwrap();
@@ -91,7 +101,9 @@ async fn a_far_tree_is_told_what_changed_and_a_remount_asks_nothing() {
     // An idle minute of watching, on the wire.
     let quiet = 30u64;
     let c3 = p.beta.wire_counts().await.unwrap();
-    let idle = p.beta.dirs_changed("alpha", &dirs, now.seq, Duration::from_secs(20));
+    let idle = p
+        .beta
+        .dirs_changed("alpha", &dirs, now.seq, Duration::from_secs(20));
     let _ = tokio::time::timeout(Duration::from_secs(quiet), async {
         let _ = idle.await;
         tokio::time::sleep(Duration::from_secs(quiet)).await;

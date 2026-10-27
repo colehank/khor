@@ -26,7 +26,11 @@ fn read_until(conn: &mut impl Read, want: &str, into: &mut Vec<u8>) {
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut buf = [0u8; 65536];
     while !String::from_utf8_lossy(into).contains(want) {
-        assert!(Instant::now() < deadline, "never saw {want:?} in {:?}", String::from_utf8_lossy(into));
+        assert!(
+            Instant::now() < deadline,
+            "never saw {want:?} in {:?}",
+            String::from_utf8_lossy(into)
+        );
         match conn.read(&mut buf) {
             Ok(0) => panic!("the host hung up"),
             Ok(n) => into.extend_from_slice(&buf[..n]),
@@ -68,16 +72,25 @@ fn a_mouse_mode_left_on_is_turned_off_and_its_reports_never_reach_the_shell() {
     // the `h`), so the reports a stale face still sends never reach the
     // shell as keys.
     let mut conn = khor_node::host::connect(&dir, 80, 24).expect("the host takes an attacher");
-    conn.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
+    conn.set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
     let mut seen = Vec::new();
     read_until(&mut conn, "SET-MARK", &mut seen);
     let mut modes = khor_node::modes::Modes::default();
     modes.feed(&seen);
-    assert!(!modes.is_set(1003), "the attacher starts with the mouse off: {:?}", String::from_utf8_lossy(&seen));
+    assert!(
+        !modes.is_set(1003),
+        "the attacher starts with the mouse off: {:?}",
+        String::from_utf8_lossy(&seen)
+    );
 
     // A stale face still sends the owner's reports, then a line.
     let mut writer = conn.try_clone().unwrap();
-    write_frame(&mut writer, &ClientOp::Input(b"\x1b[<35;6;5M\x1b[<35;12;6Mhello\r".to_vec())).unwrap();
+    write_frame(
+        &mut writer,
+        &ClientOp::Input(b"\x1b[<35;6;5M\x1b[<35;12;6Mhello\r".to_vec()),
+    )
+    .unwrap();
     read_until(&mut conn, "GOT:", &mut seen);
     std::thread::sleep(Duration::from_millis(300));
     let mut rest = [0u8; 4096];
@@ -86,11 +99,16 @@ fn a_mouse_mode_left_on_is_turned_off_and_its_reports_never_reach_the_shell() {
     }
     let text = String::from_utf8_lossy(&seen).into_owned();
     let got = &text[text.rfind("GOT:").unwrap()..];
-    assert!(got.starts_with("GOT:hello"), "the shell read reports as typing: {got:?}");
+    assert!(
+        got.starts_with("GOT:hello"),
+        "the shell read reports as typing: {got:?}"
+    );
 
     drop(conn);
     drop(writer);
-    let _ = std::process::Command::new("pkill").args(["-f", &shell.to_string_lossy()]).status();
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", &shell.to_string_lossy()])
+        .status();
     let _ = host.join();
     let _ = std::fs::remove_dir_all(&root);
 }

@@ -316,7 +316,9 @@ impl ChatDoc {
             if str_of(&m, "from_id").as_deref() != Some(from.id.as_str()) {
                 return Err("command receipt belongs to another executor".to_owned());
             }
-            if let Some(prior) = str_of(&m, "command").and_then(|s| serde_json::from_str::<CommandRecord>(&s).ok()) {
+            if let Some(prior) =
+                str_of(&m, "command").and_then(|s| serde_json::from_str::<CommandRecord>(&s).ok())
+            {
                 if prior == *record || prior.ended_at_ms.is_some() {
                     return Ok(record.id.clone());
                 }
@@ -327,9 +329,11 @@ impl ChatDoc {
             return Ok(record.id.clone());
         }
         self.push(from, "text", |m| {
-            m.insert("id", record.id.as_str()).map_err(|e| e.to_string())?;
+            m.insert("id", record.id.as_str())
+                .map_err(|e| e.to_string())?;
             m.insert("at", at).map_err(|e| e.to_string())?;
-            m.insert("text", record.line.as_str()).map_err(|e| e.to_string())?;
+            m.insert("text", record.line.as_str())
+                .map_err(|e| e.to_string())?;
             m.insert("command", encoded).map_err(|e| e.to_string())
         })?;
         Ok(record.id.clone())
@@ -339,7 +343,13 @@ impl ChatDoc {
     /// and the files it carries, all known now (the module head). A text
     /// message when there are no files, a files message (with the words
     /// as its note) when there are. Returns the message id.
-    pub fn post(&self, from: &Sender, text: &str, to: &[Target], files: &[FileRef]) -> Result<String, String> {
+    pub fn post(
+        &self,
+        from: &Sender,
+        text: &str,
+        to: &[Target],
+        files: &[FileRef],
+    ) -> Result<String, String> {
         let kind = if files.is_empty() { "text" } else { "files" };
         self.push(from, kind, |m| {
             let err = |e: loro::LoroError| e.to_string();
@@ -623,7 +633,11 @@ fn read_msg(m: &LoroMap) -> Message {
         edited: bool_of(m, "edited"),
         fates: read_fates(m),
         to: read_targets(m),
-        note: if kind == "files" { str_of(m, "text").unwrap_or_default() } else { String::new() },
+        note: if kind == "files" {
+            str_of(m, "text").unwrap_or_default()
+        } else {
+            String::new()
+        },
         command: str_of(m, "command").and_then(|s| serde_json::from_str(&s).ok()),
     }
 }
@@ -642,7 +656,10 @@ fn read_targets(m: &LoroMap) -> Vec<Target> {
                     _ => String::new(),
                 };
                 let device = text("device");
-                (!device.is_empty()).then(|| Target { device, path: text("path") })
+                (!device.is_empty()).then(|| Target {
+                    device,
+                    path: text("path"),
+                })
             }
             _ => None,
         })
@@ -681,7 +698,16 @@ fn read_fates(m: &LoroMap) -> BTreeMap<String, Fate> {
                 .collect(),
             _ => Vec::new(),
         };
-        out.insert(device.to_owned(), Fate { step, moved, landed, why: text("why"), via: text("via") });
+        out.insert(
+            device.to_owned(),
+            Fate {
+                step,
+                moved,
+                landed,
+                why: text("why"),
+                via: text("via"),
+            },
+        );
     });
     out
 }

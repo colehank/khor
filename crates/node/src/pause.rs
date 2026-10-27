@@ -99,7 +99,8 @@ struct Polled {
 }
 
 /// The homes a resident in this process polls, and their readings.
-static POLLED: std::sync::Mutex<Vec<(PathBuf, std::sync::Arc<Polled>)>> = std::sync::Mutex::new(Vec::new());
+static POLLED: std::sync::Mutex<Vec<(PathBuf, std::sync::Arc<Polled>)>> =
+    std::sync::Mutex::new(Vec::new());
 
 fn polled(root: &Path) -> Option<std::sync::Arc<Polled>> {
     POLLED

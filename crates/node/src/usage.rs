@@ -624,18 +624,22 @@ impl Meters {
 /// ledger each, and one registry shared between them would write both
 /// homes' history into whichever ledger it was built with.
 pub fn meters_for(home: &Path, ledger: &Path) -> std::sync::Arc<Meters> {
-    static ALL: std::sync::OnceLock<
-        Mutex<HashMap<(PathBuf, PathBuf), std::sync::Arc<Meters>>>,
-    > = std::sync::OnceLock::new();
+    static ALL: std::sync::OnceLock<Mutex<HashMap<(PathBuf, PathBuf), std::sync::Arc<Meters>>>> =
+        std::sync::OnceLock::new();
     let mut all = ALL
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(|p| p.into_inner());
     all.entry((home.to_path_buf(), ledger.to_path_buf()))
         .or_insert_with(|| {
-            std::sync::Arc::new(Meters::with_agent_dirs(
-                home, crate::adaptor::claude_home(home), crate::adaptor::codex_home(home),
-            ).with_ledger(ledger.to_path_buf()))
+            std::sync::Arc::new(
+                Meters::with_agent_dirs(
+                    home,
+                    crate::adaptor::claude_home(home),
+                    crate::adaptor::codex_home(home),
+                )
+                .with_ledger(ledger.to_path_buf()),
+            )
         })
         .clone()
 }

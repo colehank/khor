@@ -115,7 +115,10 @@ fn shell_stands(doing: Option<&khor_core::Doing>, shell_pid: u32) -> Option<Stri
     if let Some(cwd) = doing.and_then(|d| d.cwd.as_deref()) {
         return Some(tilde(cwd));
     }
-    if let Some(title) = doing.and_then(|d| d.title.as_deref()).filter(|t| !t.trim().is_empty()) {
+    if let Some(title) = doing
+        .and_then(|d| d.title.as_deref())
+        .filter(|t| !t.trim().is_empty())
+    {
         return Some(title.to_owned());
     }
     cwd_of(shell_pid).map(|p| tilde(&p.to_string_lossy()))
@@ -124,7 +127,9 @@ fn shell_stands(doing: Option<&khor_core::Doing>, shell_pid: u32) -> Option<Stri
 /// A path under the home directory, written from `~`.
 fn tilde(path: &str) -> String {
     match std::env::home_dir().map(|h| h.to_string_lossy().into_owned()) {
-        Some(h) if !h.is_empty() && (path == h || path.starts_with(&format!("{h}/"))) => format!("~{}", &path[h.len()..]),
+        Some(h) if !h.is_empty() && (path == h || path.starts_with(&format!("{h}/"))) => {
+            format!("~{}", &path[h.len()..])
+        }
         _ => path.to_owned(),
     }
 }
@@ -620,7 +625,15 @@ impl LiveKind {
 
     fn discover_registered(&self, registered: &[RegistryRow]) -> crate::adaptor::Findings {
         let mut found = self.discovery.sweep();
-        let terminals: Vec<_> = registered.iter().filter_map(|r| Some((r.host_child?, r.row.doing.as_ref().and_then(|d| d.title.clone())))).collect();
+        let terminals: Vec<_> = registered
+            .iter()
+            .filter_map(|r| {
+                Some((
+                    r.host_child?,
+                    r.row.doing.as_ref().and_then(|d| d.title.clone()),
+                ))
+            })
+            .collect();
         crate::codex_terminal::select(&mut found, &terminals);
         found
     }
@@ -684,8 +697,10 @@ impl LiveKind {
     /// A clicked imported agent ID may now hold its original tmux terminal
     /// in shell form. This permits terminal access, never an agent-thread join.
     fn holds_terminal_form(&self, id: &SessionId) -> bool {
-        self.seated(&|_| 0, &|sid| sid == id.0).rows.iter().any(|row|
-            row.id == *id && row.kind.0 == khor_core::kind::SHELL && row.term && row.mux)
+        self.seated(&|_| 0, &|sid| sid == id.0)
+            .rows
+            .iter()
+            .any(|row| row.id == *id && row.kind.0 == khor_core::kind::SHELL && row.term && row.mux)
     }
 
     /// Stands a host up for a discovered multiplexer session, so the
@@ -819,7 +834,13 @@ impl LiveKind {
         {
             let minted = match &noted {
                 Some(n) if !self.claims(id) => {
-                    self.ensure(id, khor_core::kind::TUI, &n.title, None, n.category.as_deref())?;
+                    self.ensure(
+                        id,
+                        khor_core::kind::TUI,
+                        &n.title,
+                        None,
+                        n.category.as_deref(),
+                    )?;
                     // Nothing was spawned: the opening 忙碌 `register`
                     // writes is demoted, as for a discovered row below.
                     let _ = self.report(id, State::Idle, Source::Screen);
@@ -856,7 +877,10 @@ impl LiveKind {
                 )
             } else if let Ok(dir) = self.existing_dir(id) {
                 let meta = read_meta(&dir)?;
-                let pid = meta.pid.filter(|pid| !crate::codex_terminal::scoped(&sweep.procs, *pid)).ok_or_else(|| msg::no_terminal_here(&id.0))?;
+                let pid = meta
+                    .pid
+                    .filter(|pid| !crate::codex_terminal::scoped(&sweep.procs, *pid))
+                    .ok_or_else(|| msg::no_terminal_here(&id.0))?;
                 (vec![pid], meta.title, None, None)
             } else {
                 return Err(msg::no_terminal_here(&id.0));
@@ -916,7 +940,11 @@ impl LiveKind {
     /// `Tmux::jump_prompt`): there tmux holds the screen and its history,
     /// so the face asks tmux.
     pub fn jump_prompt(&self, id: &SessionId, up: bool) -> Result<(), String> {
-        let row = self.discovery.tmux().ok_or_else(|| msg::no_terminal_here(&id.0)).and_then(|t| t.jump_prompt(&id.0, up));
+        let row = self
+            .discovery
+            .tmux()
+            .ok_or_else(|| msg::no_terminal_here(&id.0))
+            .and_then(|t| t.jump_prompt(&id.0, up));
         // A shell with the person's own tmux client in front (item 58).
         match row {
             Err(e) => match self.tmux_in_shell(id) {
@@ -962,7 +990,11 @@ impl LiveKind {
         id: &SessionId,
         since: Option<&crate::adaptor::tmux::HistoryAnchor>,
     ) -> Result<crate::adaptor::tmux::PaneHistory, String> {
-        let row = self.discovery.tmux().ok_or_else(|| msg::no_terminal_here(&id.0)).and_then(|t| t.history(&id.0, since));
+        let row = self
+            .discovery
+            .tmux()
+            .ok_or_else(|| msg::no_terminal_here(&id.0))
+            .and_then(|t| t.history(&id.0, since));
         // A shell with the person's own tmux client in front (item 58):
         // the history of the session that client is attached to.
         match row {
@@ -1243,17 +1275,38 @@ impl LiveKind {
         // Imported rows may have recorded this client's PID before an in-TUI
         // thread switch. Native selection, not that old pin, owns it now.
         seat_of_pid.retain(|pid, _| !crate::codex_terminal::scoped(&sweep.procs, *pid));
-        let selection_hosts: std::collections::BTreeSet<_> = registered.iter().filter(|r| {
-            r.host_child.is_some_and(|pid| sweep.procs.held_by(&[pid]).iter().any(|p| crate::codex_terminal::scoped(&sweep.procs, *p)))
-        }).map(|r| r.row.id.0.clone()).collect();
-        let bound: std::collections::BTreeSet<_> = sweep.rows.iter()
-            .filter(|r| r.category == "codex").flat_map(|r| r.sighting.pids.iter().copied()).collect();
-        let unbound: std::collections::BTreeSet<_> = sweep.procs.named("codex").into_iter()
+        let selection_hosts: std::collections::BTreeSet<_> = registered
+            .iter()
+            .filter(|r| {
+                r.host_child.is_some_and(|pid| {
+                    sweep
+                        .procs
+                        .held_by(&[pid])
+                        .iter()
+                        .any(|p| crate::codex_terminal::scoped(&sweep.procs, *p))
+                })
+            })
+            .map(|r| r.row.id.0.clone())
+            .collect();
+        let bound: std::collections::BTreeSet<_> = sweep
+            .rows
+            .iter()
+            .filter(|r| r.category == "codex")
+            .flat_map(|r| r.sighting.pids.iter().copied())
+            .collect();
+        let unbound: std::collections::BTreeSet<_> = sweep
+            .procs
+            .named("codex")
+            .into_iter()
             // Selection already excludes suspended jobs. They must not veto a
             // runnable client's bound host again in the final shell fallback.
-            .filter(|(pid, _)| crate::codex_terminal::scoped(&sweep.procs, *pid)
-                && !sweep.procs.suspended(*pid) && !bound.contains(pid))
-            .map(|(pid, _)| pid).collect();
+            .filter(|(pid, _)| {
+                crate::codex_terminal::scoped(&sweep.procs, *pid)
+                    && !sweep.procs.suspended(*pid)
+                    && !bound.contains(pid)
+            })
+            .map(|(pid, _)| pid)
+            .collect();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
         // Vendor leaves learned this poll, for the preview post-pass:
         // `registered` was read before they were written.
@@ -1426,7 +1479,10 @@ impl LiveKind {
             .enumerate()
             .map(|(i, r)| match registered.get(i) {
                 Some(reg) => reg.seat.clone(),
-                None => notes.iter().find(|n| n.id == r.id.0).map(|n| n.seat.clone()),
+                None => notes
+                    .iter()
+                    .find(|n| n.id == r.id.0)
+                    .map(|n| n.seat.clone()),
             })
             .collect();
         // ── the seating (docs/SESSION.md 形态随进程变) ─────────────
@@ -1552,7 +1608,9 @@ impl LiveKind {
                 // With no agent in the session, the shell says what the
                 // client shows in front, not 「正在运行 tmux」 (2c).
                 let found = hosts[m].tmux.as_ref().map(|f| &f.sighting);
-                let pane = front.as_ref().and_then(|p| hosts[m].panes.iter().find(|x| &x.id == p));
+                let pane = front
+                    .as_ref()
+                    .and_then(|p| hosts[m].panes.iter().find(|x| &x.id == p));
                 hosts[k].client = found.map(|f| Client {
                     word: f.word,
                     at_ms: f.at_ms,
@@ -1667,17 +1725,26 @@ impl LiveKind {
         let mut folded_bridges: Vec<SessionId> = Vec::new();
         let mut worn: Vec<(SessionId, SessionId)> = Vec::new();
         let mut forms: Vec<(usize, Form)> = Vec::new();
-        let mut unbound_rows: Vec<usize> = hosted_holds.iter()
+        let mut unbound_rows: Vec<usize> = hosted_holds
+            .iter()
             .filter(|(_, holds)| holds.iter().any(|p| unbound.contains(p)))
-            .map(|(i, _)| *i).collect();
+            .map(|(i, _)| *i)
+            .collect();
         for (h, host) in hosts.into_iter().enumerate() {
             // Prefer the pane actually in front. A background pane must not
             // change the current terminal's category or erase its preview.
-            let front = host.client.as_ref().and_then(|c| c.pane.as_ref())
+            let front = host
+                .client
+                .as_ref()
+                .and_then(|c| c.pane.as_ref())
                 .and_then(|id| host.panes.iter().find(|p| &p.id == id))
                 .or_else(|| host.panes.iter().find(|p| p.active));
             let front_holds = front.map(|p| procs.held_by(&[p.pid]));
-            let thread_unbound = front_holds.as_ref().unwrap_or(&host.holds).iter().any(|p| unbound.contains(p));
+            let thread_unbound = front_holds
+                .as_ref()
+                .unwrap_or(&host.holds)
+                .iter()
+                .any(|p| unbound.contains(p));
             let inside: Vec<usize> = (0..sits_in.len())
                 .filter(|&i| sits_in[i] == Some(h))
                 .collect();
@@ -1737,8 +1804,16 @@ impl LiveKind {
             let wear = newest(&agents);
             // Runtime workspace location follows the pane currently in view,
             // even when its command marks still describe the previous pane.
-            let runtime_cwd = host.client.as_ref().and_then(|c| c.cwd.clone())
-                .or_else(|| host.panes.iter().find(|p| p.active).and_then(|p| p.cwd.clone()));
+            let runtime_cwd = host
+                .client
+                .as_ref()
+                .and_then(|c| c.cwd.clone())
+                .or_else(|| {
+                    host.panes
+                        .iter()
+                        .find(|p| p.active)
+                        .and_then(|p| p.cwd.clone())
+                });
             let holder_row = match holder {
                 // An agent inside holds: it wears its own form, as it
                 // always did.
@@ -1835,7 +1910,9 @@ impl LiveKind {
                 }
                 None => None,
             };
-            if let Some(k) = holder_row.filter(|_| thread_unbound) { unbound_rows.push(k); }
+            if let Some(k) = holder_row.filter(|_| thread_unbound) {
+                unbound_rows.push(k);
+            }
             if let (Some(k), Some(cwd)) = (holder_row, runtime_cwd) {
                 out[k].doing.get_or_insert_with(Default::default).cwd = Some(cwd);
             }
@@ -1885,12 +1962,8 @@ impl LiveKind {
             .filter_map(|r| r.vendor_leaf.clone().map(|v| (r.row.id.0.clone(), v)))
             .collect();
         vendor_leaves.extend(learned);
-        let claude = crate::adaptor::claude::Claude::at(
-            crate::adaptor::claude_home(&self.root),
-        );
-        let codex = crate::adaptor::codex::Codex::at(
-            crate::adaptor::codex_home(&self.root),
-        );
+        let claude = crate::adaptor::claude::Claude::at(crate::adaptor::claude_home(&self.root));
+        let codex = crate::adaptor::codex::Codex::at(crate::adaptor::codex_home(&self.root));
         for r in out.iter_mut() {
             // **An agent row never says its screen's bottom line**
             // (SESS-BRIEF 1d): that line is the program's chrome, not
@@ -1980,7 +2053,9 @@ impl LiveKind {
                     // row says what tmux says that pane runs and where it
                     // stands, as an unattached tmux row does. A pane that
                     // marked has a directory (`OSC 7` at every prompt).
-                    let saved = self.dir_of(&out[k].id).and_then(|d| crate::commands::read_saved(&d));
+                    let saved = self
+                        .dir_of(&out[k].id)
+                        .and_then(|d| crate::commands::read_saved(&d));
                     let pane = saved.as_ref().and_then(|s| s.pane.clone());
                     // The pane in front never marked (item 65): the face
                     // says why its history is empty, as for a khor
@@ -1992,7 +2067,10 @@ impl LiveKind {
                             .is_some_and(|m| !m.contains(p))
                     });
                     let r = &mut out[k];
-                    let marked = r.doing.as_ref().is_some_and(|d| d.running || d.command.is_some() || d.cwd.is_some());
+                    let marked = r
+                        .doing
+                        .as_ref()
+                        .is_some_and(|d| d.running || d.command.is_some() || d.cwd.is_some());
                     if !marked {
                         let front = pane.and_then(|p| panes.into_iter().find(|x| x.id == p));
                         let (running, cwd) = match front {
@@ -2074,9 +2152,13 @@ impl LiveKind {
                     // commands in the history, and the face says why.
                     // Unknown (no pane named, a host older than the list)
                     // is not unmarked.
-                    let saved = self.dir_of(&out[k].id).and_then(|d| crate::commands::read_saved(&d));
+                    let saved = self
+                        .dir_of(&out[k].id)
+                        .and_then(|d| crate::commands::read_saved(&d));
                     let marked = saved.as_ref().and_then(|s| s.marked_panes.as_ref());
-                    let pane_unmarked = pane.as_ref().is_some_and(|p| marked.is_some_and(|m| !m.contains(p)));
+                    let pane_unmarked = pane
+                        .as_ref()
+                        .is_some_and(|p| marked.is_some_and(|m| !m.contains(p)));
                     // **A pane that marks says its own reading** (item
                     // 64): the command as typed, how it ended, where it
                     // stands. Its ledger saying a command runs while tmux
@@ -2158,22 +2240,45 @@ impl LiveKind {
         for row in &mut out {
             if selection_hosts.contains(&row.id.0)
                 && let Some(doing) = row.doing.as_mut()
-                && doing.title.as_deref().is_some_and(crate::codex_terminal::metadata_title)
+                && doing
+                    .title
+                    .as_deref()
+                    .is_some_and(crate::codex_terminal::metadata_title)
             {
-                if row.last == doing.title { row.last = doing.cwd.as_deref().map(tilde); }
+                if row.last == doing.title {
+                    row.last = doing.cwd.as_deref().map(tilde);
+                }
                 doing.title = None;
             }
         }
         // Compute unnamed terminal identity from its latest directory. The
         // synced user-name overlay is applied by Node after this reading.
         for row in &mut out {
-            if matches!(row.title.trim(), "" | "shell" | "sh" | "bash" | "zsh" | "fish" | "pwsh" | "cmd" | "-sh" | "-bash" | "-zsh" | "-fish")
-                && let Some(cwd) = row.doing.as_ref()
-                    .and_then(|d| d.cwd.as_deref())
-                    .filter(|s| !s.trim().is_empty())
-                    .or(row.place.as_deref())
+            if matches!(
+                row.title.trim(),
+                "" | "shell"
+                    | "sh"
+                    | "bash"
+                    | "zsh"
+                    | "fish"
+                    | "pwsh"
+                    | "cmd"
+                    | "-sh"
+                    | "-bash"
+                    | "-zsh"
+                    | "-fish"
+            ) && let Some(cwd) = row
+                .doing
+                .as_ref()
+                .and_then(|d| d.cwd.as_deref())
+                .filter(|s| !s.trim().is_empty())
+                .or(row.place.as_deref())
             {
-                row.title = cwd.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or(cwd).to_owned();
+                row.title = cwd
+                    .rsplit(['/', '\\'])
+                    .find(|s| !s.is_empty())
+                    .unwrap_or(cwd)
+                    .to_owned();
             }
         }
         out.retain(|r| !folded.contains(&r.id));
@@ -2265,8 +2370,9 @@ impl LiveKind {
             // working directory as the OS reports it — and never the
             // screen's last line.
             let last = match &host {
-                Some(hf) if meta.kind == khor_core::kind::SHELL
-                    && doing.as_ref().is_none_or(|d| d.command.is_none()) =>
+                Some(hf)
+                    if meta.kind == khor_core::kind::SHELL
+                        && doing.as_ref().is_none_or(|d| d.command.is_none()) =>
                 {
                     shell_stands(doing.as_ref(), hf.child_pid)
                 }
@@ -2276,10 +2382,14 @@ impl LiveKind {
             // Never rewrite Meta.place: it records where the session began.
             if doing.as_ref().and_then(|d| d.cwd.as_ref()).is_none()
                 && meta.kind == khor_core::kind::SHELL
-                && !id.0.strip_prefix("shell/").is_some_and(crate::adaptor::tmux::is_tmux_leaf)
+                && !id
+                    .0
+                    .strip_prefix("shell/")
+                    .is_some_and(crate::adaptor::tmux::is_tmux_leaf)
                 && let Some(cwd) = host.as_ref().and_then(|hf| cwd_of(hf.child_pid))
             {
-                doing.get_or_insert_with(Default::default).cwd = Some(cwd.to_string_lossy().into_owned());
+                doing.get_or_insert_with(Default::default).cwd =
+                    Some(cwd.to_string_lossy().into_owned());
             }
             out.push(RegistryRow {
                 word_outranks_disk: state.word_outranks_disk(),
@@ -2343,7 +2453,9 @@ impl LiveKind {
         Some(Ended {
             ending,
             screen: crate::host::read_ring_file(&dir),
-            recent: crate::commands::read_saved(&dir).map(|s| s.recent).unwrap_or_default(),
+            recent: crate::commands::read_saved(&dir)
+                .map(|s| s.recent)
+                .unwrap_or_default(),
         })
     }
 
@@ -3929,7 +4041,11 @@ mod tests {
         let rows = k.rows(|_| 0);
         let last = |id: &SessionId| rows.iter().find(|r| r.id == *id).unwrap().last.clone();
         assert_eq!(last(&hooked).as_deref(), Some("from the transcript"));
-        assert_eq!(last(&bare), None, "no transcript: no line, not the screen's");
+        assert_eq!(
+            last(&bare),
+            None,
+            "no transcript: no line, not the screen's"
+        );
         assert_eq!(
             last(&minted).as_deref(),
             Some("from the transcript"),
@@ -3968,7 +4084,8 @@ mod tests {
             fs::write(proj.join(format!("{uuid}.jsonl")), lines.join("\n") + "\n").unwrap();
             let k = kind_at(&root);
             let id = sid(&format!("tui/{}", clean_leaf(uuid)));
-            k.register(&id, "tui", "claude", None, Some("claude")).unwrap();
+            k.register(&id, "tui", "claude", None, Some("claude"))
+                .unwrap();
             let dir = k.dir_of(&id).unwrap();
             let me = std::process::id();
             fs::write(
@@ -3989,8 +4106,13 @@ mod tests {
         let root = tmp("preview-unread-vendor");
         let k = kind_at(&root);
         let id = sid("tui/some-codex-session");
-        k.register(&id, "tui", "codex", None, Some("codex")).unwrap();
-        fs::write(k.dir_of(&id).unwrap().join("last.txt"), "› Ask Codex to do anything").unwrap();
+        k.register(&id, "tui", "codex", None, Some("codex"))
+            .unwrap();
+        fs::write(
+            k.dir_of(&id).unwrap().join("last.txt"),
+            "› Ask Codex to do anything",
+        )
+        .unwrap();
         let rows = k.rows(|_| 0);
         assert_eq!(rows.iter().find(|r| r.id == id).unwrap().last, None);
     }
@@ -4019,10 +4141,18 @@ mod tests {
         .unwrap();
         let k = kind_at(&root);
         let id = crate::adaptor::id_for(uuid);
-        k.register(&id, "tui", "codex", None, Some("codex")).unwrap();
-        fs::write(k.dir_of(&id).unwrap().join("last.txt"), "› Ask Codex to do anything").unwrap();
+        k.register(&id, "tui", "codex", None, Some("codex"))
+            .unwrap();
+        fs::write(
+            k.dir_of(&id).unwrap().join("last.txt"),
+            "› Ask Codex to do anything",
+        )
+        .unwrap();
         let rows = k.rows(|_| 0);
-        assert_eq!(rows.iter().find(|r| r.id == id).unwrap().last.as_deref(), Some("All 40 pass."));
+        assert_eq!(
+            rows.iter().find(|r| r.id == id).unwrap().last.as_deref(),
+            Some("All 40 pass.")
+        );
     }
 
     /// **A hosted agent row learns its vendor's session from the sweep,
@@ -4048,11 +4178,15 @@ mod tests {
         .unwrap();
         let host = FakeHost::up();
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
-            Discovery::at(&fixture_vendors())
-                .with_procs(Procs::of([proc_under(4001, "claude", host.pid())])),
+            Discovery::at(&fixture_vendors()).with_procs(Procs::of([proc_under(
+                4001,
+                "claude",
+                host.pid(),
+            )])),
         ));
         let id = sid("tui/khormint01");
-        k.register(&id, "tui", "claude", Some(host.pid()), None).unwrap();
+        k.register(&id, "tui", "claude", Some(host.pid()), None)
+            .unwrap();
         let dir = k.dir_of(&id).unwrap();
         host.serve(&dir, 4001);
         fs::write(dir.join("last.txt"), "⏵⏵ auto mode on").unwrap();
@@ -4060,13 +4194,29 @@ mod tests {
         for poll in ["first", "second"] {
             let rows = k.rows(|_| 0);
             let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
-            assert_eq!(ids, vec![id.0.as_str()], "{poll} poll: one row, the hosted one");
+            assert_eq!(
+                ids,
+                vec![id.0.as_str()],
+                "{poll} poll: one row, the hosted one"
+            );
             let row = &rows[0];
             assert_eq!(row.category.as_deref(), Some("claude"), "{poll} poll");
-            assert_eq!(row.state.state, State::Blocked, "{poll} poll: claude's own word");
-            assert_eq!(row.last.as_deref(), Some("From the transcript."), "{poll} poll");
+            assert_eq!(
+                row.state.state,
+                State::Blocked,
+                "{poll} poll: claude's own word"
+            );
+            assert_eq!(
+                row.last.as_deref(),
+                Some("From the transcript."),
+                "{poll} poll"
+            );
         }
-        assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)), "the leaf is on record");
+        assert_eq!(
+            k.vendor_leaf_of(&id),
+            Some(clean_leaf(uuid)),
+            "the leaf is on record"
+        );
         assert_eq!(
             read_meta(&dir).unwrap().category.as_deref(),
             Some("claude"),
@@ -4088,11 +4238,16 @@ mod tests {
         let proj = root.join(".claude/projects/-w-one");
         fs::create_dir_all(&sessions).unwrap();
         fs::create_dir_all(&proj).unwrap();
-        let status = fs::read_to_string(fixture_vendors().join(".claude/sessions/4001.json")).unwrap();
+        let status =
+            fs::read_to_string(fixture_vendors().join(".claude/sessions/4001.json")).unwrap();
         let first = "11111111-1111-4111-8111-111111111111";
         let second = "22222222-2222-4222-8222-222222222222";
         let third = "33333333-3333-4333-8333-333333333333";
-        for (uuid, said) in [(first, "The first."), (second, "The second."), (third, "The third.")] {
+        for (uuid, said) in [
+            (first, "The first."),
+            (second, "The second."),
+            (third, "The third."),
+        ] {
             fs::write(
                 proj.join(format!("{uuid}.jsonl")),
                 format!(r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"{said}"}}]}}}}"#) + "\n",
@@ -4104,16 +4259,29 @@ mod tests {
             Discovery::at(&root).with_procs(Procs::of([proc_under(4001, "claude", host.pid())])),
         ));
         let id = sid("tui/khormint03");
-        k.register(&id, "tui", "claude", Some(host.pid()), Some("claude")).unwrap();
+        k.register(&id, "tui", "claude", Some(host.pid()), Some("claude"))
+            .unwrap();
         host.serve(&k.dir_of(&id).unwrap(), 4001);
 
-        for (uuid, said) in [(first, "The first."), (second, "The second."), (third, "The third.")] {
+        for (uuid, said) in [
+            (first, "The first."),
+            (second, "The second."),
+            (third, "The third."),
+        ] {
             fs::write(sessions.join("4001.json"), status.replace(first, uuid)).unwrap();
             let rows = k.rows(|_| 0);
             let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
             assert_eq!(ids, vec![id.0.as_str()], "{said} one row, the hosted one");
-            assert_eq!(rows[0].last.as_deref(), Some(said), "the session running now");
-            assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)), "{said} on record");
+            assert_eq!(
+                rows[0].last.as_deref(),
+                Some(said),
+                "the session running now"
+            );
+            assert_eq!(
+                k.vendor_leaf_of(&id),
+                Some(clean_leaf(uuid)),
+                "{said} on record"
+            );
         }
     }
 
@@ -4144,12 +4312,15 @@ mod tests {
             cwd: Some(PathBuf::from("/w/alpha")),
             ppid: Some(host.pid()),
         };
-        let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/codex");
-        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
-            Discovery::at(&vendors).with_procs(Procs::of([(700, codex)]).with_commands([(700, vec!["codex".into()])])),
-        ));
+        let vendors =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/codex");
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32]))
+            .discovering(Arc::new(Discovery::at(&vendors).with_procs(
+                Procs::of([(700, codex)]).with_commands([(700, vec!["codex".into()])]),
+            )));
         let id = sid("tui/khormint02");
-        k.register(&id, "tui", "codex", Some(host.pid()), Some("codex")).unwrap();
+        k.register(&id, "tui", "codex", Some(host.pid()), Some("codex"))
+            .unwrap();
         let dir = k.dir_of(&id).unwrap();
         host.serve(&dir, 700);
         fs::write(dir.join("last.txt"), "› Ask Codex to do anything").unwrap();
@@ -4157,8 +4328,16 @@ mod tests {
         for poll in ["first", "second"] {
             let rows = k.rows(|_| 0);
             let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
-            assert_eq!(ids, vec![id.0.as_str()], "{poll} poll: one row, the hosted one");
-            assert_eq!(rows[0].last.as_deref(), Some("Done, all green."), "{poll} poll");
+            assert_eq!(
+                ids,
+                vec![id.0.as_str()],
+                "{poll} poll: one row, the hosted one"
+            );
+            assert_eq!(
+                rows[0].last.as_deref(),
+                Some("Done, all green."),
+                "{poll} poll"
+            );
         }
         assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)));
     }
@@ -4184,22 +4363,38 @@ mod tests {
             serde_json::json!({"timestamp":"2026-08-06T13:49:19Z","type":"event_msg","payload":{"type":"task_started"}}),
         )).unwrap();
         fs::File::create(locks.join(".coordination.lock")).unwrap();
-        let writer = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true)
-            .open(locks.join(format!("{uuid}.lock"))).unwrap();
+        let writer = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(locks.join(format!("{uuid}.lock")))
+            .unwrap();
         writer.try_lock().unwrap();
         let host = FakeHost::up();
         let shell = proc_under(5001, "zsh", host.pid());
-        let codex = (700, Proc { name: "codex".into(), started_ms: 1_786_024_158_308 - 66_000,
-            cwd: Some("/project".into()), ppid: Some(5001) });
+        let codex = (
+            700,
+            Proc {
+                name: "codex".into(),
+                started_ms: 1_786_024_158_308 - 66_000,
+                cwd: Some("/project".into()),
+                ppid: Some(5001),
+            },
+        );
         let procs = Procs::of([shell, codex]).with_commands([(700, vec!["codex".into()])]);
-        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
-            Discovery::at(&vendors).with_procs(procs),
-        ));
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32]))
+            .discovering(Arc::new(Discovery::at(&vendors).with_procs(procs)));
         let id = sid("shell/codex-terminal");
-        k.register(&id, "shell", "khor-codex", Some(host.pid()), Some("shell")).unwrap();
+        k.register(&id, "shell", "khor-codex", Some(host.pid()), Some("shell"))
+            .unwrap();
         host.serve(&k.dir_of(&id).unwrap(), 5001);
         let rows = k.rows(|_| 0);
-        assert_eq!(rows.len(), 2, "unbound terminal and loaded thread have separate identities");
+        assert_eq!(
+            rows.len(),
+            2,
+            "unbound terminal and loaded thread have separate identities"
+        );
         let terminal = rows.iter().find(|r| r.id == id).unwrap();
         assert_eq!(terminal.kind.0, khor_core::kind::TUI);
         assert_eq!(terminal.category.as_deref(), Some("codex"));
@@ -4230,7 +4425,9 @@ mod tests {
         loop {
             match released.try_lock_shared() {
                 Ok(()) => break,
-                Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(1)),
+                Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(1))
+                }
                 Err(error) => panic!("fixture writer did not release: {error:?}"),
             }
         }
@@ -4391,23 +4588,64 @@ mod tests {
         // stand-in itself, started in this test's own directory.
         host.serve(&dir, host.pid());
         fs::write(dir.join("last.txt"), "╭─ ◖ /Library ◗ ✔ 20:58").unwrap();
-        let row = || k.rows(|_| 0).into_iter().find(|r| r.id == id).expect("the row");
-        let here = std::env::current_dir().unwrap().to_string_lossy().into_owned();
-        assert_eq!(row().doing.and_then(|d| d.cwd).as_deref(), Some(here.as_str()), "workspace receives the live shell cwd without OSC marks");
+        let row = || {
+            k.rows(|_| 0)
+                .into_iter()
+                .find(|r| r.id == id)
+                .expect("the row")
+        };
+        let here = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            row().doing.and_then(|d| d.cwd).as_deref(),
+            Some(here.as_str()),
+            "workspace receives the live shell cwd without OSC marks"
+        );
         let last = row().last.expect("a line");
         assert!(!last.contains('◖'), "the prompt's glyphs: {last:?}");
         assert_eq!(last, tilde(&here));
         let saved = |doing: khor_core::Doing| {
-            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, ..Default::default() })
+            crate::commands::write_saved(
+                &dir,
+                &crate::commands::Saved {
+                    doing,
+                    ..Default::default()
+                },
+            )
         };
-        saved(khor_core::Doing { cwd: Some("/w/proj".into()), ..Default::default() });
+        saved(khor_core::Doing {
+            cwd: Some("/w/proj".into()),
+            ..Default::default()
+        });
         assert_eq!(row().last.as_deref(), Some("/w/proj"));
-        assert_eq!(row().title, "proj", "unnamed identity follows current directory");
-        saved(khor_core::Doing { cwd: Some("/w/ACL2027".into()), title: Some("✳ vendor task".into()), ..Default::default() });
-        assert_eq!(row().title, "ACL2027", "OSC status must not become the name");
-        saved(khor_core::Doing { title: Some("vim notes.md".into()), ..Default::default() });
+        assert_eq!(
+            row().title,
+            "proj",
+            "unnamed identity follows current directory"
+        );
+        saved(khor_core::Doing {
+            cwd: Some("/w/ACL2027".into()),
+            title: Some("✳ vendor task".into()),
+            ..Default::default()
+        });
+        assert_eq!(
+            row().title,
+            "ACL2027",
+            "OSC status must not become the name"
+        );
+        saved(khor_core::Doing {
+            title: Some("vim notes.md".into()),
+            ..Default::default()
+        });
         assert_eq!(row().last.as_deref(), Some("vim notes.md"));
-        saved(khor_core::Doing { command: Some("make".into()), exit: Some(0), cwd: Some("/w/proj".into()), ..Default::default() });
+        saved(khor_core::Doing {
+            command: Some("make".into()),
+            exit: Some(0),
+            cwd: Some("/w/proj".into()),
+            ..Default::default()
+        });
         let r = row();
         assert_eq!(r.doing.and_then(|d| d.command).as_deref(), Some("make"));
         drop(host);
@@ -4437,14 +4675,28 @@ mod tests {
                 exit: (!running).then_some(exit),
                 ..Default::default()
             };
-            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, ..Default::default() })
+            crate::commands::write_saved(
+                &dir,
+                &crate::commands::Saved {
+                    doing,
+                    ..Default::default()
+                },
+            )
         };
         let row = |seen: i64| {
-            let r = k.rows(|_| seen).into_iter().find(|r| r.id == id).expect("the row");
+            let r = k
+                .rows(|_| seen)
+                .into_iter()
+                .find(|r| r.id == id)
+                .expect("the row");
             (r.state.state, r.state.at.0, r.dead)
         };
         ended(2, false);
-        assert_eq!(row(0), (State::Failed, 9_000, false), "failed, alive, stamped at its end");
+        assert_eq!(
+            row(0),
+            (State::Failed, 9_000, false),
+            "failed, alive, stamped at its end"
+        );
         assert_eq!(row(9_000).0, State::Idle, "looked at past its end");
         ended(130, false);
         assert_eq!(row(0).0, State::Idle, "^C is not a failure");
@@ -4453,7 +4705,11 @@ mod tests {
         ended(0, false);
         assert_eq!(row(0).0, State::Idle);
         ended(0, true);
-        assert_eq!(row(0).0, State::Idle, "the next command running: the failure is over");
+        assert_eq!(
+            row(0).0,
+            State::Idle,
+            "the next command running: the failure is over"
+        );
         drop(host);
     }
 
@@ -4480,46 +4736,101 @@ mod tests {
             file
         }).collect();
         let host = FakeHost::up();
-        let process = |name: &str, parent| Proc { name:name.into(), started_ms:100, cwd:Some("/project".into()), ppid:parent };
-        let argv: Vec<String> = ["codex", "-c", "tui.terminal_title=[\"thread-id\"]"].into_iter().map(str::to_owned).collect();
+        let process = |name: &str, parent| Proc {
+            name: name.into(),
+            started_ms: 100,
+            cwd: Some("/project".into()),
+            ppid: parent,
+        };
+        let argv: Vec<String> = ["codex", "-c", "tui.terminal_title=[\"thread-id\"]"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
         let procs = Procs::of([
             (5001, process("zsh", Some(host.pid()))),
             (700, process("codex", Some(5001))),
             (701, process("codex", Some(5001))),
-        ]).with_commands([(700, argv.clone()), (701, argv)]);
+        ])
+        .with_commands([(700, argv.clone()), (701, argv)]);
         let id = sid("shell/stopped-codex-host");
         let initial = LiveKind::new(root.to_path_buf(), DeviceId([9; 32]));
-        initial.register(&id, "shell", "SJTWorkshop fixture", Some(host.pid()), Some("shell")).unwrap();
+        initial
+            .register(
+                &id,
+                "shell",
+                "SJTWorkshop fixture",
+                Some(host.pid()),
+                Some("shell"),
+            )
+            .unwrap();
         let dir = initial.dir_of(&id).unwrap();
         host.serve(&dir, 5001);
         for (label, stopped, title, selected) in [
-            ("old suspended, current selected", vec![700], b, Some((b, 701, "ANSWER_B"))),
-            ("old resumed, new suspended", vec![701], a, Some((a, 700, "ANSWER_A"))),
+            (
+                "old suspended, current selected",
+                vec![700],
+                b,
+                Some((b, 701, "ANSWER_B")),
+            ),
+            (
+                "old resumed, new suspended",
+                vec![701],
+                a,
+                Some((a, 700, "ANSWER_A")),
+            ),
             ("both runnable stay ambiguous", vec![], b, None),
             ("all suspended cannot reuse title", vec![700, 701], b, None),
-            ("current resumed after fallback", vec![700], b, Some((b, 701, "ANSWER_B"))),
+            (
+                "current resumed after fallback",
+                vec![700],
+                b,
+                Some((b, 701, "ANSWER_B")),
+            ),
         ] {
-            crate::commands::write_saved(&dir, &crate::commands::Saved {
-                doing: khor_core::Doing { title:Some(format!("{}...", &title[..29])), command:Some("codex".into()), running:true, cwd:Some("/project".into()), ..Default::default() },
-                ..Default::default()
-            });
+            crate::commands::write_saved(
+                &dir,
+                &crate::commands::Saved {
+                    doing: khor_core::Doing {
+                        title: Some(format!("{}...", &title[..29])),
+                        command: Some("codex".into()),
+                        running: true,
+                        cwd: Some("/project".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
             let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
                 Discovery::at(&root).with_procs(procs.clone().with_suspended(stopped)),
             ));
             let rows = k.rows(|_| 0);
-            let terminal = rows.iter().find(|r| r.id == id).expect("the original hosted terminal");
+            let terminal = rows
+                .iter()
+                .find(|r| r.id == id)
+                .expect("the original hosted terminal");
             if let Some((thread, pid, answer)) = selected {
-                assert_eq!(terminal.category.as_deref(), Some("codex"), "{label}: final host must keep its bound agent");
+                assert_eq!(
+                    terminal.category.as_deref(),
+                    Some("codex"),
+                    "{label}: final host must keep its bound agent"
+                );
                 assert_eq!(terminal.kind.0, khor_core::kind::TUI, "{label}");
                 assert!(terminal.state_known(), "{label}");
                 assert_eq!(terminal.state.state, State::Done, "{label}");
                 assert_eq!(terminal.last.as_deref(), Some(answer), "{label}");
                 assert_eq!(terminal.unread, 1, "{label}");
-                assert_eq!(k.sighting_of(&crate::adaptor::id_for(thread)).unwrap().1, vec![pid], "{label}");
+                assert_eq!(
+                    k.sighting_of(&crate::adaptor::id_for(thread)).unwrap().1,
+                    vec![pid],
+                    "{label}"
+                );
             } else {
                 assert_eq!(terminal.category.as_deref(), Some("shell"), "{label}");
                 assert_eq!(terminal.kind.0, khor_core::kind::SHELL, "{label}");
-                assert!(!matches!(terminal.last.as_deref(), Some("ANSWER_A" | "ANSWER_B")), "{label}: no unrelated transcript");
+                assert!(
+                    !matches!(terminal.last.as_deref(), Some("ANSWER_A" | "ANSWER_B")),
+                    "{label}: no unrelated transcript"
+                );
                 assert_eq!(terminal.unread, 0, "{label}");
             }
         }
@@ -4530,22 +4841,60 @@ mod tests {
         use crate::adaptor::{Discovery, Proc, Procs};
         let root = tmp("codex-title-hidden");
         let host = FakeHost::up();
-        let process = |name: &str, ppid| Proc { name:name.into(), started_ms:100, cwd:None, ppid };
-        let procs = Procs::of([(3001, process("zsh", None)), (501, process("codex", Some(3001)))])
-            .with_commands([(501, ["codex", "-c", "tui.terminal_title=[\"thread-id\"]"].into_iter().map(str::to_owned).collect())]);
-        let k = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(Discovery::empty().with_procs(procs)));
+        let process = |name: &str, ppid| Proc {
+            name: name.into(),
+            started_ms: 100,
+            cwd: None,
+            ppid,
+        };
+        let procs = Procs::of([
+            (3001, process("zsh", None)),
+            (501, process("codex", Some(3001))),
+        ])
+        .with_commands([(
+            501,
+            ["codex", "-c", "tui.terminal_title=[\"thread-id\"]"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+        )]);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32]))
+            .discovering(Arc::new(Discovery::empty().with_procs(procs)));
         let id = sid("shell/titlemetadata");
-        k.register(&id, "shell", "shell", Some(host.pid()), None).unwrap();
-        let dir = k.dir_of(&id).unwrap(); host.serve(&dir, 3001);
+        k.register(&id, "shell", "shell", Some(host.pid()), None)
+            .unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        host.serve(&dir, 3001);
         let title = "019fd755-e464-7aaa-8aaa-aaaaa...";
-        let write = |title: &str| crate::commands::write_saved(&dir, &crate::commands::Saved { doing:khor_core::Doing {title:Some(title.into()), ..Default::default()}, ..Default::default() });
+        let write = |title: &str| {
+            crate::commands::write_saved(
+                &dir,
+                &crate::commands::Saved {
+                    doing: khor_core::Doing {
+                        title: Some(title.into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            )
+        };
         write(title);
-        let row = || k.rows(|_|0).into_iter().find(|r| r.id == id).unwrap();
-        assert!(row().doing.unwrap().title.is_none(), "an unnamed session must not display the native UUID");
+        let row = || k.rows(|_| 0).into_iter().find(|r| r.id == id).unwrap();
+        assert!(
+            row().doing.unwrap().title.is_none(),
+            "an unnamed session must not display the native UUID"
+        );
         assert_ne!(row().last.as_deref(), Some(title));
-        assert_eq!(crate::commands::read_doing(&dir).unwrap().title.as_deref(), Some(title), "raw selection metadata survives for discovery");
+        assert_eq!(
+            crate::commands::read_doing(&dir).unwrap().title.as_deref(),
+            Some(title),
+            "raw selection metadata survives for discovery"
+        );
         write("my useful title");
-        assert_eq!(row().doing.unwrap().title.as_deref(), Some("my useful title"));
+        assert_eq!(
+            row().doing.unwrap().title.as_deref(),
+            Some("my useful title")
+        );
     }
 
     #[test]
@@ -4557,7 +4906,8 @@ mod tests {
         let c = "019fd755-e466-7aaa-8aaa-cccccccccccc";
         let sessions = root.join(".codex/sessions/2026/08/06");
         let locks = root.join(".codex/thread-writer-locks");
-        fs::create_dir_all(&sessions).unwrap(); fs::create_dir_all(&locks).unwrap();
+        fs::create_dir_all(&sessions).unwrap();
+        fs::create_dir_all(&locks).unwrap();
         fs::write(locks.join(".coordination.lock"), "").unwrap();
         let writers: Vec<_> = [a, b].into_iter().map(|id| {
             let metadata = serde_json::json!({"type":"session_meta","payload":{"id":id,"cwd":"/same","originator":"codex_cli_rs","source":"cli"}});
@@ -4566,65 +4916,136 @@ mod tests {
             fs::write(sessions.join(format!("rollout-2026-08-06T21-49-18-{id}.jsonl")), format!("{metadata}\n{latest}\n{done}\n")).unwrap();
             let f = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(locks.join(format!("{id}.lock"))).unwrap(); f.try_lock().unwrap(); f
         }).collect();
-        let pending = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(locks.join(format!("{c}.lock"))).unwrap(); pending.try_lock().unwrap();
+        let pending = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(locks.join(format!("{c}.lock")))
+            .unwrap();
+        pending.try_lock().unwrap();
         let tmux = crate::adaptor::tmux::fake_tmux("codex-title-switch", "");
-        fs::write(root.join(".codex/config.toml"), "[tui]\nterminal_title=[\"thread-id\"]\n").unwrap();
-        let proc = |name: &str, parent| Proc { name:name.into(), started_ms:std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64, cwd:Some("/same".into()), ppid:parent };
+        fs::write(
+            root.join(".codex/config.toml"),
+            "[tui]\nterminal_title=[\"thread-id\"]\n",
+        )
+        .unwrap();
+        let proc = |name: &str, parent| Proc {
+            name: name.into(),
+            started_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64,
+            cwd: Some("/same".into()),
+            ppid: parent,
+        };
         let procs = Procs::of([(3001, proc("zsh", None)), (501, proc("codex", Some(3001)))])
-            .with_commands([(501, ["codex", "resume", a].into_iter().map(str::to_owned).collect())]);
-        let k = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(Discovery::at(&root).with_procs(procs.clone()).with_tmux(Tmux::at_binary(&tmux))));
-        let aid = crate::adaptor::id_for(a); let bid = crate::adaptor::id_for(b);
-        k.register(&aid, "tui", "old", Some(501), Some("codex")).unwrap();
+            .with_commands([(
+                501,
+                ["codex", "resume", a]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+            )]);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&root)
+                .with_procs(procs.clone())
+                .with_tmux(Tmux::at_binary(&tmux)),
+        ));
+        let aid = crate::adaptor::id_for(a);
+        let bid = crate::adaptor::id_for(b);
+        k.register(&aid, "tui", "old", Some(501), Some("codex"))
+            .unwrap();
         // A guessed screen state must yield to the rollout's explicit turn state.
-        k.write_state(&k.dir_of(&aid).unwrap(), State::Idle, None, Source::Screen).unwrap();
+        k.write_state(&k.dir_of(&aid).unwrap(), State::Idle, None, Source::Screen)
+            .unwrap();
         let select = |id: &str| {
             let title = format!("{}...", &id[..29]);
-            let output = format!("$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fcodex\x1f/same\x1f%1\x1fwork\x1f1\x1f1\x1f{title}\n");
+            let output = format!(
+                "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fcodex\x1f/same\x1f%1\x1fwork\x1f1\x1f1\x1f{title}\n"
+            );
             fs::write(&*tmux, format!("#!/bin/sh\ncat <<'END'\n{output}END\n")).unwrap();
         };
         select(a);
-        assert_eq!(k.sighting_of(&aid).unwrap().1, vec![501]); assert!(k.held_in_mux(&aid));
-        assert_eq!(k.rows(|_|0).iter().find(|r|r.id==aid).unwrap().last.as_deref(), Some("LATEST_A"));
+        assert_eq!(k.sighting_of(&aid).unwrap().1, vec![501]);
+        assert!(k.held_in_mux(&aid));
+        assert_eq!(
+            k.rows(|_| 0)
+                .iter()
+                .find(|r| r.id == aid)
+                .unwrap()
+                .last
+                .as_deref(),
+            Some("LATEST_A")
+        );
         // Model/status-line edits rewrite the config after this client started.
         // Both this observer and a fresh app must retain the selected identity,
         // its actual state and preview, including when other writers remain live.
         let config = root.join(".codex/config.toml");
         fs::write(&config, "model='changed'\n[tui]\nterminal_title=['thread-id']\nstatus_line=['model-with-reasoning']\n").unwrap();
         let changed_at = procs.get(501).unwrap().started_ms + 10_000;
-        fs::File::options().write(true).open(&config).unwrap().set_modified(
-            std::time::UNIX_EPOCH + std::time::Duration::from_millis(changed_at as u64),
-        ).unwrap();
-        let reopened = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(
-            Discovery::at(&root).with_procs(procs.clone()).with_tmux(Tmux::at_binary(&tmux))));
+        fs::File::options()
+            .write(true)
+            .open(&config)
+            .unwrap()
+            .set_modified(
+                std::time::UNIX_EPOCH + std::time::Duration::from_millis(changed_at as u64),
+            )
+            .unwrap();
+        let reopened = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&root)
+                .with_procs(procs.clone())
+                .with_tmux(Tmux::at_binary(&tmux)),
+        ));
         for app in [&k, &reopened] {
-            let rows = app.rows(|_|0);
-            let current = rows.iter().find(|r|r.id==aid).unwrap();
+            let rows = app.rows(|_| 0);
+            let current = rows.iter().find(|r| r.id == aid).unwrap();
             assert_eq!(current.category.as_deref(), Some("codex"));
             assert!(current.state_known());
             assert_eq!(current.state.state, State::Done);
             assert_eq!(current.last.as_deref(), Some("LATEST_A"));
         }
         select(b);
-        assert!(k.sighting_of(&aid).unwrap().1.is_empty()); assert!(!k.held_in_mux(&aid));
-        assert_eq!(k.sighting_of(&bid).unwrap().1, vec![501]); assert!(k.held_in_mux(&bid));
-        assert!(k.attach_multiplexed(&aid).is_err(), "old loaded thread cannot reopen the current thread's terminal");
-        assert!(!k.holds_terminal_form(&aid), "a different bound agent is not a shell alias");
-        let rows = k.rows(|_|0);
-        let current = rows.iter().find(|r|r.id==bid).unwrap();
+        assert!(k.sighting_of(&aid).unwrap().1.is_empty());
+        assert!(!k.held_in_mux(&aid));
+        assert_eq!(k.sighting_of(&bid).unwrap().1, vec![501]);
+        assert!(k.held_in_mux(&bid));
+        assert!(
+            k.attach_multiplexed(&aid).is_err(),
+            "old loaded thread cannot reopen the current thread's terminal"
+        );
+        assert!(
+            !k.holds_terminal_form(&aid),
+            "a different bound agent is not a shell alias"
+        );
+        let rows = k.rows(|_| 0);
+        let current = rows.iter().find(|r| r.id == bid).unwrap();
         assert_eq!(current.category.as_deref(), Some("codex"));
         assert_eq!(current.last.as_deref(), Some("LATEST_B"));
         select(c);
         let cid = crate::adaptor::id_for(c);
-        let rows = k.rows(|_|0);
-        let current = rows.iter().find(|r|r.id==cid).unwrap();
+        let rows = k.rows(|_| 0);
+        let current = rows.iter().find(|r| r.id == cid).unwrap();
         assert_eq!(current.category.as_deref(), Some("codex"));
         assert_eq!(current.state.state, State::Idle);
-        assert!(current.last.is_none(), "a selected new thread has no invented preview");
+        assert!(
+            current.last.is_none(),
+            "a selected new thread has no invented preview"
+        );
         assert!(k.held_in_mux(&cid));
         assert!(k.sighting_of(&bid).unwrap().1.is_empty());
         select(a);
-        assert_eq!(k.sighting_of(&aid).unwrap().1, vec![501]); assert!(k.held_in_mux(&aid));
-        assert_eq!(k.rows(|_|0).iter().find(|r|r.id==aid).unwrap().last.as_deref(), Some("LATEST_A"));
+        assert_eq!(k.sighting_of(&aid).unwrap().1, vec![501]);
+        assert!(k.held_in_mux(&aid));
+        assert_eq!(
+            k.rows(|_| 0)
+                .iter()
+                .find(|r| r.id == aid)
+                .unwrap()
+                .last
+                .as_deref(),
+            Some("LATEST_A")
+        );
         // Disk settings govern future clients. This exact client already
         // published a verified title from its own runtime settings.
         fs::remove_file(root.join(".codex/config.toml")).unwrap();
@@ -4637,7 +5058,11 @@ mod tests {
         select(b);
         assert_eq!(reopened.sighting_of(&bid).unwrap().1, vec![501]);
         assert!(reopened.sighting_of(&aid).unwrap().1.is_empty());
-        let row = reopened.rows(|_| 0).into_iter().find(|r| r.id == bid).unwrap();
+        let row = reopened
+            .rows(|_| 0)
+            .into_iter()
+            .find(|r| r.id == bid)
+            .unwrap();
         assert_eq!(row.last.as_deref(), Some("LATEST_B"));
         // A replacement process cannot inherit the old client's title contract,
         // even when the OS reuses its PID and the terminal retains its UUID.
@@ -4646,21 +5071,32 @@ mod tests {
         replacement.started_ms = procs.get(501).unwrap().started_ms + 30_000;
         let defaults = Procs::of([(3001, proc("zsh", None)), (501, replacement)])
             .with_commands([(501, vec!["codex".into()])]);
-        let limited = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(
-            Discovery::at(&root).with_procs(defaults).with_tmux(Tmux::at_binary(&tmux))));
-        let rows = limited.rows(|_|0);
-        let terminal = rows.iter().find(|r| r.term && r.mux && r.id != aid && r.id != bid && r.id != cid)
+        let limited = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&root)
+                .with_procs(defaults)
+                .with_tmux(Tmux::at_binary(&tmux)),
+        ));
+        let rows = limited.rows(|_| 0);
+        let terminal = rows
+            .iter()
+            .find(|r| r.term && r.mux && r.id != aid && r.id != bid && r.id != cid)
             .expect("unbound default client must retain an attachable terminal row");
         assert_eq!(terminal.kind.0, khor_core::kind::SHELL);
         assert_eq!(terminal.category.as_deref(), Some("shell"));
         assert!(terminal.state_known());
         assert_eq!(terminal.state.state, State::Busy);
-        assert_eq!(terminal.doing.as_ref().unwrap().command.as_deref(), Some("codex"));
+        assert_eq!(
+            terminal.doing.as_ref().unwrap().command.as_deref(),
+            Some("codex")
+        );
         assert_eq!(terminal.current_cwd(), Some("/same"));
         assert!(terminal.last.is_none());
         assert_eq!(terminal.unread, 0);
         assert!(limited.sighting_of(&aid).unwrap().1.is_empty());
-        assert!(limited.holds_terminal_form(&aid), "an imported agent ID in shell form still reaches its original tmux seat");
+        assert!(
+            limited.holds_terminal_form(&aid),
+            "an imported agent ID in shell form still reaches its original tmux seat"
+        );
         drop(pending);
         drop(writers);
     }
@@ -4671,23 +5107,51 @@ mod tests {
         let root = tmp("workspace-active-pane");
         let tmux = crate::adaptor::tmux::fake_tmux("workspace-active-pane", "");
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
-            Discovery::empty().with_procs(Procs::of([proc_under(3001, "zsh", 1), proc_under(3002, "zsh", 1)]))
-                .with_tmux(Tmux::at_binary(&tmux))));
+            Discovery::empty()
+                .with_procs(Procs::of([
+                    proc_under(3001, "zsh", 1),
+                    proc_under(3002, "zsh", 1),
+                ]))
+                .with_tmux(Tmux::at_binary(&tmux)),
+        ));
         let id = sid(T_ID);
         k.register(&id, "shell", "work", None, None).unwrap();
         let dir = k.dir_of(&id).unwrap();
-        crate::commands::write_saved(&dir, &crate::commands::Saved {
-            doing: khor_core::Doing { cwd: Some("/birth".into()), ..Default::default() },
-            pane: Some("%1".into()), ..Default::default()
-        });
+        crate::commands::write_saved(
+            &dir,
+            &crate::commands::Saved {
+                doing: khor_core::Doing {
+                    cwd: Some("/birth".into()),
+                    ..Default::default()
+                },
+                pane: Some("%1".into()),
+                ..Default::default()
+            },
+        );
         let read = |first: &str, second: &str, active: usize| {
-            let output = format!("$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f{first}\x1f%1\x1fwork\x1f{}\x1f1\n$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fzsh\x1f{second}\x1f%2\x1fwork\x1f{}\x1f1\n", usize::from(active == 1), usize::from(active == 2));
+            let output = format!(
+                "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f{first}\x1f%1\x1fwork\x1f{}\x1f1\n$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fzsh\x1f{second}\x1f%2\x1fwork\x1f{}\x1f1\n",
+                usize::from(active == 1),
+                usize::from(active == 2)
+            );
             fs::write(&*tmux, format!("#!/bin/sh\ncat <<'END'\n{output}END\n")).unwrap();
-            k.rows_listed(|_| 0, |s| s == T_ID).into_iter().find(|r| r.id == id).unwrap().doing.unwrap().cwd
+            k.rows_listed(|_| 0, |s| s == T_ID)
+                .into_iter()
+                .find(|r| r.id == id)
+                .unwrap()
+                .doing
+                .unwrap()
+                .cwd
         };
-        assert_eq!(read("/after-cd", "/second", 1).as_deref(), Some("/after-cd"));
+        assert_eq!(
+            read("/after-cd", "/second", 1).as_deref(),
+            Some("/after-cd")
+        );
         assert_eq!(read("/after-cd", "/second", 2).as_deref(), Some("/second"));
-        assert_eq!(read("/returned-and-cd", "/second", 1).as_deref(), Some("/returned-and-cd"));
+        assert_eq!(
+            read("/returned-and-cd", "/second", 1).as_deref(),
+            Some("/returned-and-cd")
+        );
     }
 
     /// **A tmux row khor is attached to, whose pane in front sent no
@@ -4706,7 +5170,10 @@ mod tests {
         );
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&fixture_vendors())
-                .with_procs(Procs::of([proc_under(3001, "zsh", 1), proc_under(3002, "zsh", 1)]))
+                .with_procs(Procs::of([
+                    proc_under(3001, "zsh", 1),
+                    proc_under(3002, "zsh", 1),
+                ]))
                 .with_tmux(Tmux::at_binary(&tmux)),
         ));
         let row = sid(T_ID);
@@ -4732,10 +5199,16 @@ mod tests {
         };
         ledger(khor_core::Doing::default(), "%2");
         let d = doing();
-        assert_eq!((d.command.as_deref(), d.running, d.cwd.as_deref()), (Some("sleep"), true, Some("/w/two")));
+        assert_eq!(
+            (d.command.as_deref(), d.running, d.cwd.as_deref()),
+            (Some("sleep"), true, Some("/w/two"))
+        );
         ledger(khor_core::Doing::default(), "%1");
         let d = doing();
-        assert_eq!((d.command.as_deref(), d.running, d.cwd.as_deref()), (None, false, Some("/w/one")));
+        assert_eq!(
+            (d.command.as_deref(), d.running, d.cwd.as_deref()),
+            (None, false, Some("/w/one"))
+        );
         let marked = khor_core::Doing {
             command: Some("make".into()),
             exit: Some(0),
@@ -4744,7 +5217,10 @@ mod tests {
         };
         ledger(marked.clone(), "%2");
         let d = doing();
-        assert_eq!((d.command.as_deref(), d.cwd.as_deref()), (Some("make"), Some("/w/m")));
+        assert_eq!(
+            (d.command.as_deref(), d.cwd.as_deref()),
+            (Some("make"), Some("/w/m"))
+        );
         assert!(!d.pane_unmarked, "a host older than the list: unknown");
 
         // Item 65: the pane in front marks nothing while another does:
@@ -4752,7 +5228,11 @@ mod tests {
         ledger_marked(khor_core::Doing::default(), "%1", Some(&["%2"]));
         let d = doing();
         assert!(d.pane_unmarked, "%1 never marked");
-        assert_eq!((d.command.as_deref(), d.cwd.as_deref()), (None, Some("/w/one")), "tmux's reading still");
+        assert_eq!(
+            (d.command.as_deref(), d.cwd.as_deref()),
+            (None, Some("/w/one")),
+            "tmux's reading still"
+        );
         ledger_marked(khor_core::Doing::default(), "%1", Some(&[]));
         assert!(doing().pane_unmarked, "no pane marked yet");
         ledger_marked(marked, "%2", Some(&["%2"]));
@@ -4918,13 +5398,19 @@ mod tests {
                 Some(khor_core::category::SHELL),
                 "{how}: filed as a terminal"
             );
-            assert!(!row.dead, "{how}: nothing ended — the tmux session is still there");
+            assert!(
+                !row.dead,
+                "{how}: nothing ended — the tmux session is still there"
+            );
             assert_eq!(
                 row.state.state,
                 State::Idle,
                 "{how}: the terminal's own word, not the agent's ending"
             );
-            assert!(row.term && row.mux, "{how}: its terminal is the tmux session");
+            assert!(
+                row.term && row.mux,
+                "{how}: its terminal is the tmux session"
+            );
             assert_eq!(row.title, "one-aa", "{how}: the name it had");
         };
 
@@ -4933,7 +5419,11 @@ mod tests {
         let k = at(Procs::of([pane.clone(), claude.clone()]), &tmux);
         let rows = k.rows_listed(|_| 0, on_list);
         assert!(!k.claims(&agent), "nothing registered it");
-        assert_eq!(rows.len(), 1, "a tmux session holding one claude is one row");
+        assert_eq!(
+            rows.len(),
+            1,
+            "a tmux session holding one claude is one row"
+        );
         assert_eq!(rows[0].id, agent);
         assert_eq!(rows[0].kind.0, khor_core::kind::TUI);
         assert!(rows[0].mux);
@@ -4965,7 +5455,11 @@ mod tests {
         let rows = k.rows_listed(|_| 0, on_list);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, agent);
-        assert_eq!(rows[0].state.state, State::Failed, "its host is gone: the ending stands");
+        assert_eq!(
+            rows[0].state.state,
+            State::Failed,
+            "its host is gone: the ending stands"
+        );
         assert_eq!(rows[0].category.as_deref(), Some("claude"));
     }
 
@@ -5164,7 +5658,11 @@ mod tests {
         assert_eq!(row.category.as_deref(), Some("claude"));
         let doing = row.doing.as_ref().unwrap();
         assert_eq!(doing.command, None, "not 「正在运行 tmux」");
-        assert_eq!(doing.cwd.as_deref(), Some("/w/one"), "and still where it stands");
+        assert_eq!(
+            doing.cwd.as_deref(),
+            Some("/w/one"),
+            "and still where it stands"
+        );
         assert_eq!(
             k.worn_by(&term, |_| false).map(|s| s.0),
             Some(AGENT.to_owned()),
@@ -5186,7 +5684,10 @@ mod tests {
             "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%11\x1fwork\n",
             "$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fvim\x1f/w/two\x1f%12\x1fwork\n",
         );
-        let row_reading = |tag: &str, front: Option<&str>, marked: Option<&[&str]>, own: Option<(&str, khor_core::Doing)>| {
+        let row_reading = |tag: &str,
+                           front: Option<&str>,
+                           marked: Option<&[&str]>,
+                           own: Option<(&str, khor_core::Doing)>| {
             let root = tmp(&format!("seat-shell-tmux-front-{tag}"));
             let tmux = crate::adaptor::tmux::fake_tmux(&format!("front-{tag}"), panes);
             let host = FakeHost::up();
@@ -5196,15 +5697,24 @@ mod tests {
                 proc_under(3001, "zsh", 1),
                 proc_under(3002, "zsh", 1),
             ]);
-            let discovery = Discovery::empty().with_procs(procs).with_tmux(Tmux::at_binary(&tmux));
+            let discovery = Discovery::empty()
+                .with_procs(procs)
+                .with_tmux(Tmux::at_binary(&tmux));
             let discovery = match front {
                 Some(p) => discovery.with_attached_in(5001, sid(T_ID), p),
                 None => discovery.with_attached(vec![(5001, sid(T_ID))]),
             };
-            let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(discovery));
+            let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32]))
+                .discovering(Arc::new(discovery));
             let term = sid("shell/a1b2c3d4e5f6");
-            k.register(&term, "shell", "zsh", Some(host.pid()), Some(khor_core::category::SHELL))
-                .unwrap();
+            k.register(
+                &term,
+                "shell",
+                "zsh",
+                Some(host.pid()),
+                Some(khor_core::category::SHELL),
+            )
+            .unwrap();
             let dir = k.dir_of(&term).unwrap();
             host.serve(&dir, 5001);
             crate::commands::write_saved(
@@ -5231,27 +5741,49 @@ mod tests {
             assert_eq!(rows[0].last, None, "{tag}: not the client's status bar");
             rows[0].doing.clone().unwrap()
         };
-        let row_with = |tag: &str, front: Option<&str>, marked: Option<&[&str]>| row_reading(tag, front, marked, None);
+        let row_with = |tag: &str, front: Option<&str>, marked: Option<&[&str]>| {
+            row_reading(tag, front, marked, None)
+        };
 
         let doing = row_with("busy", Some("%12"), None);
-        assert_eq!(doing.command.as_deref(), Some("vim"), "the front pane's program, not tmux");
+        assert_eq!(
+            doing.command.as_deref(),
+            Some("vim"),
+            "the front pane's program, not tmux"
+        );
         assert!(doing.running);
         assert_eq!(doing.cwd.as_deref(), Some("/w/two"));
-        assert!(!doing.pane_unmarked, "a host older than the list: unknown, not unmarked");
+        assert!(
+            !doing.pane_unmarked,
+            "a host older than the list: unknown, not unmarked"
+        );
 
         let doing = row_with("idle", Some("%11"), None);
-        assert_eq!(doing.command, None, "a front pane at its prompt runs nothing");
+        assert_eq!(
+            doing.command, None,
+            "a front pane at its prompt runs nothing"
+        );
         assert!(!doing.running);
         assert_eq!(doing.cwd.as_deref(), Some("/w/one"));
 
         let doing = row_with("unnamed", None, Some(&[]));
-        assert_eq!(doing.command.as_deref(), Some("vim"), "the session's reading");
+        assert_eq!(
+            doing.command.as_deref(),
+            Some("vim"),
+            "the session's reading"
+        );
         assert!(!doing.pane_unmarked, "no pane named: unknown");
 
         // SESS-BRIEF 3: which panes mark their commands reaches the row.
-        assert!(row_with("unmarked", Some("%12"), Some(&["%11"])).pane_unmarked, "vim's pane never marked");
+        assert!(
+            row_with("unmarked", Some("%12"), Some(&["%11"])).pane_unmarked,
+            "vim's pane never marked"
+        );
         assert!(row_with("none-yet", Some("%12"), Some(&[])).pane_unmarked);
-        assert!(!row_with("marked", Some("%11"), Some(&["%11"])).pane_unmarked, "the front pane marks");
+        assert!(
+            !row_with("marked", Some("%11"), Some(&["%11"])).pane_unmarked,
+            "the front pane marks"
+        );
 
         // Item 64: a front pane that marks says its own reading, the
         // command as typed and how it ended, not tmux's.
@@ -5263,11 +5795,24 @@ mod tests {
             cwd: Some("/w/three".into()),
             ..Default::default()
         };
-        let doing = row_reading("own", Some("%11"), Some(&["%11"]), Some(("%11", ran.clone())));
+        let doing = row_reading(
+            "own",
+            Some("%11"),
+            Some(&["%11"]),
+            Some(("%11", ran.clone())),
+        );
         assert_eq!(doing.command.as_deref(), Some("make -j8 test"));
         assert!(!doing.running);
-        assert_eq!((doing.ended_ms, doing.exit), (Some(9), Some(2)), "how it ended");
-        assert_eq!(doing.cwd.as_deref(), Some("/w/one"), "live pane cwd outranks an earlier command mark");
+        assert_eq!(
+            (doing.ended_ms, doing.exit),
+            (Some(9), Some(2)),
+            "how it ended"
+        );
+        assert_eq!(
+            doing.cwd.as_deref(),
+            Some("/w/one"),
+            "live pane cwd outranks an earlier command mark"
+        );
         assert!(!doing.pane_unmarked);
 
         let editing = khor_core::Doing {
@@ -5277,21 +5822,44 @@ mod tests {
             cwd: Some("/w/two".into()),
             ..Default::default()
         };
-        let doing = row_reading("own-running", Some("%12"), Some(&["%11", "%12"]), Some(("%12", editing.clone())));
-        assert_eq!(doing.command.as_deref(), Some("vim notes.md"), "as typed, not tmux's `vim`");
+        let doing = row_reading(
+            "own-running",
+            Some("%12"),
+            Some(&["%11", "%12"]),
+            Some(("%12", editing.clone())),
+        );
+        assert_eq!(
+            doing.command.as_deref(),
+            Some("vim notes.md"),
+            "as typed, not tmux's `vim`"
+        );
         assert!(doing.running);
         assert_eq!(doing.started_ms, 7);
 
         // The ledger says a command runs while tmux sees the pane at its
         // prompt: the end was lost out of sight, so tmux's reading.
-        let doing = row_reading("lost-end", Some("%11"), Some(&["%11"]), Some(("%11", editing)));
+        let doing = row_reading(
+            "lost-end",
+            Some("%11"),
+            Some(&["%11"]),
+            Some(("%11", editing)),
+        );
         assert_eq!(doing.command, None, "tmux sees zsh at its prompt");
         assert!(!doing.running);
         assert_eq!(doing.cwd.as_deref(), Some("/w/one"));
 
         // Another pane's reading is not the front pane's.
-        let doing = row_reading("other", Some("%12"), Some(&["%11", "%12"]), Some(("%11", ran)));
-        assert_eq!(doing.command.as_deref(), Some("vim"), "tmux's reading of %12");
+        let doing = row_reading(
+            "other",
+            Some("%12"),
+            Some(&["%11", "%12"]),
+            Some(("%11", ran)),
+        );
+        assert_eq!(
+            doing.command.as_deref(),
+            Some("vim"),
+            "tmux's reading of %12"
+        );
     }
 
     /// **khor's own terminal.** A shell khor hosts wears the claude
@@ -5468,19 +6036,26 @@ mod tests {
         let root = tmp("ending");
         let k = kind_at(&root);
         let exited = sid("shell/exit1");
-        k.register(&exited, "shell", "x", Some(std::process::id()), None).unwrap();
+        k.register(&exited, "shell", "x", Some(std::process::id()), None)
+            .unwrap();
         k.record_exit(&exited, 1).unwrap();
         let killed = sid("shell/killed1");
-        k.register(&killed, "shell", "y", Some(dead_pid()), None).unwrap();
+        k.register(&killed, "shell", "y", Some(dead_pid()), None)
+            .unwrap();
         let alive = sid("shell/alive1");
-        k.register(&alive, "shell", "z", Some(std::process::id()), None).unwrap();
+        k.register(&alive, "shell", "z", Some(std::process::id()), None)
+            .unwrap();
         assert_eq!(k.ending(&exited), Some(Ending::Exit(1)));
         assert_eq!(k.ending(&killed), Some(Ending::HostGone));
         assert_eq!(k.ending(&alive), None, "a running session has not ended");
         assert_eq!(k.ending(&sid("shell/nobody")), None);
         let rows = k.rows(|_| 0);
         let word = |id: &SessionId| rows.iter().find(|r| &r.id == id).unwrap().state.state;
-        assert_eq!((word(&exited), word(&killed)), (State::Failed, State::Failed), "the word stays 失败");
+        assert_eq!(
+            (word(&exited), word(&killed)),
+            (State::Failed, State::Failed),
+            "the word stays 失败"
+        );
     }
 
     /// **A dead row's page**: the last screen when the host left
@@ -5491,11 +6066,15 @@ mod tests {
         let root = tmp("ended");
         let k = kind_at(&root);
         let id = sid("shell/gone2");
-        k.register(&id, "shell", "x", Some(dead_pid()), None).unwrap();
+        k.register(&id, "shell", "x", Some(dead_pid()), None)
+            .unwrap();
         let dir = k.dir_of(&id).unwrap();
         let ended = k.ended(&id).expect("dead");
         assert_eq!(ended.ending, Ending::HostGone);
-        assert!(ended.screen.is_none() && ended.recent.is_empty(), "nothing left: nothing shown");
+        assert!(
+            ended.screen.is_none() && ended.recent.is_empty(),
+            "nothing left: nothing shown"
+        );
         let command = crate::commands::Command {
             n: 1,
             text: Some("make".into()),
@@ -5508,15 +6087,31 @@ mod tests {
             pane: None,
             last_line: None,
         };
-        crate::commands::write_saved(&dir, &crate::commands::Saved { recent: vec![command.clone()], ..Default::default() });
+        crate::commands::write_saved(
+            &dir,
+            &crate::commands::Saved {
+                recent: vec![command.clone()],
+                ..Default::default()
+            },
+        );
         let ended = k.ended(&id).unwrap();
         assert!(ended.screen.is_none());
         assert_eq!(ended.recent, vec![command]);
-        let screen = crate::host::RingFile { form: crate::host::RING_FORM_SNAPSHOT, cols: 80, rows: 24, at_ms: 3, bytes: b"$ make".to_vec() };
+        let screen = crate::host::RingFile {
+            form: crate::host::RING_FORM_SNAPSHOT,
+            cols: 80,
+            rows: 24,
+            at_ms: 3,
+            bytes: b"$ make".to_vec(),
+        };
         crate::host::write_ring_file(&dir, &screen).unwrap();
         assert_eq!(k.ended(&id).unwrap().screen, Some(screen));
         let alive = sid("shell/alive2");
-        k.register(&alive, "shell", "z", Some(std::process::id()), None).unwrap();
-        assert!(k.ended(&alive).is_none(), "a live shell never reads the file");
+        k.register(&alive, "shell", "z", Some(std::process::id()), None)
+            .unwrap();
+        assert!(
+            k.ended(&alive).is_none(),
+            "a live shell never reads the file"
+        );
     }
 }

@@ -195,7 +195,9 @@ impl Context {
                 return Err(Error::busy());
             }
             Some(guard)
-        } else { None };
+        } else {
+            None
+        };
         with_doc!(self, name, |loaded| {
             let before = loaded.doc.version();
             let result = doc_transfer::apply_staged(
@@ -383,13 +385,24 @@ impl State {
     pub(crate) fn pending_proofs(&self, remote: [u8; 32], limit: usize) -> Vec<DocProof> {
         self.scoped_proofs(remote, limit, false)
     }
-    pub(crate) fn scoped_proofs(&self, remote: [u8; 32], limit: usize, devices_only: bool) -> Vec<DocProof> {
+    pub(crate) fn scoped_proofs(
+        &self,
+        remote: [u8; 32],
+        limit: usize,
+        devices_only: bool,
+    ) -> Vec<DocProof> {
         self.records
             .incoming
             .iter()
             .filter_map(|r| match r {
-                Incoming::Complete { proof, .. } if proof.manifest.source == remote
-                    && (!devices_only || proof.manifest.descriptor().is_ok_and(|d| d.document == "devices")) => {
+                Incoming::Complete { proof, .. }
+                    if proof.manifest.source == remote
+                        && (!devices_only
+                            || proof
+                                .manifest
+                                .descriptor()
+                                .is_ok_and(|d| d.document == "devices")) =>
+                {
                     Some(proof.clone())
                 }
                 _ => None,
@@ -404,13 +417,24 @@ impl State {
     ) -> Result<Vec<DocAcknowledgement>, Error> {
         self.scoped_acknowledgements(remote, limit, false)
     }
-    pub(crate) fn scoped_acknowledgements(&self, remote: [u8; 32], limit: usize, devices_only: bool) -> Result<Vec<DocAcknowledgement>, Error> {
+    pub(crate) fn scoped_acknowledgements(
+        &self,
+        remote: [u8; 32],
+        limit: usize,
+        devices_only: bool,
+    ) -> Result<Vec<DocAcknowledgement>, Error> {
         self.records
             .outgoing
             .iter()
             .filter_map(|r| match r {
-                Outgoing::NeedAck(proof) if proof.manifest.recipient == remote
-                    && (!devices_only || proof.manifest.descriptor().is_ok_and(|d| d.document == "devices")) => {
+                Outgoing::NeedAck(proof)
+                    if proof.manifest.recipient == remote
+                        && (!devices_only
+                            || proof
+                                .manifest
+                                .descriptor()
+                                .is_ok_and(|d| d.document == "devices")) =>
+                {
                     Some(proof.acknowledgement())
                 }
                 _ => None,
@@ -463,7 +487,14 @@ impl State {
     ) -> Result<Option<DocChunk>, Error> {
         self.offer_encoded(context, remote, name, have, Encoding::Updates)
     }
-    fn offer_encoded(&mut self, context: &Context, remote: [u8;32], name: &str, have: &DocumentVersion, encoding: Encoding) -> Result<Option<DocChunk>, Error> {
+    fn offer_encoded(
+        &mut self,
+        context: &Context,
+        remote: [u8; 32],
+        name: &str,
+        have: &DocumentVersion,
+        encoding: Encoding,
+    ) -> Result<Option<DocChunk>, Error> {
         let active = self.records.outgoing.iter().position(|r| {
             r.active()
                 && r.manifest().recipient == remote
@@ -615,23 +646,39 @@ impl State {
         // immutable spool. Reopen still recovers/checks every core byte and
         // digest; repeated chunks need not decode that same Loro body again.
         let core = manifest.core()?;
-        let mut sink = self.blobs.open_existing(&core)
+        let mut sink = self
+            .blobs
+            .open_existing(&core)
             .map_err(Error::from_std)?
             .ok_or("outgoing document body is missing")?;
-        if !matches!(sink.progress().map_err(Error::from_std)?, Progress::VerifiedComplete { .. }) {
-            return Err(Error::from_std(khor_sync::transfer::Error::InvalidStage("outgoing body is not verified complete")));
+        if !matches!(
+            sink.progress().map_err(Error::from_std)?,
+            Progress::VerifiedComplete { .. }
+        ) {
+            return Err(Error::from_std(khor_sync::transfer::Error::InvalidStage(
+                "outgoing body is not verified complete",
+            )));
         }
         let total = core.total_bytes;
-        if offset > total || (offset != total && offset % khor_sync::transfer::CHUNK_BYTES as u64 != 0) {
-            return Err(Error::from_std(khor_sync::transfer::Error::InvalidChunk("noncanonical outbound read offset")));
+        if offset > total
+            || (offset != total && offset % khor_sync::transfer::CHUNK_BYTES as u64 != 0)
+        {
+            return Err(Error::from_std(khor_sync::transfer::Error::InvalidChunk(
+                "noncanonical outbound read offset",
+            )));
         }
         let count = (total - offset).min(khor_sync::transfer::CHUNK_BYTES as u64) as usize;
         let mut bytes = vec![0; count];
         let mut filled = 0;
         while filled < count {
-            let read = sink.read_verified(offset + filled as u64, &mut bytes[filled..]).map_err(Error::from_std)?;
+            let read = sink
+                .read_verified(offset + filled as u64, &mut bytes[filled..])
+                .map_err(Error::from_std)?;
             if read == 0 {
-                return Err(Error::from_std(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "verified outbound body was truncated")));
+                return Err(Error::from_std(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "verified outbound body was truncated",
+                )));
             }
             filled += read;
         }

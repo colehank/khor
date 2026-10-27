@@ -239,7 +239,10 @@ impl Tmux {
     /// When the session `id` (`$3`) was created, as `#{session_created}`
     /// says: what its row id is made from ([`id_of`]).
     pub fn session_created(&self, id: &str) -> Option<i64> {
-        self.ask(&["display-message", "-p", "-t", id, "#{session_created}"])?.trim().parse().ok()
+        self.ask(&["display-message", "-p", "-t", id, "#{session_created}"])?
+            .trim()
+            .parse()
+            .ok()
     }
 
     /// The server a client's own socket arguments name (`-L name`,
@@ -361,7 +364,13 @@ impl Tmux {
     /// Asked of a tmux that knows `terminal-features` only
     /// ([`Tmux::takes_client_features`]): an older one refuses `-T`, and
     /// the attach with it.
-    pub fn grouped_attach_argv(&self, row: &str, target: &str, window: Option<&str>, shim: Option<&str>) -> Vec<String> {
+    pub fn grouped_attach_argv(
+        &self,
+        row: &str,
+        target: &str,
+        window: Option<&str>,
+        shim: Option<&str>,
+    ) -> Vec<String> {
         let mut argv = vec![
             self.binaries
                 .first()
@@ -449,10 +458,29 @@ impl Tmux {
     /// window's active pane is the one moved in; `row` names it in errors.
     pub fn jump_prompt_in(&self, id: &str, row: &str, up: bool) -> Result<(), String> {
         let step = if up { "previous-prompt" } else { "next-prompt" };
-        let at = |args: &[&str]| self.ask(args).ok_or_else(|| khor_catalog::msg::tmux_session_gone(row));
-        let place = ["display-message", "-p", "-t", id, "#{pane_in_mode} #{scroll_position} #{copy_cursor_y}"];
+        let at = |args: &[&str]| {
+            self.ask(args)
+                .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))
+        };
+        let place = [
+            "display-message",
+            "-p",
+            "-t",
+            id,
+            "#{pane_in_mode} #{scroll_position} #{copy_cursor_y}",
+        ];
         let before = at(&place)?;
-        at(&["copy-mode", "-t", id, ";", "send-keys", "-X", "-t", id, step])?;
+        at(&[
+            "copy-mode",
+            "-t",
+            id,
+            ";",
+            "send-keys",
+            "-X",
+            "-t",
+            id,
+            step,
+        ])?;
         // Down from the last prompt goes nowhere: that is the bottom.
         if !up && before.starts_with('1') && at(&place)? == before {
             at(&["send-keys", "-X", "-t", id, "cancel"])?;
@@ -487,11 +515,20 @@ impl Tmux {
 
     /// [`Tmux::history`] of the session `id` (`$3`): its current window's
     /// active pane; `row` names it in errors.
-    pub fn history_in(&self, id: &str, row: &str, since: Option<&HistoryAnchor>) -> Result<PaneHistory, String> {
+    pub fn history_in(
+        &self,
+        id: &str,
+        row: &str,
+        since: Option<&HistoryAnchor>,
+    ) -> Result<PaneHistory, String> {
         // A first read looks near the end for the anchor; one with no
         // anchor to look for takes everything at once.
         let mut anchor = since.filter(|a| !a.tail.is_empty());
-        let mut window = if anchor.is_some() { HISTORY_FIRST_WINDOW } else { HISTORY_CAP };
+        let mut window = if anchor.is_some() {
+            HISTORY_FIRST_WINDOW
+        } else {
+            HISTORY_CAP
+        };
         loop {
             let read = self
                 .read_history(id, window, anchor.is_some())
@@ -533,8 +570,17 @@ impl Tmux {
     /// positive; `row` names the session
     /// in errors.
     pub fn wheel_in(&self, id: &str, row: &str, rows: i32) -> Result<(), String> {
-        let at = |args: &[&str]| self.ask(args).ok_or_else(|| khor_catalog::msg::tmux_session_gone(row));
-        let state = at(&["display-message", "-p", "-t", id, "#{pane_in_mode} #{alternate_on} #{mouse_any_flag} #{pane_height}"])?;
+        let at = |args: &[&str]| {
+            self.ask(args)
+                .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))
+        };
+        let state = at(&[
+            "display-message",
+            "-p",
+            "-t",
+            id,
+            "#{pane_in_mode} #{alternate_on} #{mouse_any_flag} #{pane_height}",
+        ])?;
         if rows == 0 {
             return Ok(());
         }
@@ -542,17 +588,57 @@ impl Tmux {
         let in_mode = flags.next() == Some("1");
         let alternate = flags.next() == Some("1");
         let mouse = flags.next() == Some("1");
-        let height = flags.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(24).saturating_sub(1).max(1);
+        let height = flags
+            .next()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(24)
+            .saturating_sub(1)
+            .max(1);
         let n = rows.unsigned_abs().to_string();
         if in_mode {
-            at(&["send-keys", "-X", "-N", &n, "-t", id, if rows > 0 { "scroll-up" } else { "scroll-down" }])?;
+            at(&[
+                "send-keys",
+                "-X",
+                "-N",
+                &n,
+                "-t",
+                id,
+                if rows > 0 { "scroll-up" } else { "scroll-down" },
+            ])?;
         } else if alternate && !mouse {
             let pages = rows.unsigned_abs().div_ceil(height).to_string();
-            at(&["send-keys", "-N", &pages, "-t", id, if rows > 0 { "PageUp" } else { "PageDown" }])?;
+            at(&[
+                "send-keys",
+                "-N",
+                &pages,
+                "-t",
+                id,
+                if rows > 0 { "PageUp" } else { "PageDown" },
+            ])?;
         } else if mouse {
-            at(&["send-keys", "-N", &n, "-t", id, if rows > 0 { "Up" } else { "Down" }])?;
+            at(&[
+                "send-keys",
+                "-N",
+                &n,
+                "-t",
+                id,
+                if rows > 0 { "Up" } else { "Down" },
+            ])?;
         } else if rows > 0 {
-            at(&["copy-mode", "-e", "-t", id, ";", "send-keys", "-X", "-N", &n, "-t", id, "scroll-up"])?;
+            at(&[
+                "copy-mode",
+                "-e",
+                "-t",
+                id,
+                ";",
+                "send-keys",
+                "-X",
+                "-N",
+                &n,
+                "-t",
+                id,
+                "scroll-up",
+            ])?;
         }
         Ok(())
     }
@@ -563,7 +649,11 @@ impl Tmux {
             .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
         sessions
             .lines()
-            .find_map(|l| l.split_once('\t').filter(|(_, r)| *r == row).map(|(id, _)| id.to_owned()))
+            .find_map(|l| {
+                l.split_once('\t')
+                    .filter(|(_, r)| *r == row)
+                    .map(|(id, _)| id.to_owned())
+            })
             .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))
     }
 
@@ -578,13 +668,52 @@ impl Tmux {
         let unjoined = "\x1fkhor-rows\x1f";
         let start = format!("-{window}");
         let mut args = vec![
-            "display-message", "-p", "-t", session, "#{pane_id} #{alternate_on} #{history_size} #{pane_top} #{pane_left} #{mouse_any_flag} #{status} #{status-position} #{window_width}x#{window_height}", ";",
-            "capture-pane", "-p", "-e", "-J", "-S", &start, "-E", "-1", "-t", session, ";",
+            "display-message",
+            "-p",
+            "-t",
+            session,
+            "#{pane_id} #{alternate_on} #{history_size} #{pane_top} #{pane_left} #{mouse_any_flag} #{status} #{status-position} #{window_width}x#{window_height}",
+            ";",
+            "capture-pane",
+            "-p",
+            "-e",
+            "-J",
+            "-S",
+            &start,
+            "-E",
+            "-1",
+            "-t",
+            session,
+            ";",
         ];
         if rows {
-            args.extend(["display-message", "-p", unjoined, ";", "capture-pane", "-p", "-S", &start, "-E", "-1", "-t", session, ";"]);
+            args.extend([
+                "display-message",
+                "-p",
+                unjoined,
+                ";",
+                "capture-pane",
+                "-p",
+                "-S",
+                &start,
+                "-E",
+                "-1",
+                "-t",
+                session,
+                ";",
+            ]);
         }
-        args.extend(["display-message", "-p", split, ";", "capture-pane", "-p", "-e", "-t", session]);
+        args.extend([
+            "display-message",
+            "-p",
+            split,
+            ";",
+            "capture-pane",
+            "-p",
+            "-e",
+            "-t",
+            session,
+        ]);
         let out = self.ask_long(&args)?;
         let (head, rest) = out.split_once('\n')?;
         let mut words = head.split(' ');
@@ -611,10 +740,27 @@ impl Tmux {
         };
         // With no history, `-E -1` names a line that is not there and tmux
         // answers with the screen's first: nothing of it is history.
-        let lines = |text: &str| -> Vec<String> { if size == 0 { Vec::new() } else { text.lines().map(str::to_owned).collect() } };
+        let lines = |text: &str| -> Vec<String> {
+            if size == 0 {
+                Vec::new()
+            } else {
+                text.lines().map(str::to_owned).collect()
+            }
+        };
         let (history, rows) = (lines(history), lines(unjoined));
         let screen = screen.lines().map(str::to_owned).collect();
-        Some(HistoryRead { pane, alternate, mouse, size, top, left, window: wsize, history, rows, screen })
+        Some(HistoryRead {
+            pane,
+            alternate,
+            mouse,
+            size,
+            top,
+            left,
+            window: wsize,
+            history,
+            rows,
+            screen,
+        })
     }
 
     /// [`Tmux::ask`] for an answer bigger than a pipe's buffer: a
@@ -661,7 +807,10 @@ impl Tmux {
         if !own.trim().is_empty() {
             return None;
         }
-        let shell = self.ask(&["show-options", "-gv", "default-shell"])?.trim().to_owned();
+        let shell = self
+            .ask(&["show-options", "-gv", "default-shell"])?
+            .trim()
+            .to_owned();
         let server_env = |k: &str| {
             self.ask(&["show-environment", "-g", k])
                 .and_then(|l| l.trim().strip_prefix(&format!("{k}=")).map(str::to_owned))
@@ -681,7 +830,9 @@ impl Tmux {
         // Strip only this store's retired launcher from an old server's PATH.
         if let Some(path) = server_env("PATH") {
             let clean = crate::legacy_codex::clean_path(scripts.parent()?, &path);
-            if clean != path { out.push_str(&format!(" PATH={}", quote(&clean)?)); }
+            if clean != path {
+                out.push_str(&format!(" PATH={}", quote(&clean)?));
+            }
         }
         out.push_str(&format!(" {}", quote(&shell)?));
         for a in &plan.args {
@@ -704,7 +855,8 @@ impl Tmux {
     /// the release that brought `terminal-features` too, which is what is
     /// asked (read-only). `false` for a server that will not answer.
     pub fn takes_client_features(&self) -> bool {
-        self.ask(&["show-options", "-sv", "terminal-features"]).is_some()
+        self.ask(&["show-options", "-sv", "terminal-features"])
+            .is_some()
     }
 
     /// The window of session `target` whose panes hold any of `wanted`,
@@ -925,7 +1077,9 @@ impl ClientInFront {
 /// the terminal: `list-clients` by `client_tty`. A `-S` path with a
 /// space in it is not found (`ps` joins the argv with spaces).
 pub fn client_in_front(pid: u32) -> Option<ClientInFront> {
-    let tty = ps(&["-o", "tty=", "-p", &pid.to_string()])?.trim().to_owned();
+    let tty = ps(&["-o", "tty=", "-p", &pid.to_string()])?
+        .trim()
+        .to_owned();
     if tty.is_empty() || tty.starts_with('?') {
         return None;
     }
@@ -935,16 +1089,27 @@ pub fn client_in_front(pid: u32) -> Option<ClientInFront> {
         let who: u32 = words.next()?.parse().ok()?;
         let stat = words.next()?;
         let argv: Vec<String> = words.map(str::to_owned).collect();
-        let tmux = argv.first().map(std::path::Path::new).and_then(std::path::Path::file_name).is_some_and(|n| n == "tmux");
+        let tmux = argv
+            .first()
+            .map(std::path::Path::new)
+            .and_then(std::path::Path::file_name)
+            .is_some_and(|n| n == "tmux");
         (who != pid && stat.contains('+') && tmux).then_some(argv)
     })?;
     let socket = crate::host::tmux_socket_args(&argv);
-    let tty = if tty.starts_with('/') { tty } else { format!("/dev/{tty}") };
+    let tty = if tty.starts_with('/') {
+        tty
+    } else {
+        format!("/dev/{tty}")
+    };
     // `#{pane_id}` in a client's format is that client's front pane: it
     // follows `select-window` and `select-pane` (measured on 3.7b). Last,
     // because a session name may hold a tab.
-    let clients = Tmux::on_socket_args(&socket)
-        .ask(&["list-clients", "-F", "#{client_tty}\t#{session_id}\t#{pane_id}\t#{session_name}"])?;
+    let clients = Tmux::on_socket_args(&socket).ask(&[
+        "list-clients",
+        "-F",
+        "#{client_tty}\t#{session_id}\t#{pane_id}\t#{session_name}",
+    ])?;
     clients.lines().find_map(|l| {
         let mut f = l.splitn(4, '\t');
         (f.next()? == tty).then(|| ClientInFront {
@@ -959,8 +1124,15 @@ pub fn client_in_front(pid: u32) -> Option<ClientInFront> {
 
 /// `ps` with `args`, its output, or `None`.
 fn ps(args: &[&str]) -> Option<String> {
-    let out = Command::new("ps").args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    let out = Command::new("ps")
+        .args(args)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// One pane, as tmux describes it.
@@ -987,12 +1159,31 @@ impl Pane {
     fn parse(line: &str) -> Option<Pane> {
         let f: Vec<&str> = line.split(SEP).collect();
         let (fields, active, title) = match f.as_slice() {
-            [base @ .., pane_active, window_active, title] if base.len() == 9 => (base, *pane_active == "1" && *window_active == "1", Some(title.to_string())),
-            [base @ .., pane_active, window_active] if base.len() == 9 => (base, *pane_active == "1" && *window_active == "1", None),
+            [base @ .., pane_active, window_active, title] if base.len() == 9 => (
+                base,
+                *pane_active == "1" && *window_active == "1",
+                Some(title.to_string()),
+            ),
+            [base @ .., pane_active, window_active] if base.len() == 9 => {
+                (base, *pane_active == "1" && *window_active == "1", None)
+            }
             base if base.len() == 9 => (base, false, None), // Older saved discovery fixtures.
             _ => return None,
         };
-        let [id, created, activity, pid, started, current, path, pane_id, name] = fields else { return None; };
+        let [
+            id,
+            created,
+            activity,
+            pid,
+            started,
+            current,
+            path,
+            pane_id,
+            name,
+        ] = fields
+        else {
+            return None;
+        };
         Some(Pane {
             session_id: id.to_string(),
             session_name: name.to_string(),
@@ -1045,7 +1236,9 @@ impl Gathering {
 
     fn absorb(&mut self, pane: &Pane, procs: &Procs) {
         self.pane_pids.push(pane.pid);
-        if pane.active { self.cwd = pane.current_path.clone(); }
+        if pane.active {
+            self.cwd = pane.current_path.clone();
+        }
         self.activity_secs = self.activity_secs.max(pane.activity_secs);
         // 忙碌 wins: a session with one pane at a prompt and one running
         // a build is a session with something running in it. Reducing
@@ -1059,7 +1252,8 @@ impl Gathering {
             title: pane.title.clone(),
             active: pane.active,
             id: pane.pane_id.clone(),
-            running: (word == Some(State::Busy) && !pane.current_command.is_empty()).then(|| pane.current_command.clone()),
+            running: (word == Some(State::Busy) && !pane.current_command.is_empty())
+                .then(|| pane.current_command.clone()),
             cwd: (!pane.current_path.is_empty()).then(|| pane.current_path.clone()),
         });
         match word {
@@ -1144,7 +1338,10 @@ fn same_program(a: &str, b: &str) -> bool {
 /// A process name as a program: no login dash, no directory (`ps`
 /// prints `/bin/zsh` for a shell started by its path).
 fn program(name: &str) -> &str {
-    name.rsplit('/').next().unwrap_or(name).trim_start_matches('-')
+    name.rsplit('/')
+        .next()
+        .unwrap_or(name)
+        .trim_start_matches('-')
 }
 
 /// Whether a program is an interactive shell — one whose being in front
@@ -1152,7 +1349,17 @@ fn program(name: &str) -> &str {
 fn is_shell(name: &str) -> bool {
     matches!(
         program(name),
-        "sh" | "bash" | "zsh" | "fish" | "dash" | "ksh" | "mksh" | "tcsh" | "csh" | "nu" | "xonsh" | "elvish"
+        "sh" | "bash"
+            | "zsh"
+            | "fish"
+            | "dash"
+            | "ksh"
+            | "mksh"
+            | "tcsh"
+            | "csh"
+            | "nu"
+            | "xonsh"
+            | "elvish"
     )
 }
 
@@ -1351,8 +1558,12 @@ impl HistoryRead {
         if a.pane != self.pane {
             return Place::Gone;
         }
-        let Some(new) = self.size.checked_sub(a.size) else { return Place::Gone };
-        let Some(counts) = row_counts(&self.history, &self.rows) else { return Place::Gone };
+        let Some(new) = self.size.checked_sub(a.size) else {
+            return Place::Gone;
+        };
+        let Some(counts) = row_counts(&self.history, &self.rows) else {
+            return Place::Gone;
+        };
         // The window holds the history's first row, so its first line is
         // whole; otherwise that line may be a wrapped line's end.
         let all = self.rows.len() >= self.size;
@@ -1361,7 +1572,9 @@ impl HistoryRead {
         let mut rows = 0;
         let mut k = 0;
         while rows < new {
-            let Some(i) = counts.len().checked_sub(k + 1) else { return short };
+            let Some(i) = counts.len().checked_sub(k + 1) else {
+                return short;
+            };
             rows += counts[i];
             k += 1;
         }
@@ -1369,9 +1582,20 @@ impl HistoryRead {
             return Place::Gone;
         }
         let n = a.tail.len();
-        let Some(end) = self.history.len().checked_sub(k + 1).filter(|&e| e + 1 >= n && (all || e >= n)) else { return short };
+        let Some(end) = self
+            .history
+            .len()
+            .checked_sub(k + 1)
+            .filter(|&e| e + 1 >= n && (all || e >= n))
+        else {
+            return short;
+        };
         let held = self.history[end + 1 - n..=end].iter().map(|l| plain(l));
-        if held.eq(a.tail.iter().cloned()) { Place::At(end) } else { Place::Gone }
+        if held.eq(a.tail.iter().cloned()) {
+            Place::At(end)
+        } else {
+            Place::Gone
+        }
     }
 
     /// The answer, given where in `history` the anchor ended (`None`:
@@ -1381,12 +1605,21 @@ impl HistoryRead {
             .iter()
             .map(|l| plain(l))
             .collect();
-        let anchor = HistoryAnchor { pane: self.pane.clone(), size: self.size, tail };
+        let anchor = HistoryAnchor {
+            pane: self.pane.clone(),
+            size: self.size,
+            tail,
+        };
         let start = found.map_or(0, |end| end + 1);
         // Under one frame (`proto::MAX_FRAME`): the oldest lines go, and
         // with a gap left behind the face's copy, it starts again.
         let mut first = start;
-        let mut bytes: usize = self.screen.iter().chain(&self.history[start..]).map(|l| l.len() + 1).sum();
+        let mut bytes: usize = self
+            .screen
+            .iter()
+            .chain(&self.history[start..])
+            .map(|l| l.len() + 1)
+            .sum();
         while bytes > HISTORY_BYTES && first < self.history.len() {
             bytes -= self.history[first].len() + 1;
             first += 1;
@@ -1485,7 +1718,9 @@ fn escapes(lines: &[String]) -> String {
         let mut rest = line.as_str();
         while let Some(i) = rest.find("\x1b[") {
             let tail = &rest[i + 2..];
-            let Some(j) = tail.find(|c: char| ('\x40'..='\x7e').contains(&c)) else { break };
+            let Some(j) = tail.find(|c: char| ('\x40'..='\x7e').contains(&c)) else {
+                break;
+            };
             if tail.as_bytes()[j] == b'm' {
                 let sgr = &rest[i..i + 2 + j + 1];
                 if sgr == "\x1b[0m" || sgr == "\x1b[m" || sgr.starts_with("\x1b[0;") {
@@ -1500,7 +1735,9 @@ fn escapes(lines: &[String]) -> String {
         }
     }
     if out.len() > LEAD_BYTES {
-        let cut = out[out.len() - LEAD_BYTES..].find("\x1b[").map_or(out.len(), |k| out.len() - LEAD_BYTES + k);
+        let cut = out[out.len() - LEAD_BYTES..]
+            .find("\x1b[")
+            .map_or(out.len(), |k| out.len() - LEAD_BYTES + k);
         out.drain(..cut);
     }
     out
@@ -1772,7 +2009,12 @@ mod tests {
     #[test]
     fn the_attach_turns_the_mouse_on_last_and_only_for_its_own_session() {
         for window in [None, Some("@3")] {
-            let argv = Tmux::on_socket("s").grouped_attach_argv("shell/1-1", "$1", window, Some("exec zsh -l"));
+            let argv = Tmux::on_socket("s").grouped_attach_argv(
+                "shell/1-1",
+                "$1",
+                window,
+                Some("exec zsh -l"),
+            );
             let tail: Vec<&str> = argv[argv.len() - 5..].iter().map(String::as_str).collect();
             assert_eq!(tail, [";", "set-option", "-q", "mouse", "on"], "{argv:?}");
             let mouse = argv.iter().position(|a| a == "mouse").unwrap();
@@ -1813,18 +2055,55 @@ mod tests {
             return;
         }
         let s = Server::start("jump");
-        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "80", "-y", "20", "/bin/sh"]);
+        s.tmux(&[
+            "-f",
+            "/dev/null",
+            "new-session",
+            "-d",
+            "-s",
+            "one",
+            "-x",
+            "80",
+            "-y",
+            "20",
+            "/bin/sh",
+        ]);
         s.until_present("one");
         s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
-        s.tmux(&["send-keys", "-t", "one", "printf '\\033]133;A\\033\\\\p1\\n\\033]133;A\\033\\\\p2\\n'", "Enter"]);
+        s.tmux(&[
+            "send-keys",
+            "-t",
+            "one",
+            "printf '\\033]133;A\\033\\\\p1\\n\\033]133;A\\033\\\\p2\\n'",
+            "Enter",
+        ]);
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !s.tmux(&["capture-pane", "-p", "-t", "one"]).unwrap_or_default().lines().any(|l| l == "p2") {
+        while !s
+            .tmux(&["capture-pane", "-p", "-t", "one"])
+            .unwrap_or_default()
+            .lines()
+            .any(|l| l == "p2")
+        {
             assert!(Instant::now() < deadline, "the marks were never printed");
             std::thread::sleep(Duration::from_millis(20));
         }
-        let at = || s.tmux(&["display-message", "-p", "-t", "one", "#{pane_in_mode} #{copy_cursor_line}"]).unwrap_or_default().trim().to_owned();
+        let at = || {
+            s.tmux(&[
+                "display-message",
+                "-p",
+                "-t",
+                "one",
+                "#{pane_in_mode} #{copy_cursor_line}",
+            ])
+            .unwrap_or_default()
+            .trim()
+            .to_owned()
+        };
         let t = s.at();
-        assert!(t.jump_prompt("shell/0-0", true).is_err(), "no session is that row's");
+        assert!(
+            t.jump_prompt("shell/0-0", true).is_err(),
+            "no session is that row's"
+        );
         t.jump_prompt("shell/9-9", true).unwrap();
         assert_eq!(at(), "1 p2");
         t.jump_prompt("shell/9-9", true).unwrap();
@@ -1838,7 +2117,12 @@ mod tests {
     /// Waits until the pane `target` shows `line` on its screen.
     fn until_shown(s: &Server, target: &str, line: &str) {
         let deadline = Instant::now() + Duration::from_secs(20);
-        while !s.tmux(&["capture-pane", "-p", "-t", target]).unwrap_or_default().lines().any(|l| l == line) {
+        while !s
+            .tmux(&["capture-pane", "-p", "-t", target])
+            .unwrap_or_default()
+            .lines()
+            .any(|l| l == line)
+        {
             assert!(Instant::now() < deadline, "{line} was never shown");
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -1854,18 +2138,51 @@ mod tests {
             // A real raw-input alternate-screen application. Read the first
             // three bytes: PageUp/Down are ESC [ 5/6 ~, arrows ESC [ A/B.
             let program = r"stty raw -echo; printf '\033[?1049hREADY\r\n'; dd bs=1 count=3 2>/dev/null | od -An -tx1; printf '\r\nDONE\r\n'; sleep 30";
-            s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "60", "-y", "20", program]);
+            s.tmux(&[
+                "-f",
+                "/dev/null",
+                "new-session",
+                "-d",
+                "-s",
+                "one",
+                "-x",
+                "60",
+                "-y",
+                "20",
+                program,
+            ]);
             until_shown(&s, "one", "READY");
-            assert_eq!(s.tmux(&["display-message", "-p", "-t", "one", "#{alternate_on} #{mouse_any_flag}"]).unwrap().trim(), "1 0");
+            assert_eq!(
+                s.tmux(&[
+                    "display-message",
+                    "-p",
+                    "-t",
+                    "one",
+                    "#{alternate_on} #{mouse_any_flag}"
+                ])
+                .unwrap()
+                .trim(),
+                "1 0"
+            );
             s.at().wheel_in("one", "fixture", rows).unwrap();
             until_shown(&s, "one", "DONE");
             let screen = s.tmux(&["capture-pane", "-p", "-t", "one"]).unwrap();
-            assert!(screen.split_whitespace().collect::<Vec<_>>().join(" ").contains(&format!("1b 5b {byte}")), "a wheel must page, not alter the input draft: {screen}");
+            assert!(
+                screen
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .contains(&format!("1b 5b {byte}")),
+                "a wheel must page, not alter the input draft: {screen}"
+            );
         }
     }
 
     fn numbers(lines: &[String]) -> Vec<u32> {
-        lines.iter().filter_map(|l| plain(l).trim().parse().ok()).collect()
+        lines
+            .iter()
+            .filter_map(|l| plain(l).trim().parse().ok())
+            .collect()
     }
 
     /// **Item 31, the host's half**: the front pane's history from before
@@ -1878,20 +2195,39 @@ mod tests {
             return;
         }
         let s = Server::start("hist");
-        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "60", "-y", "20", "/bin/sh"]);
+        s.tmux(&[
+            "-f",
+            "/dev/null",
+            "new-session",
+            "-d",
+            "-s",
+            "one",
+            "-x",
+            "60",
+            "-y",
+            "20",
+            "/bin/sh",
+        ]);
         s.until_present("one");
         s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
         s.tmux(&["send-keys", "-t", "one", "clear; seq 1 300", "Enter"]);
         until_shown(&s, "one", "300");
         let t = s.at();
-        assert!(t.history("shell/0-0", None).is_err(), "no session is that row's");
+        assert!(
+            t.history("shell/0-0", None).is_err(),
+            "no session is that row's"
+        );
 
         let first = t.history("shell/9-9", None).unwrap();
         assert!(first.refill && !first.alternate, "{first:?}");
         assert!(first.pane.starts_with('%'), "{}", first.pane);
         let mut seen = numbers(&first.lines);
         seen.extend(numbers(&first.screen));
-        assert_eq!(seen, (1..=300).collect::<Vec<_>>(), "the history and the screen are the pane, once");
+        assert_eq!(
+            seen,
+            (1..=300).collect::<Vec<_>>(),
+            "the history and the screen are the pane, once"
+        );
 
         s.tmux(&["send-keys", "-t", "one", "seq 301 400", "Enter"]);
         until_shown(&s, "one", "400");
@@ -1900,7 +2236,11 @@ mod tests {
         let mut held = numbers(&first.lines);
         held.extend(numbers(&next.lines));
         held.extend(numbers(&next.screen));
-        assert_eq!(held, (1..=400).collect::<Vec<_>>(), "appended exactly what followed");
+        assert_eq!(
+            held,
+            (1..=400).collect::<Vec<_>>(),
+            "appended exactly what followed"
+        );
 
         // Nothing new: nothing sent.
         let still = t.history("shell/9-9", Some(&next.anchor)).unwrap();
@@ -1930,11 +2270,21 @@ mod tests {
 
     /// tmux's own history of `target`, wrapped lines joined, as plain text.
     fn tmux_history(s: &Server, target: &str) -> Vec<String> {
-        s.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-E", "-1", "-t", target])
-            .unwrap_or_default()
-            .lines()
-            .map(str::to_owned)
-            .collect()
+        s.tmux(&[
+            "capture-pane",
+            "-p",
+            "-J",
+            "-S",
+            "-",
+            "-E",
+            "-1",
+            "-t",
+            target,
+        ])
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect()
     }
 
     fn plains(lines: &[String]) -> Vec<String> {
@@ -1943,7 +2293,11 @@ mod tests {
 
     /// The face's copy is tmux's history, line for line; says where not.
     fn same(copy: &[String], tmux: &[String], what: &str) {
-        let at = copy.iter().zip(tmux).position(|(a, b)| a != b).unwrap_or(copy.len().min(tmux.len()));
+        let at = copy
+            .iter()
+            .zip(tmux)
+            .position(|(a, b)| a != b)
+            .unwrap_or(copy.len().min(tmux.len()));
         assert!(
             copy.len() == tmux.len() && at == copy.len(),
             "{what}: the copy has {} lines, tmux {}; first difference at {at}: {:?} / {:?}",
@@ -1967,17 +2321,41 @@ mod tests {
             return;
         }
         let s = Server::start("histwrap");
-        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "20", "-y", "10", "/bin/sh"]);
+        s.tmux(&[
+            "-f",
+            "/dev/null",
+            "new-session",
+            "-d",
+            "-s",
+            "one",
+            "-x",
+            "20",
+            "-y",
+            "10",
+            "/bin/sh",
+        ]);
         s.until_present("one");
         s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
         let x = "x".repeat(30);
-        s.tmux(&["send-keys", "-t", "one", &format!("clear; yes {x} | head -n 300; echo d1"), "Enter"]);
+        s.tmux(&[
+            "send-keys",
+            "-t",
+            "one",
+            &format!("clear; yes {x} | head -n 300; echo d1"),
+            "Enter",
+        ]);
         until_shown(&s, "one", "d1");
         let t = s.at();
         let first = t.history("shell/9-9", None).unwrap();
         same(&plains(&first.lines), &tmux_history(&s, "one"), "whole");
         // 150 more of the same line: 300 rows, past the first window.
-        s.tmux(&["send-keys", "-t", "one", &format!("yes {x} | head -n 150; echo d2"), "Enter"]);
+        s.tmux(&[
+            "send-keys",
+            "-t",
+            "one",
+            &format!("yes {x} | head -n 150; echo d2"),
+            "Enter",
+        ]);
         until_shown(&s, "one", "d2");
         let next = t.history("shell/9-9", Some(&first.anchor)).unwrap();
         assert!(!next.refill, "{} lines, refill", next.lines.len());
@@ -1996,23 +2374,56 @@ mod tests {
             return;
         }
         let s = Server::start("histgrow");
-        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "20", "-y", "10", "/bin/sh"]);
+        s.tmux(&[
+            "-f",
+            "/dev/null",
+            "new-session",
+            "-d",
+            "-s",
+            "one",
+            "-x",
+            "20",
+            "-y",
+            "10",
+            "/bin/sh",
+        ]);
         s.until_present("one");
         s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
-        s.tmux(&["send-keys", "-t", "one", &format!("clear; yes {} | head -n 300; echo d1", "y".repeat(30)), "Enter"]);
+        s.tmux(&[
+            "send-keys",
+            "-t",
+            "one",
+            &format!("clear; yes {} | head -n 300; echo d1", "y".repeat(30)),
+            "Enter",
+        ]);
         until_shown(&s, "one", "d1");
         let t = s.at();
         let first = t.history("shell/9-9", None).unwrap();
-        assert_eq!(first.window, "20x10", "the window's size rides along (item 45)");
+        assert_eq!(
+            first.window, "20x10",
+            "the window's size rides along (item 45)"
+        );
         s.tmux(&["resize-window", "-t", "one", "-y", "30"]);
         let deadline = Instant::now() + Duration::from_secs(10);
-        while s.tmux(&["display-message", "-p", "-t", "one", "#{pane_height}"]).unwrap_or_default().trim() != "30" {
+        while s
+            .tmux(&["display-message", "-p", "-t", "one", "#{pane_height}"])
+            .unwrap_or_default()
+            .trim()
+            != "30"
+        {
             assert!(Instant::now() < deadline, "the window never grew");
             std::thread::sleep(Duration::from_millis(20));
         }
         let size = |h: &str| h.trim().parse::<usize>().unwrap();
-        let now = size(&s.tmux(&["display-message", "-p", "-t", "one", "#{history_size}"]).unwrap());
-        assert!(now < first.anchor.size, "tmux pulled rows back: {now} < {}", first.anchor.size);
+        let now = size(
+            &s.tmux(&["display-message", "-p", "-t", "one", "#{history_size}"])
+                .unwrap(),
+        );
+        assert!(
+            now < first.anchor.size,
+            "tmux pulled rows back: {now} < {}",
+            first.anchor.size
+        );
         let next = t.history("shell/9-9", Some(&first.anchor)).unwrap();
         assert!(next.refill, "{} lines, not a refill", next.lines.len());
         assert_eq!(next.window, "20x30");
@@ -2027,18 +2438,43 @@ mod tests {
             return;
         }
         let s = Server::start("histplace");
-        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "80", "-y", "20", "/bin/sh"]);
+        s.tmux(&[
+            "-f",
+            "/dev/null",
+            "new-session",
+            "-d",
+            "-s",
+            "one",
+            "-x",
+            "80",
+            "-y",
+            "20",
+            "/bin/sh",
+        ]);
         s.until_present("one");
         s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
         let t = s.at();
         let bottom = t.history("shell/9-9", None).unwrap();
-        assert_eq!((bottom.top, bottom.left), (0, 0), "status at the bottom: the pane starts at the top");
+        assert_eq!(
+            (bottom.top, bottom.left),
+            (0, 0),
+            "status at the bottom: the pane starts at the top"
+        );
         s.tmux(&["set-option", "-t", "one", "status-position", "top"]);
         let top = t.history("shell/9-9", None).unwrap();
-        assert_eq!((top.top, top.left), (1, 0), "under a status line at the top");
+        assert_eq!(
+            (top.top, top.left),
+            (1, 0),
+            "under a status line at the top"
+        );
         s.tmux(&["split-window", "-h", "-t", "one", "/bin/sh"]);
         let right = t.history("shell/9-9", None).unwrap();
-        assert!(right.left > 30 && right.top == 1, "{} {}", right.left, right.top);
+        assert!(
+            right.left > 30 && right.top == 1,
+            "{} {}",
+            right.left,
+            right.top
+        );
     }
 
     /// **A program that takes the mouse** (item 36: Claude Code does) is
@@ -2049,7 +2485,19 @@ mod tests {
             return;
         }
         let s = Server::start("histmouse");
-        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "60", "-y", "20", "/bin/sh"]);
+        s.tmux(&[
+            "-f",
+            "/dev/null",
+            "new-session",
+            "-d",
+            "-s",
+            "one",
+            "-x",
+            "60",
+            "-y",
+            "20",
+            "/bin/sh",
+        ]);
         s.until_present("one");
         s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
         let t = s.at();
@@ -2061,14 +2509,29 @@ mod tests {
                 if h.mouse == want {
                     return;
                 }
-                assert!(Instant::now() < deadline, "the mouse flag never became {want}");
+                assert!(
+                    Instant::now() < deadline,
+                    "the mouse flag never became {want}"
+                );
                 std::thread::sleep(Duration::from_millis(20));
             }
         };
-        s.tmux(&["send-keys", "-t", "one", "printf '\\033[?1002h\\033[?1006h'; echo m1", "Enter"]);
+        s.tmux(&[
+            "send-keys",
+            "-t",
+            "one",
+            "printf '\\033[?1002h\\033[?1006h'; echo m1",
+            "Enter",
+        ]);
         until_shown(&s, "one", "m1");
         held(true);
-        s.tmux(&["send-keys", "-t", "one", "printf '\\033[?1002l\\033[?1006l'; echo m2", "Enter"]);
+        s.tmux(&[
+            "send-keys",
+            "-t",
+            "one",
+            "printf '\\033[?1002l\\033[?1006l'; echo m2",
+            "Enter",
+        ]);
         until_shown(&s, "one", "m2");
         held(false);
     }
@@ -2081,11 +2544,29 @@ mod tests {
             return;
         }
         let s = Server::start("histlong");
-        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "60", "-y", "20", "/bin/sh"]);
+        s.tmux(&[
+            "-f",
+            "/dev/null",
+            "new-session",
+            "-d",
+            "-s",
+            "one",
+            "-x",
+            "60",
+            "-y",
+            "20",
+            "/bin/sh",
+        ]);
         s.until_present("one");
         s.tmux(&["set-option", "-t", "one", "history-limit", "20000"]);
         s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
-        s.tmux(&["send-keys", "-t", "one", "clear; seq 1 12000; printf '\\033[31m'; seq 12001 12050; printf '\\033[0m'", "Enter"]);
+        s.tmux(&[
+            "send-keys",
+            "-t",
+            "one",
+            "clear; seq 1 12000; printf '\\033[31m'; seq 12001 12050; printf '\\033[0m'",
+            "Enter",
+        ]);
         until_shown(&s, "one", "12050");
         let t = s.at();
         let first = t.history("shell/9-9", None).unwrap();
@@ -2098,7 +2579,10 @@ mod tests {
         let n = numbers(&next.lines);
         let held_last = *numbers(&first.lines).last().unwrap();
         assert_eq!(n.first().copied(), Some(held_last + 1), "{n:?}");
-        assert!((12001..12050).contains(&held_last), "the anchor is inside the red run: {held_last}");
+        assert!(
+            (12001..12050).contains(&held_last),
+            "the anchor is inside the red run: {held_last}"
+        );
         assert!(next.lead.ends_with("\x1b[31m"), "{:?}", next.lead);
     }
 
@@ -2119,14 +2603,27 @@ mod tests {
             rows: vec![],
             screen: vec!["$ ".into()],
         };
-        let small = HistoryRead { history: read.history[..10].to_vec(), ..read.clone_for_test() };
+        let small = HistoryRead {
+            history: read.history[..10].to_vec(),
+            ..read.clone_for_test()
+        };
         let whole = small.answer(Some(4));
-        assert!(!whole.refill && whole.lines.len() == 5 && whole.lead == "\x1b[32m", "{whole:?}");
+        assert!(
+            !whole.refill && whole.lines.len() == 5 && whole.lead == "\x1b[32m",
+            "{whole:?}"
+        );
         let capped = read.answer(Some(4));
         assert!(capped.refill, "a gap behind the copy");
         let bytes: usize = capped.lines.iter().map(|l| l.len() + 1).sum();
-        assert!(bytes <= HISTORY_BYTES && capped.lines.len() > 300, "{}", capped.lines.len());
-        assert_eq!(capped.lead, "\x1b[32m", "the colours the dropped lines left");
+        assert!(
+            bytes <= HISTORY_BYTES && capped.lines.len() > 300,
+            "{}",
+            capped.lines.len()
+        );
+        assert_eq!(
+            capped.lead, "\x1b[32m",
+            "the colours the dropped lines left"
+        );
     }
 
     impl HistoryRead {
@@ -2148,8 +2645,15 @@ mod tests {
 
     #[test]
     fn plain_text_and_the_colours_in_force() {
-        assert_eq!(plain("\x1b[31mred\x1b[0m \x1b]8;;http://x\x1b\\link\x1b]8;;\x07"), "red link");
-        let lines = ["\x1b[1mbold\x1b[0m".to_owned(), "\x1b[32mgreen".to_owned(), "still".to_owned()];
+        assert_eq!(
+            plain("\x1b[31mred\x1b[0m \x1b]8;;http://x\x1b\\link\x1b]8;;\x07"),
+            "red link"
+        );
+        let lines = [
+            "\x1b[1mbold\x1b[0m".to_owned(),
+            "\x1b[32mgreen".to_owned(),
+            "still".to_owned(),
+        ];
         assert_eq!(escapes(&lines), "\x1b[0m\x1b[32m");
     }
 
@@ -2159,7 +2663,10 @@ mod tests {
     fn rows_place_the_copy_among_repeated_lines() {
         let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         // "abcdef" wrapped at 4: two rows; a blank line is one.
-        assert_eq!(row_counts(&v(&["abcdef", "", "x"]), &v(&["abcd", "ef", "", "x"])), Some(vec![2, 1, 1]));
+        assert_eq!(
+            row_counts(&v(&["abcdef", "", "x"]), &v(&["abcd", "ef", "", "x"])),
+            Some(vec![2, 1, 1])
+        );
         assert_eq!(row_counts(&v(&["abcdef"]), &v(&["abcd", "efg"])), None);
         let read = |history: &[&str], rows: &[&str], size: usize| HistoryRead {
             pane: "%1".into(),
@@ -2173,7 +2680,11 @@ mod tests {
             rows: v(rows),
             screen: vec![],
         };
-        let anchor = |size, tail: &[&str]| HistoryAnchor { pane: "%1".into(), size, tail: v(tail) };
+        let anchor = |size, tail: &[&str]| HistoryAnchor {
+            pane: "%1".into(),
+            size,
+            tail: v(tail),
+        };
         // Five repeated lines, the copy held three: by text the newest pair
         // matches; by count it is the third line.
         let r = read(&["y", "y", "y", "y", "y"], &["y", "y", "y", "y", "y"], 5);
@@ -2186,7 +2697,13 @@ mod tests {
         // says, another pane: the whole history.
         assert_eq!(r.place(&anchor(6, &["y"])), Place::Gone);
         assert_eq!(w.place(&anchor(2, &["a", "z"])), Place::Gone);
-        assert_eq!(r.place(&HistoryAnchor { pane: "%2".into(), ..anchor(3, &["y"]) }), Place::Gone);
+        assert_eq!(
+            r.place(&HistoryAnchor {
+                pane: "%2".into(),
+                ..anchor(3, &["y"])
+            }),
+            Place::Gone
+        );
         // A window that does not reach back to the copy's end: further.
         let part = read(&["y", "y"], &["y", "y"], 50);
         assert_eq!(part.place(&anchor(10, &["y"])), Place::Further);
@@ -2245,15 +2762,41 @@ mod tests {
     #[test]
     fn workspace_cwd_follows_cd_and_the_active_pane_in_the_current_window() {
         let pane = |id: &str, path: &str, active: bool, window: bool| {
-            Pane::parse(&format!("$1\x1f1\x1f2\x1f3001\x1f0\x1fzsh\x1f{path}\x1f{id}\x1fwork\x1f{}\x1f{}", u8::from(active), u8::from(window))).unwrap()
+            Pane::parse(&format!(
+                "$1\x1f1\x1f2\x1f3001\x1f0\x1fzsh\x1f{path}\x1f{id}\x1fwork\x1f{}\x1f{}",
+                u8::from(active),
+                u8::from(window)
+            ))
+            .unwrap()
         };
         let read = |panes: &[Pane]| {
             let mut group = Gathering::new(&panes[0]);
-            for p in panes { group.absorb(p, &Procs::of([])); }
-            group.into_row(State::Idle, &Procs::of([])).found.sighting.cwd
+            for p in panes {
+                group.absorb(p, &Procs::of([]));
+            }
+            group
+                .into_row(State::Idle, &Procs::of([]))
+                .found
+                .sighting
+                .cwd
         };
-        assert_eq!(read(&[pane("%1", "/birth", false, true), pane("%2", "/current", true, true), pane("%3", "/other-window", true, false)]).as_deref(), Some("/current"));
-        assert_eq!(read(&[pane("%1", "/after-cd", true, true), pane("%2", "/current", false, true)]).as_deref(), Some("/after-cd"));
+        assert_eq!(
+            read(&[
+                pane("%1", "/birth", false, true),
+                pane("%2", "/current", true, true),
+                pane("%3", "/other-window", true, false)
+            ])
+            .as_deref(),
+            Some("/current")
+        );
+        assert_eq!(
+            read(&[
+                pane("%1", "/after-cd", true, true),
+                pane("%2", "/current", false, true)
+            ])
+            .as_deref(),
+            Some("/after-cd")
+        );
     }
 
     /// A session holds its panes **and everything under them** — which
@@ -2383,13 +2926,18 @@ mod tests {
             active: true,
             title: None,
         };
-        let shells = ["bash", "zsh", "fish", "sh", "dash", "ksh", "-zsh", "-bash", "/bin/zsh"];
+        let shells = [
+            "bash", "zsh", "fish", "sh", "dash", "ksh", "-zsh", "-bash", "/bin/zsh",
+        ];
         let procs = Procs::of(
             shells
                 .iter()
                 .enumerate()
                 .map(|(i, s)| (20 + i as u32, proc_named(s, Some(1))))
-                .chain([(40, proc_named("bash", Some(1))), (41, proc_named("python3", Some(1)))]),
+                .chain([
+                    (40, proc_named("bash", Some(1))),
+                    (41, proc_named("python3", Some(1))),
+                ]),
         );
         for (i, s) in shells.iter().enumerate() {
             let current = s.rsplit('/').next().unwrap_or(s);
@@ -2445,7 +2993,9 @@ mod tests {
             Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp").is_none(),
             "a field short"
         );
-        assert!(Pane::parse("$1\x1f100\x1f100\x1fnotapid\x1f0\x1fzsh\x1f/tmp\x1f%1\x1falpha").is_none());
+        assert!(
+            Pane::parse("$1\x1f100\x1f100\x1fnotapid\x1f0\x1fzsh\x1f/tmp\x1f%1\x1falpha").is_none()
+        );
         assert_eq!(
             Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp\x1f%1\x1fhas|pipes|in|it")
                 .unwrap()

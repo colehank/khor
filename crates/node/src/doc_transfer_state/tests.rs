@@ -277,12 +277,18 @@ fn a_recreated_equivalent_receipt_reconfirms_old_ack_without_deleting_new_ids() 
                 .unwrap(),
             late_ack
         );
-        assert!(s.records.outgoing.iter().any(
-            |r| matches!(r, Outgoing::NeedAck(p) if p == &equivalent)
-        ));
-        assert!(s.records.outgoing.iter().any(
-            |r| matches!(r, Outgoing::Ready(m) if m == &new.manifest)
-        ));
+        assert!(
+            s.records
+                .outgoing
+                .iter()
+                .any(|r| matches!(r, Outgoing::NeedAck(p) if p == &equivalent))
+        );
+        assert!(
+            s.records
+                .outgoing
+                .iter()
+                .any(|r| matches!(r, Outgoing::Ready(m) if m == &new.manifest))
+        );
         assert!(
             s.blobs
                 .open_existing(&old.manifest.core().unwrap())
@@ -307,9 +313,12 @@ fn a_recreated_equivalent_receipt_reconfirms_old_ack_without_deleting_new_ids() 
                 .iter()
                 .any(|r| r.manifest() == &old.manifest)
         );
-        assert!(s.records.outgoing.iter().any(
-            |r| matches!(r, Outgoing::Ready(m) if m == &new.manifest)
-        ));
+        assert!(
+            s.records
+                .outgoing
+                .iter()
+                .any(|r| matches!(r, Outgoing::Ready(m) if m == &new.manifest))
+        );
         assert!(
             s.blobs
                 .open_existing(&old.manifest.core().unwrap())

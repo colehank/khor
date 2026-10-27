@@ -185,7 +185,9 @@ pub(crate) fn ask_every_path(conn: &Connection) -> Duration {
             slowest = slowest.max(p.rtt());
         }
     }
-    Duration::from_secs(1).max(slowest.saturating_mul(3)).min(Duration::from_secs(30))
+    Duration::from_secs(1)
+        .max(slowest.saturating_mul(3))
+        .min(Duration::from_secs(30))
 }
 
 /// How long a far session's open is given on top of the request's own
@@ -296,9 +298,12 @@ pub(crate) fn resting_close(e: &iroh::endpoint::ConnectionError) -> bool {
     use iroh::endpoint::ConnectionError;
     match e {
         ConnectionError::ApplicationClosed(c) => {
-            c.reason.as_ref() == Retired::Suspended.reason() || c.reason.as_ref() == Retired::Paused.reason()
+            c.reason.as_ref() == Retired::Suspended.reason()
+                || c.reason.as_ref() == Retired::Paused.reason()
         }
-        ConnectionError::ConnectionClosed(c) => c.error_code == iroh::endpoint::TransportErrorCode::CONNECTION_REFUSED,
+        ConnectionError::ConnectionClosed(c) => {
+            c.error_code == iroh::endpoint::TransportErrorCode::CONNECTION_REFUSED
+        }
         _ => false,
     }
 }
@@ -609,7 +614,12 @@ impl Wires {
     /// already were the wait; starting again from five seconds when they
     /// ran out redialled a sleeping phone six times in its first minute.
     fn wait_after(&self, id: &str, n: u32) -> Duration {
-        if self.gone.lock().unwrap_or_else(|p| p.into_inner()).contains_key(id) {
+        if self
+            .gone
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .contains_key(id)
+        {
             return BACKOFF_MAX;
         }
         backoff(n)
@@ -620,7 +630,9 @@ impl Wires {
     fn drop_noted(&self, id: &str, proto: Proto, slot: &mut Slot, why: Retired) {
         if slot.conn.is_some() {
             let now = Instant::now();
-            let since = |t: Option<Instant>| t.map_or(0, |t| crate::journal::ms(now.saturating_duration_since(t)));
+            let since = |t: Option<Instant>| {
+                t.map_or(0, |t| crate::journal::ms(now.saturating_duration_since(t)))
+            };
             self.note(
                 Some(id),
                 crate::journal::What::Retired {
@@ -651,7 +663,9 @@ impl Wires {
         let margin = khor_net::carry::SWITCH_MARGIN.as_millis();
         self.live(id, Proto::Main)
             .or_else(|| self.live(id, Proto::Tunnel))
-            .is_none_or(|c| khor_net::path::relay_beats_carried(&khor_net::path::path_facts(&c), margin))
+            .is_none_or(|c| {
+                khor_net::path::relay_beats_carried(&khor_net::path::path_facts(&c), margin)
+            })
     }
 
     /// The lock that makes a key's dials one at a time.
@@ -751,7 +765,11 @@ impl Wires {
         };
         waiting
             || self.gone_lately(id)
-            || self.down.lock().unwrap_or_else(|p| p.into_inner()).contains_key(id)
+            || self
+                .down
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .contains_key(id)
     }
 
     /// The far side was heard just now (an answer came back).
@@ -787,7 +805,10 @@ impl Wires {
         self.drop_noted(id, proto, slot, why);
         if why == Retired::Unanswered {
             slot.unanswered_total += 1;
-            slot.last_failure = Some((khor_catalog::msg::wire_unanswered().to_owned(), Instant::now()));
+            slot.last_failure = Some((
+                khor_catalog::msg::wire_unanswered().to_owned(),
+                Instant::now(),
+            ));
         }
         self.counts.retired(why);
         drop(slots);
@@ -898,7 +919,10 @@ impl Wires {
     /// after a full 10 s dial.
     pub(crate) fn serving(&self, conn: &Connection) {
         self.back(&conn.remote_id().to_string());
-        self.note(Some(&conn.remote_id().to_string()), crate::journal::What::Inbound);
+        self.note(
+            Some(&conn.remote_id().to_string()),
+            crate::journal::What::Inbound,
+        );
         let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
         served.retain(|w| w.conn.upgrade().is_some_and(|c| c.close_reason().is_none()));
         served.push(Served {
@@ -948,8 +972,14 @@ impl Wires {
         {
             let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
             for proto in [Proto::Main, Proto::Tunnel] {
-                let Some(slot) = slots.get_mut(&(id.to_owned(), proto)) else { continue };
-                if slot.conn.as_ref().is_none_or(|c| c.close_reason().is_some()) {
+                let Some(slot) = slots.get_mut(&(id.to_owned(), proto)) else {
+                    continue;
+                };
+                if slot
+                    .conn
+                    .as_ref()
+                    .is_none_or(|c| c.close_reason().is_some())
+                {
                     continue;
                 }
                 if heard_lately(slot.heard, slot.rtt, now) {
@@ -1013,8 +1043,14 @@ impl Wires {
     /// Heard from: whatever a relay said about it is old news, and so is
     /// an attempt that failed to reach it.
     fn back(&self, id: &str) {
-        self.gone.lock().unwrap_or_else(|p| p.into_inner()).remove(id);
-        self.down.lock().unwrap_or_else(|p| p.into_inner()).remove(id);
+        self.gone
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(id);
+        self.down
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(id);
     }
 
     /// An attempt to reach this machine failed just now.
@@ -1068,8 +1104,18 @@ impl Wires {
     /// is off (NET-6's cost). Answers how many it forgave.
     pub(crate) fn forgive_failed_since(&self, at: Instant) -> usize {
         let mut n = 0;
-        for slot in self.slots.lock().unwrap_or_else(|p| p.into_inner()).values_mut() {
-            if slot.retry_at.is_some() && slot.last_failure.as_ref().is_some_and(|(_, when)| *when >= at) {
+        for slot in self
+            .slots
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .values_mut()
+        {
+            if slot.retry_at.is_some()
+                && slot
+                    .last_failure
+                    .as_ref()
+                    .is_some_and(|(_, when)| *when >= at)
+            {
                 slot.failures = 0;
                 slot.retry_at = None;
                 n += 1;
@@ -1081,7 +1127,12 @@ impl Wires {
     /// Every wait the pump was keeping is forgiven: the dials that failed
     /// may have failed on the old network.
     pub(crate) fn forgive_all(&self) {
-        for slot in self.slots.lock().unwrap_or_else(|p| p.into_inner()).values_mut() {
+        for slot in self
+            .slots
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .values_mut()
+        {
             slot.failures = 0;
             slot.retry_at = None;
         }
@@ -1280,8 +1331,14 @@ impl Wires {
                 && let Some(conn) = slot.conn.as_ref().filter(|c| c.close_reason().is_none())
             {
                 road = slot.word;
-                since = slot.word.and(slot.word_at).map(|at| now.saturating_duration_since(at));
-                rtt = shown_rtt(rtt_of(conn), slot.since.map(|at| now.saturating_duration_since(at)));
+                since = slot
+                    .word
+                    .and(slot.word_at)
+                    .map(|at| now.saturating_duration_since(at));
+                rtt = shown_rtt(
+                    rtt_of(conn),
+                    slot.since.map(|at| now.saturating_duration_since(at)),
+                );
                 relay = khor_net::path::relay_name(conn);
             }
             if let Some(h) = slot.heard {
@@ -1296,13 +1353,22 @@ impl Wires {
         drop(slots);
         let (last_road, since) = match road {
             Some(r) => (Some(r), since),
-            None => (last.map(|(w, _)| w), last.map(|(_, at)| now.saturating_duration_since(at))),
+            None => (
+                last.map(|(w, _)| w),
+                last.map(|(_, at)| now.saturating_duration_since(at)),
+            ),
         };
         // A live wire is the machine reached, whatever an attempt on the
         // other protocol said.
         let down = road
             .is_none()
-            .then(|| self.down.lock().unwrap_or_else(|p| p.into_inner()).get(id).copied())
+            .then(|| {
+                self.down
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .get(id)
+                    .copied()
+            })
             .flatten()
             .map(|at| now.saturating_duration_since(at));
         Reading {
@@ -1338,14 +1404,23 @@ impl Wires {
 
     /// One machine as the connections page shows it: the held wire's
     /// round trip, and the last failure on either protocol with its age.
-    pub(crate) fn peer_view(&self, id: &str) -> (Option<Duration>, Option<(String, Duration)>, u64, u64) {
+    pub(crate) fn peer_view(
+        &self,
+        id: &str,
+    ) -> (Option<Duration>, Option<(String, Duration)>, u64, u64) {
         let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
-        let (mut rtt, mut failure, mut failed, mut unanswered) = (None, None::<(String, Instant)>, 0, 0);
+        let (mut rtt, mut failure, mut failed, mut unanswered) =
+            (None, None::<(String, Instant)>, 0, 0);
         for proto in [Proto::Main, Proto::Tunnel] {
             let Some(slot) = slots.get(&(id.to_owned(), proto)) else {
                 continue;
             };
-            if slot.conn.as_ref().is_some_and(|c| c.close_reason().is_none()) && rtt.is_none() {
+            if slot
+                .conn
+                .as_ref()
+                .is_some_and(|c| c.close_reason().is_none())
+                && rtt.is_none()
+            {
                 rtt = Some(slot.rtt);
             }
             if let Some((why, at)) = &slot.last_failure
@@ -1356,7 +1431,12 @@ impl Wires {
             failed += slot.failed_total;
             unanswered += slot.unanswered_total;
         }
-        (rtt, failure.map(|(w, at)| (w, at.elapsed())), failed, unanswered)
+        (
+            rtt,
+            failure.map(|(w, at)| (w, at.elapsed())),
+            failed,
+            unanswered,
+        )
     }
 
     /// The machines this node holds a live wire to, for tests and for
@@ -1377,7 +1457,8 @@ impl Wires {
 /// Whether a wire last heard at `heard` was heard within its keepalive
 /// at `now`: alive, whatever anyone says about the road it is not on.
 fn heard_lately(heard: Option<Instant>, rtt: Duration, now: Instant) -> bool {
-    heard.is_some_and(|h| now.saturating_duration_since(h) < Patience::for_rtt(rtt).keepalive_missed)
+    heard
+        .is_some_and(|h| now.saturating_duration_since(h) < Patience::for_rtt(rtt).keepalive_missed)
 }
 
 fn drop_wire(slot: &mut Slot, why: Retired) {
@@ -1390,7 +1471,10 @@ fn drop_wire(slot: &mut Slot, why: Retired) {
     slot.word = None;
     slot.leaning = None;
     // Found dead: its round trip sizes no dial (net-dial B5).
-    if matches!(why, Retired::Silent | Retired::Unanswered | Retired::Closed | Retired::Network) {
+    if matches!(
+        why,
+        Retired::Silent | Retired::Unanswered | Retired::Closed | Retired::Network
+    ) {
         slot.rtt_fresh = false;
     }
 }
@@ -1413,8 +1497,15 @@ mod tests {
     fn a_new_wire_shows_no_round_trip_for_its_first_seconds() {
         let ms = Duration::from_millis;
         assert_eq!(super::shown_rtt(ms(14632), Some(ms(1200))), None);
-        assert_eq!(super::shown_rtt(ms(50), Some(super::RTT_WARMUP)), Some(ms(50)));
-        assert_eq!(super::shown_rtt(Duration::ZERO, Some(ms(9000))), None, "no sample yet");
+        assert_eq!(
+            super::shown_rtt(ms(50), Some(super::RTT_WARMUP)),
+            Some(ms(50))
+        );
+        assert_eq!(
+            super::shown_rtt(Duration::ZERO, Some(ms(9000))),
+            None,
+            "no sample yet"
+        );
         assert_eq!(super::shown_rtt(ms(50), None), Some(ms(50)));
     }
 
@@ -1465,9 +1556,16 @@ mod tests {
         std::thread::sleep(Duration::from_millis(5));
         settle(&mut s, PathKind::Relay);
         settle(&mut s, PathKind::Direct);
-        assert_eq!(s.word_at, Some(first), "the same word and a flicker keep its age");
+        assert_eq!(
+            s.word_at,
+            Some(first),
+            "the same word and a flicker keep its age"
+        );
         settle(&mut s, PathKind::Direct);
-        assert!(s.word_at.is_some_and(|at| at > first), "a settled change is a new age");
+        assert!(
+            s.word_at.is_some_and(|at| at > first),
+            "a settled change is a new age"
+        );
     }
 
     /// **An idle machine keeps the road it last used** (UX-48: an idle
@@ -1478,7 +1576,11 @@ mod tests {
     fn an_idle_machine_keeps_the_road_it_last_used_and_when_it_settled() {
         let w = Wires::default();
         let r = w.link("m");
-        assert_eq!((r.road, r.last_road, r.since), (None, None, None), "never connected: nothing to say");
+        assert_eq!(
+            (r.road, r.last_road, r.since),
+            (None, None, None),
+            "never connected: nothing to say"
+        );
         {
             let mut slots = w.slots.lock().unwrap();
             let s = slots.entry(("m".to_owned(), Proto::Main)).or_default();
@@ -1489,7 +1591,11 @@ mod tests {
         }
         let r = w.link("m");
         assert_eq!(r.road, None, "no live wire");
-        assert_eq!(r.last_road, Some(PathKind::Direct), "the road it last settled on");
+        assert_eq!(
+            r.last_road,
+            Some(PathKind::Direct),
+            "the road it last settled on"
+        );
         let first = r.since.expect("dated by when that road settled");
         std::thread::sleep(Duration::from_millis(5));
         let aged = w.link("m").since.expect("still dated");
@@ -1501,7 +1607,11 @@ mod tests {
             drop_wire(s, Retired::Closed);
         }
         let r = w.link("m");
-        assert_eq!(r.last_road, Some(PathKind::Relay), "the newer road of the two protocols");
+        assert_eq!(
+            r.last_road,
+            Some(PathKind::Relay),
+            "the newer road of the two protocols"
+        );
         assert!(r.since.is_some_and(|s| s < aged), "dated by that road");
         assert_eq!(r.down, None, "idle is not unreachable");
     }
@@ -1522,11 +1632,18 @@ mod tests {
         w.retire_peer("m", Retired::Paused);
         w.clear(Retired::Suspended);
         w.departed("m");
-        assert_eq!(w.link("m").down, None, "let go of, or gone from its relay: idle");
+        assert_eq!(
+            w.link("m").down,
+            None,
+            "let go of, or gone from its relay: idle"
+        );
         w.failed("m", Proto::Tunnel, "no".into());
         assert!(w.link("m").down.is_some(), "a failed dial on either wire");
         w.network_changed();
-        assert!(w.link("m").down.is_some(), "a new network forgives the wait, not the fact");
+        assert!(
+            w.link("m").down.is_some(),
+            "a new network forgives the wait, not the fact"
+        );
         w.back("m");
         assert_eq!(w.link("m").down, None, "heard from");
     }
@@ -1543,12 +1660,18 @@ mod tests {
         assert_eq!(w.link("m").down, None, "and not unreachable");
         w.failed("m", Proto::Main, "no".into());
         let wait = w.backing_off("m").expect("a wait");
-        assert!(wait > BACKOFF_MAX - Duration::from_secs(5), "the longest wait, not five seconds: {wait:?}");
+        assert!(
+            wait > BACKOFF_MAX - Duration::from_secs(5),
+            "the longest wait, not five seconds: {wait:?}"
+        );
         w.back("m");
         w.forgive("m");
         w.failed("m", Proto::Main, "no".into());
         let wait = w.backing_off("m").expect("a wait");
-        assert!(wait <= BACKOFF_FIRST, "heard from since: from five seconds again: {wait:?}");
+        assert!(
+            wait <= BACKOFF_FIRST,
+            "heard from since: from five seconds again: {wait:?}"
+        );
     }
 
     /// **The round trip of a wire found dead sizes no dial** (net-dial
@@ -1559,16 +1682,41 @@ mod tests {
         let w = Wires::default();
         let measured = |w: &Wires, proto| {
             let mut slots = w.slots.lock().unwrap();
-            slots.entry(("m".to_owned(), proto)).or_default().measured(Duration::from_secs(5));
+            slots
+                .entry(("m".to_owned(), proto))
+                .or_default()
+                .measured(Duration::from_secs(5));
         };
         measured(&w, Proto::Main);
         assert_eq!(w.last_rtt("m"), Duration::from_secs(5), "measured: trusted");
-        drop_wire(w.slots.lock().unwrap().get_mut(&("m".to_owned(), Proto::Main)).unwrap(), Retired::Silent);
+        drop_wire(
+            w.slots
+                .lock()
+                .unwrap()
+                .get_mut(&("m".to_owned(), Proto::Main))
+                .unwrap(),
+            Retired::Silent,
+        );
         assert_eq!(w.last_rtt("m"), Duration::ZERO, "found dead: not trusted");
-        assert_eq!(w.link("m").last_rtt, Some(Duration::from_secs(5)), "but still the row's number");
+        assert_eq!(
+            w.link("m").last_rtt,
+            Some(Duration::from_secs(5)),
+            "but still the row's number"
+        );
         measured(&w, Proto::Tunnel);
-        drop_wire(w.slots.lock().unwrap().get_mut(&("m".to_owned(), Proto::Tunnel)).unwrap(), Retired::NewEars);
-        assert_eq!(w.last_rtt("m"), Duration::from_secs(5), "let go on purpose: still trusted");
+        drop_wire(
+            w.slots
+                .lock()
+                .unwrap()
+                .get_mut(&("m".to_owned(), Proto::Tunnel))
+                .unwrap(),
+            Retired::NewEars,
+        );
+        assert_eq!(
+            w.last_rtt("m"),
+            Duration::from_secs(5),
+            "let go on purpose: still trusted"
+        );
     }
 
     /// **A relay's word does not retire a wire heard within its
@@ -1579,8 +1727,14 @@ mod tests {
         let now = Instant::now();
         let ago = |ms| Some(now - Duration::from_millis(ms));
         assert!(heard_lately(ago(447), Duration::from_millis(5), now));
-        assert!(!heard_lately(ago(6_500), Duration::from_millis(5), now), "past the 6 s keepalive floor");
-        assert!(heard_lately(ago(6_500), Duration::from_millis(200), now), "a slower road waits longer");
+        assert!(
+            !heard_lately(ago(6_500), Duration::from_millis(5), now),
+            "past the 6 s keepalive floor"
+        );
+        assert!(
+            heard_lately(ago(6_500), Duration::from_millis(200), now),
+            "a slower road waits longer"
+        );
         assert!(!heard_lately(None, Duration::ZERO, now), "never heard");
         // With no wire at all, the word stands: the machine is left alone.
         let w = Wires::default();
@@ -1596,7 +1750,10 @@ mod tests {
         let w = Wires::default();
         assert!(!w.out_of_reach("y"), "never dialled");
         w.failed("y", Proto::Tunnel, "no".into());
-        assert!(w.out_of_reach("y"), "a tunnel dial failed and its wait runs");
+        assert!(
+            w.out_of_reach("y"),
+            "a tunnel dial failed and its wait runs"
+        );
         w.back("y");
         w.forgive("y");
         assert!(!w.out_of_reach("y"), "heard, and the wait forgiven");

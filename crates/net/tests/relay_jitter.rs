@@ -52,7 +52,9 @@ async fn jittery_road(to: std::net::SocketAddr) -> (u16, Arc<AtomicU64>) {
     let count = carried.clone();
     tokio::spawn(async move {
         while let Ok((inbound, _)) = listener.accept().await {
-            let Ok(outbound) = TcpStream::connect(to).await else { continue };
+            let Ok(outbound) = TcpStream::connect(to).await else {
+                continue;
+            };
             let count = count.clone();
             let (mut ir, mut iw) = inbound.into_split();
             let (mut or, mut ow) = outbound.into_split();
@@ -70,7 +72,8 @@ async fn jittery_road(to: std::net::SocketAddr) -> (u16, Arc<AtomicU64>) {
                 let _ = iw.shutdown().await;
             });
             tokio::spawn(async move {
-                let (mut buf, mut chunk, mut upgraded, mut pongs) = (Vec::new(), vec![0u8; 65536], false, 0u64);
+                let (mut buf, mut chunk, mut upgraded, mut pongs) =
+                    (Vec::new(), vec![0u8; 65536], false, 0u64);
                 loop {
                     let n = match or.read(&mut chunk).await {
                         Ok(0) | Err(_) => break,
@@ -78,7 +81,9 @@ async fn jittery_road(to: std::net::SocketAddr) -> (u16, Arc<AtomicU64>) {
                     };
                     buf.extend_from_slice(&chunk[..n]);
                     if !upgraded {
-                        let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") else { continue };
+                        let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") else {
+                            continue;
+                        };
                         // A relay connection, not a latency probe's GET.
                         if buf.starts_with(b"HTTP/1.1 101") {
                             count.fetch_add(1, Ordering::Relaxed);
@@ -109,7 +114,14 @@ async fn jittery_road(to: std::net::SocketAddr) -> (u16, Arc<AtomicU64>) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_slow_pong_keeps_the_relay_connection() {
-    for k in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"] {
+    for k in [
+        "http_proxy",
+        "https_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
         // SAFETY: set before any endpoint reads the environment; nothing
         // else in this binary writes it meanwhile.
         unsafe { std::env::remove_var(k) };
@@ -120,8 +132,13 @@ async fn a_slow_pong_keeps_the_relay_connection() {
         std::env::set_var(endpoint::NO_MDNS_ENV, "1");
     }
     let mut cfg = iroh_relay::server::ServerConfig::default();
-    cfg.relay = Some(iroh_relay::server::RelayConfig::new((std::net::Ipv4Addr::LOCALHOST, 0)));
-    let relay = iroh_relay::server::Server::spawn(cfg).await.expect("the relay spawns");
+    cfg.relay = Some(iroh_relay::server::RelayConfig::new((
+        std::net::Ipv4Addr::LOCALHOST,
+        0,
+    )));
+    let relay = iroh_relay::server::Server::spawn(cfg)
+        .await
+        .expect("the relay spawns");
     let (port, carried) = jittery_road(relay.http_addr().unwrap()).await;
     let url = format!("http://127.0.0.1:{port}");
 
@@ -130,13 +147,21 @@ async fn a_slow_pong_keeps_the_relay_connection() {
         .unwrap();
     let began = Instant::now();
     let watch = Duration::from_secs(
-        std::env::var("KHOR_JITTER_S").ok().and_then(|s| s.parse().ok()).unwrap_or(120),
+        std::env::var("KHOR_JITTER_S")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(120),
     );
     while began.elapsed() < watch {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     let n = carried.load(Ordering::Relaxed);
     eprintln!("[jitter] connections to the relay in {watch:?}: {n}");
-    assert_eq!(n, 1, "the home connection was redialled {} times", n.saturating_sub(1));
+    assert_eq!(
+        n,
+        1,
+        "the home connection was redialled {} times",
+        n.saturating_sub(1)
+    );
     ep.close().await;
 }

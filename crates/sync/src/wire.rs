@@ -87,7 +87,8 @@ pub fn table_b64<D: Doc>(store: &mut BlockStore, doc: &D) -> Result<String, Stri
 
 /// [`table_b64`]'s bytes, refused across epochs.
 pub fn table_bytes(store: &BlockStore, s: &str) -> Result<Vec<u8>, String> {
-    B64.decode(unspell(store, s)?).map_err(msg::far_table_not_base64)
+    B64.decode(unspell(store, s)?)
+        .map_err(msg::far_table_not_base64)
 }
 
 /// **The version, spelled the same on every machine** — what a digest of
@@ -134,7 +135,11 @@ pub fn version_canonical<D: Doc>(store: &BlockStore, doc: &D) -> Vec<u8> {
 /// holding the first, skips the second. Every way ops leave goes through
 /// here ([`answer`], [`Peer::outgoing`]) or [`table_b64`], so the rule
 /// holds by type rather than by each caller remembering it.
-pub fn changes_since_b64<D: Doc>(store: &mut BlockStore, doc: &D, theirs: &str) -> Result<String, String> {
+pub fn changes_since_b64<D: Doc>(
+    store: &mut BlockStore,
+    doc: &D,
+    theirs: &str,
+) -> Result<String, String> {
     let vv = decode_version(store, theirs)?;
     store.flush(doc)?;
     if vv.includes_vv(&doc.version()) {
@@ -170,7 +175,9 @@ fn decode_version(store: &BlockStore, s: &str) -> Result<VersionVector, String> 
     if s.is_empty() {
         return Ok(VersionVector::default());
     }
-    let bytes = B64.decode(unspell(store, s)?).map_err(msg::version_not_base64)?;
+    let bytes = B64
+        .decode(unspell(store, s)?)
+        .map_err(msg::version_not_base64)?;
     VersionVector::decode(&bytes).map_err(msg::version_undecodable)
 }
 
@@ -613,14 +620,25 @@ mod tests {
         let e = answer(&mut new.store, &new.doc, &theirs, &pushed).unwrap_err();
         assert!(other_epoch(&e), "refused as another epoch: {e}");
         assert_eq!(e, msg::pile_other_epoch(new.store.name(), 0, EPOCH));
-        assert!(new.doc.get("old").is_none(), "and nothing of theirs was merged");
+        assert!(
+            new.doc.get("old").is_none(),
+            "and nothing of theirs was merged"
+        );
 
         // The other way: this side's round refuses their version itself…
-        let e = Peer::knowing(theirs.clone()).outgoing(&mut new.store, &new.doc).unwrap_err();
+        let e = Peer::knowing(theirs.clone())
+            .outgoing(&mut new.store, &new.doc)
+            .unwrap_err();
         assert!(other_epoch(&e), "{e}");
         // … and does not take in a reply in their epoch.
-        let reply = Reply { version: theirs, changes: pushed, items: 1 };
-        let e = Peer::new().absorb(&mut new.store, &new.doc, &Outgoing::default(), reply).unwrap_err();
+        let reply = Reply {
+            version: theirs,
+            changes: pushed,
+            items: 1,
+        };
+        let e = Peer::new()
+            .absorb(&mut new.store, &new.doc, &Outgoing::default(), reply)
+            .unwrap_err();
         assert!(other_epoch(&e), "{e}");
         assert!(new.doc.get("old").is_none());
         // What this side says is no base64 to a khor before epochs.
@@ -631,7 +649,10 @@ mod tests {
         let mut other = load_pile::<DeviceDoc>(&other_dir, 0xA3).unwrap();
         let mut peer = Peer::new();
         for _ in 0..2 {
-            peer.round(&mut other.store, &other.doc, |h, c| answer(&mut new.store, &new.doc, h, c)).unwrap();
+            peer.round(&mut other.store, &other.doc, |h, c| {
+                answer(&mut new.store, &new.doc, h, c)
+            })
+            .unwrap();
         }
         assert!(other.doc.get("new").is_some(), "same epoch, merged");
         for d in [new_dir, old_dir, other_dir] {

@@ -237,7 +237,10 @@ pub struct Findings {
 
 impl Findings {
     fn absorb(&mut self, vendor: &'static str, other: Sweep) {
-        if vendor == codex::VENDOR { self.codex_threads.extend(other.terminal_threads); self.codex_pending.extend(other.pending_threads); }
+        if vendor == codex::VENDOR {
+            self.codex_threads.extend(other.terminal_threads);
+            self.codex_pending.extend(other.pending_threads);
+        }
         self.rows
             .extend(other.rows.into_iter().map(|sighting| Found {
                 category: vendor,
@@ -838,7 +841,11 @@ impl Discovery {
     /// This is the one place a row's category is decided, and it is
     /// decided by which adaptor produced the row — see [`Found`].
     pub fn sweep_with(&self, procs: &Procs) -> Findings {
-        let mut all = Findings { codex_title_home: self.vendor_home.clone(), codex_title_root: self.title_root.clone(), ..Findings::default() };
+        let mut all = Findings {
+            codex_title_home: self.vendor_home.clone(),
+            codex_title_root: self.title_root.clone(),
+            ..Findings::default()
+        };
         for a in &self.adaptors {
             all.absorb(a.vendor(), a.sweep(procs));
         }
@@ -910,10 +917,22 @@ mod vendor_path_tests {
     fn native_overrides_never_escape_private_roots_and_explicit_vendor_home_wins() {
         let root = Path::new("/account");
         let native = Some(PathBuf::from("/native"));
-        assert_eq!(resolve_vendor_dir(root, ".codex", None, true, native.clone()), PathBuf::from("/native"));
-        assert_eq!(resolve_vendor_dir(root, ".codex", None, false, native.clone()), root.join(".codex"));
-        assert_eq!(resolve_vendor_dir(root, ".codex", Some("/fixture".into()), true, native), PathBuf::from("/fixture/.codex"));
-        assert_eq!(resolve_vendor_dir(root, ".claude", None, true, Some(PathBuf::new())), root.join(".claude"));
+        assert_eq!(
+            resolve_vendor_dir(root, ".codex", None, true, native.clone()),
+            PathBuf::from("/native")
+        );
+        assert_eq!(
+            resolve_vendor_dir(root, ".codex", None, false, native.clone()),
+            root.join(".codex")
+        );
+        assert_eq!(
+            resolve_vendor_dir(root, ".codex", Some("/fixture".into()), true, native),
+            PathBuf::from("/fixture/.codex")
+        );
+        assert_eq!(
+            resolve_vendor_dir(root, ".claude", None, true, Some(PathBuf::new())),
+            root.join(".claude")
+        );
     }
 }
 
@@ -1203,10 +1222,7 @@ mod tests {
         seen.sort();
         assert_eq!(
             seen,
-            vec![
-                ("claude", "one".to_owned()),
-                ("codex", "alpha".to_owned()),
-            ],
+            vec![("claude", "one".to_owned()), ("codex", "alpha".to_owned()),],
             "each vendor's own row must carry that vendor's name"
         );
         let _ = std::fs::remove_dir_all(&home);

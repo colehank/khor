@@ -61,14 +61,33 @@ fn tauri_commands() -> BTreeSet<String> {
     if src.contains("native_io::dispatch(invoke)") {
         let native = repo_file("../src-tauri/src/native_io.rs");
         let marker = "const COMMANDS: &[&str] = &[";
-        let start = native.find(marker).expect("native dispatcher lost its command table") + marker.len();
-        let end = start + native[start..].find("];").expect("native command table is not closed");
-        let admitted: Vec<_> = native[start..end].split(',').map(str::trim)
-            .filter(|s| !s.is_empty()).map(|s| s.strip_prefix('"').and_then(|s| s.strip_suffix('"'))
-                .expect("native command table must contain string literals")).collect();
-        assert!(!admitted.is_empty(), "native command finder found no commands");
+        let start = native
+            .find(marker)
+            .expect("native dispatcher lost its command table")
+            + marker.len();
+        let end = start
+            + native[start..]
+                .find("];")
+                .expect("native command table is not closed");
+        let admitted: Vec<_> = native[start..end]
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.strip_prefix('"')
+                    .and_then(|s| s.strip_suffix('"'))
+                    .expect("native command table must contain string literals")
+            })
+            .collect();
+        assert!(
+            !admitted.is_empty(),
+            "native command finder found no commands"
+        );
         for name in admitted {
-            assert!(commands.insert(name.to_owned()), "duplicate native command {name}");
+            assert!(
+                commands.insert(name.to_owned()),
+                "duplicate native command {name}"
+            );
         }
     }
     commands
@@ -119,16 +138,42 @@ fn served_commands() -> BTreeSet<String> {
 /// (`khor-cli`'s `NOT_IN_USAGE`, same judgment). Delete a line here and
 /// that command goes red, which is the point.
 const ONE_SIDED: &[(&str, &str)] = &[
-    ("file_preview_supported", "reports native Quick Look availability; HTTP has no native Office preview"),
-    ("file_preview_open", "presents native Quick Look for a completed app-owned file job"),
-    ("file_handoff_supported", "native device capability; HTTP faces use Web Share"),
-    ("file_handoff_open", "presents the native original-file activity sheet; HTTP faces have no app-owned native presenter"),
-    ("page_steps", "reads the app-owned native WebView's actual back/forward history; HTTP faces have no native page handle and pageSteps returns null there"),
-    ("page_sheet", "coordinates the native iOS webview scroll recognizer with the content sheet; HTTP faces have no separate native webview"),
-    ("window_appearance_support", "reports native desktop background capabilities; browser windows belong to the browser"),
-    ("set_window_appearance", "sets the main native window background and OS material, which an HTTP face cannot control"),
-    ("save_terminal_palette", "opens the native save-file panel for a local palette; browser faces use a download"),
-
+    (
+        "file_preview_supported",
+        "reports native Quick Look availability; HTTP has no native Office preview",
+    ),
+    (
+        "file_preview_open",
+        "presents native Quick Look for a completed app-owned file job",
+    ),
+    (
+        "file_handoff_supported",
+        "native device capability; HTTP faces use Web Share",
+    ),
+    (
+        "file_handoff_open",
+        "presents the native original-file activity sheet; HTTP faces have no app-owned native presenter",
+    ),
+    (
+        "page_steps",
+        "reads the app-owned native WebView's actual back/forward history; HTTP faces have no native page handle and pageSteps returns null there",
+    ),
+    (
+        "page_sheet",
+        "coordinates the native iOS webview scroll recognizer with the content sheet; HTTP faces have no separate native webview",
+    ),
+    (
+        "window_appearance_support",
+        "reports native desktop background capabilities; browser windows belong to the browser",
+    ),
+    (
+        "set_window_appearance",
+        "sets the main native window background and OS material, which an HTTP face cannot control",
+    ),
+    (
+        "save_terminal_palette",
+        "opens the native save-file panel for a local palette; browser faces use a download",
+    ),
     // ── a picked file's bytes, and the phone's edit menu, 2026-10-07 ──
     //
     // **Served, just not as an arm.** A picked file arrives as raw bytes
@@ -389,7 +434,7 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "notify_finished",
         "posts a notification through the operating system's notification centre; a page in \
          a browser is not an app the system notifies for, and `lib/finished` catches the miss",
-    ),    // ── 全网谁够得着 (round ROAD-1) ─────
+    ), // ── 全网谁够得着 (round ROAD-1) ─────
     (
         "reach_probe",
         "has every machine in the network open a connection to an address of the caller's \

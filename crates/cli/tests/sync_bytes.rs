@@ -90,11 +90,21 @@ async fn a_quiet_round_is_small_and_a_change_crosses_in_a_beat() {
                 .unwrap_or(false)
         }
     };
-    let reading = until("the row on beta", Duration::from_secs(30), row_on_beta(false)).await;
+    let reading = until(
+        "the row on beta",
+        Duration::from_secs(30),
+        row_on_beta(false),
+    )
+    .await;
 
     // A document crossing: alpha pins it, beta shows it pinned.
     p.alpha.pin_session(&SessionId(sid.clone()), true).unwrap();
-    let document = until("the pin on beta", Duration::from_secs(30), row_on_beta(true)).await;
+    let document = until(
+        "the pin on beta",
+        Duration::from_secs(30),
+        row_on_beta(true),
+    )
+    .await;
 
     eprintln!(
         "[sync] {secs} s quiet: beta's wire to alpha {:.0} B out + {:.0} B in per beat; \
@@ -104,5 +114,8 @@ async fn a_quiet_round_is_small_and_a_change_crosses_in_a_beat() {
         (a1 - a0).as_secs_f64() * 1000.0 / beats,
         (b1 - b0).as_secs_f64() * 1000.0 / beats,
     );
-    let _ = khor(&p.ra.0).args(["close", &sid]).env("KHOR_NAME", "alpha").output();
+    let _ = khor(&p.ra.0)
+        .args(["close", &sid])
+        .env("KHOR_NAME", "alpha")
+        .output();
 }

@@ -163,7 +163,11 @@ impl Machine {
     }
 
     fn id(&self) -> String {
-        self.ok(&["id"]).split_whitespace().next().unwrap().to_owned()
+        self.ok(&["id"])
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_owned()
     }
 
     fn has(&self, file: &str) -> bool {
@@ -205,17 +209,28 @@ fn the_roster_decides_who_is_in_across_three_machines() {
 
     // Each started alone, so each made a root of its own.
     let root = a.state()["root"].as_str().unwrap().to_owned();
-    assert!(a.state()["holds"].as_bool().unwrap(), "alpha holds its root");
+    assert!(
+        a.state()["holds"].as_bool().unwrap(),
+        "alpha holds its root"
+    );
     assert_ne!(b.state()["root"].as_str().unwrap(), root);
 
     // ── alpha ↔ beta: alpha holds the root, so beta is signed on the spot.
     let ticket = a.ok(&["invite"]);
     b.ok(&["pair", ticket.trim()]);
     let sb = b.state();
-    assert_eq!(sb["root"].as_str(), Some(root.as_str()), "beta took alpha's root");
+    assert_eq!(
+        sb["root"].as_str(),
+        Some(root.as_str()),
+        "beta took alpha's root"
+    );
     assert_eq!(sb["holds"].as_bool(), Some(false), "and gave up its own");
     assert!(!b.has("root.key"), "its own key is gone");
-    assert_eq!(sb["standing"].as_str(), Some("trusted"), "beta has its certificate");
+    assert_eq!(
+        sb["standing"].as_str(),
+        Some("trusted"),
+        "beta has its certificate"
+    );
     assert!(b.pending().is_empty());
     // Control for every refusal below: beta, on the roster, syncs.
     let line = b.sync_line("alpha");
@@ -226,9 +241,16 @@ fn the_roster_decides_who_is_in_across_three_machines() {
     let ticket = b.ok(&["invite"]);
     let (ok, _, hint) = c.run(&["pair", ticket.trim()]);
     assert!(ok, "the pairing itself goes through: {hint}");
-    assert!(hint.contains(cli::pair_pending_hint()), "and says it waits: {hint}");
+    assert!(
+        hint.contains(cli::pair_pending_hint()),
+        "and says it waits: {hint}"
+    );
     let sc = c.state();
-    assert_eq!(sc["root"].as_str(), Some(root.as_str()), "gamma took the network's root");
+    assert_eq!(
+        sc["root"].as_str(),
+        Some(root.as_str()),
+        "gamma took the network's root"
+    );
     assert_eq!(sc["standing"].as_str(), Some("pending"));
     let gamma = c.id();
     for (who, m) in [("beta", &b), ("gamma", &c)] {
@@ -242,7 +264,10 @@ fn the_roster_decides_who_is_in_across_three_machines() {
     b.ok(&["sync"]);
     // gamma's sync is refused by both, by name: paired, not on the roster.
     let out = c.ok(&["sync"]);
-    assert!(out.contains(&refused("alpha")), "alpha refuses gamma: {out}");
+    assert!(
+        out.contains(&refused("alpha")),
+        "alpha refuses gamma: {out}"
+    );
     assert!(out.contains(&refused("beta")), "beta refuses gamma: {out}");
     // Nobody but alpha can let it in.
     let (ok, _, err) = b.run(&["approve", "gamma"]);
@@ -257,16 +282,26 @@ fn the_roster_decides_who_is_in_across_three_machines() {
     assert!(said.contains("gamma"), "{said}");
     // approve pushed the roster; gamma is in on both.
     let line = c.sync_line("alpha");
-    assert!(!line.contains(msg::not_in_roster()), "alpha answers gamma now: {line}");
+    assert!(
+        !line.contains(msg::not_in_roster()),
+        "alpha answers gamma now: {line}"
+    );
     let line = c.sync_line("beta");
-    assert!(!line.contains(msg::not_in_roster()), "and so does beta: {line}");
+    assert!(
+        !line.contains(msg::not_in_roster()),
+        "and so does beta: {line}"
+    );
     assert_eq!(c.state()["standing"].as_str(), Some("trusted"));
     assert!(a.pending().is_empty() && c.pending().is_empty());
 
     // ── alpha revokes beta: refused from now on.
     let said = a.ok(&["revoke", "beta"]);
     assert!(said.contains("beta"), "{said}");
-    assert_eq!(b.sync_line("alpha"), refused("alpha"), "beta is refused by name");
+    assert_eq!(
+        b.sync_line("alpha"),
+        refused("alpha"),
+        "beta is refused by name"
+    );
     // Control: gamma, still on the roster, still goes through.
     let line = c.sync_line("alpha");
     assert!(!line.contains(msg::not_in_roster()), "{line}");

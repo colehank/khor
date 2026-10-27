@@ -47,7 +47,10 @@ async fn a_carried_link_is_a_road_both_ways() {
     });
     let conn = tokio::time::timeout(
         Duration::from_secs(10),
-        a.connect(EndpointAddr::from_parts(b_id, [transport_addr(&b_id)]), ALPN),
+        a.connect(
+            EndpointAddr::from_parts(b_id, [transport_addr(&b_id)]),
+            ALPN,
+        ),
     )
     .await
     .expect("the handshake crosses the link")
@@ -57,12 +60,17 @@ async fn a_carried_link_is_a_road_both_ways() {
     let mut got = vec![0u8; 5];
     r.read_exact(&mut got).await.unwrap();
     assert_eq!(&got, b"hello");
-    assert_eq!(khor_net::path::classify(&conn), khor_net::path::PathKind::Carried);
+    assert_eq!(
+        khor_net::path::classify(&conn),
+        khor_net::path::PathKind::Carried
+    );
 
     // The link ends: the table forgets it.
     drop(_up_b);
     lb.attach(a_id, Carrier::Ssh, tokio::io::empty(), tokio::io::sink());
-    tokio::time::timeout(Duration::from_secs(5), up_a.ended()).await.ok();
+    tokio::time::timeout(Duration::from_secs(5), up_a.ended())
+        .await
+        .ok();
     conn.close(0u32.into(), b"done");
     a.close().await;
     b.close().await;
@@ -78,11 +86,20 @@ async fn a_carried_link_is_a_road_both_ways() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_carried_road_is_opened_when_the_relay_answers_first_and_the_faster_carries() {
     use iroh_relay::server::{RelayConfig, Server, ServerConfig};
-    for k in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"] {
+    for k in [
+        "http_proxy",
+        "https_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
         unsafe { std::env::remove_var(k) };
     }
     let mut cfg = ServerConfig::default();
-    cfg.relay = Some(RelayConfig::new("127.0.0.1:0".parse::<std::net::SocketAddr>().unwrap()));
+    cfg.relay = Some(RelayConfig::new(
+        "127.0.0.1:0".parse::<std::net::SocketAddr>().unwrap(),
+    ));
     let relay = Server::spawn(cfg).await.unwrap();
     let url: iroh::RelayUrl = format!("http://127.0.0.1:{}", relay.http_addr().unwrap().port())
         .parse()
@@ -92,7 +109,9 @@ async fn the_carried_road_is_opened_when_the_relay_answers_first_and_the_faster_
         c.quic = None;
         Endpoint::builder(presets::Minimal)
             .secret_key(key)
-            .relay_mode(RelayMode::Custom(vec![std::sync::Arc::new(c)].into_iter().collect()))
+            .relay_mode(RelayMode::Custom(
+                vec![std::sync::Arc::new(c)].into_iter().collect(),
+            ))
             .clear_ip_transports()
             .add_custom_transport(links.transport())
             .path_selector(std::sync::Arc::new(RoadOrder::default()))
@@ -102,9 +121,17 @@ async fn the_carried_road_is_opened_when_the_relay_answers_first_and_the_faster_
     let (ka, kb) = (SecretKey::generate(), SecretKey::generate());
     let (a_id, b_id) = (ka.public(), kb.public());
     let (la, lb) = (Links::new(a_id), Links::new(b_id));
-    let (a, b) = (on_relay(ka, &la).await.unwrap(), on_relay(kb, &lb).await.unwrap());
+    let (a, b) = (
+        on_relay(ka, &la).await.unwrap(),
+        on_relay(kb, &lb).await.unwrap(),
+    );
     tokio::time::timeout(Duration::from_secs(20), async {
-        while !b.addr().addrs.iter().any(|x| matches!(x, iroh::TransportAddr::Relay(_))) {
+        while !b
+            .addr()
+            .addrs
+            .iter()
+            .any(|x| matches!(x, iroh::TransportAddr::Relay(_)))
+        {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
@@ -134,7 +161,13 @@ async fn the_carried_road_is_opened_when_the_relay_answers_first_and_the_faster_
             });
         }
     });
-    let to_b = EndpointAddr::from_parts(b_id, [transport_addr(&b_id), iroh::TransportAddr::Relay(url.clone())]);
+    let to_b = EndpointAddr::from_parts(
+        b_id,
+        [
+            transport_addr(&b_id),
+            iroh::TransportAddr::Relay(url.clone()),
+        ],
+    );
     let conn = tokio::time::timeout(Duration::from_secs(10), a.connect(to_b, ALPN))
         .await
         .expect("a dial")
@@ -208,7 +241,11 @@ where
     });
     let mut buf = vec![0u8; 64 << 10];
     while let Ok(n) = r.read(&mut buf).await {
-        if n == 0 || tx.send((tokio::time::Instant::now() + delay, buf[..n].to_vec())).is_err() {
+        if n == 0
+            || tx
+                .send((tokio::time::Instant::now() + delay, buf[..n].to_vec()))
+                .is_err()
+        {
             return;
         }
     }

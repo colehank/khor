@@ -302,7 +302,9 @@ impl Modes {
     /// A full-screen program is drawing: the alternate screen, or the
     /// mouse taken (roadmap 1.2: "a program is running").
     pub fn program_holds_screen(&self) -> bool {
-        [47, 1047, 1049, 1000, 1002, 1003].iter().any(|&m| self.is_set(m))
+        [47, 1047, 1049, 1000, 1002, 1003]
+            .iter()
+            .any(|&m| self.is_set(m))
     }
 
     /// The bytes that put a freshly reset terminal into the modes the
@@ -375,15 +377,23 @@ mod tests {
             b"\x1b[>1u\x1b[?1049h\x1b[>3u"
         );
         // Leaving the alternate screen drops its stack, not the main one.
-        assert_eq!(after(b"\x1b[>1u\x1b[?1049h\x1b[>3u\x1b[?1049l"), b"\x1b[>1u");
+        assert_eq!(
+            after(b"\x1b[>1u\x1b[?1049h\x1b[>3u\x1b[?1049l"),
+            b"\x1b[>1u"
+        );
         // A full reset forgets both; other sequences with the same leads
         // (DA2 `CSI > c`, `CSI = c`) change nothing.
         assert!(after(b"\x1b[>1u\x1bc").is_empty());
         assert!(after(b"\x1b[>c\x1b[=c\x1b[>0;1m").is_empty());
         // Pushes past the bound evict the oldest.
-        let many: Vec<u8> = (1..=20).flat_map(|n| format!("\x1b[>{n}u").into_bytes()).collect();
+        let many: Vec<u8> = (1..=20)
+            .flat_map(|n| format!("\x1b[>{n}u").into_bytes())
+            .collect();
         let kept = String::from_utf8(after(&many)).unwrap();
-        assert!(kept.starts_with("\x1b[>5u") && kept.ends_with("\x1b[>20u"), "{kept}");
+        assert!(
+            kept.starts_with("\x1b[>5u") && kept.ends_with("\x1b[>20u"),
+            "{kept}"
+        );
     }
 
     fn after(bytes: &[u8]) -> Vec<u8> {

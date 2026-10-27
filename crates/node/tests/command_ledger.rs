@@ -158,7 +158,11 @@ fn a_tmux_typed_in_a_khor_shell_keeps_each_panes_commands_apart() {
     let tag = b"]633;P;KhorPane=";
     let named = |at: usize| {
         let rest = &bytes[at + tag.len()..];
-        let digits = rest.iter().skip(1).take_while(|b| b.is_ascii_digit()).count();
+        let digits = rest
+            .iter()
+            .skip(1)
+            .take_while(|b| b.is_ascii_digit())
+            .count();
         rest.first() == Some(&b'%') && digits > 0 && rest.get(1 + digits) == Some(&0x07)
     };
     let wraps: Vec<usize> = (0..bytes.len().saturating_sub(tag.len()))
@@ -190,8 +194,20 @@ fn a_tmux_typed_in_a_khor_shell_keeps_each_panes_commands_apart() {
     assert_eq!(
         panes,
         [
-            ("%0".to_owned(), some("echo one-c"), false, Some(0), some("/s3/w/three")),
-            ("%1".to_owned(), some("sleep 2; echo two-b"), false, Some(0), some("/s3/w/two")),
+            (
+                "%0".to_owned(),
+                some("echo one-c"),
+                false,
+                Some(0),
+                some("/s3/w/three")
+            ),
+            (
+                "%1".to_owned(),
+                some("sleep 2; echo two-b"),
+                false,
+                Some(0),
+                some("/s3/w/two")
+            ),
         ]
     );
 }

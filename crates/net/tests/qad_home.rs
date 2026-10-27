@@ -37,7 +37,14 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 const ONE_WAY: Duration = Duration::from_millis(100);
 
 fn clear_proxies() {
-    for k in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"] {
+    for k in [
+        "http_proxy",
+        "https_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
         // SAFETY: set before any endpoint reads the environment; nothing
         // else in this binary writes it meanwhile.
         unsafe { std::env::remove_var(k) };
@@ -65,7 +72,12 @@ fn self_signed(pem: &std::path::Path) -> rustls::ServerConfig {
 async fn qad_relay(tls: rustls::ServerConfig) -> Server {
     let ip = IpAddr::from(Ipv4Addr::LOCALHOST);
     let mut relay = RelayConfig::new((ip, 0));
-    relay.tls = Some(TlsConfig::new((ip, 0), CertConfig::Manual { server_config: tls.clone() }));
+    relay.tls = Some(TlsConfig::new(
+        (ip, 0),
+        CertConfig::Manual {
+            server_config: tls.clone(),
+        },
+    ));
     let mut cfg = ServerConfig::default();
     cfg.relay = Some(relay);
     let mut quic = QuicConfig::new((ip, 0));
@@ -82,12 +94,19 @@ async fn plain_relay() -> Server {
 }
 
 /// Everything written one way, `ONE_WAY` later, in order.
-async fn late_pipe(mut from: tokio::net::tcp::OwnedReadHalf, mut to: tokio::net::tcp::OwnedWriteHalf) {
+async fn late_pipe(
+    mut from: tokio::net::tcp::OwnedReadHalf,
+    mut to: tokio::net::tcp::OwnedWriteHalf,
+) {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(Instant, Vec<u8>)>();
     tokio::spawn(async move {
         let mut buf = vec![0u8; 64 * 1024];
         while let Ok(n) = from.read(&mut buf).await {
-            if n == 0 || tx.send((Instant::now() + ONE_WAY, buf[..n].to_vec())).is_err() {
+            if n == 0
+                || tx
+                    .send((Instant::now() + ONE_WAY, buf[..n].to_vec()))
+                    .is_err()
+            {
                 break;
             }
         }
@@ -115,7 +134,9 @@ async fn slow_tcp(to: SocketAddr) -> u16 {
     for listener in [v4, v6] {
         tokio::spawn(async move {
             while let Ok((inbound, _)) = listener.accept().await {
-                let Ok(outbound) = TcpStream::connect(to).await else { continue };
+                let Ok(outbound) = TcpStream::connect(to).await else {
+                    continue;
+                };
                 let (ir, iw) = inbound.into_split();
                 let (or, ow) = outbound.into_split();
                 tokio::spawn(late_pipe(ir, ow));
@@ -154,7 +175,8 @@ async fn slow_udp(to: SocketAddr) -> (u16, [Arc<AtomicU64>; 2]) {
                         tokio::spawn(async move {
                             let mut buf = vec![0u8; 65536];
                             while let Ok(n) = up2.recv(&mut buf).await {
-                                let (bytes, front3, counted) = (buf[..n].to_vec(), front2.clone(), counted.clone());
+                                let (bytes, front3, counted) =
+                                    (buf[..n].to_vec(), front2.clone(), counted.clone());
                                 tokio::spawn(async move {
                                     tokio::time::sleep(ONE_WAY).await;
                                     if front3.send_to(&bytes, client).await.is_ok() {
@@ -214,35 +236,58 @@ async fn a_full_report_measures_the_relay_without_qad_before_it_settles() {
         std::env::set_var(endpoint::NO_MDNS_ENV, "1");
         std::env::set_var(
             endpoint::PUBLIC_RELAYS_ENV,
-            named.iter().map(|(url, qad)| format!("{url}?qad={qad}")).collect::<Vec<_>>().join(","),
+            named
+                .iter()
+                .map(|(url, qad)| format!("{url}?qad={qad}"))
+                .collect::<Vec<_>>()
+                .join(","),
         );
     }
     let began = Instant::now();
-    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay::bare(plain.clone())], false)
-        .await
-        .unwrap();
+    let ep = endpoint::bind_with(
+        iroh::SecretKey::generate(),
+        &[Relay::bare(plain.clone())],
+        false,
+    )
+    .await
+    .unwrap();
 
     // The first report is a full one; wait for the home it picks to connect.
     let settled = loop {
-        let connected = ep.home_relay_status().get().iter().any(|s| s.is_connected());
+        let connected = ep
+            .home_relay_status()
+            .get()
+            .iter()
+            .any(|s| s.is_connected());
         if let (Some(h), true) = (home(&ep), connected) {
             break h;
         }
-        assert!(began.elapsed() < Duration::from_secs(30), "no home within 30 s");
+        assert!(
+            began.elapsed() < Duration::from_secs(30),
+            "no home within 30 s"
+        );
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
     let took = began.elapsed();
     // Held for a while: the incremental reports after it keep it.
     tokio::time::sleep(Duration::from_secs(5)).await;
     let held = home(&ep);
-    let qad_back: Vec<[u64; 2]> =
-        answered.iter().map(|[v4, v6]| [v4.load(Ordering::Relaxed), v6.load(Ordering::Relaxed)]).collect();
+    let qad_back: Vec<[u64; 2]> = answered
+        .iter()
+        .map(|[v4, v6]| [v4.load(Ordering::Relaxed), v6.load(Ordering::Relaxed)])
+        .collect();
     eprintln!(
         "[qad-home] home {settled} after {took:?}, {held:?} 5 s on; plain {plain}; stand-ins {named:?}; \
          QAD datagrams back [v4, v6] {qad_back:?}"
     );
-    assert!(qad_back.iter().all(|[v4, _]| *v4 > 0), "both stand-ins answered QAD on v4: {qad_back:?}");
-    assert_eq!(settled, plain, "the full report's home is the relay without QAD, measured fastest");
+    assert!(
+        qad_back.iter().all(|[v4, _]| *v4 > 0),
+        "both stand-ins answered QAD on v4: {qad_back:?}"
+    );
+    assert_eq!(
+        settled, plain,
+        "the full report's home is the relay without QAD, measured fastest"
+    );
     assert_eq!(held.as_deref(), Some(plain.as_str()), "and it stays home");
 
     ep.close().await;

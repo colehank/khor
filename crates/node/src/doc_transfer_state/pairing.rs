@@ -852,12 +852,8 @@ impl State {
         let (incoming, outgoing) = self.pair_document_ids(remote, operation)?;
         // Check the entire correlated reply before changing any receipt.
         for ack in acknowledgements {
-            if !Self::pair_document_matches(
-                &ack.manifest,
-                incoming.as_deref(),
-                remote,
-                self.local,
-            )? {
+            if !Self::pair_document_matches(&ack.manifest, incoming.as_deref(), remote, self.local)?
+            {
                 return Err("receipt is outside this pairing grant".into());
             }
         }
@@ -867,12 +863,7 @@ impl State {
                 DocAckResult::Released { acknowledgement }
                 | DocAckResult::Absent { acknowledgement } => &acknowledgement.manifest,
             };
-            if !Self::pair_document_matches(
-                manifest,
-                outgoing.as_deref(),
-                self.local,
-                remote,
-            )? {
+            if !Self::pair_document_matches(manifest, outgoing.as_deref(), self.local, remote)? {
                 return Err("receipt result is outside this pairing grant".into());
             }
         }
@@ -884,29 +875,17 @@ impl State {
         }
         Ok(())
     }
-    pub(crate) fn pair_documents_pending(
-        &self,
-        remote: Id,
-        operation: Id,
-    ) -> Result<bool, Error> {
+    pub(crate) fn pair_documents_pending(&self, remote: Id, operation: Id) -> Result<bool, Error> {
         let (incoming, outgoing) = self.pair_document_ids(remote, operation)?;
         for row in &self.records.incoming {
-            if Self::pair_document_matches(
-                row.manifest(),
-                incoming.as_deref(),
-                remote,
-                self.local,
-            )? {
+            if Self::pair_document_matches(row.manifest(), incoming.as_deref(), remote, self.local)?
+            {
                 return Ok(true);
             }
         }
         for row in &self.records.outgoing {
-            if Self::pair_document_matches(
-                row.manifest(),
-                outgoing.as_deref(),
-                self.local,
-                remote,
-            )? {
+            if Self::pair_document_matches(row.manifest(), outgoing.as_deref(), self.local, remote)?
+            {
                 return Ok(true);
             }
         }

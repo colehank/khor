@@ -15,7 +15,10 @@ use std::time::{Duration, Instant};
 use scratch::*;
 
 fn env_u64(k: &str, d: u64) -> u64 {
-    std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+    std::env::var(k)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(d)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -24,7 +27,15 @@ async fn the_rows_latency_over_five_second_samples() {
     let rtt = Duration::from_millis(env_u64("DIAG_RTT_MS", 200));
     let loss = env_u64("DIAG_LOSS_PCT", 2) as u32;
     let watch = Duration::from_secs(env_u64("DIAG_WATCH_SECS", 120));
-    let (p, _road) = pair_on("rtt", Some(Impair { rtt, loss_pct: loss, stall: rtt })).await;
+    let (p, _road) = pair_on(
+        "rtt",
+        Some(Impair {
+            rtt,
+            loss_pct: loss,
+            stall: rtt,
+        }),
+    )
+    .await;
     let alpha_id = p.alpha.device_str().to_owned();
     let tmp = std::env::temp_dir().display().to_string();
     // A wire up before the first sample.

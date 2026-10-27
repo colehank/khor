@@ -174,8 +174,14 @@ mod tests {
     #[test]
     fn a_wide_board_never_lands_among_the_channels() {
         let home = PathBuf::from("/home/x");
-        assert_eq!(board_dir(&home, "wide/all").unwrap(), PathBuf::from("/home/x/.khor/wide/all"));
-        assert_eq!(board_dir(&home, "all").unwrap(), PathBuf::from("/home/x/.khor/chat/all"));
+        assert_eq!(
+            board_dir(&home, "wide/all").unwrap(),
+            PathBuf::from("/home/x/.khor/wide/all")
+        );
+        assert_eq!(
+            board_dir(&home, "all").unwrap(),
+            PathBuf::from("/home/x/.khor/chat/all")
+        );
         for bad in ["wide/", "wide/a/b", "wide/..", "wide/a b"] {
             assert!(board_dir(&home, bad).is_none(), "{bad:?} should be refused");
         }

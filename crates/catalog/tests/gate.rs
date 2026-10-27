@@ -149,7 +149,10 @@ fn zh_sentences_use_full_width_punctuation() {
         }
     }
     // The probe: a parse that walked nothing would pass by doing nothing.
-    assert!(read > 500, "probe dead: only {read} strings read from zh.toml");
+    assert!(
+        read > 500,
+        "probe dead: only {read} strings read from zh.toml"
+    );
     assert!(
         bad.is_empty(),
         "{} half-width marks inside Chinese sentences in zh.toml (use ，：；（）！？):\n{}",
@@ -181,7 +184,9 @@ fn a_duration_is_not_spaced_from_its_before_or_after() {
 fn regex_free_find(doc: &toml::Table, needles: &[&str]) -> Vec<String> {
     let mut out = Vec::new();
     for (section, table) in doc {
-        let Some(table) = table.as_table() else { continue };
+        let Some(table) = table.as_table() else {
+            continue;
+        };
         for (key, v) in table {
             let Some(text) = v.as_str() else { continue };
             if needles.iter().any(|n| text.contains(n)) {
@@ -215,7 +220,11 @@ fn the_punctuation_rule_fires_and_holds_its_fire() {
         "用 `a, b` 分开",
         "Max 20x, Pro",
     ] {
-        assert!(half_width_in_zh(green).is_empty(), "should be green: {green:?} — {:?}", half_width_in_zh(green));
+        assert!(
+            half_width_in_zh(green).is_empty(),
+            "should be green: {green:?} — {:?}",
+            half_width_in_zh(green)
+        );
     }
 }
 
@@ -287,7 +296,9 @@ fn half_width_in_zh(text: &str) -> Vec<String> {
         }
         let (l, r) = (near(i, true), near(i, false));
         if l.is_some_and(is_cjk) || r.is_some_and(is_cjk) {
-            let at: String = cs[i.saturating_sub(6)..(i + 7).min(cs.len())].iter().collect();
+            let at: String = cs[i.saturating_sub(6)..(i + 7).min(cs.len())]
+                .iter()
+                .collect();
             out.push(format!("{c:?} in …{at}…"));
         }
     }

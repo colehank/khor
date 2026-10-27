@@ -73,7 +73,9 @@ fn words(output: &Output) -> Vec<String> {
 fn retired_launcher_preserves_interactive_arguments_and_stdout() {
     let f = Fixture::new("interactive");
     for args in [
-        vec!["hello"], vec!["resume", "--last"], vec!["fork", "previous"],
+        vec!["hello"],
+        vec!["resume", "--last"],
+        vec!["fork", "previous"],
         vec!["--no-daemon", "resume", "previous"],
         vec!["-c", "tui.terminal_title=[\"project\"]", "resume", "--last"],
         vec!["--", "--no-daemon"],
@@ -159,10 +161,7 @@ fn launcher_survives_missing_tmux_environment_marker() {
         .env_remove("KHOR_CODEX_SHIM_DIR")
         .output()
         .unwrap();
-    assert_eq!(
-        words(&result),
-        ["resume", "--last"]
-    );
+    assert_eq!(words(&result), ["resume", "--last"]);
 }
 
 #[test]
@@ -261,11 +260,11 @@ fn existing_tmux_server_without_marker_launches_codex_on_a_pty() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let bytes = std::fs::read(result).unwrap();
+    assert_eq!(bytes, b"\0");
     assert_eq!(
-        bytes,
-        b"\0"
+        tmux(&["display-message", "-p", "-t", "probe", "#{mouse}"]),
+        "0"
     );
-    assert_eq!(tmux(&["display-message", "-p", "-t", "probe", "#{mouse}"]), "0");
     assert_eq!(tmux(&["show-option", "-gv", "mouse"]), "off");
     assert_eq!(
         tmux(&["display-message", "-p", "-t", "seed", "#{mouse}"]),
@@ -295,8 +294,5 @@ fn bare_argv0_does_not_invent_environment_hints() {
         .env_remove("TMUX_PANE")
         .output()
         .unwrap();
-    assert_eq!(
-        words(&result),
-        Vec::<String>::new()
-    );
+    assert_eq!(words(&result), Vec::<String>::new());
 }

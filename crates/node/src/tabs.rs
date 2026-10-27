@@ -323,7 +323,13 @@ pub fn open(root: &Path, kind: &str, device: &str, url: &str) -> Result<String, 
 
 /// [`open`], remembering the session it was opened from (`Tab::session`;
 /// empty = none known).
-pub fn open_from(root: &Path, kind: &str, device: &str, url: &str, session: &str) -> Result<String, String> {
+pub fn open_from(
+    root: &Path,
+    kind: &str,
+    device: &str,
+    url: &str,
+    session: &str,
+) -> Result<String, String> {
     open_beside(root, kind, device, url, session, "")
 }
 
@@ -331,38 +337,73 @@ pub fn open_from(root: &Path, kind: &str, device: &str, url: &str, session: &str
 /// the end — **a link that asked for a new window** (UX-42 §15): Safari
 /// puts that tab beside the one it came from. An `after` naming no row
 /// (or none) is the end, as [`open`].
-pub fn open_beside(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str) -> Result<String, String> {
+pub fn open_beside(
+    root: &Path,
+    kind: &str,
+    device: &str,
+    url: &str,
+    session: &str,
+    after: &str,
+) -> Result<String, String> {
     open_with_view(root, kind, device, url, session, after, None)
 }
 
-pub fn open_with_view(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str, view: Option<&str>) -> Result<String, String> {
+pub fn open_with_view(
+    root: &Path,
+    kind: &str,
+    device: &str,
+    url: &str,
+    session: &str,
+    after: &str,
+    view: Option<&str>,
+) -> Result<String, String> {
     open_requested(root, kind, device, url, session, after, view, "")
 }
 
-pub fn open_requested(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str, view: Option<&str>, request: &str) -> Result<String, String> {
+pub fn open_requested(
+    root: &Path,
+    kind: &str,
+    device: &str,
+    url: &str,
+    session: &str,
+    after: &str,
+    view: Option<&str>,
+    request: &str,
+) -> Result<String, String> {
     let view = checked_view(kind, view)?;
     let limit = crate::config::tabs_limit(root);
     change(root, kind, |open| {
         if !request.is_empty() {
-            if let Some(tab) = open.tabs.iter().find(|t| t.request == request && t.session == session) {
+            if let Some(tab) = open
+                .tabs
+                .iter()
+                .find(|t| t.request == request && t.session == session)
+            {
                 let id = tab.id.clone();
                 open.active = id.clone();
                 return Ok(id);
             }
         }
         let id = mint();
-        let at = open.tabs.iter().position(|t| !after.is_empty() && t.id == after).map_or(open.tabs.len(), |i| i + 1);
-        open.tabs.insert(at, Tab {
-            id: id.clone(),
-            device: device.to_string(),
-            url: url.to_string(),
-            title: String::new(),
-            pinned: false,
-            touched: now_ms(),
-            session: session.to_string(),
-            view: view.clone(),
-            request: request.to_owned(),
-        });
+        let at = open
+            .tabs
+            .iter()
+            .position(|t| !after.is_empty() && t.id == after)
+            .map_or(open.tabs.len(), |i| i + 1);
+        open.tabs.insert(
+            at,
+            Tab {
+                id: id.clone(),
+                device: device.to_string(),
+                url: url.to_string(),
+                title: String::new(),
+                pinned: false,
+                touched: now_ms(),
+                session: session.to_string(),
+                view: view.clone(),
+                request: request.to_owned(),
+            },
+        );
         open.active = id.clone();
         if let Some(limit) = limit
             && open.tabs.len() > limit
@@ -436,7 +477,15 @@ fn checked_view(kind: &str, view: Option<&str>) -> Result<Option<String>, String
     }
 }
 
-pub fn go_with_view(root: &Path, kind: &str, id: &str, device: &str, url: &str, title: &str, view: Option<&str>) -> Result<(), String> {
+pub fn go_with_view(
+    root: &Path,
+    kind: &str,
+    id: &str,
+    device: &str,
+    url: &str,
+    title: &str,
+    view: Option<&str>,
+) -> Result<(), String> {
     let view = checked_view(kind, view)?;
     change(root, kind, |open| {
         let tab = open
@@ -447,7 +496,9 @@ pub fn go_with_view(root: &Path, kind: &str, id: &str, device: &str, url: &str, 
         tab.device = device.to_string();
         tab.url = url.to_string();
         tab.title = title.to_string();
-        if view.is_some() { tab.view = view; }
+        if view.is_some() {
+            tab.view = view;
+        }
         tab.touched = now_ms();
         Ok(())
     })
@@ -573,7 +624,12 @@ pub fn reorder(root: &Path, kind: &str, session: &str, ids: &[String]) -> Result
                 rank.entry(id.clone()).or_insert(next);
             }
         }
-        let mut rows: Vec<_> = open.tabs.iter().filter(|row| rank.contains_key(&row.id)).cloned().collect();
+        let mut rows: Vec<_> = open
+            .tabs
+            .iter()
+            .filter(|row| rank.contains_key(&row.id))
+            .cloned()
+            .collect();
         rows.sort_by_key(|row| rank[&row.id]);
         let mut ordered = rows.into_iter();
         for row in &mut open.tabs {
@@ -998,11 +1054,22 @@ mod tests {
         close(&r.0, "content", &closed).unwrap();
         let new = open_from(&r.0, "content", "m", "new", "A").unwrap();
         let before = list(&r.0, "content");
-        reorder(&r.0, "content", "A", &[b.clone(), closed, a.clone(), b.clone()]).unwrap();
+        reorder(
+            &r.0,
+            "content",
+            "A",
+            &[b.clone(), closed, a.clone(), b.clone()],
+        )
+        .unwrap();
         let after = list(&r.0, "content");
-        assert_eq!(after.tabs.iter().map(|t| &t.id).collect::<Vec<_>>(), [&b, &foreign, &a, &new]);
+        assert_eq!(
+            after.tabs.iter().map(|t| &t.id).collect::<Vec<_>>(),
+            [&b, &foreign, &a, &new]
+        );
         assert_eq!(after.active, before.active);
-        for row in &after.tabs { assert_eq!(Some(row), before.tabs.iter().find(|old| old.id == row.id)); }
+        for row in &after.tabs {
+            assert_eq!(Some(row), before.tabs.iter().find(|old| old.id == row.id));
+        }
         assert!(reorder(&r.0, "content", "A", &[foreign]).is_err());
         assert_eq!(list(&r.0, "content"), after);
         pin(&r.0, "content", &a, true).unwrap();
@@ -1089,9 +1156,16 @@ mod tests {
         assert_eq!(order(&r), ["a", "c", "b"]);
         let now = list(&r.0, "page");
         assert_eq!(now.active, c, "the new tab is in front");
-        assert_eq!(now.tabs[1].session, "tui/one", "it keeps the opener's session");
+        assert_eq!(
+            now.tabs[1].session, "tui/one",
+            "it keeps the opener's session"
+        );
         open_beside(&r.0, "page", "m", "d", "", "gone").unwrap();
-        assert_eq!(order(&r), ["a", "c", "b", "d"], "an unknown opener is the end");
+        assert_eq!(
+            order(&r),
+            ["a", "c", "b", "d"],
+            "an unknown opener is the end"
+        );
     }
 
     /// **Where a tab came from survives a drag, and costs nothing where
@@ -1111,17 +1185,46 @@ mod tests {
         dragged.tabs.reverse();
         save_all(&r.0, "page", &dragged).unwrap();
         let now = list(&r.0, "page");
-        let of = |id: &str| now.tabs.iter().find(|t| t.id == id).unwrap().session.clone();
+        let of = |id: &str| {
+            now.tabs
+                .iter()
+                .find(|t| t.id == id)
+                .unwrap()
+                .session
+                .clone()
+        };
         assert_eq!(of(&here), "tui/one", "the drag kept where it came from");
         assert_eq!(of(&bare), "", "control: a tab with no session has none");
         let text = fs::read_to_string(path_for_tests(&r.0)).unwrap();
-        assert_eq!(text.matches("\"session\"").count(), 1, "only the tab with one writes the key: {text}");
+        assert_eq!(
+            text.matches("\"session\"").count(),
+            1,
+            "only the tab with one writes the key: {text}"
+        );
     }
     #[test]
     fn session_content_keeps_its_handle_and_renderer_across_restart_and_bulk_save() {
         let r = root("content");
-        let id = open_with_view(&r.0, "content", "device-a", "/repo", "session-a", "", Some("workspace")).unwrap();
-        go_with_view(&r.0, "content", &id, "device-a", "/repo/readme.md", "readme.md", Some("file")).unwrap();
+        let id = open_with_view(
+            &r.0,
+            "content",
+            "device-a",
+            "/repo",
+            "session-a",
+            "",
+            Some("workspace"),
+        )
+        .unwrap();
+        go_with_view(
+            &r.0,
+            "content",
+            &id,
+            "device-a",
+            "/repo/readme.md",
+            "readme.md",
+            Some("file"),
+        )
+        .unwrap();
         let mut from_old_face = list(&r.0, "content");
         assert_eq!(from_old_face.tabs[0].view.as_deref(), Some("file"));
         assert_eq!(from_old_face.tabs[0].session, "session-a");
@@ -1136,26 +1239,100 @@ mod tests {
     #[test]
     fn blank_content_requests_are_distinct_and_retry_without_duplicates() {
         let r = root("blank-content-retry");
-        let a = open_requested(&r.0, "content", "", "", "session-a", "", Some("workspace"), "open-a").unwrap();
-        let b = open_requested(&r.0, "content", "", "", "session-a", "", Some("workspace"), "open-b").unwrap();
+        let a = open_requested(
+            &r.0,
+            "content",
+            "",
+            "",
+            "session-a",
+            "",
+            Some("workspace"),
+            "open-a",
+        )
+        .unwrap();
+        let b = open_requested(
+            &r.0,
+            "content",
+            "",
+            "",
+            "session-a",
+            "",
+            Some("workspace"),
+            "open-b",
+        )
+        .unwrap();
         assert_ne!(a, b);
-        go_with_view(&r.0, "content", &a, "mac", "/repo/notes.md", "", Some("file")).unwrap();
-        assert_eq!(open_requested(&r.0, "content", "", "", "session-a", "", Some("workspace"), "open-a").unwrap(), a);
+        go_with_view(
+            &r.0,
+            "content",
+            &a,
+            "mac",
+            "/repo/notes.md",
+            "",
+            Some("file"),
+        )
+        .unwrap();
+        assert_eq!(
+            open_requested(
+                &r.0,
+                "content",
+                "",
+                "",
+                "session-a",
+                "",
+                Some("workspace"),
+                "open-a"
+            )
+            .unwrap(),
+            a
+        );
         let opened = list(&r.0, "content");
         assert_eq!(opened.tabs.len(), 2);
-        assert_eq!(opened.tabs.iter().find(|t| t.id == a).unwrap().url, "/repo/notes.md");
-        let c = open_requested(&r.0, "content", "", "", "session-b", "", Some("workspace"), "open-a").unwrap();
+        assert_eq!(
+            opened.tabs.iter().find(|t| t.id == a).unwrap().url,
+            "/repo/notes.md"
+        );
+        let c = open_requested(
+            &r.0,
+            "content",
+            "",
+            "",
+            "session-b",
+            "",
+            Some("workspace"),
+            "open-a",
+        )
+        .unwrap();
         assert_ne!(a, c);
     }
 
     #[test]
     fn invalid_content_view_does_not_change_the_table() {
         let r = root("bad-content");
-        let id = open_with_view(&r.0, "content", "device-a", "/repo", "s", "", Some("workspace")).unwrap();
+        let id = open_with_view(
+            &r.0,
+            "content",
+            "device-a",
+            "/repo",
+            "s",
+            "",
+            Some("workspace"),
+        )
+        .unwrap();
         let before = list(&r.0, "content");
-        assert!(go_with_view(&r.0, "content", &id, "device-a", "https://example.com", "", Some("unknown")).is_err());
+        assert!(
+            go_with_view(
+                &r.0,
+                "content",
+                &id,
+                "device-a",
+                "https://example.com",
+                "",
+                Some("unknown")
+            )
+            .is_err()
+        );
         assert_eq!(before, list(&r.0, "content"));
         assert!(open_with_view(&r.0, "page", "device-a", "/repo", "s", "", Some("file")).is_err());
     }
-
 }

@@ -40,7 +40,9 @@ macro_rules! eprint {
 /// ends `cat` (exit by that signal, nothing on the terminal). Any other
 /// write error is std's panic, unchanged.
 fn out(args: std::fmt::Arguments) {
-    if !emit_output(false, args) { execution::native_output(false, args); }
+    if !emit_output(false, args) {
+        execution::native_output(false, args);
+    }
 }
 
 // **Aliased**, because this file already has a verb called `usage`
@@ -54,8 +56,14 @@ use khor_node::{
 };
 
 mod execution;
-pub use execution::{CommandOutcome, CommandProgress, CommandSpec, ProgressSink, catalog, execute, execute_with, parse_line, private_invocation};
-use execution::{CLI_EXIT, START_WEB, command_root, emit_output, err, in_request, input_all, input_line, json_output, navigate, record_data};
+use execution::{
+    CLI_EXIT, START_WEB, command_root, emit_output, err, in_request, input_all, input_line,
+    json_output, navigate, record_data,
+};
+pub use execution::{
+    CommandOutcome, CommandProgress, CommandSpec, ProgressSink, catalog, execute, execute_with,
+    parse_line, private_invocation,
+};
 
 /// `khor relay` — its own file because it is its own program: a server
 /// with its own access control and meter (`relay.rs` head).
@@ -64,30 +72,52 @@ mod relay;
 /// Process entry hook for terminal sessions created by the slash interface.
 /// Each native binary supports its own commands; no companion CLI is required.
 pub fn console_main_if_requested(start_web: fn(&std::path::Path)) -> Option<i32> {
-    if let Some(code) = khor_node::mcp_worker::main_if_requested() { return Some(code); }
+    if let Some(code) = khor_node::mcp_worker::main_if_requested() {
+        return Some(code);
+    }
     // All native faces enter here before GUI cwd pinning or console dispatch.
     // A relative `codex` symlink must resolve from the caller's directory.
     khor_node::legacy_codex::main_if_shim();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(String::as_str) != Some("_console") { return None; }
+    if args.first().map(String::as_str) != Some("_console") {
+        return None;
+    }
     let result = console_args(&args[1..], start_web);
-    Some(match result { Ok(code) => code, Err(error) => { eprintln!("{error}"); 1 } })
+    Some(match result {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("{error}");
+            1
+        }
+    })
 }
 
 fn console_args(args: &[String], start_web: fn(&std::path::Path)) -> Result<i32, String> {
-    let [root, word, rest @ ..] = args else { return Err(usage_text().to_owned()); };
+    let [root, word, rest @ ..] = args else {
+        return Err(usage_text().to_owned());
+    };
     if !matches!(word.as_str(), "serve" | "relay" | "mcp" | "pipe") {
         return Err(msg::unknown_verb(word));
     }
-    if !std::path::Path::new(root).is_absolute() { return Err(usage_text().to_owned()); }
+    if !std::path::Path::new(root).is_absolute() {
+        return Err(usage_text().to_owned());
+    }
     execution::validate_stream(word, rest)?;
     struct RootScope(Option<std::path::PathBuf>);
-    impl Drop for RootScope { fn drop(&mut self) { execution::CLI_ROOT.with(|root| *root.borrow_mut() = self.0.take()); } }
-    let previous = execution::CLI_ROOT.with(|slot| slot.replace(Some(std::path::PathBuf::from(root))));
+    impl Drop for RootScope {
+        fn drop(&mut self) {
+            execution::CLI_ROOT.with(|root| *root.borrow_mut() = self.0.take());
+        }
+    }
+    let previous =
+        execution::CLI_ROOT.with(|slot| slot.replace(Some(std::path::PathBuf::from(root))));
     let _scope = RootScope(previous);
     START_WEB.with(|slot| slot.set(Some(start_web)));
     khor_node::config::apply_lang(&command_root());
-    let verb = VERBS.iter().find(|v| v.word == word).expect("registered stream verb");
+    let verb = VERBS
+        .iter()
+        .find(|v| v.word == word)
+        .expect("registered stream verb");
     (verb.run)(rest)?;
     Ok(0)
 }
@@ -889,12 +919,11 @@ fn root(rest: &[String]) -> Result<(), String> {
 /// What this machine verifies with, and how it stands.
 fn root_show(json: bool) -> Result<(), String> {
     let st = node()?.root_state();
-    if in_request() { record_data(serde_json::to_value(&st).map_err(|e| e.to_string())?); }
+    if in_request() {
+        record_data(serde_json::to_value(&st).map_err(|e| e.to_string())?);
+    }
     if json {
-        println!(
-            "{}",
-            json_output(&st)?
-        );
+        println!("{}", json_output(&st)?);
         return Ok(());
     }
     let Some(root) = &st.root else {
@@ -933,12 +962,11 @@ fn pending(rest: &[String]) -> Result<(), String> {
         _ => return Err(usage_text().into()),
     };
     let rows = node()?.pending()?;
-    if in_request() { record_data(serde_json::to_value(&rows).map_err(|e| e.to_string())?); }
+    if in_request() {
+        record_data(serde_json::to_value(&rows).map_err(|e| e.to_string())?);
+    }
     if json {
-        println!(
-            "{}",
-            json_output(&rows)?
-        );
+        println!("{}", json_output(&rows)?);
         return Ok(());
     }
     if rows.is_empty() {
@@ -1055,8 +1083,7 @@ fn lock(rest: &[String]) -> Result<(), String> {
         }
         [word] if word == "pin" => {
             let mut typed = String::new();
-            input_line(&mut typed)
-                .map_err(msg::cant_read_stdin)?;
+            input_line(&mut typed).map_err(msg::cant_read_stdin)?;
             say(khor_node::lock::set_pin(
                 &root,
                 typed.trim_end_matches(['\n', '\r']),
@@ -1174,17 +1201,30 @@ fn tabs(rest: &[String]) -> Result<(), String> {
         _ => ("page", "", rest),
     };
     let named = |which: &str| -> Result<String, String> {
-        if session.is_empty() { return tab_named(&root, kind, which); }
-        let tabs = khor_node::tabs::list(&root, kind).tabs.into_iter().filter(|t| t.session == session).collect::<Vec<_>>();
+        if session.is_empty() {
+            return tab_named(&root, kind, which);
+        }
+        let tabs = khor_node::tabs::list(&root, kind)
+            .tabs
+            .into_iter()
+            .filter(|t| t.session == session)
+            .collect::<Vec<_>>();
         let id = match which.parse::<usize>() {
-            Ok(n) => tabs.get(n.wrapping_sub(1)).filter(|_| n >= 1).map(|t| t.id.clone()),
+            Ok(n) => tabs
+                .get(n.wrapping_sub(1))
+                .filter(|_| n >= 1)
+                .map(|t| t.id.clone()),
             Err(_) => tabs.iter().find(|t| t.id == which).map(|t| t.id.clone()),
         };
         id.ok_or_else(|| khor_catalog::msg::no_such_tab(which))
     };
     let list = || {
         let open = khor_node::tabs::list(&root, kind);
-        for (n, t) in (1..).zip(open.tabs.iter().filter(|t| session.is_empty() || t.session == session)) {
+        for (n, t) in (1..).zip(
+            open.tabs
+                .iter()
+                .filter(|t| session.is_empty() || t.session == session),
+        ) {
             // **`in-use`, not `pinned-mark`.** The first draft borrowed
             // the workspace table's 「(置顶)」 and a real `khor tabs ls`
             // read 「置顶 https://…」, which says a person put that tab
@@ -1235,25 +1275,39 @@ fn tabs(rest: &[String]) -> Result<(), String> {
             let mut i = 0;
             while i < args.len() {
                 match args[i].as_str() {
-                    "-m" | "--machine" if i + 1 < args.len() => { i += 1; machine = &args[i]; }
-                    "--view" if i + 1 < args.len() => { i += 1; view = Some(args[i].as_str()); }
+                    "-m" | "--machine" if i + 1 < args.len() => {
+                        i += 1;
+                        machine = &args[i];
+                    }
+                    "--view" if i + 1 < args.len() => {
+                        i += 1;
+                        view = Some(args[i].as_str());
+                    }
                     value if !value.starts_with('-') && address.is_none() => address = Some(value),
                     _ => return Err(usage_text().into()),
                 }
                 i += 1;
             }
             let url = address.ok_or_else(|| usage_text().to_string())?;
-            let view = if kind == "content" { view.or(Some("workspace")) } else { view };
-            let id = khor_node::tabs::open_with_view(&root, kind, &node()?.machine_id(machine)?, url, session, "", view)?;
+            let view = if kind == "content" {
+                view.or(Some("workspace"))
+            } else {
+                view
+            };
+            let id = khor_node::tabs::open_with_view(
+                &root,
+                kind,
+                &node()?.machine_id(machine)?,
+                url,
+                session,
+                "",
+                view,
+            )?;
             println!("{id}");
             Ok(())
         }
-        [word, which] if word == "close" => {
-            khor_node::tabs::close(&root, kind, &named(which)?)
-        }
-        [word, which] if word == "focus" => {
-            khor_node::tabs::focus(&root, kind, &named(which)?)
-        }
+        [word, which] if word == "close" => khor_node::tabs::close(&root, kind, &named(which)?),
+        [word, which] if word == "focus" => khor_node::tabs::focus(&root, kind, &named(which)?),
         // 置顶 / 取消置顶, the window's row menu said in the terminal
         // (CLI 与 GUI 等价). A pinned tab refuses `close` until it is
         // unpinned — the node says so, for both callers.
@@ -1377,14 +1431,24 @@ fn avatar_verb(rest: &[String]) -> Result<(), String> {
     let who = machine.as_deref();
     let style = match (&colors, &variant, &shape) {
         (None, None, None) => match who {
-            None => n.checked_avatar_style_of(n.device_str())?.unwrap_or_default(),
+            None => n
+                .checked_avatar_style_of(n.device_str())?
+                .unwrap_or_default(),
             // Refused by name for a machine khor does not have, rather
             // than falling through to this one — a face printed for the
             // wrong machine reads exactly like a face printed for the
             // right one.
-            Some(name) => n.checked_avatar_style_of(&n.device_by_name(name)?)?.unwrap_or_default(),
+            Some(name) => n
+                .checked_avatar_style_of(&n.device_by_name(name)?)?
+                .unwrap_or_default(),
         },
-        _ => n.restyle_machine_from(who, colors.as_deref(), variant.as_deref(), shape.as_deref(), khor_node::AvatarChangeOrigin::Cli)?,
+        _ => n.restyle_machine_from(
+            who,
+            colors.as_deref(),
+            variant.as_deref(),
+            shape.as_deref(),
+            khor_node::AvatarChangeOrigin::Cli,
+        )?,
     };
     print_face(&style);
     Ok(())
@@ -1433,7 +1497,9 @@ fn ls(rest: &[String]) -> Result<(), String> {
         _ => return Err(usage_text().into()),
     };
     let (directory, entries, truncated) = rt()?.block_on(node()?.ls_of(machine, path))?;
-    record_data(serde_json::json!({"directory": directory, "entries": entries.iter().map(|e| serde_json::json!({"name": e.name, "dir": e.dir, "size": e.size})).collect::<Vec<_>>(), "truncated": truncated}));
+    record_data(
+        serde_json::json!({"directory": directory, "entries": entries.iter().map(|e| serde_json::json!({"name": e.name, "dir": e.dir, "size": e.size})).collect::<Vec<_>>(), "truncated": truncated}),
+    );
     for e in &entries {
         if e.dir {
             println!("{}/", e.name);
@@ -2158,7 +2224,11 @@ fn reach(rest: &[String]) -> Result<(), String> {
     };
     println!("{}", cli::reach_head(&view.host, view.port));
     for (id, s) in &view.rows {
-        let here = if id == n.device_str() { cli::this_machine() } else { "" };
+        let here = if id == n.device_str() {
+            cli::this_machine()
+        } else {
+            ""
+        };
         let word = match s.outcome {
             khor_node::ReachOutcome::Reached => cli::reach_reached(),
             khor_node::ReachOutcome::Silent => cli::reach_silent_word(),
@@ -2169,7 +2239,11 @@ fn reach(rest: &[String]) -> Result<(), String> {
             khor_node::ReachOutcome::Predates => cli::reach_predates_word(),
         };
         let ms = s.ms.map(|ms| cli::roads_ms(ms)).unwrap_or_default();
-        let key = s.host_key.as_deref().map(khor_node::reach::shown_key).unwrap_or_default();
+        let key = s
+            .host_key
+            .as_deref()
+            .map(khor_node::reach::shown_key)
+            .unwrap_or_default();
         let tail = match s.outcome {
             khor_node::ReachOutcome::Reached => s.banner.clone().unwrap_or_default(),
             _ => s.why.clone().unwrap_or_default(),
@@ -2182,7 +2256,12 @@ fn reach(rest: &[String]) -> Result<(), String> {
     }
     match view.entrance.as_deref() {
         Some(id) => {
-            let ms = view.rows.iter().find(|(r, _)| r == id).and_then(|(_, s)| s.ms).unwrap_or(0);
+            let ms = view
+                .rows
+                .iter()
+                .find(|(r, _)| r == id)
+                .and_then(|(_, s)| s.ms)
+                .unwrap_or(0);
             println!("{}", cli::reach_entrance(name(id), ms));
         }
         // Disagreeing keys and none here: which machine is meant is the
@@ -2195,8 +2274,11 @@ fn reach(rest: &[String]) -> Result<(), String> {
     }
     // A key that is a satellite's id names that satellite: the name
     // answered with a machine this network already holds.
-    let keys: std::collections::BTreeSet<&str> =
-        view.rows.iter().filter_map(|(_, s)| s.host_key.as_deref()).collect();
+    let keys: std::collections::BTreeSet<&str> = view
+        .rows
+        .iter()
+        .filter_map(|(_, s)| s.host_key.as_deref())
+        .collect();
     for k in keys {
         if let Some(d) = all.iter().find(|d| d.id == k) {
             println!("{}", cli::reach_known_as(d.shown()));
@@ -2240,11 +2322,18 @@ fn carry(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         [machine, host, flags @ ..] => {
-            let (mut port, mut jump, mut password, mut key, mut passphrase) = (None, None, false, None, false);
+            let (mut port, mut jump, mut password, mut key, mut passphrase) =
+                (None, None, false, None, false);
             let mut it = flags.iter();
             while let Some(f) = it.next() {
                 match f.as_str() {
-                    "--port" => port = Some(it.next().and_then(|p| p.parse().ok()).ok_or_else(usage_text)?),
+                    "--port" => {
+                        port = Some(
+                            it.next()
+                                .and_then(|p| p.parse().ok())
+                                .ok_or_else(usage_text)?,
+                        )
+                    }
                     "--via" => jump = Some(it.next().ok_or_else(usage_text)?.clone()),
                     "--password" => password = true,
                     "--key" => key = Some(it.next().ok_or_else(usage_text)?.clone()),
@@ -2269,7 +2358,10 @@ fn carry(rest: &[String]) -> Result<(), String> {
                 .with_password(password)
                 .with_identity(key.as_deref())
                 .with_passphrase(passphrase);
-            println!("{}", node()?.set_carried(machine, Some(&road), secret.as_deref())?);
+            println!(
+                "{}",
+                node()?.set_carried(machine, Some(&road), secret.as_deref())?
+            );
             Ok(())
         }
         _ => Err(usage_text().into()),
@@ -2298,8 +2390,15 @@ fn relay_check(rest: &[String]) -> Result<(), String> {
         return Err(usage_text().into());
     }
     let mut text = String::new();
-    std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
-    let urls: Vec<String> = text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect();
+    std::io::stdin()
+        .read_to_string(&mut text)
+        .map_err(|e| e.to_string())?;
+    let urls: Vec<String> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect();
     if urls.is_empty() {
         return Err(usage_text().into());
     }
@@ -2427,7 +2526,11 @@ fn devices(rest: &[String]) -> Result<(), String> {
     // (`Node::links`); with none at all the road column stays empty.
     let links = rt()?.block_on(n.links()).unwrap_or_default();
     let all = n.devices()?;
-    record_data(serde_json::json!(all.iter().map(|d| serde_json::json!({"id": d.id, "name": d.name, "shown": d.shown()})).collect::<Vec<_>>()));
+    record_data(serde_json::json!(
+        all.iter()
+            .map(|d| serde_json::json!({"id": d.id, "name": d.name, "shown": d.shown()}))
+            .collect::<Vec<_>>()
+    ));
     // id → name, for the satellite lines: their road column names the
     // sponsor they speak through, and a person reads names.
     let names: std::collections::HashMap<&str, &str> =
@@ -2452,7 +2555,10 @@ fn devices(rest: &[String]) -> Result<(), String> {
             ""
         };
         let pin = if d.pinned { cli::pinned_mark() } else { "" };
-        let link = links.iter().find(|(id, _)| *id == d.id).map(|(_, l)| l.clone());
+        let link = links
+            .iter()
+            .find(|(id, _)| *id == d.id)
+            .map(|(_, l)| l.clone());
         // A satellite has no road of its own — its sponsor speaks for
         // it (附属机器批), so the road column says who through instead
         // of a reading nothing could take: 「通过 hinton」, the word a
@@ -2504,9 +2610,17 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
     // alone** — 「通过 hinton 28 ms」, never 「直连 通过 hinton」: its own
     // road word is only the first leg's (WORDS-1008, the owner 10-09).
     let legs = |r: &khor_node::Road| {
-        let via = r.via.as_deref().map(|v| khor_catalog::gui::add_step_via(name(v))).unwrap_or_default();
+        let via = r
+            .via
+            .as_deref()
+            .map(|v| khor_catalog::gui::add_step_via(name(v)))
+            .unwrap_or_default();
         // A jump host is no device: its end is said as the jump.
-        let end = |e: &Option<String>| e.as_deref().map(name).unwrap_or_else(|| cli::roads_jump().to_owned());
+        let end = |e: &Option<String>| {
+            e.as_deref()
+                .map(name)
+                .unwrap_or_else(|| cli::roads_jump().to_owned())
+        };
         let broke = r
             .broken
             .as_ref()
@@ -2522,12 +2636,19 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
     // the second (only the first leg is known otherwise).
     let said = |r: &khor_node::Road| -> (String, Option<u16>) {
         let Some(via) = r.via.as_deref() else {
-            return (format!("{}{}", way(r.road, r.relay.as_deref()), legs(r)), r.ms);
+            return (
+                format!("{}{}", way(r.road, r.relay.as_deref()), legs(r)),
+                r.ms,
+            );
         };
         let onward = all
             .iter()
             .find(|m| m.id == via)
-            .and_then(|m| n.roads_of(m).into_iter().find(|o| o.to == r.to && o.via.is_none()))
+            .and_then(|m| {
+                n.roads_of(m)
+                    .into_iter()
+                    .find(|o| o.to == r.to && o.via.is_none())
+            })
             .and_then(|o| o.ms);
         let ms = match (r.ms, onward) {
             (Some(a), Some(b)) => Some(a.saturating_add(b)),
@@ -2559,21 +2680,24 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
                 .filter(|(to, _)| !composed.iter().any(|r| &r.to == to))
                 .map(|(to, l)| {
                     let (word, at) = match (l.hop, l.down_ms) {
-                        (khor_node::Hop::Direct, _) => (way(khor_node::RoadKind::Direct, None), l.rtt_ms),
-                        (khor_node::Hop::Relay, _) => (way(khor_node::RoadKind::Relay, l.relay.as_deref()), l.rtt_ms),
-                        (khor_node::Hop::Idle, Some(_)) => (way(khor_node::RoadKind::None, None), None),
+                        (khor_node::Hop::Direct, _) => {
+                            (way(khor_node::RoadKind::Direct, None), l.rtt_ms)
+                        }
+                        (khor_node::Hop::Relay, _) => (
+                            way(khor_node::RoadKind::Relay, l.relay.as_deref()),
+                            l.rtt_ms,
+                        ),
+                        (khor_node::Hop::Idle, Some(_)) => {
+                            (way(khor_node::RoadKind::None, None), None)
+                        }
                         (hop, _) => (khor_catalog::hop::word(hop.key()).to_owned(), None),
                     };
                     (to.clone(), word, at.map(ms))
                 })
-                .chain(
-                    composed
-                        .iter()
-                        .map(|r| {
-                            let (word, ms) = said(r);
-                            (r.to.clone(), word, ms)
-                        }),
-                )
+                .chain(composed.iter().map(|r| {
+                    let (word, ms) = said(r);
+                    (r.to.clone(), word, ms)
+                }))
                 .collect()
         } else {
             n.with_satellite_roads(&d.id, n.roads_of(d))
@@ -2598,7 +2722,10 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
 
 /// This machine's roads off its live wires (`none` only for a wire that
 /// failed; an idle one is no road), with its ssh roads to its satellites.
-fn own_roads(links: &[(String, khor_node::Link)], sats: Vec<khor_node::Road>) -> Vec<khor_node::Road> {
+fn own_roads(
+    links: &[(String, khor_node::Link)],
+    sats: Vec<khor_node::Road>,
+) -> Vec<khor_node::Road> {
     let mut out = khor_node::roadbook::own_roads(links);
     out.extend(sats);
     out
@@ -3045,7 +3172,9 @@ fn top(rest: &[String]) -> Result<(), String> {
     };
     let load =
         rt()?.block_on(node()?.load_on(machine, TOP_ROWS, khor_node::TopBy::Busiest, true))?;
-    if in_request() { record_data(serde_json::to_value(&load).map_err(|e| e.to_string())?); }
+    if in_request() {
+        record_data(serde_json::to_value(&load).map_err(|e| e.to_string())?);
+    }
     // **Measured, not guessed** (2026-09-08): down a pipe the ioctl
     // fails with `ENOTTY`; on a pty `script(1)` just made it succeeds
     // and answers 0×0, which `tty_size` already refuses; on a real
@@ -3492,10 +3621,22 @@ mod top_table {
             last_hop: None,
             via: None,
         };
-        let down = khor_node::Link { down_ms: Some(4_000), ..idle.clone() };
-        assert_eq!(super::link_words(idle, false), khor_catalog::hop::word("quiet"));
-        assert_eq!(super::link_words(down, false), khor_catalog::hop::word("down"));
-        assert_ne!(khor_catalog::hop::word("quiet"), khor_catalog::hop::word("down"));
+        let down = khor_node::Link {
+            down_ms: Some(4_000),
+            ..idle.clone()
+        };
+        assert_eq!(
+            super::link_words(idle, false),
+            khor_catalog::hop::word("quiet")
+        );
+        assert_eq!(
+            super::link_words(down, false),
+            khor_catalog::hop::word("down")
+        );
+        assert_ne!(
+            khor_catalog::hop::word("quiet"),
+            khor_catalog::hop::word("down")
+        );
     }
 }
 
@@ -3725,7 +3866,9 @@ fn usage(rest: &[String]) -> Result<(), String> {
     };
     let n = node()?;
     let devices = n.devices()?;
-    record_data(serde_json::json!({"days": days, "machines": devices.iter().map(|d| serde_json::json!({"id": d.id, "name": d.shown(), "usage": n.usage_of(&d.id)})).collect::<Vec<_>>() }));
+    record_data(
+        serde_json::json!({"days": days, "machines": devices.iter().map(|d| serde_json::json!({"id": d.id, "name": d.shown(), "usage": n.usage_of(&d.id)})).collect::<Vec<_>>() }),
+    );
     for d in devices {
         let here = if d.id == n.device_str() {
             cli::this_machine()
@@ -3981,7 +4124,11 @@ fn sessions(rest: &[String]) -> Result<(), String> {
         println!(
             "{}\t{}\t{}\t{}{pin}{quiet}{}",
             s.id.0,
-            if s.state_known() { state::word(s.state.state.key()) } else { khor_catalog::gui::thread_unbound() },
+            if s.state_known() {
+                state::word(s.state.state.key())
+            } else {
+                khor_catalog::gui::thread_unbound()
+            },
             cli::unread(s.unread),
             s.title,
             src
@@ -4067,10 +4214,13 @@ fn send(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     let machines = n.devices()?;
     let far = |t: &str| {
-        t.split_once(':')
-            .is_some_and(|(m, p)| !p.is_empty() && khor_node::post::machine_named(&machines, m).is_some())
+        t.split_once(':').is_some_and(|(m, p)| {
+            !p.is_empty() && khor_node::post::machine_named(&machines, m).is_some()
+        })
     };
-    let files = tail.iter().all(|t| std::path::Path::new(t).is_file() || far(t));
+    let files = tail
+        .iter()
+        .all(|t| std::path::Path::new(t).is_file() || far(t));
     if !files {
         let typed = format!("{} {}", to.join(" "), tail.join(" "));
         let id = rt()?.block_on(n.post(typed.trim(), &[]))?;
@@ -4081,19 +4231,30 @@ fn send(rest: &[String]) -> Result<(), String> {
     // sponsor's own scp, whole, and the verb says what moved (附属机器批;
     // from any other machine this refuses and names the sponsor to run
     // it on).
-    if let ([one], [file]) = (rest.first().filter(|m| !m.starts_with('@')).map(std::slice::from_ref).unwrap_or(&[]), tail)
-        && std::path::Path::new(file).is_file()
+    if let ([one], [file]) = (
+        rest.first()
+            .filter(|m| !m.starts_with('@'))
+            .map(std::slice::from_ref)
+            .unwrap_or(&[]),
+        tail,
+    ) && std::path::Path::new(file).is_file()
         && let Some(host) = n.satellite_host_here(one)?
     {
         let moved = n.send_to_satellite(&host, std::path::Path::new(file))?;
         println!("{}", msg::sat_sent(one, moved));
         return Ok(());
     }
-    let (far_files, here): (Vec<&String>, Vec<&String>) = tail.iter().partition(|t| !std::path::Path::new(t).is_file());
+    let (far_files, here): (Vec<&String>, Vec<&String>) = tail
+        .iter()
+        .partition(|t| !std::path::Path::new(t).is_file());
     let typed = format!(
         "{} {}",
         to.join(" "),
-        far_files.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ")
+        far_files
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
     );
     let here: Vec<std::path::PathBuf> = here.iter().map(std::path::PathBuf::from).collect();
     let id = rt()?.block_on(n.post(typed.trim(), &here))?;
@@ -4170,10 +4331,11 @@ fn log(rest: &[String]) -> Result<(), String> {
         [] => None,
         [machine] => {
             let all = n.devices()?;
-            let m = khor_node::post::machine_named(&all, machine.trim_start_matches('@')).ok_or_else(|| {
-                let names: Vec<&str> = all.iter().map(|d| d.shown()).collect();
-                msg::no_such_machine(machine, names.join(cli::name_separator()))
-            })?;
+            let m = khor_node::post::machine_named(&all, machine.trim_start_matches('@'))
+                .ok_or_else(|| {
+                    let names: Vec<&str> = all.iter().map(|d| d.shown()).collect();
+                    msg::no_such_machine(machine, names.join(cli::name_separator()))
+                })?;
             Some(m.id.clone())
         }
         _ => return Err(usage_text().into()),
@@ -4189,7 +4351,10 @@ fn log(rest: &[String]) -> Result<(), String> {
         .map(|d| (d.id.clone(), d.shown().to_owned()))
         .collect();
     for m in log.messages {
-        if only.as_ref().is_some_and(|id| !m.to.iter().any(|t| &t.device == id)) {
+        if only
+            .as_ref()
+            .is_some_and(|id| !m.to.iter().any(|t| &t.device == id))
+        {
             continue;
         }
         println!("{}: {}", m.from.name, render(&m, &names));
@@ -4203,7 +4368,10 @@ fn log(rest: &[String]) -> Result<(), String> {
 /// A file message's per-machine fates, one indented line each, in the
 /// machines' name order: where it landed, why it failed, how far it is.
 /// Nothing for a message that is not a file or has no answer yet.
-fn fate_lines(m: &khor_node::Message, names: &std::collections::HashMap<String, String>) -> Vec<String> {
+fn fate_lines(
+    m: &khor_node::Message,
+    names: &std::collections::HashMap<String, String>,
+) -> Vec<String> {
     use khor_node::FateStep as Step;
     if m.retracted || !matches!(m.body, MsgBody::Files(_)) {
         return Vec::new();
@@ -4216,11 +4384,17 @@ fn fate_lines(m: &khor_node::Message, names: &std::collections::HashMap<String, 
         .fates
         .iter()
         .map(|(id, f)| {
-            let who = names.get(id).cloned().unwrap_or_else(|| id.chars().take(8).collect());
+            let who = names
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| id.chars().take(8).collect());
             let line = match f.step {
                 // Pulled from a machine that had it, not the sender.
                 Step::Landed if !f.via.is_empty() && f.via != m.from.id => {
-                    let via = names.get(&f.via).cloned().unwrap_or_else(|| f.via.chars().take(8).collect());
+                    let via = names
+                        .get(&f.via)
+                        .cloned()
+                        .unwrap_or_else(|| f.via.chars().take(8).collect());
                     cli::fate_landed_via(&who, f.landed.join(", "), via)
                 }
                 Step::Landed => cli::fate_landed(&who, f.landed.join(", ")),
@@ -4525,12 +4699,7 @@ fn host(rest: &[String]) -> Result<(), String> {
         cols.parse::<u16>().map_err(|_| usage_text().to_string())?,
         rows.parse::<u16>().map_err(|_| usage_text().to_string())?,
     );
-    khor_node::host::host_main(
-        command_root(),
-        SessionId(sid.clone()),
-        size,
-        cmd.to_vec(),
-    )
+    khor_node::host::host_main(command_root(), SessionId(sid.clone()), size, cmd.to_vec())
 }
 
 /// 接管 (批C): typing the verb is the confirmation — the CLI's precedent
@@ -4561,8 +4730,7 @@ fn state(rest: &[String]) -> Result<(), String> {
     match rest {
         [flag] if flag == "--hook" => {
             let mut payload = String::new();
-            input_all(&mut payload)
-                .map_err(msg::hook_payload_unreadable)?;
+            input_all(&mut payload).map_err(msg::hook_payload_unreadable)?;
             n.claude_hook(&payload)?;
             Ok(())
         }
@@ -4729,7 +4897,11 @@ fn serve(_rest: &[String]) -> Result<(), String> {
 /// is why `khor web` asks the address a real question before printing
 /// it rather than assuming this succeeded (`khor_node::face::answers_at`).
 fn start_web_face(root: &std::path::Path) {
-    START_WEB.with(|slot| { if let Some(start) = slot.get() { start(root); } });
+    START_WEB.with(|slot| {
+        if let Some(start) = slot.get() {
+            start(root);
+        }
+    });
 }
 
 /// The browser face's link — the same GUI the app shows, opened from a
@@ -5068,8 +5240,7 @@ fn accounts(rest: &[String]) -> Result<(), String> {
                     "--key" => key = Some(value()?),
                     "--key-stdin" => {
                         let mut text = String::new();
-                        input_line(&mut text)
-                            .map_err(|e| e.to_string())?;
+                        input_line(&mut text).map_err(|e| e.to_string())?;
                         key = Some(text.trim().to_owned());
                     }
                     "--budget" => {
@@ -5149,7 +5320,9 @@ fn quota(rest: &[String]) -> Result<(), String> {
     let names: std::collections::HashMap<String, String> =
         n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
     let board = rt()?.block_on(n.quota_board())?;
-    if in_request() { record_data(serde_json::to_value(&board).map_err(|e| e.to_string())?); }
+    if in_request() {
+        record_data(serde_json::to_value(&board).map_err(|e| e.to_string())?);
+    }
     if board.is_empty() {
         println!("{}", cli::accounts_none());
     }
@@ -5237,7 +5410,10 @@ fn agents(rest: &[String]) -> Result<(), String> {
                 println!("{name}\t{}", spec.typed());
             }
             for endpoint in native {
-                println!("{}\t{}\t{}", endpoint.name, endpoint.interface.protocol_binding, endpoint.card_url);
+                println!(
+                    "{}\t{}\t{}",
+                    endpoint.name, endpoint.interface.protocol_binding, endpoint.card_url
+                );
             }
             Ok(())
         }
@@ -5250,15 +5426,22 @@ fn agents(rest: &[String]) -> Result<(), String> {
             let token = if token_stdin {
                 use std::io::Read;
                 let mut token = String::new();
-                std::io::stdin().take(8194).read_to_string(&mut token).map_err(|e| e.to_string())?;
+                std::io::stdin()
+                    .take(8194)
+                    .read_to_string(&mut token)
+                    .map_err(|e| e.to_string())?;
                 Some(token.trim_end_matches(['\r', '\n']).to_owned())
-            } else { None };
+            } else {
+                None
+            };
             let endpoint = n.connect_a2a(name, address, token.as_deref())?;
             println!("{}", cli::agents_added(&endpoint.name));
             Ok(())
         }
         Some((word, tail)) if word == "disconnect" => {
-            let [name] = tail else { return Err(usage_text().into()); };
+            let [name] = tail else {
+                return Err(usage_text().into());
+            };
             n.disconnect_a2a(name)?;
             println!("{}", cli::agents_forgotten(name));
             Ok(())
@@ -5449,12 +5632,11 @@ fn doctor(rest: &[String]) -> Result<(), String> {
         return Ok(());
     }
     let rows = rt()?.block_on(khor_node::doctor::doctor(&n));
-    if in_request() { record_data(serde_json::to_value(&rows).map_err(|e| e.to_string())?); }
+    if in_request() {
+        record_data(serde_json::to_value(&rows).map_err(|e| e.to_string())?);
+    }
     if json {
-        println!(
-            "{}",
-            json_output(&rows)?
-        );
+        println!("{}", json_output(&rows)?);
         return Ok(());
     }
     for c in &rows {
@@ -5512,7 +5694,9 @@ fn journal(rest: &[String]) -> Result<(), String> {
         Some(there) => rt()?.block_on(n.journal_on(there, peer.as_deref(), minutes))?,
         None => n.journal(peer.as_deref(), minutes),
     };
-    if in_request() { record_data(serde_json::to_value(&lines).map_err(|e| e.to_string())?); }
+    if in_request() {
+        record_data(serde_json::to_value(&lines).map_err(|e| e.to_string())?);
+    }
     if json {
         println!("{}", json_output(&lines)?);
         return Ok(());
@@ -5613,8 +5797,7 @@ fn pair(rest: &[String]) -> Result<(), String> {
     // pairs a machine this way over ssh, and a command line is in `ps`.
     let mut read = String::new();
     let ticket = if ticket == "-" {
-        input_line(&mut read)
-            .map_err(|e| e.to_string())?;
+        input_line(&mut read).map_err(|e| e.to_string())?;
         read.trim()
     } else {
         ticket.as_str()
@@ -6041,7 +6224,11 @@ fn group_word(group: &str) -> String {
         return cli::group_pinned().to_owned();
     }
     if let Some(key) = group.strip_prefix(list::GROUP_STATE) {
-        return if key.is_empty() { khor_catalog::gui::thread_unbound().to_owned() } else { state::word(key).to_owned() };
+        return if key.is_empty() {
+            khor_catalog::gui::thread_unbound().to_owned()
+        } else {
+            state::word(key).to_owned()
+        };
     }
     if let Some(name) = group.strip_prefix(list::GROUP_CATEGORY) {
         // The empty category is the row nobody could place; every other
@@ -6075,30 +6262,41 @@ fn render(m: &khor_node::Message, names: &std::collections::HashMap<String, Stri
         return cli::retracted().into();
     }
     // Its targets as they are called today, each with its directory.
-    let to: String = m
-        .to
-        .iter()
-        .map(|t| {
-            let who = names.get(&t.device).cloned().unwrap_or_else(|| t.device.chars().take(8).collect());
-            if t.path.is_empty() { format!("@{who} ") } else { format!("@{who}:{} ", t.path) }
-        })
-        .collect();
-    let note = if m.note.is_empty() { String::new() } else { format!("{}\t", m.note) };
-    to + &note + &match &m.body {
-        MsgBody::Text(t) => t.clone(),
-        // The transfer id rides the line: with no transfer row on the
-        // list any more (传输并入对话批), this is where the handle
-        // `khor accept` wants is read from.
-        MsgBody::Files(fs) => format!(
-            "{}\ttransfer/{}",
-            fs.iter()
-                .map(|f| cli::file_chip(&f.name, f.size))
-                .collect::<Vec<_>>()
-                .join(" "),
-            m.id
-        ),
-        MsgBody::Unknown(k) => cli::unknown_body(k),
-    }
+    let to: String =
+        m.to.iter()
+            .map(|t| {
+                let who = names
+                    .get(&t.device)
+                    .cloned()
+                    .unwrap_or_else(|| t.device.chars().take(8).collect());
+                if t.path.is_empty() {
+                    format!("@{who} ")
+                } else {
+                    format!("@{who}:{} ", t.path)
+                }
+            })
+            .collect();
+    let note = if m.note.is_empty() {
+        String::new()
+    } else {
+        format!("{}\t", m.note)
+    };
+    to + &note
+        + &match &m.body {
+            MsgBody::Text(t) => t.clone(),
+            // The transfer id rides the line: with no transfer row on the
+            // list any more (传输并入对话批), this is where the handle
+            // `khor accept` wants is read from.
+            MsgBody::Files(fs) => format!(
+                "{}\ttransfer/{}",
+                fs.iter()
+                    .map(|f| cli::file_chip(&f.name, f.size))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                m.id
+            ),
+            MsgBody::Unknown(k) => cli::unknown_body(k),
+        }
 }
 
 /// **The usage text and the dispatch table say the same words.**
@@ -6272,11 +6470,23 @@ mod fate_lines_tests {
 
     #[test]
     fn a_landing_from_a_holder_names_it_and_one_from_the_sender_does_not() {
-        let names: HashMap<String, String> = [("aa", "alpha"), ("bb", "beta"), ("cc", "gamma")].map(|(i, n)| (i.to_owned(), n.to_owned())).into();
-        let from = |via: &str| Fate { via: via.to_owned(), ..fate(Step::Landed, 300, &["/x.bin"], "") };
-        let m = files(BTreeMap::from([("bb".to_owned(), from("aa")), ("cc".to_owned(), from("bb"))]));
+        let names: HashMap<String, String> = [("aa", "alpha"), ("bb", "beta"), ("cc", "gamma")]
+            .map(|(i, n)| (i.to_owned(), n.to_owned()))
+            .into();
+        let from = |via: &str| Fate {
+            via: via.to_owned(),
+            ..fate(Step::Landed, 300, &["/x.bin"], "")
+        };
+        let m = files(BTreeMap::from([
+            ("bb".to_owned(), from("aa")),
+            ("cc".to_owned(), from("bb")),
+        ]));
         let lines = fate_lines(&m, &names);
-        assert_eq!(lines[0], cli::fate_landed("beta", "/x.bin"), "from the sender: as before");
+        assert_eq!(
+            lines[0],
+            cli::fate_landed("beta", "/x.bin"),
+            "from the sender: as before"
+        );
         assert_eq!(lines[1], cli::fate_landed_via("gamma", "/x.bin", "beta"));
     }
 
@@ -6285,8 +6495,16 @@ mod fate_lines_tests {
             command: None,
             id: "m1".into(),
             at: 0,
-            from: khor_sync::chat::Sender { id: "aa".into(), name: "alpha".into() },
-            body: MsgBody::Files(vec![FileRef { name: "x.bin".into(), size: 300, digest: String::new(), holder: String::new() }]),
+            from: khor_sync::chat::Sender {
+                id: "aa".into(),
+                name: "alpha".into(),
+            },
+            body: MsgBody::Files(vec![FileRef {
+                name: "x.bin".into(),
+                size: 300,
+                digest: String::new(),
+                holder: String::new(),
+            }]),
             retracted: false,
             edited: false,
             fates,
@@ -6297,19 +6515,38 @@ mod fate_lines_tests {
 
     #[test]
     fn each_machine_that_answered_gets_one_line_by_name() {
-        let names: HashMap<String, String> =
-            [("bb", "beta"), ("cc", "gamma"), ("dd", "delta")].map(|(i, n)| (i.to_owned(), n.to_owned())).into();
+        let names: HashMap<String, String> = [("bb", "beta"), ("cc", "gamma"), ("dd", "delta")]
+            .map(|(i, n)| (i.to_owned(), n.to_owned()))
+            .into();
         let m = files(BTreeMap::from([
-            ("bb".to_owned(), fate(Step::Landed, 300, &["/home/b/x.bin"], "")),
-            ("cc".to_owned(), fate(Step::Failed, 100, &[], "sender unreachable")),
+            (
+                "bb".to_owned(),
+                fate(Step::Landed, 300, &["/home/b/x.bin"], ""),
+            ),
+            (
+                "cc".to_owned(),
+                fate(Step::Failed, 100, &[], "sender unreachable"),
+            ),
             ("dd".to_owned(), fate(Step::Moving, 120, &[], "")),
         ]));
         let lines = fate_lines(&m, &names);
         assert_eq!(lines.len(), 3, "{lines:?}");
-        assert!(lines[0].contains("beta") && lines[0].contains("/home/b/x.bin"), "{lines:?}");
-        assert!(lines[1].contains("delta") && lines[1].contains("120/300"), "{lines:?}");
-        assert!(lines[2].contains("gamma") && lines[2].contains("sender unreachable"), "{lines:?}");
-        assert!(lines.iter().all(|l| l.starts_with("  ")), "indented: {lines:?}");
+        assert!(
+            lines[0].contains("beta") && lines[0].contains("/home/b/x.bin"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[1].contains("delta") && lines[1].contains("120/300"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[2].contains("gamma") && lines[2].contains("sender unreachable"),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().all(|l| l.starts_with("  ")),
+            "indented: {lines:?}"
+        );
     }
 
     #[test]

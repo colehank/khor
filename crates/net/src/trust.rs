@@ -313,9 +313,7 @@ pub fn newest<'a>(
     candidates
         .into_iter()
         .filter_map(|b| verify_roster(b, root).ok())
-        .max_by(|a, b| {
-            (a.seq, a.issued_ms, &a.bytes).cmp(&(b.seq, b.issued_ms, &b.bytes))
-        })
+        .max_by(|a, b| (a.seq, a.issued_ms, &a.bytes).cmp(&(b.seq, b.issued_ms, &b.bytes)))
 }
 
 fn sign_roster(
@@ -374,7 +372,10 @@ fn cert_for(key: &iroh::SecretKey, m: &Member, seq: u64, now_ms: u64) -> Vec<u8>
 
 /// The first roster of a root: `seq` 1, certifying `members`.
 pub fn genesis(key: &iroh::SecretKey, now_ms: u64, members: &[Member]) -> Vec<u8> {
-    let certs = members.iter().map(|m| cert_for(key, m, 1, now_ms)).collect();
+    let certs = members
+        .iter()
+        .map(|m| cert_for(key, m, 1, now_ms))
+        .collect();
     sign_roster(key, 1, now_ms, certs, Vec::new())
 }
 
@@ -445,7 +446,13 @@ impl Roster {
         self.age_ms(now_ms) > REFRESH_DAYS * DAY_MS
     }
 
-    fn next(&self, key: &iroh::SecretKey, now_ms: u64, certs: Vec<Vec<u8>>, revoked: Vec<Id>) -> Vec<u8> {
+    fn next(
+        &self,
+        key: &iroh::SecretKey,
+        now_ms: u64,
+        certs: Vec<Vec<u8>>,
+        revoked: Vec<Id>,
+    ) -> Vec<u8> {
         sign_roster(key, self.seq + 1, now_ms, certs, revoked)
     }
 
@@ -462,7 +469,12 @@ impl Roster {
             .map(|(_, s)| s.clone())
             .collect();
         certs.push(cert_for(key, m, seq, now_ms));
-        let revoked = self.revoked.iter().copied().filter(|r| r != &m.subject).collect();
+        let revoked = self
+            .revoked
+            .iter()
+            .copied()
+            .filter(|r| r != &m.subject)
+            .collect();
         self.next(key, now_ms, certs, revoked)
     }
 
@@ -810,17 +822,44 @@ mod tests {
         assert_eq!(settle(None, &a, Some(&lone_b), &b, true), Settle::Adopt);
         assert_eq!(settle(Some(&lone_b), &b, None, &a, false), Settle::Keep);
         // Same root.
-        assert_eq!(settle(Some(&big_a), &a, Some(&big_a), &a, true), Settle::Keep);
+        assert_eq!(
+            settle(Some(&big_a), &a, Some(&big_a), &a, true),
+            Settle::Keep
+        );
         // A network of one gives way to a network of more, either way round.
-        assert_eq!(settle(Some(&lone_a), &a, Some(&big_b), &b, true), Settle::Adopt);
-        assert_eq!(settle(Some(&big_b), &b, Some(&lone_a), &a, false), Settle::Keep);
-        assert_eq!(settle(Some(&lone_a), &a, Some(&big_b), &b, false), Settle::Adopt);
-        assert_eq!(settle(Some(&big_b), &b, Some(&lone_a), &a, true), Settle::Keep);
+        assert_eq!(
+            settle(Some(&lone_a), &a, Some(&big_b), &b, true),
+            Settle::Adopt
+        );
+        assert_eq!(
+            settle(Some(&big_b), &b, Some(&lone_a), &a, false),
+            Settle::Keep
+        );
+        assert_eq!(
+            settle(Some(&lone_a), &a, Some(&big_b), &b, false),
+            Settle::Adopt
+        );
+        assert_eq!(
+            settle(Some(&big_b), &b, Some(&lone_a), &a, true),
+            Settle::Keep
+        );
         // Two fresh machines: the one that dialed gives way.
-        assert_eq!(settle(Some(&lone_a), &a, Some(&lone_b), &b, true), Settle::Adopt);
-        assert_eq!(settle(Some(&lone_b), &b, Some(&lone_a), &a, false), Settle::Keep);
+        assert_eq!(
+            settle(Some(&lone_a), &a, Some(&lone_b), &b, true),
+            Settle::Adopt
+        );
+        assert_eq!(
+            settle(Some(&lone_b), &b, Some(&lone_a), &a, false),
+            Settle::Keep
+        );
         // Two real networks: nobody decides that by pairing.
-        assert_eq!(settle(Some(&big_a), &a, Some(&big_b), &b, true), Settle::Clash);
-        assert_eq!(settle(Some(&big_b), &b, Some(&big_a), &a, false), Settle::Clash);
+        assert_eq!(
+            settle(Some(&big_a), &a, Some(&big_b), &b, true),
+            Settle::Clash
+        );
+        assert_eq!(
+            settle(Some(&big_b), &b, Some(&big_a), &a, false),
+            Settle::Clash
+        );
     }
 }

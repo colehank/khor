@@ -421,7 +421,10 @@ fn minting_a_ticket_sweeps_the_ones_that_expired() {
     let mut hash = blake3::Hasher::new();
     hash.update(b"khor-pair-ticket-v1\0");
     hash.update(minted.as_bytes());
-    assert!(dir.join(hash.finalize().to_hex().as_str()).exists(), "while the new one stays");
+    assert!(
+        dir.join(hash.finalize().to_hex().as_str()).exists(),
+        "while the new one stays"
+    );
 }
 
 fn now_ms() -> i64 {
@@ -466,8 +469,17 @@ async fn rows_from_two_pairings_at_once_are_both_on_the_inviters_disk() {
     serve.abort();
     let _ = serve.await;
     let back = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
-    let names: Vec<String> = back.devices().unwrap().into_iter().map(|d| d.name).collect();
-    assert_eq!(names, vec!["alpha", "beta", "gamma"], "alpha's table on disk holds both joiners");
+    let names: Vec<String> = back
+        .devices()
+        .unwrap()
+        .into_iter()
+        .map(|d| d.name)
+        .collect();
+    assert_eq!(
+        names,
+        vec!["alpha", "beta", "gamma"],
+        "alpha's table on disk holds both joiners"
+    );
 }
 
 /// **A machine paired through another is answered by a third at once,
@@ -550,11 +562,18 @@ fn ghost_ticket(relays: Vec<String>) -> String {
 async fn a_pairing_dial_that_times_out_says_which_side_is_silent() {
     let rj = root("j");
     let j = Node::open_as(rj.to_path_buf(), "joiner").unwrap();
-    let err = timeout(Duration::from_secs(60), j.pair(&ghost_ticket(vec![util::loop_relay().to_owned()])))
-        .await
-        .expect("a silent issuer must not hang the join")
-        .unwrap_err();
-    assert_eq!(err, khor_catalog::msg::inviter_unreachable_timeout(), "relay up, issuer silent");
+    let err = timeout(
+        Duration::from_secs(60),
+        j.pair(&ghost_ticket(vec![util::loop_relay().to_owned()])),
+    )
+    .await
+    .expect("a silent issuer must not hang the join")
+    .unwrap_err();
+    assert_eq!(
+        err,
+        khor_catalog::msg::inviter_unreachable_timeout(),
+        "relay up, issuer silent"
+    );
 
     // A relay nobody listens on: this machine's own map and the ticket's
     // both name it, so no relay answers anywhere.
@@ -570,5 +589,9 @@ async fn a_pairing_dial_that_times_out_says_which_side_is_silent() {
         .await
         .expect("no road out must not hang the join")
         .unwrap_err();
-    assert_eq!(err, khor_catalog::msg::no_relay_reached(), "no relay answers here");
+    assert_eq!(
+        err,
+        khor_catalog::msg::no_relay_reached(),
+        "no relay answers here"
+    );
 }

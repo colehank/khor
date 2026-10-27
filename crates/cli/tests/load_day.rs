@@ -40,7 +40,10 @@ fn seed_day(home: &std::path::Path) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn a_card_on_a_far_machine_gets_the_day_once() {
-    let rtt: u64 = std::env::var("LOAD_RTT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(200);
+    let rtt: u64 = std::env::var("LOAD_RTT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
     let (p, _road) = pair_on(
         "loadday",
         Some(Impair {
@@ -51,7 +54,10 @@ async fn a_card_on_a_far_machine_gets_the_day_once() {
     )
     .await;
     seed_day(&p.ra.0);
-    let ask = || p.beta.load_on("alpha", 200, khor_core::TopBy::Busiest, true);
+    let ask = || {
+        p.beta
+            .load_on("alpha", 200, khor_core::TopBy::Busiest, true)
+    };
     let first = ask().await.expect("a first load");
     assert!(
         first.cpu_day.buckets.iter().filter(|b| b.is_some()).count() >= 280,

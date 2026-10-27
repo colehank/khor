@@ -216,7 +216,10 @@ impl Ledger {
             let got = fresh.entry(k.clone()).or_default();
             *got = larger(*got, *tokens);
         }
-        (fresh, due.and_then(|s| jiff::Timestamp::from_second(s).ok()))
+        (
+            fresh,
+            due.and_then(|s| jiff::Timestamp::from_second(s).ok()),
+        )
     }
 }
 
@@ -365,9 +368,8 @@ mod tests {
     #[test]
     fn a_bucket_never_straddles_a_midnight_anywhere() {
         for minutes in [0, 330, 345, 525, 765, -210, -570, 60, 480] {
-            let zone = jiff::tz::TimeZone::fixed(
-                jiff::tz::Offset::from_seconds(minutes * 60).unwrap(),
-            );
+            let zone =
+                jiff::tz::TimeZone::fixed(jiff::tz::Offset::from_seconds(minutes * 60).unwrap());
             let midnight = jiff::civil::date(2026, 8, 17)
                 .to_zoned(zone)
                 .unwrap()
@@ -392,7 +394,11 @@ mod tests {
         let mut left: Vec<i64> = book.keys().map(|(b, _)| *b).collect();
         left.sort_unstable();
         left.dedup();
-        assert_eq!(left, vec![7, 8, 9], "the three newest buckets, both rows each");
+        assert_eq!(
+            left,
+            vec![7, 8, 9],
+            "the three newest buckets, both rows each"
+        );
         assert_eq!(book.len(), 6);
     }
 

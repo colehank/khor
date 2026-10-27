@@ -564,7 +564,10 @@ fn two_loads_open_at_once_in_one_process_both_keep_their_writes() {
     let pairing = load::<DeviceDoc>(&dir, 0xB1).unwrap();
     let other = load::<DeviceDoc>(&dir, 0xB1).unwrap();
     pairing.doc.upsert("phone", "phone", &[]).unwrap();
-    other.doc.upsert("desk", "desk", &["10.0.0.1:1".to_owned()]).unwrap();
+    other
+        .doc
+        .upsert("desk", "desk", &["10.0.0.1:1".to_owned()])
+        .unwrap();
     let mut s = pairing.store;
     s.flush(&pairing.doc).unwrap();
     // What the joiner is handed.
@@ -576,11 +579,22 @@ fn two_loads_open_at_once_in_one_process_both_keep_their_writes() {
 
     let desk = load::<DeviceDoc>(&dir, 0xB2).unwrap();
     assert!(desk.doc.get("desk").is_some(), "the other write is on disk");
-    assert!(desk.doc.get("phone").is_some(), "the pairing's row is on disk");
+    assert!(
+        desk.doc.get("phone").is_some(),
+        "the pairing's row is on disk"
+    );
     // And a round with the joiner leaves the two copies alike.
-    desk.doc.merge(&joiner.changes_since(&desk.doc.version()).unwrap()).unwrap();
-    joiner.merge(&desk.doc.changes_since(&joiner.version()).unwrap()).unwrap();
-    assert_eq!(desk.doc.all().len(), joiner.all().len(), "the copies agree after a round");
+    desk.doc
+        .merge(&joiner.changes_since(&desk.doc.version()).unwrap())
+        .unwrap();
+    joiner
+        .merge(&desk.doc.changes_since(&joiner.version()).unwrap())
+        .unwrap();
+    assert_eq!(
+        desk.doc.all().len(),
+        joiner.all().len(),
+        "the copies agree after a round"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -609,7 +623,10 @@ fn a_block_written_while_compacting_is_not_deleted_unread() {
     store.compact(&compactor.doc).unwrap();
     let back = open_channel(&dir, 0xD3).unwrap();
     let text = render(&back.doc);
-    assert!(text.contains("before") && text.contains("during"), "both lines survive:\n{text}");
+    assert!(
+        text.contains("before") && text.contains("during"),
+        "both lines survive:\n{text}"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -632,7 +649,10 @@ fn compacting_twice_keeps_every_word() {
     }
     let back = open_channel(&dir, 0xE2).unwrap();
     let text = render(&back.doc);
-    assert!(text.contains("line 0") && text.contains("line 1"), "both lines survive:\n{text}");
+    assert!(
+        text.contains("line 0") && text.contains("line 1"),
+        "both lines survive:\n{text}"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -654,7 +674,10 @@ fn an_unchanged_directory_is_read_from_what_was_kept() {
     let first = render(&open_channel(&dir, 1).unwrap().doc);
     let kept_before = crate::store::loads_kept();
     let mut again = open_channel(&dir, 1).unwrap();
-    assert!(crate::store::loads_kept() > kept_before, "the second read came from what the first kept");
+    assert!(
+        crate::store::loads_kept() > kept_before,
+        "the second read came from what the first kept"
+    );
     assert_eq!(render(&again.doc), first, "and it reads the same");
 
     // A copy read from what was kept writes like any other…
@@ -667,7 +690,10 @@ fn an_unchanged_directory_is_read_from_what_was_kept() {
     other.store.flush(&other.doc).unwrap();
     drop(other);
     let now = render(&open_channel(&dir, 1).unwrap().doc);
-    assert!(now.contains("written on a kept read") && now.contains("from another writer"), "{now}");
+    assert!(
+        now.contains("written on a kept read") && now.contains("from another writer"),
+        "{now}"
+    );
     for i in 0..5 {
         assert!(now.contains(&format!("line {i}")), "{now}");
     }
@@ -699,7 +725,9 @@ fn a_snapshot_pulled_from_another_machine_survives_a_local_compaction() {
     h.doc.tell(&me("here"), "written here").unwrap();
     h.store.flush(&h.doc).unwrap();
     let name = snap.file_name().unwrap().to_string_lossy().to_string();
-    h.store.absorb(&h.doc, &name, &fs::read(&snap).unwrap()).unwrap();
+    h.store
+        .absorb(&h.doc, &name, &fs::read(&snap).unwrap())
+        .unwrap();
     let c = load::<AnyDoc>(&here, 0xF2).unwrap();
     let mut store = c.store;
     store.compact(&c.doc).unwrap();
@@ -734,7 +762,10 @@ fn copies_in_turn_write_under_one_name() {
     let back = open_channel(&dir, 0x200).unwrap();
     let text = render(&back.doc);
     for i in 0..50 {
-        assert!(text.contains(&format!("turn {i}")), "turn {i} is there:\n{text}");
+        assert!(
+            text.contains(&format!("turn {i}")),
+            "turn {i} is there:\n{text}"
+        );
     }
     assert_eq!(back.doc.version().len(), 2, "the seed's name and one pen");
     let _ = fs::remove_dir_all(&dir);
@@ -786,7 +817,12 @@ fn pens_across_processes() {
         let children: Vec<_> = (0..4)
             .map(|i| {
                 std::process::Command::new(&exe)
-                    .args(["--exact", "store::tests::pen_child", "--nocapture", "--test-threads=1"])
+                    .args([
+                        "--exact",
+                        "store::tests::pen_child",
+                        "--nocapture",
+                        "--test-threads=1",
+                    ])
                     .env("KHOR_PEN_DIR", &dir)
                     .env("KHOR_PEN_TAG", format!("{wave}-{i}"))
                     .env("KHOR_PEN_WAVE", "4")
@@ -807,14 +843,24 @@ fn pens_across_processes() {
                     .expect("the child says its name")
             })
             .collect();
-        assert_eq!(names.len(), 4, "four processes at once, four names: {names:?}");
+        assert_eq!(
+            names.len(),
+            4,
+            "four processes at once, four names: {names:?}"
+        );
         waves.push(names);
     }
-    assert_eq!(waves[0], waves[1], "the second wave writes under the first wave's names");
+    assert_eq!(
+        waves[0], waves[1],
+        "the second wave writes under the first wave's names"
+    );
     let back = open_channel(&dir, 0x200).unwrap();
     let text = render(&back.doc);
     for tag in ["0-0", "0-1", "0-2", "0-3", "1-0", "1-1", "1-2", "1-3"] {
-        assert!(text.contains(&format!("from child {tag}")), "child {tag}'s line is there:\n{text}");
+        assert!(
+            text.contains(&format!("from child {tag}")),
+            "child {tag}'s line is there:\n{text}"
+        );
     }
     assert_eq!(back.doc.version().len(), 5, "the seed's name and four pens");
     let _ = fs::remove_dir_all(&dir);
@@ -862,10 +908,22 @@ fn an_old_pile_is_reseeded_under_one_name() {
     assert_eq!(all.version().len(), 40);
 
     let mut p = load_pile::<DeviceDoc>(&dir, 0x78).unwrap();
-    assert_eq!(format!("{:?}", p.doc.all()), format!("{:?}", all.all()), "and reads the same");
-    assert_eq!(p.doc.version().len(), 1, "one writer name: {:?}", p.doc.version());
+    assert_eq!(
+        format!("{:?}", p.doc.all()),
+        format!("{:?}", all.all()),
+        "and reads the same"
+    );
+    assert_eq!(
+        p.doc.version().len(),
+        1,
+        "one writer name: {:?}",
+        p.doc.version()
+    );
     assert_eq!(p.store.epoch(), EPOCH);
-    assert_eq!(fs::read_to_string(dir.join(".epoch")).unwrap().trim(), EPOCH.to_string());
+    assert_eq!(
+        fs::read_to_string(dir.join(".epoch")).unwrap().trim(),
+        EPOCH.to_string()
+    );
     let loro: Vec<_> = fs::read_dir(&dir)
         .unwrap()
         .flatten()
@@ -875,15 +933,27 @@ fn an_old_pile_is_reseeded_under_one_name() {
     assert_eq!(loro.len(), 1, "one block, the snapshot: {loro:?}");
     let pen = fs::read_to_string(dir.join(".pen-0")).unwrap();
     assert_ne!(pen, old_pen, "the old pens are gone");
-    assert_eq!(p.doc.peer_id(), u64::from_str_radix(pen.trim(), 16).unwrap(), "the copy holds pen 0, the new name");
+    assert_eq!(
+        p.doc.peer_id(),
+        u64::from_str_radix(pen.trim(), 16).unwrap(),
+        "the copy holds pen 0, the new name"
+    );
 
     p.doc.upsert("after", "after", &[]).unwrap();
     p.store.flush(&p.doc).unwrap();
     drop(p);
     let again = load_pile::<DeviceDoc>(&dir, 0x79).unwrap();
-    assert_eq!(fs::read_to_string(dir.join(".pen-0")).unwrap(), pen, "not rebuilt twice");
+    assert_eq!(
+        fs::read_to_string(dir.join(".pen-0")).unwrap(),
+        pen,
+        "not rebuilt twice"
+    );
     assert!(again.doc.get("after").is_some());
-    assert_eq!(again.doc.version().len(), 1, "the write carried on under the one name");
+    assert_eq!(
+        again.doc.version().len(),
+        1,
+        "the write carried on under the one name"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -933,7 +1003,11 @@ fn two_replicas_reseeded_apart_agree_after_a_round() {
         let v = w.version();
         w.upsert(mine, mine, &[]).unwrap();
         w.upsert("row-0", mine, &[]).unwrap();
-        fs::write(dir.join(format!("u-{peer:016x}-00000000.loro")), w.changes_since(&v).unwrap()).unwrap();
+        fs::write(
+            dir.join(format!("u-{peer:016x}-00000000.loro")),
+            w.changes_since(&v).unwrap(),
+        )
+        .unwrap();
     }
     let mut a = load_pile::<DeviceDoc>(&a_dir, 0xA1).unwrap();
     let mut b = load_pile::<DeviceDoc>(&b_dir, 0xB1).unwrap();
@@ -942,7 +1016,10 @@ fn two_replicas_reseeded_apart_agree_after_a_round() {
 
     let mut peer = Peer::new();
     for _ in 0..2 {
-        peer.round(&mut a.store, &a.doc, |h, c| answer(&mut b.store, &b.doc, h, c)).unwrap();
+        peer.round(&mut a.store, &a.doc, |h, c| {
+            answer(&mut b.store, &b.doc, h, c)
+        })
+        .unwrap();
     }
     let (on_a, on_b) = (format!("{:?}", a.doc.all()), format!("{:?}", b.doc.all()));
     assert_eq!(on_a, on_b, "every key agrees");
@@ -950,7 +1027,10 @@ fn two_replicas_reseeded_apart_agree_after_a_round() {
         assert!(a.doc.get(row).is_some(), "{row} is there:\n{on_a}");
     }
     let name = a.doc.get("row-0").unwrap().name;
-    assert!(name == "only-a" || name == "only-b", "the rewritten row is one side's: {name}");
+    assert!(
+        name == "only-a" || name == "only-b",
+        "the rewritten row is one side's: {name}"
+    );
     assert_eq!(a.doc.version().len(), 2, "two names in all");
     let _ = fs::remove_dir_all(&a_dir);
     let _ = fs::remove_dir_all(&b_dir);
@@ -977,7 +1057,9 @@ fn every_way_ops_leave_flushes_them_first() {
     assert!(on_disk("answered"), "and it was on disk first");
 
     w.doc.tell(&me("a"), "pushed").unwrap();
-    let out = Peer::knowing(version_b64(&far.store, &far.doc)).outgoing(&mut w.store, &w.doc).unwrap();
+    let out = Peer::knowing(version_b64(&far.store, &far.doc))
+        .outgoing(&mut w.store, &w.doc)
+        .unwrap();
     assert!(out.pushes());
     assert!(on_disk("pushed"));
 
@@ -1007,18 +1089,25 @@ fn a_pen_whose_holder_sent_unflushed_and_died_is_retired() {
     seed.doc.tell(&me("a"), "seed").unwrap();
     seed.store.flush(&seed.doc).unwrap();
     drop(seed);
-    let (mut f, mut g) = (open_channel(&f_dir, 0x5F).unwrap(), open_channel(&g_dir, 0x56).unwrap());
+    let (mut f, mut g) = (
+        open_channel(&f_dir, 0x5F).unwrap(),
+        open_channel(&g_dir, 0x56).unwrap(),
+    );
 
     let a = open_channel(&dir, 0x51).unwrap();
     let name = a.doc.peer_id();
     for i in 1..=2 {
         a.doc.tell(&me("a"), &format!("lost {i}")).unwrap();
     }
-    f.doc.merge(&a.doc.changes_since(&f.doc.version()).unwrap()).unwrap();
+    f.doc
+        .merge(&a.doc.changes_since(&f.doc.version()).unwrap())
+        .unwrap();
     for i in 3..=4 {
         a.doc.tell(&me("a"), &format!("lost {i}")).unwrap();
     }
-    g.doc.merge(&a.doc.changes_since(&g.doc.version()).unwrap()).unwrap();
+    g.doc
+        .merge(&a.doc.changes_since(&g.doc.version()).unwrap())
+        .unwrap();
     drop(a);
 
     let mut b = open_channel(&dir, 0x52).unwrap();
@@ -1026,21 +1115,37 @@ fn a_pen_whose_holder_sent_unflushed_and_died_is_retired() {
     b.doc.tell(&me("a"), "after").unwrap();
     let mut peer = Peer::new();
     for _ in 0..2 {
-        peer.round(&mut b.store, &b.doc, |h, c| answer(&mut f.store, &f.doc, h, c)).unwrap();
+        peer.round(&mut b.store, &b.doc, |h, c| {
+            answer(&mut f.store, &f.doc, h, c)
+        })
+        .unwrap();
     }
     assert_eq!(b.store.retired(), Some(name), "the name is retired");
     drop(b);
 
     let mut c = open_channel(&dir, 0x53).unwrap();
-    assert_ne!(c.doc.peer_id(), name, "the copy after writes under a new name");
+    assert_ne!(
+        c.doc.peer_id(),
+        name,
+        "the copy after writes under a new name"
+    );
     c.doc.tell(&me("a"), "from c").unwrap();
     let mut peer = Peer::new();
     for _ in 0..2 {
-        peer.round(&mut c.store, &c.doc, |h, cs| answer(&mut g.store, &g.doc, h, cs)).unwrap();
+        peer.round(&mut c.store, &c.doc, |h, cs| {
+            answer(&mut g.store, &g.doc, h, cs)
+        })
+        .unwrap();
     }
     let (here, there) = (render(&c.doc), render(&g.doc));
-    assert!(there.contains("from c"), "its line reached the second machine:\n{there}");
-    assert!(here.contains("lost 3") && here.contains("lost 4"), "and that machine's lines came here:\n{here}");
+    assert!(
+        there.contains("from c"),
+        "its line reached the second machine:\n{there}"
+    );
+    assert!(
+        here.contains("lost 3") && here.contains("lost 4"),
+        "and that machine's lines came here:\n{here}"
+    );
     for d in [dir, f_dir, g_dir] {
         let _ = fs::remove_dir_all(d);
     }
@@ -1067,7 +1172,11 @@ fn a_read_after_one_new_block_imports_only_that_block() {
     let (passes, blocks) = reads_of(&dir);
     let back = render(&open_channel(&dir, 0x72).unwrap().doc);
     let (passes2, blocks2) = reads_of(&dir);
-    assert_eq!((passes2 - passes, blocks2 - blocks), (1, 1), "one pass, one block");
+    assert_eq!(
+        (passes2 - passes, blocks2 - blocks),
+        (1, 1),
+        "one pass, one block"
+    );
     for i in 0..10 {
         assert!(back.contains(&format!("line {i}")), "{back}");
     }

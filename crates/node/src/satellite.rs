@@ -203,7 +203,9 @@ impl Dest {
     pub(crate) fn finite_ssh_command(&self) -> Command {
         let mut c = Command::new("ssh");
         // The Windows owned adapter consumes explicit environment entries.
-        c.env_clear().envs(std::env::vars_os()).envs(self.env())
+        c.env_clear()
+            .envs(std::env::vars_os())
+            .envs(self.env())
             .args(self.road_for(true));
         c
     }
@@ -251,7 +253,12 @@ impl Dest {
             // This config key was added in OpenSSH 8.7. Earlier clients cannot
             // request it via config and we never pass -f. Keep this narrowly
             // ordered exception before the key, not a blanket IgnoreUnknown.
-            for option in ["IgnoreUnknown=ForkAfterAuthentication", "ControlMaster=no", "ControlPersist=no", "ForkAfterAuthentication=no"] {
+            for option in [
+                "IgnoreUnknown=ForkAfterAuthentication",
+                "ControlMaster=no",
+                "ControlPersist=no",
+                "ForkAfterAuthentication=no",
+            ] {
                 v.extend(["-o".to_owned(), option.to_owned()]);
                 owned.push_str("-o ");
                 owned.push_str(option);
@@ -281,7 +288,10 @@ impl Dest {
                 // A passphrase road offers the key alone: a server's
                 // password prompt would otherwise be answered with the
                 // key's passphrase.
-                v.extend(["-o".to_owned(), "PreferredAuthentications=publickey".to_owned()]);
+                v.extend([
+                    "-o".to_owned(),
+                    "PreferredAuthentications=publickey".to_owned(),
+                ]);
             }
         } else {
             v.extend(["-o".to_owned(), "BatchMode=yes".to_owned()]);
@@ -377,7 +387,11 @@ pub fn refusal(to: &Dest, said: &str) -> Option<Refusal> {
         return None;
     }
     if said.contains(crate::secret::ASKPASS_NONE_KEPT) {
-        return Some(if to.passphrase { Refusal::Locked } else { Refusal::Password });
+        return Some(if to.passphrase {
+            Refusal::Locked
+        } else {
+            Refusal::Password
+        });
     }
     match (broken(to, said)?, &to.identity) {
         (Broken::PasswordOnly, _) if to.password => Some(Refusal::Password),
@@ -398,7 +412,11 @@ fn last_line(said: &str) -> Option<&str> {
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.contains("UNKNOWN port 65535"))
         .collect();
-    lines.iter().find(|l| l.contains("open failed")).or(lines.last()).copied()
+    lines
+        .iter()
+        .find(|l| l.contains("open failed"))
+        .or(lines.last())
+        .copied()
 }
 
 /// How long ssh's words may run on the machine page.
@@ -416,7 +434,9 @@ const KEYISH: [&str; 5] = ["SHA256:", "MD5:", "AAAA", "-----BEGIN", "@@@"];
 /// for khor's askpass words and for a line that carries a key (a
 /// fingerprint, a key blob, the host-key warning's box).
 pub fn words(said: &str) -> Option<String> {
-    if said.contains(crate::secret::ASKPASS_NOT_A_PASSWORD) || said.contains(crate::secret::ASKPASS_NONE_KEPT) {
+    if said.contains(crate::secret::ASKPASS_NOT_A_PASSWORD)
+        || said.contains(crate::secret::ASKPASS_NONE_KEPT)
+    {
         return None;
     }
     let line = last_line(said)?;
@@ -459,11 +479,17 @@ pub(crate) fn cant_reach(to: &Dest, said: &str) -> String {
     }
     match (broken(to, said), &to.jump, &to.identity) {
         (Some(Broken::ToJump), Some(j), _) => msg::sat_to_jump_broken(j, last),
-        (Some(Broken::JumpToTarget), Some(j), _) => msg::sat_jump_to_target_broken(j, &to.host, last),
+        (Some(Broken::JumpToTarget), Some(j), _) => {
+            msg::sat_jump_to_target_broken(j, &to.host, last)
+        }
         (Some(Broken::PasswordOnly), _, _) if to.password => msg::sat_password_refused(&to.host),
-        (Some(Broken::PasswordOnly), _, Some(k)) if to.passphrase => msg::sat_passphrase_refused(&to.host, k),
+        (Some(Broken::PasswordOnly), _, Some(k)) if to.passphrase => {
+            msg::sat_passphrase_refused(&to.host, k)
+        }
         (Some(Broken::PasswordOnly), _, Some(k)) if key_locked(k) => msg::sat_key_locked(k),
-        (Some(Broken::PasswordOnly), _, Some(k)) => msg::sat_key_refused(&to.host, k, copy_id_line(to)),
+        (Some(Broken::PasswordOnly), _, Some(k)) => {
+            msg::sat_key_refused(&to.host, k, copy_id_line(to))
+        }
         (Some(Broken::PasswordOnly), _, None) => msg::sat_password_only(&to.host, copy_id_line(to)),
         _ => msg::sat_cant_reach(to, said),
     }
@@ -486,7 +512,9 @@ pub fn key_locked(path: &str) -> bool {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .output()
-        .is_ok_and(|o| !o.status.success() && String::from_utf8_lossy(&o.stderr).contains("passphrase"))
+        .is_ok_and(|o| {
+            !o.status.success() && String::from_utf8_lossy(&o.stderr).contains("passphrase")
+        })
 }
 
 /// What a person runs once to stop a host asking for a password: the
@@ -541,9 +569,7 @@ pub struct Probe {
 /// dead host must cost seconds, not a TCP stack's patience.
 fn ssh_base(host: &Dest) -> Command {
     let mut c = host.command("ssh");
-    c.arg("-o")
-        .arg("ConnectTimeout=8")
-        .arg(&host.host);
+    c.arg("-o").arg("ConnectTimeout=8").arg(&host.host);
     c
 }
 
@@ -1376,7 +1402,9 @@ pub fn sample(host: &Dest) -> Result<khor_core::Vitals, String> {
 /// [`sample`], with which segment broke when ssh's words say
 /// ([`broken`]) and the words themselves ([`words`]): what the sponsor's
 /// road to its satellite names (round ROAD-1, join-e).
-pub fn sample_read(host: &Dest) -> Result<khor_core::Vitals, (String, Option<Broken>, Option<String>)> {
+pub fn sample_read(
+    host: &Dest,
+) -> Result<khor_core::Vitals, (String, Option<Broken>, Option<String>)> {
     let out = ssh_base(host)
         .arg(SAMPLE_SH)
         .output()
@@ -1696,7 +1724,19 @@ mod tree_tests {
     fn nul_records_keep_names_and_refuse_links_traversal_and_partial_answers() {
         assert!(tree_reply(b"F\0").unwrap().is_none());
         let mut bytes = Vec::new();
-        for field in ["D", "D", "nested", "0", "1", "755", "F", "nested/a\nb.txt", "3", "2", "644"] {
+        for field in [
+            "D",
+            "D",
+            "nested",
+            "0",
+            "1",
+            "755",
+            "F",
+            "nested/a\nb.txt",
+            "3",
+            "2",
+            "644",
+        ] {
             bytes.extend_from_slice(field.as_bytes());
             bytes.push(0);
         }
@@ -1959,14 +1999,32 @@ mod tests {
     #[test]
     fn a_refusal_is_typed() {
         let plain = Dest::new("box", None);
-        assert_eq!(refusal(&plain, "user@box: Permission denied (publickey,password)."), Some(Refusal::Key));
         assert_eq!(
-            refusal(&plain.clone().with_password(true), "Permission denied (publickey,password)."),
+            refusal(&plain, "user@box: Permission denied (publickey,password)."),
+            Some(Refusal::Key)
+        );
+        assert_eq!(
+            refusal(
+                &plain.clone().with_password(true),
+                "Permission denied (publickey,password)."
+            ),
             Some(Refusal::Password)
         );
         let jumped = Dest::new("box", Some("gate"));
-        assert_eq!(refusal(&jumped, "channel 0: open failed: connect failed: refused\nstdio forwarding failed"), None);
-        assert_eq!(refusal(&plain, "ssh: connect to host box port 22: Connection refused"), None);
+        assert_eq!(
+            refusal(
+                &jumped,
+                "channel 0: open failed: connect failed: refused\nstdio forwarding failed"
+            ),
+            None
+        );
+        assert_eq!(
+            refusal(
+                &plain,
+                "ssh: connect to host box port 22: Connection refused"
+            ),
+            None
+        );
     }
 
     /// **A sponsor's road to its satellite** (round ROAD-1): `ssh` while
@@ -2004,24 +2062,56 @@ mod tests {
         }
         let kind = |n: &crate::Node| n.satellite_road(&sat).map(|r| r.road);
         assert_eq!(kind(&n), None, "never sampled: no reading");
-        n.cache_peer_vitals_aged(&sat, &parse_vitals(""), 1_000).unwrap();
+        n.cache_peer_vitals_aged(&sat, &parse_vitals(""), 1_000)
+            .unwrap();
         assert_eq!(kind(&n), Some(khor_core::RoadKind::Ssh));
         let mine = n.my_satellite_roads();
         assert_eq!(mine.len(), 1);
-        assert_eq!((mine[0].to.as_str(), mine[0].road), (sat.as_str(), khor_core::RoadKind::Ssh));
-        n.cache_peer_vitals_aged(&sat, &parse_vitals(""), crate::roadbook::SAT_FRESH.as_millis() as u64 + 1_000)
-            .unwrap();
+        assert_eq!(
+            (mine[0].to.as_str(), mine[0].road),
+            (sat.as_str(), khor_core::RoadKind::Ssh)
+        );
+        n.cache_peer_vitals_aged(
+            &sat,
+            &parse_vitals(""),
+            crate::roadbook::SAT_FRESH.as_millis() as u64 + 1_000,
+        )
+        .unwrap();
         let r = n.satellite_road(&sat).unwrap();
-        assert_eq!(r.road, khor_core::RoadKind::None, "a stale sample is a broken ssh");
-        assert_eq!(r.broken.map(|l| l.leg), Some(khor_core::LegKind::Ssh), "ssh said nothing that names a leg");
+        assert_eq!(
+            r.road,
+            khor_core::RoadKind::None,
+            "a stale sample is a broken ssh"
+        );
+        assert_eq!(
+            r.broken.map(|l| l.leg),
+            Some(khor_core::LegKind::Ssh),
+            "ssh said nothing that names a leg"
+        );
         // ssh's words on the last failed sample name the leg; a jump's
         // far end is no device.
-        n.roadbook.lock().unwrap().sampled(&sat, Some((Some(Broken::ToJump), Some("Connection refused".into()))));
+        n.roadbook.lock().unwrap().sampled(
+            &sat,
+            Some((Some(Broken::ToJump), Some("Connection refused".into()))),
+        );
         let leg = n.satellite_road(&sat).unwrap().broken.unwrap();
-        assert_eq!((leg.leg, leg.from.as_deref(), leg.to), (khor_core::LegKind::ToJump, Some(me.as_str()), None));
-        assert_eq!(leg.said.as_deref(), Some("Connection refused"), "ssh's words ride the leg");
-        n.roadbook.lock().unwrap().sampled(&sat, Some((Some(Broken::PasswordOnly), None)));
-        assert_eq!(n.satellite_road(&sat).unwrap().broken.map(|l| l.leg), Some(khor_core::LegKind::Auth));
+        assert_eq!(
+            (leg.leg, leg.from.as_deref(), leg.to),
+            (khor_core::LegKind::ToJump, Some(me.as_str()), None)
+        );
+        assert_eq!(
+            leg.said.as_deref(),
+            Some("Connection refused"),
+            "ssh's words ride the leg"
+        );
+        n.roadbook
+            .lock()
+            .unwrap()
+            .sampled(&sat, Some((Some(Broken::PasswordOnly), None)));
+        assert_eq!(
+            n.satellite_road(&sat).unwrap().broken.map(|l| l.leg),
+            Some(khor_core::LegKind::Auth)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2040,11 +2130,26 @@ mod tests {
         assert_eq!(broken(&via, jump_denies), Some(Broken::ToJump));
         assert_eq!(broken(&via, target_denies), Some(Broken::PasswordOnly));
         assert_eq!(broken(&direct, target_denies), Some(Broken::PasswordOnly));
-        assert_eq!(broken(&direct, "ssh: connect to host 127.0.0.1 port 22: Connection refused"), None);
+        assert_eq!(
+            broken(
+                &direct,
+                "ssh: connect to host 127.0.0.1 port 22: Connection refused"
+            ),
+            None
+        );
         // A banner timeout over a proxy cannot say which side hung.
-        assert_eq!(broken(&via, "Connection timed out during banner exchange\r\nConnection to UNKNOWN port 65535 timed out"), None);
+        assert_eq!(
+            broken(
+                &via,
+                "Connection timed out during banner exchange\r\nConnection to UNKNOWN port 65535 timed out"
+            ),
+            None
+        );
         // The jump's refusal is the line quoted, not the noise after it.
-        assert!(cant_reach(&via, on_down).contains("channel 0: open failed: connect failed: Connection refused"));
+        assert!(
+            cant_reach(&via, on_down)
+                .contains("channel 0: open failed: connect failed: Connection refused")
+        );
     }
 
     /// ssh's words as a leg carries them (round join-e): the reason
@@ -2053,7 +2158,10 @@ mod tests {
     fn a_legs_words_are_the_reason_alone() {
         let on_down = "channel 0: open failed: connect failed: Connection refused\r\nstdio forwarding failed\r\nConnection closed by UNKNOWN port 65535\r\n";
         assert_eq!(words(on_down).as_deref(), Some("Connection refused"));
-        assert_eq!(words("ssh: connect to host 10.0.0.5 port 22: Connection timed out\r\n").as_deref(), Some("Connection timed out"));
+        assert_eq!(
+            words("ssh: connect to host 10.0.0.5 port 22: Connection timed out\r\n").as_deref(),
+            Some("Connection timed out")
+        );
         assert_eq!(
             words("zgh@127.0.0.1: Permission denied (publickey,password).\r\n").as_deref(),
             Some("Permission denied (publickey,password)")
@@ -2064,8 +2172,14 @@ mod tests {
         );
         assert_eq!(words(""), None);
         // A host key's warning, a fingerprint, khor's own askpass: none.
-        assert_eq!(words("Host key for gpu-box has changed\nED25519 key fingerprint is SHA256:abc."), None);
-        assert_eq!(words("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"), None);
+        assert_eq!(
+            words("Host key for gpu-box has changed\nED25519 key fingerprint is SHA256:abc."),
+            None
+        );
+        assert_eq!(
+            words("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
+            None
+        );
         assert_eq!(words(crate::secret::ASKPASS_NONE_KEPT), None);
         let long = format!("ssh: {}", "x".repeat(200));
         let w = words(&long).unwrap();
@@ -2078,9 +2192,20 @@ mod tests {
     #[test]
     fn a_jump_is_a_batch_mode_proxy_command() {
         let road = Dest::new("gpu-box", Some("bastion")).road();
-        let proxy = road.iter().find(|a| a.starts_with("ProxyCommand=")).expect("a proxy");
-        assert!(proxy.contains("-o BatchMode=yes") && proxy.ends_with("-W %h:%p 'bastion'"), "{proxy}");
-        assert!(!Dest::new("gpu-box", Some("")).road().iter().any(|a| a.starts_with("ProxyCommand=")));
+        let proxy = road
+            .iter()
+            .find(|a| a.starts_with("ProxyCommand="))
+            .expect("a proxy");
+        assert!(
+            proxy.contains("-o BatchMode=yes") && proxy.ends_with("-W %h:%p 'bastion'"),
+            "{proxy}"
+        );
+        assert!(
+            !Dest::new("gpu-box", Some(""))
+                .road()
+                .iter()
+                .any(|a| a.starts_with("ProxyCommand="))
+        );
     }
 
     /// A port rides as `-o Port=` (ssh and scp both read it), the
@@ -2090,23 +2215,52 @@ mod tests {
     fn a_port_and_a_password_change_the_road() {
         let key = Dest::new("gpu-box", Some("bastion")).on_port(Some(2222));
         let road = key.road();
-        assert!(road.windows(2).any(|w| w == ["-o", "Port=2222"]), "{road:?}");
-        assert!(road.windows(2).any(|w| w == ["-o", "BatchMode=yes"]), "{road:?}");
+        assert!(
+            road.windows(2).any(|w| w == ["-o", "Port=2222"]),
+            "{road:?}"
+        );
+        assert!(
+            road.windows(2).any(|w| w == ["-o", "BatchMode=yes"]),
+            "{road:?}"
+        );
         assert!(key.env().is_empty());
         assert_eq!(key.secret_key(), "gpu-box:2222");
         assert_eq!(copy_id_argv(&key)[1..3], ["-p", "2222"]);
 
         let pw = key.clone().with_password(true);
         let road = pw.road();
-        assert!(road.windows(2).any(|w| w == ["-o", "BatchMode=no"]), "{road:?}");
-        assert!(road.windows(2).any(|w| w == ["-o", "NumberOfPasswordPrompts=1"]), "{road:?}");
-        let proxy = road.iter().find(|a| a.starts_with("ProxyCommand=")).expect("a proxy");
-        assert!(proxy.contains("-o BatchMode=yes"), "the jump stays a key road: {proxy}");
+        assert!(
+            road.windows(2).any(|w| w == ["-o", "BatchMode=no"]),
+            "{road:?}"
+        );
+        assert!(
+            road.windows(2)
+                .any(|w| w == ["-o", "NumberOfPasswordPrompts=1"]),
+            "{road:?}"
+        );
+        let proxy = road
+            .iter()
+            .find(|a| a.starts_with("ProxyCommand="))
+            .expect("a proxy");
+        assert!(
+            proxy.contains("-o BatchMode=yes"),
+            "the jump stays a key road: {proxy}"
+        );
         let env = pw.env();
-        assert!(env.iter().any(|(k, v)| k == "SSH_ASKPASS_REQUIRE" && v == "force"));
-        assert!(env.iter().any(|(k, v)| k == crate::secret::ASKPASS_KEY && v == "gpu-box:2222"));
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == "SSH_ASKPASS_REQUIRE" && v == "force")
+        );
+        assert!(
+            env.iter()
+                .any(|(k, v)| k == crate::secret::ASKPASS_KEY && v == "gpu-box:2222")
+        );
         assert_eq!(ssh_argv(&pw)[0], "env");
-        assert_eq!(Dest::new("h", None).on_port(Some(0)).port, None, "0 is no port");
+        assert_eq!(
+            Dest::new("h", None).on_port(Some(0)).port,
+            None,
+            "0 is no port"
+        );
     }
 
     /// A key file is `-i` with IdentitiesOnly on every command, and
@@ -2117,22 +2271,59 @@ mod tests {
     fn a_key_file_and_its_passphrase_change_the_road() {
         let k = Dest::new("gpu-box", Some("bastion")).with_identity(Some("~/.ssh/lab_key"));
         let road = k.road();
-        assert!(road.windows(2).any(|w| w == ["-i", "~/.ssh/lab_key"]), "{road:?}");
-        assert!(road.windows(2).any(|w| w == ["-o", "IdentitiesOnly=yes"]), "{road:?}");
-        assert!(road.windows(2).any(|w| w == ["-o", "BatchMode=yes"]), "{road:?}");
+        assert!(
+            road.windows(2).any(|w| w == ["-i", "~/.ssh/lab_key"]),
+            "{road:?}"
+        );
+        assert!(
+            road.windows(2).any(|w| w == ["-o", "IdentitiesOnly=yes"]),
+            "{road:?}"
+        );
+        assert!(
+            road.windows(2).any(|w| w == ["-o", "BatchMode=yes"]),
+            "{road:?}"
+        );
         assert!(!k.asks() && k.env().is_empty());
-        let proxy = road.iter().find(|a| a.starts_with("ProxyCommand=")).expect("a proxy");
-        assert!(!proxy.contains("lab_key"), "the key is the target's, not the jump's: {proxy}");
-        assert!(copy_id_argv(&k).windows(2).any(|w| w == ["-i", "~/.ssh/lab_key"]));
+        let proxy = road
+            .iter()
+            .find(|a| a.starts_with("ProxyCommand="))
+            .expect("a proxy");
+        assert!(
+            !proxy.contains("lab_key"),
+            "the key is the target's, not the jump's: {proxy}"
+        );
+        assert!(
+            copy_id_argv(&k)
+                .windows(2)
+                .any(|w| w == ["-i", "~/.ssh/lab_key"])
+        );
 
         let pp = k.clone().with_passphrase(true);
         let road = pp.road();
-        assert!(road.windows(2).any(|w| w == ["-o", "BatchMode=no"]), "{road:?}");
-        assert!(road.windows(2).any(|w| w == ["-o", "PreferredAuthentications=publickey"]), "{road:?}");
-        assert!(pp.env().iter().any(|(k, v)| k == crate::secret::ASKPASS_KEY && v == "gpu-box"));
+        assert!(
+            road.windows(2).any(|w| w == ["-o", "BatchMode=no"]),
+            "{road:?}"
+        );
+        assert!(
+            road.windows(2)
+                .any(|w| w == ["-o", "PreferredAuthentications=publickey"]),
+            "{road:?}"
+        );
+        assert!(
+            pp.env()
+                .iter()
+                .any(|(k, v)| k == crate::secret::ASKPASS_KEY && v == "gpu-box")
+        );
         let pw = Dest::new("gpu-box", None).with_password(true).road();
-        assert!(!pw.iter().any(|a| a.starts_with("PreferredAuthentications")), "{pw:?}");
-        assert_eq!(Dest::new("h", None).with_identity(Some("")).identity, None, "empty is no key");
+        assert!(
+            !pw.iter().any(|a| a.starts_with("PreferredAuthentications")),
+            "{pw:?}"
+        );
+        assert_eq!(
+            Dest::new("h", None).with_identity(Some("")).identity,
+            None,
+            "empty is no key"
+        );
     }
 
     /// The fingerprint-to-id math on a fixed digest: 32 bytes in, the

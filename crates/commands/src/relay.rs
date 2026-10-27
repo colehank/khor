@@ -39,7 +39,7 @@ use khor_catalog::cli;
 use khor_node::Node;
 use serde::{Deserialize, Serialize};
 
-use crate::{out, err};
+use crate::{err, out};
 
 /// Where a plain-HTTP relay listens when nobody says: the port the
 /// Khor tier has always used, and `iroh-relay --dev`'s own default.
@@ -398,12 +398,13 @@ fn acme_tls(acme: AcmeConfig, bind: SocketAddr) -> Result<TlsConfig, String> {
 /// served through [`Renewable`] so a renewal takes without a restart.
 fn manual_tls(cert: &Path, key: &Path) -> Result<(rustls::ServerConfig, Arc<Renewable>), String> {
     let renewable = Arc::new(Renewable::open(cert, key)?);
-    let config =
-        rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .map_err(|e| cli::relay_tls_bad(e))?
-            .with_no_client_auth()
-            .with_cert_resolver(renewable.clone());
+    let config = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|e| cli::relay_tls_bad(e))?
+    .with_no_client_auth()
+    .with_cert_resolver(renewable.clone());
     Ok((config, renewable))
 }
 
@@ -456,7 +457,10 @@ impl Renewable {
             .and_then(|i| i.collect::<Result<Vec<_>, _>>())
             .map_err(|e| cli::relay_tls_bad(format!("{}: {e}", cert.display())))?;
         if chain.is_empty() {
-            return Err(cli::relay_tls_bad(format!("{}: no certificate", cert.display())));
+            return Err(cli::relay_tls_bad(format!(
+                "{}: no certificate",
+                cert.display()
+            )));
         }
         let secret = PrivateKeyDer::from_pem_file(key)
             .map_err(|e| cli::relay_tls_bad(format!("{}: {e}", key.display())))?;
@@ -510,7 +514,10 @@ impl Renewable {
 }
 
 impl rustls::server::ResolvesServerCert for Renewable {
-    fn resolve(&self, _: rustls::server::ClientHello<'_>) -> Option<Arc<rustls::sign::CertifiedKey>> {
+    fn resolve(
+        &self,
+        _: rustls::server::ClientHello<'_>,
+    ) -> Option<Arc<rustls::sign::CertifiedKey>> {
         Some(self.now.read().unwrap_or_else(|p| p.into_inner()).clone())
     }
 }
@@ -745,7 +752,6 @@ fn stamp() -> String {
     jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-
 impl<C: std::hash::Hash + Eq> Meter<C> {
     /// Picks up where the file left off, cut to [`DEVICE_CAP`] if it
     /// holds more (a file from before the cap). A file that does not
@@ -765,7 +771,14 @@ impl<C: std::hash::Hash + Eq> Meter<C> {
             .into_iter()
             .map(|(id, d)| {
                 let ms = u128::from(d.online_secs) * 1000;
-                (id, Device { connections: d.connections, ms, seen: 0 })
+                (
+                    id,
+                    Device {
+                        connections: d.connections,
+                        ms,
+                        seen: 0,
+                    },
+                )
             })
             .collect();
         now.make_room(DEVICE_CAP);
@@ -840,7 +853,9 @@ impl<C: std::hash::Hash + Eq> Meter<C> {
         let Ok(bytes) = serde_json::to_vec_pretty(&self.snapshot()) else {
             return;
         };
-        let tmp = self.path.with_extension(format!("tmp{}", std::process::id()));
+        let tmp = self
+            .path
+            .with_extension(format!("tmp{}", std::process::id()));
         if std::fs::write(&tmp, bytes).is_ok() {
             let _ = std::fs::rename(&tmp, &self.path);
         }
@@ -895,7 +910,6 @@ fn print_stats(state: &Path) -> Result<(), String> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -928,7 +942,8 @@ mod tests {
     }
 
     fn meter_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("khor-relay-meter-{tag}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("khor-relay-meter-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -958,10 +973,21 @@ mod tests {
         meter.write();
         let bytes = std::fs::read(dir.join(STATS_FILE)).unwrap();
         let stats: Stats = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(stats.devices.len(), DEVICE_CAP, "the table stops at the cap");
-        assert!(!stats.devices.contains_key(&id(0)), "the one seen longest ago went");
+        assert_eq!(
+            stats.devices.len(),
+            DEVICE_CAP,
+            "the table stops at the cap"
+        );
+        assert!(
+            !stats.devices.contains_key(&id(0)),
+            "the one seen longest ago went"
+        );
         assert!(stats.devices.contains_key(&id(1)) && stats.devices.contains_key(&id(DEVICE_CAP)));
-        assert!(bytes.len() <= FILE_BOUND, "the file is bounded: {} bytes", bytes.len());
+        assert!(
+            bytes.len() <= FILE_BOUND,
+            "the file is bounded: {} bytes",
+            bytes.len()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -979,7 +1005,10 @@ mod tests {
         let c = meter.now.lock().unwrap();
         assert_eq!(c.devices.len(), DEVICE_CAP);
         assert!(c.devices.contains_key(&id(0)), "the open one stayed");
-        assert!(!c.devices.contains_key(&id(1)), "the oldest closed one went");
+        assert!(
+            !c.devices.contains_key(&id(1)),
+            "the oldest closed one went"
+        );
         drop(c);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -991,14 +1020,27 @@ mod tests {
     #[test]
     fn a_meter_file_over_the_cap_is_cut_on_load() {
         let dir = meter_dir("load");
-        let mut old = Stats { since: "2026-10-01 00:00:00".into(), ..Stats::default() };
+        let mut old = Stats {
+            since: "2026-10-01 00:00:00".into(),
+            ..Stats::default()
+        };
         for n in 0..DEVICE_CAP + 5 {
             let connections = if n % 1000 == 7 { 1 } else { 3 };
-            old.devices.insert(id(n), DeviceStats { connections, online_secs: 60 });
+            old.devices.insert(
+                id(n),
+                DeviceStats {
+                    connections,
+                    online_secs: 60,
+                },
+            );
         }
         std::fs::write(dir.join(STATS_FILE), serde_json::to_vec(&old).unwrap()).unwrap();
         let meter: Meter<u64> = Meter::load(dir.join(STATS_FILE));
-        assert_eq!(meter.now.lock().unwrap().devices.len(), DEVICE_CAP, "cut to the cap");
+        assert_eq!(
+            meter.now.lock().unwrap().devices.len(),
+            DEVICE_CAP,
+            "cut to the cap"
+        );
         let fresh = id(DEVICE_CAP + 100);
         meter.connected(fresh.clone(), 1);
         meter.disconnected(1);
@@ -1006,13 +1048,34 @@ mod tests {
         let bytes = std::fs::read(dir.join(STATS_FILE)).unwrap();
         let stats: Stats = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(stats.devices.len(), DEVICE_CAP, "and stays there");
-        let gone: Vec<usize> = (0..DEVICE_CAP + 5).filter(|n| !stats.devices.contains_key(&id(*n))).collect();
+        let gone: Vec<usize> = (0..DEVICE_CAP + 5)
+            .filter(|n| !stats.devices.contains_key(&id(*n)))
+            .collect();
         assert_eq!(gone.len(), 6);
-        assert!(gone.iter().all(|n| n % 1000 == 7), "the fewest connections went first: {gone:?}");
-        assert!(stats.devices.contains_key(&fresh), "the one this run saw stays");
-        assert_eq!(stats.since, "2026-10-01 00:00:00", "the rest of the file carries over");
-        assert_eq!(stats.devices[&id(4)], DeviceStats { connections: 3, online_secs: 60 });
-        assert!(bytes.len() <= FILE_BOUND, "the file is bounded: {} bytes", bytes.len());
+        assert!(
+            gone.iter().all(|n| n % 1000 == 7),
+            "the fewest connections went first: {gone:?}"
+        );
+        assert!(
+            stats.devices.contains_key(&fresh),
+            "the one this run saw stays"
+        );
+        assert_eq!(
+            stats.since, "2026-10-01 00:00:00",
+            "the rest of the file carries over"
+        );
+        assert_eq!(
+            stats.devices[&id(4)],
+            DeviceStats {
+                connections: 3,
+                online_secs: 60
+            }
+        );
+        assert!(
+            bytes.len() <= FILE_BOUND,
+            "the file is bounded: {} bytes",
+            bytes.len()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -1020,6 +1083,8 @@ mod tests {
 /// Validate a terminal-owned relay before creating its session.
 pub(crate) fn validate(rest: &[String]) -> Result<(), String> {
     let options = parse(rest)?;
-    if !options.stats && !options.tls_check && options.mode.is_none() { return Err(cli::relay_pick_mode().to_owned()); }
+    if !options.stats && !options.tls_check && options.mode.is_none() {
+        return Err(cli::relay_pick_mode().to_owned());
+    }
     Ok(())
 }

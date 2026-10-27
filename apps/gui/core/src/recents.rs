@@ -64,7 +64,13 @@ pub fn recents(root: &Path, kind: &str, limit: usize) -> Result<Vec<RecentRow>, 
 
 /// Records a visit. Called when a tab actually lands somewhere, never
 /// when one is merely opened: the list is places a person has been.
-pub fn recent_visit(root: &Path, kind: &str, machine: &str, place: &str, session: Option<&str>) -> Result<(), String> {
+pub fn recent_visit(
+    root: &Path,
+    kind: &str,
+    machine: &str,
+    place: &str,
+    session: Option<&str>,
+) -> Result<(), String> {
     Node::open(root.to_path_buf())?.recent_visit_from(kind_of(kind)?, machine, place, session)
 }
 
@@ -76,7 +82,12 @@ pub fn forget_recent(root: &Path, kind: &str, machine: &str, place: &str) -> Res
 
 /// Dismisses a row by its stable ledger identity, including orphaned
 /// devices. Only the display name depends on the current device table.
-pub fn forget_recent_by_device(root: &Path, kind: &str, device: &str, place: &str) -> Result<(), String> {
+pub fn forget_recent_by_device(
+    root: &Path,
+    kind: &str,
+    device: &str,
+    place: &str,
+) -> Result<(), String> {
     Node::open(root.to_path_buf())?.forget_recent_by_device(kind_of(kind)?, device, place)
 }
 
@@ -92,7 +103,10 @@ mod tests {
     fn only_a_known_kind_is_a_kind() {
         assert!(kind_of("dir").is_ok(), "control: dir is a kind");
         assert!(kind_of("page").is_ok(), "control: page is a kind");
-        assert!(kind_of("file").is_ok(), "control: file is a kind (UX-37 §1)");
+        assert!(
+            kind_of("file").is_ok(),
+            "control: file is a kind (UX-37 §1)"
+        );
         for word in ["", "Dir", "dirs", "files", "url"] {
             assert!(kind_of(word).is_err(), "must refuse: {word:?}");
         }

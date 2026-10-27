@@ -162,13 +162,15 @@ fn quiet_at(now: Duration) -> Option<Duration> {
 pub fn guard(after: Duration, every: Duration, stuck: impl FnOnce(Duration) + Send + 'static) {
     let _ = std::thread::Builder::new()
         .name("khor-guard".into())
-        .spawn(move || loop {
-            std::thread::sleep(every);
-            if let Some(quiet) = quiet_at(since_start())
-                && quiet >= after
-            {
-                stuck(quiet);
-                return;
+        .spawn(move || {
+            loop {
+                std::thread::sleep(every);
+                if let Some(quiet) = quiet_at(since_start())
+                    && quiet >= after
+                {
+                    stuck(quiet);
+                    return;
+                }
             }
         });
 }
@@ -190,7 +192,10 @@ fn leave_stuck(quiet: Duration) {
     let (tx, rx) = std::sync::mpsc::channel();
     let _ = std::thread::Builder::new().spawn(move || {
         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-        eprintln!("{}", khor_catalog::msg::serve_stuck(&stamp, quiet.as_secs() / 60));
+        eprintln!(
+            "{}",
+            khor_catalog::msg::serve_stuck(&stamp, quiet.as_secs() / 60)
+        );
         let _ = tx.send(());
     });
     let _ = rx.recv_timeout(Duration::from_secs(5));
@@ -209,20 +214,36 @@ mod tests {
     fn a_loop_that_stops_beating_is_found_and_one_that_beats_is_not() {
         beat();
         let (tx, rx) = std::sync::mpsc::channel();
-        guard(Duration::from_millis(300), Duration::from_millis(20), move |q| {
-            let _ = tx.send(q);
-        });
+        guard(
+            Duration::from_millis(300),
+            Duration::from_millis(20),
+            move |q| {
+                let _ = tx.send(q);
+            },
+        );
         // Beating: nothing for a second, three times the limit.
         let until = Instant::now() + Duration::from_secs(1);
         while Instant::now() < until {
             beat();
-            assert!(rx.try_recv().is_err(), "a loop that beats is never taken for stuck");
+            assert!(
+                rx.try_recv().is_err(),
+                "a loop that beats is never taken for stuck"
+            );
             std::thread::sleep(Duration::from_millis(30));
         }
         // Stopped: found within the limit and a look or two.
         let t = Instant::now();
-        let quiet = rx.recv_timeout(Duration::from_secs(3)).expect("a loop that stopped is found");
-        assert!(quiet >= Duration::from_millis(300), "not before its limit: {quiet:?}");
-        assert!(t.elapsed() < Duration::from_secs(1), "and not long after: {:?}", t.elapsed());
+        let quiet = rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("a loop that stopped is found");
+        assert!(
+            quiet >= Duration::from_millis(300),
+            "not before its limit: {quiet:?}"
+        );
+        assert!(
+            t.elapsed() < Duration::from_secs(1),
+            "and not long after: {:?}",
+            t.elapsed()
+        );
     }
 }

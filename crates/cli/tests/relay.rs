@@ -217,7 +217,11 @@ async fn a_dev_relay_carries_two_endpoints_to_each_other() {
     );
     let relays = [Relay::bare(&r.url)];
     let far = far_side(iroh::SecretKey::generate(), &relays).await;
-    assert_eq!(verdict(&far).await, Ok(()), "an open relay admits the far side");
+    assert_eq!(
+        verdict(&far).await,
+        Ok(()),
+        "an open relay admits the far side"
+    );
     let near = endpoint::bind(iroh::SecretKey::generate(), &relays)
         .await
         .unwrap();
@@ -267,10 +271,7 @@ async fn a_token_relay_refuses_the_keyless_and_carries_the_keyed() {
     )
     .await
     .unwrap();
-    assert!(
-        verdict(&wrong).await.is_err(),
-        "a wrong key is no key"
-    );
+    assert!(verdict(&wrong).await.is_err(), "a wrong key is no key");
     wrong.close().await;
 
     let near = endpoint::bind(iroh::SecretKey::generate(), &keyed)
@@ -303,7 +304,12 @@ async fn an_only_mine_relay_admits_the_roster_and_nobody_else() {
         use khor_sync::devices::{DeviceDoc, devices_dir};
         use khor_sync::store::load;
         let loaded = load::<DeviceDoc>(&devices_dir(&home.0), 0x51).unwrap();
-        for (key, name) in [(&a, "alpha"), (&b, "beta"), (&waiting, "gamma"), (&revoked, "delta")] {
+        for (key, name) in [
+            (&a, "alpha"),
+            (&b, "beta"),
+            (&waiting, "gamma"),
+            (&revoked, "delta"),
+        ] {
             loaded
                 .doc
                 .upsert(&key.public().to_string(), name, &[])
@@ -315,7 +321,8 @@ async fn an_only_mine_relay_admits_the_roster_and_nobody_else() {
     for name in ["alpha", "beta", "delta"] {
         node.approve_here(name).expect("the root holder approves");
     }
-    node.revoke_here("delta").expect("and revokes one of them again");
+    node.revoke_here("delta")
+        .expect("and revokes one of them again");
     drop(node);
 
     let r = relay(&home.0, &["--only-mine"]);
@@ -332,7 +339,11 @@ async fn an_only_mine_relay_admits_the_roster_and_nobody_else() {
     let relays = [Relay::bare(&r.url)];
 
     let far = far_side(a, &relays).await;
-    assert_eq!(verdict(&far).await, Ok(()), "a device on the roster gets in");
+    assert_eq!(
+        verdict(&far).await,
+        Ok(()),
+        "a device on the roster gets in"
+    );
 
     for (key, why) in [
         (iroh::SecretKey::generate(), "not in the table at all"),
@@ -350,7 +361,11 @@ async fn an_only_mine_relay_admits_the_roster_and_nobody_else() {
     }
 
     let near = endpoint::bind(b, &relays).await.unwrap();
-    assert_eq!(verdict(&near).await, Ok(()), "the other device on the roster gets in");
+    assert_eq!(
+        verdict(&near).await,
+        Ok(()),
+        "the other device on the roster gets in"
+    );
     assert_eq!(echo(&near, &far, &r.url).await, Ok(()));
     near.close().await;
     far.close().await;
@@ -399,7 +414,12 @@ async fn the_meter_counts_connections_and_online_time_and_nothing_else() {
     );
     // Totals only: these keys and no others — no pair of endpoints, no
     // address, nothing that says who was talking to whom.
-    let top: Vec<&str> = stats.as_object().unwrap().keys().map(String::as_str).collect();
+    let top: Vec<&str> = stats
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     assert_eq!(
         top,
         ["since", "updated", "bytes_sent", "bytes_recv", "devices"],
@@ -426,6 +446,9 @@ async fn the_meter_counts_connections_and_online_time_and_nothing_else() {
         .lines()
         .find(|l| l.contains(&id[..16]))
         .unwrap_or_else(|| panic!("--stats does not name {}: {said}", &id[..16]));
-    assert!(line.contains('2'), "the line carries the two connections: {line}");
+    assert!(
+        line.contains('2'),
+        "the line carries the two connections: {line}"
+    );
     drop(r);
 }

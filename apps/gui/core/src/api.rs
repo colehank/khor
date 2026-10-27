@@ -81,8 +81,17 @@ pub fn answer(
             args.get("payload").ok_or("missing payload")?,
         ))?),
         "console_catalog" => to_json(&crate::console::catalog()),
-        "console_complete" => to_json(&rt.block_on(crate::console_complete::complete(root, &arg("line")?, num("caret")? as usize))?),
-        "console_run" => to_json(&crate::console::run(root, &arg("line")?, &arg("token")?, opt_str("input")?.as_deref())?),
+        "console_complete" => to_json(&rt.block_on(crate::console_complete::complete(
+            root,
+            &arg("line")?,
+            num("caret")? as usize,
+        ))?),
+        "console_run" => to_json(&crate::console::run(
+            root,
+            &arg("line")?,
+            &arg("token")?,
+            opt_str("input")?.as_deref(),
+        )?),
         "sessions" => to_json(&crate::list_sessions(root, &arg("by")?)?),
         // `cells` is required rather than defaulted: it is a measured
         // pixel width, and a default would be this layer inventing a
@@ -138,9 +147,15 @@ pub fn answer(
         // as a close and an open: a drag that reorders. The ids are
         // still the node's to mint.
         "tabs_reorder" => {
-            let ids: Vec<String> = serde_json::from_value(args.get("ids").cloned().unwrap_or(serde_json::Value::Null))
-                .map_err(|e| format!("arg is not a tab id list: ids ({e})"))?;
-            to_json(&crate::tabs::reorder(root, &arg("kind")?, &arg("session")?, &ids)?)
+            let ids: Vec<String> =
+                serde_json::from_value(args.get("ids").cloned().unwrap_or(serde_json::Value::Null))
+                    .map_err(|e| format!("arg is not a tab id list: ids ({e})"))?;
+            to_json(&crate::tabs::reorder(
+                root,
+                &arg("kind")?,
+                &arg("session")?,
+                &ids,
+            )?)
         }
         "tabs_save" => {
             // **Shape-checked by serde rather than field by field**, and
@@ -193,9 +208,10 @@ pub fn answer(
         "dirs_wait" => to_json(&crate::files::DirWatch {
             seq: num("since")?,
             dirs: match args.get("dirs") {
-                Some(serde_json::Value::Array(a)) => {
-                    a.iter().filter_map(|d| d.as_str().map(str::to_owned)).collect()
-                }
+                Some(serde_json::Value::Array(a)) => a
+                    .iter()
+                    .filter_map(|d| d.as_str().map(str::to_owned))
+                    .collect(),
                 _ => Vec::new(),
             },
             unavailable: true,
@@ -331,8 +347,14 @@ pub fn answer(
         // The 额度 page: one ring per registered account, wherever its
         // key lives (`Node::quota_board`).
         "quota_board" => to_json(&rt.block_on(crate::quota_board(root))?),
-        "subscription_candidates" => to_json(&rt.block_on(crate::subscriptions::discover(root, &arg("machine")?))?),
-        "import_subscription" => to_json(&rt.block_on(crate::subscriptions::import(root, &arg("machine")?, &arg("provider")?))?),
+        "subscription_candidates" => {
+            to_json(&rt.block_on(crate::subscriptions::discover(root, &arg("machine")?))?)
+        }
+        "import_subscription" => to_json(&rt.block_on(crate::subscriptions::import(
+            root,
+            &arg("machine")?,
+            &arg("provider")?,
+        ))?),
         "register_account" => {
             // `budget` absent is "no budget"; present and not a number
             // is refused, the `restyle` rule (a malformed value quietly
@@ -407,14 +429,22 @@ pub fn answer(
         // the person can act on, so it rides back as data.
         "quota" => to_json(&rt.block_on(crate::quota())),
         "seen_snapshot" => {
-            let messages: Vec<crate::SeenMessage> = serde_json::from_value(args.get("messages").cloned().ok_or_else(|| "missing arg: messages".to_owned())?).map_err(|e| e.to_string())?;
+            let messages: Vec<crate::SeenMessage> = serde_json::from_value(
+                args.get("messages")
+                    .cloned()
+                    .ok_or_else(|| "missing arg: messages".to_owned())?,
+            )
+            .map_err(|e| e.to_string())?;
             crate::seen_snapshot(root, &arg("id")?, &messages)?;
             Ok("null".to_owned())
         }
         "seen" => {
             let at_ms = match args.get("at_ms") {
                 None | Some(serde_json::Value::Null) => None,
-                Some(v) => Some(v.as_i64().ok_or_else(|| "invalid read timestamp".to_owned())?),
+                Some(v) => Some(
+                    v.as_i64()
+                        .ok_or_else(|| "invalid read timestamp".to_owned())?,
+                ),
             };
             crate::seen(root, &arg("id")?, at_ms)?;
             Ok("null".to_owned())
@@ -472,7 +502,11 @@ pub fn answer(
             };
             to_json(&crate::set_watch(root, &arg("machine")?, &paths)?)
         }
-        "set_receive_dir" => to_json(&crate::set_receive_dir(root, &arg("machine")?, &arg("dir")?)?),
+        "set_receive_dir" => to_json(&crate::set_receive_dir(
+            root,
+            &arg("machine")?,
+            &arg("dir")?,
+        )?),
         "relays" => to_json(&crate::relays(root)?),
         "road_share" => to_json(&rt.block_on(crate::road_share(root))?),
         "connections" => to_json(&rt.block_on(crate::connections(root))?),
@@ -490,7 +524,10 @@ pub fn answer(
             to_json(&crate::proxy_line(&arg("machine")?, &arg("host")?, port))
         }
         "face_here" => {
-            rt.block_on(crate::face_here(root, matches!(args.get("visible"), Some(serde_json::Value::Bool(true)))))?;
+            rt.block_on(crate::face_here(
+                root,
+                matches!(args.get("visible"), Some(serde_json::Value::Bool(true))),
+            ))?;
             Ok("null".to_owned())
         }
         "visit" => {
@@ -538,7 +575,12 @@ pub fn answer(
             )?;
             Ok("null".to_owned())
         }
-        "agent_recognition" => to_json(&rt.block_on(crate::agent_recognition(root, &arg("machine")?, &arg("action")?, opt_str("agent")?.as_deref()))?),
+        "agent_recognition" => to_json(&rt.block_on(crate::agent_recognition(
+            root,
+            &arg("machine")?,
+            &arg("action")?,
+            opt_str("agent")?.as_deref(),
+        ))?),
         "hooks_state" => to_json(&crate::hooks_state(root)?),
         "install_hooks" => to_json(&crate::install_hooks(root)?),
         "uninstall_hooks" => to_json(&crate::uninstall_hooks(root)?),
@@ -558,10 +600,18 @@ pub fn answer(
         // put where the conversation's machine keeps files (round CHAT).
         "chat_put_paths" => {
             let paths: Vec<String> = match args.get("paths") {
-                Some(serde_json::Value::Array(a)) => a.iter().filter_map(|p| p.as_str().map(str::to_owned)).collect(),
+                Some(serde_json::Value::Array(a)) => a
+                    .iter()
+                    .filter_map(|p| p.as_str().map(str::to_owned))
+                    .collect(),
                 _ => return Err("missing list arg: paths".to_owned()),
             };
-            to_json(&crate::chat::chat_put_paths(root, &arg("id")?, &paths, opt_str("into")?.as_deref().unwrap_or(""))?)
+            to_json(&crate::chat::chat_put_paths(
+                root,
+                &arg("id")?,
+                &paths,
+                opt_str("into")?.as_deref().unwrap_or(""),
+            )?)
         }
         "chat_say" => {
             // `images` absent is the ordinary turn. Read as an array of
@@ -674,12 +724,22 @@ pub fn answer(
         "pull" => {
             to_json(&rt.block_on(crate::files::pull(root, &arg("machine")?, &arg("path")?))?)
         }
-        "file_handoff_start" => to_json(&crate::file_handoff::start(root, &arg("id")?, &arg("machine")?, &arg("path")?)?),
+        "file_handoff_start" => to_json(&crate::file_handoff::start(
+            root,
+            &arg("id")?,
+            &arg("machine")?,
+            &arg("path")?,
+        )?),
         "file_handoff_state" => to_json(&crate::file_handoff::state(root, &arg("id")?)?),
-        "file_handoff_cancel" => { crate::file_handoff::cancel(root, &arg("id")?)?; Ok("null".to_owned()) },
-        "pull_temp" => {
-            to_json(&rt.block_on(crate::files::pull_temp(root, &arg("machine")?, &arg("path")?))?)
+        "file_handoff_cancel" => {
+            crate::file_handoff::cancel(root, &arg("id")?)?;
+            Ok("null".to_owned())
         }
+        "pull_temp" => to_json(&rt.block_on(crate::files::pull_temp(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+        ))?),
         // Taking a path off a disk. `machine` empty is this one, which
         // is also the only one with a recycle bin behind it.
         "remove" => {
@@ -752,8 +812,18 @@ pub fn answer(
         "pdf_here" => to_json(&crate::files::pdf_here()),
         "term_open" => {
             // `history` is a newer face's (item 56); an older one says nothing.
-            let history = args.get("history").and_then(|v| v.as_u64()).unwrap_or(0).min(u32::MAX as u64) as u32;
-            crate::term::term_open(root, &arg("id")?, num("cols")? as u16, num("rows")? as u16, history)?;
+            let history = args
+                .get("history")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .min(u32::MAX as u64) as u32;
+            crate::term::term_open(
+                root,
+                &arg("id")?,
+                num("cols")? as u16,
+                num("rows")? as u16,
+                history,
+            )?;
             Ok("null".to_owned())
         }
         "term_attach" => to_json(&crate::term::term_attach(&arg("id")?)?),
@@ -778,19 +848,31 @@ pub fn answer(
         "term_pane_history" => {
             let since = match args.get("since") {
                 None | Some(serde_json::Value::Null) => None,
-                Some(v) => Some(serde_json::from_value(v.clone()).map_err(|e| format!("arg is not an anchor: since ({e})"))?),
+                Some(v) => Some(
+                    serde_json::from_value(v.clone())
+                        .map_err(|e| format!("arg is not an anchor: since ({e})"))?,
+                ),
             };
             to_json(&rt.block_on(crate::term::pane_history(root, &arg("id")?, since))?)
         }
         // ⌘K kept by the feed and the host's ring (term-attach).
         "term_forget" => to_json(&crate::term::term_forget(&arg("id")?, flag("redraw")?)?),
         // A tmux row's prompts, moved between by tmux (item 21).
-        "term_prompt" => to_json(&rt.block_on(crate::term::prompt(root, &arg("id")?, flag("up")?))?),
+        "term_prompt" => {
+            to_json(&rt.block_on(crate::term::prompt(root, &arg("id")?, flag("up")?))?)
+        }
         // The wheel over a shell's own tmux client (item 58).
         "term_scroll" => {
             // Signed: up is positive.
-            let rows = args.get("rows").and_then(|v| v.as_i64()).ok_or("missing number arg: rows")?;
-            to_json(&rt.block_on(crate::term::scroll(root, &arg("id")?, rows.clamp(-1000, 1000) as i32))?)
+            let rows = args
+                .get("rows")
+                .and_then(|v| v.as_i64())
+                .ok_or("missing number arg: rows")?;
+            to_json(&rt.block_on(crate::term::scroll(
+                root,
+                &arg("id")?,
+                rows.clamp(-1000, 1000) as i32,
+            ))?)
         }
         // The bridge answers one request at a time, so it never holds one
         // open: here a wait is the stream's answer as it stands.
@@ -800,15 +882,35 @@ pub fn answer(
             Ok("null".to_owned())
         }
         "term_drop_items" => {
-            let items: Vec<crate::term::DropItem> = serde_json::from_value(args.get("items").cloned().unwrap_or(serde_json::Value::Null)).map_err(|e| e.to_string())?;
-            to_json(&crate::term::term_drop_items(root, &arg("id")?, &items, args.get("into").and_then(|v| v.as_str())))
+            let items: Vec<crate::term::DropItem> = serde_json::from_value(
+                args.get("items")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+            )
+            .map_err(|e| e.to_string())?;
+            to_json(&crate::term::term_drop_items(
+                root,
+                &arg("id")?,
+                &items,
+                args.get("into").and_then(|v| v.as_str()),
+            ))
         }
         "term_drop_folder" => {
-            let dirs: Vec<String> = serde_json::from_value(args.get("dirs").cloned().unwrap_or_else(||serde_json::json!([]))).map_err(|e| e.to_string())?;
+            let dirs: Vec<String> = serde_json::from_value(
+                args.get("dirs")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!([])),
+            )
+            .map_err(|e| e.to_string())?;
             to_json(&crate::term::term_drop_folder(root, &arg("name")?, &dirs)?)
         }
         "term_drop_forget" => {
-            let paths: Vec<String> = serde_json::from_value(args.get("paths").cloned().unwrap_or_else(||serde_json::json!([]))).map_err(|e| e.to_string())?;
+            let paths: Vec<String> = serde_json::from_value(
+                args.get("paths")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!([])),
+            )
+            .map_err(|e| e.to_string())?;
             crate::term::term_drop_forget(root, &paths);
             to_json(&())
         }
@@ -824,7 +926,13 @@ pub fn answer(
                 .unwrap_or_default();
             let from = args.get("from").and_then(|v| v.as_str());
             let into = args.get("into").and_then(|v| v.as_str());
-            to_json(&crate::term::term_drop(root, &arg("id")?, &paths, from, into))
+            to_json(&crate::term::term_drop(
+                root,
+                &arg("id")?,
+                &paths,
+                from,
+                into,
+            ))
         }
         "term_drop_progress" => to_json(&crate::term::term_drop_progress(&arg("id")?)),
         // The pill's × while files go in (item 71). Behind the bridge it
@@ -834,7 +942,11 @@ pub fn answer(
             let staged: Vec<String> = args
                 .get("staged")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_owned))
+                        .collect()
+                })
                 .unwrap_or_default();
             crate::term::term_drop_cancel(root, &arg("id")?, &staged);
             Ok("null".to_owned())
@@ -855,14 +967,30 @@ pub fn answer(
             num("limit")? as usize,
         )?),
         "recent_visit" => {
-            crate::recents::recent_visit(root, &arg("kind")?, &arg("machine")?, &arg("place")?, opt_str("session")?.as_deref())?;
+            crate::recents::recent_visit(
+                root,
+                &arg("kind")?,
+                &arg("machine")?,
+                &arg("place")?,
+                opt_str("session")?.as_deref(),
+            )?;
             Ok("null".to_owned())
         }
         "forget_recent" => {
             if let Some(device) = opt_str("device")? {
-                crate::recents::forget_recent_by_device(root, &arg("kind")?, &device, &arg("place")?)?;
+                crate::recents::forget_recent_by_device(
+                    root,
+                    &arg("kind")?,
+                    &device,
+                    &arg("place")?,
+                )?;
             } else {
-                crate::recents::forget_recent(root, &arg("kind")?, &arg("machine")?, &arg("place")?)?;
+                crate::recents::forget_recent(
+                    root,
+                    &arg("kind")?,
+                    &arg("machine")?,
+                    &arg("place")?,
+                )?;
             }
             Ok("null".to_owned())
         }
@@ -888,16 +1016,18 @@ pub fn answer(
         "open_page" => {
             let machine = arg("machine")?;
             if machine.is_empty() {
-                to_json(&crate::web::WebBorrow { session: String::new(), addr: String::new() })
+                to_json(&crate::web::WebBorrow {
+                    session: String::new(),
+                    addr: String::new(),
+                })
             } else {
                 to_json(&rt.block_on(crate::web::borrow_web(root, &machine))?)
             }
         }
         // `page_deck` is the iPhone's native deck over its page (UX-13);
         // here there is neither, so it is answered like the other moves.
-        "move_page" | "hide_page" | "close_page" | "show_page" | "page_step" | "page_deck" | "page_ground" => {
-            Ok("null".to_owned())
-        }
+        "move_page" | "hide_page" | "close_page" | "show_page" | "page_step" | "page_deck"
+        | "page_ground" => Ok("null".to_owned()),
         "takeover" => {
             crate::takeover(root, &arg("id")?)?;
             Ok("null".to_owned())
@@ -916,18 +1046,39 @@ pub fn answer(
             opt_str("token")?.as_deref(),
         ))?),
         "launch_presets" => to_json(&crate::launch::list(root)?),
-        "launch_preset_save" => to_json(&crate::launch::save(root,serde_json::from_value(args.get("preset").cloned().ok_or("missing preset")?).map_err(|e|e.to_string())?)?),
-        "launch_preset_delete" => to_json(&crate::launch::remove(root,&arg("id")?)?),
-        "open_shell" => to_json(&rt.block_on(crate::open_shell(root,&arg("machine")?,&arg("cwd")?,&arg("command")?,&opt_str("title")?.unwrap_or_default(),
-            args.get("cols").and_then(|v|v.as_u64()).zip(args.get("rows").and_then(|v|v.as_u64())).map(|(c,r)|(c.min(500) as u16,r.min(200) as u16)),&arg("token")?))?),
+        "launch_preset_save" => to_json(&crate::launch::save(
+            root,
+            serde_json::from_value(args.get("preset").cloned().ok_or("missing preset")?)
+                .map_err(|e| e.to_string())?,
+        )?),
+        "launch_preset_delete" => to_json(&crate::launch::remove(root, &arg("id")?)?),
+        "open_shell" => to_json(
+            &rt.block_on(crate::open_shell(
+                root,
+                &arg("machine")?,
+                &arg("cwd")?,
+                &arg("command")?,
+                &opt_str("title")?.unwrap_or_default(),
+                args.get("cols")
+                    .and_then(|v| v.as_u64())
+                    .zip(args.get("rows").and_then(|v| v.as_u64()))
+                    .map(|(c, r)| (c.min(500) as u16, r.min(200) as u16)),
+                &arg("token")?,
+            ))?,
+        ),
         "open_on" => to_json(&rt.block_on(crate::open_term_on(
             root,
             &arg("machine")?,
             &opt_str("title")?.unwrap_or_default(),
             &opt_str("cwd")?.unwrap_or_default(),
             // The face's terminal size, when it sends one: both or none.
-            match (args.get("cols").and_then(|v| v.as_u64()), args.get("rows").and_then(|v| v.as_u64())) {
-                (Some(c), Some(r)) => Some((c.min(u16::MAX as u64) as u16, r.min(u16::MAX as u64) as u16)),
+            match (
+                args.get("cols").and_then(|v| v.as_u64()),
+                args.get("rows").and_then(|v| v.as_u64()),
+            ) {
+                (Some(c), Some(r)) => {
+                    Some((c.min(u16::MAX as u64) as u16, r.min(u16::MAX as u64) as u16))
+                }
                 _ => None,
             },
             opt_str("token")?.as_deref(),

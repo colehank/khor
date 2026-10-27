@@ -299,7 +299,11 @@ fn a_node_keeps_what_it_counted_after_the_transcript_is_gone() {
 
     std::fs::remove_file(r.join(".claude/projects/p/s.jsonl")).unwrap();
     let after = node.usage();
-    assert_eq!(output_of(&after), 4242, "the vendor deleted the file, not the history");
+    assert_eq!(
+        output_of(&after),
+        4242,
+        "the vendor deleted the file, not the history"
+    );
     assert!(
         after.days.iter().all(|d| d.category == "claude"),
         "an official id is the subscription's: {after:?}"

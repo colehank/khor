@@ -105,7 +105,11 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
         let r = row(n).expect("the broadcast row stands on every machine");
         assert_eq!(r.kind.0, khor_core::kind::BROADCAST);
         assert_eq!(r.category.as_deref(), Some(khor_core::category::KHOR));
-        assert_eq!(n.wide_members().unwrap().len(), 3, "every machine is a member");
+        assert_eq!(
+            n.wide_members().unwrap().len(),
+            3,
+            "every machine is a member"
+        );
     }
 
     // A line from beta spreads through alpha: gamma reads it although
@@ -118,14 +122,23 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     sync(&c).await;
     let said = c.log(BROADCAST).unwrap().messages;
     assert!(
-        said.iter().any(|m| matches!(&m.body, MsgBody::Text(t) if t == "hello everyone")),
+        said.iter()
+            .any(|m| matches!(&m.body, MsgBody::Text(t) if t == "hello everyone")),
         "gamma reads beta's line through alpha"
     );
     let rc_row = row(&c).unwrap();
-    assert_eq!(rc_row.last.as_deref(), Some("hello everyone"), "the row previews the newest line");
+    assert_eq!(
+        rc_row.last.as_deref(),
+        Some("hello everyone"),
+        "the row previews the newest line"
+    );
     // Every machine is the same person's: a line typed on beta was seen
     // by its writer, and the seen mark travels (`Node::tell`'s rule).
-    assert_eq!((rc_row.unread, rc_row.state.state), (0, State::Idle), "own words are unread nowhere");
+    assert_eq!(
+        (rc_row.unread, rc_row.state.state),
+        (0, State::Idle),
+        "own words are unread nowhere"
+    );
 
     // alpha offers a file. Nothing moves by itself, and nothing waits on
     // anybody: on each other machine it is a file one may take, unread
@@ -134,27 +147,45 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     let src = ra.join("all.bin");
     fs::write(&src, &payload).unwrap();
     let tid = khor_node::transfer::TransferKind::session_id(
-        &timeout(Duration::from_secs(45), a.post("", std::slice::from_ref(&src)))
-            .await
-            .expect("a post must not hang")
-            .unwrap(),
+        &timeout(
+            Duration::from_secs(45),
+            a.post("", std::slice::from_ref(&src)),
+        )
+        .await
+        .expect("a post must not hang")
+        .unwrap(),
     );
     let msg = tid.0.strip_prefix("transfer/").unwrap().to_owned();
     sync(&b).await;
     sync(&c).await;
     for n in [&b, &c] {
-        assert_eq!(row(n).unwrap().state.state, State::Done, "an unanswered offer is 未看, never 待批");
+        assert_eq!(
+            row(n).unwrap().state.state,
+            State::Done,
+            "an unanswered offer is 未看, never 待批"
+        );
     }
-    assert_ne!(row(&a).unwrap().state.state, State::Blocked, "the sender waits on nobody");
+    assert_ne!(
+        row(&a).unwrap().state.state,
+        State::Blocked,
+        "the sender waits on nobody"
+    );
     tokio::time::sleep(Duration::from_millis(500)).await;
-    assert!(!rb.join("khor-drop").join("all.bin").exists(), "an offer is not pulled before it is accepted");
+    assert!(
+        !rb.join("khor-drop").join("all.bin").exists(),
+        "an offer is not pulled before it is accepted"
+    );
     let face = |n: &Node| {
         let (log, faces) = n.wide_log(BROADCAST).unwrap();
         let i = log.messages.iter().position(|m| m.id == msg).unwrap();
         faces[i].clone().unwrap()
     };
     let f = face(&a);
-    assert_eq!((f.got, f.of, f.here), (0, 2, None), "nobody has it yet, two were asked");
+    assert_eq!(
+        (f.got, f.of, f.here),
+        (0, 2, None),
+        "nobody has it yet, two were asked"
+    );
 
     // beta accepts: pulled from alpha into beta's own receive location.
     timeout(Duration::from_secs(60), b.take(&tid))
@@ -162,10 +193,22 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
         .expect("accept must not hang")
         .unwrap();
     let landed = rb.join("khor-drop").join("all.bin");
-    assert_eq!(fs::read(&landed).unwrap(), payload, "verbatim, in beta's receive location");
+    assert_eq!(
+        fs::read(&landed).unwrap(),
+        payload,
+        "verbatim, in beta's receive location"
+    );
     assert_eq!(face(&b).here.unwrap().step, Step::Landed);
-    assert_ne!(row(&b).unwrap().state.state, State::Blocked, "answered, beta's row lets go");
-    assert_eq!(row(&c).unwrap().state.state, State::Done, "gamma's own is still unread, not waiting");
+    assert_ne!(
+        row(&b).unwrap().state.state,
+        State::Blocked,
+        "answered, beta's row lets go"
+    );
+    assert_eq!(
+        row(&c).unwrap().state.state,
+        State::Done,
+        "gamma's own is still unread, not waiting"
+    );
 
     // gamma's pull breaks (the sender's file is gone): its own record
     // says so, beta's is untouched, and a retry resumes once it is back.
@@ -177,20 +220,33 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     let failed = face(&c).here.unwrap();
     assert_eq!(failed.step, Step::Failed);
     assert!(!failed.why.is_empty(), "with its sentence");
-    assert_eq!(row(&c).unwrap().state.state, State::Errored, "a broken pull is 中断");
+    assert_eq!(
+        row(&c).unwrap().state.state,
+        State::Errored,
+        "a broken pull is 中断"
+    );
     fs::rename(ra.join("away.bin"), &src).unwrap();
     timeout(Duration::from_secs(60), c.take(&tid))
         .await
         .expect("the retry must not hang")
         .unwrap();
-    assert_eq!(fs::read(rc.join("khor-drop").join("all.bin")).unwrap(), payload);
+    assert_eq!(
+        fs::read(rc.join("khor-drop").join("all.bin")).unwrap(),
+        payload
+    );
 
     // The sender counts both, from the records the receivers wrote.
     sync(&b).await;
     sync(&c).await;
     let f = face(&a);
     assert_eq!((f.got, f.of), (2, 2), "the sender reads 2/2");
-    let both = a.log(BROADCAST).unwrap().messages.into_iter().find(|m| m.id == msg).unwrap();
+    let both = a
+        .log(BROADCAST)
+        .unwrap()
+        .messages
+        .into_iter()
+        .find(|m| m.id == msg)
+        .unwrap();
     assert_eq!(both.fates.len(), 2, "one record per receiver");
 
     // The machine that sent it has nothing to receive.
@@ -242,11 +298,17 @@ async fn a_broadcast_file_is_pulled_from_a_holder_while_its_sender_is_away() {
     sync(&b).await;
     let reached = Instant::now();
     loop {
-        let out = timeout(Duration::from_secs(45), c.sync_now()).await.expect("sync must not hang").unwrap();
+        let out = timeout(Duration::from_secs(45), c.sync_now())
+            .await
+            .expect("sync must not hang")
+            .unwrap();
         if heard(&out, "beta") {
             break;
         }
-        assert!(reached.elapsed() < Duration::from_secs(60), "gamma reaches beta: {out:?}");
+        assert!(
+            reached.elapsed() < Duration::from_secs(60),
+            "gamma reaches beta: {out:?}"
+        );
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
@@ -254,17 +316,24 @@ async fn a_broadcast_file_is_pulled_from_a_holder_while_its_sender_is_away() {
     let src = ra.join("held.bin");
     fs::write(&src, &payload).unwrap();
     let tid = khor_node::transfer::TransferKind::session_id(
-        &timeout(Duration::from_secs(45), a.post("", std::slice::from_ref(&src)))
-            .await
-            .expect("a post must not hang")
-            .unwrap(),
+        &timeout(
+            Duration::from_secs(45),
+            a.post("", std::slice::from_ref(&src)),
+        )
+        .await
+        .expect("a post must not hang")
+        .unwrap(),
     );
     let msg_id = tid.0.strip_prefix("transfer/").unwrap().to_owned();
     sync(&b).await;
     sync(&c).await;
     let face = |n: &Node| {
         let (log, faces) = n.wide_log(BROADCAST).unwrap();
-        let i = log.messages.iter().position(|m| m.id == msg_id).expect("the offer is here");
+        let i = log
+            .messages
+            .iter()
+            .position(|m| m.id == msg_id)
+            .expect("the offer is here");
         faces[i].clone().unwrap()
     };
 
@@ -278,14 +347,30 @@ async fn a_broadcast_file_is_pulled_from_a_holder_while_its_sender_is_away() {
         .unwrap_err();
     let nobody_took = t.elapsed();
     let sep = msg::take_tried_separator();
-    assert_eq!(why, format!("{}{sep}{}", msg::take_sender_down("alpha"), msg::take_no_holder()));
+    assert_eq!(
+        why,
+        format!(
+            "{}{sep}{}",
+            msg::take_sender_down("alpha"),
+            msg::take_no_holder()
+        )
+    );
     let failed = face(&c).here.unwrap();
-    assert_eq!((failed.step, failed.why.as_str()), (Step::Failed, why.as_str()), "the record says the same");
+    assert_eq!(
+        (failed.step, failed.why.as_str()),
+        (Step::Failed, why.as_str()),
+        "the record says the same"
+    );
 
     // alpha is back; beta lands it from alpha and so holds it.
     let mut resuming = link::resume(&ra).expect("alpha's serve takes a resume");
-    timeout(Duration::from_secs(30), resuming.ears()).await.expect("new ears must not hang").expect("alpha hears again");
-    let _ = timeout(Duration::from_secs(60), resuming.synced()).await.expect("the round after resume must come back");
+    timeout(Duration::from_secs(30), resuming.ears())
+        .await
+        .expect("new ears must not hang")
+        .expect("alpha hears again");
+    let _ = timeout(Duration::from_secs(60), resuming.synced())
+        .await
+        .expect("the round after resume must come back");
     timeout(Duration::from_secs(60), b.take(&tid))
         .await
         .expect("beta's accept must not hang")
@@ -293,27 +378,46 @@ async fn a_broadcast_file_is_pulled_from_a_holder_while_its_sender_is_away() {
     let on_b = rb.join("khor-drop").join("held.bin");
     assert_eq!(fs::read(&on_b).unwrap(), payload, "beta landed it");
     let at_b = face(&b).here.unwrap();
-    assert_eq!((at_b.step, at_b.via.as_str()), (Step::Landed, a.device_str()), "from alpha");
+    assert_eq!(
+        (at_b.step, at_b.via.as_str()),
+        (Step::Landed, a.device_str()),
+        "from alpha"
+    );
     // beta holds it: the landed file's record, written by the take. A
     // 收下 that finds it landed writes it again when it went missing.
     let records = || -> Vec<String> {
         fs::read_dir(rb.join(".khor").join("transfers"))
-            .map(|rd| rd.flatten().filter_map(|e| fs::read_to_string(e.path()).ok()).collect())
+            .map(|rd| {
+                rd.flatten()
+                    .filter_map(|e| fs::read_to_string(e.path()).ok())
+                    .collect()
+            })
             .unwrap_or_default()
     };
-    assert!(records().iter().any(|r| r.contains("\"held\":true")), "beta holds it: {:?}", records());
+    assert!(
+        records().iter().any(|r| r.contains("\"held\":true")),
+        "beta holds it: {:?}",
+        records()
+    );
     fs::remove_dir_all(rb.join(".khor").join("transfers")).unwrap();
     timeout(Duration::from_secs(60), b.take(&tid))
         .await
         .expect("a take of a landed file must not hang")
         .unwrap();
-    assert!(records().iter().any(|r| r.contains("\"held\":true")), "held again: {:?}", records());
+    assert!(
+        records().iter().any(|r| r.contains("\"held\":true")),
+        "held again: {:?}",
+        records()
+    );
 
     // alpha away again; gamma reads beta's landing from beta itself.
     assert!(link::deafen(&ra).await);
     let seen = Instant::now();
     while face(&c).got < 1 {
-        assert!(seen.elapsed() < Duration::from_secs(90), "gamma reads beta's landing");
+        assert!(
+            seen.elapsed() < Duration::from_secs(90),
+            "gamma reads beta's landing"
+        );
         sync(&c).await;
     }
 
@@ -345,17 +449,32 @@ async fn a_broadcast_file_is_pulled_from_a_holder_while_its_sender_is_away() {
         .unwrap();
     let from_holder_took = t.elapsed();
     // Not behind a dial to alpha: that alone is `DIAL_TIMEOUT` (10 s).
-    assert!(from_holder_took < Duration::from_secs(8), "beta is asked first: {from_holder_took:?}");
-    assert_eq!(fs::read(rc.join("khor-drop").join("held.bin")).unwrap(), payload, "gamma has alpha's bytes");
+    assert!(
+        from_holder_took < Duration::from_secs(8),
+        "beta is asked first: {from_holder_took:?}"
+    );
+    assert_eq!(
+        fs::read(rc.join("khor-drop").join("held.bin")).unwrap(),
+        payload,
+        "gamma has alpha's bytes"
+    );
     let at_c = face(&c).here.unwrap();
-    assert_eq!((at_c.step, at_c.via.as_str()), (Step::Landed, b.device_str()), "the record says it came from beta");
+    assert_eq!(
+        (at_c.step, at_c.via.as_str()),
+        (Step::Landed, b.device_str()),
+        "the record says it came from beta"
+    );
     assert!(at_c.why.is_empty());
 
     // Counted the same as a landing from the sender: two of two, on
     // beta's copy (gamma's move nudged it there) and on gamma's.
     sync(&c).await;
     assert_eq!((face(&c).got, face(&c).of), (2, 2));
-    assert_eq!((face(&b).got, face(&b).of), (2, 2), "beta counts gamma's landing from beta");
+    assert_eq!(
+        (face(&b).got, face(&b).of),
+        (2, 2),
+        "beta counts gamma's landing from beta"
+    );
     eprintln!(
         "timings: nobody-holds take {nobody_took:?}, take from the holder {from_holder_took:?}, whole test {:?}",
         began.elapsed()

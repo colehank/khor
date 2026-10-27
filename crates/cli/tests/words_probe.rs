@@ -24,7 +24,10 @@ use khor_node::{Hop, Node};
 use scratch::*;
 
 fn env_u64(k: &str, d: u64) -> u64 {
-    std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+    std::env::var(k)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(d)
 }
 
 fn word_of(hop: Hop) -> &'static str {
@@ -45,10 +48,26 @@ async fn the_word_for_a_machine_reached_directly_holds_while_the_relay_is_lossy(
     let loss = env_u64("DIAG_LOSS_PCT", 5) as u32;
     let watch = Duration::from_secs(env_u64("DIAG_WATCH_SECS", 60));
     own_tmux();
-    let (rm, rp, rr) = (scratch("words-mac"), scratch("words-phone"), scratch("words-relay"));
+    let (rm, rp, rr) = (
+        scratch("words-mac"),
+        scratch("words-phone"),
+        scratch("words-relay"),
+    );
     let (_relay, direct) = local_relay(&rr.0);
-    let to: std::net::SocketAddr = direct.trim_start_matches("http://").trim_end_matches('/').parse().unwrap();
-    let (at, _road) = slow_road(to, Impair { rtt, loss_pct: loss, stall: rtt }).await;
+    let to: std::net::SocketAddr = direct
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .parse()
+        .unwrap();
+    let (at, _road) = slow_road(
+        to,
+        Impair {
+            rtt,
+            loss_pct: loss,
+            stall: rtt,
+        },
+    )
+    .await;
     let url = format!("http://{at}");
     for h in [&rm.0, &rp.0] {
         home_on(h, &url);
@@ -96,11 +115,11 @@ async fn the_word_for_a_machine_reached_directly_holds_while_the_relay_is_lossy(
             let _ = phone.face_is_here(true).await;
         }
         beat += 1;
-        let hop = phone
-            .links()
-            .await
-            .ok()
-            .and_then(|l| l.into_iter().find(|(i, _)| *i == mac_id).map(|(_, l)| l.hop));
+        let hop = phone.links().await.ok().and_then(|l| {
+            l.into_iter()
+                .find(|(i, _)| *i == mac_id)
+                .map(|(_, l)| l.hop)
+        });
         let w = hop.map(word_of).unwrap_or("（无行）");
         if w == "直连" && first_direct.is_none() {
             first_direct = Some(began.elapsed());

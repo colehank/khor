@@ -611,7 +611,12 @@ pub async fn dirs_wait(
 ) -> Result<DirWatch, String> {
     let n = Node::open(root.to_path_buf())?;
     let c = n
-        .dirs_changed(machine, &dirs, since, std::time::Duration::from_millis(wait_ms))
+        .dirs_changed(
+            machine,
+            &dirs,
+            since,
+            std::time::Duration::from_millis(wait_ms),
+        )
         .await?;
     Ok(DirWatch {
         seq: c.seq,
@@ -1081,8 +1086,7 @@ mod large_file_tests {
 
         // Small-file fast path.
         if total <= SLICE {
-            let (_, _, bytes) =
-                khor_node::files::read_slice(path.to_str().unwrap(), 0)?;
+            let (_, _, bytes) = khor_node::files::read_slice(path.to_str().unwrap(), 0)?;
             let _ = std::fs::remove_dir_all(&dir);
             return Ok(super::shape(total, at_ms, &bytes));
         }
@@ -1092,8 +1096,7 @@ mod large_file_tests {
         let mut bytes: Vec<u8> = Vec::new();
         let mut hasher = blake3::Hasher::new();
         {
-            let (_, _, first) =
-                khor_node::files::read_slice(path.to_str().unwrap(), 0)?;
+            let (_, _, first) = khor_node::files::read_slice(path.to_str().unwrap(), 0)?;
             if first.iter().take(super::SNIFF).any(|b| *b == 0) {
                 let _ = std::fs::remove_dir_all(&dir);
                 return Ok(super::FileText {
@@ -1179,11 +1182,7 @@ mod large_file_tests {
         let result = read_via_node(&content).expect("read must succeed");
         assert!(!result.binary, "text file must not be called binary");
         assert!(!result.cut, "a file under TEXT_CAP must not be cut");
-        assert_eq!(
-            result.text.len(),
-            content.len(),
-            "all bytes must arrive"
-        );
+        assert_eq!(result.text.len(), content.len(), "all bytes must arrive");
         let expected_digest = khor_node::files::digest(&content);
         assert_eq!(
             result.digest, expected_digest,
@@ -1201,7 +1200,10 @@ mod large_file_tests {
         content.push(0x00);
         content.extend_from_slice(b"and more bytes");
         let result = read_via_node(&content).expect("read_via_node should not Err");
-        assert!(result.binary, "NUL in second slice must be detected as binary");
+        assert!(
+            result.binary,
+            "NUL in second slice must be detected as binary"
+        );
         assert!(result.text.is_empty(), "no text for a binary");
         assert!(result.digest.is_empty(), "no digest for a binary");
     }

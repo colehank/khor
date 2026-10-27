@@ -224,7 +224,10 @@ async fn real_worker_authorization_and_original_parent_identity_survive_the_proc
         let files: Vec<_> = fs::read_dir(&directory)
             .unwrap()
             .map(|entry| entry.unwrap().path())
-            .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
             .collect();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0], directory.join(format!("{key}.json")));
@@ -707,7 +710,10 @@ async fn answering_an_existing_task_keeps_a_durable_link_when_cancelled_after_ac
     let links: Vec<_> = fs::read_dir(&directory)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
         .collect();
     assert_eq!(links.len(), 1);
     let crate::delegation::Answer::Binding { binding } = node
@@ -722,9 +728,8 @@ async fn answering_an_existing_task_keeps_a_durable_link_when_cancelled_after_ac
     else {
         panic!("missing actual Answer binding");
     };
-    let expected_link = directory.join(
-        crate::delegation::child_key(&binding, &format!("task:{}", record.task.id)).unwrap(),
-    );
+    let expected_link = directory
+        .join(crate::delegation::child_key(&binding, &format!("task:{}", record.task.id)).unwrap());
     assert_eq!(links[0], expected_link);
     let before = fs::read(&expected_link).unwrap();
     let link: Value = serde_json::from_slice(&before).unwrap();

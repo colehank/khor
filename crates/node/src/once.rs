@@ -31,7 +31,10 @@ const KEPT_MS: u64 = 24 * 60 * 60 * 1000;
 /// and dashes, long enough not to meet another by chance, short enough
 /// to be a file name everywhere.
 pub(crate) fn valid(token: &str) -> bool {
-    (16..=64).contains(&token.len()) && token.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    (16..=64).contains(&token.len())
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 fn dir(root: &Path) -> PathBuf {
@@ -102,7 +105,12 @@ mod tests {
     #[test]
     fn a_token_is_a_safe_file_name_and_only_that() {
         assert!(valid("3f2b9c1e-8a7d-4e5f-9b0c-1d2e3f4a5b6c"));
-        for bad in ["short", "../../etc/passwd-xxxxxxxx", "a b c d e f g h i j", &"x".repeat(65)] {
+        for bad in [
+            "short",
+            "../../etc/passwd-xxxxxxxx",
+            "a b c d e f g h i j",
+            &"x".repeat(65),
+        ] {
             assert!(!valid(bad), "{bad:?}");
         }
     }

@@ -261,7 +261,8 @@ impl Drop for Server {
 }
 
 fn read_for(conn: &mut std::net::TcpStream, d: Duration) -> Vec<u8> {
-    conn.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    conn.set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
     let mut got = Vec::new();
     let mut buf = [0u8; 65536];
     let until = Instant::now() + d;
@@ -277,7 +278,13 @@ fn read_for(conn: &mut std::net::TcpStream, d: Duration) -> Vec<u8> {
 
 #[test]
 fn a_tmux_typed_in_a_shell_is_not_handed_out_black_after_a_narrowing() {
-    if Command::new("tmux").arg("-V").stdout(Stdio::null()).stderr(Stdio::null()).status().map_or(true, |s| !s.success()) {
+    if Command::new("tmux")
+        .arg("-V")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_or(true, |s| !s.success())
+    {
         eprintln!("skipped: no tmux on this machine");
         return;
     }
@@ -292,7 +299,9 @@ fn a_tmux_typed_in_a_shell_is_not_handed_out_black_after_a_narrowing() {
     let host = {
         let root = root.clone();
         let id = id.clone();
-        std::thread::spawn(move || khor_node::host::host_main(root, id, (80, 24), vec!["/bin/sh".into()]))
+        std::thread::spawn(move || {
+            khor_node::host::host_main(root, id, (80, 24), vec!["/bin/sh".into()])
+        })
     };
     let dir = k.dir_of(&id).expect("registered");
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -315,11 +324,15 @@ fn a_tmux_typed_in_a_shell_is_not_handed_out_black_after_a_narrowing() {
     server.started().expect("the server reports its own socket");
     // CJK to the pane's right edge: 40 wide characters fill 80 columns.
     let wide = "\u{4e2d}".repeat(40);
-    let line = format!("clear; for i in 1 2 3 4 5 6; do printf '%s\\n' '{wide}'; done; echo MARK-57");
+    let line =
+        format!("clear; for i in 1 2 3 4 5 6; do printf '%s\\n' '{wide}'; done; echo MARK-57");
     tmux(&sock, &["send-keys", "-t", "one", "-l", &line]);
     tmux(&sock, &["send-keys", "-t", "one", "Enter"]);
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !tmux(&sock, &["capture-pane", "-p", "-t", "one"]).lines().any(|l| l == "MARK-57") {
+    while !tmux(&sock, &["capture-pane", "-p", "-t", "one"])
+        .lines()
+        .any(|l| l == "MARK-57")
+    {
         assert!(Instant::now() < deadline, "the pane never showed the mark");
         let _ = read_for(&mut face, Duration::from_millis(100));
     }
@@ -348,13 +361,29 @@ fn a_tmux_typed_in_a_shell_is_not_handed_out_black_after_a_narrowing() {
     let mut face = vt100::Parser::new(24, 79, 0);
     face.process(&got);
     let screen = face.screen();
-    let rows: Vec<String> = screen.rows(0, 79).map(|r| r.trim_end().to_owned()).collect();
-    eprintln!("the face was handed {} bytes:\n{}", got.len(), rows.join("\n"));
-    assert!(screen.alternate_screen(), "the face is on tmux's alternate screen");
+    let rows: Vec<String> = screen
+        .rows(0, 79)
+        .map(|r| r.trim_end().to_owned())
+        .collect();
+    eprintln!(
+        "the face was handed {} bytes:\n{}",
+        got.len(),
+        rows.join("\n")
+    );
+    assert!(
+        screen.alternate_screen(),
+        "the face is on tmux's alternate screen"
+    );
     let want: Vec<&str> = shown.lines().map(str::trim_end).collect();
-    assert!(want.iter().any(|l| l.contains('\u{4e2d}')), "control: tmux shows the wide rows: {shown}");
+    assert!(
+        want.iter().any(|l| l.contains('\u{4e2d}')),
+        "control: tmux shows the wide rows: {shown}"
+    );
     for (i, w) in want.iter().enumerate() {
-        assert_eq!(rows[i], *w, "row {i}: the face shows what tmux shows, not a blank");
+        assert_eq!(
+            rows[i], *w,
+            "row {i}: the face shows what tmux shows, not a blank"
+        );
     }
 }
 
@@ -365,7 +394,13 @@ fn a_tmux_typed_in_a_shell_is_not_handed_out_black_after_a_narrowing() {
 /// shell again.
 #[test]
 fn a_shells_own_tmux_client_is_found_by_its_terminal() {
-    if Command::new("tmux").arg("-V").stdout(Stdio::null()).stderr(Stdio::null()).status().map_or(true, |s| !s.success()) {
+    if Command::new("tmux")
+        .arg("-V")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_or(true, |s| !s.success())
+    {
         eprintln!("skipped: no tmux on this machine");
         return;
     }
@@ -380,7 +415,9 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
     let host = {
         let root = root.clone();
         let id = id.clone();
-        std::thread::spawn(move || khor_node::host::host_main(root, id, (80, 24), vec!["/bin/sh".into()]))
+        std::thread::spawn(move || {
+            khor_node::host::host_main(root, id, (80, 24), vec!["/bin/sh".into()])
+        })
     };
     let dir = k.dir_of(&id).expect("registered");
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -392,7 +429,11 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
         std::thread::sleep(Duration::from_millis(50));
     };
     let _ = read_for(&mut face, Duration::from_millis(300));
-    assert_eq!(k.tmux_in_shell(&id), None, "a shell at its prompt has no tmux client in front");
+    assert_eq!(
+        k.tmux_in_shell(&id),
+        None,
+        "a shell at its prompt has no tmux client in front"
+    );
 
     let typed = format!("tmux -L {sock} -f /dev/null new -s mine /bin/sh\r");
     write_frame(&mut face, &ClientOp::Input(typed.into_bytes())).unwrap();
@@ -403,12 +444,28 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
     }
     server.started().expect("the server reports its own socket");
     let front = k.tmux_in_shell(&id).expect("the client in front is found");
-    assert_eq!(front.socket, vec!["-L".to_owned(), sock.clone()], "its server, from its argv");
-    assert_eq!(front.session_name, "mine");
-    assert!(front.tty.starts_with("/dev/"), "the terminal as tmux names it: {}", front.tty);
-    assert_eq!(tmux(&sock, &["list-clients", "-F", "#{client_tty}"]).trim(), front.tty, "the client on the shell's terminal");
     assert_eq!(
-        tmux(&sock, &["display-message", "-p", "-t", "mine", "#{pane_id}"]).trim(),
+        front.socket,
+        vec!["-L".to_owned(), sock.clone()],
+        "its server, from its argv"
+    );
+    assert_eq!(front.session_name, "mine");
+    assert!(
+        front.tty.starts_with("/dev/"),
+        "the terminal as tmux names it: {}",
+        front.tty
+    );
+    assert_eq!(
+        tmux(&sock, &["list-clients", "-F", "#{client_tty}"]).trim(),
+        front.tty,
+        "the client on the shell's terminal"
+    );
+    assert_eq!(
+        tmux(
+            &sock,
+            &["display-message", "-p", "-t", "mine", "#{pane_id}"]
+        )
+        .trim(),
         front.pane_id,
         "and the pane in front of it (SESS-BRIEF 2c)"
     );
@@ -434,32 +491,81 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
         "the session's row, as the sweep names it"
     );
     assert_eq!(
-        Discovery::at(&vendors).with_tmux(Tmux::on_socket(&format!("{sock}-other"))).attached(shell),
+        Discovery::at(&vendors)
+            .with_tmux(Tmux::on_socket(&format!("{sock}-other")))
+            .attached(shell),
         None,
         "a session id means nothing on another server"
     );
-    assert_eq!(Discovery::at(&vendors).attached(shell), None, "no server watched, nothing asked");
+    assert_eq!(
+        Discovery::at(&vendors).attached(shell),
+        None,
+        "no server watched, nothing asked"
+    );
 
-    tmux(&sock, &["send-keys", "-t", "mine", "-l", "i=1; while [ $i -le 200 ]; do echo row-$i; i=$((i+1)); done"]);
+    tmux(
+        &sock,
+        &[
+            "send-keys",
+            "-t",
+            "mine",
+            "-l",
+            "i=1; while [ $i -le 200 ]; do echo row-$i; i=$((i+1)); done",
+        ],
+    );
     tmux(&sock, &["send-keys", "-t", "mine", "Enter"]);
     let deadline = Instant::now() + Duration::from_secs(10);
     while !tmux(&sock, &["capture-pane", "-p", "-t", "mine"]).contains("row-200") {
         assert!(Instant::now() < deadline, "the pane never printed its rows");
         let _ = read_for(&mut face, Duration::from_millis(100));
     }
-    let h = k.tmux_history(&id, None).expect("the session's history is read through the shell's row");
-    assert!(h.lines.iter().any(|l| l == "row-1"), "the first row is in the history: {:?}", &h.lines[..h.lines.len().min(5)]);
-    assert!(!h.alternate && !h.mouse, "a shell in the pane: the drag scrolls the history");
+    let h = k
+        .tmux_history(&id, None)
+        .expect("the session's history is read through the shell's row");
+    assert!(
+        h.lines.iter().any(|l| l == "row-1"),
+        "the first row is in the history: {:?}",
+        &h.lines[..h.lines.len().min(5)]
+    );
+    assert!(
+        !h.alternate && !h.mouse,
+        "a shell in the pane: the drag scrolls the history"
+    );
 
-    let place = || tmux(&sock, &["display-message", "-p", "-t", "mine", "#{pane_in_mode} #{scroll_position}"]).trim().to_owned();
+    let place = || {
+        tmux(
+            &sock,
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "mine",
+                "#{pane_in_mode} #{scroll_position}",
+            ],
+        )
+        .trim()
+        .to_owned()
+    };
     assert_eq!(k.tmux_wheel(&id, 0), Ok(true), "asked: tmux is in front");
     assert_eq!(place(), "0", "only asked: nothing moved");
     assert_eq!(k.tmux_wheel(&id, 5), Ok(true));
     assert_eq!(place(), "1 5", "the wheel up: copy mode, five rows up");
     assert_eq!(k.tmux_wheel(&id, -5), Ok(true));
-    assert_eq!(place(), "0", "the wheel back down to the bottom leaves copy mode");
-    assert_eq!(tmux(&sock, &["show-options", "-g", "mouse"]).trim(), "mouse off", "nothing global written");
-    assert_eq!(tmux(&sock, &["show-options", "-t", "mine"]).trim(), "", "no option on the person's session");
+    assert_eq!(
+        place(),
+        "0",
+        "the wheel back down to the bottom leaves copy mode"
+    );
+    assert_eq!(
+        tmux(&sock, &["show-options", "-g", "mouse"]).trim(),
+        "mouse off",
+        "nothing global written"
+    );
+    assert_eq!(
+        tmux(&sock, &["show-options", "-t", "mine"]).trim(),
+        "",
+        "no option on the person's session"
+    );
 
     // The person detaches: a plain shell again.
     tmux(&sock, &["detach-client", "-s", "mine"]);
@@ -468,13 +574,22 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
         assert!(Instant::now() < deadline, "the client never left");
         let _ = read_for(&mut face, Duration::from_millis(100));
     }
-    assert!(k.tmux_history(&id, None).is_err(), "no history once the client left");
+    assert!(
+        k.tmux_history(&id, None).is_err(),
+        "no history once the client left"
+    );
     assert_eq!(
-        Discovery::at(&vendors).with_tmux(Tmux::on_socket(&sock)).attached(shell),
+        Discovery::at(&vendors)
+            .with_tmux(Tmux::on_socket(&sock))
+            .attached(shell),
         None,
         "and no session once it left"
     );
-    assert_eq!(k.tmux_wheel(&id, 3), Ok(false), "the wheel is the face's again");
+    assert_eq!(
+        k.tmux_wheel(&id, 3),
+        Ok(false),
+        "the wheel is the face's again"
+    );
 
     server.finish().expect("private server and socket are gone");
     write_frame(&mut face, &ClientOp::Input(b"exit\r".to_vec())).unwrap();

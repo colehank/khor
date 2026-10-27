@@ -40,16 +40,27 @@ const GATHER: Duration = Duration::from_millis(800);
 const EVERY: Duration = Duration::from_secs(5);
 
 /// The most directories one Linux workspace watches.
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    allow(dead_code)
+)]
 const MOST_DIRS: usize = 4096;
 
 /// What a watcher says about one workspace. (A phone has no watcher and
 /// hosts no workspace: only `Again` is ever said there.)
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    allow(dead_code)
+)]
 enum Said {
     /// Something in the tree changed at `at_ms`; `dated` when it is a
     /// change to the work itself, not git's own bookkeeping under `.git`.
-    Changed { ws: String, at_ms: i64, dated: bool, new_dir: Option<PathBuf> },
+    Changed {
+        ws: String,
+        at_ms: i64,
+        dated: bool,
+        new_dir: Option<PathBuf>,
+    },
     /// Look again: a recompute that was due too soon.
     Again(String),
 }
@@ -83,7 +94,9 @@ pub(crate) struct WsFacts {
 /// The facts file for `device` under `root`: this machine's written by
 /// its resident, every other one's by the round that brought them.
 pub(crate) fn file_of(root: &Path, device: &str) -> PathBuf {
-    root.join(".khor").join("wsfacts").join(format!("{device}.json"))
+    root.join(".khor")
+        .join("wsfacts")
+        .join(format!("{device}.json"))
 }
 
 /// What a facts file holds.
@@ -176,9 +189,16 @@ fn compute(
         let before = was.and_then(|w| w.newest.as_ref());
         let added = match before {
             Some(b) if b.path == file && b.at_ms == at_ms => b.added,
-            _ => seen.is_some_and(|s| !s.contains(&file)) && crate::workspace::was_added(&dir.join(&file)),
+            _ => {
+                seen.is_some_and(|s| !s.contains(&file))
+                    && crate::workspace::was_added(&dir.join(&file))
+            }
         };
-        khor_core::NewestFile { path: file, at_ms, added }
+        khor_core::NewestFile {
+            path: file,
+            at_ms,
+            added,
+        }
     });
     let fact = WorkspaceFact {
         path: path.to_owned(),
@@ -193,12 +213,18 @@ fn compute(
 }
 
 /// Whether `path` is inside one of the skipped directories under `ws`.
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    allow(dead_code)
+)]
 fn skipped(ws: &Path, path: &Path) -> Option<&'static str> {
     let rel = path.strip_prefix(ws).ok()?;
     rel.components().find_map(|c| {
         let name = c.as_os_str();
-        crate::workspace::SKIP.iter().find(|s| std::ffi::OsStr::new(s) == name).copied()
+        crate::workspace::SKIP
+            .iter()
+            .find(|s| std::ffi::OsStr::new(s) == name)
+            .copied()
     })
 }
 
@@ -225,7 +251,12 @@ impl WsFacts {
                 let mut due: HashSet<String> = HashSet::new();
                 for said in batch {
                     match said {
-                        Said::Changed { ws, at_ms, dated, new_dir } => {
+                        Said::Changed {
+                            ws,
+                            at_ms,
+                            dated,
+                            new_dir,
+                        } => {
                             keeper.heard(&ws, at_ms, dated, new_dir);
                             due.insert(ws);
                         }
@@ -250,7 +281,14 @@ impl WsFacts {
             let before = entries.len();
             entries.retain(|p, _| paths.contains(p));
             let gone = entries.len() != before;
-            (paths.iter().filter(|p| !entries.contains_key(*p)).cloned().collect(), gone)
+            (
+                paths
+                    .iter()
+                    .filter(|p| !entries.contains_key(*p))
+                    .cloned()
+                    .collect(),
+                gone,
+            )
         };
         if gone {
             self.write_out();
@@ -266,7 +304,8 @@ impl WsFacts {
         let dated = crate::workspace::touched(Path::new(&path));
         #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let (watcher, _dirs) = self.watch(&path);
-        let was = read(&self.root, &self.me).and_then(|k| k.facts.into_iter().find(|f| f.path == path));
+        let was =
+            read(&self.root, &self.me).and_then(|k| k.facts.into_iter().find(|f| f.path == path));
         let (fact, names) = compute(&path, dated, was.as_ref(), None);
         {
             let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
@@ -317,7 +356,9 @@ impl WsFacts {
                 });
             }
         });
-        let Ok(mut watcher) = watcher else { return (None, 0) };
+        let Ok(mut watcher) = watcher else {
+            return (None, 0);
+        };
         let mut dirs = 0usize;
         if cfg!(target_os = "linux") {
             // One watch per directory, the tree walked once.
@@ -326,10 +367,15 @@ impl WsFacts {
                 if dirs >= MOST_DIRS {
                     break;
                 }
-                if watcher.watch(&d, notify::RecursiveMode::NonRecursive).is_ok() {
+                if watcher
+                    .watch(&d, notify::RecursiveMode::NonRecursive)
+                    .is_ok()
+                {
                     dirs += 1;
                 }
-                let Ok(rd) = std::fs::read_dir(&d) else { continue };
+                let Ok(rd) = std::fs::read_dir(&d) else {
+                    continue;
+                };
                 for e in rd.flatten() {
                     if !e.file_type().is_ok_and(|t| t.is_dir()) {
                         continue;
@@ -338,18 +384,27 @@ impl WsFacts {
                     // `.git` itself, not inside it: HEAD and the index
                     // move with every commit and checkout.
                     if name == ".git" {
-                        if watcher.watch(&e.path(), notify::RecursiveMode::NonRecursive).is_ok() {
+                        if watcher
+                            .watch(&e.path(), notify::RecursiveMode::NonRecursive)
+                            .is_ok()
+                        {
                             dirs += 1;
                         }
                         continue;
                     }
-                    if crate::workspace::SKIP.iter().any(|s| std::ffi::OsStr::new(s) == name) {
+                    if crate::workspace::SKIP
+                        .iter()
+                        .any(|s| std::ffi::OsStr::new(s) == name)
+                    {
                         continue;
                     }
                     stack.push(e.path());
                 }
             }
-        } else if watcher.watch(&canon, notify::RecursiveMode::Recursive).is_ok() {
+        } else if watcher
+            .watch(&canon, notify::RecursiveMode::Recursive)
+            .is_ok()
+        {
             dirs = 1;
         }
         (Some(watcher), dirs)
@@ -359,7 +414,9 @@ impl WsFacts {
     /// and on Linux a new directory is watched too.
     fn heard(&self, ws: &str, at_ms: i64, dated: bool, _new_dir: Option<PathBuf>) {
         let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
-        let Some(entry) = entries.get_mut(ws) else { return };
+        let Some(entry) = entries.get_mut(ws) else {
+            return;
+        };
         if dated {
             entry.fact.changed_ms = entry.fact.changed_ms.max(at_ms);
         }
@@ -380,7 +437,12 @@ impl WsFacts {
         let (since, dated, was, seen) = {
             let entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
             let Some(e) = entries.get(&ws) else { return };
-            (e.last.map(|l| l.elapsed()), e.fact.changed_ms, e.fact.clone(), e.names.clone())
+            (
+                e.last.map(|l| l.elapsed()),
+                e.fact.changed_ms,
+                e.fact.clone(),
+                e.names.clone(),
+            )
         };
         if let Some(since) = since
             && since < EVERY
@@ -392,7 +454,12 @@ impl WsFacts {
             });
             return;
         }
-        if let Some(e) = self.entries.lock().unwrap_or_else(|p| p.into_inner()).get_mut(&ws) {
+        if let Some(e) = self
+            .entries
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_mut(&ws)
+        {
             e.last = Some(Instant::now());
         }
         tokio::task::spawn_blocking(move || {
@@ -450,7 +517,11 @@ mod tests {
         let repo = root.join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
         std::fs::write(repo.join("x.txt"), "x").unwrap();
-        assert_eq!(compute(&repo.display().to_string(), 0, None, None).0.newest, None, "a checkout says HEAD's subject instead");
+        assert_eq!(
+            compute(&repo.display().to_string(), 0, None, None).0.newest,
+            None,
+            "a checkout says HEAD's subject instead"
+        );
     }
 
     /// **新建了 only for a file that was not there at the last reading**
@@ -466,27 +537,52 @@ mod tests {
         std::fs::create_dir_all(&plain).unwrap();
         let at = |secs: u64| std::time::SystemTime::now() - std::time::Duration::from_secs(secs);
         std::fs::write(plain.join("a.txt"), "a").unwrap();
-        std::fs::File::open(plain.join("a.txt")).unwrap().set_modified(at(3600)).unwrap();
+        std::fs::File::open(plain.join("a.txt"))
+            .unwrap()
+            .set_modified(at(3600))
+            .unwrap();
         std::fs::write(plain.join("old.txt"), "o").unwrap();
         let path = plain.display().to_string();
         let added = |f: &WorkspaceFact| f.newest.as_ref().map(|n| (n.path.clone(), n.added));
         let (first, seen) = compute(&path, 0, None, None);
-        assert_eq!(added(&first), Some(("old.txt".into(), false)), "a first reading has nothing to compare: edited");
-        let births = std::fs::metadata(plain.join("old.txt")).unwrap().created().is_ok();
+        assert_eq!(
+            added(&first),
+            Some(("old.txt".into(), false)),
+            "a first reading has nothing to compare: edited"
+        );
+        let births = std::fs::metadata(plain.join("old.txt"))
+            .unwrap()
+            .created()
+            .is_ok();
 
         std::fs::write(plain.join("b.txt"), "b").unwrap();
         let (second, seen) = compute(&path, 0, Some(&first), seen.as_ref());
-        assert_eq!(added(&second), Some(("b.txt".into(), births)), "made since the last reading");
+        assert_eq!(
+            added(&second),
+            Some(("b.txt".into(), births)),
+            "made since the last reading"
+        );
 
         let (again, seen) = compute(&path, 0, Some(&second), seen.as_ref());
-        assert_eq!(added(&again), added(&second), "nothing moved: what was said stands");
+        assert_eq!(
+            added(&again),
+            added(&second),
+            "nothing moved: what was said stands"
+        );
 
         // An editor's atomic save of a.txt: a new file renamed over it.
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(plain.join(".a.txt.tmp"), "a2").unwrap();
         std::fs::rename(plain.join(".a.txt.tmp"), plain.join("a.txt")).unwrap();
-        std::fs::File::open(plain.join("a.txt")).unwrap().set_modified(at(0) + std::time::Duration::from_secs(5)).unwrap();
+        std::fs::File::open(plain.join("a.txt"))
+            .unwrap()
+            .set_modified(at(0) + std::time::Duration::from_secs(5))
+            .unwrap();
         let (saved, _) = compute(&path, 0, Some(&again), seen.as_ref());
-        assert_eq!(added(&saved), Some(("a.txt".into(), false)), "a fresh birth under a name that was there: edited");
+        assert_eq!(
+            added(&saved),
+            Some(("a.txt".into(), false)),
+            "a fresh birth under a name that was there: edited"
+        );
     }
 }

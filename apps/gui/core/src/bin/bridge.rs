@@ -29,7 +29,9 @@ fn main() {
     if let Some(code) = khor_commands::console_main_if_requested(|_| {
         // The development bridge serves its own frontend, with no LAN listener.
         eprintln!("{}", khor_catalog::msg::web_face_not_serving());
-    }) { std::process::exit(code); }
+    }) {
+        std::process::exit(code);
+    }
     // First thing, before any bridge behaviour: if this process was
     // re-exec'd as a session host (`spawn_host` uses current_exe), be
     // one. Without this a host spawned from the bridge was another
@@ -136,7 +138,13 @@ fn main() {
                 khor_gui_core::chat_put_args(&query)
                     .ok_or_else(|| "chat_put needs id and name query args".to_owned())
                     .and_then(|(id, name)| {
-                        khor_gui_core::chat::chat_put(&root, &id, &name, &khor_gui_core::into_arg(&query), req.as_reader())
+                        khor_gui_core::chat::chat_put(
+                            &root,
+                            &id,
+                            &name,
+                            &khor_gui_core::into_arg(&query),
+                            req.as_reader(),
+                        )
                     })
             } else {
                 khor_gui_core::upload_args(&query)
@@ -173,7 +181,10 @@ fn main() {
         if cmd == "term_drop" {
             let root = root.clone();
             std::thread::spawn(move || {
-                let outcome = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                let outcome = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
                     Ok(rt) => answered(&rt, &root, &cmd, &args),
                     Err(e) => Err(e.to_string()),
                 };
@@ -201,9 +212,7 @@ fn answered(
     .unwrap_or_else(|_| Err("panic in handler".to_owned()))
 }
 
-fn json_response(
-    outcome: Result<String, String>,
-) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+fn json_response(outcome: Result<String, String>) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let (code, payload) = match outcome {
         Ok(json) => (200, json),
         Err(e) => (

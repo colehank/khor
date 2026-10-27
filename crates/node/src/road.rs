@@ -149,8 +149,15 @@ impl Job {
     }
 
     pub fn state(&self) -> Result<DropState, String> {
-        let end = self.end.lock().map(|e| e.as_ref().map(|(_, o)| o.clone())).unwrap_or(None);
-        let (moved, total) = (self.moved.load(Ordering::Relaxed), self.total.load(Ordering::Relaxed));
+        let end = self
+            .end
+            .lock()
+            .map(|e| e.as_ref().map(|(_, o)| o.clone()))
+            .unwrap_or(None);
+        let (moved, total) = (
+            self.moved.load(Ordering::Relaxed),
+            self.total.load(Ordering::Relaxed),
+        );
         match end {
             None => Ok(DropState {
                 moved,
@@ -196,7 +203,11 @@ pub fn job(key: &str) -> (Arc<Job>, bool) {
 
 /// The job this key names, when there is one; makes none.
 pub fn peek(key: &str) -> Option<Arc<Job>> {
-    jobs().lock().unwrap_or_else(|e| e.into_inner()).get(key).cloned()
+    jobs()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(key)
+        .cloned()
 }
 
 /// Drops the job this key names, so the next [`job`] starts a new one
@@ -265,13 +276,20 @@ pub fn default_dir(root: &Path) -> PathBuf {
 /// default), `~`, `~/…`, or absolute, never with a `..` in it.
 pub fn tidy_setting(dir: &str) -> Result<String, String> {
     let d = dir.trim();
-    let d = if d.len() > 1 { d.trim_end_matches('/') } else { d };
+    let d = if d.len() > 1 {
+        d.trim_end_matches('/')
+    } else {
+        d
+    };
     if d.is_empty() {
         return Ok(String::new());
     }
     let p = Path::new(d);
     let led = d == "~" || d.starts_with("~/") || p.is_absolute();
-    if !led || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    if !led
+        || p.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return Err(msg::receive_dir_not_absolute(d));
     }
     Ok(d.to_owned())
@@ -309,7 +327,10 @@ pub fn resolve(root: &Path, setting: Option<&str>, make: bool) -> (PathBuf, Opti
             if make {
                 let _ = std::fs::create_dir_all(&default);
             }
-            (default, Some(msg::receive_dir_unusable(wanted.display(), why)))
+            (
+                default,
+                Some(msg::receive_dir_unusable(wanted.display(), why)),
+            )
         }
     }
 }
@@ -372,9 +393,11 @@ impl crate::Node {
             wrote = true;
         }
         if make && (taken != setting || me.as_ref().and_then(|d| d.receive_why.clone()) != why) {
-            loaded
-                .doc
-                .set_receive_resolved(&self.device_str, setting.as_deref().unwrap_or(""), why.as_deref().unwrap_or(""))?;
+            loaded.doc.set_receive_resolved(
+                &self.device_str,
+                setting.as_deref().unwrap_or(""),
+                why.as_deref().unwrap_or(""),
+            )?;
             wrote = true;
         }
         if wrote {
@@ -475,7 +498,8 @@ pub fn record(root: &Path, r: &Receipt) -> Result<(), String> {
     let path = keyed(root, &r.digest, "json").ok_or_else(|| msg::not_a_digest(&r.digest))?;
     std::fs::create_dir_all(received_dir(root)).map_err(|e| e.to_string())?;
     let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
-    std::fs::write(&tmp, serde_json::to_vec(r).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, serde_json::to_vec(r).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
@@ -504,10 +528,15 @@ pub fn arrivals(root: &Path, dir: &Path) -> std::collections::HashMap<String, (S
         if p.extension().is_none_or(|x| x != "json") {
             continue;
         }
-        let Some(r) = std::fs::read(&p).ok().and_then(|t| serde_json::from_slice::<Receipt>(&t).ok()) else {
+        let Some(r) = std::fs::read(&p)
+            .ok()
+            .and_then(|t| serde_json::from_slice::<Receipt>(&t).ok())
+        else {
             continue;
         };
-        let (Some(parent), Some(name)) = (r.path.parent(), r.path.file_name().and_then(|n| n.to_str())) else {
+        let (Some(parent), Some(name)) =
+            (r.path.parent(), r.path.file_name().and_then(|n| n.to_str()))
+        else {
             continue;
         };
         let here = canon
@@ -520,7 +549,9 @@ pub fn arrivals(root: &Path, dir: &Path) -> std::collections::HashMap<String, (S
         }
         // Two receipts for one name (one landed, deleted, another took
         // its name): the later landing is the file there now.
-        let newer = out.get(name).is_none_or(|(_, at): &(String, i64)| r.at_ms > *at);
+        let newer = out
+            .get(name)
+            .is_none_or(|(_, at): &(String, i64)| r.at_ms > *at);
         if newer {
             out.insert(name.to_owned(), (r.from, r.at_ms));
         }
@@ -563,7 +594,9 @@ pub fn landed(root: &Path, channel_dir: &Path, f: &FileRef) -> Option<PathBuf> {
         return Some(r.path);
     }
     let old = crate::transfer::payload_path(channel_dir, f);
-    old.symlink_metadata().is_ok_and(|m| m.is_file()).then_some(old)
+    old.symlink_metadata()
+        .is_ok_and(|m| m.is_file())
+        .then_some(old)
 }
 
 /// Moves a finished file into a reserved landing: a rename, or a copy
@@ -611,7 +644,11 @@ pub fn move_chat_files(root: &Path, dir: &Path) -> usize {
     let mut moved = 0;
     let mut stuck = false;
     for ch in std::fs::read_dir(&chats).into_iter().flatten().flatten() {
-        for e in std::fs::read_dir(ch.path().join("files")).into_iter().flatten().flatten() {
+        for e in std::fs::read_dir(ch.path().join("files"))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
             let old = e.path();
             let Some(leaf) = old.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
                 continue;
@@ -737,26 +774,46 @@ mod tests {
         write("~/inbox");
         n.follow_receive_dir().unwrap();
         let got = row(&n);
-        assert_eq!(got.receive_at.as_deref(), Some(root.join("inbox").display().to_string().as_str()));
-        assert_eq!((got.receive_for.as_deref(), got.receive_why), (Some("~/inbox"), None));
-        assert!(root.join("inbox").is_dir(), "made at once, not at the next receive");
+        assert_eq!(
+            got.receive_at.as_deref(),
+            Some(root.join("inbox").display().to_string().as_str())
+        );
+        assert_eq!(
+            (got.receive_for.as_deref(), got.receive_why),
+            (Some("~/inbox"), None)
+        );
+        assert!(
+            root.join("inbox").is_dir(),
+            "made at once, not at the next receive"
+        );
 
         std::fs::write(root.join("plain"), b"x").unwrap();
         let plain = root.join("plain").display().to_string();
         write(&plain);
         n.follow_receive_dir().unwrap();
         let got = row(&n);
-        assert_eq!(got.receive_at.as_deref(), Some(root.join("khor-drop").display().to_string().as_str()));
+        assert_eq!(
+            got.receive_at.as_deref(),
+            Some(root.join("khor-drop").display().to_string().as_str())
+        );
         assert_eq!(got.receive_for.as_deref(), Some(plain.as_str()));
         assert!(got.receive_why.is_some(), "the fallback says why");
         let (at, why) = n.receive_place(false).unwrap();
-        assert_eq!(at, root.join("khor-drop"), "a read does not undo the fallback");
+        assert_eq!(
+            at,
+            root.join("khor-drop"),
+            "a read does not undo the fallback"
+        );
         assert!(why.is_some());
 
         write("");
         n.follow_receive_dir().unwrap();
         let got = row(&n);
-        assert_eq!((got.receive_for, got.receive_why), (None, None), "back to the default");
+        assert_eq!(
+            (got.receive_for, got.receive_why),
+            (None, None),
+            "back to the default"
+        );
     }
 
     #[test]
@@ -777,7 +834,11 @@ mod tests {
         record(&root, &r).unwrap();
         assert_eq!(landed(&root, &root.join("ch"), &f), Some(path.clone()));
         std::fs::write(&path, b"changed!").unwrap();
-        assert_eq!(landed(&root, &root.join("ch"), &f), None, "another size is another file");
+        assert_eq!(
+            landed(&root, &root.join("ch"), &f),
+            None,
+            "another size is another file"
+        );
         std::fs::remove_file(&path).unwrap();
         assert_eq!(receipt(&root, &f.digest), None);
     }
@@ -790,23 +851,52 @@ mod tests {
         let root = crate::testdir::TempTree::fresh("road-arrivals");
         let dir = root.join("khor-drop");
         std::fs::create_dir_all(&dir).unwrap();
-        for (name, body, from, at_ms) in [("a.txt", &b"hello"[..], "far", 7), ("b.txt", b"bye", "", 8)] {
+        for (name, body, from, at_ms) in
+            [("a.txt", &b"hello"[..], "far", 7), ("b.txt", b"bye", "", 8)]
+        {
             let path = dir.join(name);
             std::fs::write(&path, body).unwrap();
             let f = file_ref(name, body);
-            record(&root, &Receipt { digest: f.digest, name: name.into(), path, size: body.len() as u64, from: from.into(), at_ms, mode: Mode::Offer }).unwrap();
+            record(
+                &root,
+                &Receipt {
+                    digest: f.digest,
+                    name: name.into(),
+                    path,
+                    size: body.len() as u64,
+                    from: from.into(),
+                    at_ms,
+                    mode: Mode::Offer,
+                },
+            )
+            .unwrap();
         }
         std::fs::write(dir.join("mine.txt"), b"put here by hand").unwrap();
         let (at, mut rows, _) = crate::files::list_dir(dir.to_str().unwrap()).unwrap();
         mark_arrivals(&root, &at, &mut rows);
-        let said = |n: &str| rows.iter().find(|e| e.name == n).map(|e| (e.from.clone(), e.received_ms)).unwrap();
+        let said = |n: &str| {
+            rows.iter()
+                .find(|e| e.name == n)
+                .map(|e| (e.from.clone(), e.received_ms))
+                .unwrap()
+        };
         assert_eq!(said("a.txt"), (Some("far".into()), Some(7)));
-        assert_eq!(said("b.txt"), (None, Some(8)), "a receipt that does not know the sender");
+        assert_eq!(
+            said("b.txt"),
+            (None, Some(8)),
+            "a receipt that does not know the sender"
+        );
         assert_eq!(said("mine.txt"), (None, None), "no receipt");
         std::fs::write(dir.join("a.txt"), b"changed!").unwrap();
         let (at, mut rows, _) = crate::files::list_dir(dir.to_str().unwrap()).unwrap();
         mark_arrivals(&root, &at, &mut rows);
-        assert_eq!(rows.iter().find(|e| e.name == "a.txt").map(|e| e.from.clone()), Some(None), "another size is another file");
+        assert_eq!(
+            rows.iter()
+                .find(|e| e.name == "a.txt")
+                .map(|e| e.from.clone()),
+            Some(None),
+            "another size is another file"
+        );
     }
 
     /// **The move out of the conversation folders**: each file lands under
@@ -830,8 +920,15 @@ mod tests {
         assert_eq!(std::fs::read(&new).unwrap(), b"# notes");
         assert_eq!(landed(&root, &ch, &f), Some(new.clone()));
         #[cfg(unix)]
-        assert_eq!(std::fs::read(&old).unwrap(), b"# notes", "the old path still opens it");
-        assert!(ch.join("files").join(".partial-x").exists(), "a partial is not a file to move");
+        assert_eq!(
+            std::fs::read(&old).unwrap(),
+            b"# notes",
+            "the old path still opens it"
+        );
+        assert!(
+            ch.join("files").join(".partial-x").exists(),
+            "a partial is not a file to move"
+        );
         assert_eq!(move_chat_files(&root, &dir), 0, "once");
     }
 
@@ -853,7 +950,11 @@ mod tests {
         let moved = move_chat_files(&root, &dir);
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(moved, 0);
-        assert_eq!(landed(&root, &ch, &f), Some(old.clone()), "still found where it was");
+        assert_eq!(
+            landed(&root, &ch, &f),
+            Some(old.clone()),
+            "still found where it was"
+        );
         assert!(!moved_mark(&root).exists(), "tried again next time");
         assert_eq!(move_chat_files(&root, &dir), 1);
     }

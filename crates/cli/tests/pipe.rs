@@ -21,7 +21,9 @@ use tokio::time::timeout;
 /// A listener that says a banner, then echoes until the input ends and
 /// hangs up — the shape of a server that outlives its client's last byte.
 async fn echo() -> u16 {
-    let l = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let l = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
     let port = l.local_addr().unwrap().port();
     tokio::spawn(async move {
         while let Ok((s, _)) = l.accept().await {
@@ -47,7 +49,8 @@ async fn a_pipe_through_another_machine_carries_both_ways_and_says_why_it_failed
     let mut out = Vec::new();
     timeout(
         Duration::from_secs(30),
-        p.beta.pipe_via("alpha", "127.0.0.1", port, &b"ping\n"[..], &mut out),
+        p.beta
+            .pipe_via("alpha", "127.0.0.1", port, &b"ping\n"[..], &mut out),
     )
     .await
     .expect("the pipe ends when the far end hangs up")
@@ -55,14 +58,21 @@ async fn a_pipe_through_another_machine_carries_both_ways_and_says_why_it_failed
     assert_eq!(String::from_utf8_lossy(&out), "SSH-2.0-Echo\r\nping\n");
 
     // A port nobody holds: refused in words, before any byte moves.
-    let closed = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    let closed = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     let mut none = Vec::new();
     let why = p
         .beta
         .pipe_via("alpha", "127.0.0.1", closed, &b""[..], &mut none)
         .await
         .expect_err("nothing there to pipe to");
-    assert!(why.contains(&format!("127.0.0.1:{closed}")), "names the target: {why}");
+    assert!(
+        why.contains(&format!("127.0.0.1:{closed}")),
+        "names the target: {why}"
+    );
 
     // The verb, as ssh runs it: stdin in, stdout out, exits when the far
     // end hangs up.
@@ -73,9 +83,19 @@ async fn a_pipe_through_another_machine_carries_both_ways_and_says_why_it_failed
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(b"from the verb\n").unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"from the verb\n")
+        .unwrap();
     let mut got = String::new();
-    child.stdout.take().unwrap().read_to_string(&mut got).unwrap();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut got)
+        .unwrap();
     let status = child.wait().unwrap();
     assert!(status.success(), "{status:?}");
     assert_eq!(got, "SSH-2.0-Echo\r\nfrom the verb\n");
@@ -84,7 +104,12 @@ async fn a_pipe_through_another_machine_carries_both_ways_and_says_why_it_failed
     // dials alpha's exit itself.
     drop(p._b);
     timeout(Duration::from_secs(20), async {
-        while serve_pid(&p.rb.0).is_some_and(|pid| Command::new("kill").args(["-0", &pid.to_string()]).status().is_ok_and(|s| s.success())) {
+        while serve_pid(&p.rb.0).is_some_and(|pid| {
+            Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .status()
+                .is_ok_and(|s| s.success())
+        }) {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
@@ -97,11 +122,26 @@ async fn a_pipe_through_another_machine_carries_both_ways_and_says_why_it_failed
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(b"no resident\n").unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"no resident\n")
+        .unwrap();
     let mut got = String::new();
-    child.stdout.take().unwrap().read_to_string(&mut got).unwrap();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut got)
+        .unwrap();
     let mut err = String::new();
-    child.stderr.take().unwrap().read_to_string(&mut err).unwrap();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut err)
+        .unwrap();
     assert!(child.wait().unwrap().success(), "{err}");
     assert_eq!(got, "SSH-2.0-Echo\r\nno resident\n", "{err}");
 }
@@ -132,7 +172,11 @@ fn ssh_world(dir: &Path, port: u16, khor_home: &Path) -> std::path::PathBuf {
     )
     .unwrap();
     let host_pub = std::fs::read_to_string(dir.join("host_key.pub")).unwrap();
-    std::fs::write(dir.join("known_hosts"), format!("[127.0.0.1]:{port} {}", host_pub.trim())).unwrap();
+    std::fs::write(
+        dir.join("known_hosts"),
+        format!("[127.0.0.1]:{port} {}", host_pub.trim()),
+    )
+    .unwrap();
     std::fs::write(
         dir.join("config"),
         format!(
@@ -154,7 +198,11 @@ async fn a_real_ssh_logs_in_through_another_machines_exit() {
         eprintln!("no /usr/sbin/sshd here: skipped");
         return;
     }
-    let port = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     let p = pair("pipe-ssh").await;
     let world = p.rb.0.join("ssh-world");
     let config = ssh_world(&world, port, &p.rb.0);
@@ -167,12 +215,20 @@ async fn a_real_ssh_logs_in_through_another_machines_exit() {
             .unwrap(),
     );
     timeout(Duration::from_secs(10), async {
-        while tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_err() {
+        while tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_err()
+        {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
     .await
-    .unwrap_or_else(|_| panic!("sshd never listened: {}", std::fs::read_to_string(world.join("sshd.log")).unwrap_or_default()));
+    .unwrap_or_else(|_| {
+        panic!(
+            "sshd never listened: {}",
+            std::fs::read_to_string(world.join("sshd.log")).unwrap_or_default()
+        )
+    });
 
     // Waited on with a deadline and killed by pid: a pipe that carries
     // nothing leaves ssh waiting for sshd's two-minute grace.

@@ -74,7 +74,8 @@ pub struct WorkspaceRow {
 pub fn workspaces(root: &Path) -> Result<Vec<WorkspaceRow>, String> {
     let n = Node::open(root.to_path_buf())?;
     // One facts file per machine, read once for all its rows.
-    let mut facts: std::collections::HashMap<String, Vec<khor_core::WorkspaceFact>> = Default::default();
+    let mut facts: std::collections::HashMap<String, Vec<khor_core::WorkspaceFact>> =
+        Default::default();
     Ok(n.workspaces()?
         .into_iter()
         .map(|w| {

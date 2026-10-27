@@ -305,7 +305,10 @@ mod tests {
             err.starts_with(&head(msg::root_key_too_open('\u{0}', '\u{0}'))),
             "got: {err}"
         );
-        assert!(err.contains("chmod 600"), "it must say how to fix it: {err}");
+        assert!(
+            err.contains("chmod 600"),
+            "it must say how to fix it: {err}"
+        );
     }
 
     #[test]

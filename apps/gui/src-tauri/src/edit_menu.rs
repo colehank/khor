@@ -77,7 +77,12 @@ fn subclass_of(of: &AnyClass) -> Option<&'static AnyClass> {
     let mut b = ClassBuilder::new(WITH_MENU, of)?;
     // SAFETY: `buildMenuWithBuilder:` takes one object and returns void
     // (`v24@0:8@16`), which is this signature.
-    unsafe { b.add_method(sel!(buildMenuWithBuilder:), build_menu as extern "C-unwind" fn(_, _, _)) };
+    unsafe {
+        b.add_method(
+            sel!(buildMenuWithBuilder:),
+            build_menu as extern "C-unwind" fn(_, _, _),
+        )
+    };
     Some(b.register())
 }
 
@@ -135,7 +140,8 @@ extern "C-unwind" fn build_menu(this: &AnyObject, _cmd: Sel, builder: *mut AnyOb
         }
         let edit: *mut AnyObject = msg_send![&*builder, menuForIdentifier: UIMenuStandardEdit];
         if edit.is_null() {
-            let _: () = msg_send![&*builder, insertChildMenu: menu, atStartOfMenuForIdentifier: UIMenuRoot];
+            let _: () =
+                msg_send![&*builder, insertChildMenu: menu, atStartOfMenuForIdentifier: UIMenuRoot];
         } else {
             let _: () = msg_send![&*builder, insertSiblingMenu: menu, afterMenuForIdentifier: UIMenuStandardEdit];
         }
@@ -171,7 +177,12 @@ static AT_INTERACTION: Mutex<usize> = Mutex::new(0);
 
 /// Shows the system's edit menu over `rect` (the page's CSS px, from the
 /// document's origin) with `items`; `copy` is what 拷贝 writes.
-pub fn show_at(webview: *mut std::ffi::c_void, rect: [f64; 4], items: Vec<(String, String)>, copy: Option<String>) {
+pub fn show_at(
+    webview: *mut std::ffi::c_void,
+    rect: [f64; 4],
+    items: Vec<(String, String)>,
+    copy: Option<String>,
+) {
     if webview.is_null() {
         return;
     }
@@ -182,14 +193,23 @@ pub fn show_at(webview: *mut std::ffi::c_void, rect: [f64; 4], items: Vec<(Strin
         // `UIScrollView`).
         let web = &*(webview as *mut AnyObject);
         let scroll: *mut AnyObject = msg_send![web, scrollView];
-        let Some(scroll) = scroll.as_ref() else { return false };
+        let Some(scroll) = scroll.as_ref() else {
+            return false;
+        };
         let zoom: f64 = msg_send![scroll, zoomScale];
         let [x, y, w, h] = rect;
         let rect = [x * zoom, y * zoom, w * zoom, h * zoom];
         if let Ok(mut at) = AT.lock() {
-            *at = Some(At { items, copy, rect, web: webview as usize });
+            *at = Some(At {
+                items,
+                copy,
+                rect,
+                web: webview as usize,
+            });
         }
-        let Some(interaction) = interaction_on(scroll) else { return false };
+        let Some(interaction) = interaction_on(scroll) else {
+            return false;
+        };
         let none: *mut AnyObject = std::ptr::null_mut();
         let point = objc2_foundation::NSPoint::new(rect[0] + rect[2] / 2.0, rect[1]);
         let config: *mut AnyObject = msg_send![class!(UIEditMenuConfiguration), configurationWithIdentifier: none, sourcePoint: point];
@@ -305,19 +325,31 @@ extern "C-unwind" fn menu_at(
     }
 }
 
-extern "C-unwind" fn target_at(_this: &AnyObject, _cmd: Sel, _interaction: *mut AnyObject, _config: *mut AnyObject) -> objc2_foundation::NSRect {
+extern "C-unwind" fn target_at(
+    _this: &AnyObject,
+    _cmd: Sel,
+    _interaction: *mut AnyObject,
+    _config: *mut AnyObject,
+) -> objc2_foundation::NSRect {
     let [x, y, w, h] = match AT.lock().ok().as_deref() {
         Some(Some(at)) => at.rect,
         _ => [0.0; 4],
     };
-    objc2_foundation::NSRect::new(objc2_foundation::NSPoint::new(x, y), objc2_foundation::NSSize::new(w, h))
+    objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(x, y),
+        objc2_foundation::NSSize::new(w, h),
+    )
 }
 
 /// 拷贝 at khor's selection: the cells' text the page handed over, onto
 /// the pasteboard natively (a page's clipboard write outside a gesture
 /// is refused).
 fn copy_at() {
-    let Some(text) = AT.lock().ok().and_then(|at| at.as_ref().and_then(|a| a.copy.clone())) else {
+    let Some(text) = AT
+        .lock()
+        .ok()
+        .and_then(|at| at.as_ref().and_then(|a| a.copy.clone()))
+    else {
         return;
     };
     // SAFETY: main thread (a menu action); documented UIKit.
@@ -359,7 +391,8 @@ fn pick(web: usize, id: &str) {
         );
         let js = NSString::from_str(&js);
         let done: Option<&block2::Block<dyn Fn(*mut AnyObject, *mut AnyObject)>> = None;
-        let _: () = msg_send![web as *mut AnyObject, evaluateJavaScript: &*js, completionHandler: done];
+        let _: () =
+            msg_send![web as *mut AnyObject, evaluateJavaScript: &*js, completionHandler: done];
     }
 }
 

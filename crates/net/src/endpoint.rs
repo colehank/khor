@@ -65,7 +65,10 @@ pub const KHOR_RELAYS: &[(&str, Serves, Option<&str>)] = &[
         "http://101.200.80.77:3340",
         // QAD on UDP 7842 with an IP certificate (ruling (b), in-path test
         // audit/net-d.md i.4) and iroh's pkarr server on TCP 3343 (i.5).
-        Serves { qad: Some(7842), pkarr: Some("http://101.200.80.77:3343/pkarr") },
+        Serves {
+            qad: Some(7842),
+            pkarr: Some("http://101.200.80.77:3343/pkarr"),
+        },
         // Rotated 2026-10-21: the key before this one had crossed the wire
         // in the clear since 2026-10-01 (this relay is plain HTTP, and so
         // is every bearer token sent to it). Until every machine runs a
@@ -82,7 +85,10 @@ pub const KHOR_RELAYS: &[(&str, Serves, Option<&str>)] = &[
         // host (vendor/iroh/src/net_report.rs `run_probe_v4`), so this
         // entry cannot borrow 7842's IP certificate. No pkarr: the box's
         // registry is plain HTTP on 3343, with no TLS front.
-        Serves { qad: Some(7843), pkarr: None },
+        Serves {
+            qad: Some(7843),
+            pkarr: None,
+        },
         Some("19ccb31e891ffa3ab66f95f5b743c7d4b419afe635b97e5e"),
     ),
     (
@@ -145,7 +151,11 @@ pub fn successor_pairs() -> Vec<(String, String)> {
 /// `relays` — a successor this machine holds no entry (and no key) for
 /// would be a home it could not stand on.
 pub fn successors(relays: &[Relay]) -> Vec<(iroh::RelayUrl, iroh::RelayUrl)> {
-    let held = |u: &str| relays.iter().any(|r| r.url.trim_end_matches('/') == u.trim_end_matches('/'));
+    let held = |u: &str| {
+        relays
+            .iter()
+            .any(|r| r.url.trim_end_matches('/') == u.trim_end_matches('/'))
+    };
     successor_pairs()
         .into_iter()
         .filter(|(a, b)| held(a) && held(b))
@@ -243,7 +253,10 @@ pub struct Serves {
 
 impl Serves {
     /// Relaying only.
-    pub const RELAY: Serves = Serves { qad: None, pkarr: None };
+    pub const RELAY: Serves = Serves {
+        qad: None,
+        pkarr: None,
+    };
 }
 
 /// The Khor tier as relay entries.
@@ -439,7 +452,10 @@ pub const PUBLIC_RELAYS_ENV: &str = "KHOR_PUBLIC_RELAYS";
 /// the trailing slash, as the lists are; a list entry that names the home
 /// is not written twice.
 pub fn home_first(home: Option<&iroh::RelayUrl>, relays: &[String]) -> Vec<String> {
-    let mut out: Vec<String> = home.map(|h| h.as_str().trim_end_matches('/').to_owned()).into_iter().collect();
+    let mut out: Vec<String> = home
+        .map(|h| h.as_str().trim_end_matches('/').to_owned())
+        .into_iter()
+        .collect();
     for r in relays {
         let is_home = home.is_some_and(|h| r.parse::<iroh::RelayUrl>().is_ok_and(|u| &u == h));
         if !is_home {
@@ -579,7 +595,9 @@ pub async fn bind_pinned(
     }
     if let Some(ip) = bind_ip().filter(|_| std::env::var_os(RELAY_ONLY_ENV).is_none()) {
         let port = if ip.is_ipv4() { v4 } else { v6 };
-        b = b.clear_ip_transports().bind_addr(std::net::SocketAddr::new(ip, port))?;
+        b = b
+            .clear_ip_transports()
+            .bind_addr(std::net::SocketAddr::new(ip, port))?;
     } else if (v4, v6) != (0, 0) && std::env::var_os(RELAY_ONLY_ENV).is_none() {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
         b = b
@@ -594,7 +612,10 @@ pub async fn bind_pinned(
     let mut config = iroh::endpoint::NetReportConfig::default();
     config.preferred_relay = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok());
     config.successors = successors(relays);
-    config.fallback = fallback_tier(relays, n0).into_iter().map(|r| r.url.clone()).collect();
+    config.fallback = fallback_tier(relays, n0)
+        .into_iter()
+        .map(|r| r.url.clone())
+        .collect();
     config.home_dwell = HOME_DWELL;
     b = b.net_report_config(config);
     Ok(b.bind().await?)
@@ -630,50 +651,50 @@ fn builder(
     } else {
         iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
     }
-        .secret_key(secret)
-        // Compiled-in Mozilla roots instead of the operating system's:
-        // the system route reads the macOS Keychain, and on a Mac
-        // operated over ssh that read hangs 25-40 seconds — every
-        // process's FIRST bind paid it (measured 2026-08-20: khor's
-        // own test binaries at 36-43s per process, while the verdict
-        // hid because the hang is synchronous and froze single-thread
-        // tokio timers with it, #73). These roots only verify outward
-        // TLS (https relays); iroh's own encryption never touched the
-        // Keychain in the first place.
-        .ca_tls_config(ca_roots())
-        // Explicit public nameservers instead of "read the system's":
-        // on macOS the system route goes through SCDynamicStore, whose
-        // ApplicationBundleID lookup hung 40 SECONDS per process for
-        // unbundled binaries — measured with `sample` on 2026-08-20,
-        // the whole of #73's frozen-timer mystery (the hang is
-        // synchronous, so it froze single-threaded tokio clocks too).
-        // The Khor tier is an IP and needs no DNS at all; these servers
-        // resolve a relay somebody named by its domain. The cost — a
-        // network whose ONLY nameserver is an internal one cannot
-        // resolve such a relay — is on the ledger.
-        .dns_resolver(
-            iroh::dns::DnsResolver::builder()
-                .add_nameserver_configs(
-                    ["223.5.5.5", "8.8.8.8", "1.1.1.1", "2400:3200::1"]
-                        .map(|ip| iroh::dns::NameserverConfig::udp(ip.parse().unwrap())),
-                )
-                .build(),
-        )
-        .proxy_from_env()
-        .transport_config(transport())
-        .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()])
-        // The filter that keeps this machine from publishing an address
-        // nobody can route to belongs where the services are assembled
-        // (the reason is the mDNS service's, below). It also decides what
-        // a hole-punching round offers the far side (vendor/iroh patch 9):
-        // upstream offered every address, 198.18.0.1 among them.
-        .addr_filter(iroh::address_lookup::AddrFilter::new(|addrs| {
-            if addrs.iter().any(unroutable) {
-                std::borrow::Cow::Owned(addrs.iter().filter(|a| !unroutable(a)).cloned().collect())
-            } else {
-                std::borrow::Cow::Borrowed(addrs)
-            }
-        }));
+    .secret_key(secret)
+    // Compiled-in Mozilla roots instead of the operating system's:
+    // the system route reads the macOS Keychain, and on a Mac
+    // operated over ssh that read hangs 25-40 seconds — every
+    // process's FIRST bind paid it (measured 2026-08-20: khor's
+    // own test binaries at 36-43s per process, while the verdict
+    // hid because the hang is synchronous and froze single-thread
+    // tokio timers with it, #73). These roots only verify outward
+    // TLS (https relays); iroh's own encryption never touched the
+    // Keychain in the first place.
+    .ca_tls_config(ca_roots())
+    // Explicit public nameservers instead of "read the system's":
+    // on macOS the system route goes through SCDynamicStore, whose
+    // ApplicationBundleID lookup hung 40 SECONDS per process for
+    // unbundled binaries — measured with `sample` on 2026-08-20,
+    // the whole of #73's frozen-timer mystery (the hang is
+    // synchronous, so it froze single-threaded tokio clocks too).
+    // The Khor tier is an IP and needs no DNS at all; these servers
+    // resolve a relay somebody named by its domain. The cost — a
+    // network whose ONLY nameserver is an internal one cannot
+    // resolve such a relay — is on the ledger.
+    .dns_resolver(
+        iroh::dns::DnsResolver::builder()
+            .add_nameserver_configs(
+                ["223.5.5.5", "8.8.8.8", "1.1.1.1", "2400:3200::1"]
+                    .map(|ip| iroh::dns::NameserverConfig::udp(ip.parse().unwrap())),
+            )
+            .build(),
+    )
+    .proxy_from_env()
+    .transport_config(transport())
+    .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()])
+    // The filter that keeps this machine from publishing an address
+    // nobody can route to belongs where the services are assembled
+    // (the reason is the mDNS service's, below). It also decides what
+    // a hole-punching round offers the far side (vendor/iroh patch 9):
+    // upstream offered every address, 198.18.0.1 among them.
+    .addr_filter(iroh::address_lookup::AddrFilter::new(|addrs| {
+        if addrs.iter().any(unroutable) {
+            std::borrow::Cow::Owned(addrs.iter().filter(|a| !unroutable(a)).cloned().collect())
+        } else {
+            std::borrow::Cow::Borrowed(addrs)
+        }
+    }));
     // **On the builder, not on the bound endpoint — and that is the
     // whole difference between wired up and merely present.**
     // `endpoint.address_lookup().add(..)` after a bind (what the
@@ -799,7 +820,11 @@ fn fallback_tier(relays: &[Relay], n0: bool) -> Vec<std::sync::Arc<iroh::RelayCo
         return Vec::new();
     }
     let public: Vec<std::sync::Arc<iroh::RelayConfig>> = match named {
-        Some(named) => named.split(',').filter_map(Relay::parse).filter_map(|r| relay_config(&r)).collect(),
+        Some(named) => named
+            .split(',')
+            .filter_map(Relay::parse)
+            .filter_map(|r| relay_config(&r))
+            .collect(),
         None => iroh::defaults::prod::default_relay_map().relays(),
     };
     let ours = relay_map(relays).relays::<Vec<_>>();
@@ -826,7 +851,10 @@ pub const HOME_DWELL: std::time::Duration = std::time::Duration::from_secs(10 * 
 /// in the entries' order.
 pub fn registries(relays: &[Relay]) -> Vec<iroh::RelayUrl> {
     let mut out: Vec<iroh::RelayUrl> = Vec::new();
-    for url in relays.iter().filter_map(|r| r.pkarr.as_deref()?.parse().ok()) {
+    for url in relays
+        .iter()
+        .filter_map(|r| r.pkarr.as_deref()?.parse().ok())
+    {
         if !out.contains(&url) {
             out.push(url);
         }
@@ -893,7 +921,8 @@ fn unroutable(addr: &iroh::TransportAddr) -> bool {
         iroh::TransportAddr::Ip(sa) => match sa.ip() {
             std::net::IpAddr::V4(v4) => {
                 let o = v4.octets();
-                (o[0] == 198 && (o[1] == 18 || o[1] == 19) && !in_lab()) || (o[0] == 192 && o[1] == 0 && o[2] == 0)
+                (o[0] == 198 && (o[1] == 18 || o[1] == 19) && !in_lab())
+                    || (o[0] == 192 && o[1] == 0 && o[2] == 0)
             }
             std::net::IpAddr::V6(_) => false,
         },
@@ -993,8 +1022,12 @@ fn same_machine(bound: &[std::net::SocketAddr]) -> Vec<String> {
     bound
         .iter()
         .map(|s| match s.ip() {
-            IpAddr::V4(ip) if ip.is_unspecified() => SocketAddr::from((Ipv4Addr::LOCALHOST, s.port())),
-            IpAddr::V6(ip) if ip.is_unspecified() => SocketAddr::from((Ipv6Addr::LOCALHOST, s.port())),
+            IpAddr::V4(ip) if ip.is_unspecified() => {
+                SocketAddr::from((Ipv4Addr::LOCALHOST, s.port()))
+            }
+            IpAddr::V6(ip) if ip.is_unspecified() => {
+                SocketAddr::from((Ipv6Addr::LOCALHOST, s.port()))
+            }
             _ => *s,
         })
         .filter(|s| !unroutable(&iroh::TransportAddr::Ip(*s)))
@@ -1041,11 +1074,18 @@ mod tests {
 
     #[test]
     fn the_live_home_is_published_first_and_once() {
-        let mine = vec!["http://101.200.80.77:3340".to_owned(), "https://hk.relay.khor.cloud".to_owned()];
+        let mine = vec![
+            "http://101.200.80.77:3340".to_owned(),
+            "https://hk.relay.khor.cloud".to_owned(),
+        ];
         let aps1: iroh::RelayUrl = "https://aps1-1.relay.n0.iroh.link.".parse().unwrap();
         assert_eq!(
             home_first(Some(&aps1), &mine),
-            ["https://aps1-1.relay.n0.iroh.link.", "http://101.200.80.77:3340", "https://hk.relay.khor.cloud"]
+            [
+                "https://aps1-1.relay.n0.iroh.link.",
+                "http://101.200.80.77:3340",
+                "https://hk.relay.khor.cloud"
+            ]
         );
         let beijing: iroh::RelayUrl = "http://101.200.80.77:3340".parse().unwrap();
         assert_eq!(home_first(Some(&beijing), &mine), mine);
@@ -1090,7 +1130,11 @@ mod tests {
         let secret = iroh::SecretKey::generate();
         let id = secret.public();
         let relays = [Relay::bare("http://203.0.113.9:3340")];
-        let ep = builder(secret, &relays, false, true).unwrap().bind().await.unwrap();
+        let ep = builder(secret, &relays, false, true)
+            .unwrap()
+            .bind()
+            .await
+            .unwrap();
         let until = |want: usize| async move {
             for _ in 0..100 {
                 if Following::alive(&id) == want {
@@ -1157,10 +1201,20 @@ mod tests {
         // bearer that a keyed relay refuses and an open one ignores.
         assert_eq!(Relay::parse("http://h:1?token=").unwrap().token, None);
         // What else the server serves rides the same way, lifted out too.
-        let serving = Relay::parse("http://101.200.80.77:3340?qad=7842&pkarr=http://101.200.80.77:3343/pkarr").unwrap();
+        let serving = Relay::parse(
+            "http://101.200.80.77:3340?qad=7842&pkarr=http://101.200.80.77:3343/pkarr",
+        )
+        .unwrap();
         assert_eq!(serving.url, "http://101.200.80.77:3340");
-        assert_eq!((serving.qad, serving.pkarr.as_deref()), (Some(7842), Some("http://101.200.80.77:3343/pkarr")));
-        assert_eq!(Relay::parse("http://h:1?qad=x").unwrap().qad, None, "a port that is no port is none");
+        assert_eq!(
+            (serving.qad, serving.pkarr.as_deref()),
+            (Some(7842), Some("http://101.200.80.77:3343/pkarr"))
+        );
+        assert_eq!(
+            Relay::parse("http://h:1?qad=x").unwrap().qad,
+            None,
+            "a port that is no port is none"
+        );
         for garbage in ["", "garbage", "?token=x", "http://?token=x"] {
             assert_eq!(Relay::parse(garbage), None, "{garbage:?} is not a relay");
         }
@@ -1170,10 +1224,20 @@ mod tests {
     /// said on its entry (audit/net-d.md i.4, i.5).
     #[test]
     fn beijing_serves_qad_and_a_registry() {
-        let beijing = khor_tier().into_iter().find(|r| r.url == "http://101.200.80.77:3340").unwrap();
+        let beijing = khor_tier()
+            .into_iter()
+            .find(|r| r.url == "http://101.200.80.77:3340")
+            .unwrap();
         assert_eq!(beijing.qad, Some(7842));
-        assert_eq!(beijing.pkarr.as_deref(), Some("http://101.200.80.77:3343/pkarr"));
-        assert_eq!(registries(&khor_tier()).len(), 1, "one registry in the Khor tier");
+        assert_eq!(
+            beijing.pkarr.as_deref(),
+            Some("http://101.200.80.77:3343/pkarr")
+        );
+        assert_eq!(
+            registries(&khor_tier()).len(),
+            1,
+            "one registry in the Khor tier"
+        );
     }
 
     /// Beijing over TLS answers QAD on its own port, 7843, with the
@@ -1182,12 +1246,21 @@ mod tests {
     /// (2026-10-21). Its pkarr stays off: the registry has no TLS front.
     #[test]
     fn beijing_tls_serves_qad_on_its_own_port() {
-        let pk = khor_tier().into_iter().find(|r| r.url == BEIJING_TLS).unwrap();
+        let pk = khor_tier()
+            .into_iter()
+            .find(|r| r.url == BEIJING_TLS)
+            .unwrap();
         assert_eq!(pk.qad, Some(7843));
         assert_eq!(pk.pkarr, None);
         let map = relay_map(&khor_tier());
-        let port = map.get(&BEIJING_TLS.parse().unwrap()).and_then(|c| c.quic.as_ref().map(|q| q.port));
-        assert_eq!(port, Some(7843), "the map a bind hands iroh asks pk on 7843");
+        let port = map
+            .get(&BEIJING_TLS.parse().unwrap())
+            .and_then(|c| c.quic.as_ref().map(|q| q.port));
+        assert_eq!(
+            port,
+            Some(7843),
+            "the map a bind hands iroh asks pk on 7843"
+        );
     }
 
     /// A key each, and not the same key ([`KHOR_RELAYS`]): the plain
@@ -1196,7 +1269,10 @@ mod tests {
     fn no_two_khor_relays_share_a_key() {
         let keys: Vec<&str> = KHOR_RELAYS.iter().filter_map(|(_, _, k)| *k).collect();
         let distinct: std::collections::HashSet<&str> = keys.iter().copied().collect();
-        assert_eq!((keys.len(), distinct.len()), (KHOR_RELAYS.len(), KHOR_RELAYS.len()));
+        assert_eq!(
+            (keys.len(), distinct.len()),
+            (KHOR_RELAYS.len(), KHOR_RELAYS.len())
+        );
     }
 
     /// iroh asks QAD of the first five relays of its map only
@@ -1218,8 +1294,14 @@ mod tests {
                 .take(5)
                 .map(|c| c.url.to_string())
                 .collect();
-            for url in ["http://101.200.80.77:3340/", "https://pk.relay.khor.cloud:3341/"] {
-                assert!(asked.iter().any(|u| u == url), "n0 {n0}: {url} not in the first five {asked:?}");
+            for url in [
+                "http://101.200.80.77:3340/",
+                "https://pk.relay.khor.cloud:3341/",
+            ] {
+                assert!(
+                    asked.iter().any(|u| u == url),
+                    "n0 {n0}: {url} not in the first five {asked:?}"
+                );
             }
         }
     }
@@ -1240,10 +1322,24 @@ mod tests {
             Relay::bare("not a url"),
         ]);
         assert_eq!(map.len(), 2, "the bad entry is dropped, the others kept");
-        let qad_of = |u: &str| map.get(&u.parse().unwrap()).and_then(|c| c.quic.as_ref().map(|q| q.port));
-        assert_eq!(qad_of("http://203.0.113.9:3340"), Some(7842), "QAD on the port the entry names");
-        assert_eq!(qad_of("http://203.0.113.10:3340"), None, "an entry naming no port is asked no QAD");
-        let key_of = |u: &str| map.get(&u.parse().unwrap()).and_then(|c| c.auth_token.clone());
+        let qad_of = |u: &str| {
+            map.get(&u.parse().unwrap())
+                .and_then(|c| c.quic.as_ref().map(|q| q.port))
+        };
+        assert_eq!(
+            qad_of("http://203.0.113.9:3340"),
+            Some(7842),
+            "QAD on the port the entry names"
+        );
+        assert_eq!(
+            qad_of("http://203.0.113.10:3340"),
+            None,
+            "an entry naming no port is asked no QAD"
+        );
+        let key_of = |u: &str| {
+            map.get(&u.parse().unwrap())
+                .and_then(|c| c.auth_token.clone())
+        };
         assert_eq!(key_of("http://203.0.113.9:3340").as_deref(), Some("k"));
         assert_eq!(key_of("http://203.0.113.10:3340"), None);
     }
@@ -1265,15 +1361,30 @@ mod tests {
         let relays = [Relay::bare(MINE)];
 
         let n0 = format!("{:?}", iroh::Endpoint::builder(iroh::endpoint::presets::N0));
-        assert!(n0.contains(N0), "control: the needle must find n0 in n0's preset");
-        let ours = format!("{:?}", builder(iroh::SecretKey::generate(), &relays, false, true).unwrap());
-        assert!(!ours.contains(N0), "the builder names an n0 service: {ours}");
+        assert!(
+            n0.contains(N0),
+            "control: the needle must find n0 in n0's preset"
+        );
+        let ours = format!(
+            "{:?}",
+            builder(iroh::SecretKey::generate(), &relays, false, true).unwrap()
+        );
+        assert!(
+            !ours.contains(N0),
+            "the builder names an n0 service: {ours}"
+        );
         assert!(
             ours.contains("203.0.113.9"),
             "control: the builder's Debug must show the relays it holds: {ours}"
         );
-        let with = format!("{:?}", builder(iroh::SecretKey::generate(), &relays, true, true).unwrap());
-        assert!(with.contains(N0), "the n0 switch must name n0's services: {with}");
+        let with = format!(
+            "{:?}",
+            builder(iroh::SecretKey::generate(), &relays, true, true).unwrap()
+        );
+        assert!(
+            with.contains(N0),
+            "the n0 switch must name n0's services: {with}"
+        );
         let urls: Vec<iroh::RelayUrl> = full_relay_map(&relays, true).urls();
         assert_eq!(urls[0], MINE.parse().unwrap(), "ours comes first: {urls:?}");
         for url in iroh::defaults::prod::default_relay_map().urls::<Vec<_>>() {
@@ -1293,7 +1404,11 @@ mod tests {
             .await
             .unwrap();
         let lookup = ep.address_lookup().unwrap();
-        assert_eq!(lookup.len(), 1, "mDNS is the one lookup service: {lookup:?}");
+        assert_eq!(
+            lookup.len(),
+            1,
+            "mDNS is the one lookup service: {lookup:?}"
+        );
         assert!(!format!("{lookup:?}").contains(N0), "{lookup:?}");
         for url in iroh::defaults::prod::default_relay_map().urls::<Vec<_>>() {
             assert!(
@@ -1318,15 +1433,31 @@ mod tests {
     async fn a_punching_round_offers_no_unroutable_address() {
         use iroh::Watcher;
         let relays = [Relay::bare("http://203.0.113.9:3340")];
-        let bind = || async { builder(iroh::SecretKey::generate(), &relays, false, false).unwrap().bind().await.unwrap() };
+        let bind = || async {
+            builder(iroh::SecretKey::generate(), &relays, false, false)
+                .unwrap()
+                .bind()
+                .await
+                .unwrap()
+        };
         let (server, client) = (bind().await, bind().await);
-        let port = server.bound_sockets().iter().find(|s| s.is_ipv4()).unwrap().port();
+        let port = server
+            .bound_sockets()
+            .iter()
+            .find(|s| s.is_ipv4())
+            .unwrap()
+            .port();
         let addr = iroh::EndpointAddr::new(server.id())
             .with_ip_addr(std::net::SocketAddr::from(([127, 0, 0, 1], port)));
         let held = tokio::spawn({
             let server = server.clone();
             async move {
-                let conn = server.accept().await.expect("accept ended early").await.expect("handshake");
+                let conn = server
+                    .accept()
+                    .await
+                    .expect("accept ended early")
+                    .await
+                    .expect("handshake");
                 conn.closed().await;
             }
         });
@@ -1337,8 +1468,15 @@ mod tests {
             .expect("a round starts when the connection is added")
             .expect("the round");
         assert_eq!(round.remote, server.id());
-        let offered: Vec<_> = round.local.iter().filter(|a| unroutable(&iroh::TransportAddr::Ip(**a))).collect();
-        assert!(offered.is_empty(), "offered unroutable candidates: {offered:?}");
+        let offered: Vec<_> = round
+            .local
+            .iter()
+            .filter(|a| unroutable(&iroh::TransportAddr::Ip(**a)))
+            .collect();
+        assert!(
+            offered.is_empty(),
+            "offered unroutable candidates: {offered:?}"
+        );
         let held_here: Vec<std::net::SocketAddr> = client
             .watch_direct_addrs()
             .get()
@@ -1349,7 +1487,10 @@ mod tests {
         if held_here.is_empty() {
             eprintln!("no unroutable address on this machine: the check above is vacuous here");
         } else {
-            eprintln!("control: iroh holds {held_here:?}, the round offered {:?}", round.local);
+            eprintln!(
+                "control: iroh holds {held_here:?}, the round offered {:?}",
+                round.local
+            );
         }
         held.abort();
         client.close().await;
@@ -1367,7 +1508,11 @@ mod tests {
             .await
             .unwrap();
         let lookup = ep.address_lookup().unwrap();
-        assert_eq!(lookup.len(), 0, "no lookup service without mDNS: {lookup:?}");
+        assert_eq!(
+            lookup.len(),
+            0,
+            "no lookup service without mDNS: {lookup:?}"
+        );
         ep.close().await;
     }
 
@@ -1434,16 +1579,27 @@ mod tests {
         }
         // 192.0.0.0/24: a DS-Lite end (localhost, 2026-10-20), an
         // iPhone's 464XLAT end. Its edges.
-        for road in [ip("192.0.0.6:50911"), ip("192.0.0.2:1"), ip("192.0.0.255:1")] {
+        for road in [
+            ip("192.0.0.6:50911"),
+            ip("192.0.0.2:1"),
+            ip("192.0.0.255:1"),
+        ] {
             assert!(unroutable(&road), "{road:?} is the same on every such host");
         }
-        for road in [ip("191.255.255.255:1"), ip("192.0.1.0:1"), ip("192.0.2.1:1")] {
+        for road in [
+            ip("191.255.255.255:1"),
+            ip("192.0.1.0:1"),
+            ip("192.0.2.1:1"),
+        ] {
             assert!(!unroutable(&road), "{road:?} is outside 192.0.0.0/24");
         }
         // docker0's address is a LAN address by range; iroh drops it by
         // the interface's name (vendor/iroh patch 27), not this filter.
         assert!(!unroutable(&ip("172.17.0.1:50911")));
-        assert!(!unroutable(&ip("172.17.3.20:50911")), "a LAN may be 172.17 too");
+        assert!(
+            !unroutable(&ip("172.17.3.20:50911")),
+            "a LAN may be 172.17 too"
+        );
     }
 
     /// The row of the device table carries no loopback of khor's making
@@ -1452,9 +1608,17 @@ mod tests {
     #[tokio::test]
     async fn the_table_row_has_no_loopback_and_the_same_machine_still_does() {
         let relays = [Relay::bare("http://203.0.113.9:3340")];
-        let ep = builder(iroh::SecretKey::generate(), &relays, false, false).unwrap().bind().await.unwrap();
+        let ep = builder(iroh::SecretKey::generate(), &relays, false, false)
+            .unwrap()
+            .bind()
+            .await
+            .unwrap();
         let started = std::time::Instant::now();
-        while ep.addr().addrs.iter().all(|t| !matches!(t, iroh::TransportAddr::Ip(_)))
+        while ep
+            .addr()
+            .addrs
+            .iter()
+            .all(|t| !matches!(t, iroh::TransportAddr::Ip(_)))
             && started.elapsed() < std::time::Duration::from_secs(10)
         {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -1463,12 +1627,23 @@ mod tests {
         let ips: Vec<std::net::SocketAddr> = row.iter().map(|a| a.parse().unwrap()).collect();
         let alone = ips.iter().all(|a| a.ip().is_loopback());
         if !alone {
-            assert!(ips.iter().all(|a| !a.ip().is_loopback()), "loopback in the row: {row:?}");
+            assert!(
+                ips.iter().all(|a| !a.ip().is_loopback()),
+                "loopback in the row: {row:?}"
+            );
         }
-        assert!(ips.iter().all(|a| !unroutable(&iroh::TransportAddr::Ip(*a))), "{row:?}");
+        assert!(
+            ips.iter()
+                .all(|a| !unroutable(&iroh::TransportAddr::Ip(*a))),
+            "{row:?}"
+        );
         let here = local_addrs(&ep);
         for s in ep.bound_sockets() {
-            let want = if s.is_ipv4() { format!("127.0.0.1:{}", s.port()) } else { format!("[::1]:{}", s.port()) };
+            let want = if s.is_ipv4() {
+                format!("127.0.0.1:{}", s.port())
+            } else {
+                format!("[::1]:{}", s.port())
+            };
             assert!(here.contains(&want), "{want} for {s} in {here:?}");
         }
         ep.close().await;
@@ -1476,16 +1651,32 @@ mod tests {
 
     #[test]
     fn a_wildcard_is_reached_on_loopback_of_its_own_family() {
-        let bound: Vec<std::net::SocketAddr> =
-            ["0.0.0.0:50911", "[::]:48210", "127.0.0.1:7", "[::1]:8", "192.168.10.8:9"].map(|s| s.parse().unwrap()).to_vec();
+        let bound: Vec<std::net::SocketAddr> = [
+            "0.0.0.0:50911",
+            "[::]:48210",
+            "127.0.0.1:7",
+            "[::1]:8",
+            "192.168.10.8:9",
+        ]
+        .map(|s| s.parse().unwrap())
+        .to_vec();
         assert_eq!(
             same_machine(&bound),
-            ["127.0.0.1:50911", "[::1]:48210", "127.0.0.1:7", "[::1]:8", "192.168.10.8:9"],
+            [
+                "127.0.0.1:50911",
+                "[::1]:48210",
+                "127.0.0.1:7",
+                "[::1]:8",
+                "192.168.10.8:9"
+            ],
             "the v6 wildcard's port is reached on [::1], not 127.0.0.1"
         );
         let tun: Vec<std::net::SocketAddr> = vec!["198.18.0.1:50911".parse().unwrap()];
         if !in_lab() {
-            assert!(same_machine(&tun).is_empty(), "not even for the same machine");
+            assert!(
+                same_machine(&tun).is_empty(),
+                "not even for the same machine"
+            );
         }
     }
 }

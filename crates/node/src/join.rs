@@ -37,8 +37,8 @@ use std::time::{Duration, Instant};
 use khor_catalog::{cli, msg};
 use sha2::{Digest, Sha256};
 
-use crate::satellite::{self, Dest};
 use crate::Node;
+use crate::satellite::{self, Dest};
 
 /// The install script, as shipped: what runs on the far machine.
 const INSTALL_SH: &str = include_str!("../../../scripts/install.sh");
@@ -63,14 +63,23 @@ struct PushedArchive {
 }
 
 fn pushed_archive_path(receipt: &str) -> Result<String, String> {
-    let path = receipt.strip_prefix("KHOR_PUSH_ASSET_V1\t")
+    let path = receipt
+        .strip_prefix("KHOR_PUSH_ASSET_V1\t")
         .and_then(|value| value.strip_suffix('\n'))
-        .filter(|value| value.starts_with('/') && value.len() <= 8192
-            && !value.contains(['\n', '\r', '\0']))
+        .filter(|value| {
+            value.starts_with('/') && value.len() <= 8192 && !value.contains(['\n', '\r', '\0'])
+        })
         .ok_or("remote archive transfer did not return one exact path")?;
-    let valid_name = path.rsplit('/').next().and_then(|name| name.strip_prefix(".khor.push."))
-        .is_some_and(|nonce| nonce.len() == 8 && nonce.bytes().all(|byte| byte.is_ascii_alphanumeric()));
-    if !valid_name { return Err("remote archive transfer returned an invalid stage path".into()); }
+    let valid_name = path
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.strip_prefix(".khor.push."))
+        .is_some_and(|nonce| {
+            nonce.len() == 8 && nonce.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        });
+    if !valid_name {
+        return Err("remote archive transfer returned an invalid stage path".into());
+    }
     Ok(path.to_owned())
 }
 
@@ -147,7 +156,8 @@ pub struct Run {
 
 /// The runs this machine holds, by token. A finished run is kept for a
 /// few more asks (the asker's last read), then the oldest go.
-static RUNS: LazyLock<Mutex<Vec<(String, Arc<Mutex<Run>>)>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+static RUNS: LazyLock<Mutex<Vec<(String, Arc<Mutex<Run>>)>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// How many finished runs are kept for their askers.
 const RUNS_KEPT: usize = 8;
@@ -176,10 +186,19 @@ pub(crate) fn run_for(token: &str) -> (Arc<Mutex<Run>>, bool) {
 
 /// Starts `to`'s add on a thread of its own as the run `run` (this
 /// machine the sponsor), so it outlives the ask that started it.
-pub(crate) fn start(node: Arc<Node>, run: Arc<Mutex<Run>>, to: Dest, name: Option<String>, satellite_only: bool) {
+pub(crate) fn start(
+    node: Arc<Node>,
+    run: Arc<Mutex<Run>>,
+    to: Dest,
+    name: Option<String>,
+    satellite_only: bool,
+) {
     std::thread::spawn(move || {
         let out = node.add_over_ssh(&to, name.as_deref(), satellite_only, None, &mut |s, m| {
-            run.lock().unwrap_or_else(|p| p.into_inner()).marks.push((s, m));
+            run.lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .marks
+                .push((s, m));
         });
         run.lock().unwrap_or_else(|p| p.into_inner()).done = Some(out);
     });
@@ -310,7 +329,12 @@ mod process;
 
 /// One finite local SSH command, including input and concurrent output drains.
 /// Confirming local cleanup does not confirm remote execution has stopped.
-fn run(to: &Dest, command: &str, stdin: &[u8], wait: Duration) -> Result<(bool, String, String), String> {
+fn run(
+    to: &Dest,
+    command: &str,
+    stdin: &[u8],
+    wait: Duration,
+) -> Result<(bool, String, String), String> {
     let mut command_line = to.finite_ssh_command();
     command_line
         .args(["-o", "ConnectTimeout=8"])
@@ -322,7 +346,9 @@ fn run(to: &Dest, command: &str, stdin: &[u8], wait: Duration) -> Result<(bool, 
         stderr.insert_str(0, "[SSH stderr truncated to its last 262144 bytes]\n");
     }
     if out.timed_out {
-        if !stderr.is_empty() && !stderr.ends_with('\n') { stderr.push('\n'); }
+        if !stderr.is_empty() && !stderr.ends_with('\n') {
+            stderr.push('\n');
+        }
         stderr.push_str(&msg::add_timed_out(wait.as_secs()));
         return Ok((false, String::new(), stderr));
     }
@@ -346,45 +372,74 @@ fn published_archive_digest(record: &[u8], asset: &str) -> Result<String, String
     let name = format!("{asset}.gz");
     if record.len() > 512
         || line.len() != 66 + name.len()
-        || !line[..64].iter().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        || !line[..64]
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
         || &line[64..66] != b"  "
         || &line[66..] != name.as_bytes()
     {
-        return Err("release checksum must contain one digest for the exact archive basename".into());
+        return Err(
+            "release checksum must contain one digest for the exact archive basename".into(),
+        );
     }
     Ok(line[..64].iter().map(|byte| char::from(*byte)).collect())
 }
 
-fn release_asset_url(mirror: Option<&str>, repo: Option<&str>, version: &str, asset: &str) -> Result<String, String> {
-    if !matches!(asset, "khor-linux-x86_64" | "khor-linux-aarch64" | "khor-macos-arm64" | "khor-macos-x86_64")
-        || version.is_empty()
-        || !version.bytes().all(|byte| byte.is_ascii_alphanumeric() || b".-+".contains(&byte))
+fn release_asset_url(
+    mirror: Option<&str>,
+    repo: Option<&str>,
+    version: &str,
+    asset: &str,
+) -> Result<String, String> {
+    if !matches!(
+        asset,
+        "khor-linux-x86_64" | "khor-linux-aarch64" | "khor-macos-arm64" | "khor-macos-x86_64"
+    ) || version.is_empty()
+        || !version
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b".-+".contains(&byte))
     {
         return Err("invalid release asset or version".into());
     }
     if let Some(mirror) = mirror.filter(|value| !value.is_empty()) {
-        let url = reqwest::Url::parse(mirror).map_err(|_| "invalid release mirror URL".to_owned())?;
+        let url =
+            reqwest::Url::parse(mirror).map_err(|_| "invalid release mirror URL".to_owned())?;
         if !matches!(url.scheme(), "http" | "https")
             || url.host_str().is_none()
             || !url.username().is_empty()
             || url.password().is_some()
             || url.query().is_some()
             || url.fragment().is_some()
-            || !mirror.bytes().all(|byte| byte.is_ascii_alphanumeric() || b":/._~+[]-".contains(&byte))
+            || !mirror
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b":/._~+[]-".contains(&byte))
         {
             return Err("invalid release mirror URL".into());
         }
-        return Ok(format!("{}/releases/v{version}/{asset}.gz", url.as_str().trim_end_matches('/')));
+        return Ok(format!(
+            "{}/releases/v{version}/{asset}.gz",
+            url.as_str().trim_end_matches('/')
+        ));
     }
-    let repo = repo.filter(|value| !value.is_empty()).unwrap_or("colehank/khor");
+    let repo = repo
+        .filter(|value| !value.is_empty())
+        .unwrap_or("colehank/khor");
     let parts: Vec<_> = repo.split('/').collect();
-    if parts.len() != 2 || parts.iter().any(|part| {
-        part.is_empty() || part.len() > 100 || matches!(*part, "." | "..")
-            || !part.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte))
-    }) {
+    if parts.len() != 2
+        || parts.iter().any(|part| {
+            part.is_empty()
+                || part.len() > 100
+                || matches!(*part, "." | "..")
+                || !part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte))
+        })
+    {
         return Err("invalid release repository".into());
     }
-    Ok(format!("https://github.com/{repo}/releases/download/v{version}/{asset}.gz"))
+    Ok(format!(
+        "https://github.com/{repo}/releases/download/v{version}/{asset}.gz"
+    ))
 }
 
 fn fetch_archive_bytes(url: &str, limit: Option<usize>) -> Result<Vec<u8>, String> {
@@ -490,7 +545,10 @@ impl Node {
         }
         let added = self.add_road(&to, name, satellite_only, on);
         let logs_in = added.as_ref().is_ok_and(|a| {
-            !a.member || self.devices().is_ok_and(|all| all.iter().any(|d| d.id == a.id && self.logs_in_to(d)))
+            !a.member
+                || self
+                    .devices()
+                    .is_ok_and(|all| all.iter().any(|d| d.id == a.id && self.logs_in_to(d)))
         });
         if !logs_in {
             crate::secret::drop_kept(self.root(), &key)?;
@@ -534,11 +592,7 @@ impl Node {
     /// through the same install; its satellite row goes and its name
     /// carries over to the new machine. When it cannot stay a member it
     /// stays the satellite it was, with nothing left behind.
-    pub fn promote(
-        &self,
-        machine: &str,
-        on: &mut dyn FnMut(Step, Mark),
-    ) -> Result<Added, String> {
+    pub fn promote(&self, machine: &str, on: &mut dyn FnMut(Step, Mark)) -> Result<Added, String> {
         let (channel, _) = self.resolve(machine)?;
         let row = self
             .devices_loaded()?
@@ -551,12 +605,10 @@ impl Node {
         let to = Dest::of(&row).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
         let name = row.shown().to_owned();
         on(Step::Connect, Mark::Live);
-        let look = self
-            .look(&to)
-            .map_err(|(e, refused)| {
-                on(Step::Connect, refused_or_failed(refused, &e));
-                e
-            })?;
+        let look = self.look(&to).map_err(|(e, refused)| {
+            on(Step::Connect, refused_or_failed(refused, &e));
+            e
+        })?;
         on(Step::Connect, Mark::Done(String::new()));
         match self.become_member(&to, &name, &look, on) {
             Ok(added) => {
@@ -579,7 +631,10 @@ impl Node {
         let (ok, out, err) =
             run(to, "sh -s", LOOK_SH.as_bytes(), Duration::from_secs(30)).map_err(|e| (e, None))?;
         if !ok {
-            return Err((satellite::cant_reach(to, &err), satellite::refusal(to, &err)));
+            return Err((
+                satellite::cant_reach(to, &err),
+                satellite::refusal(to, &err),
+            ));
         }
         let mut lines = out.lines().map(str::trim);
         let system = lines.next().unwrap_or("").to_owned();
@@ -589,7 +644,10 @@ impl Node {
             asset: asset_for(&system, &machine),
             tmux: words.iter().any(|w| w == "tmux"),
             bin_ok: words.iter().any(|w| w == "bin-ok"),
-            had: words.into_iter().filter(|w| w.starts_with("had-")).collect(),
+            had: words
+                .into_iter()
+                .filter(|w| w.starts_with("had-"))
+                .collect(),
         })
     }
 
@@ -614,34 +672,47 @@ impl Node {
             return Err(Stop::Fallback(why));
         };
         let wait = Duration::from_secs(300);
-        let (ok, _, err) = run(to, &install_env("KHOR_NO_SERVE=1"), INSTALL_SH.as_bytes(), wait).map_err(Stop::Fatal)?;
+        let (ok, _, err) = run(
+            to,
+            &install_env("KHOR_NO_SERVE=1"),
+            INSTALL_SH.as_bytes(),
+            wait,
+        )
+        .map_err(Stop::Fatal)?;
         let placed = if ok {
             cli::add_placed_fetched(crate::VERSION)
         } else {
             // It could not fetch for itself: this machine brings it.
-            let pushed = self
-                .push_asset(to, asset)
-                .and_then(|archive| {
-                    let env = install_env(&format!(
-                        "KHOR_NO_SERVE=1 KHOR_ASSET_FILE={} KHOR_ASSET_SHA256={}",
-                        install_quoted_value(&archive.path), install_quoted_value(&archive.digest),
-                    ));
-                    let result = run(to, &env, INSTALL_SH.as_bytes(), wait);
-                    if !matches!(&result, Ok((true, _, _))) {
-                        let cleanup = run(to, &format!("rm -f -- {}", install_quoted_value(&archive.path)), &[], Duration::from_secs(30));
-                        if !matches!(cleanup, Ok((true, _, _))) {
-                            let why = match &result {
-                                Err(why) => why.clone(),
-                                Ok((_, _, stderr)) => last_line(stderr),
-                            };
-                            return Err(format!("{why}; remote archive cleanup could not be confirmed"));
-                        }
+            let pushed = self.push_asset(to, asset).and_then(|archive| {
+                let env = install_env(&format!(
+                    "KHOR_NO_SERVE=1 KHOR_ASSET_FILE={} KHOR_ASSET_SHA256={}",
+                    install_quoted_value(&archive.path),
+                    install_quoted_value(&archive.digest),
+                ));
+                let result = run(to, &env, INSTALL_SH.as_bytes(), wait);
+                if !matches!(&result, Ok((true, _, _))) {
+                    let cleanup = run(
+                        to,
+                        &format!("rm -f -- {}", install_quoted_value(&archive.path)),
+                        &[],
+                        Duration::from_secs(30),
+                    );
+                    if !matches!(cleanup, Ok((true, _, _))) {
+                        let why = match &result {
+                            Err(why) => why.clone(),
+                            Ok((_, _, stderr)) => last_line(stderr),
+                        };
+                        return Err(format!(
+                            "{why}; remote archive cleanup could not be confirmed"
+                        ));
                     }
-                    let (ok, _, err2) = result?;
-                    if ok { Ok(()) } else { Err(last_line(&err2)) }
-                });
+                }
+                let (ok, _, err2) = result?;
+                if ok { Ok(()) } else { Err(last_line(&err2)) }
+            });
             if let Err(e) = pushed {
-                let why = msg::add_why_cant_place(host, if e.is_empty() { last_line(&err) } else { e });
+                let why =
+                    msg::add_why_cant_place(host, if e.is_empty() { last_line(&err) } else { e });
                 on(Step::Place, Mark::Failed(why.clone()));
                 return Err(Stop::Fallback(why));
             }
@@ -652,14 +723,20 @@ impl Node {
         // 启动, then checked from a fresh connection: a resident that
         // dies with the session that started it is not one.
         on(Step::Start, Mark::Live);
-        let (ok, out, err) =
-            run(to, &install_env("KHOR_SKIP_FETCH=1"), INSTALL_SH.as_bytes(), wait).map_err(Stop::Fatal)?;
+        let (ok, out, err) = run(
+            to,
+            &install_env("KHOR_SKIP_FETCH=1"),
+            INSTALL_SH.as_bytes(),
+            wait,
+        )
+        .map_err(Stop::Fatal)?;
         let keeper = out
             .lines()
             .find_map(|l| l.trim().strip_prefix("khor: keeper "))
             .map(|k| keeper_words(k.trim()));
         let (alive, id) = if ok {
-            let (_, out, _) = run(to, "sh -s", CHECK_SH.as_bytes(), Duration::from_secs(30)).map_err(Stop::Fatal)?;
+            let (_, out, _) = run(to, "sh -s", CHECK_SH.as_bytes(), Duration::from_secs(30))
+                .map_err(Stop::Fatal)?;
             let mut lines = out.lines();
             let alive = lines.next().is_some_and(|l| l.trim() == "alive");
             let id = lines
@@ -712,10 +789,21 @@ impl Node {
             on(Step::Pair, Mark::Failed(why.clone()));
             return Err(Stop::Fallback(why));
         }
-        if name != host || !self.devices().is_ok_and(|d| d.iter().any(|r| r.id == id && r.shown() == name)) {
+        if name != host
+            || !self
+                .devices()
+                .is_ok_and(|d| d.iter().any(|r| r.id == id && r.shown() == name))
+        {
             self.rename_machine(&id, name).map_err(Stop::Fatal)?;
         }
-        on(Step::Pair, Mark::Done(if carried { cli::add_paired_carried().to_owned() } else { String::new() }));
+        on(
+            Step::Pair,
+            Mark::Done(if carried {
+                cli::add_paired_carried().to_owned()
+            } else {
+                String::new()
+            }),
+        );
         Ok(Added {
             id,
             name: name.to_owned(),
@@ -782,11 +870,24 @@ impl Node {
         // This is the digest of this exact transport buffer. A locally gzipped
         // current_exe is a local source, not an independently signed release.
         let digest = archive_digest(&bytes);
-        let command = format!("sh -c {} sh \"$HOME/.local/bin\"", install_quoted_value(PUSH_ARCHIVE_SH));
-        let uncertain = |why: String| format!("{why}; remote transfer was not confirmed and an unclaimed temporary archive may remain");
-        let (ok, receipt, err) = run(to, &command, &bytes, Duration::from_secs(600)).map_err(uncertain)?;
-        if !ok { return Err(uncertain(last_line(&err))); }
-        Ok(PushedArchive { path: pushed_archive_path(&receipt).map_err(uncertain)?, digest })
+        let command = format!(
+            "sh -c {} sh \"$HOME/.local/bin\"",
+            install_quoted_value(PUSH_ARCHIVE_SH)
+        );
+        let uncertain = |why: String| {
+            format!(
+                "{why}; remote transfer was not confirmed and an unclaimed temporary archive may remain"
+            )
+        };
+        let (ok, receipt, err) =
+            run(to, &command, &bytes, Duration::from_secs(600)).map_err(uncertain)?;
+        if !ok {
+            return Err(uncertain(last_line(&err)));
+        }
+        Ok(PushedArchive {
+            path: pushed_archive_path(&receipt).map_err(uncertain)?,
+            digest,
+        })
     }
 
     fn undo(&self, to: &Dest, look: &Look) -> Result<(), String> {
@@ -805,14 +906,24 @@ impl Node {
             flag("had-dir"),
             flag("had-profile"),
             // Created by the attempt, deepest first.
-            ["Library/LaunchAgents", "Library", ".config/systemd/user", ".config/systemd", ".config"]
-                .into_iter()
-                .filter(|d| !look.had.contains(&format!("had-d:{d}")))
-                .collect::<Vec<_>>()
-                .join(" "),
+            [
+                "Library/LaunchAgents",
+                "Library",
+                ".config/systemd/user",
+                ".config/systemd",
+                ".config"
+            ]
+            .into_iter()
+            .filter(|d| !look.had.contains(&format!("had-d:{d}")))
+            .collect::<Vec<_>>()
+            .join(" "),
         );
         let (ok, _, err) = run(to, &vars, UNDO_SH.as_bytes(), Duration::from_secs(60))?;
-        if ok { Ok(()) } else { Err(satellite::cant_reach(to, &err)) }
+        if ok {
+            Ok(())
+        } else {
+            Err(satellite::cant_reach(to, &err))
+        }
     }
 
     /// **Pairs `id` over khor inside ssh** (round ROAD-3): this machine's
@@ -823,7 +934,10 @@ impl Node {
     /// dial may leave before its link is up. `false` with no resident
     /// here, or when neither pairing arrives.
     pub fn pair_carried(&self, to: &Dest, id: &str) -> bool {
-        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
             return false;
         };
         let op = crate::ipc::Op::CarryFor {
@@ -835,11 +949,16 @@ impl Node {
             password: to.password,
             passphrase: to.passphrase,
         };
-        if !matches!(rt.block_on(self.via_serve(op)), Some(Ok(crate::ipc::Reply::Noted))) {
+        if !matches!(
+            rt.block_on(self.via_serve(op)),
+            Some(Ok(crate::ipc::Reply::Noted))
+        ) {
             return false;
         }
         for _ in 0..2 {
-            let Ok(ticket) = self.invite() else { return false };
+            let Ok(ticket) = self.invite() else {
+                return false;
+            };
             let paired = run(
                 to,
                 "env -u KHOR_HOME \"$HOME/.local/bin/khor\" pair -",
@@ -847,13 +966,18 @@ impl Node {
                 PAIR_WAIT,
             );
             drop(ticket);
-            if matches!(paired, Ok((true, _, _))) && self.wait_for_row(id, Duration::from_secs(10)) {
+            if matches!(paired, Ok((true, _, _))) && self.wait_for_row(id, Duration::from_secs(10))
+            {
                 let me = self.device_str().to_owned();
                 return self.devices_loaded().is_ok_and(|loaded| {
-                    loaded.doc.set_carried(id, Some(&me), Some(&to.as_row())).is_ok() && {
-                        let mut store = loaded.store;
-                        store.flush(&loaded.doc).is_ok()
-                    }
+                    loaded
+                        .doc
+                        .set_carried(id, Some(&me), Some(&to.as_row()))
+                        .is_ok()
+                        && {
+                            let mut store = loaded.store;
+                            store.flush(&loaded.doc).is_ok()
+                        }
                 });
             }
         }
@@ -927,27 +1051,50 @@ mod tests {
     fn archive_checksum_names_exactly_one_compressed_asset() {
         let asset = "khor-linux-x86_64";
         let digest = archive_digest(b"abc");
-        assert_eq!(digest, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
         let record = format!("{digest}  {asset}.gz");
-        assert_eq!(published_archive_digest(record.as_bytes(), asset).unwrap(), digest);
+        assert_eq!(
+            published_archive_digest(record.as_bytes(), asset).unwrap(),
+            digest
+        );
         assert!(published_archive_digest(format!("{record}\n").as_bytes(), asset).is_ok());
         for record in [
-            String::new(), format!("{digest}  other.gz\n"), format!("{digest}  ./{asset}.gz\n"),
-            format!("{digest} *{asset}.gz\n"), format!("{record}\n\n"), format!("{record}\r\n"),
-            format!("{record}\n{record}\n"), format!("{}  {asset}.gz\n", digest.to_uppercase()),
+            String::new(),
+            format!("{digest}  other.gz\n"),
+            format!("{digest}  ./{asset}.gz\n"),
+            format!("{digest} *{asset}.gz\n"),
+            format!("{record}\n\n"),
+            format!("{record}\r\n"),
+            format!("{record}\n{record}\n"),
+            format!("{}  {asset}.gz\n", digest.to_uppercase()),
         ] {
-            assert!(published_archive_digest(record.as_bytes(), asset).is_err(), "{record:?}");
+            assert!(
+                published_archive_digest(record.as_bytes(), asset).is_err(),
+                "{record:?}"
+            );
         }
     }
 
     #[test]
     fn pushed_archive_uses_one_explicit_release_directory() {
         let asset = "khor-linux-x86_64";
-        assert_eq!(release_asset_url(Some("http://127.0.0.1:1234/base/"), None, "1.2.3", asset).unwrap(),
-            "http://127.0.0.1:1234/base/releases/v1.2.3/khor-linux-x86_64.gz");
-        assert_eq!(release_asset_url(None, Some("owner/repo"), "1.2.3", asset).unwrap(),
-            "https://github.com/owner/repo/releases/download/v1.2.3/khor-linux-x86_64.gz");
-        for mirror in ["file:///tmp/release", "https://user:pass@example.test", "https://example.test/?v=2", "https://example.test/#tag"] {
+        assert_eq!(
+            release_asset_url(Some("http://127.0.0.1:1234/base/"), None, "1.2.3", asset).unwrap(),
+            "http://127.0.0.1:1234/base/releases/v1.2.3/khor-linux-x86_64.gz"
+        );
+        assert_eq!(
+            release_asset_url(None, Some("owner/repo"), "1.2.3", asset).unwrap(),
+            "https://github.com/owner/repo/releases/download/v1.2.3/khor-linux-x86_64.gz"
+        );
+        for mirror in [
+            "file:///tmp/release",
+            "https://user:pass@example.test",
+            "https://example.test/?v=2",
+            "https://example.test/#tag",
+        ] {
             assert!(release_asset_url(Some(mirror), None, "1.2.3", asset).is_err());
         }
         assert!(release_asset_url(None, Some("../repo"), "1.2.3", asset).is_err());
@@ -965,7 +1112,10 @@ mod tests {
     fn archive_output_checks_producer_status_and_bounds_metadata() {
         let mut exact = Command::new("/usr/bin/printf");
         exact.args(["%s", &"x".repeat(512)]);
-        assert_eq!(read_archive_output(exact, Some(512)).unwrap(), vec![b'x'; 512]);
+        assert_eq!(
+            read_archive_output(exact, Some(512)).unwrap(),
+            vec![b'x'; 512]
+        );
 
         let mut oversized = Command::new("/usr/bin/printf");
         oversized.args(["%s", &"x".repeat(100_000)]);
@@ -978,48 +1128,94 @@ mod tests {
 
     #[test]
     fn archive_transfer_receipts_identify_one_owned_path() {
-        assert_eq!(pushed_archive_path("KHOR_PUSH_ASSET_V1\t/tmp/path with 'quotes'/.khor.push.A1b2C3d4\n").unwrap(),
-            "/tmp/path with 'quotes'/.khor.push.A1b2C3d4");
-        for receipt in ["", "banner\nKHOR_PUSH_ASSET_V1\t/tmp/.khor.push.A1b2C3d4\n",
+        assert_eq!(
+            pushed_archive_path(
+                "KHOR_PUSH_ASSET_V1\t/tmp/path with 'quotes'/.khor.push.A1b2C3d4\n"
+            )
+            .unwrap(),
+            "/tmp/path with 'quotes'/.khor.push.A1b2C3d4"
+        );
+        for receipt in [
+            "",
+            "banner\nKHOR_PUSH_ASSET_V1\t/tmp/.khor.push.A1b2C3d4\n",
             "KHOR_PUSH_ASSET_V1\trelative/.khor.push.A1b2C3d4\n",
-            "KHOR_PUSH_ASSET_V1\t/tmp/khor\n", "KHOR_PUSH_ASSET_V1\t/tmp/.khor.push.A1b2C3d4\nextra\n",
+            "KHOR_PUSH_ASSET_V1\t/tmp/khor\n",
+            "KHOR_PUSH_ASSET_V1\t/tmp/.khor.push.A1b2C3d4\nextra\n",
             "KHOR_PUSH_ASSET_V1\t/tmp/.khor.push.A1b2C3d4\r\n",
-        ] { assert!(pushed_archive_path(receipt).is_err(), "{receipt:?}"); }
+        ] {
+            assert!(pushed_archive_path(receipt).is_err(), "{receipt:?}");
+        }
     }
 
     #[test]
     #[cfg(unix)]
     fn concurrent_archive_transfers_keep_separate_owned_stages() {
-        let dir = std::env::temp_dir().join(format!("khor-archive-stage-{}", crate::link::fresh_hex().unwrap()));
+        let dir = std::env::temp_dir().join(format!(
+            "khor-archive-stage-{}",
+            crate::link::fresh_hex().unwrap()
+        ));
         std::fs::create_dir(&dir).unwrap();
         struct Scratch(std::path::PathBuf);
-        impl Drop for Scratch { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
         let _scratch = Scratch(dir.clone());
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
-        let workers: Vec<_> = [b"first archive".as_slice(), b"second archive".as_slice()].into_iter().map(|payload| {
-            let dir = dir.clone(); let barrier = barrier.clone();
-            std::thread::spawn(move || {
-                barrier.wait();
-                let mut child = Command::new("/bin/sh").args(["-c", PUSH_ARCHIVE_SH, "archive-stage"])
-                    .arg(dir).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-                child.stdin.take().unwrap().write_all(payload).unwrap();
-                let output = child.wait_with_output().unwrap();
-                assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-                let path = pushed_archive_path(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
-                assert_eq!(std::fs::read(&path).unwrap(), payload);
-                (path, payload)
+        let workers: Vec<_> = [b"first archive".as_slice(), b"second archive".as_slice()]
+            .into_iter()
+            .map(|payload| {
+                let dir = dir.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let mut child = Command::new("/bin/sh")
+                        .args(["-c", PUSH_ARCHIVE_SH, "archive-stage"])
+                        .arg(dir)
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                        .unwrap();
+                    child.stdin.take().unwrap().write_all(payload).unwrap();
+                    let output = child.wait_with_output().unwrap();
+                    assert!(
+                        output.status.success(),
+                        "{}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    let path =
+                        pushed_archive_path(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
+                    assert_eq!(std::fs::read(&path).unwrap(), payload);
+                    (path, payload)
+                })
             })
-        }).collect();
-        let stages: Vec<_> = workers.into_iter().map(|worker| worker.join().unwrap()).collect();
+            .collect();
+        let stages: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
         assert_ne!(stages[0].0, stages[1].0);
         std::fs::remove_file(&stages[0].0).unwrap();
         assert_eq!(std::fs::read(&stages[1].0).unwrap(), stages[1].1);
 
         let failed = format!("cat() {{ printf partial; return 7; }}\n{PUSH_ARCHIVE_SH}");
-        let output = Command::new("/bin/sh").args(["-c", &failed, "archive-stage"]).arg(&dir).output().unwrap();
+        let output = Command::new("/bin/sh")
+            .args(["-c", &failed, "archive-stage"])
+            .arg(&dir)
+            .output()
+            .unwrap();
         assert!(!output.status.success());
-        assert!(output.stdout.is_empty(), "a partial stage cannot publish a receipt");
-        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "failure cleans only its stage");
+        assert!(
+            output.stdout.is_empty(),
+            "a partial stage cannot publish a receipt"
+        );
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            1,
+            "failure cleans only its stage"
+        );
     }
 
     #[test]
@@ -1031,15 +1227,28 @@ mod tests {
             ("Darwin", "x86_64", "khor-macos-x86_64"),
         ] {
             assert_eq!(asset_for(s, m), Some(a));
-            assert!(INSTALL_SH.contains(&format!("ASSET={a}")), "install.sh names {a}");
+            assert!(
+                INSTALL_SH.contains(&format!("ASSET={a}")),
+                "install.sh names {a}"
+            );
         }
         assert_eq!(asset_for("FreeBSD", "amd64"), None);
     }
 
     #[test]
     fn install_sh_names_every_keeper_word_this_reads() {
-        for k in ["none", "launchd", "systemd", "systemd-linger", "systemd-login", "login"] {
-            assert!(INSTALL_SH.contains(&format!("KEEPER={k}")), "install.sh sets KEEPER={k}");
+        for k in [
+            "none",
+            "launchd",
+            "systemd",
+            "systemd-linger",
+            "systemd-login",
+            "login",
+        ] {
+            assert!(
+                INSTALL_SH.contains(&format!("KEEPER={k}")),
+                "install.sh sets KEEPER={k}"
+            );
         }
         assert!(INSTALL_SH.contains("KHOR_SKIP_FETCH") && INSTALL_SH.contains("KHOR_ASSET_FILE"));
     }

@@ -835,8 +835,20 @@ fn gui_host_main_with_timeouts(
     let opened = rt.block_on(async {
         tokio::time::timeout(
             timeouts.handshake,
-            khor_acp::start_configured_on(transport.streams, transport.lifecycle, cwd, resume.clone(), environment),
-        ).await.unwrap_or_else(|_| Err(khor_acp::Refusal::Wont("The agent did not finish the ACP handshake within 28 seconds".into())))
+            khor_acp::start_configured_on(
+                transport.streams,
+                transport.lifecycle,
+                cwd,
+                resume.clone(),
+                environment,
+            ),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            Err(khor_acp::Refusal::Wont(
+                "The agent did not finish the ACP handshake within 28 seconds".into(),
+            ))
+        })
     });
     if opened.is_err() {
         process_lifecycle.request_shutdown();
@@ -858,154 +870,156 @@ fn gui_host_main_with_timeouts(
         })?;
 
     let result = (|| -> Result<(), String> {
-    let context = context_path(&root, handle.session().0.as_ref());
-    if !retained_environment.mcp_servers.is_empty()
-        || !retained_environment.additional_directories.is_empty()
-    {
-        let parent = context.parent().expect("context parent");
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        #[cfg(unix)]
+        let context = context_path(&root, handle.session().0.as_ref());
+        if !retained_environment.mcp_servers.is_empty()
+            || !retained_environment.additional_directories.is_empty()
         {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
-                .map_err(|e| e.to_string())?;
+            let parent = context.parent().expect("context parent");
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+                    .map_err(|e| e.to_string())?;
+            }
+            crate::link::write_private(
+                &context,
+                &serde_json::to_vec(&retained_environment).map_err(|e| e.to_string())?,
+            )?;
         }
+        // The vendor's uuid is the id — the whole merge story hangs on this
+        // line (module head).
+        let id = crate::adaptor::id_for(&handle.session().0);
+        if resume.is_some() {
+            // The takeover re-seats a row that already exists (and clears
+            // the ending the takeover itself just caused).
+            live.reopen(&id, khor_core::kind::GUI, &title, std::process::id())?;
+        } else {
+            // The vendor the opener declared, if it did: the wizard's own
+            // 智能体 field is the user saying whose session this is, which
+            // is not the guess the argv ruling forbids.
+            let vendor = std::env::var(VENDOR_ENV).ok();
+            live.register(
+                &id,
+                khor_core::kind::GUI,
+                &title,
+                Some(std::process::id()),
+                vendor.as_deref(),
+            )?;
+            // **This process was started standing in it** — the opener
+            // spawned the ghost with `current_dir`, so the answer is right
+            // here and needs no argument passed down
+            // (`khor_core::Session::place`).
+            if let Some(cwd) = crate::cwd::standing() {
+                live.learn_place(&id, &cwd)?;
+            }
+            // Register wrote the spawn's 忙碌; a fresh GUI session is a
+            // prompt nobody has typed into yet.
+            live.report(&id, State::Idle, Source::Reported)?;
+        }
+        let dir = live
+            .dir_of(&id)
+            .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
+        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+        let cookie = crate::link::fresh_hex()?;
         crate::link::write_private(
-            &context,
-            &serde_json::to_vec(&retained_environment).map_err(|e| e.to_string())?,
+            &host_file_path(&dir),
+            &serde_json::to_vec(&HostFile {
+                port,
+                cookie: cookie.clone(),
+                host_pid: std::process::id(),
+                // `close` kills `-child_pid` then the host: naming the host
+                // twice is deliberate. The agent is not in the host's
+                // process group (the library gives it its own), so the kill
+                // lands here, and dropping the connection takes the agent's
+                // whole group with it — the child dies *because* the host
+                // does, which is the ordering close wants anyway.
+                child_pid: std::process::id(),
+            })
+            .map_err(|e| e.to_string())?,
         )?;
-    }
-    // The vendor's uuid is the id — the whole merge story hangs on this
-    // line (module head).
-    let id = crate::adaptor::id_for(&handle.session().0);
-    if resume.is_some() {
-        // The takeover re-seats a row that already exists (and clears
-        // the ending the takeover itself just caused).
-        live.reopen(&id, khor_core::kind::GUI, &title, std::process::id())?;
-    } else {
-        // The vendor the opener declared, if it did: the wizard's own
-        // 智能体 field is the user saying whose session this is, which
-        // is not the guess the argv ruling forbids.
-        let vendor = std::env::var(VENDOR_ENV).ok();
-        live.register(
-            &id,
-            khor_core::kind::GUI,
-            &title,
-            Some(std::process::id()),
-            vendor.as_deref(),
-        )?;
-        // **This process was started standing in it** — the opener
-        // spawned the ghost with `current_dir`, so the answer is right
-        // here and needs no argument passed down
-        // (`khor_core::Session::place`).
-        if let Some(cwd) = crate::cwd::standing() {
-            live.learn_place(&id, &cwd)?;
-        }
-        // Register wrote the spawn's 忙碌; a fresh GUI session is a
-        // prompt nobody has typed into yet.
-        live.report(&id, State::Idle, Source::Reported)?;
-    }
-    let dir = live
-        .dir_of(&id)
-        .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        std::fs::write(&ready, &id.0).map_err(|e| e.to_string())?;
 
-    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
-    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let cookie = crate::link::fresh_hex()?;
-    crate::link::write_private(
-        &host_file_path(&dir),
-        &serde_json::to_vec(&HostFile {
-            port,
-            cookie: cookie.clone(),
-            host_pid: std::process::id(),
-            // `close` kills `-child_pid` then the host: naming the host
-            // twice is deliberate. The agent is not in the host's
-            // process group (the library gives it its own), so the kill
-            // lands here, and dropping the connection takes the agent's
-            // whole group with it — the child dies *because* the host
-            // does, which is the ordering close wants anyway.
-            child_pid: std::process::id(),
-        })
-        .map_err(|e| e.to_string())?,
-    )?;
-    std::fs::write(&ready, &id.0).map_err(|e| e.to_string())?;
+        let fanout = Arc::new(Fanout::new());
+        let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, GuiOp, bool)>();
+        // A face that just arrived, so the loop can hand it what is
+        // outstanding. Its own channel rather than a `GuiOp`: joining is
+        // not something a face *does*, it is something that happened to
+        // this host, and a face must not be able to spell it.
+        let (joined_tx, mut joined_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
 
-    let fanout = Arc::new(Fanout::new());
-    let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, GuiOp, bool)>();
-    // A face that just arrived, so the loop can hand it what is
-    // outstanding. Its own channel rather than a `GuiOp`: joining is
-    // not something a face *does*, it is something that happened to
-    // this host, and a face must not be able to spell it.
-    let (joined_tx, mut joined_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
-
-    // Attachers: cookie in, frames both ways after the welcome. Each
-    // gets a number so a replay can be answered to its asker alone;
-    // every other op is the same from anyone.
-    {
-        let fanout = fanout.clone();
-        let cookie = cookie.clone();
-        let ops_tx = ops_tx.clone();
-        let joined_tx = joined_tx.clone();
-        std::thread::spawn(move || {
-            let mut next_client: u64 = 0;
-            for conn in listener.incoming().flatten() {
-                let mut conn = conn;
-                let Ok(hello) = read_frame::<Hello>(&mut conn) else {
-                    continue;
-                };
-                if hello.cookie != cookie {
-                    let _ = write_frame(
+        // Attachers: cookie in, frames both ways after the welcome. Each
+        // gets a number so a replay can be answered to its asker alone;
+        // every other op is the same from anyone.
+        {
+            let fanout = fanout.clone();
+            let cookie = cookie.clone();
+            let ops_tx = ops_tx.clone();
+            let joined_tx = joined_tx.clone();
+            std::thread::spawn(move || {
+                let mut next_client: u64 = 0;
+                for conn in listener.incoming().flatten() {
+                    let mut conn = conn;
+                    let Ok(hello) = read_frame::<Hello>(&mut conn) else {
+                        continue;
+                    };
+                    if hello.cookie != cookie {
+                        let _ = write_frame(
+                            &mut conn,
+                            &Welcome {
+                                ok: false,
+                                why: msg::wrong_cookie().into(),
+                            },
+                        );
+                        continue;
+                    }
+                    if write_frame(
                         &mut conn,
                         &Welcome {
-                            ok: false,
-                            why: msg::wrong_cookie().into(),
+                            ok: true,
+                            why: GUI_GREETING.into(),
                         },
-                    );
-                    continue;
-                }
-                if write_frame(
-                    &mut conn,
-                    &Welcome {
-                        ok: true,
-                        why: GUI_GREETING.into(),
-                    },
-                )
-                .is_err()
-                {
-                    continue;
-                }
-                let Ok(mut readable) = conn.try_clone() else {
-                    continue;
-                };
-                let who = next_client;
-                next_client += 1;
-                if fanout.packets.add(who, conn).is_err() { continue; }
-                let _ = joined_tx.send(who);
-                let ops_tx = ops_tx.clone();
-                let fanout = fanout.clone();
-                std::thread::spawn(move || {
-                    let mut parts = Reassembly::default();
-                    while let Ok(op) = read_frame::<GuiOp>(&mut readable) {
-                        let stopped_upload = matches!(op, GuiOp::Stop) && parts.has_upload();
-                        let Some(op) = parts.take(op) else {
-                            continue;
-                        };
-                        if ops_tx.send((who, op, stopped_upload)).is_err() {
-                            break;
-                        }
+                    )
+                    .is_err()
+                    {
+                        continue;
                     }
-                    fanout.packets.remove(who);
-                });
-            }
-        });
-    }
+                    let Ok(mut readable) = conn.try_clone() else {
+                        continue;
+                    };
+                    let who = next_client;
+                    next_client += 1;
+                    if fanout.packets.add(who, conn).is_err() {
+                        continue;
+                    }
+                    let _ = joined_tx.send(who);
+                    let ops_tx = ops_tx.clone();
+                    let fanout = fanout.clone();
+                    std::thread::spawn(move || {
+                        let mut parts = Reassembly::default();
+                        while let Ok(op) = read_frame::<GuiOp>(&mut readable) {
+                            let stopped_upload = matches!(op, GuiOp::Stop) && parts.has_upload();
+                            let Some(op) = parts.take(op) else {
+                                continue;
+                            };
+                            if ops_tx.send((who, op, stopped_upload)).is_err() {
+                                break;
+                            }
+                        }
+                        fanout.packets.remove(who);
+                    });
+                }
+            });
+        }
 
-    // The conversation loop: one task, owning every state change, so
-    // the words cannot race each other.
-    let loop_live = live.clone();
-    let loop_id = id.clone();
-    let loop_fanout = fanout.clone();
-    let ending = rt.block_on(async move {
+        // The conversation loop: one task, owning every state change, so
+        // the words cannot race each other.
+        let loop_live = live.clone();
+        let loop_id = id.clone();
+        let loop_fanout = fanout.clone();
+        let ending = rt.block_on(async move {
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
         // The pending asks, each with the very note it was announced
         // by: a face that arrives later must be told the same sentence
@@ -1563,25 +1577,32 @@ match event {
         }
     });
 
-    process_lifecycle.request_shutdown();
-    rt.block_on(process_lifecycle.confirmed_exit())
-        .map_err(|why| format!("ACP process cleanup is unconfirmed: {why}"))?;
+        process_lifecycle.request_shutdown();
+        rt.block_on(process_lifecycle.confirmed_exit())
+            .map_err(|why| format!("ACP process cleanup is unconfirmed: {why}"))?;
 
-    fanout.send(&GuiNote::Gone);
+        fanout.send(&GuiNote::Gone);
 
-    fanout.packets.close();
+        fanout.packets.close();
 
-    // 0 for an ending nobody minded, 1 for a torn connection: the exit
-    // code is how `record_exit` tells 完成-shaped endings from 失败.
-    let _ = live.record_exit(&id, if ending.is_none() { 0 } else { 1 });
-    Ok(())
+        // 0 for an ending nobody minded, 1 for a torn connection: the exit
+        // code is how `record_exit` tells 完成-shaped endings from 失败.
+        let _ = live.record_exit(&id, if ending.is_none() { 0 } else { 1 });
+        Ok(())
     })();
     process_lifecycle.request_shutdown();
     let retired = rt.block_on(process_lifecycle.confirmed_exit());
     match (result, retired) {
         (Ok(()), Ok(_)) => Ok(()),
         (Err(why), Ok(_)) => Err(why),
-        (outcome, Err(why)) => Err(format!("{}ACP process cleanup is unconfirmed: {why} ({} stderr bytes captured)", outcome.err().map(|why| format!("{why}; ")).unwrap_or_default(), stderr.lock().unwrap_or_else(|p| p.into_inner()).len())),
+        (outcome, Err(why)) => Err(format!(
+            "{}ACP process cleanup is unconfirmed: {why} ({} stderr bytes captured)",
+            outcome
+                .err()
+                .map(|why| format!("{why}; "))
+                .unwrap_or_default(),
+            stderr.lock().unwrap_or_else(|p| p.into_inner()).len()
+        )),
     }
 }
 
@@ -1898,13 +1919,19 @@ mod parts_tests {
     #[test]
     fn an_uncancelled_sliced_turn_retains_the_complete_payload() {
         let picture = "x".repeat(3 * PART + 17);
-        let op = GuiOp::SayWith { text: "keep this".into(), images: vec![("image/png".into(), picture.clone())], files: vec![] };
+        let op = GuiOp::SayWith {
+            text: "keep this".into(),
+            images: vec![("image/png".into(), picture.clone())],
+            files: vec![],
+        };
         let bytes = crate::proto::encode(&op).unwrap();
         let mut parts = Reassembly::default();
         for slice in bytes.chunks(PART) {
             assert!(parts.take(GuiOp::Part(slice.to_vec().into())).is_none());
         }
-        assert!(matches!(parts.take(GuiOp::Parts), Some(GuiOp::SayWith { text, images, .. }) if text == "keep this" && images[0].1 == picture));
+        assert!(
+            matches!(parts.take(GuiOp::Parts), Some(GuiOp::SayWith { text, images, .. }) if text == "keep this" && images[0].1 == picture)
+        );
     }
 
     /// A Stop cancels its partial upload; the following turn still crosses
@@ -1944,9 +1971,15 @@ mod parts_tests {
             }
         })
         .unwrap();
-        write_frame(&mut *conn.lock().unwrap(), &GuiOp::SayWith {
-            text: "next".into(), images: vec![], files: vec![],
-        }).unwrap();
+        write_frame(
+            &mut *conn.lock().unwrap(),
+            &GuiOp::SayWith {
+                text: "next".into(),
+                images: vec![],
+                files: vec![],
+            },
+        )
+        .unwrap();
         let seen = reader.join().unwrap();
         assert!(slices >= 4, "{slices} slices");
         assert!(

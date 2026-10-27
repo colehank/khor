@@ -524,7 +524,8 @@ pub(crate) fn heard_last(
 ) -> Option<String> {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, (std::time::SystemTime, Heard)>>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, (std::time::SystemTime, Heard)>>> =
+        OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let before = match cache.lock().unwrap().get(&path) {
         Some((t, heard)) if *t == mtime => return heard.said.clone(),
@@ -611,7 +612,10 @@ pub(crate) fn newest_said(
         // unless the window starts the file.
         let head = match start {
             0 => 0,
-            _ => buf.iter().position(|&b| b == b'\n').map_or(buf.len(), |i| i + 1),
+            _ => buf
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(buf.len(), |i| i + 1),
         };
         let heard = |said| Heard {
             said,
@@ -630,18 +634,23 @@ pub(crate) fn newest_said(
 
 /// The newest sentence in a run of whole lines.
 fn said_in(bytes: &[u8], parse: fn(&str) -> Vec<Utterance>) -> Option<String> {
-    parse(&String::from_utf8_lossy(bytes)).into_iter().rev().find_map(|u| match u {
-        // The marks come off before the line is folded: a said line is
-        // markdown, and a preview has nowhere to render it to
-        // (`khor_core::plain`). `plain` first — its list and heading
-        // marks only exist at the head of a line, and `preview` is what
-        // takes the lines away.
-        Utterance::User(t) | Utterance::Agent(t) => Some(khor_core::preview(&khor_core::plain(&t))),
-        // A thought or a tool name is the machine's bookkeeping — a
-        // preview line should say what was *said*, and skipping back to
-        // the newest real sentence reads better than "Read".
-        Utterance::Thought(_) | Utterance::Tool(_) | Utterance::ToolDone(_) => None,
-    })
+    parse(&String::from_utf8_lossy(bytes))
+        .into_iter()
+        .rev()
+        .find_map(|u| match u {
+            // The marks come off before the line is folded: a said line is
+            // markdown, and a preview has nowhere to render it to
+            // (`khor_core::plain`). `plain` first — its list and heading
+            // marks only exist at the head of a line, and `preview` is what
+            // takes the lines away.
+            Utterance::User(t) | Utterance::Agent(t) => {
+                Some(khor_core::preview(&khor_core::plain(&t)))
+            }
+            // A thought or a tool name is the machine's bookkeeping — a
+            // preview line should say what was *said*, and skipping back to
+            // the newest real sentence reads better than "Read".
+            Utterance::Thought(_) | Utterance::Tool(_) | Utterance::ToolDone(_) => None,
+        })
 }
 
 /// What a transcript said since it was last read.
@@ -1430,20 +1439,29 @@ mod tests {
     }
 
     fn bookkeeping(bytes: usize) -> String {
-        format!(r#"{{"type":"attachment","attachment":{{"content":"{}"}}}}"#, "x".repeat(bytes)) + "\n"
+        format!(
+            r#"{{"type":"attachment","attachment":{{"content":"{}"}}}}"#,
+            "x".repeat(bytes)
+        ) + "\n"
     }
 
     /// `newest_said` past the bookkeeping, through growth, a line caught
     /// half written, a rewrite, and its bound (SESS-BRIEF 1a).
     #[test]
     fn the_newest_sentence_is_found_however_much_bookkeeping_follows_it() {
-        let dir = Scratch(std::env::temp_dir().join(format!("khor-newest-said-{}", std::process::id())));
+        let dir =
+            Scratch(std::env::temp_dir().join(format!("khor-newest-said-{}", std::process::id())));
         let _ = std::fs::remove_dir_all(&*dir);
         std::fs::create_dir_all(&*dir).unwrap();
         let path = dir.join("t.jsonl");
         let append = |s: &str| {
             use std::io::Write;
-            std::fs::OpenOptions::new().append(true).open(&path).unwrap().write_all(s.as_bytes()).unwrap();
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(s.as_bytes())
+                .unwrap();
         };
 
         // Several windows of bookkeeping after the answer.
@@ -1467,7 +1485,10 @@ mod tests {
         append(a);
         let half = newest_said(&path, Some(&grown), utterances_of).unwrap();
         assert_eq!(half.said.as_deref(), Some("the answer"));
-        assert_eq!(half.upto, grown.upto, "the next look starts at the half line's head");
+        assert_eq!(
+            half.upto, grown.upto,
+            "the next look starts at the half line's head"
+        );
         append(b);
         let whole = newest_said(&path, Some(&half), utterances_of).unwrap();
         assert_eq!(whole.said.as_deref(), Some("and now"));
@@ -1544,7 +1565,10 @@ mod tests {
 
         let path = dir.join("far.jsonl");
         let mut text = bookkeeping(49_777) + &bookkeeping(17_814);
-        assert!(text.len() > 64 * 1024, "the fixture must put the cwd past 64 KiB");
+        assert!(
+            text.len() > 64 * 1024,
+            "the fixture must put the cwd past 64 KiB"
+        );
         text.push_str(r#"{"type":"user","cwd":"/far/down","message":{}}"#);
         text.push('\n');
         std::fs::write(&path, &text).unwrap();
@@ -1553,11 +1577,19 @@ mod tests {
         let path = dir.join("late.jsonl");
         std::fs::write(&path, bookkeeping(100)).unwrap();
         assert_eq!(cwd_in(&path), None);
-        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
-        std::io::Write::write_all(&mut f, br#"{"type":"user","cwd":"/later","message":{}}"#).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        std::io::Write::write_all(&mut f, br#"{"type":"user","cwd":"/later","message":{}}"#)
+            .unwrap();
         std::io::Write::write_all(&mut f, b"\n").unwrap();
         drop(f);
-        assert_eq!(cwd_in(&path), Some(PathBuf::from("/later")), "a miss must not outlive the file's next change");
+        assert_eq!(
+            cwd_in(&path),
+            Some(PathBuf::from("/later")),
+            "a miss must not outlive the file's next change"
+        );
     }
 
     /// Every line shape a real transcript holds (sampled on this
@@ -2696,7 +2728,10 @@ mod tests {
         ]);
         let sweep = resumed.sweep(&procs);
         assert_eq!(sweep.rows.len(), 1, "one session id, one row");
-        assert_eq!(sweep.rows[0].title, "resumed", "directory identity ignores the vendor's generated name");
+        assert_eq!(
+            sweep.rows[0].title, "resumed",
+            "directory identity ignores the vendor's generated name"
+        );
         assert_eq!(sweep.rows[0].word, State::Busy);
         assert_eq!(sweep.unmapped, 0);
         // **Both processes, not just the winner's.** Found on this

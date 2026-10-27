@@ -328,16 +328,44 @@ fn every_receiver_keeps_its_own_fate_of_one_offer() {
     let a = ChatDoc::new(2).unwrap();
     let b = ChatDoc::new(3).unwrap();
     let third = ChatDoc::new(4).unwrap();
-    let f = FileRef { name: "a.txt".into(), size: 5, digest: "cd".repeat(32), holder: String::new() };
+    let f = FileRef {
+        name: "a.txt".into(),
+        size: 5,
+        digest: "cd".repeat(32),
+        holder: String::new(),
+    };
     let id = sender.post(&me("s"), "", &[], &[f]).unwrap();
     for d in [&a, &b] {
         d.merge(&sender.snapshot().unwrap()).unwrap();
     }
     assert!(a.messages()[0].fates.is_empty(), "nobody has answered yet");
 
-    let landed = Fate { step: Step::Landed, moved: 5, landed: vec!["/home/a/khor-drop/a.txt".into()], why: String::new(), via: String::new() };
-    let failed = Fate { step: Step::Failed, moved: 2, landed: vec![], why: "gone".into(), via: String::new() };
-    a.set_fate_of(&id, "dev-a", &Fate { step: Step::Moving, moved: 1, landed: vec![], why: String::new(), via: String::new() }).unwrap();
+    let landed = Fate {
+        step: Step::Landed,
+        moved: 5,
+        landed: vec!["/home/a/khor-drop/a.txt".into()],
+        why: String::new(),
+        via: String::new(),
+    };
+    let failed = Fate {
+        step: Step::Failed,
+        moved: 2,
+        landed: vec![],
+        why: "gone".into(),
+        via: String::new(),
+    };
+    a.set_fate_of(
+        &id,
+        "dev-a",
+        &Fate {
+            step: Step::Moving,
+            moved: 1,
+            landed: vec![],
+            why: String::new(),
+            via: String::new(),
+        },
+    )
+    .unwrap();
     a.set_fate_of(&id, "dev-a", &landed).unwrap();
     let before = a.version();
     a.set_fate_of(&id, "dev-a", &landed).unwrap();
@@ -365,7 +393,11 @@ fn the_head_names_a_home_that_travels_and_can_move() {
     assert_eq!(b.home().as_deref(), Some("dev-a"));
     b.set_home("dev-b").unwrap();
     a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
-    assert_eq!(a.home().as_deref(), Some("dev-b"), "moving a home is writing another id");
+    assert_eq!(
+        a.home().as_deref(),
+        Some("dev-b"),
+        "moving a home is writing another id"
+    );
     a.set_home("").unwrap();
     assert_eq!(a.home(), None);
 }
@@ -380,22 +412,60 @@ fn a_posted_message_carries_its_targets_its_words_and_each_files_holder() {
     let sender = ChatDoc::new(1).unwrap();
     let third = ChatDoc::new(2).unwrap();
     let to = vec![
-        Target { device: "dev-b".into(), path: "~/in".into() },
-        Target { device: "dev-c".into(), path: String::new() },
+        Target {
+            device: "dev-b".into(),
+            path: "~/in".into(),
+        },
+        Target {
+            device: "dev-c".into(),
+            path: String::new(),
+        },
     ];
-    let here = FileRef { name: "x".into(), size: 5, digest: "ab".repeat(32), holder: String::new() };
-    let far = FileRef { name: "y".into(), size: 7, digest: "cd".repeat(32), holder: "dev-h".into() };
-    let id = sender.post(&me("s"), "look at these", &to, &[here.clone(), far.clone()]).unwrap();
+    let here = FileRef {
+        name: "x".into(),
+        size: 5,
+        digest: "ab".repeat(32),
+        holder: String::new(),
+    };
+    let far = FileRef {
+        name: "y".into(),
+        size: 7,
+        digest: "cd".repeat(32),
+        holder: "dev-h".into(),
+    };
+    let id = sender
+        .post(&me("s"), "look at these", &to, &[here.clone(), far.clone()])
+        .unwrap();
     let said = sender.post(&me("s"), "hello", &to[..1], &[]).unwrap();
     third.merge(&sender.snapshot().unwrap()).unwrap();
     let msgs = third.messages();
     let files = msgs.iter().find(|m| m.id == id).unwrap();
-    assert_eq!(files.to, to, "every target with its own path, in the order named");
-    assert_eq!(files.body, MsgBody::Files(vec![here, far]), "each file with its holder; empty is the sender");
+    assert_eq!(
+        files.to, to,
+        "every target with its own path, in the order named"
+    );
+    assert_eq!(
+        files.body,
+        MsgBody::Files(vec![here, far]),
+        "each file with its holder; empty is the sender"
+    );
     assert_eq!(files.note, "look at these", "the words said with the files");
     let text = msgs.iter().find(|m| m.id == said).unwrap();
     assert_eq!(text.body, MsgBody::Text("hello".into()));
-    assert_eq!((text.to.len(), text.note.as_str()), (1, ""), "a line's words are its body, not a note");
+    assert_eq!(
+        (text.to.len(), text.note.as_str()),
+        (1, ""),
+        "a line's words are its body, not a note"
+    );
     let plain = sender.post(&me("s"), "to everyone", &[], &[]).unwrap();
-    assert!(sender.messages().iter().find(|m| m.id == plain).unwrap().to.is_empty(), "no target, no key");
+    assert!(
+        sender
+            .messages()
+            .iter()
+            .find(|m| m.id == plain)
+            .unwrap()
+            .to
+            .is_empty(),
+        "no target, no key"
+    );
 }

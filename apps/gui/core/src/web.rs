@@ -192,7 +192,9 @@ pub fn loopback_of(url: &str) -> Option<(String, u16)> {
     };
     let bare = host.trim_start_matches('[').trim_end_matches(']');
     let lower = host.to_ascii_lowercase();
-    let loop_ip = bare.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback());
+    let loop_ip = bare
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback());
     (loop_ip || lower == "localhost" || lower == "localhost.").then_some((host, port))
 }
 
@@ -201,7 +203,8 @@ pub fn loopback_of(url: &str) -> Option<(String, u16)> {
 type Loop = std::sync::Arc<std::sync::Mutex<(String, String)>>;
 
 fn loops() -> &'static std::sync::Mutex<std::collections::HashMap<u16, Loop>> {
-    static L: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u16, Loop>>> = std::sync::OnceLock::new();
+    static L: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u16, Loop>>> =
+        std::sync::OnceLock::new();
     L.get_or_init(Default::default)
 }
 
@@ -239,7 +242,10 @@ pub async fn hold_loopback(host: &str, port: u16, proxy: &str) -> Result<(), Str
         .await
         .map_err(|_| khor_catalog::msg::page_port_taken(port))?;
     let held: Loop = std::sync::Arc::new(std::sync::Mutex::new((target, proxy.to_owned())));
-    loops().lock().map_err(|e| e.to_string())?.insert(port, held.clone());
+    loops()
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(port, held.clone());
     tokio::spawn(async move {
         while let Ok((sock, _)) = listener.accept().await {
             let at = held.lock().map(|a| a.clone());
@@ -263,7 +269,9 @@ pub fn loopback_held(port: u16) -> bool {
 /// a failed load, and says so.
 async fn through(mut sock: tokio::net::TcpStream, target: &str, proxy: &str) -> Result<(), String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let mut up = tokio::net::TcpStream::connect(proxy).await.map_err(|e| e.to_string())?;
+    let mut up = tokio::net::TcpStream::connect(proxy)
+        .await
+        .map_err(|e| e.to_string())?;
     up.write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n").as_bytes())
         .await
         .map_err(|e| e.to_string())?;
@@ -279,7 +287,9 @@ async fn through(mut sock: tokio::net::TcpStream, target: &str, proxy: &str) -> 
     if line.split_whitespace().nth(1) != Some("200") {
         return Err(line.lines().next().unwrap_or_default().to_owned());
     }
-    tokio::io::copy_bidirectional(&mut sock, &mut up).await.map_err(|e| e.to_string())?;
+    tokio::io::copy_bidirectional(&mut sock, &mut up)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -290,12 +300,33 @@ mod loopback_tests {
 
     #[test]
     fn loopback_addresses_are_told_apart() {
-        assert_eq!(loopback_of("http://127.0.0.1:8765/x?y"), Some(("127.0.0.1".into(), 8765)));
-        assert_eq!(loopback_of("http://localhost/"), Some(("localhost".into(), 80)));
-        assert_eq!(loopback_of("https://LOCALHOST:5173"), Some(("LOCALHOST".into(), 5173)));
-        assert_eq!(loopback_of("http://[::1]:3000/"), Some(("[::1]".into(), 3000)));
-        assert_eq!(loopback_of("http://127.1.2.3:9/"), Some(("127.1.2.3".into(), 9)));
-        for url in ["http://172.23.250.213:8765/", "http://x.localhost:1/", "https://example.com/", "file:///etc", "http://localhost.example/"] {
+        assert_eq!(
+            loopback_of("http://127.0.0.1:8765/x?y"),
+            Some(("127.0.0.1".into(), 8765))
+        );
+        assert_eq!(
+            loopback_of("http://localhost/"),
+            Some(("localhost".into(), 80))
+        );
+        assert_eq!(
+            loopback_of("https://LOCALHOST:5173"),
+            Some(("LOCALHOST".into(), 5173))
+        );
+        assert_eq!(
+            loopback_of("http://[::1]:3000/"),
+            Some(("[::1]".into(), 3000))
+        );
+        assert_eq!(
+            loopback_of("http://127.1.2.3:9/"),
+            Some(("127.1.2.3".into(), 9))
+        );
+        for url in [
+            "http://172.23.250.213:8765/",
+            "http://x.localhost:1/",
+            "https://example.com/",
+            "file:///etc",
+            "http://localhost.example/",
+        ] {
             assert_eq!(loopback_of(url), None, "{url}");
         }
     }
@@ -328,10 +359,16 @@ mod loopback_tests {
                         s.read_exact(&mut b).await.unwrap();
                         head.push(b[0]);
                     }
-                    let line = String::from_utf8_lossy(&head).lines().next().unwrap().to_owned();
+                    let line = String::from_utf8_lossy(&head)
+                        .lines()
+                        .next()
+                        .unwrap()
+                        .to_owned();
                     let _ = asked_tx.send(line);
                     let mut up = tokio::net::TcpStream::connect(far_at).await.unwrap();
-                    s.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.unwrap();
+                    s.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                        .await
+                        .unwrap();
                     let _ = tokio::io::copy_bidirectional(&mut s, &mut up).await;
                 });
             }
@@ -342,24 +379,36 @@ mod loopback_tests {
             l.local_addr().unwrap().port()
         };
         hold_loopback("localhost", port, &proxy_at).await.unwrap();
-        let mut page = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let mut page = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
         let mut got = String::new();
         page.read_to_string(&mut got).await.unwrap();
         assert_eq!(got, "far side");
-        assert_eq!(asked.recv().await.unwrap(), format!("CONNECT localhost:{port} HTTP/1.1"));
+        assert_eq!(
+            asked.recv().await.unwrap(),
+            format!("CONNECT localhost:{port} HTTP/1.1")
+        );
         // Asked again for the same port: re-pointed, not bound twice.
         hold_loopback("127.0.0.1", port, &proxy_at).await.unwrap();
-        let mut page = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let mut page = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
         let mut got = String::new();
         page.read_to_string(&mut got).await.unwrap();
-        assert_eq!(asked.recv().await.unwrap(), format!("CONNECT 127.0.0.1:{port} HTTP/1.1"));
+        assert_eq!(
+            asked.recv().await.unwrap(),
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1")
+        );
     }
 
     #[tokio::test]
     async fn a_taken_port_is_said() {
         let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = taken.local_addr().unwrap().port();
-        let said = hold_loopback("localhost", port, "127.0.0.1:9").await.unwrap_err();
+        let said = hold_loopback("localhost", port, "127.0.0.1:9")
+            .await
+            .unwrap_err();
         assert!(said.contains(&port.to_string()), "{said}");
     }
 }

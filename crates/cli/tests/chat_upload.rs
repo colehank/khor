@@ -37,7 +37,8 @@ fn stub() -> PathBuf {
 /// Reads notes until the agent says something, or `within` passes.
 fn first_words(conn: &mut TcpStream, within: Duration) -> Option<Duration> {
     let began = Instant::now();
-    conn.set_read_timeout(Some(Duration::from_millis(500))).unwrap();
+    conn.set_read_timeout(Some(Duration::from_millis(500)))
+        .unwrap();
     while began.elapsed() < within {
         match read_frame::<GuiNote>(conn) {
             Ok(GuiNote::Note(_)) => return Some(began.elapsed()),
@@ -50,7 +51,12 @@ fn first_words(conn: &mut TcpStream, within: Duration) -> Option<Duration> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn a_big_turn_reaches_a_far_agent_in_slices() {
-    let env = |k: &str, d: u64| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+    let env = |k: &str, d: u64| {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(d)
+    };
     let rtt = Duration::from_millis(env("UPLOAD_RTT_MS", 200));
     let mb = env("UPLOAD_MB", 10) as usize;
     let (p, _road) = pair_on(
@@ -69,14 +75,27 @@ async fn a_big_turn_reaches_a_far_agent_in_slices() {
         .env("KHOR_NAME", "alpha")
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let out = khor(&p.ra.0)
         .args(["open", "--gui", "--agent", "stub"])
         .env("KHOR_NAME", "alpha")
         .output()
         .unwrap();
-    let sid = String::from_utf8_lossy(&out.stdout).trim().lines().last().unwrap_or_default().to_owned();
-    assert!(sid.contains('/'), "a session: {sid:?} {}", String::from_utf8_lossy(&out.stderr));
+    let sid = String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        sid.contains('/'),
+        "a session: {sid:?} {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let picture = "x".repeat(mb << 20);
     let turn = || GuiOp::SayWith {
@@ -87,7 +106,11 @@ async fn a_big_turn_reaches_a_far_agent_in_slices() {
 
     // The control, the old way: one frame. On its own face, so what it
     // wedges is only itself.
-    let (addr, cookie) = p.beta.reach("alpha", &khor_node::SessionId(sid.clone())).await.expect("beta reaches the conversation");
+    let (addr, cookie) = p
+        .beta
+        .reach("alpha", &khor_node::SessionId(sid.clone()))
+        .await
+        .expect("beta reaches the conversation");
     let (control, waited) = tokio::task::spawn_blocking({
         let (addr, cookie, op) = (addr.clone(), cookie.clone(), turn());
         move || {
@@ -105,7 +128,11 @@ async fn a_big_turn_reaches_a_far_agent_in_slices() {
     .unwrap();
 
     // The new way: in slices, with progress.
-    let (addr, cookie) = p.beta.reach("alpha", &khor_node::SessionId(sid.clone())).await.expect("beta reaches the conversation");
+    let (addr, cookie) = p
+        .beta
+        .reach("alpha", &khor_node::SessionId(sid.clone()))
+        .await
+        .expect("beta reaches the conversation");
     let (sent, answered, slices) = tokio::task::spawn_blocking({
         let op = turn();
         move || {
@@ -113,7 +140,9 @@ async fn a_big_turn_reaches_a_far_agent_in_slices() {
             let mut listen = reading.try_clone().unwrap();
             let conn = Mutex::new(reading);
             // Drain what attaching says first (agent facts, settings).
-            listen.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+            listen
+                .set_read_timeout(Some(Duration::from_millis(300)))
+                .unwrap();
             while read_frame::<GuiNote>(&mut listen).is_ok() {}
             let began = Instant::now();
             let mut slices = 0;
@@ -135,7 +164,13 @@ async fn a_big_turn_reaches_a_far_agent_in_slices() {
             None => "never answered".to_owned(),
         },
     );
-    assert!(control.is_none(), "one frame over the host's cap should not have gone");
+    assert!(
+        control.is_none(),
+        "one frame over the host's cap should not have gone"
+    );
     assert!(answered.is_some(), "the sliced turn reached the agent");
-    let _ = khor(&p.ra.0).args(["close", &sid]).env("KHOR_NAME", "alpha").output();
+    let _ = khor(&p.ra.0)
+        .args(["close", &sid])
+        .env("KHOR_NAME", "alpha")
+        .output();
 }

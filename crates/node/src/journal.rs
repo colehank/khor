@@ -171,8 +171,12 @@ pub enum What {
     Departed,
     /// It opened a connection to this machine.
     Inbound,
-    Network { source: String },
-    Addrs { addrs: Vec<String> },
+    Network {
+        source: String,
+    },
+    Addrs {
+        addrs: Vec<String>,
+    },
     Home {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         url: Option<String>,
@@ -191,7 +195,9 @@ pub enum What {
     /// Back in front, the same endpoint kept (net-r): its sockets rebound
     /// on their ports, its relay checked, every path pinged; `ms` until
     /// the round that follows had come back.
-    Front { ms: u64 },
+    Front {
+        ms: u64,
+    },
     Hop {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         via: Option<String>,
@@ -205,7 +211,9 @@ pub enum What {
     /// A person's act that dials past the backoff (NET-STABLE 第二步):
     /// `face`, a face arriving (this machine's line); `page`, a machine's
     /// page opened (that machine's).
-    Person { by: String },
+    Person {
+        by: String,
+    },
     /// What iroh learnt of this machine from the relays that answer QUIC
     /// address discovery (NET-DIRECT): its public addresses, whether its
     /// NAT maps each destination to a port of its own (then a peer behind
@@ -223,7 +231,9 @@ pub enum What {
     /// Whether this machine has a relay to go out by (C7, `egress`):
     /// `true` when it has had no home relay and no relay answered for
     /// `egress::ENTER_AFTER`; `false` when one is back.
-    NoRelay { none: bool },
+    NoRelay {
+        none: bool,
+    },
     /// The kernel sends this machine's internet traffic out from `src`, a
     /// fake-IP address (198.18.0.0/15): a proxy's TUN carries every UDP
     /// datagram and gives it a port of its own. `None`: it no longer does.
@@ -245,7 +255,9 @@ pub enum What {
     /// Path changes of a connection to the peer that iroh's event buffer
     /// dropped before they were read (vendor/iroh patch 21). The next
     /// `path` line is the selection as it stood then.
-    PathsMissed { missed: u64 },
+    PathsMissed {
+        missed: u64,
+    },
     /// Hole punching toward the peer (vendor/iroh patch 8): the
     /// candidates of the latest round, and how many rounds were started
     /// since the last such line — written when the candidates change, and
@@ -259,14 +271,23 @@ pub enum What {
     /// stopped there (NET-DIRECT: turing's and lecun's devices tables
     /// failed every round for days and nothing said so). Written when
     /// the failure is new or its words changed ([`sync_failed`]).
-    Sync { doc: String, error: String },
+    Sync {
+        doc: String,
+        error: String,
+    },
     /// A pile the peer keeps in another epoch (`khor_sync::store::load_pile`):
     /// not merged, and the round went on. Written like [`What::Sync`].
-    Apart { doc: String, error: String },
+    Apart {
+        doc: String,
+        error: String,
+    },
     /// The far side sent ops under the name this machine's copy of a pile
     /// was writing with, ops this machine never kept: the name is retired
     /// (`khor_sync::store::BlockStore::took_in`).
-    PenRetired { doc: String, name: String },
+    PenRetired {
+        doc: String,
+        name: String,
+    },
 }
 
 /// One line of the journal.
@@ -354,7 +375,9 @@ impl Journal {
             peer: peer.map(str::to_owned),
             what,
         };
-        let Ok(mut line) = serde_json::to_string(&entry) else { return };
+        let Ok(mut line) = serde_json::to_string(&entry) else {
+            return;
+        };
         line.push('\n');
         let key = peer.unwrap_or(HERE).to_owned();
         // A file name from an id: hex, so safe; anything else is refused.
@@ -439,7 +462,10 @@ pub fn read(root: &Path, peer: Option<&str>, since: u64) -> Vec<Entry> {
     flush_open(root);
     let d = dir(root);
     let mut files: Vec<PathBuf> = match peer {
-        Some(id) => vec![d.join(format!("{id}.jsonl")), d.join(format!("{HERE}.jsonl"))],
+        Some(id) => vec![
+            d.join(format!("{id}.jsonl")),
+            d.join(format!("{HERE}.jsonl")),
+        ],
         None => std::fs::read_dir(&d)
             .map(|it| {
                 it.filter_map(|e| e.ok().map(|e| e.path()))
@@ -494,7 +520,9 @@ pub fn scrub(s: &str) -> String {
         out.push('…');
         let after = &rest[i + k..];
         let end = after
-            .find(|c: char| c == '&' || c == ',' || c == '"' || c == '\'' || c == ')' || c.is_whitespace())
+            .find(|c: char| {
+                c == '&' || c == ',' || c == '"' || c == '\'' || c == ')' || c.is_whitespace()
+            })
             .unwrap_or(after.len());
         rest = &after[end..];
     }
@@ -585,10 +613,18 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
                 }
                 // **Refused is not unreachable** (net-dial B4): its own
                 // sentence, and no backoff to tell of.
-                None if *asleep => format!("{}；{tried}", msg::journal_dial_refused(by_word(*by), ms)),
+                None if *asleep => {
+                    format!("{}；{tried}", msg::journal_dial_refused(by_word(*by), ms))
+                }
                 None => {
-                    let why = error.as_deref().map(scrub).unwrap_or_else(|| msg::journal_timed_out().to_owned());
-                    let mut s = format!("{}；{tried}", msg::journal_dial_failed(by_word(*by), ms, why));
+                    let why = error
+                        .as_deref()
+                        .map(scrub)
+                        .unwrap_or_else(|| msg::journal_timed_out().to_owned());
+                    let mut s = format!(
+                        "{}；{tried}",
+                        msg::journal_dial_failed(by_word(*by), ms, why)
+                    );
                     if let Some(r) = retry_s {
                         s.push_str("；");
                         s.push_str(&msg::journal_backoff(failures, r));
@@ -597,7 +633,12 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
                 }
             }
         }
-        What::Settled { road, relay, rtt_ms, paths } => {
+        What::Settled {
+            road,
+            relay,
+            rtt_ms,
+            paths,
+        } => {
             let road = match relay {
                 Some(r) => msg::journal_settled_relay(road_word(road), r),
                 None => road_word(road).to_owned(),
@@ -609,7 +650,12 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             }
             s
         }
-        What::Retired { why, quiet_ms, age_ms, .. } => {
+        What::Retired {
+            why,
+            quiet_ms,
+            age_ms,
+            ..
+        } => {
             // How long it was quiet in ms: 367 ms read 「1 秒」 rounded up
             // (2026-10-16), which said the opposite of what happened.
             msg::journal_retired(why_word(why), quiet_ms, secs(*age_ms))
@@ -626,7 +672,11 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         What::Addrs { addrs } if addrs.is_empty() => msg::journal_addrs_none().to_owned(),
         What::Addrs { addrs } => msg::journal_addrs(addrs.join("，")),
         What::Home { url: None, .. } => msg::journal_home_none().to_owned(),
-        What::Home { url: Some(url), state, error } => {
+        What::Home {
+            url: Some(url),
+            state,
+            error,
+        } => {
             let state = match (state.as_str(), error) {
                 ("connected", _) => msg::journal_home_connected().to_owned(),
                 ("connecting", _) => msg::journal_home_connecting().to_owned(),
@@ -636,19 +686,30 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             msg::journal_home(scrub(url), state)
         }
         What::Ears { ms, error: None } => msg::journal_ears(ms),
-        What::Ears { error: Some(why), .. } => msg::journal_ears_failed(scrub(why)),
+        What::Ears {
+            error: Some(why), ..
+        } => msg::journal_ears_failed(scrub(why)),
         What::Rest => msg::journal_rest().to_owned(),
         What::Front { ms } => msg::journal_front(ms),
         What::Hop { via: Some(via), .. } => msg::journal_hop_up(name_of(via)),
         What::Hop { via: None, tried } => msg::journal_hop_none(tried),
         What::Carry { up: true, .. } => msg::journal_carry_up().to_owned(),
-        What::Carry { up: false, why } => msg::journal_carry_down(scrub(why.as_deref().unwrap_or(""))),
+        What::Carry { up: false, why } => {
+            msg::journal_carry_down(scrub(why.as_deref().unwrap_or("")))
+        }
         What::Person { by } if by == "page" => msg::journal_person_page().to_owned(),
         What::Person { .. } => msg::journal_person_face().to_owned(),
         What::NoRelay { none: true } => msg::journal_no_relay().to_owned(),
         What::NoRelay { none: false } => msg::journal_relay_back().to_owned(),
-        What::Learnt { v4: None, v6: None, .. } => msg::journal_learnt_none().to_owned(),
-        What::Learnt { v4, v6, varies, from } => {
+        What::Learnt {
+            v4: None, v6: None, ..
+        } => msg::journal_learnt_none().to_owned(),
+        What::Learnt {
+            v4,
+            v6,
+            varies,
+            from,
+        } => {
             let addrs: Vec<&str> = v4.iter().chain(v6.iter()).map(String::as_str).collect();
             let mut s = msg::journal_learnt(addrs.join("，"), from.join("、"));
             if *varies == Some(true) {
@@ -658,7 +719,12 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         }
         What::Tun { src: Some(src) } => msg::journal_tun(src),
         What::Tun { src: None } => msg::journal_tun_off().to_owned(),
-        What::Path { change, road, addr, rtt_ms } => {
+        What::Path {
+            change,
+            road,
+            addr,
+            rtt_ms,
+        } => {
             let mut s = if change == "opened" {
                 msg::journal_path_opened(addr)
             } else if change == "started" {
@@ -682,7 +748,11 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             s
         }
         What::PathsMissed { missed } => msg::journal_paths_missed(missed),
-        What::Round { local, remote, rounds } => {
+        What::Round {
+            local,
+            remote,
+            rounds,
+        } => {
             let none = || msg::journal_round_none().to_owned();
             let list = |v: &[String]| if v.is_empty() { none() } else { v.join("，") };
             msg::journal_round(rounds, list(local), list(remote))
@@ -698,7 +768,9 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
 pub fn is_trouble(e: &Entry) -> bool {
     match &e.what {
         What::Dial { won, asleep, .. } => won.is_none() && !asleep,
-        What::Retired { why, .. } => !matches!(why.as_str(), "replaced" | "paused" | "suspended" | "asleep"),
+        What::Retired { why, .. } => {
+            !matches!(why.as_str(), "replaced" | "paused" | "suspended" | "asleep")
+        }
         What::Home { state, .. } => state == "disconnected",
         What::Ears { error, .. } => error.is_some(),
         What::Hop { via, .. } => via.is_none(),
@@ -793,7 +865,12 @@ pub(crate) fn watch_ears(
         let mut learnt = Learnt::default();
         let mut punching = Punching::default();
         let mut tun = tun_source();
-        wires.note(None, What::Addrs { addrs: was_ips.clone() });
+        wires.note(
+            None,
+            What::Addrs {
+                addrs: was_ips.clone(),
+            },
+        );
         if tun.is_some() {
             wires.note(None, What::Tun { src: tun.clone() });
         }
@@ -801,7 +878,14 @@ pub(crate) fn watch_ears(
             if state == "disconnected" {
                 down_at.get_or_insert_with(std::time::Instant::now);
             }
-            wires.note(None, What::Home { url: Some(url.clone()), state: state.clone(), error: error.clone() });
+            wires.note(
+                None,
+                What::Home {
+                    url: Some(url.clone()),
+                    state: state.clone(),
+                    error: error.clone(),
+                },
+            );
             was_home.push((url, state, error));
         }
         loop {
@@ -911,7 +995,11 @@ pub(crate) fn watch_ears(
 /// address is gone when two reports in a row lack it.
 #[derive(Debug, Default)]
 struct Learnt {
-    told: Option<(Option<std::net::IpAddr>, Option<std::net::IpAddr>, Option<bool>)>,
+    told: Option<(
+        Option<std::net::IpAddr>,
+        Option<std::net::IpAddr>,
+        Option<bool>,
+    )>,
     /// Reports in a row without the v4 and the v6 address told.
     missed: (u8, u8),
 }
@@ -919,15 +1007,23 @@ struct Learnt {
 impl Learnt {
     fn saw(&mut self, r: &iroh::unstable_net_report::NetReport) -> Option<What> {
         use iroh::unstable_net_report::Probe;
-        let varies = r.mapping_varies_by_dest_ipv4.or(r.mapping_varies_by_dest_ipv6);
+        let varies = r
+            .mapping_varies_by_dest_ipv4
+            .or(r.mapping_varies_by_dest_ipv6);
         let mut key = (
             r.global_v4.map(|a| std::net::IpAddr::V4(*a.ip())),
             r.global_v6.map(|a| std::net::IpAddr::V6(*a.ip())),
             varies,
         );
         let told = self.told.unwrap_or_default();
-        let (v4, v6) = (key.0.is_none() && told.0.is_some(), key.1.is_none() && told.1.is_some());
-        self.missed = (if v4 { self.missed.0 + 1 } else { 0 }, if v6 { self.missed.1 + 1 } else { 0 });
+        let (v4, v6) = (
+            key.0.is_none() && told.0.is_some(),
+            key.1.is_none() && told.1.is_some(),
+        );
+        self.missed = (
+            if v4 { self.missed.0 + 1 } else { 0 },
+            if v6 { self.missed.1 + 1 } else { 0 },
+        );
         if self.missed.0 == 1 {
             key.0 = told.0;
         }
@@ -974,9 +1070,15 @@ pub(crate) fn sync_failed(peer: &str, doc: &str, error: Option<&str>) -> Option<
     }
     last.insert(key, error.to_owned());
     if khor_sync::wire::other_epoch(error) {
-        return Some(What::Apart { doc: doc.to_owned(), error: error.to_owned() });
+        return Some(What::Apart {
+            doc: doc.to_owned(),
+            error: error.to_owned(),
+        });
     }
-    Some(What::Sync { doc: doc.to_owned(), error: error.to_owned() })
+    Some(What::Sync {
+        doc: doc.to_owned(),
+        error: error.to_owned(),
+    })
 }
 
 /// How often a round of hole punching with unchanged candidates is
@@ -994,7 +1096,11 @@ struct Punching {
 }
 
 impl Punching {
-    fn saw(&mut self, round: iroh::endpoint::HolepunchRound, now: std::time::Instant) -> Option<What> {
+    fn saw(
+        &mut self,
+        round: iroh::endpoint::HolepunchRound,
+        now: std::time::Instant,
+    ) -> Option<What> {
         let sorted = |v: &[std::net::SocketAddr]| {
             let mut v: Vec<String> = v.iter().map(|a| a.to_string()).collect();
             v.sort();
@@ -1002,7 +1108,10 @@ impl Punching {
         };
         let (local, remote) = (sorted(&round.local), sorted(&round.remote_candidates));
         let first = !self.last.contains_key(&round.remote);
-        let entry = self.last.entry(round.remote).or_insert_with(|| (Vec::new(), Vec::new(), 0, now));
+        let entry = self
+            .last
+            .entry(round.remote)
+            .or_insert_with(|| (Vec::new(), Vec::new(), 0, now));
         entry.2 += 1;
         let fresh = first || entry.0 != local || entry.1 != remote;
         if !fresh && now.duration_since(entry.3) < ROUND_EVERY {
@@ -1010,7 +1119,11 @@ impl Punching {
         }
         let rounds = entry.2;
         *entry = (local.clone(), remote.clone(), 0, now);
-        Some(What::Round { local, remote, rounds })
+        Some(What::Round {
+            local,
+            remote,
+            rounds,
+        })
     }
 }
 
@@ -1054,7 +1167,10 @@ fn interface_addrs(
 ) -> Vec<std::net::SocketAddr> {
     let mut v: Vec<std::net::SocketAddr> = all
         .iter()
-        .filter(|d| (d.typ == iroh::endpoint::DirectAddrType::Local || told.contains(&d.addr)) && !d.addr.ip().is_loopback())
+        .filter(|d| {
+            (d.typ == iroh::endpoint::DirectAddrType::Local || told.contains(&d.addr))
+                && !d.addr.ip().is_loopback()
+        })
         .map(|d| d.addr)
         .collect();
     v.sort();
@@ -1149,10 +1265,20 @@ impl crate::Node {
     /// one did meanwhile (its new ears, its own dials). `peer` narrows to
     /// that machine's file and the far one's own events, which are named
     /// by the far machine's name, not 「本机」.
-    pub async fn journal_on(&self, machine: &str, peer: Option<&str>, minutes: u64) -> Result<Vec<Line>, String> {
+    pub async fn journal_on(
+        &self,
+        machine: &str,
+        peer: Option<&str>,
+        minutes: u64,
+    ) -> Result<Vec<Line>, String> {
         let since = crate::now_ms().saturating_sub(minutes.saturating_mul(60_000));
-        let lines = self.journal_lines_of(machine, peer.map(str::to_owned), since).await?;
-        let entries = lines.iter().filter_map(|l| serde_json::from_str::<Entry>(l).ok()).collect();
+        let lines = self
+            .journal_lines_of(machine, peer.map(str::to_owned), since)
+            .await?;
+        let entries = lines
+            .iter()
+            .filter_map(|l| serde_json::from_str::<Entry>(l).ok())
+            .collect();
         let id = self.device_by_name(machine)?;
         let there = self
             .devices()
@@ -1204,7 +1330,11 @@ impl crate::Node {
         let mut out = String::new();
         out.push_str(msg::journal_report_title());
         out.push('\n');
-        out.push_str(&jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S %Z").to_string());
+        out.push_str(
+            &jiff::Zoned::now()
+                .strftime("%Y-%m-%d %H:%M:%S %Z")
+                .to_string(),
+        );
         out.push('\n');
         let short: String = self.device_str().chars().take(8).collect();
         out.push_str(&msg::journal_report_machine(self.shown_name(), short));
@@ -1236,9 +1366,16 @@ impl crate::Node {
             out.push_str(msg::journal_why_title());
             out.push('\n');
             for (peer, road, why) in &verdicts {
-                let name = names.get(peer).cloned().unwrap_or_else(|| peer.chars().take(8).collect());
+                let name = names
+                    .get(peer)
+                    .cloned()
+                    .unwrap_or_else(|| peer.chars().take(8).collect());
                 let why: Vec<String> = why.iter().map(Why::words).collect();
-                out.push_str(&msg::journal_why_line(name, road_word(road), why.join("；")));
+                out.push_str(&msg::journal_why_line(
+                    name,
+                    road_word(road),
+                    why.join("；"),
+                ));
                 out.push('\n');
             }
             out.push('\n');
@@ -1316,7 +1453,12 @@ pub fn not_direct(entries: &[Entry]) -> Vec<(String, String, Vec<Why>)> {
     for e in entries {
         match (&e.peer, &e.what) {
             (None, What::Addrs { addrs }) => here_v6 = addrs.iter().any(|a| global_v6(a)),
-            (None, What::Learnt { v4, v6, varies: v, .. }) => {
+            (
+                None,
+                What::Learnt {
+                    v4, v6, varies: v, ..
+                },
+            ) => {
                 learnt_v4 = v4.is_some();
                 here_v6 |= v6.is_some();
                 varies = *v;
@@ -1325,7 +1467,9 @@ pub fn not_direct(entries: &[Entry]) -> Vec<(String, String, Vec<Why>)> {
             (Some(p), What::Settled { road, .. }) => {
                 peers.entry(p.clone()).or_default().0 = Some(road.clone());
             }
-            (Some(p), What::Path { change, road, .. }) if change == "selected" || change == "started" => {
+            (Some(p), What::Path { change, road, .. })
+                if change == "selected" || change == "started" =>
+            {
                 peers.entry(p.clone()).or_default().0 = Some(road.clone());
             }
             (Some(p), What::Round { remote, rounds, .. }) => {
@@ -1391,7 +1535,10 @@ mod tests {
         assert!(l.saw(&report(true, true)).is_none());
         assert!(l.saw(&report(true, false)).is_none());
         assert!(
-            matches!(l.saw(&report(true, false)), Some(What::Learnt { v6: None, .. })),
+            matches!(
+                l.saw(&report(true, false)),
+                Some(What::Learnt { v6: None, .. })
+            ),
             "missing twice is gone"
         );
         assert!(l.saw(&report(true, false)).is_none(), "and told once");
@@ -1403,44 +1550,158 @@ mod tests {
     /// destination, the proxy's TUN — and turing, direct, left out.
     #[test]
     fn why_not_direct_reads_the_journal() {
-        let at = |n: u64, peer: Option<&str>, what: What| Entry { at: n, peer: peer.map(str::to_owned), what };
+        let at = |n: u64, peer: Option<&str>, what: What| Entry {
+            at: n,
+            peer: peer.map(str::to_owned),
+            what,
+        };
         let entries = vec![
-            at(1, None, What::Addrs { addrs: vec!["59.64.53.85:57876".into(), "198.18.0.1:57876".into()] }),
-            at(2, None, What::Tun { src: Some("198.18.0.1".into()) }),
-            at(3, None, What::Learnt {
-                v4: Some("219.142.45.253:52498".into()),
-                v6: None,
-                varies: Some(true),
-                from: vec!["https://aps1-1.relay.n0.iroh.link.".into()],
-            }),
-            at(4, Some("phone"), What::Settled { road: "relay".into(), relay: None, rtt_ms: 27, paths: vec![] }),
-            at(5, Some("phone"), What::Round {
-                local: vec!["59.64.53.85:57876".into()],
-                remote: vec!["[2408:8409:18d0:5ff8::1]:61723".into(), "10.1.2.3:61723".into()],
-                rounds: 3,
-            }),
-            at(6, Some("turing"), What::Settled { road: "relay".into(), relay: None, rtt_ms: 30, paths: vec![] }),
-            at(7, Some("turing"), What::Path { change: "selected".into(), road: "direct".into(), addr: "172.16.185.103:35156".into(), rtt_ms: Some(2) }),
-            at(8, Some("lecun"), What::Settled { road: "carried".into(), relay: None, rtt_ms: 2, paths: vec![] }),
+            at(
+                1,
+                None,
+                What::Addrs {
+                    addrs: vec!["59.64.53.85:57876".into(), "198.18.0.1:57876".into()],
+                },
+            ),
+            at(
+                2,
+                None,
+                What::Tun {
+                    src: Some("198.18.0.1".into()),
+                },
+            ),
+            at(
+                3,
+                None,
+                What::Learnt {
+                    v4: Some("219.142.45.253:52498".into()),
+                    v6: None,
+                    varies: Some(true),
+                    from: vec!["https://aps1-1.relay.n0.iroh.link.".into()],
+                },
+            ),
+            at(
+                4,
+                Some("phone"),
+                What::Settled {
+                    road: "relay".into(),
+                    relay: None,
+                    rtt_ms: 27,
+                    paths: vec![],
+                },
+            ),
+            at(
+                5,
+                Some("phone"),
+                What::Round {
+                    local: vec!["59.64.53.85:57876".into()],
+                    remote: vec![
+                        "[2408:8409:18d0:5ff8::1]:61723".into(),
+                        "10.1.2.3:61723".into(),
+                    ],
+                    rounds: 3,
+                },
+            ),
+            at(
+                6,
+                Some("turing"),
+                What::Settled {
+                    road: "relay".into(),
+                    relay: None,
+                    rtt_ms: 30,
+                    paths: vec![],
+                },
+            ),
+            at(
+                7,
+                Some("turing"),
+                What::Path {
+                    change: "selected".into(),
+                    road: "direct".into(),
+                    addr: "172.16.185.103:35156".into(),
+                    rtt_ms: Some(2),
+                },
+            ),
+            at(
+                8,
+                Some("lecun"),
+                What::Settled {
+                    road: "carried".into(),
+                    relay: None,
+                    rtt_ms: 2,
+                    paths: vec![],
+                },
+            ),
         ];
         let v = not_direct(&entries);
         assert_eq!(
             v,
             vec![
-                ("lecun".to_owned(), "carried".to_owned(), vec![Why::NoRound, Why::Tun]),
-                ("phone".to_owned(), "relay".to_owned(), vec![Why::V6Here, Why::Tun]),
+                (
+                    "lecun".to_owned(),
+                    "carried".to_owned(),
+                    vec![Why::NoRound, Why::Tun]
+                ),
+                (
+                    "phone".to_owned(),
+                    "relay".to_owned(),
+                    vec![Why::V6Here, Why::Tun]
+                ),
             ],
             "turing went direct and is not listed"
         );
         // Both with v6, nothing else wrong: the rounds are the answer.
         let entries = vec![
-            at(1, None, What::Addrs { addrs: vec!["[2001:da8:207:e212::5]:35060".into()] }),
-            at(2, None, What::Learnt { v4: Some("1.2.3.4:5".into()), v6: None, varies: Some(false), from: vec![] }),
-            at(3, Some("p"), What::Settled { road: "relay".into(), relay: None, rtt_ms: 9, paths: vec![] }),
-            at(4, Some("p"), What::Round { local: vec![], remote: vec!["[2408::1]:1".into()], rounds: 2 }),
-            at(5, Some("p"), What::Round { local: vec![], remote: vec!["[2408::1]:1".into()], rounds: 5 }),
+            at(
+                1,
+                None,
+                What::Addrs {
+                    addrs: vec!["[2001:da8:207:e212::5]:35060".into()],
+                },
+            ),
+            at(
+                2,
+                None,
+                What::Learnt {
+                    v4: Some("1.2.3.4:5".into()),
+                    v6: None,
+                    varies: Some(false),
+                    from: vec![],
+                },
+            ),
+            at(
+                3,
+                Some("p"),
+                What::Settled {
+                    road: "relay".into(),
+                    relay: None,
+                    rtt_ms: 9,
+                    paths: vec![],
+                },
+            ),
+            at(
+                4,
+                Some("p"),
+                What::Round {
+                    local: vec![],
+                    remote: vec!["[2408::1]:1".into()],
+                    rounds: 2,
+                },
+            ),
+            at(
+                5,
+                Some("p"),
+                What::Round {
+                    local: vec![],
+                    remote: vec!["[2408::1]:1".into()],
+                    rounds: 5,
+                },
+            ),
         ];
-        assert_eq!(not_direct(&entries), vec![("p".to_owned(), "relay".to_owned(), vec![Why::Punched(7)])]);
+        assert_eq!(
+            not_direct(&entries),
+            vec![("p".to_owned(), "relay".to_owned(), vec![Why::Punched(7)])]
+        );
     }
 
     /// Rounds with unchanged candidates are written once per
@@ -1457,12 +1718,34 @@ mod tests {
         };
         let t = std::time::Instant::now();
         let mut p = Punching::default();
-        assert!(matches!(p.saw(round(vec![a]), t), Some(What::Round { rounds: 1, .. })), "the first is written");
+        assert!(
+            matches!(
+                p.saw(round(vec![a]), t),
+                Some(What::Round { rounds: 1, .. })
+            ),
+            "the first is written"
+        );
         for i in 1..5 {
-            assert_eq!(p.saw(round(vec![a]), t + Duration::from_secs(60 * i)), None, "unchanged within the wait");
+            assert_eq!(
+                p.saw(round(vec![a]), t + Duration::from_secs(60 * i)),
+                None,
+                "unchanged within the wait"
+            );
         }
-        assert!(matches!(p.saw(round(vec![a]), t + ROUND_EVERY), Some(What::Round { rounds: 5, .. })), "then with the count");
-        assert!(matches!(p.saw(round(vec![a, b]), t + ROUND_EVERY), Some(What::Round { rounds: 1, .. })), "new candidates at once");
+        assert!(
+            matches!(
+                p.saw(round(vec![a]), t + ROUND_EVERY),
+                Some(What::Round { rounds: 5, .. })
+            ),
+            "then with the count"
+        );
+        assert!(
+            matches!(
+                p.saw(round(vec![a, b]), t + ROUND_EVERY),
+                Some(What::Round { rounds: 1, .. })
+            ),
+            "new candidates at once"
+        );
     }
 
     /// **A switch is told once, after it holds still** (NET-STABLE 第二步):
@@ -1478,7 +1761,11 @@ mod tests {
         let mut i = Interfaces::new(vec![a]);
         i.saw(vec![], ms(0));
         i.saw(vec![b], ms(300));
-        assert_eq!(i.due, Some(ms(300) + ADDRS_SETTLE), "each set starts the wait again");
+        assert_eq!(
+            i.due,
+            Some(ms(300) + ADDRS_SETTLE),
+            "each set starts the wait again"
+        );
         assert!(i.settled(), "a new network is told");
         assert_eq!(i.due, None);
         i.saw(vec![a], ms(2000));
@@ -1498,13 +1785,36 @@ mod tests {
         use iroh::endpoint::{DirectAddr, DirectAddrType};
         let v6: std::net::SocketAddr = "[2001:db8::5]:7000".parse().unwrap();
         let v4: std::net::SocketAddr = "192.168.1.5:7000".parse().unwrap();
-        let set = |typ| std::collections::BTreeSet::from([DirectAddr { addr: v4, typ: DirectAddrType::Local }, DirectAddr { addr: v6, typ }]);
+        let set = |typ| {
+            std::collections::BTreeSet::from([
+                DirectAddr {
+                    addr: v4,
+                    typ: DirectAddrType::Local,
+                },
+                DirectAddr { addr: v6, typ },
+            ])
+        };
         let told = interface_addrs(&set(DirectAddrType::Local), &[]);
         assert_eq!(told, vec![v4, v6]);
-        assert_eq!(interface_addrs(&set(DirectAddrType::Qad), &told), told, "the source moved, the set did not");
-        assert_eq!(interface_addrs(&set(DirectAddrType::Qad), &[]), vec![v4], "learnt only by QAD is no interface");
-        let gone = std::collections::BTreeSet::from([DirectAddr { addr: v4, typ: DirectAddrType::Local }]);
-        assert_eq!(interface_addrs(&gone, &told), vec![v4], "gone from the list is gone");
+        assert_eq!(
+            interface_addrs(&set(DirectAddrType::Qad), &told),
+            told,
+            "the source moved, the set did not"
+        );
+        assert_eq!(
+            interface_addrs(&set(DirectAddrType::Qad), &[]),
+            vec![v4],
+            "learnt only by QAD is no interface"
+        );
+        let gone = std::collections::BTreeSet::from([DirectAddr {
+            addr: v4,
+            typ: DirectAddrType::Local,
+        }]);
+        assert_eq!(
+            interface_addrs(&gone, &told),
+            vec![v4],
+            "gone from the list is gone"
+        );
     }
 
     #[test]
@@ -1512,18 +1822,31 @@ mod tests {
         let root = crate::testdir::TempTree::fresh("journal-ring");
         let j = Journal::open(&root.path());
         for i in 0..(2 * KEEP + 5) {
-            j.note(Some("abc"), What::Hop { via: None, tried: i as u32 });
+            j.note(
+                Some("abc"),
+                What::Hop {
+                    via: None,
+                    tried: i as u32,
+                },
+            );
         }
         j.note(None, What::Started);
         let all = read(&root.path(), Some("abc"), 0);
-        let hops = all.iter().filter(|e| matches!(e.what, What::Hop { .. })).count();
+        let hops = all
+            .iter()
+            .filter(|e| matches!(e.what, What::Hop { .. }))
+            .count();
         assert!(hops <= 2 * KEEP && hops >= KEEP, "kept {hops}");
         assert!(matches!(all.last().unwrap().what, What::Started));
         let last = all.iter().rev().find_map(|e| match e.what {
             What::Hop { tried, .. } => Some(tried),
             _ => None,
         });
-        assert_eq!(last, Some((2 * KEEP + 4) as u32), "the newest line survives the cut");
+        assert_eq!(
+            last,
+            Some((2 * KEEP + 4) as u32),
+            "the newest line survives the cut"
+        );
     }
 
     /// **A file that never opens does not hold the one noting** (net-dial
@@ -1539,7 +1862,11 @@ mod tests {
         let d = dir(&root.path());
         std::fs::create_dir_all(&d).unwrap();
         let fifo = std::ffi::CString::new(d.join("stuck.jsonl").as_os_str().as_bytes()).unwrap();
-        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0, "a FIFO to open");
+        assert_eq!(
+            unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) },
+            0,
+            "a FIFO to open"
+        );
         let j = Journal::open(&root.path());
         let (tx, rx) = std::sync::mpsc::channel();
         {
@@ -1560,7 +1887,10 @@ mod tests {
         );
         // The writer behind it is stuck on the FIFO's open for good; its
         // thread is this test's to leak.
-        assert!(!j.flush(Duration::from_millis(50)), "and the line is still waiting, not lost in the caller");
+        assert!(
+            !j.flush(Duration::from_millis(50)),
+            "and the line is still waiting, not lost in the caller"
+        );
     }
 
     #[test]
@@ -1569,7 +1899,10 @@ mod tests {
             scrub("relay https://r.example/?token=s3cret&x=1 refused"),
             "relay https://r.example/?token=…&x=1 refused"
         );
-        assert_eq!(scrub("Authorization: Bearer abc.def"), "Authorization: Bearer …");
+        assert_eq!(
+            scrub("Authorization: Bearer abc.def"),
+            "Authorization: Bearer …"
+        );
         assert_eq!(scrub("nothing here"), "nothing here");
     }
 
@@ -1577,17 +1910,35 @@ mod tests {
     /// 「改为经 SSH 转连」 — where it said 「改走转连：，往返 0 ms」.
     #[test]
     fn a_carried_path_says_what_carries_it() {
-        let name_of = |id: &str| if id == "b1" { "turing".to_owned() } else { id.to_owned() };
+        let name_of = |id: &str| {
+            if id == "b1" {
+                "turing".to_owned()
+            } else {
+                id.to_owned()
+            }
+        };
         let e = |addr: &str, rtt_ms| Entry {
             at: 0,
             peer: Some("y".into()),
-            what: What::Path { change: "selected".into(), road: "carried".into(), addr: addr.into(), rtt_ms },
+            what: What::Path {
+                change: "selected".into(),
+                road: "carried".into(),
+                addr: addr.into(),
+                rtt_ms,
+            },
         };
-        assert_eq!(words(&e("b1", None), &name_of), msg::journal_path_hop("turing"));
+        assert_eq!(
+            words(&e("b1", None), &name_of),
+            msg::journal_path_hop("turing")
+        );
         assert_eq!(words(&e("ssh", None), &name_of), msg::journal_path_ssh());
         assert_eq!(
             words(&e("b1", Some(3)), &name_of),
-            format!("{}{}", msg::journal_path_hop("turing"), msg::journal_path_rtt(3))
+            format!(
+                "{}{}",
+                msg::journal_path_hop("turing"),
+                msg::journal_path_rtt(3)
+            )
         );
     }
 
@@ -1595,18 +1946,35 @@ mod tests {
     /// not 「改走中继」 — it is no move of the machine's.
     #[test]
     fn a_connections_first_road_is_not_a_move() {
-        let name_of = |id: &str| if id == "b1" { "turing".to_owned() } else { id.to_owned() };
+        let name_of = |id: &str| {
+            if id == "b1" {
+                "turing".to_owned()
+            } else {
+                id.to_owned()
+            }
+        };
         let e = |road: &str, addr: &str| Entry {
             at: 0,
             peer: Some("y".into()),
-            what: What::Path { change: "started".into(), road: road.into(), addr: addr.into(), rtt_ms: None },
+            what: What::Path {
+                change: "started".into(),
+                road: road.into(),
+                addr: addr.into(),
+                rtt_ms: None,
+            },
         };
         assert_eq!(
             words(&e("relay", "r.example"), &name_of),
             msg::journal_path_started(msg::journal_road_relay(), "r.example")
         );
-        assert_eq!(words(&e("carried", "b1"), &name_of), msg::journal_path_started_hop("turing"));
-        assert_eq!(words(&e("carried", "ssh"), &name_of), msg::journal_path_started_ssh());
+        assert_eq!(
+            words(&e("carried", "b1"), &name_of),
+            msg::journal_path_started_hop("turing")
+        );
+        assert_eq!(
+            words(&e("carried", "ssh"), &name_of),
+            msg::journal_path_started_ssh()
+        );
         assert_ne!(
             words(&e("relay", "r.example"), &name_of),
             msg::journal_path_selected(msg::journal_road_relay(), "r.example")
@@ -1620,12 +1988,29 @@ mod tests {
     #[test]
     fn a_pile_in_another_epoch_is_one_line_of_its_own() {
         let apart = msg::pile_other_epoch("devices", 0, khor_sync::store::EPOCH);
-        let w = sync_failed("epoch-peer", "devices", Some(&apart)).expect("the first time is written");
-        assert!(matches!(&w, What::Apart { doc, .. } if doc == "devices"), "{w:?}");
-        let e = Entry { at: 1, peer: Some("epoch-peer".into()), what: w };
-        assert_eq!(words(&e, &|s| s.to_owned()), msg::journal_sync_apart("devices", &apart));
-        assert!(sync_failed("epoch-peer", "devices", Some(&apart)).is_none(), "and not again");
+        let w =
+            sync_failed("epoch-peer", "devices", Some(&apart)).expect("the first time is written");
+        assert!(
+            matches!(&w, What::Apart { doc, .. } if doc == "devices"),
+            "{w:?}"
+        );
+        let e = Entry {
+            at: 1,
+            peer: Some("epoch-peer".into()),
+            what: w,
+        };
+        assert_eq!(
+            words(&e, &|s| s.to_owned()),
+            msg::journal_sync_apart("devices", &apart)
+        );
+        assert!(
+            sync_failed("epoch-peer", "devices", Some(&apart)).is_none(),
+            "and not again"
+        );
         let other = msg::version_undecodable("x");
-        assert!(matches!(sync_failed("epoch-peer", "devices", Some(&other)), Some(What::Sync { .. })));
+        assert!(matches!(
+            sync_failed("epoch-peer", "devices", Some(&other)),
+            Some(What::Sync { .. })
+        ));
     }
 }

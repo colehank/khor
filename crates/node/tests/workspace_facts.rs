@@ -48,7 +48,14 @@ fn git(dir: &std::path::Path, args: &[&str]) {
     let ok = Command::new("git")
         .arg("-C")
         .arg(dir)
-        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"])
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "init.defaultBranch=main",
+        ])
         .args(args)
         .output()
         .unwrap()
@@ -101,7 +108,11 @@ async fn a_workspaces_facts_move_when_a_file_does_and_reach_the_other_machine() 
     let plain = fs::canonicalize(&plain).unwrap().display().to_string();
 
     // Alpha's resident takes them up on its next beat.
-    let fact = |n: &Node, path: &str| n.workspace_facts_of(&alpha).into_iter().find(|f| f.path == path);
+    let fact = |n: &Node, path: &str| {
+        n.workspace_facts_of(&alpha)
+            .into_iter()
+            .find(|f| f.path == path)
+    };
     let kept = until(Duration::from_secs(30), "alpha keeping both", || {
         fact(&a, &repo).is_some() && fact(&a, &plain).is_some()
     })
@@ -110,12 +121,23 @@ async fn a_workspaces_facts_move_when_a_file_does_and_reach_the_other_machine() 
     assert_eq!(first.branch.as_deref(), Some("main"));
     assert_eq!(first.changed, Some(0), "a clean checkout");
     let seg = first.git.clone().expect("a checkout has a git segment");
-    assert_eq!((seg.branch.as_deref(), seg.subject.as_deref()), (Some("main"), Some("one")));
-    assert_eq!(seg.head.as_ref().map(String::len), Some(8), "HEAD's short id");
+    assert_eq!(
+        (seg.branch.as_deref(), seg.subject.as_deref()),
+        (Some("main"), Some("one"))
+    );
+    assert_eq!(
+        seg.head.as_ref().map(String::len),
+        Some(8),
+        "HEAD's short id"
+    );
     assert_eq!((seg.staged, seg.unstaged, seg.untracked), (0, 0, 0));
     assert!(seg.since_ms > 0, "dated by git's own files on first sight");
     let folder = fact(&a, &plain).unwrap();
-    assert_eq!((folder.branch.as_deref(), folder.changed), (None, None), "a folder has only a time");
+    assert_eq!(
+        (folder.branch.as_deref(), folder.changed),
+        (None, None),
+        "a folder has only a time"
+    );
     assert_eq!(folder.git, None, "and no git segment");
     assert!(folder.changed_ms > 0, "and has one");
 
@@ -123,9 +145,19 @@ async fn a_workspaces_facts_move_when_a_file_does_and_reach_the_other_machine() 
     // says alpha holds workspaces, the next asks alpha for their facts —
     // a machine with none is not asked at all (the reading's name would
     // cost a phone half a KB a minute for nothing).
-    timeout(Duration::from_secs(60), b.sync_now()).await.unwrap().unwrap();
-    timeout(Duration::from_secs(60), b.sync_now()).await.unwrap().unwrap();
-    assert_eq!(fact(&b, &repo), Some(first.clone()), "beta holds alpha's facts");
+    timeout(Duration::from_secs(60), b.sync_now())
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(60), b.sync_now())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        fact(&b, &repo),
+        Some(first.clone()),
+        "beta holds alpha's facts"
+    );
 
     // A file changed and one added: the watcher, a recompute, the next round.
     tokio::time::sleep(Duration::from_millis(1100)).await;
@@ -137,11 +169,22 @@ async fn a_workspaces_facts_move_when_a_file_does_and_reach_the_other_machine() 
     })
     .await;
     let now = fact(&a, &repo).unwrap();
-    assert!(now.changed_ms > first.changed_ms, "the time moved: {} → {}", first.changed_ms, now.changed_ms);
+    assert!(
+        now.changed_ms > first.changed_ms,
+        "the time moved: {} → {}",
+        first.changed_ms,
+        now.changed_ms
+    );
     let moved_seg = now.git.clone().unwrap();
     assert_eq!((moved_seg.unstaged, moved_seg.untracked), (1, 1), "!1 ?1");
-    assert!(moved_seg.since_ms > seg.since_ms, "a changed segment is dated anew");
-    timeout(Duration::from_secs(60), b.sync_now()).await.unwrap().unwrap();
+    assert!(
+        moved_seg.since_ms > seg.since_ms,
+        "a changed segment is dated anew"
+    );
+    timeout(Duration::from_secs(60), b.sync_now())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(fact(&b, &repo), Some(now), "and beta has the new count");
     eprintln!(
         "[wsfacts] kept after {kept:?}; a write counted on alpha {moved:?} after it ({:?} with the round)",
@@ -162,8 +205,21 @@ fn a_checkouts_segment_counts_what_a_prompt_counts() {
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-q", "-m", "first line\n\nbody"]);
     let seg = khor_node::git::segment(&repo).unwrap();
-    assert_eq!((seg.branch.as_deref(), seg.subject.as_deref()), (Some("main"), Some("first line")));
-    assert_eq!((seg.ahead, seg.behind, seg.stashes, seg.staged, seg.unstaged, seg.untracked), (0, 0, 0, 0, 0, 0));
+    assert_eq!(
+        (seg.branch.as_deref(), seg.subject.as_deref()),
+        (Some("main"), Some("first line"))
+    );
+    assert_eq!(
+        (
+            seg.ahead,
+            seg.behind,
+            seg.stashes,
+            seg.staged,
+            seg.unstaged,
+            seg.untracked
+        ),
+        (0, 0, 0, 0, 0, 0)
+    );
 
     fs::write(repo.join("a.txt"), "two\n").unwrap();
     git(&repo, &["stash", "-q"]);
@@ -174,7 +230,13 @@ fn a_checkouts_segment_counts_what_a_prompt_counts() {
     fs::write(repo.join("d.txt"), "new\n").unwrap();
     let seg = khor_node::git::segment(&repo).unwrap();
     assert_eq!(
-        (seg.stashes, seg.staged, seg.unstaged, seg.untracked, seg.changed),
+        (
+            seg.stashes,
+            seg.staged,
+            seg.unstaged,
+            seg.untracked,
+            seg.changed
+        ),
         (1, 1, 1, 2, 4),
         "*1 +1 !1 ?2"
     );
@@ -182,8 +244,15 @@ fn a_checkouts_segment_counts_what_a_prompt_counts() {
     let head = seg.head.clone().unwrap();
     git(&repo, &["checkout", "-q", "--detach"]);
     let seg = khor_node::git::segment(&repo).unwrap();
-    assert_eq!((seg.branch, seg.head), (None, Some(head)), "detached: no branch, its short id");
-    assert!(khor_node::git::last_moved(&repo) > 0, "git's own files date it");
+    assert_eq!(
+        (seg.branch, seg.head),
+        (None, Some(head)),
+        "detached: no branch, its short id"
+    );
+    assert!(
+        khor_node::git::last_moved(&repo) > 0,
+        "git's own files date it"
+    );
 
     let plain = r.0.join("plain");
     fs::create_dir_all(&plain).unwrap();
@@ -195,12 +264,22 @@ fn git_stops(dir: &std::path::Path, args: &[&str]) {
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
-        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"])
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "init.defaultBranch=main",
+        ])
         .args(args)
         .env("GIT_EDITOR", "true")
         .output()
         .unwrap();
-    assert!(!out.status.success(), "git {args:?} was to stop on a conflict");
+    assert!(
+        !out.status.success(),
+        "git {args:?} was to stop on a conflict"
+    );
 }
 
 /// **What a prompt says past the counts** (UX-51, the owner
@@ -221,13 +300,23 @@ fn a_segment_names_an_operation_and_counts_what_no_remote_has() {
     git(&repo, &["commit", "-q", "-m", "first"]);
     let seg = |why: &str| {
         let s = khor_node::git::segment(&repo).unwrap();
-        eprintln!("[segment] {why}: ahead {} behind {} ~{} {:?}", s.ahead, s.behind, s.conflicted, s.operation);
+        eprintln!(
+            "[segment] {why}: ahead {} behind {} ~{} {:?}",
+            s.ahead, s.behind, s.conflicted, s.operation
+        );
         s
     };
-    assert_eq!((seg("no remote").ahead, seg("no remote").operation), (0, None), "no remote, no count");
+    assert_eq!(
+        (seg("no remote").ahead, seg("no remote").operation),
+        (0, None),
+        "no remote, no count"
+    );
 
     // Pushed without `-u`: on the remote, and no upstream configured.
-    git(&repo, &["remote", "add", "origin", origin.to_str().unwrap()]);
+    git(
+        &repo,
+        &["remote", "add", "origin", origin.to_str().unwrap()],
+    );
     git(&repo, &["push", "-q", "origin", "main"]);
     assert_eq!(seg("main pushed, no upstream").ahead, 0);
     git(&repo, &["checkout", "-q", "-b", "topic"]);
@@ -237,7 +326,11 @@ fn a_segment_names_an_operation_and_counts_what_no_remote_has() {
     fs::write(repo.join("a.txt"), "topic\n").unwrap();
     git(&repo, &["commit", "-q", "-am", "topic a"]);
     let s = seg("topic never pushed");
-    assert_eq!((s.branch.as_deref(), s.ahead, s.behind), (Some("topic"), 2, 0), "⇡2 though no upstream");
+    assert_eq!(
+        (s.branch.as_deref(), s.ahead, s.behind),
+        (Some("topic"), 2, 0),
+        "⇡2 though no upstream"
+    );
 
     git(&repo, &["checkout", "-q", "main"]);
     fs::write(repo.join("a.txt"), "main\n").unwrap();
@@ -246,7 +339,11 @@ fn a_segment_names_an_operation_and_counts_what_no_remote_has() {
 
     git_stops(&repo, &["merge", "-q", "topic"]);
     let s = seg("merging");
-    assert_eq!((s.operation, s.conflicted), (Some(O::Merge), 1), "合并中 ~1");
+    assert_eq!(
+        (s.operation, s.conflicted),
+        (Some(O::Merge), 1),
+        "合并中 ~1"
+    );
     git(&repo, &["merge", "--abort"]);
 
     git_stops(&repo, &["cherry-pick", "topic"]);
@@ -254,7 +351,13 @@ fn a_segment_names_an_operation_and_counts_what_no_remote_has() {
     git(&repo, &["cherry-pick", "--abort"]);
 
     let first = String::from_utf8(
-        Command::new("git").arg("-C").arg(&repo).args(["rev-list", "--max-parents=0", "HEAD"]).output().unwrap().stdout,
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["rev-list", "--max-parents=0", "HEAD"])
+            .output()
+            .unwrap()
+            .stdout,
     )
     .unwrap();
     git_stops(&repo, &["revert", "--no-edit", first.trim()]);

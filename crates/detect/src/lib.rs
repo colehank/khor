@@ -196,7 +196,10 @@ impl Screen {
     /// is passed over for the line above it, and a screen of nothing but
     /// those answers none.
     pub fn last_line(&self) -> Option<String> {
-        self.visible().into_iter().rev().find(|l| l.chars().any(char::is_alphanumeric))
+        self.visible()
+            .into_iter()
+            .rev()
+            .find(|l| l.chars().any(char::is_alphanumeric))
     }
 
     /// The visible rows, right-trimmed, with trailing blank rows

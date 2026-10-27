@@ -223,14 +223,27 @@ fn hunk(h: khor_node::proto::Hunk) -> GitHunk {
     }
 }
 
-async fn ask(root: &Path, machine: &str, q: khor_node::git::GitAsk) -> Result<khor_node::git::GitAnswer, String> {
+async fn ask(
+    root: &Path,
+    machine: &str,
+    q: khor_node::git::GitAsk,
+) -> Result<khor_node::git::GitAnswer, String> {
     Node::open(root.to_path_buf())?.git_on(machine, &q).await
 }
 
 /// One file's log off any machine (`khor_node::Node::git_on`).
 pub async fn log(root: &Path, machine: &str, path: &str) -> Result<GitLog, String> {
     use khor_node::git::{GitAnswer, GitAsk};
-    match ask(root, machine, GitAsk::Log { path: path.to_owned(), limit: 200 }).await? {
+    match ask(
+        root,
+        machine,
+        GitAsk::Log {
+            path: path.to_owned(),
+            limit: 200,
+        },
+    )
+    .await?
+    {
         GitAnswer::Log { commits, more } => Ok(GitLog {
             commits: commits.into_iter().map(commit).collect(),
             more,
@@ -242,7 +255,15 @@ pub async fn log(root: &Path, machine: &str, path: &str) -> Result<GitLog, Strin
 /// Who wrote each of one file's lines, as HEAD has it.
 pub async fn blame(root: &Path, machine: &str, path: &str) -> Result<GitBlame, String> {
     use khor_node::git::{GitAnswer, GitAsk};
-    match ask(root, machine, GitAsk::Blame { path: path.to_owned() }).await? {
+    match ask(
+        root,
+        machine,
+        GitAsk::Blame {
+            path: path.to_owned(),
+        },
+    )
+    .await?
+    {
         GitAnswer::Blame { commits, runs } => Ok(GitBlame {
             commits: commits.into_iter().map(commit).collect(),
             runs: runs
@@ -266,7 +287,12 @@ pub async fn show(root: &Path, machine: &str, path: &str, rev: &str) -> Result<G
         rev: rev.to_owned(),
     };
     match ask(root, machine, q).await? {
-        GitAnswer::Show { text, cut, hunks, more } => Ok(GitShow {
+        GitAnswer::Show {
+            text,
+            cut,
+            hunks,
+            more,
+        } => Ok(GitShow {
             text,
             cut,
             diff: GitDiff {
@@ -291,14 +317,24 @@ pub async fn checkout(root: &Path, machine: &str, dir: &str) -> Result<bool, Str
 
 /// One commit of the repository `dir` is in, and what it changed
 /// (the commit page, COMMITS-BRIEF 2026-10-12).
-pub async fn commit_show(root: &Path, machine: &str, dir: &str, rev: &str) -> Result<GitCommitShow, String> {
+pub async fn commit_show(
+    root: &Path,
+    machine: &str,
+    dir: &str,
+    rev: &str,
+) -> Result<GitCommitShow, String> {
     use khor_node::git::{GitAnswer, GitAsk};
     let q = GitAsk::Commit {
         root: dir.to_owned(),
         rev: rev.to_owned(),
     };
     match ask(root, machine, q).await? {
-        GitAnswer::Commit { commit: c, files, total, more } => Ok(GitCommitShow {
+        GitAnswer::Commit {
+            commit: c,
+            files,
+            total,
+            more,
+        } => Ok(GitCommitShow {
             commit: commit(c),
             files: files
                 .into_iter()

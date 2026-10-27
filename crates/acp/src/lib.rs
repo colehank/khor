@@ -820,8 +820,12 @@ impl EventFence {
         }
         let mut completed = self.completed.clone();
         loop {
-            if let Some(result) = completed.borrow_and_update().clone() { return result; }
-            completed.changed().await
+            if let Some(result) = completed.borrow_and_update().clone() {
+                return result;
+            }
+            completed
+                .changed()
+                .await
                 .map_err(|_| "ACP event forwarder ended without confirmation".to_owned())?;
         }
     }
@@ -830,7 +834,8 @@ struct ForwarderCompletion(tokio::sync::watch::Sender<Option<Result<(), String>>
 impl Drop for ForwarderCompletion {
     fn drop(&mut self) {
         if self.0.borrow().is_none() {
-            self.0.send_replace(Some(Err("ACP event forwarder was cancelled".into())));
+            self.0
+                .send_replace(Some(Err("ACP event forwarder was cancelled".into())));
         }
     }
 }
@@ -873,7 +878,10 @@ fn start_event_forwarder(
         };
         completion.0.send_replace(Some(result));
     });
-    EventFence { requests, completed }
+    EventFence {
+        requests,
+        completed,
+    }
 }
 #[cfg(test)]
 #[path = "event_fence_tests.rs"]

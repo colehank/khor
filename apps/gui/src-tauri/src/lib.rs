@@ -3,8 +3,8 @@
 //! are the same functions (docs/KHOR.md 三条地基).
 
 mod menu_overlay;
-mod page_history;
 mod native_io;
+mod page_history;
 
 #[cfg(desktop)]
 mod window_surface;
@@ -102,7 +102,15 @@ fn tabs_list(kind: String) -> khor_gui_core::tabs::TabsOpen {
 /// Opens one and puts it in front; answers its id. Both places absent
 /// is the fresh tab the 「+」 mints.
 #[tauri::command]
-fn tabs_open(kind: String, device: Option<String>, url: Option<String>, session: Option<String>, after: Option<String>, view: Option<String>, request: Option<String>) -> Result<String, String> {
+fn tabs_open(
+    kind: String,
+    device: Option<String>,
+    url: Option<String>,
+    session: Option<String>,
+    after: Option<String>,
+    view: Option<String>,
+    request: Option<String>,
+) -> Result<String, String> {
     khor_gui_core::tabs::open(
         &Node::root_from_env(),
         &kind,
@@ -157,7 +165,11 @@ fn tabs_pin(kind: String, id: String, on: bool) -> Result<khor_gui_core::tabs::T
 
 /// Moves only the requested identifiers within this session's live column.
 #[tauri::command]
-fn tabs_reorder(kind: String, session: String, ids: Vec<String>) -> Result<khor_gui_core::tabs::TabsOpen, String> {
+fn tabs_reorder(
+    kind: String,
+    session: String,
+    ids: Vec<String>,
+) -> Result<khor_gui_core::tabs::TabsOpen, String> {
     khor_gui_core::tabs::reorder(&Node::root_from_env(), &kind, &session, &ids)
 }
 
@@ -224,7 +236,10 @@ async fn dirs_wait(
 /// What an open file is now, without its bytes
 /// (`khor_gui_core::files::stat_text`).
 #[tauri::command]
-async fn stat_text(machine: String, path: String) -> Result<khor_gui_core::files::FileStat, String> {
+async fn stat_text(
+    machine: String,
+    path: String,
+) -> Result<khor_gui_core::files::FileStat, String> {
     khor_gui_core::files::stat_text(&Node::root_from_env(), &machine, &path).await
 }
 
@@ -356,13 +371,21 @@ async fn git_blame(machine: String, path: String) -> Result<khor_gui_core::git::
 }
 
 #[tauri::command]
-async fn git_show(machine: String, path: String, rev: String) -> Result<khor_gui_core::git::GitShow, String> {
+async fn git_show(
+    machine: String,
+    path: String,
+    rev: String,
+) -> Result<khor_gui_core::git::GitShow, String> {
     khor_gui_core::git::show(&Node::root_from_env(), &machine, &path, &rev).await
 }
 
 /// One commit of the repository `dir` is in, and what it changed.
 #[tauri::command]
-async fn git_commit(machine: String, dir: String, rev: String) -> Result<khor_gui_core::git::GitCommitShow, String> {
+async fn git_commit(
+    machine: String,
+    dir: String,
+    rev: String,
+) -> Result<khor_gui_core::git::GitCommitShow, String> {
     khor_gui_core::git::commit_show(&Node::root_from_env(), &machine, &dir, &rev).await
 }
 
@@ -372,7 +395,9 @@ async fn quota_board() -> Result<Vec<khor_gui_core::AccountRing>, String> {
 }
 
 #[tauri::command]
-async fn subscription_candidates(machine: String) -> Result<Vec<khor_gui_core::subscriptions::SubscriptionCandidate>, String> {
+async fn subscription_candidates(
+    machine: String,
+) -> Result<Vec<khor_gui_core::subscriptions::SubscriptionCandidate>, String> {
     khor_gui_core::subscriptions::discover(&Node::root_from_env(), &machine).await
 }
 
@@ -498,13 +523,19 @@ async fn khor_agent(
 }
 
 #[tauri::command]
-async fn console_complete(line: String, caret: usize) -> Result<khor_gui_core::console_complete::Completion, String> {
+async fn console_complete(
+    line: String,
+    caret: usize,
+) -> Result<khor_gui_core::console_complete::Completion, String> {
     khor_gui_core::console_complete::complete(&Node::root_from_env(), &line, caret).await
 }
 
 #[tauri::command]
 async fn console_run(line: String, token: String, input: Option<String>) -> Result<String, String> {
-    off_main(move || khor_gui_core::console::run(&Node::root_from_env(), &line, &token, input.as_deref())).await
+    off_main(move || {
+        khor_gui_core::console::run(&Node::root_from_env(), &line, &token, input.as_deref())
+    })
+    .await
 }
 
 /// A row on another machine closes there, over the network
@@ -576,7 +607,10 @@ async fn connections() -> Result<khor_gui_core::Connections, String> {
 /// 全网谁够得着 (`khor_gui_core::reach_probe`, round ROAD-1): every
 /// machine's try at one address. Async: it asks every machine.
 #[tauri::command]
-async fn reach_probe(host: String, port: Option<u16>) -> Result<khor_gui_core::ReachReport, String> {
+async fn reach_probe(
+    host: String,
+    port: Option<u16>,
+) -> Result<khor_gui_core::ReachReport, String> {
     khor_gui_core::reach_probe(&Node::root_from_env(), host, port).await
 }
 
@@ -609,9 +643,11 @@ fn ssh_config_hosts() -> Vec<String> {
 /// 上传公钥: a terminal running `ssh-copy-id` for the form's host.
 #[tauri::command]
 async fn open_copy_id(ask: khor_gui_core::add::LoginAsk) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || khor_gui_core::add::open_copy_id(&Node::root_from_env(), ask))
-        .await
-        .map_err(|e| e.to_string())?
+    tokio::task::spawn_blocking(move || {
+        khor_gui_core::add::open_copy_id(&Node::root_from_env(), ask)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 选择密钥文件…: the system's picker, opened in `~/.ssh`. Answers the
@@ -632,7 +668,11 @@ async fn pick_key_file(app: tauri::AppHandle) -> Option<String> {
 /// thread: finding the `khor` it names can ask the login shell for its
 /// PATH (`Node::user_path`), a process started and waited on.
 #[tauri::command]
-async fn proxy_line(machine: String, host: String, port: Option<u16>) -> Result<khor_gui_core::ProxyLine, String> {
+async fn proxy_line(
+    machine: String,
+    host: String,
+    port: Option<u16>,
+) -> Result<khor_gui_core::ProxyLine, String> {
     off_main(move || Ok(khor_gui_core::proxy_line(&machine, &host, port))).await
 }
 
@@ -709,8 +749,13 @@ fn restyle(
 }
 
 #[tauri::command]
-async fn agent_recognition(machine: String, action: String, agent: Option<String>) -> Result<Vec<khor_gui_core::RecognitionEntry>, String> {
-    khor_gui_core::agent_recognition(&Node::root_from_env(), &machine, &action, agent.as_deref()).await
+async fn agent_recognition(
+    machine: String,
+    action: String,
+    agent: Option<String>,
+) -> Result<Vec<khor_gui_core::RecognitionEntry>, String> {
+    khor_gui_core::agent_recognition(&Node::root_from_env(), &machine, &action, agent.as_deref())
+        .await
 }
 
 /// The three hook commands are about **this machine's** claude: the
@@ -750,7 +795,11 @@ fn chat_poll(id: String, since: u64) -> Result<khor_gui_core::chat::ChatBatch, S
 /// The conversation, pushed: held open until a frame lands
 /// (`chat::chat_wait`). Async, for `term_wait`'s reason.
 #[tauri::command]
-async fn chat_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::chat::ChatBatch, String> {
+async fn chat_wait(
+    id: String,
+    since: u64,
+    ms: u64,
+) -> Result<khor_gui_core::chat::ChatBatch, String> {
     khor_gui_core::chat::chat_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
 }
 
@@ -840,45 +889,82 @@ async fn pull(machine: String, path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn file_handoff_start(id: String, machine: String, path: String) -> Result<khor_gui_core::file_handoff::FileHandoff,String> {
+fn file_handoff_start(
+    id: String,
+    machine: String,
+    path: String,
+) -> Result<khor_gui_core::file_handoff::FileHandoff, String> {
     khor_gui_core::file_handoff::start(&Node::root_from_env(), &id, &machine, &path)
 }
 #[tauri::command]
-fn file_handoff_state(id: String) -> Result<khor_gui_core::file_handoff::FileHandoff,String> {
+fn file_handoff_state(id: String) -> Result<khor_gui_core::file_handoff::FileHandoff, String> {
     khor_gui_core::file_handoff::state(&Node::root_from_env(), &id)
 }
 #[tauri::command]
-fn file_handoff_cancel(id: String) -> Result<(),String> {
+fn file_handoff_cancel(id: String) -> Result<(), String> {
     khor_gui_core::file_handoff::cancel(&Node::root_from_env(), &id)
 }
 #[tauri::command]
-fn file_handoff_supported() -> bool { cfg!(any(target_os = "ios",target_os = "macos",target_os="android")) }
+fn file_handoff_supported() -> bool {
+    cfg!(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "android"
+    ))
+}
 #[tauri::command]
-async fn file_handoff_open(app:tauri::AppHandle, webview: tauri::Webview, id: String) -> Result<bool,String> {
-    if webview.label() != "main" { return Err("file opening is only available in the app".into()); }
-    #[cfg(not(target_os="android"))]
-    let _=&app;
+async fn file_handoff_open(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+    id: String,
+) -> Result<bool, String> {
+    if webview.label() != "main" {
+        return Err("file opening is only available in the app".into());
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = &app;
     let path = khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
     #[cfg(target_os = "ios")]
-    { phone_share::open(webview,path).await }
+    {
+        phone_share::open(webview, path).await
+    }
     #[cfg(target_os = "macos")]
-    { khor_gui_core::files::launch(&Node::root_from_env(),"",&path.to_string_lossy()).await?; Ok(true) }
-    #[cfg(target_os="android")]
-    {tauri_plugin_khor_files::open(&app,&path).map_err(|_|khor_catalog::msg::file_open_unavailable().to_owned())?;Ok(true)}
-    #[cfg(not(any(target_os = "ios",target_os="macos",target_os="android")))]
-    { let _ = (app,path); Err(khor_catalog::msg::file_open_unavailable().into()) }
+    {
+        khor_gui_core::files::launch(&Node::root_from_env(), "", &path.to_string_lossy()).await?;
+        Ok(true)
+    }
+    #[cfg(target_os = "android")]
+    {
+        tauri_plugin_khor_files::open(&app, &path)
+            .map_err(|_| khor_catalog::msg::file_open_unavailable().to_owned())?;
+        Ok(true)
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "android")))]
+    {
+        let _ = (app, path);
+        Err(khor_catalog::msg::file_open_unavailable().into())
+    }
 }
 
 #[tauri::command]
-fn file_preview_supported() -> bool { cfg!(any(target_os="ios",target_os="macos")) }
+fn file_preview_supported() -> bool {
+    cfg!(any(target_os = "ios", target_os = "macos"))
+}
 #[tauri::command]
-async fn file_preview_open(webview:tauri::Webview,id:String)->Result<bool,String> {
-    if webview.label()!="main" {return Err("file preview is only available in the app".into());}
-    let path=khor_gui_core::file_handoff::ready_path(&Node::root_from_env(),&id)?;
-    #[cfg(any(target_os="ios",target_os="macos"))]
-    {quick_look::open(webview,path).await}
-    #[cfg(not(any(target_os="ios",target_os="macos")))]
-    {let _=(webview,path);Err(khor_catalog::msg::file_preview_unavailable().into())}
+async fn file_preview_open(webview: tauri::Webview, id: String) -> Result<bool, String> {
+    if webview.label() != "main" {
+        return Err("file preview is only available in the app".into());
+    }
+    let path = khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    {
+        quick_look::open(webview, path).await
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+    {
+        let _ = (webview, path);
+        Err(khor_catalog::msg::file_preview_unavailable().into())
+    }
 }
 
 /// The same file in a temporary folder here, for this machine's other
@@ -1001,7 +1087,16 @@ fn pdf_here() -> bool {
 /// ([`off_main`]).
 #[tauri::command]
 async fn term_open(id: String, cols: u16, rows: u16, history: Option<u32>) -> Result<(), String> {
-    off_main(move || khor_gui_core::term::term_open(&Node::root_from_env(), &id, cols, rows, history.unwrap_or(0))).await
+    off_main(move || {
+        khor_gui_core::term::term_open(
+            &Node::root_from_env(),
+            &id,
+            cols,
+            rows,
+            history.unwrap_or(0),
+        )
+    })
+    .await
 }
 
 /// A dead terminal row's page (`term::ended`, P5-SHELL): its last screen
@@ -1031,7 +1126,14 @@ async fn term_history(
     dir: String,
     failed: bool,
 ) -> Result<Vec<khor_gui_core::term::HistoryRow>, String> {
-    khor_gui_core::term::history(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &text, &dir, failed).await
+    khor_gui_core::term::history(
+        &Node::root_from_env(),
+        machine.as_deref().unwrap_or(""),
+        &text,
+        &dir,
+        failed,
+    )
+    .await
 }
 
 /// A tmux row's prompts, moved between by tmux (item 21, `term::prompt`).
@@ -1058,7 +1160,11 @@ async fn term_pane_history(
 }
 
 #[tauri::command]
-async fn term_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::term::TermChunk, String> {
+async fn term_wait(
+    id: String,
+    since: u64,
+    ms: u64,
+) -> Result<khor_gui_core::term::TermChunk, String> {
     khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
 }
 
@@ -1075,7 +1181,11 @@ fn notify_finished(app: tauri::AppHandle, title: String, body: String) -> Result
     {
         return Ok(());
     }
-    n.builder().title(title).body(body).show().map_err(|e| e.to_string())
+    n.builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|e| e.to_string())
 }
 
 /// **A line from the page into the app's log** (item 18 A): what a
@@ -1127,10 +1237,19 @@ fn edit_menu(items: Vec<(String, String)>) {
 /// is the selection's box in the page's CSS px from the document's
 /// origin; `copy` is what 拷贝 writes. Queued on UIKit's thread.
 #[tauri::command]
-fn edit_menu_at(app: tauri::AppHandle, x: f64, y: f64, w: f64, h: f64, items: Vec<(String, String)>, copy: Option<String>) {
+fn edit_menu_at(
+    app: tauri::AppHandle,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    items: Vec<(String, String)>,
+    copy: Option<String>,
+) {
     #[cfg(target_os = "ios")]
     if let Some(face) = phone_page::face(&app) {
-        let _ = face.with_webview(move |wv| edit_menu::show_at(wv.inner(), [x, y, w, h], items, copy));
+        let _ =
+            face.with_webview(move |wv| edit_menu::show_at(wv.inner(), [x, y, w, h], items, copy));
     }
     #[cfg(not(target_os = "ios"))]
     let _ = (app, x, y, w, h, items, copy);
@@ -1165,17 +1284,26 @@ fn haptic(app: tauri::AppHandle, kind: String) {
         let _ = app.run_on_main_thread(move || {
             use objc2::{MainThreadMarker, MainThreadOnly as _};
             use objc2_ui_kit::{
-                UIImpactFeedbackGenerator, UIImpactFeedbackStyle, UINotificationFeedbackGenerator, UINotificationFeedbackType,
-                UISelectionFeedbackGenerator,
+                UIImpactFeedbackGenerator, UIImpactFeedbackStyle, UINotificationFeedbackGenerator,
+                UINotificationFeedbackType, UISelectionFeedbackGenerator,
             };
-            let Some(mtm) = MainThreadMarker::new() else { return };
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
             match kind.as_str() {
-                "selection" => UISelectionFeedbackGenerator::init(UISelectionFeedbackGenerator::alloc(mtm)).selectionChanged(),
-                "threshold" => {
-                    UIImpactFeedbackGenerator::initWithStyle(UIImpactFeedbackGenerator::alloc(mtm), UIImpactFeedbackStyle::Light).impactOccurred()
+                "selection" => {
+                    UISelectionFeedbackGenerator::init(UISelectionFeedbackGenerator::alloc(mtm))
+                        .selectionChanged()
                 }
+                "threshold" => UIImpactFeedbackGenerator::initWithStyle(
+                    UIImpactFeedbackGenerator::alloc(mtm),
+                    UIImpactFeedbackStyle::Light,
+                )
+                .impactOccurred(),
                 "success" | "warning" => {
-                    let g = UINotificationFeedbackGenerator::init(UINotificationFeedbackGenerator::alloc(mtm));
+                    let g = UINotificationFeedbackGenerator::init(
+                        UINotificationFeedbackGenerator::alloc(mtm),
+                    );
                     g.notificationOccurred(if kind == "success" {
                         UINotificationFeedbackType::Success
                     } else {
@@ -1265,12 +1393,28 @@ fn recents(kind: String, limit: u32) -> Result<Vec<khor_gui_core::recents::Recen
 }
 
 #[tauri::command]
-fn recent_visit(kind: String, machine: String, place: String, session: Option<String>) -> Result<(), String> {
-    khor_gui_core::recents::recent_visit(&Node::root_from_env(), &kind, &machine, &place, session.as_deref())
+fn recent_visit(
+    kind: String,
+    machine: String,
+    place: String,
+    session: Option<String>,
+) -> Result<(), String> {
+    khor_gui_core::recents::recent_visit(
+        &Node::root_from_env(),
+        &kind,
+        &machine,
+        &place,
+        session.as_deref(),
+    )
 }
 
 #[tauri::command]
-fn forget_recent(kind: String, machine: Option<String>, device: Option<String>, place: String) -> Result<(), String> {
+fn forget_recent(
+    kind: String,
+    machine: Option<String>,
+    device: Option<String>,
+    place: String,
+) -> Result<(), String> {
     let root = Node::root_from_env();
     if let Some(device) = device {
         khor_gui_core::recents::forget_recent_by_device(&root, &kind, &device, &place)
@@ -1433,7 +1577,11 @@ fn want_page(tab: &str, shown: bool) {
 }
 
 fn page_is_wanted(tab: &str) -> bool {
-    page_wanted().lock().ok().and_then(|m| m.get(tab).copied()).unwrap_or(true)
+    page_wanted()
+        .lock()
+        .ok()
+        .and_then(|m| m.get(tab).copied())
+        .unwrap_or(true)
 }
 
 fn forget_page(tab: &str) {
@@ -1774,17 +1922,34 @@ async fn open_page(
     let (d_tab, d_face) = (tab.clone(), face.clone());
     let builder = builder.on_download(move |_view, event| {
         let tell = |text: String| {
-            let _ = fetched.emit_to(d_face.clone(), "page:download", PageWord { tab: d_tab.clone(), text });
+            let _ = fetched.emit_to(
+                d_face.clone(),
+                "page:download",
+                PageWord {
+                    tab: d_tab.clone(),
+                    text,
+                },
+            );
         };
         match event {
             tauri::webview::DownloadEvent::Requested { url, destination } => {
-                let name = destination.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                let name = destination
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 if let Ok(mut m) = page_downloads().lock() {
                     m.push((url.to_string(), destination.clone()));
                 }
                 // The navigation that became a download ends no load: the
                 // light goes out here.
-                let _ = fetched.emit_to(d_face.clone(), "page:load", PageWord { tab: d_tab.clone(), text: "finished".into() });
+                let _ = fetched.emit_to(
+                    d_face.clone(),
+                    "page:load",
+                    PageWord {
+                        tab: d_tab.clone(),
+                        text: "finished".into(),
+                    },
+                );
                 tell(format!("started|{name}"));
             }
             tauri::webview::DownloadEvent::Finished { url, success, .. } => {
@@ -1798,7 +1963,12 @@ async fn open_page(
                 if success {
                     tell(format!("saved|{}", at.display()));
                 } else {
-                    tell(format!("failed|{}", at.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
+                    tell(format!(
+                        "failed|{}",
+                        at.file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default()
+                    ));
                 }
             }
             _ => {}
@@ -1829,7 +1999,8 @@ async fn open_page(
 /// (`open_page`'s `on_download`).
 #[cfg(desktop)]
 fn page_downloads() -> &'static std::sync::Mutex<Vec<(String, std::path::PathBuf)>> {
-    static DOWNS: std::sync::OnceLock<std::sync::Mutex<Vec<(String, std::path::PathBuf)>>> = std::sync::OnceLock::new();
+    static DOWNS: std::sync::OnceLock<std::sync::Mutex<Vec<(String, std::path::PathBuf)>>> =
+        std::sync::OnceLock::new();
     DOWNS.get_or_init(Default::default)
 }
 
@@ -1920,7 +2091,9 @@ fn on_the_page_store<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
         // releases, and a changed id is a profile whose page store is
         // silently gone after a toolchain update.
         let fnv = |seed: u64, bytes: &[u8]| {
-            bytes.iter().fold(seed, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3))
+            bytes.iter().fold(seed, |h, b| {
+                (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3)
+            })
         };
         let bytes = explicit.as_encoded_bytes();
         let mut id = [0u8; 16];
@@ -2024,7 +2197,10 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     let _ = _built.with_webview(|wv| {
         use objc2::msg_send;
         use objc2::runtime::AnyObject;
-        let (view, window) = (wv.inner() as *mut AnyObject, wv.ns_window() as *mut AnyObject);
+        let (view, window) = (
+            wv.inner() as *mut AnyObject,
+            wv.ns_window() as *mut AnyObject,
+        );
         if !view.is_null() && !window.is_null() {
             // SAFETY: both are the live webview and its window, handed to
             // this closure on the main thread.
@@ -2147,37 +2323,58 @@ fn repaint_the_ground(app: &tauri::AppHandle) {
 /// A snapshot of the actual native session history. Null means that this
 /// tab has no page yet; errors are not reported as invented availability.
 #[tauri::command]
-async fn page_steps(app: tauri::AppHandle, tab: String) -> Result<Option<page_history::PageSteps>, String> {
+async fn page_steps(
+    app: tauri::AppHandle,
+    tab: String,
+) -> Result<Option<page_history::PageSteps>, String> {
     #[cfg(desktop)]
     {
         use tauri::Manager;
-        let Some(view) = app.get_webview(&page_label(&tab)) else { return Ok(None); };
+        let Some(view) = app.get_webview(&page_label(&tab)) else {
+            return Ok(None);
+        };
         let (tx, rx) = tokio::sync::oneshot::channel();
-        view.with_webview(move |native| { let _ = tx.send(page_history::desktop(native).map(Some)); })
-            .map_err(|e| e.to_string())?;
+        view.with_webview(move |native| {
+            let _ = tx.send(page_history::desktop(native).map(Some));
+        })
+        .map_err(|e| e.to_string())?;
         rx.await.map_err(|e| e.to_string())?
     }
     #[cfg(target_os = "ios")]
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        app.run_on_main_thread(move || { let _ = tx.send(phone_page::steps(&tab)); })
-            .map_err(|e| e.to_string())?;
+        app.run_on_main_thread(move || {
+            let _ = tx.send(phone_page::steps(&tab));
+        })
+        .map_err(|e| e.to_string())?;
         rx.await.map_err(|e| e.to_string())
     }
     #[cfg(not(any(desktop, target_os = "ios")))]
-    { let _ = (app, tab); Ok(None) }
+    {
+        let _ = (app, tab);
+        Ok(None)
+    }
 }
 
 /// Tell only khor's own containing window, never the external page.
 #[cfg(desktop)]
 fn tell_page_steps(view: &tauri::Webview, tab: &str) {
     use tauri::{Emitter, Manager};
-    let (app, face, tab) = (view.app_handle().clone(), view.window().label().to_owned(), tab.to_owned());
+    let (app, face, tab) = (
+        view.app_handle().clone(),
+        view.window().label().to_owned(),
+        tab.to_owned(),
+    );
     let _ = view.with_webview(move |native| {
         if let Ok(steps) = page_history::desktop(native) {
-            let _ = app.emit_to(face, "page:steps", PageWord {
-                tab, text: format!("{}{}", u8::from(steps.back), u8::from(steps.forward)),
-            });
+            let _ = app.emit_to(
+                face,
+                "page:steps",
+                PageWord {
+                    tab,
+                    text: format!("{}{}", u8::from(steps.back), u8::from(steps.forward)),
+                },
+            );
         }
     });
 }
@@ -2203,7 +2400,9 @@ fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), Stri
         // failure, or a platform that hears none, reloads.
         "retry" => {
             #[cfg(target_os = "macos")]
-            if let Some(url) = page_fail::take_failed(&tab).and_then(|u| u.parse::<tauri::Url>().ok()) {
+            if let Some(url) =
+                page_fail::take_failed(&tab).and_then(|u| u.parse::<tauri::Url>().ok())
+            {
                 return view.navigate(url).map_err(|e| e.to_string());
             }
             view.reload().map_err(|e| e.to_string())
@@ -2274,7 +2473,11 @@ pub(crate) fn show_settings(app: &tauri::AppHandle, pane: Option<String>) -> tau
 }
 
 #[cfg(desktop)]
-fn show_settings_for(app: &tauri::AppHandle, pane: Option<String>, machine: Option<String>) -> tauri::Result<()> {
+fn show_settings_for(
+    app: &tauri::AppHandle,
+    pane: Option<String>,
+    machine: Option<String>,
+) -> tauri::Result<()> {
     use tauri::{Emitter, Manager};
     if let Some(w) = app.get_webview_window(SETTINGS) {
         if let Some(m) = machine {
@@ -2288,23 +2491,34 @@ fn show_settings_for(app: &tauri::AppHandle, pane: Option<String>, machine: Opti
     }
     let at = pane.map(|p| format!("&pane={p}")).unwrap_or_default();
     let target = machine.map(|m| format!("&machine={m}")).unwrap_or_default();
-    let win = tauri::WebviewWindowBuilder::new(app, SETTINGS, tauri::WebviewUrl::App(format!("index.html?face=settings{at}{target}").into()))
-        .title(khor_catalog::gui::nav_settings())
-        .inner_size(780.0, 560.0)
-        // Never the narrow face (`use-narrow`'s 760): a settings window
-        // has its panes beside their content, not a bottom bar.
-        .min_inner_size(760.0, 420.0)
-        .minimizable(false)
-        .maximizable(false)
-        .background_color(ground(chosen_dark(desktop_is_dark)));
+    let win = tauri::WebviewWindowBuilder::new(
+        app,
+        SETTINGS,
+        tauri::WebviewUrl::App(format!("index.html?face=settings{at}{target}").into()),
+    )
+    .title(khor_catalog::gui::nav_settings())
+    .inner_size(780.0, 560.0)
+    // Never the narrow face (`use-narrow`'s 760): a settings window
+    // has its panes beside their content, not a bottom bar.
+    .min_inner_size(760.0, 420.0)
+    .minimizable(false)
+    .maximizable(false)
+    .background_color(ground(chosen_dark(desktop_is_dark)));
     on_the_page_store(win).build().map(|_| ())
 }
 
 /// ⌘, and 设置… — the page's road to `show_settings`.
 #[cfg(desktop)]
 #[tauri::command]
-async fn open_settings(app: tauri::AppHandle, pane: Option<String>, machine: Option<String>) -> Result<(), String> {
-    if machine.as_ref().is_some_and(|m| m.len() != 64 || !m.bytes().all(|c| c.is_ascii_hexdigit())) {
+async fn open_settings(
+    app: tauri::AppHandle,
+    pane: Option<String>,
+    machine: Option<String>,
+) -> Result<(), String> {
+    if machine
+        .as_ref()
+        .is_some_and(|m| m.len() != 64 || !m.bytes().all(|c| c.is_ascii_hexdigit()))
+    {
         return Err("invalid settings machine id".into());
     }
     show_settings_for(&app, pane, machine).map_err(|e| e.to_string())
@@ -2346,64 +2560,107 @@ fn menu_owner(webview: &tauri::Webview) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn show_menu(webview: tauri::Webview, request: menu_overlay::MenuRequest) -> Result<bool, String> {
+async fn show_menu(
+    webview: tauri::Webview,
+    request: menu_overlay::MenuRequest,
+) -> Result<bool, String> {
     let owner = menu_owner(&webview)?;
     #[cfg(desktop)]
-    { let _ = owner; menu_overlay::desktop::show(&webview.window(), &request) }
+    {
+        let _ = owner;
+        menu_overlay::desktop::show(&webview.window(), &request)
+    }
     #[cfg(target_os = "ios")]
     {
         use tauri::Manager;
         let app = webview.app_handle().clone();
-        let (tx,rx)=tokio::sync::oneshot::channel();
-        webview.with_webview(move |native| {
-            let _=tx.send(menu_overlay::ios::show(&app,native.inner() as *mut objc2::runtime::AnyObject,&owner,request));
-        }).map_err(|e|e.to_string())?;
-        rx.await.map_err(|e|e.to_string())?
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        webview
+            .with_webview(move |native| {
+                let _ = tx.send(menu_overlay::ios::show(
+                    &app,
+                    native.inner() as *mut objc2::runtime::AnyObject,
+                    &owner,
+                    request,
+                ));
+            })
+            .map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())?
     }
-    #[cfg(not(any(desktop,target_os = "ios")))]
-    { let _=(owner,request); Ok(false) }
+    #[cfg(not(any(desktop, target_os = "ios")))]
+    {
+        let _ = (owner, request);
+        Ok(false)
+    }
 }
 
 #[tauri::command]
 fn hide_menu(webview: tauri::Webview, id: String) -> Result<(), String> {
-    let owner=menu_owner(&webview)?;
+    let owner = menu_owner(&webview)?;
     #[cfg(desktop)]
-    { let _=owner; menu_overlay::desktop::hide(&webview.window(), &id) }
+    {
+        let _ = owner;
+        menu_overlay::desktop::hide(&webview.window(), &id)
+    }
     #[cfg(target_os = "ios")]
     {
         use tauri::Manager;
-        webview.app_handle().run_on_main_thread(move || menu_overlay::ios::hide(&owner,&id)).map_err(|e|e.to_string())
+        webview
+            .app_handle()
+            .run_on_main_thread(move || menu_overlay::ios::hide(&owner, &id))
+            .map_err(|e| e.to_string())
     }
-    #[cfg(not(any(desktop,target_os = "ios")))]
-    { let _=(owner,id); Ok(()) }
+    #[cfg(not(any(desktop, target_os = "ios")))]
+    {
+        let _ = (owner, id);
+        Ok(())
+    }
 }
 
-fn menu_renderer(webview:&tauri::Webview)->Result<(),String> {
-    if webview.label()=="menu" {Ok(())}else{Err("this webview is not the menu renderer".into())}
+fn menu_renderer(webview: &tauri::Webview) -> Result<(), String> {
+    if webview.label() == "menu" {
+        Ok(())
+    } else {
+        Err("this webview is not the menu renderer".into())
+    }
 }
 #[tauri::command]
-fn size_menu(webview:tauri::Webview,id:String,h:f64)->Result<(),String> {
+fn size_menu(webview: tauri::Webview, id: String, h: f64) -> Result<(), String> {
     menu_renderer(&webview)?;
     #[cfg(desktop)]
-    {menu_overlay::desktop::size(&webview.window(),&id,h)}
+    {
+        menu_overlay::desktop::size(&webview.window(), &id, h)
+    }
     #[cfg(not(desktop))]
-    {let _=(id,h);Ok(())}
+    {
+        let _ = (id, h);
+        Ok(())
+    }
 }
 #[tauri::command]
-fn menu_rows(webview:tauri::Webview)->Result<Option<menu_overlay::MenuSnapshot>,String> {
+fn menu_rows(webview: tauri::Webview) -> Result<Option<menu_overlay::MenuSnapshot>, String> {
     menu_renderer(&webview)?;
     #[cfg(desktop)]
-    {menu_overlay::desktop::rows(&webview.window())}
+    {
+        menu_overlay::desktop::rows(&webview.window())
+    }
     #[cfg(not(desktop))]
-    {Ok(None)}
+    {
+        Ok(None)
+    }
 }
 #[tauri::command]
-fn menu_pick(webview:tauri::Webview,id:String,key:String)->Result<(),String> {
+fn menu_pick(webview: tauri::Webview, id: String, key: String) -> Result<(), String> {
     menu_renderer(&webview)?;
     #[cfg(desktop)]
-    {menu_overlay::desktop::pick(&webview.window(),&id,&key)}
+    {
+        menu_overlay::desktop::pick(&webview.window(), &id, &key)
+    }
     #[cfg(not(desktop))]
-    {let _=(id,key);Ok(())}
+    {
+        let _ = (id, key);
+        Ok(())
+    }
 }
 
 /// Grows the window for a column opening beside the page (`room`, UX-39
@@ -2771,7 +3028,9 @@ async fn open_page(
         let handle = app.clone();
         face.with_webview(move |pw| {
             let wk = pw.inner() as *mut objc2::runtime::AnyObject;
-            let _ = tx.send(phone_page::open(&handle, wk, &tab, &machine, &url, at, wiring));
+            let _ = tx.send(phone_page::open(
+                &handle, wk, &tab, &machine, &url, at, wiring,
+            ));
         })
         .map_err(|e| e.to_string())?;
         rx.await.map_err(|e| e.to_string())??;
@@ -2868,11 +3127,17 @@ fn page_sheet(
 /// (`phone_page::deck`, `lib/native-deck.ts`).
 #[cfg(not(desktop))]
 #[tauri::command]
-fn page_deck(app: tauri::AppHandle, tab: String, drawing: Option<serde_json::Value>) -> Result<(), String> {
+fn page_deck(
+    app: tauri::AppHandle,
+    tab: String,
+    drawing: Option<serde_json::Value>,
+) -> Result<(), String> {
     #[cfg(target_os = "ios")]
     {
         let drawing = match drawing {
-            Some(d) => Some(serde_json::from_value::<phone_page::DeckDrawing>(d).map_err(|e| e.to_string())?),
+            Some(d) => Some(
+                serde_json::from_value::<phone_page::DeckDrawing>(d).map_err(|e| e.to_string())?,
+            ),
             None => None,
         };
         let _ = app.run_on_main_thread(move || phone_page::deck(&tab, drawing));
@@ -3050,7 +3315,13 @@ async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
     let into = header("x-khor-into").unwrap_or_default();
     let bytes = bytes.clone();
     tokio::task::spawn_blocking(move || {
-        khor_gui_core::chat::chat_put(&Node::root_from_env(), &id, &name, &into, &mut bytes.as_slice())
+        khor_gui_core::chat::chat_put(
+            &Node::root_from_env(),
+            &id,
+            &name,
+            &into,
+            &mut bytes.as_slice(),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3177,9 +3448,18 @@ async fn term_pick_folders(
 /// Files this machine already has (a drop, a picker's paths), put where
 /// the agent conversation's machine keeps files (round CHAT).
 #[tauri::command]
-async fn chat_put_paths(id: String, paths: Vec<String>, into: Option<String>) -> Result<Vec<String>, String> {
+async fn chat_put_paths(
+    id: String,
+    paths: Vec<String>,
+    into: Option<String>,
+) -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(move || {
-        khor_gui_core::chat::chat_put_paths(&Node::root_from_env(), &id, &paths, into.as_deref().unwrap_or(""))
+        khor_gui_core::chat::chat_put_paths(
+            &Node::root_from_env(),
+            &id,
+            &paths,
+            into.as_deref().unwrap_or(""),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3217,7 +3497,11 @@ async fn pick_paths(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     };
     picked
         .into_iter()
-        .map(|p| p.into_path().map(|p| p.display().to_string()).map_err(|e| e.to_string()))
+        .map(|p| {
+            p.into_path()
+                .map(|p| p.display().to_string())
+                .map_err(|e| e.to_string())
+        })
         .collect()
 }
 
@@ -3608,8 +3892,8 @@ fn wear_on_the_windows(theme: &str) {
 /// Main thread only (`with_webview` runs there).
 #[cfg(target_os = "ios")]
 fn hold_the_face_still(webview: *mut std::ffi::c_void) {
-    use objc2::runtime::{AnyObject, Bool};
     use objc2::msg_send;
+    use objc2::runtime::{AnyObject, Bool};
     // SAFETY: UIKit on the main thread; the live webview this closure was
     // handed, and documented UIScrollView setters.
     unsafe {
@@ -3706,7 +3990,12 @@ fn drop_the_form_bar(webview: *mut std::ffi::c_void) {
         // SAFETY: `inputAccessoryView` takes no argument and returns an
         // object (`@16@0:8`), which is this signature; nil is a valid
         // answer (UIResponder's own default).
-        unsafe { b.add_method(sel!(inputAccessoryView), no_bar as extern "C-unwind" fn(_, _) -> _) };
+        unsafe {
+            b.add_method(
+                sel!(inputAccessoryView),
+                no_bar as extern "C-unwind" fn(_, _) -> _,
+            )
+        };
         Some(b.register())
     }
 
@@ -3764,7 +4053,8 @@ fn wear_on_the_app(theme: Option<tauri::Theme>) {
                     tauri::Theme::Dark => c"NSAppearanceNameDarkAqua",
                     _ => c"NSAppearanceNameAqua",
                 };
-                let ns: *mut AnyObject = msg_send![class!(NSString), stringWithUTF8String: name.as_ptr()];
+                let ns: *mut AnyObject =
+                    msg_send![class!(NSString), stringWithUTF8String: name.as_ptr()];
                 msg_send![class!(NSAppearance), appearanceNamed: ns]
             }
             None => std::ptr::null_mut(),
@@ -3992,7 +4282,10 @@ fn settled(moves: &[Front]) -> Option<Front> {
 fn front_worker(app: tauri::AppHandle) -> std::sync::mpsc::Sender<Front> {
     let (tx, rx) = std::sync::mpsc::channel::<Front>();
     std::thread::spawn(move || {
-        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
             return;
         };
         let root = Node::root_from_env();
@@ -4010,7 +4303,9 @@ fn front_worker(app: tauri::AppHandle) -> std::sync::mpsc::Sender<Front> {
             // Asked again while moves keep arriving behind the question:
             // a freeze in the middle of it ends with the return queued.
             let (on, resting) = loop {
-                let Some(on) = settled(&moves) else { break (None, None) };
+                let Some(on) = settled(&moves) else {
+                    break (None, None);
+                };
                 let resting = rt.block_on(async {
                     tokio::time::timeout(bounded, khor_node::link::resting(&root))
                         .await
@@ -4070,7 +4365,10 @@ fn resume_the_node(app: &tauri::AppHandle, root: &std::path::Path) {
     };
     let app = app.clone();
     std::thread::spawn(move || {
-        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
             return;
         };
         let woken = |app: &tauri::AppHandle| {
@@ -4136,7 +4434,9 @@ mod push_grace {
         if khor_node::post::pushes_in_flight() == 0 {
             return;
         }
-        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
         let mut held = TASK.lock().unwrap_or_else(|p| p.into_inner());
         if held.is_some() {
             return;
@@ -4149,7 +4449,10 @@ mod push_grace {
             EXPIRED.store(true, Ordering::SeqCst);
             let (told, heard) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
-                if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
                     let _ = rt.block_on(tokio::time::timeout(
                         Duration::from_secs(3),
                         khor_node::link::cut_pushes(&Node::root_from_env()),
@@ -4165,15 +4468,22 @@ mod push_grace {
         // SAFETY: UIKit's constant, a linked static for the process.
         if id != unsafe { UIBackgroundTaskInvalid } {
             *held = Some(id);
-            eprintln!("khor push grace: began with {} push(es) running", khor_node::post::pushes_in_flight());
+            eprintln!(
+                "khor push grace: began with {} push(es) running",
+                khor_node::post::pushes_in_flight()
+            );
         }
     }
 
     /// Ends the task, once. On the main thread (`run_on_main_thread`, or
     /// the expiration handler, which UIKit calls there).
     pub(super) fn end() {
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(id) = TASK.lock().unwrap_or_else(|p| p.into_inner()).take() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(id) = TASK.lock().unwrap_or_else(|p| p.into_inner()).take() else {
+            return;
+        };
         UIApplication::sharedApplication(mtm).endBackgroundTask(id);
         eprintln!("khor push grace: ended");
     }
@@ -4188,7 +4498,10 @@ mod push_grace {
             return None;
         }
         let began = Instant::now();
-        while khor_node::post::pushes_in_flight() > 0 && !EXPIRED.load(Ordering::SeqCst) && began.elapsed() < AT_MOST {
+        while khor_node::post::pushes_in_flight() > 0
+            && !EXPIRED.load(Ordering::SeqCst)
+            && began.elapsed() < AT_MOST
+        {
             let came: Vec<Front> = rx.try_iter().collect();
             if !came.is_empty() {
                 return Some(came);
@@ -4207,7 +4520,8 @@ mod push_grace {
 
 /// An Android phone's `front_worker`, for its window events to reach.
 #[cfg(target_os = "android")]
-static ANDROID_FRONT: std::sync::OnceLock<std::sync::mpsc::Sender<Front>> = std::sync::OnceLock::new();
+static ANDROID_FRONT: std::sync::OnceLock<std::sync::mpsc::Sender<Front>> =
+    std::sync::OnceLock::new();
 
 /// **UIKit's own word on where the app is**, from the default
 /// notification centre: did enter background, will enter foreground, did
@@ -4230,8 +4544,14 @@ fn watch_the_front(app: tauri::AppHandle) {
     // SAFETY: UIKit's names, linked statics that live for the process.
     let names = unsafe {
         [
-            (UIApplicationDidEnterBackgroundNotification, Front::Background),
-            (UIApplicationWillEnterForegroundNotification, Front::Foreground),
+            (
+                UIApplicationDidEnterBackgroundNotification,
+                Front::Background,
+            ),
+            (
+                UIApplicationWillEnterForegroundNotification,
+                Front::Foreground,
+            ),
             (UIApplicationDidBecomeActiveNotification, Front::Active),
         ]
     };
@@ -4246,8 +4566,12 @@ fn watch_the_front(app: tauri::AppHandle) {
     // SAFETY: the default centre, for the life of the process; posted on
     // the main thread, which `push_grace::begin` needs.
     unsafe {
-        let token =
-            centre.addObserverForName_object_queue_usingBlock(Some(UIApplicationDidEnterBackgroundNotification), None, None, &pushing);
+        let token = centre.addObserverForName_object_queue_usingBlock(
+            Some(UIApplicationDidEnterBackgroundNotification),
+            None,
+            None,
+            &pushing,
+        );
         std::mem::forget(token);
     }
     for (name, on) in names {
@@ -4259,7 +4583,8 @@ fn watch_the_front(app: tauri::AppHandle) {
         // process; posted on the main thread (no queue given), and the
         // block only sends on a channel.
         unsafe {
-            let token = centre.addObserverForName_object_queue_usingBlock(Some(name), None, None, &told);
+            let token =
+                centre.addObserverForName_object_queue_usingBlock(Some(name), None, None, &told);
             // Kept for the life of the app, as `watch_for_wake`'s is.
             std::mem::forget(token);
         }
@@ -4277,8 +4602,12 @@ fn watch_the_front(app: tauri::AppHandle) {
     });
     // SAFETY: as above — the default centre, for the life of the process.
     unsafe {
-        let token =
-            centre.addObserverForName_object_queue_usingBlock(Some(UIApplicationDidBecomeActiveNotification), None, None, &active);
+        let token = centre.addObserverForName_object_queue_usingBlock(
+            Some(UIApplicationDidBecomeActiveNotification),
+            None,
+            None,
+            &active,
+        );
         std::mem::forget(token);
     }
 }
@@ -4478,7 +4807,9 @@ pub fn run() {
             Ok(face) => eprintln!("{}", khor_catalog::cli::web_banner(face.addr)),
             Err(error) => eprintln!("{error}"),
         }
-    }) { std::process::exit(code); }
+    }) {
+        std::process::exit(code);
+    }
     eprintln!("khor app ui: {}", khor_web::ui_revision());
     // **Stand somewhere that cannot be deleted, before anything else**
     // (docs/SHELL.md 第十四轮 第 4 条). The install script starts this
@@ -4595,8 +4926,8 @@ pub fn run() {
     khor_node::vitals::local::start(&Node::root_from_env());
 
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
-    #[cfg(target_os="android")]
-    let builder=builder.plugin(tauri_plugin_khor_files::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_khor_files::init());
     // 加入网络's 扫码 (docs/IOS.md 第三步): the camera reads a pairing
     // ticket's QR code on a phone. Its grant is `capabilities/scan.json`;
     // whether the face draws the entry at all is `scanner_here`.
@@ -5070,7 +5401,9 @@ async fn take_the_home(n: &Node) {
         return;
     };
     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-    eprintln!("[{stamp}] khor app: a kept serve (pid {keeper}) holds this home; asking it to leave");
+    eprintln!(
+        "[{stamp}] khor app: a kept serve (pid {keeper}) holds this home; asking it to leave"
+    );
     // SAFETY: a signal to the pid this home's own serve.pid names.
     unsafe {
         libc::kill(keeper as libc::pid_t, libc::SIGTERM);
@@ -5161,24 +5494,24 @@ fn say_signals() {
     }
 }
 
-#[cfg(desktop)]
-mod menu;
 #[cfg(target_os = "ios")]
 mod edit_menu;
+#[cfg(desktop)]
+mod menu;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod page_fail;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod page_trust;
 #[cfg(target_os = "ios")]
-mod phone_page;
-#[cfg(target_os = "ios")]
 mod phone_files;
+#[cfg(target_os = "ios")]
+mod phone_page;
 #[cfg(target_os = "ios")]
 mod phone_share;
 #[cfg(desktop)]
-mod traffic;
-#[cfg(desktop)]
 mod room;
+#[cfg(desktop)]
+mod traffic;
 
 #[cfg(test)]
 mod tests {
@@ -5192,9 +5525,20 @@ mod tests {
     #[test]
     fn the_phone_lets_go_in_the_background_and_wakes_in_front() {
         use super::{Act, Front, lifecycle_act};
-        assert_eq!(lifecycle_act(Front::Background, Some(false)), Some(Act::Suspend));
-        assert_eq!(lifecycle_act(Front::Background, Some(true)), None, "already resting");
-        assert_eq!(lifecycle_act(Front::Background, None), Some(Act::Suspend), "unknown: let go");
+        assert_eq!(
+            lifecycle_act(Front::Background, Some(false)),
+            Some(Act::Suspend)
+        );
+        assert_eq!(
+            lifecycle_act(Front::Background, Some(true)),
+            None,
+            "already resting"
+        );
+        assert_eq!(
+            lifecycle_act(Front::Background, None),
+            Some(Act::Suspend),
+            "unknown: let go"
+        );
         for resting in [Some(false), Some(true), None] {
             assert_eq!(
                 lifecycle_act(Front::Foreground, resting),
@@ -5202,8 +5546,16 @@ mod tests {
                 "back from the background is new ears, resting {resting:?}"
             );
         }
-        assert_eq!(lifecycle_act(Front::Active, Some(true)), Some(Act::Resume), "the stuck node");
-        assert_eq!(lifecycle_act(Front::Active, Some(false)), None, "awake: one resume, not two");
+        assert_eq!(
+            lifecycle_act(Front::Active, Some(true)),
+            Some(Act::Resume),
+            "the stuck node"
+        );
+        assert_eq!(
+            lifecycle_act(Front::Active, Some(false)),
+            None,
+            "awake: one resume, not two"
+        );
         assert_eq!(lifecycle_act(Front::Active, None), None, "no resident yet");
     }
 
@@ -5216,9 +5568,17 @@ mod tests {
         use super::{Front, settled};
         use Front::*;
         assert_eq!(settled(&[Background]), Some(Background));
-        assert_eq!(settled(&[Background, Foreground, Active]), Some(Foreground), "left and came back");
+        assert_eq!(
+            settled(&[Background, Foreground, Active]),
+            Some(Foreground),
+            "left and came back"
+        );
         assert_eq!(settled(&[Background, Foreground]), Some(Foreground));
-        assert_eq!(settled(&[Foreground, Active, Background]), Some(Background), "left again");
+        assert_eq!(
+            settled(&[Foreground, Active, Background]),
+            Some(Background),
+            "left again"
+        );
         assert_eq!(settled(&[Active]), Some(Active));
         assert_eq!(settled(&[Active, Active]), Some(Active));
         assert_eq!(settled(&[]), None);
@@ -5310,5 +5670,5 @@ mod tests {
     }
 }
 
-#[cfg(any(target_os="ios",target_os="macos"))]
+#[cfg(any(target_os = "ios", target_os = "macos"))]
 mod quick_look;

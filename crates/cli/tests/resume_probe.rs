@@ -31,7 +31,10 @@ use khor_node::{Hop, Node};
 use scratch::*;
 
 fn env_u64(k: &str, d: u64) -> u64 {
-    std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+    std::env::var(k)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(d)
 }
 
 async fn word(n: &Node, id: &str) -> String {
@@ -75,7 +78,11 @@ async fn the_way_back(
     ids: [(&str, &str); 2],
     dir: &str,
     began: Instant,
-) -> (Vec<(String, Option<Duration>)>, Option<Duration>, Vec<String>) {
+) -> (
+    Vec<(String, Option<Duration>)>,
+    Option<Duration>,
+    Vec<String>,
+) {
     let mut seen = Vec::new();
     let words = async {
         let mut firsts = vec![None; ids.len()];
@@ -100,9 +107,11 @@ async fn the_way_back(
             .collect::<Vec<_>>()
     };
     let answer = async {
-        until(Duration::from_secs(120), || async { phone.ls_of("far", dir).await.is_ok() })
-            .await
-            .map(|_| began.elapsed())
+        until(Duration::from_secs(120), || async {
+            phone.ls_of("far", dir).await.is_ok()
+        })
+        .await
+        .map(|_| began.elapsed())
     };
     let (words, answer) = tokio::join!(words, answer);
     (words, answer, seen)
@@ -117,10 +126,27 @@ async fn the_phone_comes_back_after_being_away_and_after_its_network_changes() {
     // SAFETY: before any endpoint in this process binds.
     unsafe { std::env::set_var("KHOR_RELAY_ONLY", "1") };
     own_tmux();
-    let (rm, rf, rp, rr) = (scratch("back-mac"), scratch("back-far"), scratch("back-phone"), scratch("back-relay"));
+    let (rm, rf, rp, rr) = (
+        scratch("back-mac"),
+        scratch("back-far"),
+        scratch("back-phone"),
+        scratch("back-relay"),
+    );
     let (_relay, direct) = local_relay(&rr.0);
-    let to: std::net::SocketAddr = direct.trim_start_matches("http://").trim_end_matches('/').parse().unwrap();
-    let (at, _road) = slow_road(to, Impair { rtt, loss_pct: loss, stall: rtt }).await;
+    let to: std::net::SocketAddr = direct
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .parse()
+        .unwrap();
+    let (at, _road) = slow_road(
+        to,
+        Impair {
+            rtt,
+            loss_pct: loss,
+            stall: rtt,
+        },
+    )
+    .await;
     let url = format!("http://{at}");
     for h in [&rm.0, &rf.0, &rp.0] {
         home_on(h, &url);
@@ -164,7 +190,10 @@ async fn the_phone_comes_back_after_being_away_and_after_its_network_changes() {
     let dir = rf.0.join("tree");
     std::fs::create_dir_all(&dir).unwrap();
     let dir = dir.display().to_string();
-    let first = until(Duration::from_secs(90), || async { phone.ls_of("far", &dir).await.is_ok() }).await;
+    let first = until(Duration::from_secs(90), || async {
+        phone.ls_of("far", &dir).await.is_ok()
+    })
+    .await;
     eprintln!("[back] the phone's first listing on the far machine answered after {first:?}");
     // The face is on the phone, as it is when the app goes away.
     phone.face_is_here(true).await.unwrap();
@@ -173,7 +202,10 @@ async fn the_phone_comes_back_after_being_away_and_after_its_network_changes() {
 
     // R: away.
     phone.face_is_here(false).await.unwrap();
-    assert!(khor_node::link::suspending(&rp.0).await, "the phone's resident suspends");
+    assert!(
+        khor_node::link::suspending(&rp.0).await,
+        "the phone's resident suspends"
+    );
     assert!(khor_node::link::deafen(&rp.0).await, "and its ears close");
     let m0 = mac.wire_counts().await.unwrap();
     let left = Instant::now();
@@ -192,7 +224,9 @@ async fn the_phone_comes_back_after_being_away_and_after_its_network_changes() {
          {:.0} B/min, rounds {}",
         away.as_secs(),
         m1.dialed.saturating_sub(m0.dialed),
-        (m1.sent_bytes + m1.received_bytes).saturating_sub(m0.sent_bytes + m0.received_bytes) as f64 / mins,
+        (m1.sent_bytes + m1.received_bytes).saturating_sub(m0.sent_bytes + m0.received_bytes)
+            as f64
+            / mins,
         m1.rounds.saturating_sub(m0.rounds),
     );
     let began = Instant::now();
@@ -200,8 +234,15 @@ async fn the_phone_comes_back_after_being_away_and_after_its_network_changes() {
     let mut resuming = khor_node::link::resume(&rp.0).expect("a resumable resident");
     let ears = resuming.ears().await.map(|_| began.elapsed());
     let back = the_way_back(&phone, ids, &dir, began);
-    let mac_back = until(Duration::from_secs(120), || async { word(&mac, &phone_id).await == "中继" });
-    let synced = async { resuming.synced().await.map(|o| (began.elapsed(), o.iter().filter(|(_, r)| r.is_ok()).count())) };
+    let mac_back = until(Duration::from_secs(120), || async {
+        word(&mac, &phone_id).await == "中继"
+    });
+    let synced = async {
+        resuming
+            .synced()
+            .await
+            .map(|o| (began.elapsed(), o.iter().filter(|(_, r)| r.is_ok()).count()))
+    };
     let ((words, answer, seen), mac_back, synced) = tokio::join!(back, mac_back, synced);
     eprintln!(
         "[back] R resumed after {}s: ears {ears:?}, round {synced:?}; first 中继 {words:?}; first far answer \
@@ -214,7 +255,9 @@ async fn the_phone_comes_back_after_being_away_and_after_its_network_changes() {
     let began = Instant::now();
     assert!(khor_node::link::network_changed(&rp.0));
     let (words, answer, seen) = the_way_back(&phone, ids, &dir, began).await;
-    eprintln!("[back] N network_changed: first 中继 {words:?}; first far answer {answer:?}; words in order {seen:?}");
+    eprintln!(
+        "[back] N network_changed: first 中继 {words:?}; first far answer {answer:?}; words in order {seen:?}"
+    );
     tokio::time::sleep(Duration::from_secs(10)).await;
 
     // W: Wi-Fi ↔ cellular, by rebinding on a new port.
@@ -222,7 +265,10 @@ async fn the_phone_comes_back_after_being_away_and_after_its_network_changes() {
     let mut rebinding = khor_node::link::resume(&rp.0).expect("a resumable resident");
     let ears = rebinding.ears().await.map(|_| began.elapsed());
     let (words, answer, seen) = the_way_back(&phone, ids, &dir, began).await;
-    let mac_back = until(Duration::from_secs(60), || async { word(&mac, &phone_id).await == "中继" }).await;
+    let mac_back = until(Duration::from_secs(60), || async {
+        word(&mac, &phone_id).await == "中继"
+    })
+    .await;
     eprintln!(
         "[back] W rebound: ears {ears:?}; first 中继 {words:?}; first far answer {answer:?}; the Mac's 中继 for the \
          phone {mac_back:?} after; words in order {seen:?}"

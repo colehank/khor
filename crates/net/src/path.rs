@@ -160,13 +160,34 @@ mod tests {
     /// relay taken over it is not the hop losing.
     #[test]
     fn the_relay_beats_the_hop_only_on_measurement() {
-        assert!(!relay_beats_carried(&[path(true, true, 856), carried(false, 100)], 10), "a stalled hop");
-        assert!(relay_beats_carried(&[path(true, true, 200), carried(false, 300)], 10), "a slower hop");
-        assert!(relay_beats_carried(&[path(true, true, 200), carried(false, 195)], 10), "within the margin");
-        assert!(relay_beats_carried(&[path(true, true, 200)], 10), "no carried path");
-        assert!(relay_beats_carried(&[path(true, true, 200), carried(false, 0)], 10), "a carried path never measured");
-        assert!(!relay_beats_carried(&[path(true, false, 200), carried(true, 300)], 10), "on the hop now");
-        assert!(!relay_beats_carried(&[path(false, true, 2), path(true, false, 200)], 10), "direct");
+        assert!(
+            !relay_beats_carried(&[path(true, true, 856), carried(false, 100)], 10),
+            "a stalled hop"
+        );
+        assert!(
+            relay_beats_carried(&[path(true, true, 200), carried(false, 300)], 10),
+            "a slower hop"
+        );
+        assert!(
+            relay_beats_carried(&[path(true, true, 200), carried(false, 195)], 10),
+            "within the margin"
+        );
+        assert!(
+            relay_beats_carried(&[path(true, true, 200)], 10),
+            "no carried path"
+        );
+        assert!(
+            relay_beats_carried(&[path(true, true, 200), carried(false, 0)], 10),
+            "a carried path never measured"
+        );
+        assert!(
+            !relay_beats_carried(&[path(true, false, 200), carried(true, 300)], 10),
+            "on the hop now"
+        );
+        assert!(
+            !relay_beats_carried(&[path(false, true, 2), path(true, false, 200)], 10),
+            "direct"
+        );
     }
 
     fn path(relay: bool, selected: bool, rtt_ms: u128) -> PathFact {
@@ -208,7 +229,10 @@ mod tests {
             carried: true,
             ..path(false, true, 9)
         };
-        assert_eq!(kind_of(&[carried, path(true, false, 61)]), PathKind::Carried);
+        assert_eq!(
+            kind_of(&[carried, path(true, false, 61)]),
+            PathKind::Carried
+        );
         // No paths, or none selected: both are "no fact available".
         assert_eq!(kind_of(&[]), PathKind::Unknown);
         assert_eq!(

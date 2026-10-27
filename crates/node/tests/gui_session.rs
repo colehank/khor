@@ -89,16 +89,61 @@ fn next_note(conn: &mut TcpStream) -> GuiNote {
 }
 
 #[test]
-fn a_complete_empty_option_list_removes_the_previous_controls(){
-    let root=std::env::temp_dir().join(format!("khor-gui-empty-settings-{}",khor_node::link::fresh_hex().unwrap()));std::fs::create_dir_all(&root).unwrap();let ready=root.join("ready");
+fn a_complete_empty_option_list_removes_the_previous_controls() {
+    let root = std::env::temp_dir().join(format!(
+        "khor-gui-empty-settings-{}",
+        khor_node::link::fresh_hex().unwrap()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let ready = root.join("ready");
     let command=serde_json::json!({"command":stub_path(),"env":{"KHOR_STUB_SETTINGS":"1","KHOR_STUB_EMPTY_OPTIONS":"1"}}).to_string();
-    let host={let root=root.clone();let ready=ready.clone();std::thread::spawn(move||gui_host_main(root,ready,"options".into(),vec![command]))};
-    let id=wait_for_ready(&ready);let live=LiveKind::new(root.clone(),DeviceId([1;32]));let hf=read_host_file(&live.dir_of(&id).unwrap()).unwrap();let mut conn=TcpStream::connect(("127.0.0.1",hf.port)).unwrap();
-    write_frame(&mut conn,&Hello{cookie:hf.cookie,cols:0,rows:0}).unwrap();let _:Welcome=read_frame(&mut conn).unwrap();let _=next_note(&mut conn);
-    let GuiNote::Settings(first)=next_note(&mut conn)else{panic!("initial settings")};assert!(!serde_json::from_str::<serde_json::Value>(&first).unwrap()["options"].as_array().unwrap().is_empty());
-    write_frame(&mut conn,&GuiOp::SetOption{id:"fast".into(),value:Choice::Switch(true)}).unwrap();
-    let GuiNote::Settings(next)=next_note(&mut conn)else{panic!("updated settings")};assert_eq!(serde_json::from_str::<serde_json::Value>(&next).unwrap()["options"],serde_json::json!([]));
-    write_frame(&mut conn,&GuiOp::Close).unwrap();host.join().unwrap().unwrap();let _=std::fs::remove_dir_all(root);
+    let host = {
+        let root = root.clone();
+        let ready = ready.clone();
+        std::thread::spawn(move || gui_host_main(root, ready, "options".into(), vec![command]))
+    };
+    let id = wait_for_ready(&ready);
+    let live = LiveKind::new(root.clone(), DeviceId([1; 32]));
+    let hf = read_host_file(&live.dir_of(&id).unwrap()).unwrap();
+    let mut conn = TcpStream::connect(("127.0.0.1", hf.port)).unwrap();
+    write_frame(
+        &mut conn,
+        &Hello {
+            cookie: hf.cookie,
+            cols: 0,
+            rows: 0,
+        },
+    )
+    .unwrap();
+    let _: Welcome = read_frame(&mut conn).unwrap();
+    let _ = next_note(&mut conn);
+    let GuiNote::Settings(first) = next_note(&mut conn) else {
+        panic!("initial settings")
+    };
+    assert!(
+        !serde_json::from_str::<serde_json::Value>(&first).unwrap()["options"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    write_frame(
+        &mut conn,
+        &GuiOp::SetOption {
+            id: "fast".into(),
+            value: Choice::Switch(true),
+        },
+    )
+    .unwrap();
+    let GuiNote::Settings(next) = next_note(&mut conn) else {
+        panic!("updated settings")
+    };
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&next).unwrap()["options"],
+        serde_json::json!([])
+    );
+    write_frame(&mut conn, &GuiOp::Close).unwrap();
+    host.join().unwrap().unwrap();
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]

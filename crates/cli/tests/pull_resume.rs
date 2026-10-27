@@ -14,7 +14,10 @@ use scratch::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn a_pull_cut_halfway_carries_on_from_its_part_file() {
-    let rtt: u64 = std::env::var("PULL_RTT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(300);
+    let rtt: u64 = std::env::var("PULL_RTT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300);
     let (mut p, _road) = pair_on(
         "resume",
         Some(Impair {
@@ -25,7 +28,9 @@ async fn a_pull_cut_halfway_carries_on_from_its_part_file() {
     )
     .await;
     let size: usize = 16 << 20;
-    let payload: Vec<u8> = (0..size as u32).map(|i| (i.wrapping_mul(2654435761) >> 13) as u8).collect();
+    let payload: Vec<u8> = (0..size as u32)
+        .map(|i| (i.wrapping_mul(2654435761) >> 13) as u8)
+        .collect();
     let src = p.ra.0.join("big.bin");
     std::fs::write(&src, &payload).unwrap();
     let src = src.display().to_string();
@@ -34,7 +39,11 @@ async fn a_pull_cut_halfway_carries_on_from_its_part_file() {
     let whole = p.rb.0.join("whole");
     std::fs::create_dir_all(&whole).unwrap();
     let began = Instant::now();
-    let (moved, dest) = p.beta.pull_path("alpha", &src, &whole).await.expect("a whole pull");
+    let (moved, dest) = p
+        .beta
+        .pull_path("alpha", &src, &whole)
+        .await
+        .expect("a whole pull");
     let whole_took = began.elapsed();
     assert_eq!(moved as usize, size);
     assert_eq!(std::fs::read(&dest).unwrap(), payload);
@@ -44,7 +53,11 @@ async fn a_pull_cut_halfway_carries_on_from_its_part_file() {
     std::fs::create_dir_all(&cut).unwrap();
     let part = cut.join(".khor-pull-big.bin");
     let pulling = {
-        let (beta, src, cut) = (khor_node::Node::open_as(p.rb.0.clone(), "beta").unwrap(), src.clone(), cut.clone());
+        let (beta, src, cut) = (
+            khor_node::Node::open_as(p.rb.0.clone(), "beta").unwrap(),
+            src.clone(),
+            cut.clone(),
+        );
         tokio::spawn(async move { beta.pull_path("alpha", &src, &cut).await })
     };
     while std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0) < (size / 2) as u64 {
@@ -53,7 +66,10 @@ async fn a_pull_cut_halfway_carries_on_from_its_part_file() {
     let old = serve_pid(&p.ra.0).unwrap();
     drop(p.a.take());
     let first = pulling.await.unwrap();
-    assert!(first.is_err(), "a pull whose far end stopped does not land: {first:?}");
+    assert!(
+        first.is_err(),
+        "a pull whose far end stopped does not land: {first:?}"
+    );
     let had = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
     assert!(had > 0, "the part file stays, to carry on from");
     p.a = Some(serve_with(&p.ra.0, "alpha", &[("KHOR_RELAY_ONLY", "1")]));
@@ -66,12 +82,19 @@ async fn a_pull_cut_halfway_carries_on_from_its_part_file() {
     .expect("alpha comes back");
 
     let began = Instant::now();
-    let (moved, dest) = tokio::time::timeout(Duration::from_secs(180), p.beta.pull_path("alpha", &src, &cut))
-        .await
-        .expect("the carried-on pull must not hang")
-        .expect("the pull carries on");
+    let (moved, dest) = tokio::time::timeout(
+        Duration::from_secs(180),
+        p.beta.pull_path("alpha", &src, &cut),
+    )
+    .await
+    .expect("the carried-on pull must not hang")
+    .expect("the pull carries on");
     let rest_took = began.elapsed();
-    assert_eq!(std::fs::read(&dest).unwrap(), payload, "byte for byte the far file");
+    assert_eq!(
+        std::fs::read(&dest).unwrap(),
+        payload,
+        "byte for byte the far file"
+    );
     assert!(
         (moved as usize) < size,
         "carried on, not started over: moved {moved} of {size}"

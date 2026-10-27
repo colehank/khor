@@ -54,7 +54,11 @@ pub struct Miss {
 
 impl Miss {
     pub fn new(kind: MissKind, machine: Option<&str>, raw: impl Into<String>) -> Miss {
-        Miss { kind, machine: machine.map(str::to_owned), raw: raw.into() }
+        Miss {
+            kind,
+            machine: machine.map(str::to_owned),
+            raw: raw.into(),
+        }
     }
 }
 
@@ -65,7 +69,9 @@ const DEPTH: usize = 3;
 /// `said` in parts. `machine` is the machine the caller was talking to,
 /// for a sentence that does not name one itself.
 pub fn read(said: &str, machine: Option<&str>) -> Miss {
-    known(said, DEPTH).unwrap_or_else(|| Miss::new(MissKind::Other, machine, said)).or_machine(machine)
+    known(said, DEPTH)
+        .unwrap_or_else(|| Miss::new(MissKind::Other, machine, said))
+        .or_machine(machine)
 }
 
 impl Miss {
@@ -82,11 +88,15 @@ fn known(said: &str, depth: usize) -> Option<Miss> {
     let (key, args) = khor_catalog::read(said)?;
     let arg = |i: usize| args.get(i).map(String::as_str);
     let miss = match key {
-        "msg.cant-reach-named" => Miss::new(MissKind::Unreached, arg(0), arg(1).unwrap_or_default()),
+        "msg.cant-reach-named" => {
+            Miss::new(MissKind::Unreached, arg(0), arg(1).unwrap_or_default())
+        }
         "msg.cant-reach-plain" => Miss::new(MissKind::Unreached, None, arg(0).unwrap_or_default()),
         "msg.machine-unreachable-timeout" => Miss::new(MissKind::Unreached, arg(0), said),
         "msg.peer-backing-off" => Miss::new(MissKind::Unreached, None, said),
-        "msg.drop-serve-gone" | "msg.reach-needs-serve" => Miss::new(MissKind::ServeGone, None, said),
+        "msg.drop-serve-gone" | "msg.reach-needs-serve" => {
+            Miss::new(MissKind::ServeGone, None, said)
+        }
         "msg.drop-predates" | "msg.landed-unsaid" => Miss::new(MissKind::Predates, None, said),
         "msg.drop-too-big" => Miss::new(MissKind::TooBig, None, said),
         "msg.drop-cancelled" => Miss::new(MissKind::Cancelled, None, said),
@@ -106,18 +116,41 @@ mod tests {
     #[test]
     fn a_dial_failure_comes_apart() {
         let raw = "aborted by peer: the server refused to accept a new connection";
-        let m = read(&khor_catalog::msg::cant_reach_named("Mac-mini", raw), Some("turing"));
+        let m = read(
+            &khor_catalog::msg::cant_reach_named("Mac-mini", raw),
+            Some("turing"),
+        );
         assert_eq!(m, Miss::new(MissKind::Unreached, Some("Mac-mini"), raw));
     }
 
     #[test]
     fn the_kinds_a_drop_ends_in() {
         let kind = |s: String| read(&s, Some("turing")).kind;
-        assert_eq!(kind(khor_catalog::msg::drop_serve_gone().to_owned()), MissKind::ServeGone);
-        assert_eq!(kind(khor_catalog::msg::drop_predates().to_owned()), MissKind::Predates);
-        assert_eq!(kind(khor_catalog::msg::drop_cancelled().to_owned()), MissKind::Cancelled);
-        assert_eq!(read(khor_catalog::msg::drop_serve_gone(), Some("turing")).machine, None, "this machine's own resident");
+        assert_eq!(
+            kind(khor_catalog::msg::drop_serve_gone().to_owned()),
+            MissKind::ServeGone
+        );
+        assert_eq!(
+            kind(khor_catalog::msg::drop_predates().to_owned()),
+            MissKind::Predates
+        );
+        assert_eq!(
+            kind(khor_catalog::msg::drop_cancelled().to_owned()),
+            MissKind::Cancelled
+        );
+        assert_eq!(
+            read(khor_catalog::msg::drop_serve_gone(), Some("turing")).machine,
+            None,
+            "this machine's own resident"
+        );
         let other = read("Permission denied (os error 13)", Some("turing"));
-        assert_eq!(other, Miss::new(MissKind::Other, Some("turing"), "Permission denied (os error 13)"));
+        assert_eq!(
+            other,
+            Miss::new(
+                MissKind::Other,
+                Some("turing"),
+                "Permission denied (os error 13)"
+            )
+        );
     }
 }

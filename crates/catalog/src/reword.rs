@@ -85,7 +85,11 @@ fn entries() -> &'static [Entry] {
     ALL.get_or_init(|| {
         crate::TEMPLATES
             .iter()
-            .map(|(key, zh, en)| Entry { key, zh: pieces(zh), en: pieces(en) })
+            .map(|(key, zh, en)| Entry {
+                key,
+                zh: pieces(zh),
+                en: pieces(en),
+            })
             .filter(|e| own_text(&e.zh) >= OWN_TEXT && own_text(&e.en) >= OWN_TEXT)
             .collect()
     })
@@ -124,7 +128,12 @@ const TRIES: usize = 4096;
 /// The arguments `said` fills `p` with, or `false` when it is not this
 /// text. A slot takes the shortest run after which the rest still
 /// matches, and tries longer ones only if that fails.
-fn fill<'a>(p: &[Piece], said: &'a str, args: &mut Vec<(usize, &'a str)>, tries: &mut usize) -> bool {
+fn fill<'a>(
+    p: &[Piece],
+    said: &'a str,
+    args: &mut Vec<(usize, &'a str)>,
+    tries: &mut usize,
+) -> bool {
     if *tries == 0 {
         return false;
     }
@@ -139,7 +148,10 @@ fn fill<'a>(p: &[Piece], said: &'a str, args: &mut Vec<(usize, &'a str)>, tries:
             // it starts are worth trying; a last slot takes the rest.
             let cuts: Vec<usize> = match rest.first() {
                 None => vec![said.len()],
-                Some(Piece::Text(next)) => said.match_indices(next.as_str()).map(|(at, _)| at).collect(),
+                Some(Piece::Text(next)) => said
+                    .match_indices(next.as_str())
+                    .map(|(at, _)| at)
+                    .collect(),
                 Some(Piece::Slot(_)) => said
                     .char_indices()
                     .map(|(at, _)| at)
@@ -196,7 +208,9 @@ fn said_again(said: &str, lang: crate::lang::Lang, depth: usize) -> Option<Strin
     let args: Vec<(usize, String)> = args
         .into_iter()
         .map(|(i, a)| {
-            let again = (depth > 1).then(|| said_again(a, lang, depth - 1)).flatten();
+            let again = (depth > 1)
+                .then(|| said_again(a, lang, depth - 1))
+                .flatten();
             (i, again.unwrap_or_else(|| a.to_owned()))
         })
         .collect();
@@ -234,9 +248,16 @@ mod tests {
     /// never switch the process's language: other tests in this binary
     /// read it at the same time.
     fn said(key: &str, lang: Lang, args: &[&str]) -> String {
-        let (_, zh, en) = crate::TEMPLATES.iter().find(|(k, _, _)| *k == key).expect(key);
+        let (_, zh, en) = crate::TEMPLATES
+            .iter()
+            .find(|(k, _, _)| *k == key)
+            .expect(key);
         let p = pieces(if lang == Lang::Zh { zh } else { en });
-        let args: Vec<(usize, String)> = args.iter().enumerate().map(|(i, a)| (i, a.to_string())).collect();
+        let args: Vec<(usize, String)> = args
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (i, a.to_string()))
+            .collect();
         render(&p, &args)
     }
 
@@ -247,7 +268,13 @@ mod tests {
         let raw = "aborted by peer: the server refused to accept a new connection";
         for lang in [Lang::Zh, Lang::En] {
             let s = said("msg.cant-reach-named", lang, &["Mac-mini", raw]);
-            assert_eq!(read(&s), Some(("msg.cant-reach-named", vec!["Mac-mini".to_owned(), raw.to_owned()])));
+            assert_eq!(
+                read(&s),
+                Some((
+                    "msg.cant-reach-named",
+                    vec!["Mac-mini".to_owned(), raw.to_owned()]
+                ))
+            );
         }
         assert_eq!(read("Permission denied (os error 13)"), None);
     }
@@ -259,9 +286,17 @@ mod tests {
         let far = said("msg.not-paired", Lang::En, &[]);
         let here = said("msg.not-paired", Lang::Zh, &[]);
         assert_eq!(said_again(&far, Lang::Zh, DEPTH), Some(here.clone()));
-        assert_eq!(said_again(&here, Lang::Zh, DEPTH), Some(here.clone()), "already in this language");
         assert_eq!(
-            said_again(&said("msg.invite-expired", Lang::En, &["15"]), Lang::Zh, DEPTH),
+            said_again(&here, Lang::Zh, DEPTH),
+            Some(here.clone()),
+            "already in this language"
+        );
+        assert_eq!(
+            said_again(
+                &said("msg.invite-expired", Lang::En, &["15"]),
+                Lang::Zh,
+                DEPTH
+            ),
             Some(said("msg.invite-expired", Lang::Zh, &["15"]))
         );
         let nested = said("msg.cant-reach-named", Lang::Zh, &["hinton", &here]);
@@ -312,7 +347,12 @@ mod tests {
                 }
             }
         }
-        assert!(missed.is_empty(), "{} entries do not read back:\n{}", missed.len(), missed.join("\n"));
+        assert!(
+            missed.is_empty(),
+            "{} entries do not read back:\n{}",
+            missed.len(),
+            missed.join("\n")
+        );
     }
 
     /// Free text in the arguments — a far machine's names and paths, in
@@ -320,14 +360,23 @@ mod tests {
     /// said, in every entry, either way.
     #[test]
     fn free_text_arguments_round_trip_exactly() {
-        let words = ["/Users/zgh/项目/khor 2", "实验室的 Mac", "hinton", "a b.txt", "~/.khor-hosts/lecun", "12"];
+        let words = [
+            "/Users/zgh/项目/khor 2",
+            "实验室的 Mac",
+            "hinton",
+            "a b.txt",
+            "~/.khor-hosts/lecun",
+            "12",
+        ];
         let mut missed = Vec::new();
         for (n, (key, zh, en)) in crate::TEMPLATES.iter().enumerate() {
             let (pz, pe) = (pieces(zh), pieces(en));
             if own_text(&pz) < OWN_TEXT || own_text(&pe) < OWN_TEXT {
                 continue;
             }
-            let args: Vec<(usize, String)> = (0..9).map(|i| (i, words[(n + i) % words.len()].to_owned())).collect();
+            let args: Vec<(usize, String)> = (0..9)
+                .map(|i| (i, words[(n + i) % words.len()].to_owned()))
+                .collect();
             for (from, to, lang) in [(&pz, &pe, Lang::En), (&pe, &pz, Lang::Zh)] {
                 let said = render(from, &args);
                 let twins = crate::TEMPLATES.iter().any(|(k, z, e)| {
@@ -339,6 +388,11 @@ mod tests {
                 }
             }
         }
-        assert!(missed.is_empty(), "{} entries do not round-trip:\n{}", missed.len(), missed.join("\n"));
+        assert!(
+            missed.is_empty(),
+            "{} entries do not round-trip:\n{}",
+            missed.len(),
+            missed.join("\n")
+        );
     }
 }

@@ -75,7 +75,10 @@ pub(crate) struct StartupInput<W> {
 
 impl<W: Write> StartupInput<W> {
     pub(crate) fn new(writer: W, startup: Option<&str>) -> Self {
-        Self { writer, pending: startup.map(input).filter(|bytes| !bytes.is_empty()) }
+        Self {
+            writer,
+            pending: startup.map(input).filter(|bytes| !bytes.is_empty()),
+        }
     }
 
     pub(crate) fn ready(&mut self) -> io::Result<()> {
@@ -109,7 +112,11 @@ impl<W: Write> Write for StartupInput<W> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        if self.pending.is_some() { Ok(()) } else { self.writer.flush() }
+        if self.pending.is_some() {
+            Ok(())
+        } else {
+            self.writer.flush()
+        }
     }
 }
 

@@ -67,8 +67,12 @@ enum Scan {
     Str,
     StrEsc,
     /// A picture, from its introducer on.
-    Body { osc: bool },
-    BodyEsc { osc: bool },
+    Body {
+        osc: bool,
+    },
+    BodyEsc {
+        osc: bool,
+    },
 }
 
 /// What a byte asks of the feed.
@@ -76,9 +80,14 @@ enum Step {
     Nothing,
     /// A character printed under a link starts here (cut before it)
     /// and ends here too when it is `Some` (cut after it).
-    Char { starts: bool, ends: Option<char> },
+    Char {
+        starts: bool,
+        ends: Option<char>,
+    },
     /// A switch of screens: count before it, look after it.
-    Switch { clears: bool },
+    Switch {
+        clears: bool,
+    },
     /// An erase of the display (`CSI J`), by mode.
     Erase(u16),
     /// `ESC c`: everything goes.
@@ -118,9 +127,15 @@ struct Kept {
 impl Kept {
     /// The rows before `first` go.
     fn drop_before(&mut self, first: u64) {
-        if self.runs.first_key_value().is_some_and(|(&row, _)| row < first) {
+        if self
+            .runs
+            .first_key_value()
+            .is_some_and(|(&row, _)| row < first)
+        {
             let kept = self.runs.split_off(&first);
-            self.count = self.count.saturating_sub(self.runs.values().map(Vec::len).sum::<usize>());
+            self.count = self
+                .count
+                .saturating_sub(self.runs.values().map(Vec::len).sum::<usize>());
             self.runs = kept;
         }
     }
@@ -182,12 +197,17 @@ impl Beside {
         while i < bytes.len() {
             match self.scan {
                 // The common case: text with no link open, copied whole.
-                Scan::Ground if self.link.is_none() => match bytes[i..].iter().position(|&b| b == ESC) {
-                    Some(n) => i += n,
-                    None => break,
-                },
+                Scan::Ground if self.link.is_none() => {
+                    match bytes[i..].iter().position(|&b| b == ESC) {
+                        Some(n) => i += n,
+                        None => break,
+                    }
+                }
                 Scan::Body { osc } => {
-                    let run = bytes[i..].iter().position(|&b| b == ESC || b == CAN || b == SUB || (osc && b == BEL)).unwrap_or(bytes.len() - i);
+                    let run = bytes[i..]
+                        .iter()
+                        .position(|&b| b == ESC || b == CAN || b == SUB || (osc && b == BEL))
+                        .unwrap_or(bytes.len() - i);
                     self.take(&bytes[i..i + run]);
                     i += run;
                     if i == bytes.len() {
@@ -437,7 +457,10 @@ impl Beside {
                 } else {
                     1
                 };
-                Step::Char { starts: true, ends: None }
+                Step::Char {
+                    starts: true,
+                    ends: None,
+                }
             }
             0x80..=0xbf if self.due > 0 => {
                 self.chr.push(b);
@@ -445,10 +468,15 @@ impl Beside {
                 if self.due > 0 {
                     return Step::Nothing;
                 }
-                let c = std::str::from_utf8(&self.chr).ok().and_then(|s| s.chars().next());
+                let c = std::str::from_utf8(&self.chr)
+                    .ok()
+                    .and_then(|s| s.chars().next());
                 self.chr.clear();
                 match c {
-                    Some(c) => Step::Char { starts: false, ends: Some(c) },
+                    Some(c) => Step::Char {
+                        starts: false,
+                        ends: Some(c),
+                    },
                     None => {
                         self.before = None;
                         Step::Nothing
@@ -472,7 +500,10 @@ impl Beside {
     fn csi_final(&mut self, b: u8) -> Step {
         let seq = std::mem::take(&mut self.seq);
         let private = seq.first() == Some(&b'?');
-        let params = || seq.split(|&c| c == b';').map(|p| p.strip_prefix(b"?").unwrap_or(p));
+        let params = || {
+            seq.split(|&c| c == b';')
+                .map(|p| p.strip_prefix(b"?").unwrap_or(p))
+        };
         match b {
             b'h' | b'l' if private => {
                 let mut switch = None;
@@ -486,7 +517,10 @@ impl Beside {
                 switch.map_or(Step::Nothing, |clears| Step::Switch { clears })
             }
             b'J' if seq.iter().all(|&c| c.is_ascii_digit() || c == b'?') => {
-                let mode = params().next().and_then(|p| std::str::from_utf8(p).ok()?.parse().ok()).unwrap_or(0);
+                let mode = params()
+                    .next()
+                    .and_then(|p| std::str::from_utf8(p).ok()?.parse().ok())
+                    .unwrap_or(0);
                 Step::Erase(mode)
             }
             _ => Step::Nothing,
@@ -498,9 +532,15 @@ impl Beside {
         if self.long {
             return;
         }
-        let Some(rest) = self.seq.strip_prefix(b"8;") else { return };
-        let Ok(rest) = std::str::from_utf8(rest) else { return };
-        let Some((_, target)) = rest.split_once(';') else { return };
+        let Some(rest) = self.seq.strip_prefix(b"8;") else {
+            return;
+        };
+        let Ok(rest) = std::str::from_utf8(rest) else {
+            return;
+        };
+        let Some((_, target)) = rest.split_once(';') else {
+            return;
+        };
         self.link = (!target.is_empty()).then(|| Arc::from(rest));
         self.cut_char();
     }
@@ -534,7 +574,11 @@ impl Beside {
             return;
         }
         self.pictures_size += body.len();
-        let kept = if at.alt { &mut self.alt } else { &mut self.normal };
+        let kept = if at.alt {
+            &mut self.alt
+        } else {
+            &mut self.normal
+        };
         kept.pictures.push(Picture {
             at: at.row,
             col: at.col,
@@ -542,7 +586,11 @@ impl Beside {
         });
         // The oldest go first, the normal screen's before the program's.
         while self.pictures_size > PICTURES {
-            let kept = if self.normal.pictures.is_empty() { &mut self.alt } else { &mut self.normal };
+            let kept = if self.normal.pictures.is_empty() {
+                &mut self.alt
+            } else {
+                &mut self.normal
+            };
             if kept.pictures.is_empty() {
                 break;
             }
@@ -552,13 +600,23 @@ impl Beside {
     }
 
     fn recount_pictures(&mut self) {
-        self.pictures_size = self.normal.pictures.iter().chain(&self.alt.pictures).map(|p| p.bytes.len()).sum();
+        self.pictures_size = self
+            .normal
+            .pictures
+            .iter()
+            .chain(&self.alt.pictures)
+            .map(|p| p.bytes.len())
+            .sum();
     }
 
     /// `CSI J` at `at`: the pictures on the erased part of the display go.
     fn erase(&mut self, mode: u16, at: Spot) {
         let top = if at.alt { 0 } else { self.scrolled };
-        let kept = if at.alt { &mut self.alt } else { &mut self.normal };
+        let kept = if at.alt {
+            &mut self.alt
+        } else {
+            &mut self.normal
+        };
         let before = |p: &Picture| p.at < at.row || (p.at == at.row && p.col < at.col);
         kept.pictures.retain(|p| match mode {
             0 => before(p),
@@ -588,7 +646,9 @@ impl Beside {
     /// back at the bottom. A count that may have run past what the view
     /// can show is not trusted: the normal screen's marks go.
     fn count(&mut self, parser: &mut vt100::Parser, keeps: usize) {
-        let Some((len0, off0)) = self.armed.take() else { return };
+        let Some((len0, off0)) = self.armed.take() else {
+            return;
+        };
         let s = parser.screen_mut();
         if s.alternate_screen() {
             return;
@@ -597,7 +657,11 @@ impl Beside {
         s.set_scrollback(usize::MAX);
         let len = s.scrollback();
         s.set_scrollback(0);
-        let (n, sure) = if off0 == 0 { (len.saturating_sub(len0), len < keeps) } else { (off.saturating_sub(off0), off < keeps) };
+        let (n, sure) = if off0 == 0 {
+            (len.saturating_sub(len0), len < keeps)
+        } else {
+            (off.saturating_sub(off0), off < keeps)
+        };
         self.scrolled += n as u64;
         if !sure {
             self.normal = Kept::default();
@@ -649,11 +713,17 @@ impl Beside {
     fn printed(&mut self, parser: &mut vt100::Parser, keeps: usize, c: char) {
         let Some(a) = self.before.take() else { return };
         let b = self.spot(parser, keeps);
-        let Some(link) = self.link.clone() else { return };
+        let Some(link) = self.link.clone() else {
+            return;
+        };
         if a.alt != b.alt {
             return;
         }
-        let kept = if b.alt { &mut self.alt } else { &mut self.normal };
+        let kept = if b.alt {
+            &mut self.alt
+        } else {
+            &mut self.normal
+        };
         let (row, from, to) = if b.row == a.row && b.col > a.col {
             (a.row, a.col, b.col)
         } else if b.row == a.row + 1 && b.col > 0 && b.col <= 2 {
@@ -661,7 +731,10 @@ impl Beside {
             (b.row, 0, b.col)
         } else {
             if b == a
-                && let Some(run) = kept.runs.get_mut(&a.row).and_then(|r| r.iter_mut().rev().find(|r| r.to == a.col))
+                && let Some(run) = kept
+                    .runs
+                    .get_mut(&a.row)
+                    .and_then(|r| r.iter_mut().rev().find(|r| r.to == a.col))
             {
                 run.text.push(c);
             }
@@ -684,7 +757,11 @@ impl Beside {
             }
         }
         if self.normal.count + self.alt.count > RUNS_MOST {
-            let kept = if self.normal.runs.is_empty() { &mut self.alt } else { &mut self.normal };
+            let kept = if self.normal.runs.is_empty() {
+                &mut self.alt
+            } else {
+                &mut self.normal
+            };
             if let Some((_, gone)) = kept.runs.pop_first() {
                 kept.count = kept.count.saturating_sub(gone.len());
             }
@@ -707,7 +784,14 @@ impl Beside {
     /// What absolute row `at` carries, read against `screen`'s visible
     /// row `row`: each link whose text is still on its cells, a later one
     /// over an earlier, and the pictures drawn there.
-    pub fn marks(&self, alt: bool, at: u64, screen: &vt100::Screen, row: u16, cols: u16) -> RowMarks {
+    pub fn marks(
+        &self,
+        alt: bool,
+        at: u64,
+        screen: &vt100::Screen,
+        row: u16,
+        cols: u16,
+    ) -> RowMarks {
         let kept = if alt { &self.alt } else { &self.normal };
         let mut out = RowMarks::default();
         if let Some(runs) = kept.runs.get(&at) {
@@ -723,7 +807,12 @@ impl Beside {
                 }
             }
         }
-        out.pictures = kept.pictures.iter().filter(|p| p.at == at).map(|p| (p.col, p.bytes.clone())).collect();
+        out.pictures = kept
+            .pictures
+            .iter()
+            .filter(|p| p.at == at)
+            .map(|p| (p.col, p.bytes.clone()))
+            .collect();
         out
     }
 
@@ -811,7 +900,11 @@ mod tests {
             }
             let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
             let (mut p, b) = fed(&refs, keeps);
-            assert_eq!(b.scrolled(), 300 - 23, "keeps {keeps}: one row a line past the screen");
+            assert_eq!(
+                b.scrolled(),
+                300 - 23,
+                "keeps {keeps}: one row a line past the screen"
+            );
             assert_eq!(p.screen().scrollback(), 0, "the view is at the bottom");
             let s = p.screen_mut();
             assert_eq!(s.cell(22, 0).unwrap().contents(), "l");
@@ -827,7 +920,16 @@ mod tests {
         let want = linked(&mut p, &b);
         assert_eq!(
             want,
-            [(0, 2, ";file:///a".into()), (0, 3, ";file:///a".into()), (0, 4, ";file:///a".into()), (0, 5, ";file:///a".into()), (0, 7, "id=1;https://x".into()), (0, 8, "id=1;https://x".into()), (0, 9, "id=1;https://x".into()), (0, 10, "id=1;https://x".into())]
+            [
+                (0, 2, ";file:///a".into()),
+                (0, 3, ";file:///a".into()),
+                (0, 4, ";file:///a".into()),
+                (0, 5, ";file:///a".into()),
+                (0, 7, "id=1;https://x".into()),
+                (0, 8, "id=1;https://x".into()),
+                (0, 9, "id=1;https://x".into()),
+                (0, 10, "id=1;https://x".into())
+            ]
         );
         for cut in 0..=whole.len() {
             let (mut p, b) = fed(&[&whole[..cut], &whole[cut..]], 100);
@@ -854,7 +956,11 @@ mod tests {
         assert_eq!(b.scrolled(), 41 + 5 - 23);
         let got = linked(&mut p, &b);
         assert_eq!(got.len(), 4);
-        assert!(got.iter().all(|(row, _, l)| *row == 0 && l == ";https://kept"), "{got:?}");
+        assert!(
+            got.iter()
+                .all(|(row, _, l)| *row == 0 && l == ";https://kept"),
+            "{got:?}"
+        );
     }
 
     /// A picture keeps its row; `clear` takes the ones on the screen, the
@@ -870,11 +976,25 @@ mod tests {
         s.extend_from_slice(b"\r\nshown\r\n");
         s.extend_from_slice(pic);
         let (_, b) = fed(&[&s], 100);
-        assert_eq!(b.normal.pictures.iter().map(|p| (p.at, p.col)).collect::<Vec<_>>(), [(1, 0), (33, 0)]);
+        assert_eq!(
+            b.normal
+                .pictures
+                .iter()
+                .map(|p| (p.at, p.col))
+                .collect::<Vec<_>>(),
+            [(1, 0), (33, 0)]
+        );
         let (_, b) = fed(&[&s, b"\x1b[H\x1b[2J"], 100);
-        assert_eq!(b.normal.pictures.iter().map(|p| p.at).collect::<Vec<_>>(), [1], "the screen's picture is cleared");
+        assert_eq!(
+            b.normal.pictures.iter().map(|p| p.at).collect::<Vec<_>>(),
+            [1],
+            "the screen's picture is cleared"
+        );
         let (_, b) = fed(&[&s, b"\x1bc"], 100);
-        assert!(b.normal.pictures.is_empty() && b.scrolled() == 0, "a reset takes everything");
+        assert!(
+            b.normal.pictures.is_empty() && b.scrolled() == 0,
+            "a reset takes everything"
+        );
         // A picture cut across chunks anywhere is still one picture.
         for cut in 0..=s.len() {
             let (_, b) = fed(&[&s[..cut], &s[cut..]], 100);

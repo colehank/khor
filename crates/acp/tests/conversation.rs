@@ -14,25 +14,62 @@ use tokio::time::timeout;
 const STUB: &str = env!("CARGO_BIN_EXE_acp-stub");
 
 #[tokio::test]
-async fn advertised_resume_is_preferred_and_unsupported_context_is_refused(){
-    let(h,mut rx)=khor_acp::start_configured(&stub_with("KHOR_STUB_EXTENDED","1"),std::env::temp_dir(),Some("existing".into()),khor_acp::Environment::default()).await.unwrap();
+async fn advertised_resume_is_preferred_and_unsupported_context_is_refused() {
+    let (h, mut rx) = khor_acp::start_configured(
+        &stub_with("KHOR_STUB_EXTENDED", "1"),
+        std::env::temp_dir(),
+        Some("existing".into()),
+        khor_acp::Environment::default(),
+    )
+    .await
+    .unwrap();
     assert!(text_of(next(&mut rx).await).contains("no-replay resume"));
-    assert!(matches!(next(&mut rx).await,Event::Ready{..}));drop(h);
-    let context=khor_acp::Environment{additional_directories:vec![std::env::temp_dir()],..Default::default()};
-    assert!(matches!(khor_acp::start_configured(STUB,std::env::temp_dir(),None,context).await,Err(Refusal::Wont(_))));
-    let(h,_rx)=start(STUB,std::env::temp_dir()).await.unwrap();assert!(h.control("delete",&serde_json::json!({})).await.is_err());
+    assert!(matches!(next(&mut rx).await, Event::Ready { .. }));
+    drop(h);
+    let context = khor_acp::Environment {
+        additional_directories: vec![std::env::temp_dir()],
+        ..Default::default()
+    };
+    assert!(matches!(
+        khor_acp::start_configured(STUB, std::env::temp_dir(), None, context).await,
+        Err(Refusal::Wont(_))
+    ));
+    let (h, _rx) = start(STUB, std::env::temp_dir()).await.unwrap();
+    assert!(h.control("delete", &serde_json::json!({})).await.is_err());
 }
 
 #[cfg(unix)]
 #[tokio::test]
-async fn cancelling_an_open_also_ends_a_stalled_handshake_process(){
-    let marker=std::env::temp_dir().join(format!("khor-acp-init-{}",std::process::id()));let _=std::fs::remove_file(&marker);
-    assert!(timeout(Duration::from_millis(500),start(&stub_with("KHOR_STUB_WAIT_INIT",marker.to_str().unwrap()),std::env::temp_dir())).await.is_err());
-    let pid=std::fs::read_to_string(&marker).expect("the handshake child started");
-    timeout(Duration::from_secs(5),async{
-        loop{if !std::process::Command::new("kill").args(["-0",&pid]).stderr(std::process::Stdio::null()).status().unwrap().success(){break;}tokio::time::sleep(Duration::from_millis(20)).await;}
-    }).await.expect("cancelling initialization must not leak its child");
-    let _=std::fs::remove_file(marker);
+async fn cancelling_an_open_also_ends_a_stalled_handshake_process() {
+    let marker = std::env::temp_dir().join(format!("khor-acp-init-{}", std::process::id()));
+    let _ = std::fs::remove_file(&marker);
+    assert!(timeout(
+        Duration::from_millis(500),
+        start(
+            &stub_with("KHOR_STUB_WAIT_INIT", marker.to_str().unwrap()),
+            std::env::temp_dir()
+        )
+    )
+    .await
+    .is_err());
+    let pid = std::fs::read_to_string(&marker).expect("the handshake child started");
+    timeout(Duration::from_secs(5), async {
+        loop {
+            if !std::process::Command::new("kill")
+                .args(["-0", &pid])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("cancelling initialization must not leak its child");
+    let _ = std::fs::remove_file(marker);
 }
 
 #[tokio::test]

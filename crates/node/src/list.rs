@@ -179,7 +179,9 @@ fn place_of(
                 (format!("{GROUP_DEVICE}{hex}"), (2, hex))
             }
         },
-        Arrange::State if !view.session.state_known() => (GROUP_STATE.to_owned(), (8, String::new())),
+        Arrange::State if !view.session.state_known() => {
+            (GROUP_STATE.to_owned(), (8, String::new()))
+        }
         Arrange::State => {
             let word = view.session.state.state;
             (
@@ -265,16 +267,27 @@ mod tests {
         row.session.place = Some("/birth".into());
         for cwd in [Some("/work/ACL2027"), Some("/other-pane"), Some("  "), None] {
             row.session.doing = Some(khor_core::Doing {
-                cwd: cwd.map(str::to_owned), ..Default::default()
+                cwd: cwd.map(str::to_owned),
+                ..Default::default()
             });
             let expected = cwd.filter(|s| !s.trim().is_empty()).unwrap_or("/birth");
             let rows = arrange(vec![row.clone()], Arrange::Place, &names);
             assert_eq!(rows[0].group, format!("at:{expected}"));
-            assert_eq!(rows[0].view.session.place.as_deref(), Some("/birth"), "birth record stays intact");
+            assert_eq!(
+                rows[0].view.session.place.as_deref(),
+                Some("/birth"),
+                "birth record stays intact"
+            );
         }
         row.session.place = None;
-        row.session.doing = Some(khor_core::Doing { cwd: Some("/runtime-only".into()), ..Default::default() });
-        assert_eq!(arrange(vec![row.clone()], Arrange::Place, &names)[0].group, "at:/runtime-only");
+        row.session.doing = Some(khor_core::Doing {
+            cwd: Some("/runtime-only".into()),
+            ..Default::default()
+        });
+        assert_eq!(
+            arrange(vec![row.clone()], Arrange::Place, &names)[0].group,
+            "at:/runtime-only"
+        );
         row.session.doing = None;
         assert_eq!(arrange(vec![row], Arrange::Place, &names)[0].group, "at:");
     }
@@ -360,7 +373,10 @@ mod tests {
     #[test]
     fn unbound_threads_are_not_grouped_as_idle() {
         let mut rows = sample();
-        rows[0].session.doing = Some(khor_core::Doing { thread_unbound: true, ..Default::default() });
+        rows[0].session.doing = Some(khor_core::Doing {
+            thread_unbound: true,
+            ..Default::default()
+        });
         let out = arrange(rows, Arrange::State, &names);
         assert_eq!(out.last().unwrap().group, GROUP_STATE);
     }

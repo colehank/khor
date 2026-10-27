@@ -401,7 +401,11 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
             "ask {ask}: the refusal is said as the failed page: {said}"
         );
         if ask > 0 {
-            assert!(started.elapsed() < Duration::from_millis(500), "ask {ask} waited {:?} for the exit again", started.elapsed());
+            assert!(
+                started.elapsed() < Duration::from_millis(500),
+                "ask {ask} waited {:?} for the exit again",
+                started.elapsed()
+            );
         }
     }
 

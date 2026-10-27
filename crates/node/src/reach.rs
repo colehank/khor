@@ -67,10 +67,11 @@ async fn probe_with(host: &str, port: u16, lookup: fn(&str, u16) -> Option<Strin
         let host = host.clone();
         tokio::task::spawn_blocking(move || lookup(&host, port))
     };
-    let addrs: Vec<std::net::SocketAddr> = match tokio::net::lookup_host((host.as_str(), port)).await {
-        Ok(a) => a.collect(),
-        Err(_) => Vec::new(),
-    };
+    let addrs: Vec<std::net::SocketAddr> =
+        match tokio::net::lookup_host((host.as_str(), port)).await {
+            Ok(a) => a.collect(),
+            Err(_) => Vec::new(),
+        };
     if addrs.is_empty() {
         seen.why = Some(msg::reach_no_name(&host));
     } else {
@@ -91,7 +92,11 @@ async fn probe_with(host: &str, port: u16, lookup: fn(&str, u16) -> Option<Strin
                     seen.banner = banner(&mut tcp).await;
                     // The banner decides: a connect that says no ssh line
                     // may be a proxy's fake address taking anything.
-                    if seen.banner.as_deref().is_some_and(|b| b.starts_with("SSH-")) {
+                    if seen
+                        .banner
+                        .as_deref()
+                        .is_some_and(|b| b.starts_with("SSH-"))
+                    {
                         seen.outcome = ReachOutcome::Reached;
                         seen.why = None;
                     } else {
@@ -112,10 +117,17 @@ async fn probe_with(host: &str, port: u16, lookup: fn(&str, u16) -> Option<Strin
     // (`CheckHostIP`), and a person may have typed either.
     seen.host_key = match key.await.ok().flatten() {
         Some(k) => Some(k),
-        None => match seen.addr.as_deref().and_then(|a| a.parse::<std::net::SocketAddr>().ok()) {
+        None => match seen
+            .addr
+            .as_deref()
+            .and_then(|a| a.parse::<std::net::SocketAddr>().ok())
+        {
             Some(a) if a.ip().to_string() != host => {
                 let ip = a.ip().to_string();
-                tokio::task::spawn_blocking(move || lookup(&ip, port)).await.ok().flatten()
+                tokio::task::spawn_blocking(move || lookup(&ip, port))
+                    .await
+                    .ok()
+                    .flatten()
             }
             _ => None,
         },
@@ -126,7 +138,9 @@ async fn probe_with(host: &str, port: u16, lookup: fn(&str, u16) -> Option<Strin
 /// `[::1]` as a person may type it, without the brackets the resolver
 /// does not want.
 fn bare(host: &str) -> &str {
-    host.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(host)
+    host.strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host)
 }
 
 /// The server's first line, kept printable and short; `None` when it said
@@ -160,7 +174,11 @@ fn first_line(bytes: &[u8]) -> Option<String> {
 /// The key this machine's known_hosts holds for the name, as ssh files
 /// it: bare for port 22, `[host]:port` for any other.
 fn host_key(host: &str, port: u16) -> Option<String> {
-    let name = if port == SSH_PORT { host.to_owned() } else { format!("[{host}]:{port}") };
+    let name = if port == SSH_PORT {
+        host.to_owned()
+    } else {
+        format!("[{host}]:{port}")
+    };
     crate::satellite::known_host_id(&name).ok().flatten()
 }
 
@@ -171,7 +189,10 @@ pub fn shown_key(hex: &str) -> String {
     let bytes: Vec<u8> = (0..hex.len() / 2)
         .filter_map(|i| u8::from_str_radix(hex.get(2 * i..2 * i + 2)?, 16).ok())
         .collect();
-    format!("SHA256:{}", base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes))
+    format!(
+        "SHA256:{}",
+        base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes)
+    )
 }
 
 /// The port a person typed, or ssh's.
@@ -197,9 +218,13 @@ impl crate::Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = khor_net::endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
-            .await
-            .map_err(|e| e.to_string())?;
+        let ep = khor_net::endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
         let out = self.reach_probe_with(&ep, host, port).await;
         ep.close().await;
         out
@@ -286,22 +311,33 @@ mod tests {
 
     #[test]
     fn a_banner_is_its_first_line_printable_and_short() {
-        assert_eq!(first_line(b"SSH-2.0-OpenSSH_9.6\r\nrest").as_deref(), Some("SSH-2.0-OpenSSH_9.6"));
+        assert_eq!(
+            first_line(b"SSH-2.0-OpenSSH_9.6\r\nrest").as_deref(),
+            Some("SSH-2.0-OpenSSH_9.6")
+        );
         assert_eq!(first_line(b"\x1b[31mhi\x07\n").as_deref(), Some("[31mhi"));
         assert_eq!(first_line(b""), None);
-        assert_eq!(first_line(&[b'a'; 400]).map(|s| s.len()), Some(REACH_BANNER_MAX));
+        assert_eq!(
+            first_line(&[b'a'; 400]).map(|s| s.len()),
+            Some(REACH_BANNER_MAX)
+        );
     }
 
     #[test]
     fn a_key_is_shown_as_openssh_prints_it() {
-        assert_eq!(shown_key(&"00".repeat(32)), format!("SHA256:{}", "A".repeat(43)));
+        assert_eq!(
+            shown_key(&"00".repeat(32)),
+            format!("SHA256:{}", "A".repeat(43))
+        );
     }
 
     /// One listener that says an ssh banner, one port nobody holds: the
     /// two outcomes a person sees most, off loopback only.
     #[tokio::test]
     async fn a_listener_is_reached_with_its_banner_and_a_closed_port_is_refused() {
-        let l = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let l = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
         let port = l.local_addr().unwrap().port();
         tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
@@ -321,7 +357,9 @@ mod tests {
         let seen = probe_with("127.0.0.1", closed, none).await;
         assert_eq!(seen.outcome, ReachOutcome::Refused, "{seen:?}");
         // A listener that says nothing: connected, not reached.
-        let quiet = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let quiet = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
         let qport = quiet.local_addr().unwrap().port();
         tokio::spawn(async move {
             let mut held = Vec::new();
@@ -330,7 +368,11 @@ mod tests {
             }
         });
         let seen = probe_with("127.0.0.1", qport, none).await;
-        assert_eq!((seen.outcome, seen.banner.as_deref()), (ReachOutcome::Silent, None), "{seen:?}");
+        assert_eq!(
+            (seen.outcome, seen.banner.as_deref()),
+            (ReachOutcome::Silent, None),
+            "{seen:?}"
+        );
         // No `no-name` case here: a resolver behind a fake-ip proxy
         // answers every name, `.invalid` included (measured: 198.18.0.23),
         // so the only loopback-safe way to it is a lookup that is never made.

@@ -81,8 +81,9 @@ pub(crate) async fn read_target(recv: &mut RecvStream) -> Result<String, String>
 /// it must (`crate::wires`) — fetched for each new pipe, so a lease
 /// outlives the death of any one connection under it.
 pub type WireSource = std::sync::Arc<
-    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Connection, String>> + Send>>
-        + Send
+    dyn Fn() -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Connection, String>> + Send>,
+        > + Send
         + Sync,
 >;
 
@@ -191,18 +192,17 @@ pub(crate) async fn serve_target(
         let _ = send.finish();
         return Ok(());
     }
-    let tcp = match tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::TcpStream::connect(target))
-        .await
-    {
-        Ok(Ok(tcp)) => tcp,
-        // Both "connect errored" and "connect timed out" are the same
-        // fact to the dialer: the exit's network could not reach there.
-        _ => {
-            let _ = send.write_all(&[NO_ROUTE]).await;
-            let _ = send.finish();
-            return Ok(());
-        }
-    };
+    let tcp =
+        match tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::TcpStream::connect(target)).await {
+            Ok(Ok(tcp)) => tcp,
+            // Both "connect errored" and "connect timed out" are the same
+            // fact to the dialer: the exit's network could not reach there.
+            _ => {
+                let _ = send.write_all(&[NO_ROUTE]).await;
+                let _ = send.finish();
+                return Ok(());
+            }
+        };
     send.write_all(&[OK]).await.map_err(|e| e.to_string())?;
     splice(send, recv, tcp).await;
     Ok(())
@@ -296,7 +296,8 @@ pub async fn serve_proxy(
 const UNREACHED_HOLD: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// The targets the exit refused, and when.
-type Unreached = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>>;
+type Unreached =
+    std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>>;
 
 /// A local port that pipes to **one** fixed target on the far machine.
 ///
@@ -464,7 +465,8 @@ async fn proxy_one(
             // no word. Its title is the one the app reads instead of a
             // title ([`PAGE_FAILED_TITLE`]). An `https://` page's CONNECT
             // refused is a failed load to WebKit, which the app hears too.
-            let body = format!("<!doctype html><meta charset=utf-8><title>{PAGE_FAILED_TITLE}</title>");
+            let body =
+                format!("<!doctype html><meta charset=utf-8><title>{PAGE_FAILED_TITLE}</title>");
             let reply = format!(
                 "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()

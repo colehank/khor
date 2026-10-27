@@ -20,11 +20,18 @@ fn command_receipts_replicate_updates_without_duplicate_messages() {
     let b = ChatDoc::new(0xb).unwrap();
     let sender = me("executor");
     let mut record = CommandRecord {
-        id: "command-unique-token".into(), line: "/devices".into(),
-        owner: sender.id.clone(), owner_name: sender.name.clone(),
-        status: "running".into(), started_at_ms: 100, ended_at_ms: None,
-        stdout: String::new(), stderr: String::new(), data_json: None,
-        session: None, error: None,
+        id: "command-unique-token".into(),
+        line: "/devices".into(),
+        owner: sender.id.clone(),
+        owner_name: sender.name.clone(),
+        status: "running".into(),
+        started_at_ms: 100,
+        ended_at_ms: None,
+        stdout: String::new(),
+        stderr: String::new(),
+        data_json: None,
+        session: None,
+        error: None,
         agent: None,
     };
     a.command(&sender, &record).unwrap();
@@ -38,7 +45,8 @@ fn command_receipts_replicate_updates_without_duplicate_messages() {
     a.command(&sender, &record).unwrap();
     a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
     b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();
-    b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+    b.merge(&a.changes_since(&Default::default()).unwrap())
+        .unwrap();
     let messages = b.messages();
     assert_eq!(messages.len(), 1);
     assert!(messages[0].retracted);

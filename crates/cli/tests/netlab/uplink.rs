@@ -36,9 +36,16 @@ async fn e_wifi_to_cellular_keeps_the_connection_and_journals_it() {
     tokio::time::sleep(Duration::from_secs(10)).await;
     let before = peer.link(&mover).await.unwrap_or(before);
 
-    let at_ms = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64;
+    let at_ms = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
     let switched = Instant::now();
-    dm.iface("eth0").expect("eth0").replug(cell.id()).await.unwrap();
+    dm.iface("eth0")
+        .expect("eth0")
+        .replug(cell.id())
+        .await
+        .unwrap();
     eprintln!("[netlab] mover now on cell: v4 {:?}", dm.ip());
 
     // Watch the peer's word for the mover: never down, and heard again.
@@ -59,12 +66,33 @@ async fn e_wifi_to_cellular_keeps_the_connection_and_journals_it() {
     }
     let last = last.expect("a link after the switch");
     let after = |e: &serde_json::Value| e["at"].as_u64().is_some_and(|t| t >= at_ms);
-    let addrs = mover.journal(None).into_iter().filter(|e| e["e"] == "addrs" && after(e)).count();
-    let paths = mover.journal(Some(&peer)).into_iter().filter(|e| e["e"] == "path" && after(e)).count()
-        + peer.journal(Some(&mover)).into_iter().filter(|e| e["e"] == "path" && after(e)).count();
-    let retired = mover.journal(Some(&peer)).into_iter().filter(|e| e["e"] == "retired" && after(e)).count()
-        + peer.journal(Some(&mover)).into_iter().filter(|e| e["e"] == "retired" && after(e)).count();
-    let ok = !down_seen && retired == 0 && back.is_some_and(|b| b <= BACK) && addrs > 0 && paths > 0;
+    let addrs = mover
+        .journal(None)
+        .into_iter()
+        .filter(|e| e["e"] == "addrs" && after(e))
+        .count();
+    let paths = mover
+        .journal(Some(&peer))
+        .into_iter()
+        .filter(|e| e["e"] == "path" && after(e))
+        .count()
+        + peer
+            .journal(Some(&mover))
+            .into_iter()
+            .filter(|e| e["e"] == "path" && after(e))
+            .count();
+    let retired = mover
+        .journal(Some(&peer))
+        .into_iter()
+        .filter(|e| e["e"] == "retired" && after(e))
+        .count()
+        + peer
+            .journal(Some(&mover))
+            .into_iter()
+            .filter(|e| e["e"] == "retired" && after(e))
+            .count();
+    let ok =
+        !down_seen && retired == 0 && back.is_some_and(|b| b <= BACK) && addrs > 0 && paths > 0;
     result(
         s,
         ok,
@@ -76,7 +104,10 @@ async fn e_wifi_to_cellular_keeps_the_connection_and_journals_it() {
         ),
     );
     assert!(!down_seen && retired == 0, "the wire survives the switch");
-    assert!(back.is_some_and(|b| b <= BACK), "the peer hears the mover within {BACK:?}");
+    assert!(
+        back.is_some_and(|b| b <= BACK),
+        "the peer hears the mover within {BACK:?}"
+    );
     assert!(addrs > 0, "the mover's journal has its new addresses");
     assert!(paths > 0, "a journal has the road the connection moved to");
 }

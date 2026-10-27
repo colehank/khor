@@ -43,14 +43,19 @@ fn a_current_attacher_gets_the_snapshot_not_the_ring() {
     let dir = k.dir_of(&id).expect("registered");
     let deadline = Instant::now() + Duration::from_secs(30);
     while std::fs::read_to_string(dir.join("last.txt")).unwrap_or_default() != "DONE-MARK" {
-        assert!(Instant::now() < deadline, "the stand-in never finished writing");
+        assert!(
+            Instant::now() < deadline,
+            "the stand-in never finished writing"
+        );
         std::thread::sleep(Duration::from_millis(100));
     }
     std::thread::sleep(Duration::from_millis(300));
 
     let started = Instant::now();
-    let mut conn = khor_node::host::connect(&dir, 80, 24).expect("the host takes a current attacher");
-    conn.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+    let mut conn =
+        khor_node::host::connect(&dir, 80, 24).expect("the host takes a current attacher");
+    conn.set_read_timeout(Some(Duration::from_millis(300)))
+        .unwrap();
     let mut got = Vec::new();
     let mut buf = [0u8; 65536];
     let until = Instant::now() + Duration::from_secs(2);
@@ -69,17 +74,48 @@ fn a_current_attacher_gets_the_snapshot_not_the_ring() {
     let _ = host.join();
 
     let text = String::from_utf8_lossy(&got);
-    eprintln!("the attacher was handed {} bytes, the first after {:?}", got.len(), first_byte_at);
-    assert!(got.len() < 400 * 1024, "the snapshot is bounded by the model's scrollback, not the ring: {} bytes", got.len());
-    assert!(text.contains("DONE-MARK"), "the screen's last line is there");
-    assert!(text.contains("flood-009999"), "the newest history line is there");
-    assert!(!text.contains("flood-005000"), "a line 5 000 rows up is past the model's history");
+    eprintln!(
+        "the attacher was handed {} bytes, the first after {:?}",
+        got.len(),
+        first_byte_at
+    );
+    assert!(
+        got.len() < 400 * 1024,
+        "the snapshot is bounded by the model's scrollback, not the ring: {} bytes",
+        got.len()
+    );
+    assert!(
+        text.contains("DONE-MARK"),
+        "the screen's last line is there"
+    );
+    assert!(
+        text.contains("flood-009999"),
+        "the newest history line is there"
+    );
+    assert!(
+        !text.contains("flood-005000"),
+        "a line 5 000 rows up is past the model's history"
+    );
     let done = text.find("DONE-MARK").unwrap();
-    for (mode, what) in [("\x1b[?1h", "application cursor keys"), ("\x1b[?2004h", "bracketed paste"), ("\x1b=", "the application keypad")] {
-        assert!(text.contains(mode), "{what} ({mode:?}) is set for the attacher");
+    for (mode, what) in [
+        ("\x1b[?1h", "application cursor keys"),
+        ("\x1b[?2004h", "bracketed paste"),
+        ("\x1b=", "the application keypad"),
+    ] {
+        assert!(
+            text.contains(mode),
+            "{what} ({mode:?}) is set for the attacher"
+        );
     }
-    assert!(text[..done].contains("\x1b[32m") || text[..done].contains("\x1b[0;32m"), "the history keeps its colours");
-    assert!(first_byte_at.unwrap() < Duration::from_millis(250), "a current attacher is not made to wait out the first-frame window: {:?}", first_byte_at);
+    assert!(
+        text[..done].contains("\x1b[32m") || text[..done].contains("\x1b[0;32m"),
+        "the history keeps its colours"
+    );
+    assert!(
+        first_byte_at.unwrap() < Duration::from_millis(250),
+        "a current attacher is not made to wait out the first-frame window: {:?}",
+        first_byte_at
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -137,14 +173,18 @@ fn a_re_attach_keeps_the_history_the_face_asked_for() {
     std::fs::write(root.join("later.go"), "").unwrap();
     let deadline = Instant::now() + Duration::from_secs(30);
     while std::fs::read_to_string(dir.join("last.txt")).unwrap_or_default() != "DONE-MARK" {
-        assert!(Instant::now() < deadline, "the stand-in never finished writing");
+        assert!(
+            Instant::now() < deadline,
+            "the stand-in never finished writing"
+        );
         std::thread::sleep(Duration::from_millis(100));
     }
     std::thread::sleep(Duration::from_millis(300));
 
     let again = khor_node::host::connect(&dir, 80, 24).expect("the face comes back");
     let mut conn = again;
-    conn.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+    conn.set_read_timeout(Some(Duration::from_millis(300)))
+        .unwrap();
     let mut got = Vec::new();
     let mut buf = [0u8; 65536];
     let until = Instant::now() + Duration::from_secs(2);
@@ -159,9 +199,21 @@ fn a_re_attach_keeps_the_history_the_face_asked_for() {
     let _ = host.join();
     let text = String::from_utf8_lossy(&got);
     let rows = text.matches("flood-").count();
-    eprintln!("the face came back to {rows} rows of flood ({} bytes)", got.len());
-    assert!(text.contains("DONE-MARK") && text.contains("flood-007999"), "the newest rows are there");
-    assert!(text.contains("flood-003100"), "a row 4 900 up is kept: the face asked for 5 000, not the host's 2 000");
-    assert!(!text.contains("flood-002900"), "a row 5 100 up is past what the face asked for");
+    eprintln!(
+        "the face came back to {rows} rows of flood ({} bytes)",
+        got.len()
+    );
+    assert!(
+        text.contains("DONE-MARK") && text.contains("flood-007999"),
+        "the newest rows are there"
+    );
+    assert!(
+        text.contains("flood-003100"),
+        "a row 4 900 up is kept: the face asked for 5 000, not the host's 2 000"
+    );
+    assert!(
+        !text.contains("flood-002900"),
+        "a row 5 100 up is past what the face asked for"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }

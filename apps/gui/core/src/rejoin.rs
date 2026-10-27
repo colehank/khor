@@ -131,7 +131,13 @@ pub fn again<T>(
     attach: impl Fn(&str, &str) -> Result<T, String>,
     told: impl Fn(Miss),
 ) -> Option<T> {
-    again_with(|| rejoin_once(root, machine, id), machine, left, attach, told)
+    again_with(
+        || rejoin_once(root, machine, id),
+        machine,
+        left,
+        attach,
+        told,
+    )
 }
 
 /// [`again`] with the reach itself given (`try_once`), so a test can
@@ -169,7 +175,11 @@ fn again_with<T>(
         }
         wait_since(seen, beat);
         // After a kick the ladder starts again: new ears are a new road.
-        beat = if kicked() != seen { FIRST } else { (beat * 2).min(LONGEST) };
+        beat = if kicked() != seen {
+            FIRST
+        } else {
+            (beat * 2).min(LONGEST)
+        };
     }
 }
 
@@ -255,7 +265,10 @@ mod tests {
         assert!(got.is_some());
         let t = tries.lock().unwrap();
         let gap = t[3] - t[2];
-        assert!(gap < Duration::from_millis(500), "the try after the kick came {gap:?} later");
+        assert!(
+            gap < Duration::from_millis(500),
+            "the try after the kick came {gap:?} later"
+        );
     }
 
     /// An attachment nobody holds is not asked for again.
@@ -263,7 +276,14 @@ mod tests {
     fn a_left_attachment_is_not_asked_again() {
         let left = Arc::new(AtomicBool::new(true));
         let root = std::env::temp_dir().join("khor-rejoin-left-never-opened");
-        let got: Option<()> = again(&root, "far", &SessionId("x".into()), &left, |_, _| Ok(()), |_| {});
+        let got: Option<()> = again(
+            &root,
+            "far",
+            &SessionId("x".into()),
+            &left,
+            |_, _| Ok(()),
+            |_| {},
+        );
         assert!(got.is_none());
         assert!(!root.exists(), "nothing was opened for it");
     }

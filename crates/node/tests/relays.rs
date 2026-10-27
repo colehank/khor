@@ -262,7 +262,9 @@ fn a_relay_key_reaches_the_bind_and_nothing_that_is_published() {
 
     // Removing the relay takes its key with it: adding it back bare
     // gives a bare relay, not the old key resurrected.
-    again.set_relays(&[], false).expect("clearing should be allowed");
+    again
+        .set_relays(&[], false)
+        .expect("clearing should be allowed");
     again
         .set_relays(&[Relay::bare(MINE)], false)
         .expect("re-adding should be allowed");

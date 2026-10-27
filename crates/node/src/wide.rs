@@ -94,7 +94,9 @@ pub type WideLog = (ChannelLog, Vec<Option<WideFace>>);
 /// what a fate is kept under. `None` for anything that is not files.
 fn bytes(m: &Message) -> Option<Vec<&str>> {
     match &m.body {
-        MsgBody::Files(fs) if !fs.is_empty() => Some(fs.iter().map(|f| f.digest.as_str()).collect()),
+        MsgBody::Files(fs) if !fs.is_empty() => {
+            Some(fs.iter().map(|f| f.digest.as_str()).collect())
+        }
         _ => None,
     }
 }
@@ -150,7 +152,9 @@ fn face_of(m: &Message, me: &str, members: &[DeviceInfo], kept: &Kept<'_>) -> Op
     }
     let to: Vec<&DeviceInfo> = members.iter().filter(|d| d.id != m.from.id).collect();
     Some(WideFace {
-        here: (m.from.id != me).then(|| kept.fate(m, me).cloned()).flatten(),
+        here: (m.from.id != me)
+            .then(|| kept.fate(m, me).cloned())
+            .flatten(),
         got: to
             .iter()
             .filter(|d| kept.fate(m, &d.id).is_some_and(|f| f.step == Step::Landed))
@@ -160,7 +164,10 @@ fn face_of(m: &Message, me: &str, members: &[DeviceInfo], kept: &Kept<'_>) -> Op
 }
 
 impl Node {
-    pub fn record_command(&self, record: &khor_sync::chat::CommandRecord) -> Result<String, String> {
+    pub fn record_command(
+        &self,
+        record: &khor_sync::chat::CommandRecord,
+    ) -> Result<String, String> {
         let id = self.chat.command(BROADCAST, record)?;
         let _ = self.emit_row_of(&khor_core::SessionId(BROADCAST.to_owned()));
         Ok(id)
@@ -205,7 +212,9 @@ impl KindSurface for WideKind {
         let seen = node.seen_loaded()?;
         let watermark = seen.doc.watermark(BROADCAST);
         let msgs = node.chat.log(BROADCAST)?.messages;
-        let mut row: Session = node.chat.row_from(BROADCAST, node.device(), &msgs, watermark, Some(&seen.doc));
+        let mut row: Session =
+            node.chat
+                .row_from(BROADCAST, node.device(), &msgs, watermark, Some(&seen.doc));
         row.title = msg::broadcast_title().to_owned();
         // The latest message still standing speaks, from this machine's
         // seat (the module head): a file to this machine still moving or
@@ -349,7 +358,10 @@ mod tests {
         .unwrap();
         let r = Scratch(p);
         let n = Node::open(r.to_path_buf()).unwrap();
-        let far = Sender { id: "dd".repeat(32), name: "far".into() };
+        let far = Sender {
+            id: "dd".repeat(32),
+            name: "far".into(),
+        };
         let loaded = n.devices_loaded().unwrap();
         loaded.doc.upsert(&far.id, &far.name, &[]).unwrap();
         let mut store = loaded.store;
@@ -361,19 +373,36 @@ mod tests {
     fn plant(r: &std::path::Path, far: &ChatDoc) {
         let dir = wide_dir(r, BROADCAST).unwrap();
         fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("u-000000000000fafa-00000000.loro"), far.changes_since(&Default::default()).unwrap()).unwrap();
+        fs::write(
+            dir.join("u-000000000000fafa-00000000.loro"),
+            far.changes_since(&Default::default()).unwrap(),
+        )
+        .unwrap();
     }
 
     fn bytes_ref(name: &str) -> FileRef {
-        FileRef { name: name.into(), size: 6, digest: "ef".repeat(32), holder: String::new() }
+        FileRef {
+            name: name.into(),
+            size: 6,
+            digest: "ef".repeat(32),
+            holder: String::new(),
+        }
     }
 
     fn fate(step: Step, landed: &str) -> Fate {
         Fate {
             step,
             moved: 0,
-            landed: if landed.is_empty() { Vec::new() } else { vec![landed.to_owned()] },
-            why: if step == Step::Failed { "broke".into() } else { String::new() },
+            landed: if landed.is_empty() {
+                Vec::new()
+            } else {
+                vec![landed.to_owned()]
+            },
+            why: if step == Step::Failed {
+                "broke".into()
+            } else {
+                String::new()
+            },
             via: String::new(),
         }
     }
@@ -389,15 +418,24 @@ mod tests {
         let (r, n, far) = node("snapshot-seen");
         let doc = ChatDoc::new(0xfafa).unwrap();
         doc.tell(&far, "first visible message").unwrap();
-        let visible = crate::SeenMessage { id: doc.messages()[0].id.clone(), at_ms: doc.messages()[0].at };
+        let visible = crate::SeenMessage {
+            id: doc.messages()[0].id.clone(),
+            at_ms: doc.messages()[0].at,
+        };
         tick();
         doc.tell(&far, "not rendered yet").unwrap();
         plant(&r, &doc);
-        n.seen_snapshot(&SessionId(BROADCAST.into()), &[visible.clone()]).unwrap();
+        n.seen_snapshot(&SessionId(BROADCAST.into()), &[visible.clone()])
+            .unwrap();
         let rows = WideKind.rows(&n).unwrap();
         assert_eq!(rows[0].unread, 1);
-        n.seen_snapshot(&SessionId(BROADCAST.into()), &[visible]).unwrap();
-        assert_eq!(WideKind.rows(&n).unwrap()[0].unread, 1, "old receipts never move backwards");
+        n.seen_snapshot(&SessionId(BROADCAST.into()), &[visible])
+            .unwrap();
+        assert_eq!(
+            WideKind.rows(&n).unwrap()[0].unread,
+            1,
+            "old receipts never move backwards"
+        );
         n.seen(&SessionId(BROADCAST.into())).unwrap();
         assert_eq!(WideKind.rows(&n).unwrap()[0].unread, 0);
     }
@@ -408,16 +446,27 @@ mod tests {
         n.note_here("@unknown:/missing ordinary text", &[]).unwrap();
         let log = n.log(BROADCAST).unwrap();
         assert!(log.messages[0].to.is_empty());
-        assert_eq!(log.messages[0].body, MsgBody::Text("@unknown:/missing ordinary text".into()));
+        assert_eq!(
+            log.messages[0].body,
+            MsgBody::Text("@unknown:/missing ordinary text".into())
+        );
     }
 
     fn word(n: &Node) -> State {
-        WideKind.rows(n).unwrap().first().expect("the broadcast row stands").state.state
+        WideKind
+            .rows(n)
+            .unwrap()
+            .first()
+            .expect("the broadcast row stands")
+            .state
+            .state
     }
 
     /// Bubble `i`'s fate on this machine, as the face reads it.
     fn here(n: &Node, i: usize) -> Option<Step> {
-        n.wide_log(BROADCAST).unwrap().1[i].as_ref().and_then(|f| f.here.as_ref().map(|f| f.step))
+        n.wide_log(BROADCAST).unwrap().1[i]
+            .as_ref()
+            .and_then(|f| f.here.as_ref().map(|f| f.step))
     }
 
     /// **The same bytes landed later retire the old 中断** (rule 2), and
@@ -431,18 +480,39 @@ mod tests {
         far.post(&who, "", &[], &[bytes_ref("a.bin")]).unwrap();
         plant(&r, &far);
         let old = far.messages()[0].id.clone();
-        n.chat.set_fate(BROADCAST, &old, &fate(Step::Failed, "")).unwrap();
-        assert_eq!(word(&n), State::Errored, "control: the newest file broke here");
+        n.chat
+            .set_fate(BROADCAST, &old, &fate(Step::Failed, ""))
+            .unwrap();
+        assert_eq!(
+            word(&n),
+            State::Errored,
+            "control: the newest file broke here"
+        );
         assert_eq!(here(&n, 0), Some(Step::Failed));
 
         tick();
-        far.post(&who, "", &[], &[bytes_ref("a-again.bin")]).unwrap();
+        far.post(&who, "", &[], &[bytes_ref("a-again.bin")])
+            .unwrap();
         plant(&r, &far);
         let new = far.messages()[1].id.clone();
-        n.chat.set_fate(BROADCAST, &new, &fate(Step::Landed, "/drop/a-again.bin")).unwrap();
-        assert_eq!(word(&n), State::Done, "the newest landed: the row is 未看, the old break presses nothing");
-        assert_eq!(here(&n, 0), Some(Step::Landed), "the old bubble reads landed: the same bytes are here");
-        assert_eq!(n.wide_log(BROADCAST).unwrap().1[0].as_ref().unwrap().got, 1, "and counts this machine");
+        n.chat
+            .set_fate(BROADCAST, &new, &fate(Step::Landed, "/drop/a-again.bin"))
+            .unwrap();
+        assert_eq!(
+            word(&n),
+            State::Done,
+            "the newest landed: the row is 未看, the old break presses nothing"
+        );
+        assert_eq!(
+            here(&n, 0),
+            Some(Step::Landed),
+            "the old bubble reads landed: the same bytes are here"
+        );
+        assert_eq!(
+            n.wide_log(BROADCAST).unwrap().1[0].as_ref().unwrap().got,
+            1,
+            "and counts this machine"
+        );
         n.seen(&SessionId(BROADCAST.into())).unwrap();
         assert_eq!(word(&n), State::Idle, "looked at: 空闲");
     }
@@ -456,14 +526,28 @@ mod tests {
         far.post(&who, "", &[], &[bytes_ref("big.bin")]).unwrap();
         plant(&r, &far);
         let id = far.messages()[0].id.clone();
-        n.chat.set_fate(BROADCAST, &id, &fate(Step::Moving, "")).unwrap();
-        assert_eq!(word(&n), State::Busy, "the newest file is moving here: 忙碌, although nobody here has seen it");
+        n.chat
+            .set_fate(BROADCAST, &id, &fate(Step::Moving, ""))
+            .unwrap();
+        assert_eq!(
+            word(&n),
+            State::Busy,
+            "the newest file is moving here: 忙碌, although nobody here has seen it"
+        );
 
         tick();
         far.tell(&who, "did it arrive?").unwrap();
         plant(&r, &far);
-        assert_eq!(word(&n), State::Done, "the newest message is a line nobody here has seen: 未看");
-        assert_eq!(here(&n, 0), Some(Step::Moving), "the file's own bubble still says 忙碌");
+        assert_eq!(
+            word(&n),
+            State::Done,
+            "the newest message is a line nobody here has seen: 未看"
+        );
+        assert_eq!(
+            here(&n, 0),
+            Some(Step::Moving),
+            "the file's own bubble still says 忙碌"
+        );
     }
 
     /// **An offer never says 待批** (rule 3): a broadcast file this
@@ -475,8 +559,16 @@ mod tests {
         far.post(&who, "", &[], &[bytes_ref("maybe.bin")]).unwrap();
         plant(&r, &far);
         assert_eq!(here(&n, 0), None, "never answered");
-        assert_eq!(word(&n), State::Done, "a file one may take: 未看, never 待批");
+        assert_eq!(
+            word(&n),
+            State::Done,
+            "a file one may take: 未看, never 待批"
+        );
         n.seen(&SessionId(BROADCAST.into())).unwrap();
-        assert_eq!(word(&n), State::Idle, "looked at and still not taken: 空闲, nothing waits");
+        assert_eq!(
+            word(&n),
+            State::Idle,
+            "looked at and still not taken: 空闲, nothing waits"
+        );
     }
 }

@@ -32,10 +32,13 @@ async fn a_file_pulls_at_the_roads_pace_not_a_slice_per_round_trip() {
     let src = p.ra.0.join("big.bin");
     std::fs::write(&src, &payload).unwrap();
     let began = Instant::now();
-    let id = tokio::time::timeout(Duration::from_secs(120), p.alpha.post("", std::slice::from_ref(&src)))
-        .await
-        .expect("a post must not hang")
-        .unwrap();
+    let id = tokio::time::timeout(
+        Duration::from_secs(120),
+        p.alpha.post("", std::slice::from_ref(&src)),
+    )
+    .await
+    .expect("a post must not hang")
+    .unwrap();
     let tid = khor_node::transfer::TransferKind::session_id(&id);
     tokio::time::timeout(Duration::from_secs(120), p.beta.sync_now())
         .await
@@ -54,7 +57,8 @@ async fn a_file_pulls_at_the_roads_pace_not_a_slice_per_round_trip() {
     let began = Instant::now();
     let (total, _, bytes, cut) = tokio::time::timeout(
         Duration::from_secs(300),
-        p.beta.read_all("alpha", &view.display().to_string(), 4 << 20),
+        p.beta
+            .read_all("alpha", &view.display().to_string(), 4 << 20),
     )
     .await
     .expect("a preview must not hang")

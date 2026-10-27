@@ -57,7 +57,12 @@ pub async fn relay(lab: &Lab, tag: &str, name: &str, rtt: Option<Duration>) -> R
     // connections (scratch::local_relay).
     std::thread::spawn(move || for _ in lines.map_while(Result::ok) {});
     eprintln!("[netlab] relay {name} at {url}");
-    Relay { url, dev, _home: home, _child: Reaped(child) }
+    Relay {
+        url,
+        dev,
+        _home: home,
+        _child: Reaped(child),
+    }
 }
 
 /// Stand-ins for n0's relays: HTTPS on 443 and QUIC address discovery on
@@ -94,8 +99,16 @@ pub async fn qad_relays_dual(lab: &Lab, tag: &str, names: &[&str]) -> QadRelays 
     qad_relays_on(lab, tag, names, None, RouterPreset::Public).await
 }
 
-async fn qad_relays_on(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Duration>, preset: RouterPreset) -> QadRelays {
-    use iroh_relay::server::{CertConfig, QuicConfig, RelayConfig, Server, ServerConfig, TlsConfig};
+async fn qad_relays_on(
+    lab: &Lab,
+    tag: &str,
+    names: &[&str],
+    rtt: Option<Duration>,
+    preset: RouterPreset,
+) -> QadRelays {
+    use iroh_relay::server::{
+        CertConfig, QuicConfig, RelayConfig, Server, ServerConfig, TlsConfig,
+    };
     let mut devs = vec![];
     for name in names {
         let dc = lab
@@ -113,20 +126,25 @@ async fn qad_relays_on(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Duratio
     let ips: Vec<std::net::Ipv4Addr> = devs.iter().map(|d| d.ip().unwrap()).collect();
     let ip6s: Vec<Option<std::net::Ipv6Addr>> = devs.iter().map(|d| d.ip6()).collect();
     let home = scratch(&format!("{tag}-qad"));
-    let names: Vec<String> =
-        ips.iter().map(|ip| ip.to_string()).chain(ip6s.iter().flatten().map(|ip| ip.to_string())).collect();
+    let names: Vec<String> = ips
+        .iter()
+        .map(|ip| ip.to_string())
+        .chain(ip6s.iter().flatten().map(|ip| ip.to_string()))
+        .collect();
     let made = rcgen::generate_simple_self_signed(names).unwrap();
     let ca = home.0.join("qad-ca.pem");
     std::fs::write(&ca, made.cert.pem()).unwrap();
     let key = rustls::pki_types::PrivateKeyDer::from(rustls::pki_types::PrivatePkcs8KeyDer::from(
         made.signing_key.serialize_der(),
     ));
-    let tls = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(rustls::crypto::ring::default_provider()))
-        .with_safe_default_protocol_versions()
-        .unwrap()
-        .with_no_client_auth()
-        .with_single_cert(vec![made.cert.der().clone()], key)
-        .unwrap();
+    let tls = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(vec![made.cert.der().clone()], key)
+    .unwrap();
     let mut servers = vec![];
     let mut urls = vec![];
     for ((dev, ip), ip6) in devs.iter().zip(&ips).zip(&ip6s) {
@@ -140,7 +158,12 @@ async fn qad_relays_on(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Duratio
         let task = dev
             .spawn(move |_| async move {
                 let mut relay = RelayConfig::new((bind, 80));
-                relay.tls = Some(TlsConfig::new((bind, 443), CertConfig::Manual { server_config: tls.clone() }));
+                relay.tls = Some(TlsConfig::new(
+                    (bind, 443),
+                    CertConfig::Manual {
+                        server_config: tls.clone(),
+                    },
+                ));
                 let mut cfg = ServerConfig::default();
                 cfg.relay = Some(relay);
                 let mut quic = QuicConfig::new((bind, 7842));
@@ -159,9 +182,20 @@ async fn qad_relays_on(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Duratio
             urls.push(format!("https://[{ip6}]:443"));
         }
     }
-    let env = urls.iter().map(|u| format!("{u}?qad=7842")).collect::<Vec<_>>().join(",");
+    let env = urls
+        .iter()
+        .map(|u| format!("{u}?qad=7842"))
+        .collect::<Vec<_>>()
+        .join(",");
     eprintln!("[netlab] QAD stand-ins {env}");
-    QadRelays { env, ca, urls, devs, _home: home, _servers: servers }
+    QadRelays {
+        env,
+        ca,
+        urls,
+        devs,
+        _home: home,
+        _servers: servers,
+    }
 }
 
 impl QadRelays {
@@ -169,7 +203,10 @@ impl QadRelays {
     /// QAD port included: the shape of the Beijing relay once it answers
     /// address discovery on UDP 7842.
     pub fn entries(&self) -> Vec<serde_json::Value> {
-        self.urls.iter().map(|u| serde_json::json!({ "url": u, "qad": 7842 })).collect()
+        self.urls
+            .iter()
+            .map(|u| serde_json::json!({ "url": u, "qad": 7842 }))
+            .collect()
     }
 }
 
@@ -194,8 +231,17 @@ pub struct LabNode {
 }
 
 /// Starts `khor serve` as `name` on `dev`, homed on `relays` only.
-pub async fn node(tag: &str, dev: Device, name: &str, relays: &[&Relay], env: &[(&str, &str)]) -> LabNode {
-    let list = relays.iter().map(|r| serde_json::json!({ "url": r.url })).collect();
+pub async fn node(
+    tag: &str,
+    dev: Device,
+    name: &str,
+    relays: &[&Relay],
+    env: &[(&str, &str)],
+) -> LabNode {
+    let list = relays
+        .iter()
+        .map(|r| serde_json::json!({ "url": r.url }))
+        .collect();
     node_on(tag, dev, name, list, env).await
 }
 
@@ -225,12 +271,24 @@ pub async fn node_on(
     let child = dev.spawn_command_sync(cmd).unwrap();
     let began = Instant::now();
     while !home.0.join(".khor/endpoint.json").exists() {
-        assert!(began.elapsed() < Duration::from_secs(60), "{name} stands up");
+        assert!(
+            began.elapsed() < Duration::from_secs(60),
+            "{name} stands up"
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    let id = Node::open_as(home.0.clone(), name).unwrap().device_str().to_owned();
+    let id = Node::open_as(home.0.clone(), name)
+        .unwrap()
+        .device_str()
+        .to_owned();
     eprintln!("[netlab] {name} up: v4 {:?} v6 {:?}", dev.ip(), dev.ip6());
-    LabNode { name: name.to_owned(), id, dev, home, serve: Some(Reaped(child)) }
+    LabNode {
+        name: name.to_owned(),
+        id,
+        dev,
+        home,
+        serve: Some(Reaped(child)),
+    }
 }
 
 impl LabNode {
@@ -253,7 +311,12 @@ impl LabNode {
     pub async fn link(&self, peer: &LabNode) -> Option<Link> {
         let id = peer.id.clone();
         self.with(move |n| async move {
-            n.links().await.ok()?.into_iter().find(|(d, _)| *d == id).map(|(_, l)| l)
+            n.links()
+                .await
+                .ok()?
+                .into_iter()
+                .find(|(d, _)| *d == id)
+                .map(|(_, l)| l)
         })
         .await
     }
@@ -326,7 +389,11 @@ impl LabNode {
         let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
         v["relays"]
             .as_array()
-            .map(|a| a.iter().filter_map(|r| r.as_str().map(str::to_owned)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|r| r.as_str().map(str::to_owned))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 }
@@ -342,7 +409,10 @@ fn read_jsonl(path: &Path) -> Vec<serde_json::Value> {
 /// `joiner` pairs with `host`'s ticket, retried for two minutes (both
 /// have to be on a relay before either is found there).
 pub async fn pair(host: &LabNode, joiner: &LabNode) -> Duration {
-    let ticket = host.with(|n| async move { n.invite() }).await.expect("a ticket");
+    let ticket = host
+        .with(|n| async move { n.invite() })
+        .await
+        .expect("a ticket");
     let began = Instant::now();
     loop {
         let t = ticket.clone();
@@ -367,7 +437,10 @@ pub async fn pair(host: &LabNode, joiner: &LabNode) -> Duration {
 pub async fn mesh(nodes: &[&LabNode]) {
     for joiner in &nodes[1..] {
         let took = pair(nodes[0], joiner).await;
-        eprintln!("[netlab] {} paired with {} in {took:?}", joiner.name, nodes[0].name);
+        eprintln!(
+            "[netlab] {} paired with {} in {took:?}",
+            joiner.name, nodes[0].name
+        );
     }
     let ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
     let began = Instant::now();
@@ -383,7 +456,11 @@ pub async fn mesh(nodes: &[&LabNode]) {
             if known {
                 break;
             }
-            assert!(began.elapsed() < Duration::from_secs(90), "{} knows every machine", n.name);
+            assert!(
+                began.elapsed() < Duration::from_secs(90),
+                "{} knows every machine",
+                n.name
+            );
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
@@ -391,11 +468,22 @@ pub async fn mesh(nodes: &[&LabNode]) {
 
 /// A road word with its rtt, for the result lines.
 pub fn word(l: &Link) -> String {
-    let via = l.via.as_deref().map(|v| format!(" via {}", &v[..v.len().min(8)])).unwrap_or_default();
-    format!("{:?}{via} {} ms", l.hop, l.rtt_ms.map_or("?".into(), |r| r.to_string()))
+    let via = l
+        .via
+        .as_deref()
+        .map(|v| format!(" via {}", &v[..v.len().min(8)]))
+        .unwrap_or_default();
+    format!(
+        "{:?}{via} {} ms",
+        l.hop,
+        l.rtt_ms.map_or("?".into(), |r| r.to_string())
+    )
 }
 
 /// One result line, the shape `scripts/netlab.sh` collects for the report.
 pub fn result(scenario: &str, verdict: bool, what: impl std::fmt::Display) {
-    eprintln!("[netlab-result] {scenario} | {} | {what}", if verdict { "green" } else { "red" });
+    eprintln!(
+        "[netlab-result] {scenario} | {} | {what}",
+        if verdict { "green" } else { "red" }
+    );
 }

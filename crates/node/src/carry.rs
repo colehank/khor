@@ -77,7 +77,9 @@ impl Node {
     /// The carried address of `id`, when a link to it is up.
     pub(crate) fn carried_addr(&self, id: &str) -> Option<iroh::TransportAddr> {
         let peer: iroh::EndpointId = id.parse().ok()?;
-        self.carry.has(&peer).then(|| khor_net::carry::transport_addr(&peer))
+        self.carry
+            .has(&peer)
+            .then(|| khor_net::carry::transport_addr(&peer))
     }
 
     /// The handle a carrying task keeps to reach [`let_path_go`]: weak, so
@@ -102,7 +104,12 @@ impl Node {
     /// when given, is the road's password or key passphrase, kept in this
     /// machine's secret store as `khor add` keeps one (round ROAD-4); the
     /// sweep drops it once this machine no longer carries the row.
-    pub fn set_carried(&self, machine: &str, road: Option<&Dest>, secret: Option<&str>) -> Result<String, String> {
+    pub fn set_carried(
+        &self,
+        machine: &str,
+        road: Option<&Dest>,
+        secret: Option<&str>,
+    ) -> Result<String, String> {
         let (channel, id) = self.resolve(machine)?;
         let id = id.hex();
         let loaded = self.devices_loaded()?;
@@ -192,20 +199,34 @@ impl Node {
     /// this, and that is someone who logged in here; what the link then
     /// carries still meets iroh's handshake and the roster's gate.
     pub(crate) async fn carry_hosted(&self, carrier: &str) -> Result<(String, String), String> {
-        let peer: iroh::EndpointId = carrier.parse().map_err(|_| msg::carry_not_a_machine(carrier))?;
+        let peer: iroh::EndpointId = carrier
+            .parse()
+            .map_err(|_| msg::carry_not_a_machine(carrier))?;
         if !self.carry_on() || self.carrying().is_none() {
             return Err(msg::carry_off().to_owned());
         }
-        if self.devices()?.iter().any(|d| d.id == carrier && d.sponsor.is_some()) {
+        if self
+            .devices()?
+            .iter()
+            .any(|d| d.id == carrier && d.sponsor.is_some())
+        {
             return Err(msg::carry_not_a_machine(carrier));
         }
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .map_err(|e| e.to_string())?;
-        let addr = listener.local_addr().map_err(|e| e.to_string())?.to_string();
+        let addr = listener
+            .local_addr()
+            .map_err(|e| e.to_string())?
+            .to_string();
         let cookie = crate::link::fresh_hex()?;
         let want = format!("{cookie}\n");
-        let (links, wires, id, node) = (self.carry.clone(), self.wires.clone(), carrier.to_owned(), self.weak());
+        let (links, wires, id, node) = (
+            self.carry.clone(),
+            self.wires.clone(),
+            carrier.to_owned(),
+            self.weak(),
+        );
         tokio::spawn(async move {
             let claimed = tokio::time::timeout(CLAIM_WITHIN, async {
                 loop {
@@ -225,10 +246,22 @@ impl Node {
                 let attached = links.attach(peer, Carrier::Ssh, r, w);
                 offer_path(&node, peer).await;
                 wires.forgive(&id);
-                wires.note(Some(&id), crate::journal::What::Carry { up: true, why: None });
+                wires.note(
+                    Some(&id),
+                    crate::journal::What::Carry {
+                        up: true,
+                        why: None,
+                    },
+                );
                 attached.ended().await;
                 let_path_go(&node, &links, peer).await;
-                wires.note(Some(&id), crate::journal::What::Carry { up: false, why: None });
+                wires.note(
+                    Some(&id),
+                    crate::journal::What::Carry {
+                        up: false,
+                        why: None,
+                    },
+                );
             }
         });
         Ok((addr, cookie))
@@ -262,7 +295,9 @@ impl Node {
                 if running.contains_key(&id) {
                     continue;
                 }
-                let Ok(peer) = id.parse::<iroh::EndpointId>() else { continue };
+                let Ok(peer) = id.parse::<iroh::EndpointId>() else {
+                    continue;
+                };
                 let one = self.one_carry(peer, dest.clone());
                 let task = tokio::spawn(one.run(None));
                 running.insert(id, (dest, task.abort_handle()));
@@ -300,7 +335,11 @@ impl Node {
         let started = Instant::now();
         let mut up_since = None;
         while started.elapsed() < SETTLED * 6 {
-            up_since = if self.carry.has(&peer) { up_since.or(Some(Instant::now())) } else { None };
+            up_since = if self.carry.has(&peer) {
+                up_since.or(Some(Instant::now()))
+            } else {
+                None
+            };
             if up_since.is_some_and(|t| t.elapsed() >= SETTLED) {
                 return Ok(());
             }
@@ -316,7 +355,11 @@ impl Node {
 /// idle. Nothing when a newer link to the machine took its place (it rides
 /// the same path) or no resident is serving. The ears are read at the end,
 /// not when the link came up: fresh ears move the links to a new endpoint.
-pub(crate) async fn let_path_go(node: &std::sync::Weak<Node>, links: &khor_net::carry::Links, peer: iroh::EndpointId) {
+pub(crate) async fn let_path_go(
+    node: &std::sync::Weak<Node>,
+    links: &khor_net::carry::Links,
+    peer: iroh::EndpointId,
+) {
     if links.has(&peer) {
         return;
     }
@@ -331,8 +374,11 @@ pub(crate) async fn let_path_go(node: &std::sync::Weak<Node>, links: &khor_net::
 /// the next dial.
 pub(crate) async fn offer_path(node: &std::sync::Weak<Node>, peer: iroh::EndpointId) {
     if let Some(ep) = node.upgrade().and_then(|n| n.current_ears()) {
-        ep.offer_addrs(iroh::EndpointAddr::from_parts(peer, [khor_net::carry::transport_addr(&peer)]))
-            .await;
+        ep.offer_addrs(iroh::EndpointAddr::from_parts(
+            peer,
+            [khor_net::carry::transport_addr(&peer)],
+        ))
+        .await;
     }
 }
 
@@ -351,20 +397,33 @@ impl OneCarry {
     /// flow's session, which also ends when another link to the machine
     /// took its place.
     async fn run(self, until: Option<Instant>) {
-        let OneCarry { links, wires, node, me, peer, to } = self;
+        let OneCarry {
+            links,
+            wires,
+            node,
+            me,
+            peer,
+            to,
+        } = self;
         let id = peer.to_string();
         let mut failures = 0u32;
         loop {
             let started = Instant::now();
             let mut ssh = tokio::process::Command::from(to.command("ssh"));
-            ssh.args(["-T", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3"])
-                .args(["-o", "ConnectTimeout=10"])
-                .arg(&to.host)
-                .arg(far_command(&me))
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .kill_on_drop(true);
+            ssh.args([
+                "-T",
+                "-o",
+                "ServerAliveInterval=15",
+                "-o",
+                "ServerAliveCountMax=3",
+            ])
+            .args(["-o", "ConnectTimeout=10"])
+            .arg(&to.host)
+            .arg(far_command(&me))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
             if let Ok(mut child) = ssh.spawn()
                 && let (Some(w), Some(r)) = (child.stdin.take(), child.stdout.take())
             {
@@ -374,13 +433,24 @@ impl OneCarry {
                     tokio::spawn(async move {
                         let mut all = Vec::new();
                         let _ = e.read_to_end(&mut all).await;
-                        String::from_utf8_lossy(&all).trim().lines().last().unwrap_or("").to_owned()
+                        String::from_utf8_lossy(&all)
+                            .trim()
+                            .lines()
+                            .last()
+                            .unwrap_or("")
+                            .to_owned()
                     })
                 });
                 let attached = links.attach(peer, Carrier::Ssh, r, w);
                 offer_path(&node, peer).await;
                 wires.forgive(&id);
-                wires.note(Some(&id), crate::journal::What::Carry { up: true, why: None });
+                wires.note(
+                    Some(&id),
+                    crate::journal::What::Carry {
+                        up: true,
+                        why: None,
+                    },
+                );
                 let ended = attached.ended();
                 tokio::pin!(ended);
                 let mut gone = false;
@@ -411,7 +481,11 @@ impl OneCarry {
             {
                 return;
             }
-            failures = if started.elapsed() >= LIVED { 0 } else { failures.saturating_add(1) };
+            failures = if started.elapsed() >= LIVED {
+                0
+            } else {
+                failures.saturating_add(1)
+            };
             tokio::time::sleep(backoff(failures)).await;
         }
     }
@@ -424,7 +498,10 @@ mod tests {
     #[test]
     fn the_carrier_backs_off_to_a_minute() {
         let s = |n| backoff(n).as_secs();
-        assert_eq!([s(0), s(1), s(2), s(3), s(4), s(5), s(9)], [2, 4, 8, 16, 32, 60, 60]);
+        assert_eq!(
+            [s(0), s(1), s(2), s(3), s(4), s(5), s(9)],
+            [2, 4, 8, 16, 32, 60, 60]
+        );
     }
 
     /// Round ROAD-4: a member this machine carries logs in by its road as
@@ -445,7 +522,10 @@ mod tests {
         let carried_by = |carrier: &str| {
             let loaded = n.devices_loaded().unwrap();
             loaded.doc.upsert(&member, "box", &[]).unwrap();
-            loaded.doc.set_carried(&member, Some(carrier), Some(&road.as_row())).unwrap();
+            loaded
+                .doc
+                .set_carried(&member, Some(carrier), Some(&road.as_row()))
+                .unwrap();
             let mut store = loaded.store;
             store.flush(&loaded.doc).unwrap();
             n.devices().unwrap()
@@ -453,7 +533,10 @@ mod tests {
         let kept = n.secrets_in_use(&carried_by(&me));
         assert!(kept.contains("box:2222"), "carried here: {kept:?}");
         let other = "ef".repeat(32);
-        assert!(n.secrets_in_use(&carried_by(&other)).is_empty(), "another machine keeps its own");
+        assert!(
+            n.secrets_in_use(&carried_by(&other)).is_empty(),
+            "another machine keeps its own"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

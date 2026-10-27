@@ -172,7 +172,9 @@ pub fn get(key: &str) -> Result<Option<String>, String> {
 pub fn forget(key: &str) -> Result<(), String> {
     if let Some(dir) = door() {
         return match std::fs::remove_file(door_file(&dir, key)) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(msg::secret_store_failed(e.to_string())),
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(msg::secret_store_failed(e.to_string()))
+            }
             _ => Ok(()),
         };
     }
@@ -377,7 +379,11 @@ mod tests {
         assert_eq!(went, 1, "only the row that left goes");
         assert_eq!(dropped.into_inner(), ["gone-box"]);
         let names: Vec<String> = ledger(&root).into_iter().map(|(_, n)| n).collect();
-        assert_eq!(names, ["live-box:2222", "adding-box"], "an add in progress is spared");
+        assert_eq!(
+            names,
+            ["live-box:2222", "adding-box"],
+            "an add in progress is spared"
+        );
         // Keeping a name again moves it, it does not double it.
         note(&root, "adding-box", SWEEP_GRACE_MS + 2).unwrap();
         assert_eq!(ledger(&root).len(), 2);

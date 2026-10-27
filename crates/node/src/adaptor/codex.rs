@@ -203,8 +203,13 @@ impl Codex {
     /// A writer belongs to a thread, possibly inside a shared daemon. It is
     /// never permission to terminate that daemon or guess a terminal PID.
     pub(crate) fn has_writer(&self, uuid: &str) -> Result<bool, String> {
-        writer_owned(&self.root.join("thread-writer-locks").join(format!("{uuid}.lock")))
-            .map_err(|error| error.to_string())
+        writer_owned(
+            &self
+                .root
+                .join("thread-writer-locks")
+                .join(format!("{uuid}.lock")),
+        )
+        .map_err(|error| error.to_string())
     }
 
     /// The rollout behind a lossy khor leaf, by name alone.
@@ -544,7 +549,9 @@ impl Codex {
             };
             let (word, at_ms) =
                 last_word(&rollout.path).unwrap_or((State::Idle, rollout.started_ms));
-            if !meta.is_subagent { sweep.terminal_threads.push(meta.session_id.clone()); }
+            if !meta.is_subagent {
+                sweep.terminal_threads.push(meta.session_id.clone());
+            }
             sweep.rows.push(Sighting {
                 vendor_session_id: meta.session_id.clone(),
                 title: title_of(meta.cwd.as_deref()),
@@ -559,11 +566,21 @@ impl Codex {
         if let Ok(entries) = std::fs::read_dir(locks) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let Some(id) = path.file_stem().and_then(|s| s.to_str()).filter(|id| id.len() == 36 && crate::codex_terminal::metadata_title(id)) else { continue; };
-                if path.extension().and_then(|s| s.to_str()) != Some("lock") || rollout_ids.contains(id) { continue; }
+                let Some(id) = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .filter(|id| id.len() == 36 && crate::codex_terminal::metadata_title(id))
+                else {
+                    continue;
+                };
+                if path.extension().and_then(|s| s.to_str()) != Some("lock")
+                    || rollout_ids.contains(id)
+                {
+                    continue;
+                }
                 match writer_owned(&path) {
                     Ok(true) => sweep.pending_threads.push(id.to_owned()),
-                    Ok(false) => {},
+                    Ok(false) => {}
                     Err(_) => sweep.unmapped += 1,
                 }
             }
@@ -1164,7 +1181,10 @@ mod current {
         std::fs::write(&bad, "not valid metadata\n").unwrap();
         let found = codex.sweep(&Procs::of([]));
         assert!(found.rows.is_empty());
-        assert!(found.pending_threads.is_empty(), "an unreadable existing rollout is not a new idle conversation");
+        assert!(
+            found.pending_threads.is_empty(),
+            "an unreadable existing rollout is not a new idle conversation"
+        );
         assert_eq!(found.unmapped, 1);
     }
 
@@ -1176,13 +1196,22 @@ mod current {
         // A shared daemon owns the writer, but the interactive client is
         // inside khor's terminal. Bootstrap took 66 seconds on the real TUI.
         for name in ["codex", "codex.exe", "CODEX.EXE"] {
-            let procs = Procs::of([(700, Proc {
-                name: name.into(), started_ms: uuid_v7_ms(THREAD).unwrap() - 66_000,
-                cwd: Some("/project".into()), ppid: Some(500),
-            })]).with_commands([(700, vec![name.into()])]);
+            let procs = Procs::of([(
+                700,
+                Proc {
+                    name: name.into(),
+                    started_ms: uuid_v7_ms(THREAD).unwrap() - 66_000,
+                    cwd: Some("/project".into()),
+                    ppid: Some(500),
+                },
+            )])
+            .with_commands([(700, vec![name.into()])]);
             let found = Codex::at(home.0.clone()).sweep(&procs);
             assert_eq!(found.rows.len(), 1);
-            assert!(found.rows[0].pids.is_empty(), "birth time and cwd cannot identify a selected thread: {name}");
+            assert!(
+                found.rows[0].pids.is_empty(),
+                "birth time and cwd cannot identify a selected thread: {name}"
+            );
         }
     }
 
@@ -1195,9 +1224,12 @@ mod current {
         // TUI originator. Children inherit that originator and cwd too.
         for (path, source) in [
             (parent, serde_json::json!("vscode")),
-            (child, serde_json::json!({"subagent":{"thread_spawn":{
-                "parent_thread_id": THREAD, "depth": 1, "agent_path": "/root/review"
-            }}})),
+            (
+                child,
+                serde_json::json!({"subagent":{"thread_spawn":{
+                    "parent_thread_id": THREAD, "depth": 1, "agent_path": "/root/review"
+                }}}),
+            ),
         ] {
             let body = std::fs::read_to_string(&path).unwrap();
             let (first, rest) = body.split_once('\n').unwrap();
@@ -1209,24 +1241,54 @@ mod current {
         let _child_writer = home.writer(OTHER);
         let codex = Codex::at(home.0.clone());
         for name in ["codex", "codex.exe", "CODEX.EXE"] {
-            let procs = Procs::of([(700, Proc {
-                name: name.into(), started_ms: uuid_v7_ms(THREAD).unwrap() - 66_000,
-                cwd: Some("/project".into()), ppid: Some(500),
-            })]).with_commands([(700, vec![name.into()])]);
+            let procs = Procs::of([(
+                700,
+                Proc {
+                    name: name.into(),
+                    started_ms: uuid_v7_ms(THREAD).unwrap() - 66_000,
+                    cwd: Some("/project".into()),
+                    ppid: Some(500),
+                },
+            )])
+            .with_commands([(700, vec![name.into()])]);
             let rows = codex.sweep(&procs).rows;
             assert_eq!(rows.len(), 2, "subagents remain discoverable");
-            assert!(rows.iter().find(|r| r.vendor_session_id == THREAD).unwrap().pids.is_empty());
-            assert!(rows.iter().find(|r| r.vendor_session_id == OTHER).unwrap().pids.is_empty());
-            assert_eq!(codex.last_said(&crate::live::clean_leaf(THREAD)).as_deref(), Some("parent answer"));
+            assert!(
+                rows.iter()
+                    .find(|r| r.vendor_session_id == THREAD)
+                    .unwrap()
+                    .pids
+                    .is_empty()
+            );
+            assert!(
+                rows.iter()
+                    .find(|r| r.vendor_session_id == OTHER)
+                    .unwrap()
+                    .pids
+                    .is_empty()
+            );
+            assert_eq!(
+                codex.last_said(&crate::live::clean_leaf(THREAD)).as_deref(),
+                Some("parent answer")
+            );
         }
         drop(parent_writer);
-        let procs = Procs::of([(700, Proc {
-            name: "codex".into(), started_ms: uuid_v7_ms(OTHER).unwrap() - 66_000,
-            cwd: Some("/project".into()), ppid: Some(500),
-        })]).with_commands([(700, vec!["codex".into()])]);
+        let procs = Procs::of([(
+            700,
+            Proc {
+                name: "codex".into(),
+                started_ms: uuid_v7_ms(OTHER).unwrap() - 66_000,
+                cwd: Some("/project".into()),
+                ppid: Some(500),
+            },
+        )])
+        .with_commands([(700, vec!["codex".into()])]);
         let rows = codex.sweep(&procs).rows;
         assert_eq!(rows.len(), 1);
-        assert!(rows[0].pids.is_empty(), "a lone child is still not a terminal frontend");
+        assert!(
+            rows[0].pids.is_empty(),
+            "a lone child is still not a terminal frontend"
+        );
     }
 
     #[test]
@@ -1237,13 +1299,21 @@ mod current {
         let mut meta: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
         meta["payload"]["source"] = serde_json::json!({"subagent":"review"});
         std::fs::write(path, format!("{meta}\n")).unwrap();
-        let procs = Procs::of([(700, Proc {
-            name: "codex".into(), started_ms: uuid_v7_ms(THREAD).unwrap(),
-            cwd: Some("/project".into()), ppid: None,
-        })]);
+        let procs = Procs::of([(
+            700,
+            Proc {
+                name: "codex".into(),
+                started_ms: uuid_v7_ms(THREAD).unwrap(),
+                cwd: Some("/project".into()),
+                ppid: None,
+            },
+        )]);
         let found = Codex::at(home.0.clone()).sweep(&procs);
         assert!(found.rows.is_empty());
-        assert_eq!(found.unmapped, 0, "a known child is not an unreadable terminal");
+        assert_eq!(
+            found.unmapped, 0,
+            "a known child is not an unreadable terminal"
+        );
     }
 
     #[test]
@@ -1251,31 +1321,67 @@ mod current {
         let home = Home::new("tui-client-refusals");
         let path = home.rollout(THREAD, "", "");
         let _writer = home.writer(THREAD);
-        let proc = Proc { name: "codex".into(), started_ms: uuid_v7_ms(THREAD).unwrap() - 66_000,
-            cwd: Some("/project".into()), ppid: None };
+        let proc = Proc {
+            name: "codex".into(),
+            started_ms: uuid_v7_ms(THREAD).unwrap() - 66_000,
+            cwd: Some("/project".into()),
+            ppid: None,
+        };
         let base = Procs::of([(700, proc.clone())]).with_commands([(700, vec!["codex".into()])]);
         let codex = Codex::at(home.0.clone());
-        for argv in [vec!["codex", "app-server"], vec!["codex", "exec"], vec!["codex", "resume", THREAD]] {
-            let table = base.clone().with_commands([(700, argv.into_iter().map(str::to_owned).collect())]);
+        for argv in [
+            vec!["codex", "app-server"],
+            vec!["codex", "exec"],
+            vec!["codex", "resume", THREAD],
+        ] {
+            let table = base
+                .clone()
+                .with_commands([(700, argv.into_iter().map(str::to_owned).collect())]);
             assert!(codex.sweep(&table).rows[0].pids.is_empty());
         }
-        assert!(codex.sweep(&Procs::of([(700, proc.clone())])).rows[0].pids.is_empty(), "unknown command line");
-        for changed in [Proc { cwd: None, ..proc.clone() }, Proc { cwd: Some("/other".into()), ..proc.clone() },
-            Proc { started_ms: uuid_v7_ms(THREAD).unwrap() + 60_000, ..proc.clone() }] {
+        assert!(
+            codex.sweep(&Procs::of([(700, proc.clone())])).rows[0]
+                .pids
+                .is_empty(),
+            "unknown command line"
+        );
+        for changed in [
+            Proc {
+                cwd: None,
+                ..proc.clone()
+            },
+            Proc {
+                cwd: Some("/other".into()),
+                ..proc.clone()
+            },
+            Proc {
+                started_ms: uuid_v7_ms(THREAD).unwrap() + 60_000,
+                ..proc.clone()
+            },
+        ] {
             let table = Procs::of([(700, changed)]).with_commands([(700, vec!["codex".into()])]);
             assert!(codex.sweep(&table).rows[0].pids.is_empty());
         }
         let two = Procs::of([(700, proc.clone()), (701, proc)])
             .with_commands([(700, vec!["codex".into()]), (701, vec!["codex".into()])]);
-        assert!(codex.sweep(&two).rows[0].pids.is_empty(), "two clients in one directory");
+        assert!(
+            codex.sweep(&two).rows[0].pids.is_empty(),
+            "two clients in one directory"
+        );
         // A daemon can have several TUI-originated threads loaded in one cwd.
         home.rollout(OTHER, "", "");
         let other_writer = home.writer(OTHER);
-        assert!(codex.sweep(&base).rows.iter().all(|r| r.pids.is_empty()), "two loaded threads in one directory");
+        assert!(
+            codex.sweep(&base).rows.iter().all(|r| r.pids.is_empty()),
+            "two loaded threads in one directory"
+        );
         drop(other_writer);
         let body = std::fs::read_to_string(&path).unwrap();
         std::fs::write(path, body.replace("codex-tui", "Codex Desktop")).unwrap();
-        assert!(codex.sweep(&base).rows[0].pids.is_empty(), "a desktop thread is not the terminal's");
+        assert!(
+            codex.sweep(&base).rows[0].pids.is_empty(),
+            "a desktop thread is not the terminal's"
+        );
     }
 
     #[test]
@@ -1340,9 +1446,15 @@ mod current {
         let busy = found.rows.iter().filter(|r| r.word == State::Busy).count();
         if let Ok(pid) = std::env::var("KHOR_CODEX_PROBE_PID") {
             let pid: u32 = pid.parse().unwrap();
-            let thread = std::env::var("KHOR_CODEX_PROBE_THREAD").expect("explicit expected thread");
-            assert!(found.rows.iter().any(|r| r.vendor_session_id == thread && r.pids.contains(&pid)),
-                "the running TUI must be associated with its actual thread");
+            let thread =
+                std::env::var("KHOR_CODEX_PROBE_THREAD").expect("explicit expected thread");
+            assert!(
+                found
+                    .rows
+                    .iter()
+                    .any(|r| r.vendor_session_id == thread && r.pids.contains(&pid)),
+                "the running TUI must be associated with its actual thread"
+            );
         }
         let mut conversations = 0;
         for row in &found.rows {

@@ -634,7 +634,8 @@ impl Node {
                             .unwrap_or_else(|p| p.into_inner())
                             .remove(&recovery_root);
                         let mut saved: Saved = serde_json::from_slice(
-                            &fs::read(file(&recovery_root, &recovery_id)).map_err(|e| e.to_string())?,
+                            &fs::read(file(&recovery_root, &recovery_id))
+                                .map_err(|e| e.to_string())?,
                         )
                         .map_err(|e| e.to_string())?;
                         saved.record.status = "failed".into();

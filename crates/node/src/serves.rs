@@ -228,9 +228,21 @@ mod tests {
             seen(900001, 1, false, Some("/nfs/home/.khor-hosts/lecun")),
         ];
         let rs = residents(&ps, Path::new("/unused"));
-        assert_eq!(beside(&rs, Path::new(side), 999), Some(833241), "the keeper, not its child");
-        assert_eq!(beside(&rs, Path::new(side), 833241), None, "a keeper re-executed is itself");
-        assert_eq!(beside(&rs, Path::new("/nfs/home"), 999), None, "another store is not in the way");
+        assert_eq!(
+            beside(&rs, Path::new(side), 999),
+            Some(833241),
+            "the keeper, not its child"
+        );
+        assert_eq!(
+            beside(&rs, Path::new(side), 833241),
+            None,
+            "a keeper re-executed is itself"
+        );
+        assert_eq!(
+            beside(&rs, Path::new("/nfs/home"), 999),
+            None,
+            "another store is not in the way"
+        );
     }
 
     /// hinton the same morning: a keeper and its child, one resident —

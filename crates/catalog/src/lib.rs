@@ -21,7 +21,11 @@ include!(concat!(env!("OUT_DIR"), "/catalog.rs"));
 pub mod count {
     use std::fmt::Display;
 
-    fn pick<N: Display + PartialEq + From<u8>>(n: N, one: fn(N) -> String, many: fn(N) -> String) -> String {
+    fn pick<N: Display + PartialEq + From<u8>>(
+        n: N,
+        one: fn(N) -> String,
+        many: fn(N) -> String,
+    ) -> String {
         if n == N::from(1) { one(n) } else { many(n) }
     }
 
@@ -41,10 +45,18 @@ pub mod count {
         pick(n, |n| crate::one::up_day(n), |n| crate::cli::uptime_days(n))
     }
     pub fn up_hours(n: u64) -> String {
-        pick(n, |n| crate::one::up_hour(n), |n| crate::cli::uptime_hours(n))
+        pick(
+            n,
+            |n| crate::one::up_hour(n),
+            |n| crate::cli::uptime_hours(n),
+        )
     }
     pub fn lock_idle_after(n: u64) -> String {
-        pick(n, |n| crate::one::lock_idle_after(n), |n| crate::cli::lock_idle_after(n))
+        pick(
+            n,
+            |n| crate::one::lock_idle_after(n),
+            |n| crate::cli::lock_idle_after(n),
+        )
     }
 
     #[cfg(test)]

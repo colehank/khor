@@ -64,7 +64,10 @@ impl Frame {
     /// The same frame, give or take a pixel of rounding — what a window
     /// nobody touched reads back as.
     fn same(&self, o: &Frame) -> bool {
-        (self.x - o.x).abs() < 1.5 && (self.y - o.y).abs() < 1.5 && (self.w - o.w).abs() < 1.5 && (self.h - o.h).abs() < 1.5
+        (self.x - o.x).abs() < 1.5
+            && (self.y - o.y).abs() < 1.5
+            && (self.w - o.w).abs() < 1.5
+            && (self.h - o.h).abs() < 1.5
     }
 }
 
@@ -95,12 +98,27 @@ pub(crate) fn grow(from: Frame, area: Frame, want: f64, least: f64, scale: f64) 
     let least = least.clamp(0.0, want);
     let room = (area.x + area.w - (from.x + from.w)).max(0.0);
     let right = want.min(room);
-    let left = if right >= least { 0.0 } else { (least - right).min((from.x - area.x).max(0.0)) };
+    let left = if right >= least {
+        0.0
+    } else {
+        (least - right).min((from.x - area.x).max(0.0))
+    };
     if right + left < 1.0 {
         return None;
     }
-    let to = Frame { x: from.x - left, y: from.y, w: from.w + right + left, h: from.h };
-    Some(Grown { from, to, right: right / scale, left: left / scale, scale })
+    let to = Frame {
+        x: from.x - left,
+        y: from.y,
+        w: from.w + right + left,
+        h: from.h,
+    };
+    Some(Grown {
+        from,
+        to,
+        right: right / scale,
+        left: left / scale,
+        scale,
+    })
 }
 
 /// Where a window standing at `now` goes when the column closes; `None`
@@ -111,7 +129,8 @@ pub(crate) fn give_back(g: &Grown, now: Frame, scale: f64) -> Option<Frame> {
     }
     // Compared in logical pixels: the same window on a screen of another
     // scale has another physical size and is not resized.
-    let resized = (now.w / scale - g.to.w / g.scale).abs() >= 1.0 || (now.h / scale - g.to.h / g.scale).abs() >= 1.0;
+    let resized = (now.w / scale - g.to.w / g.scale).abs() >= 1.0
+        || (now.h / scale - g.to.h / g.scale).abs() >= 1.0;
     if resized {
         return None;
     }
@@ -119,22 +138,33 @@ pub(crate) fn give_back(g: &Grown, now: Frame, scale: f64) -> Option<Frame> {
     // at — the size it had at the press.
     let left = g.left * scale;
     let right = g.right * scale;
-    Some(Frame { x: now.x + left, y: now.y, w: (now.w - left - right).max(1.0), h: now.h })
+    Some(Frame {
+        x: now.x + left,
+        y: now.y,
+        w: (now.w - left - right).max(1.0),
+        h: now.h,
+    })
 }
 
 /// The notes, by window label and column. Two columns may hold room at
 /// once (a window grown for one, then the other); each answers its own
 /// close.
 fn notes() -> &'static std::sync::Mutex<std::collections::HashMap<(String, String), Grown>> {
-    static NOTES: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<(String, String), Grown>>> =
-        std::sync::OnceLock::new();
+    static NOTES: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<(String, String), Grown>>,
+    > = std::sync::OnceLock::new();
     NOTES.get_or_init(Default::default)
 }
 
 fn frame_of(window: &tauri::Window) -> Result<Frame, String> {
     let at = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
-    Ok(Frame { x: at.x as f64, y: at.y as f64, w: size.width as f64, h: size.height as f64 })
+    Ok(Frame {
+        x: at.x as f64,
+        y: at.y as f64,
+        w: size.width as f64,
+        h: size.height as f64,
+    })
 }
 
 /// Puts the window's outer frame at `to`, and answers whether it is
@@ -172,7 +202,7 @@ fn place(window: &tauri::Window, to: Frame) -> Result<bool, String> {
 #[cfg(target_os = "macos")]
 fn place_now(window: &tauri::Window, to: Frame) -> Result<bool, String> {
     use objc2::runtime::AnyObject;
-    use objc2::{msg_send, MainThreadMarker};
+    use objc2::{MainThreadMarker, msg_send};
     use objc2_foundation::{NSPoint, NSRect, NSSize};
     if MainThreadMarker::new().is_none() {
         return Ok(false);
@@ -188,7 +218,10 @@ fn place_now(window: &tauri::Window, to: Frame) -> Result<bool, String> {
         let now: NSRect = msg_send![ns, frame];
         let top = at.y as f64 / scale + now.origin.y + now.size.height;
         let h = to.h / scale;
-        let r = NSRect::new(NSPoint::new(to.x / scale, top - to.y / scale - h), NSSize::new(to.w / scale, h));
+        let r = NSRect::new(
+            NSPoint::new(to.x / scale, top - to.y / scale - h),
+            NSSize::new(to.w / scale, h),
+        );
         let _: () = msg_send![ns, setFrame: r, display: true];
     }
     Ok(true)
@@ -205,10 +238,16 @@ fn place_queued(window: &tauri::Window, to: Frame) -> Result<(), String> {
     let dw = outer.width as f64 - inner.width as f64;
     let dh = outer.height as f64 - inner.height as f64;
     window
-        .set_size(PhysicalSize::new((to.w - dw).max(1.0).round() as u32, (to.h - dh).max(1.0).round() as u32))
+        .set_size(PhysicalSize::new(
+            (to.w - dw).max(1.0).round() as u32,
+            (to.h - dh).max(1.0).round() as u32,
+        ))
         .map_err(|e| e.to_string())?;
     window
-        .set_position(PhysicalPosition::new(to.x.round() as i32, to.y.round() as i32))
+        .set_position(PhysicalPosition::new(
+            to.x.round() as i32,
+            to.y.round() as i32,
+        ))
         .map_err(|e| e.to_string())
 }
 
@@ -219,9 +258,18 @@ fn place_queued(window: &tauri::Window, to: Frame) -> Result<(), String> {
 /// page.
 /// `least`: the narrowest the column may take before the window moves
 /// left (`None` = the whole `w`).
-pub(crate) fn widen(window: &tauri::Window, column: String, w: f64, least: Option<f64>) -> Result<f64, String> {
+pub(crate) fn widen(
+    window: &tauri::Window,
+    column: String,
+    w: f64,
+    least: Option<f64>,
+) -> Result<f64, String> {
     let key = (window.label().to_string(), column);
-    if notes().lock().map_err(|e| e.to_string())?.contains_key(&key) {
+    if notes()
+        .lock()
+        .map_err(|e| e.to_string())?
+        .contains_key(&key)
+    {
         return Ok(0.0);
     }
     if window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false) {
@@ -235,9 +283,19 @@ pub(crate) fn widen(window: &tauri::Window, column: String, w: f64, least: Optio
     let area = match window.current_monitor().map_err(|e| e.to_string())? {
         Some(mon) => {
             let a = mon.work_area();
-            Frame { x: a.position.x as f64, y: a.position.y as f64, w: a.size.width as f64, h: a.size.height as f64 }
+            Frame {
+                x: a.position.x as f64,
+                y: a.position.y as f64,
+                w: a.size.width as f64,
+                h: a.size.height as f64,
+            }
         }
-        None => Frame { x: from.x, y: from.y, w: from.w + w * scale, h: from.h },
+        None => Frame {
+            x: from.x,
+            y: from.y,
+            w: from.w + w * scale,
+            h: from.h,
+        },
     };
     let Some(mut g) = grow(from, area, w * scale, least.unwrap_or(w) * scale, scale) else {
         return Ok(0.0);
@@ -283,33 +341,82 @@ mod tests {
     use super::*;
 
     /// A 1512×945-point screen at 2×, the menu bar's 37 points off the top.
-    const AREA: Frame = Frame { x: 0.0, y: 74.0, w: 3024.0, h: 1816.0 };
+    const AREA: Frame = Frame {
+        x: 0.0,
+        y: 74.0,
+        w: 3024.0,
+        h: 1816.0,
+    };
     const S: f64 = 2.0;
 
     #[test]
     fn grows_rightward_when_there_is_room() {
-        let from = Frame { x: 100.0, y: 200.0, w: 2000.0, h: 1440.0 };
+        let from = Frame {
+            x: 100.0,
+            y: 200.0,
+            w: 2000.0,
+            h: 1440.0,
+        };
         let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
-        assert_eq!(g.to, Frame { x: 100.0, y: 200.0, w: 2780.0, h: 1440.0 });
+        assert_eq!(
+            g.to,
+            Frame {
+                x: 100.0,
+                y: 200.0,
+                w: 2780.0,
+                h: 1440.0
+            }
+        );
         assert_eq!((g.right, g.left), (390.0, 0.0));
     }
 
     #[test]
     fn grows_leftward_for_what_the_right_edge_cannot_give() {
         // 64 physical pixels short of the right edge.
-        let from = Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 };
+        let from = Frame {
+            x: 800.0,
+            y: 200.0,
+            w: 2160.0,
+            h: 1440.0,
+        };
         let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
-        assert_eq!(g.to, Frame { x: 84.0, y: 200.0, w: 2940.0, h: 1440.0 });
+        assert_eq!(
+            g.to,
+            Frame {
+                x: 84.0,
+                y: 200.0,
+                w: 2940.0,
+                h: 1440.0
+            }
+        );
         assert_eq!((g.right, g.left), (32.0, 358.0));
     }
 
     #[test]
     fn against_both_edges_it_grows_by_what_there_is() {
-        let from = Frame { x: 100.0, y: 200.0, w: 2824.0, h: 1440.0 };
+        let from = Frame {
+            x: 100.0,
+            y: 200.0,
+            w: 2824.0,
+            h: 1440.0,
+        };
         let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
-        assert_eq!(g.to, Frame { x: 0.0, y: 200.0, w: 3024.0, h: 1440.0 });
+        assert_eq!(
+            g.to,
+            Frame {
+                x: 0.0,
+                y: 200.0,
+                w: 3024.0,
+                h: 1440.0
+            }
+        );
         assert_eq!((g.right, g.left), (50.0, 50.0));
-        let full = Frame { x: 0.0, y: 74.0, w: 3024.0, h: 1816.0 };
+        let full = Frame {
+            x: 0.0,
+            y: 74.0,
+            w: 3024.0,
+            h: 1816.0,
+        };
         assert_eq!(grow(full, AREA, 780.0, 780.0, S), None);
     }
 
@@ -319,24 +426,59 @@ mod tests {
     #[test]
     fn an_untouched_window_comes_back_exactly() {
         for from in [
-            Frame { x: 100.0, y: 200.0, w: 2000.0, h: 1440.0 },
-            Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 },
-            Frame { x: 100.0, y: 200.0, w: 2824.0, h: 1440.0 },
+            Frame {
+                x: 100.0,
+                y: 200.0,
+                w: 2000.0,
+                h: 1440.0,
+            },
+            Frame {
+                x: 800.0,
+                y: 200.0,
+                w: 2160.0,
+                h: 1440.0,
+            },
+            Frame {
+                x: 100.0,
+                y: 200.0,
+                w: 2824.0,
+                h: 1440.0,
+            },
         ] {
             let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
             assert_eq!(give_back(&g, g.to, S), Some(from));
             // A pixel of the window manager's rounding is still untouched.
-            let nudged = Frame { w: g.to.w + 1.0, ..g.to };
+            let nudged = Frame {
+                w: g.to.w + 1.0,
+                ..g.to
+            };
             assert_eq!(give_back(&g, nudged, S), Some(from));
         }
     }
 
     #[test]
     fn a_moved_window_keeps_its_move_and_gets_its_size_back() {
-        let from = Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 };
+        let from = Frame {
+            x: 800.0,
+            y: 200.0,
+            w: 2160.0,
+            h: 1440.0,
+        };
         let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
-        let moved = Frame { x: g.to.x - 40.0, y: g.to.y + 100.0, ..g.to };
-        assert_eq!(give_back(&g, moved, S), Some(Frame { x: 760.0, y: 300.0, w: 2160.0, h: 1440.0 }));
+        let moved = Frame {
+            x: g.to.x - 40.0,
+            y: g.to.y + 100.0,
+            ..g.to
+        };
+        assert_eq!(
+            give_back(&g, moved, S),
+            Some(Frame {
+                x: 760.0,
+                y: 300.0,
+                w: 2160.0,
+                h: 1440.0
+            })
+        );
     }
 
     /// The lead's ruling (2026-10-07): a size somebody chose while the
@@ -344,12 +486,25 @@ mod tests {
     /// or only taller.
     #[test]
     fn a_resized_window_is_left_alone() {
-        let from = Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 };
+        let from = Frame {
+            x: 800.0,
+            y: 200.0,
+            w: 2160.0,
+            h: 1440.0,
+        };
         let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
         for now in [
-            Frame { w: g.to.w + 200.0, h: 1200.0, ..g.to },
+            Frame {
+                w: g.to.w + 200.0,
+                h: 1200.0,
+                ..g.to
+            },
             Frame { w: 1000.0, ..g.to },
-            Frame { h: 1300.0, x: g.to.x + 30.0, ..g.to },
+            Frame {
+                h: 1300.0,
+                x: g.to.x + 30.0,
+                ..g.to
+            },
         ] {
             assert_eq!(give_back(&g, now, S), None);
         }
@@ -357,11 +512,29 @@ mod tests {
 
     #[test]
     fn the_column_comes_off_in_logical_pixels_on_another_screen() {
-        let from = Frame { x: 100.0, y: 200.0, w: 2000.0, h: 1440.0 };
+        let from = Frame {
+            x: 100.0,
+            y: 200.0,
+            w: 2000.0,
+            h: 1440.0,
+        };
         let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
         // Dragged to a 1× screen: the same 1390×720 points, half the pixels.
-        let there = Frame { x: 3100.0, y: 100.0, w: 1390.0, h: 720.0 };
-        assert_eq!(give_back(&g, there, 1.0), Some(Frame { x: 3100.0, y: 100.0, w: 1000.0, h: 720.0 }));
+        let there = Frame {
+            x: 3100.0,
+            y: 100.0,
+            w: 1390.0,
+            h: 720.0,
+        };
+        assert_eq!(
+            give_back(&g, there, 1.0),
+            Some(Frame {
+                x: 3100.0,
+                y: 100.0,
+                w: 1000.0,
+                h: 720.0
+            })
+        );
     }
 
     /// sb-a (2026-10-09): a column with a floor. 1280 points wanted, 720
@@ -369,20 +542,51 @@ mod tests {
     #[test]
     fn a_column_with_a_floor_takes_the_right_edge_first() {
         // Room for all of it: all of it, rightward.
-        let from = Frame { x: 100.0, y: 200.0, w: 1400.0, h: 1440.0 };
+        let from = Frame {
+            x: 100.0,
+            y: 200.0,
+            w: 1400.0,
+            h: 1440.0,
+        };
         let g = grow(from, AREA, 1280.0, 720.0, S).unwrap();
         assert_eq!((g.right, g.left), (640.0, 0.0));
         // 1000 physical to the right edge: the column shrinks to it, the
         // window does not move.
-        let from = Frame { x: 100.0, y: 200.0, w: 1924.0, h: 1440.0 };
+        let from = Frame {
+            x: 100.0,
+            y: 200.0,
+            w: 1924.0,
+            h: 1440.0,
+        };
         let g = grow(from, AREA, 1280.0, 720.0, S).unwrap();
-        assert_eq!(g.to, Frame { x: 100.0, y: 200.0, w: 2924.0, h: 1440.0 });
+        assert_eq!(
+            g.to,
+            Frame {
+                x: 100.0,
+                y: 200.0,
+                w: 2924.0,
+                h: 1440.0
+            }
+        );
         assert_eq!((g.right, g.left), (500.0, 0.0));
         // 400 to the right edge: below the floor, so the window moves left
         // by what the floor still needs, and no further.
-        let from = Frame { x: 800.0, y: 200.0, w: 1824.0, h: 1440.0 };
+        let from = Frame {
+            x: 800.0,
+            y: 200.0,
+            w: 1824.0,
+            h: 1440.0,
+        };
         let g = grow(from, AREA, 1280.0, 720.0, S).unwrap();
-        assert_eq!(g.to, Frame { x: 480.0, y: 200.0, w: 2544.0, h: 1440.0 });
+        assert_eq!(
+            g.to,
+            Frame {
+                x: 480.0,
+                y: 200.0,
+                w: 2544.0,
+                h: 1440.0
+            }
+        );
         assert_eq!((g.right, g.left), (200.0, 160.0));
         assert_eq!(give_back(&g, g.to, S), Some(from));
     }

@@ -90,7 +90,11 @@ pub fn machine_named<'a>(machines: &'a [DeviceInfo], typed: &str) -> Option<&'a 
 /// is one token, its name otherwise — what the picker inserts.
 pub fn typed_name(d: &DeviceInfo) -> &str {
     let shown = d.shown();
-    if shown.is_empty() || shown.chars().any(|c| c.is_whitespace() || c == ':' || c == '"') {
+    if shown.is_empty()
+        || shown
+            .chars()
+            .any(|c| c.is_whitespace() || c == ':' || c == '"')
+    {
         &d.name
     } else {
         shown
@@ -134,7 +138,10 @@ pub fn parse(typed: &str, machines: &[DeviceInfo], me: &str) -> Result<Draft, St
         rest = after;
     }
     while let Some((tok, after)) = lead(rest) {
-        let Some((name, path)) = tok.split_once(':').filter(|(n, p)| !n.is_empty() && !p.is_empty()) else {
+        let Some((name, path)) = tok
+            .split_once(':')
+            .filter(|(n, p)| !n.is_empty() && !p.is_empty())
+        else {
             break;
         };
         let Some(m) = machine_named(machines, name) else {
@@ -173,18 +180,24 @@ impl Flying {
     fn begin(msg: &str, to: &DeviceInfo) -> Flying {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let seq = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        flights().lock().unwrap_or_else(|p| p.into_inner()).push(InFlight {
-            seq,
-            msg: msg.to_owned(),
-            to: to.clone(),
-        });
+        flights()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(InFlight {
+                seq,
+                msg: msg.to_owned(),
+                to: to.clone(),
+            });
         Flying(seq)
     }
 }
 
 impl Drop for Flying {
     fn drop(&mut self) {
-        flights().lock().unwrap_or_else(|p| p.into_inner()).retain(|f| f.seq != self.0);
+        flights()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .retain(|f| f.seq != self.0);
     }
 }
 
@@ -198,9 +211,13 @@ impl Node {
     /// Console prose does not parse addressing or command syntax. CLI
     /// tell/send retain their explicit argument grammar through post.
     pub async fn note(&self, text: &str, files: &[PathBuf]) -> Result<String, String> {
-        if let Some(reply) = self.via_serve(crate::ipc::Op::Note {
-            text: text.to_owned(), files: files.iter().map(|p| p.display().to_string()).collect(),
-        }).await {
+        if let Some(reply) = self
+            .via_serve(crate::ipc::Op::Note {
+                text: text.to_owned(),
+                files: files.iter().map(|p| p.display().to_string()).collect(),
+            })
+            .await
+        {
             return match reply? {
                 crate::ipc::Reply::Posted { id } => Ok(id),
                 crate::ipc::Reply::Refused { why } => Err(why),
@@ -211,10 +228,23 @@ impl Node {
     }
 
     pub(crate) fn note_here(&self, text: &str, files: &[PathBuf]) -> Result<String, String> {
-        if text.trim().is_empty() && files.is_empty() { return Err(msg::post_nothing().to_owned()); }
-        let refs = files.iter().map(|p| self.offer_file(p)).collect::<Result<Vec<_>, _>>()?;
+        if text.trim().is_empty() && files.is_empty() {
+            return Err(msg::post_nothing().to_owned());
+        }
+        let refs = files
+            .iter()
+            .map(|p| self.offer_file(p))
+            .collect::<Result<Vec<_>, _>>()?;
         let told = self.chat.post(BROADCAST, self.device(), text, &[], &refs)?;
-        if !text.is_empty() { let _ = self.seen_snapshot(&told.row.id, &[crate::SeenMessage { id: told.msg_id.clone(), at_ms: told.at }]); }
+        if !text.is_empty() {
+            let _ = self.seen_snapshot(
+                &told.row.id,
+                &[crate::SeenMessage {
+                    id: told.msg_id.clone(),
+                    at_ms: told.at,
+                }],
+            );
+        }
         self.emit(NodeEvent::Event(told.event));
         let _ = self.emit_row_of(&told.row.id);
         Ok(told.msg_id)
@@ -242,9 +272,13 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = khor_net::endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
-            .await
-            .map_err(|e| e.to_string())?;
+        let ep = khor_net::endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
         let files: Vec<PathBuf> = files.into_iter().map(PathBuf::from).collect();
         let out = self.post_with(&ep, typed, &files, true).await;
         ep.close().await;
@@ -266,7 +300,12 @@ impl Node {
         let machines = self.devices()?;
         let draft = parse(typed, &machines, &me)?;
         let mut here: Vec<PathBuf> = files.to_vec();
-        here.extend(draft.here.iter().map(|p| crate::road::expand(self.root(), p)));
+        here.extend(
+            draft
+                .here
+                .iter()
+                .map(|p| crate::road::expand(self.root(), p)),
+        );
         if draft.text.is_empty() && here.is_empty() && draft.far.is_empty() {
             return Err(msg::post_nothing().to_owned());
         }
@@ -294,13 +333,17 @@ impl Node {
             .map(|(d, _)| d.shown())
             .collect();
         if !down.is_empty() {
-            return Err(msg::post_target_down(down.join(khor_catalog::cli::name_separator())));
+            return Err(msg::post_target_down(
+                down.join(khor_catalog::cli::name_separator()),
+            ));
         }
         // A file on another machine is offered by it now: what the
         // message stores is its digest, and it is pulled from there.
         let mut refs: Vec<FileRef> = Vec::new();
         for (h, path) in &draft.far {
-            let asked = self.ask_on(ep, h, &Request::Offer { path: path.clone() }).await;
+            let asked = self
+                .ask_on(ep, h, &Request::Offer { path: path.clone() })
+                .await;
             match asked {
                 Ok(Response::Offered { name, size, digest }) => refs.push(FileRef {
                     name,
@@ -308,7 +351,9 @@ impl Node {
                     digest,
                     holder: h.id.clone(),
                 }),
-                Ok(Response::Refused { why }) => return Err(msg::post_holder_refused(h.shown(), path, why)),
+                Ok(Response::Refused { why }) => {
+                    return Err(msg::post_holder_refused(h.shown(), path, why));
+                }
                 Ok(other) => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
                 Err(_) => return Err(msg::post_holder_down(h.shown(), path)),
             }
@@ -324,7 +369,9 @@ impl Node {
                 path: path.clone(),
             })
             .collect();
-        let told = self.chat.post(BROADCAST, self.device(), &draft.text, &to, &refs)?;
+        let told = self
+            .chat
+            .post(BROADCAST, self.device(), &draft.text, &to, &refs)?;
         // Words typed here were read here (`seen`'s rule: own words are
         // unread nowhere). A file is not: it has arrived nowhere yet.
         if !draft.text.is_empty() {
@@ -336,11 +383,17 @@ impl Node {
         let carries = !refs.is_empty();
         // Counted from here, before any task runs: a phone that leaves
         // the screen the moment this answers still sees them.
-        let flying: Vec<(DeviceInfo, Flying)> =
-            draft.to.iter().map(|(d, _)| (d.clone(), Flying::begin(&id, d))).collect();
+        let flying: Vec<(DeviceInfo, Flying)> = draft
+            .to
+            .iter()
+            .map(|(d, _)| (d.clone(), Flying::begin(&id, d)))
+            .collect();
         if wait {
             let id = id.as_str();
-            let pushes = flying.into_iter().map(|(d, f)| async move { self.push_to(ep, &d, id, carries, f).await }).collect();
+            let pushes = flying
+                .into_iter()
+                .map(|(d, f)| async move { self.push_to(ep, &d, id, carries, f).await })
+                .collect();
             crate::link::join_all(pushes).await;
         } else if let Some(n) = self.me() {
             for (d, f) in flying {
@@ -356,7 +409,14 @@ impl Node {
     /// **One push** (module head): the broadcast reaches the target now,
     /// then it is asked to take the files; its own record of the move
     /// comes back with a last round. Counted while it runs.
-    async fn push_to(&self, ep: &iroh::Endpoint, d: &DeviceInfo, msg_id: &str, files: bool, _flying: Flying) {
+    async fn push_to(
+        &self,
+        ep: &iroh::Endpoint,
+        d: &DeviceInfo,
+        msg_id: &str,
+        files: bool,
+        _flying: Flying,
+    ) {
         let _ = self.round_with(ep, d, true).await;
         if !files {
             return;
@@ -387,7 +447,11 @@ impl Node {
                     session: TransferKind::session_id(&f.msg).0,
                     action: "cut".to_owned(),
                 };
-                let _ = tokio::time::timeout(std::time::Duration::from_secs(3), self.ask_on(ep, &f.to, &cut)).await;
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_secs(3),
+                    self.ask_on(ep, &f.to, &cut),
+                )
+                .await;
             })
             .collect();
         crate::link::join_all(cuts).await;
@@ -456,22 +520,45 @@ mod tests {
     #[test]
     fn the_typed_form_reads_targets_then_files_then_words() {
         let t = table();
-        let d = parse("@turing:~/data @北京 hinton:/data/x.bin mac:~/y look: at these", &t, "me").unwrap();
-        let to: Vec<(&str, &str)> = d.to.iter().map(|(m, p)| (m.id.as_str(), p.as_str())).collect();
+        let d = parse(
+            "@turing:~/data @北京 hinton:/data/x.bin mac:~/y look: at these",
+            &t,
+            "me",
+        )
+        .unwrap();
+        let to: Vec<(&str, &str)> =
+            d.to.iter()
+                .map(|(m, p)| (m.id.as_str(), p.as_str()))
+                .collect();
         assert_eq!(to, [("t", "~/data"), ("h", "")]);
-        let far: Vec<(&str, &str)> = d.far.iter().map(|(m, p)| (m.id.as_str(), p.as_str())).collect();
+        let far: Vec<(&str, &str)> = d
+            .far
+            .iter()
+            .map(|(m, p)| (m.id.as_str(), p.as_str()))
+            .collect();
         assert_eq!(far, [("h", "/data/x.bin")]);
         assert_eq!(d.here, ["~/y"]);
         assert_eq!(d.text, "look: at these");
 
         let d = parse("@turing:\"~/my dir\"   hello\nthere", &t, "me").unwrap();
-        assert_eq!((d.to[0].1.as_str(), d.text.as_str()), ("~/my dir", "hello\nthere"), "quotes hold a space; words keep their lines");
+        assert_eq!(
+            (d.to[0].1.as_str(), d.text.as_str()),
+            ("~/my dir", "hello\nthere"),
+            "quotes hold a space; words keep their lines"
+        );
         let d = parse("@turing @turing hi", &t, "me").unwrap();
         assert_eq!(d.to.len(), 1, "a target named twice is pushed to once");
         let d = parse("mail me@turing tomorrow", &t, "me").unwrap();
-        assert!(d.to.is_empty() && d.text == "mail me@turing tomorrow", "an @ inside the words is words");
+        assert!(
+            d.to.is_empty() && d.text == "mail me@turing tomorrow",
+            "an @ inside the words is words"
+        );
         let d = parse(&addressed("北京", "hi there"), &t, "me").unwrap();
-        assert_eq!((d.to[0].0.id.as_str(), d.text.as_str()), ("h", "hi there"), "`khor tell` is a push");
+        assert_eq!(
+            (d.to[0].0.id.as_str(), d.text.as_str()),
+            ("h", "hi there"),
+            "`khor tell` is a push"
+        );
         assert_eq!(addressed("wide/all", "hi"), "hi");
         let d = parse("@ alone", &t, "me").unwrap();
         assert_eq!((d.to.len(), d.text.as_str()), (0, "@ alone"));
@@ -482,14 +569,20 @@ mod tests {
         let t = table();
         let e = parse("@lecun hi", &t, "me").unwrap_err();
         assert!(e.contains("lecun") && e.contains("turing"), "{e}");
-        assert!(parse("@turing:data hi", &t, "me").is_err(), "a path is absolute or ~-led");
+        assert!(
+            parse("@turing:data hi", &t, "me").is_err(),
+            "a path is absolute or ~-led"
+        );
         assert!(parse("@turing:~/../x hi", &t, "me").is_err());
     }
 
     #[test]
     fn the_picker_writes_the_shown_name_when_it_is_one_token() {
         assert_eq!(typed_name(&machine("h", "hinton", Some("北京"))), "北京");
-        assert_eq!(typed_name(&machine("h", "hinton", Some("北京 机房"))), "hinton");
+        assert_eq!(
+            typed_name(&machine("h", "hinton", Some("北京 机房"))),
+            "hinton"
+        );
         assert_eq!(typed_name(&machine("t", "turing", None)), "turing");
     }
 }

@@ -57,9 +57,17 @@ impl TerminalContext {
         // interactive terminal. NO_COLOR from an automation launcher used
         // to suppress color inside every shell/TUI and tmux it created.
         for name in [
-            "NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE",
-            "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION",
-            "TERM_SESSION_ID", "TERM_FEATURES", "TMUX", "TMUX_PANE",
+            "NO_COLOR",
+            "FORCE_COLOR",
+            "CLICOLOR",
+            "CLICOLOR_FORCE",
+            "CLAUDECODE",
+            "CLAUDE_CODE_ENTRYPOINT",
+            "CLAUDE_CODE_CHILD_SESSION",
+            "TERM_SESSION_ID",
+            "TERM_FEATURES",
+            "TMUX",
+            "TMUX_PANE",
         ] {
             builder.env_remove(name);
         }
@@ -101,7 +109,10 @@ pub struct Welcome {
 #[derive(Serialize, Deserialize)]
 pub enum ClientOp {
     Input(#[serde(with = "serde_bytes")] Vec<u8>),
-    Resize { cols: u16, rows: u16 },
+    Resize {
+        cols: u16,
+        rows: u16,
+    },
     /// The current terminal protocol, required as the first frame after Welcome.
     Version(u32),
     /// **⌘K, kept by the host**: the ring forgets everything
@@ -271,7 +282,8 @@ pub fn read_last(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join("last.txt")).ok()?;
     let line = text.trim();
     // A frame written before the filter existed is still on disk.
-    (khor_core::says_something(line) && !looks_like_a_tmux_status_line(line)).then(|| line.to_owned())
+    (khor_core::says_something(line) && !looks_like_a_tmux_status_line(line))
+        .then(|| line.to_owned())
 }
 
 /// Whether a line is tmux's status bar rather than anything a person
@@ -373,15 +385,20 @@ pub fn write_frame<T: Serialize>(s: &mut (impl Write + ?Sized), t: &T) -> Result
 /// per-client input loop exited, and every key after it was lost until a
 /// reload, while output kept flowing). The length prefix says exactly how
 /// much to skip, so the stream stays in step.
-fn read_client_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> Result<Option<T>, String> {
+fn read_client_frame<T: for<'a> Deserialize<'a>>(
+    s: &mut (impl Read + ?Sized),
+) -> Result<Option<T>, String> {
     let mut len = [0u8; 4];
     s.read_exact(&mut len).map_err(msg::no_frame)?;
     let len = u32::from_be_bytes(len) as usize;
     if len > MAX_OP {
         eprintln!("{}", msg::frame_too_big(len));
-        let skipped = std::io::copy(&mut s.take(len as u64), &mut std::io::sink()).map_err(msg::half_a_frame)?;
+        let skipped = std::io::copy(&mut s.take(len as u64), &mut std::io::sink())
+            .map_err(msg::half_a_frame)?;
         if skipped as usize != len {
-            return Err(msg::half_a_frame(std::io::Error::from(std::io::ErrorKind::UnexpectedEof)));
+            return Err(msg::half_a_frame(std::io::Error::from(
+                std::io::ErrorKind::UnexpectedEof,
+            )));
         }
         return Ok(None);
     }
@@ -550,7 +567,10 @@ const VIEWER_ENV: &str = "KHOR_HOST_VIEWER";
 const STARTUP_ENV: &str = "KHOR_HOST_STARTUP";
 
 fn host_store_root(dir: &Path) -> Result<PathBuf, String> {
-    let root = dir.ancestors().nth(3).ok_or_else(|| msg::no_such_dir(dir.display()))?;
+    let root = dir
+        .ancestors()
+        .nth(3)
+        .ok_or_else(|| msg::no_such_dir(dir.display()))?;
     std::fs::canonicalize(root).map_err(|e| msg::cant_read(root.display(), e))
 }
 
@@ -576,7 +596,9 @@ fn spawn_host_with(
     c.env("CLAUDE_CONFIG_DIR", crate::adaptor::claude_home(&root));
     c.env("CODEX_HOME", crate::adaptor::codex_home(&root));
     c.env_remove(STARTUP_ENV);
-    if let Some(text) = startup { c.env(STARTUP_ENV,text); }
+    if let Some(text) = startup {
+        c.env(STARTUP_ENV, text);
+    }
     if let Some(cwd) = cwd {
         c.current_dir(cwd);
     }
@@ -695,7 +717,9 @@ pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpS
     }
     write_frame(&mut stream, &ClientOp::Version(HOST_VERSION))?;
     stream.set_read_timeout(None).map_err(msg::no_frame)?;
-    stream.set_write_timeout(None).map_err(msg::handoff_failed)?;
+    stream
+        .set_write_timeout(None)
+        .map_err(msg::handoff_failed)?;
     Ok(stream)
 }
 
@@ -817,7 +841,8 @@ struct Ring {
 impl Ring {
     fn push(&mut self, bytes: &[u8]) {
         let mut text = Vec::with_capacity(bytes.len());
-        self.pictures.sort(bytes, self.gone + self.bytes.len() as u64, &mut text);
+        self.pictures
+            .sort(bytes, self.gone + self.bytes.len() as u64, &mut text);
         self.bytes.extend(text);
         let over = self.bytes.len().saturating_sub(RING);
         if over > 0 {
@@ -828,7 +853,9 @@ impl Ring {
         // Other long strings (a clipboard copy, a protocol the face does
         // not draw) stay in the text: a trim inside one runs on to its end.
         while self.head.mid_sequence() {
-            let Some(b) = self.bytes.pop_front() else { break };
+            let Some(b) = self.bytes.pop_front() else {
+                break;
+            };
             self.head.feed(&[b]);
             self.gone += 1;
         }
@@ -840,12 +867,18 @@ impl Ring {
     /// next attacher is handed that line and what follows it — at a
     /// prompt, the prompt, and the shell's own ⌃L redraw right after.
     fn forget(&mut self) {
-        let keep = self.bytes.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+        let keep = self
+            .bytes
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map_or(0, |i| i + 1);
         let gone: Vec<u8> = self.bytes.drain(..keep).collect();
         self.head.feed(&gone);
         self.gone += keep as u64;
         while self.head.mid_sequence() {
-            let Some(b) = self.bytes.pop_front() else { break };
+            let Some(b) = self.bytes.pop_front() else {
+                break;
+            };
             self.head.feed(&[b]);
             self.gone += 1;
         }
@@ -904,13 +937,21 @@ pub(crate) fn tmux_socket_args(cmd: &[String]) -> Vec<String> {
 fn redraw_tmux_client(cmd: &[String], tty: Option<std::path::PathBuf>) {
     let Some(tty) = tty else { return };
     let path = crate::spawn_path(&cmd[0]);
-    let Some(tmux) = crate::find_program(&cmd[0], &path) else { return };
+    let Some(tmux) = crate::find_program(&cmd[0], &path) else {
+        return;
+    };
     let mut c = std::process::Command::new(tmux);
-    c.args(tmux_socket_args(cmd)).arg("refresh-client").arg("-t").arg(tty).env("PATH", &path);
+    c.args(tmux_socket_args(cmd))
+        .arg("refresh-client")
+        .arg("-t")
+        .arg(tty)
+        .env("PATH", &path);
     for k in ["TMUX", "TMUX_PANE"] {
         c.env_remove(k);
     }
-    c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    c.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
     std::thread::spawn(move || {
         let _ = c.status();
     });
@@ -1172,7 +1213,8 @@ impl Model {
     fn feed(&mut self, bytes: &[u8]) -> bool {
         use std::panic::{AssertUnwindSafe, catch_unwind};
         let (parser, beside, keeps) = (&mut self.parser, &mut self.beside, self.keeps);
-        let replaced = catch_unwind(AssertUnwindSafe(|| beside.feed(parser, bytes, keeps))).is_err();
+        let replaced =
+            catch_unwind(AssertUnwindSafe(|| beside.feed(parser, bytes, keeps))).is_err();
         if replaced {
             self.parser = parser_like(self.parser.screen(), self.keeps);
             self.beside = Beside::default();
@@ -1296,7 +1338,11 @@ fn overlay(out: &mut Vec<u8>, beside: &Beside, alt: bool, top: u64, screen: &vt1
             };
             over.extend_from_slice(format!("\x1b[{};{}H", r + 1, c + 1).as_bytes());
             let mut pen = Pen::default();
-            while marks.links.get(c as usize).is_some_and(|l| l.as_deref() == Some(&**link)) {
+            while marks
+                .links
+                .get(c as usize)
+                .is_some_and(|l| l.as_deref() == Some(&**link))
+            {
                 if let Some(cell) = screen.cell(r, c) {
                     pen.cell(&mut over, cell, Some(link));
                 }
@@ -1330,13 +1376,16 @@ fn cursor_from_the_bottom(out: &mut Vec<u8>, screen: &vt100::Screen) {
     if up > 0 {
         out.extend_from_slice(format!("\x1b[{up}A").as_bytes());
     }
-    let last = screen.cell(cy, cols.saturating_sub(1)).filter(|c| c.has_contents() && !c.is_wide_continuation());
+    let last = screen
+        .cell(cy, cols.saturating_sub(1))
+        .filter(|c| c.has_contents() && !c.is_wide_continuation());
     match last {
         Some(cell) if cx >= cols => {
             out.extend_from_slice(format!("\x1b[{cols}G").as_bytes());
             Pen::default().cell(out, cell, None);
         }
-        _ => out.extend_from_slice(format!("\x1b[{}G", cx.min(cols.saturating_sub(1)) + 1).as_bytes()),
+        _ => out
+            .extend_from_slice(format!("\x1b[{}G", cx.min(cols.saturating_sub(1)) + 1).as_bytes()),
     }
     out.extend_from_slice(b"\x1b[0m");
     out.extend_from_slice(&screen.attributes_formatted());
@@ -1466,7 +1515,14 @@ impl CellLook {
 /// a line end — unless the row wraps into the next, which then continues
 /// it (the full row makes the face wrap exactly there). A picture drawn
 /// on the row goes in before the cell it was drawn at (item 66).
-fn write_row(out: &mut Vec<u8>, screen: &vt100::Screen, row: u16, cols: u16, pen: &mut Pen, marks: &RowMarks) {
+fn write_row(
+    out: &mut Vec<u8>,
+    screen: &vt100::Screen,
+    row: u16,
+    cols: u16,
+    pen: &mut Pen,
+    marks: &RowMarks,
+) {
     let wrapped = screen.row_wrapped(row);
     let mut end = cols;
     if !wrapped {
@@ -1487,8 +1543,14 @@ fn write_row(out: &mut Vec<u8>, screen: &vt100::Screen, row: u16, cols: u16, pen
         while let Some((_, bytes)) = pictures.next_if(|(at, _)| *at <= col) {
             picture(out, pen, bytes);
         }
-        let Some(c) = screen.cell(row, col) else { break };
-        pen.cell(out, c, marks.links.get(col as usize).and_then(Option::as_ref));
+        let Some(c) = screen.cell(row, col) else {
+            break;
+        };
+        pen.cell(
+            out,
+            c,
+            marks.links.get(col as usize).and_then(Option::as_ref),
+        );
     }
     for (at, bytes) in pictures {
         if *at > end {
@@ -1616,11 +1678,17 @@ pub fn host_main(
     size: (u16, u16),
     cmd: Vec<String>,
 ) -> Result<(), String> {
-    host_main_with_startup(root,id,size,cmd,None)
+    host_main_with_startup(root, id, size, cmd, None)
 }
 
 /// Explicit startup input belongs to a newly created host, never a connection.
-pub fn host_main_with_startup(root:PathBuf,id:SessionId,size:(u16,u16),cmd:Vec<String>,startup:Option<String>) -> Result<(),String> {
+pub fn host_main_with_startup(
+    root: PathBuf,
+    id: SessionId,
+    size: (u16, u16),
+    cmd: Vec<String>,
+    startup: Option<String>,
+) -> Result<(), String> {
     let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
         .map_err(|e| e.to_string())?;
     let khor = root.join(".khor");
@@ -1874,7 +1942,10 @@ fn host_serving(
                 };
                 // Before anyone can see it: a question is pending before
                 // a face can answer it.
-                ledger.lock().unwrap().saw_output(&buf[..n], std::time::Instant::now());
+                ledger
+                    .lock()
+                    .unwrap()
+                    .saw_output(&buf[..n], std::time::Instant::now());
                 // **Mouse tracking off once the shell has the terminal
                 // back** (item 25; the owner's zsh prompt filling with
                 // `35;6;5M…`). A program that turned mouse tracking on and
@@ -1888,7 +1959,12 @@ fn host_serving(
                 // a mouse mode is on.
                 let reset = shells_own
                     && ledger.lock().unwrap().mouse_on()
-                    && master.lock().unwrap().process_group_leader().map(|p| p as u32) == Some(child_pid);
+                    && master
+                        .lock()
+                        .unwrap()
+                        .process_group_leader()
+                        .map(|p| p as u32)
+                        == Some(child_pid);
                 let data: std::borrow::Cow<[u8]> = if reset {
                     ledger
                         .lock()
@@ -1927,7 +2003,12 @@ fn host_serving(
                 let mut ring = shared.ring.lock().unwrap();
                 ring.push(&buf[..n]);
                 shared.changes.fetch_add(1, Ordering::SeqCst);
-                let lost = shared.model.lock().unwrap().as_mut().is_some_and(|m| m.feed(&buf[..n]));
+                let lost = shared
+                    .model
+                    .lock()
+                    .unwrap()
+                    .as_mut()
+                    .is_some_and(|m| m.feed(&buf[..n]));
                 let chunk: Arc<[u8]> = Arc::from(&buf[..n]);
                 let mut clients = shared.clients.lock().unwrap();
                 // Queued, never written here: the program must not wait
@@ -2153,11 +2234,15 @@ fn host_serving(
                     };
                     // No output or renderer-independent startup before the
                     // current Version arrives whole inside its fixed deadline.
-                    if !matches!(read_handshake_frame::<ClientOp>(&mut readable, FIRST_FRAME),
-                        Ok(ClientOp::Version(HOST_VERSION))) {
+                    if !matches!(
+                        read_handshake_frame::<ClientOp>(&mut readable, FIRST_FRAME),
+                        Ok(ClientOp::Version(HOST_VERSION))
+                    ) {
                         continue;
                     }
-                    if readable.set_read_timeout(None).is_err() { continue; }
+                    if readable.set_read_timeout(None).is_err() {
+                        continue;
+                    }
                     let _ = master.lock().unwrap().resize(PtySize {
                         rows: hello.rows,
                         cols: hello.cols,
@@ -2222,7 +2307,10 @@ fn host_serving(
                                 ClientOp::Input(bytes) => {
                                     // An answer only while its question waits
                                     // (`answers`); keys whole.
-                                    let bytes = ledger.lock().unwrap().take_input(&bytes, std::time::Instant::now());
+                                    let bytes = ledger
+                                        .lock()
+                                        .unwrap()
+                                        .take_input(&bytes, std::time::Instant::now());
                                     if bytes.is_empty() {
                                         continue;
                                     }
@@ -2334,7 +2422,12 @@ mod tests {
     #[test]
     fn pictures_do_not_push_the_text_out_of_the_ring() {
         let plot = |n: u8| {
-            [b"\x1b]1337;File=inline=1:".as_slice(), &vec![b'A' + n; 400 << 10], b"\x07"].concat()
+            [
+                b"\x1b]1337;File=inline=1:".as_slice(),
+                &vec![b'A' + n; 400 << 10],
+                b"\x07",
+            ]
+            .concat()
         };
         let mut ring = Ring::default();
         let mut text = Vec::new();
@@ -2346,9 +2439,15 @@ mod tests {
         }
         assert_eq!(ring.bytes.iter().copied().collect::<Vec<_>>(), text);
         let replay = ring.replay();
-        assert!(replay.starts_with(b"line 0"), "the replay opens on text, not base64");
+        assert!(
+            replay.starts_with(b"line 0"),
+            "the replay opens on text, not base64"
+        );
         for n in 0..3u8 {
-            assert!(replay.windows(16).any(|w| w == [b'A' + n; 16]), "plot {n} is in the replay");
+            assert!(
+                replay.windows(16).any(|w| w == [b'A' + n; 16]),
+                "plot {n} is in the replay"
+            );
         }
     }
 
@@ -2401,7 +2500,8 @@ mod tests {
 #[cfg(test)]
 mod last_line_tests {
     use super::{
-        CellLook, MODEL_SCROLLBACK, MODEL_SCROLLBACK_MOST, Model, last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last, tmux_socket_args,
+        CellLook, MODEL_SCROLLBACK, MODEL_SCROLLBACK_MOST, Model, last_plain_line,
+        looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last, tmux_socket_args,
     };
     use crate::modes::Modes;
     use std::path::Path;
@@ -2419,7 +2519,10 @@ mod last_line_tests {
     #[test]
     fn a_frame_only_line_gives_way_to_the_line_above() {
         let bytes = "cargo test -p khor-node\r\n\u{256d}\u{2500} \u{2500}\u{256e}\r\n\u{2570}\u{2500} \u{2500}\u{256f}\r\n".as_bytes();
-        assert_eq!(last_plain_line(bytes).as_deref(), Some("cargo test -p khor-node"));
+        assert_eq!(
+            last_plain_line(bytes).as_deref(),
+            Some("cargo test -p khor-node")
+        );
         assert!(last_plain_line("\u{2570}\u{2500}\u{256f}\r\n".as_bytes()).is_none());
     }
 
@@ -2480,9 +2583,17 @@ mod last_line_tests {
     fn snapshot_streams() -> Vec<(&'static str, Vec<u8>)> {
         let mut shell = Vec::new();
         for i in 0..120 {
-            shell.extend_from_slice(format!("\x1b[32mdesk\x1b[0m:\x1b[34m~/work\x1b[0m$ echo {i}\r\n").as_bytes());
+            shell.extend_from_slice(
+                format!("\x1b[32mdesk\x1b[0m:\x1b[34m~/work\x1b[0m$ echo {i}\r\n").as_bytes(),
+            );
             if i % 7 == 0 {
-                shell.extend_from_slice(format!("\x1b[1;33mwarning\x1b[0m line {i} {}\r\n", "0123456789".repeat(12)).as_bytes());
+                shell.extend_from_slice(
+                    format!(
+                        "\x1b[1;33mwarning\x1b[0m line {i} {}\r\n",
+                        "0123456789".repeat(12)
+                    )
+                    .as_bytes(),
+                );
             } else {
                 shell.extend_from_slice(format!("{i}\r\n").as_bytes());
             }
@@ -2490,16 +2601,28 @@ mod last_line_tests {
         shell.extend_from_slice(b"\x1b[32mdesk\x1b[0m:\x1b[34m~/work\x1b[0m$ ");
         let mut tui = Vec::new();
         tui.extend_from_slice(b"\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J");
-        tui.extend_from_slice("\x1b[2;3H\x1b[36m\u{256d}\u{2500}\u{2500}\u{2500}\u{2500}\u{256e}\x1b[0m".as_bytes());
-        tui.extend_from_slice("\x1b[3;3H\x1b[36m\u{2502}\x1b[0m > hi \x1b[36m\u{2502}\x1b[0m".as_bytes());
-        tui.extend_from_slice("\x1b[4;3H\x1b[36m\u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{256f}\x1b[0m".as_bytes());
+        tui.extend_from_slice(
+            "\x1b[2;3H\x1b[36m\u{256d}\u{2500}\u{2500}\u{2500}\u{2500}\u{256e}\x1b[0m".as_bytes(),
+        );
+        tui.extend_from_slice(
+            "\x1b[3;3H\x1b[36m\u{2502}\x1b[0m > hi \x1b[36m\u{2502}\x1b[0m".as_bytes(),
+        );
+        tui.extend_from_slice(
+            "\x1b[4;3H\x1b[36m\u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{256f}\x1b[0m".as_bytes(),
+        );
         tui.extend_from_slice(b"\x1b[10;1H\x1b[7m status \x1b[0m\x1b[3;9H");
         let mut wide = Vec::new();
         wide.extend_from_slice("\x1b[1m\u{4f60}\u{597d}\x1b[0m \x1b[4m\u{4e16}\u{754c}\x1b[0m \x1b[38;5;208mo\x1b[48;2;10;20;30mb\x1b[0m\r\n".as_bytes());
         wide.extend_from_slice(format!("{}\r\n", "\u{6f22}".repeat(50)).as_bytes());
         wide.extend_from_slice(format!("{}", "x".repeat(80)).as_bytes());
         wide.extend_from_slice(b"\x1b[3;2mdim italic\x1b[0m end\r\n$ ");
-        vec![("shell", shell), ("tui", tui), ("wide", wide), ("links", links_stream()), ("pictures", pictures_stream())]
+        vec![
+            ("shell", shell),
+            ("tui", tui),
+            ("wide", wide),
+            ("links", links_stream()),
+            ("pictures", pictures_stream()),
+        ]
     }
 
     /// `ls --hyperlink` and friends (item 66): OSC 8 links scrolled into
@@ -2513,9 +2636,16 @@ mod last_line_tests {
         }
         s.extend_from_slice(b"\x1b[34m\x1b]8;id=x1;https://example.com/a\x1b\\docs\x1b]8;;\x1b\\\x1b[0m and more\r\n");
         let long = format!("https://example.com/{}", "very-long-path/".repeat(6));
-        s.extend_from_slice(format!("see \x1b]8;;{long}\x1b\\{long}\x1b]8;;\x1b\\ end\r\n").as_bytes());
-        s.extend_from_slice("\x1b]8;;file:///tmp/%E6%8A%A5%E5%91%8A.txt\x07\u{62a5}\u{544a}.txt\x1b]8;;\x07 ok\r\n".as_bytes());
-        s.extend_from_slice(b"\x1b]8;;https://gone.example/\x1b\\gone\x1b]8;;\x1b\\\r\x1b[Kplain over it\r\n");
+        s.extend_from_slice(
+            format!("see \x1b]8;;{long}\x1b\\{long}\x1b]8;;\x1b\\ end\r\n").as_bytes(),
+        );
+        s.extend_from_slice(
+            "\x1b]8;;file:///tmp/%E6%8A%A5%E5%91%8A.txt\x07\u{62a5}\u{544a}.txt\x1b]8;;\x07 ok\r\n"
+                .as_bytes(),
+        );
+        s.extend_from_slice(
+            b"\x1b]8;;https://gone.example/\x1b\\gone\x1b]8;;\x1b\\\r\x1b[Kplain over it\r\n",
+        );
         s.extend_from_slice(b"$ ");
         s
     }
@@ -2660,10 +2790,20 @@ mod last_line_tests {
         let mut model = Model::new(24, 80);
         model.feed(&raw);
         let snap = model.snapshot(b"");
-        let want: Vec<_> = linked_text(&raw).into_iter().filter(|(u, _)| !u.contains("gone")).collect();
+        let want: Vec<_> = linked_text(&raw)
+            .into_iter()
+            .filter(|(u, _)| !u.contains("gone"))
+            .collect();
         assert_eq!(want.len(), 43, "the oracle reads the stream's links");
-        assert_eq!(linked_text(&snap), want, "the links on their text, in order");
-        assert!(!String::from_utf8_lossy(&snap).contains("gone.example"), "a link redrawn over is not carried");
+        assert_eq!(
+            linked_text(&snap),
+            want,
+            "the links on their text, in order"
+        );
+        assert!(
+            !String::from_utf8_lossy(&snap).contains("gone.example"),
+            "a link redrawn over is not carried"
+        );
 
         let raw = pictures_stream();
         let mut model = Model::new(24, 80);
@@ -2671,9 +2811,17 @@ mod last_line_tests {
         let snap = model.snapshot(b"");
         let all = [IIP_A, IIP_C, SIXEL_B];
         let watched = picture_places(&raw, &all);
-        assert_eq!(watched.iter().map(|p| p.0).collect::<Vec<_>>(), [0, 1, 2], "the oracle finds the stream's pictures");
+        assert_eq!(
+            watched.iter().map(|p| p.0).collect::<Vec<_>>(),
+            [0, 1, 2],
+            "the oracle finds the stream's pictures"
+        );
         let want: Vec<_> = watched.into_iter().filter(|p| p.0 != 1).collect();
-        assert_eq!(picture_places(&snap, &all), want, "the pictures kept, each where it was drawn; the cleared one not");
+        assert_eq!(
+            picture_places(&snap, &all),
+            want,
+            "the pictures kept, each where it was drawn; the cleared one not"
+        );
     }
 
     /// Each row's links, history first, as the model hands them out.
@@ -2685,8 +2833,13 @@ mod last_line_tests {
         let total = s.scrollback();
         let mut out = Vec::new();
         let row = |s: &vt100::Screen, r: u16, at: u64| {
-            let links = model.beside.marks(s.alternate_screen(), at, s, r, cols).links;
-            (0..cols as usize).map(|c| links.get(c).cloned().flatten().map(|l| l.to_string())).collect::<Vec<_>>()
+            let links = model
+                .beside
+                .marks(s.alternate_screen(), at, s, r, cols)
+                .links;
+            (0..cols as usize)
+                .map(|c| links.get(c).cloned().flatten().map(|l| l.to_string()))
+                .collect::<Vec<_>>()
         };
         for h in 0..total {
             s.set_scrollback(total - h);
@@ -2709,7 +2862,10 @@ mod last_line_tests {
     fn the_links_come_back_on_the_same_cells() {
         let mut full = Vec::new();
         for i in 0..MODEL_SCROLLBACK + 100 {
-            full.extend_from_slice(format!("\x1b]8;;https://e.example/{i}\x1b\\item {i}\x1b]8;;\x1b\\ text\r\n").as_bytes());
+            full.extend_from_slice(
+                format!("\x1b]8;;https://e.example/{i}\x1b\\item {i}\x1b]8;;\x1b\\ text\r\n")
+                    .as_bytes(),
+            );
         }
         let mut alt = b"$ vim\r\n\x1b[?1049h\x1b[H\x1b[2J".to_vec();
         alt.extend_from_slice(b"\x1b[3;5H\x1b[4m\x1b]8;;https://alt.example/\x1b\\in the program\x1b]8;;\x1b\\\x1b[0m\x1b[10;1H");
@@ -2718,17 +2874,28 @@ mod last_line_tests {
             let mut a = Model::new(24, 80);
             a.feed(&raw);
             let want = links_of(&mut a);
-            assert!(want.iter().flatten().any(Option::is_some), "{name}: the stream has links in the model");
+            assert!(
+                want.iter().flatten().any(Option::is_some),
+                "{name}: the stream has links in the model"
+            );
             let snap = a.snapshot(b"");
             let mut b = Model::new(24, 80);
             b.feed(&snap);
-            assert_eq!(links_of(&mut b), want, "{name}: the snapshot's links on the stream's cells");
+            assert_eq!(
+                links_of(&mut b),
+                want,
+                "{name}: the snapshot's links on the stream's cells"
+            );
             if name != "full" {
                 let mut c = Model::new(24, 80);
                 for byte in raw.chunks(1) {
                     c.feed(byte);
                 }
-                assert_eq!(c.snapshot(b""), snap, "{name}: fed a byte at a time, the same snapshot");
+                assert_eq!(
+                    c.snapshot(b""),
+                    snap,
+                    "{name}: fed a byte at a time, the same snapshot"
+                );
             }
         }
     }
@@ -2762,7 +2929,14 @@ mod last_line_tests {
             let fed = t.elapsed();
             let t = std::time::Instant::now();
             let snap = model.snapshot(b"");
-            eprintln!("{}: fed {} KB in {:.1} ms, snapshot {} KB in {:.1} ms", if linked { "linked" } else { "plain" }, raw.len() >> 10, fed.as_secs_f64() * 1e3, snap.len() >> 10, t.elapsed().as_secs_f64() * 1e3);
+            eprintln!(
+                "{}: fed {} KB in {:.1} ms, snapshot {} KB in {:.1} ms",
+                if linked { "linked" } else { "plain" },
+                raw.len() >> 10,
+                fed.as_secs_f64() * 1e3,
+                snap.len() >> 10,
+                t.elapsed().as_secs_f64() * 1e3
+            );
         }
     }
 
@@ -2770,12 +2944,16 @@ mod last_line_tests {
     /// was before item 66, byte for byte: the face's fixtures stand.
     #[test]
     fn a_plain_snapshot_is_unchanged() {
-        for (name, raw) in snapshot_streams().into_iter().filter(|(n, _)| ["shell", "tui", "wide"].contains(n)) {
+        for (name, raw) in snapshot_streams()
+            .into_iter()
+            .filter(|(n, _)| ["shell", "tui", "wide"].contains(n))
+        {
             let mut model = Model::new(24, 80);
             model.feed(&raw);
             let mut modes = Modes::default();
             modes.feed(&raw);
-            let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/gui/scripts/fixtures/snapshot");
+            let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../apps/gui/scripts/fixtures/snapshot");
             let kept = std::fs::read(dir.join(format!("{name}.snap"))).unwrap();
             assert_eq!(model.snapshot(&modes.preamble()), kept, "{name}");
         }
@@ -2796,16 +2974,32 @@ mod last_line_tests {
             again.process(&snap);
             let a = model.parser.screen();
             let b = again.screen();
-            assert_eq!(a.alternate_screen(), b.alternate_screen(), "{name}: the buffer");
+            assert_eq!(
+                a.alternate_screen(),
+                b.alternate_screen(),
+                "{name}: the buffer"
+            );
             assert_eq!(a.contents(), b.contents(), "{name}: the screen's text");
-            assert_eq!(a.cursor_position(), b.cursor_position(), "{name}: the cursor");
+            assert_eq!(
+                a.cursor_position(),
+                b.cursor_position(),
+                "{name}: the cursor"
+            );
             for r in 0..24 {
                 for c in 0..80 {
                     let (x, y) = (a.cell(r, c).unwrap(), b.cell(r, c).unwrap());
-                    assert_eq!((x.contents(), CellLook::of(x) == CellLook::of(y)), (y.contents(), true), "{name}: cell {r},{c}");
+                    assert_eq!(
+                        (x.contents(), CellLook::of(x) == CellLook::of(y)),
+                        (y.contents(), true),
+                        "{name}: cell {r},{c}"
+                    );
                 }
             }
-            assert_eq!(a.mouse_protocol_mode(), b.mouse_protocol_mode(), "{name}: the mouse");
+            assert_eq!(
+                a.mouse_protocol_mode(),
+                b.mouse_protocol_mode(),
+                "{name}: the mouse"
+            );
             if !a.alternate_screen() {
                 let mut a = Model::new(24, 80);
                 a.feed(&raw);
@@ -2814,7 +3008,12 @@ mod last_line_tests {
                 let total = a.scrollback();
                 b_history(&mut again, total, a, name);
             }
-            assert!(snap.len() < raw.len() + 4096, "{name}: a snapshot is not longer than the stream it stands for by more than its framing ({} vs {})", snap.len(), raw.len());
+            assert!(
+                snap.len() < raw.len() + 4096,
+                "{name}: a snapshot is not longer than the stream it stands for by more than its framing ({} vs {})",
+                snap.len(),
+                raw.len()
+            );
         }
     }
 
@@ -2830,7 +3029,12 @@ mod last_line_tests {
         };
         let mut off = total;
         while off > 0 {
-            assert_eq!(text(a, off), text(b, off), "{name}: history row {} from the top", total - off);
+            assert_eq!(
+                text(a, off),
+                text(b, off),
+                "{name}: history row {} from the top",
+                total - off
+            );
             off -= 1;
         }
     }
@@ -2856,24 +3060,51 @@ mod last_line_tests {
             model.feed(format!("\x1b[3{}mline {i}\x1b[0m\r\n", i % 7 + 1).as_bytes());
         }
         model.feed(b"$ typed");
-        assert_eq!(history_of(&mut model).0, MODEL_SCROLLBACK, "the length before any face asks");
+        assert_eq!(
+            history_of(&mut model).0,
+            MODEL_SCROLLBACK,
+            "the length before any face asks"
+        );
         let before = model.parser.screen().contents_formatted();
         model.keep(5000);
-        assert_eq!(model.parser.screen().contents_formatted(), before, "the screen, its colours and the cursor survive the rebuild");
-        assert!(model.parser.screen().bracketed_paste(), "the modes survive it");
+        assert_eq!(
+            model.parser.screen().contents_formatted(),
+            before,
+            "the screen, its colours and the cursor survive the rebuild"
+        );
+        assert!(
+            model.parser.screen().bracketed_paste(),
+            "the modes survive it"
+        );
         let (total, oldest) = history_of(&mut model);
-        assert_eq!((total, oldest.as_str()), (MODEL_SCROLLBACK, "line 977"), "the rows held are kept, none invented");
+        assert_eq!(
+            (total, oldest.as_str()),
+            (MODEL_SCROLLBACK, "line 977"),
+            "the rows held are kept, none invented"
+        );
         for i in 3000..9000 {
             model.feed(format!("line {i}\r\n").as_bytes());
         }
-        assert_eq!(history_of(&mut model).0, 5000, "the history grows to the ask");
+        assert_eq!(
+            history_of(&mut model).0,
+            5000,
+            "the history grows to the ask"
+        );
         model.keep(1000);
-        assert_eq!(history_of(&mut model).0, 5000, "a smaller ask (the phone's) does not cut a larger one (the Mac's)");
+        assert_eq!(
+            history_of(&mut model).0,
+            5000,
+            "a smaller ask (the phone's) does not cut a larger one (the Mac's)"
+        );
         model.keep(50_000);
         for i in 9000..21000 {
             model.feed(format!("line {i}\r\n").as_bytes());
         }
-        assert_eq!(history_of(&mut model).0, MODEL_SCROLLBACK_MOST, "capped at the most");
+        assert_eq!(
+            history_of(&mut model).0,
+            MODEL_SCROLLBACK_MOST,
+            "capped at the most"
+        );
     }
 
     /// An ask that comes while a program holds the alternate screen waits
@@ -2886,10 +3117,17 @@ mod last_line_tests {
         }
         model.feed(b"\x1b[?1049h\x1b[Hfull screen");
         model.keep(5000);
-        assert_eq!(model.keeps, MODEL_SCROLLBACK, "not rebuilt on the alternate screen");
+        assert_eq!(
+            model.keeps, MODEL_SCROLLBACK,
+            "not rebuilt on the alternate screen"
+        );
         model.feed(b"\x1b[?1049l");
         assert_eq!(model.keeps, 5000, "rebuilt once it ends");
-        assert_eq!(history_of(&mut model), (MODEL_SCROLLBACK, "line 477".to_owned()), "the normal screen's history came through");
+        assert_eq!(
+            history_of(&mut model),
+            (MODEL_SCROLLBACK, "line 477".to_owned()),
+            "the normal screen's history came through"
+        );
     }
 
     /// A shell's history, then a full-screen program with CJK to its
@@ -2913,7 +3151,9 @@ mod last_line_tests {
     fn redraw(cols: usize) -> Vec<u8> {
         let mut raw = b"\x1b[H".to_vec();
         for r in 1..=6 {
-            raw.extend_from_slice(format!("\x1b[{r};1H{}\x1b[K", "\u{6587}".repeat(cols / 2)).as_bytes());
+            raw.extend_from_slice(
+                format!("\x1b[{r};1H{}\x1b[K", "\u{6587}".repeat(cols / 2)).as_bytes(),
+            );
         }
         raw.extend_from_slice(b"\x1b[7;1HREDRAWN\x1b[K\x1b[7;8H");
         raw
@@ -2944,10 +3184,22 @@ mod last_line_tests {
         let face = face_of(&mut model, &modes.preamble(), 24, 79);
         let s = face.screen();
         assert!(s.alternate_screen(), "the face is on the program's screen");
-        assert_eq!(s.rows(0, 79).nth(6).unwrap().trim_end(), "REDRAWN", "the redraw is what the face is handed");
-        assert_eq!(s.rows(0, 79).next().unwrap().trim_end(), "\u{6587}".repeat(39), "the wide rows at the new width");
+        assert_eq!(
+            s.rows(0, 79).nth(6).unwrap().trim_end(),
+            "REDRAWN",
+            "the redraw is what the face is handed"
+        );
+        assert_eq!(
+            s.rows(0, 79).next().unwrap().trim_end(),
+            "\u{6587}".repeat(39),
+            "the wide rows at the new width"
+        );
         let _ = model.feed(b"\x1b[?1049l");
-        assert_eq!(history_of(&mut model).1, "line 0", "the shell's history under the program is kept");
+        assert_eq!(
+            history_of(&mut model).1,
+            "line 0",
+            "the shell's history under the program is kept"
+        );
     }
 
     /// **A model that panics keeps its screen for the repaint** (item
@@ -2969,11 +3221,21 @@ mod last_line_tests {
         model.parser.screen_mut().set_size(24, 79);
         let lost = model.feed(&redraw(79));
         assert!(lost, "the model says it lost its picture");
-        assert!(model.parser.screen().alternate_screen(), "still on the program's screen");
-        assert!(model.parser.screen().application_cursor(), "the program's modes are kept");
+        assert!(
+            model.parser.screen().alternate_screen(),
+            "still on the program's screen"
+        );
+        assert!(
+            model.parser.screen().application_cursor(),
+            "the program's modes are kept"
+        );
         let _ = model.feed(&redraw(79));
         let face = face_of(&mut model, &modes.preamble(), 24, 79);
-        assert_eq!(face.screen().rows(0, 79).nth(6).unwrap().trim_end(), "REDRAWN", "the repaint is what the face is handed, not a blank");
+        assert_eq!(
+            face.screen().rows(0, 79).nth(6).unwrap().trim_end(),
+            "REDRAWN",
+            "the repaint is what the face is handed, not a blank"
+        );
     }
 
     /// What one shell's model costs (item 56): the process's resident
@@ -2985,20 +3247,43 @@ mod last_line_tests {
     #[ignore]
     fn model_memory() {
         let rss = || {
-            let out = std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap();
-            String::from_utf8_lossy(&out.stdout).trim().parse::<u64>().unwrap()
+            let out = std::process::Command::new("ps")
+                .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .parse::<u64>()
+                .unwrap()
         };
-        let env = |k: &str, or: usize| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(or);
-        let (cols, lines) = (env("MODEL_COLS", 80) as u16, env("MODEL_LINES", MODEL_SCROLLBACK));
+        let env = |k: &str, or: usize| {
+            std::env::var(k)
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(or)
+        };
+        let (cols, lines) = (
+            env("MODEL_COLS", 80) as u16,
+            env("MODEL_LINES", MODEL_SCROLLBACK),
+        );
         let start = rss();
         let mut model = Model::new(40, cols);
         model.keep(lines);
-        let line = format!("\x1b[32m$\x1b[0m {}\r\n", "x".repeat(40.min(cols as usize - 3)));
+        let line = format!(
+            "\x1b[32m$\x1b[0m {}\r\n",
+            "x".repeat(40.min(cols as usize - 3))
+        );
         for _ in 0..lines + 40 {
             model.feed(line.as_bytes());
         }
-        assert_eq!(history_of(&mut model).0, lines.min(MODEL_SCROLLBACK_MOST).max(MODEL_SCROLLBACK));
-        eprintln!("model {cols} columns, {lines} rows: {:.1} MB", rss().saturating_sub(start) as f64 / 1024.0);
+        assert_eq!(
+            history_of(&mut model).0,
+            lines.min(MODEL_SCROLLBACK_MOST).max(MODEL_SCROLLBACK)
+        );
+        eprintln!(
+            "model {cols} columns, {lines} rows: {:.1} MB",
+            rss().saturating_sub(start) as f64 / 1024.0
+        );
     }
 
     /// ⌘K in the model: the history and the rows above the cursor's are
@@ -3015,12 +3300,19 @@ mod last_line_tests {
         let s = model.parser.screen_mut();
         assert_eq!(s.cursor_position(), (0, 7));
         assert_eq!(s.contents().trim_end(), "$ typed");
-        assert_eq!(s.cell(0, 0).unwrap().fgcolor(), vt100::Color::Idx(3), "the prompt keeps its colour");
+        assert_eq!(
+            s.cell(0, 0).unwrap().fgcolor(),
+            vt100::Color::Idx(3),
+            "the prompt keeps its colour"
+        );
         assert!(s.bracketed_paste(), "the modes stay");
         s.set_scrollback(usize::MAX);
         assert_eq!(s.scrollback(), 0, "the history is gone");
         let snap = model.snapshot(b"");
-        assert!(!String::from_utf8_lossy(&snap).contains("line 39"), "a later attacher does not see it");
+        assert!(
+            !String::from_utf8_lossy(&snap).contains("line 39"),
+            "a later attacher does not see it"
+        );
     }
 
     /// Writes the streams and their snapshots for the face's gate
@@ -3029,7 +3321,8 @@ mod last_line_tests {
     #[test]
     #[ignore]
     fn writes_snapshot_fixtures() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/gui/scripts/fixtures/snapshot");
+        let dir =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/gui/scripts/fixtures/snapshot");
         std::fs::create_dir_all(&dir).unwrap();
         for (name, raw) in snapshot_streams() {
             let mut model = Model::new(24, 80);
@@ -3037,7 +3330,11 @@ mod last_line_tests {
             let mut modes = Modes::default();
             modes.feed(&raw);
             std::fs::write(dir.join(format!("{name}.raw")), &raw).unwrap();
-            std::fs::write(dir.join(format!("{name}.snap")), model.snapshot(&modes.preamble())).unwrap();
+            std::fs::write(
+                dir.join(format!("{name}.snap")),
+                model.snapshot(&modes.preamble()),
+            )
+            .unwrap();
         }
     }
 
@@ -3046,8 +3343,31 @@ mod last_line_tests {
     #[test]
     fn a_tmux_argv_names_its_socket() {
         let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
-        assert_eq!(tmux_socket_args(&argv(&["tmux", "-L", "khor", "-T", "extkeys", "new-session", "-t", "$0"])), argv(&["-L", "khor"]));
-        assert_eq!(tmux_socket_args(&argv(&["tmux", "-u", "-f", "/dev/null", "-S", "/tmp/s", "attach"])), argv(&["-S", "/tmp/s"]));
+        assert_eq!(
+            tmux_socket_args(&argv(&[
+                "tmux",
+                "-L",
+                "khor",
+                "-T",
+                "extkeys",
+                "new-session",
+                "-t",
+                "$0"
+            ])),
+            argv(&["-L", "khor"])
+        );
+        assert_eq!(
+            tmux_socket_args(&argv(&[
+                "tmux",
+                "-u",
+                "-f",
+                "/dev/null",
+                "-S",
+                "/tmp/s",
+                "attach"
+            ])),
+            argv(&["-S", "/tmp/s"])
+        );
         assert!(tmux_socket_args(&argv(&["tmux", "attach", "-t", "-L"])).is_empty());
     }
 
@@ -3303,15 +3623,34 @@ mod ring_file_tests {
     fn a_ring_file_reads_back_whole_and_is_overwritten_whole() {
         let d = dir("whole");
         assert_eq!(read_ring_file(&d), None, "no file, no screen");
-        let first = RingFile { form: RING_FORM_SNAPSHOT, cols: 80, rows: 24, at_ms: 1, bytes: b"one".repeat(1000) };
+        let first = RingFile {
+            form: RING_FORM_SNAPSHOT,
+            cols: 80,
+            rows: 24,
+            at_ms: 1,
+            bytes: b"one".repeat(1000),
+        };
         write_ring_file(&d, &first).unwrap();
         assert_eq!(read_ring_file(&d).as_ref(), Some(&first));
-        let second = RingFile { form: RING_FORM_REPLAY, cols: 100, rows: 30, at_ms: 2, bytes: b"two".to_vec() };
+        let second = RingFile {
+            form: RING_FORM_REPLAY,
+            cols: 100,
+            rows: 30,
+            at_ms: 2,
+            bytes: b"two".to_vec(),
+        };
         write_ring_file(&d, &second).unwrap();
         assert_eq!(read_ring_file(&d), Some(second));
-        assert!(!d.join("ring.bin.tmp").exists(), "the temporary is renamed, never left");
+        assert!(
+            !d.join("ring.bin.tmp").exists(),
+            "the temporary is renamed, never left"
+        );
         std::fs::write(ring_file_path(&d), b"\x93garbled").unwrap();
-        assert_eq!(read_ring_file(&d), None, "a garbled file is no screen, not a panic");
+        assert_eq!(
+            read_ring_file(&d),
+            None,
+            "a garbled file is no screen, not a panic"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -3322,14 +3661,32 @@ mod ring_file_tests {
     #[test]
     fn the_saved_screen_is_the_screen_a_reconnect_gets() {
         for (name, stream) in [
-            ("shell", (0..300).flat_map(|i| format!("\x1b[32m$\x1b[0m echo {i}\r\n{i}\r\n").into_bytes()).collect::<Vec<u8>>()),
-            ("tui", b"\x1b[?1049h\x1b[?1000h\x1b[H\x1b[2J\x1b[3;5H\x1b[7m menu \x1b[0m\x1b[10;1Hstatus".to_vec()),
-            ("wide", "\u{4f60}\u{597d} \x1b[1mbold\x1b[0m\r\n$ ".as_bytes().to_vec()),
+            (
+                "shell",
+                (0..300)
+                    .flat_map(|i| format!("\x1b[32m$\x1b[0m echo {i}\r\n{i}\r\n").into_bytes())
+                    .collect::<Vec<u8>>(),
+            ),
+            (
+                "tui",
+                b"\x1b[?1049h\x1b[?1000h\x1b[H\x1b[2J\x1b[3;5H\x1b[7m menu \x1b[0m\x1b[10;1Hstatus"
+                    .to_vec(),
+            ),
+            (
+                "wide",
+                "\u{4f60}\u{597d} \x1b[1mbold\x1b[0m\r\n$ "
+                    .as_bytes()
+                    .to_vec(),
+            ),
         ] {
             let s = shared(24, 80);
             feed(&s, &stream);
             let file = s.ring_now().expect("a model, a file");
-            assert_eq!((file.rows, file.cols), (24, 80), "{name}: the size it was laid out for");
+            assert_eq!(
+                (file.rows, file.cols),
+                (24, 80),
+                "{name}: the size it was laid out for"
+            );
             assert_eq!(file.form, RING_FORM_SNAPSHOT, "{name}");
             let mut again = vt100::Parser::new(file.rows, file.cols, 0);
             again.process(&file.bytes);
@@ -3337,9 +3694,21 @@ mod ring_file_tests {
             let a = m.as_ref().unwrap().parser.screen();
             let b = again.screen();
             assert_eq!(a.contents(), b.contents(), "{name}: the screen's text");
-            assert_eq!(a.alternate_screen(), b.alternate_screen(), "{name}: the buffer");
-            assert_eq!(a.cursor_position(), b.cursor_position(), "{name}: the cursor");
-            assert_eq!(a.mouse_protocol_mode(), b.mouse_protocol_mode(), "{name}: the mouse");
+            assert_eq!(
+                a.alternate_screen(),
+                b.alternate_screen(),
+                "{name}: the buffer"
+            );
+            assert_eq!(
+                a.cursor_position(),
+                b.cursor_position(),
+                "{name}: the cursor"
+            );
+            assert_eq!(
+                a.mouse_protocol_mode(),
+                b.mouse_protocol_mode(),
+                "{name}: the mouse"
+            );
         }
     }
 
@@ -3351,7 +3720,10 @@ mod ring_file_tests {
         let s = shared(24, 80);
         let mut saved = 0u64;
         s.save_ring(&d, &mut saved);
-        assert!(!ring_file_path(&d).exists(), "nothing written yet, nothing saved");
+        assert!(
+            !ring_file_path(&d).exists(),
+            "nothing written yet, nothing saved"
+        );
         feed(&s, b"hello\r\n");
         s.save_ring(&d, &mut saved);
         let first = read_ring_file(&d).expect("written once");
@@ -3384,10 +3756,16 @@ mod command_root_tests {
     use super::*;
     #[test]
     fn host_store_comes_from_the_session_directory() {
-        let root = std::env::temp_dir().join(format!("khor-host-root-{}", crate::link::fresh_hex().unwrap()));
+        let root = std::env::temp_dir().join(format!(
+            "khor-host-root-{}",
+            crate::link::fresh_hex().unwrap()
+        ));
         let dir = crate::live::sessions_dir(&root).join("example-session");
         std::fs::create_dir_all(&dir).unwrap();
-        assert_eq!(host_store_root(&dir).unwrap(), std::fs::canonicalize(&root).unwrap());
+        assert_eq!(
+            host_store_root(&dir).unwrap(),
+            std::fs::canonicalize(&root).unwrap()
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }

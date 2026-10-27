@@ -86,21 +86,46 @@ async fn a_paired_machine_searches_the_far_history_and_an_unpaired_key_is_refuse
     // Alpha's history, two sessions; beta's own is different, so an
     // answer read off the wrong disk cannot pass.
     let file = history_file(&ra);
-    append_history(&file, "shell/one", &[ran(1, "cargo test", "/w/khor", 0), ran(2, "make", "/w/other", 2)]);
-    append_history(&file, "shell/two", &[ran(3, "cargo build", "/w/khor", 101), ran(4, "cargo test", "/w/khor", 0)]);
-    append_history(&history_file(&rb), "shell/b", &[ran(1, "beta only", "/b", 0)]);
+    append_history(
+        &file,
+        "shell/one",
+        &[
+            ran(1, "cargo test", "/w/khor", 0),
+            ran(2, "make", "/w/other", 2),
+        ],
+    );
+    append_history(
+        &file,
+        "shell/two",
+        &[
+            ran(3, "cargo build", "/w/khor", 101),
+            ran(4, "cargo test", "/w/khor", 0),
+        ],
+    );
+    append_history(
+        &history_file(&rb),
+        "shell/b",
+        &[ran(1, "beta only", "/b", 0)],
+    );
 
     let ask = |text: &str, failed: bool| HistoryAsk {
         text: text.into(),
         dir: String::new(),
         failed,
     };
-    let hits = timeout(Duration::from_secs(60), b.history("alpha", &ask("cargo", false)))
-        .await
-        .expect("the search must not hang")
-        .unwrap();
+    let hits = timeout(
+        Duration::from_secs(60),
+        b.history("alpha", &ask("cargo", false)),
+    )
+    .await
+    .expect("the search must not hang")
+    .unwrap();
     let rows: Vec<(&str, u32)> = hits.iter().map(|h| (h.text.as_str(), h.runs)).collect();
-    assert_eq!(rows, [("cargo test", 2), ("cargo build", 1)], "alpha's, newest first, counted");
+    assert_eq!(
+        rows,
+        [("cargo test", 2), ("cargo build", 1)],
+        "alpha's, newest first, counted"
+    );
     let failed = timeout(Duration::from_secs(60), b.history("alpha", &ask("", true)))
         .await
         .expect("must not hang")
@@ -109,7 +134,10 @@ async fn a_paired_machine_searches_the_far_history_and_an_unpaired_key_is_refuse
     assert_eq!(failed, ["cargo build", "make"]);
     // And this machine's own, without a wire.
     let mine = b.history("", &ask("", false)).await.unwrap();
-    assert_eq!(mine.iter().map(|h| h.text.as_str()).collect::<Vec<_>>(), ["beta only"]);
+    assert_eq!(
+        mine.iter().map(|h| h.text.as_str()).collect::<Vec<_>>(),
+        ["beta only"]
+    );
 
     // The control: an unpaired key, same request, same wire, against the
     // serve that just answered.
@@ -125,7 +153,9 @@ async fn a_paired_machine_searches_the_far_history_and_an_unpaired_key_is_refuse
             iroh::SecretKey::generate(),
             &alpha_info.id,
             &alpha_info.addrs,
-            &Request::History { ask: ask("", false) },
+            &Request::History {
+                ask: ask("", false),
+            },
         ),
     )
     .await

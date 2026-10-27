@@ -18,20 +18,30 @@ use khor_node::Node;
 use scratch::*;
 
 fn env_u64(k: &str, d: u64) -> u64 {
-    std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+    std::env::var(k)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(d)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 #[ignore = "a probe of a quarter hour: run by hand"]
 async fn what_the_road_column_writes_on_a_four_machine_mesh() {
     let span = Duration::from_secs(env_u64("DIAG_SPAN_SECS", 900));
-    let (rr, homes) = (scratch("roads-relay"), ["a", "b", "c", "d"].map(|t| scratch(&format!("roads-{t}"))));
+    let (rr, homes) = (
+        scratch("roads-relay"),
+        ["a", "b", "c", "d"].map(|t| scratch(&format!("roads-{t}"))),
+    );
     let (_relay, url) = local_relay(&rr.0);
     for h in &homes {
         home_on(&h.0, &url);
     }
     let names = ["alpha", "beta", "gamma", "delta"];
-    let mut serves: Vec<Option<Reaped>> = homes.iter().zip(names).map(|(h, n)| Some(serve(&h.0, n))).collect();
+    let mut serves: Vec<Option<Reaped>> = homes
+        .iter()
+        .zip(names)
+        .map(|(h, n)| Some(serve(&h.0, n)))
+        .collect();
     stood_up(&homes.iter().map(|h| h.0.as_path()).collect::<Vec<_>>()).await;
     let a = Node::open_as(homes[0].0.clone(), "alpha").unwrap();
     for (h, n) in homes.iter().zip(names).skip(1) {
@@ -50,7 +60,13 @@ async fn what_the_road_column_writes_on_a_four_machine_mesh() {
     let mut restarted = false;
     while began.elapsed() < span {
         let t = began.elapsed().as_secs_f64() / span.as_secs_f64();
-        let phase = if t < 2.0 / 3.0 { 0 } else if t < 5.0 / 6.0 { 1 } else { 2 };
+        let phase = if t < 2.0 / 3.0 {
+            0
+        } else if t < 5.0 / 6.0 {
+            1
+        } else {
+            2
+        };
         if phase == 1 && !stopped {
             stopped = true;
             let _ = khor(&homes[3].0).arg("quit").output();
@@ -69,7 +85,15 @@ async fn what_the_road_column_writes_on_a_four_machine_mesh() {
                 if last.get(&key) != Some(&r) {
                     writes += 1;
                     by_phase[phase] += 1;
-                    eprintln!("[roads] {:>6.0}s {} -> {}: {:?} {:?} {:?}", began.elapsed().as_secs_f64(), key.0, &r.to[..8], r.road, r.relay, r.ms);
+                    eprintln!(
+                        "[roads] {:>6.0}s {} -> {}: {:?} {:?} {:?}",
+                        began.elapsed().as_secs_f64(),
+                        key.0,
+                        &r.to[..8],
+                        r.road,
+                        r.relay,
+                        r.ms
+                    );
                     last.insert(key, r);
                 }
             }

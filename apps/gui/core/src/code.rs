@@ -136,7 +136,10 @@ mod tests {
     fn the_machine_pages_door_opens_no_folder() {
         // 「打开这台机器的 VS Code，不指定目录」: an empty dir is no
         // `folder` at all, not an empty one.
-        assert_eq!(url(&"127.0.0.1:5000", "t0k", ""), "http://127.0.0.1:5000/?tkn=t0k");
+        assert_eq!(
+            url(&"127.0.0.1:5000", "t0k", ""),
+            "http://127.0.0.1:5000/?tkn=t0k"
+        );
         assert_eq!(
             url(&"127.0.0.1:5000", "t0k", "/w/a b"),
             "http://127.0.0.1:5000/?tkn=t0k&folder=/w/a%20b"

@@ -69,7 +69,10 @@ fn an_older_residents_idle_link_is_not_down() {
     })
     .unwrap();
     let read: Link = khor_node::proto::decode(&old).unwrap();
-    assert_eq!((read.hop, read.down_ms, read.last_rtt_ms), (Hop::Idle, None, None));
+    assert_eq!(
+        (read.hop, read.down_ms, read.last_rtt_ms),
+        (Hop::Idle, None, None)
+    );
     let down = Link {
         down_ms: Some(4_000),
         last_rtt_ms: Some(38),

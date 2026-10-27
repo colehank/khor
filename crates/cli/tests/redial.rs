@@ -21,7 +21,12 @@ fn median(mut v: Vec<Duration>) -> Duration {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn the_first_answer_after_a_redial() {
-    let env = |k: &str, d: u64| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+    let env = |k: &str, d: u64| {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(d)
+    };
     let rtt = Duration::from_millis(env("REDIAL_RTT_MS", 200));
     let n = env("REDIAL_N", 5) as usize;
     let (p, _road) = pair_on(
@@ -43,7 +48,10 @@ async fn the_first_answer_after_a_redial() {
     let mut held = Vec::new();
     for _ in 0..n {
         let began = Instant::now();
-        p.beta.ls_of("alpha", &dir).await.expect("a listing on a held wire");
+        p.beta
+            .ls_of("alpha", &dir)
+            .await
+            .expect("a listing on a held wire");
         held.push(began.elapsed());
     }
     let (mut read, mut write, mut sync) = (Vec::new(), Vec::new(), Vec::new());
@@ -55,13 +63,22 @@ async fn the_first_answer_after_a_redial() {
         sync_held.push(began.elapsed());
     }
     for i in 0..n {
-        p.beta.let_go_of("alpha").await.expect("the resident lets go");
+        p.beta
+            .let_go_of("alpha")
+            .await
+            .expect("the resident lets go");
         let began = Instant::now();
-        p.beta.ls_of("alpha", &dir).await.expect("a listing after a redial");
+        p.beta
+            .ls_of("alpha", &dir)
+            .await
+            .expect("a listing after a redial");
         read.push(began.elapsed());
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        p.beta.let_go_of("alpha").await.expect("the resident lets go");
+        p.beta
+            .let_go_of("alpha")
+            .await
+            .expect("the resident lets go");
         let began = Instant::now();
         p.beta
             .mkdir("alpha", &format!("{dir}/made-{i}"))
@@ -70,7 +87,10 @@ async fn the_first_answer_after_a_redial() {
         write.push(began.elapsed());
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        p.beta.let_go_of("alpha").await.expect("the resident lets go");
+        p.beta
+            .let_go_of("alpha")
+            .await
+            .expect("the resident lets go");
         let began = Instant::now();
         let outcomes = p.beta.sync_now().await.expect("a sync after a redial");
         assert!(

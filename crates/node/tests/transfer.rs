@@ -135,7 +135,8 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
     let f = &files[0];
     // Where it landed: the receive directory, under its own name, found
     // again by its digest (`khor_node::road`).
-    let landed = |f: &khor_sync::chat::FileRef| khor_node::road::landed(&rb, &dir, f).expect("landed");
+    let landed =
+        |f: &khor_sync::chat::FileRef| khor_node::road::landed(&rb, &dir, f).expect("landed");
     assert_eq!(landed(f), rb.join("khor-drop").join("big.bin"));
     assert_eq!(
         fs::read(landed(f)).unwrap(),
@@ -148,7 +149,11 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
         "the landing must be nameable — retry's answer prints it"
     );
     // The message carries the landing, for every device to read.
-    let fate = m.fates.get(b.device_str()).cloned().expect("the receiver wrote how the move stands");
+    let fate = m
+        .fates
+        .get(b.device_str())
+        .cloned()
+        .expect("the receiver wrote how the move stands");
     assert_eq!(fate.step, khor_sync::chat::Step::Landed);
     assert_eq!(fate.landed, vec![landed(f).display().to_string()]);
     assert_eq!(fate.moved, payload.len() as i64);
@@ -156,7 +161,11 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
     // Resume: plant a partial of the first 100k — the second pull moves
     // only the missing tail, and the result is still verbatim.
     fs::remove_file(landed(f)).unwrap();
-    fs::write(khor_node::road::partial_of(&rb, &f.digest).unwrap(), &payload[..100_000]).unwrap();
+    fs::write(
+        khor_node::road::partial_of(&rb, &f.digest).unwrap(),
+        &payload[..100_000],
+    )
+    .unwrap();
     let (moved, _) = timeout(Duration::from_secs(60), b.take(&tid))
         .await
         .expect("take must not hang")
@@ -189,11 +198,25 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
         "wrong bytes must fail the digest: {err}"
     );
     assert!(
-        !khor_node::road::partial_of(&rb, &f.digest).unwrap().exists(),
+        !khor_node::road::partial_of(&rb, &f.digest)
+            .unwrap()
+            .exists(),
         "the poisoned partial must be discarded"
     );
-    let failed = b.log(BROADCAST).unwrap().messages.into_iter().find(|x| x.id == m.id).unwrap().fates[b.device_str()].clone();
-    assert_eq!(failed.step, khor_sync::chat::Step::Failed, "a failure is on the message");
+    let failed = b
+        .log(BROADCAST)
+        .unwrap()
+        .messages
+        .into_iter()
+        .find(|x| x.id == m.id)
+        .unwrap()
+        .fates[b.device_str()]
+    .clone();
+    assert_eq!(
+        failed.step,
+        khor_sync::chat::Step::Failed,
+        "a failure is on the message"
+    );
     assert!(!failed.why.is_empty(), "with its sentence: {failed:?}");
     let (moved, _) = timeout(Duration::from_secs(60), b.take(&tid))
         .await
@@ -272,7 +295,12 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
 /// The message with this transfer id, as `n` reads it.
 fn message(n: &Node, tid: &SessionId) -> khor_sync::chat::Message {
     let id = tid.0.strip_prefix("transfer/").unwrap();
-    n.log(BROADCAST).unwrap().messages.into_iter().find(|m| m.id == id).expect("the message is here")
+    n.log(BROADCAST)
+        .unwrap()
+        .messages
+        .into_iter()
+        .find(|m| m.id == id)
+        .expect("the message is here")
 }
 
 /// A file offered in the broadcast to nobody in particular (STORE-BRIEF
@@ -298,13 +326,19 @@ async fn a_cancelled_pull_leaves_nothing_and_a_retry_lands_it() {
     let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let ticket = a.invite().unwrap();
     let b = std::sync::Arc::new(Node::open_as(rb.to_path_buf(), "beta").unwrap());
-    timeout(Duration::from_secs(45), b.pair(&ticket)).await.expect("pairing must not hang").unwrap();
+    timeout(Duration::from_secs(45), b.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
 
     let payload: Vec<u8> = (0..64_000_000u32).map(|i| (i % 253) as u8).collect();
     let src = ra.join("large.bin");
     fs::write(&src, &payload).unwrap();
     let tid = offer(&a, &src).await;
-    timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
+    timeout(Duration::from_secs(45), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
     let digest = blake3::hash(&payload).to_hex().to_string();
     let key = khor_node::road::sent_key(tid.0.strip_prefix("transfer/").unwrap(), b.device_str());
 
@@ -315,7 +349,9 @@ async fn a_cancelled_pull_leaves_nothing_and_a_retry_lands_it() {
     // The cancel lands once bytes are moving, as a person's × would.
     timeout(Duration::from_secs(60), async {
         loop {
-            if khor_node::road::peek(&key).is_some_and(|j| j.moved.load(std::sync::atomic::Ordering::Relaxed) > 0) {
+            if khor_node::road::peek(&key)
+                .is_some_and(|j| j.moved.load(std::sync::atomic::Ordering::Relaxed) > 0)
+            {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -324,14 +360,34 @@ async fn a_cancelled_pull_leaves_nothing_and_a_retry_lands_it() {
     .await
     .expect("the pull must start");
     khor_node::road::stop(&key);
-    let err = timeout(Duration::from_secs(60), pulling).await.expect("a cancelled pull must end").unwrap().unwrap_err();
+    let err = timeout(Duration::from_secs(60), pulling)
+        .await
+        .expect("a cancelled pull must end")
+        .unwrap()
+        .unwrap_err();
     assert_eq!(err, khor_node::road::cancelled());
-    assert!(!khor_node::road::partial_of(&rb, &digest).unwrap().exists(), "no partial kept");
-    assert!(!rb.join("khor-drop").join("large.bin").exists(), "nothing landed");
-    assert_eq!(message(&b, &tid).fates[b.device_str()].step, khor_sync::chat::Step::Stopped);
+    assert!(
+        !khor_node::road::partial_of(&rb, &digest).unwrap().exists(),
+        "no partial kept"
+    );
+    assert!(
+        !rb.join("khor-drop").join("large.bin").exists(),
+        "nothing landed"
+    );
+    assert_eq!(
+        message(&b, &tid).fates[b.device_str()].step,
+        khor_sync::chat::Step::Stopped
+    );
 
-    let (moved, landed) = timeout(Duration::from_secs(120), b.take(&tid)).await.expect("a retry must not hang").unwrap();
-    assert_eq!(moved, payload.len() as u64, "a retry after a cancel starts from nothing");
+    let (moved, landed) = timeout(Duration::from_secs(120), b.take(&tid))
+        .await
+        .expect("a retry must not hang")
+        .unwrap();
+    assert_eq!(
+        moved,
+        payload.len() as u64,
+        "a retry after a cancel starts from nothing"
+    );
     assert_eq!(fs::read(&landed[0]).unwrap(), payload);
 
     serve.abort();
@@ -367,8 +423,18 @@ async fn a_receive_dir_set_elsewhere_is_resolved_on_sync() {
         .expect("sync must not hang")
         .unwrap();
     let want = ra.join("inbox").display().to_string();
-    let mine = |n: &Node| n.devices().unwrap().into_iter().find(|d| d.id == alpha).unwrap();
-    assert_eq!(mine(&a).receive_at.as_deref(), Some(want.as_str()), "alpha resolved it as the sync arrived");
+    let mine = |n: &Node| {
+        n.devices()
+            .unwrap()
+            .into_iter()
+            .find(|d| d.id == alpha)
+            .unwrap()
+    };
+    assert_eq!(
+        mine(&a).receive_at.as_deref(),
+        Some(want.as_str()),
+        "alpha resolved it as the sync arrived"
+    );
     assert_eq!(mine(&a).receive_for.as_deref(), Some("~/inbox"));
     assert!(ra.join("inbox").is_dir(), "and made it");
 
@@ -376,7 +442,11 @@ async fn a_receive_dir_set_elsewhere_is_resolved_on_sync() {
         .await
         .expect("sync must not hang")
         .unwrap();
-    assert_eq!(mine(&b).receive_at.as_deref(), Some(want.as_str()), "beta reads where alpha's files land now");
+    assert_eq!(
+        mine(&b).receive_at.as_deref(),
+        Some(want.as_str()),
+        "beta reads where alpha's files land now"
+    );
 
     serve.abort();
 }
@@ -406,7 +476,8 @@ async fn a_line_told_now_reaches_the_other_machine_without_waiting_for_the_beat(
     // No sync here: the push brought it across.
     let said = a.log(BROADCAST).unwrap().messages;
     assert!(
-        said.iter().any(|m| matches!(&m.body, MsgBody::Text(t) if t == "are you there")),
+        said.iter()
+            .any(|m| matches!(&m.body, MsgBody::Text(t) if t == "are you there")),
         "alpha reads beta's line at once"
     );
 
