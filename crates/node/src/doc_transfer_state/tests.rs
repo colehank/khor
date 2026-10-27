@@ -255,6 +255,74 @@ fn a_recreated_equivalent_receipt_reconfirms_old_ack_without_deleting_new_ids() 
                 .any(|r| r.manifest() == &new.manifest)
         );
     });
+    // The Work that sent old can receive its Complete after another pump's
+    // exact Confirm/ACK already removed it. Generic unknown proofs still fail.
+    let late_ack = state(&a, |s| {
+        assert!(s.accept(&a, b.local, &equivalent, false).is_err());
+        assert!(
+            s.accept_sent(&a, b.local, &new.manifest, &equivalent)
+                .is_err()
+        );
+        assert!(
+            !s.records
+                .outgoing
+                .iter()
+                .any(|r| r.manifest() == &old.manifest)
+        );
+        let late_ack = s
+            .accept_sent(&a, b.local, &old.manifest, &equivalent)
+            .unwrap();
+        assert_eq!(
+            s.accept_sent(&a, b.local, &old.manifest, &equivalent)
+                .unwrap(),
+            late_ack
+        );
+        assert!(s.records.outgoing.iter().any(
+            |r| matches!(r, Outgoing::NeedAck(p) if p == &equivalent)
+        ));
+        assert!(s.records.outgoing.iter().any(
+            |r| matches!(r, Outgoing::Ready(m) if m == &new.manifest)
+        ));
+        assert!(
+            s.blobs
+                .open_existing(&old.manifest.core().unwrap())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            s.blobs
+                .open_existing(&new.manifest.core().unwrap())
+                .unwrap()
+                .is_some()
+        );
+        late_ack
+    });
+    let absent = state(&b, |s| s.acknowledge(a.local, &late_ack).unwrap());
+    assert!(matches!(&absent, DocAckResult::Absent { .. }));
+    state(&a, |s| {
+        s.acknowledged(&a, b.local, &absent).unwrap();
+        assert!(
+            !s.records
+                .outgoing
+                .iter()
+                .any(|r| r.manifest() == &old.manifest)
+        );
+        assert!(s.records.outgoing.iter().any(
+            |r| matches!(r, Outgoing::Ready(m) if m == &new.manifest)
+        ));
+        assert!(
+            s.blobs
+                .open_existing(&old.manifest.core().unwrap())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            s.blobs
+                .open_existing(&new.manifest.core().unwrap())
+                .unwrap()
+                .is_some()
+        );
+    });
 }
 
 #[test]

@@ -14,6 +14,9 @@ use khor_sync::{
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::PathBuf};
 mod io;
+pub(crate) use io::RootGate as RootMutationGuard;
+pub(crate) use io::publish_anchor;
+pub(crate) mod pairing;
 pub(crate) mod registry;
 use registry::with_doc;
 
@@ -97,7 +100,8 @@ const MAX_RECORDS: usize = 64;
 const MAX_RECORD_BYTES: usize = 192 * 1024;
 
 impl DocManifest {
-    pub(crate) fn core(&self) -> Result<Manifest, Error> {
+    /// Shared byte envelope; the purpose owner must validate its binding.
+    pub(crate) fn blob_core(&self) -> Result<Manifest, Error> {
         let value = Manifest {
             source: self.source,
             recipient: self.recipient,
@@ -105,6 +109,11 @@ impl DocManifest {
             total_bytes: self.total_bytes,
             digest: self.digest,
         };
+        value.validate().map_err(Error::from_std)?;
+        Ok(value)
+    }
+    pub(crate) fn core(&self) -> Result<Manifest, Error> {
+        let value = self.blob_core()?;
         Descriptor::from_manifest(&value).map_err(Error::from_std)?;
         Ok(value)
     }
@@ -180,6 +189,13 @@ impl Context {
         remote: [u8; 32],
         sink: &mut khor_sync::transfer::Sink,
     ) -> Result<(DocumentVersion, bool, Option<u64>), Error> {
+        let _trust = if name == "devices" {
+            let guard = io::root_gate(&self.root)?;
+            if pairing::needs_recovery(&self.root, self.local)? {
+                return Err(Error::busy());
+            }
+            Some(guard)
+        } else { None };
         with_doc!(self, name, |loaded| {
             let before = loaded.doc.version();
             let result = doc_transfer::apply_staged(
@@ -249,6 +265,10 @@ impl Incoming {
 struct Records {
     outgoing: Vec<Outgoing>,
     incoming: Vec<Incoming>,
+    // Last and omitted when empty, so pre-pairing N1 journals keep their
+    // canonical two-field representation and all retained Doc stages.
+    #[serde(default, skip_serializing_if = "pairing::Records::is_empty")]
+    pairing: pairing::Records,
 }
 
 pub(crate) struct Notice {
@@ -337,7 +357,7 @@ impl State {
                         r.manifest() == &wire
                     }
                 });
-            if !referenced {
+            if !referenced && !self.records.pairing.references(&wire) {
                 return Err(
                     "unreferenced retained document stage; explicit reconciliation required".into(),
                 );
@@ -361,11 +381,15 @@ impl State {
         Ok(names.into_iter().collect())
     }
     pub(crate) fn pending_proofs(&self, remote: [u8; 32], limit: usize) -> Vec<DocProof> {
+        self.scoped_proofs(remote, limit, false)
+    }
+    pub(crate) fn scoped_proofs(&self, remote: [u8; 32], limit: usize, devices_only: bool) -> Vec<DocProof> {
         self.records
             .incoming
             .iter()
             .filter_map(|r| match r {
-                Incoming::Complete { proof, .. } if proof.manifest.source == remote => {
+                Incoming::Complete { proof, .. } if proof.manifest.source == remote
+                    && (!devices_only || proof.manifest.descriptor().is_ok_and(|d| d.document == "devices")) => {
                     Some(proof.clone())
                 }
                 _ => None,
@@ -378,11 +402,15 @@ impl State {
         remote: [u8; 32],
         limit: usize,
     ) -> Result<Vec<DocAcknowledgement>, Error> {
+        self.scoped_acknowledgements(remote, limit, false)
+    }
+    pub(crate) fn scoped_acknowledgements(&self, remote: [u8; 32], limit: usize, devices_only: bool) -> Result<Vec<DocAcknowledgement>, Error> {
         self.records
             .outgoing
             .iter()
             .filter_map(|r| match r {
-                Outgoing::NeedAck(proof) if proof.manifest.recipient == remote => {
+                Outgoing::NeedAck(proof) if proof.manifest.recipient == remote
+                    && (!devices_only || proof.manifest.descriptor().is_ok_and(|d| d.document == "devices")) => {
                     Some(proof.acknowledgement())
                 }
                 _ => None,
@@ -433,12 +461,26 @@ impl State {
         name: &str,
         have: &DocumentVersion,
     ) -> Result<Option<DocChunk>, Error> {
+        self.offer_encoded(context, remote, name, have, Encoding::Updates)
+    }
+    fn offer_encoded(&mut self, context: &Context, remote: [u8;32], name: &str, have: &DocumentVersion, encoding: Encoding) -> Result<Option<DocChunk>, Error> {
         let active = self.records.outgoing.iter().position(|r| {
             r.active()
                 && r.manifest().recipient == remote
                 && r.manifest().descriptor().is_ok_and(|d| d.document == name)
         });
         if let Some(index) = active {
+            if encoding == Encoding::Snapshot {
+                let active = self.records.outgoing[index].manifest().descriptor()?;
+                if active.encoding != encoding
+                    || active.epoch != have.epoch
+                    || active.base != have.version
+                {
+                    // A normal plan keeps its immutable target and owner;
+                    // Pair must wait rather than change its fixed grant base.
+                    return Err(Error::busy());
+                }
+            }
             match self.records.outgoing[index].clone() {
                 Outgoing::Ready(manifest) => {
                     return self.read_outgoing(context, remote, &manifest, 0).map(Some);
@@ -488,7 +530,7 @@ impl State {
             let descriptor = Descriptor {
                 document: name.into(),
                 epoch: loaded.store.epoch(),
-                encoding: Encoding::Updates,
+                encoding,
                 base: have.version.clone(),
                 target: loaded.doc.version(),
             };
@@ -512,7 +554,7 @@ impl State {
                     recipient: remote,
                     receiver_epoch: have.epoch,
                     base: have.version.clone(),
-                    encoding: Encoding::Updates,
+                    encoding,
                 },
                 &self.blobs,
             )
@@ -569,11 +611,31 @@ impl State {
         {
             return Err("outgoing document epoch changed".into());
         }
-        let mut outbound = doc_transfer::resume(&self.blobs, &manifest.core()?)
+        // Ready is published only for a locally prepared, body-validated
+        // immutable spool. Reopen still recovers/checks every core byte and
+        // digest; repeated chunks need not decode that same Loro body again.
+        let core = manifest.core()?;
+        let mut sink = self.blobs.open_existing(&core)
             .map_err(Error::from_std)?
             .ok_or("outgoing document body is missing")?;
-        let bytes = outbound.read_chunk(offset).map_err(Error::from_std)?;
-        drop(outbound);
+        if !matches!(sink.progress().map_err(Error::from_std)?, Progress::VerifiedComplete { .. }) {
+            return Err(Error::from_std(khor_sync::transfer::Error::InvalidStage("outgoing body is not verified complete")));
+        }
+        let total = core.total_bytes;
+        if offset > total || (offset != total && offset % khor_sync::transfer::CHUNK_BYTES as u64 != 0) {
+            return Err(Error::from_std(khor_sync::transfer::Error::InvalidChunk("noncanonical outbound read offset")));
+        }
+        let count = (total - offset).min(khor_sync::transfer::CHUNK_BYTES as u64) as usize;
+        let mut bytes = vec![0; count];
+        let mut filled = 0;
+        while filled < count {
+            let read = sink.read_verified(offset + filled as u64, &mut bytes[filled..]).map_err(Error::from_std)?;
+            if read == 0 {
+                return Err(Error::from_std(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "verified outbound body was truncated")));
+            }
+            filled += read;
+        }
+        drop(sink);
         Ok(DocChunk {
             manifest: manifest.clone(),
             offset,
@@ -791,6 +853,37 @@ impl State {
         proof: &DocProof,
         confirmation_request: bool,
     ) -> Result<DocAcknowledgement, Error> {
+        self.validate_completion(context, remote, proof)?;
+        self.accept_checked(proof, confirmation_request)
+    }
+    pub(crate) fn accept_sent(
+        &mut self,
+        context: &Context,
+        remote: [u8; 32],
+        sent: &DocManifest,
+        proof: &DocProof,
+    ) -> Result<DocAcknowledgement, Error> {
+        if sent != &proof.manifest {
+            return Err("completion does not bind the active outgoing manifest".into());
+        }
+        self.validate_completion(context, remote, proof)?;
+        if self.records.outgoing.iter().any(|r| r.manifest() == sent) {
+            return self.accept_checked(proof, false);
+        }
+        // A parallel authenticated pump may have confirmed and retired the
+        // exact manifest this Work sent before its Complete reply arrived.
+        // Keep only the terminal ACK retry, never a new body or Ready plan.
+        let acknowledgement = proof.acknowledgement()?;
+        self.records.outgoing.push(Outgoing::NeedAck(proof.clone()));
+        self.save()?;
+        Ok(acknowledgement)
+    }
+    fn validate_completion(
+        &self,
+        context: &Context,
+        remote: [u8; 32],
+        proof: &DocProof,
+    ) -> Result<(), Error> {
         proof.validate()?;
         authorize(&proof.manifest, context.local, remote)?;
         let descriptor = proof.manifest.descriptor()?;
@@ -798,6 +891,13 @@ impl State {
         if local.epoch != descriptor.epoch || !local.version.includes_vv(&descriptor.target) {
             return Err("outgoing completion belongs to an obsolete source version".into());
         }
+        Ok(())
+    }
+    fn accept_checked(
+        &mut self,
+        proof: &DocProof,
+        confirmation_request: bool,
+    ) -> Result<DocAcknowledgement, Error> {
         let id = proof.manifest.id()?;
         let index = self
             .records
@@ -928,6 +1028,7 @@ fn validate_records(bytes: &[u8], local: [u8; 32]) -> Result<(), Error> {
     if records.outgoing.len() > MAX_RECORDS || records.incoming.len() > MAX_RECORDS {
         return Err("document transfer metadata count exceeds budget".into());
     }
+    records.pairing.validate(local)?;
     let mut ids = BTreeSet::new();
     let mut active = BTreeSet::new();
     for row in &records.outgoing {

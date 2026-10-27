@@ -333,7 +333,12 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
     let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let stale = a.invite().unwrap();
     let token = khor_net::endpoint::Ticket::decode(&stale).unwrap().token;
-    let record = ra.join(".khor").join("invites").join(&token);
+    let record = ra.join(".khor").join("invites").join({
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"khor-pair-ticket-v1\0");
+        hash.update(token.as_bytes());
+        hash.finalize().to_hex().to_string()
+    });
     assert!(record.exists(), "control: the issuer keeps a record to age");
 
     // One millisecond past the window, on the clock that decides.
@@ -413,7 +418,10 @@ fn minting_a_ticket_sweeps_the_ones_that_expired() {
     let minted = khor_net::endpoint::Ticket::decode(&ticket).unwrap().token;
     assert!(!old.exists(), "an expired ticket is swept");
     assert!(!empty.exists(), "and so is one whose age cannot be read");
-    assert!(dir.join(&minted).exists(), "while the new one stays");
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"khor-pair-ticket-v1\0");
+    hash.update(minted.as_bytes());
+    assert!(dir.join(hash.finalize().to_hex().as_str()).exists(), "while the new one stays");
 }
 
 fn now_ms() -> i64 {

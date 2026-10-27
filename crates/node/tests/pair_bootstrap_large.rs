@@ -190,7 +190,12 @@ async fn exercise(root: &Path) {
     let ticket = issuer.invite().unwrap();
     // The raw token is used only for its owned fixture path, never logged.
     let token = Ticket::decode(&ticket).unwrap().token;
-    let invite_path = issuer_root.join(".khor/invites").join(&token);
+    let invite_path = issuer_root.join(".khor/invites").join({
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"khor-pair-ticket-v1\0");
+        hash.update(token.as_bytes());
+        hash.finalize().to_hex().to_string()
+    });
     assert!(
         invite_path.is_file(),
         "the fixture starts with an unspent ticket"

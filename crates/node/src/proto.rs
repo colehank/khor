@@ -16,15 +16,8 @@ pub const SLICE: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
-    /// Join with a one-time token and the asker's signed roster.
-    /// The issuer settles the network root before burning the token.
-    Pair {
-        token: String,
-        name: String,
-        addrs: Vec<String>,
-        #[serde(default)]
-        roster: serde_bytes::ByteBuf,
-    },
+    /// Recoverable authenticated pairing. Every body is a canonical blob chunk.
+    Pair { action: PairAction },
     /// The only current document transport. Mutating operations wait for
     /// authenticated handshake completion and carry exact bounded manifests.
     DocTransfer { action: DocTransferAction },
@@ -579,11 +572,7 @@ pub enum Request {
     /// Sent only after the answerer refused a round's opening. **A new
     /// variant**: a khor that predates it refuses the frame, and the
     /// asker's round fails as it did before, with the refusal's words.
-    Vouch {
-        name: String,
-        addrs: Vec<String>,
-        roster: serde_bytes::ByteBuf,
-    },
+    Vouch { action: VouchAction },
     /// **Pull this file into your drop directory** (item 60,
     /// `crate::drops`): `from` is the id of the machine that has it,
     /// `path` absolute there. The answering machine pulls it directly
@@ -704,6 +693,59 @@ pub struct DocChunk {
     pub bytes: serde_bytes::ByteBuf,
 }
 
+/// A first header is immutable for a claim, including its fresh devices base.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairHeader {
+    pub name: String,
+    pub addrs: Vec<String>,
+    pub devices_have: serde_bytes::ByteBuf,
+    pub roster: Option<DocManifest>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PairPhase { Receiving, AdmissionFlushed, BootstrapComplete }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PairAction {
+    Start { token: String, nonce: [u8; 32], header: PairHeader, roster: Option<DocChunk> },
+    Resume { claim: [u8; 32], nonce: [u8; 32] },
+    WriteRoster { claim: [u8; 32], nonce: [u8; 32], chunk: DocChunk },
+    ReadRoster { claim: [u8; 32], nonce: [u8; 32], manifest: DocManifest, offset: u64 },
+    Commit { claim: [u8; 32], nonce: [u8; 32] },
+    TrustAccepted { claim: [u8; 32], nonce: [u8; 32], roster: Option<DocManifest> },
+    Devices { claim: [u8; 32], nonce: [u8; 32], action: DocTransferAction },
+    Finish { claim: [u8; 32], nonce: [u8; 32], have: serde_bytes::ByteBuf, target: serde_bytes::ByteBuf },
+    Abort { claim: [u8; 32], nonce: [u8; 32] },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PairReply {
+    Progress {
+        claim: [u8; 32], phase: PairPhase, name: String,
+        devices_have: serde_bytes::ByteBuf,
+        roster_manifest: Option<DocManifest>, roster: Option<DocChunk>,
+        roster_received: u64,
+    },
+    Roster { claim: [u8; 32], chunk: DocChunk },
+    Devices { claim: [u8; 32], reply: DocTransferReply },
+    Aborted { claim: [u8; 32] },
+    Uncommitted { claim: [u8;32], why: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VouchAction {
+    Start { name: String, addrs: Vec<String>, certificate: serde_bytes::ByteBuf, roster: DocChunk },
+    Write { operation: [u8; 32], chunk: DocChunk },
+    Status { operation: [u8; 32] },
+    Finish { operation: [u8; 32] },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VouchPhase { Stored { next_offset: u64 }, VerifiedBlob, Vouched }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VouchReply { pub operation: [u8; 32], pub phase: VouchPhase }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DocProofKind { Applied, AlreadyHaveEquivalent }
 
@@ -785,25 +827,8 @@ pub enum DocumentInventory {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
-    /// Pairing done on the issuer's side; `devices` is its table snapshot
-    /// (base64) — merging it is what makes one pairing join the whole
-    /// network.
-    ///
-    /// `roster` is the issuer's newest roster **after** it settled and
-    /// signed (empty in a network from before roots); the asker runs the
-    /// same rule on it before merging anything.
-    ///
-    /// An older asker cannot decode the longer frame: its `pair_with`
-    /// lands on the decode error and prints it — a refusal a person
-    /// reads, not a half-joined table (nothing was merged). Same break,
-    /// same reason as `Request::Pair`.
-    Paired {
-        name: String,
-        devices: String,
-        #[serde(default)]
-        roster: serde_bytes::ByteBuf,
-        version: serde_bytes::ByteBuf,
-    },
+    /// One bounded recoverable pairing step. No full document or roster inline.
+    Paired { reply: PairReply },
     DocTransfer { reply: DocTransferReply },
     /// A changed reading did not fit beside the document inventory.
     ReadingDeferred,
@@ -1117,7 +1142,7 @@ pub enum Response {
     WorkspaceFacts { facts: Vec<khor_core::WorkspaceFact> },
     /// [`Request::Vouch`] taken: the asker's row and the roster are in
     /// the answerer's table.
-    Vouched,
+    Vouched { reply: VouchReply },
     /// [`Request::DropFile`]'s job so far: bytes landed of `total` (0
     /// until the source has said), and once `done`, the absolute path
     /// the file landed at on the answering machine.
@@ -1360,7 +1385,7 @@ impl Request {
             | Request::Fetch { .. }
             | Request::FetchPath { .. }
             | Request::SatFetchPath { .. }
-            | Request::Pair { .. } => Duration::from_secs(30),
+            | Request::Pair { .. } | Request::Vouch { .. } => Duration::from_secs(30),
             Request::SatVitals { .. }
             | Request::SatLs { .. }
             | Request::SatRemove { .. }
@@ -1396,17 +1421,26 @@ pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {
 }
 
 pub fn encode_request(request: &Request) -> Result<Vec<u8>, String> {
-    if let Request::DocTransfer { action } = request { crate::link::documents::validate_action(action)?; }
+    match request {
+        Request::DocTransfer { action } => crate::link::documents::validate_action(action)?,
+        Request::Pair { action } => crate::link::pairing::validate_pair_action(action)?,
+        Request::Vouch { action } => crate::link::pairing::validate_vouch_action(action)?,
+        _ => (),
+    }
     let bytes = encode(request)?;
-    if matches!(request, Request::DocTransfer { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+    if matches!(request, Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
         return Err("document transfer request exceeds 1 MiB".into());
     }
     Ok(bytes)
 }
 pub fn encode_response(response: &Response) -> Result<Vec<u8>, String> {
-    if let Response::DocTransfer { reply } = response { crate::link::documents::validate_reply(reply)?; }
+    match response {
+        Response::DocTransfer { reply } => crate::link::documents::validate_reply(reply)?,
+        Response::Paired { reply } => crate::link::pairing::validate_pair_reply(reply)?,
+        _ => (),
+    }
     let bytes = encode(response)?;
-    if matches!(response, Response::DocTransfer { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+    if matches!(response, Response::DocTransfer { .. } | Response::Paired { .. } | Response::Vouched { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
         return Err("document transfer response exceeds 1 MiB".into());
     }
     Ok(bytes)
@@ -1420,8 +1454,13 @@ pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, String> {
 /// The decoder can leave trailing bytes, so re-encoding cannot enforce this cap.
 pub fn question(bytes: &[u8]) -> Result<Request, String> {
     let request = decode::<Request>(bytes)?;
-    if matches!(&request, Request::DocTransfer { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+    if matches!(&request, Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
         return Err("document transfer request exceeds 1 MiB".into());
+    }
+    match &request {
+        Request::Pair { action } => crate::link::pairing::validate_pair_action(action)?,
+        Request::Vouch { action } => crate::link::pairing::validate_vouch_action(action)?,
+        _ => (),
     }
     Ok(request)
 }
@@ -1453,16 +1492,25 @@ fn answer_inner(bytes: &[u8], body_bytes: Option<&mut Option<usize>>) -> Result<
             Response::DocTransfer {
                 reply: DocTransferReply::Exchanged { offer: Some(chunk), .. }
                     | DocTransferReply::Chunk { chunk },
-            } => chunk.bytes.len(),
+            }
+            | Response::Paired { reply: PairReply::Devices {
+                reply: DocTransferReply::Exchanged { offer: Some(chunk), .. }
+                    | DocTransferReply::Chunk { chunk }, ..
+            } } => chunk.bytes.len(),
             _ => 0,
         });
     }
-    if matches!(&response, Response::DocTransfer { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+    if matches!(&response, Response::DocTransfer { .. } | Response::Paired { .. } | Response::Vouched { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
         return Err("document transfer response exceeds 1 MiB".into());
     }
-    if let Response::DocTransfer { reply } = &response { crate::link::documents::validate_reply(reply)?; }
+    match &response {
+        Response::DocTransfer { reply } => crate::link::documents::validate_reply(reply)?,
+        Response::Paired { reply } => crate::link::pairing::validate_pair_reply(reply)?,
+        _ => (),
+    }
     match &mut response {
         Response::Refused { why } | Response::InventoryNotAdmitted { why } => reword(why),
+        Response::Paired { reply: PairReply::Uncommitted { why, .. } } => reword(why),
         Response::Versions { docs, .. } => {
             for (_, inventory) in docs {
                 if let DocumentInventory::Failed { why } = inventory {
@@ -1470,7 +1518,7 @@ fn answer_inner(bytes: &[u8], body_bytes: Option<&mut Option<usize>>) -> Result<
                 }
             }
         }
-        Response::DocTransfer { reply } => match reply {
+        Response::DocTransfer { reply } | Response::Paired { reply: PairReply::Devices { reply, .. } } => match reply {
             DocTransferReply::Failed { why, .. }
             | DocTransferReply::State { state: DocTransferState::Failed { why, .. }, .. } => reword(why),
             DocTransferReply::Exchanged { received: Some(DocTransferState::Failed { why, .. }), .. } => reword(why),

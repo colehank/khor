@@ -17,6 +17,7 @@ static WORK: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 static WAITING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
 const VISIT_BYTES: usize = 32 * 1024 * 1024;
 const VISIT_TIME: Duration = Duration::from_secs(30);
+type PairRoute = Option<([u8; 32], [u8; 32])>;
 
 fn fits_step_budget(starting: bool, charged_bytes: usize, quantum_chunks: usize) -> bool {
     let reserved_chunks = if starting { 2 } else { 1 };
@@ -60,6 +61,18 @@ async fn blocking<T: Send + 'static>(
     context: Context,
     job: impl FnOnce(&Context, &mut State) -> Result<T, Error> + Send + 'static,
 ) -> Result<(T, Vec<Notice>), Error> {
+    on_worker(context, move |context| {
+        let mut state = State::open(context)?;
+        let value = job(context, &mut state)?;
+        let notices = state.notice_ids(context)?;
+        Ok((value, notices))
+    }).await
+}
+
+pub(super) async fn on_worker<T: Send + 'static>(
+    context: Context,
+    job: impl FnOnce(&Context) -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
     // Queue at most eight owned jobs, and spawn only after the single heavy
     // seat is acquired. A transient local step must not skip Seen/Pins just
     // because an unrelated admitted step is finishing its flush.
@@ -68,17 +81,14 @@ async fn blocking<T: Send + 'static>(
     drop(waiting);
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let mut state = State::open(&context)?;
-        let value = job(&context, &mut state)?;
-        let notices = state.notice_ids(&context)?;
-        Ok((value, notices))
+        job(&context)
     })
     .await
     .map_err(|e| format!("document transfer worker: {e}"))?
 }
 
 impl Node {
-    fn doc_context(&self) -> Result<Context, Error> {
+    pub(super) fn doc_context(&self) -> Result<Context, Error> {
         Ok(Context {
             root: self.root().clone(),
             writer: self.writer_peer(),
@@ -86,12 +96,16 @@ impl Node {
                 .ok_or("invalid local document identity")?,
         })
     }
-    async fn doc_step<T: Send + 'static>(
+    pub(super) async fn doc_step<T: Send + 'static>(
         &self,
         job: impl FnOnce(&Context, &mut State) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
         let context = self.doc_context()?;
         let (value, notices) = blocking(context.clone(), job).await?;
+        self.deliver_doc_notices(context, notices).await?;
+        Ok(value)
+    }
+    pub(super) async fn deliver_doc_notices(&self, context: Context, notices: Vec<Notice>) -> Result<(), Error> {
         for Notice {
             id,
             document: name,
@@ -117,7 +131,7 @@ impl Node {
             }
             blocking(context.clone(), move |_, state| state.mark_notified(&id)).await?;
         }
-        Ok(value)
+        Ok(())
     }
     pub(super) async fn answer_doc_transfer(&self, remote: &str, action: Action) -> Reply {
         let Some(remote) = khor_net::trust::id_from_hex(remote) else {
@@ -155,6 +169,7 @@ impl Node {
         line: &Line,
         action: Action,
         usage: &mut Usage,
+        route: PairRoute,
     ) -> Result<Reply, Error> {
         validate_action(&action)?;
         let local = self.doc_context()?.local;
@@ -174,8 +189,14 @@ impl Node {
             0
         };
         let mut attempt = super::DocAttempt::default();
+        let request = match route {
+            None => Request::DocTransfer { action },
+            Some((claim, nonce)) => Request::Pair {
+                action: crate::proto::PairAction::Devices { claim, nonce, action },
+            },
+        };
         let response = self
-            .exchange_doc_on(line, &Request::DocTransfer { action }, &mut attempt)
+            .exchange_doc_on(line, &request, &mut attempt)
             .await;
         // Preserve both directions before transport/decode/role/shape/local
         // errors can return. Every repeated application request counts again.
@@ -189,14 +210,14 @@ impl Node {
         } else if attempt.started {
             usage.uncertain(possible_reply);
         }
-        match response.map_err(super::Miss::words)? {
-            Response::DocTransfer { reply } => {
-                validate_reply_roles(&reply, local, remote)?;
-                Ok(reply)
-            }
-            Response::Refused { why } => Err(why.into()),
-            _ => Err("unexpected non-document response".into()),
-        }
+        let reply = match (route, response.map_err(super::Miss::words)?) {
+            (None, Response::DocTransfer { reply }) => reply,
+            (Some((expected, _)), Response::Paired { reply: crate::proto::PairReply::Devices { claim, reply } }) if claim == expected => reply,
+            (_, Response::Refused { why }) => return Err(why.into()),
+            _ => return Err("unexpected document route or response".into()),
+        };
+        validate_reply_roles(&reply, local, remote)?;
+        Ok(reply)
     }
     pub(super) async fn resolve_doc_inventory(
         &self,
@@ -273,6 +294,16 @@ impl Node {
         line: &Line,
         docs: Vec<(String, DocumentInventory)>,
     ) -> SyncProgress {
+        self.transfer_documents_route(line, docs, None).await
+    }
+    pub(super) async fn transfer_pair_documents(
+        &self, line: &Line, version: serde_bytes::ByteBuf, claim: [u8; 32], nonce: [u8; 32],
+    ) -> SyncProgress {
+        self.transfer_documents_route(line, vec![("devices".into(), DocumentInventory::Version { version })], Some((claim, nonce))).await
+    }
+    async fn transfer_documents_route(
+        &self, line: &Line, docs: Vec<(String, DocumentInventory)>, route: PairRoute,
+    ) -> SyncProgress {
         let Some(remote) = khor_net::trust::id_from_hex(&line.id) else {
             let mut p = SyncProgress::default();
             p.fail("invalid remote document identity".into());
@@ -339,7 +370,7 @@ impl Node {
                     };
                     #[cfg(test)]
                     flow_tests::before_step(self.root(), &item.name, kind).await;
-                    let step = self.transfer_step(line, remote, item).await;
+                    let step = self.transfer_step(line, remote, item, route).await;
                     usage.add(&step.usage);
                     quantum_bytes += step.usage.charged();
                     quantum_chunks += step.usage.chunks;
@@ -371,7 +402,7 @@ impl Node {
             }
         }
         let cleanup = self
-            .flush_doc_receipts(line, remote, began + VISIT_TIME, &mut usage)
+            .flush_doc_receipts(line, remote, began + VISIT_TIME, &mut usage, route)
             .await;
         let mut progress = SyncProgress::default();
         progress.moved = usage.known_bytes;
@@ -401,10 +432,10 @@ impl Node {
         }
         progress
     }
-    async fn transfer_step(&self, line: &Line, remote: [u8; 32], work: &mut Work) -> StepOutcome {
+    async fn transfer_step(&self, line: &Line, remote: [u8; 32], work: &mut Work, route: PairRoute) -> StepOutcome {
         let mut usage = Usage::default();
         let result = self
-            .transfer_step_inner(line, remote, work, &mut usage)
+            .transfer_step_inner(line, remote, work, &mut usage, route)
             .await;
         StepOutcome { usage, result }
     }
@@ -414,6 +445,7 @@ impl Node {
         remote: [u8; 32],
         work: &mut Work,
         usage: &mut Usage,
+        route: PairRoute,
     ) -> Result<(), Error> {
         if !work.started {
             let name = work.name.clone();
@@ -425,15 +457,25 @@ impl Node {
                 .doc_step(move |context, state| {
                     let local = context.version(&name)?;
                     let offer = if local.epoch == have.epoch {
-                        state.offer(context, remote, &name, &have)?
+                        match route { Some((operation, _)) => state.pair_offer(context, remote, operation, &have)?, None => state.offer(context, remote, &name, &have)? }
                     } else {
                         None
+                    };
+                    let (proofs, acknowledgements) = match route {
+                        Some((operation, _)) => (
+                            state.pair_document_proofs(remote, operation, 1)?,
+                            state.pair_document_acknowledgements(remote, operation, 1)?,
+                        ),
+                        None => (
+                            state.pending_proofs(remote, 1),
+                            state.pending_acknowledgements(remote, 1)?,
+                        ),
                     };
                     Ok((
                         local.encode().map_err(|e| e.to_string())?,
                         offer,
-                        state.pending_proofs(remote, 1),
-                        state.pending_acknowledgements(remote, 1)?,
+                        proofs,
+                        acknowledgements,
                     ))
                 })
                 .await?;
@@ -450,6 +492,7 @@ impl Node {
                         acknowledgements,
                     },
                     usage,
+                    route,
                 )
                 .await?;
             let Reply::Exchanged {
@@ -498,14 +541,14 @@ impl Node {
             let mut needs_exchange = matches!(&received, Some(TransferState::Missing));
             #[cfg(test)]
             flow_tests::before_receipts(self.root(), &work.name).await;
-            self.take_receipt_answers(remote, proof_acknowledgements, acknowledgement_results)
+            self.take_receipt_answers(remote, proof_acknowledgements, acknowledgement_results, route)
                 .await?;
             if let Some(received) = received {
                 self.take_push_state(remote, work, received).await?;
             }
             if let Some(chunk) = offer {
                 let state = self
-                    .doc_step(move |context, state| state.receive(context, remote, &chunk, true))
+                    .doc_step(move |context, state| match route { Some((operation, _)) => state.pair_receive(context, remote, operation, &chunk, true), None => state.receive(context, remote, &chunk, true) })
                     .await?;
                 needs_exchange |= matches!(&state, TransferState::Missing);
                 take_pull_state(work, state)?;
@@ -525,6 +568,7 @@ impl Node {
                         chunk: chunk.clone(),
                     },
                     usage,
+                    route,
                 )
                 .await?;
             let Reply::State { manifest, state } = reply else {
@@ -561,6 +605,7 @@ impl Node {
                         offset,
                     },
                     usage,
+                    route,
                 )
                 .await?;
             let Reply::Chunk { chunk } = reply else {
@@ -570,7 +615,7 @@ impl Node {
                 return Err("read answered a different manifest or offset".into());
             }
             let state = self
-                .doc_step(move |context, state| state.receive(context, remote, &chunk, false))
+                .doc_step(move |context, state| match route { Some((operation, _)) => state.pair_receive(context, remote, operation, &chunk, false), None => state.receive(context, remote, &chunk, false) })
                 .await?;
             take_pull_state(work, state)?;
             return Ok(());
@@ -585,11 +630,14 @@ impl Node {
     ) -> Result<(), Error> {
         match reply {
             TransferState::Complete { proof } => {
-                if work.push.as_ref() != Some(&proof.manifest) {
-                    return Err("completion does not bind the active outgoing manifest".into());
-                }
-                self.doc_step(move |context, state| state.accept(context, remote, &proof, false))
-                    .await?;
+                let sent = work
+                    .push
+                    .clone()
+                    .ok_or("completion does not bind the active outgoing manifest")?;
+                self.doc_step(move |context, state| {
+                    state.accept_sent(context, remote, &sent, &proof)
+                })
+                .await?;
                 work.push = None;
             }
             TransferState::Stored { next_offset } => {
@@ -626,11 +674,21 @@ impl Node {
         remote: [u8; 32],
         acknowledgements: Vec<DocAcknowledgement>,
         results: Vec<DocAckResult>,
+        route: PairRoute,
     ) -> Result<(), Error> {
         if acknowledgements.len() > 2 || results.len() > 2 {
             return Err("too many document receipt acknowledgements".into());
         }
         self.doc_step(move |context, state| {
+            if let Some((operation, _)) = route {
+                return state.pair_receipt_answers(
+                    context,
+                    remote,
+                    operation,
+                    &acknowledgements,
+                    &results,
+                );
+            }
             for ack in acknowledgements {
                 state.acknowledge(remote, &ack)?;
             }
@@ -647,6 +705,7 @@ impl Node {
         remote: [u8; 32],
         deadline: Instant,
         usage: &mut Usage,
+        route: PairRoute,
     ) -> Result<(), Error> {
         // At most64 records per direction, batch2. There is no unbounded task
         // queue and no per-document empty Begin/Commit round trip.
@@ -656,10 +715,16 @@ impl Node {
             }
             let (proofs, acks) = self
                 .doc_step(move |_, state| {
-                    Ok((
-                        state.pending_proofs(remote, 2),
-                        state.pending_acknowledgements(remote, 2)?,
-                    ))
+                    match route {
+                        Some((operation, _)) => Ok((
+                            state.pair_document_proofs(remote, operation, 2)?,
+                            state.pair_document_acknowledgements(remote, operation, 2)?,
+                        )),
+                        None => Ok((
+                            state.pending_proofs(remote, 2),
+                            state.pending_acknowledgements(remote, 2)?,
+                        )),
+                    }
                 })
                 .await?;
             if proofs.is_empty() && acks.is_empty() {
@@ -667,11 +732,11 @@ impl Node {
             }
             if !proofs.is_empty() {
                 match self
-                    .doc_exchange(line, Action::Confirm { proofs }, usage)
+                    .doc_exchange(line, Action::Confirm { proofs }, usage, route)
                     .await?
                 {
                     Reply::Confirmed { acknowledgements } => {
-                        self.take_receipt_answers(remote, acknowledgements, Vec::new())
+                        self.take_receipt_answers(remote, acknowledgements, Vec::new(), route)
                             .await?
                     }
                     other => return Err(reply_error(other)),
@@ -685,11 +750,12 @@ impl Node {
                             acknowledgements: acks,
                         },
                         usage,
+                        route,
                     )
                     .await?
                 {
                     Reply::Acknowledged { results } => {
-                        self.take_receipt_answers(remote, Vec::new(), results)
+                        self.take_receipt_answers(remote, Vec::new(), results, route)
                             .await?
                     }
                     other => return Err(reply_error(other)),
@@ -774,12 +840,15 @@ fn reply_error(reply: Reply) -> Error {
     }
 }
 
-fn handle(
+pub(super) fn handle(
     context: &Context,
     state: &mut State,
     remote: [u8; 32],
     action: Action,
 ) -> Result<Reply, Error> {
+    handle_pair(context, state, remote, action, None)
+}
+pub(super) fn handle_pair(context: &Context, state: &mut State, remote: [u8;32], action: Action, operation: Option<[u8;32]>) -> Result<Reply, Error> {
     match action {
         Action::Exchange {
             document,
@@ -811,7 +880,7 @@ fn handle(
                         why: "exchange first chunk does not bind its document".into(),
                     };
                 }
-                match state.receive(context, remote, &chunk, true) {
+                match match operation { Some(id) => state.pair_receive(context, remote, id, &chunk, true), None => state.receive(context, remote, &chunk, true) } {
                     Ok(reply) => reply,
                     Err(error) => TransferState::Failed {
                         kind: error.kind,
@@ -822,7 +891,7 @@ fn handle(
             let have = DocumentVersion::decode(&have).map_err(|e| e.to_string())?;
             let local = context.version(&document)?;
             let offer = if have.epoch == local.epoch {
-                state.offer(context, remote, &document, &have)?
+                match operation { Some(id) => state.pair_offer(context, remote, id, &have)?, None => state.offer(context, remote, &document, &have)? }
             } else {
                 None
             };
@@ -837,7 +906,7 @@ fn handle(
         }
         Action::Write { chunk } => {
             let manifest = chunk.manifest.clone();
-            let state = state.receive(context, remote, &chunk, false)?;
+            let state = match operation { Some(id) => state.pair_receive(context, remote, id, &chunk, false)?, None => state.receive(context, remote, &chunk, false)? };
             Ok(Reply::State { manifest, state })
         }
         Action::Read { manifest, offset } => Ok(Reply::Chunk {
@@ -1020,7 +1089,7 @@ pub(crate) fn validate_reply(reply: &Reply) -> Result<(), Error> {
     Ok(())
 }
 
-fn validate_roles(action: &Action, receiver: [u8; 32], sender: [u8; 32]) -> Result<(), Error> {
+pub(super) fn validate_roles(action: &Action, receiver: [u8; 32], sender: [u8; 32]) -> Result<(), Error> {
     match action {
         Action::Exchange {
             document,

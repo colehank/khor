@@ -1099,6 +1099,7 @@ impl Node {
             carry,
             hosts,
         };
+        node.recover_pairing_before_bootstrap()?;
         node.register_self()?;
         // After the row exists: the first machine's root certifies the
         // machine the table now holds (docs/CONNECT.md 身份).
@@ -2121,6 +2122,7 @@ impl Node {
         host: &satellite::Dest,
         tmux: bool,
     ) -> Result<(), String> {
+        let _trust = self.root_mutation_guard()?;
         let loaded = self.devices_loaded()?;
         loaded.doc.upsert(id, name, &[])?;
         loaded
@@ -3751,6 +3753,7 @@ impl Node {
     /// [`Node::forget_device`] by id: 转正 drops the satellite row while
     /// the new member wears the same name, so a name would be ambiguous.
     pub(crate) fn forget_id(&self, id: &str) -> Result<(), String> {
+        let _trust = self.root_mutation_guard()?;
         let loaded = self.devices_loaded()?;
         // A satellite of this machine, or a member it carries, that
         // logged in with a password or a key's passphrase: the secret

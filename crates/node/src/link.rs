@@ -12,7 +12,7 @@ use khor_catalog::msg;
 use khor_net::endpoint::{self, ALPN, Ticket};
 use khor_sync::devices::DeviceInfo;
 use khor_sync::store::Doc;
-use khor_sync::{chat, wire};
+use khor_sync::chat;
 
 use crate::proto::{self, DocumentInventory, MAX_FRAME, Request, Response};
 use crate::{Node, ipc, wires};
@@ -22,6 +22,8 @@ mod tree;
 use crate::doc_transfer_state::registry::{with_doc, ROUND_DOCS};
 #[path = "link_doc_transfer.rs"]
 pub(crate) mod documents;
+#[path = "link_pairing.rs"]
+pub(crate) mod pairing;
 
 struct RoundOpening {
     request: Request,
@@ -3792,72 +3794,15 @@ impl Node {
             }
         }
         match req {
-            Request::Pair {
-                token,
-                name,
-                addrs,
-                roster,
-            } => {
-                let path = self.invite_path(&token)?;
-                if !path.exists() {
-                    return Err(msg::bad_invite().into());
-                }
-                // **Expired is its own answer, not "wrong code".** The
-                // two have different fixes: a wrong or spent code means
-                // check what you pasted, an expired one means ask for
-                // another. Reading them as one word sends people to look
-                // for a mistake they did not make (docs/UX.md 失败要说
-                // 清是哪一种).
-                if !Self::invite_is_fresh(&path) {
-                    // It can never be used again, so it goes now rather
-                    // than waiting for the next mint to sweep it.
-                    let _ = fs::remove_file(&path);
-                    return Err(msg::invite_expired(invite_window_minutes()));
-                }
-                let loaded = self.devices_loaded()?;
-                // Whose root this network is, **before the token burns**:
-                // two networks that each have a root are refused here, and
-                // the ticket is still good once the other side has left
-                // its own (`khor_net::trust::settle`).
-                self.settle_with(&loaded.doc, &roster, remote, false)?;
-                // Burn before use: a token that pairs twice is a door
-                // that never closes.
-                fs::remove_file(&path).map_err(msg::cant_burn_invite)?;
-                loaded.doc.upsert(remote, &name, &addrs)?;
-                // Taking a machine back in is what pairing *is*, so a
-                // ticket clears the tombstone. Deliberately here and not
-                // on the far side: a machine that was shown the door
-                // cannot let itself back in, it has to be handed a
-                // ticket by somebody already inside.
-                loaded.doc.set_gone(remote, false)?;
-                // Pairing is done when the new machine has a certificate
-                // (CONNECT.md 身份): signed now if this machine holds the
-                // root, waiting in `khor pending` otherwise.
-                self.enroll_after_pair(
-                    &loaded.doc,
-                    &[(remote, &name), (self.device_str(), self.name())],
-                )?;
-                let mut store = loaded.store;
-                store.flush(&loaded.doc)?;
-                // Everybody else learns of the new machine now, not at
-                // the next quiet beat (the stranger's knock above is the
-                // other half).
+            Request::Pair { action } => {
+                let response = self.answer_pair(remote, action).await?;
                 self.nudge(ep, false);
-                Ok(Response::Paired {
-                    name: self.name().to_owned(),
-                    devices: wire::table_b64(&mut store, &loaded.doc)?,
-                    roster: serde_bytes::ByteBuf::from(self.roster_offer_in(&loaded.doc)),
-                    version: khor_sync::doc_transfer::DocumentVersion { epoch: store.epoch(), version: loaded.doc.version() }.encode().map_err(|e| e.to_string())?.into(),
-                })
+                Ok(response)
             }
-            // The other door a stranger may knock on (round NET-10): the
-            // root's signature is its admission, as the token is `Pair`'s.
-            Request::Vouch { name, addrs, roster } => {
-                self.take_vouch(remote, &name, &addrs, &roster)?;
-                // Its row is here now: the round that brings the rest
-                // starts from this side too, not at the next quiet beat.
+            Request::Vouch { action } => {
+                let response = self.answer_vouch(remote, action).await?;
                 self.nudge(ep, false);
-                Ok(Response::Vouched)
+                Ok(response)
             }
             Request::DocTransfer { action } => {
                 Ok(Response::DocTransfer { reply: self.answer_doc_transfer(remote, action).await })
@@ -9713,11 +9658,10 @@ impl Node {
     }
 
     fn invite_path(&self, token: &str) -> Result<std::path::PathBuf, String> {
-        // The token lands in a filename; only our own hex survives.
-        if token.is_empty() || token.len() > 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(msg::bad_invite().into());
-        }
-        Ok(self.root().join(".khor").join("invites").join(token))
+        // Only the one-way hash is stored beside the claim. The raw ticket
+        // remains the credential on the first Start, never a journal field.
+        let hash = crate::doc_transfer_state::pairing::token_hash(token).map_err(String::from)?;
+        Ok(self.root().join(".khor/invites").join(khor_net::trust::id_hex(&hash)))
     }
 
     /// Whether a token file is still inside its window.
@@ -9832,58 +9776,7 @@ impl Node {
                 return Err(msg::inviter_unreachable(why));
             }
         };
-        let resp = request(
-            &conn,
-            &t.name,
-            &Request::Pair {
-                token: t.token,
-                name: self.name().to_owned(),
-                addrs: report_addrs,
-                roster: serde_bytes::ByteBuf::from(self.roster_offer()),
-            },
-        )
-        .await?;
-        match resp {
-            Response::Paired {
-                name,
-                devices,
-                roster,
-                version,
-            } => {
-                let mut loaded = self.devices_loaded()?;
-                let bytes = wire::table_bytes(&loaded.store, &devices)?;
-                // The same rule the issuer just ran, from this side — so
-                // both reach one verdict without a round trip to agree.
-                self.settle_with(&loaded.doc, &roster, &t.id, true)?;
-                let before = loaded.doc.version();
-                loaded.doc.merge(&bytes)?;
-                loaded.store.took_in(&before, &loaded.doc);
-                self.say_retired(&t.id, "devices", &loaded.store);
-                let signed = self.enroll_after_pair(
-                    &loaded.doc,
-                    &[(t.id.as_str(), name.as_str()), (self.device_str(), self.name())],
-                )?;
-                loaded.store.flush(&loaded.doc)?;
-                drop(loaded);
-                // This side holds the root and just signed the issuer in
-                // (a server that issued the ticket, CONNECT.md 新设备入网三
-                // 路): it learns its certificate the way it learns
-                // anything, one devices round over this same connection.
-                // Best effort — the next sync carries it anyway.
-                if signed {
-                    let line = Line {
-                        id: t.id.clone(),
-                        name: name.clone(),
-                        proto: wires::Proto::Main,
-                        conn: conn.clone(),
-                    };
-                    let _ = self.transfer_documents(&line, vec![("devices".into(), DocumentInventory::Version { version })]).await;
-                }
-                Ok(name)
-            }
-            Response::Refused { why } => Err(why),
-            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
-        }
+        self.pair_over(&conn, &t, report_addrs).await
     }
 
     /// Takes **this** machine out of the network (docs/MORE.md 离开).
@@ -9968,6 +9861,7 @@ impl Node {
 
         // 1 — the tombstone, onto this machine's own row.
         {
+            let _trust = self.root_mutation_guard()?;
             let loaded = self.devices_loaded()?;
             loaded.doc.set_gone(self.device_str(), true)?;
             let mut store = loaded.store;
@@ -10001,6 +9895,7 @@ impl Node {
         // with it (`Node::leave_trust`: a holder keeps the root, which is
         // the network's and not this machine's).
         {
+            let _trust = self.root_mutation_guard()?;
             let loaded = self.devices_loaded()?;
             loaded.doc.keep_only(self.device_str())?;
             loaded.doc.set_gone(self.device_str(), false)?;
@@ -10568,12 +10463,7 @@ impl Node {
         let Some((name, addrs, roster)) = self.vouch_offer() else {
             return false;
         };
-        let ask = Request::Vouch {
-            name,
-            addrs,
-            roster: serde_bytes::ByteBuf::from(roster),
-        };
-        matches!(self.exchange_on(line, &ask).await, Ok(Response::Vouched))
+        self.vouch_over(line, name, addrs, roster).await.is_ok()
     }
 
     /// **A round by what changed** (round NET-3). One exchange first,
@@ -12287,7 +12177,7 @@ mod current_inventory {
             )]
         );
         assert_eq!(readings[0].1.as_ref(), [1, 2, 3]);
-        assert!(versions_answer(Response::Vouched).is_err());
+        assert!(versions_answer(Response::Vouched { reply: proto::VouchReply { operation: [0;32], phase: proto::VouchPhase::Vouched } }).is_err());
     }
 
     #[test]

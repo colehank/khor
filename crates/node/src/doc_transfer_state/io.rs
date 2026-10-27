@@ -12,12 +12,124 @@ pub(super) const MAX_IMAGE: usize = 32 * 1024 * 1024;
 const MAGIC: &[u8; 8] = b"khor-d01";
 const HEADER: usize = 8 + 8 + 8 + 32;
 static LOCAL: Mutex<()> = Mutex::new(());
+static ROOTS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 #[cfg(test)]
 pub(super) static TEST_SERIAL: Mutex<()> = Mutex::new(());
 
 pub(super) struct Gate {
     _local: MutexGuard<'static, ()>,
     _file: File,
+}
+
+/// Separate from the metadata gate: settlement holds this before loading a
+/// devices document, and may then publish its bounded metadata transaction.
+pub(crate) struct RootGate {
+    root: PathBuf,
+    _file: Option<File>,
+}
+impl Drop for RootGate {
+    fn drop(&mut self) {
+        // Release the OS lease before admitting another in-process mutator.
+        self._file.take();
+        ROOTS.lock().unwrap_or_else(|p| p.into_inner()).retain(|p| p != &self.root);
+    }
+}
+pub(crate) fn root_gate(root: &Path) -> Result<RootGate, Error> {
+    let mut roots = ROOTS.lock().unwrap_or_else(|p| p.into_inner());
+    if roots.iter().any(|p| p == root) {
+        return Err(Error::busy());
+    }
+    if roots.len() >= 64 {
+        return Err("active trust mutation quota exceeded".into());
+    }
+    roots.push(root.into());
+    drop(roots);
+    let mut owned = RootGate { root: root.into(), _file: None };
+    let directory = root.join(".khor/trust-mutation");
+    private_dir(&directory)?;
+    for (count, entry) in fs::read_dir(&directory).map_err(error)?.enumerate() {
+        let entry = entry.map_err(error)?;
+        if count >= 2 || !matches!(entry.file_name().to_str(), Some("gate" | "anchor.next")) {
+            return Err("unknown trust mutation entry; reconciliation required".into());
+        }
+        check_file(&entry.path())?;
+    }
+    let file = open(&directory.join("gate"), true)?;
+    if file.metadata().map_err(error)?.len() != 0 {
+        return Err("unexpected trust mutation gate bytes".into());
+    }
+    match file.try_lock() {
+        Ok(()) => (),
+        Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
+        Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+    }
+    owned._file = Some(file);
+    Ok(owned)
+}
+
+/// The public anchor is old or new after process interruption, never a
+/// truncated identity. The private next file is recovered only for this exact
+/// requested value; unknown bytes are preserved for explicit reconciliation.
+pub(crate) fn publish_anchor(root: &Path, bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() != 65 || bytes.last() != Some(&b'\n') {
+        return Err("invalid public anchor publication".into());
+    }
+    let directory = root.join(".khor/trust-mutation");
+    private_dir(&directory)?;
+    let next = directory.join("anchor.next");
+    let prefix = read_optional(&next)?;
+    if let Some(prefix) = &prefix {
+        if prefix.len() > bytes.len() || prefix.as_slice() != &bytes[..prefix.len()] {
+            return Err("unknown anchor publication; reconciliation required".into());
+        }
+    }
+    let mut file = if prefix.is_some() { open(&next, false)? }
+        else { options().create_new(true).open(&next).map_err(error)? };
+    file.write_all(bytes).map_err(error)?;
+    file.sync_all().map_err(error)?;
+    drop(file);
+    check_file(&next)?;
+    let target = root.join(".khor/root.pub");
+    match fs::symlink_metadata(&target) {
+        Ok(metadata) if !metadata.is_file() || metadata.file_type().is_symlink() => return Err("unsafe public anchor target".into()),
+        Ok(_) => (),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+        Err(e) => return Err(error(e)),
+    }
+    fs::rename(next, target).map_err(error)
+}
+
+pub(super) fn has_publication(root: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(root.join("registry.next")) {
+        Ok(_) => { check_file(&root.join("registry.next"))?; Ok(true) }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(error(e)),
+    }
+}
+
+/// Atomic registry reads do not acquire/mutate a transfer owner. Before any
+/// trust bootstrap, a critical intent must be recovered under both leases.
+pub(super) fn peek(root: &Path) -> Result<Option<Vec<u8>>, String> {
+    match fs::symlink_metadata(root) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(error(e)),
+        Ok(metadata) => {
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                return Err("unsafe transfer metadata directory".into());
+            }
+            private(&metadata)?;
+        }
+    }
+    for (count, entry) in fs::read_dir(root).map_err(error)?.enumerate() {
+        let entry = entry.map_err(error)?;
+        if count >= 3 || !matches!(entry.file_name().to_str(), Some("gate" | "registry" | "registry.next")) {
+            return Err("unrecognized transfer metadata file; reconciliation required".into());
+        }
+        check_file(&entry.path())?;
+    }
+    read_optional(&root.join("registry"))?
+        .map(|bytes| decode(&bytes).map(|(_, body)| body.to_vec()))
+        .transpose()
 }
 
 pub(super) fn gate(root: &Path) -> Result<Gate, Error> {
