@@ -226,6 +226,7 @@ impl Peer {
             release.clone(),
             events.clone(),
         );
+        let home = node.device();
         let owner = thread::spawn(move || {
             let by = Instant::now() + Duration::from_secs(25);
             let mut handlers = Vec::new();
@@ -245,7 +246,7 @@ impl Peer {
                             observed.clone(),
                         );
                         handlers.push(thread::spawn(move || {
-                            respond(stream, &root, &cookie, mode, &stop, &release, &events)
+                            respond(stream, &root, home, &cookie, mode, &stop, &release, &events)
                         }));
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -297,6 +298,7 @@ impl Drop for Peer {
 fn respond(
     mut stream: TcpStream,
     root: &Path,
+    home: khor_core::DeviceId,
     cookie: &str,
     mode: Mode,
     stop: &AtomicBool,
@@ -326,61 +328,77 @@ fn respond(
     let crate::ipc::Op::Delegation { machine, action } = handoff.op else {
         return Err("not Delegation".into());
     };
-    let node = Node::open(root.to_path_buf())?;
     let expected_agent = if matches!(mode, Mode::HoldContinuedSend) {
         "a2a:fixture"
     } else {
         "fixture"
     };
-    if machine != node.device_str() {
+    if machine != home.hex() {
         return Err("incorrect stable IPC home".into());
     }
-    if matches!(mode, Mode::HoldContinuedSend)
+    let operation = if matches!(mode, Mode::HoldContinuedSend)
         && matches!(&action, DelegationAction::ResolveBinding { agent, task: Some(_) } if agent == expected_agent)
     {
+        None
+    } else {
+        Some(match &action {
+            DelegationAction::Bound {
+                binding,
+                action: BoundAction::Get { task },
+            } if binding.home == home
+                && binding.caller == home
+                && binding.agent == expected_agent =>
+            {
+                (task.clone(), false, false)
+            }
+            DelegationAction::Bound {
+                binding,
+                action: BoundAction::Cancel { task },
+            } if binding.home == home
+                && binding.caller == home
+                && binding.agent == expected_agent =>
+            {
+                (task.clone(), true, false)
+            }
+            DelegationAction::Bound {
+                binding,
+                action: BoundAction::Send { message, .. },
+            } if matches!(mode, Mode::HoldContinuedSend)
+                && binding.home == home
+                && binding.caller == home
+                && binding.agent == expected_agent =>
+            {
+                (
+                    message
+                        .task_id
+                        .clone()
+                        .ok_or("continued input must name its actual task")?,
+                    false,
+                    true,
+                )
+            }
+            _ => return Err("incorrect bound fixture operation".into()),
+        })
+    };
+    let node = match Node::open(root.to_path_buf()) {
+        Ok(node) => node,
+        Err(why) if why == crate::doc_transfer_state::Error::busy().why => {
+            let bytes = crate::proto::encode(&crate::ipc::Reply::Refused { why })?;
+            stream.write_all(&bytes).map_err(|e| e.to_string())?;
+            let _ = stream.shutdown(Shutdown::Write);
+            return Ok(());
+        }
+        Err(why) => return Err(why),
+    };
+    if node.device() != home {
+        return Err("incorrect stable IPC home".into());
+    }
+    let Some((task, cancel, continued_send)) = operation else {
         let answer = node.delegation_here(node.device(), action)?;
         let bytes = crate::proto::encode(&crate::ipc::Reply::Delegation { answer })?;
         stream.write_all(&bytes).map_err(|e| e.to_string())?;
         let _ = stream.shutdown(Shutdown::Write);
         return Ok(());
-    }
-    let (task, cancel, continued_send) = match &action {
-        DelegationAction::Bound {
-            binding,
-            action: BoundAction::Get { task },
-        } if binding.home == node.device()
-            && binding.caller == node.device()
-            && binding.agent == expected_agent =>
-        {
-            (task.clone(), false, false)
-        }
-        DelegationAction::Bound {
-            binding,
-            action: BoundAction::Cancel { task },
-        } if binding.home == node.device()
-            && binding.caller == node.device()
-            && binding.agent == expected_agent =>
-        {
-            (task.clone(), true, false)
-        }
-        DelegationAction::Bound {
-            binding,
-            action: BoundAction::Send { message, .. },
-        } if matches!(mode, Mode::HoldContinuedSend)
-            && binding.home == node.device()
-            && binding.caller == node.device()
-            && binding.agent == expected_agent =>
-        {
-            (
-                message
-                    .task_id
-                    .clone()
-                    .ok_or("continued input must name its actual task")?,
-                false,
-                true,
-            )
-        }
-        _ => return Err("incorrect bound fixture operation".into()),
     };
     let answer = node.delegation_here(node.device(), action);
     if continued_send
