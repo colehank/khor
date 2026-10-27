@@ -1000,3 +1000,25 @@ root独立核PID2934的exe/start/PPID2932/PGID2932与exact helper参数、真实
 owner/root核当前Ready只能来自outbound::prepare在stage前已完整validate_body的本地spool（含Preparing恢复），网络不能创建此outbound Ready；每次core.open_existing仍作owner/gate/recover/full digest/progress校验。root批准source22只改State::read_outgoing：原auth/source/dst/binding/exact Ready/fresh epoch、offset/EOF/256KiB门保留；改core.open_existing→显式VerifiedComplete→read_verified填满合法shortread，返回owned bytes前drop Sink。普通库resume与接收apply_checked不变，无跨await Sink/Loaded、无全局cache/框架；不是O(chunk)宣称。
 
 下一唯一槽已授owner做normalNode+原Pair04一个integration build/来源＋原case09一个父，原90s/数据/3007205GiB/owned/dual，CLI/libtest/pairing不构；先交source22 delta与实际launch，若仍红按实报，不扩其它优化。shutdown已3707→dc98提交整合，独立Q055 GUI env缺口只记下轮。
+
+
+## source22 dev仍90s红；真实安装local验证与执行边界收口
+
+source22单read_outgoing delta `f2ad292cb1472b20c730be3cc4f3f6b564bf7921d9fcc85d5e10825df9192586` 已root核prepare-before-stage/Preparing恢复/VerifiedComplete/shortread/EOF/role/epoch，无其它路径变化。run09正常Node＋Pair04 target build0/70.73s及来源/list过，但原first Pair90s又超时（prepared29223889B）；19dual/1932稳/5组与TMP清，0父。runtime-only run10无构建重放同样90s红，97.262s/16dual/3组与TMP清；原case/data均不改。
+
+root source22第二次exact helper采样（20951，sampler22509，exit0）在caller>=1MiB后执行，scope身份全核，6dual observation10已闭合。无resume/validate_body剩余，主要read_outgoing→open_existing/recover/BLAKE3，另Context.version/load_pile；caller6.0→8.1MiB，但before/after含符号处理约11s，不冒5s吞吐或CPU百分比。字节完整性不删。原卡未要求dev profile90s，实际build-on使用已存在profile.local；因此另以实际安装优化profile原数据/90s验证，不将local绿回填dev红，不改Cargo/profile源码。
+
+local首次冷编run11在proc-macro2触发rustup自动更新，0产品父/5.622s/forced非绿。原因是固定Cargo但未pin Rustc，dep自带rust-toolchain components=rust-src，原14组件缺此项；工具链旧组件已卸载。原事务备份完整：root/非作者按旧config14组件、逆manifest、642严格ctime映射630项；Cargo c512bff7…4758、Rustc b829b733…cf1c与原SHA完全一致。root已hardlink恢复628文件保tmp原件、rename原docs回位、恢复初始components原字节，1.95.0/LLVM22.1.2及依赖cwd真实探针都过，未升级/增组件/改settings/触1.89。恢复双盘receipt complete=true，不得重复恢复；后续real RUSTC/RUSTDOC/PATH、绝对sysroot selector与AUTO_INSTALL0固定。
+
+local12已正常编到aws-lc，但历史进程累计>512触发旧entry二次observe再次抛错，跳过原cleanup；0产品父/84.534s非绿，owner对精确47175组有限TERM清，原快照与late raw/postcleanup12独立保留不回写。root必要最小entry修（默认512可cold设有限8192、末observe异常保primary后继续drain），2真实私有进程树检查0.725s/独审过，已集成3a0104a9；5dual修复快照 `local-cold-entry-repair13`。不改Q055 provenance模块或GUI env，不扩产品矩阵。
+
+当前local13已launch：session51036/controller69298/Cargo69367，runner `3460b00449458d0e5439d0e7f2984fc2013daa33ffec4aaeb608bc3dd10fc20c`，data `4e4a9d5e0c314975049c2b9629ec62bbf0fedf71e413a179034cda156d7c6ba8`，entry f7ff04264df0da72de7197f0d7740bc0ecd393a33b6fd05cbf33fbbb6d3085e1。仅原Pair04 target，BUILD1200/TEST300/TOTAL1500与双盘5GiB，原产品90s/12288×64/所有oracle不变；同source22/1932，local部分缓存自然复用，priors=[]不冒旧producer。已normalNode actual row，正在pair_bootstrap_large opt3/thinLTO/CGU16链接（85296），约11分钟仍在预算内，尚0产品结果。唯一槽保留，不自重启。
+
+
+### local13优化原Pair04通过并归槽；既定验收不扩围
+
+source22 local13实际exit0：metadata .920s、唯一local target构建976.241s（<1200s），原Pair04父21.416s/worker21.14s（原90s），总1002.443s<1500。真实Snapshot29,223,891B，first/retry、fixedVV target covered/content/epoch1/1/2rows/sameRoot/trusted、第三身份bad-invite原oracle全过；helper与外父两summary只计1 distinct。dev run09/run10两次90s红、run11/run12控制失败保原件，不回填。
+
+actual selected local/deps/pair_bootstrap_large-2295b3c774a254da，72,297,560B，SHA bb0dc0b467495089d51977c3565561a804b2429755d974aa160e0b9b627a47e5；provenance b450504e9815ecdd8fde5ffea928b4db1b1f46339477e34748b799ae56362eb0。selected及正常Node均当前作者manifest/src，freshfalse/opt3，Node cfgtestfalse，selected cfgtesttrue。1932 source before=after/current与12payload候选22稳；root核原raw、20双盘文件SHA+manifest、source frame一致、所有6组已退、TMP不存在。5owned PGID69311/69367/96651/96668/96681与runner69298全退，656累计owners有界；所有phase无forced/remaining/footprint，guard/cleanup空。min外9,357,045,760B、内9,995,948,032B。raw SHA9b5009e0ef46d4cade7d51a4dc14fc12f540bc5f6680828366c2e102b9851e9f，result5180db8b58826f1580def177e862d9d74a8b98702d9530fdcd5d77eade46a57e。
+
+外证据`Q039/node-pair-vouch22-local-run13`/内recovery同名共21文件。owner明确归还唯一槽，当前无native在跑；root要求先给原47剩余46＋原N0＋既登记优化网络边界的最小计划，复用同源provenance，不自动launch/扩target。用户最新范围规则持续有效：开工的完成，新独立问题只记录下一轮；此1父不冒N2全部或整App已绿。
