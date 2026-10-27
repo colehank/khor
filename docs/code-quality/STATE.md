@@ -11,17 +11,23 @@
 
 集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1@495d096d54ea083304031423ca052f87dd9bc75e` clean。完整 2388 输入 frame SHA `36f15241f5524d1e900d9b160087eb26b512a5db3f217c0713a869500efaf07e`，含 gen157/dist277/模块锁。生产与21b1一致；56bde只有原030失败 snapshot diagnostic，495d只有 Peer fixture 精确 Busy→Refused；全部原测试体不变。N2作者130fb、R2作者828f、退出作者3707均已集成，恢复仍核真实 refs。
 
-## 唯一执行槽：正常 GUI build 已启动
+## 唯一执行槽：标准 core helper producer
 
-**root 是唯一 native owner，当前 session23822**，执行 `P5/Q033-quality-gui-build-plan05/run.py --execute-authorized`，OUT `P5/Q033-quality-gui-build-run02`、TMP `/tmp/kgui34`。不并发 Cargo/native、不启动 App/服务；旧 run08 session74788 已 exit0/完整归槽。新 controller PID 以现场为准；缺失 handle 先核现场不重启。
+**root是唯一native owner，当前session1320**，执行 `P5/Q033-core-helper-producer-plan04/run.py --execute-authorized --gui-result <GUI-run02/result.json> --gui-result-sha256 ec56eb347c058b1a167e5fd8807fdd7cf1a57891cc93cae9e6d3f1019385e2bf`。OUT `P5/Q033-core-helper-producer-run02`，TMP `/tmp/kcore57`。不并发native/App/服务，恢复核live handle后只poll，不重启旧handle。
 
-GUI05 runner `ffdc80058ae0b4007eed4dbe4007865ab64f5534195acb36dca8e9a2b3b77266`；data `92bcbe88327bcedae255452d66cb4daa420d20d261f12dabf27ef833876a736e`。沿已独审 runner 逐字不变，此前4个data来源字段刷新495d/36f152，当前仅3个OUT/internal/TMP字段改新run02，root核精确delta；runner/源/配置/profile/时限全部不变。单正常 dev/no-default/devtools bin，非test、opt0、freshfalse；真实 Pi bundle af955、quality JSON 1d16、REMOVE_UNUSED_COMMANDS显式unset。入口恢复6582原pins，外层PATH去掉恰好首个toolbin前缀，原runner prepend后全文一致。
+core04与已独审03 runner逐字同（0f421c31c6ee1442a697af9d741087a47c79445bd92f219c6d74163d1a439165），仅3个OUT/internal/TMP字段改新run02；data SHA8b40397ff350355ffcc40caf6f84a8e741fc3129eec66333131dde204816688e。标准dev、清GUI embed环境，真实原prepare/verify/require；原actualrun06/core prior1b73不改，所有source/profile/时限/门保持。GUI独立SHA固定。
 
-正常GUI run01 session22658已exit1：137.116s时外盘低于5GiB门而有界终止编译，实际未产GUI，非Q055结果；source/gen/dist/helper稳、20dual/owned全退/TMP清，root已独核，resulta1c848802844032df257d6d13e8e69ed337843b6bb23727fcbaaa4f28631b823。原nongreen保留，不改门/时限。
+## 正常GUI已产出，空间中断原件保留
 
-为完成既定构建，仅可逆迁移旧cache：P5/cache-offload01（local旧profile5954文件+4旧GUI exe）及02（2旧iOS static archive），逐file原stat/SHA/恢复路径、copy2后完整核验再移除确切原cache；源码、normal dev依赖、current CLI/core和所有证据保留，非global clean。备份在内恢复cache-offload-20261028-01/02，metadata双盘；02两完全相同备份已硬链接去重，源原stat仍在plan。旧local/旧iOS/cache artifact路径不再直接可用，需先按清单恢复且不能假定inode证明仍有效。实际外盘约7.66GB、内盘约7.66GB后才启动新GUI05；正常资源门保持。
+`P5/Q033-quality-gui-build-run02` 已正常完成（session23822 exit1仅自动proof拒绝）：metadata/build均0，102.620s，29dual、source/gen/dist/helper与bundle稳、owned/TMP清。root独核实际selected freshfalse/testfalse/opt0/features仅devtools、当前manifest/main.rs，GUI executable SHA **f76302af7b61b59c1d01172ee4209c1c9cb6c80bd6381ee760468527624c865d**、374,932,072B；result SHA **ec56eb347c058b1a167e5fd8807fdd7cf1a57891cc93cae9e6d3f1019385e2bf**。实际选择/完整stat见 `gui-selected-actual.json`。真实App尚未启动。
 
-**Q055已知限制保持**：自动来源 helper 未覆盖 TAURI_CONFIG/REMOVE_UNUSED_COMMANDS，必须保留实际 verify 异常与 `provenance_complete=false`，整体 nongreen/exit1。正常 build、实际 artifact、source、cleanup 可分别独核；不得伪造 accepted receipt 或为此修 helper/新开工具专项。其他失败立即停保。
+**Q055保持非绿**：实际verify拒绝 `Build script names an unrecorded environment input: TAURI_CONFIG`，provenance_complete=false/verification_status=rejected/整体nongreen，normal_build_completed与artifact_checks_passed均true。未伪造accepted receipt/修改prepared或helper。GUI05静态data92bcbe88327bcedae255452d66cb4daa420d20d261f12dabf27ef833876a736e，runnerffdc8005…77266与已审GUI04逐字同，只3个输出路径改run02。实际启动PATH去掉6582首个toolbin前缀，原runner prepend后全文一致。
+
+两个受控中断原件不回填：
+- GUI-run01/session22658，137.116s因外盘低于5GiB终止编译；未产GUI，source/gen/dist稳、20dual/owned与TMP清，resulta1c848802844032df257d6d13e8e69ed337843b6bb23727fcbaaa4f28631b823，非Q055 verifier结果。
+- core-helper-run01/session92324，39.499s因内盘低于5GiB终止；未完成producer或provenance，21dual/source/helpers稳/owned与TMP清，result9045587e03cb5a31231bbecdce33ad98dfea13e67370a218e295042524658b29。迁入内盘的备份挤占编译余量，root先压缩后按原门重新启动，未降低门/加时。
+
+缓存空间准备只属既定构建：offload01旧local5954文件+4旧GUI exe；02两个旧iOS static archive；03三个已完成functional test exe（Node cfgtest/wire/pairing）。源码、normal dev依赖、current CLI/core/GUI与全部证据保持，非global clean；逐file原stat/SHA/restore路径、copy后校验再移除确切旧cache。**原raw备份目录已由逐entry SHA核验后的ZIP替代**：内恢复根 `cache-offload-20261028-01.zip`（1,304,712,152B）、02.zip（503,951,410B）、03.zip（188,683,166B）；各SHA与恢复方式在双盘 `P5/cache-offload0N/compressed-backup.json`，原stat在plan.json。历史cache路径不再直接可用，恢复bytes/mtime不恢复inode或自动证明旧receipt当前有效。压缩时无验收进程；恢复两盘原空间门后才启动core04。归档session37388已exit0/62.394s，内盘约8.75GB。
 
 ## 既定组合验收：115项全部已执行
 
@@ -47,8 +53,8 @@ d26e608f仅216 Rust机械格式；33c8bc12把共同检查放main/显式root、�
 
 ## 接下来：既定真实 App 验收，尚未执行
 
-1. 核当前GUI04实际build/artifact/source/cleanup与已知自动proof缺口，归槽。
-2. 其后执行 `P5/Q033-core-helper-producer-plan03`（9dual），runner与已审01逐字同，只更新来源和最新run06/core prior `1b73ca9c38ba6bac4b1b2cc53758cf14fb1f34344a37ed007e33fc20093cf21a`。data SHA `2d757278b098423ac599c9be28de107ffeec9824418ce76971289f1166473105`。按原GUI→helper顺序，标准无embed环境原prepare/verify/require，必要单目标构建，不能假定旧core仍有效；GUI bin独立SHA不变。
+1. GUI-run02实际artifact与known proof gap已独核归槽；完成当前core04真实producer并归槽。
+2. core04沿 `P5/Q033-core-helper-producer-plan03`（9dual）原控制，runner与已审01逐字同，只更新来源和最新run06/core prior `1b73ca9c38ba6bac4b1b2cc53758cf14fb1f34344a37ed007e33fc20093cf21a`。新core04 data见上；原03 data2d757…3105保历史。按原GUI→helper顺序，标准无embed环境原prepare/verify/require，必要单目标构建，不能假定旧core仍有效；GUI bin独立SHA不变。
 3. `P5/Q033-real-app-owned-plan04`执行真实Q033：env-i私有HOME/ROOT/TMUX/cwd，无SIDECAR/凭据/GHOST；真实native/wire/ACP phase快照，4实际PNG由CUA选择，A上传时Stop→B相同草稿/附件重发Allow→smallC Stop→实际mode/option更新→原raw oracle确认→CUA正常Quit→host stop/finished/observer有界退。原helper270/firstPart30/外300门保，人工accepted不代替业务oracle。
 4. 同一正常artifact完成Q035实际page/双私有peer借网/最后owner释放；Q043真实OS拖放、全屏、window-close、正常Quit。私有relay须两新Root首次open前非空only_mine配置；仅KHOR_RELAY仍追加public tier。Q035原4 native程序化资源场景使用已审端口替换plan01，单列程序化证据。
 5. 任务卡/STATE/AUDIT末尾按真实结果对齐，保留失败/未验/旧版本复用边界；Q010/011真实iOS/Safari已有确切版本与影响映射，不新开物理机/IME/Safari矩阵。无main/ship。
