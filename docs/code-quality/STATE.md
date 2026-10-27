@@ -1,6 +1,6 @@
 # 当前代码治理状态
 
-更新2026-10-28。**目标active，未完成。** 本轮源码实现及Clean Code结构收口已集成；P5真实App验收仍有阻断/未执行项。详细旧记录见[前一检查点](history/STATE-before-q035-q043-closeout-20261028.md)，旧handle都不可重启。继续先读本页与[PLAN](PLAN.md)，再核实际refs/diff/PID。
+更新2026-10-28。**目标active，未完成。** 本轮主体源码实现及首轮Clean Code结构整理已集成；当前准入纠正仍须结构独审，P5真实App验收仍有阻断/未执行项。详细旧记录见[前一检查点](history/STATE-before-q035-q043-closeout-20261028.md)，旧handle都不可重启。继续先读本页与[PLAN](PLAN.md)，再核实际refs/diff/PID。
 
 ## 用户边界与唯一执行者
 
@@ -61,7 +61,7 @@ plan01→`Q035-borrow-owned-run01`/54361，11.464s，resultd1d338aaae1214333ee0f
 
 `Q043-pi-owned-run01`/30904，163.913s，resultad3f9fcff3af1017eb65831976eb211b978891ab091401ef8e3c238c87ae5417 nongreen。root CUA开khor配置model disabled；Quota Register三次重开均Credential home无候选/Connect disabled/document transfer state busy。raw read1–10 rejected，catalog11/16成功、12–15 rejected；**零manage/login/secret/reply/OAuth，runtime目录和khor-agent进程均无**，不能把本地catalog称运行。root记录root-ui-abort并CUA CmdQ App65305 return0，业务未达、observer failed-path forced cleanup，原normal_app_exitfalse不改。
 
-独审`P5/Q043-pi-run01-review01` SHA2bb4e6d654dfbacee2981f30aa25216a060902c51d4a01ff9b58dfde7dba190d，33项证据检查（非33业务测试），106PID/34group/TMP清、来源/双盘齐。Busy只据root CUA，不从redacted reject冒称精确诊断。归已有Node打开准入/GUI目录候选下一轮，不新实现或重复尝试。实际embedded startup仍unverified。
+独审`P5/Q043-pi-run01-review01` SHA2bb4e6d654dfbacee2981f30aa25216a060902c51d4a01ff9b58dfde7dba190d，33项证据检查（非33业务测试），106PID/34group/TMP清、来源/双盘齐。Busy只据root CUA，不从redacted reject冒称精确诊断。此处准入归类已由后续源审更正：按本页“当前唯一下一步”及Q-039-node-open-admission处理现有N1改动边界；原GUI失败证据不变，实际embedded startup仍unverified。
 
 ### Q043 OS：实际执行，整体非绿
 

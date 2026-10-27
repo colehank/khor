@@ -21,3 +21,9 @@ P5/Q043-pi-owned-run01账户读取/设备目录Busy、Connect disabled，实际�
 第一步只交双盘P5/node-open-admission-design01设计：具体锁/准入契约、允许路径、已有target里能先红的最小行为测试、重入/限时/资源/跨进程/async blocking边界，以及现有可复用clean worktree。root审后才授权实现/单独分支，不新建worktree。所有Cargo/native由root唯一槽授予；原300/720/5GiB/jobs1/inc0/来源/owned/TMP/dual门保持，不改公共f7/fcb。
 
 修正必须有原行为红→候选绿、非作者审查和精确集成版本；再刷新受影响GUI/core实际producer并继续被阻塞的P5原流程。已过115及Q033不重复充数；已有旧证据只按明确影响映射使用。尚未达成任何新pass，不以本卡代替实现或整轮完成。
+
+## 静态锁序核对（2026-10-28）
+
+root与非作者审查共同确认，不能只在Node::open外再套一层constructor锁：resident trust_tick/approve/revoke及Pair结算也使用RootGate，仍会使单个普通open失败。需要恢复的open先取root再取metadata，而Pair路径可以先metadata再try root；保留metadata与控制路径的fail-fast，避免把原拒绝改成循环等待。拟议普通open等待必须在本次root/metadata均未持有时进行，限时/限额、重入明确拒绝，其他进程的OS lease仍try并fail-closed。尚未选定或实现具体策略，也未证明GUI根因唯一。
+
+Clean Code验收：统一一处表达准入规则与释放顺序，资源由RAII所有者释放；不在调用方各自加重试或重复状态。同步改异步不得产生脱离请求/关闭所有者的后台构造写入，裸spawn_blocking方案不接受。功能通过与结构质量分别提供证据。
