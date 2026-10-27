@@ -94,3 +94,9 @@ run02只把npm user/global配置隔离到两个不同owned空文件，恢复使�
 所有phase remaining_group_pids=[]，所有observed PIDs最后ps为空，time/Node/Bun/smoke均已结束。先向root立即归还槽，后续仅只读整理；没有Cargo/gen/下一轮Bun。已恢复链接、source/providers不变，已授权cache/artifact/证据保留，不删除主源/用户数据。
 
 限制仍然明确：本次真实Darwin arm64验证已成立；Linux GNU/musl未真实编译或运行，Rust include_bytes嵌入/提取启动与onset全链未跑，不能以本产物关闭这些验收。未调用真实SSH/installer/服务/provider，未合并main或ship。
+
+## 当前f763真实账户UI验收阻断（2026-10-28）
+
+实际正常GUI已嵌入本卡真实bundle，但不能由build成功推出runtime已运行。P5/Q043-pi-owned-run01实际root CUA账户管理Credential home无候选/Connect disabled/document transfer state busy，未达到manage login/secret；native仅read/catalog，runtime目录及khor-agent进程不存在。catalog只是providers本地读取，不能当嵌入启动。原resultad3f9fcff3af1017eb65831976eb211b978891ab091401ef8e3c238c87ae5417/163.913s保nongreen；App65305实际CmdQ return0，业务未达与observer失败回收使原normal_app_exitfalse保持，不回填。独审P5/Q043-pi-run01-review01/report.json SHA2bb4e6d654dfbacee2981f30aa25216a060902c51d4a01ff9b58dfde7dba190d的33项为证据检查，非启动业务测试通过；106PID/34group/TMP与来源/双盘已清核。
+
+实际embedded提取/启动仍unverified，归既有Node打开准入/目录候选下一轮，不为通过而注入manage调用/凭据/OAuth或改生产接口。

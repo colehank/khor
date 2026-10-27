@@ -15,9 +15,9 @@
 | Q025/036/032/040 | FIFO写完成/连接owner、输入预算、canonical cache/once弱锁回收均已集成；既定组合已执行 | 确切旧版本/当前版本覆盖分别见STATE |
 | Q030/030b/031/038、Q037 | 脱敏、A2A caller隔离续聊、输入/事件预算、stderr drain、Pi/ACP/MCP/远端取消与退出已按已启动任务集成并完成既定组合 | 原040 deadline与062 Node Busy真实失败归下一轮；Windows runtime/真实SSH等不新增本轮矩阵 |
 | Q033/034 | 当前协议、取消收据/GUI恢复、poll退避/gone均已集成；最终f763 GUI实际四图A取消→B重发Allow/EndTurn→C取消、mode/option和正常Quit已独立补验 | 原run05因观察服务143被一次性harness漏认而nongreen，42项独审补验另列，不伪造旧green；Q055另保缺口 |
-| Q035 | native page owner/LRU已集成，模块及Chrome/WebKit行为已验 | 剩原四native程序化资源场景，以及生产UI双owner/真实私有双peer代理最后释放 |
+| Q035 | native page owner/LRU已集成，模块及Chrome/WebKit行为已验 | 原四native已执行2pass/2fail（关闭查询channel closed候选下一轮），生产UI双owner仍待；首次Pair FinishPending保失败、一次现有Resume接线待执行 |
 | Q039 | 统一当前Node/Doc/Pair分块、pending cache/compact数据保护与恢复已集成；真实大数据及bootstrap守卫证据与版本映射齐 | 新Node打开Busy/fixture晚写等只登记下一轮，不新建锁或矩阵 |
-| Q041 | 真实Darwin Pi bundle已编译/嵌入当前GUI，安装/镜像/来源入口已集成；normal GUI/core产物已完成 | Q055自动环境输入覆盖保持非绿；Pi账户页catalog不启动sidecar，剩现有连接入口运行至secret提示前的提取/启动/取消实证，不做provider登录 |
+| Q041 | 真实Darwin Pi bundle已编译/嵌入当前GUI，安装/镜像/来源入口已集成；normal GUI/core产物已完成 | Q055自动环境输入覆盖保持非绿；Pi账户页catalog不启动sidecar，真实账户管理被Credential home目录Busy阻塞，未有manage/runtime，提取/启动未验证；不做provider登录 |
 | Q043 | native adapter/helpers及shared consumer异常隔离已集成；38项回归和真实七注册/撤销/child WK title证据齐 | 剩OS拖放、全屏值、window-close与最终App，不能用旧native Rust或browser fixture代替 |
 | Q045 | 本地SSH deadline/I/O/reaped回执已修，源审/定向及既定组合按确切版本完成 | 真实SSH/master及remote lease不新增本轮前置 |
 | P4/P5 | Clean Code已改边界结构收口完成并独审，机械格式216 Rust/共同入口单独提交；原115父全部执行（113过、2失败下一轮） | 正在完成上述既定真实App剩余流程，最后对齐任务卡和交付；main/ship未授权 |
@@ -111,3 +111,11 @@ Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史
 ### 下一轮记录：Vite受控TERM退出码
 
 Q033 run05全部实际UI与业务及正常App/helper退出已完成，但现有一次性launcher只认observer0/-15，当前Vite SIGTERM handler server.close后以128+15=143退出，原运行保nongreen。来源与原未到达末尾42项独立补验见双盘P5/Q033-real-app-run05-postreview01，原result/launcher未改，当前产品无新增实现。未来维护该运行入口时统一受控TERM语义；本轮不重跑已完成UI或扩建工具治理。
+
+### 2026-10-28 真实P5新失败记录（不新增本轮产品实现）
+
+| 观察 | 当前证据 | 处置与边界 |
+| --- | --- | --- |
+| native page_steps关闭交接返回channel closed | Q035 native run02 late-close、run03 close-reopen两个原父失败；资源最终null，后者新owner中间Some。源码支持get_webview与排队WithWebview之间Close丢回调/oneshot候选，但raw无唯一失败invoke/调度序列。 | 下一轮核native查询/关闭语义，不改断言/重跑失败父。Strict与cap两原父通过，原四2pass2fail0unrun，不能称全绿。独审46be305a…808a。 |
+| Pair FinishPending阻断真实双peer setup | Q035 borrow run01真实Pair返回精确pending，原d1d338…abf9保失败，未UI。不是Node首次bootstrap未完成；无现有外部Finish-ready状态。 | 仅已存在的同ticket/savedintent Resume可作真实恢复流程，plan02最多一次且共享70s，其他错误不纳入，不改产品或新grant。 |
+| 模型账户目录Busy阻断embedded Pi UI | Q043 Pi run01三次打开账户管理均Credential home无候选、Connect disabled；实际只有read/catalog，零manage/secret/runtime。原ad3f9…5417保非绿；App真实CmdQ return0，observer失败路径回收。 | 归已有Node打开准入/目录候选下一轮；提取/启动unverified，不从redacted reject推断具体原因。独审33项证据检查不是业务测试数，2bb4e6…190d。 |
