@@ -61,3 +61,11 @@ host抽窄pub forget_parser(parser, scrollback)，机械复用Model原normal-scr
 - host.rs `a49f4a72cade30e648e611c6269b845d49baf30cb777f66daf3203d0067894c0`
 
 作者冻结三源，不commit/不编译，不自审；本卡本次追加写权交还root，validation-plan保执行收据写权。Q052仍open。
+
+## 2026-10-28 实施、验收与集成补记
+
+本节接续上文候选冻结之后的实际结果，不改写旧失败。完整执行账在[Q052验收计划](Q-052-validation-plan.md)的plan09及source04/plan10末节：source03实际28个不同业务父通过，native_handoff仅编译、不计业务父；原plan09因两个自有stale socket保cleanup非绿。source04仅修host_shell_tmux.rs的fixture有限退出与精确socket清理，生产和其余1920输入相对03不变，保全部原业务oracle。
+
+plan10实际必要构建0/74.5767s、两个原tmux父2/0/0/6.4232s，总83.0786s；source1921与产物指纹稳定、owned全退、scratch_absent及cleanup_completed均true。它承接未改26父并重验受影响2父，不能相加写成30个不同业务父，也不回填plan09原清理失败。
+
+作者95428b255ab5b8266817bbcada956641f4978538已由root集成为8d1033bb，12源码路径与source04逐SHA一致、当时集成clean；因此上文“不commit/不编译”为历史候选状态。本片已完成该次实现与定向验收。后续当前协议/源码变更与整合结果按[STATE](../STATE.md)和确切来源映射记录，不将旧28父冒充最终全部源码重跑；真正App及物理设备边界继续保留，当前不据此标完整P5或全部终端平台done。

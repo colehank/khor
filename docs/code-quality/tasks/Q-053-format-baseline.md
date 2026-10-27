@@ -33,3 +33,11 @@ N2已14931整合后，实际范围841 Rust=449第一方+392第三方。使用原
 新增private agent_setup使最终范围842 Rust=450第一方+392排除。所有writer交接后仅一次共同write(2处内部新增排版)→check0，dual P4/clean-code-final-format，第三方仍全稳，未运行Cargo代替业务验收。root将脚本/config/CI/两文档入口及统一ENGINEERING指南单独33c8bc1254d26335ddc5ea409d215a8b426bd30a提交；本地与现quality scripts job共用，job显式Rust1.95.0/rustfmt组件，无新增job/matrix/依赖。dtolnay @版本的选择语义已核其官方README。Windows只做关闭文件后replace/chmod路径兼容设计，未实跑不冒已测。
 
 格式/入口本身已收口；整体P4仍按ENGINEERING结构和行为准则、最终组合/App证据核定，不以文件/行/注释数量计完成。当前集成33c8 clean，原npm构建已0（TMP Node缓存原门非绿另postcleanup），后续native正在一次最终网络边界，不因格式重复作者树LTO。
+
+## 2026-10-28 当前收口补记：格式与结构成果分别记账
+
+本节更新本卡开头的历史状态，不覆盖原始基线或失败记录。格式迁移d26e608f与共同入口33c8bc12已经实施、独审并集成；450第一方check0、392第三方SHA稳定及受限import零副作用的证据仍为上节确切版本结果。本次未重复执行formatter或CI，也不将这些结果改称495d头上新跑过。
+
+Clean Code的独立结构成果是18c0a9d1的Pair请求/Issuer–Joiner角色、废分支删除与固定base纯规则，3e5e25a4的input/sticky及setup终态共享规则，357c7070的UploadRelay线程/socket/gate资源所有者；后者属于验收fixture。规则、状态/资源归属与失败语义的整理不以216文件排版替代，也不据此声称全仓完成深层重构。约束与具体边界见[ENGINEERING](../ENGINEERING.md)及[AUDIT](../AUDIT.md)。
+
+当前集成495d096d的既定115父已全部执行或有明确复用映射：113通过、040/062两失败保留下一轮，未执行0；不是整体验收全绿。最后run08的50父/53成功summary、85双盘文件、2388输入before=after=current与owned/TMP清理已独核，完整记录见[STATE](../STATE.md)。正常GUI构建、真实App用户流程及退出仍在既定验收中；格式/入口本项完成不代替它们，也不将计划或旧二进制计作当前App实证。

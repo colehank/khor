@@ -1076,3 +1076,15 @@ source24 dev diag17正常Node/Pairing actual freshfalse/opt0 build0/58.819s，�
 runtime19原case11实际1passed/0failed/0ignored，5.93s，整个父末尾两次Pair/quiet/第三peer与原12s内业务断言全部达到；总7.692665s。14dual/source1932/13candidate+同actualbinary/proof/三工具SHA稳，2组63943/63961全部ESRCH、TMPn2r30无、cleanup/forced全空，root独立逐raw/双盘/source/组核。result468f31c54acc4b9a8bbfeaa82edc4c8ae7b511be94eaf6ec4ec589851445cf44，raw e84bbf355fe7a7620c693e1b57ae26a2ba4297859f39ef7a669cfe547e410083。外Q039/node-pair-vouch24-dev-pairing-runtime-run19/内同名，原17失败不回填。actor归槽，root授下一仅dev state18一build/既有a_recreated父，300/300/720/512/5GiB，不接其它39/压力/target。
 
 旧n2d28由root独立postcleanup处理：原PGID均退、Lsof1无输出，2文件按原tmp-inventory的dev/ino/uid/size并实际SHA双盘保留，2已录空tmux目录按原inode核后rmdir；首次root rmdir因这两个空目录停止，后续复核完成。3file双盘Q039/node-pair-vouch24-dev-pairing-postcleanup17，原resultSHA保留，未回写run17。只是整理私有残留，不给原失败变绿。
+
+## 2026-10-28 source24作者验收、正式集成与最终组合补记
+
+本节接续runtime19之后的实际结果，不回填diag17或其他原失败。source24的state18原receipt父1过（result `eb0ece0432c23c4eddda4d6564790a7f9b6150f47d155c96bc92893f35567d0a`，78.838s），加上已记runtime19原case11的1过及remaining-runtime20的44个不同父，共46个不同父。run20结果 `4a9e233fb64e77e386f8ba3018269a4830d21052a3c359906d4cc152840245bf`，114.582s，source稳定、owned/TMP清理全过。证据分别在外部Q039的`node-pair-vouch24-dev-state-diag-run18`、`node-pair-vouch24-dev-pairing-runtime-run19`、`node-pair-vouch24-dev-remaining-runtime-run20`及对应内恢复镜像。这些是作者source24版本实证，不冒称最终集成App或local大数据边界均已由该46覆盖。
+
+作者130fb已由root集成为14931af7af9c62428a04575c5b82e05a1d0342d5，13源码路径；随后d26e仅机械排版，18c0明确Pair请求/角色和共享规则，21b1修复恢复至bootstrap的同一root fence。最终网络边界、恢复父和受影响组合的确切版本及复用映射见[STATE](../STATE.md)；旧source24结果、33c8大数据结果和后续495d入口结果分别保留来源，不把旧binary写作新入口已实跑。
+
+当前集成495d096d54ea083304031423ca052f87dd9bc75e的原115父集合已核闭合：此前63通过加run08的50通过等于113通过；原040 worker-start deadline与原062 normal-serve restart中的Node-open Busy两失败登记下一轮，未执行0，三个集合互斥且并集精确等于原115。此数字是受影响组合的总账，不是N2单项46重复相加，也不包含helper充数；原030及所有历史非绿仍保留，不称全部运行全绿或Node准入问题已修。
+
+run08实际50父/53成功summary（Node41/core3/pairing6）、59phase全0，总157.487s；result `b5043df74c80a22fa4e2be0049939ad891df89590a12ffd3348d33644e825bd5`。85文件双盘逐SHA、全部本次业务raw、63旧通过项的raw/result/source origins及两延期失败原件均经独核；2388输入before=after=current，frame `36f15241f5524d1e900d9b160087eb26b512a5db3f217c0713a869500efaf07e`，91组/140 observed owner原账干净且独核时91组仍不存在，`/tmp/kcomb43`不存在。证据为外部`P5/integration-affected-combination-run08`及对应内恢复镜像。
+
+当前正在既定正常GUI构建与后续App验收阶段；core helper须在GUI embed后按原计划重证/必要构建。上述后验不再次require可能已被合法后续构建覆盖的debug产物，也不据此填写真实App结果。Q033上传取消、Q035页面/双owner借网、Q043 OS手势与正常Quit仍待实际App证据；没有main合并或ship授权。新独立问题只登记下一轮，不追加本轮实现或矩阵。
