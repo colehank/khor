@@ -114,7 +114,7 @@ fn run_worker(case: &str) {
 }
 
 #[test]
-fn an_oversized_devices_gap_reports_failure_but_seen_and_pins_still_sync() {
+fn a_devices_body_over_the_current_limit_reports_failure_but_seen_and_pins_sync() {
     run_worker("oversize");
 }
 
@@ -238,7 +238,11 @@ async fn exercise(root: &Path, case: &str) {
         let me = source.doc.get(client.device_str()).unwrap();
         assert_eq!(source.store.epoch(), receiver_epoch);
         if case == "oversize" {
-            large_address_history(&source.doc, &me.id, &me.name, &me.addrs);
+            // The old 4 MiB wire failure is intentionally gone. Preserve a real
+            // independent-document failure using the current 64 MiB body limit.
+            for _ in 0..3 {
+                large_address_history(&source.doc, &me.id, &me.name, &me.addrs);
+            }
         }
         // Public Doc mutation only: Node::set_receive_dir would immediately
         // resolve this setting and would hide an erroneous follow_after_sync.
@@ -261,12 +265,8 @@ async fn exercise(root: &Path, case: &str) {
     }
     if case == "oversize" {
         assert!(
-            gap_bytes > wire::MAX_BYTES,
-            "fixture must exceed the real live-wire cap"
-        );
-        assert!(
-            gap_bytes > 24 * 1024 * 1024,
-            "retain the 25.4 MB research fixture"
+            gap_bytes as u64 > khor_sync::transfer::MAX_BLOB_BYTES,
+            "the legitimate source history must exceed the current 64 MiB accepted-body contract"
         );
     } else {
         // A later on-disk epoch is not automatically reseeded down by this
@@ -309,7 +309,7 @@ async fn exercise(root: &Path, case: &str) {
     eprintln!(
         "[Q039-NODE] paired case={case} receiver={receiving_id} sender={} raw_gap={gap_bytes} cap={} epoch={sender_epoch}/{receiver_epoch} baseline_seen=0 baseline_pin=false",
         client.device_str(),
-        wire::MAX_BYTES
+        khor_sync::transfer::MAX_BLOB_BYTES
     );
 
     // Only B's explicit real Node round can push its Seen/Pins: B has no
@@ -338,18 +338,19 @@ async fn exercise(root: &Path, case: &str) {
         let error = verdict
             .as_ref()
             .expect_err("a required devices failure must not claim whole-round success");
-        let cap_reason =
-            khor_catalog::msg::outbound_too_big(gap_bytes / 1024, wire::MAX_BYTES / 1024);
         assert!(
-            error.contains(&cap_reason),
-            "retain the actual cap rejection, not an unrelated transport failure: {error}"
+            error.starts_with("transfer resource limit:")
+                && error.contains("outbound body exceeds 64 MiB"),
+            "retain the current typed outbound-body resource failure, not an old wire/frame cap or unrelated transport error: {error}"
         );
     } else {
-        // Existing modern behavior deliberately skips another epoch and
-        // continues. This regression does not redefine it as a new round error.
-        verdict
+        let summary = verdict
             .as_ref()
-            .expect("another devices epoch remains an isolated skip");
+            .expect("another devices epoch remains isolated");
+        assert!(
+            khor_catalog::read(summary).is_some_and(|(key, _)| key == "msg.sync-partly-apart"),
+            "epoch separation must be explicit rather than already latest: {summary}"
+        );
     }
     assert!(
         !must_not_follow.exists(),

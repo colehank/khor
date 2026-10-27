@@ -25,12 +25,9 @@ pub enum Request {
         #[serde(default)]
         roster: serde_bytes::ByteBuf,
     },
-    /// One sync exchange over a named doc: `devices`, or `chat/<channel>`.
-    Sync {
-        doc: String,
-        have: String,
-        changes: String,
-    },
+    /// The only current document transport. Mutating operations wait for
+    /// authenticated handshake completion and carry exact bounded manifests.
+    DocTransfer { action: DocTransferAction },
     /// One slice of an offered payload, content-addressed. The offerer
     /// serves bytes only after the far user approved the pull — the
     /// approval IS this request arriving (docs/SESSION.md 传输).
@@ -688,11 +685,101 @@ pub enum Request {
     Delegation { #[serde(with = "crate::delegation::wire_json")] action: crate::delegation::Action },
 }
 
+/// Smaller than the general business frame, including all serde envelopes.
+pub const DOC_TRANSFER_FRAME_BYTES: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocManifest {
+    pub source: [u8; 32],
+    pub recipient: [u8; 32],
+    pub binding: serde_bytes::ByteBuf,
+    pub total_bytes: u64,
+    pub digest: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocChunk {
+    pub manifest: DocManifest,
+    pub offset: u64,
+    pub bytes: serde_bytes::ByteBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DocProofKind { Applied, AlreadyHaveEquivalent }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocProof {
+    pub manifest: DocManifest,
+    pub persisted_version: serde_bytes::ByteBuf,
+    pub kind: DocProofKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocAcknowledgement {
+    pub manifest: DocManifest,
+    pub proof_hash: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DocAckResult {
+    Released { acknowledgement: DocAcknowledgement },
+    Absent { acknowledgement: DocAcknowledgement },
+    /// A late Exchange recreated an equivalent receipt after old ACK GC.
+    Reconfirm { proof: DocProof },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DocTransferFailure { Busy, Invalid, Storage, Apply, ResourceLimit }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DocTransferState {
+    Missing,
+    Stored { next_offset: u64 },
+    Complete { proof: DocProof },
+    Apart { expected: u32, actual: u32 },
+    Failed { kind: DocTransferFailure, why: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DocTransferAction {
+    Exchange {
+        document: String,
+        have: serde_bytes::ByteBuf,
+        offer: Option<DocChunk>,
+        proofs: Vec<DocProof>,
+        acknowledgements: Vec<DocAcknowledgement>,
+    },
+    Write { chunk: DocChunk },
+    Read { manifest: DocManifest, offset: u64 },
+    Status { manifest: DocManifest },
+    Confirm { proofs: Vec<DocProof> },
+    Acknowledge { acknowledgements: Vec<DocAcknowledgement> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DocTransferReply {
+    Exchanged {
+        document: String,
+        have: serde_bytes::ByteBuf,
+        received: Option<DocTransferState>,
+        offer: Option<DocChunk>,
+        proof_acknowledgements: Vec<DocAcknowledgement>,
+        acknowledgement_results: Vec<DocAckResult>,
+    },
+    State { manifest: DocManifest, state: DocTransferState },
+    Chunk { chunk: DocChunk },
+    Confirmed { acknowledgements: Vec<DocAcknowledgement> },
+    Acknowledged { results: Vec<DocAckResult> },
+    Failed { kind: DocTransferFailure, why: String },
+}
+
 /// One selected document's inventory result. A failed document remains in the
 /// response so it cannot be mistaken for an unchanged version.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DocumentInventory {
-    Version { version: String },
+    Version { version: serde_bytes::ByteBuf },
+    /// The requested name is continued in a smaller docs-only page.
+    Deferred,
     Failed { why: String },
 }
 
@@ -715,12 +802,11 @@ pub enum Response {
         devices: String,
         #[serde(default)]
         roster: serde_bytes::ByteBuf,
+        version: serde_bytes::ByteBuf,
     },
-    Synced {
-        version: String,
-        changes: String,
-        items: u64,
-    },
+    DocTransfer { reply: DocTransferReply },
+    /// A changed reading did not fit beside the document inventory.
+    ReadingDeferred,
     Refused {
         why: String,
     },
@@ -1145,7 +1231,7 @@ impl Request {
     pub fn is_reading(&self) -> bool {
         matches!(
             self,
-            Request::Sync { .. }
+            Request::DocTransfer { .. }
                 | Request::Fetch { .. }
                 | Request::Sessions
                 | Request::Usage
@@ -1270,7 +1356,7 @@ impl Request {
             Request::CodeServe { .. } => Duration::from_secs(280),
             // A digest is a read of the whole file.
             Request::Offer { .. } => Duration::from_secs(280),
-            Request::Sync { .. }
+            Request::DocTransfer { .. }
             | Request::Fetch { .. }
             | Request::FetchPath { .. }
             | Request::SatFetchPath { .. }
@@ -1309,12 +1395,52 @@ pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {
     rmp_serde::to_vec(t).map_err(khor_catalog::msg::cant_encode_frame)
 }
 
+pub fn encode_request(request: &Request) -> Result<Vec<u8>, String> {
+    if let Request::DocTransfer { action } = request { crate::link::documents::validate_action(action)?; }
+    let bytes = encode(request)?;
+    if matches!(request, Request::DocTransfer { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+        return Err("document transfer request exceeds 1 MiB".into());
+    }
+    Ok(bytes)
+}
+pub fn encode_response(response: &Response) -> Result<Vec<u8>, String> {
+    if let Response::DocTransfer { reply } = response { crate::link::documents::validate_reply(reply)?; }
+    let bytes = encode(response)?;
+    if matches!(response, Response::DocTransfer { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+        return Err("document transfer response exceeds 1 MiB".into());
+    }
+    Ok(bytes)
+}
+
 pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, String> {
     rmp_serde::from_slice(bytes).map_err(khor_catalog::msg::cant_decode_frame)
 }
 
+/// The real inbound request envelope, before dispatch or transfer metadata IO.
+/// The decoder can leave trailing bytes, so re-encoding cannot enforce this cap.
+pub fn question(bytes: &[u8]) -> Result<Request, String> {
+    let request = decode::<Request>(bytes)?;
+    if matches!(&request, Request::DocTransfer { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+        return Err("document transfer request exceeds 1 MiB".into());
+    }
+    Ok(request)
+}
+
 /// Decode remote errors in this machine's language; preserve unknown OS text.
 pub fn answer(bytes: &[u8]) -> Result<Response, String> {
+    answer_inner(bytes, None)
+}
+
+/// Preserve decoded Doc body usage even when the original reply checks fail.
+/// Only the document pump uses this receipt; ordinary answers stay unchanged.
+pub(crate) fn answer_doc_observed(
+    bytes: &[u8],
+    body_bytes: &mut Option<usize>,
+) -> Result<Response, String> {
+    answer_inner(bytes, Some(body_bytes))
+}
+
+fn answer_inner(bytes: &[u8], body_bytes: Option<&mut Option<usize>>) -> Result<Response, String> {
     fn reword(why: &mut String) {
         if let Some(local) = khor_catalog::reword(why) {
             *why = local;
@@ -1322,6 +1448,19 @@ pub fn answer(bytes: &[u8]) -> Result<Response, String> {
     }
 
     let mut response = decode::<Response>(bytes)?;
+    if let Some(body_bytes) = body_bytes {
+        *body_bytes = Some(match &response {
+            Response::DocTransfer {
+                reply: DocTransferReply::Exchanged { offer: Some(chunk), .. }
+                    | DocTransferReply::Chunk { chunk },
+            } => chunk.bytes.len(),
+            _ => 0,
+        });
+    }
+    if matches!(&response, Response::DocTransfer { .. }) && bytes.len() > DOC_TRANSFER_FRAME_BYTES {
+        return Err("document transfer response exceeds 1 MiB".into());
+    }
+    if let Response::DocTransfer { reply } = &response { crate::link::documents::validate_reply(reply)?; }
     match &mut response {
         Response::Refused { why } | Response::InventoryNotAdmitted { why } => reword(why),
         Response::Versions { docs, .. } => {
@@ -1331,6 +1470,12 @@ pub fn answer(bytes: &[u8]) -> Result<Response, String> {
                 }
             }
         }
+        Response::DocTransfer { reply } => match reply {
+            DocTransferReply::Failed { why, .. }
+            | DocTransferReply::State { state: DocTransferState::Failed { why, .. }, .. } => reword(why),
+            DocTransferReply::Exchanged { received: Some(DocTransferState::Failed { why, .. }), .. } => reword(why),
+            _ => {}
+        },
         _ => {}
     }
     Ok(response)
@@ -1363,7 +1508,7 @@ mod tests {
                     (
                         "pins".into(),
                         DocumentInventory::Version {
-                            version: "a-version".into(),
+                            version: b"a-version".to_vec().into(),
                         },
                     ),
                     (
@@ -1388,7 +1533,7 @@ mod tests {
             assert_eq!(
                 docs[1].1,
                 DocumentInventory::Version {
-                    version: "a-version".into()
+                    version: b"a-version".to_vec().into()
                 }
             );
             assert_eq!(
@@ -1421,28 +1566,10 @@ mod tests {
 
     #[test]
     fn a_frame_round_trips_and_names_its_op() {
-        let req = Request::Sync {
-            doc: "devices".into(),
-            have: "aGF2ZQ".into(),
-            changes: String::new(),
-        };
-        let bytes = encode(&req).unwrap();
-        // The op name itself is on the wire: renaming a variant is a
-        // protocol change and must land here first, consciously.
-        assert!(
-            bytes.windows(4).any(|w| w == b"Sync"),
-            "the frame must carry the op name"
-        );
-        let back: Request = decode(&bytes).unwrap();
-        match back {
-            Request::Sync { doc, have, changes } => {
-                assert_eq!(
-                    (doc.as_str(), have.as_str(), changes.as_str()),
-                    ("devices", "aGF2ZQ", "")
-                );
-            }
-            other => panic!("decoded wrong: {other:?}"),
-        }
+        let req = Request::DocTransfer { action: DocTransferAction::Confirm { proofs: Vec::new() } };
+        let bytes = encode_request(&req).unwrap();
+        assert!(bytes.windows(b"DocTransfer".len()).any(|w| w == b"DocTransfer"));
+        assert!(matches!(decode::<Request>(&bytes).unwrap(), Request::DocTransfer { action: DocTransferAction::Confirm { proofs } } if proofs.is_empty()));
     }
 
     /// **A new op must be unreadable to an older peer, not readable as a

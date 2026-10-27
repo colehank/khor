@@ -7,6 +7,11 @@
 //! real implementations actually share: produce rows, claim an id,
 //! answer what "looked at now" means, and close.
 
+// The shared integration wire helpers also exercise this very unit-test
+// Node, including its private observers, without a second crate instance.
+#[cfg(test)]
+extern crate self as khor_node;
+
 pub mod accounts;
 pub mod subscriptions;
 pub mod answers;
@@ -51,6 +56,7 @@ pub(crate) mod acp_process;
 mod acp_management;
 mod acp_mcp;
 pub mod link;
+mod doc_transfer_state;
 pub mod list;
 pub mod live;
 pub mod lock;

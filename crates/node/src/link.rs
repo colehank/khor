@@ -19,48 +19,9 @@ use crate::{Node, ipc, wires};
 #[path = "link_tree.rs"]
 mod tree;
 
-/// **Every synced document by its wire name**, loaded, bound to
-/// `$loaded` (a `&mut khor_sync::store::Loaded<_>`) for `$body` — one
-/// list for the arms that answer a sync, compare versions and run a
-/// round, so a document added to one is added to all. An unknown name is
-/// `msg::unknown_doc`. In a function returning `Result<_, String>`.
-macro_rules! with_doc {
-    ($node:expr, $name:expr, |$loaded:ident| $body:expr) => {{
-        let name: &str = $name;
-        match name {
-            "devices" => { let mut l = $node.devices_loaded()?; let $loaded = &mut l; $body }
-            "seen" => { let mut l = $node.seen_loaded()?; let $loaded = &mut l; $body }
-            "pins" => { let mut l = $node.pins_loaded()?; let $loaded = &mut l; $body }
-            "roster" => { let mut l = $node.roster_loaded()?; let $loaded = &mut l; $body }
-            "dirpins" => { let mut l = $node.dirpins_loaded()?; let $loaded = &mut l; $body }
-            "workspaces" => { let mut l = $node.workspaces_loaded()?; let $loaded = &mut l; $body }
-            "webpins" => { let mut l = $node.webpins_loaded()?; let $loaded = &mut l; $body }
-            "recents" => { let mut l = $node.recents_loaded()?; let $loaded = &mut l; $body }
-            "agents" => { let mut l = $node.agents_loaded()?; let $loaded = &mut l; $body }
-            "accounts" => { let mut l = $node.accounts_loaded()?; let $loaded = &mut l; $body }
-            "titles" => { let mut l = $node.titles_loaded()?; let $loaded = &mut l; $body }
-            // A khor-wide conversation (`wide/<name>`, foundation B). ⚠️
-            // 墓碑 (STORE-BRIEF phase 5): a machine's `chat/<机器>` was a
-            // document here too; that session kind is gone, so an older
-            // khor asking for one is refused by name (`unknown_doc`).
-            _ => match chat::wide_dir($node.root(), name) {
-                Some(dir) => {
-                    let mut l = chat::open_channel(&dir, $node.writer_peer())?;
-                    let $loaded = &mut l;
-                    $body
-                }
-                None => Err(msg::unknown_doc(name)),
-            },
-        }
-    }};
-}
-
-/// Global documents in sync order, followed by the selected conversations.
-/// A document failure is reported after the remaining documents are visited.
-const ROUND_DOCS: [&str; 11] = [
-    "devices", "seen", "pins", "roster", "dirpins", "workspaces", "webpins", "recents",
-    "agents", "accounts", "titles",
-];
+use crate::doc_transfer_state::registry::{with_doc, ROUND_DOCS};
+#[path = "link_doc_transfer.rs"]
+pub(crate) mod documents;
 
 struct RoundOpening {
     request: Request,
@@ -73,17 +34,23 @@ struct RoundOpening {
 struct SyncProgress {
     moved: usize,
     apart: Vec<String>,
+    pending: Vec<String>,
     first_failure: Option<String>,
 }
 
 struct SyncSummary {
     moved: usize,
     apart: Vec<String>,
+    pending: Vec<String>,
 }
 
 impl SyncSummary {
     fn description(self) -> String {
-        if !self.apart.is_empty() {
+        if !self.pending.is_empty() && !self.apart.is_empty() {
+            msg::sync_partly_pending_and_apart(self.moved, self.pending.join(", "), self.apart.join(", "))
+        } else if !self.pending.is_empty() {
+            msg::sync_partly_pending(self.moved, self.pending.join(", "))
+        } else if !self.apart.is_empty() {
             msg::sync_partly_apart(self.moved, self.apart.join(", "))
         } else if self.moved == 0 {
             msg::nothing_to_move().into()
@@ -104,6 +71,7 @@ impl SyncProgress {
             None => Ok(SyncSummary {
                 moved: self.moved,
                 apart: self.apart,
+                pending: self.pending,
             }),
         }
     }
@@ -111,8 +79,12 @@ impl SyncProgress {
 
 /// A document's version, as a [`Request::Versions`] digest: blake3 of
 /// its canonical spelling, 16 bytes.
-fn version_digest<D: Doc>(loaded: &khor_sync::store::Loaded<D>) -> Vec<u8> {
-    blake3::hash(&wire::version_canonical(&loaded.store, &loaded.doc)).as_bytes()[..16].to_vec()
+fn document_version<D: Doc>(loaded: &khor_sync::store::Loaded<D>) -> Result<serde_bytes::ByteBuf, String> {
+    khor_sync::doc_transfer::DocumentVersion { epoch: loaded.store.epoch(), version: loaded.doc.version() }
+        .encode().map(serde_bytes::ByteBuf::from).map_err(|e| e.to_string())
+}
+fn version_digest<D: Doc>(loaded: &khor_sync::store::Loaded<D>) -> Result<Vec<u8>, String> {
+    Ok(blake3::hash(&document_version(loaded)?).as_bytes()[..16].to_vec())
 }
 
 /// A reading's answer frame, as a [`Request::Versions`] digest.
@@ -3177,9 +3149,27 @@ impl Node {
     /// skip the retirement, so a dead wire was handed out again for
     /// 100 s of 29.5 s hangs.
     pub(crate) async fn exchange_on(&self, line: &Line, req: &Request) -> Result<Response, Miss> {
+        self.exchange_on_inner(line, req, None).await
+    }
+
+    async fn exchange_doc_on(
+        &self,
+        line: &Line,
+        req: &Request,
+        attempt: &mut DocAttempt,
+    ) -> Result<Response, Miss> {
+        self.exchange_on_inner(line, req, Some(attempt)).await
+    }
+
+    async fn exchange_on_inner(
+        &self,
+        line: &Line,
+        req: &Request,
+        attempt: Option<&mut DocAttempt>,
+    ) -> Result<Response, Miss> {
         let mut guard = RetireUnheard::new(&self.wires, line);
         let budget = wires::budget_for(req.budget(), &line.conn);
-        let out = exchange(&line.conn, &line.name, req, budget).await;
+        let out = exchange_inner(&line.conn, &line.name, req, budget, attempt).await;
         guard.disarm();
         match &out {
             Ok(_) => self.wires.heard(&line.id, line.proto, &line.conn),
@@ -3559,7 +3549,7 @@ impl Node {
                 // **A watch keeps its stream** (`crate::watch`): answered
                 // as it goes, not once — through the same gate as every
                 // other request.
-                if let Ok(Request::Watch { dirs }) = proto::decode::<Request>(&bytes) {
+                if let Ok(Request::Watch { dirs }) = proto::question(&bytes) {
                     if early && *done.borrow() != Some(true) {
                         while done.borrow().is_none() {
                             if done.changed().await.is_err() {
@@ -3583,7 +3573,9 @@ impl Node {
                     }
                     return;
                 }
-                let resp = match proto::decode::<Request>(&bytes) {
+                #[cfg(test)]
+                let wire_tag = documents::flow_tests::FrameTag::new(node.root(), &remote);
+                let resp = match proto::question(&bytes) {
                     Ok(req) => {
                         if early && !req.rides_early() {
                             while done.borrow().is_none() {
@@ -3595,14 +3587,20 @@ impl Node {
                                 return;
                             }
                         }
-                        node.dispatch(&remote, req, &ep).await
+                        #[cfg(test)]
+                        let response = node.dispatch_wire(&remote, req, &ep, &wire_tag).await;
+                        #[cfg(not(test))]
+                        let response = node.dispatch(&remote, req, &ep).await;
+                        response
                     }
                     Err(e) => Response::Refused { why: e },
                 };
-                let Ok(frame) = proto::encode(&resp) else {
+                let Ok(frame) = proto::encode_response(&resp) else {
                     return;
                 };
                 if send.write_all(&frame).await.is_ok() {
+                    #[cfg(test)]
+                    documents::flow_tests::reply_written(&wire_tag, &resp);
                     let _ = send.finish();
                 }
             });
@@ -3611,8 +3609,26 @@ impl Node {
     }
 
     async fn dispatch(&self, remote: &str, req: Request, ep: &iroh::Endpoint) -> Response {
-        match self.dispatch_inner(remote, req, ep).await {
+        #[cfg(test)]
+        let result = self.dispatch_inner(remote, req, ep, None).await;
+        #[cfg(not(test))]
+        let result = self.dispatch_inner(remote, req, ep).await;
+        match result {
             Ok(resp) => resp,
+            Err(why) => Response::Refused { why },
+        }
+    }
+
+    #[cfg(test)]
+    async fn dispatch_wire(
+        &self,
+        remote: &str,
+        req: Request,
+        ep: &iroh::Endpoint,
+        tag: &documents::flow_tests::FrameTag,
+    ) -> Response {
+        match self.dispatch_inner(remote, req, ep, Some(tag)).await {
+            Ok(response) => response,
             Err(why) => Response::Refused { why },
         }
     }
@@ -3622,6 +3638,7 @@ impl Node {
         remote: &str,
         req: Request,
         ep: &iroh::Endpoint,
+        #[cfg(test)] wire_tag: Option<&documents::flow_tests::FrameTag>,
     ) -> Result<Response, String> {
         // **One gate, before any arm** (docs/CONNECT.md 名单是信任的唯一
         // 出处): in the table, and on the roster. `Pair` is the one
@@ -3641,6 +3658,12 @@ impl Node {
             } else {
                 Err(e)
             };
+        }
+        #[cfg(test)]
+        if !matches!(&req, Request::Pair { .. } | Request::Vouch { .. }) {
+            if let Some(tag) = wire_tag {
+                documents::flow_tests::admitted(tag, &req);
+            }
         }
         match req {
             Request::Pair {
@@ -3698,6 +3721,7 @@ impl Node {
                     name: self.name().to_owned(),
                     devices: wire::table_b64(&mut store, &loaded.doc)?,
                     roster: serde_bytes::ByteBuf::from(self.roster_offer_in(&loaded.doc)),
+                    version: khor_sync::doc_transfer::DocumentVersion { epoch: store.epoch(), version: loaded.doc.version() }.encode().map_err(|e| e.to_string())?.into(),
                 })
             }
             // The other door a stranger may knock on (round NET-10): the
@@ -3709,23 +3733,8 @@ impl Node {
                 self.nudge(ep, false);
                 Ok(Response::Vouched)
             }
-            Request::Sync { doc, have, changes } => {
-                let reply = with_doc!(self, doc.as_str(), |loaded| {
-                    let reply = wire::answer(&mut loaded.store, &loaded.doc, &have, &changes);
-                    self.say_retired(&remote, &doc, &loaded.store);
-                    reply
-                })?;
-                if doc == "devices" && !changes.is_empty() {
-                    self.follow_after_sync();
-                }
-                if !changes.is_empty() && doc == crate::wide::BROADCAST {
-                    self.take_arrived();
-                }
-                Ok(Response::Synced {
-                    version: reply.version,
-                    changes: reply.changes,
-                    items: reply.items as u64,
-                })
+            Request::DocTransfer { action } => {
+                Ok(Response::DocTransfer { reply: self.answer_doc_transfer(remote, action).await })
             }
             Request::Fetch { digest, offset } => {
                 self.serve_slice(&remote, &digest, offset)
@@ -9711,6 +9720,7 @@ impl Node {
                 name,
                 devices,
                 roster,
+                version,
             } => {
                 let mut loaded = self.devices_loaded()?;
                 let bytes = wire::table_bytes(&loaded.store, &devices)?;
@@ -9726,6 +9736,7 @@ impl Node {
                     &[(t.id.as_str(), name.as_str()), (self.device_str(), self.name())],
                 )?;
                 loaded.store.flush(&loaded.doc)?;
+                drop(loaded);
                 // This side holds the root and just signed the issuer in
                 // (a server that issued the ticket, CONNECT.md 新设备入网三
                 // 路): it learns its certificate the way it learns
@@ -9738,7 +9749,7 @@ impl Node {
                         proto: wires::Proto::Main,
                         conn: conn.clone(),
                     };
-                    let _ = self.rounds(&line, "devices", &mut loaded).await;
+                    let _ = self.transfer_documents(&line, vec![("devices".into(), DocumentInventory::Version { version })]).await;
                 }
                 Ok(name)
             }
@@ -10440,18 +10451,16 @@ impl Node {
     /// **A round by what changed** (round NET-3). One exchange first,
     /// [`Request::Versions`]: a digest of every document's version and
     /// of every reading this node holds of that machine. Then only the
-    /// documents whose versions differ, one exchange each (the far
-    /// version is known, so the first exchange already pushes), and the
+    /// documents whose versions differ through the bounded fair pump, and the
     /// readings that changed came back in the answer itself. A quiet
     /// round is the one exchange.
     ///
     /// The shape is the one CouchDB (`_revs_diff`), Syncthing (index id
     /// and max sequence before an index update) and Automerge (heads
     /// before changes) share: say where you are, then send only the
-    /// difference. Unlike theirs, nothing here is remembered between
-    /// rounds — a version is a digest of the document itself, so a
-    /// restart, a rejoin or a second asker cannot leave a stale marker
-    /// that under-sends.
+    /// difference. Inventory digests describe the document itself; the
+    /// transfer journal separately pins each published body/target until its
+    /// authenticated completion and receipt acknowledgement survive restart.
     ///
     async fn sync_what_changed(
         &self,
@@ -10460,7 +10469,8 @@ impl Node {
         opening: RoundOpening,
         answer: Response,
     ) -> Result<SyncSummary, String> {
-        let (mut differ, changed) = versions_answer(answer)?;
+        let (differ, changed) = versions_answer(answer)?;
+        let mut differ = self.resolve_doc_inventory(line, &opening.request, differ).await?;
         self.take_readings(line, d, &opening.kinds, changed).await;
         differ.extend(
             opening
@@ -10475,7 +10485,26 @@ impl Node {
             .map(|(index, name)| (name.as_str(), index))
             .collect();
         differ.sort_by_key(|(name, _)| order.get(name.as_str()).copied().unwrap_or(usize::MAX));
-        let mut progress = self.sync_documents(line, d, differ).await;
+        let pending_result = self.pending_doc_transfers(&line.id).await;
+        let (pending, pending_error) = match pending_result {
+            Ok(names) => (names, None),
+            Err(error) => (Vec::new(), Some(error)),
+        };
+        for name in pending {
+            if !differ.iter().any(|(selected, _)| selected == &name) {
+                // Query this current document even when the digest is equal:
+                // completion/receipt cleanup can outlive the last data reply.
+                let asked = self.versions_request(d, &[], vec![(name.clone(), serde_bytes::ByteBuf::new())]);
+                let answer = self.exchange_on(line, &asked).await.map_err(Miss::words)?;
+                differ.extend(versions_answer(answer)?.0);
+            }
+        }
+        differ.sort_by_key(|(name, _)| order.get(name.as_str()).copied().unwrap_or(usize::MAX));
+        let mut progress = self.transfer_documents(line, differ).await;
+        if let Some(error) = pending_error {
+            if error.kind == proto::DocTransferFailure::Busy { progress.pending.push("receipts".into()); }
+            else { progress.fail(error.why); }
+        }
         // Readings can depend on documents that did advance, even in a partial round.
         if progress.moved > 0 {
             let refreshed = async {
@@ -10493,51 +10522,6 @@ impl Node {
         progress.finish()
     }
 
-    async fn sync_document(&self, line: &Line, name: &str, have: String) -> Result<usize, String> {
-        with_doc!(self, name, |loaded| {
-            self.rounds_from(line, name, loaded, wire::Peer::knowing(have), 1)
-                .await
-        })
-    }
-
-    async fn sync_documents(
-        &self,
-        line: &Line,
-        device: &DeviceInfo,
-        docs: Vec<(String, DocumentInventory)>,
-    ) -> SyncProgress {
-        let mut progress = SyncProgress::default();
-        for (name, inventory) in docs {
-            let synced = match inventory {
-                DocumentInventory::Version { version } => {
-                    self.sync_document(line, &name, version).await
-                }
-                DocumentInventory::Failed { why } => Err(why),
-            };
-            if let Some(note) = crate::journal::sync_failed(
-                &device.id,
-                &name,
-                synced.as_ref().err().map(String::as_str),
-            ) {
-                self.wires.note(Some(&device.id), note);
-            }
-            match synced {
-                Ok(bytes) => {
-                    progress.moved += bytes;
-                    if name == "devices" && bytes > 0 {
-                        self.follow_after_sync();
-                    }
-                    if name == crate::wide::BROADCAST && bytes > 0 {
-                        self.take_arrived();
-                    }
-                }
-                Err(why) if wire::other_epoch(&why) => progress.apart.push(name),
-                Err(why) => progress.fail(why),
-            }
-        }
-        progress
-    }
-
     /// A round's opening [`Request::Versions`] for `d`: every document's
     /// digest and every reading held, and the readings' kinds.
     fn opening(&self, d: &DeviceInfo) -> RoundOpening {
@@ -10547,9 +10531,7 @@ impl Node {
         let mut failures = Vec::new();
         for name in &names {
             let digest = (|| {
-                with_doc!(self, name.as_str(), |loaded| Ok::<_, String>(
-                    version_digest(loaded)
-                ))
+                with_doc!(self, name.as_str(), |loaded| version_digest(loaded))
             })();
             match digest {
                 Ok(digest) => docs.push((name.clone(), serde_bytes::ByteBuf::from(digest))),
@@ -10702,6 +10684,13 @@ impl Node {
                         },
                     }
                 }
+                Ok(Response::ReadingDeferred) => match reading_request(&asked) {
+                    Some(request) => match self.exchange_on(line, &request).await {
+                        Ok(answer) if !matches!(&answer, Response::Refused { .. }) => proto::encode(&answer).ok().map(|frame| HeldReading { digest: reading_digest(&frame), answer }),
+                        _ => None,
+                    },
+                    None => None,
+                },
                 Ok(answer) => Some(HeldReading {
                     digest: reading_digest(&frame),
                     answer,
@@ -10772,19 +10761,32 @@ impl Node {
         ep: &iroh::Endpoint,
     ) -> Result<Response, String> {
         let mut differ = Vec::new();
-        for (name, theirs) in docs {
+        let baseline = docs.iter().map(|(name, _)| proto::encode(&(name, DocumentInventory::Deferred)).map(|b| b.len())).collect::<Result<Vec<_>, _>>()?;
+        let reserve: usize = baseline.iter().sum::<usize>().saturating_add(128);
+        let budget = (reserve.saturating_add(proto::DOC_TRANSFER_FRAME_BYTES)).min(MAX_FRAME.saturating_sub(128));
+        let mut spent = reserve;
+        for ((name, theirs), reserved) in docs.into_iter().zip(baseline) {
+            if spent.saturating_add(khor_sync::transfer::MAX_METADATA_BYTES) > budget && !differ.is_empty() {
+                differ.push((name, DocumentInventory::Deferred));
+                continue;
+            }
             let inventory = (|| {
                 with_doc!(self, name.as_str(), |loaded| Ok::<_, String>((
-                    version_digest(loaded),
-                    wire::version_b64(&loaded.store, &loaded.doc)
+                    version_digest(loaded)?, document_version(loaded)?
                 )))
             })();
-            match inventory {
-                Ok((mine, version)) if mine[..] != theirs[..] => {
-                    differ.push((name, DocumentInventory::Version { version }));
-                }
-                Ok(_) => {}
-                Err(why) => differ.push((name, DocumentInventory::Failed { why })),
+            let inventory = match inventory {
+                Ok((mine, version)) if mine[..] != theirs[..] => DocumentInventory::Version { version },
+                Ok(_) => continue,
+                Err(why) => DocumentInventory::Failed { why },
+            };
+            let bytes = proto::encode(&(&name, &inventory))?.len();
+            let extra = bytes.saturating_sub(reserved);
+            if spent.saturating_add(extra) > budget {
+                differ.push((name, DocumentInventory::Deferred));
+            } else {
+                spent = spent.saturating_add(extra);
+                differ.push((name, inventory));
             }
         }
         let by_change = readings.iter().any(|(k, _)| k == ROWS_BY_CHANGE);
@@ -10861,7 +10863,18 @@ impl Node {
                 }
                 _ => frame,
             };
-            changed.push((kind, serde_bytes::ByteBuf::from(frame)));
+            let previous = changed.len();
+            changed.push((kind.clone(), serde_bytes::ByteBuf::from(frame)));
+            if proto::encode(&Response::Versions { docs: differ.clone(), readings: changed.clone() })?.len() > MAX_FRAME {
+                changed.truncate(previous);
+                changed.push((kind, proto::encode(&Response::ReadingDeferred)?.into()));
+                while proto::encode(&Response::Versions { docs: differ.clone(), readings: changed.clone() })?.len() > MAX_FRAME {
+                    let Some(position) = changed.iter().position(|(_, frame)| frame.len() > 1024) else {
+                        return Err("inventory metadata exceeds the current frame budget".into());
+                    };
+                    changed[position].1 = proto::encode(&Response::ReadingDeferred)?.into();
+                }
+            }
         }
         Ok(Response::Versions {
             docs: differ,
@@ -10878,63 +10891,6 @@ impl Node {
                 crate::journal::What::PenRetired { doc: doc.to_owned(), name: format!("{name:016x}") },
             );
         }
-    }
-
-    /// Two wire rounds: the first is pull-only by design, the second
-    /// pushes. Returns bytes moved.
-    async fn rounds<D: Doc>(
-        &self,
-        line: &Line,
-        doc_name: &str,
-        loaded: &mut khor_sync::store::Loaded<D>,
-    ) -> Result<usize, String> {
-        self.rounds_from(line, doc_name, loaded, wire::Peer::new(), 2).await
-    }
-
-    /// `times` wire rounds from what `peer` knows of the far side: two
-    /// from nothing ([`Node::rounds`]), one from a version just told
-    /// ([`Node::sync_what_changed`]). Returns bytes moved.
-    async fn rounds_from<D: Doc>(
-        &self,
-        line: &Line,
-        doc_name: &str,
-        loaded: &mut khor_sync::store::Loaded<D>,
-        mut peer: wire::Peer,
-        times: usize,
-    ) -> Result<usize, String> {
-        let mut moved = 0usize;
-        for _ in 0..times {
-            let out = peer.outgoing(&mut loaded.store, &loaded.doc)?;
-            let resp = self
-                .exchange_on(
-                    line,
-                    &Request::Sync {
-                        doc: doc_name.to_owned(),
-                        have: out.have.clone(),
-                        changes: out.changes.clone(),
-                    },
-                )
-                .await
-                .map_err(Miss::words)?;
-            let reply = match resp {
-                Response::Synced {
-                    version,
-                    changes,
-                    items,
-                } => wire::Reply {
-                    version,
-                    changes,
-                    items: items as usize,
-                },
-                Response::Refused { why } => return Err(why),
-                other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
-            };
-            let round = peer.absorb(&mut loaded.store, &loaded.doc, &out, reply);
-            self.say_retired(&line.id, doc_name, &loaded.store);
-            let round = round?;
-            moved += round.pushed + round.pulled;
-        }
-        Ok(moved)
     }
 
     /// The khor-wide conversations worth syncing, by board name
@@ -11250,6 +11206,14 @@ impl Miss {
 /// How often an exchange looks at whether its wire has been heard.
 const LIVENESS_BEAT: Duration = Duration::from_millis(250);
 
+/// Local receipt for one Doc attempt; no wire field or transport retry.
+#[derive(Default)]
+struct DocAttempt {
+    started: bool,
+    request_written: bool,
+    response_body: Option<usize>,
+}
+
 /// **One request and its answer on one connection, watched for life.**
 ///
 /// The far machine's QUIC stack acknowledges what it receives within a
@@ -11275,7 +11239,20 @@ async fn exchange(
     req: &Request,
     budget: Duration,
 ) -> Result<Response, Miss> {
-    let frame = proto::encode(req).map_err(Miss::Garbled)?;
+    exchange_inner(conn, who, req, budget, None).await
+}
+
+async fn exchange_inner(
+    conn: &iroh::endpoint::Connection,
+    who: &str,
+    req: &Request,
+    budget: Duration,
+    mut attempt: Option<&mut DocAttempt>,
+) -> Result<Response, Miss> {
+    let frame = proto::encode_request(req).map_err(Miss::Garbled)?;
+    if let Some(attempt) = attempt.as_deref_mut() {
+        attempt.started = true;
+    }
     let sent = tokio::time::Instant::now();
     let mut count = wires::heard_count(conn);
     let mut heard: Option<tokio::time::Instant> = None;
@@ -11297,12 +11274,19 @@ async fn exchange(
         send.write_all(&frame)
             .await
             .map_err(|e| lost(msg::cant_send(e)))?;
+        if let Some(attempt) = attempt.as_deref_mut() {
+            attempt.request_written = true;
+        }
         send.finish().map_err(|e| lost(msg::cant_close_stream(e)))?;
         let bytes = recv
             .read_to_end(MAX_FRAME)
             .await
             .map_err(|e| lost(msg::no_answer(e)))?;
-        proto::answer(&bytes).map_err(Miss::Garbled)
+        match attempt.as_deref_mut() {
+            Some(attempt) => proto::answer_doc_observed(&bytes, &mut attempt.response_body),
+            None => proto::answer(&bytes),
+        }
+        .map_err(Miss::Garbled)
     };
     tokio::pin!(work);
     let mut beat = tokio::time::interval(LIVENESS_BEAT);
@@ -12158,7 +12142,7 @@ mod current_inventory {
             docs: vec![(
                 "pins".into(),
                 DocumentInventory::Version {
-                    version: "current-vector".into(),
+                    version: b"current-vector".to_vec().into(),
                 },
             )],
             readings: vec![("sessions".into(), serde_bytes::ByteBuf::from(vec![1, 2, 3]))],
@@ -12170,7 +12154,7 @@ mod current_inventory {
             [(
                 "pins".into(),
                 DocumentInventory::Version {
-                    version: "current-vector".into()
+                    version: b"current-vector".to_vec().into()
                 }
             )]
         );
@@ -12224,6 +12208,23 @@ mod current_inventory {
         let description = progress.finish().unwrap().description();
         assert_eq!(description, msg::sync_partly_apart(0, "devices"));
         assert_ne!(description, msg::nothing_to_move());
+    }
+
+    #[test]
+    fn pending_and_mixed_rounds_describe_the_actual_remaining_documents() {
+        let mut progress = SyncProgress::default();
+        progress.pending.push("devices".into());
+        assert_eq!(progress.finish().unwrap().description(), msg::sync_partly_pending(0, "devices"));
+        let mut progress = SyncProgress::default();
+        progress.moved = 123;
+        progress.pending.push("devices".into());
+        progress.apart.push("titles".into());
+        assert_eq!(progress.finish().unwrap().description(),
+            msg::sync_partly_pending_and_apart(123, "devices", "titles"));
+        let mut progress = SyncProgress::default();
+        progress.pending.push("devices".into());
+        progress.fail("pins failed".into());
+        assert_eq!(progress.finish().err().as_deref(), Some("pins failed"));
     }
 
     #[test]
