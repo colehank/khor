@@ -1113,11 +1113,13 @@ impl Node {
             carry,
             hosts,
         };
-        node.recover_pairing_before_bootstrap()?;
-        node.register_self()?;
-        // After the row exists: the first machine's root certifies the
-        // machine the table now holds (docs/CONNECT.md 身份).
-        node.root_born = node.bootstrap_trust()?;
+        {
+            let recovered = node.recover_pairing_before_bootstrap()?;
+            node.register_self()?;
+            // After the row exists: the first machine's root certifies the
+            // machine the table now holds (docs/CONNECT.md 身份).
+            node.root_born = node.bootstrap_trust(&recovered)?;
+        }
         Ok(node)
     }
 

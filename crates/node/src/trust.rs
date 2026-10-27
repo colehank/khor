@@ -892,8 +892,10 @@ impl Node {
     ///   — take up a roster that names this machine, if one has arrived.
     /// - No key and alone: **this is the first machine**. It makes the
     ///   root, certifies itself, and marks the words unshown.
-    pub(crate) fn bootstrap_trust(&self) -> Result<bool, String> {
-        let _trust = self.root_mutation_guard()?;
+    pub(crate) fn bootstrap_trust(
+        &self,
+        _recovered: &crate::doc_transfer_state::RootMutationGuard,
+    ) -> Result<bool, String> {
         if self.anchor().is_some() {
             // **A holder is always on its own roster** — and after `khor id
             // --reset` its device id is a new one. Only a machine with a
@@ -1157,24 +1159,29 @@ impl Node {
         root_mutation_at(self.root(), self.my_id())
     }
 
-    pub(crate) fn recover_pairing_before_bootstrap(&self) -> Result<(), String> {
+    // Keep this lease through self-registration and bootstrap. A later ordinary
+    // Doc journal publication must not cause a second recovery decision after
+    // the critical intents have been reconciled under this same root fence.
+    pub(crate) fn recover_pairing_before_bootstrap(
+        &self,
+    ) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
         use crate::doc_transfer_state::{Context, State, pairing};
-        if !pairing::needs_recovery(self.root(), self.my_id()).map_err(String::from)? {
-            return Ok(());
+        let guard = pairing::root_fence(self.root()).map_err(String::from)?;
+        if pairing::needs_recovery(self.root(), self.my_id()).map_err(String::from)? {
+            let context = Context {
+                root: self.root().clone(),
+                writer: self.writer_peer(),
+                local: self.my_id(),
+            };
+            State::open(&context)
+                .map_err(String::from)?
+                .recover_pairing(
+                    &PairTrust::new(context.clone(), self.name().into()),
+                    &context,
+                )
+                .map_err(String::from)?;
         }
-        let _guard = pairing::root_fence(self.root()).map_err(String::from)?;
-        let context = Context {
-            root: self.root().clone(),
-            writer: self.writer_peer(),
-            local: self.my_id(),
-        };
-        State::open(&context)
-            .map_err(String::from)?
-            .recover_pairing(
-                &PairTrust::new(context.clone(), self.name().into()),
-                &context,
-            )
-            .map_err(String::from)
+        Ok(guard)
     }
 }
 
