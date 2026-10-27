@@ -50,3 +50,10 @@ root实际复现01盲点：包外shared-input内容改变并保mtime，producer 
 root实际 `Q055/native-provenance-real03` 以收紧后的控制运行，exit0/5.542s：A→B→sameB→returnA→relocatedA 共5次真实Cargo build及5次真实native输出均正确，所有changed producer实际fresh=false，sameB的3个artifact全fresh=true且refresh=[]。保旧mtime的新module/API/生成输入变化没有错复用；旧A消息在B状态被拒；故意陈旧顶层summary.d未代替配对rustc.d；回A触发脚本重新生成old值；relocation实际env!(CARGO_MANIFEST_DIR)为新root。root逐SHA核66dual并独读全部receipt/actualstdout。moduleSHA bef186f76c5184e8a0bf57784b417610817be32acb4a7d673eb75da22c22a9b5稳定，所有owned groups gone/leaderreaped，无forced/cleanup error，TMP清，最终module/TOTAL/镜像门均通过。原01/02失败保留。
 
 作者exact5提交859b9f7d5d962d117f516184dce45050b1ff1896，root集成d49d88c3ec5be3ade695138308f716402d89fed6。这建立可用的第一方来源校验入口，并验证真实小型workspace的正反对照；Khor自身正常CLI/原生入口、CI实际运行及最终App同源接线仍要验，不能把本段标全Q055/P5 done。下一批R1先接当前正常CLI+Node build及9个必要业务父，复用现有process controls而不是复制runner。
+
+
+## 真正Khor入口接线
+
+R1 run02仅metadata离线解析要求未缓存Android依赖而exit101，0build/0业务父；改用实际rustc host过滤，保resolve/locked/offline后run03 metadata过、CLI build0/73.08s，verify保守拒绝Node未配置的包外compile-time输入。root扫描实际所有workspace rustc.d一次列齐仅providers.json与scripts/install.sh。candidate05只在khor-node extras显式纳这两文件tree(file)及Node/dependents key，verify和未知输入拒绝不放宽，20纯控过。CI/doc host过滤9229→16a86已集成；05 exact2 fc592→0a888已集成。
+
+run04实际normalCLI0/69.34s、Node0/66.30s，并通过完整verify/require来源；zero/slow+close6合计8个业务父过，但R0第一run进度红，整run非绿。源码/entry/module/dist稳、owned组/TMP清，28dual由root独读逐SHA核。证明来源模块已接上真正Khor入口；R1行为红不被误计成来源工具失败，也不标全R1/P5完成。原各setup/verify/产品失败都独立保留。

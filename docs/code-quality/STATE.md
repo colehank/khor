@@ -6,7 +6,7 @@
 
 - 完成全仓功能审计、按风险修复/重构、Clean Code工程治理和最终同源App验收；多智能体协作与压缩恢复贯穿全程。任一首批或库基座不能代替完整目标。
 - 未上线，不保旧Khor端fallback/迁移矩阵；统一当前协议。认证、epoch、数据完整性、实际支持平台及外部ACP声明能力仍保留。
-- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@d49d88c3ec5be3ade695138308f716402d89fed6`，两树最近核对均clean。用户既有App/服务/release不动。
+- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@0a888f24c0e20e6233192b93df05618c883bf0ea`，两树最近核对均clean。用户既有App/服务/release不动。
 - 权威协调目录是本目录；实现树同名文档为历史副本。外盘新资料放 `/Volumes/disk0/Khor` 对应分类。
 
 ## 已集成的成果
@@ -22,12 +22,12 @@
 
 | owner | 实现树 / baseline | 当前状态 |
 | --- | --- | --- |
-| root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至d49d88c3（含真实SIGKILL验收与Q055来源入口）；共同lib/link/proto组合native及App待。 |
-| node_test_review | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-native-provenance@859b9f7d` | 复用原terminal树做Q055，candidate04已859b9f7d→d49d88c3集成；19纯控及真实5build/5native对照全过，66dual。正在准备R1两必要build+9父的来源接线，暂未授运行。 |
-| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@c81d0a18` | 已c81→dd9检查点集成；真实2s metadata阻塞Stop已红，最小生产fix source04含R0/close fixture适配，root及非作者独审已过；尚未编验，不能计修复绿。原owner额度错误，当前源冻结完整保留，root接管。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@8f2f1d1b` | source08纯policy实际0/1/0精确红；已返槽。source11完整17+原N0已过，d7a→c13提交集成；crash14实际1个业务父全绿，8f2f1d1b→3a2bb9bf已提交集成；47dual/1085，真实postflush SIGKILL+fresh-open/错误ACK保stage/精确GC均过。正在窄查N2恢复claim契约；优化构建32MiB边界仍待。 |
+| root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至0a888f24（含真实SIGKILL验收与Q055来源入口/host及Node嵌入输入）；共同lib/link/proto组合native及App待。 |
+| node_test_review | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-native-provenance@fc592fdb` | 复用原terminal树做Q055，Q05505已fc592fdb→0a888f24集成，20纯控、real03五对照及真实R1 CLI/Node来源接线过；现转R1 driver实现owner，源04保留，仅remote_cancel.rs/必要策略回归，无native授权。 |
+| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@c81d0a18` | 已c81→dd9检查点集成；真实2s metadata阻塞Stop已红，source04已实际编验：zero/slow+close6共8父过；R0第0run无自主pump真实红。原owner额度错误停；node_test_review接driver实现、root与N1 owner独审，原source04不覆盖。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@8f2f1d1b` | source08纯policy实际0/1/0精确红；已返槽。source11完整17+原N0已过，d7a→c13提交集成；crash14实际1个业务父全绿，8f2f1d1b→3a2bb9bf已提交集成；47dual/1085，真实postflush SIGKILL+fresh-open/错误ACK保stage/精确GC均过。N2 candidate15仅trust纯plan/apply提取+3回归源冻结，root源码审无阻断，未编验/commit；8dual/1085，其他1084不变。保持冻结，兼任R1 driver非作者独审；优化构建32MiB边界仍待。 |
 
-**当前唯一Cargo/native槽空。N1 crash14/control12已经完成归槽，Q055真实real03已完成归槽并提交集成；R1 source04独审已过，正常CLI重建及实际回归未运行。** 授槽/启动后须核现场，不据旧active.json重启。Q052/R1/N1三个检查点均已集成，组合native/App尚待；R1后续慢Stop/R2、N1实际32MiB边界/N2等仍未完成。
+**当前唯一Cargo/native槽空。R1 run04已完成归槽：新CLI/Node来源构建过、8父过，但R0实际红，整体非绿；仅新driver源码授权，未再授执行。** 授槽/启动后须核现场，不据旧active.json重启。Q052/R1/N1三个检查点均已集成，组合native/App尚待；R1后续慢Stop/R2、N1实际32MiB边界/N2等仍未完成。
 
 ## Q052：终端当前协议与清屏
 
@@ -57,7 +57,7 @@
 
 source02只两fixture路径27payload/2353输入；原source01的DeviceId.id编译错误已最小删.id，旧compile101/0父20dual保留。`metadata-startup-red-run-20261027T050904Z` 实际正常libtest63.730s过；zero内外父各1/0/0，16Stop567ms；真实2s启动下slow内外父各0/1/0、first2123ms/16calls2124ms，唯一primary Stop admission blocked，真实gate→exec2.0097135s/同PID/原CLI最终DurablyQueued。实际intent身份、正常close、Pi/metadata ESRCH均过，50dual/10PID/9PGID/TMP清。root已独读result，明确是本次产品红，不倒推旧5.27。
 
-已授权最小生产fix：仅persist&&!retry的Stop登记准入owned metadata后不再等启动/落盘，已完成照实decode、未完成诚实PersistenceUnknown，owner/claim/quota持续持有；Status/显式Retry语义保留、原1s门/exercise不改，补真实Status观察持久化完成。source04已交（27/2353，生产仅5行Stop fast分支，慢fixture真实Status及原R0/两close等待者最小适配），root及node_test_review非作者独审通过；R0真实Status+intent在原六/four-held/5,6 delivery之后，close以同owner显式Retry实际Pending，原owner/claim/quota/fence oracle保留。尚无该源码实际native绿；生产变了须重建正常CLI，不能沿用旧17b4。R2不混入。
+已授权最小生产fix：仅persist&&!retry的Stop登记准入owned metadata后不再等启动/落盘，已完成照实decode、未完成诚实PersistenceUnknown，owner/claim/quota持续持有；Status/显式Retry语义保留、原1s门/exercise不改，补真实Status观察持久化完成。source04已交（27/2353，生产仅5行Stop fast分支，慢fixture真实Status及原R0/两close等待者最小适配），root及node_test_review非作者独审通过；R0真实Status+intent在原六/four-held/5,6 delivery之后，close以同owner显式Retry实际Pending，原owner/claim/quota/fence oracle保留。run04已实际新CLI/Node构建及来源验证过，zero/2s+close6共8父绿，slow Stop由原2123ms降至1ms且最后真实durable。R0第0run原2秒内未到实际Cancel，定位metadata完成结果无自主pump；整个run非绿。原source04/28dual保留，driver最小源码修复及后续完整回归待；不能给fixture加Read/Status来驱动，R2不混入。详见Q-037-cancel-driver。
 
 ## N1 / N2：Node文档同步
 
@@ -73,7 +73,7 @@ source02只两fixture路径27payload/2353输入；原source01的DeviceId.id编�
 
 - Q053全仓fmt基线205个第一方Rust文件差异，尚未迁移；功能集成后独立纯格式批次。
 - Q054私有IO gate typed错误边界待N1后，去除按英文文案识Busy；不建全仓错误框架。
-- Q055 candidate04已859b9f7d→d49d88c3提交集成。root独审及真实小型编译先后抓到包外输入未入producer key、hyphen bin名配对、回A漏刷新生成器三处缺口，均保原失败后最小修复。19纯控及real03真实A→B→同源B→A→relocation的5build/5native全过；同源3artifact全fresh/empty refresh，变化正确重建、生成内容与嵌入root正确，66dual/owned组全退/TMP清。Khor自身正常CLI/native入口和最终App接线仍待，后续复用入口验证Khor真实构建及其生成/嵌入输入，不再逐任务复制runner。实际Sync/catalog反例证明fresh=true与manifest路径不足，精确refresh只是临时措施，未定性Cargo bug。
+- Q055 candidate04已859b9f7d→d49d88c3提交集成。root独审及真实小型编译先后抓到包外输入未入producer key、hyphen bin名配对、回A漏刷新生成器三处缺口，均保原失败后最小修复。19纯控及real03真实A→B→同源B→A→relocation的5build/5native全过；同源3artifact全fresh/empty refresh，变化正确重建、生成内容与嵌入root正确，66dual/owned组全退/TMP清。R1实际host metadata发现离线全平台依赖问题后CI/doc显式host过滤（9229→16a86），actual CLI rustc.d又确认Node包含providers.json/install.sh，05显式纳key而不放开未知输入（fc592→0a888）。20纯控及真实R1 normalCLI/Node完整来源验证已过；最终整合App与CI远端运行仍待，后续复用入口不复制runner。实际Sync/catalog反例证明fresh=true与manifest路径不足，精确refresh只是临时措施，未定性Cargo bug。
 - 仍需Q033真实GUI上传、Q035真实borrow lease、Q043 OS拖放/主动退出/全屏、Q045真实SSH/master/remote lease、Q041 fresh onset/远程/Linux musl/嵌入；余下P1审计、P4规范与工具入口、P5最终同源App全流程。物理iPhone/IME/Windows runtime没有全部证明，类型检查不等于运行通过。
 
 ## 构建资源与恢复
