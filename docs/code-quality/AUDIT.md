@@ -83,6 +83,7 @@ Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史
 | 原配对fixture setup失败后的晚写残留 | diag17原cleanup门非绿，2个私有usage文件在Scratch Drop后出现；进程全退，root另作dual归档/postcleanup，原非绿不回填。 | 下一轮整理fixture serve任务先停/join再删Root，保原业务断言。 |
 | Q033原Fixture构造前setup owner gap | 与HEAD比对，原先已spawn host再等待ready，Self构造前panic缺本层owner guard；驻留新增部分不扩大该路径。 | 下一轮治理既有setup路径；当前最终App helper必须现owned-entry外层300s/PGID回收，setup失败不计绿。 |
 | Node26前端工具TMP cache分类 | 原npm build0/99.915s、源码/锁稳，但受控TMP留250编译缓存文件，原frontend run保cleanup非绿；root按原stat/hash双盘ZIP归档、独立postcleanup后移除，原结果未改。 | 下一轮若统一工具清理策略再处理；本轮不改Q055/f7或重复构建。 |
+| 取消状态即时查询偶发Unavailable | 21b1原case030在Retry已DurablyQueued后Query返回Unavailable；raw缺code。仅增强原断言diagnostic后同生产源码一次通过，未定位/未改产品，不据此回填原红。 | 下一轮若再现从新snapshot.code定位；本轮不反复重跑、猜测回滚或另开状态服务专项。 |
 
 
 ## 2026-10-28 已改边界的Clean Code收口
