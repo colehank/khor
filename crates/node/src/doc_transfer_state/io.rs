@@ -1,5 +1,6 @@
 //! Private bounded metadata publication. File sync + atomic rename supports
 //! process restart; this is not a cross-platform power-loss transaction.
+use super::Error;
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -19,21 +20,21 @@ pub(super) struct Gate {
     _file: File,
 }
 
-pub(super) fn gate(root: &Path) -> Result<Gate, String> {
+pub(super) fn gate(root: &Path) -> Result<Gate, Error> {
     let local = match LOCAL.try_lock() {
         Ok(guard) => guard,
         Err(TryLockError::Poisoned(error)) => error.into_inner(),
-        Err(TryLockError::WouldBlock) => return Err("document transfer state busy".into()),
+        Err(TryLockError::WouldBlock) => return Err(Error::busy()),
     };
     private_dir(root)?;
     let file = open(root.join("gate").as_path(), true)?;
     if file.metadata().map_err(error)?.len() != 0 {
-        return Err("unexpected transfer metadata gate bytes".into());
+        return Err("unexpected transfer metadata gate bytes".to_owned().into());
     }
     match file.try_lock() {
         Ok(()) => {}
-        Err(fs::TryLockError::WouldBlock) => return Err("document transfer state busy".into()),
-        Err(fs::TryLockError::Error(why)) => return Err(error(why)),
+        Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
+        Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
     }
     Ok(Gate {
         _local: local,

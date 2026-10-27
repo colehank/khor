@@ -60,6 +60,52 @@ fn receive(receiver: &Context, source: &Context, chunk: &DocChunk) -> DocProof {
 }
 
 #[test]
+fn metadata_contention_is_busy_and_releasing_each_real_lock_allows_reopen() {
+    let _serial = super::io::TEST_SERIAL
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let context = fixture.context("locks", 71);
+    let held = State::open(&context).unwrap();
+    let error = State::open(&context).err().expect("local gate is held");
+    assert_eq!(error.kind, crate::proto::DocTransferFailure::Busy);
+    drop(held);
+
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(context.root.join(".khor/doc-transfer-state/gate"))
+        .unwrap();
+    file.try_lock().unwrap();
+    let error = State::open(&context).err().expect("file gate is held");
+    assert_eq!(error.kind, crate::proto::DocTransferFailure::Busy);
+    drop(file);
+    drop(State::open(&context).unwrap());
+}
+
+#[test]
+fn invalid_metadata_and_opaque_diagnostics_remain_storage_failures() {
+    let _serial = super::io::TEST_SERIAL
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let context = fixture.context("storage", 72);
+    drop(State::open(&context).unwrap());
+    let gate = context.root.join(".khor/doc-transfer-state/gate");
+    fs::write(&gate, b"preserve invalid metadata").unwrap();
+    let error = State::open(&context).err().expect("invalid gate bytes");
+    assert_eq!(error.kind, crate::proto::DocTransferFailure::Storage);
+    assert_eq!(fs::read(&gate).unwrap(), b"preserve invalid metadata");
+    fs::write(&gate, []).unwrap();
+    drop(State::open(&context).unwrap());
+
+    let diagnostic = "document transfer state busy".to_owned();
+    let error = Error::from(diagnostic.clone());
+    assert_eq!(error.kind, crate::proto::DocTransferFailure::Storage);
+    assert_eq!(error.why, diagnostic);
+}
+
+#[test]
 fn checked_import_receipt_survives_reopen_and_both_sides_clean_exact_stages() {
     let _serial = super::io::TEST_SERIAL
         .lock()

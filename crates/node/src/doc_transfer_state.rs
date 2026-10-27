@@ -67,13 +67,9 @@ impl Error {
 }
 impl From<String> for Error {
     fn from(why: String) -> Self {
-        if why == "document transfer state busy" {
-            Self::busy()
-        } else {
-            Self {
-                kind: crate::proto::DocTransferFailure::Storage,
-                why,
-            }
+        Self {
+            kind: crate::proto::DocTransferFailure::Storage,
+            why,
         }
     }
 }
