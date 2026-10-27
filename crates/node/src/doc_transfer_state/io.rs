@@ -198,7 +198,11 @@ impl RootPermit {
             // Register before checking the registry: release cannot be lost.
             notified.as_mut().enable();
             {
-                let ready = roots().ordinary(root, &mut waiter)?;
+                let mut admission = roots();
+                if tokio::time::Instant::now() >= until {
+                    return Err(Error::busy());
+                }
+                let ready = admission.ordinary(root, &mut waiter)?;
                 if let Some(permit) = ready {
                     return Ok(permit);
                 }
