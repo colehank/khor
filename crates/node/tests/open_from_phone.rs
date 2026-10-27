@@ -172,7 +172,7 @@ async fn run() {
     assert!(!counter.exists(), "startup ran before a terminal was ready to answer queries");
     let live=khor_node::live::LiveKind::new(desk_root.0.clone(),khor_core::DeviceId([1;32]));
     let dir=live.dir_of(&made).expect("startup session has a registry row");
-    let mut first=khor_node::host::connect_host_versioned(&dir,69,33).unwrap().stream;
+    let mut first=khor_node::host::connect(&dir,69,33).unwrap();
     use khor_node::host::{write_frame,ClientOp};
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(!counter.exists(), "a connected socket is not yet a ready terminal");
@@ -180,8 +180,8 @@ async fn run() {
     write_frame(&mut first,&ClientOp::Ready).unwrap();
     write_frame(&mut first,&ClientOp::Ready).unwrap();
     drop(first);
-    let mut second=khor_node::host::connect_host_versioned(&dir,69,33).unwrap();
-    write_frame(&mut second.stream,&ClientOp::Ready).unwrap();drop(second);
+    let mut second=khor_node::host::connect(&dir,69,33).unwrap();
+    write_frame(&mut second,&ClientOp::Ready).unwrap();drop(second);
     let until=Instant::now()+Duration::from_secs(8);
     while std::fs::read_to_string(&value).unwrap_or_default()!="kept"&&Instant::now()<until {tokio::time::sleep(Duration::from_millis(50)).await;}
     let count=std::fs::read_to_string(&counter).unwrap_or_default();
@@ -190,27 +190,39 @@ async fn run() {
     assert_eq!(count,"x","creation retry and two attaches must not repeat startup");
     assert_eq!(retained,"kept","startup runs in the interactive shell that remains attached");
 
-    // A pre-Ready client still works with a new host, without receiving or
-    // sending an operation its protocol does not know.
-    let old_count = desk_root.0.join("old-client-startup");
-    let legacy = khor_node::shell_start::ShellStart {
+    // A client from before Ready is refused, and cannot release startup.
+    let rejected_count = desk_root.0.join("rejected-client-startup");
+    let strict = khor_node::shell_start::ShellStart {
         token: "5a7f8a4c-7426-4899-9714-4a1cb71fd11a".into(),
-        title: "legacy startup".into(), cwd: desk_root.0.display().to_string(),
-        command: format!("printf x >> '{}'", old_count.display()), cols: 69, rows: 33,
+        title: "current startup".into(), cwd: desk_root.0.display().to_string(),
+        command: format!("printf x >> '{}'", rejected_count.display()), cols: 69, rows: 33,
     };
-    let old_id = phone().open_shell_on("desk", legacy).await.unwrap();
-    let _old_cleanup = Hosted(&desk, old_id.clone());
-    let old_dir = live.dir_of(&old_id).unwrap();
-    let file: khor_node::host::HostFile = serde_json::from_slice(&std::fs::read(old_dir.join("host.json")).unwrap()).unwrap();
-    let mut old = std::net::TcpStream::connect(("127.0.0.1", file.port)).unwrap();
-    old.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-    write_frame(&mut old, &khor_node::host::Hello { cookie: file.cookie, cols: 69, rows: 33 }).unwrap();
-    let welcome: khor_node::host::Welcome = khor_node::host::read_frame(&mut old).unwrap();
+    let strict_id = phone().open_shell_on("desk", strict).await.unwrap();
+    let _strict_cleanup = Hosted(&desk, strict_id.clone());
+    let strict_dir = live.dir_of(&strict_id).unwrap();
+    let file = khor_node::host::read_host_file(&strict_dir).unwrap();
+    let mut rejected = std::net::TcpStream::connect(("127.0.0.1", file.port)).unwrap();
+    rejected.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    write_frame(&mut rejected, &khor_node::host::Hello { cookie: file.cookie, cols: 69, rows: 33 }).unwrap();
+    let welcome: khor_node::host::Welcome = khor_node::host::read_frame(&mut rejected).unwrap();
     assert!(welcome.ok);
-    write_frame(&mut old, &ClientOp::Version(4)).unwrap();
+    assert_eq!(welcome.why, "khor-host/5");
+    write_frame(&mut rejected, &ClientOp::Version(4)).unwrap();
+    use std::io::Read;
+    match rejected.read(&mut [0u8; 1]) {
+        Ok(0) => {},
+        Err(error) if matches!(error.kind(), std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted) => {},
+        other => panic!("a refused version received output or stayed open: {other:?}"),
+    }
+    assert!(!rejected_count.exists(), "a refused client released startup");
+    let mut current = khor_node::host::connect(&strict_dir, 69, 33).unwrap();
+    tokio::time::sleep(Duration::from_millis(350)).await;
+    assert!(!rejected_count.exists(), "a current socket still needs renderer Ready");
+    write_frame(&mut current, &ClientOp::Ready).unwrap();
+    write_frame(&mut current, &ClientOp::Ready).unwrap();
     let until = Instant::now() + Duration::from_secs(8);
-    while !old_count.exists() && Instant::now() < until { tokio::time::sleep(Duration::from_millis(50)).await; }
-    assert_eq!(std::fs::read_to_string(old_count).unwrap(), "x");
+    while !rejected_count.exists() && Instant::now() < until { tokio::time::sleep(Duration::from_millis(50)).await; }
+    assert_eq!(std::fs::read_to_string(rejected_count).unwrap(), "x");
 
     let _ = desk.close(&id);
     serve_desk.abort();

@@ -17,6 +17,11 @@
 //! that size and must see what tmux shows.
 #![cfg(unix)]
 use std::io::Read;
+use std::os::{
+    fd::AsRawFd,
+    unix::fs::{FileTypeExt, MetadataExt},
+};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -27,6 +32,8 @@ use khor_node::live::LiveKind;
 
 fn tmux(sock: &str, args: &[&str]) -> String {
     let out = Command::new("tmux")
+        .arg("-f")
+        .arg("/dev/null")
         .arg("-L")
         .arg(sock)
         .args(args)
@@ -38,13 +45,218 @@ fn tmux(sock: &str, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-/// The test's own tmux server, killed however the test ends: a failed
-/// assertion must not leave a server and its client behind.
-struct Server(String);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SocketIdentity {
+    dev: u64,
+    ino: u64,
+    uid: u32,
+    nlink: u64,
+}
+
+/// Only this test's named server and the socket it actually reported.
+/// Explicit finish reports cleanup errors; Drop preserves unknown state.
+struct Server {
+    name: String,
+    path: PathBuf,
+    identity: Option<SocketIdentity>,
+    finished: bool,
+}
+
+impl Server {
+    fn new(name: String) -> Result<Self, String> {
+        let pid = std::process::id();
+        if ![format!("khor-test-57-{pid}"), format!("khor-test-58-{pid}")].contains(&name) {
+            return Err("not this fixture's server name".into());
+        }
+        // tmux -L uses TMUX_TMPDIR (otherwise /tmp), then tmux-UID.
+        let base = std::env::var_os("TMUX_TMPDIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| "/tmp".into());
+        let base = base.canonicalize().map_err(|e| e.to_string())?;
+        // SAFETY: geteuid only reads this process's effective user id.
+        let uid = unsafe { libc::geteuid() };
+        let path = base.join(format!("tmux-{uid}")).join(&name);
+        match std::fs::symlink_metadata(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err("private tmux socket path was not absent at setup".into()),
+        }
+        Ok(Self {
+            name,
+            path,
+            identity: None,
+            finished: false,
+        })
+    }
+
+    fn socket_identity(&self) -> Result<Option<SocketIdentity>, String> {
+        let m = match std::fs::symlink_metadata(&self.path) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.to_string()),
+        };
+        // SAFETY: geteuid has no arguments or memory side effects.
+        let uid = unsafe { libc::geteuid() };
+        let parent = std::fs::symlink_metadata(self.path.parent().ok_or("socket has no parent")?)
+            .map_err(|e| e.to_string())?;
+        if !m.file_type().is_socket()
+            || m.uid() != uid
+            || m.nlink() != 1
+            || !parent.is_dir()
+            || parent.uid() != uid
+            || parent.mode() & 0o077 != 0
+        {
+            return Err("private socket or directory has unknown type/owner/links/mode".into());
+        }
+        Ok(Some(SocketIdentity {
+            dev: m.dev(),
+            ino: m.ino(),
+            uid: m.uid(),
+            nlink: m.nlink(),
+        }))
+    }
+
+    /// -N forbids starting another server; -S addresses only the known path.
+    fn command(&self, args: &[&str]) -> Result<(std::process::ExitStatus, String), String> {
+        let mut child = Command::new("tmux")
+            .args(["-f", "/dev/null", "-N", "-S"])
+            .arg(&self.path)
+            .args(args)
+            .env_remove("TMUX")
+            .env_remove("TMUX_PANE")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                let stdout = child.stdout.take().ok_or("tmux stdout missing")?;
+                // A control client must not leave an inherited pipe holding
+                // cleanup open after it exits. Unknown output state is an Err.
+                // SAFETY: stdout owns this live descriptor; fcntl only changes
+                // its status flags and no other thread accesses it.
+                let flags = unsafe { libc::fcntl(stdout.as_raw_fd(), libc::F_GETFL) };
+                if flags < 0
+                    || unsafe {
+                        libc::fcntl(stdout.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK)
+                    } < 0
+                {
+                    return Err(std::io::Error::last_os_error().to_string());
+                }
+                let mut out = String::new();
+                stdout
+                    .take(4096)
+                    .read_to_string(&mut out)
+                    .map_err(|e| e.to_string())?;
+                return Ok((status, out));
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let until = Instant::now() + Duration::from_secs(1);
+                while Instant::now() < until {
+                    if child.try_wait().map_err(|e| e.to_string())?.is_some() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                return Err("private tmux control timed out; preserve socket".into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn started(&mut self) -> Result<(), String> {
+        let identity = self
+            .socket_identity()?
+            .ok_or("private server socket missing")?;
+        if self.identity.is_some() && self.identity != Some(identity) {
+            return Err("private socket identity was already recorded differently".into());
+        }
+        let (status, path) = self.command(&["display-message", "-p", "#{socket_path}"])?;
+        if !status.success()
+            || PathBuf::from(path.trim())
+                .canonicalize()
+                .map_err(|e| e.to_string())?
+                != self.path
+            || self.socket_identity()? != Some(identity)
+        {
+            return Err("server did not report the unchanged private socket".into());
+        }
+        self.identity = Some(identity);
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<(), String> {
+        if self.finished {
+            return Ok(());
+        }
+        if self.identity.is_none() {
+            if self.socket_identity()?.is_none() {
+                self.finished = true;
+                return Ok(());
+            }
+            self.started()?;
+        }
+        let identity = self.identity.ok_or("private socket identity missing")?;
+        if self.socket_identity()? != Some(identity) {
+            return Err("private socket changed before stop; preserve it".into());
+        }
+        // A server may have exited already. Only its recorded socket's state
+        // decides whether removal is safe, never the kill command's status.
+        let _ = self.command(&["kill-server"])?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match self.socket_identity()? {
+                None => {
+                    self.finished = true;
+                    return Ok(());
+                }
+                Some(now) if now != identity => {
+                    return Err("private socket changed after stop; preserve it".into());
+                }
+                Some(_) => {}
+            }
+            let probe = runtime.block_on(async {
+                tokio::time::timeout(
+                    Duration::from_millis(100),
+                    tokio::net::UnixStream::connect(&self.path),
+                )
+                .await
+            });
+            match probe {
+                Ok(Err(e)) if e.raw_os_error() == Some(libc::ECONNREFUSED) => {
+                    if self.socket_identity()? != Some(identity) {
+                        return Err("private socket changed before unlink; preserve it".into());
+                    }
+                    std::fs::remove_file(&self.path).map_err(|e| e.to_string())?;
+                    self.finished = true;
+                    return Ok(());
+                }
+                Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Ok(Err(e)) => {
+                    return Err(format!("unknown private socket state; preserve it: {e}"));
+                }
+                Ok(Ok(stream)) => drop(stream),
+                Err(_) => {}
+            }
+            if Instant::now() >= deadline {
+                return Err("private server is still live; preserve socket".into());
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
 
 impl Drop for Server {
     fn drop(&mut self) {
-        tmux(&self.0, &["kill-server"]);
+        if let Err(error) = self.finish() {
+            eprintln!("private tmux fixture {} cleanup failed: {error}", self.name);
+        }
     }
 }
 
@@ -73,7 +285,7 @@ fn a_tmux_typed_in_a_shell_is_not_handed_out_black_after_a_narrowing() {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
     let sock = format!("khor-test-57-{}", std::process::id());
-    let _server = Server(sock.clone());
+    let mut server = Server::new(sock.clone()).expect("private socket starts absent");
     let id = SessionId("shell/57-0".into());
     let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
     k.register(&id, "shell", "sh", None, None).unwrap();
@@ -85,8 +297,8 @@ fn a_tmux_typed_in_a_shell_is_not_handed_out_black_after_a_narrowing() {
     let dir = k.dir_of(&id).expect("registered");
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut face = loop {
-        if let Ok(a) = khor_node::host::connect_host_versioned(&dir, 80, 24) {
-            break a.stream;
+        if let Ok(a) = khor_node::host::connect(&dir, 80, 24) {
+            break a;
         }
         assert!(Instant::now() < deadline, "the host never took an attacher");
         std::thread::sleep(Duration::from_millis(50));
@@ -100,6 +312,7 @@ fn a_tmux_typed_in_a_shell_is_not_handed_out_black_after_a_narrowing() {
         assert!(Instant::now() < deadline, "tmux never started in the shell");
         let _ = read_for(&mut face, Duration::from_millis(100));
     }
+    server.started().expect("the server reports its own socket");
     // CJK to the pane's right edge: 40 wide characters fill 80 columns.
     let wide = "\u{4e2d}".repeat(40);
     let line = format!("clear; for i in 1 2 3 4 5 6; do printf '%s\\n' '{wide}'; done; echo MARK-57");
@@ -120,10 +333,10 @@ fn a_tmux_typed_in_a_shell_is_not_handed_out_black_after_a_narrowing() {
 
     // A face joins again at the size the pty has: no SIGWINCH, so what it
     // is handed is the host's model and nothing else.
-    let mut again = khor_node::host::connect_host_versioned(&dir, 79, 24).expect("the face comes back").stream;
+    let mut again = khor_node::host::connect(&dir, 79, 24).expect("the face comes back");
     let got = read_for(&mut again, Duration::from_millis(1500));
     let shown = tmux(&sock, &["capture-pane", "-p", "-t", "one"]);
-    tmux(&sock, &["kill-server"]);
+    server.finish().expect("private server and socket are gone");
     // The shell ends, and the host with it.
     let _ = read_for(&mut again, Duration::from_millis(300));
     write_frame(&mut again, &ClientOp::Input(b"exit\r".to_vec())).unwrap();
@@ -160,7 +373,7 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
     let sock = format!("khor-test-58-{}", std::process::id());
-    let _server = Server(sock.clone());
+    let mut server = Server::new(sock.clone()).expect("private socket starts absent");
     let id = SessionId("shell/58-0".into());
     let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
     k.register(&id, "shell", "sh", None, None).unwrap();
@@ -172,8 +385,8 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
     let dir = k.dir_of(&id).expect("registered");
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut face = loop {
-        if let Ok(a) = khor_node::host::connect_host_versioned(&dir, 80, 24) {
-            break a.stream;
+        if let Ok(a) = khor_node::host::connect(&dir, 80, 24) {
+            break a;
         }
         assert!(Instant::now() < deadline, "the host never took an attacher");
         std::thread::sleep(Duration::from_millis(50));
@@ -188,6 +401,7 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
         assert!(Instant::now() < deadline, "tmux never started in the shell");
         let _ = read_for(&mut face, Duration::from_millis(100));
     }
+    server.started().expect("the server reports its own socket");
     let front = k.tmux_in_shell(&id).expect("the client in front is found");
     assert_eq!(front.socket, vec!["-L".to_owned(), sock.clone()], "its server, from its argv");
     assert_eq!(front.session_name, "mine");
@@ -262,7 +476,7 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
     );
     assert_eq!(k.tmux_wheel(&id, 3), Ok(false), "the wheel is the face's again");
 
-    tmux(&sock, &["kill-server"]);
+    server.finish().expect("private server and socket are gone");
     write_frame(&mut face, &ClientOp::Input(b"exit\r".to_vec())).unwrap();
     let _ = read_for(&mut face, Duration::from_millis(300));
     drop(face);

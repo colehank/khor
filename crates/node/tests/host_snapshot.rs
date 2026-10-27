@@ -1,12 +1,6 @@
-//! A version-3 attacher is handed the host's snapshot, not the ring
-//! (item 46): the screen as the host's model shows it, with the history
-//! above it as styled lines — bounded by the model's scrollback, never a
-//! MiB of bytes to parse visibly — and the modes the program set. An
-//! attacher that never says its version still gets the ring
-//! (`host_replay.rs`).
-//!
-//! A real host, a real PTY: a stand-in sets four modes and writes far
-//! past the ring; a versioned attacher reads what it is handed.
+//! Current terminal attachers receive the host model's bounded snapshot,
+//! including styled history and modes. A real host and PTY produce more
+//! than the ring's budget before a client attaches.
 use std::io::Read;
 use std::time::{Duration, Instant};
 
@@ -26,7 +20,7 @@ while [ ! -f "$0.stop" ]; do sleep 0.1; done
 "#;
 
 #[test]
-fn a_versioned_attacher_gets_the_snapshot_not_the_ring() {
+fn a_current_attacher_gets_the_snapshot_not_the_ring() {
     let root = std::env::temp_dir().join(format!("khor-hostsnap-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
@@ -55,9 +49,7 @@ fn a_versioned_attacher_gets_the_snapshot_not_the_ring() {
     std::thread::sleep(Duration::from_millis(300));
 
     let started = Instant::now();
-    let attached = khor_node::host::connect_host_versioned(&dir, 80, 24).expect("the host takes a versioned attacher");
-    assert_eq!(attached.version, khor_node::host::HOST_VERSION, "the host advertised its version and the client took it");
-    let mut conn = attached.stream;
+    let mut conn = khor_node::host::connect(&dir, 80, 24).expect("the host takes a current attacher");
     conn.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
     let mut got = Vec::new();
     let mut buf = [0u8; 65536];
@@ -87,7 +79,7 @@ fn a_versioned_attacher_gets_the_snapshot_not_the_ring() {
         assert!(text.contains(mode), "{what} ({mode:?}) is set for the attacher");
     }
     assert!(text[..done].contains("\x1b[32m") || text[..done].contains("\x1b[0;32m"), "the history keeps its colours");
-    assert!(first_byte_at.unwrap() < Duration::from_millis(250), "a versioned attacher is not made to wait out the first-frame window: {:?}", first_byte_at);
+    assert!(first_byte_at.unwrap() < Duration::from_millis(250), "a current attacher is not made to wait out the first-frame window: {:?}", first_byte_at);
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -104,8 +96,8 @@ while [ ! -f "$0.stop" ]; do sleep 0.1; done
 "#;
 
 /// **The re-attach keeps the history the face asked for** (item 56): a
-/// face that says 5 000 rows on attach (`ClientOp::Scrollback`, version
-/// 4) finds 5 000 rows of history when it comes back, not the host's
+/// face that says 5 000 rows on attach (`ClientOp::Scrollback`) finds
+/// 5 000 rows of history when it comes back, not the host's
 /// 2 000 (the cap is `host::last_line_tests`').
 #[test]
 fn a_re_attach_keeps_the_history_the_face_asked_for() {
@@ -132,14 +124,13 @@ fn a_re_attach_keeps_the_history_the_face_asked_for() {
     let dir = k.dir_of(&id).expect("registered");
     let deadline = Instant::now() + Duration::from_secs(10);
     let first = loop {
-        if let Ok(a) = khor_node::host::connect_host_versioned(&dir, 80, 24) {
+        if let Ok(a) = khor_node::host::connect(&dir, 80, 24) {
             break a;
         }
         assert!(Instant::now() < deadline, "the host never took an attacher");
         std::thread::sleep(Duration::from_millis(50));
     };
-    assert!(first.version >= 4, "a host that keeps the face's history");
-    let mut conn = first.stream;
+    let mut conn = first;
     write_frame(&mut conn, &ClientOp::Scrollback(5000)).unwrap();
     std::thread::sleep(Duration::from_millis(200));
     drop(conn);
@@ -151,8 +142,8 @@ fn a_re_attach_keeps_the_history_the_face_asked_for() {
     }
     std::thread::sleep(Duration::from_millis(300));
 
-    let again = khor_node::host::connect_host_versioned(&dir, 80, 24).expect("the face comes back");
-    let mut conn = again.stream;
+    let again = khor_node::host::connect(&dir, 80, 24).expect("the face comes back");
+    let mut conn = again;
     conn.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
     let mut got = Vec::new();
     let mut buf = [0u8; 65536];

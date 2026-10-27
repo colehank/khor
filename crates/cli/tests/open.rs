@@ -521,7 +521,7 @@ fn a_private_host_does_not_inherit_an_unrelated_native_agent_store() {
     let dir = home.join(".khor/sessions").join(sid.replace('/', "-"));
     let hf = host::read_host_file(&dir).unwrap();
     let _reap = Reaper(hf.host_pid);
-    let mut stream = host::connect_host_versioned(&dir, 80, 24).unwrap().stream;
+    let mut stream = host::connect(&dir, 80, 24).unwrap();
     let shown = read_until(&mut stream, ";done", 10);
     assert!(shown.contains(&format!("codex={};claude={};done", home.join(".codex").display(), home.join(".claude").display())), "wrong store: {shown}");
     assert!(khor(&home).args(["close", &sid]).status().unwrap().success());

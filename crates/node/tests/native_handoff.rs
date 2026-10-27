@@ -68,7 +68,7 @@ fn main() {
     assert_ne!(terminal.child_pid, original.child_pid);
     // A real TUI asks its attached terminal for cursor/device information.
     // Answer those queries, as xterm does in the GUI, before checking its seat.
-    let mut stream = host::connect_host_versioned(&dir, 80, 24).unwrap().stream;
+    let mut stream = host::connect(&dir, 80, 24).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_millis(100)))
         .unwrap();

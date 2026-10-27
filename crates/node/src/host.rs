@@ -102,71 +102,29 @@ pub struct Welcome {
 pub enum ClientOp {
     Input(#[serde(with = "serde_bytes")] Vec<u8>),
     Resize { cols: u16, rows: u16 },
-    /// **The client's protocol version** ([`HOST_VERSION`]), sent once,
-    /// first, and only to a host whose `Welcome` advertised version 2 or
-    /// later: the two then speak the lower of the two. Tail-appended, like
-    /// every op after it — a host older than the handshake does not know
-    /// these words and would drop the client's input on the first one, so
-    /// none is ever sent to it.
+    /// The current terminal protocol, required as the first frame after Welcome.
     Version(u32),
-    /// **⌘K, kept by the host** (version 2): the ring forgets everything
+    /// **⌘K, kept by the host**: the ring forgets everything
     /// before the line the cursor is on, so a face that attaches later —
     /// a reload, a re-attach, another face — is not handed the history
     /// the person cleared.
     Forget,
-    /// **The face's 历史行数** (version 4, item 56): the rows of history
+    /// **The face's 历史行数**: the rows of history
     /// it shows, said once after `Version`. The host's model keeps the
     /// most any face has asked for, up to [`MODEL_SCROLLBACK_MOST`].
     Scrollback(u32),
     /// The terminal has parsed its initial replay and can answer live
-    /// queries (version 5). Releases this host's initial shell input once.
+    /// queries. Releases this host's initial shell input once.
     Ready,
 }
 
-/// **The host protocol's version** (audit/term-attach.md). 1 is every
-/// host and client before the handshake: `Hello`, `Welcome`, raw bytes,
-/// `Input` and `Resize`. 2 adds [`ClientOp::Version`] and
-/// [`ClientOp::Forget`]. 3 (item 46) changes what an attacher is handed
-/// first: a client that says `Version(3)` gets the host's **snapshot**
-/// ([`Model::snapshot`]: the scrollback as styled lines, the screen with
-/// its attributes and cursor, the modes) instead of the ring's bytes; an
-/// older client still gets the ring. No new frame: the host waits
-/// [`FIRST_FRAME`] for the client's first word before choosing. 4 adds
-/// [`ClientOp::Scrollback`] (item 56). 5 adds [`ClientOp::Ready`].
-///
-/// **How it is agreed without changing a frame's shape.** msgpack here
-/// is positional, and a struct read from a longer array fails
-/// (`LengthMismatch`, measured on rmp-serde 1.3): a `Hello` or `Welcome`
-/// with one more field would lock out every host or client already
-/// installed. So a host of version 2 or later says so in the `why` of a
-/// successful `Welcome` — a field an older client only reads when the
-/// answer is no — and a client that sees it answers with
-/// [`ClientOp::Version`] before anything else. Neither side sends a word
-/// the other has not said it knows.
+/// Both sides require this exact current terminal protocol.
 pub const HOST_VERSION: u32 = 5;
 
-/// How long a host waits after its `Welcome` for the client's first frame
-/// before handing it the ring (item 46): a versioned client's `Version`
-/// is its first write and arrives in a round trip — loopback, since far
-/// faces attach through the node beside the host — and a client older
-/// than the handshake, which never sends one, pays this once per attach.
-const FIRST_FRAME: Duration = Duration::from_millis(300);
-
-/// The `why` of a successful `Welcome` from a versioned host: this, then
-/// the version.
+/// Far attachers return Version over the network after receiving Welcome.
+/// Use the shared handshake budget for that complete round trip as well.
+const FIRST_FRAME: Duration = HANDSHAKE;
 const GREETING: &str = "khor-host/";
-
-/// The version a `Welcome` advertises: 1 for a host older than the
-/// handshake, which leaves `why` empty when it welcomes.
-fn advertised(w: &Welcome) -> u32 {
-    w.why.strip_prefix(GREETING).and_then(|v| v.parse().ok()).unwrap_or(1)
-}
-
-/// A connection with the version both ends agreed to speak.
-pub struct Attached {
-    pub stream: TcpStream,
-    pub version: u32,
-}
 
 /// Above any sane keystroke burst, far below anything hostile-sized.
 const MAX_OP: usize = 1 << 20;
@@ -217,13 +175,8 @@ pub fn read_view_file(dir: &Path) -> Result<HostFile, String> {
 
 /// [`connect`], to the viewer's address rather than the host's.
 pub fn connect_view(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
-    connect_view_versioned(dir, cols, rows).map(|a| a.stream)
-}
-
-/// [`connect_view`], keeping the agreed version.
-pub fn connect_view_versioned(dir: &Path, cols: u16, rows: u16) -> Result<Attached, String> {
     let hf = read_view_file(dir)?;
-    connect_versioned(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
+    connect_at(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
 }
 
 /// Where a host that died on the way up leaves the reason, for the
@@ -715,13 +668,8 @@ fn spawn_host_with(
 /// Connects and completes the handshake; on return the stream carries
 /// the replay and then live PTY bytes. Client ops go back framed.
 pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
-    connect_host_versioned(dir, cols, rows).map(|a| a.stream)
-}
-
-/// [`connect`], keeping the agreed version.
-pub fn connect_host_versioned(dir: &Path, cols: u16, rows: u16) -> Result<Attached, String> {
     let hf = read_host_file(dir)?;
-    connect_versioned(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
+    connect_at(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
 }
 
 /// The same handshake against an address the caller already has.
@@ -741,30 +689,18 @@ pub fn connect_host_versioned(dir: &Path, cols: u16, rows: u16) -> Result<Attach
 /// stream goes back to blocking without a timeout once welcomed: from
 /// then on a quiet terminal is a terminal nobody is typing in.
 pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpStream, String> {
-    connect_versioned(addr, cookie, cols, rows).map(|a| a.stream)
-}
-
-/// [`connect_at`], agreeing a version ([`HOST_VERSION`]): with a host
-/// that advertises one, the client's own is sent before anything else.
-pub fn connect_versioned(
-    addr: &str,
-    cookie: &str,
-    cols: u16,
-    rows: u16,
-) -> Result<Attached, String> {
-    let (mut s, w) = connect_welcomed(addr, cookie, cols, rows)?;
-    let version = advertised(&w).min(HOST_VERSION);
-    if version >= 2 {
-        write_frame(&mut s, &ClientOp::Version(HOST_VERSION))?;
+    let (mut stream, welcome) = connect_welcomed(addr, cookie, cols, rows)?;
+    if welcome.why != format!("{GREETING}{HOST_VERSION}") {
+        return Err(msg::peer_non_answer("terminal protocol mismatch"));
     }
-    let _ = s.set_read_timeout(None);
-    let _ = s.set_write_timeout(None);
-    Ok(Attached { stream: s, version })
+    write_frame(&mut stream, &ClientOp::Version(HOST_VERSION))?;
+    stream.set_read_timeout(None).map_err(msg::no_frame)?;
+    stream.set_write_timeout(None).map_err(msg::handoff_failed)?;
+    Ok(stream)
 }
 
 /// The common cookie handshake, before a terminal or GUI selects its protocol.
-/// Successful `why` remains available for capability negotiation without
-/// changing the positional Hello/Welcome frames.
+/// Successful `why` identifies the current protocol before raw bytes flow.
 pub fn connect_welcomed(
     addr: &str,
     cookie: &str,
@@ -791,19 +727,69 @@ pub fn connect_welcomed(
     Ok((s, w))
 }
 
-/// The host's `Welcome`, or **why it did not come** in words a person
-/// reads (item 36): a host that took the connection and stayed silent
-/// past [`HANDSHAKE`] ran the read into its deadline, which the socket
-/// reports as `WouldBlock` — on macOS and iOS 「Resource temporarily
-/// unavailable (os error 35)」, what the owner was shown.
-fn read_welcome(s: &mut TcpStream) -> Result<Welcome, String> {
-    let mut len = [0u8; 4];
-    if let Err(e) = s.peek(&mut len) {
-        if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) {
-            return Err(msg::host_silent(HANDSHAKE.as_secs()));
+/// A complete Welcome must arrive before the shared handshake deadline;
+/// a partial reply cannot extend the wait for a far host.
+fn read_welcome(stream: &mut TcpStream) -> Result<Welcome, String> {
+    read_handshake_frame(stream, HANDSHAKE)
+}
+
+/// One deadline covers the prefix and body, including a peer trickling bytes.
+/// A per-read timeout alone would let each new byte renew the whole budget.
+fn read_handshake_frame<T: for<'a> Deserialize<'a>>(
+    stream: &mut TcpStream,
+    budget: Duration,
+) -> Result<T, String> {
+    fn exact(
+        stream: &mut TcpStream,
+        mut into: &mut [u8],
+        deadline: std::time::Instant,
+    ) -> std::io::Result<()> {
+        while !into.is_empty() {
+            let remaining = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .filter(|left| !left.is_zero())
+                .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::TimedOut))?;
+            stream.set_read_timeout(Some(remaining))?;
+            match stream.read(into) {
+                Ok(0) => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+                Ok(count) => into = &mut into[count..],
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error),
+            }
         }
+        Ok(())
     }
-    read_frame(s)
+    let deadline = std::time::Instant::now() + budget;
+    let timeout = |error: &std::io::Error| {
+        matches!(
+            error.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        )
+    };
+    let mut prefix = [0u8; 4];
+    exact(stream, &mut prefix, deadline).map_err(|error| {
+        if timeout(&error) {
+            msg::host_silent(budget.as_secs())
+        } else {
+            msg::no_frame(error)
+        }
+    })?;
+    let length = u32::from_be_bytes(prefix) as usize;
+    if length > MAX_OP {
+        return Err(msg::frame_too_big(length));
+    }
+    let mut bytes = vec![0; length];
+    exact(stream, &mut bytes, deadline).map_err(|error| {
+        if timeout(&error) {
+            msg::host_silent(budget.as_secs())
+        } else {
+            msg::half_a_frame(error)
+        }
+    })?;
+    if std::time::Instant::now() >= deadline {
+        return Err(msg::host_silent(budget.as_secs()));
+    }
+    proto::decode(&bytes)
 }
 
 /// How long [`connect_at`] waits for a host to welcome it: a far pipe's
@@ -986,6 +972,37 @@ pub fn parser_like(old: &vt100::Screen, scrollback: usize) -> vt100::Parser {
     let mut fresh = vt100::Parser::new(rows, cols, scrollback);
     fresh.process(&kept);
     fresh
+}
+
+/// Clears the normal screen through the cursor's preceding row, keeping
+/// the cursor's row and what follows, its column, attributes and input modes.
+/// The host model and an attached GUI's screen must forget the same picture.
+/// Alternate screens are unchanged, as the face's clear-buffer action is.
+pub fn forget_parser(parser: &mut vt100::Parser, scrollback: usize) {
+    let screen = parser.screen_mut();
+    if screen.alternate_screen() {
+        return;
+    }
+    let (rows, cols) = screen.size();
+    screen.set_scrollback(0);
+    let (cy, cx) = screen.cursor_position();
+    let mut bytes = Vec::new();
+    let mut pen = Pen::default();
+    for r in cy..rows {
+        write_row(&mut bytes, screen, r, cols, &mut pen, &RowMarks::default());
+    }
+    if bytes.ends_with(b"\r\n") {
+        bytes.truncate(bytes.len() - 2);
+    }
+    bytes.extend_from_slice(format!("\x1b[0m\x1b[1;{}H", cx + 1).as_bytes());
+    if screen.hide_cursor() {
+        bytes.extend_from_slice(b"\x1b[?25l");
+    }
+    bytes.extend_from_slice(&screen.attributes_formatted());
+    bytes.extend_from_slice(&screen.input_mode_formatted());
+    let mut fresh = vt100::Parser::new(rows, cols, scrollback);
+    fresh.process(&bytes);
+    *parser = fresh;
 }
 
 /// **The program on the terminal draws its screen again** (item 57):
@@ -1183,27 +1200,10 @@ impl Model {
         if screen.alternate_screen() {
             return;
         }
-        let (rows, cols) = screen.size();
         screen.set_scrollback(0);
-        let (cy, cx) = screen.cursor_position();
+        let (cy, _) = screen.cursor_position();
         self.beside.forget(self.beside.scrolled() + cy as u64);
-        let mut bytes = Vec::new();
-        let mut pen = Pen::default();
-        for r in cy..rows {
-            write_row(&mut bytes, screen, r, cols, &mut pen, &RowMarks::default());
-        }
-        if bytes.ends_with(b"\r\n") {
-            bytes.truncate(bytes.len() - 2);
-        }
-        bytes.extend_from_slice(format!("\x1b[0m\x1b[1;{}H", cx + 1).as_bytes());
-        if screen.hide_cursor() {
-            bytes.extend_from_slice(b"\x1b[?25l");
-        }
-        bytes.extend_from_slice(&screen.attributes_formatted());
-        bytes.extend_from_slice(&screen.input_mode_formatted());
-        let mut fresh = vt100::Parser::new(rows, cols, self.keeps);
-        fresh.process(&bytes);
-        self.parser = fresh;
+        forget_parser(&mut self.parser, self.keeps);
     }
 
     /// **The snapshot**: on the normal screen, the scrollback as styled
@@ -2123,7 +2123,7 @@ fn host_serving(
             for conn in listener.incoming().flatten() {
                 let _ = conn.set_write_timeout(Some(Duration::from_secs(2)));
                 let mut conn = conn;
-                let Ok(hello) = read_frame::<Hello>(&mut conn) else {
+                let Ok(hello) = read_handshake_frame::<Hello>(&mut conn, HANDSHAKE) else {
                     continue;
                 };
                 if hello.cookie != cookie {
@@ -2135,23 +2135,6 @@ fn host_serving(
                         },
                     );
                     continue;
-                }
-                let _ = master.lock().unwrap().resize(PtySize {
-                    rows: hello.rows,
-                    cols: hello.cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                });
-                if let Some(m) = shared.model.lock().unwrap().as_mut() {
-                    m.resize(hello.rows, hello.cols);
-                }
-                // The reader has to follow, or it is matching against a
-                // screen of a different shape than the one the agent is
-                // drawing to — and the first thing to break is the box
-                // border that scopes claude's busy rules, since a
-                // wrapped border line stops being a line of all `─`.
-                if let Some(screen) = &screen {
-                    screen.lock().unwrap().resize(hello.rows, hello.cols);
                 }
                 if write_frame(
                     &mut conn,
@@ -2168,28 +2151,30 @@ fn host_serving(
                     let Ok(mut readable) = conn.try_clone() else {
                         continue;
                     };
-                    // **The client's first word, before anything is
-                    // queued** (item 46): a versioned client's `Version`
-                    // decides between the snapshot and the ring. Waited for
-                    // `FIRST_FRAME` at most; a frame that has begun to
-                    // arrive is read whole.
-                    let mut first_op: Option<ClientOp> = None;
-                    let _ = readable.set_read_timeout(Some(FIRST_FRAME));
-                    if matches!(readable.peek(&mut [0u8; 1]), Ok(n) if n > 0) {
-                        let _ = readable.set_read_timeout(None);
-                        match read_client_frame::<ClientOp>(&mut readable) {
-                            Ok(op) => first_op = op,
-                            Err(_) => continue,
-                        }
+                    // No output or renderer-independent startup before the
+                    // current Version arrives whole inside its fixed deadline.
+                    if !matches!(read_handshake_frame::<ClientOp>(&mut readable, FIRST_FRAME),
+                        Ok(ClientOp::Version(HOST_VERSION))) {
+                        continue;
                     }
-                    let _ = readable.set_read_timeout(None);
-                    let agreed_first = match first_op {
-                        Some(ClientOp::Version(v)) => v.min(HOST_VERSION),
-                        _ => 1,
-                    };
-                    // Anything else said first (an old client's keystroke
-                    // in the window) is the loop's first op below.
-                    let mut pending = first_op.filter(|op| !matches!(op, ClientOp::Version(_)));
+                    if readable.set_read_timeout(None).is_err() { continue; }
+                    let _ = master.lock().unwrap().resize(PtySize {
+                        rows: hello.rows,
+                        cols: hello.cols,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    });
+                    if let Some(m) = shared.model.lock().unwrap().as_mut() {
+                        m.resize(hello.rows, hello.cols);
+                    }
+                    // The reader has to follow, or it is matching against a
+                    // screen of a different shape than the one the agent is
+                    // drawing to — and the first thing to break is the box
+                    // border that scopes claude's busy rules, since a
+                    // wrapped border line stops being a line of all `─`.
+                    if let Some(screen) = &screen {
+                        screen.lock().unwrap().resize(hello.rows, hello.cols);
+                    }
                     // The first chunk is queued under the ring's lock so
                     // nothing the reader broadcasts is missed or doubled —
                     // and queued, not written, so a slow far viewer
@@ -2204,12 +2189,12 @@ fn host_serving(
                     // over, up to a MiB, parsed visibly on the phone, and
                     // tmux can draw the screen afresh instead; the history
                     // is read from tmux (item 31). The modes still go first.
-                    // **A version-3 client gets the snapshot** (item 46);
-                    // an older one the ring, as before.
+                    // Current attachers receive the model snapshot. The raw
+                    // ring remains the real fallback when no model exists.
                     let mut model = shared.model.lock().unwrap();
                     let first = match model.as_mut() {
                         _ if mux_client => ring.modes_now(),
-                        Some(m) if agreed_first >= 3 => m.snapshot(&ring.modes_now()),
+                        Some(m) => m.snapshot(&ring.modes_now()),
                         _ => ring.replay(),
                     };
                     drop(model);
@@ -2221,28 +2206,17 @@ fn host_serving(
                     if mux_client {
                         redraw_tmux_client(&cmd, master.lock().unwrap().tty_name());
                     }
-                    // Older clients cannot acknowledge renderer readiness.
-                    // They retain attach-time startup; no new op is required.
-                    if agreed_first < 5 && writer.lock().unwrap().ready().is_err() {
-                        continue;
-                    }
                     let master = master.clone();
                     let writer = writer.clone();
                     let ledger = ledger.clone();
                     let shared = shared.clone();
                     std::thread::spawn(move || {
                         let mut readable = readable;
-                        // What this client and this host speak: 1 until
-                        // the client says otherwise.
-                        let mut agreed = agreed_first;
                         loop {
-                            let op = match pending.take() {
-                                Some(op) => op,
-                                None => match read_client_frame::<ClientOp>(&mut readable) {
-                                    Ok(Some(op)) => op,
-                                    Ok(None) => continue,
-                                    Err(_) => break,
-                                },
+                            let op = match read_client_frame::<ClientOp>(&mut readable) {
+                                Ok(Some(op)) => op,
+                                Ok(None) => continue,
+                                Err(_) => break,
                             };
                             match op {
                                 ClientOp::Input(bytes) => {
@@ -2268,8 +2242,11 @@ fn host_serving(
                                         m.resize(rows, cols);
                                     }
                                 }
-                                ClientOp::Version(v) => agreed = v.min(HOST_VERSION),
-                                ClientOp::Forget if agreed >= 2 => {
+                                ClientOp::Version(_) => {
+                                    let _ = readable.shutdown(std::net::Shutdown::Both);
+                                    break;
+                                }
+                                ClientOp::Forget => {
                                     let mut ring = shared.ring.lock().unwrap();
                                     ring.forget();
                                     if let Some(m) = shared.model.lock().unwrap().as_mut() {
@@ -2278,19 +2255,16 @@ fn host_serving(
                                     shared.changes.fetch_add(1, Ordering::SeqCst);
                                     drop(ring);
                                 }
-                                ClientOp::Forget => {}
-                                ClientOp::Scrollback(lines) if agreed >= 4 => {
+                                ClientOp::Scrollback(lines) => {
                                     if let Some(m) = shared.model.lock().unwrap().as_mut() {
                                         m.keep(lines as usize);
                                     }
                                 }
-                                ClientOp::Scrollback(_) => {}
-                                ClientOp::Ready if agreed >= 5 => {
+                                ClientOp::Ready => {
                                     if writer.lock().unwrap().ready().is_err() {
                                         break;
                                     }
                                 }
-                                ClientOp::Ready => {}
                             }
                         }
                     });
@@ -3105,87 +3079,195 @@ mod last_line_tests {
 
 #[cfg(test)]
 mod handshake_tests {
-    use super::{ClientOp, HANDSHAKE, Hello, Welcome, connect_at, connect_versioned, read_frame, write_frame};
+    use super::*;
+    use std::time::Instant;
 
-    /// **A versioned client against a host from before the handshake**:
-    /// the host welcomes with an empty `why`, so the client speaks version
-    /// 1 and its first frame is the person's input, never a `Version` the
-    /// old host would choke on. The old host is played here by its own
-    /// words: `Hello` in, `Welcome { ok, "" }` out, then only the two ops
-    /// it knew.
     #[test]
-    fn a_versioned_client_speaks_version_one_to_a_host_from_before() {
-        #[derive(serde::Deserialize, Debug)]
-        enum OldOp {
-            Input(#[serde(with = "serde_bytes")] Vec<u8>),
-            #[allow(dead_code)]
-            Resize { cols: u16, rows: u16 },
-        }
-        let old = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let addr = old.local_addr().unwrap().to_string();
+    fn a_current_client_sends_version_five_before_any_input() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
         let host = std::thread::spawn(move || {
-            let (mut c, _) = old.accept().unwrap();
-            let hello: Hello = read_frame(&mut c).unwrap();
-            write_frame(&mut c, &Welcome { ok: true, why: String::new() }).unwrap();
-            let first: OldOp = read_frame(&mut c).expect("the old host can read what came first");
-            (hello.cols, first)
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let hello: Hello = read_frame(&mut stream).unwrap();
+            assert_eq!(
+                (hello.cookie.as_str(), hello.cols, hello.rows),
+                ("owned-cookie", 80, 24)
+            );
+            write_frame(
+                &mut stream,
+                &Welcome {
+                    ok: true,
+                    why: "khor-host/5".into(),
+                },
+            )
+            .unwrap();
+            assert!(matches!(
+                read_frame(&mut stream).unwrap(),
+                ClientOp::Version(5)
+            ));
+            assert!(
+                matches!(read_frame(&mut stream).unwrap(), ClientOp::Input(bytes) if bytes == b"hi")
+            );
         });
-        let a = connect_versioned(&addr, "cookie", 80, 24).unwrap();
-        assert_eq!(a.version, 1);
-        let mut s = a.stream;
-        write_frame(&mut s, &ClientOp::Input(b"hi".to_vec())).unwrap();
-        let (cols, first) = host.join().unwrap();
-        assert_eq!(cols, 80);
-        match first {
-            OldOp::Input(b) => assert_eq!(b, b"hi"),
-            other => panic!("{other:?}"),
+        let mut stream = connect_at(&addr, "owned-cookie", 80, 24).unwrap();
+        assert_eq!(stream.read_timeout().unwrap(), None);
+        assert_eq!(stream.write_timeout().unwrap(), None);
+        write_frame(&mut stream, &ClientOp::Input(b"hi".to_vec())).unwrap();
+        drop(stream);
+        host.join().unwrap();
+    }
+
+    #[test]
+    fn empty_old_future_unknown_and_gui_welcomes_are_protocol_errors() {
+        for greeting in [
+            "",
+            "khor-host/1",
+            "khor-host/4",
+            "khor-host/6",
+            "khor-host/05",
+            "unknown",
+            "khor-gui/1",
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap().to_string();
+            let host = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let _: Hello = read_frame(&mut stream).unwrap();
+                write_frame(
+                    &mut stream,
+                    &Welcome {
+                        ok: true,
+                        why: greeting.into(),
+                    },
+                )
+                .unwrap();
+                let mut byte = [0];
+                assert_eq!(
+                    stream.read(&mut byte).unwrap(),
+                    0,
+                    "a rejected host must not receive a Version or input"
+                );
+            });
+            let why = connect_at(&addr, "owned-cookie", 80, 24).err();
+            host.join().unwrap();
+            assert_eq!(
+                khor_catalog::read(why.as_deref().expect("unsupported greeting connected"))
+                    .map(|(key, _)| key),
+                Some("msg.peer-non-answer")
+            );
         }
     }
 
-    use std::net::TcpListener;
-    use std::time::{Duration, Instant};
+    #[test]
+    fn a_cookie_refusal_keeps_the_hosts_reason() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let host = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let _: Hello = read_frame(&mut stream).unwrap();
+            write_frame(
+                &mut stream,
+                &Welcome {
+                    ok: false,
+                    why: msg::wrong_cookie().into(),
+                },
+            )
+            .unwrap();
+        });
+        let why = connect_at(&addr, "owned-cookie", 80, 24).err();
+        host.join().unwrap();
+        assert_eq!(why, Some(msg::wrong_cookie().to_string()));
+    }
 
-    /// **A host that never says welcome is given up on** (2026-10-02,
-    /// the phone that froze). A far terminal's address is the resident's
-    /// pipe, which accepts at once and only then dials the far machine;
-    /// when that machine has dropped off, nothing came back and the
-    /// attach waited with no end. Here the pipe is a listener that
-    /// accepts and stays silent. The bound below is the test's, written
-    /// as a number on purpose: on the code before the deadline this
-    /// never returned, and the test says so instead of hanging.
     #[test]
     fn a_host_that_never_welcomes_is_given_up_on() {
-        let silent = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let addr = silent.local_addr().unwrap().to_string();
-        std::thread::spawn(move || {
-            let held = silent.accept();
-            std::thread::sleep(Duration::from_secs(120));
-            drop(held);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let (finish, stopped) = std::sync::mpsc::channel();
+        let host = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let _: Hello = read_frame(&mut stream).unwrap();
+            let _ = stopped.recv_timeout(HANDSHAKE + Duration::from_secs(3));
         });
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let begun = Instant::now();
-            let answer = connect_at(&addr, "cookie", 80, 24);
-            let _ = tx.send((answer.map(|_| ()), begun.elapsed()));
-        });
-        let (answer, took) = rx
-            .recv_timeout(Duration::from_secs(40))
-            .expect("connect_at must come back from a host that never answers");
-        // **And it is said in words** (item 36): the read ran into its
-        // deadline, which macOS and iOS report as 「Resource temporarily
-        // unavailable (os error 35)」 — what the owner was shown.
-        assert_eq!(
-            answer,
-            Err(khor_catalog::msg::host_silent(HANDSHAKE.as_secs())),
-            "a silent host is not a welcome, and the face is told why"
-        );
+        let began = Instant::now();
+        let why = connect_at(&addr, "owned-cookie", 80, 24).err();
+        let took = began.elapsed();
+        let _ = finish.send(());
+        host.join().unwrap();
+        assert_eq!(why, Some(msg::host_silent(HANDSHAKE.as_secs())));
         assert!(
-            took >= Duration::from_secs(5),
-            "it waited for the far dial, not just a moment ({took:?})"
+            took >= HANDSHAKE / 2 && took < HANDSHAKE + Duration::from_secs(3),
+            "{took:?}"
         );
     }
-}
 
+    #[test]
+    fn the_first_frame_deadline_covers_silence_partial_prefix_partial_body_and_drips() {
+        let budget = Duration::from_millis(150);
+        let mut frame = Vec::new();
+        write_frame(&mut frame, &ClientOp::Version(5)).unwrap();
+        for case in 0..4 {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+            let (mut server, _) = listener.accept().unwrap();
+            let (finish, stopped) = std::sync::mpsc::channel();
+            let data = frame.clone();
+            let writer = std::thread::spawn(move || {
+                client
+                    .set_write_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                match case {
+                    0 => {}
+                    1 => client.write_all(&data[..1]).unwrap(),
+                    2 => client.write_all(&data[..data.len() - 1]).unwrap(),
+                    _ => {
+                        // Every byte arrives faster than the socket's original
+                        // timeout; only an absolute whole-frame deadline wins.
+                        for byte in data {
+                            if client.write_all(&[byte]).is_err() {
+                                return;
+                            }
+                            match stopped.recv_timeout(budget / 3) {
+                                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                                _ => return,
+                            }
+                        }
+                    }
+                }
+                let _ = stopped.recv_timeout(Duration::from_secs(3));
+            });
+            let began = Instant::now();
+            let result = read_handshake_frame::<ClientOp>(&mut server, budget);
+            let took = began.elapsed();
+            drop(server);
+            let _ = finish.send(());
+            writer.join().unwrap();
+            let why = result
+                .err()
+                .expect("an incomplete first frame was accepted");
+            assert_eq!(
+                khor_catalog::read(&why).map(|(key, _)| key),
+                Some("msg.host-silent")
+            );
+            assert!(
+                took >= budget / 2 && took < budget * 4,
+                "case {case}: {took:?}"
+            );
+        }
+    }
+}
 
 #[cfg(test)]
 mod ring_file_tests {

@@ -22,14 +22,9 @@
 //! let SIGWINCH repaint). It keeps no scrollback any more — history is
 //! the feed.
 //!
-//! **Where history comes from**: the feed starts collecting the moment
-//! the attachment opens, and the host pours its ring to every fresh
-//! client first (its own design for every attacher) — so an attach
-//! replays the past the host kept, and the feed carries everything
-//! since. The old head kept a shelf note ("the host could keep the raw
-//! bytes and answer a request for history"); this is that note half
-//! cashed — the near half. Cross-attachment history is still the
-//! host's ring and dies with the host, exactly as before.
+//! The host starts each attachment with its current snapshot (or raw ring
+//! when no model exists). This feed retains that replay and the live bytes
+//! since, with the mode state needed to replay its trimmed head safely.
 
 #[path = "term_upload.rs"]
 mod upload;
@@ -77,8 +72,8 @@ struct Feed {
     /// The modes at the feed's end: what a face that starts over from
     /// the screen ([`take_since`]) is put into before the screen is drawn.
     tail: Modes,
-    /// Where this attachment's life began on the cursor ([`restart_feed`]):
-    /// a cursor before it is another life's.
+    /// Where this attachment's replay began on the cursor ([`restart_feed`]
+    /// or a clear): a cursor before it must replay the retained feed.
     life: u64,
 }
 
@@ -178,27 +173,21 @@ struct Term {
     /// held. Written only inside [`push_feed`], under the `feed` lock,
     /// so a reader holding that lock sees the pair consistent.
     fed: AtomicU64,
-    /// The host protocol version this attachment agreed
-    /// (`khor_node::host::HOST_VERSION`): 1 for a host from before the
-    /// handshake, which is sent nothing it does not know.
-    version: AtomicU32,
     /// The most history any face holding this terminal has asked the
     /// host to keep (its 历史行数, item 56); 0 until one says. Said
     /// again to a host the attachment rejoins.
     history: AtomicU32,
 }
 
-/// **The host keeps the history the face shows** (item 56): the face's
-/// 历史行数 goes to a host of version 4 or later as
-/// [`ClientOp::Scrollback`], the largest any face holding the terminal
-/// asked for. An older host keeps its own 2000 rows and is sent nothing.
+/// The host keeps the largest history any attached face asks for. Zero
+/// means no preference; reconnect sends the retained preference again.
 fn keep_history(term: &Term, lines: u32) {
     let most = term.history.fetch_max(lines, Ordering::Relaxed).max(lines);
-    say_history(term, &mut plock(&term.conn), most);
+    say_history(&mut plock(&term.conn), most);
 }
 
-fn say_history(term: &Term, conn: &mut std::net::TcpStream, lines: u32) {
-    if lines > 0 && term.version.load(Ordering::Relaxed) >= 4 {
+fn say_history(conn: &mut std::net::TcpStream, lines: u32) {
+    if lines > 0 {
         let _ = write_frame(conn, &ClientOp::Scrollback(lines));
     }
 }
@@ -279,7 +268,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
     // A leave that came while this open was reaching takes its hold
     // (`crate::landing`): nobody is there to read what it attached.
     let left = plock(landing()).land(id);
-    let (conn, far, version) = attached?;
+    let (conn, far) = attached?;
     if left {
         let _ = conn.shutdown(std::net::Shutdown::Both);
         return Ok(());
@@ -309,10 +298,8 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
         left: AtomicBool::new(false),
         feed: Mutex::new(Feed::default()),
         fed: AtomicU64::new(0),
-        version: AtomicU32::new(1),
         history: AtomicU32::new(0),
     });
-    term.version.store(version, Ordering::Relaxed);
     let target = term.clone();
     let initial = term.commands.submit(move || { keep_history(&target, history); Ok(()) })?;
     let reader = term.clone();
@@ -320,8 +307,8 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
     std::thread::spawn(move || {
         use std::io::Read;
         let mut buf = [0u8; 8192];
-        // The next bytes are a new attachment's: the host's ring again,
-        // from its start (`start_over`).
+        // The next bytes are a new attachment's initial replay
+        // (`start_over`).
         let mut fresh = false;
         loop {
             match reading.read(&mut buf) {
@@ -347,14 +334,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
                         machine,
                         &sid,
                         &reader.left,
-                        |addr, cookie| {
-                            // A far host may have been replaced meanwhile:
-                            // the version is agreed again.
-                            khor_node::host::connect_versioned(addr, cookie, cols, rows).map(|a| {
-                                reader.version.store(a.version, Ordering::Relaxed);
-                                a.stream
-                            })
-                        },
+                        |addr, cookie| khor_node::host::connect_at(addr, cookie, cols, rows),
                         told,
                     ) else {
                         break;
@@ -405,7 +385,7 @@ fn attach(
     id: &str,
     cols: u16,
     rows: u16,
-) -> Result<(std::net::TcpStream, Option<String>, u32), String> {
+) -> Result<(std::net::TcpStream, Option<String>), String> {
     let n = Node::open(root.to_path_buf())?;
     let sid = SessionId(id.to_owned());
     // **The fork is on the row, not on a flag** (`Node::far_machine`):
@@ -421,7 +401,7 @@ fn attach(
         // network under it (`host::connect_at`).
         Some(machine) => {
             let (addr, cookie) = reach_blocking(root, machine, &sid)?;
-            khor_node::host::connect_versioned(&addr, &cookie, cols, rows)?
+            khor_node::host::connect_at(&addr, &cookie, cols, rows)?
         }
         None => {
             // A row this machine does not host yet may still have a
@@ -448,12 +428,12 @@ fn attach(
                 .session_dir(&sid)
                 .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
             match seat {
-                khor_node::live::Seat::View => khor_node::host::connect_view_versioned(&dir, cols, rows)?,
-                khor_node::live::Seat::Host => khor_node::host::connect_host_versioned(&dir, cols, rows)?,
+                khor_node::live::Seat::View => khor_node::host::connect_view(&dir, cols, rows)?,
+                khor_node::live::Seat::Host => khor_node::host::connect(&dir, cols, rows)?,
             }
         }
     };
-    Ok((conn.stream, far, conn.version))
+    Ok((conn, far))
 }
 
 /// An open terminal under `id` takes one more hold and answers yes; a
@@ -590,6 +570,20 @@ fn take_all(feed: &Mutex<Feed>, fed: &AtomicU64) -> (Vec<u8>, u64) {
     (g.replay(), fed.load(Ordering::Relaxed))
 }
 
+/// The screen and feed forget together, under paint's parser → feed order.
+/// Caught-up cursors keep their place; cursors before the cleared head replay
+/// only what remains. Later cap trims snapshot the cleaned screen as well.
+fn forget_feed(parser: &Mutex<vt100::Parser>, feed: &Mutex<Feed>, fed: &AtomicU64) {
+    let mut screen = plock(parser);
+    if screen.screen().alternate_screen() {
+        return;
+    }
+    let mut g = plock(feed);
+    khor_node::host::forget_parser(&mut screen, 0);
+    g.forget();
+    g.life = g.life.max(fed.load(Ordering::Relaxed) - g.bytes.len() as u64);
+}
+
 /// The bytes from `since` to the end — or, with `reset` raised:
 ///
 /// - **`since` fell off the trimmed head in this life** (a face that
@@ -639,8 +633,8 @@ fn term_of(id: &str) -> Result<Arc<Term>, String> {
 
 /// The feed so far, for a face that just attached: reset the emulator,
 /// write these bytes, then tail from `seq` with [`term_stream`]. The
-/// host pours its ring to every fresh client, so this carries the
-/// history the host kept plus everything since this attachment opened.
+/// host supplies its initial replay, so this carries the history kept
+/// plus everything since this attachment opened.
 pub fn term_attach(id: &str) -> Result<TermStart, String> {
     let term = term_of(id)?;
     let (bytes, seq) = take_all(&term.feed, &term.fed);
@@ -657,10 +651,7 @@ pub fn term_ready(id: &str) -> Result<(), String> {
 }
 pub fn submit_ready(id: &str) -> Result<crate::command_queue::Pending<()>, String> {
     submit(id, |term| {
-        if term.version.load(Ordering::Relaxed) >= 5 {
-            write_frame(&mut *plock(&term.conn), &ClientOp::Ready)?;
-        }
-        Ok(())
+        write_frame(&mut *plock(&term.conn), &ClientOp::Ready)
     })
 }
 
@@ -1474,14 +1465,8 @@ fn drop_items_blocking(
     .map_err(|_| khor_catalog::msg::deliver_thread_died().to_owned())?
 }
 
-/// **⌘K, kept where the bytes are** (audit/term-attach.md): this
-/// attachment's feed forgets everything before the cursor's line, and so
-/// does the host's ring when the host speaks version 2 — a reload or a
-/// re-attach then starts from the clear, as iTerm2's Clear Buffer does.
-/// `redraw` sends the shell its ⌃L after the forget, on the same
-/// connection so the host takes them in that order. Answers whether the
-/// host kept it (false: a host from before the handshake, where the
-/// clear is this face's alone, as it always was).
+/// Write the host's Forget, clear the local screen/feed, then request an
+/// optional same-stream shell redraw. Successful writes return true.
 pub fn term_forget(id: &str, redraw: bool) -> Result<bool, String> {
     submit_forget(id, redraw)?.wait()
 }
@@ -1489,18 +1474,15 @@ pub fn submit_forget(id: &str, redraw: bool) -> Result<crate::command_queue::Pen
     submit(id, move |term| forget(&term, redraw))
 }
 fn forget(term: &Term, redraw: bool) -> Result<bool, String> {
-    let kept = term.version.load(Ordering::Relaxed) >= 2;
     {
         let mut conn = plock(&term.conn);
-        if kept {
-            write_frame(&mut *conn, &ClientOp::Forget)?;
-        }
+        write_frame(&mut *conn, &ClientOp::Forget)?;
+        forget_feed(&term.parser, &term.feed, &term.fed);
         if redraw {
             write_frame(&mut *conn, &ClientOp::Input(vec![0x0c]))?;
         }
     }
-    plock(&term.feed).forget();
-    Ok(kept)
+    Ok(true)
 }
 
 /// A resize: the PTY is told (so programs repaint at the new size) and
@@ -1891,7 +1873,6 @@ mod tests {
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
-            version: AtomicU32::new(1),
             history: AtomicU32::new(0),
         });
         push_feed(&term.feed, &term.fed, b"\x1b[31mhi");
@@ -1939,7 +1920,6 @@ mod tests {
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
-            version: AtomicU32::new(1),
             history: AtomicU32::new(0),
         });
         let id = format!("shell/held-size-{}", std::process::id());
@@ -1976,7 +1956,6 @@ mod tests {
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
-            version: AtomicU32::new(1),
             history: AtomicU32::new(0),
         });
         let id = format!("tui/feed-wait-{}", std::process::id());
@@ -2135,7 +2114,6 @@ mod burst_tests {
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
-            version: AtomicU32::new(1),
             history: AtomicU32::new(0),
         });
         let id = format!("tui/burst-{}", std::process::id());
