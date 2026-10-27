@@ -420,6 +420,41 @@ class ProvenanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "covered by its producer key"):
             p.verify_build(changed, rows)
 
+    def test_node_known_root_includes_are_keyed_and_each_invalidates_with_old_mtime(self):
+        self.metadata["packages"][0]["name"] = "khor-node"
+        self.put("dep/Cargo.toml", "[package]\nname='khor-node'\nversion='0.1.0'\n[lib]\nname='dep'\n")
+        providers = self.put("apps/agent/providers.json", '{"provider":"A"}\n')
+        install = self.put("scripts/install.sh", "#!/bin/sh\nprintf A\n")
+        self.put("dep/src/lib.rs", 'pub const PROVIDERS: &str = include_str!("../../apps/agent/providers.json");\n'
+                 'pub const INSTALL: &str = include_str!("../../scripts/install.sh");\n')
+        prepared = self.prepare()
+        rows = self.rows()
+        library = Path(rows[0]["filenames"][0])
+        dep = library.with_name(library.stem.removeprefix("lib") + ".d")
+        dep.write_text(f"{library}: {rows[0]['target']['src_path']} {providers} {install}\n{dep}:\n")
+        receipt = p.verify_build(prepared, rows)
+        self.assertEqual(set(receipt["extra_inputs"]),
+                         {"apps/agent/providers.json", "scripts/install.sh"})
+        p.require_provenance(receipt, self.root, rows[1])
+        originals = {path: (path.read_bytes(), path.stat()) for path in (providers, install)}
+        for path in (providers, install):
+            with self.subTest(input=str(path.relative_to(self.root))):
+                for item, (data, stamp) in originals.items():
+                    item.write_bytes(data)
+                    os.utime(item, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+                data, stamp = originals[path]
+                path.write_bytes(data + b"changed without newer timestamp\n")
+                os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+                changed = self.prepare([receipt])
+                self.assertEqual(changed["refresh_plan"], ["app/src/lib.rs", "dep/src/lib.rs"])
+                self.assertEqual(path.stat().st_mtime_ns, stamp.st_mtime_ns)
+                for row in rows[:-1]:
+                    row["fresh"] = True
+                with self.assertRaisesRegex(ValueError, "lacks a matching producer"):
+                    p.verify_build(changed, rows)
+                with self.assertRaisesRegex(ValueError, "source frame"):
+                    p.require_provenance(receipt, self.root, rows[1])
+
     def test_different_embedded_manifest_root_does_not_reuse_identical_bytes(self):
         receipt, rows = self.initial()
         self.root.rename(self.base / "old-source")

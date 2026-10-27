@@ -131,6 +131,9 @@ def build_state(root, metadata, tools):
         extras = {}
         if package["name"] == "khor-web":
             extras["apps/gui/dist"] = tree(root / "apps/gui/dist")
+        if package["name"] == "khor-node":
+            for name in ("apps/agent/providers.json", "scripts/install.sh"):
+                extras[name] = tree(root / name)
         if package["name"] == "khor-node" and os.environ.get("KHOR_AGENT_BUNDLE"):
             extras[os.environ["KHOR_AGENT_BUNDLE"]] = tree(os.environ["KHOR_AGENT_BUNDLE"])
         # Default to root-sensitive: env!, file!, generated absolute include paths,
