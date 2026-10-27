@@ -13,6 +13,8 @@
 
 `cargo test` 跑全部测试。`target/` 是指向外挂盘的符号链接，别 `cargo clean`。
 
+工程约定与格式入口见 [ENGINEERING](docs/code-quality/ENGINEERING.md)。
+
 桌面 app 在 `apps/gui`：开发窗口 = `npm run dev`（apps/gui 下）加
 `cargo run -p khor-gui`；真连排版验收 = `node scripts/smoke.mjs`，
 网页脸那一份 = `node scripts/web-face.mjs`。

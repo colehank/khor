@@ -1,0 +1,46 @@
+# Khor 工程约定
+
+适用于第一方源码和测试。功能语义与平台边界按领域文档；界面修改先读[设计系统](../design-system/README.md)。本轮任务边界、协作与恢复流程归[PLAN](PLAN.md)，当前进展归[STATE](STATE.md)。
+
+## 写代码与审查
+
+- 名称表达业务意图，同一概念使用同名。优先沿用领域词，隐晦缩写改成可搜索的名称。
+- 按独立改变理由划分模块。接口说明输入、结果及资源所有者，内部封装状态转换；保留能顺序阅读的完整业务流程。
+- 状态由明确的会话、请求或资源所有者持有。迟到结果按身份和代次核对；释放、取消和重试保留各自语义。
+- 把纯计算与网络、存储、进程及界面副作用分开。创建者交代资源的关闭与等待方式，失败路径也完成清理。
+- Rust 使用惯用类型和 Result 表达失败，错误在知道业务背景的边界补充上下文。保持错误类型与文本展示分离，权限和协议判断依据结构化结果。
+- 共享真正相同的规则；抽象应减少调用方理解的内部细节。函数行数、注释数、文件数用于定位候选，不设机械拆分指标。
+
+## 注释与历史
+
+代码名称与类型表达“做什么”，英文注释保留代码无法说明的协议不变量、平台约束、并发原因和取舍。修改行为时同步核对这些约束。
+
+已失效的实现过程说明从源码移到相应决策或任务记录。仅复述语句的注释可以删除；必要的约束先有代码、测试或领域文档承载，再调整注释。完整历史由 Git 保存。
+
+## 格式与生成边界
+
+Rust 采用官方 rustfmt 默认风格并尊重各 manifest edition；ACP 是2021，其余 workspace成员继承2024。格式迁移与功能修改分别提交。
+
+第一方范围包含根workspace、独立Windows harness及测试/probe模板；vendor补丁和具有原文SHA契约的第三方快照分别归其上游适配边界。使用Python 3.11+；共同入口是 `python3 scripts/check-rust-format.py --check`，显式 `--write`执行排版；本地与quality.yml的scripts job使用同一入口。固定Rust 1.95.0／rustfmt 1.9.0-stable，按各manifest分别确定parser和style edition，独立模板通过stdin处理。清单和排除以脚本为准，迁移证据见[Q053](tasks/Q-053-format-baseline.md)。工具缺失或版本不符明确报错，安装和工具链选择由开发者显式完成。
+
+生成结果从producer修正：Rust的OUT_DIR输出归各build.rs，GUI bindings/catalog归原gen命令。前端沿用现有编码风格和门禁；引入新formatter属于单独工程决定。
+
+## 按变化选择验证
+
+| 变化 | 现有验证入口与完成条件 |
+| --- | --- |
+| GUI模型或类型 | apps/gui 的 test:unit、test:types；生成类型变化由原gen入口产生 |
+| GUI交互 | apps/gui 的 test:interaction或对应单项；等待动画、焦点与异步布局稳定，检查连续操作后的最终状态 |
+| 界面、图标或布局 | 设计系统规定的门及真实App验收清单；浏览器几何检查补充原生平台证据 |
+| Pi sidecar | apps/agent 的 npm test；实际bundle/登录/远程链路另记真实运行证据 |
+| Rust功能与协议 | 对应crate/target及精确行为父；真实worker、输入数据和断言保持，helper单独注明 |
+| 构建与脚本 | scripts/tests既有入口及受影响脚本；验证失败退出状态和必要资源清理 |
+| 全部功能批整合 | 固定同源产物后一次受影响组合，再做既定App用户流程；只重跑有变化或失败理由的检查 |
+
+故障修复先确认原故障，再用同一行为断言证明修复。结构重构验证外部行为与不变量，避免测试只镜像实现。fixture、浏览器、WebKit、模拟器、真实桌面App与物理设备各自记录；缺少设备或账户的项目明确待验。
+
+原生证据包含实际源码、工具与产物来源、执行命令、退出结果及资源清理。复用结果时核对影响范围与来源；setup失败、业务失败、清理失败分别保留，未执行不计通过。协作与共享构建资源按PLAN执行。
+
+## 原则来源
+
+本约定是《Clean Code》原则在Khor中的应用：[必要注释](https://blog.cleancoder.com/uncle-bob/2017/02/23/NecessaryComments.html)、[第二版原则节选](https://www.informit.com/articles/article.aspx?p=3222335)、[出版社目录](https://www.pearson.com/en-us/subject-catalog/p/clean-code-a-handbook-of-agile-software-craftsmanship-2nd-edition/P200000013239/9780135398548)。命名、职责、错误和状态归属用于帮助读者理解与修改代码，具体约束由当前功能契约决定。
