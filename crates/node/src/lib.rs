@@ -981,9 +981,49 @@ impl Node {
     /// Opens the node rooted at `root`, named after the hostname (or
     /// `KHOR_NAME` when set — tests and same-machine dual instances).
     pub fn open(root: PathBuf) -> Result<Node, String> {
-        let host = std::env::var("KHOR_NAME")
-            .unwrap_or_else(|_| gethostname::gethostname().to_string_lossy().to_string());
-        Self::open_as(root, &host)
+        Self::open_as(root, &Self::opening_name())
+    }
+
+    fn opening_name() -> String {
+        std::env::var("KHOR_NAME")
+            .unwrap_or_else(|_| gethostname::gethostname().to_string_lossy().to_string())
+    }
+
+    /// Control admission never waits behind an ordinary constructor.
+    pub fn try_open(root: PathBuf) -> Result<Node, String> {
+        Self::with_blocking_isolation(|| {
+            let permit =
+                doc_transfer_state::RootPermit::try_acquire(&root).map_err(String::from)?;
+            Self::open_admitted(root, &Self::opening_name(), khor_core::hosts_here(), permit)
+        })
+    }
+
+    fn with_blocking_isolation<T>(work: impl FnOnce() -> T) -> T {
+        if tokio::runtime::Handle::try_current().is_ok_and(|runtime| {
+            runtime.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
+        }) {
+            tokio::task::block_in_place(work)
+        } else {
+            work()
+        }
+    }
+
+    /// Wait only for local admission, then construct on this same future/thread.
+    /// Requires a current Tokio runtime with its time driver enabled for the
+    /// bounded admission deadline. No runtime is created; sync callers use `open`.
+    pub async fn open_async(root: PathBuf) -> Result<Node, String> {
+        Self::open_hosting_async(root, Self::opening_name(), khor_core::hosts_here()).await
+    }
+
+    async fn open_hosting_async(root: PathBuf, name: String, hosts: bool) -> Result<Node, String> {
+        tokio::runtime::Handle::try_current().map_err(|_| {
+            "async Node opening requires a Tokio runtime; use Node::open".to_owned()
+        })?;
+        let permit = doc_transfer_state::RootPermit::acquire_async(&root)
+            .await
+            .map_err(String::from)?;
+        // CurrentThread cannot block_in_place: FS runs to completion in this poll.
+        Self::with_blocking_isolation(|| Self::open_admitted(root, &name, hosts, permit))
     }
 
     /// Opens with an explicit machine name (pre-cleaning).
@@ -994,14 +1034,26 @@ impl Node {
     /// [`Node::open_as`], told whether this machine can host rather than
     /// reading it off the build.
     ///
-    /// **Every real open goes through `open_as`**, which passes the
-    /// build's truth (`khor_core::hosts_here`): a phone build answers no,
+    /// Every production entry passes the build's truth (`khor_core::hosts_here`):
+    /// a phone build answers no,
     /// every other build yes. This door exists so a test on a computer
     /// can stand up the node a phone runs — the build fact cannot be
     /// flipped in a test binary, and what has to be proven (no tmux
     /// asked, no session started, the row says so) is about the node,
     /// not about the build.
     pub fn open_hosting(root: PathBuf, name: &str, hosts: bool) -> Result<Node, String> {
+        Self::with_blocking_isolation(|| {
+            let permit = doc_transfer_state::RootPermit::acquire(&root).map_err(String::from)?;
+            Self::open_admitted(root, name, hosts, permit)
+        })
+    }
+
+    fn open_admitted(
+        root: PathBuf,
+        name: &str,
+        hosts: bool,
+        permit: doc_transfer_state::RootPermit,
+    ) -> Result<Node, String> {
         // **Before anything reads a path** (第十四轮 第 4 条): if this
         // process is standing in a directory that has been deleted, it
         // steps onto `/` first — `gix` goes through the current
@@ -1114,7 +1166,8 @@ impl Node {
             hosts,
         };
         {
-            let recovered = node.recover_pairing_before_bootstrap()?;
+            let recovered = permit.attach().map_err(String::from)?;
+            node.recover_pairing_before_bootstrap(&recovered)?;
             node.register_self()?;
             // After the row exists: the first machine's root certifies the
             // machine the table now holds (docs/CONNECT.md 身份).

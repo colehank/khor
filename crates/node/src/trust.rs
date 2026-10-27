@@ -1164,9 +1164,9 @@ impl Node {
     // the critical intents have been reconciled under this same root fence.
     pub(crate) fn recover_pairing_before_bootstrap(
         &self,
-    ) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
+        _guard: &crate::doc_transfer_state::RootMutationGuard,
+    ) -> Result<(), String> {
         use crate::doc_transfer_state::{Context, State, pairing};
-        let guard = pairing::root_fence(self.root()).map_err(String::from)?;
         if pairing::needs_recovery(self.root(), self.my_id()).map_err(String::from)? {
             let context = Context {
                 root: self.root().clone(),
@@ -1181,7 +1181,7 @@ impl Node {
                 )
                 .map_err(String::from)?;
         }
-        Ok(guard)
+        Ok(())
     }
 }
 

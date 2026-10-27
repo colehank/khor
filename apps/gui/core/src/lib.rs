@@ -398,10 +398,7 @@ pub async fn reach_probe(
     host: String,
     port: Option<u16>,
 ) -> Result<ReachReport, String> {
-    let at = root.to_path_buf();
-    let n = tokio::task::spawn_blocking(move || open(&at))
-        .await
-        .map_err(|e| e.to_string())??;
+    let n = open_async(root).await?;
     let port = khor_node::reach::port_or_ssh(port);
     let devices = n.devices().unwrap_or_default();
     let shown = |id: &str| {
@@ -451,10 +448,7 @@ pub async fn reach_probe(
 /// is, and gives a face that arrives a round at once (round NET-6). With
 /// no resident there is nobody to tell, and that is not an error.
 pub async fn face_here(root: &Path, visible: bool) -> Result<(), String> {
-    let at = root.to_path_buf();
-    let n = tokio::task::spawn_blocking(move || open(&at))
-        .await
-        .map_err(|e| e.to_string())??;
+    let n = open_async(root).await?;
     let _ = n.face_is_here(visible).await;
     Ok(())
 }
@@ -463,10 +457,7 @@ pub async fn face_here(root: &Path, visible: bool) -> Result<(), String> {
 /// with it now, past its backoff (NET-STABLE 第二步). With no resident
 /// there is nobody to tell, and that is not an error.
 pub async fn visit(root: &Path, machine: &str) -> Result<(), String> {
-    let at = root.to_path_buf();
-    let n = tokio::task::spawn_blocking(move || open(&at))
-        .await
-        .map_err(|e| e.to_string())??;
+    let n = open_async(root).await?;
     let _ = n.visit(machine).await;
     Ok(())
 }
@@ -481,10 +472,7 @@ pub async fn rejoin_now(root: &Path, machine: &str) -> Result<(), String> {
 
 /// The connections, read off the resident (`Node::connections`).
 pub async fn connections(root: &Path) -> Result<Connections, String> {
-    let at = root.to_path_buf();
-    let n = tokio::task::spawn_blocking(move || open(&at))
-        .await
-        .map_err(|e| e.to_string())??;
+    let n = open_async(root).await?;
     let names: std::collections::HashMap<String, String> = n
         .devices()
         .unwrap_or_default()
@@ -946,6 +934,14 @@ fn open(root: &Path) -> Result<Node, String> {
     Node::open(root.to_path_buf())
 }
 
+async fn open_async(root: &Path) -> Result<Node, String> {
+    Node::open_async(root.to_path_buf()).await
+}
+
+fn try_open(root: &Path) -> Result<Node, String> {
+    Node::try_open(root.to_path_buf())
+}
+
 /// Everything the editor paints, **for whichever machine is open in
 /// it**. The order of each axis is the library's (`PRESETS` is ordered
 /// by provenance, `ALL` by the order a chooser should offer them); this
@@ -1224,7 +1220,7 @@ pub struct AccountRing {
 /// Every registered account's ring (`Node::quota_board`), home machines
 /// named.
 pub async fn quota_board(root: &Path) -> Result<Vec<AccountRing>, String> {
-    let n = open(root)?;
+    let n = open_async(root).await?;
     // This machine's own login joins the list as a registration the
     // first time it is found (`Node::adopt_subscriptions`). A failure
     // here is not the board's: the list is still the list.
@@ -1338,7 +1334,10 @@ pub async fn load(
     by: khor_core::TopBy,
     desc: bool,
 ) -> Result<khor_core::Load, String> {
-    open(root)?.load_on(machine, top, by, desc).await
+    open_async(root)
+        .await?
+        .load_on(machine, top, by, desc)
+        .await
 }
 
 /// One cell of a day strip, in the shape the frontend can paint.
@@ -1410,10 +1409,7 @@ pub fn day_strips(
 /// thread rather than the async one the app polls this on every two
 /// seconds.
 pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
-    let at = root.to_path_buf();
-    let n = tokio::task::spawn_blocking(move || open(&at))
-        .await
-        .map_err(|e| e.to_string())??;
+    let n = open_async(root).await?;
     // A resident that did not answer in time keeps its last reading
     // (`Node::links`); only with no reading at all is the road left
     // unsaid on every row — never a word for "the question failed".
@@ -1687,10 +1683,7 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
 /// 直连占比, from the resident's own memory of its dials
 /// (`Node::road_tallies`).
 pub async fn road_share(root: &Path) -> Result<RoadShare, String> {
-    let at = root.to_path_buf();
-    let n = tokio::task::spawn_blocking(move || open(&at))
-        .await
-        .map_err(|e| e.to_string())??;
+    let n = open_async(root).await?;
     Ok(match n.road_tallies().await {
         Ok(tallies) => RoadShare {
             direct: tallies.iter().map(|(_, t)| t.direct).sum(),
@@ -1762,7 +1755,7 @@ pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
 /// submissions use the command executor; @ is reserved for agents.
 pub async fn post(root: &Path, typed: &str, files: &[String]) -> Result<String, String> {
     let files: Vec<std::path::PathBuf> = files.iter().map(std::path::PathBuf::from).collect();
-    open(root)?.note(typed, &files).await
+    open_async(root).await?.note(typed, &files).await
 }
 
 /// Whether claude on **this** machine is set up to tell khor what it is
@@ -2043,7 +2036,7 @@ pub fn face_note(root: &Path, line: &str) {
 /// The whole checklist. Each check under its own timeout, concurrently —
 /// see `khor_node::doctor`.
 pub async fn doctor(root: &Path) -> Result<Vec<DoctorRow>, String> {
-    let n = open(root)?;
+    let n = open_async(root).await?;
     Ok(khor_node::doctor::doctor(&n)
         .await
         .into_iter()
@@ -2245,7 +2238,7 @@ pub async fn open_session(
     machine: &str,
     token: Option<&str>,
 ) -> Result<String, String> {
-    let n = open(root)?;
+    let n = open_async(root).await?;
     if machine.is_empty() || machine == n.name() {
         return n.start_session(dir, title, form, agent).map(|id| id.0);
     }
@@ -2368,7 +2361,11 @@ pub async fn khor_agent(
     action: &str,
     payload: &serde_json::Value,
 ) -> Result<KhorAgentView, String> {
-    let n = open(root)?;
+    let n = if matches!(action, "stop" | "answer" | "cancel_status" | "cancel_retry") {
+        try_open(root)?
+    } else {
+        open_async(root).await?
+    };
     let string = |key: &str| {
         payload[key]
             .as_str()
@@ -2762,7 +2759,7 @@ pub fn stage_upload(
 /// spelled here because it is the node's address scheme, not the
 /// screen's. Answers where the files landed.
 pub async fn retry_transfer(root: &Path, msg: &str) -> Result<Vec<String>, String> {
-    let n = open(root)?;
+    let n = open_async(root).await?;
     let (_, landed) = n
         .take(&khor_node::transfer::TransferKind::session_id(msg))
         .await?;
@@ -2772,7 +2769,7 @@ pub async fn retry_transfer(root: &Path, msg: &str) -> Result<Vec<String>, Strin
 /// A conversation file's move cancelled, on its receiver: nothing
 /// partial stays (the chip's ×).
 pub async fn stop_transfer(root: &Path, msg: &str) -> Result<(), String> {
-    open(root)?
+    try_open(root)?
         .stop_take(&khor_node::transfer::TransferKind::session_id(msg))
         .await
 }
@@ -2816,7 +2813,7 @@ pub async fn open_term_on(
     let size = size
         .map(|(c, r)| (c.clamp(20, 500), r.clamp(5, 200)))
         .unwrap_or((80, 24));
-    let n = open(root)?;
+    let n = open_async(root).await?;
     if machine.is_empty() || machine == n.name() {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
         let shell_name = std::path::Path::new(&shell)
@@ -2885,7 +2882,11 @@ pub async fn open_shell(
         cols: size.0,
         rows: size.1,
     };
-    Ok(open(root)?.open_shell_on(machine, start).await?.0)
+    Ok(open_async(root)
+        .await?
+        .open_shell_on(machine, start)
+        .await?
+        .0)
 }
 
 /// Issues a one-time pairing ticket. It carries the live endpoint's
@@ -2905,7 +2906,7 @@ pub fn invite(root: &Path) -> Result<Ticket, String> {
 /// because a resident serve holds this key's one endpoint, the call
 /// usually hands off to it over loopback rather than dialing here.
 pub async fn pair(root: &Path, ticket: &str) -> Result<String, String> {
-    let node = open(root)?;
+    let node = open_async(root).await?;
     node.pair(ticket).await
 }
 
@@ -2928,7 +2929,7 @@ pub struct SyncOutcome {
 /// `pair`'s reason: it dials, and a machine that is away costs a dial's
 /// timeout.
 pub async fn sync_now(root: &Path) -> Result<Vec<SyncOutcome>, String> {
-    let node = open(root)?;
+    let node = open_async(root).await?;
     Ok(node
         .sync_now()
         .await?
@@ -2974,7 +2975,10 @@ pub struct Waiting {
 
 /// Who waits for the root holder, and whether this machine is it.
 pub fn waiting(root: &Path) -> Result<Waiting, String> {
-    let node = open(root)?;
+    waiting_of(&open(root)?)
+}
+
+fn waiting_of(node: &Node) -> Result<Waiting, String> {
     Ok(Waiting {
         holds: node.holds_root(),
         rows: node
@@ -2993,8 +2997,9 @@ pub fn waiting(root: &Path) -> Result<Waiting, String> {
 /// removal through), pushes the roster out, and answers the list as it
 /// now stands. Async for `pair`'s reason: the push dials.
 pub async fn approve(root: &Path, machine: &str) -> Result<Waiting, String> {
-    open(root)?.approve(machine).await?;
-    waiting(root)
+    let node = open_async(root).await?;
+    node.approve(machine).await?;
+    waiting_of(&node)
 }
 
 /// The root's 24 words, for 「…」 → 安全 after the person pressed
@@ -3034,7 +3039,7 @@ pub struct LeaveOutcome {
 /// rots. The page still disables its button on an empty box, which is
 /// about the button being live, not about the act.
 pub async fn leave(root: &Path, name_typed: &str) -> Result<LeaveOutcome, String> {
-    let left = open(root)?.leave(name_typed).await?;
+    let left = open_async(root).await?.leave(name_typed).await?;
     Ok(LeaveOutcome {
         told: left.told,
         untold: left.untold,
@@ -3237,7 +3242,10 @@ pub async fn agent_recognition(
         "disable" => Action::Disable(selected()?),
         _ => return Err("unknown recognition action".into()),
     };
-    let report = open(root)?.recognition_on(machine, action).await?;
+    let report = open_async(root)
+        .await?
+        .recognition_on(machine, action)
+        .await?;
     Ok(report
         .entries
         .into_iter()

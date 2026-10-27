@@ -14,8 +14,8 @@ use khor_sync::{
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::PathBuf};
 mod io;
-pub(crate) use io::RootGate as RootMutationGuard;
 pub(crate) use io::publish_anchor;
+pub(crate) use io::{RootGate as RootMutationGuard, RootPermit};
 pub(crate) mod pairing;
 pub(crate) mod registry;
 use registry::with_doc;

@@ -2,17 +2,34 @@
 //! process restart; this is not a cross-platform power-loss transaction.
 use super::Error;
 use std::{
+    cell::Cell,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
+    marker::PhantomData,
     path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard, TryLockError},
+    rc::Rc,
+    sync::{Condvar, Mutex, MutexGuard, TryLockError},
+    thread::ThreadId,
+    time::{Duration, Instant},
 };
 
 pub(super) const MAX_IMAGE: usize = 32 * 1024 * 1024;
 const MAGIC: &[u8; 8] = b"khor-d01";
 const HEADER: usize = 8 + 8 + 8 + 32;
 static LOCAL: Mutex<()> = Mutex::new(());
-static ROOTS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+const ROOT_LIMIT: usize = 64;
+const WAITER_LIMIT: usize = 64;
+const OPEN_WAIT: Duration = Duration::from_secs(1);
+static ROOTS: Mutex<RootAdmission> = Mutex::new(RootAdmission {
+    owners: Vec::new(),
+    waiters: Vec::new(),
+    next_id: 0,
+});
+static ROOT_CHANGED: Condvar = Condvar::new();
+static ROOT_NOTIFIED: tokio::sync::Notify = tokio::sync::Notify::const_new();
+thread_local! {
+    static METADATA_HELD: Cell<bool> = const { Cell::new(false) };
+}
 #[cfg(test)]
 pub(super) static TEST_SERIAL: Mutex<()> = Mutex::new(());
 
@@ -20,57 +37,223 @@ pub(super) struct Gate {
     _local: MutexGuard<'static, ()>,
     _file: File,
 }
+impl Drop for Gate {
+    fn drop(&mut self) {
+        METADATA_HELD.set(false);
+    }
+}
 
-/// Separate from the metadata gate: settlement holds this before loading a
-/// devices document, and may then publish its bounded metadata transaction.
-pub(crate) struct RootGate {
+struct RootOwner {
+    id: u64,
     root: PathBuf,
-    _file: Option<File>,
+    thread: ThreadId,
+}
+struct WaitingRoot {
+    id: u64,
+    root: PathBuf,
+}
+struct RootAdmission {
+    owners: Vec<RootOwner>,
+    waiters: Vec<WaitingRoot>,
+    next_id: u64,
+}
+impl RootAdmission {
+    fn id(&mut self) -> Result<u64, Error> {
+        self.next_id = self
+            .next_id
+            .checked_add(1)
+            .ok_or("root admission ids exhausted")?;
+        Ok(self.next_id)
+    }
+    fn reserve(&mut self, root: &Path, id: Option<u64>) -> Result<RootPermit, Error> {
+        if self.owners.len() >= ROOT_LIMIT {
+            return Err("active trust mutation quota exceeded".into());
+        }
+        let id = match id {
+            Some(id) => id,
+            None => self.id()?,
+        };
+        self.owners.push(RootOwner {
+            id,
+            root: root.into(),
+            thread: std::thread::current().id(),
+        });
+        Ok(RootPermit {
+            id,
+            root: root.into(),
+            _thread: PhantomData,
+        })
+    }
+    fn ordinary(
+        &mut self,
+        root: &Path,
+        waiter: &mut Option<RootWaiter>,
+    ) -> Result<Option<RootPermit>, Error> {
+        // A metadata->root or root->root caller must never become a waiter.
+        if METADATA_HELD.get()
+            || self
+                .owners
+                .iter()
+                .any(|owner| owner.thread == std::thread::current().id())
+        {
+            return Err(Error::busy());
+        }
+        let owned = self.owners.iter().any(|owner| owner.root == root);
+        let first = self.waiters.iter().find(|waiting| waiting.root == root);
+        let our_turn = first.is_none_or(|first| {
+            waiter
+                .as_ref()
+                .is_some_and(|waiting| waiting.id == first.id)
+        });
+        if !owned && our_turn {
+            let permit = self.reserve(root, waiter.as_ref().map(|waiting| waiting.id))?;
+            if let Some(waiter) = waiter.as_mut() {
+                self.waiters.retain(|waiting| waiting.id != waiter.id);
+                waiter.registered = false;
+            }
+            return Ok(Some(permit));
+        }
+        if waiter.is_none() {
+            if self.waiters.len() >= WAITER_LIMIT {
+                return Err("ordinary root admission quota exceeded".into());
+            }
+            let id = self.id()?;
+            self.waiters.push(WaitingRoot {
+                id,
+                root: root.into(),
+            });
+            *waiter = Some(RootWaiter {
+                id,
+                registered: true,
+            });
+        }
+        Ok(None)
+    }
+}
+fn roots() -> MutexGuard<'static, RootAdmission> {
+    ROOTS.lock().unwrap_or_else(|error| error.into_inner())
+}
+fn root_changed() {
+    ROOT_CHANGED.notify_all();
+    ROOT_NOTIFIED.notify_waiters();
+}
+struct RootWaiter {
+    id: u64,
+    registered: bool,
+}
+impl Drop for RootWaiter {
+    fn drop(&mut self) {
+        if self.registered {
+            roots().waiters.retain(|waiting| waiting.id != self.id);
+            root_changed();
+        }
+    }
+}
+/// Process-local ownership before any constructor filesystem side effects.
+/// This lease stays on its acquiring thread; it never lives in a returned Node.
+pub(crate) struct RootPermit {
+    id: u64,
+    root: PathBuf,
+    _thread: PhantomData<Rc<()>>,
+}
+impl RootPermit {
+    pub(crate) fn try_acquire(root: &Path) -> Result<Self, Error> {
+        let mut admission = roots();
+        if admission.owners.iter().any(|owner| owner.root == root) {
+            return Err(Error::busy());
+        }
+        admission.reserve(root, None)
+    }
+    pub(crate) fn acquire(root: &Path) -> Result<Self, Error> {
+        let until = Instant::now() + OPEN_WAIT;
+        // The mutex guard drops before a registered waiter's cleanup can lock it.
+        let mut waiter = None;
+        let mut admission = roots();
+        loop {
+            if Instant::now() >= until {
+                return Err(Error::busy());
+            }
+            if let Some(permit) = admission.ordinary(root, &mut waiter)? {
+                return Ok(permit);
+            }
+            let remaining = until.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(Error::busy());
+            }
+            admission = ROOT_CHANGED
+                .wait_timeout(admission, remaining)
+                .unwrap_or_else(|error| error.into_inner())
+                .0;
+        }
+    }
+    pub(crate) async fn acquire_async(root: &Path) -> Result<Self, Error> {
+        let until = tokio::time::Instant::now() + OPEN_WAIT;
+        let mut waiter = None;
+        loop {
+            if tokio::time::Instant::now() >= until {
+                return Err(Error::busy());
+            }
+            let notified = ROOT_NOTIFIED.notified();
+            tokio::pin!(notified);
+            // Register before checking the registry: release cannot be lost.
+            notified.as_mut().enable();
+            {
+                let ready = roots().ordinary(root, &mut waiter)?;
+                if let Some(permit) = ready {
+                    return Ok(permit);
+                }
+            }
+            if tokio::time::timeout_at(until, notified).await.is_err() {
+                return Err(Error::busy());
+            }
+        }
+    }
+    pub(crate) fn attach(self) -> Result<RootGate, Error> {
+        let mut owned = RootGate {
+            permit: self,
+            file: None,
+        };
+        let directory = owned.permit.root.join(".khor/trust-mutation");
+        private_dir(&directory)?;
+        for (count, entry) in fs::read_dir(&directory).map_err(error)?.enumerate() {
+            let entry = entry.map_err(error)?;
+            if count >= 2 || !matches!(entry.file_name().to_str(), Some("gate" | "anchor.next")) {
+                return Err("unknown trust mutation entry; reconciliation required".into());
+            }
+            check_file(&entry.path())?;
+        }
+        let file = open(&directory.join("gate"), true)?;
+        if file.metadata().map_err(error)?.len() != 0 {
+            return Err("unexpected trust mutation gate bytes".into());
+        }
+        match file.try_lock() {
+            Ok(()) => (),
+            Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
+            Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+        }
+        owned.file = Some(file);
+        Ok(owned)
+    }
+}
+impl Drop for RootPermit {
+    fn drop(&mut self) {
+        roots().owners.retain(|owner| owner.id != self.id);
+        root_changed();
+    }
+}
+/// The OS lease attaches once to the same local reservation used by bootstrap.
+pub(crate) struct RootGate {
+    permit: RootPermit,
+    file: Option<File>,
 }
 impl Drop for RootGate {
     fn drop(&mut self) {
-        // Release the OS lease before admitting another in-process mutator.
-        self._file.take();
-        ROOTS
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .retain(|p| p != &self.root);
+        // Drop the OS lease before the permit retires its owner and wakes waiters.
+        self.file.take();
     }
 }
 pub(crate) fn root_gate(root: &Path) -> Result<RootGate, Error> {
-    let mut roots = ROOTS.lock().unwrap_or_else(|p| p.into_inner());
-    if roots.iter().any(|p| p == root) {
-        return Err(Error::busy());
-    }
-    if roots.len() >= 64 {
-        return Err("active trust mutation quota exceeded".into());
-    }
-    roots.push(root.into());
-    drop(roots);
-    let mut owned = RootGate {
-        root: root.into(),
-        _file: None,
-    };
-    let directory = root.join(".khor/trust-mutation");
-    private_dir(&directory)?;
-    for (count, entry) in fs::read_dir(&directory).map_err(error)?.enumerate() {
-        let entry = entry.map_err(error)?;
-        if count >= 2 || !matches!(entry.file_name().to_str(), Some("gate" | "anchor.next")) {
-            return Err("unknown trust mutation entry; reconciliation required".into());
-        }
-        check_file(&entry.path())?;
-    }
-    let file = open(&directory.join("gate"), true)?;
-    if file.metadata().map_err(error)?.len() != 0 {
-        return Err("unexpected trust mutation gate bytes".into());
-    }
-    match file.try_lock() {
-        Ok(()) => (),
-        Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
-        Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
-    }
-    owned._file = Some(file);
-    Ok(owned)
+    RootPermit::try_acquire(root)?.attach()
 }
 
 /// The public anchor is old or new after process interruption, never a
@@ -167,6 +350,7 @@ pub(super) fn gate(root: &Path) -> Result<Gate, Error> {
         Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
         Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
     }
+    METADATA_HELD.set(true);
     Ok(Gate {
         _local: local,
         _file: file,
@@ -607,5 +791,188 @@ mod tests {
             reopened_anchor, anchor,
             "ordinary reopening changed the trust anchor"
         );
+    }
+
+    fn private_trust_root(root: &Path) {
+        private_dir(root).unwrap();
+        private_dir(&root.join(".khor")).unwrap();
+    }
+
+    struct HeldRoot {
+        release: Option<std::sync::mpsc::Sender<()>>,
+        worker: Option<std::thread::JoinHandle<()>>,
+    }
+    impl HeldRoot {
+        fn new(root: PathBuf) -> Self {
+            private_trust_root(&root);
+            let (held_tx, held_rx) = std::sync::mpsc::channel();
+            let (release_tx, release_rx) = std::sync::mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                let _gate = root_gate(&root).unwrap();
+                let _ = held_tx.send(());
+                let _ = release_rx.recv_timeout(Duration::from_secs(10));
+            });
+            let held = Self {
+                release: Some(release_tx),
+                worker: Some(worker),
+            };
+            assert!(held_rx.recv_timeout(Duration::from_secs(2)).is_ok());
+            held
+        }
+    }
+    impl Drop for HeldRoot {
+        fn drop(&mut self) {
+            if let Some(release) = self.release.take() {
+                let _ = release.send(());
+            }
+            if let Some(worker) = self.worker.take() {
+                let joined = worker.join();
+                assert!(
+                    joined.is_ok() || std::thread::panicking(),
+                    "root owner panicked"
+                );
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancelled_async_open_retires_its_waiter_and_a_late_notification_cannot_construct() {
+        use std::task::Poll;
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let fixture = Fixture::new();
+        let held = HeldRoot::new(fixture.0.clone());
+        let mut cancelled = Box::pin(crate::Node::open_hosting_async(
+            fixture.0.clone(),
+            "cancelled-open".into(),
+            false,
+        ));
+        fn require_send<T: Send>(_: &T) {}
+        require_send(&cancelled);
+        assert!(matches!(futures::poll!(cancelled.as_mut()), Poll::Pending));
+        drop(cancelled);
+        assert!(!fixture.0.join(".khor/identity.key").exists());
+        // The canceled request must not consume one of the fixed64 waiter slots.
+        let mut pending = Vec::new();
+        for _ in 0..64 {
+            let mut opening = Box::pin(crate::Node::open_hosting_async(
+                fixture.0.clone(),
+                "queued-open".into(),
+                false,
+            ));
+            assert!(matches!(futures::poll!(opening.as_mut()), Poll::Pending));
+            pending.push(opening);
+        }
+        let overflow =
+            crate::Node::open_hosting_async(fixture.0.clone(), "over-quota".into(), false).await;
+        assert!(
+            overflow
+                .err()
+                .expect("the65th waiter must be refused")
+                .contains("quota")
+        );
+        drop(pending);
+        assert!(!fixture.0.join(".khor/identity.key").exists());
+        drop(held);
+        let reopened =
+            crate::Node::open_hosting_async(fixture.0.clone(), "admitted-open".into(), false)
+                .await
+                .unwrap();
+        assert!(reopened.root_born());
+        assert!(
+            reopened
+                .devices()
+                .unwrap()
+                .iter()
+                .any(|device| device.id == reopened.device_str())
+        );
+        drop(reopened);
+
+        let expired = Fixture::new();
+        let held = HeldRoot::new(expired.0.clone());
+        let mut opening = Box::pin(crate::Node::open_hosting_async(
+            expired.0.clone(),
+            "expired-open".into(),
+            false,
+        ));
+        assert!(matches!(futures::poll!(opening.as_mut()), Poll::Pending));
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        // Notify after the fixed deadline, before polling the waiting future again.
+        drop(held);
+        assert!(
+            opening.await.is_err(),
+            "a late free root extended the admission deadline"
+        );
+        assert!(!expired.0.join(".khor/identity.key").exists());
+    }
+
+    #[test]
+    fn ordinary_reentry_and_deadline_preserve_control_and_external_try_leases() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let fixture = Fixture::new();
+        private_trust_root(&fixture.0);
+        let nested = fixture.0.join("nested");
+        {
+            let _owner = root_gate(&fixture.0).unwrap();
+            assert!(crate::Node::open_hosting(fixture.0.clone(), "reentry", false).is_err());
+            assert!(crate::Node::open_hosting(nested.clone(), "other-root", false).is_err());
+            assert!(!nested.exists());
+        }
+        {
+            let _metadata = gate(&fixture.0.join("metadata")).unwrap();
+            assert!(crate::Node::open_hosting(nested.clone(), "metadata-owner", false).is_err());
+            assert!(!nested.exists());
+        }
+        let without_runtime = fixture.0.join("without-runtime");
+        let missing = futures::executor::block_on(crate::Node::open_async(without_runtime.clone()));
+        assert!(
+            missing
+                .err()
+                .expect("async opening requires an existing runtime")
+                .contains("Tokio runtime")
+        );
+        assert!(!without_runtime.exists());
+
+        let held = HeldRoot::new(fixture.0.clone());
+        let started = Instant::now();
+        assert!(crate::Node::try_open(fixture.0.clone()).is_err());
+        assert!(
+            started.elapsed() < OPEN_WAIT,
+            "control construction entered the ordinary queue"
+        );
+        let root = fixture.0.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let started = Instant::now();
+            let opened = crate::Node::open_hosting(root, "deadline-open", false).map(drop);
+            let _ = done_tx.send((opened.clone(), started.elapsed()));
+            opened
+        });
+        let timed = done_rx.recv_timeout(Duration::from_secs(3));
+        drop(held);
+        let joined = worker.join();
+        let (opened, elapsed) =
+            timed.expect("ordinary admission did not reach its finite deadline");
+        assert!(opened.is_err());
+        assert!(
+            elapsed >= OPEN_WAIT,
+            "ordinary construction failed instead of waiting"
+        );
+        assert!(joined.expect("ordinary worker panicked").is_err());
+        assert!(!fixture.0.join(".khor/identity.key").exists());
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(fixture.0.join(".khor/trust-mutation/gate"))
+            .unwrap();
+        file.try_lock().unwrap();
+        let permit = RootPermit::acquire(&fixture.0).unwrap();
+        let error = permit
+            .attach()
+            .err()
+            .expect("an unknown OS owner remains fail-closed");
+        assert_eq!(error.kind, crate::proto::DocTransferFailure::Busy);
+        drop(file);
+        drop(root_gate(&fixture.0).unwrap());
     }
 }
