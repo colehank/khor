@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Deterministic ACP peer; requests are durable evidence of actual prompts."""
+import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
 log = Path(sys.argv[1])
+redacted = "--redacted" in sys.argv[2:]
 mode = "careful"
 model = "one"
 prompt = None
@@ -27,11 +30,22 @@ def options():
 for line in sys.stdin:
     request = json.loads(line)
     with log.open("a") as out:
-        out.write(json.dumps(request) + "\n")
+        evidence = request
+        if redacted:
+            evidence = {key: request[key] for key in ["jsonrpc", "id", "method"] if key in request}
+            evidence["pid"] = os.getpid()
+            if request.get("method") == "session/prompt":
+                evidence["content"] = [{"type": block.get("type"),
+                    "json_bytes": len(json.dumps(block).encode()),
+                    "sha256": hashlib.sha256(json.dumps(block, sort_keys=True).encode()).hexdigest()}
+                    for block in request.get("params", {}).get("prompt", [])]
+        out.write(json.dumps(evidence) + "\n")
+        out.flush()
+        os.fsync(out.fileno())
     method = request.get("method")
     request_id = request.get("id")
     if method == "initialize":
-        result(request_id, {"protocolVersion": 1, "agentCapabilities": {},
+        result(request_id, {"protocolVersion": 1, "agentCapabilities": ({"promptCapabilities": {"image": True, "embeddedContext": True}} if redacted else {}),
                             "agentInfo": {"name": "upload-fixture", "version": "1"}})
     elif method == "session/new":
         result(request_id, {"sessionId": "upload-fixture", "modes": {"currentModeId": mode,
