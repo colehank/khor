@@ -7,7 +7,7 @@ use crate::{
     Node,
     doc_transfer_state::{Context, Error, State, pairing as state},
     proto::*,
-    trust::PairTrust,
+    trust::{PairSettlementRequest, PairSettlementSide, PairTrust},
 };
 use khor_net::trust::{self as nt, Id};
 use khor_sync::{
@@ -109,12 +109,14 @@ fn commit(
     let prepared = trust.prepare_pair_settlement(
         context,
         state,
-        row.id,
-        row.caller,
-        false,
-        row.header.name.clone(),
-        row.header.addrs.clone(),
-        row.header.roster.clone(),
+        PairSettlementRequest {
+            operation: row.id,
+            remote: row.caller,
+            side: PairSettlementSide::Issuer,
+            remote_name: row.header.name.clone(),
+            remote_addrs: row.header.addrs.clone(),
+            input_roster: row.header.roster.clone(),
+        },
     );
     if let Err(error) = prepared {
         // Only pre-Ready decisions can release the claim; a recorded Ready
@@ -778,12 +780,14 @@ impl Node {
                     trust.prepare_pair_settlement(
                         context,
                         state,
-                        operation,
-                        remote,
-                        true,
-                        peer_name,
-                        peer_addrs,
-                        row.peer_roster.clone(),
+                        PairSettlementRequest {
+                            operation,
+                            remote,
+                            side: PairSettlementSide::Joiner,
+                            remote_name: peer_name,
+                            remote_addrs: peer_addrs,
+                            input_roster: row.peer_roster.clone(),
+                        },
                     )?;
                     trust.apply_pair_settlement(context, state, operation)?;
                 }
@@ -1129,10 +1133,7 @@ fn authorize_devices(row: &mut state::Claim, action: &DocTransferAction) -> Resu
             if let Some(chunk) = offer {
                 let descriptor = chunk.manifest.descriptor()?;
                 let have = DocumentVersion::decode(&row.devices_have).map_err(Error::from_std)?;
-                if descriptor.document != "devices"
-                    || descriptor.epoch != have.epoch
-                    || descriptor.base != have.version
-                {
+                if !state::matches_fixed_devices_base(&descriptor, &have) {
                     return Err("pairing devices base or epoch changed".into());
                 }
                 let key = chunk.manifest.id()?;

@@ -1178,6 +1178,21 @@ impl Node {
     }
 }
 
+pub(crate) enum PairSettlementSide {
+    Issuer,
+    Joiner,
+}
+
+// Local planning input; the persisted Settlement keeps its existing layout.
+pub(crate) struct PairSettlementRequest {
+    pub operation: Id,
+    pub remote: Id,
+    pub side: PairSettlementSide,
+    pub remote_name: String,
+    pub remote_addrs: Vec<String>,
+    pub input_roster: Option<crate::proto::DocManifest>,
+}
+
 pub(crate) struct PairTrust {
     context: crate::doc_transfer_state::Context,
     name: String,
@@ -1409,18 +1424,22 @@ impl PairTrust {
         &self,
         context: &crate::doc_transfer_state::Context,
         state: &mut crate::doc_transfer_state::State,
-        id: Id,
-        remote: Id,
-        dialed: bool,
-        name: String,
-        addrs: Vec<String>,
-        input: Option<crate::proto::DocManifest>,
+        request: PairSettlementRequest,
     ) -> Result<crate::doc_transfer_state::pairing::Settlement, crate::doc_transfer_state::Error>
     {
         use crate::doc_transfer_state::{
             Error,
             pairing::{self, Settlement},
         };
+        let PairSettlementRequest {
+            operation: id,
+            remote,
+            side,
+            remote_name: name,
+            remote_addrs: addrs,
+            input_roster: input,
+        } = request;
+        let dialed = matches!(side, PairSettlementSide::Joiner);
         if let Some(mut saved) = state.pair_settlement(id) {
             if saved.ready {
                 return Ok(saved);

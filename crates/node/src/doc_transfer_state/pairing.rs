@@ -6,7 +6,7 @@ use crate::{
     trust::PairTrust,
 };
 use khor_sync::{
-    doc_transfer::DocumentVersion,
+    doc_transfer::{Descriptor, DocumentVersion},
     transfer::{CHUNK_BYTES, MAX_BLOB_BYTES, Progress},
 };
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,15 @@ pub(crate) const LOCAL_SETTLEMENT: u8 = 2;
 pub(crate) const VOUCH_ROSTER: u8 = 3;
 const MAX_CLAIMS: usize = 16;
 const MAX_ROW: usize = 192 * 1024;
+
+pub(crate) fn matches_fixed_devices_base(
+    descriptor: &Descriptor,
+    expected: &DocumentVersion,
+) -> bool {
+    descriptor.document == "devices"
+        && descriptor.epoch == expected.epoch
+        && descriptor.base == expected.version
+}
 
 pub(crate) fn token_hash(token: &str) -> Result<Id, Error> {
     if token.is_empty() || token.len() > 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -963,10 +972,7 @@ impl State {
         };
         let expected = DocumentVersion::decode(&expected).map_err(Error::from_std)?;
         let descriptor = chunk.manifest.descriptor()?;
-        if descriptor.document != "devices"
-            || descriptor.epoch != expected.epoch
-            || descriptor.base != expected.version
-        {
+        if !matches_fixed_devices_base(&descriptor, &expected) {
             return Err("pairing incoming base or epoch changed".into());
         }
         if let Some(mut c) = self.pair_claim(operation) {

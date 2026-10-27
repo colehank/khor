@@ -383,26 +383,11 @@ impl State {
         Ok(names.into_iter().collect())
     }
     pub(crate) fn pending_proofs(&self, remote: [u8; 32], limit: usize) -> Vec<DocProof> {
-        self.scoped_proofs(remote, limit, false)
-    }
-    pub(crate) fn scoped_proofs(
-        &self,
-        remote: [u8; 32],
-        limit: usize,
-        devices_only: bool,
-    ) -> Vec<DocProof> {
         self.records
             .incoming
             .iter()
             .filter_map(|r| match r {
-                Incoming::Complete { proof, .. }
-                    if proof.manifest.source == remote
-                        && (!devices_only
-                            || proof
-                                .manifest
-                                .descriptor()
-                                .is_ok_and(|d| d.document == "devices")) =>
-                {
+                Incoming::Complete { proof, .. } if proof.manifest.source == remote => {
                     Some(proof.clone())
                 }
                 _ => None,
@@ -415,26 +400,11 @@ impl State {
         remote: [u8; 32],
         limit: usize,
     ) -> Result<Vec<DocAcknowledgement>, Error> {
-        self.scoped_acknowledgements(remote, limit, false)
-    }
-    pub(crate) fn scoped_acknowledgements(
-        &self,
-        remote: [u8; 32],
-        limit: usize,
-        devices_only: bool,
-    ) -> Result<Vec<DocAcknowledgement>, Error> {
         self.records
             .outgoing
             .iter()
             .filter_map(|r| match r {
-                Outgoing::NeedAck(proof)
-                    if proof.manifest.recipient == remote
-                        && (!devices_only
-                            || proof
-                                .manifest
-                                .descriptor()
-                                .is_ok_and(|d| d.document == "devices")) =>
-                {
+                Outgoing::NeedAck(proof) if proof.manifest.recipient == remote => {
                     Some(proof.acknowledgement())
                 }
                 _ => None,
