@@ -916,3 +916,9 @@ root独核B11真实收敛后明确授权提交，已提交 **d7a4192dfde6e589005
 `Q039/node-transfer-n1-commit-checkpoint-11`/internal同名2files（commit receipt/git show stat）逐SHA一致，记录exact14/tree/clean/sourceframe。当前checkpoint验证为A11同源17distinct真实绿+B11原25,447,950B/max4/固定VV与内容收敛真绿，全部原raw/失败/资源/来源/cleanup收据保持。actual32MiB release网络边界、postflush/prereceipt SIGKILL fresh恢复、N2 Pair/Vouch大bootstrap仍未完成；标题/提交不声称整个Q039或N2完成。
 
 本卡写权现在**交回root暂接checkpoint**；作者后续不再写本卡，除非root重新明确移交。下一仅只读准备真实postflush/prereceipt SIGKILL最小方案，无源码变更或Cargo/native。
+
+## 当前N2执行恢复（2026-10-27，root）
+
+N1 source11/crash14、trust15与root Q054都已集成；组合run04的正常CLI/Node＋61 distinct实际通过（333.684s/81dual，root核），包含原flow quiet/Busy/purepull、crash sole业务父及trust18。paired另target、真实release32MiB边界和整App不在该61中。
+
+node_transfer_owner已返唯一native槽，现回作者树 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery@27093f4a4ff94afcdffa36aa4cd6143e11ecaaad` 实作本卡已批准N2完整契约：大Pair04与烧票恢复、durable caller/issuer claim-intent/root fence、bounded devices与signedRoster/Vouch，旧Khor wire无fallback。不得用另一轮纯types/plan提取代替垂直修复。允许Node link/proto/trust/lib/doc_transfer_state(+io/registry)/link_doc_transfer及必要private pairing模块/tests；不改a2a/R2/GUI/依赖，Q054 typed gate行为保留。先coherent源+原红oracle/恢复fixtures，root独审后统一授Cargo/native，不先运行或扩大热/磁盘负荷。R2由另一owner在R1树独立实施。

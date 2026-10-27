@@ -6,7 +6,7 @@
 
 - 完成全仓功能审计、按风险修复/重构、Clean Code工程治理和最终同源App验收；多智能体协作与压缩恢复贯穿全程。任一首批或库基座不能代替完整目标。
 - 未上线，不保旧Khor端fallback/迁移矩阵；统一当前协议。认证、epoch、数据完整性、实际支持平台及外部ACP声明能力仍保留。
-- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@36e3918f4186b5e6c812ebb148b7da45ce802dee`，两树最近核对均clean。用户既有App/服务/release不动。
+- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@ec404dd71df62c15703c818f65fabb699be1877b`，两树最近核对均clean。用户既有App/服务/release不动。
 - 权威协调目录是本目录；实现树同名文档为历史副本。外盘新资料放 `/Volumes/disk0/Khor` 对应分类。
 
 ## 已集成的成果
@@ -14,7 +14,7 @@
 - 首批GUI键盘/最新消息与commit文件跳转已修，已有浏览器、真实Tauri iOS与MobileSafari/UIKit验证；物理iPhone/IME及最终同源App未全验。
 - 编辑autosave/conflict/lock、身份与资源owner、凭据裁剪/A2A/输入预算、upload receipt/poll、SSH生命周期等已分批独审集成，范围见AUDIT与任务卡。
 - Q039 DocTransfer库已集成strict apply、descriptor、init、outbound、receive、lookup/resume；库FlushedImport不是网络ACK，Node接入N1另做。
-- Q037 owned MCP回收/claim释放已集成；R1可靠取消/owned runtime close检查点亦已e5e913ff/47d509e2/dd9c45ca集成，dd9时26 payload与Q05212路径逐SHA保留；现c13加入N1后，R1非共同23/N1非共同9/全部Q05212精确保留，catalog键值并集核齐，三个共同源等待组合native验证。A8新增8、原B19 19与正常Tauri caller check过；组合native/App、慢Stop与R2另待。
+- Q037 owned MCP回收、R1持久取消/owned runtime close/自主driver已集成；真实2s metadata启动Stop由2123ms降到约1ms并最终确认持久化，source07原31distinct已过。最新组合ec404又实际通过R1的30父（paired另target未重跑）＋trust/Doc/flow/crash共61父。真正App/serve退出、R2与其它target仍待，不能以库关闭替代整个进程退出。
 - Q033 current GUI协议子集已集成（767aa23d），19项不同回归过；真GUI→Tauri→Rust→host→ACP上传未全验。
 - Q041e bindings生成已集成（c89aa135→670347d7）：实际清理3个过期TS export、11项回归/标准生成/types通过；全Q041与P5未完成。
 
@@ -22,12 +22,12 @@
 
 | owner | 实现树 / baseline | 当前状态 |
 | --- | --- | --- |
-| root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至b196992a（含取消31回归、Q055闭包输入修复、trust18提取）；共同lib/link/proto组合native及App待。 |
-| node_test_review | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-native-provenance@28ed5bee` | 复用原terminal树做Q055，Q05505已fc592fdb→0a888f24集成，20纯控、real03五对照及真实R1 CLI/Node来源接线过；容量错误已停；R1 driver与fixture07已8292→8395提交集成，31distinct全过；Q055 closure06已28ed→bdb689c2提交集成，22纯控及真实无dist Node-only构建/来源接线过，当前clean。 |
-| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@c81d0a18` | 已c81→dd9检查点集成；真实2s metadata阻塞Stop已红，原owner额度错误停；现8292e654 clean，source07实测31父全过并8395集成；旧04/06/各失败均保留。正常Tauri/组合App仍待，不把R1全部/R2标done。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@fdfb6d0b` | N1 crash与source11原17/N0已过；trust提取candidate15真实新3+原15全部过，fdfb→b196提交集成，树clean。Q055 closure06也已提交集成。作者树现27093f4a clean，root的Q054三路径已提交集成；现执行36e3918f组合构建/61回归；大Pair04/claim/wire及优化构建32MiB边界仍待。 |
+| root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至b196992a（含取消31回归、Q055闭包输入修复、trust18提取）；现又集成Q054＋fixture至ec404，组合CLI/Node及61功能父已过，真正App/其余target待。 |
+| node_test_review | 当前R2树 `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@8292e654`；Q055作者树28ed5bee clean | 复用原terminal树做Q055，Q05505已fc592fdb→0a888f24集成，20纯控、real03五对照及真实R1 CLI/Node来源接线过；先前容量错误已恢复；现接R2 Native input原子取消/fence，仅源与fixture、无native，见Q-037-input-cancellation；R1 driver与fixture07已8292→8395提交集成，31distinct全过；Q055 closure06已28ed→bdb689c2提交集成，22纯控及真实无dist Node-only构建/来源接线过，Q055树clean；当前R2树11路径WIP，candidate01保留，root审后正修collect/source一致性与original_parent首次发布竞态，均未native。 |
+| remote_cancel_owner | 原R1 owner已因额度停止，无当前写权 | R1已8292e654→8395提交集成；同树R2当前归node_test_review。旧04/06/各失败均保留，真正App/serve与R2未完成。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@27093f4a` | N1 crash与source11原17/N0已过；trust提取candidate15真实新3+原15全部过，fdfb→b196提交集成，树clean。Q055 closure06也已提交集成。作者树现27093f4a clean，root的Q054三路径已提交集成；组合61已过/槽归；现N2完整Pair/Vouch实现，见Q-039-node-transfer；大Pair04/claim/wire及优化构建32MiB边界仍待。 |
 
-**当前唯一Cargo/native槽已授node_transfer_owner：准备/执行集成36e3918f的Q054组合CLI/Node两build＋61 distinct功能父（R1原30、trust18、doc_state6、io3、flow quiet/Busy/purepull3、crash业务父1；paired另target、真实release32MiB边界另做）。原b196 build-only run02已green/175.036s，root核18dual/2378inputs；其actual inventory02两list通过all1065/ignored58、0业务父，root核9dual/owned组与TMP清，旧槽已正式归还。** 授槽/启动后须核现场，不据旧active.json重启。Q052/R1/N1三个检查点均已集成，组合CLI/Node编译已过，组合功能native/App尚待；R1调用方关闭/R2、N1实际32MiB边界/N2等仍未完成。
+**当前唯一Cargo/native槽空。组合run04/session9898已green退出333.684s：确切2378输入上的正常CLI/Node两构建与61 distinct功能父全过，root独核81dual/所有raw summary/源与实际产物SHA/269组和TMP均清。前run03的case23 EAGAIN失败原件保留；已用本机accept/fcntl诊断并仅修测试Peer显式blocking两行，ec404dd7已提交。没有追加paired另target、真实release32MiB压力父或App测试。node_test_review做R2源码与fixtures，node_transfer_owner已回27093作者树做N2完整Pair/Vouch恢复实现；两者均未授新native。** 授槽/启动后须核现场，不据旧active.json重启。Q052/R1/N1三个检查点均已集成，组合CLI/Node编译及本次61功能父已过，其余target/App尚待；R1调用方关闭/R2、N1实际32MiB边界/N2等仍未完成。
 
 ## Q052：终端当前协议与清屏
 
@@ -41,7 +41,7 @@
 
 ## R1 / R2：智能体取消与退出
 
-- 原R0/receipt focused18项已实际过；旧Stop一次5.27s失败保留，buffered同用例276/213ms不能抹掉outlier。metadata启动可等5s+250ms，真实慢启动时限验证待做。
+- 原R0/receipt focused18项已实际过；旧Stop一次5.27s失败保留，buffered同用例276/213ms不能抹掉outlier。后续真实2s metadata启动fixture已红→约1ms返回并真实durable闭环，source07/最新组合已过；不能倒推为旧5.27s的单独根因证明。
 - S22 stream、GUI tools/network、GUI restart、paired真实认证Cancel四项过，原整run清理红14regular files/1752B保留，未后清；真实晚写推动owned close API。
 - close03具有bounded ClosedRoot fence、显式acquire、冷Root NoCreate、config→executor admission、Arc claim、锁外有限join、Home/Closed/Closing union容量；6个新真实FIFO/claim测试为独进程ignored用例。close只指本进程agent producers/cancel owners，不是全Node IO shutdown或远端Cancel完成。
 - root已接serve_as acquire与Tauri真正Exit调用；Busy/错误保durable root与既有退出行为。GUI fixture改为close→HTTP stop/join→删Root，超时/错误保Root。实际Tauri AppExit尚未编验。
@@ -51,9 +51,9 @@
 
 - **resume06实际A8全绿** `close-a8-run-20261027T034134Z`：Node67.753s+GUI60.667s正常构建，原6个close测试与GUI2各1/0/0，整体180.977s/exit0。root独读raw/result并核80dual/source稳定/cleanup空；66PID/32PGID全退，TMP清，无guard/forced/fallback。当前槽已返。原Node actualtest已内盘保全 `runtime-artifacts/R1-close-a8`，SHA74618b30999017c372519cd392f866d2eca0f4f6ace4f1b983115d81b2c8e071。
 - B19实际paired target52.566s编译过，原R0业务父通过六Prompt/六Cancel/四held与后5/6投递/清理；控制误将worker+外父两次成功summary当异常，原41dual/失败保留，不计成2业务父。root已读完整原raw承认1distinct通过；源码/4binary/8normal稳，组与TMP清。
-- 原tail18实际在 `close-b18-runtime-20261027T035817Z` 全过，各raw唯一1/0/0，0Cargo/0mtime，60.947s/exit0。root逐raw并核91dual；163PID/76PGID全退，TMP清，源/actual4binary/normal8稳。组合原R0恰为B19 19 distinct，原错误收据不回填。正常Tauri lib check实际0/35.297s，当前四critical metadata fresh=false/当前ROOT，root核26dual/源与TMP/组清；作者已提交c81d0a18，root集成e5e913ff/47d509e2/dd9c45ca且26 payload与Q05212路径逐SHA全部保留。App/真实Exit/慢Stop与**R2未知首次Send lookup/lateSend fence**仍待。
+- 原tail18实际在 `close-b18-runtime-20261027T035817Z` 全过，各raw唯一1/0/0，0Cargo/0mtime，60.947s/exit0。root逐raw并核91dual；163PID/76PGID全退，TMP清，源/actual4binary/normal8稳。组合原R0恰为B19 19 distinct，原错误收据不回填。正常Tauri lib check实际0/35.297s，当前四critical metadata fresh=false/当前ROOT，root核26dual/源与TMP/组清；作者已提交c81d0a18，root集成e5e913ff/47d509e2/dd9c45ca且26 payload与Q05212路径逐SHA全部保留。App/真实Exit/慢Stop与**R2未知首次Send lookup/lateSend fence**现已授源码/fixture实现（Q-037-input-cancellation），尚未验证。
 
-### 真实慢metadata Stop红（尚未修复）
+### 历史慢metadata Stop红与已完成的后续闭环
 
 source02只两fixture路径27payload/2353输入；原source01的DeviceId.id编译错误已最小删.id，旧compile101/0父20dual保留。`metadata-startup-red-run-20261027T050904Z` 实际正常libtest63.730s过；zero内外父各1/0/0，16Stop567ms；真实2s启动下slow内外父各0/1/0、first2123ms/16calls2124ms，唯一primary Stop admission blocked，真实gate→exec2.0097135s/同PID/原CLI最终DurablyQueued。实际intent身份、正常close、Pi/metadata ESRCH均过，50dual/10PID/9PGID/TMP清。root已独读result，明确是本次产品红，不倒推旧5.27。
 
@@ -72,7 +72,7 @@ source02只两fixture路径27payload/2353输入；原source01的DeviceId.id编�
 ## 其余完整范围
 
 - Q053全仓fmt基线205个第一方Rust文件差异，尚未迁移；功能集成后独立纯格式批次。
-- Q054私有IO gate typed错误边界由root在N1作者树fdfb上实现3路径候选：gate返回既有Error，两真实WouldBlock显式Busy，普通String保持Storage；新增真实Mutex/OS锁释放重开与坏metadata硬错/保留、诊断不控制分类测试。node_test_review只读独审无阻断，作者27093f4a已36e3918f集成，最新功能native待；不建全仓错误框架。
+- Q054私有IO gate typed错误边界由root在N1作者树fdfb上实现3路径候选：gate返回既有Error，两真实WouldBlock显式Busy，普通String保持Storage；新增真实Mutex/OS锁释放重开与坏metadata硬错/保留、诊断不控制分类测试。node_test_review只读独审无阻断，作者27093f4a已36e3918f集成，同源两构建＋61 distinct实际过（333.684s/81dual/269组与TMP清），本片done；不建全仓错误框架。
 - Q055 candidate04已859b9f7d→d49d88c3提交集成。root独审及真实小型编译先后抓到包外输入未入producer key、hyphen bin名配对、回A漏刷新生成器三处缺口，均保原失败后最小修复。19纯控及real03真实A→B→同源B→A→relocation的5build/5native全过；同源3artifact全fresh/empty refresh，变化正确重建、生成内容与嵌入root正确，66dual/owned组全退/TMP清。R1实际host metadata发现离线全平台依赖问题后CI/doc显式host过滤（9229→16a86），actual CLI rustc.d又确认Node包含providers.json/install.sh，05显式纳key而不放开未知输入（fc592→0a888）。20纯控及真实R1 normalCLI/Node完整来源验证已过；最终整合App与CI远端运行仍待；现又确认Node-only树无dist却被未选web输入阻挡，closure06按request闭包读取states/keys/extra（22纯控过），已在真实N1无dist树成功构建并完整证明Node产物，28ed→bdb689c2 exact2集成，后续复用入口不复制runner。实际Sync/catalog反例证明fresh=true与manifest路径不足，精确refresh只是临时措施，未定性Cargo bug。
 - 仍需Q033真实GUI上传、Q035真实borrow lease、Q043 OS拖放/主动退出/全屏、Q045真实SSH/master/remote lease、Q041 fresh onset/远程/Linux musl/嵌入；余下P1审计、P4规范与工具入口、P5最终同源App全流程。物理iPhone/IME/Windows runtime没有全部证明，类型检查不等于运行通过。
 

@@ -90,3 +90,7 @@ root完成新manifest资源清理后授唯一槽。启动前fresh内盘7,297,744
 ## 范围声明
 
 验证实际Rust MCP dispatch和实际IPC收发；不冒充真实PiSDK/model/mesh、远端agent已停止或远端回滚。库ledger/connect File.lock、重复Stop取消sweep、CLI MCP EOF、真实SDK控制仍按审计卡后续单批。本批只构造第一个可观测的同步MCP local-owner首红，不提出已完成Q037的结论。
+
+## 后续P4 fixture socket模式核对（2026-10-27，root）
+
+组合run03的receipt Peer已实际暴露macOS accepted socket继承O_NONBLOCK的EAGAIN；root真实libc.accept/fcntl诊断见Q054卡。全仓5处set_nonblocking(true)均在tests，没有发现同模式的生产listener。R0 reply与HeldIpc已有WouldBlock＋有限deadline读循环，不能盲目改掉。另 `mcp_worker_tests::environment_fixture`（UnixListener，OpenSSH ssh-add read_exact）与 `AnswerReceiptGate`（TCP，read_to_end）未清accepted模式、未重试，有同类潜在flaky，尚未实际复现/改源。下一片用原真实broker/Answer父定向验收，避免为了两个fixture无条件重跑旧106全套。当前run04只改原receipt Peer两行，不扩本片。
