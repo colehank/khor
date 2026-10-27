@@ -61,16 +61,29 @@ jobs:
         working-directory: apps/gui
       - run: npm ci
         working-directory: apps/agent
-      - run: cargo build --locked -p khor-cli --bin khor
+      - name: Snapshot the actual Cargo graph and prepare the normal worker
+        run: |
+          cargo metadata --locked --format-version 1 > "${{ runner.temp }}/node-metadata.json"
+          python3 scripts/native_provenance.py prepare --metadata "${{ runner.temp }}/node-metadata.json" --target-dir "$CARGO_TARGET_DIR" --package khor-cli --name khor --kind bin --tool "$(rustup which cargo)" --tool "$(rustup which rustc)" --apply-refresh --output "${{ runner.temp }}/cli-prepared.json"
+      - run: cargo build --locked -p khor-cli --bin khor --message-format=json > "${{ runner.temp }}/cli-artifacts.json"
+      - name: Verify the normal worker and prepare the isolated acceptance binary
+        run: |
+          python3 scripts/native_provenance.py verify --prepared "${{ runner.temp }}/cli-prepared.json" --artifacts "${{ runner.temp }}/cli-artifacts.json" --output "${{ runner.temp }}/cli-provenance.json"
+          python3 scripts/native_provenance.py prepare --metadata "${{ runner.temp }}/node-metadata.json" --target-dir "$CARGO_TARGET_DIR" --package khor-node --name khor_node --kind lib --test --tool "$(rustup which cargo)" --tool "$(rustup which rustc)" --prior "${{ runner.temp }}/cli-provenance.json" --apply-refresh --output "${{ runner.temp }}/node-prepared.json"
       - run: cargo test --locked -p khor-node --lib --no-run --message-format=json > "${{ runner.temp }}/node-artifacts.json"
+      - run: python3 scripts/native_provenance.py verify --prepared "${{ runner.temp }}/node-prepared.json" --artifacts "${{ runner.temp }}/node-artifacts.json" --output "${{ runner.temp }}/node-provenance.json"
       - name: Run each agent close acceptance test in its own process
-        run: python3 scripts/run-node-acceptance.py --suite runtime-close --artifacts "${{ runner.temp }}/node-artifacts.json" --output "${{ runner.temp }}/node-native-close"
+        run: python3 scripts/run-node-acceptance.py --suite runtime-close --artifacts "${{ runner.temp }}/node-artifacts.json" --provenance "${{ runner.temp }}/node-provenance.json" --worker-provenance "${{ runner.temp }}/cli-provenance.json" --output "${{ runner.temp }}/node-native-close"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: node-native-close-evidence
           path: |
             ${{ runner.temp }}/node-artifacts.json
+            ${{ runner.temp }}/node-metadata.json
+            ${{ runner.temp }}/cli-artifacts.json
+            ${{ runner.temp }}/*-prepared.json
+            ${{ runner.temp }}/*-provenance.json
             ${{ runner.temp }}/node-native-close
           if-no-files-found: warn
 

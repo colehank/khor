@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Run process-global Node acceptance tests in separate native processes.
 
-Build with `cargo test --locked -p khor-node --lib --no-run
---message-format=json`, save its output, then pass --artifacts and an external
---output directory. The caller owns dependency/build-input provenance; a
-Cargo manifest path alone does not prove that cached dependency bytes match.
+Prepare and verify the build with native_provenance.py, then pass its receipt
+with --provenance. See scripts/NATIVE-PROVENANCE.md. Cargo still runs in the
+caller's existing guarded build phase; this entry only runs proven executables.
 """
 
 import argparse
@@ -17,6 +16,8 @@ import signal
 import subprocess
 import sys
 import time
+
+from native_provenance import key, read_messages, require_provenance
 
 
 SUITES = {
@@ -202,6 +203,8 @@ def select_binary(artifacts, root):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts", type=Path, required=True)
+    parser.add_argument("--provenance", type=Path, required=True)
+    parser.add_argument("--worker-provenance", type=Path)
     parser.add_argument("--suite", choices=SUITES, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -217,9 +220,25 @@ def main():
     (output / "source-before.json").write_text(json.dumps(before, indent=2) + "\n")
     try:
         binary, artifact = select_binary(args.artifacts, root)
+        provenance = json.loads(args.provenance.read_text())
+        require_provenance(provenance, root, artifact)
+        if provenance["messages_sha256"] != key(read_messages(args.artifacts)):
+            raise ValueError("Cargo artifact log differs from the proven build")
+        worker_provenance = None
+        if worker := os.environ.get("KHOR_TEST_MCP_EXECUTABLE"):
+            if args.worker_provenance is None:
+                raise ValueError("The real MCP worker requires --worker-provenance")
+            worker_provenance = json.loads(args.worker_provenance.read_text())
+            worker_row = worker_provenance["selected"]["row"]
+            if (worker_row["executable"] != str(Path(worker).resolve())
+                    or worker_row["profile"]["test"] or worker_row["target"]["kind"] != ["bin"]):
+                raise ValueError("MCP worker is not the proven normal executable")
+            require_provenance(worker_provenance, root, worker_row)
         binary_sha = digest(binary)
         receipt.update(artifact=artifact, binary_sha256=binary_sha,
-                       artifacts_sha256=digest(args.artifacts))
+                       artifacts_sha256=digest(args.artifacts),
+                       provenance_sha256=digest(args.provenance),
+                       worker_provenance_sha256=digest(args.worker_provenance) if worker_provenance else None)
         prefix, count = SUITES[args.suite]
         inventories = []
         for name, flags in (("all", []), ("ignored", ["--ignored"])):
@@ -242,6 +261,9 @@ def main():
                 raise RuntimeError("Source or actual binary changed during acceptance")
             receipt["passes"].append({"test": test, **result})
             print(f"PASS {test}", flush=True)
+        require_provenance(provenance, root, artifact)
+        if worker_provenance:
+            require_provenance(worker_provenance, root, worker_row)
     except Exception as error:
         receipt["error"] = str(error)
     finally:
