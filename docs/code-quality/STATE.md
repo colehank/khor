@@ -29,18 +29,21 @@
 | Q033，root实现、node_test_review独审 | UploadRelay集中网络/线程/socket/gate归属，Fixture负责session/host；for_app命名构造。network block原样、业务tail仅relay字段资格；停止/Close/有限join顺序保。新增Drop的poison锁二次panic已窄修，join失败仍失败。 | 单源357c70707ab674825c90572aea8abf7b0754ef98；原网络块/业务tail语义保，poison窄修独审通过，实际fixture/App待。 |
 | P4入口，shutdown_owner草稿、node_test_review整理、root审 | 默认check/显式write、workspace edition/独立模板/第三方排除、真实formatter禁auto-install；main入口与显式root，import --write探针无I/O副作用。 | 33c8bc1254d26335ddc5ea409d215a8b426bd30a；实际450第一方共同check0/392第三方稳，import探针0副作用，CI接同入口。 |
 
-**当前唯一Cargo/native槽：node_transfer_owner，Pair01后验完成，N0 run02执行中。** Pair01原session67536/controller23369/Cargo23438已退出，禁止重启。ROOT clean33c8/fullframe2388（含gen157/dist277/锁），runner999c2b0e24fbcd7cf77421491e312027c28a36b375ab4d11d8311d59ddd15174/data06c36164…6bf8。OUT Q039/integration-final-network-pair-run01，result SHA2326207322fdf29ecca97961e257fc9bb31cd5c4f297d17b8887b585ed89163e；22dual root逐hash核、source before=after/cleanup空/TMP清。metadata1.10s/build621.07s/原Pair父19.00s（helper18.97s，只计1父），总646.454s，约29,223,902B/原90s/首次与重试/VV/content/epoch1/1/2rows/sameRoot/trusted/第三方拒绝全部通过。预算1200/300/1500、双盘5GiB/8192全保。normalNode与selected local opt3来源后验已齐，owner已顺序接N0 run02：controller41010/Cargo41094/rustc41113，OUT Q039/integration-final-network-n0-run02；exec返回压缩截断，按实际原PID监控，不重启。root不并发Cargo/App。
+**当前唯一Cargo/native槽：node_transfer_owner，budget run03执行中。** session82686/controller54600/Cargo54639；仅当前Node local --lib编译后两个既定32MiB父，OUT Q039/integration-final-network-budget-run03。runner999c2b0e…15174/data b682cee3…e6ac3b，ROOT clean33c8/fullframe2388、1200/300/1500/5GiB/8192-history，产品原32MiB/30s/256KiB/SeenPin/公平不变。禁止并发Cargo/App或重启旧handle。
+
+当前整合前两原父已绿并完成后验：Pair01总646.454s/build621.07s/父19.00s、29,223,902B/原90s/首次重试/VV/content/epoch1/1/2rows/sameRoot/trusted/第三方拒绝全过；result2326207322fdf29ecca97961e257fc9bb31cd5c4f297d17b8887b585ed89163e/provenance528702135233e476de4234e90b8974c551a94ef17405b9acd159b19d11217669。N0 run02总474.977s/build458.410s/case10.494s，25,446,089B/visit1/VV/content/Seen123/Pintrue/capreject0，resultc3151f5f342ce04f2ea6d89f984b48ef1e5eb7aa818f057a7493e19561fccea0/receipt02f5435264bff9e8bdb25f42312e36a696a8b8dde95f424bf05357de7be243c1。各22dual、2388源前后/current等、clean、owned/TMP清；每父有worker仅计1。Pair原session67536/controller23369与N0controller41010已退出，不重启。
 
 已授权同一owner依次仅四既定父/三个local targets：大Pair04→原N0→Node libtest两个真实32MiB边界。每批完整绿/后验才下一；失败立即停，不自动修源/重启/加时/扩大。当前正常Node/selected须freshfalse opt3，后续freshtrue仅同源真实producer reuse；fcb/f7不改。最终Node local libtest receipt将复用给后续受影响组合，避免另编dev Node libtest。
 
 前置原npm run build（gen→tsc→Vite）99.915s exit0，当前33c8 tracked/source1954不变；gen157/tree a5f8941e…30c82，dist277/tree5c487ed4…d135e，非正常CLI/Node producer声明。整run因250个Node26 compile-cache TMP文件保非绿；root在全部组退出/Lsof空/原inode与SHA核后dual ZIP归档3.36MB并移除私有TMP，仅postcleanup，原result不变。外/内Q055/integration-final-frontend-run01及独立postcleanup01。
 
-P5外部Q033 observer/driver/qualityconfig三文件已静态准备，真实invoke仅旁观/原Promise/无fake；未启动服务、App或浏览器，不抢native槽。后续组合纯清单已去重：R2/SH+Q033共69父，与原N2剩46零重叠；当前四全绿后最小剩115（最终Node local libtest复用86、pairing6、A2A18、wire2、core3），连当前四总119 distinct。其余targets及正常CLI/ACP-stub只defaultdev必要编译；shutdown_owner只静态准备既有runner/数据，不启动metadata。大四完成后才冻结执行，GUI实际build覆盖caller编译不重复check。此处尚不宣称组合或App绿。
+P5外部Q033 observer/driver/qualityconfig三文件已静态准备，真实invoke仅旁观/原Promise/无fake；未启动服务、App或浏览器，不抢native槽。后续组合静态计划E/P5/integration-affected-combination-plan01已双盘6文件，runner0cc2cf83…135e/data7da2589d…d33f4，node_test_review独审中，Node receipt尚待run03。清单已去重：R2/SH+Q033共69父，与原N2剩46零重叠；当前四全绿后最小剩115（最终Node local libtest复用86、pairing6、A2A18、wire2、core3），连当前四总119 distinct。其余targets及正常CLI/ACP-stub只defaultdev必要编译；shutdown_owner只静态准备既有runner/数据，不启动metadata。大四完成后才冻结执行，GUI实际build覆盖caller编译不重复check。此处尚不宣称组合或App绿。
 
 ## 原完整目标余项
 
 - 首两故障及autosave/冲突/锁、身份/预算/脱敏、上传收据、poll、页面owner/事件、SSH本地deadline等已有分批实现与独审；详[AUDIT](AUDIT.md)/任务卡。原Q010真实Tauri iOS/Safari已有证据，最终全部同源App仍待，物理iPhone/IME未全验。
-- 原P5仍保：Q033真实ChatView→Tauri→host→独立ACP上传Stop和同socket后续输入；Q035 borrow lease；Q043 OS拖放/正常Quit/全屏；Q045真SSH/master/remote lease；Q041 fresh onset/嵌入提取/Linux/真实remote链；当前组合正常producer与App Exit。类型/fixture/旧分支通过不当全部App/平台通过。
+- 当前已实现批的既定P5仍保：Q033真实ChatView→Tauri→host→独立ACP上传Stop和同socket后续输入；Q035真实page/双本地peer borrow；Q043 OS拖放/正常Quit/全屏；当前组合正常producer与App Exit。Q045本地owner原135回归与真实SSH/master的证据边界单列，不能把本地reap当远端lease。类型/fixture/旧分支通过不当全部App/平台通过。
+- 按最新范围核卡：Q041d fresh-onset仍ready/设计待实施，原卡明确不授权新编译/源码及Linux/musl/SSH外部写入；现33c8该链无WIP。它和未实现的remote lease保原目标待办/下一轮，不新增为当前App前置；物理iPhone/IME与跨OS运行缺口仍诚实保留，不冒已验证。
 - 原P1结构清单和未知项仍在，不冒逐行深审；P4规则/职责/历史注释的收口依已改范围，必要协议/平台/并发注释保留，不追行数/注释数。
 
 ## 仅记录下一轮
