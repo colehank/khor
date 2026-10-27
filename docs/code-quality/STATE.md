@@ -10,21 +10,23 @@
 - **无main合并/ship授权**，用户App/服务/release不动。
 - root独占native/Cargo/App/服务槽。当前所有受控执行均terminal；只有root可启动下一计划。三个agent只静态准备或只读审查，不自行执行。
 
-## 当前唯一下一步：现有N1准入修正实现
+## 当前唯一下一步：原target定向验证正在运行
 
-root已冻结并独审具体设计 `P5/node-open-admission-design01/DESIGN.md` SHA9ac36699d07d5173517972b6f36798d44a8c8bb66f660bec4bf1a010c70fc1b6，以及IMPLEMENTATION-LIMITS.md SHAfeb0f81dd2fa60db433b95293ddf026fe74df700a54fe9d6d6f53507d39560d0；两份非作者静态报告在node-open-admission-review01与node-open-async-review01。一处registry/单constructor，ordinary同进程root准入有界协调；control/meta/未知跨进程OS仍Try。async只等准入，真实MultiThread同线程block_in_place做同步FS，CurrentThread直接同步FS的取舍明示，新async入口缺Tokio立即Err且无副作用/排队；不新增脱离future的constructor或泛化agent-runtime。RootPermit唯一转移、non-Send lease和原FS顺序保，不冒全App关闭屏障。khor_agent stop/answer/cancel_status/cancel_retry与stop_transfer构造也用Try，不能新增1s等待。
+候选已经从a663红基线实现为fccb2a3923e3aa50d69cff9183cb031dc8f74776，再按独审修正async“锁外查期限→等锁→过期仍准入”缝隙为 **669fe9f8cd89005a503dc28a12681f824d5cca56**；wave1已FF仅为验证，不代表任务done。5授权路径/无新模块或依赖，原76行红断言未改。一处owner registry/单constructor/RAII唯一转移、ordinary固定1s与64active/64waiters、control/meta/跨进程Try；async缺Tokio立即Err/需time driver，仅实际MultiThread同线程block_in_place，无裸spawn；CurrentThread同步FS/原FS不可抢占与非全App关闭屏障限制明示。agent stop/answer/cancel_status/cancel_retry与stop_transfer构造Try，approve读回共享同Node，避免间接sync重开。
 
-**可信基线红已完成**：test-only a663b374在现有libtest一个父实际返回`Q039_EARLY_OPEN_ERROR: document transfer state busy`并触发持lease业务断言失败（101/0.10s）。原run `P5/node-open-admission-red-run01` result **8df725e933043f6b04ffe381aa8ad05e9d82f713fdce5161c2c111cafbe62bac**/113.900s整体nongreen保原件；编译成功、source/helpers/guard/owned/TMP/20dual均过。不是编译/setup/调度timeout红，不证明Pi/OS的唯一gate；没有重试父。独审node-open-admission-red-review01/report.json SHA0c2ee8903e0e6b865b1bf13dc655cfb8f5ddf98256ec63a064ca20cfca35f05e，17项证据检查（非业务测试）满足，未到的release后anchor断言不冒通过。
+独立源审：P5/node-open-admission-candidate-review01保留fccb期限阻断原REVIEW，再追加669 DELTA（SHA6ac35fbcc2404bfa5056d7ab2d146e9405d264367bad2a516afde43ce394f704）确认清除；async/core半片P5/node-open-admission-async-candidate-review01/report.json SHAa40b58cfaf7096a3d7cf7556e25f9be8cb89ca8ab5e159052dd42fde95aae310。静态通过不冒编译/Send/运行绿。具体DESIGN9ac366…fc1b6 +最新addendum feb0f81d…60d0双盘，candidate01保fccb原字节，不覆盖旧证据。
 
-completion_audit已获实现/静态测试准备授权，复用内盘overwrite-recovery树的新分支`fix/quality-node-open-admission@a663b374`；原130fb997分支保留，未新建worktree。仅设计列出的6个路径与原libtest，root写中央docs；作者无Cargo/native/App/服务授权。现阶段源码候选待交付、未绿，不重跑115/旧GUI。q043_app_acceptance只做本次红证据独审。root单独调度后续候选验证，当前原10722已exit1，无live native slot。
+**root唯一Cargo/native槽live：exec session30582**，命令P5/node-open-admission-green-plan01/run.py --execute-authorized，输出P5/node-open-admission-green-run01，TMP /tmp/knopgreen1。只build现有node libtest+normal CLI两个target，按新full2388 frame **e4b37785c50e3236221692932380008d2c8ffabb8a1915131cc9a91bf6d5a808**；13父=3准入+3旧IO完整性+1原中断Pair恢复+6原退出/setup（含原062失败）。原flags/断言/worker/body/3summary恢复与2summary退出保留，runtime仅六原父获本轮真实CLI，无stub/凭据；旧115不重跑/不回填。原f7/fcb/300step720total/5GiB/512/jobs1/inc0/source/owned/TMP/dual门保。代码作者已退出，无人可在该run terminal前改wave1来源或重启同handle；先poll30582/核progress再决定。观察超时不是终止。
+
+可信红原run保非绿：P5/node-open-admission-red-run01 result8df725e933043f6b04ffe381aa8ad05e9d82f713fdce5161c2c111cafbe62bac/113.900s；actual Busy+持lease业务断言101/0.10s，非compile/setup/无调度。独审0c2ee890…f05e，17证据检查、20dual/source/helpers/owned/TMP过；release后anchor断言尚待候选通过，不证明Pi/OS唯一gate。当前没有新业务pass；本次真实App/Pi/borrow/OS尚未重启。
 
 ## 当前源码、产物与环境
 
-集成：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1@a663b374940c126c43c38bdcf68141eee1bb9849` trackedclean；新提交仅cfg(test)增加76行回归。当前full2388输入frame SHA **54756f5a436415b3e751ee39a64da4e8a8e0c62270977899b3e7e02b641ff8b8**；原GUI/既定组合495d输入frame为36f15241f5524d1e900d9b160087eb26b512a5db3f217c0713a869500efaf07e（含gen157/dist277/模块锁）。生产与21b1一致，56bde仅原030失败diagnostic，495d仅Peer fixture精确Busy→Refused；原testbody不变。
+集成：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1@669fe9f8cd89005a503dc28a12681f824d5cca56` trackedclean（候选验证中）。当前full2388输入frame SHA **e4b37785c50e3236221692932380008d2c8ffabb8a1915131cc9a91bf6d5a808**；红基线a663/test-only frame54756f5a436415b3e751ee39a64da4e8a8e0c62270977899b3e7e02b641ff8b8；原GUI/既定组合495d输入frame为36f15241f5524d1e900d9b160087eb26b512a5db3f217c0713a869500efaf07e（含gen157/dist277/模块锁）。生产与21b1一致，56bde仅原030失败diagnostic，495d仅Peer fixture精确Busy→Refused；原testbody不变。
 
 main `/Users/zgh/Desktop/working/khor@8704a503a27b36ad58f922690de50e766f8bd485`不动。协调目录即本页所在plan树，root写中央docs。
 
-**不重跑115；候选未完成前不编译。** 正常dev GUI **f76302af7b61b59c1d01172ee4209c1c9cb6c80bd6381ee760468527624c865d** /374932072B，实际producer `P5/Q033-quality-gui-build-run02` result ec56eb347c058b1a167e5fd8807fdd7cf1a57891cc93cae9e6d3f1019385e2bf；build/artifact/source/cleanup通过，自动Q055 proof因TAURI_CONFIG未覆盖仍nongreen，不能伪造receipt。core-helper-run02完整provenance true：8115c4d2b35760839818aa80e8b0f9b1a8629954689d7423455126e195b12d2b；`debug/deps/chat_upload_cancel-a98ef2c294b70f0c` SHA fa77eac90f78bc7df46506d24a982bda54c42d9aa3051756cf25cd924d8d0552。
+**不重跑115；本次唯一编译30582按上述计划运行。旧GUI/CLI normal exe现已可逆归档，不能启动旧plan；待本次CLI与后续GUI刷新实际producers。** 正常dev GUI **f76302af7b61b59c1d01172ee4209c1c9cb6c80bd6381ee760468527624c865d** /374932072B，实际producer `P5/Q033-quality-gui-build-run02` result ec56eb347c058b1a167e5fd8807fdd7cf1a57891cc93cae9e6d3f1019385e2bf；build/artifact/source/cleanup通过，自动Q055 proof因TAURI_CONFIG未覆盖仍nongreen，不能伪造receipt。core-helper-run02完整provenance true：8115c4d2b35760839818aa80e8b0f9b1a8629954689d7423455126e195b12d2b；`debug/deps/chat_upload_cancel-a98ef2c294b70f0c` SHA fa77eac90f78bc7df46506d24a982bda54c42d9aa3051756cf25cd924d8d0552。
 
 五必需path/SHA固定双盘`P5/Q033-real-app-actual-producers01.json`的origins；其旧status/launcher是历史，不作当前状态。normal CLI retained `debug/khor` SHA24b1ce4685b560c6e930ddf1dc974925bda45c061a0a027d549d41aa433e3e91，原receipt22fd...28df7，1953源条目与当前frame匹配；GUI合法重编共享deps后只映射实际exe/stat/源码，不称旧CLI full require仍真。
 
@@ -102,3 +104,8 @@ E `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`；I `/Users/zgh
 红run完成的唯一Node libtest exe（275818216B/SHA1b7b418a299a3a2df72dc2174c5b888db8cd9434e4e99a6decef2bce33fe0e37）已在root+非作者检查actual binary/depinfo及20dual、无lsof后可逆归档，避免下轮链接双份触5GiB门。索引P5/node-open-red-binary-archive01/index.json；ZIP I/node-open-red-a663b374-libtest.zip，66276089B/SHA67e1bf2f5e46073553e48deb732b2e6afbc974947f60d87786f6ad68ad7faca5。只unlink该exe，depinfo/原receipt/result/log/source、normalGUI/core/CLI/deps都保；现在不能冒称原full producer receipt当前完整，恢复bytes/mode/mtime才可重新核，inode是历史。外盘约5.97GB/内约8.39GB，启动再核门。
 
 Fullscreen分类补核（只读）：main8704与495d的App挂载及resize都调用同一win.isFullscreen，@tauri-apps/api2.11.1锁一致；本轮仅改成listenNativeEvent注册/回收，因此OS回调0不能整体当旧问题。已展开固定Tauri2.11.5生成ACL的core:default→core:window:default→allow-is-fullscreen：若引用default会授权，但当前三个capability均未引用该default或具体permission；tauri-utils2.9.3只展开明确引用集合，无隐式grant。故“静态缺授权”候选有依据，但不是原run唯一原因证明，也不免验新listener生命周期。未修改权限/新增运行或探针；停止该源审，原OS结果非绿保持。
+
+
+候选生产Node已改变，旧normal CLI24b1…3e91与GUI f763…65d两精确task-owned无占用exe已可逆归档并unlink，索引P5/node-open-obsolete-producers-archive01；CLI ZIP I/node-open-previous-cli-24b1ce46.zip，69135437B/SHA99948389720ba00e941cd41ab15c9382797c8e5dade39a9d1d09773b00275080；GUI复用既有8a9bf6…6c30 ZIP。只保历史receipt不冒当前完整；core-helper fa77实际exe保留，但生产Node变更后仍需新source产物，旧P5 plan不得重启。用户main/release/App均未动。
+
+为同源2target和后续GUI临时链接留空间，仅10个>300MB的**旧khor-node自身** rlib/rmeta变体已逐SHA/stat/无编译及lsof、完整ZIP解压SHA核后可逆归档；原4178641624B，I/node-old-large-variants-before-669fe9f8.zip 1174824236B/SHA2151b69c7da5dc28e6f2ae93b1692848d93fb56fd9103ba7f42147da7f6de3d2，索引P5/node-open-old-node-variants-archive01。普通外部依赖/源码/depinfo/fingerprint及用户targets不清。旧full producer需恢复对应bytes/mode/mtime后才可重新核；历史来源与原结果不回填。完成后实测外盘6.90GB/内7.13GB，不能以逻辑unlink大小推算实际APFS回收；运行guard继续核5GiB。

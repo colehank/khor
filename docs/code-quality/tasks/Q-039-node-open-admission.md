@@ -1,6 +1,6 @@
 # Q039/N1：已改 Node 打开准入边界的集成收尾
 
-状态：implementation working；owner completion_audit，root审查/集成/唯一运行槽。不是新独立模块或新增治理批次；可信基线红已达、候选未交付。基线wave1 integrate/code-quality-wave1@495d096d54ea083304031423ca052f87dd9bc75e，tracked clean。main8704不动，无merge/ship授权。
+状态：candidate verification running；owner completion_audit，root审查/集成/唯一运行槽。不是新独立模块或新增治理批次；可信基线红已达、候选未交付。基线wave1 integrate/code-quality-wave1@495d096d54ea083304031423ca052f87dd9bc75e，tracked clean。main8704不动，无merge/ship授权。
 
 ## 为什么属于已开始工作
 
@@ -36,3 +36,6 @@ root在两份非作者报告后接管第一版具体设计，双盘node-open-adm
 
 
 非作者红独审已冻结node-open-admission-red-review01/report.json SHA0c2ee8903e0e6b865b1bf13dc655cfb8f5ddf98256ec63a064ca20cfca35f05e（17项证据检查，非17业务测试）。Release后身份断言未到达，仍待候选绿。实施addendum最新SHAfeb0f81dd2fa60db433b95293ddf026fe74df700a54fe9d6d6f53507d39560d0；新async入口要求Tokio，缺失立即Err、不无声退同步1s等待。原DESIGN不改，以最新addendum为准。已归档的唯一红unit exe及资源边界见STATE，原结果保非绿。
+
+
+候选669fe9f8（fccb+最小deadline临界区修正）已按两路静态独审FF到wave1，仅FOR VALIDATION。root在exec30582按双盘P5/node-open-admission-green-plan01执行13个当前/原父及node libtest+normal CLI两target，source2388frame e4b377…a808，尚无运行pass。原红不回填。唯一槽与恢复/资源/旧产物归档索引及精确版本见STATE；run terminal前严禁改来源或另起Cargo。main/ship无授权，真实App后续仍待。
