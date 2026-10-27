@@ -59,6 +59,21 @@ pub struct Submission {
     pub accepted: bool,
 }
 
+/// Exact-input cancellation evidence. It never exposes a task's history.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum InputResolution {
+    Fenced,
+    Known {
+        task: TaskRef,
+        state: protocol::TaskState,
+        revision: u64,
+        cancellation_requested: bool,
+    },
+    Superseded {
+        task: TaskRef,
+    },
+}
+
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
@@ -66,6 +81,7 @@ pub enum Error {
     Invalid(&'static str),
     NotFound(String),
     Conflict,
+    InputFenced,
     Busy,
     Terminal,
     NotCancelable(String),
@@ -82,6 +98,9 @@ impl Error {
             Self::NotCancelable(id) => A2AError::task_not_cancelable(id),
             Self::Invalid(why) => A2AError::invalid_params(*why),
             Self::Conflict => A2AError::invalid_params("Message ID or session binding conflict"),
+            Self::InputFenced => {
+                A2AError::unsupported_operation("This input was canceled before acceptance")
+            }
             Self::Busy => A2AError::unsupported_operation("The context is already executing"),
             Self::Terminal => A2AError::unsupported_operation("The task is terminal"),
             _ => A2AError::internal("Delegation storage or executor failure"),
@@ -97,6 +116,7 @@ impl std::fmt::Display for Error {
             Self::Invalid(e) => e.fmt(f),
             Self::NotFound(id) => write!(f, "Task or context not found: {id}"),
             Self::Conflict => f.write_str("Message ID or session binding conflict"),
+            Self::InputFenced => f.write_str("This input was canceled before acceptance"),
             Self::Busy => f.write_str("The context is already executing"),
             Self::Terminal => f.write_str("The task is terminal"),
             Self::NotCancelable(id) => write!(f, "Task cannot be canceled: {id}"),

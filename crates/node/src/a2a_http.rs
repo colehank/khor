@@ -723,7 +723,7 @@ pub(crate) fn handle_bound(
     runtime()?.block_on(async {
         tokio::time::timeout(
             Duration::from_secs(12),
-            handle_async(node, caller, action.into_action(agent.into()), Some(digest)),
+            handle_async(node, caller, action.into_action(agent.into())?, Some(digest)),
         )
         .await
         .map_err(|_| "A2A bound operation outcome is unknown".to_owned())?

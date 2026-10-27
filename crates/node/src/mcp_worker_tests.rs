@@ -221,11 +221,13 @@ async fn real_worker_authorization_and_original_parent_identity_survive_the_proc
     assert_eq!(later_record.parent.as_ref(), Some(&parent));
     for run in ["worker-parent-fixture", later_run] {
         let directory = crate::delegation::children_dir(node.root(), run);
-        let files: Vec<_> = fs::read_dir(directory)
+        let files: Vec<_> = fs::read_dir(&directory)
             .unwrap()
             .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
             .collect();
         assert_eq!(files.len(), 1);
+        assert_eq!(files[0], directory.join(format!("{key}.json")));
         let link: crate::delegation::ChildLink =
             serde_json::from_slice(&fs::read(&files[0]).unwrap()).unwrap();
         assert_eq!(link.binding, binding);
@@ -317,6 +319,7 @@ async fn environment_fixture(root: &Path) {
                 Err(error) => return Err(error.to_string()),
             }
         };
+        stream.set_nonblocking(false).map_err(|e| e.to_string())?;
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .map_err(|e| e.to_string())?;
@@ -555,6 +558,7 @@ impl AnswerReceiptGate {
                             Err(error) => return Err(error.to_string()),
                         }
                     };
+                    stream.set_nonblocking(false).map_err(|e| e.to_string())?;
                     stream
                         .set_read_timeout(Some(Duration::from_secs(2)))
                         .map_err(|e| e.to_string())?;
@@ -703,9 +707,26 @@ async fn answering_an_existing_task_keeps_a_durable_link_when_cancelled_after_ac
     let links: Vec<_> = fs::read_dir(&directory)
         .unwrap()
         .map(|e| e.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
         .collect();
     assert_eq!(links.len(), 1);
-    let before = fs::read(&links[0]).unwrap();
+    let crate::delegation::Answer::Binding { binding } = node
+        .delegation_here(
+            node.device(),
+            crate::delegation::Action::ResolveBinding {
+                agent: "fixture".into(),
+                task: Some(record.task.id.clone()),
+            },
+        )
+        .unwrap()
+    else {
+        panic!("missing actual Answer binding");
+    };
+    let expected_link = directory.join(
+        crate::delegation::child_key(&binding, &format!("task:{}", record.task.id)).unwrap(),
+    );
+    assert_eq!(links[0], expected_link);
+    let before = fs::read(&expected_link).unwrap();
     let link: Value = serde_json::from_slice(&before).unwrap();
     assert_eq!(link["task"], record.task.id);
     assert_eq!(link["message"], format!("task:{}", record.task.id));

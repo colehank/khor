@@ -1,4 +1,6 @@
-use crate::{AgentTarget, DeviceId, Error, Record, Result, SessionRef, Submission, TaskRef};
+use crate::{
+    AgentTarget, DeviceId, Error, InputResolution, Record, Result, SessionRef, Submission, TaskRef,
+};
 use a2a::{Message, Role, Task, TaskState, TaskStatus};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -46,11 +48,99 @@ struct Context {
     caller: DeviceId,
     session: Option<SessionRef>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Dedup {
-    fingerprint: String,
-    task: String,
+    fingerprint: Option<String>,
+    task: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fence: Option<InputFence>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InputFence {
+    caller: DeviceId,
+    target: AgentTarget,
+    message: String,
+    parent: Option<TaskRef>,
+}
+
+impl Dedup {
+    fn validate(&self, caller: DeviceId, to: &AgentTarget, message: &str) -> Result<()> {
+        match (&self.fingerprint, &self.task, &self.fence) {
+            (Some(fingerprint), Some(task), None)
+                if fingerprint.len() == 64
+                    && fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+            {
+                opaque(task)
+            }
+            (None, None, Some(fence))
+                if fence.caller == caller
+                    && fence.target == *to
+                    && fence.message == message
+                    && fence.parent.as_ref().is_none_or(|parent| {
+                        parent.home == caller && opaque(&parent.id).is_ok()
+                    }) =>
+            {
+                Ok(())
+            }
+            _ => Err(Error::Corrupt(
+                "Input index has no valid acceptance or exact fence".into(),
+            )),
+        }
+    }
+}
+
+fn input_resolution(
+    home: DeviceId,
+    state: &Ledger,
+    caller: DeviceId,
+    to: &AgentTarget,
+    message: &str,
+) -> Result<Option<InputResolution>> {
+    let key = fingerprint(&(caller, &to.agent, message))?;
+    let Some(prior) = state.messages.get(&key) else {
+        return Ok(None);
+    };
+    prior.validate(caller, to, message)?;
+    let Some(task) = &prior.task else {
+        return Ok(Some(InputResolution::Fenced));
+    };
+    let entry = caller_entry(state, caller, to, task)?;
+    let task = TaskRef {
+        home,
+        id: task.clone(),
+    };
+    if entry.pending_message != message {
+        return Ok(Some(InputResolution::Superseded { task }));
+    }
+    Ok(Some(InputResolution::Known {
+        task,
+        state: entry.task.status.state.clone(),
+        revision: entry.revision,
+        cancellation_requested: entry.cancellation_requested,
+    }))
+}
+
+fn cancel_entry(state: &mut Ledger, caller: DeviceId, to: &AgentTarget, id: &str) -> Result<()> {
+    let entry = caller_entry(state, caller, to, id)?;
+    if entry.task.status.state == TaskState::Canceled {
+        return Ok(());
+    }
+    if entry.task.status.state.is_terminal() {
+        return Err(Error::NotCancelable(id.into()));
+    }
+    let idle = entry.task.status.state != TaskState::Working;
+    let entry = state.tasks.get_mut(id).expect("validated task");
+    if !entry.cancellation_requested {
+        entry.cancellation_requested = true;
+        entry.revision += 1;
+    }
+    if idle {
+        status(entry, TaskState::Canceled, None);
+    }
+    Ok(())
 }
 
 fn json_error(error: serde_json::Error) -> Error {
@@ -296,11 +386,15 @@ impl Store {
         let digest = fingerprint(&(to, message, &parent))?;
         self.transaction(true, |state| {
             if let Some(prior) = state.messages.get(&key) {
-                if prior.fingerprint != digest {
+                prior.validate(caller, to, &message.message_id)?;
+                let Some(task) = &prior.task else {
+                    return Err(Error::InputFenced);
+                };
+                if prior.fingerprint.as_ref() != Some(&digest) {
                     return Err(Error::Conflict);
                 }
                 return Ok(Submission {
-                    record: record(state, &prior.task)?,
+                    record: record(state, task)?,
                     accepted: false,
                 });
             }
@@ -388,8 +482,9 @@ impl Store {
             state.messages.insert(
                 key,
                 Dedup {
-                    fingerprint: digest,
-                    task: task_id.clone(),
+                    fingerprint: Some(digest),
+                    task: Some(task_id.clone()),
+                    fence: None,
                 },
             );
             Ok(Submission {
@@ -452,26 +547,83 @@ impl Store {
     pub fn request_cancel(&self, caller: DeviceId, to: &AgentTarget, id: &str) -> Result<Record> {
         target(self.home, to)?;
         self.transaction(true, |state| {
-            let entry = caller_entry(state, caller, to, id)?;
-            if entry.task.status.state == TaskState::Canceled {
-                return record(state, id);
-            }
-            if entry.task.status.state.is_terminal() {
-                return Err(Error::NotCancelable(id.into()));
-            }
             // Submitted work has not started. Input/auth-required states are
             // quiescent by the executor contract; another task holding this
             // context's lease must not strand their cancellation.
-            let idle = entry.task.status.state != TaskState::Working;
-            let entry = state.tasks.get_mut(id).expect("validated task");
-            if !entry.cancellation_requested {
-                entry.cancellation_requested = true;
-                entry.revision += 1;
-            }
-            if idle {
-                status(entry, TaskState::Canceled, None);
-            }
+            cancel_entry(state, caller, to, id)?;
             record(state, id)
+        })
+    }
+
+    /// A read-only index observation. None is not proof that a late input is fenced.
+    pub fn find_owned_message(
+        &self,
+        caller: DeviceId,
+        to: &AgentTarget,
+        message: &str,
+    ) -> Result<Option<InputResolution>> {
+        target(self.home, to)?;
+        opaque(message)?;
+        self.transaction(false, |state| {
+            input_resolution(self.home, state, caller, to, message)
+        })
+    }
+
+    /// Lookup, fence, and current-input cancellation share accept's write lock.
+    /// Fences retain the exact caller/agent/message until explicit store removal;
+    /// they use the existing bounded ledger, with no TTL or automatic pruning.
+    pub fn cancel_input(
+        &self,
+        caller: DeviceId,
+        to: &AgentTarget,
+        message: &str,
+        parent: Option<TaskRef>,
+    ) -> Result<InputResolution> {
+        target(self.home, to)?;
+        opaque(message)?;
+        if let Some(parent) = &parent {
+            opaque(&parent.id)?;
+            if parent.home != caller {
+                return Err(Error::Invalid("Input parent belongs to another caller"));
+            }
+        }
+        let key = fingerprint(&(caller, &to.agent, message))?;
+        self.transaction(true, |state| {
+            if let Some(prior) = state.messages.get(&key).cloned() {
+                prior.validate(caller, to, message)?;
+                if let Some(fence) = prior.fence {
+                    if fence.parent != parent {
+                        return Err(Error::Conflict);
+                    }
+                    return Ok(InputResolution::Fenced);
+                }
+                let id = prior.task.expect("validated input task");
+                let entry = caller_entry(state, caller, to, &id)?;
+                if entry.parent != parent {
+                    return Err(Error::Conflict);
+                }
+                // A task can accept a later message. An old Stop must not
+                // cancel that new turn between lookup and a separate Cancel.
+                if entry.pending_message == message && !entry.task.status.state.is_terminal() {
+                    cancel_entry(state, caller, to, &id)?;
+                }
+            } else {
+                state.messages.insert(
+                    key,
+                    Dedup {
+                        fingerprint: None,
+                        task: None,
+                        fence: Some(InputFence {
+                            caller,
+                            target: to.clone(),
+                            message: message.into(),
+                            parent,
+                        }),
+                    },
+                );
+            }
+            input_resolution(self.home, state, caller, to, message)?
+                .ok_or_else(|| Error::Corrupt("Input resolution disappeared".into()))
         })
     }
 

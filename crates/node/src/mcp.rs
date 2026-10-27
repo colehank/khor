@@ -343,7 +343,7 @@ pub(crate) fn call_with_parent(
                         message.metadata = Some([("khor.cwd".into(), json!(cwd))].into());
                     }
                     if let Some(parent) = &parent {
-                        crate::delegation::track_child(
+                        crate::delegation::track_input(
                             root,
                             parent,
                             &s("machine"),

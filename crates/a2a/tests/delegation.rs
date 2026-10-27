@@ -683,3 +683,258 @@ fn child_executor() {
         std::thread::park_timeout(Duration::from_secs(1));
     }
 }
+
+#[test]
+fn accepted_input_recovers_exact_task_without_replaying_send() {
+    use khor_a2a::InputResolution;
+    let scratch = Scratch::new();
+    let store = scratch.store();
+    let parent = Some(TaskRef {
+        home: CALLER,
+        id: "original-parent".into(),
+    });
+    let message = input("accepted before its response is lost");
+    let accepted = store
+        .accept(CALLER, &target(), &message, parent.clone())
+        .unwrap();
+    // Discard the response boundary, then use only the durable exact-input index.
+    let id = accepted.record.task.id;
+    drop(store);
+    let reopened = scratch.store();
+    assert!(
+        matches!(reopened.find_owned_message(CALLER, &target(), &message.message_id).unwrap(),
+        Some(InputResolution::Known { task, state: TaskState::Submitted, .. }) if task.id == id && task.home == HOME)
+    );
+    let resolved = reopened
+        .cancel_input(CALLER, &target(), &message.message_id, parent.clone())
+        .unwrap();
+    let InputResolution::Known {
+        task,
+        state,
+        revision,
+        cancellation_requested,
+    } = resolved
+    else {
+        panic!("accepted input disappeared")
+    };
+    assert_eq!(task.id, id);
+    assert_eq!(state, TaskState::Canceled);
+    assert!(cancellation_requested);
+    let again = reopened
+        .cancel_input(CALLER, &target(), &message.message_id, parent)
+        .unwrap();
+    assert!(
+        matches!(again, InputResolution::Known { revision: same, state: TaskState::Canceled, .. } if same == revision)
+    );
+    let record = reopened.get(CALLER, &target(), &id).unwrap();
+    assert_eq!(
+        record
+            .task
+            .history
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry.message_id == message.message_id)
+            .count(),
+        1
+    );
+    assert_eq!(
+        reopened
+            .list(CALLER, &target(), None, None, 100)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn absent_input_fence_survives_restart_and_rejects_late_send() {
+    use khor_a2a::InputResolution;
+    let scratch = Scratch::new();
+    let message = input("not yet admitted");
+    let parent = Some(TaskRef {
+        home: CALLER,
+        id: "original-parent".into(),
+    });
+    {
+        let store = scratch.store();
+        assert_eq!(
+            store
+                .find_owned_message(CALLER, &target(), &message.message_id)
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            store
+                .cancel_input(CALLER, &target(), &message.message_id, parent.clone())
+                .unwrap(),
+            InputResolution::Fenced
+        );
+    }
+    let reopened = scratch.store();
+    assert_eq!(
+        reopened
+            .find_owned_message(CALLER, &target(), &message.message_id)
+            .unwrap(),
+        Some(InputResolution::Fenced)
+    );
+    assert_eq!(
+        reopened
+            .cancel_input(CALLER, &target(), &message.message_id, parent.clone())
+            .unwrap(),
+        InputResolution::Fenced
+    );
+    assert!(matches!(
+        reopened.accept(CALLER, &target(), &message, parent),
+        Err(Error::InputFenced)
+    ));
+    assert!(
+        reopened
+            .list(CALLER, &target(), None, None, 100)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        reopened
+            .accept(CALLER, &target(), &input("different message"), None)
+            .is_ok()
+    );
+    // A malformed None task is not silently accepted as a durable fence.
+    let path = scratch.0.join("a2a/tasks.json");
+    let mut ledger: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let fence = ledger["messages"]
+        .as_object_mut()
+        .unwrap()
+        .values_mut()
+        .find(|entry| entry["fence"].is_object())
+        .unwrap();
+    fence.as_object_mut().unwrap().remove("fence");
+    fs::write(&path, serde_json::to_vec(&ledger).unwrap()).unwrap();
+    assert!(matches!(
+        reopened.cancel_input(CALLER, &target(), &message.message_id, None),
+        Err(Error::Corrupt(_))
+    ));
+}
+
+#[test]
+fn input_cancellation_isolates_caller_home_agent_and_original_parent() {
+    use khor_a2a::InputResolution;
+    let scratch = Scratch::new();
+    let store = scratch.store();
+    let message = input("same opaque message id");
+    let parent = Some(TaskRef {
+        home: CALLER,
+        id: "first-parent".into(),
+    });
+    let accepted = store
+        .accept(CALLER, &target(), &message, parent.clone())
+        .unwrap();
+    assert!(matches!(
+        store.cancel_input(
+            CALLER,
+            &target(),
+            &message.message_id,
+            Some(TaskRef {
+                home: CALLER,
+                id: "later-parent".into()
+            })
+        ),
+        Err(Error::Conflict)
+    ));
+    assert!(
+        store
+            .cancel_input(
+                CALLER,
+                &AgentTarget {
+                    home: CALLER,
+                    agent: target().agent
+                },
+                &message.message_id,
+                parent.clone()
+            )
+            .is_err()
+    );
+    assert!(
+        store
+            .cancel_input(
+                CALLER,
+                &target(),
+                &message.message_id,
+                Some(TaskRef {
+                    home: HOME,
+                    id: "foreign-parent".into()
+                })
+            )
+            .is_err()
+    );
+    let other_caller = DeviceId([3; 32]);
+    assert_eq!(
+        store
+            .cancel_input(other_caller, &target(), &message.message_id, None)
+            .unwrap(),
+        InputResolution::Fenced
+    );
+    let other_agent = AgentTarget {
+        home: HOME,
+        agent: "other-agent".into(),
+    };
+    assert_eq!(
+        store
+            .cancel_input(CALLER, &other_agent, &message.message_id, None)
+            .unwrap(),
+        InputResolution::Fenced
+    );
+    let untouched = store
+        .get(CALLER, &target(), &accepted.record.task.id)
+        .unwrap();
+    assert_eq!(untouched, accepted.record);
+    assert!(matches!(
+        store
+            .cancel_input(CALLER, &target(), &message.message_id, parent)
+            .unwrap(),
+        InputResolution::Known {
+            state: TaskState::Canceled,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn older_input_is_superseded_without_canceling_a_later_message_on_the_same_task() {
+    use khor_a2a::InputResolution;
+    let scratch = Scratch::new();
+    let store = scratch.store();
+    let first = input("ask");
+    let accepted = accept(&store, &first);
+    let id = accepted.record.task.id;
+    dispatch(store.clone(), &id, &first.message_id, &ReportExecutor)
+        .await
+        .unwrap();
+    let mut next = input("new turn");
+    next.task_id = Some(id.clone());
+    let pending = accept(&store, &next).record;
+    assert_eq!(pending.task.status.state, TaskState::Submitted);
+    assert_eq!(
+        store
+            .cancel_input(CALLER, &target(), &first.message_id, None)
+            .unwrap(),
+        InputResolution::Superseded {
+            task: TaskRef {
+                home: HOME,
+                id: id.clone()
+            }
+        }
+    );
+    assert_eq!(store.get(CALLER, &target(), &id).unwrap(), pending);
+    let completed = dispatch(store.clone(), &id, &next.message_id, &ReportExecutor)
+        .await
+        .unwrap();
+    assert_eq!(completed.task.status.state, TaskState::Completed);
+    assert!(!completed.cancellation_requested);
+    assert!(matches!(
+        store
+            .cancel_input(CALLER, &target(), &first.message_id, None)
+            .unwrap(),
+        InputResolution::Superseded { .. }
+    ));
+}

@@ -1029,7 +1029,9 @@ async fn a_bad_source_or_receipt_stays_unresolved_while_valid_siblings_cancel() 
             let mut paths: Vec<_> = fs::read_dir(folder)
                 .unwrap()
                 .map(|entry| entry.unwrap().path())
+                .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
                 .collect();
+            assert_eq!(paths.len(), 3, "all three business links must exist");
             paths.sort();
             paths[0].clone()
         };
@@ -1450,11 +1452,8 @@ async fn known_delegate_continuation_survives_lost_reply_and_stop_cancels_exact_
     }
     let applied = peer.events.lock().unwrap().contains(&(task.clone(), false));
     let links = delegation::children_dir(node.root(), &run);
-    let before_link = fs::read_dir(&links)
+    let before_link = fs::read(links.join(delegation::child_key(&binding, request).unwrap()))
         .ok()
-        .and_then(|mut entries| entries.next())
-        .and_then(Result::ok)
-        .and_then(|entry| fs::read(entry.path()).ok())
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
     let stopped = node
         .khor_agent_here(Action::Stop { run: run.clone() })
@@ -1622,3 +1621,6 @@ async fn retry_preserves_parseable_foreign_issue_identity_and_cancels_valid_rece
         );
     }
 }
+
+#[path = "remote_cancel_input_tests.rs"]
+mod input_tests;

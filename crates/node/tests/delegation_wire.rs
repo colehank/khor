@@ -17,6 +17,9 @@ use std::{
 };
 
 fn main() {
+    if let Some(code) = khor_node::mcp_worker::main_if_requested() {
+        std::process::exit(code);
+    }
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|s| s == "_ghost") {
         let root = PathBuf::from(std::env::var_os("KHOR_HOME").unwrap());
@@ -34,10 +37,13 @@ fn main() {
     }
     const BOUND_PARENT: &str =
         "paired_bound_delegation_keeps_authenticated_identity_and_original_parent";
+    const INPUT_PARENT: &str = "paired_cancel_input_fences_absent_message_before_late_send";
     if args.iter().any(|s| s == "--list") {
         println!("local_and_remote_delegation: test");
         #[cfg(unix)]
         println!("{BOUND_PARENT}: test");
+        #[cfg(unix)]
+        println!("{INPUT_PARENT}: test");
         return;
     }
     let exact: Vec<_> = args
@@ -52,7 +58,7 @@ fn main() {
         }
         let selected = args.get(exact[0].0 + 1).map(String::as_str);
         match selected {
-            Some(BOUND_PARENT) => {
+            Some(BOUND_PARENT) | Some(INPUT_PARENT) => {
                 #[cfg(not(unix))]
                 {
                     eprintln!("paired Bound process evidence is unsupported on this platform");
@@ -66,10 +72,16 @@ fn main() {
                         .enable_all()
                         .build()
                         .unwrap()
-                        .block_on(run_bound_pair());
-                    println!("test {BOUND_PARENT} ... ok");
+                        .block_on(async {
+                            if selected == Some(INPUT_PARENT) {
+                                run_input_pair().await;
+                            } else {
+                                run_bound_pair().await;
+                            }
+                        });
+                    println!("test {} ... ok", selected.unwrap());
                     println!(
-                        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out"
+                        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out"
                     );
                     return;
                 }
@@ -677,6 +689,31 @@ fn bound_host_pids(
 }
 
 #[cfg(unix)]
+async fn close_bound_runtime(root: &Path) -> Result<(), String> {
+    let by = Instant::now() + Duration::from_secs(10);
+    loop {
+        let remaining = by.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("paired runtime close deadline".into());
+        }
+        match tokio::time::timeout(remaining, Node::close_agent_runtime(root)).await {
+            Ok(Ok(khor_node::khor_agent::RuntimeClose::Closed)) => {
+                println!(
+                    "actual paired cancellation runtime Closed: {}",
+                    root.display()
+                );
+                return Ok(());
+            }
+            Ok(Ok(khor_node::khor_agent::RuntimeClose::Busy)) => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            Ok(Err(error)) => return Err(error),
+            Err(_) => return Err("paired runtime close waiter deadline".into()),
+        }
+    }
+}
+
+#[cfg(unix)]
 async fn run_bound_pair() {
     let alpha_root = root("bound-alpha");
     let beta_root = root("bound-beta");
@@ -916,11 +953,21 @@ async fn run_bound_pair() {
             !live.contains(pid)
         );
     }
+    let alpha_closed = close_bound_runtime(&alpha_root.0).await;
+    let beta_closed = close_bound_runtime(&beta_root.0).await;
     for serving in [&alpha_serving, &beta_serving] {
         serving.0.abort();
     }
     let alpha_stopped = tokio::time::timeout(Duration::from_secs(5), &mut alpha_serving.0).await;
     let beta_stopped = tokio::time::timeout(Duration::from_secs(5), &mut beta_serving.0).await;
+    if alpha_closed.is_err() || beta_closed.is_err() {
+        let retained = (alpha_root.0.clone(), beta_root.0.clone());
+        std::mem::forget(alpha_root);
+        std::mem::forget(beta_root);
+        panic!(
+            "paired runtime owners not closed; Roots retained {retained:?}: {alpha_closed:?}/{beta_closed:?}"
+        );
+    }
     assert!(
         discovered.is_ok(),
         "owned host discovery failed during cleanup"
@@ -934,4 +981,108 @@ async fn run_bound_pair() {
         "actual node serving tasks did not retire"
     );
     assert!(result.is_ok(), "bound paired behavior failed: {result:?}");
+}
+
+// The Store cases exercise acceptance/lost-response and later-message races.
+// This parent independently proves the absent fence over the authenticated mesh.
+#[cfg(unix)]
+async fn run_input_pair() {
+    use khor_node::delegation::{AgentTarget, InputResolution};
+    let alpha_root = root("input-alpha");
+    let beta_root = root("input-beta");
+    let alpha = Node::open_as(alpha_root.0.clone(), "input-alpha").unwrap();
+    let beta = Node::open_as(beta_root.0.clone(), "input-beta").unwrap();
+    // A correct fence must reject before dispatch; this command must never run.
+    alpha
+        .register_agent("fixture", &["input-fenced-must-not-run".into()])
+        .unwrap();
+    let mut alpha_serving = serve(&alpha_root.0, "input-alpha").await;
+    let paired =
+        tokio::time::timeout(Duration::from_secs(45), beta.pair(&alpha.invite().unwrap())).await;
+    let mut beta_serving = serve(&beta_root.0, "input-beta").await;
+    let result = tokio::time::timeout(Duration::from_secs(45), async {
+        paired.map_err(|_| "input pairing timed out".to_owned())??;
+        let selected = beta.devices()?.into_iter().find(|device| device.id == alpha.device_str())
+            .ok_or("input paired target missing")?;
+        let Answer::Binding { binding } = beta.delegation_on(alpha.device_str(), Action::ResolveBinding {
+            agent: "fixture".into(), task: None,
+        }).await? else { return Err("no input binding".into()) };
+        if binding.home != alpha.device() || binding.caller != beta.device()
+            || binding.agent != "fixture" || binding.protocol != BindingProtocol::Native {
+            return Err("input binding identity differs".into());
+        }
+        let parent = TaskRef { home: beta.device(), id: "original-input-parent".into() };
+        let input = message("late-first-input", None);
+        let target = AgentTarget { home: alpha.device(), agent: "fixture".into() };
+        let store = alpha.delegation_store()?;
+        if store.find_owned_message(beta.device(), &target, &input.message_id).map_err(|e| e.to_string())?.is_some() {
+            return Err("input was not actually absent".into());
+        }
+        for wrong in [
+            Binding { caller: alpha.device(), ..binding.clone() },
+            Binding { home: beta.device(), ..binding.clone() },
+        ] {
+            bound_refused(bound_raw(&beta_root.0, &selected.id, &selected.addrs, Action::Bound {
+                binding: wrong, action: BoundAction::CancelInput { message: input.message_id.clone(), parent: Some(parent.clone()) },
+            }).await?, true)?;
+        }
+        if store.find_owned_message(beta.device(), &target, &input.message_id).map_err(|e| e.to_string())?.is_some() {
+            return Err("wrong binding mutated the exact input".into());
+        }
+        for _ in 0..2 {
+            let answer = beta.delegation_on(alpha.device_str(), Action::Bound { binding: binding.clone(),
+                action: BoundAction::CancelInput { message: input.message_id.clone(), parent: Some(parent.clone()) },
+            }).await?;
+            match answer {
+                Answer::Input { binding: received, message, parent: received_parent, resolution: InputResolution::Fenced }
+                    if received == binding && message == input.message_id && received_parent.as_ref() == Some(&parent) => {}
+                _ => return Err("input reply did not preserve exact binding/message/parent/fence".into()),
+            }
+        }
+        let reopened = khor_node::delegation::Store::open(alpha_root.0.join(".khor/a2a"), alpha.device()).map_err(|e| e.to_string())?;
+        if reopened.find_owned_message(beta.device(), &target, &input.message_id).map_err(|e| e.to_string())? != Some(InputResolution::Fenced) {
+            return Err("wire fence did not persist".into());
+        }
+        let refused = beta.delegation_on(alpha.device_str(), Action::Bound { binding: binding.clone(),
+            action: BoundAction::Send { message: input.clone(), parent: Some(parent.clone()) },
+        }).await;
+        if !matches!(refused, Err(ref error) if error == "This input was canceled before acceptance") {
+            return Err("late authenticated Send did not receive exact input-fenced refusal".into());
+        }
+        let wrong_parent = beta.delegation_on(alpha.device_str(), Action::Bound { binding,
+            action: BoundAction::CancelInput { message: input.message_id.clone(), parent: Some(TaskRef {
+                home: beta.device(), id: "different-parent".into(),
+            }) },
+        }).await;
+        if !matches!(wrong_parent, Err(ref error) if error == "Message ID or session binding conflict") {
+            return Err("wire fence accepted a different original parent".into());
+        }
+        if !reopened.list(beta.device(), &target, None, None, 100).map_err(|e| e.to_string())?.is_empty()
+            || alpha_root.0.join(".khor/agent/runs").exists() {
+            return Err("late Send created or dispatched a task".into());
+        }
+        Ok::<_, String>(())
+    }).await.map_err(|_| "paired input exercise deadline".to_owned()).and_then(|value| value);
+    let alpha_closed = close_bound_runtime(&alpha_root.0).await;
+    let beta_closed = close_bound_runtime(&beta_root.0).await;
+    alpha_serving.0.abort();
+    beta_serving.0.abort();
+    let alpha_stopped = tokio::time::timeout(Duration::from_secs(5), &mut alpha_serving.0).await;
+    let beta_stopped = tokio::time::timeout(Duration::from_secs(5), &mut beta_serving.0).await;
+    if alpha_closed.is_err() || beta_closed.is_err() {
+        let retained = (alpha_root.0.clone(), beta_root.0.clone());
+        std::mem::forget(alpha_root);
+        std::mem::forget(beta_root);
+        panic!(
+            "input runtime owners not closed; Roots retained {retained:?}: {alpha_closed:?}/{beta_closed:?}"
+        );
+    }
+    assert!(
+        alpha_stopped.is_ok() && beta_stopped.is_ok(),
+        "input serving task cleanup failed"
+    );
+    assert!(
+        result.is_ok(),
+        "paired CancelInput behavior failed: {result:?}"
+    );
 }

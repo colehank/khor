@@ -49,13 +49,15 @@ struct Progress {
     scan_cursor: Option<String>,
     scan_complete: bool,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Phase {
     Queued,
     InFlight,
     OutcomeUnknown,
     AckPending,
     ConfirmedCanceled,
+    InputFenced,
+    InputSuperseded,
     TerminalOther(protocol::TaskState),
     NeedsAttention(String),
 }
@@ -67,7 +69,7 @@ impl Phase {
         )
     }
 }
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 struct Observation {
     task: String,
     target_home: DeviceId,
@@ -77,13 +79,20 @@ struct Observation {
     revision: u64,
     observed_at_ms: i64,
 }
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+struct InputIdentity {
+    message: String,
+    parent: delegation::TaskRef,
+}
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 struct ChildReceipt {
     version: u32,
     intent_id: String,
     child_key: String,
     binding: Binding,
     task: Option<String>,
+    #[serde(default)]
+    input: Option<InputIdentity>,
     phase: Phase,
     attempt_no: u64,
     attempt_id: String,
@@ -151,7 +160,7 @@ fn validated_snapshot(reply: &Reply, run: &str, persist: bool) -> Option<serde_j
     let durability: Durability = serde_json::from_value(snapshot["durability"].clone()).ok()?;
     let full = serde_json::from_value::<Snapshot>(snapshot.clone()).ok();
     if let Some(full) = &full {
-        if full.counts.len() > 8
+        if full.counts.len() > 10
             || full
                 .counts
                 .values()
@@ -261,7 +270,7 @@ fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), (String, bool)> {
     let _ = fs::remove_file(temporary);
     result
 }
-fn gate(path: &Path) -> Result<File, String> {
+pub(crate) fn gate(path: &Path) -> Result<File, String> {
     let mut options = OpenOptions::new();
     options.create(true).truncate(false).read(true).write(true);
     #[cfg(unix)]
@@ -368,6 +377,7 @@ fn discover_children(node: &Node, intent: &Intent) -> Result<(), String> {
         .take(PAGE)
         .cloned()
         .collect();
+    let mut deferred = false;
     for child in &page {
         match discover_child(node, intent, child) {
             Ok(mut receipt) => {
@@ -376,11 +386,15 @@ fn discover_children(node: &Node, intent: &Intent) -> Result<(), String> {
                     .map_err(|(code, _)| code)?;
                 issues::child(node, intent, child, None)?;
             }
+            Err(code) if code == "Busy" => {
+                deferred = true;
+                break;
+            }
             Err(code) => issues::child(node, intent, child, Some(&code))?,
         }
+        progress.scan_cursor = Some(child.clone());
     }
-    progress.scan_cursor = page.last().cloned();
-    if page.len() < PAGE {
+    if page.len() < PAGE && !deferred {
         progress.scan_complete = valid_run(node, &intent.run)?;
         if !progress.scan_complete {
             progress.scan_cursor = None;
@@ -393,55 +407,161 @@ fn discover_children(node: &Node, intent: &Intent) -> Result<(), String> {
     )
     .map_err(|(e, _)| e)
 }
-fn discover_child(node: &Node, intent: &Intent, child: &str) -> Result<ChildReceipt, String> {
+fn source_child(
+    node: &Node,
+    intent: &Intent,
+    child: &str,
+) -> Result<(delegation::ChildLink, Option<InputIdentity>), String> {
     let link: delegation::ChildLink = read(
         &delegation::children_dir(node.root(), &intent.run).join(child),
         SMALL,
     )
     .map_err(|code| format!("Link{code}"))?;
-    if link.binding.caller != node.device() || link.binding.agent.is_empty() {
+    if link.binding.caller != node.device()
+        || link.binding.agent.is_empty()
+        || delegation::child_key(&link.binding, &link.message)? != child
+        || link
+            .input_parent
+            .as_ref()
+            .is_some_and(|parent| parent.home != node.device())
+    {
         return Err("LinkIdentityMismatch".into());
     }
+    let input = if matches!(link.binding.protocol, delegation::BindingProtocol::Native) {
+        let parent = match &link.input_parent {
+            Some(parent) => Some(parent.clone()),
+            None if link.task.is_none() => {
+                let path = node.root().join(".khor/agent/messages").join(child);
+                if path.try_exists().map_err(|_| "ReadFailed")? {
+                    Some(read::<delegation::TaskRef>(&path, SMALL)?)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+        if parent.as_ref().is_some_and(|parent| {
+            parent.home != node.device()
+                || parent.id.trim().is_empty()
+                || parent.id.len() > 256
+                || parent.id.chars().any(char::is_control)
+        }) {
+            return Err("LinkIdentityMismatch".into());
+        }
+        parent.map(|parent| InputIdentity {
+            message: link.message.clone(),
+            parent,
+        })
+    } else {
+        None
+    };
+    if link.input_scoped && input.is_none() {
+        return Err("LinkIdentityMismatch".into());
+    }
+    Ok((link, input))
+}
+fn validate_child_receipt(
+    intent: &Intent,
+    child: &str,
+    receipt: &ChildReceipt,
+    link: &delegation::ChildLink,
+    input: &Option<InputIdentity>,
+) -> Result<(), String> {
+    if receipt.version != 1
+        || receipt.intent_id != intent.intent_id
+        || receipt.binding != link.binding
+        || receipt.child_key != child
+        || (link.input_scoped && receipt.input.is_none())
+        || receipt
+            .input
+            .as_ref()
+            .is_some_and(|identity| Some(identity) != input.as_ref())
+        || receipt
+            .task
+            .as_ref()
+            .is_some_and(|task| Some(task) != link.task.as_ref())
+    {
+        return Err("ReceiptIdentityMismatch".into());
+    }
+    Ok(())
+}
+fn scope_child(
+    node: &Node,
+    intent: &Intent,
+    child: &str,
+    link: delegation::ChildLink,
+    input: &InputIdentity,
+) -> Result<(delegation::ChildLink, Option<InputIdentity>), String> {
+    delegation::scope_input_child(
+        node.root(),
+        &delegation::TaskRef {
+            home: node.device(),
+            id: intent.run.clone(),
+        },
+        &link.machine,
+        &link.binding,
+        &link.message,
+        &input.parent,
+    )?;
+    source_child(node, intent, child)
+}
+fn discover_child(node: &Node, intent: &Intent, child: &str) -> Result<ChildReceipt, String> {
+    let (mut link, mut input) = source_child(node, intent, child)?;
     let path = receipt_path(node.root(), &intent.run, child);
     match read::<ChildReceipt>(&path, SMALL) {
         Ok(mut receipt) => {
-            if receipt.version != 1
-                || receipt.intent_id != intent.intent_id
-                || receipt.binding != link.binding
-                || receipt.child_key != child
-                || receipt
-                    .task
-                    .as_ref()
-                    .is_some_and(|task| Some(task) != link.task.as_ref())
-            {
-                return Err("ReceiptIdentityMismatch".into());
+            // Existing committed scope with a missing/mismatched input is
+            // corruption, not permission to downgrade to task-wide Cancel.
+            validate_child_receipt(intent, child, &receipt, &link, &input)?;
+            let input_mode = receipt.input.is_some() || receipt.task.is_none();
+            if input_mode && !link.input_scoped {
+                if let Some(identity) = input.clone() {
+                    (link, input) = scope_child(node, intent, child, link, &identity)?;
+                }
             }
-            if receipt.task.is_none() && link.task.is_some() {
-                receipt.task = link.task;
+            if input_mode && input.is_some() && receipt.input.is_none() {
+                receipt.input = input.clone();
                 receipt.phase = Phase::Queued;
             }
+            if receipt.task.is_none() && link.task.is_some() {
+                receipt.task = link.task.clone();
+                receipt.phase = Phase::Queued;
+            }
+            validate_child_receipt(intent, child, &receipt, &link, &input)?;
             Ok(receipt)
         }
         Err(code) if path.try_exists().map_err(|_| "ReadFailed")? => Err(format!("Receipt{code}")),
-        Err(_) => Ok(ChildReceipt {
-            version: 1,
-            intent_id: intent.intent_id.clone(),
-            child_key: child.into(),
-            binding: link.binding,
-            task: link.task.clone(),
-            phase: if link.task.is_some() {
-                Phase::Queued
-            } else {
-                Phase::NeedsAttention("UnknownTask".into())
-            },
-            attempt_no: 0,
-            attempt_id: String::new(),
-            next_retry_at_ms: 0,
-            last_ack: None,
-            last_observed: None,
-            safe_error_code: None,
-            revision: 0,
-        }),
+        Err(_) => {
+            if link.task.is_none() && !link.input_scoped {
+                if let Some(identity) = input.clone() {
+                    (link, input) = scope_child(node, intent, child, link, &identity)?;
+                }
+            }
+            Ok(ChildReceipt {
+                version: 1,
+                intent_id: intent.intent_id.clone(),
+                child_key: child.into(),
+                binding: link.binding,
+                task: link.task.clone(),
+                input: if link.input_scoped {
+                    input.clone()
+                } else {
+                    None
+                },
+                phase: if link.task.is_some() || input.is_some() {
+                    Phase::Queued
+                } else {
+                    Phase::NeedsAttention("UnknownTask".into())
+                },
+                attempt_no: 0,
+                attempt_id: String::new(),
+                next_retry_at_ms: 0,
+                last_ack: None,
+                last_observed: None,
+                safe_error_code: None,
+                revision: 0,
+            })
+        }
     }
 }
 struct Collection {
@@ -450,33 +570,64 @@ struct Collection {
     issues: usize,
 }
 fn collect(node: &Node, intent: &Intent, persist_errors: bool) -> Result<Collection, String> {
-    let children = names(
+    let receipt_names = names(
         &directory(node.root(), &intent.run).join("children"),
         CHILD_LIMIT * 2,
     )?;
-    if children.len() > CHILD_LIMIT {
+    let link_names = names(
+        &delegation::children_dir(node.root(), &intent.run),
+        CHILD_LIMIT * 2,
+    )?;
+    if receipt_names.len() > CHILD_LIMIT || link_names.len() > CHILD_LIMIT {
         return Err("ResourceLimit".into());
     }
+    let mut complete = load_progress(node.root(), &intent.run)?.scan_complete;
+    let mut children = receipt_names.clone();
+    children.extend(link_names.iter().cloned());
+    children.sort();
+    children.dedup();
     let mut unresolved = issues::children(node, intent)?;
     let mut receipts = Vec::new();
     for child in children {
-        let receipt = read::<ChildReceipt>(&receipt_path(node.root(), &intent.run, &child), SMALL)
-            .and_then(|receipt| {
-                if receipt.version == 1
-                    && receipt.intent_id == intent.intent_id
-                    && receipt.child_key == child
-                    && receipt.binding.caller == node.device()
-                {
-                    Ok(receipt)
-                } else {
-                    Err("ReceiptIdentityMismatch".into())
+        // Discovery creates receipts a bounded page at a time. Before its
+        // completion, unseen links cannot count as canceled or as corruption.
+        if !complete && !receipt_names.contains(&child) {
+            continue;
+        }
+        let receipt: Result<ChildReceipt, String> = (|| {
+            if !link_names.contains(&child) {
+                return Err("LinkMissing".into());
+            }
+            let (link, input) = source_child(node, intent, &child)?;
+            let receipt =
+                read::<ChildReceipt>(&receipt_path(node.root(), &intent.run, &child), SMALL)?;
+            validate_child_receipt(intent, &child, &receipt, &link, &input)?;
+            let needs_scope = !link.input_scoped
+                && input.is_some()
+                && (receipt.input.is_some() || receipt.task.is_none());
+            if needs_scope && !persist_errors {
+                return Err("InputScopeUncommitted".into());
+            }
+            if persist_errors {
+                let updated = discover_child(node, intent, &child)?;
+                if updated != receipt {
+                    write(&receipt_path(node.root(), &intent.run, &child), &updated)
+                        .map_err(|(code, _)| code)?;
                 }
-            });
+                Ok(updated)
+            } else {
+                Ok(receipt)
+            }
+        })();
         match receipt {
             Ok(receipt) if !unresolved.contains(&child) => receipts.push((child, receipt)),
             Ok(_) => {}
             Err(code) => {
-                if persist_errors {
+                if code == "Busy" {
+                    // A legitimate short publication race is Deferred. Keep
+                    // this run scheduled; never persist a permanent bad child.
+                    complete = false;
+                } else if persist_errors {
                     issues::child(node, intent, &child, Some(&code))?;
                 }
                 unresolved.insert(child);
@@ -485,7 +636,7 @@ fn collect(node: &Node, intent: &Intent, persist_errors: bool) -> Result<Collect
     }
     Ok(Collection {
         receipts,
-        scan_complete: load_progress(node.root(), &intent.run)?.scan_complete,
+        scan_complete: complete,
         issues: unresolved.len() + usize::from(issues::pending_unresolved(node, &intent.run)),
     })
 }
@@ -526,6 +677,8 @@ fn snapshot(node: &Node, run: &str, durability: Durability) -> serde_json::Value
                     Phase::OutcomeUnknown => "OutcomeUnknown",
                     Phase::AckPending => "AckPending",
                     Phase::ConfirmedCanceled => "ConfirmedCanceled",
+                    Phase::InputFenced => "InputFenced",
+                    Phase::InputSuperseded => "InputSuperseded",
                     Phase::TerminalOther(_) => "TerminalOther",
                     Phase::NeedsAttention(_) => "NeedsAttention",
                 };
@@ -537,6 +690,14 @@ fn snapshot(node: &Node, run: &str, durability: Durability) -> serde_json::Value
             }
             snapshot.unresolved += usize::from(!complete);
             snapshot.backlog = snapshot.active + usize::from(!complete);
+            // This aggregate promises only explicit absence fences for every
+            // linked input. Accepted/superseded inputs keep their distinct truth.
+            snapshot.late_input_fence = complete
+                && issues == 0
+                && !receipts.is_empty()
+                && receipts
+                    .iter()
+                    .all(|(_, receipt)| matches!(receipt.phase, Phase::InputFenced));
             snapshot.all_known_children_canceled =
                 complete && snapshot.unresolved == 0 && valid_run(node, run) == Ok(true);
         }
@@ -740,7 +901,7 @@ fn finish_step(
         step_result(StepResult::Retired)
     }
 }
-/// Exactly one Cancel or Get, fenced by a private run lease and attempt ID.
+/// Exactly one task Cancel/Get or exact-input CancelInput, fenced by a private run lease and attempt ID.
 pub(crate) fn step(root: &Path, run: &str) -> Result<String, String> {
     let node = Node::open(root.to_path_buf())?;
     if !network_allowed(root)? || !valid_run(&node, run)? {
@@ -787,7 +948,10 @@ pub(crate) fn step(root: &Path, run: &str) -> Result<String, String> {
         write(&child_path, &receipt).map_err(|(e, _)| e)?;
     }
     let observe = matches!(receipt.phase, Phase::OutcomeUnknown | Phase::AckPending);
-    let task = receipt.task.clone().ok_or("UnknownTask")?;
+    let task = receipt.task.clone();
+    if task.is_none() && receipt.input.is_none() {
+        return Err("UnknownTask".into());
+    }
     receipt.attempt_no = receipt.attempt_no.saturating_add(1);
     receipt.attempt_id = protocol::new_task_id();
     let attempt_id = receipt.attempt_id.clone();
@@ -802,10 +966,19 @@ pub(crate) fn step(root: &Path, run: &str) -> Result<String, String> {
         .enable_all()
         .build()
         .map_err(|_| "RuntimeUnavailable")?;
-    let action = if observe {
-        BoundAction::Get { task: task.clone() }
+    let action = if let Some(input) = &receipt.input {
+        BoundAction::CancelInput {
+            message: input.message.clone(),
+            parent: Some(input.parent.clone()),
+        }
+    } else if observe {
+        BoundAction::Get {
+            task: task.clone().expect("known task"),
+        }
     } else {
-        BoundAction::Cancel { task: task.clone() }
+        BoundAction::Cancel {
+            task: task.clone().expect("known task"),
+        }
     };
     if !network_allowed(root)? {
         return step_result(StepResult::ReadyAt {
@@ -840,6 +1013,121 @@ pub(crate) fn step(root: &Path, run: &str) -> Result<String, String> {
         receipt.phase = Phase::NeedsAttention("BindingMismatch".into());
         receipt.safe_error_code = Some("BindingMismatch".into());
     }
+    if let Some(input) = receipt.input.clone() {
+        let mut observed = None;
+        match outcome {
+            Ok(delegation::Answer::Input {
+                binding: received,
+                message,
+                parent,
+                resolution,
+            }) if received == binding
+                && input.message == message
+                && Some(&input.parent) == parent.as_ref() =>
+            {
+                use delegation::InputResolution;
+                match resolution {
+                    InputResolution::Fenced if task.is_none() => {
+                        receipt.phase = Phase::InputFenced;
+                        receipt.safe_error_code = None;
+                    }
+                    InputResolution::Known { task: found, .. }
+                    | InputResolution::Superseded { task: found }
+                        if found.home != binding.home
+                            || task.as_ref().is_some_and(|task| task != &found.id) =>
+                    {
+                        receipt.phase = Phase::NeedsAttention("ReplyIdentityMismatch".into());
+                        receipt.safe_error_code = Some("ReplyIdentityMismatch".into());
+                    }
+                    InputResolution::Fenced => {
+                        receipt.phase = Phase::NeedsAttention("ReplyIdentityMismatch".into());
+                        receipt.safe_error_code = Some("ReplyIdentityMismatch".into());
+                    }
+                    resolution => {
+                        let found = match &resolution {
+                            InputResolution::Known { task, .. }
+                            | InputResolution::Superseded { task } => task,
+                            InputResolution::Fenced => unreachable!(),
+                        };
+                        // Link first: a crash leaves the existing input receipt
+                        // InFlight and the exact recovered task discoverable.
+                        let link: delegation::ChildLink =
+                            read(&delegation::children_dir(root, run).join(child), SMALL)?;
+                        delegation::recover_input_child(
+                            root,
+                            &delegation::TaskRef {
+                                home: node.device(),
+                                id: run.into(),
+                            },
+                            &link.machine,
+                            &binding,
+                            &input.message,
+                            &input.parent,
+                            &found.id,
+                        )?;
+                        receipt.task = Some(found.id.clone());
+                        match resolution {
+                            InputResolution::Known {
+                                task,
+                                state,
+                                revision,
+                                ..
+                            } => observed = Some((task.id, state, revision)),
+                            InputResolution::Superseded { .. } => {
+                                receipt.phase = Phase::InputSuperseded;
+                                receipt.safe_error_code = None;
+                            }
+                            InputResolution::Fenced => unreachable!(),
+                        }
+                    }
+                }
+            }
+            Ok(_) => {
+                receipt.phase = Phase::NeedsAttention("ReplyIdentityMismatch".into());
+                receipt.safe_error_code = Some("ReplyIdentityMismatch".into());
+            }
+            Err(_) => {}
+        }
+        if let Some((task, state, revision)) = observed {
+            let prior_revision = receipt
+                .last_ack
+                .as_ref()
+                .into_iter()
+                .chain(receipt.last_observed.as_ref())
+                .map(|observation| observation.revision)
+                .max();
+            if prior_revision.is_some_and(|prior| revision < prior) {
+                receipt.safe_error_code = Some("StaleObservation".into());
+            } else {
+                let observation = Observation {
+                    task,
+                    target_home: binding.home,
+                    caller: binding.caller,
+                    agent: binding.agent,
+                    task_state: state.clone(),
+                    revision,
+                    observed_at_ms: now(),
+                };
+                receipt.safe_error_code = None;
+                receipt.phase = match state {
+                    protocol::TaskState::Canceled => Phase::ConfirmedCanceled,
+                    state if state.is_terminal() => Phase::TerminalOther(state),
+                    _ => Phase::AckPending,
+                };
+                if observe {
+                    receipt.last_observed = Some(observation);
+                } else {
+                    receipt.last_ack = Some(observation);
+                }
+            }
+        }
+        receipt.next_retry_at_ms =
+            now() + (1i64 << receipt.attempt_no.saturating_sub(1).min(5)).min(30) * 1000;
+        receipt.revision = receipt.revision.saturating_add(1);
+        write(&child_path, &receipt).map_err(|(error, _)| error)?;
+        return finish_step(&node, &intent, &receipts, complete, Some((child, &receipt)));
+    }
+    let task = task.ok_or("UnknownTask")?;
     if let Ok(delegation::Answer::Task { record }) = outcome {
         if record.target.home == binding.home
             && record.caller == binding.caller

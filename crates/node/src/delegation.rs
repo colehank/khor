@@ -6,7 +6,8 @@ use crate::{
     host::{Hello, Welcome, read_frame, write_frame},
 };
 pub use khor_a2a::{
-    AgentTarget, Execution, Executor, Record, SessionRef, Store, TaskRef, dispatch, protocol,
+    AgentTarget, Execution, Executor, InputResolution, Record, SessionRef, Store, TaskRef,
+    dispatch, protocol,
 };
 use khor_core::{DeviceId, SessionId};
 use serde::{Deserialize, Serialize};
@@ -71,6 +72,12 @@ pub enum Answer {
     Binding {
         binding: Binding,
     },
+    Input {
+        binding: Binding,
+        message: String,
+        parent: Option<TaskRef>,
+        resolution: InputResolution,
+    },
     Agents {
         agents: Vec<Agent>,
     },
@@ -121,10 +128,14 @@ pub enum BoundAction {
     Cancel {
         task: String,
     },
+    CancelInput {
+        message: String,
+        parent: Option<TaskRef>,
+    },
 }
 impl BoundAction {
-    pub(crate) fn into_action(self, agent: String) -> Action {
-        match self {
+    pub(crate) fn into_action(self, agent: String) -> Result<Action, String> {
+        Ok(match self {
             Self::Send { message, parent } => Action::Send {
                 agent,
                 message,
@@ -138,7 +149,10 @@ impl BoundAction {
             },
             Self::Get { task } => Action::Get { agent, task },
             Self::Cancel { task } => Action::Cancel { agent, task },
-        }
+            Self::CancelInput { .. } => {
+                return Err("Native input cancellation is unsupported by this adapter".into());
+            }
+        })
     }
 }
 
@@ -158,6 +172,9 @@ pub(crate) fn validate_answer(
                 | BoundAction::Cancel { task }
                 | BoundAction::Answer { task, .. } => Some(task),
                 BoundAction::Send { message, .. } => message.task_id.as_ref(),
+                BoundAction::CancelInput { .. } => {
+                    return Err("Delegation reply identity mismatch".into());
+                }
             };
             record.target.home == binding.home
                 && record.caller == binding.caller
@@ -171,6 +188,33 @@ pub(crate) fn validate_answer(
             },
             Answer::Message { agent, .. },
         ) => &binding.agent == agent,
+        (
+            Action::Bound {
+                binding,
+                action: BoundAction::CancelInput { message, parent },
+            },
+            Answer::Input {
+                binding: received,
+                message: received_message,
+                parent: received_parent,
+                resolution,
+            },
+        ) => {
+            binding == received
+                && binding.home == home
+                && binding.caller == caller
+                && message == received_message
+                && parent == received_parent
+                && match resolution {
+                    InputResolution::Fenced => true,
+                    InputResolution::Known { task, .. } | InputResolution::Superseded { task } => {
+                        task.home == home
+                            && !task.id.trim().is_empty()
+                            && task.id.len() <= 256
+                            && !task.id.chars().any(char::is_control)
+                    }
+                }
+        }
         (Action::ResolveBinding { .. } | Action::Bound { .. }, _) => false,
         _ => true,
     };
@@ -257,7 +301,28 @@ impl Node {
                         );
                     }
                     BindingProtocol::Native if !crate::a2a_http::is_target(&binding.agent) => {
-                        action.into_action(binding.agent)
+                        if let BoundAction::CancelInput { message, parent } = action {
+                            let store = self.delegation_store()?;
+                            store.recover().map_err(|error| error.to_string())?;
+                            let resolution = store
+                                .cancel_input(
+                                    caller,
+                                    &AgentTarget {
+                                        home: self.device(),
+                                        agent: binding.agent.clone(),
+                                    },
+                                    &message,
+                                    parent.clone(),
+                                )
+                                .map_err(|error| error.to_string())?;
+                            return Ok(Answer::Input {
+                                binding,
+                                message,
+                                parent,
+                                resolution,
+                            });
+                        }
+                        action.into_action(binding.agent)?
                     }
                     _ => return Err("Delegation binding protocol mismatch".into()),
                 }
@@ -817,10 +882,18 @@ pub(crate) struct ChildLink {
     pub(crate) binding: Binding,
     pub(crate) message: String,
     pub(crate) task: Option<String>,
+    #[serde(default)]
+    pub(crate) input_parent: Option<TaskRef>,
+    #[serde(default, alias = "input_recovered")]
+    pub(crate) input_scoped: bool,
 }
 pub(crate) fn children_dir(root: &Path, run: &str) -> std::path::PathBuf {
     root.join(".khor/agent/children")
         .join(blake3::hash(run.as_bytes()).to_hex().as_str())
+}
+pub(crate) fn child_key(binding: &Binding, message: &str) -> Result<String, String> {
+    let fingerprint = serde_json::to_vec(&(binding, message)).map_err(|e| e.to_string())?;
+    Ok(format!("{}.json", blake3::hash(&fingerprint).to_hex()))
 }
 /// Bind before sending. A lost response keeps an unresolved link; cancellation
 /// never replays Send/Answer or claims an unknown task has stopped.
@@ -832,14 +905,89 @@ pub(crate) fn track_child(
     message: &str,
     task: Option<&str>,
 ) -> Result<(), String> {
+    track_child_inner(root, parent, machine, binding, message, task, None, false)
+}
+/// Capture the wire parent before a delegate Send can have any remote effect.
+pub(crate) fn track_input(
+    root: &Path,
+    parent: &TaskRef,
+    machine: &str,
+    binding: &Binding,
+    message: &str,
+    task: Option<&str>,
+) -> Result<(), String> {
+    let original = original_parent(root, parent, binding, message)?;
+    track_child_inner(
+        root,
+        parent,
+        machine,
+        binding,
+        message,
+        task,
+        Some(original),
+        false,
+    )
+}
+/// Commit exact-input mode before any cancellation receipt can refer to it.
+/// It is sticky even if a normal Send reply publishes a task concurrently.
+pub(crate) fn scope_input_child(
+    root: &Path,
+    parent: &TaskRef,
+    machine: &str,
+    binding: &Binding,
+    message: &str,
+    input_parent: &TaskRef,
+) -> Result<(), String> {
+    track_child_inner(
+        root,
+        parent,
+        machine,
+        binding,
+        message,
+        None,
+        Some(input_parent.clone()),
+        true,
+    )
+}
+pub(crate) fn recover_input_child(
+    root: &Path,
+    parent: &TaskRef,
+    machine: &str,
+    binding: &Binding,
+    message: &str,
+    input_parent: &TaskRef,
+    task: &str,
+) -> Result<(), String> {
+    track_child_inner(
+        root,
+        parent,
+        machine,
+        binding,
+        message,
+        Some(task),
+        Some(input_parent.clone()),
+        true,
+    )
+}
+fn track_child_inner(
+    root: &Path,
+    parent: &TaskRef,
+    machine: &str,
+    binding: &Binding,
+    message: &str,
+    task: Option<&str>,
+    input_parent: Option<TaskRef>,
+    scoped: bool,
+) -> Result<(), String> {
     let dir = children_dir(root, &parent.id);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     if binding.caller != parent.home {
         return Err("Child binding caller mismatch".into());
     }
-    let fingerprint = serde_json::to_vec(&(binding, message)).map_err(|e| e.to_string())?;
-    let leaf = blake3::hash(&fingerprint).to_hex().to_string();
-    let path = dir.join(format!("{leaf}.json"));
+    // A Send reply can race exact-input recovery. Serialize this short local
+    // publication so neither writer can erase the other's recovered marker.
+    let _links = crate::remote_cancel::gate(&dir.join("links.lock"))?;
+    let path = dir.join(child_key(binding, message)?);
     let names = crate::remote_cancel::names(&dir, crate::remote_cancel::CHILD_LIMIT * 2)?;
     if !path.exists() && names.len() >= crate::remote_cancel::CHILD_LIMIT {
         return Err("Child link resource limit".into());
@@ -848,6 +996,12 @@ pub(crate) fn track_child(
         let prior: ChildLink = crate::remote_cancel::read(&path, 16 * 1024)?;
         if prior.binding != *binding
             || prior.message != message
+            || input_parent.as_ref().is_some_and(|parent| {
+                prior
+                    .input_parent
+                    .as_ref()
+                    .is_some_and(|previous| previous != parent)
+            })
             || task.is_some_and(|task| prior.task.as_ref().is_some_and(|previous| previous != task))
         {
             return Err("Child link identity mismatch".into());
@@ -856,7 +1010,15 @@ pub(crate) fn track_child(
     } else {
         None
     };
+    if scoped && prior.is_none() {
+        return Err("Child link missing".into());
+    }
+    let input_parent =
+        input_parent.or_else(|| prior.as_ref().and_then(|prior| prior.input_parent.clone()));
+    let input_scoped = scoped || prior.as_ref().is_some_and(|prior| prior.input_scoped);
     let link = ChildLink {
+        input_parent,
+        input_scoped,
         machine: machine.into(),
         binding: binding.clone(),
         message: message.into(),
@@ -913,23 +1075,49 @@ pub(crate) fn original_parent(
     binding: &Binding,
     message: &str,
 ) -> Result<TaskRef, String> {
+    fn validate(parent: &TaskRef, binding: &Binding) -> Result<(), String> {
+        if parent.home != binding.caller
+            || parent.id.trim().is_empty()
+            || parent.id.len() > 256
+            || parent.id.chars().any(char::is_control)
+        {
+            return Err("Original parent identity mismatch".into());
+        }
+        Ok(())
+    }
+    validate(parent, binding)?;
+    if message.trim().is_empty() || message.len() > 256 || message.chars().any(char::is_control) {
+        return Err("Invalid original input identity".into());
+    }
     let dir = root.join(".khor/agent/messages");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let key = serde_json::to_vec(&(binding, message)).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("{}.json", blake3::hash(&key).to_hex()));
-    match fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // A Pi execution home has one active main turn; only that turn
-            // writes this index. Readers never start or replay a message.
-            let temporary = dir.join(format!("{}.tmp", protocol::new_task_id()));
-            crate::link::write_private(
-                &temporary,
-                &serde_json::to_vec(parent).map_err(|e| e.to_string())?,
-            )?;
-            fs::rename(temporary, path).map_err(|e| e.to_string())?;
-            Ok(parent.clone())
-        }
-        Err(error) => Err(error.to_string()),
+    let path = dir.join(child_key(binding, message)?);
+    // Release this short first-parent gate before taking any child-link gate.
+    // Tail tools from distinct turns must observe the same first writer.
+    let _parent = crate::remote_cancel::gate(&path.with_extension("lock"))?;
+    if path.try_exists().map_err(|e| e.to_string())? {
+        let stored: TaskRef = crate::remote_cancel::read(&path, 16 * 1024)?;
+        validate(&stored, binding)?;
+        return Ok(stored);
     }
+    let temporary = dir.join(format!("{}.tmp", protocol::new_task_id()));
+    let outcome: Result<TaskRef, String> = (|| {
+        crate::link::write_private(
+            &temporary,
+            &serde_json::to_vec(parent).map_err(|e| e.to_string())?,
+        )?;
+        fs::File::open(&temporary)
+            .and_then(|file| file.sync_all())
+            .map_err(|e| e.to_string())?;
+        fs::rename(&temporary, &path).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        fs::File::open(&dir)
+            .and_then(|file| file.sync_all())
+            .map_err(|e| e.to_string())?;
+        Ok(parent.clone())
+    })();
+    if outcome.is_err() {
+        let _ = fs::remove_file(temporary);
+    }
+    outcome
 }

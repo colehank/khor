@@ -1486,6 +1486,101 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exact_input_cancel_round_trips_both_transports_and_binds_the_reply() {
+        use crate::delegation::{
+            Action, Answer, Binding, BindingProtocol, BoundAction, InputResolution, TaskRef,
+        };
+        let home = khor_core::DeviceId([1; 32]);
+        let caller = khor_core::DeviceId([2; 32]);
+        let binding = Binding {
+            home,
+            caller,
+            agent: "fixture".into(),
+            protocol: BindingProtocol::Native,
+        };
+        let parent = Some(TaskRef {
+            home: caller,
+            id: "original-parent".into(),
+        });
+        let action = Action::Bound {
+            binding: binding.clone(),
+            action: BoundAction::CancelInput {
+                message: "original-message".into(),
+                parent: parent.clone(),
+            },
+        };
+        let request = Request::Delegation {
+            action: action.clone(),
+        };
+        let decoded: Request = decode(&encode(&request).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::to_value(decoded).unwrap()
+        );
+        let ipc = crate::ipc::Op::Delegation {
+            machine: home.hex(),
+            action: action.clone(),
+        };
+        let decoded: crate::ipc::Op = decode(&encode(&ipc).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_value(ipc).unwrap(),
+            serde_json::to_value(decoded).unwrap()
+        );
+        for resolution in [
+            InputResolution::Fenced,
+            InputResolution::Known {
+                task: TaskRef {
+                    home,
+                    id: "found-task".into(),
+                },
+                state: crate::delegation::protocol::TaskState::Working,
+                revision: 7,
+                cancellation_requested: true,
+            },
+            InputResolution::Superseded {
+                task: TaskRef {
+                    home,
+                    id: "found-task".into(),
+                },
+            },
+        ] {
+            let answer = Answer::Input {
+                binding: binding.clone(),
+                message: "original-message".into(),
+                parent: parent.clone(),
+                resolution,
+            };
+            crate::delegation::validate_answer(&action, home, caller, &answer).unwrap();
+            let response = Response::Delegation {
+                answer: answer.clone(),
+            };
+            let decoded: Response = decode(&encode(&response).unwrap()).unwrap();
+            assert_eq!(
+                serde_json::to_value(response).unwrap(),
+                serde_json::to_value(decoded).unwrap()
+            );
+            let ipc = crate::ipc::Reply::Delegation {
+                answer: answer.clone(),
+            };
+            let decoded: crate::ipc::Reply = decode(&encode(&ipc).unwrap()).unwrap();
+            assert_eq!(
+                serde_json::to_value(ipc).unwrap(),
+                serde_json::to_value(decoded).unwrap()
+            );
+            for key in ["message", "parent", "binding"] {
+                let mut wrong = serde_json::to_value(&answer).unwrap();
+                match key {
+                    "message" => wrong["Input"][key] = serde_json::json!("other-message"),
+                    "parent" => wrong["Input"][key] = serde_json::json!(null),
+                    _ => wrong["Input"][key]["caller"] = serde_json::to_value(home).unwrap(),
+                }
+                let wrong: Answer = serde_json::from_value(wrong).unwrap();
+                assert!(crate::delegation::validate_answer(&action, home, caller, &wrong).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn inventory_errors_use_local_words_and_keep_unknown_diagnostics() {
         for remote_reason in [
             "This machine isn't in the machine table — pair first",
