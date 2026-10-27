@@ -2,6 +2,17 @@
 
 更新：2026-10-27，close03 / N1 flow06实际红 / Q052首构建前提失败检查点。完整目标 active，未完成。先读本页、PLAN与任务卡，再核实际 HEAD/diff/agents/PID/SHA；不得按摘要覆盖未提交源。上一完整检查点见 [历史](history/STATE-before-native-close03-20261027.md)，旧阶段证据继续保留，当前事实以本页为准。
 
+## 最近检查点：终端28项通过，生命周期与同步待收敛（2026-10-27）
+
+本段取代下文较早的执行槽、候选和验证状态。main/wave1仍未变；全目标未完成。
+
+- **当前槽空**。R1 A8 `close-a8-run-20261027T030215Z` 在控制脚本 setup 阶段因 `main` 内冗余 `import re` 遮蔽模块导入而停止，0 Cargo、0 native业务测试；runner已退出、TMP未创建、源和共享产物稳定，11份证据已双盘保留。仅授权删除内部import并冻结plan04，待root短审后执行原8项；未授权扩范围或自启。
+- **Q052 source03 28项实际功能回归全部通过**，覆盖当前终端协议、真实History/Ready/Forget与清屏回归。原plan07在真实TCP用例发现清屏后旧内容重现；source03将parser/feed清理原子化并保留光标、模式与备用屏行为，原失败用例及新增4个IO用例通过。`terminal-green09`实际21个执行阶段均退出0，源/生成输入稳定。
+- Q052原09整run仍为清理失败：两个已停止的私有tmux socket残留。root另凭精确身份与不活跃证明删除这两个socket，t52v9已不存在；原09失败收据不改。source04仅改tmux测试fixture生命周期，生产与其余1920项输入相对03完全相同，root独审无阻断。下一步plan10只验证原2个tmux用例，继承其余26项同源功能结果；通过后提交并集成治理分支。source04尚未编译/运行，未提交。
+- **R1当前26个payload源/2352输入**包含close03、root的serve_as/Tauri Exit调用、版本化逐进程native验收入口与Unix CI、GUI fixture真实close后清理。独立源码审查通过；新6个close用例和GUI2项仍未实际运行。入口的假进程控制验证不算native功能通过。实际App Exit、慢metadata启动下Stop时限与R2首次未知Send/lateSend fence仍待完成。
+- **N1两个真实缺陷已复现、尚未功能修复**：失败时漏计6个完整传输块；partial Pending未保留但重开后数据已实际完成。source07外盘与内盘TMP的few-op Chat用例都未在30秒内达到32MiB边界，均为setup失败，不能算预算越界复现，也不能归因外盘。source08仅语义等价提取预算判断并加纯策略用例，root独审通过；control05已准备但未授权执行。实际网络预算边界验证仍保留，N2大Pair/Vouch恢复未实现。
+- 本次用户进度回复已明确：最初两项GUI故障已集成；当前处于P3逐模块修复；P4格式治理与P5整包App验收尚未完成。main仍8704a503，wave1仍670347d7，两树clean，本轮无main合并/发布授权。
+
 ## 最近检查点：native入口与Q05206（2026-10-27 09:10）
 
 本段取代下文较早的执行槽/准备状态，原05/06失败证据保留。main/wave1仍未变。
