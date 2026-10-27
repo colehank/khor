@@ -21,7 +21,9 @@
 
 ## native槽与立即下一步
 
-**当前唯一Cargo/native槽：node_transfer_owner，source22 local pairing14。** session27743/controller1578/Cargo1657；只原pairing6，runner SHA26107dcc64b064b894a6c64d48350aa97b11e659cecbd7afa1bd5109ca3b7722。metadata0后单local目标构建，BUILD1200/TEST300/TOTAL1500/5GiB/有限8192，真实工具链pin。当前批全绿且清理后才原N0 1，最后Node libtest42（原40+既登记真实32MiB两父）；总待49，顺序复用正常Node，不新增case/target。任意setup/business/resource/cleanup失败立即停并保原证据归槽，不自动重启/改源。
+**当前无Cargo/native活动槽。** local pairing14原6父执行到第5失败即停：前4实际绿，父名thirdpeer但实际第一次`c.pair(a.invite())`（pairing.rs496）收到“completion does not name an outgoing plan”；还没2秒quiet、beta加入或第三方访问。第6未跑，N0/Node42未启动；不推断第三方认证失败。build0/461.329s、整run476.974s，1932源稳定、26dual、owned组/TMP清，owner明确归槽，root核raw/双盘/10组退出。
+
+node_transfer_owner仅只读定位本既定父的completion生命周期，不改源或自动重跑。重点区分同响应的receipt清理与并行normal/Pair泵提前确认回收，先实证根因再最小修复；未证实候选保持待证。原49授权在此次失败处停止，后续需root沿既定收口重新授槽，不扩case/target。
 
 已完成local13原Pair04唯一父：构建976.241s、父21.416s、总1002.443s；原90s/数据/全部断言保留。root已核原raw、20双盘SHA及manifest、来源profile/正常Node、before=after、6个进程组消失与TMP清，local13旧handle已结束不得重启。source22单函数非作者node_test_review实际窄审无新增阻断：prepare canonical校验先于stage/Ready，open_existing完整digest/owner/epoch授权、短读/EOF、RAII/drop及普通resume/receiver边界保留。
 
