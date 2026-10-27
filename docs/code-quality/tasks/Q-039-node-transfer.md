@@ -943,3 +943,19 @@ node_transfer_owner已返唯一native槽，现回作者树 `/Users/zgh/Developer
 run01 terminal exit1/37.138s，失败在Node编译，0业务父：trust.rs四root::load返回anyhow不能传Error::from_std（重复诊断共8条），一处tuple的&String/&str分支不一致。13dual/raw SHA `be126f294f40b134e7c404244c138117ae7e442b9aac4c6d7b96ebdb90ce3e17`；1932输入before/after/current一致，owned groups与runner全退、/tmp/n2v16清、无forced/cleanup错误。root实核raw、13dual与实际PGID，不记作产品运行红。
 
 root授权最小编译修，candidate17仅4路径：trust四处现有String→Error映射与as_str/as_slice类型，另去本片unused wire/Doc与无必要parens；TESTS/oracle/范围不变。delta SHA `c8946e9298573fac21a739df223014eada01d37329371dffffe14d27b27f9fc8`，root已读，30dual。plan02只换候选/输出/短TMP，runner SHA `cdefd8196c56413cedd8b2030f405d2c26ee4452b8861ec95e7164333f28f195`，data `fdf60889df674fb9519100e3551e838b1e3ed48c06fddbda5299cd1e251c5f45`，7dual，仍1932完整Git输入/实际selected来源与3target47父。当前session53766/runner43484，metadata1.05s/0后build-node43578，尚无业务结果。共享native槽仍N2，其他owner不得启动。
+
+
+### run02现成小Pair业务红与source18最小修（当前run03）
+
+run02三必要build全部0：Node75.78s、原Pair04 target48.25s、pairing10.16s，实际三个产物及all/ignored inventory来源过。新2ordinary已绿；第3父原`pairing_joins_both_tables_and_chat_flows_both_ways`在123行`b.post("@alpha from beta")`报alpha不通。此前真实Pair和两端2rows断言已过，随后发消息失败是产品红；其余44父未跑，不能说47绿。run02 144.726970s、31dual，1932输入与3产物稳定，13PGID/runner43484全退、TMP /tmp/n2v17无、guard/cleanup空，root读raw并实核SHA/PGID。原raw SHA `ded06f402675a6ed2e2ecfdbcd3e8dc961bb3a60e8a074a2cdc6e29783fbefb7`。
+
+定位当前本地settlement给issuer remote_addrs传空Vec，新caller Snapshot可传播空hint。root核实际Ticket.direct是已有Vec<String>、且dial成功用了同一direct，授权最小沿票据保已成功拨号地址。source18仅link_pairing两行：clone ticket.direct并传入settlement；delta SHA `3525f20fc67adf8bb8fc9428cfe4c6c605ad6c2665df8f4b6b03c988026cbc1d`，root已读，31dual，无新wire/地址框架/父。原小Pair就是现成红绿oracle不改。plan03仍1932/3target47，7dual，runner `86e8c24bc26d5a32e8f98798cfd884a3777005776d38e682b7f02e7010b24046`，data `04e0809f3e19a0378ae90d6b0014ba70c22c9f5b5932784d1977e51867bdcdcf`。
+
+当前唯一槽继续N2，run03 session40694/runner49774，metadata0/.94s后build-node49812；源不变、未宣称新业务绿。shutdown plan02已准备（runner2bc5ee7c…94c42），补内盘ROOT场景显式外盘target持续5GiB门，原37/真实Pi/normalTauri不变，等本轮归槽再执行。
+
+
+### run03四父绿，sweep同义夹具定位补齐，run04执行中
+
+source18 run03三build/proof/list全部0，当前新2ordinary＋原pairing完整双向聊天/认证/Seen链＋真实expiry共4父绿。case05原sweep旧票/空票删除断言均过，最后fresh minted仍按raw token文件名查找失败；其余42未跑，不能充47绿。167.260s、33dual、1932源和三actual产物稳、15PGID/runner49774全退、/tmp/n2v18清、guard/cleanup空。raw SHA `08c59139f95791a7fa6fa31537c83ed77df70301082c2af933db83b9d9b824cf` 保留。
+
+source19只tests/pairing.rs补同义hash定位（3hash行+原assert），所有原过期/旧票/新票/时限断言保持；root已检查全部invites相关测试定位，无另见raw路径。delta SHA `4d4a40c5d29985b3e14fe7242076e5cf7a920cd7ba1543deac704315212c4b4f`，32dual。用户收口要求下不新建跨版本承接/不改proof源域/不扩矩阵，仍当前3target47父，未跑恢复/Vouch/Pair04等须当前实际artifact。plan04只有候选/输出/短TMP切换，runner SHA `bb85351745bf4204dd888b7d52db6682c81c0dd04cd4b8c7ad9c0c82df308800`，data `83c9c345c05fba6f0d6e08fd0f6b55901ed942add742f8b05f6feebafdedce7c`，7dual。当前唯一槽N2，session71681/runner56774，metadata0后build-node56827，尚未新业务结果。

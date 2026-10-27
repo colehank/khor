@@ -62,3 +62,8 @@ source03双盘：外盘 `Q037/shutdown-lifecycle-source03`、内盘同相对目�
 ### 实际验收准备与Pi复用（未执行shutdown native）
 
 node_test_review未launch已归还槽，N2先实际运行；避免环境准备占空槽。shutdown_owner只读找回真实Pi产物 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q041/real-bundle-darwin-02/khor-agent`，实际SHA `af9555409de4af93cf166aeedc4b88f19196b5848dc89dd496ea0c650b79d646`/76474082B/0755/MachO arm64。当前shutdown树全部26agent输入与Q041 run02 before/after/build完全相同（无增减），package/lock及现locked cache亦同；bundle原件不在已归档14Rust二进制中，仍直接可用。真实accounts独立父给KHOR_AGENT_SIDECAR绝对路径即可，无需node_modules、下载或再build；新6父内部Python进程仍只作各自fixture，不能冒真实accounts。本片生产source03保持，无新的工具治理专项。
+
+
+### shutdown plan02 READY（37父＋normal Tauri，未launch）
+
+入口 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q037/shutdown-validation-plan02/run.py`，runner SHA `2bc5ee7cfbbfd58e78411a6db718a81122d5db76d1d05b90098a7c6554094c42`，data `addb46fde7ed7de1805d1451050c2e051e86df9b2a17968a44f884d497a2e66c`，5dual。沿原controller最小换2378当前输入/434ignored/normalCLI+Node两build，new6先跑（各外内summary不另计父）＋原R1 Node30＋真实accounts原1=37，最后正常Tauri caller check。独立ACP旧全矩阵不加，manage_on同义wrapper原driverbody不改且新6含实际initialize/authenticate/reap。root已读plan01全runner，并要求plan02仅两guard行显式target外盘持续5GiB（ROOT现内盘不可只查两内盘路径），原300/720/5GiB/owned/proof/资源门全保。当前READY无native，N2唯一槽未归还；source03仍未编译/运行/App验收。
