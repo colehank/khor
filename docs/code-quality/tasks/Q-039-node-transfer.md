@@ -929,3 +929,17 @@ node_transfer_owner已返唯一native槽，现回作者树 `/Users/zgh/Developer
 作者树27093f4a上9tracked+3new共12路径，双盘29文件，patch SHA256 `9c36f7fa102a8e160fa0b712d8185dc54666ff8c51a32fca507aa863365ac9dc`，manifest `73a27f9e4b4e3c996b07c65bc12b533aa89a0a2145354d34a6de216dee2f36e7`。外盘 `Q039/node-pair-vouch-candidate16`。完整Pair/Vouch已启动垂直路径及恢复fixtures交审，12源Rust解析/diffcheck过；Cargo/native/commit为0，不标N2修复。shutdown_owner非作者独审；作者只准备既定验证入口，不launch。2普通+3ignored新业务父、1helper不计父，原29,224,082B Pair04 90s门、原pairing语义保留，只invite文件定位由token转tokenHash。
 
 沿现有State/TransferStore/worker与N1 pump，没有whole-table/inline roster fallback。Pair设备bootstrap用现有canonical Snapshot以保原Pair04数据/64MiB门，normal N1仍Updates。863 git-listed frame不是实际native closure，后续用Q055实际selected/ignored来源。独立新问题如已有normal devices plan冲突仅登记下一轮，不安全删除plan、不扩本轮范围；用户明确已开始做完，后续只记录。
+
+
+### candidate16非作者源审完成（shutdown_owner＋root）
+
+实际29dual/12current payload与manifest核齐；root读Pair/claims、doc route、prepare/apply与recover-before-bootstrap、Vouch，shutdown_owner独审同一契约，未确认明确阻断。已核认证caller+nonce+immutable header、raw ticket首Start/tokenHash不当凭证、Ready与target-before-flush、exact旧key、epoch和当前gone/revoked限制、purpose/manifest pins、Vouch upload-only与重复Write不重建、1MiB/256KiB/64MiB原预算；原两fixture只文件定位改hash。图仍旧快照，不当当前覆盖证明。
+
+允许准备实际3target/47 distinct＝新5+原Pair04 1+原pairing6+trust18+N1原17；先实际list/ignore核对，再定向新与原Pair04，后同artifact既有回归。原N0另target放最终集成组合，避免作者/整合重复重型构建，不丢验收。当前唯一native槽空闲，shutdown先准备，N2需root授槽后才launch。source/type/native/App未知不以源审替代。
+
+
+### 首次编译红保留，最小candidate17 / run02执行中
+
+run01 terminal exit1/37.138s，失败在Node编译，0业务父：trust.rs四root::load返回anyhow不能传Error::from_std（重复诊断共8条），一处tuple的&String/&str分支不一致。13dual/raw SHA `be126f294f40b134e7c404244c138117ae7e442b9aac4c6d7b96ebdb90ce3e17`；1932输入before/after/current一致，owned groups与runner全退、/tmp/n2v16清、无forced/cleanup错误。root实核raw、13dual与实际PGID，不记作产品运行红。
+
+root授权最小编译修，candidate17仅4路径：trust四处现有String→Error映射与as_str/as_slice类型，另去本片unused wire/Doc与无必要parens；TESTS/oracle/范围不变。delta SHA `c8946e9298573fac21a739df223014eada01d37329371dffffe14d27b27f9fc8`，root已读，30dual。plan02只换候选/输出/短TMP，runner SHA `cdefd8196c56413cedd8b2030f405d2c26ee4452b8861ec95e7164333f28f195`，data `fdf60889df674fb9519100e3551e838b1e3ed48c06fddbda5299cd1e251c5f45`，7dual，仍1932完整Git输入/实际selected来源与3target47父。当前session53766/runner43484，metadata1.05s/0后build-node43578，尚无业务结果。共享native槽仍N2，其他owner不得启动。

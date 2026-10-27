@@ -52,3 +52,13 @@ root确认既定代次契约的一项阻断：原Serve::Drop先serving=false，�
 原restart业务父中加入同一真实serve最终Drop屏障：正常drain已ack、旧owner尚未执行最后stop时，显式新owner lease必须Busy；释放屏障并等旧serve实际完成后，原后续真实新Node/新serve启动与旧Node拒绝断言继续执行。没有新增专项父/矩阵，仍6业务父。source02其余8payload逐字节保留，Root/producer边界未扩。
 
 source03双盘：外盘 `Q037/shutdown-lifecycle-source03`、内盘同相对目录；manifest SHA256 `4e682bd69dc369a5fe96ba61ff8ea9b11ad021a86f669f28abe75162af2e0d01`。两个变更Rust解析、diff-check、严格两路径差异与6父数量检查已过；Cargo/native/App仍0，等待root既定独审及授槽。本卡未提交中央index；源树仍dirty未提交，source01/02完整保留。
+
+
+### source03非作者独审完成（node_test_review＋root）
+
+当前10payload与双盘manifest相同，02→03仅runtime与restart父变。独审未确认现契约阻断：旧Serve reservation跨最后stop保留，API Call覆盖spawn→register，producer join锁外且reservation持续；Pi Session真实wait/IO join，ACP confirmed_exit来自native reap+IO join，超时/线程panic保unconfirmed。可以进入既定normal CLI/Node构建、新6父＋原R1 Node30＋既有账户父、normal Tauri caller check；真实App Exit仍P5。此时仅入口准备，尚未启动native，不加新专项。
+
+
+### 实际验收准备与Pi复用（未执行shutdown native）
+
+node_test_review未launch已归还槽，N2先实际运行；避免环境准备占空槽。shutdown_owner只读找回真实Pi产物 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q041/real-bundle-darwin-02/khor-agent`，实际SHA `af9555409de4af93cf166aeedc4b88f19196b5848dc89dd496ea0c650b79d646`/76474082B/0755/MachO arm64。当前shutdown树全部26agent输入与Q041 run02 before/after/build完全相同（无增减），package/lock及现locked cache亦同；bundle原件不在已归档14Rust二进制中，仍直接可用。真实accounts独立父给KHOR_AGENT_SIDECAR绝对路径即可，无需node_modules、下载或再build；新6父内部Python进程仍只作各自fixture，不能冒真实accounts。本片生产source03保持，无新的工具治理专项。

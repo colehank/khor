@@ -27,11 +27,11 @@
 | owner | 实现树 / baseline | 当前状态 |
 | --- | --- | --- |
 | root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052/R1/N1已集成至b196992a（含取消31回归、Q055闭包输入修复、trust18提取）；现又集成Q054＋fixture至ec404，组合CLI/Node及61功能父已过，真正App/其余target待。 |
-| node_test_review | R2树 `fix/quality-remote-cancel@828fbd3167732c27fc4bb1718474a41961882279` clean | R2 run05实际59 distinct全过，已集成aa9f80ca；现只读独审shutdown source03及准备既定验证，尚未授native。 |
+| node_test_review | R2树 `fix/quality-remote-cancel@828fbd3167732c27fc4bb1718474a41961882279` clean | R2 run05实际59 distinct全过，已集成aa9f80ca；shutdown source03独审无确认阻断，已归还未启动的槽（真实accounts sidecar前提待准备）；先完成CLI/Node＋6新/30旧入口，无native。 |
 | shutdown_owner | 复用Q055旧树 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-shutdown-lifecycle@ec404dd7` dirty10 | source03修复最后stop前释放代次reservation的已确认竞态，6业务父仅源码。现作为非作者只读审N2 candidate16；不改源、无native。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@27093f4a` dirty12 | N2完整Pair/Vouch candidate16交审；2普通＋3ignored新父仅源码，原Pair04与pairing oracle保留。现准备既定最小验证入口，无native；不扩范围。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@27093f4a` dirty12 | N2 candidate16双审无阻断；run01编译类型错误0父，已最小修candidate17；plan02实际3target/47父执行中session53766，不扩范围。 |
 
-**当前native槽空闲，R2 run05已terminal并归槽。** R2作者828fbd→集成aa9f80ca，12 payload已逐字节核（proto保留N1并核R2测试块），两树clean。当前集成aa9尚未组合native/App验收；待已开始的N2/shutdown集成后针对受影响链路作一次组合，不逐commit无变化重跑。上一ec404的61父原绿仅适用当时版本。
+**当前唯一native槽已授node_transfer_owner执行N2 plan02（3target/47父，runnercdefd819…8f195，session53766）。shutdown未launch已明确归槽，继续并行准备CLI/Node＋新6/旧30及真实accounts/Tauri前提，不占槽。R2 run05已terminal并归槽。** R2作者828fbd→集成aa9f80ca，12 payload已逐字节核（proto保留N1并核R2测试块），两树clean。当前集成aa9尚未组合native/App验收；待已开始的N2/shutdown集成后针对受影响链路作一次组合，不逐commit无变化重跑。上一ec404的61父原绿仅适用当时版本。
 
 R2 run05：正常CLI/Node/A2A/acp-stub/wire五产物来源验证＋59 distinct，70阶段全0，311.919s/94双盘文件；2354完整输入before/after/current一致，288 owned groups全部实际消失、TMP `/tmp/r2i5`不存在，无forced/guard/残留。root核全部raw、双盘SHA、当前输入及实际PGID。HTTP不支持仍Unknown，不宣称所有远端停止。历史run01–04失败保持。证据 `Q037/remote-r2/input-cancel-validation-run05`。
 
@@ -67,7 +67,7 @@ source02只两fixture路径27payload/2353输入；原source01的DeviceId.id编�
 
 ## N1 / N2：Node文档同步
 
-- 原N0合法25,447,954B设备历史旧4sync不收敛但Seen123/Pintrue推进；Pair04真29,224,082B回包失败烧票、同caller重试badinvite。原红保留；大Pair/Vouch恢复N2未实现。
+- 原N0合法25,447,954B设备历史旧4sync不收敛但Seen123/Pintrue推进；Pair04真29,224,082B回包失败烧票、同caller重试badinvite。原红保留；大Pair/Vouch恢复N2当前candidate17定向验证中，尚未证明修复。
 - N1初始candidate04：单DocTransfer、encoded1MiB/256KiB块、32MiB/30s visit、4块/1MiB公平quantum，无Loaded/Sink跨network await；raw1MiB门同用例红→绿，unit11实际过。03原N0被Busy误分类中止，04只修三处typed Busy，N0尚未绿。
 - source06实际quiet1 Versions过；Busy6次真实body6,377,994B却计4,805,130B，漏6完整块；purepull Busy后first_pending=false但重开同manifest实际VV+Spec已完成。**两项真实缺陷已由后续source11实际回归闭环**。
 - 原last-single及source07 few-op Chat在外/内盘TMP均未于30s达到32MiB；都是setup失败，不是越界红，不能归因外盘。保留优化构建下实际网络预算边界验证，不降低32MiB/30s限额。
