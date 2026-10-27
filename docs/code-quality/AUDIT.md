@@ -90,6 +90,8 @@ Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史
 
 | 原normal serve重启夹具Node打开Busy | run07原062 helper在runtime_close_tests1051 Node::open unwrap Busy，父789 restart失败；raw无具体gate。63累计过/本父失败/余50未执行；57dual/source稳/99组402owner全退/TMP清。 | 归已有Node打开并发准入候选下一轮，不新增源码/诊断/重试，不将helper另计父或充pass。 |
 
+| 真实GUI首次打开/多图上传遇Busy | Q033实App run03/run04首次open均显示document transfer state busy，UI Retry后成功；run03并发4图put有2 rejected，UI补齐后4图确实进入23MB Say。run04逐图put全部成功。 | 归已登记Node打开准入下一轮；不以手动补齐或单图路径声称并发多图已修，不扩本轮产品实现。 |
+
 
 ## 2026-10-28 已改边界的Clean Code收口
 

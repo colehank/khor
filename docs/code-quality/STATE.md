@@ -1,6 +1,6 @@
 # 当前代码治理状态
 
-更新：2026-10-28。完整目标 active，未完成；当前在 P5 真实 App 验收准备。继续先读本页和 [PLAN](PLAN.md)，核实际 refs/diff/agents/PID。此前详细记录保留在[历史 checkpoint](history/STATE-before-real-app-acceptance-20261028.md)；历史 handle 不得重启。
+更新：2026-10-28。完整目标 active，未完成；当前在 P5 真实 App 验收。继续先读本页和 [PLAN](PLAN.md)，核实际 refs/diff/agents/PID。此前详细记录保留在[历史 checkpoint](history/STATE-before-real-app-acceptance-20261028.md)；历史 handle 不得重启。
 
 ## 用户边界与当前源码
 
@@ -11,17 +11,23 @@
 
 集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1@495d096d54ea083304031423ca052f87dd9bc75e` clean。完整 2388 输入 frame SHA `36f15241f5524d1e900d9b160087eb26b512a5db3f217c0713a869500efaf07e`，含 gen157/dist277/模块锁。生产与21b1一致；56bde只有原030失败 snapshot diagnostic，495d只有 Peer fixture 精确 Busy→Refused；全部原测试体不变。N2作者130fb、R2作者828f、退出作者3707均已集成，恢复仍核真实 refs。
 
-## 当前执行槽空：下一步直接真实 App04
+## 当前执行槽空：真实App原流程待完整闭环
 
-**当前无native/Cargo/App/服务运行，原core04 session1320已exit0完整归槽。** core-helper-run02正常producer完成、原verify/require全过：81.979s，24dual、source/helpers与GUI独立artifact稳、owned/TMP清；root逐SHA/selected实际stat和完整结果已核。result SHA **89715726663ccd10094d09039c62232e556725c58c1541a5cab94a79a00e0d4f**，core-provenance SHA **8115c4d2b35760839818aa80e8b0f9b1a8629954689d7423455126e195b12d2b**。实际testexe `target/debug/deps/chat_upload_cancel-a98ef2c294b70f0c` SHA fa77eac90f78bc7df46506d24a982bda54c42d9aa3051756cf25cd924d8d0552，原helper/时限未改。
+**当前无native/Cargo/App/服务，App run03 session77772和run04 session31945都已exit1并有限清理；不能重启旧handle。** GUI/core实际producer仍如下，未重新编译。真实Q033已执行两次，原结果均非绿：
+- run03 278.611s：系统文件选择/多次CUA往返耗时，helper270.07s deadline101；A23MB首Part→真实Stop/显式release→原稿4图恢复，checkpoint-a已捕；B/C/normalQuit未达。首次会话open Busy→UI Retry成功，原4图并发put两rejected，经UI补齐；保真实问题归已有Node打开准入下一轮。source/helpers/dist/bundle稳、guard空/owned和TMP清，未伪造accepted。
+- run04 277.263s，resultaf91822399463c5e69450ddb5ec8651ca71e9fadd4722fcbf5dc1a70379ce373：四图逐张正常加入；A/B同547B文本SHA与四PNG hash/order完全相同，A取消reconnectfalse/无commit；B新tokencommit→真实Allow/chat_answer→EndTurn、checkpoint-b恰1prompt；C无附件小消息commit→Ask→Stop/Cancelled；option/model two成功，新Settings实存，单连接。mode与最终oracle/正常Quit未达，helper270.06 deadline后原outer清理，source/helper/dist/bundle稳、guard空/owned-TMP清。独立app_runtime_review逐raw核过，不能称完整成功。
+
+为纠正执行层约50次工具往返超时，仅root CUA把已观测确定的文件选择步骤在单调用内串行执行，每一步都fresh AX唯一真实元素定位后click/setValue/pressKey；不使用driver UI脚本、DOM/IPC伪操作，不增加原270/30/外300时限。`P5/Q033-real-app-owned-plan06`6dual，run/launcher与04/05逐字同、data72850c645e8ee0ff3eccd939842665dd754712802c825d24a91c5655b309b0b7仅4路径key改新run05/q033ui5，root和app_runtime_review短审通过，可仅此接续一次完整原流程。原capture A/B/最终raw与CUA正常Quit全保，真实producer五SHA齐。下一次直接该计划，不重编/重跑115/改源或加时。
+
+core-helper-run02 producer已完成81.979s/24dual/来源true/所有owned-TMP清，result89715726663ccd10094d09039c62232e556725c58c1541a5cab94a79a00e0d4f，core-provenance8115c4d2b35760839818aa80e8b0f9b1a8629954689d7423455126e195b12d2b；exe chat_upload_cancel-a98ef2c294b70f0c SHAfa77eac90f78bc7df46506d24a982bda54c42d9aa3051756cf25cd924d8d0552。原1320已exit0。
 
 core04与已独审03 runner逐字同，仅3个OUT/internal/TMP字段改run02；data8b40397ff350355ffcc40caf6f84a8e741fc3129eec66333131dde204816688e。标准无GUI embed环境、真实当前来源，不能将GUI自动proof缺口传播为伪core receipt。
 
-**无需再规划或编译。下一步用现成 `P5/Q033-real-app-owned-plan04/run.py` 执行实际Q033。** 五个必需实际producer path+SHA已在双盘 `P5/Q033-real-app-actual-producers01.json` 逐项固定（status明确App尚未启动）。恢复6582五pin，外层PATH仅去掉恰好首个toolbin:，原App04 prepend后等于core实际环境；原外层自己设置CARGO_*并清runtime helper变量，TAURI_CONFIG/REMOVE/KHOR_AGENT_BUNDLE保持unset。先CUA文档/只读inventory准备好，再按既定唯一owned launcher启动；不要由getApp先行无隔离启动，也不重跑原115/构建或重启旧handle。
+**无需再规划或编译。下一步用已短审 `P5/Q033-real-app-owned-plan06/run.py` 完成本页上述原Q033。** 五个必需实际producer path+SHA已在双盘 `P5/Q033-real-app-actual-producers01.json` 逐项固定（status明确App尚未启动）。恢复6582五pin，外层PATH仅去掉恰好首个toolbin:，原App04 prepend后等于core实际环境；原外层自己设置CARGO_*并清runtime helper变量，TAURI_CONFIG/REMOVE/KHOR_AGENT_BUNDLE保持unset。先CUA文档/只读inventory准备好，再按既定唯一owned launcher启动；不要由getApp先行无隔离启动，也不重跑原115/构建或重启旧handle。
 
 ## 正常GUI已产出，空间中断原件保留
 
-`P5/Q033-quality-gui-build-run02` 已正常完成（session23822 exit1仅自动proof拒绝）：metadata/build均0，102.620s，29dual、source/gen/dist/helper与bundle稳、owned/TMP清。root独核实际selected freshfalse/testfalse/opt0/features仅devtools、当前manifest/main.rs，GUI executable SHA **f76302af7b61b59c1d01172ee4209c1c9cb6c80bd6381ee760468527624c865d**、374,932,072B；result SHA **ec56eb347c058b1a167e5fd8807fdd7cf1a57891cc93cae9e6d3f1019385e2bf**。实际选择/完整stat见 `gui-selected-actual.json`。真实App尚未启动。
+`P5/Q033-quality-gui-build-run02` 已正常完成（session23822 exit1仅自动proof拒绝）：metadata/build均0，102.620s，29dual、source/gen/dist/helper与bundle稳、owned/TMP清。root独核实际selected freshfalse/testfalse/opt0/features仅devtools、当前manifest/main.rs，GUI executable SHA **f76302af7b61b59c1d01172ee4209c1c9cb6c80bd6381ee760468527624c865d**、374,932,072B；result SHA **ec56eb347c058b1a167e5fd8807fdd7cf1a57891cc93cae9e6d3f1019385e2bf**。实际选择/完整stat见 `gui-selected-actual.json`。真实App已实际执行，完整闭环尚未通过，见上。
 
 **Q055保持非绿**：实际verify拒绝 `Build script names an unrecorded environment input: TAURI_CONFIG`，provenance_complete=false/verification_status=rejected/整体nongreen，normal_build_completed与artifact_checks_passed均true。未伪造accepted receipt/修改prepared或helper。GUI05静态data92bcbe88327bcedae255452d66cb4daa420d20d261f12dabf27ef833876a736e，runnerffdc8005…77266与已审GUI04逐字同，只3个输出路径改run02。实际启动PATH去掉6582首个toolbin前缀，原runner prepend后全文一致。
 
@@ -53,15 +59,15 @@ d26e608f仅216 Rust机械格式；33c8bc12把共同检查放main/显式root、�
 
 21b1恢复/register_self/bootstrap共持同一现有root fence，bootstrap借guard、返回Node前释放；不跨await/不新锁/不重试，Ready/坏next/认证不变量保。495d仅测试协议适配，不是Node并发准入治理。
 
-## 接下来：既定真实 App 验收，尚未执行
+## 接下来：既定真实 App 验收收口
 
-1. GUI-run02与core-helper-run02均已实际完成并独核归槽，直接真实App04。
-2. core04沿 `P5/Q033-core-helper-producer-plan03`（9dual）原控制，runner与已审01逐字同，只更新来源和最新run06/core prior `1b73ca9c38ba6bac4b1b2cc53758cf14fb1f34344a37ed007e33fc20093cf21a`。新core04 data见上；原03 data2d757…3105保历史。按原GUI→helper顺序，标准无embed环境原prepare/verify/require，必要单目标构建，不能假定旧core仍有效；GUI bin独立SHA不变。
-3. `P5/Q033-real-app-owned-plan04`执行真实Q033：env-i私有HOME/ROOT/TMUX/cwd，无SIDECAR/凭据/GHOST；真实native/wire/ACP phase快照，4实际PNG由CUA选择，A上传时Stop→B相同草稿/附件重发Allow→smallC Stop→实际mode/option更新→原raw oracle确认→CUA正常Quit→host stop/finished/observer有界退。原helper270/firstPart30/外300门保，人工accepted不代替业务oracle。
+1. GUI-run02与core-helper-run02均已实际完成并独核归槽，不重编译。Q033 run03/run04均已真实执行但未完整通过；下一次使用已独审plan06，输出新run05。
+2. root CUA逐步fresh AX批量执行确定的文件选择，减少往返；原helper270/firstPart30/outer300及全套原raw oracle保持，mode和option、正常Quit均需实际完成。
+3. 完成A上传中Stop/release→capture-a→B同稿四图Allow/EndTurn→capture-b→smallC Stop→mode bold/model two→最终oracle ack→CUA CmdQ→accepted。失败保原证据，不用人工marker替代业务判断。
 4. 同一正常artifact完成Q035实际page/双私有peer借网/最后owner释放；Q043真实OS拖放、全屏、window-close、正常Quit。私有relay须两新Root首次open前非空only_mine配置；仅KHOR_RELAY仍追加public tier。Q035原4 native程序化资源场景使用已审端口替换plan01，单列程序化证据。
 5. 任务卡/STATE/AUDIT末尾按真实结果对齐，保留失败/未验/旧版本复用边界；Q010/011真实iOS/Safari已有确切版本与影响映射，不新开物理机/IME/Safari矩阵。无main/ship。
 
-真实UI统一CUA。此前只有只读inventory；当前turn已恢复CUA文档，尚未启动App。继续UI前若上下文压缩，先rewriteDocumentation；先listApps确认已由owned launcher启动，再getApp，避免工具自行无隔离启动。
+真实UI统一CUA。此前两次实际App流程保留失败证据；当前CUA文档已恢复。继续UI前若上下文压缩，先rewriteDocumentation；先listApps确认已由owned launcher启动，再getApp，避免工具自行无隔离启动。
 
 ## 资源、恢复与下一轮
 
@@ -70,3 +76,9 @@ d26e608f仅216 Rust机械格式；33c8bc12把共同检查放main/显式root、�
 工具链事务已complete，不重复恢复/rustup升级/增组件。真实sysroot `/Users/zgh/.rustup/toolchains/stable-aarch64-apple-darwin`，Rust1.95.0/LLVM22.1.2/rustfmt1.9.0；真实Cargo/RUSTC/RUSTDOC与绝对RUSTUP_TOOLCHAIN/AUTO_INSTALL0。精确原env/PATH取 `Q039/integration-bootstrap-guard-run01/toolchain-pins.json`，SHA6582c4471645016dfe900e561685bf29c3d605d8d9e0f52be8797fbd0cf79533，不重复prepend。fcb模块/f7entry固定不改。
 
 权威为本目录；外证据 `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`，内恢复 `/Users/zgh/Library/Caches/khor-code-quality/recovery`，掉盘读RESUME/逐SHA镜像再核现场。下一轮见[AUDIT](AUDIT.md)：040 deadline、Node打开Busy/fixture晚写、Q055、原setup owner gap等；Q041d fresh-onset、remote lease、Linux/musl/真实SSH等原未实施项不变成本轮新前置。
+
+## 2026-10-28 失败运行重复产物归档
+
+run03/run04双盘原manifest所有条目逐SHA核过，四份同SHAf763/374932072B的历史staged GUI executable已可逆归档，原日志/results/manifest及其余bundle文件保持。ZIP在内恢复根q033-historical-staged-gui-f76302af.zip，102641293B/SHA8a9bf6443392b6a2e71faf473c069bcab8d00211349f997faf2ccaba62f56c30，恢复索引双盘P5/Q033-historical-staged-gui-archive01/archive.json。恢复原4路径前，历史全树manifest不可直接声称当前完整；bytes/mode/mtime可恢复、inode不可恢复。归档后外盘6479036416B、内盘9085059072B，未降低5GiB门。
+
+发现工具在run04已清理后重新唤起私有历史App37569（05:27:43/ppid1，原owned App为30087）；root已CUA CmdQ并ps确认缺失。它不是原流程正常Quit证据，未回填run04结果；无用户App被退出。避免旧handle再次访问，第三次只绑定owned launcher已启动的新run05精确App路径。
