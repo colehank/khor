@@ -959,3 +959,19 @@ run02三必要build全部0：Node75.78s、原Pair04 target48.25s、pairing10.16s
 source18 run03三build/proof/list全部0，当前新2ordinary＋原pairing完整双向聊天/认证/Seen链＋真实expiry共4父绿。case05原sweep旧票/空票删除断言均过，最后fresh minted仍按raw token文件名查找失败；其余42未跑，不能充47绿。167.260s、33dual、1932源和三actual产物稳、15PGID/runner49774全退、/tmp/n2v18清、guard/cleanup空。raw SHA `08c59139f95791a7fa6fa31537c83ed77df70301082c2af933db83b9d9b824cf` 保留。
 
 source19只tests/pairing.rs补同义hash定位（3hash行+原assert），所有原过期/旧票/新票/时限断言保持；root已检查全部invites相关测试定位，无另见raw路径。delta SHA `4d4a40c5d29985b3e14fe7242076e5cf7a920cd7ba1543deac704315212c4b4f`，32dual。用户收口要求下不新建跨版本承接/不改proof源域/不扩矩阵，仍当前3target47父，未跑恢复/Vouch/Pair04等须当前实际artifact。plan04只有候选/输出/短TMP切换，runner SHA `bb85351745bf4204dd888b7d52db6682c81c0dd04cd4b8c7ad9c0c82df308800`，data `83c9c345c05fba6f0d6e08fd0f6b55901ed942add742f8b05f6feebafdedce7c`，7dual。当前唯一槽N2，session71681/runner56774，metadata0后build-node56827，尚未新业务结果。
+
+
+### run04七父绿，恢复helper失败先单父诊断（root）
+
+source19 run04三build/proof/实际inventory都过，前7 distinct真绿：新2ordinary＋原small Pair完整chat/auth/Seen、expiry、sweep3＋新claim无burn/真实认证和大Vouch chunks/upload-only/幂等2。case08确到anchor checkpoint并owned SIGKILL9；fresh verifier exit101，父wait_success泛assert失败。verify.log未先打印而Case Drop删除私有scratch，当前证据不能区分生产恢复问题/夹具错误，不能按exit101猜修生产。原raw SHA `2129cab5617633e11bb7acf820ae2378a63301e542b2860f914598f295e3f902`；后39父含Pair04未跑，不称47绿。175.120s/36dual，1932源与三actuallinked binaries稳，18组/runner56774全退、/tmp/n2v19清，guard/cleanup空，root核全部双盘SHA、实际PGID及原失败raw。
+
+root授权最小source20仅让wait_success失败分支在原assert前打印owned verify.log，成功分支summary不变，生产/恢复oracle不动。为控制执行成本，下一先沿同controller做单Node libtest target＋case08唯一恢复父（actual complete source/provenance/list/300/720/5GiB/owned/dual全保），不先重建另外两个integration或跑其它46。真实失败原因拿到后报root，不猜改生产。该定向父过后，同源Node receipt可由既有require_provenance复用给原47完整验收，不新造跨版本继承/工具框架。当前作者保留唯一槽，未有下一native active；shutdown plan02 READY不启动。
+
+
+### diag05获得真实因果，source21四点recipient归属修（diag06运行）
+
+source20仅失败日志输出delta `c847f53098acb67cb01e85996040c7dde4a6927e8abfab85e668e69059c44e0d`（33dual）；diag05 Node唯一build0/84.52s并provenance/list过。原恢复父anchor SIGKILL后fresh Node::open、target、独立Pin和第一次public Pair都过，第二次Pair在worker501明确报`settled roster archive is missing or changed`；父未通过，0业务父。90.371s/18dual，1932输入稳定、5PGID与runner66992全退、TMP清、guard/cleanup空；root读实际子raw并核18dual/PGID，不把运行红归为控制问题。
+
+根因双方共用claim id，issuer在pair_archive(id)存caller输入，caller同key存issuer输入；replicated devices map双向Snapshot后LWW覆盖不同原始roster，重复Pair精确digest校验失败。root/owner独立确认后只授权trust.rs四处source21：key=claim＋local recipient；apply(context.local)、release(self.my_id())和completed-only GC本owner key一致；另一端档案由其自己的owner过期回收。保rawlen/digest、第二次Pair/leave/原父断言，没加wire/fallback/store/新用例。delta SHA `96448882cfa5dab47b71d6f18c12100cfb6b86dc833963f6526a3cf202ff4893`，34dual，root读四处源后无额外阻断。
+
+diag06同单Node＋原恢复父已启动，session16191/runner72396，Cargo72491/rustc72621。runner `57fd6aa805bdfa736ddf8fb9ceec1714e0dfd03f0e32e5de0d4b7701471eaaee`，data `2c7159710132c2a8cf144f164947e37825805a8a1ebf86fc19d33c79051df96b`。定向绿后仅既有require_provenance复用同源Node给原47完整验收，其余39/Pair04尚未跑。shutdown37/Tauri plan02 READY仍无槽，本轮无新增scope。
