@@ -303,6 +303,8 @@ fn respond(
     release: &AtomicBool,
     events: &Mutex<Vec<(String, bool)>>,
 ) -> Result<(), String> {
+    // Accepted sockets can inherit the listener's nonblocking mode on macOS.
+    stream.set_nonblocking(false).map_err(|e| e.to_string())?;
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| e.to_string())?;
