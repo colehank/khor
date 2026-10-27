@@ -125,3 +125,6 @@ Q033 run05全部实际UI与业务及正常App/helper退出已完成，但现有�
 源码确认main8704已有GUI每API Node::open；本轮14931新增RootGate/try-lock、21b1延长构造fence，故不能把当前GUI Busy一概记为main既有独立缺陷。归现有N1已改边界的回归/契约缺口候选，先窄设计/原target红证据，再必要纠正；唯一Busy gate/owner仍未知，不能猜测21b1单独责任。此不撤销“新独立问题下一轮”，也不重启全仓专项。新卡Q-039-node-open-admission归现有N1集成收尾。OS default capability与main逐字同，fullscreen缺口则保持既有候选下一轮。
 
 OS run01最终b4a3…f831非绿/helper原270s期限；0 drag/fullscreen回调/guard write、无正常Quit。外盘DS_Store/UI描述晚写分别保全，独审45dfed…e048不冒当前双盘全树绿。borrow run02一次既有Resume成功后在脚本按id rename处失败；plan03仅修准备参数顺序，未执行。
+
+
+2026-10-28后续可信红：test-only a663b374在原libtest单父实际持same-root控制lease，另一线程正常Node打开立即返回Busy并触发业务断言（非setup/编译红）；原result8df725e9…2bac保nongreen、113.900s/来源清理与20dual过。这证明已改准入的普通打开冲突契约缺口，不定位Pi/OS唯一gate。按既有N1授权窄实现，候选待交付；具体设计与非作者审查见STATE/Q039卡，不把静态设计或红算修复完成。

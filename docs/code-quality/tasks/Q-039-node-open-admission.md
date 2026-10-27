@@ -1,6 +1,6 @@
 # Q039/N1：已改 Node 打开准入边界的集成收尾
 
-状态：design working；owner completion_audit，root审查/集成/唯一运行槽。不是新独立模块或新增治理批次；当前只做有界设计，未实现/编译。基线wave1 integrate/code-quality-wave1@495d096d54ea083304031423ca052f87dd9bc75e，tracked clean。main8704不动，无merge/ship授权。
+状态：implementation working；owner completion_audit，root审查/集成/唯一运行槽。不是新独立模块或新增治理批次；可信基线红已达、候选未交付。基线wave1 integrate/code-quality-wave1@495d096d54ea083304031423ca052f87dd9bc75e，tracked clean。main8704不动，无merge/ship授权。
 
 ## 为什么属于已开始工作
 
@@ -27,3 +27,9 @@ P5/Q043-pi-owned-run01账户读取/设备目录Busy、Connect disabled，实际�
 root与非作者审查共同确认，不能只在Node::open外再套一层constructor锁：resident trust_tick/approve/revoke及Pair结算也使用RootGate，仍会使单个普通open失败。需要恢复的open先取root再取metadata，而Pair路径可以先metadata再try root；保留metadata与控制路径的fail-fast，避免把原拒绝改成循环等待。拟议普通open等待必须在本次root/metadata均未持有时进行，限时/限额、重入明确拒绝，其他进程的OS lease仍try并fail-closed。尚未选定或实现具体策略，也未证明GUI根因唯一。
 
 Clean Code验收：统一一处表达准入规则与释放顺序，资源由RAII所有者释放；不在调用方各自加重试或重复状态。同步改异步不得产生脱离请求/关闭所有者的后台构造写入，裸spawn_blocking方案不接受。功能通过与结构质量分别提供证据。
+
+## 可信红与实施授权（2026-10-28）
+
+root在两份非作者报告后接管第一版具体设计，双盘node-open-admission-design01/DESIGN.md与IMPLEMENTATION-LIMITS.md为授权契约；实际基线test-only a663b374，保原495d产品行为。root独审app_runtime_review的现有API红测试补丁并只作rustfmt后集成；原76行断言保持。原f7/fcb guarded runner只build既有libtest/运行一个父，实际Busy+持lease业务断言失败，原result8df725e933043f6b04ffe381aa8ad05e9d82f713fdce5161c2c111cafbe62bac nongreen保留；113.900s/source/helpers/guard/owned/TMP/20dual清。当前原session10722 terminal。
+
+允许作者在复用overwrite-recovery树fix/quality-node-open-admission@a663b374实现六个列明路径及原target最小测试；禁止作者编译/启动服务/写中央docs。原fix/quality-node-doc-transfer@130fb997保留。新增Try构造入口服务stop/answer/cancel_status/cancel_retry及stop_transfer，避免控制请求增加1s。所有权唯一转移、64active/64waiters/固定1s、等待取消真实退役、普通线程/metadata重入拒绝、控制/meta/跨进程Try、async同future无脱离writer均须候选审查和定向证据。同步FS不能宣称任意中断或全App关闭屏障。main/ship未授权；新独立问题仍只记下一轮。
