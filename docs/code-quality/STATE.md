@@ -21,7 +21,9 @@
 
 ## native槽与立即下一步
 
-**当前无Cargo/native活动槽。** node_transfer_owner 的 source22/local13 已完成并明确归槽，session51036/controller69298/Cargo69367均已结束；禁止重启旧handle。原Pair04唯一业务父通过，实际优化构建976.241s、父21.416s、总1002.443s，原90s/数据/全部断言保留。root已核原raw、20双盘SHA及manifest、来源profile/正常Node、before=after、6个进程组消失与TMP清。剩余既定47/N0/优化网络边界先出最小复用计划再执行，不自动追加target。
+**当前唯一Cargo/native槽：node_transfer_owner，source22 local pairing14。** session27743/controller1578/Cargo1657；只原pairing6，runner SHA26107dcc64b064b894a6c64d48350aa97b11e659cecbd7afa1bd5109ca3b7722。metadata0后单local目标构建，BUILD1200/TEST300/TOTAL1500/5GiB/有限8192，真实工具链pin。当前批全绿且清理后才原N0 1，最后Node libtest42（原40+既登记真实32MiB两父）；总待49，顺序复用正常Node，不新增case/target。任意setup/business/resource/cleanup失败立即停并保原证据归槽，不自动重启/改源。
+
+已完成local13原Pair04唯一父：构建976.241s、父21.416s、总1002.443s；原90s/数据/全部断言保留。root已核原raw、20双盘SHA及manifest、来源profile/正常Node、before=after、6个进程组消失与TMP清，local13旧handle已结束不得重启。source22单函数非作者node_test_review实际窄审无新增阻断：prepare canonical校验先于stage/Ready，open_existing完整digest/owner/epoch授权、短读/EOF、RAII/drop及普通resume/receiver边界保留。
 
 local13 receipt外盘`Q039/node-pair-vouch22-local-run13`，内盘`recovery/Q039`同名；source1932/12payload冻结。actual Pair04 exe SHA bb0dc0b4…a47e5，provenance b450504e…62eb0，normalNode和selected均opt3/freshfalse。只计1父，helper不充数；source22 dev90s红保留，不以优化绿回填。后续real RUSTC/RUSTDOC/PATH固定1.95，绝对RUSTUP_TOOLCHAIN/AUTO_INSTALL0、有限owned历史8192冷编门、双盘5GiB不变。
 
