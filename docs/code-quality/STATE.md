@@ -13,13 +13,17 @@
 
 集成 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1@56bde639f37ace27694b78282fa648bedabc2d07` clean。fullframe2388 SHA ad57f6ffcb67cba13b2a82e306d83e9434026daad95460be315a31140e1f4525，含gen157/dist277/锁；生产源码相对33c8仅21b1的lib.rs/trust.rs两源变化；56bde639仅给原case030断言增加失败snapshot上下文，操作/时序/expected逐字保，其余2387相对21b1逐SHA同。作者N2树130fb、R2树828f、退出树3707均clean，refs镜像仍须现场核。
 
-**当前native槽空。** node_transfer_owner仅静态准备剩82，不能重启旧handle/先编GUI。最终111 run03原session72265/controller14509已exit1/完整后验：5producer均0，其中stub/A2A actual freshtrue+原verify selected.reuse=true；28原父/32positive summary实绿，原case030 Query state Unavailable而期望DurablyQueued实际红，余82未跑。75dual/source21b1-d21f稳定/139组237owner全退/TMP kcomb36清/0forced，result98039bdfd3eac9eaea89b51d4832d4ef1fa6e4fc280b40473779b52914c0b43e。原红保留。
+**当前native槽空。** node_transfer_owner获准仅应用已独审的Peer fixture适配并准备原038/039定向控制，尚未授Cargo槽；不得重启旧handle/先编GUI。最终111 run03已完整后验：28父过，原case030 Query Unavailable红；source21b1-d21f稳/75dual/139组237owner全退/TMP清，result98039bdf…b43e。只补原assert失败snapshot的case030诊断run一次通过（原生产代码不改、不当fix）：25dual/sourcead57/10组35owner/TMP清，result387b0c7d…1461；其diagnostic已56bde639提交，原Query异常待下轮定位。
 
-只读定位已纠正：remote_cancel_tests.rs575解锁后Retry的DurablyQueued已过；576随后的Query才Unavailable。raw缺durability.code，不能猜Busy/StoreUnavailable/InvalidReply，也没有已捕获的改动因果。仅加原assert失败snapshot后，单原case030诊断run01已一次实绿（test.42s/phase.632s），**生产代码没变，不当作产品修复，不继续反复试**。25dual/sourcead57稳定/10组35owner全退/TMP kdiag37清/0forced，全run157.318s/result387b0c7d6d7543bc4340ea6312c1e90fda152b113066859bdfe5c75d2aff1461；正常CLI字节与run03相同。源码诊断已56bde639提交，原异常只保待定位候选，不扩大本轮专项。
+剩82 run04原session51972/controller41525已exit1/完整后验：5producer/list全0，原031–037七父过；原038 `a_bad_source_or_receipt_stays_unresolved_while_valid_siblings_cancel` 因peer=Err("document transfer state busy")实际红，余74未跑。56dual/sourcead57/64组113owner全部退/0forced或guard-cleanup错误/TMP kcomb38清；总239.328s/result3b7edeb0d7895ec68cc32f29f239f39719c3f1661481aa749b043a3d1eef56a3/rawf026f5c12a3ec79fbddd8216e5d8bf2e2791aaf4417ca85c03b1f4b24c94aab9。
+
+run05继续最后74，原039 `pending_reference_recovers_only_by_its_hash_and_preserves_bad_bytes` 同样在Peer Node::open Busy提前退出，0新过/余73未跑；36dual/15.469s/70组89owner全部退/无forced或guard-cleanup错误/TMP kcomb39清；result105b0cb0b079e1812480627a95817e8f669d92819d12c91ca36da705d41bdb83/rawf03657cb63878fd247a34404e7bd3108525f43427569744edc145d5ea09b8deb。
+
+两次Busy均在fixture respond的Node::open?处提前返回，finish先汇总peerErr，原siblings/hash强断言未执行；生产IPC Delegation会将同错误封为Refused继续服务。无法从why判具体gate，Node并发准入问题仍下一轮。为完成既定业务验收，按PLAN“必要接线最小修正”采用仅fixture适配：immutable home保原身份/binding/agent/operation校验，只有精确已知Busy写Refused，其他错误硬失败，成功open再核home；所有原test body/时限/强断言逐字不变，无sleep/retry/新case。`P5/receipt-peer-busy-draft01/fixture.patch` SHA a08000d519e7797ac2f8390157a47cf4df7079af7fa33cb14a5c67cd42acafbc 已root与非作者node_test_review通过；当前已授权作者apply/固定formatter/freeze并静态准备仅原038/039，**尚无执行或通过结论**。这是对之前“夹具也只记录”的窄化修正，不实现Node准入治理；两个旧失败原件保留不回填。
 
 - 当前Node dev libtest receipt `P5/case030-status-diagnostic-run01/node-provenance.json` SHA08565f1d662422b11ca59cb95f31025f34ccfbb1ff971e681f741c6c015bab03；正常CLI receiptb407bb525d063327a1b6c672130448d36fdf4c78c8b07aac398801cd1d84174e。必须恢复原pins环境真require后使用；不按mtime猜。
-- 原115精确减guard-run01已过4、同生产21b1 run03已过28、诊断run已过1=**剩82：Node58/wire1/A2A14/core3/pairing6**。诊断只改未过case030的失败message，其余test body/全部生产不改；旧28与4带确切版本/影响映射复用，不重跑；原case030不当“已修复”。
-- 接续控制只当前Node/CLI require→stub/A2A/wire/core/pairing五必要producer重证或build→82原父，原case对象/flags/数据/helper/summaries/markers/Pi仅accounts/custom-wire普通listing全保。历史receipt只原matching-key/variant/files复用，freshtrue必须原verify selected.reuse=true，不把旧source selected直接当当前。
+- 原115精确减guard-run01已过4、同生产21b1 run03已过28、诊断run已过1、run04已过7=40，另有原038与039两父fixture失败未达业务断言，**剩73未执行**；先完成两父适配后定向，再继续73。诊断只改未过case030的失败message，其余test body/全部生产不改；旧28与4带确切版本/影响映射复用，不重跑；原case030不当“已修复”。
+- 接续控制只当前Node/CLI require→stub/A2A/wire/core/pairing五必要producer重证或build→原038/039定向后剩73原父，原case对象/flags/数据/helper/summaries/markers/Pi仅accounts/custom-wire普通listing全保。历史receipt只原matching-key/variant/files复用，freshtrue必须原verify selected.reuse=true，不把旧source selected直接当当前。
 - 原真实toolchain-pins环境/PATH全文恢复，SHA6582c4471645016dfe900e561685bf29c3d605d8d9e0f52be8797fbd0cf79533；不重复prepend。custom wire harness=false仅all-list核完整3名/ordinary，不能按--ignored分类，不选nested Cargo parent。
 - 300step/720total/5GiB/default512/f7-entry/fcb-module/owned/source/TMP/dual原门保持。下一计划须静态独审后另授槽；首错停保原件，不自动修/重跑/加时/接GUI。所有产品源冻结。
 
@@ -43,10 +47,10 @@
 
 ## 后续既定App验收（未启动）
 
-1. 当前剩82完成并归槽，按实际结果收口；不提前覆盖共享debug libs。
-2. 正常quality GUI build：`P5/Q033-quality-gui-build-plan02`代码已独审，但其旧source/head数据**须更新为实际56bde639/ad57后再独审冻结，不能直接执行旧计划**。单正常dev/no-default/devtools，quality JSON、REMOVE_UNUSED_COMMANDS显式unset、现成真实Darwin Pi bundleaf955/26agent输入。Q055 TAURI_CONFIG/REMOVE env自动proof缺口明记，原prepared/实际verify异常保，不造完整receipt或全绿。真实artifact单独核。
-3. 依原driver的GUI→helper顺序，实际core helper在GUI embed改写共享Node deps之后标准重证/必要构建（无embed环境匹配原require），不放宽fcb；GUI独立artifact SHA保持。真实App runtime env-i、私有HOME/ROOT/TMUX、无SIDECAR/凭据/GHOST，验证真实embedded提取/启动；Python ACP仅Q033独立peer。
-4. `P5/Q033-real-app-owned-plan04`已静态交付，B1遗留data KeyError、B2 native/wire/ACP实际业务关联、B3 RUN/work已修；03独审只剩smallC实际wire应SayWith，04仅此单行替换待短核。不能用人工accepted bool替业务oracle。原helper270/firstPart30/外300、正常App仅CUA Quit、host stop/finished/observer有界退出、owned/source/TMP/dual门保。
+1. 原038/039最小fixture接线与定向、剩73完成并归槽，按实际结果收口；不提前覆盖共享debug libs。
+2. 正常quality GUI build：`P5/Q033-quality-gui-build-plan03`9dual已实际更新56bde639/ad57，runner与已审02 byteexact，仅4个来源字段；node_test_review已短审无阻断，尚未执行。单正常dev/no-default/devtools，quality JSON、REMOVE_UNUSED_COMMANDS显式unset、现成真实Darwin Pi bundleaf955/26agent输入。Q055 TAURI_CONFIG/REMOVE env自动proof缺口明记，原prepared/实际verify异常保，不造完整receipt或全绿。真实artifact单独核。
+3. 依原driver的GUI→helper顺序，`Q033-core-helper-producer-plan01`7dual已独审，实际core helper在GUI embed改写共享Node deps之后标准重证/必要构建（无embed环境匹配原require），不放宽fcb；GUI独立artifact SHA保持。真实App runtime env-i、私有HOME/ROOT/TMUX、无SIDECAR/凭据/GHOST，验证真实embedded提取/启动；Python ACP仅Q033独立peer。
+4. `P5/Q033-real-app-owned-plan04`已静态交付，B1遗留data KeyError、B2 native/wire/ACP实际业务关联、B3 RUN/work已修；03独审只剩smallC实际wire应SayWith，04仅此单行替换已短核通过；未执行。不能用人工accepted bool替业务oracle。原helper270/firstPart30/外300、正常App仅CUA Quit、host stop/finished/observer有界退出、owned/source/TMP/dual门保。
 5. Q033四有效PNG已双盘，`Q033-real-app-driver-preparation`原三文件保持；page旁观`Q033-Q035-app-observer-plan02`只增加4命令实际metadata/原Promise，root已读diff。真实UI全用CUA，至今只有getState只读inventory，未启动App。
 6. 同一正常artifact后续验Q035实际page/双私有peer借网/最后owner释放、Q043 OS拖放/全屏/关闭/正常Quit。私有relay可用正常CLI `relay --dev`；仅KHOR_RELAY会追加public tier，两个新Root首次open前须按已审README的非空only_mine配置。Q035原四native程序化资源场景仅端口改动的3dual已逆核，不冒生产App手势。
 

@@ -84,6 +84,7 @@ Q020非作者审查在父/子提交都复现“用我的覆盖”刚读到历史
 | Q033原Fixture构造前setup owner gap | 与HEAD比对，原先已spawn host再等待ready，Self构造前panic缺本层owner guard；驻留新增部分不扩大该路径。 | 下一轮治理既有setup路径；当前最终App helper必须现owned-entry外层300s/PGID回收，setup失败不计绿。 |
 | Node26前端工具TMP cache分类 | 原npm build0/99.915s、源码/锁稳，但受控TMP留250编译缓存文件，原frontend run保cleanup非绿；root按原stat/hash双盘ZIP归档、独立postcleanup后移除，原结果未改。 | 下一轮若统一工具清理策略再处理；本轮不改Q055/f7或重复构建。 |
 | 取消状态即时查询偶发Unavailable | 21b1原case030在Retry已DurablyQueued后Query返回Unavailable；raw缺code。仅增强原断言diagnostic后同生产源码一次通过，未定位/未改产品，不据此回填原红。 | 下一轮若再现从新snapshot.code定位；本轮不反复重跑、猜测回滚或另开状态服务专项。 |
+| 原取消siblings夹具将Node打开Busy提升为父失败 | run04原case038 peerErr=document transfer state busy，respond:334 Node::open?在answer→Refused前返回；生产IPC路径会封Refused，不退出resident。raw无具体gate，后续siblings强断言尚未执行。 | Node准入治理留下一轮。随后run05原039同一夹具提前失败；按PLAN既定验收必要接线，仅fixture将精确Busy封Refused，immutable home保全部身份/操作校验，其他错误硬失败、全部原测试体/强断言/时限保持。草案root与非作者独审通过，待apply/原038与039定向；两个旧run保失败不计pass，不加sleep/retry。 |
 
 
 ## 2026-10-28 已改边界的Clean Code收口
