@@ -10,6 +10,10 @@
 - **无main合并/ship授权**，用户App/服务/release不动。
 - root独占native/Cargo/App/服务槽。当前所有受控执行均terminal；只有root可启动下一计划。三个agent只静态准备或只读审查，不自行执行。
 
+## 当前唯一下一步：已改Node准入边界的窄设计
+
+`completion_audit`正在静态准备P5/node-open-admission-design01，详[现有N1集成收尾卡](tasks/Q-039-node-open-admission.md)。新增证据分类：main已有每API Node::open；14931新RootGate/try-lock与21b1延长scope使当前Busy不能直接视作main既有缺陷。先最小可复验契约/原target红测设计，root审后才实现；不笼统改全局gate/新增Node cache/睡眠重试，不扩新模块或矩阵。现阶段无源码改动/编译/新运行。其他新独立问题仍只登记下一轮。
+
 ## 当前源码、产物与环境
 
 集成：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1@495d096d54ea083304031423ca052f87dd9bc75e` trackedclean。full2388输入frame SHA **36f15241f5524d1e900d9b160087eb26b512a5db3f217c0713a869500efaf07e**（含gen157/dist277/模块锁）。生产与21b1一致，56bde仅原030失败diagnostic，495d仅Peer fixture精确Busy→Refused；原testbody不变。
@@ -49,7 +53,7 @@ run05/source495d/f763真实CUA四PNG共base64 23,048,528B：A首Part→真实Sto
 
 plan01→`Q035-borrow-owned-run01`/54361，11.464s，resultd1d338aaae1214333ee0f7d1ee893a06b6fca1d364494a7a548a94281704abf9：两真实root/私有relay就绪、invite0、pair1精确FinishPending，未进入UI，source/owned/TMP全清。readiness-audit01报告f1a29d71343bd40655ee11e066d4bd5ad8ae42470a1156639b8dcb044184bbe6：该消息来自Pair Finish，非初始Node bootstrap。无外部Finish-ready状态，不伪造轮询。
 
-**下一步root独审已冻结plan02，再唯一槽执行。** `P5/Q035-borrow-owned-plan02` run6dee9203...4c7df逐字同01；launcher e0ababff53483f25964ee590d52a30aca2c25f5ea28c69a659e1c484081351e5；data1516718b9ddc9acfaf5a5155066d092d2f14b97a032b3ed6442322801632be30。仅精确首次FinishPending允许同0600ticket/同两Root一次现有Resume，与首pair共享原70s，原source证明复用saved operation+nonce、首消息Resume、产品原完整journal验证保持；外部只存bytes/SHA/stat，不写状态/新grant/新invite/循环/睡眠/新解析或加密工具。一次Resume再失败就停。完整5phase/native/proxy/Quit/cleanup不变。
+历史plan02已执行，结果见后；不得重复旧handle。冻结plan03当前只作已审最小准备，等Node准入设计分类后再调度，不重复已知Blocked GUI。 `P5/Q035-borrow-owned-plan02` run6dee9203...4c7df逐字同01；launcher e0ababff53483f25964ee590d52a30aca2c25f5ea28c69a659e1c484081351e5；data1516718b9ddc9acfaf5a5155066d092d2f14b97a032b3ed6442322801632be30。仅精确首次FinishPending允许同0600ticket/同两Root一次现有Resume，与首pair共享原70s，原source证明复用saved operation+nonce、首消息Resume、产品原完整journal验证保持；外部只存bytes/SHA/stat，不写状态/新grant/新invite/循环/睡眠/新解析或加密工具。一次Resume再失败就停。完整5phase/native/proxy/Quit/cleanup不变。
 
 两freshRoot首次open前须非空实际relay only_mine配置；App只持APP_ROOT、CLI只serve EXIT_ROOT。新plan不请求web随机口，启动前只读核已有5467 listener且两实例实际busy降级，不能碰用户94762或其他owner。原normalCLI quit仅EXIT_ROOT、keeper143；relay正式TERM0；observer0/-15/143。原285/300/720/5GiB不增。
 
@@ -59,15 +63,25 @@ plan01→`Q035-borrow-owned-run01`/54361，11.464s，resultd1d338aaae1214333ee0f
 
 独审`P5/Q043-pi-run01-review01` SHA2bb4e6d654dfbacee2981f30aa25216a060902c51d4a01ff9b58dfde7dba190d，33项证据检查（非33业务测试），106PID/34group/TMP清、来源/双盘齐。Busy只据root CUA，不从redacted reject冒称精确诊断。归已有Node打开准入/GUI目录候选下一轮，不新实现或重复尝试。实际embedded startup仍unverified。
 
-### Q043 OS：已静态独审，尚未执行
+### Q043 OS：实际执行，整体非绿
 
-`P5/Q043-real-app-owned-plan01/os` runner187864963f7d4121558c47d89f90979f78d24a75338b58af30264191fb6e79dd，launcher81eddb6e3becedb12a42d1fc94fa07b50298717943e580783ef791904669d3fb，observera645375c8b81cd031697a3f226e047459a6c39e87ca534f35258f025102c00aa，data61c76112cd4900290bc32797bf997d3fa05efe7fc9d10c4e79cea9f4ae572c96。原helper270/inner285/outer300720/5GiB与所有门保，零新编译。真实Finder→ChatView/terminal drop、false→true→false fullscreen、私有不可写文件修改→窗口Close prevented/Keep→仅修fixture权限/真实save→正常Quit。不能用DOM动作/伪IPC/native事件替代OS动作。旧七注册撤销/title及38组只映射复用，不重跑矩阵。
+`Q043-os-owned-run01`/4638已exit1，278.010s，result **b4a3af15757bf194874ffa38010265ca42f7bdad811a2ea7f0c61d82af34f831**。root真实CUA系统左右排列后两次Finder跨窗drag未产生可观测drop；CtrlCmdF窗口控件实际消失/回来，但成功fullscreen回调raw为0；NewSession Machine无候选/Directory及Create disabled/Busy，未建Shell/开guard文件，write_text0。不能归因工具/产品或当pass。任务Finder新窗已关闭；末尾切app缺fresh state被工具拒绝，随后原helper270.076s期限101，App/observer由原失败路径回收，**无正常Quit**。source/helper/dist/bundle/guard/owned/TMP均稳清，非业务绿。
+
+独审P5/Q043-os-run01-review01/report SHA45dfed0482394a780d5e1465968eebbe512577922ed81699d7f0bb14c3cee048，32项证据检查，0 OS行为晋升pass。default capability与main逐字同SHA2415f799409b0aef20c60aca95b3325478bd69983de6afcc6e40b8d4272450c6，无allow-is-fullscreen；quality无override，属main既有静态候选下一轮，实际SDK拒绝原因未捕，不扩权限。API transform已生效，0回调仅说明未观察到成功值；drag hook执行无单独runtime证明，不凭0事件定位。
+
+原内盘871条全manifest匹配，外盘870旧项匹配、仅runtime/.DS_Store晚写且新增postrun root-ui-abort.json；双版本metadata和描述已另双盘保存，postdelta SHAb490ef0d6744dbe28f5df09eb67ad71e35a4c584959936e9ec54a57526d8ad48。原manifest/result不回填。历史重复stage已按实际f763/lsof及该差异集归档，索引P5/Q043-staged-gui-archive08；恢复exe也不自动消除外盘元数据差异。
+
+### Q035生产UI准备追加
+
+borrow run02/24358实际13.560s，result3d489a48ba3e6c74ea87068d8811101dfb838499c5d6107766b582ec7d195469：原一次同ticket Resume确实成功，首pair1→resume0共2.420s，两root trusted/root同/seq2；随后原脚本按完整id rename被CLI拒绝，未UI，全部source/owned/TMP清，保原失败。此为准备脚本参数错误，不是再一个产品失败。
+
+冻结P5/Q035-borrow-owned-plan03：launcher50857305bc4d84e51ce2dd55c3e2e0ea7e03a6232d6be61d7eed72ef9f005b93，data64015e0f42ae433c0cc653f94b95ae55d8966de079f534e0c7180ca93d79cfc1，outer6dee9203逐字同02。仅在首次pair前EXIT_ROOT id读取真实channel并核实际id，再rename -m actual-channel q035-exit，删后置按id rename；source证明CLI只认label/channel，默认rename是session不是本机。原35/shared70/285/300720/5GiB与5phase/cleanup不动。root已读最小diff，未执行，无新grant/产品改动。
 
 ## UI执行提示（避免再次误launch）
 
 CUA压缩后先rewriteDocumentation。**getApp前必须ps确认ready.app_pid及精确executable仍live**；原harness可能几秒内失败，inventory可能false。getApp会launch，禁止访问已死旧handle。完成后注销仅历史quality App的LaunchServices注册；必要reset CUA，然后绑定新owned精确.app路径，不靠重复bundle id。原run04/035run01工具曾重唤旧private App，均CUA正常退出，不能算原流程正常Quit。
 
-当前CUA只持已退出qcap和任务Finder；新Finder窗口P5（root通过CmdN新建）已用系统Window→Move&Resize→Right放右半屏，截图1280×1410；用户原Finder窗口未关。OS可以把quality App放左半屏，再实际跨窗drag，末尾只关这个任务Finder窗口。别重置用户原窗口/偏好。
+当前CUA持已死qo/finder句柄，不访问qo以免误launch。root新建的任务Finder窗已实际关闭（drop-source标题核对后CmdW），用户原Finder窗口未关。后续若需真实手势必须重新核live PID/窗口，不凭旧左右布局猜状态。
 
 Q035生产UI最快：Sessions→khor→再次点当前药丸（Click to focus this session’s tabs），首次自动内容picker；radio Browser→Choose machine→q035-exit→Machine and URL输入readyURL Return，持久owner为content。Machines→q035-exit→Browse→同URL得第二owner；probe-both。切Sessions使MachineWeb卸载→probe-one。**关闭Session content组内URL药丸× aria-label Close或右键Close tab**才真正删持久tab，内容工具条Close tab仅隐藏不可当释放；probe-none。New session tab→Browser/remote/URL→probe-reopen，真关内容tab→probe-final。各marker必须等匹配ack，之后Quit intent/ack/CUA CmdQ/10s内accepted。别关外层khor session。
 
@@ -77,6 +91,6 @@ E `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`；I `/Users/zgh
 
 原cache-offload01/02/03恢复ZIP在I根，原stat/SHA见双盘P5/cache-offload0N/compressed-backup.json；旧local/iOS静态档/完成旧test exe路径不可直接用。normal GUI/core/CLI与源码/正常deps保留，禁global clean。
 
-历史quality staged GUI都是f763重复，逐全manifest/实际binarySHA/无lsof后可逆归档到I/q033-historical-staged-gui-f76302af.zip，102641293B/SHA8a9bf6443392b6a2e71faf473c069bcab8d00211349f997faf2ccaba62f56c30，唯一entry khor-gui解压374932072B/f763。精确恢复bytes/mode/mtime/原manifestSHA索引：P5/Q033-historical-staged-gui-archive01(run03/04)、Q033-Q035-staged-gui-archive02(Q033run05/Q035native01)、Q035-staged-gui-archive03(native02/borrow01)、Q043-staged-gui-archive04(Pi01)、Q035-staged-gui-archive05(native03)。恢复exe前原全树manifest不再成立；独审全树检查是归档前事实，inode不恢复。native-run04重复stage已在独审/root核106条全manifest后归档，索引P5/Q035-staged-gui-archive06；原cap结果不变。当前外盘约6.20GB，内盘约8.68GB，每次启动重新核5GiB门。不要凭旧floor盲启动。
+历史quality staged GUI都是f763重复，逐全manifest/实际binarySHA/无lsof后可逆归档到I/q033-historical-staged-gui-f76302af.zip，102641293B/SHA8a9bf6443392b6a2e71faf473c069bcab8d00211349f997faf2ccaba62f56c30，唯一entry khor-gui解压374932072B/f763。精确恢复bytes/mode/mtime/原manifestSHA索引：P5/Q033-historical-staged-gui-archive01(run03/04)、Q033-Q035-staged-gui-archive02(Q033run05/Q035native01)、Q035-staged-gui-archive03(native02/borrow01)、Q043-staged-gui-archive04(Pi01)、Q035-staged-gui-archive05(native03)、archive06(native04)、archive07(borrow02)、Q043-staged-gui-archive08(OS01)。恢复exe前原全树manifest不再成立；独审全树检查是归档前事实，inode不恢复。native-run04重复stage已在独审/root核106条全manifest后归档，索引P5/Q035-staged-gui-archive06；原cap结果不变。当前外盘约6.02GB，内盘约8.45GB，每次启动重新核5GiB门。不要凭旧floor盲启动。
 
 内盘恢复RESUME与current-code-quality-docs每次关键事实后镜像；掉盘先读RESUME，逐SHA核再恢复，不能按摘要覆盖未提交源。

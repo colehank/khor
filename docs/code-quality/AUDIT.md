@@ -119,3 +119,9 @@ Q033 run05全部实际UI与业务及正常App/helper退出已完成，但现有�
 | native page_steps关闭交接返回channel closed | Q035 native run02 late-close、run03 close-reopen两个原父失败；资源最终null，后者新owner中间Some。源码支持get_webview与排队WithWebview之间Close丢回调/oneshot候选，但raw无唯一失败invoke/调度序列。 | 下一轮核native查询/关闭语义，不改断言/重跑失败父。Strict与cap两原父通过，原四2pass2fail0unrun，不能称全绿。独审46be305a…808a。 |
 | Pair FinishPending阻断真实双peer setup | Q035 borrow run01真实Pair返回精确pending，原d1d338…abf9保失败，未UI。不是Node首次bootstrap未完成；无现有外部Finish-ready状态。 | 仅已存在的同ticket/savedintent Resume可作真实恢复流程，plan02最多一次且共享70s，其他错误不纳入，不改产品或新grant。 |
 | 模型账户目录Busy阻断embedded Pi UI | Q043 Pi run01三次打开账户管理均Credential home无候选、Connect disabled；实际只有read/catalog，零manage/secret/runtime。原ad3f9…5417保非绿；App真实CmdQ return0，observer失败路径回收。 | 归已有Node打开准入/目录候选下一轮；提取/启动unverified，不从redacted reject推断具体原因。独审33项证据检查不是业务测试数，2bb4e6…190d。 |
+
+### 2026-10-28 准入分类更正
+
+源码确认main8704已有GUI每API Node::open；本轮14931新增RootGate/try-lock、21b1延长构造fence，故不能把当前GUI Busy一概记为main既有独立缺陷。归现有N1已改边界的回归/契约缺口候选，先窄设计/原target红证据，再必要纠正；唯一Busy gate/owner仍未知，不能猜测21b1单独责任。此不撤销“新独立问题下一轮”，也不重启全仓专项。新卡Q-039-node-open-admission归现有N1集成收尾。OS default capability与main逐字同，fullscreen缺口则保持既有候选下一轮。
+
+OS run01最终b4a3…f831非绿/helper原270s期限；0 drag/fullscreen回调/guard write、无正常Quit。外盘DS_Store/UI描述晚写分别保全，独审45dfed…e048不冒当前双盘全树绿。borrow run02一次既有Resume成功后在脚本按id rename处失败；plan03仅修准备参数顺序，未执行。
