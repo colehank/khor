@@ -1328,6 +1328,7 @@ impl Node {
     }
 
     async fn serve_as(self, resumable: bool) -> Result<(), String> {
+        Self::acquire_agent_runtime(self.root())?;
         self.app_resident
             .store(resumable, std::sync::atomic::Ordering::Relaxed);
         let mut ep = self.bind_ears().await?;

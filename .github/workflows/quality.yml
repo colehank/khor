@@ -36,6 +36,44 @@ jobs:
       - run: npm test
         working-directory: apps/agent
 
+  node-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/khor-quality-target
+      CARGO_BUILD_JOBS: '1'
+      CARGO_INCREMENTAL: '0'
+      KHOR_TEST_MCP_EXECUTABLE: ${{ runner.temp }}/khor-quality-target/debug/khor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: quality-node-native
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: apps/gui/package-lock.json
+      - run: npm ci
+        working-directory: apps/gui
+      - run: npm run build
+        working-directory: apps/gui
+      - run: npm ci
+        working-directory: apps/agent
+      - run: cargo build --locked -p khor-cli --bin khor
+      - run: cargo test --locked -p khor-node --lib --no-run --message-format=json > "${{ runner.temp }}/node-artifacts.json"
+      - name: Run each agent close acceptance test in its own process
+        run: python3 scripts/run-node-acceptance.py --suite runtime-close --artifacts "${{ runner.temp }}/node-artifacts.json" --output "${{ runner.temp }}/node-native-close"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: node-native-close-evidence
+          path: |
+            ${{ runner.temp }}/node-artifacts.json
+            ${{ runner.temp }}/node-native-close
+          if-no-files-found: warn
+
   gui:
     runs-on: ubuntu-latest
     timeout-minutes: 30

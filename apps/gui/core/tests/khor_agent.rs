@@ -14,14 +14,146 @@ use std::{
 };
 use tiny_http::{Header, Response, Server};
 
+fn refuse_acceptance() -> ! {
+    eprintln!("unsupported acceptance parent or option");
+    std::process::exit(2);
+}
+
+// The production factory re-executes the current native executable. Answer
+// its private worker mode before any acceptance output touches stdout.
+fn main() {
+    if let Some(code) = khor_node::mcp_worker::main_if_requested() {
+        std::process::exit(code);
+    }
+    let parents: [(&str, fn()); 2] = [
+        (
+            "network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_calls",
+            network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_calls,
+        ),
+        (
+            "restarting_an_executor_interrupts_its_receipt_without_starting_pi",
+            restarting_an_executor_interrupts_its_receipt_without_starting_pi,
+        ),
+    ];
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.len() == 1 && args[0] == "--list" {
+        for (name, _) in parents {
+            println!("{name}: test");
+        }
+        return;
+    }
+    let mut selected = None;
+    let mut options = std::collections::HashSet::new();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--exact" => {
+                if selected.is_some() {
+                    refuse_acceptance();
+                }
+                index += 1;
+                let Some(name) = args.get(index) else {
+                    refuse_acceptance();
+                };
+                if !parents.iter().any(|(known, _)| name.as_str() == *known) {
+                    refuse_acceptance();
+                }
+                selected = Some(name.as_str());
+            }
+            "--include-ignored" | "--nocapture" | "--test-threads=1" => {
+                if !options.insert(args[index].as_str()) {
+                    refuse_acceptance();
+                }
+            }
+            _ => refuse_acceptance(),
+        }
+        index += 1;
+    }
+    let chosen: Vec<_> = parents
+        .into_iter()
+        .filter(|(name, _)| selected.is_none_or(|selected| selected == *name))
+        .collect();
+    if chosen.is_empty() {
+        refuse_acceptance();
+    }
+    let count = chosen.len();
+    println!("running {count} tests");
+    let started = Instant::now();
+    let mut failed = 0;
+    for (name, parent) in chosen {
+        match std::panic::catch_unwind(parent) {
+            Ok(()) => println!("test {name} ... ok"),
+            Err(_) => {
+                failed += 1;
+                println!("test {name} ... FAILED");
+            }
+        }
+    }
+    println!(
+        "test result: {}. {} passed; {failed} failed; 0 ignored; 0 measured; {} filtered out; finished in {:.2}s",
+        if failed == 0 { "ok" } else { "FAILED" },
+        count - failed,
+        2 - count,
+        started.elapsed().as_secs_f64()
+    );
+    if failed != 0 {
+        std::process::exit(1);
+    }
+}
+
 struct Fixture {
     root: PathBuf,
     stop: Arc<AtomicBool>,
+    serving: Option<thread::JoinHandle<()>>,
+}
+impl Fixture {
+    fn stop_server(&mut self) -> Result<(), String> {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(serving) = self.serving.take() {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while !serving.is_finished() {
+                if Instant::now() >= deadline {
+                    return Err("fixture HTTP owner did not retire; root retained".into());
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            serving.join().map_err(|_| "fixture HTTP owner failed".to_owned())?;
+        }
+        Ok(())
+    }
+
+    fn finish(&mut self, node: &Node, runtime: &tokio::runtime::Runtime) {
+        runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(8), async {
+                loop {
+                    match Node::close_agent_runtime(&self.root).await.unwrap() {
+                        khor_node::khor_agent::RuntimeClose::Closed => break,
+                        khor_node::khor_agent::RuntimeClose::Busy => {
+                            node.reconcile_agent().unwrap();
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                        }
+                    }
+                }
+            })
+            .await
+            .expect("agent runtime did not close; root retained");
+        });
+        self.stop_server().unwrap();
+        fs::remove_dir_all(&self.root).unwrap();
+        assert!(!self.root.exists());
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
-        let _ = fs::remove_dir_all(&self.root);
+        if let Err(error) = self.stop_server() {
+            eprintln!("{error}");
+            if !thread::panicking() {
+                panic!("{error}");
+            }
+        }
+        if !thread::panicking() {
+            assert!(!self.root.exists(), "fixture root was not explicitly closed and is retained");
+        }
     }
 }
 
@@ -57,7 +189,6 @@ fn completion(delta: Value, finish: &str) -> String {
     )
 }
 
-#[test]
 fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_calls() {
     let server = Server::http("127.0.0.1:0").unwrap();
     let url = format!("http://{}", server.server_addr());
@@ -119,9 +250,10 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
         "khor-agent-integration-{}",
         khor_node::link::fresh_hex().unwrap()
     ));
-    let fixture = Fixture {
+    let mut fixture = Fixture {
         root: root.clone(),
         stop,
+        serving: Some(serving),
     };
     fs::create_dir_all(root.join(".khor")).unwrap();
     fs::write(
@@ -287,8 +419,8 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
     assert!(cancelled.error.is_none());
     assert!(!cancelled.stderr.is_empty());
     // Exercise both GUI mappings and their unmodified JSON projection. This
-    // libtest is not a native worker executable; R1's owned CLI tests establish
-    // durability, rather than treating this routing check as a remote ACK.
+    // acceptance entry answers the same real worker protocol as a native app;
+    // these mapping checks still do not treat routing as a remote ACK.
     for action in ["cancel_status", "cancel_retry"] {
         let view = rt.block_on(khor_gui_core::khor_agent(&root, home, action, &json!({"run":third_id}))).unwrap();
         assert_eq!(view.run.as_deref(), Some(third_id.as_str()));
@@ -296,19 +428,18 @@ fn network_agent_uses_its_account_persists_context_and_authorizes_actual_tool_ca
         assert_eq!(data["run"], third_id);
         assert!(data["durability"]["state"].is_string());
     }
-    drop(fixture);
-    serving.join().unwrap();
+    fixture.finish(&node, &rt);
 }
 
-#[test]
 fn restarting_an_executor_interrupts_its_receipt_without_starting_pi() {
     let root = std::env::temp_dir().join(format!(
         "khor-agent-recovery-{}",
         khor_node::link::fresh_hex().unwrap()
     ));
-    let fixture = Fixture {
+    let mut fixture = Fixture {
         root: root.clone(),
         stop: Arc::new(AtomicBool::new(false)),
+        serving: None,
     };
     let node = Node::open_as(root.clone(), "recovery-fixture").unwrap();
     let record = CommandRecord {
@@ -342,5 +473,6 @@ fn restarting_an_executor_interrupts_its_receipt_without_starting_pi() {
             .is_some()
     );
     assert!(!root.join(".khor/agent/sessions").exists());
-    drop(fixture);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    fixture.finish(&node, &runtime);
 }

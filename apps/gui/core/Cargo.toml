@@ -29,3 +29,8 @@ qrcode = { version = "0.14.1", default-features = false }
 # in slice 3 never waits for slice 4. Already in the workspace tree
 # (crates/node uses it for write_whole), so this costs no new package.
 blake3.workspace = true
+
+# The integration fixture re-executes itself through the real native MCP entry.
+[[test]]
+name = "khor_agent"
+harness = false

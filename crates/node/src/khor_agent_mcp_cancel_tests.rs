@@ -270,7 +270,12 @@ fn absent(pid: i32) -> bool {
         && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
 }
 
-async fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<(), String> {
+async fn exercise(
+    node: &Node,
+    scratch: &Path,
+    cleanup: &mut Cleanup,
+    diagnostics: &mut Vec<Value>,
+) -> Result<(), String> {
     let run = node
         .khor_agent_here(Action::Prompt {
             token: "mcp-cancel-first-fixture".into(),
@@ -295,14 +300,56 @@ async fn exercise(node: &Node, scratch: &Path, cleanup: &mut Cleanup) -> Result<
     }
     let stopped = Instant::now();
     let sweeps_before = crate::mcp_worker::SWEEPS_STARTED.load(Ordering::SeqCst);
-    node.khor_agent_here(Action::Stop { run: run.clone() })
-        .await?;
-    for _ in 1..16 {
+    // Bounded diagnostic only: no Status/Retry RPC or result-payload logging.
+    let mut log_stop = |index: usize,
+                        call_started: Instant,
+                        sweep_at_start: usize,
+                        result: Option<&Result<Report, String>>| {
+        let data = result
+            .and_then(|value| value.as_ref().ok())
+            .and_then(|report| report.data.as_ref());
+        let safe = |key: &str| {
+            data.and_then(|value| value["durability"][key].as_str())
+                .filter(|value| {
+                    value.len() <= 64
+                        && value
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+                })
+                .map(str::to_owned)
+        };
+        let sweeps = crate::mcp_worker::SWEEPS_STARTED.load(Ordering::SeqCst);
+        if diagnostics.len() < 32 {
+            diagnostics.push(json!({
+                "index":index,"phase":if result.is_some() {"end"} else {"begin"},
+                "elapsed_ms":stopped.elapsed().as_millis(),
+                "call_elapsed_ms":call_started.elapsed().as_millis(),
+                "result":result.map(|value| if value.is_ok() {"Ok"} else {"Err"}),
+                "durability_state":safe("state"),"durability_code":safe("code"),
+                "as_of_ms":data.and_then(|value| value["as_of_ms"].as_i64()),
+                "sweeps_call_delta":sweeps.saturating_sub(sweep_at_start),
+                "sweeps_total_delta":sweeps.saturating_sub(sweeps_before),
+            }));
+        }
+    };
+    let call_started = Instant::now();
+    let sweep_at_start = crate::mcp_worker::SWEEPS_STARTED.load(Ordering::SeqCst);
+    log_stop(0, call_started, sweep_at_start, None);
+    let stop_result = node
+        .khor_agent_here(Action::Stop { run: run.clone() })
+        .await;
+    log_stop(0, call_started, sweep_at_start, Some(&stop_result));
+    stop_result?;
+    for index in 1..16 {
         // Repeated Stop must share the same local owner; a finished run may
         // already have retired by the last call.
-        let _ = node
+        let call_started = Instant::now();
+        let sweep_at_start = crate::mcp_worker::SWEEPS_STARTED.load(Ordering::SeqCst);
+        log_stop(index, call_started, sweep_at_start, None);
+        let stop_result = node
             .khor_agent_here(Action::Stop { run: run.clone() })
             .await;
+        log_stop(index, call_started, sweep_at_start, Some(&stop_result));
     }
     // Checked after map/claim retirement below, when the single sweep has been
     // admitted. No snapshot of a source-level flag substitutes for this count.
@@ -453,11 +500,15 @@ async fn mcp_cancel_worker() {
         run: None,
         ipc,
     };
-    let outcome = exercise(&node, &scratch, &mut cleanup).await;
+    let mut diagnostics = Vec::with_capacity(32);
+    let outcome = exercise(&node, &scratch, &mut cleanup, &mut diagnostics).await;
     // Preserve the product assertion, but retire the held socket and observe
     // actual executor release before failing. Never leave its 300s call behind.
     let cleanup_result = cleanup.finish();
     println!("explicit IPC release+fixture join and execute/map/claim drain: {cleanup_result:?}");
+    for record in diagnostics {
+        println!("stop_diagnostic {record}");
+    }
     assert!(
         cleanup_result.is_ok(),
         "{cleanup_result:?}; primary={outcome:?}"

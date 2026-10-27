@@ -4553,10 +4553,12 @@ pub fn run() {
     watch_for_wake();
     #[cfg(target_os = "ios")]
     watch_the_path();
-    std::thread::spawn(|| {
+    let agent_runtime_root = Node::root_from_env();
+    let resident_root = agent_runtime_root.clone();
+    std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         rt.block_on(async {
-            match Node::open(Node::root_from_env()) {
+            match Node::open(resident_root) {
                 Ok(n) => {
                     take_the_home(&n).await;
                     let served = n.serve_resumable().await;
@@ -5031,7 +5033,7 @@ pub fn run() {
         // **Every way out is said in the log** (round NET-FIX): a window
         // closed or ⌘Q is the person's, and the line names it so a
         // missing app is never a mystery again.
-        .run(|_app, event| {
+        .run(move |_app, event| {
             if let tauri::RunEvent::ExitRequested { code, .. } = &event {
                 let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                 match code {
@@ -5041,6 +5043,17 @@ pub fn run() {
             }
             if let tauri::RunEvent::Exit = event {
                 let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                match tauri::async_runtime::block_on(Node::close_agent_runtime(&agent_runtime_root)) {
+                    Ok(khor_node::khor_agent::RuntimeClose::Closed) => {
+                        eprintln!("[{stamp}] khor app: agent runtime closed");
+                    }
+                    Ok(khor_node::khor_agent::RuntimeClose::Busy) => {
+                        eprintln!("[{stamp}] khor app: agent runtime is busy; pending work retained");
+                    }
+                    Err(error) => {
+                        eprintln!("[{stamp}] khor app: agent runtime close failed: {error}");
+                    }
+                }
                 eprintln!("[{stamp}] khor app: exiting");
             }
         });

@@ -69,6 +69,14 @@ pub struct Report {
     pub data: Option<Value>,
 }
 
+/// Whether this process's agent producers and cancellation owners have retired.
+/// Closing does not assert that any remote task has been canceled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeClose {
+    Closed,
+    Busy,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Saved {
     fingerprint: String,
@@ -205,6 +213,9 @@ fn configuration_lock(root: &Path) -> Result<File, String> {
     Ok(file)
 }
 fn claim(root: &Path) -> Result<File, String> {
+    try_claim(root)?.ok_or_else(|| msg::agent_busy().to_owned())
+}
+fn try_claim(root: &Path) -> Result<Option<File>, String> {
     fs::create_dir_all(directory(root).join("runs")).map_err(|e| e.to_string())?;
     let lock = OpenOptions::new()
         .create(true)
@@ -213,9 +224,114 @@ fn claim(root: &Path) -> Result<File, String> {
         .write(true)
         .open(directory(root).join("executor.lock"))
         .map_err(|e| e.to_string())?;
-    lock.try_lock().map_err(|_| msg::agent_busy().to_owned())?;
-    Ok(lock)
+    match lock.try_lock() {
+        Ok(()) => Ok(Some(lock)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
 }
+
+enum CloseClaim {
+    Held(File),
+    Busy,
+    Missing,
+}
+fn close_claim(root: &Path, admission: bool) -> Result<CloseClaim, String> {
+    // Only the existing agent directory may gain its admission lock. Closing
+    // a cold Root must never initialize the directory or an executor claim.
+    let path = directory(root).join(if admission {
+        "config.lock"
+    } else {
+        "executor.lock"
+    });
+    let file = match OpenOptions::new()
+        .create(admission)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CloseClaim::Missing);
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    match file.try_lock() {
+        Ok(()) => Ok(CloseClaim::Held(file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(CloseClaim::Busy),
+        Err(error) => Err(error.to_string()),
+    }
+}
+fn prompt_admission(root: &Path) -> Result<File, String> {
+    crate::remote_cancel::check_admission(root)?;
+    fs::create_dir_all(directory(root)).map_err(|e| e.to_string())?;
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(directory(root).join("config.lock"))
+        .map_err(|e| e.to_string())?;
+    file.try_lock().map_err(|_| msg::agent_busy().to_owned())?;
+    crate::remote_cancel::acquire(root)?;
+    Ok(file)
+}
+fn spawn_executor<F>(root: &Path, execute: F) -> std::io::Result<std::thread::JoinHandle<()>>
+where
+    F: FnOnce() + Send + 'static,
+{
+    #[cfg(all(test, unix))]
+    if runtime_close_tests::fail_spawn(root) {
+        return Err(std::io::Error::other("controlled executor factory failure"));
+    }
+    let _ = root;
+    std::thread::Builder::new()
+        .name("khor-agent".into())
+        .spawn(execute)
+}
+impl Node {
+    /// Explicitly acquire this process's cancellation runtime for new work.
+    /// Ordinary reads and resident ticks never reopen a successfully closed Root.
+    pub fn acquire_agent_runtime(root: &Path) -> Result<(), String> {
+        crate::remote_cancel::acquire(root)
+    }
+    /// Quiesce this Root's local agent runtime before its owner releases it.
+    /// Busy callers retain the Root; durable cancellation files remain on disk.
+    pub async fn close_agent_runtime(root: &Path) -> Result<RuntimeClose, String> {
+        let root = root.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let Some(closing) = crate::remote_cancel::begin_close(&root)? else {
+                return Ok(RuntimeClose::Busy);
+            };
+            #[cfg(all(test, unix))]
+            runtime_close_tests::producer_point(&root, "close-reserved");
+            // Match Prompt's admission -> executor ordering. Both files remain
+            // held through all owner joins, even if the async waiter is dropped.
+            let _admission = match close_claim(&root, true)? {
+                CloseClaim::Held(file) => Some(file),
+                CloseClaim::Missing => None,
+                CloseClaim::Busy => return Ok(RuntimeClose::Busy),
+            };
+            let (missing_claim, _executor) = match close_claim(&root, false)? {
+                CloseClaim::Held(file) => (false, Some(file)),
+                CloseClaim::Missing => (true, None),
+                CloseClaim::Busy => return Ok(RuntimeClose::Busy),
+            };
+            if running()
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .contains_key(&root)
+            {
+                return Ok(RuntimeClose::Busy);
+            }
+            closing.finish(missing_claim)
+        })
+        .await
+        .map_err(|_| "Agent runtime close owner failed".to_owned())?
+    }
+}
+
 fn save(root: &Path, saved: &Saved) -> Result<(), String> {
     let mut saved = Saved {
         fingerprint: saved.fingerprint.clone(),
@@ -350,6 +466,11 @@ impl Node {
             }
             Action::Prompt { token, text } => {
                 self.refuse_unless_hosting()?;
+                let _admission = prompt_admission(&root)?;
+                crate::remote_cancel::pump(
+                    &root,
+                    !self.paused() && !self.resting.load(Ordering::Relaxed),
+                );
                 if !safe_token(&token) || text.trim().is_empty() || text.len() > 128 * 1024 {
                     return Err(msg::agent_arguments().to_owned());
                 }
@@ -381,11 +502,13 @@ impl Node {
                     if prior.fingerprint != fingerprint {
                         return Err(msg::console_token_conflict().to_owned());
                     }
+                    #[cfg(all(test, unix))]
+                    runtime_close_tests::producer_point(&root, "retry-record");
                     self.record_command(&prior.record)?;
                     report.run = Some(id);
                     return Ok(report);
                 }
-                let claim = claim(&root)?;
+                let claim = Arc::new(claim(&root)?);
                 // Re-check under the cross-process executor claim.
                 if file(&root, &id).exists() {
                     return Err(msg::agent_busy().to_owned());
@@ -424,36 +547,35 @@ impl Node {
                 }
                 let recovery_root = root.clone();
                 let recovery_id = id.clone();
-                let spawned =
-                    std::thread::Builder::new()
-                        .name("khor-agent".into())
-                        .spawn(move || {
-                            let _claim = claim;
-                            let id = saved.record.id.clone();
-                            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                execute(root.clone(), saved, active, start, key.trim());
-                            }))
-                            .is_err()
-                            {
-                                if let Ok(bytes) = fs::read(file(&root, &id)) {
-                                    if let Ok(mut saved) = serde_json::from_slice::<Saved>(&bytes) {
-                                        saved.record.status = "interrupted".into();
-                                        saved.record.error =
-                                            Some(msg::console_interrupted().into());
-                                        saved.record.ended_at_ms =
-                                            Some(now().max(saved.record.started_at_ms + 1));
-                                        if let Some(agent) = saved.record.agent.as_mut() {
-                                            agent.approval = None;
-                                        }
-                                        let _ = save(&root, &saved);
-                                    }
+                let executor_claim = claim.clone();
+                let spawned = spawn_executor(&recovery_root, move || {
+                    let _claim = executor_claim;
+                    #[cfg(all(test, unix))]
+                    runtime_close_tests::producer_point(&root, "executor-start");
+                    let id = saved.record.id.clone();
+                    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        execute(root.clone(), saved, active, start, key.trim());
+                    }))
+                    .is_err()
+                    {
+                        if let Ok(bytes) = fs::read(file(&root, &id)) {
+                            if let Ok(mut saved) = serde_json::from_slice::<Saved>(&bytes) {
+                                saved.record.status = "interrupted".into();
+                                saved.record.error = Some(msg::console_interrupted().into());
+                                saved.record.ended_at_ms =
+                                    Some(now().max(saved.record.started_at_ms + 1));
+                                if let Some(agent) = saved.record.agent.as_mut() {
+                                    agent.approval = None;
                                 }
+                                let _ = save(&root, &saved);
                             }
-                            running()
-                                .lock()
-                                .unwrap_or_else(|p| p.into_inner())
-                                .remove(&root);
-                        });
+                        }
+                    }
+                    running()
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .remove(&root);
+                });
                 if let Err(error) = spawned {
                     running()
                         .lock()
@@ -466,6 +588,8 @@ impl Node {
                     saved.record.status = "failed".into();
                     saved.record.error = Some(error.to_string());
                     saved.record.ended_at_ms = Some(now());
+                    #[cfg(all(test, unix))]
+                    runtime_close_tests::producer_point(&recovery_root, "spawn-failure-save");
                     save(&recovery_root, &saved)?;
                 }
                 report.run = Some(id);
@@ -505,6 +629,19 @@ impl Node {
     }
 
     pub fn reconcile_agent(&self) -> Result<(), String> {
+        if crate::remote_cancel::is_closed(self.root()) {
+            return Ok(());
+        }
+        // A stale passive reader must not recreate directories after close.
+        // The same existing-directory admission guard also covers its display
+        // receipt writes; unlike a Prompt this never explicitly reopens a Root.
+        let _admission = match close_claim(self.root(), true)? {
+            CloseClaim::Held(file) => file,
+            CloseClaim::Busy | CloseClaim::Missing => return Ok(()),
+        };
+        if crate::remote_cancel::is_closed(self.root()) {
+            return Ok(());
+        }
         crate::remote_cancel::pump(
             self.root(),
             !self.paused() && !self.resting.load(Ordering::Relaxed),
@@ -518,6 +655,11 @@ impl Node {
         let Ok(_claim) = claim(self.root()) else {
             return Ok(());
         };
+        // A passive read may have crossed the close before obtaining the
+        // claim. Recheck while holding it before touching any display receipt.
+        if crate::remote_cancel::is_closed(self.root()) {
+            return Ok(());
+        }
         let recorded: HashMap<_, _> = self
             .chat
             .log(crate::wide::BROADCAST)?
@@ -1448,3 +1590,7 @@ mod remote_cancel_tests;
 #[cfg(all(test, unix))]
 #[path = "remote_cancel_tests.rs"]
 mod cancellation_receipt_tests;
+
+#[cfg(all(test, unix))]
+#[path = "khor_agent_runtime_close_tests.rs"]
+pub(crate) mod runtime_close_tests;

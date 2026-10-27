@@ -5,7 +5,7 @@ mod util;
 use khor_node::{
     Node,
     delegation::{
-        Action, Answer, Record,
+        Action, Answer, Binding, BindingProtocol, BoundAction, Record, TaskRef,
         protocol::{Message, Part, Role, TaskState},
     },
     gui_host::{GuiOp, gui_host_main},
@@ -32,9 +32,54 @@ fn main() {
         }
         return;
     }
+    const BOUND_PARENT: &str =
+        "paired_bound_delegation_keeps_authenticated_identity_and_original_parent";
     if args.iter().any(|s| s == "--list") {
         println!("local_and_remote_delegation: test");
+        #[cfg(unix)]
+        println!("{BOUND_PARENT}: test");
         return;
+    }
+    let exact: Vec<_> = args
+        .iter()
+        .enumerate()
+        .filter(|(_, arg)| *arg == "--exact")
+        .collect();
+    if !exact.is_empty() {
+        if exact.len() != 1 {
+            eprintln!("one exact acceptance parent is required");
+            std::process::exit(2);
+        }
+        let selected = args.get(exact[0].0 + 1).map(String::as_str);
+        match selected {
+            Some(BOUND_PARENT) => {
+                #[cfg(not(unix))]
+                {
+                    eprintln!("paired Bound process evidence is unsupported on this platform");
+                    std::process::exit(3);
+                }
+                #[cfg(unix)]
+                {
+                    println!("running 1 test");
+                    tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(4)
+                        .enable_all()
+                        .build()
+                        .unwrap()
+                        .block_on(run_bound_pair());
+                    println!("test {BOUND_PARENT} ... ok");
+                    println!(
+                        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out"
+                    );
+                    return;
+                }
+            }
+            Some("local_and_remote_delegation") => {}
+            _ => {
+                eprintln!("unknown exact acceptance parent: {selected:?}");
+                std::process::exit(2);
+            }
+        }
     }
     println!("running 1 test");
     let status =
@@ -459,4 +504,434 @@ async fn run() {
     ));
     stranger.close().await;
     drop(after_restart);
+}
+
+// This explicit parent uses the existing self-reexecuting host entry above;
+// unlike the legacy default parent it never starts Cargo from inside the test.
+#[cfg(unix)]
+async fn bound_record(
+    node: &Node,
+    home: &str,
+    binding: &Binding,
+    task: &str,
+) -> Result<Record, String> {
+    let answer = node
+        .delegation_on(
+            home,
+            Action::Bound {
+                binding: binding.clone(),
+                action: BoundAction::Get { task: task.into() },
+            },
+        )
+        .await?;
+    match answer {
+        Answer::Task { record } => Ok(*record),
+        _ => Err("Bound Get returned no Task".into()),
+    }
+}
+#[cfg(unix)]
+async fn bound_until(
+    node: &Node,
+    home: &str,
+    binding: &Binding,
+    task: &str,
+    canceled: bool,
+) -> Result<Record, String> {
+    let by = Instant::now() + Duration::from_secs(20);
+    loop {
+        let record = bound_record(node, home, binding, task).await?;
+        if if canceled {
+            record.task.status.state == TaskState::Canceled
+        } else {
+            pending(&record).is_some()
+        } {
+            return Ok(record);
+        }
+        if record.task.status.state.is_terminal() || Instant::now() >= by {
+            return Err(
+                "actual bound Task did not reach the required permission/terminal state".into(),
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+// Send deliberately malformed bindings to the selected receiver over an
+// authenticated wire. delegation_on correctly routes by binding.home, so it
+// cannot itself be used to probe a false home at a different receiver.
+#[cfg(unix)]
+async fn bound_raw(
+    caller_root: &Path,
+    target: &str,
+    addrs: &[String],
+    action: Action,
+) -> Result<khor_node::proto::Response, String> {
+    let key = khor_net::identity::load_or_create(&caller_root.join(".khor/identity.key"))
+        .map_err(|e| e.to_string())?;
+    let relays = [khor_net::endpoint::Relay::bare(util::loop_relay())];
+    let endpoint = khor_net::endpoint::bind_with(key, &relays, false)
+        .await
+        .map_err(|e| e.to_string())?;
+    let result = tokio::time::timeout(Duration::from_secs(15), async {
+        let address = khor_net::endpoint::dial_addr(target, addrs, &[util::loop_relay().into()])
+            .map_err(|e| e.to_string())?;
+        let connection = endpoint
+            .connect(address, khor_net::endpoint::ALPN)
+            .await
+            .map_err(|e| e.to_string())?;
+        let (mut send, mut recv) = connection.open_bi().await.map_err(|e| e.to_string())?;
+        send.write_all(&khor_node::proto::encode(
+            &khor_node::proto::Request::Delegation { action },
+        )?)
+        .await
+        .map_err(|e| e.to_string())?;
+        send.finish().map_err(|e| e.to_string())?;
+        let bytes = recv
+            .read_to_end(khor_node::proto::MAX_FRAME)
+            .await
+            .map_err(|e| e.to_string())?;
+        khor_node::proto::decode(&bytes)
+    })
+    .await
+    .map_err(|_| "bound authenticated probe timed out".to_owned());
+    endpoint.close().await;
+    result?
+}
+#[cfg(unix)]
+fn bound_refused(answer: khor_node::proto::Response, identity: bool) -> Result<(), String> {
+    match answer {
+        khor_node::proto::Response::Refused { why }
+            if why
+                == if identity {
+                    "Delegation binding identity mismatch"
+                } else {
+                    "Message ID or session binding conflict"
+                } =>
+        {
+            Ok(())
+        }
+        _ => Err("actual receiver did not refuse the bound probe as required".into()),
+    }
+}
+#[cfg(unix)]
+fn bound_pid_absent(pid: u32) -> bool {
+    let status = unsafe { libc::kill(pid as i32, 0) };
+    status == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+}
+#[cfg(unix)]
+fn bound_processes(host: u32) -> Result<Vec<u32>, String> {
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-axo", "pid=,ppid="])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err("could not read owned host descendants".into());
+    }
+    let rows: Vec<(u32, u32)> = String::from_utf8(output.stdout)
+        .map_err(|e| e.to_string())?
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            Some((fields.next()?.parse().ok()?, fields.next()?.parse().ok()?))
+        })
+        .collect();
+    let mut pids = vec![host];
+    loop {
+        let before = pids.len();
+        for (pid, parent) in &rows {
+            if pids.contains(parent) && !pids.contains(pid) {
+                pids.push(*pid);
+            }
+        }
+        if pids.len() == before {
+            return Ok(pids);
+        }
+    }
+}
+#[cfg(unix)]
+fn bound_host_pids(
+    node: &Node,
+    root: &Path,
+    caller: khor_core::DeviceId,
+) -> Result<Vec<u32>, String> {
+    let target = khor_node::delegation::AgentTarget {
+        home: node.device(),
+        agent: "fixture".into(),
+    };
+    let mut pids = Vec::new();
+    for record in node
+        .delegation_store()?
+        .list(caller, &target, None, None, 10)
+        .map_err(|e| e.to_string())?
+    {
+        if let Some(session) = record.context_session {
+            let live = khor_node::live::LiveKind::new(root.to_path_buf(), node.device());
+            if let Some(directory) = live.dir_of(&session.id) {
+                let host = khor_node::host::read_host_file(&directory)?;
+                pids.extend(bound_processes(host.host_pid)?);
+            }
+        }
+    }
+    pids.sort_unstable();
+    pids.dedup();
+    Ok(pids)
+}
+
+#[cfg(unix)]
+async fn run_bound_pair() {
+    let alpha_root = root("bound-alpha");
+    let beta_root = root("bound-beta");
+    let alpha = Node::open_as(alpha_root.0.clone(), "bound-alpha").unwrap();
+    let beta = Node::open_as(beta_root.0.clone(), "bound-beta").unwrap();
+    let stub = PathBuf::from(
+        std::env::var_os("KHOR_TEST_ACP_STUB").expect("set the verified actual ACP stub"),
+    );
+    assert!(stub.is_absolute() && stub.is_file());
+    alpha
+        .register_agent(
+            "fixture",
+            &[
+                stub.to_string_lossy().into_owned(),
+                "--unique-session".into(),
+            ],
+        )
+        .unwrap();
+    std::fs::write(
+        alpha_root.0.join("caller.json"),
+        serde_json::to_vec(&beta.device()).unwrap(),
+    )
+    .unwrap();
+    let hosts = Hosts(alpha_root.0.clone());
+    let mut alpha_serving = serve(&alpha_root.0, "bound-alpha").await;
+    let paired =
+        tokio::time::timeout(Duration::from_secs(45), beta.pair(&alpha.invite().unwrap())).await;
+    let mut beta_serving = serve(&beta_root.0, "bound-beta").await;
+    let mut observed_pids = Vec::new();
+    let result = tokio::time::timeout(Duration::from_secs(90), async {
+        paired.map_err(|_| "actual pairing timed out".to_owned())??;
+        let selected = beta
+            .devices()?
+            .into_iter()
+            .find(|d| d.id == alpha.device_str())
+            .ok_or("actual paired target missing")?;
+        let Answer::Binding { binding } = beta
+            .delegation_on(
+                alpha.device_str(),
+                Action::ResolveBinding {
+                    agent: "fixture".into(),
+                    task: None,
+                },
+            )
+            .await?
+        else {
+            return Err("ResolveBinding returned no actual binding".into());
+        };
+        if binding.home != alpha.device()
+            || binding.caller != beta.device()
+            || binding.agent != "fixture"
+            || !matches!(&binding.protocol, BindingProtocol::Native)
+        {
+            return Err("resolved binding did not select the real home/caller/agent".into());
+        }
+        let parent = TaskRef {
+            home: beta.device(),
+            id: "original-bound-parent".into(),
+        };
+        let input = message("bound-first-input", None);
+        let send = Action::Bound {
+            binding: binding.clone(),
+            action: BoundAction::Send {
+                message: input.clone(),
+                parent: Some(parent.clone()),
+            },
+        };
+        let Answer::Task { record: submitted } =
+            beta.delegation_on(alpha.device_str(), send.clone()).await?
+        else {
+            return Err("actual Bound Send returned no Task".into());
+        };
+        let before = bound_until(
+            &beta,
+            alpha.device_str(),
+            &binding,
+            &submitted.task.id,
+            false,
+        )
+        .await?;
+        if pending(&before)
+            .and_then(|ask| ask["ask"].as_u64())
+            .is_none()
+            || before.task.id != submitted.task.id
+            || before.caller != beta.device()
+            || before.target.home != alpha.device()
+            || before.parent.as_ref() != Some(&parent)
+        {
+            return Err("actual Bound Send/Get changed task ownership or original parent".into());
+        }
+        observed_pids = bound_host_pids(&alpha, &alpha_root.0, beta.device())?;
+        if observed_pids.len() < 2 {
+            return Err("actual ACP host and its live child were not both observed".into());
+        }
+        for pid in &observed_pids {
+            println!("actual bound host/ACP PID {pid}: live before probes");
+        }
+        let mut forged_caller = binding.clone();
+        forged_caller.caller = alpha.device();
+        bound_refused(
+            bound_raw(
+                &beta_root.0,
+                &selected.id,
+                &selected.addrs,
+                Action::Bound {
+                    binding: forged_caller,
+                    action: BoundAction::Get {
+                        task: before.task.id.clone(),
+                    },
+                },
+            )
+            .await?,
+            true,
+        )?;
+        let mut forged_home = binding.clone();
+        forged_home.home = beta.device();
+        bound_refused(
+            bound_raw(
+                &beta_root.0,
+                &selected.id,
+                &selected.addrs,
+                Action::Bound {
+                    binding: forged_home,
+                    action: BoundAction::Cancel {
+                        task: before.task.id.clone(),
+                    },
+                },
+            )
+            .await?,
+            true,
+        )?;
+        let beta_selected = alpha
+            .devices()?
+            .into_iter()
+            .find(|d| d.id == beta.device_str())
+            .ok_or("actual paired reverse target missing")?;
+        bound_refused(
+            bound_raw(
+                &alpha_root.0,
+                &beta_selected.id,
+                &beta_selected.addrs,
+                Action::Bound {
+                    binding: binding.clone(),
+                    action: BoundAction::Get {
+                        task: before.task.id.clone(),
+                    },
+                },
+            )
+            .await?,
+            true,
+        )?;
+        // A changed-parent retry is an actual Store conflict, not a new lineage.
+        bound_refused(
+            bound_raw(
+                &beta_root.0,
+                &selected.id,
+                &selected.addrs,
+                Action::Bound {
+                    binding: binding.clone(),
+                    action: BoundAction::Send {
+                        message: input,
+                        parent: Some(TaskRef {
+                            home: beta.device(),
+                            id: "later-bound-parent".into(),
+                        }),
+                    },
+                },
+            )
+            .await?,
+            false,
+        )?;
+        let after_refusals =
+            bound_record(&beta, alpha.device_str(), &binding, &before.task.id).await?;
+        if pending(&after_refusals).is_none() || after_refusals.parent.as_ref() != Some(&parent) {
+            return Err("refused probes affected the actual pending task".into());
+        }
+        let Answer::Task { record: duplicate } =
+            beta.delegation_on(alpha.device_str(), send).await?
+        else {
+            return Err("same-input Bound retry returned no actual Task".into());
+        };
+        if duplicate.task.id != before.task.id || duplicate.parent.as_ref() != Some(&parent) {
+            return Err("same-input Bound retry changed task identity".into());
+        }
+        let cancel = beta
+            .delegation_on(
+                alpha.device_str(),
+                Action::Bound {
+                    binding: binding.clone(),
+                    action: BoundAction::Cancel {
+                        task: before.task.id.clone(),
+                    },
+                },
+            )
+            .await?;
+        if !matches!(cancel, Answer::Task { record } if record.task.id == before.task.id) {
+            return Err("actual Bound Cancel returned a different task".into());
+        }
+        let final_record =
+            bound_until(&beta, alpha.device_str(), &binding, &before.task.id, true).await?;
+        let rows = alpha
+            .delegation_store()?
+            .list(beta.device(), &before.target, None, None, 10)
+            .map_err(|e| e.to_string())?;
+        if rows.len() != 1
+            || rows[0].task.id != before.task.id
+            || rows[0].parent.as_ref() != Some(&parent)
+            || final_record.parent.as_ref() != Some(&parent)
+        {
+            return Err("bound probes created another Task or changed original parent".into());
+        }
+        Ok::<_, String>(())
+    })
+    .await
+    .map_err(|_| "bound paired exercise exceeded its absolute deadline".to_owned())
+    .and_then(|v| v);
+    // Retire real hosts before any final behavior assertion, including failures.
+    let discovered = bound_host_pids(&alpha, &alpha_root.0, beta.device());
+    if let Ok(pids) = &discovered {
+        observed_pids.extend(pids);
+    }
+    observed_pids.sort_unstable();
+    observed_pids.dedup();
+    drop(hosts);
+    let by = Instant::now() + Duration::from_secs(5);
+    while observed_pids.iter().any(|pid| !bound_pid_absent(*pid)) && Instant::now() < by {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let live: Vec<_> = observed_pids
+        .iter()
+        .filter(|pid| !bound_pid_absent(**pid))
+        .copied()
+        .collect();
+    for pid in &observed_pids {
+        println!(
+            "actual bound host/ACP PID {pid}: ESRCH={}",
+            !live.contains(pid)
+        );
+    }
+    for serving in [&alpha_serving, &beta_serving] {
+        serving.0.abort();
+    }
+    let alpha_stopped = tokio::time::timeout(Duration::from_secs(5), &mut alpha_serving.0).await;
+    let beta_stopped = tokio::time::timeout(Duration::from_secs(5), &mut beta_serving.0).await;
+    assert!(
+        discovered.is_ok(),
+        "owned host discovery failed during cleanup"
+    );
+    assert!(
+        live.is_empty(),
+        "owned bound host/ACP PIDs remain: {live:?}"
+    );
+    assert!(
+        alpha_stopped.is_ok() && beta_stopped.is_ok(),
+        "actual node serving tasks did not retire"
+    );
+    assert!(result.is_ok(), "bound paired behavior failed: {result:?}");
 }

@@ -900,6 +900,13 @@ pub(crate) fn step(root: &Path, run: &str) -> Result<String, String> {
 type Completion = Arc<Mutex<Option<Result<String, String>>>>;
 struct OwnedWorker(Option<std::thread::JoinHandle<Result<String, String>>>);
 impl OwnedWorker {
+    fn join(&mut self) -> Result<String, String> {
+        self.0
+            .take()
+            .ok_or_else(|| "WorkerOwnerMissing".to_owned())?
+            .join()
+            .unwrap_or_else(|_| Err("WorkerOwnerFailed".into()))
+    }
     fn poll(&mut self) -> Option<Result<String, String>> {
         if !self.0.as_ref()?.is_finished() {
             return None;
@@ -911,6 +918,13 @@ impl OwnedWorker {
                 .join()
                 .unwrap_or_else(|_| Err("WorkerOwnerFailed".into())),
         )
+    }
+}
+impl Drop for OwnedWorker {
+    fn drop(&mut self) {
+        if self.0.is_some() {
+            let _ = self.join();
+        }
     }
 }
 struct MetadataOwner {
@@ -938,6 +952,10 @@ struct Home {
 }
 #[derive(Default)]
 struct Scheduler {
+    closing: std::collections::HashSet<PathBuf>,
+    closed: std::collections::HashSet<PathBuf>,
+    closing_steps: usize,
+    closing_metadata: bool,
     metadata: Option<MetadataOwner>,
     steps: Vec<StepOwner>,
     homes: HashMap<PathBuf, Home>,
@@ -949,6 +967,63 @@ struct Scheduler {
 fn scheduler() -> &'static Mutex<Scheduler> {
     static STATE: OnceLock<Mutex<Scheduler>> = OnceLock::new();
     STATE.get_or_init(Default::default)
+}
+#[cfg(all(test, unix))]
+pub(crate) fn test_close_state(root: &Path) -> (bool, bool, usize, bool, usize) {
+    let state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+    (
+        state.closing.contains(root),
+        state.closed.contains(root),
+        state.steps.len() + state.closing_steps,
+        state.metadata.is_some() || state.closing_metadata,
+        state
+            .retired
+            .iter()
+            .filter(|(path, _)| path == root)
+            .count(),
+    )
+}
+#[cfg(all(test, unix))]
+pub(crate) fn test_defer_scan(root: &Path) {
+    let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+    state
+        .homes
+        .get_mut(root)
+        .expect("admitted fixture Root")
+        .next_scan = Instant::now() + Duration::from_secs(60);
+}
+#[cfg(all(test, unix))]
+pub(crate) fn test_root_count() -> usize {
+    scheduler()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .root_count()
+}
+#[cfg(all(test, unix))]
+pub(crate) fn test_resume_step(root: &Path, run: &str) {
+    let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+    assert!(state.steps.len() + state.closing_steps < 4);
+    // Fixture setup uses an already committed real intent, then exercises the
+    // same finite Step owner as normal pending discovery. No worker reply is injected.
+    let worker = start(root.into(), Operation::CancelStep { run: run.into() }).unwrap();
+    state.steps.push(StepOwner {
+        root: root.into(),
+        run: run.into(),
+        worker,
+        failures: 0,
+    });
+}
+#[cfg(all(test, unix))]
+pub(crate) fn test_ready_durable_step(root: &Path, run: &str) {
+    let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+    assert!(state.can_admit_root(root));
+    state.homes.entry(root.into()).or_insert(Home {
+        cursor: None,
+        next_scan: Instant::now() + Duration::from_secs(30),
+        allowed: true,
+    });
+    state.enqueue(root.into(), run.into(), Instant::now(), 0);
+    state.pump(false);
 }
 #[cfg(test)]
 fn test_starts() -> &'static Mutex<VecDeque<(PathBuf, String, u32, i64)>> {
@@ -979,12 +1054,18 @@ fn start(root: PathBuf, operation: Operation) -> Result<OwnedWorker, String> {
         Operation::CancelStep { run } => Some((root.clone(), run.clone())),
         _ => None,
     };
+    #[cfg(all(test, unix))]
+    let worker_root = root.clone();
     let mut worker = Worker::spawn(
         Request { root, operation },
         Arc::new(Control::default()),
         BUDGET,
         None,
     )?;
+    #[cfg(all(test, unix))]
+    if let Some(pid) = worker.pid() {
+        crate::khor_agent::runtime_close_tests::owner_started(&worker_root, pid);
+    }
     #[cfg(test)]
     if let Some((root, run)) = traced
         && let Some(pid) = worker.pid()
@@ -1009,9 +1090,27 @@ fn start(root: PathBuf, operation: Operation) -> Result<OwnedWorker, String> {
     Ok(OwnedWorker(Some(thread)))
 }
 impl Scheduler {
+    /// A Root can occupy several lifecycle states during transitions, but its
+    /// admission reservation is counted once. Cold closes reserve capacity too.
+    fn root_count(&self) -> usize {
+        self.homes
+            .keys()
+            .chain(&self.closed)
+            .chain(&self.closing)
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+    }
+    fn can_admit_root(&self, root: &Path) -> bool {
+        self.homes.contains_key(root)
+            || self.closed.contains(root)
+            || self.closing.contains(root)
+            || self.root_count() < RUN_LIMIT
+    }
     fn enqueue(&mut self, root: PathBuf, run: String, at: Instant, failures: u8) {
         // Discovery coalesces without bringing an existing not-before forward.
-        if self.ready.len() >= RUN_LIMIT
+        if self.closing.contains(&root)
+            || self.closed.contains(&root)
+            || self.ready.len() >= RUN_LIMIT
             || self
                 .ready
                 .iter()
@@ -1031,6 +1130,15 @@ impl Scheduler {
         });
     }
     fn start_metadata(&mut self, root: PathBuf, operation: Metadata) -> Result<Completion, String> {
+        if self.closing.contains(&root) {
+            return Err("RuntimeClosing".into());
+        }
+        if self.closed.contains(&root) {
+            return Err("RuntimeClosed".into());
+        }
+        if self.closing_metadata {
+            return Err("Busy".into());
+        }
         let completion = Arc::new(Mutex::new(None));
         let worker = start(
             root.clone(),
@@ -1131,8 +1239,13 @@ impl Scheduler {
                 index += 1;
             }
         }
-        if background && self.metadata.is_none() {
-            if let Some((root, run)) = self.retired.pop_front() {
+        if background && self.metadata.is_none() && !self.closing_metadata {
+            if let Some(index) = self
+                .retired
+                .iter()
+                .position(|(root, _)| !self.closing.contains(root) && !self.closed.contains(root))
+            {
+                let (root, run) = self.retired.remove(index).expect("retired entry");
                 if self
                     .start_metadata(
                         root.clone(),
@@ -1156,13 +1269,15 @@ impl Scheduler {
         }
         let count = self.ready.len();
         for _ in 0..count {
-            if self.steps.len() >= 4 {
+            if self.steps.len() + self.closing_steps >= 4 {
                 break;
             }
             let Some(item) = self.ready.pop_front() else {
                 break;
             };
             if item.at > Instant::now()
+                || self.closing.contains(&item.root)
+                || self.closed.contains(&item.root)
                 || !self.homes.get(&item.root).is_some_and(|home| home.allowed)
             {
                 self.ready.push_back(item);
@@ -1199,7 +1314,9 @@ impl Scheduler {
             let due = self
                 .homes
                 .get(&root)
-                .is_some_and(|h| h.next_scan <= Instant::now());
+                .is_some_and(|h| h.next_scan <= Instant::now())
+                && !self.closing.contains(&root)
+                && !self.closed.contains(&root);
             self.home_order.push_back(root.clone());
             if due {
                 return Some(root);
@@ -1211,9 +1328,13 @@ impl Scheduler {
 /// The reactor supplies cached pause/rest state. This function scans no files.
 pub(crate) fn pump(root: &Path, allowed: bool) {
     let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+    if state.closing.contains(root) || state.closed.contains(root) {
+        state.pump(true);
+        return;
+    }
     if let Some(home) = state.homes.get_mut(root) {
         home.allowed = allowed;
-    } else if state.homes.len() < RUN_LIMIT {
+    } else if state.can_admit_root(root) {
         state.home_order.push_back(root.into());
         state.homes.insert(
             root.into(),
@@ -1225,6 +1346,186 @@ pub(crate) fn pump(root: &Path, allowed: bool) {
         );
     }
     state.pump(true);
+}
+
+/// An explicit new-work entry may reopen a closed runtime. Normal Node::open
+/// and passive reads intentionally do not call this.
+pub(crate) fn acquire(root: &Path) -> Result<(), String> {
+    let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+    if state.closing.contains(root) {
+        return Err("RuntimeClosing".into());
+    }
+    if !state.can_admit_root(root) {
+        return Err("ResourceLimit".into());
+    }
+    state.closed.remove(root);
+    if !state.homes.contains_key(root) {
+        state.home_order.push_back(root.into());
+        state.homes.insert(
+            root.into(),
+            Home {
+                cursor: None,
+                next_scan: Instant::now(),
+                // The normal entry supplies its real cached pause/rest state.
+                allowed: false,
+            },
+        );
+    }
+    Ok(())
+}
+pub(crate) fn check_admission(root: &Path) -> Result<(), String> {
+    if scheduler()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .closing
+        .contains(root)
+    {
+        Err("RuntimeClosing".into())
+    } else {
+        Ok(())
+    }
+}
+pub(crate) fn is_closed(root: &Path) -> bool {
+    let state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+    state.closing.contains(root) || state.closed.contains(root)
+}
+pub(crate) struct CloseGuard {
+    root: PathBuf,
+    steps: usize,
+    metadata: bool,
+}
+impl Drop for CloseGuard {
+    fn drop(&mut self) {
+        let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+        state.closing.remove(&self.root);
+        state.closing_steps -= self.steps;
+        if self.metadata {
+            state.closing_metadata = false;
+        }
+    }
+}
+/// Fence before probing a cold Root's existing locks, so even a Missing lock
+/// cannot let a simultaneous explicit acquire cross the close operation.
+pub(crate) fn begin_close(root: &Path) -> Result<Option<CloseGuard>, String> {
+    let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+    if state.closing.contains(root) {
+        return Ok(None);
+    }
+    if !state.can_admit_root(root) {
+        return Ok(None);
+    }
+    state.closing.insert(root.into());
+    Ok(Some(CloseGuard {
+        root: root.into(),
+        steps: 0,
+        metadata: false,
+    }))
+}
+impl CloseGuard {
+    /// The caller holds admission and any existing executor claim. Existing owners
+    /// retain their original deadline; joins never hold the scheduler mutex.
+    pub(crate) fn finish(
+        mut self,
+        missing_claim: bool,
+    ) -> Result<crate::khor_agent::RuntimeClose, String> {
+        use crate::khor_agent::RuntimeClose;
+        let root_path = self.root.clone();
+        let root = root_path.as_path();
+        let (mut metadata, mut steps, reserved) = {
+            let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+            if state.retired.iter().any(|(path, _)| path == root) {
+                return Ok(RuntimeClose::Busy);
+            }
+            if missing_claim
+                && (state.metadata.as_ref().is_some_and(|m| m.root == root)
+                    || state.steps.iter().any(|owner| owner.root == root))
+            {
+                return Ok(RuntimeClose::Busy);
+            }
+            let reserved = state.metadata.as_ref().and_then(|owner| {
+                if owner.root == root {
+                    if let Metadata::Persist { run, .. } = &owner.operation {
+                        return Some(run.clone());
+                    }
+                }
+                None
+            });
+            // Reserve a bounded retirement slot before taking a Persist owner.
+            // Its real result may prove that the intent never committed.
+            if reserved.is_some() && state.retired.len() >= RUN_LIMIT {
+                return Ok(RuntimeClose::Busy);
+            }
+            if let Some(run) = &reserved {
+                state.retired.push_back((root.into(), run.clone()));
+            }
+            let metadata = if state.metadata.as_ref().is_some_and(|m| m.root == root) {
+                state.metadata.take()
+            } else {
+                None
+            };
+            if metadata.is_some() {
+                state.closing_metadata = true;
+            }
+            let mut owned = Vec::new();
+            for step in std::mem::take(&mut state.steps) {
+                if step.root == root {
+                    owned.push(step);
+                } else {
+                    state.steps.push(step);
+                }
+            }
+            state.ready.retain(|item| item.root != root);
+            state.durable.retain(|(path, _, _)| path != root);
+            state.closing_steps += owned.len();
+            (metadata, owned, reserved)
+        };
+        self.steps = steps.len();
+        self.metadata = metadata.is_some();
+        let mut error = None;
+        let mut committed = reserved.is_none();
+        if let Some(owner) = metadata.as_mut() {
+            let result = owner.worker.join();
+            if let Err(code) = &result {
+                error = Some(code.clone());
+            }
+            if let Some(run) = &reserved {
+                committed = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|raw| decode_reply(raw).ok())
+                    .and_then(|reply| validated_snapshot(&reply, run, true))
+                    .is_some_and(|snapshot| snapshot["durability"]["state"] == "DurablyQueued");
+            }
+            // Return exactly the worker's real reply to an existing coalesced
+            // caller, without scheduling any further work for this closing Root.
+            *owner.completion.lock().unwrap_or_else(|p| p.into_inner()) = Some(result);
+        }
+        for step in &mut steps {
+            if let Err(code) = step.worker.join() {
+                error.get_or_insert(code);
+            }
+        }
+        let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+        if committed {
+            if let Some(run) = reserved {
+                state
+                    .retired
+                    .retain(|entry| entry != &(root.into(), run.clone()));
+            }
+        } else {
+            return Ok(RuntimeClose::Busy);
+        }
+        if state.retired.iter().any(|(path, _)| path == root) {
+            return Ok(RuntimeClose::Busy);
+        }
+        if let Some(code) = error {
+            return Err(code);
+        }
+        state.homes.remove(root);
+        state.home_order.retain(|path| path != root);
+        state.closed.insert(root.into());
+        Ok(RuntimeClose::Closed)
+    }
 }
 /// Called by the synchronous executor only after local retirement; memory only.
 pub(crate) fn local_retired(root: PathBuf, run: String) {
@@ -1289,10 +1590,28 @@ pub(crate) async fn request(
     };
     let completion = {
         let mut state = scheduler().lock().unwrap_or_else(|p| p.into_inner());
+        if state.closing.contains(root) {
+            return serde_json::json!({"run":run,"durability":if persist {
+                Durability::NotPersisted { code: "RuntimeClosing".into() }
+            } else {
+                Durability::Unavailable { code: "RuntimeClosing".into() }
+            }});
+        }
+        if state.closed.contains(root) {
+            if persist && retry {
+                state.closed.remove(root);
+            } else {
+                return serde_json::json!({"run":run,"durability":if persist {
+                    Durability::NotPersisted { code: "RuntimeClosed".into() }
+                } else {
+                    Durability::Unavailable { code: "RuntimeClosed".into() }
+                }});
+            }
+        }
         if let Some(home) = state.homes.get_mut(root) {
             home.allowed = allowed;
         }
-        if !state.homes.contains_key(root) && state.homes.len() < RUN_LIMIT {
+        if !state.homes.contains_key(root) && state.can_admit_root(root) {
             state.home_order.push_back(root.into());
             state.homes.insert(
                 root.into(),
@@ -1305,7 +1624,7 @@ pub(crate) async fn request(
         }
         state.pump(false);
         // Reap before admission, without starting a periodic metadata scan.
-        if persist && !state.homes.contains_key(root) {
+        if !state.homes.contains_key(root) {
             Err("ResourceLimit".to_owned())
         } else if persist
             && !retry

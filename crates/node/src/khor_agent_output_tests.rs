@@ -17,6 +17,19 @@ impl Drop for Worker {
     }
 }
 
+fn drain_cancellation_owners(root: &std::path::Path) {
+    // Terminal fixture scopes must outlive their finite cancellation owners.
+    let by = Instant::now() + Duration::from_secs(6);
+    let cleanup = loop {
+        let result = crate::remote_cancel::release_test_root(root);
+        if result.is_ok() || Instant::now() >= by {
+            break result;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert!(cleanup.is_ok(), "owned cancellation cleanup: {cleanup:?}");
+}
+
 #[test]
 fn failed_sidecar_receipts_redact_once_and_leave_empty_credentials_readable() {
     for (key, error, expected) in [
@@ -103,7 +116,7 @@ fn failed_sidecar_child() {
     let root = PathBuf::from(std::env::var_os("KHOR_OUTPUT_TEST_ROOT").unwrap());
     let key = std::env::var("KHOR_OUTPUT_TEST_KEY").unwrap();
     let expected = std::env::var("KHOR_OUTPUT_TEST_EXPECTED").unwrap();
-    let _node = Node::open_as(root.clone(), "output-fixture").unwrap();
+    let node = Node::open_as(root.clone(), "output-fixture").unwrap();
     let _claim = claim(&root).unwrap();
     let active = Arc::new(Running {
         id: "agent-output-fixture".into(),
@@ -118,6 +131,7 @@ fn failed_sidecar_child() {
         fingerprint: "fixture".into(),
         record: CommandRecord {
             id: active.id.clone(),
+            owner: node.device_str().into(),
             started_at_ms: now(),
             data_json: Some(json!({"existingFixtureMetadata":{"token":"kept"}}).to_string()),
             agent: Some(AgentTurn {
@@ -137,13 +151,15 @@ fn failed_sidecar_child() {
         json!({"type":"start"}),
         &key,
     );
+    drain_cancellation_owners(&root);
     let receipt: Saved =
         serde_json::from_slice(&fs::read(file(&root, &active.id)).unwrap()).unwrap();
     assert_eq!(receipt.record.status, "failed");
     let data: Value = serde_json::from_str(receipt.record.data_json.as_deref().unwrap()).unwrap();
     assert_eq!(data["existingFixtureMetadata"]["token"], "kept");
-    assert_eq!(data["remoteCancellation"]["state"], "pending");
-    assert_eq!(data["remoteCancellation"]["confirmed"], false);
+    // Cancellation truth lives in private receipts, never in competing Saved
+    // state. Absence here is not a claim about remote confirmation.
+    assert!(data.get("remoteCancellation").is_none());
     assert_eq!(receipt.record.error.as_deref(), Some(expected.as_str()));
     assert_eq!(receipt.record.error.unwrap().len(), expected.len());
 }
@@ -438,7 +454,7 @@ fn streamed_sidecar_child() {
     let case: Value = serde_json::from_slice(&fs::read(&fixture).unwrap()).unwrap();
     let key = case["key"].as_str().unwrap().to_owned();
     let root = directory.join("store");
-    let _node = Node::open_as(root.clone(), "stream-fixture").unwrap();
+    let node = Node::open_as(root.clone(), "stream-fixture").unwrap();
     let _claim = claim(&root).unwrap();
     let active = Arc::new(Running {
         id: "agent-stream-fixture".into(),
@@ -453,6 +469,7 @@ fn streamed_sidecar_child() {
         fingerprint: "stream-fixture".into(),
         record: CommandRecord {
             id: active.id.clone(),
+            owner: node.device_str().into(),
             started_at_ms: now(),
             status: "running".into(),
             agent: Some(AgentTurn {
@@ -501,6 +518,7 @@ fn streamed_sidecar_child() {
         None
     };
     execution.join().unwrap();
+    drain_cancellation_owners(&root);
     if case["checkpoint"] == true {
         let checkpoint = checkpoint.expect("sidecar must persist a live snapshot before release");
         assert_eq!(
