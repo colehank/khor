@@ -2,6 +2,17 @@
 
 更新：2026-10-27，close03 / N1 flow06实际红 / Q052首构建前提失败检查点。完整目标 active，未完成。先读本页、PLAN与任务卡，再核实际 HEAD/diff/agents/PID/SHA；不得按摘要覆盖未提交源。上一完整检查点见 [历史](history/STATE-before-native-close03-20261027.md)，旧阶段证据继续保留，当前事实以本页为准。
 
+## 最近检查点：native入口与Q05206（2026-10-27 09:10）
+
+本段取代下文较早的执行槽/准备状态，原05/06失败证据保留。main/wave1仍未变。
+
+- Q05206实际frontend12.59s和CLI53.59s构建通过；CLI current两父20.24s、private host一父1.22s真绿，共3/23。首两test exe已精确退休。之后normal CLI退休前身份门发现inode变而内容SHA/size/mtime/dev/uid/nlink相同，整run仍失败，CLI保留。实际第二Cargo确实同树fresh=true row，未trace不硬断原因。49dual/1921源/571frontend(155gen)/277dist稳定，UI_REVISION `khor-ui-assets:/assets/index-CRE8tIZZ.js` 与actual assets.rs全include齐；5PGID全退、0guard/owners、TMP清，已正式返槽。
+- **当前槽空，无新执行授权**。node_test_review正在准备plan07只续9必要build/20父，不重跑3已绿或frontend/CLI前提；继承06完整来源与actual内容同源证明，记录当前CLI身份另保到所有剩余host父后，再按精确门退休，不回写06或因fresh=true单独信内容。冻结后root短审再授槽。
+- R1 close03已由node_transfer_owner非作者独审，24payload/31dual与02→03真实delta核齐，统一union容量/cold publicclose预留/已完成token claimfree+configBusy新oracle无确认源码阻断；6父仍未真实运行。新卡 `Q-037-close03-independent-review.md` 已交root。
+- Root版本化 `scripts/run-node-acceptance.py` 与Unix CI接线、serve_as/TauriExit caller经R1 owner非作者审。原setsid脱离初始组仍错误绿的真实fake控制红已补：25ms有界ancestry、已观察group全members/身份保护、privateexe footprint、finite drain、Popen前与poll两盘5GiB门。修订setsid与timeout确非绿且组退，正常fake6/5与zero/skip/mutation/缺父/缺ignore/resource-before-Popen对照齐；这些全是**0个native业务父**。CI同job已加agent npm ci。卡 `Q-037-runtime-callers-entry-review.md` 交root。实际AppExit未验。
+- Root另改GUI两父Fixture：真实close成功→finite HTTP owner完成/join→removeRoot；Drop/panic/Busy保Root、不再静默删除。关闭loop现await timeout8s保Root；原32s权限/工具completed/Stop/maps/restart body不减。`root-gui-close-fixture01`原源保留，最终timeout窄改正由独审收口为02。未编/运行。当前R1树=close03+root entry/CI+GUI teardown WIP，下一编译前聚合新frame，不能称2351旧frame=current。
+- N1候选07已root核22dual/14源/1084**选择域**（crates/vendor/agent/gui-core/gui-tauri/scripts/Cargo/config/quality.yml，非全部GUI仓库），仅flow新增合法few-op Chat预算父+5ignore，原四body保持，生产仍04；`Q039/root-flow07-source-audit`。单新父control04 SHA97ae20b…343b00已准备，未启动；等Q052剩余20完成避免中途重换shared catalog/Sync。N1 owner仅准备3缺口最小typed Step/usage/Pending/reserve设计，无功能源修改。
+
 ## 用户决定与交付边界
 
 - 全仓功能审计、按风险修复/重构、Clean Code工程治理、最终同源App验收；多智能体与压缩恢复贯穿全程，不能以任一首批或库基座代替整体完成。误发AEC撤回。
