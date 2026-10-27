@@ -217,6 +217,55 @@ fn id_of(hex: &str) -> Result<Id, String> {
     nt::id_from_hex(hex).ok_or_else(|| msg::not_a_machine_id(format_args!("{hex:?}")))
 }
 
+/// A verified, owned decision for the immediate settlement below. This is
+/// not a durable intent or permission to replay against a later trust state.
+struct SettlementPlan {
+    anchor: Option<Id>,
+    action: SettlementAction,
+    roster: Option<Roster>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettlementAction {
+    Keep,
+    Adopt,
+}
+
+/// Verify before consulting or changing this machine's trust state. The
+/// claimed root is only an input to the existing full signature verifier.
+fn verified_settlement_roster(bytes: &[u8]) -> Result<Option<Roster>, String> {
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    let root = nt::claimed_root(bytes).ok_or_else(|| nt::TrustError::Garbled.to_string())?;
+    nt::verify_roster(bytes, &root)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+/// Pure decision over one snapshot. `mine` is the roster selected under
+/// `anchor`; `theirs` comes from verified_settlement_roster. The plan owns the
+/// exact signed bytes/sequence and anchor identity, not a later roster lookup.
+fn plan_settlement(
+    anchor: Option<Id>,
+    mine: Option<&Roster>,
+    me: &Id,
+    theirs: Option<Roster>,
+    them: &str,
+    i_dialed: bool,
+) -> Result<SettlementPlan, String> {
+    let action = match nt::settle(mine, me, theirs.as_ref(), &id_of(them)?, i_dialed) {
+        Settle::Clash => return Err(msg::pair_two_roots().into()),
+        Settle::Adopt => SettlementAction::Adopt,
+        Settle::Keep => SettlementAction::Keep,
+    };
+    Ok(SettlementPlan {
+        anchor,
+        action,
+        roster: theirs,
+    })
+}
+
 impl Node {
     fn khor_file(&self, name: &str) -> PathBuf {
         self.root().join(".khor").join(name)
@@ -662,22 +711,34 @@ impl Node {
         them: &str,
         i_dialed: bool,
     ) -> Result<(), String> {
-        let theirs = if theirs.is_empty() {
-            None
-        } else {
-            let root = nt::claimed_root(theirs).ok_or_else(|| nt::TrustError::Garbled.to_string())?;
-            Some(nt::verify_roster(theirs, &root).map_err(|e| e.to_string())?)
-        };
+        let theirs = verified_settlement_roster(theirs)?;
         let anchor = self.anchor();
         let mine = anchor.as_ref().and_then(|a| newest_in(doc, a));
-        match nt::settle(mine.as_deref(), &self.my_id(), theirs.as_ref(), &id_of(them)?, i_dialed) {
-            Settle::Clash => Err(msg::pair_two_roots().into()),
-            Settle::Adopt => self.give_way_to(doc, &theirs.expect("adopting needs theirs")),
-            Settle::Keep => {
-                if let (Some(a), Some(t)) = (anchor, theirs)
-                    && t.root == *a.as_bytes()
+        let plan = plan_settlement(
+            anchor.as_ref().map(|a| *a.as_bytes()),
+            mine.as_deref(),
+            &self.my_id(),
+            theirs,
+            them,
+            i_dialed,
+        )?;
+        self.apply_settlement(doc, plan)
+    }
+
+    /// Consume an immediate plan while the caller still owns the same Loaded.
+    /// The existing mutation order and key safety check are preserved. Durable
+    /// replay, a shared trust fence and stale-plan checks belong to the intent
+    /// slice; this function alone provides none of those guarantees.
+    fn apply_settlement(&self, doc: &DeviceDoc, plan: SettlementPlan) -> Result<(), String> {
+        match plan.action {
+            SettlementAction::Adopt => {
+                self.give_way_to(doc, &plan.roster.expect("adopting needs theirs"))
+            }
+            SettlementAction::Keep => {
+                if let (Some(anchor), Some(roster)) = (plan.anchor, plan.roster)
+                    && roster.root == anchor
                 {
-                    self.store_roster(doc, &t)?;
+                    self.store_roster(doc, &roster)?;
                 }
                 Ok(())
             }
@@ -1186,6 +1247,113 @@ mod tests {
         let mut ks = [roster_key(&r2), k.clone()];
         ks.sort();
         assert_eq!(ks[0], k, "zero-padded keys sort the way seqs do");
+    }
+
+    #[test]
+    fn settlement_plan_owns_the_verified_roster_sequence_and_anchor_snapshot() {
+        let local_key = iroh::SecretKey::generate();
+        let remote_key = iroh::SecretKey::generate();
+        let mine = roster(&local_key, &[Member::device(id(1))], NOW);
+        let theirs = roster(
+            &remote_key,
+            &[Member::device(id(2)), Member::device(id(3))],
+            NOW,
+        );
+        let expected_bytes = theirs.bytes().to_vec();
+        let mut wire = expected_bytes.clone();
+        let anchor = *local_key.public().as_bytes();
+        let plan = plan_settlement(
+            Some(anchor),
+            Some(&mine),
+            &id(1),
+            verified_settlement_roster(&wire).unwrap(),
+            &nt::id_hex(&id(2)),
+            false,
+        )
+        .unwrap();
+        wire.fill(0);
+        let newer = theirs.refresh(&remote_key, NOW + 1);
+        let newer = nt::verify_roster(&newer, &remote_key.public()).unwrap();
+        assert_eq!(plan.action, SettlementAction::Adopt);
+        assert_eq!(plan.anchor, Some(anchor));
+        let fixed = plan.roster.as_ref().unwrap();
+        assert_eq!(fixed.seq, theirs.seq);
+        assert!(
+            fixed.bytes() == expected_bytes.as_slice(),
+            "plan must retain the exact verified signed bytes"
+        );
+        assert!(
+            fixed.seq < newer.seq,
+            "later roster creation must not change a prepared plan"
+        );
+        assert!(
+            mine.root == anchor && mine.lone(&id(1)),
+            "pure planning must leave the local snapshot intact"
+        );
+    }
+
+    #[test]
+    fn settlement_planning_uses_the_actual_identities_and_dialer_direction() {
+        let local_key = iroh::SecretKey::generate();
+        let remote_key = iroh::SecretKey::generate();
+        let mine = roster(&local_key, &[Member::device(id(1))], NOW);
+        let theirs = roster(&remote_key, &[Member::device(id(2))], NOW);
+        let decide = |me: Id, them: Id, dialed| {
+            plan_settlement(
+                Some(*local_key.public().as_bytes()),
+                Some(&mine),
+                &me,
+                verified_settlement_roster(theirs.bytes()).unwrap(),
+                &nt::id_hex(&them),
+                dialed,
+            )
+            .unwrap()
+            .action
+        };
+        assert_eq!(decide(id(1), id(2), true), SettlementAction::Adopt);
+        assert_eq!(decide(id(1), id(2), false), SettlementAction::Keep);
+        assert_eq!(
+            decide(id(9), id(2), true),
+            SettlementAction::Keep,
+            "a one-member roster is not lone for a different local identity"
+        );
+        assert_eq!(
+            decide(id(1), id(9), false),
+            SettlementAction::Adopt,
+            "the remote identity, not just roster size, decides whether its root is lone"
+        );
+    }
+
+    #[test]
+    fn settlement_planning_refuses_bad_signatures_and_two_existing_networks() {
+        let local_key = iroh::SecretKey::generate();
+        let remote_key = iroh::SecretKey::generate();
+        let mine = roster(
+            &local_key,
+            &[Member::device(id(1)), Member::device(id(3))],
+            NOW,
+        );
+        let theirs = roster(
+            &remote_key,
+            &[Member::device(id(2)), Member::device(id(4))],
+            NOW,
+        );
+        let mut bad = theirs.bytes().to_vec();
+        *bad.last_mut().unwrap() ^= 1;
+        assert!(verified_settlement_roster(&bad).is_err());
+        let decision = plan_settlement(
+            Some(*local_key.public().as_bytes()),
+            Some(&mine),
+            &id(1),
+            verified_settlement_roster(theirs.bytes()).unwrap(),
+            &nt::id_hex(&id(2)),
+            false,
+        );
+        assert!(
+            matches!(decision, Err(why) if why == msg::pair_two_roots()),
+            "two non-lone roots must be refused before an apply plan exists"
+        );
+        assert!(verified_settlement_roster(&[]).unwrap().is_none());
     }
 
     // ── on a real store (no network) ────────────────────────────────
