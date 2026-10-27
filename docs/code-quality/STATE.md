@@ -6,7 +6,7 @@
 
 - 完成全仓功能审计、按风险修复/重构、Clean Code工程治理和最终同源App验收；多智能体协作与压缩恢复贯穿全程。任一首批或库基座不能代替完整目标。
 - 未上线，不保旧Khor端fallback/迁移矩阵；统一当前协议。认证、epoch、数据完整性、实际支持平台及外部ACP声明能力仍保留。
-- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@670347d766191b2b30fbc0e91f31fbf4e87cb3c2`，两树最近核对均clean。用户既有App/服务/release不动。
+- **本轮没有main合并/ship授权。** main `/Users/zgh/Desktop/working/khor` 为 `8704a503a27b36ad58f922690de50e766f8bd485`；治理集成树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1` 为 `integrate/code-quality-wave1@8d1033bbfb7ab32582b0e55f0b380c13c45a6130`，两树最近核对均clean。用户既有App/服务/release不动。
 - 权威协调目录是本目录；实现树同名文档为历史副本。外盘新资料放 `/Volumes/disk0/Khor` 对应分类。
 
 ## 已集成的成果
@@ -22,12 +22,12 @@
 
 | owner | 实现树 / baseline | 当前状态 |
 | --- | --- | --- |
-| root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052 source04已无冲突apply-check，待原2项验证后提交集成。 |
-| node_test_review | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-terminal-current@13a9459f` | source04冻结，只测试fixture较03变化；plan10待最终冻结，仅一次host_shell_tmux构建+原2项。未自启。 |
-| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@8242b5bd` | A8 plan04实际CLI构建过、Node libtest编译失败，已正式返槽。仅授权新close测试guard最小源码修正及冻结，未重启。 |
-| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@5f2d5cf7` | source08等价预算提取/纯测试冻结，control05 root短审认可、尚未授槽。仅只读准备后续Usage/Pending/reserve修复。 |
+| root | wave1集成、plan总账 | 独审、公共调用方、集成及恢复镜像；Q052已95428b25→8d1033bb集成，12路径精确同source04；集成定向native待。 |
+| node_test_review | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，`fix/quality-terminal-current@13a9459f` | source04已提交/集成，plan10原2项实际过且清理绿；源码及两卡已交root，后续任N1非作者审待命。 |
+| remote_cancel_owner | `/Volumes/disk0/Khor/worktrees/current/khor-quality-agent-protocol`，`fix/quality-remote-cancel@8242b5bd` | A8 plan04实际CLI构建过、Node libtest编译失败，已正式返槽。source05仅guard绑定+立即drop，root已审33dual；resume复用已保全CLI，只待绑定最新N1 producer后排原8项。 |
+| node_transfer_owner | `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，`fix/quality-node-doc-transfer@5f2d5cf7` | source08纯policy实际0/1/0精确红；已返槽。已授权最小3路径Usage/Pending/reserve功能修复，暂无native槽。 |
 
-**唯一Cargo/native槽当前空，下一顺序Q052 tmux2→N1 policy红/最小功能修复；R1修正后再协调。** 授槽/启动后须核现场，不据旧active.json重启。当前各实现批尚未提交/集成。
+**唯一Cargo/native槽当前空，R1准备续原8项；N1并行修源。** 授槽/启动后须核现场，不据旧active.json重启。Q052已提交集成，R1/N1仍未集成。
 
 ## Q052：终端当前协议与清屏
 
@@ -36,7 +36,7 @@
 - **source03实际28项功能回归全部通过**（terminal-green09，21个执行阶段全0）；native_handoff只编译，不算运行。源/生成输入与实际依赖来源稳定。
 - 原09整run仍清理红：2个停止的私有tmux socket残留。root另凭精确身份、不活跃与无持有证明只清这2个socket，t52v9已不存在；原失败收据不回写。
 - source04仅 `crates/node/tests/host_shell_tmux.rs` fixture生命周期改动，其余1920输入含生产相对03字节完全相同。root独审已接受，22份双盘证据；12个变更路径，1921输入。manifest `6d20b800edca287236519eb57b2700be91bce0c4825219133efd2655a85b73a7`。
-- plan10只跑原tmux2，继承同源其余26；不重复全28、npm或gen。通过后作者提交exact12路径，root集成并验证。
+- plan10实际build0/74.58s，原tmux2为2/0/0、运行6.42s，整run83.08s/exit0；1921稳定、normal/actualexe稳定、所有owned组退、TMP/socket清，无guard/forced。root独读raw/final/results并核42dual。95428b25→8d1033bb已集成，12路径完整SHA精确source04，集成定向native尚待。
 - 原05缺dist、06 CLI inode退休门、08旧summary depfile门等失败保留。实际rustc hashed depfile及源内容为来源证明，顶层debug/khor.d可能陈旧，fresh=true/current manifest本身不足以证明同源。
 
 ## R1 / R2：智能体取消与退出
@@ -57,7 +57,7 @@
 - source06实际quiet1 Versions过；Busy6次真实body6,377,994B却计4,805,130B，漏6完整块；purepull Busy后first_pending=false但重开同manifest实际VV+Spec已完成。**两项真实缺陷尚未修复**。
 - 原last-single及source07 few-op Chat在外/内盘TMP均未于30s达到32MiB；都是setup失败，不是越界红，不能归因外盘。保留优化构建下实际网络预算边界验证，不降低32MiB/30s限额。
 - source08只语义等价提取生产预算判断并加唯一纯策略测试，14源/1084选择域输入（非全部GUI仓库），root独审通过。manifest `ebffe36de46e5f0045eaea0e2b3bc16fd62f7b9bf2126818f8955d708f542751`。
-- control05 root已短审认可，一次当前libtest构建+普通exact纯策略红；未授槽。该用例不代替实际网络32MiB验证。之后才做最小Usage所有错误保量、opening双块reserve、partial Pending修正。
+- control05实际当前libtest构建0/67.885s；唯一普通exact纯策略用例0/1/0，在原第1057行headroom断言真实失败，root已读raw/final。1084/binary/deps稳、PGID/TMP清，槽已还。该用例不代替网络32MiB验证。已授最小link_doc_transfer/link/proto三路径功能修复，尚未完成或编验。
 - 后续原Busy/purepull/unit11/N0、postflush/prereceipt真实SIGKILL重开和N2仍必需；Complete后重开不能冒中途崩溃证明。
 
 ## 其余完整范围

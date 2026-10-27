@@ -1,5 +1,13 @@
 # Q052：终端统一当前协议
 
+## 当前交付（2026-10-27，root）
+
+源码作者提交 `95428b255ab5b8266817bbcada956641f4978538`，治理集成提交 `8d1033bbfb7ab32582b0e55f0b380c13c45a6130`。共12路径，包含当前host协议统一及真实clear/replay修复。root已逐文件核集成后的12路径SHA精确等于source04冻结，作者树与集成树clean；main未改。
+
+source03实际28个不同功能回归通过。原09整run因两个私有停止tmux socket清理失败，原失败收据保留；root另精确后清。source04只修该fixture生命周期，其余1920输入含生产完全同03。plan10实际唯一目标构建74.58s通过，原tmux2回归2/0/0、无skip，运行6.42s；源1921/实际normal库与exe稳定、所有自有组退出、TMP和socket清理完成、无guard/forced，整run exit0。root已独立读raw/results/final并核42份双盘一致。
+
+source04独审在 `Q052/terminal-candidate04-root-review`；运行证据 `Q052/terminal-green10`。当前作者验证已收口并提交集成，**集成分支定向native验证与最终同源App验收尚待后续，不把作者树通过直接写成App通过**。此前准备/失败记录如下，均保留历史含义。
+
 2026-10-27，owner node_test_review（实现作者，root独审）。复用 `/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-store-owner-recovery`，交接clean `13a9459f6c2dfd8d12912e6e2325b58de6e06999`（tree与集成767aa相同），切隔离分支fix/quality-terminal-current；不新worktree/target，不接Gen。Gen源码与卡已交还root，本片不再写它们。
 
 先读权威STATE/PLAN及Q033定界；refactor-safely图first minimal/callers/file-summary，图build686f不匹配13a，仅作导航，当前无.codegraph。随后实际全仓Rust调用搜索补漏：host版本化包装供gui-core term/commands CLI attach及node与cli直接tests；图5callers未覆盖这些全部test。0flow不作coverage。
@@ -31,3 +39,25 @@ external `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q052/term
 生产SHA：host.rs `2536d1288706e296c39b4ef018d74f90c2464764202a2e951860b1a56c766096`；term.rs `7cc4920a931f33e9292238b9bc102ca1c4e6379ce34e16915f89cd86ae352b0d`；commands lib.rs `81e97aa9577037169d904c0bc42f30269999ede865d29a7dadd0c6060f63f61f`。完整11源SHA/bytes及删除项在candidate.json，前后全源都保存。最终available外5879201792B/内12345278464B，均≥5GiB。候选卡快照不含本回执。
 
 源已停止变更，交root独审；无Cargo/typecheck/test/native/gen/服务/自有PID/新target/缓存清理/commit，不把9定向普通测试源码当9通过。本片不影响已交Gen；任何后续修订另冻delta，不无声改本候选。
+
+## source03：真实 clear/replay 缺口最小修复（作者交付，未运行）
+
+Root已接收07原始失败及只读归因，另授03三源写权；02/root审历史及05/06/07原件保持。07原TCP父第201行实际发现before-clear重现，不以改cursor规避。实现仍fix/quality-terminal-current@13a9459f6c2dfd8d12912e6e2325b58de6e06999；总scope12路径/11现存源不变，02→03仅host.rs、core term.rs、term_io_tests.rs。
+
+host抽窄pub forget_parser(parser, scrollback)，机械复用Model原normal-screen清理：保cursor当前行及后续、列、属性/input modes/visibility，清旧screen/history；Model的Beside归属/offset/原normal guard仍留Model。Core写锁内顺序为Forget成功→parser/feed同临界区清理→可选Ctrl-L，线上op仍Forget/Input；首write失败不清本地，任何write失败继续Err。局部清理采用paint/take_since一致parser→feed锁序；life=max(旧life,current fed−retained len)，fed不跳号，caught-up cursor仍连续。Alt本地不清，与真实host Model和GUI normal guard一致。Reader paint返回已释放parser/feed才取conn发Resize；resize/paste临时parser guard亦在conn前释放，无现有parser→conn交叉持锁。无ACK/新协议/TS/依赖/公共catalog修改。
+
+新增4普通父均通过生产paint和submit_forget组合及真实TCP帧读取：`a_clear_preserves_the_prompt_modes_and_caught_up_cursor`（含第二次clear）、`a_later_feed_trim_cannot_revive_the_screen_a_clear_forgot`（完整bounded OSC titles超过真实FEED_CAP而不滚掉旧screen）、`a_redraw_is_requested_only_after_the_local_screen_and_feed_clear`（持parser锁证明Ctrl-L等待清理，随后真实redraw保留）、`an_alternate_screen_is_kept_and_a_failed_forget_does_not_clear`。原term_io全file逆去新方法+4父逐字还原02，原TCP terminal_current整个file逐字同02，包括201与最终同socket Input。Host原formatter/parser replacement尾机械等值记录在source-equivalence。
+
+仅rustfmt emit stdout skip_children parse、git diff --check、full/delta reverse patch --check通过；没有Cargo/typecheck/native/生成器运行，不将source静态通过称绿。当前1921source除上述3源外其余1918逐字同02；571frontend/155genTS/277actual06dist全部未变，不冒新App验收。后续仍须独立源码审，以及同源当前normal构建、新4/原Q05223父与受影响Host model/snapshot/真实CLI清理适用验证；native_handoff仍仅compile-only。
+
+冻结：external `/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q052/terminal-current-candidate03`，internal recovery/Q052同名，27文件逐SHA相同，完整source/before/fullpatch/delta/1921inputs/gen/dist/静态记录齐。
+
+- manifest `208f5e65a019a4ac651844e113e9a8aaf982b24d89910d6583049ecd2dd4d9bc`
+- fullpatch `6e089967b58dce35b9e8219492f5686a7159cdc003cc93e238c40dadc240a08e`
+- delta02 `d6d438dda3b5116e48c8d70a80ec351123e2c5dcf3bd7f02eddb74f49faf0575`
+- source-inputs `208f4f12a6535d6f92cc7f6496109cecab993fb94288b9bd8b6377689787689b`
+- term.rs `710e6e2fce8c942e91f2504a038dca9e9e6fee36b51a1ca6269e6f516706e936`
+- term_io_tests.rs `8506789852f8bb3df9556f726ff717bbde3144ac8e12924ca64faf382a91c54d`
+- host.rs `a49f4a72cade30e648e611c6269b845d49baf30cb777f66daf3203d0067894c0`
+
+作者冻结三源，不commit/不编译，不自审；本卡本次追加写权交还root，validation-plan保执行收据写权。Q052仍open。
