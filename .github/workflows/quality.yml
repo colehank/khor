@@ -63,7 +63,9 @@ jobs:
         working-directory: apps/agent
       - name: Snapshot the actual Cargo graph and prepare the normal worker
         run: |
-          cargo metadata --locked --format-version 1 > "${{ runner.temp }}/node-metadata.json"
+          native_host="$(rustc -vV | sed -n 's/^host: //p')"
+          test -n "$native_host"
+          cargo metadata --locked --format-version 1 --filter-platform "$native_host" > "${{ runner.temp }}/node-metadata.json"
           python3 scripts/native_provenance.py prepare --metadata "${{ runner.temp }}/node-metadata.json" --target-dir "$CARGO_TARGET_DIR" --package khor-cli --name khor --kind bin --tool "$(rustup which cargo)" --tool "$(rustup which rustc)" --apply-refresh --output "${{ runner.temp }}/cli-prepared.json"
       - run: cargo build --locked -p khor-cli --bin khor --message-format=json > "${{ runner.temp }}/cli-artifacts.json"
       - name: Verify the normal worker and prepare the isolated acceptance binary

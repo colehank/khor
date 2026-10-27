@@ -10,7 +10,9 @@ and requires the verified Node receipt, plus the normal CLI receipt when
 Use the existing build command and metadata captured from the current tree:
 
 ```sh
-cargo metadata --locked --offline --format-version 1 > "$EVIDENCE/metadata.json"
+native_host="$(rustc -vV | sed -n 's/^host: //p')"
+test -n "$native_host"
+cargo metadata --locked --offline --format-version 1 --filter-platform "$native_host" > "$EVIDENCE/metadata.json"
 python3 scripts/native_provenance.py prepare \
   --metadata "$EVIDENCE/metadata.json" --target-dir "$CARGO_TARGET_DIR" \
   --package khor-node --name khor_node --kind lib --test \
