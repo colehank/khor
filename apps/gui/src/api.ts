@@ -64,6 +64,7 @@ import type { ConfigChoice } from "./gen/bindings/ConfigChoice";
 import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
+import type { HistoryPage } from "./gen/bindings/HistoryPage";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
 import type { Found } from "./gen/bindings/Found";
@@ -1417,6 +1418,9 @@ export const fetchHistory = (id: string) => call<ChatFrame[]>("history", { id })
     repaints. Both shapes are ones the fold already knows — see
     `chat::history_follow` for why that split is the design and not a
     convenience. */
+export const fetchHistoryPage = (id: string, cursor: string | null = null) =>
+  call<HistoryPage>("history_page", { id, cursor });
+
 export const followHistory = (id: string, from: number) =>
   call<{ frames: ChatFrame[]; at: number; following: boolean }>("history_follow", { id, from });
 /** One machine's directory — order, cap and the answered-about path

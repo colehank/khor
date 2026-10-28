@@ -72,6 +72,7 @@ macro_rules! roots {
         $visit!(khor_core::Load);
         $visit!(khor_gui_core::QuotaAnswer);
         $visit!(khor_gui_core::chat::ChatBatch);
+        $visit!(khor_gui_core::chat::HistoryPage);
         $visit!(khor_gui_core::MachineLog);
         $visit!(khor_gui_core::files::DirListing);
         $visit!(khor_gui_core::recents::RecentRow);

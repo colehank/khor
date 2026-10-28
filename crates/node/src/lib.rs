@@ -5439,6 +5439,38 @@ impl Node {
         }
     }
 
+    /// A bounded page of an external transcript, latest events first loaded
+    /// from the tail. The cursor is scoped to this session and file identity.
+    pub fn transcript_page(
+        &self,
+        id: &SessionId,
+        cursor: Option<&adaptor::transcript_page::Cursor>,
+    ) -> Result<adaptor::transcript_page::Page, String> {
+        let leaf =
+            id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI))
+                .ok_or_else(|| "session has no external transcript source".to_owned())?;
+        let leaf = self
+            .live
+            .vendor_leaf_of(id)
+            .unwrap_or_else(|| leaf.to_owned());
+        let claude = adaptor::claude::Claude::at(adaptor::claude_home(&self.root));
+        let (path, parse): (_, fn(&str) -> Vec<adaptor::claude::Utterance>) =
+            if let Some((path, _)) = claude.transcript_path(&leaf) {
+                (path, adaptor::claude::utterances_of)
+            } else {
+                let codex = adaptor::codex::Codex::at(adaptor::codex_home(&self.root));
+                let full = codex
+                    .full_session_id(&leaf)
+                    .ok_or_else(|| "no transcript source".to_owned())?;
+                let path = codex
+                    .rollout_path(&full)
+                    .ok_or_else(|| "no transcript source".to_owned())?;
+                (path, adaptor::codex::utterances_of)
+            };
+        let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        adaptor::transcript_page::read_page(&mut file, &id.0, cursor, parse)
+    }
+
     /// A discovered conversation, followed: what its transcript has said
     /// since byte `from`.
     ///

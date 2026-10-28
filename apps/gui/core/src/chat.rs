@@ -1106,6 +1106,174 @@ pub fn history_follow(root: &Path, id: &str, from: u64) -> Result<Followed, Stri
     })
 }
 
+/// One bounded external-history response. Record references explicitly retain
+/// content that cannot safely be expanded into an inline response.
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct HistoryPage {
+    pub entries: Vec<HistoryEntry>,
+    pub older: Option<String>,
+    pub references: Vec<HistoryRecordRef>,
+    pub reset: bool,
+    pub encoded_bytes: usize,
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct HistoryEntry {
+    pub key: String,
+    pub frame: ChatFrame,
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct HistoryRecordRef {
+    #[ts(type = "number")]
+    pub start: u64,
+    #[ts(type = "number")]
+    pub end: u64,
+    pub missing_start: bool,
+    pub missing_end: bool,
+    pub item: Option<usize>,
+    pub cursor: String,
+}
+
+const HISTORY_PAYLOAD_BYTES: usize = 512 * 1024;
+const HISTORY_FRAME_BYTES: usize = HISTORY_PAYLOAD_BYTES - 16 * 1024;
+
+struct EncodedSize(usize);
+impl std::io::Write for EncodedSize {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 = self.0.saturating_add(bytes.len());
+        if self.0 > HISTORY_PAYLOAD_BYTES {
+            return Err(std::io::Error::other(
+                "history response exceeds its byte budget",
+            ));
+        }
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+fn encoded_size(value: &impl Serialize) -> Result<usize, String> {
+    let mut counter = EncodedSize(0);
+    serde_json::to_writer(&mut counter, value).map_err(|e| e.to_string())?;
+    Ok(counter.0)
+}
+
+pub fn history_page(root: &Path, id: &str, cursor: Option<&str>) -> Result<HistoryPage, String> {
+    if cursor.is_some_and(|cursor| cursor.len() > 4096) {
+        return Err("history cursor exceeds its byte budget".to_owned());
+    }
+    let cursor: Option<khor_node::adaptor::transcript_page::Cursor> = cursor
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|e| format!("invalid history cursor: {e}"))?;
+    let node = Node::open(root.to_path_buf())?;
+    let page = node.transcript_page(&SessionId(id.to_owned()), cursor.as_ref())?;
+    history_page_response(id, page)
+}
+
+fn history_page_response(
+    id: &str,
+    mut page: khor_node::adaptor::transcript_page::Page,
+) -> Result<HistoryPage, String> {
+    let mut entries = Vec::new();
+    let mut frame_bytes = 0;
+    let mut first_position = None;
+    let mut expanded_references = Vec::new();
+    // Traverse backwards to prioritize recent content while keeping a cursor
+    // before the oldest admitted event. No discarded event is skipped forever.
+    for event in std::mem::take(&mut page.events).into_iter().rev() {
+        let Some(update) = khor_node::replayed_update(event.utterance) else {
+            continue;
+        };
+        let update = serde_json::to_value(update).map_err(|e| e.to_string())?;
+        let frame = ChatFrame::Note {
+            update: serde_json::json!({ "sessionId": id, "update": update }),
+        };
+        let entry = HistoryEntry {
+            key: format!("{}:{}", event.position.start, event.position.item),
+            frame,
+        };
+        let bytes = encoded_size(&entry).unwrap_or(HISTORY_PAYLOAD_BYTES + 1);
+        if bytes > HISTORY_FRAME_BYTES {
+            expanded_references.push(HistoryRecordRef {
+                start: event.position.start,
+                end: event.position.end,
+                missing_start: false,
+                missing_end: false,
+                item: Some(event.position.item),
+                cursor: serde_json::to_string(&page.cursor_before(event.position.clone()))
+                    .map_err(|e| e.to_string())?,
+            });
+            first_position = Some(event.position);
+            continue;
+        }
+        if frame_bytes + bytes > HISTORY_FRAME_BYTES {
+            break;
+        }
+        frame_bytes += bytes;
+        first_position = Some(event.position.clone());
+        entries.push(entry);
+    }
+    entries.reverse();
+    let older = if let Some(position) = &first_position {
+        if position.start == 0 && position.item == 0 {
+            None
+        } else {
+            Some(page.cursor_before(position.clone()))
+        }
+    } else {
+        page.older.clone()
+    };
+    let mut references: Vec<_> = page
+        .references
+        .iter()
+        .filter(|reference| {
+            first_position
+                .as_ref()
+                .is_none_or(|first| reference.range.end > first.start)
+        })
+        .map(|reference| {
+            let position = khor_node::adaptor::transcript_page::Position {
+                start: reference.range.start,
+                end: reference.range.end,
+                item: 0,
+            };
+            Ok(HistoryRecordRef {
+                start: reference.range.start,
+                end: reference.range.end,
+                missing_start: reference.missing_start,
+                missing_end: reference.missing_end,
+                item: None,
+                cursor: serde_json::to_string(&page.cursor_before(position))
+                    .map_err(|e| e.to_string())?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    references.extend(expanded_references);
+    let mut response = HistoryPage {
+        entries,
+        older: older
+            .map(|cursor| serde_json::to_string(&cursor))
+            .transpose()
+            .map_err(|e| e.to_string())?,
+        references,
+        reset: page.reset,
+        encoded_bytes: 0,
+    };
+    loop {
+        let encoded_bytes = encoded_size(&response)?;
+        if encoded_bytes == response.encoded_bytes {
+            break;
+        }
+        response.encoded_bytes = encoded_bytes;
+    }
+    Ok(response)
+}
+
 /// [`history_follow`]'s answer: what to paint, and where to continue.
 #[derive(Serialize, TS)]
 #[ts(export)]
@@ -1617,5 +1785,100 @@ mod put_tests {
         assert_eq!(again, first);
         assert_eq!(std::fs::read_to_string(&want).unwrap(), "# notes\n");
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod bounded_history_response_tests {
+    use super::*;
+    use std::io::Write;
+
+    struct RecordFixture(std::path::PathBuf);
+    impl RecordFixture {
+        fn new(name: &str, text: &[u8]) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("khor-history-{name}-{}", std::process::id()));
+            std::fs::write(&path, text).unwrap();
+            Self(path)
+        }
+        fn page(
+            &self,
+            cursor: Option<&str>,
+            parse: fn(&str) -> Vec<khor_node::adaptor::claude::Utterance>,
+        ) -> HistoryPage {
+            let cursor = cursor.map(serde_json::from_str).transpose().unwrap();
+            let mut file = std::fs::File::open(&self.0).unwrap();
+            let page = khor_node::adaptor::transcript_page::read_page(
+                &mut file,
+                "session",
+                cursor.as_ref(),
+                parse,
+            )
+            .unwrap();
+            history_page_response("session", page).unwrap()
+        }
+    }
+    impl Drop for RecordFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn serialized_budget_retains_a_cursor_before_the_unadmitted_event() {
+        // Exercise response accounting independently of the vendor parser's
+        // current expansion ratio; a future parser must not bypass the cap.
+        fn expand(line: &str) -> Vec<khor_node::adaptor::claude::Utterance> {
+            vec![khor_node::adaptor::claude::Utterance::Agent(
+                line.trim().repeat(200 * 1024),
+            )]
+        }
+        let fixture = RecordFixture::new("wire-budget", b"a\nb\nc\n");
+        let tail = fixture.page(None, expand);
+        assert_eq!(tail.entries.len(), 2);
+        assert!(tail.encoded_bytes <= HISTORY_PAYLOAD_BYTES);
+        assert_eq!(tail.encoded_bytes, serde_json::to_vec(&tail).unwrap().len());
+        assert_eq!(
+            tail.entries
+                .iter()
+                .map(|entry| entry.key.as_str())
+                .collect::<Vec<_>>(),
+            ["2:0", "4:0"]
+        );
+        let older = fixture.page(tail.older.as_deref(), expand);
+        assert_eq!(older.entries.len(), 1);
+        assert_eq!(older.entries[0].key, "0:0");
+        assert!(older.older.is_none());
+    }
+
+    #[test]
+    fn over_budget_expanded_event_is_an_identity_bound_reference() {
+        fn expand(_: &str) -> Vec<khor_node::adaptor::claude::Utterance> {
+            vec![khor_node::adaptor::claude::Utterance::Agent(
+                "x".repeat(HISTORY_PAYLOAD_BYTES),
+            )]
+        }
+        let fixture = RecordFixture::new("expanded-reference", b"a\n");
+        let page = fixture.page(None, expand);
+        assert!(page.entries.is_empty());
+        assert_eq!(page.references.len(), 1);
+        assert_eq!(page.references[0].item, Some(0));
+        assert!(!page.references[0].cursor.is_empty());
+        assert!(page.encoded_bytes < HISTORY_PAYLOAD_BYTES);
+    }
+
+    #[test]
+    fn giant_raw_record_is_never_offered_to_the_inline_parser() {
+        fn forbidden(_: &str) -> Vec<khor_node::adaptor::claude::Utterance> {
+            panic!("oversized record parsed inline")
+        }
+        let mut text = vec![b'x'; 128 * 1024];
+        text.write_all(b"\n").unwrap();
+        let fixture = RecordFixture::new("raw-reference", &text);
+        let page = fixture.page(None, forbidden);
+        assert!(page.entries.is_empty());
+        assert_eq!(page.references.len(), 1);
+        assert!(!page.references[0].missing_start);
+        assert!(!page.references[0].missing_end);
     }
 }

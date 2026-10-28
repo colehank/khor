@@ -486,7 +486,7 @@ impl Claude {
         found
     }
 
-    fn transcript_path(&self, leaf: &str) -> Option<(PathBuf, std::time::SystemTime)> {
+    pub(crate) fn transcript_path(&self, leaf: &str) -> Option<(PathBuf, std::time::SystemTime)> {
         let mut hit: Option<(std::time::SystemTime, PathBuf)> = None;
         let projects = std::fs::read_dir(self.projects_dir()).ok()?;
         for proj in projects.flatten() {
@@ -751,7 +751,7 @@ pub enum Utterance {
 /// So the judgment has to be made **here, where the evidence is** —
 /// reading the vendor's own file, which is the only place the envelope
 /// is visible at all.
-fn utterances_of(text: &str) -> Vec<Utterance> {
+pub(crate) fn utterances_of(text: &str) -> Vec<Utterance> {
     const PLUMBING: [&str; 4] = [
         "<command-name>",
         "<local-command-stdout>",

@@ -875,6 +875,17 @@ async fn history_follow(id: String, from: u64) -> Result<khor_gui_core::chat::Fo
     off_main(move || khor_gui_core::chat::history_follow(&Node::root_from_env(), &id, from)).await
 }
 
+#[tauri::command]
+async fn history_page(
+    id: String,
+    cursor: Option<String>,
+) -> Result<khor_gui_core::chat::HistoryPage, String> {
+    off_main(move || {
+        khor_gui_core::chat::history_page(&Node::root_from_env(), &id, cursor.as_deref())
+    })
+    .await
+}
+
 /// One machine's directory, for the files landing. Async because the
 /// machine may be far away (the same reason `pair` is).
 #[tauri::command]
@@ -5241,6 +5252,7 @@ pub fn run() {
             chat_leave,
             history,
             history_follow,
+            history_page,
             ls,
             pull,
             pull_temp,
