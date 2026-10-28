@@ -148,3 +148,6 @@ OS2正确全局WorkspacePane草稿保护已实际通过（拒写→close prevent
 新独立覆盖缺口记录下一轮：SessionContent、SideWorkspace、MachineFiles的本地草稿未向全局reportDrafts；main已有同样缺口，真实OS1在会话内部FilePage拒写后close preventedfalse直接退出。新listener回调实际已执行，不称注册缺失；不能把已通过的全局WorkspacePane保护外推到这些入口。原工具死窗口读取后privateApp残留另正常退出清理，不回填原cleanup失败。
 
 Q055完整GUI自动来源证明缺口、两原page_steps关闭交接失败及040deadline仍留下一轮；不以本次Pi/借网通过覆盖它们。主体Clean Code成果见DELIVERY；目标active，最后未证明验收边界见STATE。
+
+
+2026-10-28最后原拖放窄验：live ChatView/fixture注册前提无capability gate源证；Finder真正IconView文件图像→composer实际gesture仍0event，人工可选验收未回复/无事件。原run03 helper270到期/cleanup后publish双盘断言失败，原结果10dd4436…28f00非绿保；外盘DS_Store晚写与I缺rootpartial分别另保，不补绿。未定位工具/产品唯一原因，不新增修复。现需用户裁定既有fullscreen权限是否扩入本轮；在此之前保“新问题下轮”边界，不自动改权限或反复原OS。
