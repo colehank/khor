@@ -45,3 +45,8 @@ root在两份非作者报告后接管第一版具体设计，双盘node-open-adm
 
 
 候选自身LocalSet反例6b真实panic后，e110去掉自动block_in_place优化；14父/22summary/19phase实际绿663704…20cb/177.542s/37dual，独审5a219…5ea6，原26行与原13断言全未改。所有runtimeFS同步不可抢占可阻塞executor取舍明确，最新LOCALSET-RESOLUTION覆盖旧优化约定。新的normalGUI576678…49fb2实际build/artifact成功但原Q055nongreen8f62…d9e2a保，独审debd339…c8eb；Core正常producer完整绿2fc111…2d5b/97.114s/23dual、receipt900ba74d…c8a7/helperd84f1167…bbc8，root实际require过，待非作者回执。当前三产物/五来源binderf003…4668与已结束全部exec/资源索引见STATE；真App尚未启动，任务未done。
+
+
+## 2026-10-28 当前事实对齐（保留上文历史）
+
+最终e110/full2388frame1862。原same-root Busy与LocalSet真实panic反例均红→最小纠正；14父/22summary/19phase实际全绿，独审5a219…5ea6。单registry/constructor/非Send RAII、固定1s/64+64，control/meta/crossprocess Try保；所有获准后FS仍同步不可抢占/可阻塞executor，六旧wrapper隔离取舍明确。新同源Pi及借网5phase均实际全绿并独审；OS全局guard过但整组未绿，见STATE，不称所有Busy/全OS已修。

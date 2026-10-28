@@ -100,3 +100,8 @@ run02只把npm user/global配置隔离到两个不同owned空文件，恢复使�
 实际正常GUI已嵌入本卡真实bundle，但不能由build成功推出runtime已运行。P5/Q043-pi-owned-run01实际root CUA账户管理Credential home无候选/Connect disabled/document transfer state busy，未达到manage login/secret；native仅read/catalog，runtime目录及khor-agent进程不存在。catalog只是providers本地读取，不能当嵌入启动。原resultad3f9fcff3af1017eb65831976eb211b978891ab091401ef8e3c238c87ae5417/163.913s保nongreen；App65305实际CmdQ return0，业务未达与observer失败回收使原normal_app_exitfalse保持，不回填。独审P5/Q043-pi-run01-review01/report.json SHA2bb4e6d654dfbacee2981f30aa25216a060902c51d4a01ff9b58dfde7dba190d的33项为证据检查，非启动业务测试通过；106PID/34group/TMP与来源/双盘已清核。
 
 实际embedded提取/启动仍unverified，归既有Node打开准入/目录候选下一轮，不为通过而注入manage调用/凭据/OAuth或改生产接口。
+
+
+## 2026-10-28 当前事实对齐（保留上文历史）
+
+当前normal GUI576678…49fb2是真实embedded build（Q055自动来源缺口保）；Pi run01真实提取af955/76474082B/mode700并采样实际PID93960，经App账户UI真实secret等待→Cancel→原5s退出门→正常Quit全绿，33c789…f512及独审6fa1…bce0。无SIDECAR/假helper/API key输入/provider登录，不称全进程离线。
