@@ -21,6 +21,7 @@ import type { ContentTab, SessionContent } from '@/hooks/use-session-content';
 import { useContentSheet } from '@/hooks/use-content-sheet';
 import { directoryOf } from '@/lib/paths';
 import { imeKey } from '@/lib/ime';
+import { useFieldDismiss } from '@/hooks/use-field-dismiss';
 import { sessionCwdOnScreen } from '@/lib/session-cwd';
 import { SideWorkspace } from '@/views/SideWorkspace';
 import type { PlaceDetent } from '@/views/SessionPlaceSheet';
@@ -68,9 +69,10 @@ export function contentFileDeck(props: DeckOwner & {session:string;title:string;
  return {identity:<div className="mobile-file-identity"><ContentFileIdentity {...props}/></div>,folded:<span className="mobile-fold-identity"><ContentOwnerIdentity face={face} title={title}/></span>};
 }
 /** Search has one clear button inside and an independent end-editing control outside. */
-export function ContentSearch({label,value,onChange,onEditing,onEnter}: {label:string;value:string;onChange:(value:string)=>void;onEditing:(editing:boolean)=>void;onEnter?:()=>void}) {
-  const input=useRef<HTMLInputElement>(null);
-  return <div className="content-search-field"><IconSearch/><Input ref={input} autoFocus type="search" aria-label={label} placeholder={label} value={value} onFocus={()=>onEditing(true)} onBlur={()=>onEditing(false)} onChange={e=>onChange(e.target.value)} onKeyDown={e=>{if(imeKey(e))return;if(e.key==='Enter')onEnter?.();if(e.key==='Escape'){e.preventDefault();e.stopPropagation();input.current?.blur();}}}/>{value&&<button data-content-search-clear aria-label={gui.search_clear} onPointerDown={e=>e.preventDefault()} onClick={()=>{onChange('');input.current?.focus();}}><IconClose/></button>}</div>;
+export function ContentSearch({label,value,onChange,onEditing,onEnter,onDismiss}: {label:string;value:string;onChange:(value:string)=>void;onEditing:(editing:boolean)=>void;onEnter?:()=>void;onDismiss?:()=>void}) {
+  const input=useRef<HTMLInputElement>(null),region=useRef<HTMLDivElement>(null);
+  useFieldDismiss(onDismiss!==undefined,()=>[region.current],()=>onDismiss?.());
+  return <div ref={region} className="content-search-field"><IconSearch/><Input ref={input} autoFocus type="search" aria-label={label} placeholder={label} value={value} onFocus={()=>onEditing(true)} onBlur={()=>onEditing(false)} onChange={e=>onChange(e.target.value)} onKeyDown={e=>{if(imeKey(e))return;if(e.key==='Enter')onEnter?.();if(e.key==='Escape'){e.preventDefault();e.stopPropagation();input.current?.blur();onDismiss?.();}}}/>{value&&<button data-content-search-clear aria-label={gui.search_clear} onPointerDown={e=>e.preventDefault()} onClick={()=>{onChange('');input.current?.focus();}}><IconClose/></button>}</div>;
 }
 /** One location toolbar for both sizes; the content below keeps its own scroll. */
 export function ContentPicker({row,devices,navigation,onOpen,onFilesMoved,onFilesGone,face,content,onClose,desktop=false}: DeckOwner & {
@@ -90,9 +92,9 @@ export function ContentPicker({row,devices,navigation,onOpen,onFilesMoved,onFile
  const places=usePlaces(PAGES);
  const edit=(editing:boolean)=>navigation.edit(fieldKey,{editing});
  const endEdit=()=>{const active=document.activeElement;if(active instanceof HTMLElement&&active.matches('input,textarea,[contenteditable="true"]'))active.blur();navigation.edit(fieldKey,{editing:false,exitPrompt:undefined});};
- const directory=(d:DeviceRow,path:string)=>{navigation.update(session,{scope:{device:d.id,root:path},query:''});endEdit();};
- const open=(d:DeviceRow,path:string,view:'file'|'page',line?:number|null)=>{endEdit();onOpen(d,path,view,line);};
- const source=(source:ContentSource)=>{endEdit();setSearching(false);navigation.update(session,{source});};
+ const directory=(d:DeviceRow,path:string)=>{stopSearch();navigation.update(session,{scope:{device:d.id,root:path},query:''});endEdit();};
+ const open=(d:DeviceRow,path:string,view:'file'|'page',line?:number|null)=>{stopSearch();endEdit();onOpen(d,path,view,line);};
+ const source=(source:ContentSource)=>{stopSearch();endEdit();navigation.update(session,{source});};
  const setQuery=(query:string)=>navigation.update(session,{query});
  const stopSearch=()=>{(document.activeElement as HTMLElement|null)?.blur();setSearching(false);setQuery('');};
  const scope=<ContentScope value={state.source} onChange={source} inPill={!desktop} segmented={desktop}/>;
@@ -100,9 +102,9 @@ export function ContentPicker({row,devices,navigation,onOpen,onFilesMoved,onFile
  const directoryActions=state.source==='workspace'&&<GlassCapsule role="group" aria-label={gui.content_workspace_actions}><GlassItem data-content-directory-search aria-label={searching?gui.search_clear:gui.tree_search} onClick={()=>{if(searching)stopSearch();else{edit(false);setSearching(true);}}}>{searching?<IconClose/>:<IconSearch/>}</GlassItem>{newAction}</GlassCapsule>;
  const address=exit&&<PageField suggestAddresses={false} tab={fieldKey} machine={exit} devices={devices} at={state.address} onDraft={address=>navigation.update(session,{address})} first={home?.id} machinePrompt={field.exitPrompt} steps={false} autoFocus={!desktop&&editing} inPill listSeat={desktop?undefined:listSeat} onLeave={()=>edit(false)} onEditingChange={edit} onMachine={d=>{navigation.update(session,{exit:d.id});if(field.exitPrompt!==undefined)open(d,navigation.get(session).address,'page');}} onGo={(url,d)=>{navigation.update(session,{exit:d.id,address:url});open(d,url,'page');}}/>;
  const location=state.source==='browser'?address:editDevice&&<ContentPathField key={editDevice.id+root} device={editDevice} devices={devices} path={device?root:''} mobile={!desktop} onDirectory={directory} onFile={(d,path)=>open(d,path,'file')} onLeave={endEdit}/>;
- const search=<div data-content-directory-search-field><ContentSearch label={gui.tree_search} value={state.query} onChange={setQuery} onEditing={()=>{}}/></div>;
+ const search=<div data-content-directory-search-field><ContentSearch label={gui.tree_search} value={state.query} onChange={setQuery} onEditing={()=>{}} onDismiss={stopSearch}/></div>;
  const fieldBody=searching?search:location;
- const close=()=>{if(!navigation.closePicker(session))onClose();};
+ const close=()=>{stopSearch();if(!navigation.closePicker(session))onClose();};
  const revisit=(id:string,url:string)=>{const d=devices.find(d=>d.id===id);if(d)open(d,url,'page');else{navigation.update(session,{source:'browser',address:url});navigation.edit(fieldKey,{editing:true,exitPrompt:(field.exitPrompt??0)+1});}};
  const forget=async(id:string,path:string)=>{try{await forgetRecentByDevice('page',id,path);places.reload();}catch(e){setError(said(e));}};
  return <div className="mobile-content-picker" data-desktop-picker={desktop||undefined}>
