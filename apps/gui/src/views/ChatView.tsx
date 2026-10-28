@@ -60,11 +60,10 @@ import { useReadingSession, type SessionReading } from "@/hooks/use-session-atte
 //   change is reversible and this note can be short.
 import { offerTabAct } from "@/lib/tab-acts";
 import { failedNotice, offerNotice, rejoinNotice, type PillNotice } from "@/lib/pill-notices";
-import { takeHandOff } from "@/lib/composer-handoff";
+import { takeHandOff, askOpenPath, askOpenUrl } from "@/lib/composer-handoff";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
-  launchOn,
   chatAnswer,
   chatLeave,
   chatOpen,
@@ -96,7 +95,7 @@ import { useCoarse } from "@/hooks/use-coarse";
 import { useChatScroll } from "@/hooks/use-chat-scroll";
 import { BarSeat } from "@/components/SessionBar";
 import { sessionMark } from "@/components/BrandIcons";
-import { FileCard, FilePreview, MachineFilePick, PendingChips, SendInto, usePendingFiles } from "@/views/chat-files";
+import { FileCard, MachineFilePick, PendingChips, SendInto, usePendingFiles } from "@/views/chat-files";
 import { LinkHomeProvider, useKnownFiles, useLinkHome, type LinkHome } from "@/views/linkHome";
 import { filesFolderIn, splitAttachments, withAttachments } from "@/lib/paths";
 import { Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
@@ -1237,12 +1236,6 @@ export function ChatView({
   const picker = useRef<HTMLInputElement>(null);
   /** Files can go along while there is somebody to say them to. */
   const canAttach = !still && !gone;
-  /** The file a press asked to look at (round CHAT): a file card, or a
-      path in the agent's words. */
-  const [preview, setPreview] = useState<string | null>(null);
-  // **A path in the prose opens the preview first**, outside a workspace;
-  // its 「在文件视图中打开」 is where the press used to go. Beside a tree
-  // the press keeps going straight to the middle column (`beside`).
   const outer = useLinkHome();
   // **The conversation's files folder is painted too** (round CHAT item
   // 2): what the agent says about a file it was handed names it there,
@@ -1255,32 +1248,20 @@ export function ChatView({
     return null;
   }, [paint]);
   const inFolder = useKnownFiles(home ?? "", folder ?? "");
-  const chatHome = useMemo<LinkHome | null>(() => {
-    // No project around this conversation: only its folder is painted.
-    const base: LinkHome | null =
-      outer ??
-      (home === null
-        ? null
-        : {
-            machine: home,
-            root: "",
-            known: () => false,
-            see: () => {},
-            open: () => {},
-            launch: (abs) => void launchOn(home, abs).catch(() => {}),
-          });
-    if (base === null) return null;
+  const chatHome = useMemo<LinkHome>(() => {
+    const base: LinkHome = outer ?? {
+      machine: home ?? machine ?? "", root: "", known: () => false,
+      see: () => {}, open: () => {},
+    };
+    const target = home ?? base.machine;
     return {
       ...base,
-      // Beside a tree a project file opens there; anything else, and
-      // everything outside a workspace, opens the preview.
-      open: (abs, line) =>
-        base.beside && base.root !== "" && abs.startsWith(`${base.root}/`) ? base.open(abs, line) : setPreview(abs),
+      open: (abs, line) => askOpenPath(target, abs, false, line),
+      openPage: url => askOpenUrl(target, url),
       more: folder === null ? undefined : { root: folder, known: inFolder.known, see: inFolder.see },
     };
-  }, [outer, home, folder, inFolder.known, inFolder.see]);
-  /** A file card pressed: the same road as a path in the prose. */
-  const openFile = (abs: string) => (chatHome ? chatHome.open(abs, null) : setPreview(abs));
+  }, [outer, home, machine, folder, inFolder.known, inFolder.see]);
+  const openFile = (abs: string) => chatHome.open(abs, null);
   const dropBox = useRef<HTMLDivElement>(null);
   const [dropping, setDropping] = useState(false);
   // **In the app a drop is tauri's**, which hands over the real paths
@@ -2022,13 +2003,6 @@ export function ChatView({
       {/* ⚠️ 墓碑 (round UX-3): the keyboard switch in the bar. The box raises
           the keyboard and a drag down over the content lowers it
           (`SessionScreen`); a third way was a second door. */}
-      <FilePreview
-        machine={home ?? ""}
-        shown={home ?? ""}
-        path={preview}
-        here={machine === null}
-        onClose={() => setPreview(null)}
-      />
     </div>
     </LinkHomeProvider>
   );
