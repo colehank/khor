@@ -283,6 +283,20 @@ impl Codex {
         Ok(utterances_of(&text))
     }
 
+    /// A bounded raw window for paginated history. Fragments and oversized
+    /// records remain explicit; this does not change the legacy follow cursor.
+    pub fn transcript_window(
+        &self,
+        uuid: &str,
+        before: Option<u64>,
+    ) -> Result<super::transcript_window::TranscriptWindow, String> {
+        let path = self
+            .rollout_path(uuid)
+            .ok_or_else(|| khor_catalog::msg::takeover_no_record(uuid))?;
+        let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        super::transcript_window::read_window(&mut file, before).map_err(|e| e.to_string())
+    }
+
     /// The same conversation, **followed**: what the rollout has said
     /// since byte `from`, and where to continue.
     ///

@@ -246,6 +246,21 @@ impl Claude {
         Ok(utterances_of(&text))
     }
 
+    /// A bounded raw window for paginated history. Fragments and oversized
+    /// records remain explicit; this does not change the legacy follow cursor.
+    pub fn transcript_window(
+        &self,
+        leaf: &str,
+        before: Option<u64>,
+    ) -> Result<super::transcript_window::TranscriptWindow, String> {
+        let path = self
+            .transcript_path(leaf)
+            .map(|(path, _)| path)
+            .ok_or_else(|| msg::no_such_session(leaf))?;
+        let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        super::transcript_window::read_window(&mut file, before).map_err(|e| e.to_string())
+    }
+
     /// What was appended to a transcript since byte `from`.
     ///
     /// **Only the new bytes are read.** A watched conversation's file

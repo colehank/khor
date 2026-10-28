@@ -51,6 +51,7 @@ use khor_core::{SessionId, State};
 pub mod claude;
 pub mod codex;
 pub mod tmux;
+pub mod transcript_window;
 
 /// How long a crashed session stays in the list.
 ///
