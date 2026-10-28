@@ -1,0 +1,9 @@
+# Q040a 独立审查
+
+审查者root。作者26abd267，基于85a78fe9；图detect_changes先行，索引落后作者提交，结论依据实际diff/源码。改动仅once.rs锁段和新测试；valid/note/made/24h以及Cargo.lock逐字节保持，原调用方和OwnedMutexGuard返回类型不变。
+
+在同一std表锁下清dead weak、upgrade或创建，取到强Arc后再释放表锁并await。只要原owner、已poll排队future或其他caller强Arc仍存在，该Weak不能成为永久0；新建发生在旧强引用为0且升级失败之后，旧锁不能再复活。表锁串行化首次创建，故不会有同token两把活锁。取消排队future仅释放自己的Arc/队列位置，不会清除仍持有或有survivor的锁。
+
+独立逐项检查7新测试：1万unique后只看唯一scope防全局并行误报；128真实Tokio竞争通过active原子拒重入；确定poll queued future并比较mutex identity；取消部分/唯一waiter；不同token可并持；清扫后真实note/made回放保持文件bytes/mtime、不增加副作用。没有仅凭函数名/源码形状给绿，也没有用LRU删receipt。
+
+作者真实红7过3失败→相同测试指纹绿10/10（含substring顺带hardware1）；本审未重启Cargo，最终精确集成once/OpenOnce链验证仍待root独占槽。当前未发现生产阻断，可集成。惰性dead-key回收不等于最后guard drop即清表；HashMap capacity仍保留并发峰值，也没有全进程RSS测量，不能称内存归零。GUI creates未知结果重试map、本地token相邻差异与网络open_from_phone端到端不在本次通过范围。
