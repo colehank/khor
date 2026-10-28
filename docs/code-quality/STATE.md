@@ -1,6 +1,14 @@
 # 本轮代码治理：交付状态
 
-更新：2026-10-28。**本轮实现与既定业务验收已完成，已合并main并完成Mac/iOS/集群发布；当前进入实际使用反馈，未开始下一轮实现。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
+更新：2026-10-29。**上轮已发布；用户已授权启动下一轮，当前执行E/H首批。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
+
+## 当前执行：用户已授权下一轮，E/H首批并行
+
+2026-10-29用户最新指令“开始吧”，解除此前等待开工条件；允许按既定33项计划实施、独立Lab与验证，main合并/ship仍待后续授权。基线核实main e7c335c8且干净。
+
+集成：/Volumes/disk0/Khor/worktrees/current/khor-round2（integrate/round2）。作者输入：khor-round2-input（fix/round2-input），历史：khor-round2-history（fix/round2-history），均从同基线创建。任务卡[tasks/R2-E](tasks/R2-E.md)、[tasks/R2-H](tasks/R2-H.md)、[tasks/R2-REVIEW](tasks/R2-REVIEW.md)；root协调、两作者和非作者审查。先复现/稳定接口，再最小片段集成；尚无完成项，不冒用户故障已修。
+
+当前native/Cargo槽空闲，未经root协调不启动。用户App和会话保留。compact恢复先读本节与任务卡、执行计划，再核实际diff/活动owner；下方“等待用户允许”为历史，已由本次授权覆盖。
 
 ## 最新进展：Mac输入反馈与下一轮执行安排已存盘
 
