@@ -10,15 +10,17 @@
 - **无main合并/ship授权**，用户App/服务/release不动。
 - root独占native/Cargo/App/服务槽。当前所有受控执行均terminal；只有root可启动下一计划。三个agent只静态准备或只读审查，不自行执行。
 
-## 当前唯一下一步：原target定向验证正在运行
+## 当前唯一下一步：GUI同源产物的空间准备（禁止盲重跑）
 
-候选已经从a663红基线实现为fccb2a3923e3aa50d69cff9183cb031dc8f74776，再按独审修正async“锁外查期限→等锁→过期仍准入”缝隙为 **669fe9f8cd89005a503dc28a12681f824d5cca56**；wave1已FF仅为验证，不代表任务done。5授权路径/无新模块或依赖，原76行红断言未改。一处owner registry/单constructor/RAII唯一转移、ordinary固定1s与64active/64waiters、control/meta/跨进程Try；async缺Tokio立即Err/需time driver，仅实际MultiThread同线程block_in_place，无裸spawn；CurrentThread同步FS/原FS不可抢占与非全App关闭屏障限制明示。agent stop/answer/cancel_status/cancel_retry与stop_transfer构造Try，approve读回共享同Node，避免间接sync重开。
+现有N1准入修正 **669fe9f8cd89005a503dc28a12681f824d5cca56** 已在wave1定向验证通过：P5/node-open-admission-green-run01，原exec30582已exit0，result **540c1996c07a6c46627bdff4df6df8292cd3d763e196368086fd820b19265371**，178.990s、13父/21父+worker成功summary/18phase、source/helpers/guard/owned/TMP全过、36dual。3准入+3旧IO完整性+1原Pair中断恢复+6原退出/setup，含原062新修正后过；040未重跑，旧115历史不回填。非作者green-review01/report SHA32e563e5e9104b0148213f97c15795c9f3f9c062a05526b8cb55db4013933725核21项证据、66PID/33组清，非21业务父；红首父与a663/原其他父断言未改。前GUI真实双receipt require proof fb5b3e204ec87cd7a6a72f725a91d22acca83f8a2cfec7aa485cc4aacfbfc3fe明确其验证时刻，后续合法共享deps重编不得冒旧full receipt仍当前完整。
 
-独立源审：P5/node-open-admission-candidate-review01保留fccb期限阻断原REVIEW，再追加669 DELTA（SHA6ac35fbcc2404bfa5056d7ab2d146e9405d264367bad2a516afde43ce394f704）确认清除；async/core半片P5/node-open-admission-async-candidate-review01/report.json SHAa40b58cfaf7096a3d7cf7556e25f9be8cb89ca8ab5e159052dd42fde95aae310。静态通过不冒编译/Send/运行绿。具体DESIGN9ac366…fc1b6 +最新addendum feb0f81d…60d0双盘，candidate01保fccb原字节，不覆盖旧证据。
+新normal CLI实际0ffdc83135abadf250ec71217a4b533e5c886090dceb43f3dd8dd8e9c56fb4d5，269605816B，e14c0566…fbd2 producer；Node unit351d1110…215c、86812b9b…567f。公开core83函数签名与gen157/dist277字节未变，按原runner静态准备双盘P5/node-open-gui-producers-plan01/gui+core（manifest ccf360…18）。GUI的原Q055不完整自动输入覆盖边界仍保；不伪造accepted GUI prior、不改f7/fcb/flags/embed/context或5GiB门。
 
-**root唯一Cargo/native槽live：exec session30582**，命令P5/node-open-admission-green-plan01/run.py --execute-authorized，输出P5/node-open-admission-green-run01，TMP /tmp/knopgreen1。只build现有node libtest+normal CLI两个target，按新full2388 frame **e4b37785c50e3236221692932380008d2c8ffabb8a1915131cc9a91bf6d5a808**；13父=3准入+3旧IO完整性+1原中断Pair恢复+6原退出/setup（含原062失败）。原flags/断言/worker/body/3summary恢复与2summary退出保留，runtime仅六原父获本轮真实CLI，无stub/凭据；旧115不重跑/不回填。原f7/fcb/300step720total/5GiB/512/jobs1/inc0/source/owned/TMP/dual门保。代码作者已退出，无人可在该run terminal前改wave1来源或重启同handle；先poll30582/核progress再决定。观察超时不是终止。
+**GUI第一次刷新已真实失败，不能启动该run或Core**：exec90578已exit1，P5/node-open-gui-producer-run01 result **3bdc44d9fa710dc5d0c57d90e66b91c4bc9f38d1932a09e1776f33540f959c44**，70.515s；build-gui因外盘最小5363560448B<5368709120门而受控TERM，normal_build_completed/artifact false；source/helper稳定，owned/TMP清、19dual，未生成可用GUI，非源码编译错误，也还未到Q055。实际845第三方fresh/12nonfresh，prior=[]使fcb真实touch18第一方入口（12包及build.rs）；不是全cold或profile/env漂移。GUI bundle env导致12/12 package key与CLI不同，添加CLI prior不能省刷新；旧GUIQ055无完整receipt，不能合成接受。不再开构建工具专项。
 
-可信红原run保非绿：P5/node-open-admission-red-run01 result8df725e933043f6b04ffe381aa8ad05e9d82f713fdce5161c2c111cafbe62bac/113.900s；actual Busy+持lease业务断言101/0.10s，非compile/setup/无调度。独审0c2ee890…f05e，17证据检查、20dual/source/helpers/owned/TMP过；release后anchor断言尚待候选通过，不证明Pi/OS唯一gate。当前没有新业务pass；本次真实App/Pi/borrow/OS尚未重启。
+root Cargo/native槽当前空。**缓存归档exec42552仍live**（root普通Python，不是Cargo）：仅其余过期khor-node rlib/rmeta，保当前green CLI的normalNode两文件、CLI/unit/Core-helper exes、全部外部deps/source/depinfo/fingerprint；只在完整ZIP解压SHA核后退原文件。不要将观察timeout当terminal，也不启动第二个归档或Cargo。此前79536已exit0：两旧GUI static.a+精确f763 deps exe克隆归档，原2.14GBstatic，ZIP496218290B/SHA1606873a61b399eb06047f732cc77c0dcdcf94dc5e1150bdb0986f9202f08400；索引P5/node-open-old-gui-static-archive01，实测外7.02GB/内6.62GB。42552目标index P5/node-open-retired-node-variants-archive02，先poll拿完成/实际物理空间；不可按逻辑unlink预测APFS回收。按已知Node897MB+GUI静态a1.10GB+其他链接输出，下一次GUI前应准备约9GiB外盘操作预算（原5GiB门不降，内盘原5GiB也保），无够空间不盲重跑。
+
+源码作者与两路审查已结束，中央docs root写，source669保持冻结；main/ship无授权。两路静态审查及669 delta、原红8df725…2bac/17项独审、具体DESIGN9ac366…fc1b6与最新addendum feb0f81d…60d0均双盘保。真实GUI/Pi/借网/OS尚未在新源上重启，不把13通过冒产品验收完成。
 
 ## 当前源码、产物与环境
 
@@ -26,7 +28,7 @@
 
 main `/Users/zgh/Desktop/working/khor@8704a503a27b36ad58f922690de50e766f8bd485`不动。协调目录即本页所在plan树，root写中央docs。
 
-**不重跑115；本次唯一编译30582按上述计划运行。旧GUI/CLI normal exe现已可逆归档，不能启动旧plan；待本次CLI与后续GUI刷新实际producers。** 正常dev GUI **f76302af7b61b59c1d01172ee4209c1c9cb6c80bd6381ee760468527624c865d** /374932072B，实际producer `P5/Q033-quality-gui-build-run02` result ec56eb347c058b1a167e5fd8807fdd7cf1a57891cc93cae9e6d3f1019385e2bf；build/artifact/source/cleanup通过，自动Q055 proof因TAURI_CONFIG未覆盖仍nongreen，不能伪造receipt。core-helper-run02完整provenance true：8115c4d2b35760839818aa80e8b0f9b1a8629954689d7423455126e195b12d2b；`debug/deps/chat_upload_cancel-a98ef2c294b70f0c` SHA fa77eac90f78bc7df46506d24a982bda54c42d9aa3051756cf25cd924d8d0552。
+**不重跑115。当前CLI已刷新，GUI刷新因空间门失败待有预算后一次新计划；不得重启旧handle/Core。** 正常dev GUI **f76302af7b61b59c1d01172ee4209c1c9cb6c80bd6381ee760468527624c865d** /374932072B，实际producer `P5/Q033-quality-gui-build-run02` result ec56eb347c058b1a167e5fd8807fdd7cf1a57891cc93cae9e6d3f1019385e2bf；build/artifact/source/cleanup通过，自动Q055 proof因TAURI_CONFIG未覆盖仍nongreen，不能伪造receipt。core-helper-run02完整provenance true：8115c4d2b35760839818aa80e8b0f9b1a8629954689d7423455126e195b12d2b；`debug/deps/chat_upload_cancel-a98ef2c294b70f0c` SHA fa77eac90f78bc7df46506d24a982bda54c42d9aa3051756cf25cd924d8d0552。
 
 五必需path/SHA固定双盘`P5/Q033-real-app-actual-producers01.json`的origins；其旧status/launcher是历史，不作当前状态。normal CLI retained `debug/khor` SHA24b1ce4685b560c6e930ddf1dc974925bda45c061a0a027d549d41aa433e3e91，原receipt22fd...28df7，1953源条目与当前frame匹配；GUI合法重编共享deps后只映射实际exe/stat/源码，不称旧CLI full require仍真。
 
