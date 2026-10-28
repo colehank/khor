@@ -4,11 +4,11 @@
 
 ## 最新进展：工作区第三版 Lab 待用户验收
 
-本轮最新用户决定已落实：文件/提交共享单击预览、双击固定，各commit以hash独立保留；提交正文显示标题和正文，标签用用户历史SVG；文件默认展开（覆盖较早默认收起），手动收起按commit保存。左侧仅日期链条借鉴GitHub，右侧保持Khor平面列表；最新反馈要求其只是更高的文件行，故左右文字/状态列、右边距和选中背景均按文件树对齐，禁止卡片化和额外右侧留白。返回文件在原摘要行，与文件名同起点。工作区picker恢复正式头像/名称+branch/Git计数/摘要+时间。右上最新改为两块玻璃 `[更多] [会话 VS Code]`，更多在左，覆盖旧三图标同胶囊；标签栏与文件标题行之间不画分割线/下沿阴影。
+本轮最新用户决定已落实：文件/提交共享单击预览、双击固定，各commit以hash独立保留；提交正文显示标题和正文，标签用用户历史SVG；文件默认展开（覆盖较早默认收起），手动收起按commit保存。左侧仅日期链条借鉴GitHub，右侧保持Khor平面列表；最新反馈要求其只是更高的文件行，故左右文字/状态列、右边距和选中背景均按文件树对齐，禁止卡片化和额外右侧留白。返回文件在原摘要行，与文件名同起点。工作区picker恢复正式头像/名称+branch/Git计数/摘要+时间。右上最新改为两块玻璃 `[会话 VS Code] [更多]`，更多在最右（用户最后调换），覆盖旧三图标同胶囊；标签栏与文件标题行之间不画分割线/下沿阴影。
 
 文件树和目录列表取消悬浮下载，下载统一进右键菜单；状态字母/目录点同固定末尾槽，反馈不挤动标记。所有下载在Lab仅走隔离mock，返回“Lab 模拟结果（未写磁盘）”。正式App/main未改动、重启、合并或ship；S/C/B专项和工作区正式产品接入仍未开工。
 
-Lab工作副本 `/Volumes/disk0/Khor/worktrees/current/khor-workspace-layout-lab`，分支 `lab/workspace-layout-20261028`，源码提交 `7750592d3fee33af474d7a4047c81e3344db6684`，基线main `e7c335c8`；入口 <http://localhost:23832/lab/workspace-layout.html>。说明在Lab `apps/gui/lab/workspace-layout.md`，最新决定与历史在 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)。服务继续供验收。
+Lab工作副本 `/Volumes/disk0/Khor/worktrees/current/khor-workspace-layout-lab`，分支 `lab/workspace-layout-20261028`，源码提交 `dce195641adb8ececa1f4d815f0fa782c479ffcc`，基线main `e7c335c8`；入口 <http://localhost:23832/lab/workspace-layout.html>。说明在Lab `apps/gui/lab/workspace-layout.md`，最新决定与历史在 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)。服务继续供验收。
 
 TypeScript通过；布局5组、预览/固定3组、阅读位置3组、commit呈现/折叠/完整文件/跳转14项、下载菜单/状态列/返回文字对齐6项通过，无浏览器运行错误。纯重命名完整文本用例先红后绿；位置脚本原hover后立即wheel的失败留存，稳定布局后完整位移验证通过，没有为其修改产品。最后间距样式反馈追加定向几何与截图；随后仅顶部材质/按钮分组微调，TypeScript与1360/390视口截图几何检查通过（零边线、零阴影、相接52px、无横向溢出），证据另存v4。详见 `/Volumes/disk0/Khor/evidence/labs/workspace-layout-20261028/v3`。旧check-face强制hover下载按钮的门与新用户决定冲突，正式接入时须更新，不声称旧全仓门通过。
 
