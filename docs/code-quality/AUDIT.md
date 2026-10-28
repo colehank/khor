@@ -13,14 +13,14 @@
 | Q020/020b/020c、Q021/021b | 自动保存、显式覆盖digest假冲突、锁刷新均已集成并有独立回归/源审 | 原失败证据不回填；并发失败分层记录 |
 | Q022/023/023b | 身份原子首建、store/purge目标范围与真实owner已集成 | 不宣称断电目录项/Windows runtime验证 |
 | Q025/036/032/040 | FIFO写完成/连接owner、输入预算、canonical cache/once弱锁回收均已集成；既定组合已执行 | 确切旧版本/当前版本覆盖分别见STATE |
-| Q030/030b/031/038、Q037 | 脱敏、A2A caller隔离续聊、输入/事件预算、stderr drain、Pi/ACP/MCP/远端取消与退出已按已启动任务集成并完成既定组合 | 原040 deadline与062 Node Busy真实失败归下一轮；Windows runtime/真实SSH等不新增本轮矩阵 |
+| Q030/030b/031/038、Q037 | 脱敏、A2A caller隔离续聊、输入/事件预算、stderr drain、Pi/ACP/MCP/远端取消与退出已按已启动任务集成并完成既定组合 | 原115中040 deadline/062 Busy失败保历史；062已在e110的N1定向14父中通过，040仍下一轮。Windows runtime/真实SSH等不新增矩阵 |
 | Q033/034 | 当前协议、取消收据/GUI恢复、poll退避/gone均已集成；最终f763 GUI实际四图A取消→B重发Allow/EndTurn→C取消、mode/option和正常Quit已独立补验 | 原run05因观察服务143被一次性harness漏认而nongreen，42项独审补验另列，不伪造旧green；Q055另保缺口 |
-| Q035 | native page owner/LRU已集成，模块及Chrome/WebKit行为已验 | 原四native已执行2pass/2fail（关闭查询channel closed候选下一轮），生产UI双owner仍待；首次Pair FinishPending保失败、一次现有Resume接线待执行 |
-| Q039 | 统一当前Node/Doc/Pair分块、pending cache/compact数据保护与恢复已集成；真实大数据及bootstrap守卫证据与版本映射齐 | Node打开Busy按下文准入分类更正，收尾现有N1已改边界；fixture独立晚写等登记下一轮，不扩矩阵 |
-| Q041 | 真实Darwin Pi bundle已编译/嵌入当前GUI，安装/镜像/来源入口已集成；normal GUI/core产物已完成 | Q055自动环境输入覆盖保持非绿；Pi账户页catalog不启动sidecar，真实账户管理被Credential home目录Busy阻塞，未有manage/runtime，提取/启动未验证；不做provider登录 |
-| Q043 | native adapter/helpers及shared consumer异常隔离已集成；38项回归和真实七注册/撤销/child WK title证据齐 | 剩OS拖放、全屏值、window-close与最终App，不能用旧native Rust或browser fixture代替 |
+| Q035 | native page owner/LRU、模块及Chrome/WebKit行为已验；生产双peer Borrow run02原5phase/正常Quit/清理及独审完成，一次既有同ticket Resume成功 | 原四native仍2pass/2fail，两个channel closed候选下一轮；不回填首次Pair FinishPending或后续setup失败 |
+| Q039 | 统一当前Node/Doc/Pair分块、pending cache/compact数据保护与恢复已集成；真实大数据及bootstrap证据齐；N1 same-root Busy/LocalSet真实红→e11014父绿并独审 | 单registry/constructor/RAII及有界取消准入保；获准后的同步FS不可抢占/可阻塞executor，不冒更深IO架构。fixture独立晚写等下一轮 |
+| Q041 | Darwin Pi bundle实际嵌入提取/启动、secret空输入取消/原5s退出/正常Quit及独审完成；ecab新normal GUI39b/Core6644按五来源binder固定 | Q055自动环境输入覆盖仍非完整green，不合成accepted GUI proof；无provider登录，不称全进程网络隔离 |
+| Q043 | native adapter/helpers及shared consumer隔离已集成；最新OS run03两个实际drop、false/true/false、全局guard/精确保存、实际CmdQ/App exit0均到原业务断言 | 最小fullscreen grant已获用户纳入并独审；原whole因launcher全后代消失门仍false，合法持久shell与harness契约冲突留下一轮，不回填原结果 |
 | Q045 | 本地SSH deadline/I/O/reaped回执已修，源审/定向及既定组合按确切版本完成 | 真实SSH/master及remote lease不新增本轮前置 |
-| P4/P5 | Clean Code已改边界结构收口完成并独审，机械格式216 Rust/共同入口单独提交；原115父全部执行（113过、2失败下一轮） | 正在完成上述既定真实App剩余流程，最后对齐任务卡和交付；main/ship未授权 |
+| P4/P5 | 已授权实现、Clean Code结构收口及既定真实App业务验收完成；机械格式216 Rust/共同入口单列，原115父113过/2原失败保，当前N1定向14绿 | 不称全测试/全平台全绿；原OS whole非绿与下一轮harness契约明确保留。最终文档/恢复同步由root收口，main/ship未授权 |
 
 没有把首轮文件清单当逐行深审，没有把局部回归或113通过称全仓全绿。
 
@@ -151,3 +151,13 @@ Q055完整GUI自动来源证明缺口、两原page_steps关闭交接失败及040
 
 
 2026-10-28最后原拖放窄验：live ChatView/fixture注册前提无capability gate源证；Finder真正IconView文件图像→composer实际gesture仍0event，人工可选验收未回复/无事件。原run03 helper270到期/cleanup后publish双盘断言失败，原结果10dd4436…28f00非绿保；外盘DS_Store晚写与I缺rootpartial分别另保，不补绿。未定位工具/产品唯一原因，不新增修复。现需用户裁定既有fullscreen权限是否扩入本轮；在此之前保“新问题下轮”边界，不自动改权限或反复原OS。
+
+## 2026-10-28 当前交付收口（优先于上文历史待项）
+
+用户随后明确“纳入”fullscreen特定查询grant；ecab575e最小能力JSON、生成ACL独审及新normal GUI39b/Core provenance6644的五来源binder完成。e110→ecab仅此JSON变化，Pi/Borrow和首两故障已绿源映射复用。新fullscreen OS run01已证1次chat_put_paths/实际落地与false→true→false，但原270helper到期、whole非绿；run02在ready前6.459s被5GiB门停止，0业务通过。这些原结果不回填。
+
+最新fullscreen OS run03：两个人手drop依次到chat_put_paths seq76/term_drop seq95各1次，落地SHA一致；全屏序列、全局拒写→Don't quit→精确保存与实际CmdQ/App47945 exit0均达原业务断言，launcher_sent_app_signal=false。原result537bdd93…c5c0仍whole/manual=false（215.249s），source稳/guard_failures空/最终owned-footprint-TMP清。
+
+独审以session host.json/meta精确对应CreateShell的host50774/child50775；docs/SESSION与host实现契约刻意持久、窗口关闭后仍可重连。launcher10s“所有App观测后代全gone”比产品寿命更强，属于下一轮harness契约缺口；缺10s末snapshot，不能把这两个PID冒作唯一最终remaining。业务/正常Quit成功另记，原whole不涂绿，不要求用户重做已证明拖放，不新增本轮产品或工具修复。
+
+最新逐项交付与具体来源映射见E/P5/final-delivery-current-audit02；除本次只读分类独审与中央文档/恢复同步，没有另一个按最新范围必须新增实施或重跑的既定工作。040deadline、两原page_steps失败、Q055自动环境证明和三个编辑入口draft覆盖等继续下一轮；main未合并/未ship，不称全仓逐行重构或全测试全平台通过。

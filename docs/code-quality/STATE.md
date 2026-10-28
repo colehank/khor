@@ -1,100 +1,58 @@
-# 当前代码治理状态
+# 本轮代码治理：交付状态
 
-更新：2026-10-28。**目标 active，未完成；主体源码及 Clean Code 结构治理已集成，剩余真实 OS 验收有明确缺口。** 本页为恢复入口，计划与边界见[PLAN](PLAN.md)，前一详细检查点见[历史](history/STATE-before-pi-borrow-os-actual-closeout-20261028.md)。不要按历史“尚未启动/正在运行”重启旧 handle。
+更新：2026-10-28。**用户最新范围内的实现、Clean Code结构治理与既定业务验收已完成；main未合并、未发布。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
 
-## 最新执行入口：fullscreen修复已集成，新source GUI完成，Core待刷新
+## 版本与运行状态
 
-用户已明确“纳入”该具体fullscreen查询权限缺口；无授权的旧阻碍判断已替代。wave1与作者树当前 **ecab575e3f978f6570bff2c05a9542be93fd7342** trackedclean，唯一新增`apps/gui/src-tauri/capabilities/fullscreen-state.json`，main webview/特定allow-is-fullscreen；原SDK/API/listener/旧3cap均不变，main8704不动。候选独审a63788dc7717b2af102561db2524c33893a4c2f09fdf99158c63eac7acddf280无静态blocker。full2389 frame **32101973afa2bdb0d2969154a0b4819a0cc275c7d04f34e5a06a8832e1277438**，不是旧2388。
+- 主仓库：`/Users/zgh/Desktop/working/khor`，`main@8704a503a27b36ad58f922690de50e766f8bd485`，tracked clean，既有发布服务不动。本轮无main合并或ship授权。
+- 集成：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1@ecab575e3f978f6570bff2c05a9542be93fd7342`，tracked clean。最后产品改动仅main webview特定fullscreen查询grant，用户已明确“纳入”。作者树overwrite-recovery同提交，原N1分支保留e110。
+- 协调：本目录，`plan/code-quality`；最终文档提交及全部实际refs以恢复集`current-worktree-refs.json`为准。
+- root唯一native槽已释放。所有本轮exec均terminal；没有受控App/Cargo/helper/observer/TMP残留。不再读取任何已退出CUA App对象，以免重唤。专用Finder窗口已关，用户原窗口/服务保留。
 
-`P5/fullscreen-query-producers-plan01/{gui,core}`新计划已冻结：原两个runner字节同，GUI flags/Bun/TAURI/knownQ055/prior[]不变，Core原2prior加旧完整900ba74仅matching-key候选；必须实际新GUI result供Core，原门不降。
+## 交付与验证
 
-**GUI producer40922已terminal exit1，仅knownQ055原nongreen**：`fullscreen-query-gui-producer-run01` result **d159564bf90fbcaf8826747a5b4218ad350c4cacc2c55b3170ca14a09a23522f**/116.7846s，metadata/build exit0，normal_build/artifact/source/frontend/guiinputs/helpers/cleanup全过，guard无；automatic false/TAURI_CONFIG未记录继续保。actualnormal GUI **39b300263fe72763a437eedea7d14017674744ac79a7f74c7ec0498f995458e0**/374444376B，selected **ac192c21a5a18c43235048ab780646bc7d8e826819ce3af96718df21cd1a46ce**。completion_audit独审当前新GUI事实及实际生成ACL中；root接着原Core同源producer，再填新OS计划5个实际来源，不用e110旧Core证明新源。
-
-当前无live Cargo/App/native。`fullscreen-query-os-owned-plan01`静态准备中；未实际验收，原fullscreen false/true/false与两个dropconsumer/guard/Quit断言不放宽。旧人工拖放邀请已结束，新Lab未开。用户后来“什么进度”仅查询，原目标继续。
-
-资源：旧8个preOct24缓存副本共享APFS块，归档未释放预期空间；已逐SHA从既有khor-target只读源APFS clone恢复到原quality路径，退冗余ZIP，第二组原文件从未删，整个reserve实验已回滚，`fullscreen-build-cache-reserve01/rollback.json`；不再继续该类清理。OS3旧两stage已独审后复用旧ZIP退役index`node-open-os-staged-archive03`（其原两差异另保）。为必要ecab重编，旧e110 GUI两exe和旧static.a已可逆退役，`fullscreen-old-gui-rebuild-artifacts01/index.json`；静态a备份I/fullscreen-old-gui-static-576.zip281506712B，正常CLI/Core/Nodeunit与源码不动。新GUI已实际重建，当前E约6.06GB/I约5.68GB，运行前核5GiB，runtime stage/dual须另留空间。原f7/fcb/工具链不改。
-
-下述e110与OS3是历史检查点，不得按旧“当前槽/未授权”指针执行。
-
-## 当前决定与执行边界
-
-- 用户：开始了的做完，新发现的独立问题只记录下一轮。无 main 合并或 ship 授权，不碰用户发布 App/服务。
-- Clean Code 贯穿命名、职责、共享规则、状态/资源 owner、副作用与失败语义；格式仅机械小项，具体交付见[交付记录](DELIVERY.md)与[工程约定](ENGINEERING.md)。
-- 主体源码上一检查点在 wave1 `e110ce05af04a45695df3d645b2c713802eba690`，main `8704a503a27b36ad58f922690de50e766f8bd485` 未动。full2388 输入 frame `1862eba5203f6400873a4173aeed26aa2c4831b5da1e231e08f8119b5082d08a`。
-- root 独占 native/Cargo/App/服务槽；目前 **所有执行均 terminal，无受控 App/服务/Cargo 在运行**。最后拖放91713 exit1、借网41123 exit0、OS61652 exit1，归档26340 exit0；不可重用这些 session 或死 CUA 句柄。
-- 当前事实对齐与独审均已完成，仍有 OS 原验收的未证明部分。**不要重跑已绿 Pi/借网/115/14，不重新扩全仓审计，不把既有 ACL 或新独立 draft 覆盖缺口扩为本轮产品实现。**
-
-## 已完成与未完成
-
-| 范围 | 实际结果 | 边界 |
+| 范围 | 已验证事实 | 限制 |
 | --- | --- | --- |
-| 初始键盘、commit 跳转 | 原红→浏览器/真实 Tauri iOS 模拟器/Safari 既定验收完成；d9→e110 三个相关源文件无变化可映射复用 | 不冒物理 iPhone、IME、所有平台验收 |
-| 原组合115父 | 113 pass、040 deadline 与062 NodeBusy两原失败，0未执行 | 历史不回填；062已在当前e110定向通过，040留下一轮 |
-| N1准入纠正 | 原 same-root Busy 与 LocalSet panic 均真实红→e110窄修；14父/22summary/19phase绿，独审通过 | 单registry/constructor/RAII、固定1s/64+64/取消waiter，control/meta/crossprocess Try；获准后同步FS不可抢占，可阻塞executor，非更深IO架构完成 |
-| Q033实际多图/取消/权限/config | 真实四图A取消恢复→同稿B重发Allow/EndTurn→C取消、mode/option/正常Quit完成，42项独审补验 | 495d历史来源；原Vite143旧harness nongreen保，未重复跑 |
-| Q035原四native场景 | 全执行，strict/cap两过，late-close/close-reopen两channel closed失败 | main同查询/关闭代码，唯一race未证；两失败下一轮，不称全绿 |
-| **Pi实际嵌入启动/取消** | **当前e110完整实际通过并独审** | 无API key输入/无provider登录，不称全进程网络隔离 |
-| **生产双peer借网** | **当前e110原五phase/实际正常Quit/清理完整通过并独审** | 仅fixture用既有KHOR_NAME首开区分同机channel；无产品改动 |
-| **全局工作区未保存保护** | **OS run02实际拒写→阻止关闭→Don't quit→fixture恢复权限→实际保存与精确bytes均确认** | OS全组依然非绿，不能用此覆盖拖放/全屏缺口；独审完成 |
-| OS 拖放/全屏 | 两次真实跨窗drag仍0 native event，terminal第二consumer未到；实际全屏进出但成功callback0 | 拖放工具/产品原因未唯一归因；fullscreen既有缺grant在当前配置下阻成功query。无放断言或权限修复，**全组未通过** |
+| 首两项故障 | 键盘/输入框增高时最新消息跟随、读历史锚点；commit连续跳转及焦点交接。真实红→浏览器/真实Tauri iOS模拟器/Safari既定验收，相关源与最终提交映射已核 | 不冒物理iPhone/IME |
+| 已启动模块治理 | 编辑原子发布、保存代次/digest/owner；身份和存储范围；网络/Node/Pair当前协议恢复；Pi/ACP/MCP输入取消、资源/退出归属；错误语义与共享纯规则已集成 | 模块范围与证据在AUDIT/tasks，不冒所有文件逐行重构 |
+| Clean Code | 命名与角色、职责分离、单registry/constructor/RAII、共享规则、明确副作用/失败和资源owner；机械格式单独成批，保留必要协议/并发解释 | 不用注释/行数减少替代质量判断，ENGINEERING含来源与具体约定 |
+| 组合与N1 | 原115父113pass/2fail保；原062 Busy/LocalSet反例当前修复后14父/22summary/19phase绿并独审 | 不回填旧115；原040下一轮 |
+| Q033/Pi | 真实四图取消恢复→同稿重发Allow/EndTurn→小图取消、mode/option；实际嵌入Bun启动/空secret Cancel/原5s退出门/正常Quit/清理均通过独审 | 无provider登录/API key输入；旧harness失败保 |
+| 生产借网 | 双私有peer实际原五阶段、native与新TCP、重开释放、正常Quit与清理通过独审 | 同机fixture仅既有KHOR_NAME初始区分；不冒真实SSH/master/remotelease |
+| 最终OS业务 | 用户两次真实Finder拖放，chat_put_paths与term_drop各唯一成功/顺序与落地内容正确；fullscreen成功query false→true→false；全局WorkspacePane拒写→关闭阻止→Don't quit→fixture恢复权限→真实成功保存精确20B；实际CmdQ/GUI exit0 | 原whole脚本因持久session契约不匹配仍false，详下，不补写原green |
 
-## 最新真实 App 证据（E/P5 与 I/P5 同名）
+最终交付对照：`E/P5/final-delivery-current-audit02`。E=`/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`，I=`/Users/zgh/Library/Caches/khor-code-quality/recovery`；同名证据双盘。
 
-E=`/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence`；I=`/Users/zgh/Library/Caches/khor-code-quality/recovery`。
+## 最新真实OS验收及原失败分类
 
-- Pi `node-open-pi-owned-run01`：exec22455 exit0/93.202s，result `33c789180e67eb9a8e50690fcd382dbe09aec6602a1dfbfac1e07e8c9006f512`。Quota/Register→本机home可用→OpenAI api_key→真实secret prompt空输入Cancel；实际Bun af955/76474082B/mode700，ownedPID93960；原5s退出门→CUA CmdQ/App92625 exit0→accepted→全部清。独审 `node-open-pi-owned-run01-review01/report.json` `6fa1a8f976def1274bc2fbf4fd194c302d9e849e75b0424dfa761a52cf66bce0`，16证据checks/860manifest（非新业务测试数）。
-- Borrow `node-open-borrow-owned-run02`：exec41123 exit0/212.6575s，result `de4004174a1385f26254ce97a4c93ec346de5efc536bf4d72ade20c7e7535ad4`。两实际open_page同borrow/01889344be40fa00@59953；卸machine owner仍通；真关content后新TCP errno61；UI远端历史重开新borrow/68805b5df0b84999@60680再通；真关再拒绝。原5ack→Quit intent/ack→CUA CmdQ/App10450 exit0→6.932s内accepted→仅EXIT_ROOT CLI quit0/keeper143/relay0/observer143/originclosed，198owner/87group/TMP全清。独审 `node-open-borrow-owned-run02-review01/report.json` `95a4c8670ee54ac97bb1688012a64a72a3b2898cbdc8f7fe061fadae67810eee`，16checks/1000manifest归档前完整。首pair精确FinishPending1→原同ticket单Resume0/共享3.217s，未新grant。
-- Borrow `node-open-borrow-owned-run01`：result `f50c7e0d6f9116aeeb5cdaf6061e7cda70af5e04fe1be5831ee6119e399d00c7` 原非绿保留，双同机fixed name Mac-mini、rename只改shown，API仍name→selfnetwork拒绝。源核main相同，既有KHOR_NAME专供同机双实例；plan02仅start中4行按真实HOME设置两freshRoot初始q035-app/q035-exit，删除此If后原launcher完整AST同，所有门/5phase/断言原样。独审e90f10a2…7ec93/956manifest。不得改写成原run也通过。
-- OS `node-open-os-owned-run02`：exec61652 exit1/267.553s，result `24e3ddc5551ae8b7f466d8a069eb5e05a42473810e951c22bd4ce4a06c1a7623`。真实全局Workspaces/WorkspacePane；原write_text1–5拒绝，quit_requested preventedtrue；实际Not saved/1 files unsaved→Don't quit→guard-kept→原fixture-only restore→write6成功/精确`Q043 edited locally\n`。全屏成功query/drag/chat_put_paths/term_drop均0；CUA第三坐标误用在工具层拒绝，没有输入。root描述在freeze前`runtime/root-ui-partial.json`。root只关闭task Finder新窗并实际CmdQ/App18557 exit0，未再读取死UI；原checked/normalQuit/fullcontract门未到，未写quit-intent/accepted，**whole/manual=false保持**。原failed-path清理207owner/73group/footprint/TMP全清。原882manifest/883files独审完整，`node-open-os-owned-run02-review01/report.json` SHA `49087734f677f7a681faf8210018336b2a400ccf6154c3118eca9a2ed70ca506`，14项证据核验（不是业务测试数）。
-- OS `node-open-os-owned-run01`：result `52185fe3ea147b5ee1db1647d24b5153c754c75e7151065a2685ad46955ce77f` 原非绿。root走KhorSession内部FilePage，write15/17拒绝但close preventedfalse；该入口本地draft未报全局，main已有，非监听未注册证据。后续CUA读取死窗口可能重唤私有PID7470导致原cleanup footprint/TMP异常；原结果不改，root独立ps→CUA CmdQ→ps gone/空TMP清另记`node-open-os-run01-postcleanup01`。独审 `c2e7579afcb041eb1d75a26a68ebb5bb77e45b7c38e57a2d9d557b7bdc66bd1f`/872manifest完整。
+`P5/fullscreen-query-os-owned-run03`，exec98281 terminal exit1，215.248890583s，result **537bdd936401ba2a998abe05ae90575a631ccddf89cfe22a8566ffb771e5c5c0**，whole/manual false保持。原run/launcher/observer字节不变，plan03仅5个命名空间数据键变化；270/285/300720/双盘5GiB/512/来源/cleanup门都保留。
 
-更早495d Pi Busy、OS270超时、借网setup/rename失败均保持历史。当前通过项只引用上述新source结果。
+原`business-oracles.json`完整成立：chat_put_paths seq76/term_drop seq95各唯一success，不发送消息/终端不回车；native drop3观察是两个真实拖动的广播记录。两处landed SHA **b32de19c93bcdd6330e2f945f35224d941975f235a080f98fa0d2fff51deeccd**；full压缩[false,true,false]；write1–6拒绝/write7成功；Not saved/Don't quit真实操作及20B保存一致。App47945实际CUA CmdQ正常exit0，launcher_sent_app_signal:false；accepted在app-exited后6.142836875s写下，早于launcher错误。
 
-## 当前产物与运行纪律
+原失败是launcher在读取accepted前等所有观测App后代消失。该Shell的host.json/meta.json把50774/50775明确映射为本次创建的持久host/child；`docs/SESSION.md`109寿命、host.rs1–5/628、Node::open_persistent明确允许发起窗口离开后host继续。原门强于产品持久契约；不能称产品退出泄漏，也不声称原日志记录了10s末完整remaining名单。按用户“新独立问题下一轮”，登记harness契约纠正，不改原结果/断言、不要求用户重复拖放。非作者独审`P5/fullscreen-query-os-owned-run03-review01/report.json` SHA **97a42fdc03ba9a0f9c651e05f9513844c484f30c22c93f7f452d94ee50a413f4**；原902entry两盘逐SHA零缺件/差异/extras。最终cleanup无errors/remaining/footprint，TMP不存在；source/helpers/dist/bundle稳定、资源门无失败。
 
-- 集成：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，作者复用树`/Users/zgh/Developer/Khor/worktrees/recovery/khor-quality-overwrite-recovery`，均e110 trackedclean。中央plan独立分支，恢复后先核refs/diff。
-- normal GUI `.../caches/rust/khor-quality-target/debug/khor-gui` SHA`576678f1aa72d3557a04314cd4e87bcc353f01ecee240c00331f877320549fb2`/374443848B。实际normal build/artifact成功及独审debd3390…c8eb；**Q055完整自动provenance仍因TAURI_CONFIG/REMOVE_UNUSED_COMMANDS缺口nongreen**，不能伪造accepted receipt。
-- Core `debug/deps/chat_upload_cancel-a98ef2c294b70f0c` d84f1167…ba1bbc8/75861904B；Core03 result2fc111e4…c2d5b/provenance900ba74d…cc8a7完整通过，root实际require和独审eed3f9dc…4d25完成。
-- CLI `debug/khor` e0a4d3e6…f69b06/269289608B；receipt4c50a2da…2920a的完整require是合法GUI共享deps重编前历史，不冒它当前所有deps完整。GUI/Core后按实际exe/stat/source映射使用。
-- 五实际来源binder `P5/node-open-real-app-actual-producers01.json` SHA f0031a21…a84668。原timestamp pending字段是历史元数据，不更新旧binder；当前事实以本页为准。
-- 原f7 entry/fcb provenance不改，工具链5pins取Q039/integration-bootstrap-guard-run01/toolchain-pins.json SHA6582c447…79533；outer prepend一次，父PATH仅去恰首toolbin。唯一target/jobs1/inc0/offline/locked；原285inner/270helper/300step720total/双盘5GiB/512/ownedPID-TMP-lsof-source-dual门保，不重做工具链或全cold。
-- getApp/getAXState可能重新launch已死private App；任何UI接管先ps核readyPID+exactpath仍live，正常Quit后仅ps/原harness观察，**不再读取死App**。用户94762/5467未动；task Finder新窗已关，原用户窗口保留。
+run01人工ChatView成功与fullscreen已证，原270超时整组false，独审a8dc670a…aaa；run02ready前资源门停止，result27afcfc4…040b、独审bf10bd3c…6167，无业务操作。全部历史失败保。
 
-## 下一轮与未证明部分
+## 当前构建来源
 
-- SessionContent/SideWorkspace/MachineFiles编辑草稿未接全局reportDrafts：main既有覆盖缺口；全局WorkspacePane原路径已真实通过，不把两者混作已修。
-- fullscreen缺grant阻query；本轮不增权限。真实drag未观测根因未知，不能称产品或工具已经定位/修复。**这是目标尚未完整验收的剩余边界。**
-- 原040deadline、两个page_steps channel closed候选、Q055环境证明覆盖及已登记独立缺陷留下一轮。物理iPhone/IME、真实SSH/master/remotelease、Linux/Windows矩阵不新增。
-- 不宣称全仓逐行重构、全测试全绿、所有平台通过或已发布。独立交付对照`E/P5/final-delivery-audit01`及其后补事实供审查，不代替本页当前结果。
+- full2389 source frame **32101973afa2bdb0d2969154a0b4819a0cc275c7d04f34e5a06a8832e1277438**。
+- normal GUI `.../caches/rust/khor-quality-target/debug/khor-gui` SHA **39b300263fe72763a437eedea7d14017674744ac79a7f74c7ec0498f995458e0**/374444376B。GUI producer40922 resultd159564b…522f原exit1仅Q055环境来源覆盖缺口；实际normal build/artifact/inputs/cleanup成功及生成ACL非作者独审ea482c96…0b63完成。没有伪造完整GUI accepted provenance。
+- Core `debug/deps/chat_upload_cancel-a98ef2c294b70f0c` SHAd84f1167…ba1bbc8/75861904B；新source producer13238 exit0/result5a7fbeef…315，完整receipt **6644ec805d3c75a24bf87ecc25994f7f819d7a3b7ab1f09b1319bd86c76e6d50**，root实际full require和非作者独审9d8fdabc…b559通过。相同bytes来自实际新producer，不冒旧source收据。
+- 五实际来源`P5/fullscreen-query-real-app-actual-producers01.json`；runtime重新校验。CLI e0a4d3e6…f69b06未改；旧收据仅历史。
 
-## 可逆归档与恢复
+## 明确留下一轮
 
-旧源/结果不回填。历史producer/staged/cache归档详上一检查点与对应index；恢复bytes/mode/mtime前旧full manifest仅是历史，inode不能恢复。当前normal产物/源/depinfo/指纹保留，无global clean。
+1. 原040取消deadline；native四case中的late-close/close-reopen两channel closed，唯一race未证明。
+2. Q055 GUI自动环境输入覆盖TAURI_CONFIG/REMOVE_UNUSED_COMMANDS；不冒完整proof。
+3. 会话内/机器文件入口未向全局退出保护报告草稿；本轮已验全局WorkspacePane，不外推全部入口。
+4. OS一次性harness把刻意持久terminal后代当全部必须随GUI退出，需按产品生命周期分别验证与fixture收尾。原结果不回填。
 
-最新：`node-retired-cache-archive-relocation01`将583MB旧ZIP搬至`/Volumes/disk0/Khor/caches/archives/node-retired-variants-except-current-cli-669.zip`，SHA713709…43c9（copy验证后退旧I文件，非独立内盘备份）。`node-open-pi-completed-artifacts-archive01/completed-pi-artifacts.zip`142914326B/SHA5e5bc033430668a4349c71a9753164a138405d669907910c1017ed51cb7228ba，含真实GUI/Bun entries；Pi两stage+两runtime已退原件。Borrow run01/run02与OS run01两盘重复stage复用此ZIP退役，索引`node-open-borrow-staged-archive01/02`、`node-open-os-staged-archive01`，均在独审完整manifest与实际SHA/stat/lsof后；当前OS run02已在独审后按`node-open-os-staged-archive02`复用同ZIP可逆归档两stage，normal产物不动。ZIP在外盘、内盘保索引，不称独立盘备份。
+这些独立项按用户最新收口规则登记，不追加本轮实现或重跑已绿矩阵；没有因它们宣称全仓无缺陷。后续是否合并/发布或启动下一轮，由用户决定。
 
-关键事实后镜像STATE/PLAN/全docs manifest与refs到I；外盘中断先读I/RESUME.md，核实际SHA/refs再继续，不能按摘要覆盖未提交内容。
+## 存储、恢复与继续指南
 
+旧归档索引在历史及各独立archive index；原字节/模式/mtime恢复前旧fullmanifest只代表归档前事实，inode历史。当前normalGUI/Core/CLI/source不退役，没有global clean。run01/run02两份375MB stage逐SHA/lsof/独审后复用`fullscreen-current-gui-stage-archive01/current-gui-39b.zip`(SHA103530b1…214f)可逆退役，index01/02记录。run03当前完整双盘尚保留。
 
-## 2026-10-28 剩余拖放窄验证检查点
+旧task-owned内盘incremental（无当前Core收据引用、current incremental0）11229files/4100120197B逐entry校验后压缩留I/`incremental-retired-20261028.zip`，SHAd15a2d88ee7eab5ac6f0aa60647fab25aca6335785feea70bb48965af63071d0/1710737465B；原目录退役，inventory/stat/report双盘`P5/fullscreen-old-incremental-retirement01`。实际释放约2.4GB，未动用户缓存或外盘currenttarget。
 
-上一目标轮是progress（Pi/借网/全局guard真实完成及独审），未宣告整目标完成。root graph先查但669旧索引缺TS/config覆盖，已仅实际读取native-events/window-drop/api/windowbuilder/config，未见显式禁拖；这不证明实际OS送达。`P5/drag-verification-followup01/root-preflight.json`保存源SHA和边界。`node-open-os-owned-plan03`只5个namespace/reference数据键变化，原run/launcher/observer字节同，非作者静态复核通过；fresh run03/TMP knopos3当前未启动。待q043原ChatView/fixture挂载条件窄核后，root仅最后一次文件图标→输入区实际拖放；不重跑既有guard/Pi/借网或改ACL/断言。若仍0事件保未证明，不靠重复相同gesture制造进度。
-
-原OS plan03 exec91713已terminal exit1；不要重用session或任何dead CUA对象。source/normalproducers未改。
-
-
-## 当前需外部输入的验收边界（第二个连续目标轮确认）
-
-- 本轮graph-first窄核排除了显式禁拖配置/fixture capability gate的静态候选。q043只读报告`P5/Q043-drop-source-readiness01/report.json` SHA c1f8238fa99702860ccde17e656ce939c95079acfcc80a6a02d71ba4be626d75：ChatView直接listenNativeDragDrop，live inApp且非still/gone挂载；text-file落地不受imagecapability限制。它仍不证明实际OS事件送达。
-- 最后一次具体不同手势已执行：`node-open-os-owned-run03`/exec91713，实际选中Finder IconView文件图像→相对坐标[250,98]拖到左侧composer[-580,1378]，仍无附件/native_drag/chat_put_paths/term_drop。用户已被邀请在具体live Lab中手动复核，等待超过60s且原exec/PID反复确认live；未收到回复/实际事件，不把等待当通过或批准。到原时限已关闭任务Finder新窗、用户原窗保留，当前不能再按旧邀请拖到已关Lab。
-- 原helper270.08s/101先于末尾root退出动作，App32738由原failure路径SIGTERM15；随后CUA读到空窗口可能重唤私有同App，紧接CmdQ，实际ps确认无sameprivatefootprint。不能把root描述中的“before deadline”意图当实际normalQuit。run03 result `10dd44360e8076957ab5c5cd9c3b3196c3ca40813e03aa5ad61181b9e6028f00`/275.4389s，source/helpers/bundle稳/原cleanup remaining-footprint-TMP清/manualfalse；原outer最后publish双盘断言失败，原result/manifest不回填。
-- 独审已确认实际双盘差异：同875-entry manifest；外盘.DS_Store在freeze后晚写变更，内盘保期望；root-ui-drag-result.json位于helper/launcher已终止与manifest之间，E有原manifest期望字节、I缺失。两版DS_Store和rootpartial原bytes/stat将保到独立review，不补原I以充完整绿。
-- 当前剩余同一阻碍：自动实际drag始终无事件，需要人工手势/外部操作条件改变；既有fullscreen grant缺口又在“新问题下一轮”边界外，却阻原OS全契约。已通过异步问题请求用户裁定是否把该权限缺口纳入本轮，或保留下一轮并接受带例外交付；预选/等待均不算批准。该处等待已被后续用户“纳入”决定替代；按下方最新范围执行。
-- 上一目标轮在完成Pi/借网/guard后已明确同一OS验收缺口，本目标轮又以不同手势及源条件核实，连续确认计2；本轮有具体新证据，仍不满足complete，也未到blocked三轮门槛。后续若无用户输入/外部条件改变且同一真实阻碍第三轮持续，按goal规则核定blocked，不继续靠重跑/重复状态保active。
-
-
-## 最新用户决定：fullscreen特定查询grant纳入本轮（2026-10-28）
-
-用户对具体范围问题回复“纳入”，即授权修复fullscreen现有权限缺口并保原真实false/true/false验收，PLAN已追加原话/作用范围；**不再以无授权阻挡这项实现**。其余新独立问题仍下一轮，main/ship不变。旧用户人工拖放邀请因原270helper结束已撤销，不能据旧窗口操作。
-
-root native槽目前空；q043在复用作者树overwrite-recovery/e110新branch fix/quality-fullscreen-query准备最小capability JSON grant，原fix/quality-node-open-admission必须保留。不得加default权限/其他query或改native事件代码/原断言。候选交非作者独审后root集成，再刷新新source正常GUI/Core与原OS实际验收；不重跑不受影响的115/14/Pi/借网。completion_audit接手OS3完整差异报告收尾（app_runtime因capacity errored，未改原件），随后候选非作者审查；两agent禁native。连续阻碍2轮的旧判断被本次真实用户scope输入改变，当前有可推进的授权工作，不能据旧计数mark blocked。
+上下文恢复先读本页/PLAN、当前用户决定及实际refs/diff；外盘缺失读I/RESUME.md与current-code-quality-docs-manifest.json核内盘快照，禁止按摘要覆盖外盘未提交内容。此轮已收口，勿按历史live句柄重新启动App/Cargo/重跑矩阵；需后续任务时按新授权登记范围、所有者和证据。
