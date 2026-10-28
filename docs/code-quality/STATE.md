@@ -2,6 +2,12 @@
 
 更新：2026-10-28。**用户最新范围内的实现、Clean Code结构治理与既定业务验收已完成；main未合并、未发布。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
 
+## 最新用户决定：main 合并及 ship 已授权
+
+用户在2026-10-28明确要求“先合并到main, 然后ship”，旧未授权限制被替代。产品ecab已fast-forward到main；中央最终文档plan6f3c07d5也已合并，文档冲突仅5份早期快照与中央最新记录，采用中央owner已审最终版，原版本保在产品父提交，收据E/releases/20261028-code-quality/doc-conflict-resolution.json。当前正在执行正式Mac/iOS/集群发布，尚不把构建/上传标成成功。后续发布事实看同目录证据及SHIP发布记录。新一轮反馈入口[ROUND-2](ROUND-2.md)；完成发布后先实际测试与总结，再启动下一轮改动。
+
+下方版本/发布未授权表述为本轮治理收口时的历史，最新指令以本节及实际refs为准。
+
 ## 版本与运行状态
 
 - 主仓库：`/Users/zgh/Desktop/working/khor`，`main@8704a503a27b36ad58f922690de50e766f8bd485`，tracked clean，既有发布服务不动。本轮无main合并或ship授权。
