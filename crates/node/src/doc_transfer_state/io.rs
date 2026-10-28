@@ -979,4 +979,30 @@ mod tests {
         drop(file);
         drop(root_gate(&fixture.0).unwrap());
     }
+
+    #[test]
+    fn node_opening_on_a_multithread_localset_keeps_sync_async_and_try_as_results() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let fixture = Fixture::new();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(tokio::task::LocalSet::new().run_until(async {
+            let first = crate::Node::open_hosting(fixture.0.clone(), "local-open", false).unwrap();
+            assert!(first.root_born());
+            let anchor = fs::read(fixture.0.join(".khor/root.pub")).unwrap();
+            drop(first);
+            let reopened =
+                crate::Node::open_hosting_async(fixture.0.clone(), "local-open".into(), false)
+                    .await
+                    .unwrap();
+            assert!(!reopened.root_born());
+            assert_eq!(fs::read(fixture.0.join(".khor/root.pub")).unwrap(), anchor);
+            drop(reopened);
+            let _control = root_gate(&fixture.0).unwrap();
+            assert!(crate::Node::try_open(fixture.0.clone()).is_err());
+        }));
+    }
 }
