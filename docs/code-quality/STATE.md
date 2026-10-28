@@ -2,11 +2,15 @@
 
 更新：2026-10-28。**本轮实现与既定业务验收已完成，已合并main并完成Mac/iOS/集群发布；当前进入实际使用反馈，未开始下一轮实现。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
 
-## 最新讨论：工作区布局先对齐，再 Lab 验收交下一轮
+## 最新进展：工作区独立 Lab 已就绪，待用户验收
 
-用户提出工作区左右布局重组、提交历史从弹窗改为内容标签，以及双滚动条/透明 diff 文件标题问题。已保存讨论稿 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)，登记 R2-019–023。用户明确提交范围为**当前分支完整历史**，已确认左侧返回后右侧清空但保留各工作区标签/草稿，并补充已选工作区无内容标签时显示“最近打开”。顺序为先讨论布局 → 独立 Lab → 用户验收 → 将 Lab 参考交下一轮；当前仍在讨论，尚未开始 Lab 或产品修改。标签实体应为列表还是某次提交仍在讨论：最新建议为稳定标签 ID 内导航，当前内容目标和标题随列表/commit 变化；不能当成用户已确认。
+用户明确“好的 lab吧”，授权按已对齐方案制作独立 Lab；具体交接见 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)。未选工作区右侧空白；选后左树名字/branch，右侧共用 session Tabs 和三个操作；无标签显示最近打开。提交列表和详情共用稳定标签，当前目标与标题随具体 commit 变化，返回保留列表位置。主产品、会话连续性/内容交互/浏览器三个专项仍未开工，不合并 main 或 ship。
 
-当前真实 GUI 已核：PID79598 加载 inode36154987，二进制 SHA a6ab09…7f9af2，HTTP 前端指纹 BjJjcA2m，均与最新 ship 收据匹配；build320a48d9 到 main e7c335c8 无产品差异。两个 commit 问题在该版本源码仍存在：重复 MenuViewport 与透明 card。以前修的是跳转回顶及其它列表/补全材质，不能声称这两个入口已修。刷新不能只删按钮：现有文件内容/Git 状态并非全部实时；完整历史目前仍有 200 条和 first-parent 限制。详情与 Lab 验收边界见专项。
+Lab：`/Volumes/disk0/Khor/worktrees/current/khor-workspace-layout-lab`，分支 `lab/workspace-layout-20261028`，提交 `b4b4f6c7dc5f642d146fba15ea8c7d7fd5cbed46`，基线 main `e7c335c8`；入口 <http://localhost:23832/lab/workspace-layout.html>。两个工作区、240 条提交、18 个变动文件均为模拟数据，全部 `/api/*` 被隔离服务截断，不操作真实仓库或 session。服务记录与检查在 `/Volumes/disk0/Khor/evidence/labs/workspace-layout-20261028`。代码与启动说明见 Lab 的 `apps/gui/lab/workspace-layout.md`。
+
+独立桌面/390×844流程检查、完整240条模拟分页与短hash区分通过；CommitPage 的重复 MenuViewport、透明 sticky 标题已在本 Lab 分支 red→green，保留跳转/焦点回归。独立审查发现的位置丢失与搜索不回顶已修正并复测通过：文件跨标签/工作区保持纵横位置及草稿，提交异步加载后恢复位置且继续接受滚轮/键盘/点击，搜索实际回顶。正式后端完整历史分页和外部内容/Git自动更新仍属下一轮，用户验收尚未完成。main 和正式 App 未替换。
+
+此前运行版本核验已确认用户看到的两项 commit 视觉问题存在于最新 ship 源码，不是旧 App：PID79598/inode36154987、SHA a6ab09…7f9af2、前端 BjJjcA2m 与收据匹配；这些是当时核验记录，不作为现在 PID 存活证明。
 
 ## 浏览器五项问题已登记，仍未开始下一轮
 
