@@ -25,7 +25,7 @@ import { flushSync } from "react-dom";
 import {
   fetchGitStatus,
   fetchGitLog,
-  launchOn,
+
   searchIn,
   widenWindow,
   giveBackWindow,
@@ -1198,14 +1198,6 @@ export function WorkspacePane({
       open: (abs, line) => {
         open(abs, false);
         setGoLine(line === null ? null : { path: abs, line, at: Date.now() });
-      },
-      // **`⌘`+press hands it to the machine the session is on**
-      // (ruling 35, restated by 2026-09-18 ruling 54) — the same road
-      // an address in the same sentence takes. A refusal is that
-      // machine's own (no opener, no screen) and rides back through
-      // the call; nothing here invents one.
-      launch: (abs) => {
-        void launchOn(machine, abs).catch(() => {});
       },
       beside: true,
     }),

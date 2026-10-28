@@ -22,7 +22,6 @@ export type LinkHome = {
   open: (abs: string, line: number | null) => void;
   /** A session URL opens in its own content side panel. */
   openPage?: (url: string) => void;
-  launch: (abs: string) => void;
   /** **The file opens beside the prose**, in the middle column of the
       pane that holds both (`WorkspacePane`). A conversation elsewhere
       shows a pressed file in its own preview first (round CHAT,
