@@ -980,6 +980,7 @@ fn relays_under(root: &std::path::Path) -> (Vec<khor_net::endpoint::Relay>, bool
 impl Node {
     /// Opens the node rooted at `root`, named after the hostname (or
     /// `KHOR_NAME` when set — tests and same-machine dual instances).
+    /// Admission and filesystem work block this calling thread.
     pub fn open(root: PathBuf) -> Result<Node, String> {
         Self::open_as(root, &Self::opening_name())
     }
@@ -990,27 +991,17 @@ impl Node {
     }
 
     /// Control admission never waits behind an ordinary constructor.
+    /// Admitted filesystem work still blocks this calling thread.
     pub fn try_open(root: PathBuf) -> Result<Node, String> {
-        Self::with_blocking_isolation(|| {
-            let permit =
-                doc_transfer_state::RootPermit::try_acquire(&root).map_err(String::from)?;
-            Self::open_admitted(root, &Self::opening_name(), khor_core::hosts_here(), permit)
-        })
-    }
-
-    fn with_blocking_isolation<T>(work: impl FnOnce() -> T) -> T {
-        if tokio::runtime::Handle::try_current().is_ok_and(|runtime| {
-            runtime.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
-        }) {
-            tokio::task::block_in_place(work)
-        } else {
-            work()
-        }
+        let permit = doc_transfer_state::RootPermit::try_acquire(&root).map_err(String::from)?;
+        Self::open_admitted(root, &Self::opening_name(), khor_core::hosts_here(), permit)
     }
 
     /// Wait only for local admission, then construct on this same future/thread.
     /// Requires a current Tokio runtime with its time driver enabled for the
     /// bounded admission deadline. No runtime is created; sync callers use `open`.
+    /// After admission, filesystem work is synchronous and nonpreemptible in
+    /// every runtime flavor, including LocalSet; it can block the executor thread.
     pub async fn open_async(root: PathBuf) -> Result<Node, String> {
         Self::open_hosting_async(root, Self::opening_name(), khor_core::hosts_here()).await
     }
@@ -1022,8 +1013,7 @@ impl Node {
         let permit = doc_transfer_state::RootPermit::acquire_async(&root)
             .await
             .map_err(String::from)?;
-        // CurrentThread cannot block_in_place: FS runs to completion in this poll.
-        Self::with_blocking_isolation(|| Self::open_admitted(root, &name, hosts, permit))
+        Self::open_admitted(root, &name, hosts, permit)
     }
 
     /// Opens with an explicit machine name (pre-cleaning).
@@ -1042,10 +1032,8 @@ impl Node {
     /// asked, no session started, the row says so) is about the node,
     /// not about the build.
     pub fn open_hosting(root: PathBuf, name: &str, hosts: bool) -> Result<Node, String> {
-        Self::with_blocking_isolation(|| {
-            let permit = doc_transfer_state::RootPermit::acquire(&root).map_err(String::from)?;
-            Self::open_admitted(root, name, hosts, permit)
-        })
+        let permit = doc_transfer_state::RootPermit::acquire(&root).map_err(String::from)?;
+        Self::open_admitted(root, name, hosts, permit)
     }
 
     fn open_admitted(

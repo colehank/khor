@@ -1400,14 +1400,13 @@ pub fn day_strips(
         .collect())
 }
 
-/// Async only because of the road reading: it is the resident's answer,
-/// fetched once for the whole table (`khor_node::Node::hops`).
+/// Reads the resident's road answer once for the whole table
+/// (`khor_node::Node::hops`).
 ///
-/// **Nothing in here waits for a disk** (docs/SHELL.md 第十六轮): this
-/// machine's reading and watched rows are the background sampler's last
-/// round, and the file reads (the store, the caches) go on a blocking
-/// thread rather than the async one the app polls this on every two
-/// seconds.
+/// Node admission waits asynchronously; its constructor then performs synchronous
+/// filesystem work on this thread. This machine's reading and watched rows use
+/// the background sampler's last round. The later table/store/cache reads in
+/// `rows_of_devices` still run on the existing blocking worker.
 pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
     let n = open_async(root).await?;
     // A resident that did not answer in time keeps its last reading
