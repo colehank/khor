@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "fullscreen-state",
+  "description": "The main Khor webview may read its window's fullscreen state.",
+  "webviews": [
+    "main"
+  ],
+  "permissions": [
+    "core:window:allow-is-fullscreen"
+  ]
+}
