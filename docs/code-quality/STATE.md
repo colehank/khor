@@ -2,15 +2,17 @@
 
 更新：2026-10-28。**本轮实现与既定业务验收已完成，已合并main并完成Mac/iOS/集群发布；当前进入实际使用反馈，未开始下一轮实现。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
 
-## 最新进展：工作区第二版 Lab 已就绪，待用户验收
+## 最新进展：工作区第三版 Lab 待用户验收
 
-用户针对第一版要求保留正式文件树/list、搜索和新建；去掉标签内容重复标题和提交返回按钮；标题左/branch 右，下一行机器：路径；最新提交摘要点开后在左栏原位显示日志。第二版已按该反馈完成。右上顺序为会话、VS Code、…；左侧连续选提交更新右侧同一枚提交标签，打开日志本身不打断文件。详细决定与第一版历史见 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)。三个 S/C/B 专项及正式产品仍未开工，不合并 main 或 ship。
+本轮最新用户决定已落实：文件/提交共享单击预览、双击固定，各commit以hash独立保留；提交正文显示标题和正文，标签用用户历史SVG；文件默认展开（覆盖较早默认收起），手动收起按commit保存。左侧仅日期链条借鉴GitHub，右侧保持Khor平面列表；最新反馈要求其只是更高的文件行，故左右文字/状态列、右边距和选中背景均按文件树对齐，禁止卡片化和额外右侧留白。返回文件在原摘要行，与文件名同起点。工作区picker恢复正式头像/名称+branch/Git计数/摘要+时间。右上仍会话、VS Code、…。
 
-Lab：`/Volumes/disk0/Khor/worktrees/current/khor-workspace-layout-lab`，分支 `lab/workspace-layout-20261028`，提交 `b20eb7384d0222f46de4f13d284e78c07078b8a9`，基线 main `e7c335c8`；入口 <http://localhost:23832/lab/workspace-layout.html>。复用正式 SideList、PaneBar、SideFind、FileTree、Hits、Tabs 和 CommitPage；新建/搜索使用隔离内存 API，全部 `/api/*` 被截断，不操作真实文件、仓库或 session。240 条提交和 18 个 diff 文件均为样例。
+文件树和目录列表取消悬浮下载，下载统一进右键菜单；状态字母/目录点同固定末尾槽，反馈不挤动标记。所有下载在Lab仅走隔离mock，返回“Lab 模拟结果（未写磁盘）”。正式App/main未改动、重启、合并或ship；S/C/B专项和工作区正式产品接入仍未开工。
 
-最终组合验证：TypeScript、5 组布局/搜索/新建/窄屏/分页检查、7 组 commit 菜单/材质/焦点/独立页与标签模式检查、3 组草稿和位置检查通过。fixture 接口边界 14 项检查及随后同路径重新添加工作区的定向检查已留档。窄屏当前标签保持标题，可横向查看其它标签。证据位于 `/Volumes/disk0/Khor/evidence/labs/workspace-layout-20261028/v2`，启动说明在 Lab 的 `apps/gui/lab/workspace-layout.md`。用户视觉/体感验收未完成；不冒真实原生/iPhone验收。正式后端完整历史分页和文件/Git自动更新仍属下一轮。
+Lab工作副本 `/Volumes/disk0/Khor/worktrees/current/khor-workspace-layout-lab`，分支 `lab/workspace-layout-20261028`，源码提交 `c4125e58516a90df78d4153c72e52a31d7b76aa7`，基线main `e7c335c8`；入口 <http://localhost:23832/lab/workspace-layout.html>。说明在Lab `apps/gui/lab/workspace-layout.md`，最新决定与历史在 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)。服务继续供验收。
 
-此前运行版本核验已确认用户看到的两项 commit 视觉问题存在于最新 ship 源码，不是旧 App：PID79598/inode36154987、SHA a6ab09…7f9af2、前端 BjJjcA2m 与收据匹配；这些是当时核验记录，不作为现在 PID 存活证明。main 与正式 App 本次未改动或重启。
+TypeScript通过；布局5组、预览/固定3组、阅读位置3组、commit呈现/折叠/完整文件/跳转14项、下载菜单/状态列/返回文字对齐6项通过，无浏览器运行错误。纯重命名完整文本用例先红后绿；位置脚本原hover后立即wheel的失败留存，稳定布局后完整位移验证通过，没有为其修改产品。最后仅间距样式反馈追加定向几何与截图，详见 `/Volumes/disk0/Khor/evidence/labs/workspace-layout-20261028/v3`。旧check-face强制hover下载按钮的门与新用户决定冲突，正式接入时须更新，不声称旧全仓门通过。
+
+用户视觉/体感验收待进行。正式后端完整历史分页、文件/Git自动更新、原生/iPhone验收仍属下一轮，不用模拟通过代替。旧运行版本核验见专项，是当时证据，不代表当前进程仍存活。
 
 ## 浏览器五项问题已登记，仍未开始下一轮
 
