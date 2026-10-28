@@ -30,7 +30,8 @@
 // broken, which is the failure `check-acp` 第二批 names.
 import { useFileHandoff, type FileHandoffControl } from "@/hooks/use-file-handoff";
 import { FileHandoffAction, FileHandoffStatus } from "@/components/FileHandoff";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { fileRefresh } from "@/lib/file-refresh";
 
 import {
   fetchPreview,
@@ -401,8 +402,11 @@ function FileBody({
       still for is the beat after a remount, when this mount has read
       nothing yet and the pane is holding what somebody typed. */
   const edit = own ?? draft ?? null;
+  const refresh = useRef(fileRefresh());
+  useLayoutEffect(() => () => refresh.current.invalidate(), [machine, path]);
   const setEdit = useCallback(
     (next: Draft | null | ((was: Draft | null) => Draft | null)) => {
+      refresh.current.invalidate();
       setOwn((was) => (typeof next === "function" ? next(was ?? draft ?? null) : next));
     },
     [draft],
@@ -674,42 +678,22 @@ function FileBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readAt]);
 
-  /** Ask the far machine what this file says now, and take the answer
-      only where taking it costs nobody anything (工作区批⑩).
-   *
-   * **A draft stops it dead, before the round trip is even read.**
-   * 「有草稿维持『存的时候报冲突』」— the buffer is somebody's work and
-   * the disk is somebody else's; khor does not pick between them, and
-   * the place that already asks is the save, which has three ways out
-   * (`theirs` / `merge` / `mine`). Touching `file` here would be worse
-   * than useless: `file.text` is the **base** the merge is computed
-   * against, so moving it under a draft would make that merge
-   * three-way against a base nobody ever had.
-   *
-   * **The same digest means nothing happened**, and saying so would be
-   * a repaint of an unchanged file plus a fresh diff request.
-   *
-   * A failure is silent: a machine that could not be reached on the way
-   * back into the window is not news about this file, and the next save
-   * says its own piece in its own words. */
+  /** Refresh a clean file without replacing intervening edits or marked text.
+      The original disk version must also remain the draft's merge base. */
   const again = () => {
     if (kindOf(path) !== "text" || file === null || dirty) return;
-    // **Asked what it is, not for what it says** (round NET-4): one
-    // small answer, and the file only when that answer moved. A failure
-    // to ask reads it as before.
-    fetchFileStat(machine, path)
-      .then((now) => (unchanged(file, now) ? null : fetchFileText(machine, path)))
-      .catch(() => fetchFileText(machine, path))
-      .then((f) => {
-        if (f === null || f.digest === file.digest) return;
+    void refresh.current.read(
+      () => fetchFileStat(machine, path)
+        .then((now) => (unchanged(file, now) ? null : fetchFileText(machine, path)))
+        .catch(() => fetchFileText(machine, path)),
+      (f) => {
+        if (f.digest === file.digest) return;
         remember(machine, path, f);
         setFile(f);
         setEdit({ text: f.text, was: f.digest, by: newLine() });
-        // The gutter is about HEAD and the file just moved underneath
-        // it, so it is wrong until it is asked again.
         setDiffAt((n) => n + 1);
-      })
-      .catch(() => {});
+      },
+    ).catch(() => {});
   };
 
   /** **A write landed**, from this mount or from one that left the file
@@ -1127,6 +1111,7 @@ function FileBody({
           hunks={hunks}
           blamed={blamed}
           goLine={goLine}
+          onComposition={(active) => refresh.current.setComposing(active)}
           onText={(t) => {
             // **The leaving write sees the key at once.** CodeMirror's
             // input is not a React event, so the render that refreshes

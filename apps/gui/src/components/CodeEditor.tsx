@@ -204,6 +204,7 @@ export function CodeEditor({
   goLine = null,
   against = null,
   onText,
+  onComposition,
   onSave,
   onChunks,
   className,
@@ -238,6 +239,7 @@ export function CodeEditor({
   /** The disk's text while a merge waits on the person, else null. */
   against?: string | null;
   onText?: (text: string) => void;
+  onComposition?: (active: boolean) => void;
   /** ⌘S. */
   onSave?: () => void;
   /** How many places of the merge are still undecided, as they change. */
@@ -250,8 +252,8 @@ export function CodeEditor({
   /** The last text handed out, so a host echoing it back is not a
       replacement. */
   const out = useRef(text);
-  const cb = useRef({ onText, onSave, onChunks });
-  cb.current = { onText, onSave, onChunks };
+  const cb = useRef({ onText, onComposition, onSave, onChunks });
+  cb.current = { onText, onComposition, onSave, onChunks };
   const lang = useRef(new Compartment());
   const edit = useRef(new Compartment());
   const wrapping = useRef(new Compartment());
@@ -283,6 +285,10 @@ export function CodeEditor({
           merge.current.of(merging(against)),
           EditorView.contentAttributes.of({ "data-file-text": "", "data-sheet-scroll": "" }),
           keyboardCaret(),
+          EditorView.domEventHandlers({
+            compositionstart: () => { cb.current.onComposition?.(true); },
+            compositionend: () => { cb.current.onComposition?.(false); },
+          }),
           // The one shortcut of the textarea, `metaKey` and `ctrlKey`
           // both: a Mac app, a phone's browser and Windows, one build
           // (`Mod` alone is ⌘ on a Mac, and ⌃S there saved nothing).
@@ -341,6 +347,7 @@ export function CodeEditor({
         history: v.state.field(historyField),
       };
       v.destroy();
+      cb.current.onComposition?.(false);
       view.current = null;
     };
     // The view is made once per mount; the props below reach it through
