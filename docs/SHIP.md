@@ -302,3 +302,15 @@ Mac 的 Rust 构建必须设置 `KHOR_AGENT_BUNDLE` 为当前平台的 Pi 独立
 - iOS：先移开旧静态库，archive-only 复用已验证 dist，重新编译 Rust 并归档；新静态库、归档 App 的时间、完整收据与签名通过。系统 PATH 导出上传于 `2026-10-25 13:09:29 +08:00` 返回 `Upload succeeded`／`EXPORT SUCCEEDED`，上传版本 **0.1.14（59）**，Apple 已开始处理。临时签名工程配置按构建前基线恢复。
 - 收尾：日志、截图、会话快照与发布收据保留于 `/Volumes/disk0/khor-ship-20261025-session-nav/`、`/Volumes/disk0/khor-session-production-proof/`。确认包身份／本次源码及 lsof 无引用后，清理源码 export、旧静态库备份与 Khor Xcode 导出暂存，共 909,094,738 字节。保留当前二进制、最新静态库、正式归档、Lab 和测试证据，没有清理用户会话、全量 target 或系统 swap。
 - 平台边界：本次 iOS 完成编译／归档／上传；手势与键盘的 iPhone 真机操作仍待安装后验收。Windows／Android 未打包或发布。
+
+
+## 发布记录：2026-10-28（首轮代码治理）
+
+- 用户授权治理产品及中央文档合并main后发布；构建提交`320a48d9`，产品来自`ecab575e`。界面收据：`khor-ui-assets:/assets/index-BjJjcA2m.js`。main已推送；后续提交仅补发布/反馈记录。
+- 发布验证：当前main前端TypeScript/生产构建、默认检查/gates通过，Pi源码43项通过；Mac两exe及Linux CLI均核完整UI收据和对应平台Pi完整字节嵌入，iOS核新lib/归档和签名。治理既有验收、历史非绿与范围见code-quality/DELIVERY和STATE，不冒全矩阵全平台绿。
+- Mac：正式release CLI SHA`59f548bee15bcff0df3bc044b62cd0d8762e3af78c47664b05d64ca6556c8e58`，GUI`a6ab09abead752200911d6534eb852fc09d1b7e705b5d922dd0855430b7f9af2`；codesign通过。CLI原子替换，GUI PID79598实际监听5467，HTTP与启动日志完整收据一致；匿名HTTP403是鉴权门，未改PIN/安全配置。Mac Pi SHA`7672a1c1f29dc59b7a70d160452d9121ebe837ac0321d67e9a0bd7a34de066ef`。
+- 旧GUI曾卡死，用户强制kill了旧宿主；9条旧会话显示失败有用户确认归因。原先默认列出的10个ID在新版--all中全保（当前11条），5条旧记录仅默认折叠，不声称旧宿主进程保活或零新增失败。Codex会话仍可resume，普通import仅状态/无PTY接管的问题与卡死复现已记ROUND-2。
+- 集群：hinton忙时采用nice19/jobs1的等价分步构建，原local ThinLTO配置不变，47m40s成功；原onset一次0，另外两keeper自然换新。hinton/turing/lecun实际5467监听PID3145303/3961799/1603581，运行exe、共享安装bin与产物SHA均`e32f2a5f41d76509472980c817954a0dd312eefcbfbb27661fa371686b5c8ca7`，直连HTTP403 tiny-http的UI收据一致；Mac CLI确认三台直连。Linux Pi SHA`89b53264b099746af37cd05feb31fcec0de36ce13034888d998904a6b74eeac4`，实际完整嵌入；最大GLIBC符号2.30。每机成功post --all均保原10IDs；hinton首次及turing settled两次只读Busy保原失败，不重装/反复追绿，列下一轮。
+- iOS：新lib SHA`5d0ea2c9332f02243e46d4a393ce660b654312310a0906c59cec826e6ed5582e`，归档App`e02c2a34a08561c4a7ac1b5d0009bd3dca6db6177a3087b3219c1d1d366ae5fc`；fresh/fullUI/codesign及Team均通过独审，两签名文件精确恢复。系统PATH/direct网络export上传于2026-10-28 14:15:07 +08:00返回Upload succeeded/EXPORT SUCCEEDED，最终payload **0.1.14（60）**，Apple开始处理，不冒手机已安装或真机验收。
+- 发布日志/产物核验/独审/前后快照在`/Volumes/disk0/Khor/evidence/releases/20261028-code-quality/`。旧59归档/lib保为rollback；当前archive/Externals和验证产物保留。空间准备仅清已停用无引用旧console编译缓存，并逐SHA迁移可重建incremental ZIP至外盘archives；未清当前target/用户会话/系统swap。
+- 先实际测试、汇总[ROUND-2](code-quality/ROUND-2.md)并确认下一轮范围；本次未追加导入/接管实现、未自动重启同一Codex会话或隐藏原失败。

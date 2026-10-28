@@ -1,14 +1,22 @@
 # 本轮代码治理：交付状态
 
-更新：2026-10-28。**用户最新范围内的实现、Clean Code结构治理与既定业务验收已完成；main未合并、未发布。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
+更新：2026-10-28。**本轮实现与既定业务验收已完成，已合并main并完成Mac/iOS/集群发布；当前进入实际使用反馈，未开始下一轮实现。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
 
-## 最新用户决定：main 合并及 ship 已授权
+## 当前入口：已发布，先测试与汇总
 
-用户在2026-10-28明确要求“先合并到main, 然后ship”，旧未授权限制被替代。产品ecab已fast-forward到main；中央最终文档plan6f3c07d5也已合并，文档冲突仅5份早期快照与中央最新记录，采用中央owner已审最终版，原版本保在产品父提交，收据E/releases/20261028-code-quality/doc-conflict-resolution.json。当前正在执行正式Mac/iOS/集群发布，尚不把构建/上传标成成功。后续发布事实看同目录证据及SHIP发布记录。新一轮反馈入口[ROUND-2](ROUND-2.md)；完成发布后先实际测试与总结，再启动下一轮改动。
+用户明确授权“先合并到main, 然后ship, 我们来测试一下总结一轮问题再到下一轮”，已执行。产品ecab575e与中央最终文档plan6f3c07d5已合并；构建提交**320a48d95d18222aaa4216702408caa9eaffca51**，后续main提交仅发布记录/反馈文档。最新实际refs以恢复集current-worktree-refs.json为准。
 
-下方版本/发布未授权表述为本轮治理收口时的历史，最新指令以本节及实际refs为准。
+- Mac CLI/GUI正式release构建、完整UI和Pi字节嵌入、签名及独审通过。CLI已原子安装，GUI主PID79598真实监听5467，UI收据`khor-ui-assets:/assets/index-BjJjcA2m.js`；默认命令解析到~/.cargo/bin/khor。
+- iOS新静态库/归档App/签名/独审通过，0.1.14（60）已Upload succeeded/EXPORT SUCCEEDED，Apple开始处理；不冒真机已安装。临时两签名文件已逐字恢复。
+- hinton/turing/lecun一次onset安装及keeper自然换新，真实5467监听exeSHA均e32f2a5f41d76509472980c817954a0dd312eefcbfbb27661fa371686b5c8ca7，三机UI收据一致；Mac CLI确认三台直连。每机postinstall成功--all观察均保留原10IDs。两次只读查询报document transfer state busy，原失败保留，未反复追绿/重装，登记下一轮。
 
-## 版本与运行状态
+完整发布收据在`/Volumes/disk0/Khor/evidence/releases/20261028-code-quality`，发布记录见[SHIP](../SHIP.md)，反馈见[ROUND-2](ROUND-2.md)。目前无编译/上传/本轮installer在运行；正式GUI、用户终端、Codex后台与三机resident是用户运行服务，不清理。
+
+用户确认旧GUI卡死/无法识别session后强制kill，9个旧会话失败来自宿主结束；原10IDs仍可在Mac --all中找到（当前11条），没有按默认年龄折叠误判数据丢失。普通import只登记观察状态，没有接管外部iTerm PTY；此路径与旧8704一致，但缺实际rowflags，不冒排除所有终端流回归。当前Codex0.165的工具进程祖先是独立app-server89847→daemon1548，不隶属Khor终端宿主；后者关闭与后台agent结束应分开表达。旧GUI卡死唯一根因未定位，无冻结瞬间主线程栈，不把资源压力当已证原因。
+
+先让用户测试、汇总并确认下一轮范围；不要自动实施导入/接管、重启同一Codex会话或重跑已绿治理矩阵。下方版本与未授权语句为治理收口时历史，被本节最新决定替代。
+
+## 治理收口时的版本与运行状态（历史）
 
 - 主仓库：`/Users/zgh/Desktop/working/khor`，`main@8704a503a27b36ad58f922690de50e766f8bd485`，tracked clean，既有发布服务不动。本轮无main合并或ship授权。
 - 集成：`/Volumes/disk0/Khor/worktrees/current/khor-code-quality-wave1`，`integrate/code-quality-wave1@ecab575e3f978f6570bff2c05a9542be93fd7342`，tracked clean。最后产品改动仅main webview特定fullscreen查询grant，用户已明确“纳入”。作者树overwrite-recovery同提交，原N1分支保留e110。
@@ -59,6 +67,6 @@ run01人工ChatView成功与fullscreen已证，原270超时整组false，独审a
 
 旧归档索引在历史及各独立archive index；原字节/模式/mtime恢复前旧fullmanifest只代表归档前事实，inode历史。当前normalGUI/Core/CLI/source不退役，没有global clean。run01/run02两份375MB stage逐SHA/lsof/独审后复用`fullscreen-current-gui-stage-archive01/current-gui-39b.zip`(SHA103530b1…214f)可逆退役，index01/02记录。run03当前完整双盘尚保留。
 
-旧task-owned内盘incremental（无当前Core收据引用、current incremental0）11229files/4100120197B逐entry校验后压缩留I/`incremental-retired-20261028.zip`，SHAd15a2d88ee7eab5ac6f0aa60647fab25aca6335785feea70bb48965af63071d0/1710737465B；原目录退役，inventory/stat/report双盘`P5/fullscreen-old-incremental-retirement01`。实际释放约2.4GB，未动用户缓存或外盘currenttarget。
+旧task-owned内盘incremental（无当前Core收据引用、current incremental0）11229files/4100120197B逐entry校验后压缩留`/Volumes/disk0/Khor/caches/archives/incremental-retired-20261028.zip`（正式发布期间逐SHA迁移，旧I路径为历史），SHAd15a2d88ee7eab5ac6f0aa60647fab25aca6335785feea70bb48965af63071d0/1710737465B；原目录退役，inventory/stat/report双盘`P5/fullscreen-old-incremental-retirement01`。实际释放约2.4GB，未动用户缓存或外盘currenttarget。
 
 上下文恢复先读本页/PLAN、当前用户决定及实际refs/diff；外盘缺失读I/RESUME.md与current-code-quality-docs-manifest.json核内盘快照，禁止按摘要覆盖外盘未提交内容。此轮已收口，勿按历史live句柄重新启动App/Cargo/重跑矩阵；需后续任务时按新授权登记范围、所有者和证据。
