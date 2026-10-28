@@ -1,6 +1,6 @@
 # 当前代码治理状态
 
-更新2026-10-28。**目标active，未完成。** 本轮主体源码实现及首轮Clean Code结构整理已集成；当前准入纠正仍须结构独审，P5真实App验收仍有阻断/未执行项。详细旧记录见[前一检查点](history/STATE-before-q035-q043-closeout-20261028.md)，旧handle都不可重启。继续先读本页与[PLAN](PLAN.md)，再核实际refs/diff/PID。
+更新2026-10-28。**目标active，未完成。** 本轮主体源码实现及首轮Clean Code结构整理已集成；当前准入纠正及14项回归均完成独审，P5真实App验收仍有未完成项。详细旧记录见[前一检查点](history/STATE-before-q035-q043-closeout-20261028.md)，旧handle都不可重启。继续先读本页与[PLAN](PLAN.md)，再核实际refs/diff/PID。
 
 ## 用户边界与唯一执行者
 
@@ -10,7 +10,7 @@
 - **无main合并/ship授权**，用户App/服务/release不动。
 - root独占native/Cargo/App/服务槽。当前所有受控执行均terminal；只有root可启动下一计划。三个agent只静态准备或只读审查，不自行执行。
 
-## 当前唯一下一步：准备同源真实App（尚未启动）
+## 当前唯一下一步：同源Pi真实App验收（root已完成启动前复核，尚未启动）
 
 最终源码 **e110ce05af04a45695df3d645b2c713802eba690**（wave1及复用作者树均clean），full2388 frame **1862eba5203f6400873a4173aeed26aa2c4831b5da1e231e08f8119b5082d08a**。669原13父绿后，新26行LocalSet反例test-only6b真实panic（57fc1e…fe46/94.062s），故e110最小删除自动block_in_place。最新约定P5/node-open-admission-design01/LOCALSET-RESOLUTION.md覆盖旧DESIGN/feb的该优化；所有runtime获准后同步FS同future/thread、不可抢占/可阻塞executor，六旧wrapper隔离变化如实保，不泛化runtime owner、不spawn。原单registry/单constructor/RAII/固定1s与64+64/无await持lease/control与meta与跨进程Try保持；approve复用同Node、控制四动作与stop_transfer构造Try。原3父和LocalSet26行断言未改。
 
@@ -18,9 +18,9 @@
 
 **normal GUI真实build/actualartifact成功，但Q055自动来源原nongreen保**：P5/node-open-gui-producer-run02，exec53682 exit1，result **8f62d93948351d1a543f9d6ef8fefbb2618891ec0d52ff8393d278b8e35d9e2a**/109.537s，build/artifact/source/helpers/guard/owned/TMP过、28dual；只拒绝未记录TAURI_CONFIG，known_gap_match=true/provenance_complete=false，不合成accepted GUI prior。实际debug/khor-gui **576678f1aa72d3557a04314cd4e87bcc353f01ecee240c00331f877320549fb2**/374443848B、selected文件e2716d51…c42e；quality1d16/Bunaf955/76474082B/cfg khor_embedded_agent真实，18第一方rows/5script输出。独审producer-review02/report **debd3390694b10b65e1dead45bb8e6d1d0f55a174d67d59a4e2bf77babd0c8eb**确认actual facts可用于后续Core/App，未把它称完整自动provenance或业务绿。
 
-**Core producer已terminal完整绿，独审待回**：P5/node-open-core-producer-run03，exec31049 exit0，result **2fc111e4fb2b45598ea04e94488fb398cf3589bfccdbd0b4b66f6fdbc18c2d5b**/97.114s，normal/provenance/source/helpers/guard/owned/TMP清、23dual；root恢复精确生产env/cwd后实际require完整core receipt **900ba74d6352a5e5bf027041a6f5a63b8798cc49e91d286b06a2fde1632cc8a7**过。helper实际 **d84f116703563c06316b930bfc5f4ca5f27aab8cc1524b20f1be96e00ba1bbc8**/75861904B，普通默认dev，无测试执行。原core prior1b73保留，并只加同context/Nodevariant真实CLI4c50交原fcb筛选，不改helper或承诺reuse。
+**Core producer已terminal完整绿，独审已完成**：P5/node-open-core-producer-run03，exec31049 exit0，result **2fc111e4fb2b45598ea04e94488fb398cf3589bfccdbd0b4b66f6fdbc18c2d5b**/97.114s，normal/provenance/source/helpers/guard/owned/TMP清、23dual；root恢复精确生产env/cwd后实际require完整core receipt **900ba74d6352a5e5bf027041a6f5a63b8798cc49e91d286b06a2fde1632cc8a7**过。helper实际 **d84f116703563c06316b930bfc5f4ca5f27aab8cc1524b20f1be96e00ba1bbc8**/75861904B，普通默认dev，无测试执行。原core prior1b73保留，并只加同context/Nodevariant真实CLI4c50交原fcb筛选，不改helper或承诺reuse。
 
-当前正常CLI **e0a4d3e606d0ec65cf7e42112368bd7790e6a678bb7f9b97e07bd4df47f69b06**/269289608B，green02 receipt4c50a2da…2920a。Core/GUI重编后只按实际exe/stat/source映射使用，不能冒old CLI full current require。**五来源binder**双盘P5/node-open-real-app-actual-producers01.json SHA **f0031a217f9ef7a6ec9d9123f4c499e09d26fe8c22fdbaafd815236b81a84668**已列origins实path/SHA（GUI data/frame/result/selected +Core receipt），status保Core独审pending/no runtime。app_runtime_review静态准备node-open-borrow-owned-plan01并核Core producer；q043静态准备node-open-pi-owned-plan01。尚未许可任何runtime启动；root读最终data/来源/门后单槽启动。不要凭文件出现当进程终止，不访问死CUA句柄以免误launch。
+当前正常CLI **e0a4d3e606d0ec65cf7e42112368bd7790e6a678bb7f9b97e07bd4df47f69b06**/269289608B，green02 receipt4c50a2da…2920a。Core/GUI重编后只按实际exe/stat/source映射使用，不能冒old CLI full current require。**五来源binder**双盘P5/node-open-real-app-actual-producers01.json SHA **f0031a217f9ef7a6ec9d9123f4c499e09d26fe8c22fdbaafd815236b81a84668**已列origins实path/SHA（GUI data/frame/result/selected +Core receipt），status保Core独审pending/no runtime。app_runtime_review静态准备node-open-borrow-owned-plan01并核Core producer；q043静态准备node-open-pi-owned-plan01。Core03独审26项证据检查已完成，report SHA eed3f9dcf80eac6319bdb576d2d405364687082d57643357faf53793d6574d25。root已核Pi原runner/data/五来源/门/clean refs/两盘空间，静态报告P5/node-open-pi-root-preflight01/report.json；下一步root单槽启动node-open-pi-owned-plan01。当前尚未启动runtime。不要凭文件出现当进程终止，不访问死CUA句柄以免误launch。
 
 **所有Cargo/native/归档exec现均terminal**：90578 GUIrun01因空间<5GiB失败、53682已完成新GUI、10487已绿、70673语义红、31049 Core绿；42552/79536/96696缓存归档均exit0。当前root唯一native槽空，源码e110冻结。原5GiB/300step720total/512/jobs1/inc0/source/PID/TMP/dual门始终保。Gui-run01 result3bdc44…9c44/70.515s/19dual失败原件保；已知845fresh第三方、12第一方因GUI无完整accepted prior而refresh18，非全cold/env漂移；不为省空间伪造GUI prior或改embed/flags。补到约9.9GB后新GUI实际完成，启动前重新核两盘5GiB。
 
