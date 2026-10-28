@@ -1,3 +1,4 @@
+import {useDraftCount} from "@/hooks/use-draft-count";
 // One file, read (工作区批2). What the middle column of a workspace
 // shows when a file is picked out of the tree.
 //
@@ -624,6 +625,7 @@ function FileBody({
       One fact, one place. */
   const canEdit = (edit?.was ?? "") !== "";
   const dirty = file !== null && edit !== null && edit.text !== file.text;
+  useDraftCount(onDraft === undefined && dirty ? 1 : 0);
   useEffect(() => onCanEdit?.(canEdit), [canEdit, onCanEdit]);
 
   // **「a draft」means「the buffer differs from the disk」, and it is

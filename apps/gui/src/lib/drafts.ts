@@ -24,7 +24,7 @@
 
 /** Per reporter, so two panes open at once add up and a pane that goes
     away takes its own number with it. */
-const owed = new Map<string, number>();
+const owed = new Map<string | symbol, number>();
 const watchers = new Set<(n: number) => void>();
 
 function total(): number {
@@ -42,7 +42,7 @@ export function draftCount(): number {
 /** One pane says how many of its files are unsaved. `0` is a real
     answer and is how a pane says 「none of mine」; a pane going away
     calls it with `0` too, which is the same fact. */
-export function reportDrafts(who: string, n: number): void {
+export function reportDrafts(who: string | symbol, n: number): void {
   const was = total();
   if (n === 0) owed.delete(who);
   else owed.set(who, n);

@@ -1,3 +1,4 @@
+import {useDraftCount} from '@/hooks/use-draft-count';
 /**
  * **A machine's files, in place on its page** (the redesign, 2026-10-02,
  * the owner: 「文件按钮点击后，不要跳转到工作区，工作区只负责工作区」).
@@ -68,6 +69,7 @@ export function MachineFiles({
   // What was typed into a file and not saved, kept when another file is
   // opened — the workspace pane's rule (`FileView`'s `draft`).
   const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map());
+  useDraftCount(drafts.size);
   useEffect(() => {
     if (!narrow) return;
     onOpenFile?.(file !== null ? () => setFile(null) : null);
