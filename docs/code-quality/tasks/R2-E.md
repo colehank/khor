@@ -28,3 +28,27 @@ hook跟踪主pointer起点区域，内起拖外放产生的click不退出；下�
 实际hook和ContentSearch、picker JSX/stopSearch/open回调级13例绿，旧源码同测红；field-interaction、刷新8例、tsc与diff通过。非作者审查无阻断。测试不挂载React、不操作真实浏览器；保留初版harness的Node capture移除与TypeScript转译错误日志，区分其与业务red。证据field-dismiss-receipt.json及对应日志。
 
 下一步：独立核PageField onBlur及ContentPathField/PathField的选择焦点链，先报告新路径；root集成后按受影响范围验证。整包E未完成。
+
+## R11真实组件选择Lab，待用户手工反馈
+
+root批准PageField、必要时PathField和隔离Lab写权。当前只新增4个field-selection Lab文件，未改这两个生产组件；PageField立即blur/rest路径与PathField自身延后blur机制需实测，不能因源码风险直接扩大修改。
+
+入口http://127.0.0.1:23834/lab/field-selection.html，作者树运行Vite，exec26585，独立缓存round2-field-selection；服务归本任务保留供root CUA。真实PageField/ContentPathField＋固定API数据，页面记录选区/焦点/离开次数，打开只显示本地文本。Lab TypeScript通过，源码与server收据field-selection-server.json；真实拖选/Tab/候选/外点尚待用户操作，未冒通过。root当前浏览器控制工具不可用，已请求用户两框拖选反馈。
+
+当前Lab checkpoint为 `e294e53529fb43ab03c8a711028e083a89f0ee08`，4个Lab文件已提交；没有PageField/PathField产品补丁。compact后应先确认root已做的UI操作与服务再继续，不启动重复服务或外部Playwright。
+
+## L03只读入口盘点（待新写权）
+
+FilePage的5个生产调用方：WorkspacePane已有reportDrafts；SessionContent/ MachineFiles/ SideWorkspace有既有draft集合但未报告；StorePage无onDraft，由FileBody.own持有。不能只补会话入口便宣称全部覆盖。
+
+建议共享useDraftCount仅派生现有owner的计数、layout更新/清理、实例唯一reporter；FileBody仅无onDraft上游时报告自身dirty，避免同一缓冲双计。此方案不新增草稿状态、不改App全局退出判断。已向root提出MachineFiles/SideWorkspace/new hook写权请求；尚未写实现或测试。
+
+## L03草稿退出发现能力接线checkpoint
+
+root已批准SessionContent/MachineFiles/SideWorkspace、lib/drafts.ts、use-draft-count.ts及FileBody无上游owner分支。提交 `5c75f50dfc2fe8046c663b320c811a361eaa3f70`，独审无阻断、review-ready，L03不标完整done。
+
+所有生产FilePage调用方已盘点：WorkspacePane原有report不动；SessionContent/MachineFiles/SideWorkspace分别报告现有草稿集合；StorePage无上游onDraft，由FileBody自身dirty报告。共享hook稳定Symbol ref避免跨React root/字符串reporter碰撞，layout更新count无中间0，真正owner卸载才清自己的报告。隐藏但保留集合owner仍报告，不复制正文或另存草稿。未改App全局Quit规则。
+
+实际hook与生产owner计数表达式9项旧红新绿，包含saved/discard、隐藏保留、多实例、既有Workspace隔离、无双计、无中间0与StrictMode replay；最终tsc/diff通过。证据draft-count-receipt.json与red/green/types日志。测试不挂载React、不冒原生退出；最后一键立即Quit、上游onDraft被动回报间隙和拒写/退出流程仍待真实App验收。
+
+当前作者树全部源码已提交，Lab23834唯一实例保持待用户手工拖选反馈。下一步root集成本片段后验组合；作者等待真实R11反馈或再约定R27外部text/组词结束接纳策略。R28尚未确切入口复现。

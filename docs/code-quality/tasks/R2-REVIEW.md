@@ -38,3 +38,23 @@ H后续v0契约审查：tail/older/newer＋含record内frame偏移cursor；256Ki
 E第二固定版577f888d80d0a5813f9d9417faefb9f740120150已核：现场干净，三文件SHA与field-dismiss-receipt.json一致。13例纯行为、既有field-interaction、8例刷新和types通过收据已读；初始harness失败单存，未冒业务失败。无阻断；root已集成79789276并验13例/types。R11仍缺PageField blur与实际拖选，不计整项done。
 
 H首片段Node --lib cargo check已由root协调完成，cargo-check-result.json及retry日志核对exit0；先前“wrapper crate未编译”已被这次实际check覆盖，保留历史证据。不代表后续history_page未提交代码已编译。首轮setup错误保留，无新native操作。
+
+## L03与history_page后续审查
+
+E L03未提交diff初审无阻断：useDraftCount稳定Symbol owner，count更新和卸载cleanup分开，string Workspace reporter仍可共存；SessionContent/MachineFiles/SideWorkspace直接派生既有集合，FileBody仅无上游onDraft时报本地dirty，未复制正文。作者9例检查实际hook及生产调用表达式，不冒真实native退出/最后一键→即时Quit已验；等待固定提交核收据。
+
+H transcript_page与core history_page/IPC/Tauri/gen根未提交diff初审：record内item游标能承接单record超128事件；core反向挑近期帧，预算break前最老已承接位置用作older，不静默丢掉后续前页。记录refs保留，来源64KiB约束作为serde to_value前分配上界；已提示core需单独覆盖序列化预算截断/续接，不以Node128测试替代。Node目前有界tail/older，newer、GUI缓存/渲染、refs按需等尚未交付；Node::open和vendor路径定位需纳入最终端到端首屏预算。当前独审未见阻断，不等于未编译新片段已通过。
+
+L03固定版5c75f50dfc2fe8046c663b320c811a361eaa3f70独审无阻断。干净作者树、7源SHA与draft-count-receipt.json一致；9项hook/生产owner表达式及types通过收据。可集成派生计数接线checkpoint；没有实际React挂载/native Quit/最后一键即时Quit证据，上游onDraft被动回报间隙待真实App验证，不关闭L03。
+
+H服务固定版2950ddb2d581860c4cef367e373b7cb514c49191独审无阻断。真实Node5项最终重跑含set_len、core3项wire预算/older续接/refs日志exit0；两测试记录diff SHA相同93c0dd30a4521a079abb5b3dcf130e527eec0d93ac4bd642e0594c6c41a59926。gen首次inventory extras拒绝保留，可逆备份后相同producer retry exit0；GUI tsc exit0。服务只tail/older，未完成newer/chunk/取消/ChatView实际消费；Tauri完整App未编译。
+
+集成注意：HistoryPage/HistoryEntry/HistoryRecordRef由真实producer生成且属ignored产物，不在9文件提交stat；集成树需重跑producer或按精确哈希转移本次产物与inventory，不能手抄类型或用旧绑定冒types通过。root已收到这一提示。服务基础checkpoint不等于S1关闭。
+
+证据补充：上述测试diff SHA只覆盖tracked diff，两个source.patch未包含当时untracked transcript_page.rs，不能将其称完整源码指纹。已通知作者在继续前保存固定2950ddb2新增文件快照/SHA及测试binarySHA，注明事后核定；root若在集成固定版本定向重跑，用新收据补齐来源，不回填原diff，也不双方重复测。代码无阻断结论不变，测试范围/源码来源限制须保留。
+
+## 2950来源补充复核与纠正
+
+posthoc-2950-source.json和两份全文已核对git show：transcript_page.rs SHA9983493db537492f2ca0bbebd42d19d9137a6f40921d6a5916f3953ba0365e64；core chat.rs SHAd291a565cc46b84daa1da70027287cfdb3562728f9a46a7af0876e8f85713293。binary明确仅事后观测，不冒原日志producer身份。
+
+纠正前一节“final-source.patch未包含”判断：只查diff header的推断不准确。实际final capture在tracked diff之后raw追加新增模块全文，字节包含检查为true；缺的是unified路径标头，不是源内容。早期page-test-source确实不是补set_len后的字节，保持历史。已告root这一纠正，原日志不改，作者无需重复测试；root已安排的集成固定版定向验证继续。

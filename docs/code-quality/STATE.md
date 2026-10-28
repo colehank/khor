@@ -2,6 +2,20 @@
 
 更新：2026-10-29。**上轮已发布；用户已授权启动下一轮，当前执行E/H首批。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
 
+## 最新执行点：显式目标“完成第二轮”active，五个片段已集成
+
+用户在询问进度后设置目标“完成第二轮”（active）。按既定28反馈＋5遗留共33项持续推进；main/ship仍未另授。所有等待开工条款已由“开始吧”与本目标覆盖。
+
+集成完整HEAD `e2e058f9ed4d6ed8016caef1eba824541dc8beb4`。新增作者E5c75f50d→集成4e025e3a（各文件草稿owner计数，9项），H2950ddb2→集成e2e058f9（尾页/older有界历史服务到GUI API，Node5/core3），均固定版独审无阻断。当前共五个实施片段，不能按片段数算33项完成率。
+
+root在精确集成版本重新运行输入8+13+9三组检查均exit0；实际producer在隔离staging生成全部绑定，成功后可逆保留旧目录再同步，TypeScript再次通过。gen日志gen-e2e058f9.*及types/input检查见evidence/round2/integration。编译槽已释放。作者原失败/来源说明保留，Tauri整App未编译。
+
+E继续实际异步merge迟到覆盖的owner/operation接纳保护；不因构造任意旧props就增加公共revision API。R11真实PageField拖选待用户反馈，Lab23834/PID3175保留，root当前缺CUA工具已向用户请求手动两框验证；真人Mac IME/ShiftLeft/真实Quit仍未验。H继续newer/按需分块/取消/GUI缓存与ChatView实际消费，旧全量UI尚未替换。两作者和独审已followup重新运行，勿按前次completed状态误判已停工。
+
+compact恢复先核本节、任务卡、目标状态、真实diff/活动agent/native槽；继续现有owner，禁止重复worker。下一步仍是E/H第一批剩余，后续按接口稳定交接C/G/W和A/S，不等人手验收而阻塞无关任务。
+
+## 以下为先前检查点（历史）
+
 ## 当前检查点：三个小片段已集成，E/H继续推进
 
 集成79789276b172adc7e7ff604908b4f3f4236a8abe：E首片段b70906cd拒收迟到刷新，第二片段79789276保留输入内起拖归属、退出搜索清query/结果打开前清理；H ef5f1143为有界历史窗口基础。作者对应447419cf、577f888d、8bb3c459。独审均无阻断；集成8项刷新、13项field-dismiss及TypeScript检查通过。

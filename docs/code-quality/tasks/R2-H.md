@@ -46,3 +46,25 @@ root重新授相同Cargo check槽，CARGO_TARGET_DIR=/Volumes/disk0/Khor/caches/
 纵向slice追加预算（实现前固定）：最多128帧，返回序列化frames不超过512KiB；单帧超过预算以有源范围的引用替代，不先复制大正文后才计量。载荷生成过程逐记录限额，所有128+输出必须由record内游标续接或引用承担。GUI同时限制8页、512帧、2MiB已接收序列化载荷；超出从远离当前阅读位置的一端淘汰并保留重载游标，先核页元数据预算再合并，禁止unbounded items.map累计。必要大记录引用由用户按需读取每块不超过64KiB，不自动递归加载。固定数值对应本轮首个性能夹具后可按实测解释调整，不为追绿事后放大。
 
 取消契约：每次打开/切换生成独立generation；离开或切换立即停止旧poll/预取调度并拒收旧结果。同步文件读取单次256KiB不具备途中强制撤销，在接口中据实声明，其有界步骤后检查取消再解析/发送；不能声称JavaScript忽略结果等于取消原生工作。native worker取消与transport token要在实际接线时明确owner，不能后台持续重读。
+
+## 实际纵向slice检查点（8bb3c459之后，未提交）
+
+已写Node adaptor/transcript_page.rs及Node::transcript_page，直接解析真实Claude/Codex来源的有限窗口，无全量fallback。Cursor绑定source与同一File句柄metadata的file身份、观察len/mtime、record范围和record内item。append不reset；替换、缩短与同长改写标reset；增长同时原地改写还需provider generation，不能声称通用检测已完成。小行跨窗口通过older边界重叠恢复，巨行纯fragment页严格向左。
+
+Node真实lib test已执行5项通过，1m35s构建/0.08s执行：300事件单记录128/128/44无漏重、边界小行恰好恢复一次、巨行引用与进度、append/rename、source/range拒绝。证据page-test.log/result/source.patch（含实际源diff SHA）。随后按独审补了原inode set_len截断断言，尚未重跑，不冒旧5项覆盖新断言。
+
+gui-core chat::history_page/response已实现HistoryPage、HistoryEntry稳定record:item键、HistoryRecordRef身份绑定cursor，逐entry无额外序列化缓冲计量；128条/512KiB上限，wire budget不接纳的旧事件通过older准确续接，过大expanded event显式引用。为响应encoded_bytes固定点计算避免字数位数跨界误差。消费的是已由provider限制的内联record，计量前的结构转换仍有其固定上界，不冒任意大输入零分配。
+
+实际接线已写core/api.rs dispatcher、Tauri history_page off_main+命令注册、gen_bindings.rs roots注册真实HistoryPage依赖；GUI api.ts使用真实生成HistoryPage类型，无手抄结构。新增3项core wire预算/refs定向测试尚待运行。当前服务只tail/older，newer、chunk按需、取消贯通、GUI实际只读消费/缓存未完成；旧UI仍全量follow，不能算S1已修。
+
+root当前turn已交付，作者核无其他Cargo进程且E完成、审查者只读，已向root登记按其“报调用后独占”条款占唯一生成槽。命令cargo run -p khor-gui-core --bin gen_bindings --locked -- <本树apps/gui/src/gen/bindings绝对路径>，sharedtarget/jobs1/incremental0/TMP外盘，证据page-gen-running/result/log/source.patch。生成运行中不得恢复重复启动；完成立即释放，若失败保留原日志按明确失败修接线。
+
+## 纵向服务片段验证完成（2026-10-29）
+
+真实gen首次已编译Node+gui-core成功（1m05），但发布拒绝inventory154 vs实际157；准确extras是本作者树既有ts-rs生成PlaceRow/QuotaWindowKind/Wheel，无业务API引用。逐文件生成头校验后可逆移至history/preexisting-extra-bindings，SHA收据保留，未删除目录或改producer规则。重跑同一gen成功（0.91s），实际生成HistoryPage/HistoryEntry/HistoryRecordRef与inventory；原拒绝exit1完整保留。输出快照/哈希generated-history-types(.json)。
+
+core真测试3项通过（14.31s构建/0.04s执行），覆盖序列化预算截断后older续接、expanded引用、giant raw不调用parser。Node真测试5项重跑通过（1m05s构建/0.10s执行），已包含新增原inode set_len断言。两者源diff SHA与日志在core-page-test*/node-page-test-final*；没有增加其他features/矩阵。native/Cargo唯一槽已明确释放。
+
+全GUI TypeScript直接命令tsc --noEmit --pretty false exit0，API使用真实生成类型；无手写TS结构。Tauri命令注册源码尚未独立编译完整App，不把core compile当整个native通过。当前工作树将提交纵向服务片段，下一步仍是newer、记录chunk、取消贯通、GUI有界缓存与ChatView实际消费，旧全量follow尚未替换。
+
+纵向服务片段提交：2950ddb2d581860c4cef367e373b7cb514c49191，作者树clean。内盘任务独立恢复bundle round2-history-2950ddb2.bundle，收据round2-history-checkpoint.json；不修改root的全局refs/manifest，待root下一检查点整合。
