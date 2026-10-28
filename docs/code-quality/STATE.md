@@ -10,7 +10,16 @@
 - **无main合并/ship授权**，用户App/服务/release不动。
 - root独占native/Cargo/App/服务槽。当前所有受控执行均terminal；只有root可启动下一计划。三个agent只静态准备或只读审查，不自行执行。
 
-## 当前唯一下一步：同源Pi真实App验收（root已完成启动前复核，尚未启动）
+## 当前唯一下一步：原OS正确工作区入口验收（Pi与生产借网已完成，源码e110冻结）
+
+2026-10-28实际进展：
+- Pi run01 exec22455 exit0/93.202s，result33c789180e67eb9a8e50690fcd382dbe09aec6602a1dfbfac1e07e8c9006f512，真实OpenAI api_key secret空输入取消/真实BunPID93960/原5s owner退出/实际CUA CmdQ/App92625 exit0/accepted/清理均过；独审P5/node-open-pi-owned-run01-review01/report SHA6fa1a8f976def1274bc2fbf4fd194c302d9e849e75b0424dfa761a52cf66bce0，16证据检查/860manifest完整（不是provider登录或全进程离线证明）。
+- Borrow run01 exec81018 exit1/278.915s/resultf50c7e0d6f9116aeeb5cdaf6061e7cda70af5e04fe1be5831ee6119e399d00c7，真实配对成功但两同机固定channel同Mac-mini，rename仅改shown；选q035-exit仍native Mac-mini→own-network拒绝，5phase未达。独审e90f10a2908e325dbea17e7491d752036d9d7525384de7fd00aa07858b47ec93/17checks/956manifest，原失败保。source证明main同；既有KHOR_NAME支持同机测试首开初始化，plan02仅4行按实际KHOR_HOME为两freshRoot设置q035-app/q035-exit，删除该If后原launcher整体AST同，全部断言/门/时限不变，root已审。
+- **Borrow run02 exec41123 exit0/212.6575s，resultde4004174a1385f26254ce97a4c93ec346de5efc536bf4d72ade20c7e7535ad4，全5phase+normalQuit+cleanup实际绿**：两真实remote open_page同borrow/session+addr→新TCP源标记通；切Sessions只卸机器owner仍通；真关content tab新TCP拒绝；实际UI最近remoteURL重开新borrow再通；真关content再次拒绝；原oracle ready→CUA CmdQ/App10450 return0→accepted→仅EXIT_ROOT CLI quit/keeper+relay/observer退、owned/TMP清。app_runtime_review独审中，不冒其已回。用户94762/5467不动。
+- OS run01 exec83490 exit1/63.460s/result52185fe3ea147b5ee1db1647d24b5153c754c75e7151065a2685ad46955ce77f：root走KhorSession内部FilePage（不是原全局WorkspacePane），write_text15/17真实拒绝但close callback preventedfalse，窗口直接退出/无guard。该本地draft未report全局的缺口main已有，completion_audit窄源核；不冒native listener未注册。后续CUA读取死窗口可能重唤sameprivatePID7470，原cleanup footprint/TMP失败保；root实际ps→CUA CmdQ→ps gone/空TMP无lsof已另收尾P5/node-open-os-run01-postcleanup01，不回填。独审c2e7579afcb041eb1d75a26a68ebb5bb77e45b7c38e57a2d9d557b7bdc66bd1f/16checks/872manifest完整。
+- 当前native槽空；P5/node-open-os-owned-plan02仅fresh OUT/I run02/TMP knopos2，原run/launcher/observer字节与所有门/断言不变，root已核。下一步限原OS业务，guard改走正确全局Workspaces→WorkspacePane。固定fullscreen query在现缺grant生效时被ACL拒绝，observer仅成功then记值，因此原false/true/false契约不能绿；静态报告plan02/fullscreen-static-limit.json，不修权限/不放断言、不重跑已绿Pi/借网/115。
+
+空间可逆索引：P5/node-retired-cache-archive-relocation01将旧583MB retiredNodeZIP copy+SHA核后搬到/Volumes/disk0/Khor/caches/archives（非内盘备份）；P5/node-open-pi-completed-artifacts-archive01已在独审后归档Pi两个stage+两个runtimeBun到同目录completed-pi-artifacts.zip142914326B/SHA5e5bc033430668a4349c71a9753164a138405d669907910c1017ed51cb7228ba。P5/node-open-borrow-staged-archive01和node-open-os-staged-archive01分别复用该ZIP的GUI entry退役原run01两stage，均先actualSHA/stat/lsof/独审全manifest、后unlink。原full树manifest现在是历史直到restore对应bytes/mode/mtime；源/当前normal产物/证据不动，inode历史。
 
 最终源码 **e110ce05af04a45695df3d645b2c713802eba690**（wave1及复用作者树均clean），full2388 frame **1862eba5203f6400873a4173aeed26aa2c4831b5da1e231e08f8119b5082d08a**。669原13父绿后，新26行LocalSet反例test-only6b真实panic（57fc1e…fe46/94.062s），故e110最小删除自动block_in_place。最新约定P5/node-open-admission-design01/LOCALSET-RESOLUTION.md覆盖旧DESIGN/feb的该优化；所有runtime获准后同步FS同future/thread、不可抢占/可阻塞executor，六旧wrapper隔离变化如实保，不泛化runtime owner、不spawn。原单registry/单constructor/RAII/固定1s与64+64/无await持lease/control与meta与跨进程Try保持；approve复用同Node、控制四动作与stop_transfer构造Try。原3父和LocalSet26行断言未改。
 
