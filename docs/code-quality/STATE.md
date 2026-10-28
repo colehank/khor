@@ -2,6 +2,20 @@
 
 更新：2026-10-28。**目标 active，未完成；主体源码及 Clean Code 结构治理已集成，剩余真实 OS 验收有明确缺口。** 本页为恢复入口，计划与边界见[PLAN](PLAN.md)，前一详细检查点见[历史](history/STATE-before-pi-borrow-os-actual-closeout-20261028.md)。不要按历史“尚未启动/正在运行”重启旧 handle。
 
+## 最新执行入口：fullscreen修复已集成，新source GUI完成，Core待刷新
+
+用户已明确“纳入”该具体fullscreen查询权限缺口；无授权的旧阻碍判断已替代。wave1与作者树当前 **ecab575e3f978f6570bff2c05a9542be93fd7342** trackedclean，唯一新增`apps/gui/src-tauri/capabilities/fullscreen-state.json`，main webview/特定allow-is-fullscreen；原SDK/API/listener/旧3cap均不变，main8704不动。候选独审a63788dc7717b2af102561db2524c33893a4c2f09fdf99158c63eac7acddf280无静态blocker。full2389 frame **32101973afa2bdb0d2969154a0b4819a0cc275c7d04f34e5a06a8832e1277438**，不是旧2388。
+
+`P5/fullscreen-query-producers-plan01/{gui,core}`新计划已冻结：原两个runner字节同，GUI flags/Bun/TAURI/knownQ055/prior[]不变，Core原2prior加旧完整900ba74仅matching-key候选；必须实际新GUI result供Core，原门不降。
+
+**GUI producer40922已terminal exit1，仅knownQ055原nongreen**：`fullscreen-query-gui-producer-run01` result **d159564bf90fbcaf8826747a5b4218ad350c4cacc2c55b3170ca14a09a23522f**/116.7846s，metadata/build exit0，normal_build/artifact/source/frontend/guiinputs/helpers/cleanup全过，guard无；automatic false/TAURI_CONFIG未记录继续保。actualnormal GUI **39b300263fe72763a437eedea7d14017674744ac79a7f74c7ec0498f995458e0**/374444376B，selected **ac192c21a5a18c43235048ab780646bc7d8e826819ce3af96718df21cd1a46ce**。completion_audit独审当前新GUI事实及实际生成ACL中；root接着原Core同源producer，再填新OS计划5个实际来源，不用e110旧Core证明新源。
+
+当前无live Cargo/App/native。`fullscreen-query-os-owned-plan01`静态准备中；未实际验收，原fullscreen false/true/false与两个dropconsumer/guard/Quit断言不放宽。旧人工拖放邀请已结束，新Lab未开。用户后来“什么进度”仅查询，原目标继续。
+
+资源：旧8个preOct24缓存副本共享APFS块，归档未释放预期空间；已逐SHA从既有khor-target只读源APFS clone恢复到原quality路径，退冗余ZIP，第二组原文件从未删，整个reserve实验已回滚，`fullscreen-build-cache-reserve01/rollback.json`；不再继续该类清理。OS3旧两stage已独审后复用旧ZIP退役index`node-open-os-staged-archive03`（其原两差异另保）。为必要ecab重编，旧e110 GUI两exe和旧static.a已可逆退役，`fullscreen-old-gui-rebuild-artifacts01/index.json`；静态a备份I/fullscreen-old-gui-static-576.zip281506712B，正常CLI/Core/Nodeunit与源码不动。新GUI已实际重建，当前E约6.06GB/I约5.68GB，运行前核5GiB，runtime stage/dual须另留空间。原f7/fcb/工具链不改。
+
+下述e110与OS3是历史检查点，不得按旧“当前槽/未授权”指针执行。
+
 ## 当前决定与执行边界
 
 - 用户：开始了的做完，新发现的独立问题只记录下一轮。无 main 合并或 ship 授权，不碰用户发布 App/服务。
