@@ -5,19 +5,25 @@ export function fileRefresh() {
   let request = 0;
   let composing = false;
   const invalidate = () => { revision += 1; };
+  const checkpoint = () => {
+    if (composing) return null;
+    const startedAt = revision;
+    return () => startedAt === revision && !composing;
+  };
   return {
     invalidate,
+    checkpoint,
     setComposing(next: boolean) {
       if (composing === next) return;
       composing = next;
       invalidate();
     },
     async read<T>(load: () => Promise<T | null>, accept: (value: T) => void) {
-      if (composing) return;
-      const startedAt = revision;
+      const current = checkpoint();
+      if (current === null) return;
       const id = ++request;
       const value = await load();
-      if (value !== null && startedAt === revision && id === request && !composing) accept(value);
+      if (value !== null && current() && id === request) accept(value);
     },
   };
 }

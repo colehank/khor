@@ -815,25 +815,29 @@ function FileBody({
    */
   const merge = () => {
     if (edit === null || file === null || working) return;
+    const current = refresh.current.checkpoint();
+    if (current === null) return;
+    const action = ++overwriteEpoch.current;
+    const accepts = () => action === overwriteEpoch.current && current();
     setWorking(true);
     setOops(null);
     const base = file.text;
     const mine_ = edit.text;
     fetchFileText(machine, path)
-      .then((now) =>
-        mergeFileText(base, mine_, now.text).then((m) => {
-          // The base moves with the merge: a second refusal has to be
-          // measured against what this merge started from, not against
-          // the text the view first opened.
+      .then((now) => {
+        if (!accepts()) return;
+        return mergeFileText(base, mine_, now.text).then((m) => {
+          if (!accepts()) return;
+          // The buffer and its merge base move together, only while this
+          // action still owns the unchanged line of editing.
           setFile((f) => (f === null ? f : { ...f, text: now.text, digest: now.digest, at_ms: now.at_ms }));
           setEdit((e) => (e === null ? e : { ...e, text: m.text, was: now.digest }));
           setClashes(m.clashes);
-          // The clash is answered: the box is pinned to what is there.
           forget(machine, path);
-        }),
-      )
-      .catch((e: unknown) => setOops(said(e)))
-      .finally(() => setWorking(false));
+        });
+      })
+      .catch((e: unknown) => { if (accepts()) setOops(said(e)); })
+      .finally(() => { if (action === overwriteEpoch.current) setWorking(false); });
   };
 
   /** Save what is in the box over whatever is there now.
