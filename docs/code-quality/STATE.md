@@ -2,6 +2,14 @@
 
 更新：2026-10-29。**上轮已发布；用户已授权启动下一轮，当前执行E/H首批。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
 
+## 最新检查点：E/H首片段已独审并集成，条目仍未完成
+
+集成HEAD ef5f1143acb12462abb1dd1a3162a3edbc8d0698。E作者447419cf→集成b70906cd：后台刷新按编辑/读取代次与组词状态拒收迟到回包，真实回调红1/8→绿8/8；集成后8项及tsc再验通过。H作者8bb3c459：256KiB窗口/64KiB内联记录与显式片段引用，8项std原语测试通过；仅基础API，未接服务/UI，不能称卡死已修。两片段非作者独审无阻断，详细证据在tasks/R2-E/H/REVIEW。
+
+E继续use-field-dismiss.ts、MobileSessionContent.tsx与定向检查（R11/12）；CodeEditor通用外部text组词策略、真人Mac IME、ShiftLeft与L03仍未完成。H获Node/lib、gui-core chat/api、Tauri lib、实际生成器、GUI api/ChatView及局部模型唯一写权，继续history_page纵向接入，源树与接口草案见卡。
+
+H首次cargo check在编译前遇到退役incremental路径断链，exit101保留。root核旧归档收据后可逆保留旧link并在外盘原位置建空目录，未恢复旧缓存。H重获唯一Cargo槽，仅node --lib check，具体进程/状态以现场及H消息为准；root与E不并发native。资源初测外盘20GiB/内盘6.6GiB，复用既有依赖与同源生成TS，未新建大缓存。
+
 ## 当前执行：用户已授权下一轮，E/H首批并行
 
 2026-10-29用户最新指令“开始吧”，解除此前等待开工条件；允许按既定33项计划实施、独立Lab与验证，main合并/ship仍待后续授权。基线核实main e7c335c8且干净。
