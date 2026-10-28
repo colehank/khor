@@ -1113,6 +1113,8 @@ pub fn history_follow(root: &Path, id: &str, from: u64) -> Result<Followed, Stri
 pub struct HistoryPage {
     pub entries: Vec<HistoryEntry>,
     pub older: Option<String>,
+    pub newer: String,
+    pub has_more: bool,
     pub references: Vec<HistoryRecordRef>,
     pub reset: bool,
     pub encoded_bytes: usize,
@@ -1136,6 +1138,51 @@ pub struct HistoryRecordRef {
     pub missing_end: bool,
     pub item: Option<usize>,
     pub cursor: String,
+}
+
+#[path = "chat/history_request.rs"]
+mod history_request;
+
+pub fn history_begin() -> Result<String, String> {
+    history_request::begin()
+}
+pub fn history_cancel(key: &str) -> Result<(), String> {
+    history_request::cancel(key)
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct HistoryRecordChunk {
+    #[ts(type = "number")]
+    pub offset: u64,
+    pub data: String,
+    #[ts(type = "number | null")]
+    pub next: Option<u64>,
+}
+
+pub fn history_record(
+    root: &Path,
+    id: &str,
+    cursor: &str,
+    from: u64,
+    request_key: &str,
+) -> Result<HistoryRecordChunk, String> {
+    use base64::Engine as _;
+    let request = history_request::Request::claim(request_key)?;
+    request.check()?;
+    if cursor.len() > 4096 {
+        return Err("history cursor exceeds its byte budget".to_owned());
+    }
+    let cursor =
+        serde_json::from_str(cursor).map_err(|error| format!("invalid history cursor: {error}"))?;
+    let node = Node::open(root.to_path_buf())?;
+    let chunk = node.transcript_record(&SessionId(id.to_owned()), &cursor, from, request.flag())?;
+    request.check()?;
+    Ok(HistoryRecordChunk {
+        offset: chunk.offset,
+        data: base64::engine::general_purpose::STANDARD.encode(chunk.bytes),
+        next: chunk.next,
+    })
 }
 
 const HISTORY_PAYLOAD_BYTES: usize = 512 * 1024;
@@ -1162,7 +1209,15 @@ fn encoded_size(value: &impl Serialize) -> Result<usize, String> {
     Ok(counter.0)
 }
 
-pub fn history_page(root: &Path, id: &str, cursor: Option<&str>) -> Result<HistoryPage, String> {
+pub fn history_page(
+    root: &Path,
+    id: &str,
+    cursor: Option<&str>,
+    newer: bool,
+    request_key: &str,
+) -> Result<HistoryPage, String> {
+    let request = history_request::Request::claim(request_key)?;
+    request.check()?;
     if cursor.is_some_and(|cursor| cursor.len() > 4096) {
         return Err("history cursor exceeds its byte budget".to_owned());
     }
@@ -1171,21 +1226,41 @@ pub fn history_page(root: &Path, id: &str, cursor: Option<&str>) -> Result<Histo
         .transpose()
         .map_err(|e| format!("invalid history cursor: {e}"))?;
     let node = Node::open(root.to_path_buf())?;
-    let page = node.transcript_page(&SessionId(id.to_owned()), cursor.as_ref())?;
-    history_page_response(id, page)
+    let page = node.transcript_page(
+        &SessionId(id.to_owned()),
+        cursor.as_ref(),
+        newer,
+        request.flag(),
+    )?;
+    request.check()?;
+    history_page_response(id, page, newer, &|| {
+        request.flag().load(std::sync::atomic::Ordering::Acquire)
+    })
 }
 
 fn history_page_response(
     id: &str,
     mut page: khor_node::adaptor::transcript_page::Page,
+    ascending: bool,
+    cancelled: &impl Fn() -> bool,
 ) -> Result<HistoryPage, String> {
     let mut entries = Vec::new();
     let mut frame_bytes = 0;
     let mut first_position = None;
+    let mut last_position = None;
     let mut expanded_references = Vec::new();
     // Traverse backwards to prioritize recent content while keeping a cursor
     // before the oldest admitted event. No discarded event is skipped forever.
-    for event in std::mem::take(&mut page.events).into_iter().rev() {
+    let mut candidates = std::mem::take(&mut page.events);
+    if !ascending {
+        candidates.reverse();
+    }
+    let mut forward_cursor = None;
+    let mut wire_has_more = false;
+    for event in candidates {
+        if cancelled() {
+            return Err("history request cancelled".to_owned());
+        }
         let Some(update) = khor_node::replayed_update(event.utterance) else {
             continue;
         };
@@ -1208,17 +1283,28 @@ fn history_page_response(
                 cursor: serde_json::to_string(&page.cursor_before(event.position.clone()))
                     .map_err(|e| e.to_string())?,
             });
-            first_position = Some(event.position);
+            forward_cursor = Some(page.cursor_after(event.position.clone()));
+            last_position = Some(event.position.clone());
+            if !ascending || first_position.is_none() {
+                first_position = Some(event.position);
+            }
             continue;
         }
         if frame_bytes + bytes > HISTORY_FRAME_BYTES {
+            wire_has_more = true;
             break;
         }
+        forward_cursor = Some(page.cursor_after(event.position.clone()));
         frame_bytes += bytes;
-        first_position = Some(event.position.clone());
+        last_position = Some(event.position.clone());
+        if !ascending || first_position.is_none() {
+            first_position = Some(event.position);
+        }
         entries.push(entry);
     }
-    entries.reverse();
+    if !ascending {
+        entries.reverse();
+    }
     let older = if let Some(position) = &first_position {
         if position.start == 0 && position.item == 0 {
             None
@@ -1232,9 +1318,16 @@ fn history_page_response(
         .references
         .iter()
         .filter(|reference| {
-            first_position
-                .as_ref()
-                .is_none_or(|first| reference.range.end > first.start)
+            if ascending {
+                !wire_has_more
+                    || last_position
+                        .as_ref()
+                        .is_none_or(|last| reference.range.end <= last.end)
+            } else {
+                first_position
+                    .as_ref()
+                    .is_none_or(|first| reference.range.end > first.start)
+            }
         })
         .map(|reference| {
             let position = khor_node::adaptor::transcript_page::Position {
@@ -1262,6 +1355,13 @@ fn history_page_response(
             .map_err(|e| e.to_string())?,
         references,
         reset: page.reset,
+        newer: serde_json::to_string(&if ascending && wire_has_more {
+            forward_cursor.unwrap_or_else(|| page.newer.clone())
+        } else {
+            page.newer.clone()
+        })
+        .map_err(|error| error.to_string())?,
+        has_more: page.has_more || (ascending && wire_has_more),
         encoded_bytes: 0,
     };
     loop {
@@ -1813,9 +1913,27 @@ mod bounded_history_response_tests {
                 "session",
                 cursor.as_ref(),
                 parse,
+                &|| false,
             )
             .unwrap();
-            history_page_response("session", page).unwrap()
+            history_page_response("session", page, false, &|| false).unwrap()
+        }
+        fn next(
+            &self,
+            cursor: &str,
+            parse: fn(&str) -> Vec<khor_node::adaptor::claude::Utterance>,
+        ) -> HistoryPage {
+            let cursor = serde_json::from_str(cursor).unwrap();
+            let mut file = std::fs::File::open(&self.0).unwrap();
+            let page = khor_node::adaptor::transcript_page::read_next(
+                &mut file,
+                "session",
+                &cursor,
+                parse,
+                &|| false,
+            )
+            .unwrap();
+            history_page_response("session", page, true, &|| false).unwrap()
         }
     }
     impl Drop for RecordFixture {
@@ -1849,6 +1967,32 @@ mod bounded_history_response_tests {
         assert_eq!(older.entries.len(), 1);
         assert_eq!(older.entries[0].key, "0:0");
         assert!(older.older.is_none());
+    }
+
+    #[test]
+    fn forward_wire_budget_continues_immediately_after_last_admitted_entry() {
+        fn expand(line: &str) -> Vec<khor_node::adaptor::claude::Utterance> {
+            vec![khor_node::adaptor::claude::Utterance::Agent(
+                line.trim().repeat(200 * 1024),
+            )]
+        }
+        let fixture = RecordFixture::new("forward-wire-budget", b"");
+        let initial = fixture.page(None, expand);
+        std::fs::write(&fixture.0, b"a\nb\nc\n").unwrap();
+        let first = fixture.next(&initial.newer, expand);
+        assert_eq!(
+            first
+                .entries
+                .iter()
+                .map(|entry| entry.key.as_str())
+                .collect::<Vec<_>>(),
+            ["0:0", "2:0"]
+        );
+        assert!(first.has_more);
+        let second = fixture.next(&first.newer, expand);
+        assert_eq!(second.entries[0].key, "4:0");
+        assert_eq!(second.entries.len(), 1);
+        assert!(!second.has_more);
     }
 
     #[test]

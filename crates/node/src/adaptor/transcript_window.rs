@@ -72,6 +72,27 @@ pub fn read_window(
     let observed_len = reader.seek(SeekFrom::End(0))?;
     let end = before.unwrap_or(observed_len).min(observed_len);
     let start = end.saturating_sub((SCAN_BYTES - 1) as u64);
+    read_range(reader, observed_len, start, end)
+}
+
+pub fn read_forward_window(
+    reader: &mut (impl Read + Seek),
+    from: u64,
+) -> io::Result<TranscriptWindow> {
+    let observed_len = reader.seek(SeekFrom::End(0))?;
+    let start = from.min(observed_len);
+    let end = start
+        .saturating_add((SCAN_BYTES - 1) as u64)
+        .min(observed_len);
+    read_range(reader, observed_len, start, end)
+}
+
+fn read_range(
+    reader: &mut (impl Read + Seek),
+    observed_len: u64,
+    start: u64,
+    end: u64,
+) -> io::Result<TranscriptWindow> {
     let begins_record = if start == 0 {
         true
     } else {

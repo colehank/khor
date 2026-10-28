@@ -5445,7 +5445,42 @@ impl Node {
         &self,
         id: &SessionId,
         cursor: Option<&adaptor::transcript_page::Cursor>,
+        newer: bool,
+        cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<adaptor::transcript_page::Page, String> {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("history request cancelled".to_owned());
+        }
+        let (mut file, parse) = self.external_transcript(id)?;
+        let cancelled = || cancelled.load(std::sync::atomic::Ordering::Acquire);
+        if newer {
+            let cursor = cursor.ok_or_else(|| "newer history requires a cursor".to_owned())?;
+            adaptor::transcript_page::read_next(&mut file, &id.0, cursor, parse, &cancelled)
+        } else {
+            adaptor::transcript_page::read_page(&mut file, &id.0, cursor, parse, &cancelled)
+        }
+    }
+
+    pub fn transcript_record(
+        &self,
+        id: &SessionId,
+        cursor: &adaptor::transcript_page::Cursor,
+        from: u64,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<adaptor::transcript_page::RecordChunk, String> {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("history request cancelled".to_owned());
+        }
+        let (mut file, _) = self.external_transcript(id)?;
+        adaptor::transcript_page::read_record_chunk(&mut file, &id.0, cursor, from, &|| {
+            cancelled.load(std::sync::atomic::Ordering::Acquire)
+        })
+    }
+
+    fn external_transcript(
+        &self,
+        id: &SessionId,
+    ) -> Result<(std::fs::File, fn(&str) -> Vec<adaptor::claude::Utterance>), String> {
         let leaf =
             id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI))
                 .ok_or_else(|| "session has no external transcript source".to_owned())?;
@@ -5467,8 +5502,8 @@ impl Node {
                     .ok_or_else(|| "no transcript source".to_owned())?;
                 (path, adaptor::codex::utterances_of)
             };
-        let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-        adaptor::transcript_page::read_page(&mut file, &id.0, cursor, parse)
+        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        Ok((file, parse))
     }
 
     /// A discovered conversation, followed: what its transcript has said

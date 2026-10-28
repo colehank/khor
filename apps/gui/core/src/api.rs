@@ -585,10 +585,26 @@ pub fn answer(
         "install_hooks" => to_json(&crate::install_hooks(root)?),
         "uninstall_hooks" => to_json(&crate::uninstall_hooks(root)?),
         "chat_open" => to_json(&crate::chat::chat_open(root, &arg("id")?)?),
+        "history_begin" => to_json(&crate::chat::history_begin()?),
+        "history_cancel" => {
+            crate::chat::history_cancel(&arg("requestKey")?)?;
+            Ok("null".to_owned())
+        }
+        "history_record" => to_json(&crate::chat::history_record(
+            root,
+            &arg("id")?,
+            &arg("cursor")?,
+            num("from")?,
+            &arg("requestKey")?,
+        )?),
         "history_page" => to_json(&crate::chat::history_page(
             root,
             &arg("id")?,
             opt_str("cursor")?.as_deref(),
+            args.get("newer")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            &arg("requestKey")?,
         )?),
         "history_follow" => to_json(&crate::chat::history_follow(
             root,

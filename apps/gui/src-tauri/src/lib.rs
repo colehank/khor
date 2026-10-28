@@ -876,12 +876,46 @@ async fn history_follow(id: String, from: u64) -> Result<khor_gui_core::chat::Fo
 }
 
 #[tauri::command]
+fn history_begin() -> Result<String, String> {
+    khor_gui_core::chat::history_begin()
+}
+#[tauri::command]
+fn history_cancel(request_key: String) -> Result<(), String> {
+    khor_gui_core::chat::history_cancel(&request_key)
+}
+#[tauri::command]
+async fn history_record(
+    id: String,
+    cursor: String,
+    from: u64,
+    request_key: String,
+) -> Result<khor_gui_core::chat::HistoryRecordChunk, String> {
+    off_main(move || {
+        khor_gui_core::chat::history_record(
+            &Node::root_from_env(),
+            &id,
+            &cursor,
+            from,
+            &request_key,
+        )
+    })
+    .await
+}
+#[tauri::command]
 async fn history_page(
     id: String,
     cursor: Option<String>,
+    newer: bool,
+    request_key: String,
 ) -> Result<khor_gui_core::chat::HistoryPage, String> {
     off_main(move || {
-        khor_gui_core::chat::history_page(&Node::root_from_env(), &id, cursor.as_deref())
+        khor_gui_core::chat::history_page(
+            &Node::root_from_env(),
+            &id,
+            cursor.as_deref(),
+            newer,
+            &request_key,
+        )
     })
     .await
 }
@@ -5252,7 +5286,10 @@ pub fn run() {
             chat_leave,
             history,
             history_follow,
+            history_begin,
+            history_cancel,
             history_page,
+            history_record,
             ls,
             pull,
             pull_temp,

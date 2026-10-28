@@ -1,3 +1,4 @@
+import type { HistoryRecordChunk } from "./gen/bindings/HistoryRecordChunk";
 // The one transport seam. Three ways in, one set of commands
 // (`khor_gui_core::api`): the app talks tauri IPC, browser verification
 // talks to the dev bridge, and a phone talks to the web face this page
@@ -1418,8 +1419,12 @@ export const fetchHistory = (id: string) => call<ChatFrame[]>("history", { id })
     repaints. Both shapes are ones the fold already knows — see
     `chat::history_follow` for why that split is the design and not a
     convenience. */
-export const fetchHistoryPage = (id: string, cursor: string | null = null) =>
-  call<HistoryPage>("history_page", { id, cursor });
+export const beginHistoryRequest = () => call<string>("history_begin");
+export const cancelHistoryRequest = (requestKey: string) => call<null>("history_cancel", { requestKey });
+export const fetchHistoryRecord = (id: string, requestKey: string, cursor: string, from: number) =>
+  call<HistoryRecordChunk>("history_record", { id, requestKey, cursor, from });
+export const fetchHistoryPage = (id: string, requestKey: string, cursor: string | null = null, newer = false) =>
+  call<HistoryPage>("history_page", { id, cursor, newer, requestKey });
 
 export const followHistory = (id: string, from: number) =>
   call<{ frames: ChatFrame[]; at: number; following: boolean }>("history_follow", { id, from });
