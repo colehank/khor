@@ -6,13 +6,13 @@
 
 本轮最新用户决定已落实：文件/提交共享单击预览、双击固定，各commit以hash独立保留；提交正文显示标题和正文，标签用用户历史SVG；文件默认展开（覆盖较早默认收起），手动收起按commit保存。左侧仅日期链条借鉴GitHub，右侧保持Khor平面列表；最新反馈要求其只是更高的文件行，故左右文字/状态列、右边距和选中背景均按文件树对齐，禁止卡片化和额外右侧留白。返回文件在原摘要行，与文件名同起点。工作区picker恢复正式头像/名称+branch/Git计数/摘要+时间。右上最新改为两块玻璃 `[会话 VS Code] [更多]`，更多在最右（用户最后调换），覆盖旧三图标同胶囊；标签栏与文件标题行之间不画分割线/下沿阴影。
 
-最新左侧头部复用正式 PaneBar：返回、工作区名、新建、搜索；搜索展开替换名字但保留返回。下行按用户最终修正为 **机器头像 : 完整路径**，branch 与文件树顶部最近提交合为一行（分支/摘要/时间），取消独立分支行。头像提示机器名，路径可复制和折行。文件树/提交列表共用此头部。连续新建暴露菜单关闭抢输入焦点，PaneAction 增加可选 afterClose，仅 Lab 启用；先释放菜单焦点再打开命名框。TypeScript及5组布局/搜索/新建/窄屏检查通过，证据v5/machine-path-check，原三次失败均保留；未重跑旧31项矩阵。
+最新左侧头部复用正式 PaneBar：返回、工作区名、新建、搜索；搜索展开替换名字但保留返回。下行按用户最终修正为 **机器头像 : 完整路径**，branch 与文件树顶部最近提交合为一行（分支/摘要/时间），取消独立分支行。头像提示机器名，头像宽高1em与路径字号一致（桌面实测12/12px）；路径可复制和折行。文件树/提交列表共用此头部。连续新建暴露菜单关闭抢输入焦点，PaneAction 增加可选 afterClose，仅 Lab 启用；先释放菜单焦点再打开命名框。TypeScript及5组布局/搜索/新建/窄屏检查通过，证据v5/machine-path-check，原三次失败均保留；未重跑旧31项矩阵。
 
 最新分支/提交合行已通过TypeScript及5组布局检查，证据v6/ui-check；整行点击仍进入日志，返回行保留分支和数量。
 
 文件树和目录列表取消悬浮下载，下载统一进右键菜单；状态字母/目录点同固定末尾槽，反馈不挤动标记。所有下载在Lab仅走隔离mock，返回“Lab 模拟结果（未写磁盘）”。正式App/main未改动、重启、合并或ship；S/C/B专项和工作区正式产品接入仍未开工。
 
-Lab工作副本 `/Volumes/disk0/Khor/worktrees/current/khor-workspace-layout-lab`，分支 `lab/workspace-layout-20261028`，源码提交 `35a637b37ff640ff693c0e19dc347013f21a0a2e`，基线main `e7c335c8`；入口 <http://localhost:23832/lab/workspace-layout.html>。说明在Lab `apps/gui/lab/workspace-layout.md`，最新决定与历史在 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)。服务继续供验收。
+Lab工作副本 `/Volumes/disk0/Khor/worktrees/current/khor-workspace-layout-lab`，分支 `lab/workspace-layout-20261028`，源码提交 `43f805fc77304d4ce7e360426f611c88087ff017`，基线main `e7c335c8`；入口 <http://localhost:23832/lab/workspace-layout.html>。说明在Lab `apps/gui/lab/workspace-layout.md`，最新决定与历史在 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)。服务继续供验收。
 
 TypeScript通过；布局5组、预览/固定3组、阅读位置3组、commit呈现/折叠/完整文件/跳转14项、下载菜单/状态列/返回文字对齐6项通过，无浏览器运行错误。纯重命名完整文本用例先红后绿；位置脚本原hover后立即wheel的失败留存，稳定布局后完整位移验证通过，没有为其修改产品。最后间距样式反馈追加定向几何与截图；随后仅顶部材质/按钮分组微调，TypeScript与1360/390视口截图几何检查通过（零边线、零阴影、相接52px、无横向溢出），证据另存v4。详见 `/Volumes/disk0/Khor/evidence/labs/workspace-layout-20261028/v3`。旧check-face强制hover下载按钮的门与新用户决定冲突，正式接入时须更新，不声称旧全仓门通过。
 
