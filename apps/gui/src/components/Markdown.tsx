@@ -1,3 +1,4 @@
+import {linkIntent,openSystemUrl} from "@/lib/content-link-intent";
 // Agents write markdown. Until this file, the conversation face painted
 // their text as one pre-wrapped run: a table arrived as pipes, a code
 // block as three backticks and its indentation, a numbered list as the
@@ -62,7 +63,7 @@ import { unified } from "unified";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
-import { fetchPreview, launchOn, openLink } from "@/api";
+import { fetchPreview } from "@/api";
 import { onDisk } from "@/components/HtmlView";
 import { MermaidBlock } from "@/components/Mermaid";
 import { PathLink, remarkPaths } from "@/components/PathLinks";
@@ -297,21 +298,8 @@ function isClosed(node: Positioned["node"], openAt: number | null): boolean {
   return at !== undefined && at < openAt;
 }
 
-/** A link in an agent's text.
- *
- * **Inside a workspace it opens on the machine the session is running
- * on** (工作区第五轮 第 35 条: 都在宿主机器上打开). That is the machine
- * the conversation happened on, and the one the agent was talking about
- * — this face can be a browser on a phone, and a phone is not where
- * anything in that sentence lives.
- *
- * Everywhere else it goes to this machine's own browser, which is what
- * it has always done and is still the right answer: a link written in a
- * conversation nobody has a project open for is a page to read, here.
- *
- * A refusal (a scheme that is not a page) puts the address on screen
- * instead of doing nothing — the person is then the one who decides
- * what it is. */
+/** A session link follows the user's destination intent. Local anchors
+ * stay within the rendered document; other contexts retain system opening. */
 function Link({ href, children, className: _className, ...rest }: { href?: string; children?: ReactNode; [prop: string]: unknown }) {
   const [refused, setRefused] = useState(false);
   const home = useLinkHome();
@@ -340,11 +328,13 @@ function Link({ href, children, className: _className, ...rest }: { href?: strin
       // URL ran 838 px past its paragraph): `anywhere`, and the wrapped
       // lines start on the left like the prose around them.
       className="cursor-pointer text-left underline underline-offset-2 [overflow-wrap:anywhere]"
-      onClick={(e) =>
-        anchor
-          ? jump(e.currentTarget, href)
-          : (home === null ? openLink(href) : launchOn(home.machine, href)).catch(() => setRefused(true))
-      }
+      onClick={async (e) => {
+        if (anchor) { jump(e.currentTarget, href); return; }
+        try {
+          if (linkIntent(e) === "internal" && home?.openPage) await home.openPage(href);
+          else await openSystemUrl(href);
+        } catch { setRefused(true); }
+      }}
     >
       {children}
     </button>
