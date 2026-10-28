@@ -34,7 +34,7 @@
 | R2-016 | Mac Khor 打开 lan.cibol.khor.cloud/guest 显示连接被拒绝 | 当前直连/系统代理 HEAD 均 200，标签为本机；文案混合 -1004/-1005，缺真实失败事件 | B3 采真实 WebView 错误及运行路径复现后修；不增加可达性预检 |
 | R2-017 | 手机网站底部导航被 Khor 甲板遮挡 | 原生网页 frame 延伸到甲板下方，仅设 scroll inset；两截图域名/登录态不同，尚未同页实测 | B4 统一可用视口与甲板几何，fixed/sticky 底栏可见可点；验真实手机与会话网页 |
 | R2-018 | 浏览器 list 左滑只有置顶，用户要求置顶和删除 | SideList 筛选排除非 destructive 的 close；后端 pinned 仍拒绝 close | B5 明确两项左滑操作并统一置顶删除规则，不清网站数据或其它标签 |
-| R2-019 | 工作区未选时右空白，选后左树两行名称/branch，右顶直接标签栏与 session/更多/VS Code | 当前未选显示总览，openWs/wsTree 分离，名称仍占 R0 | W1 先对齐状态与布局，再独立 Lab 验收后交下一轮 |
+| R2-019 | 工作区未选时右空白，选后左树两行名称/branch，右顶直接标签栏与 session/更多/VS Code；无内容标签时显示当前工作区最近打开 | 当前未选显示总览，openWs/wsTree 分离，名称仍占 R0；用户已确认返回列表清空右侧但保留标签/草稿 | W1 先对齐状态与布局，再独立 Lab 验收后交下一轮 |
 | R2-020 | commit log 从树第一行进入右侧完整标签；当前分支完整历史 | 现在弹窗列表，详情替换整个 Tabs；后端上限 200/first-parent，前端不能续读 | W2 单标签列表/详情往返建议待对齐；正式实现需可分页遍历完整分支历史 |
 | R2-021 | 跳转到文件菜单两根滚动条 | CommitPage 自包 MenuViewport，共用 DropdownMenuContent 已包一层；最新 ship 仍有 | W3 单一滚动所有者，保留跳转/焦点既有修复；长列表验收 |
 | R2-022 | 变动文件 sticky 标题透明、正文穿透 | bg-card 随 window-transparent 背景透明；其它入口修复未覆盖这里 | W4 稳定遮挡正文的标题材质，验深浅/毛玻璃/长 diff |
