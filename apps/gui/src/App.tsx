@@ -11,7 +11,7 @@ import { tabAct, useTabActs } from "@/lib/tab-acts";
 import { noticesOf, useNotices } from "@/lib/pill-notices";
 import { rungOffScreen } from "@/lib/bell-marks";
 import { FinishedWatch, type Finished } from "@/lib/finished";
-import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
+import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT, askOpenPath, askOpenUrl } from "@/lib/composer-handoff";
 import {
   faceHere,
   fetchDevices,
@@ -26,7 +26,6 @@ import {
   widenWindow,
   giveBackWindow,
   inApp,
-  launchOn,
   closeSession,
   forgetDevice,
   nameSettings,
@@ -1263,10 +1262,6 @@ export default function App() {
   // an answer from the disk the conversation is happening on.
   const sessionMachine = selectedRow?.home ?? "";
   const sessionRoot = sessionCwdOnScreen(selectedRow) ?? "";
-  /** That machine's id. **The id and not the name**, because what it
-      is compared against is a workspace row's `device` — and a name is
-      a thing the user retypes (2026-09-17 改名也进命令行). */
-  const sessionDevice = devices.find((d) => d.name === sessionMachine)?.id ?? "";
   const { known: sessionKnown, see: seeInSession } = useKnownFiles(sessionMachine, sessionRoot);
   /** A file a press in a conversation asked this shell to show, handed
       to whichever workspace pane opens next (`WorkspacePane`'s
@@ -1277,58 +1272,16 @@ export default function App() {
     at: number;
   } | null>(null);
   const sessionHome = useMemo<LinkHome | null>(() => {
-    // **No directory, no links** — a conversation nobody recorded a
-    // directory for has no root, and a relative path in it is relative
-    // to nothing. The context is null and the prose stays prose, which
-    // is `linkHome`'s own default outside a workspace.
-    if (sessionMachine === "" || sessionRoot === "") return null;
-    /** That path on the machine the session runs on — the address's
-        road, and what `⌘`+press and a workspace-less path both take. */
-    const toHost = (abs: string) => {
-      void launchOn(sessionMachine, abs).catch(() => {
-        // The machine's own refusal (no opener, no screen) — it is
-        // said where it is asked for, and a sentence about khor in the
-        // middle of a sentence about code is not an improvement.
-      });
-    };
+    if (!selectedRow) return null;
     return {
       machine: sessionMachine,
       root: sessionRoot,
       known: sessionKnown,
       see: seeInSession,
-      launch: toHost,
-      open: (abs, line) => {
-        // **Asked at the press, from the local table** (ruling 54:
-        // 「问本地那张工作区表(`ws ls`), 不走网」). One read of a
-        // replicated document costs nothing and is never stale, which
-        // is worth more here than a poll would be: the answer decides
-        // where somebody lands.
-        void fetchWorkspaces().then(
-          (list) => {
-            const ws = holding(list, sessionDevice, abs);
-            // Nothing on this machine declares a project around it, so
-            // there is no tree to open it in and no root to show it
-            // under — the host's own opener is the honest answer, and
-            // it is the same one an address in the same sentence gets.
-            if (ws === null) {
-              toHost(abs);
-              return;
-            }
-            setMorePage(null);
-            setLanding("workspaces");
-            // The id stands in where the device table has no name for
-            // it — `WorkspacesList`'s own line, for the same reason.
-            setOpenWs({ device: ws.device, machine: ws.machine || ws.device, path: ws.path });
-            setReveal({ path: abs, line, at: Date.now() });
-            setScreen("detail");
-          },
-          // A table this face could not read is a face that knows of no
-          // workspace, which is the branch above.
-          () => toHost(abs),
-        );
-      },
+      open: (path, line) => askOpenPath(sessionMachine, path, false, line),
+      openPage: (url) => askOpenUrl(sessionMachine, url),
     };
-  }, [sessionMachine, sessionRoot, sessionDevice, sessionKnown, seeInSession]);
+  }, [selectedRow?.id, sessionMachine, sessionRoot, sessionKnown, seeInSession]);
   // ⚠️ **The open row's workspace word left with the detail header**
   // (第十四轮 第 1 条): 「工作区 · 类型」 was the tab's own content said
   // a second time one row lower, and the user struck the whole row out.
