@@ -2,6 +2,18 @@
 
 更新：2026-10-29。**上轮已发布；用户已授权启动下一轮，当前执行E/H首批。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
 
+## 当前检查点：三个小片段已集成，E/H继续推进
+
+集成797892766a（以实际完整HEAD/恢复收据为准）：E首片段b70906cd拒收迟到刷新，第二片段79789276保留输入内起拖归属、退出搜索清query/结果打开前清理；H ef5f1143为有界历史窗口基础。作者对应447419cf、577f888d、8bb3c459。独审均无阻断；集成8项刷新、13项field-dismiss及TypeScript检查通过。
+
+H基础Node crate check重试exit0（21.8s），初次setup失败保留；Cargo槽已释放。新history_page契约和固定预算已写R2-H：128帧/512KiB响应、GUI8页/512帧/2MiB，来源身份/跨页/记录内续帧/取消仍待实现。旧只读UI仍全量，R6不能done。
+
+E下步获PageField.tsx、必要时PathField.tsx及独立真实组件Lab唯一写权，先复现实际blur/选区，不改旧23832验收Lab。通用CodeEditor外部text/自动保存composition、Mac真人IME、ShiftLeft、L03仍未完。R11/R12目前仅定向回调验证，不冒全入口/实机done。
+
+当前root协调，round2_input与round2_history继续作者任务，round2_reviewer持续独审。授权仍为用户“开始吧”的33项实施，main/ship未授权；没有条目整包被小片段绿替代关闭。compact按最新任务卡、活动agent与实际diff继续，不重新派重复作者。
+
+## 以下为首片段集成时历史记录
+
 ## 最新检查点：E/H首片段已独审并集成，条目仍未完成
 
 集成HEAD ef5f1143acb12462abb1dd1a3162a3edbc8d0698。E作者447419cf→集成b70906cd：后台刷新按编辑/读取代次与组词状态拒收迟到回包，真实回调红1/8→绿8/8；集成后8项及tsc再验通过。H作者8bb3c459：256KiB窗口/64KiB内联记录与显式片段引用，8项std原语测试通过；仅基础API，未接服务/UI，不能称卡死已修。两片段非作者独审无阻断，详细证据在tasks/R2-E/H/REVIEW。

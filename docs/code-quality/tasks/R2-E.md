@@ -18,3 +18,13 @@ owner: round2_input；工作树 /Volumes/disk0/Khor/worktrees/current/khor-round
 Clean Code：删除已不完整的长refresh历史说明，保留merge基线不变量；读取接纳规则由纯协调器唯一持有，组件保留输运/呈现副作用。
 
 独审round2_reviewer未发现首片段阻断；按意见明确真实挂载/组词结束最终事务时序尚待验证。接下来R2-011/012路径/搜索退出先报告新增写路径并独立复现；R2-028、通用外部text组词策略和L03退出草稿未完成。无native/Cargo/App/真实用户文件操作。
+
+## 第二片段：拖选归属与搜索退出
+
+用户授权范围内，经root批准新增use-field-dismiss.ts、MobileSessionContent.tsx、check-field-dismiss.mjs唯一写权；提交 `577f888d80d0a5813f9d9417faefb9f740120150`，review-ready。原有PageField blur链和真实拖选验收仍未完成。
+
+hook跟踪主pointer起点区域，内起拖外放产生的click不退出；下一pointerdown、pointercancel与键盘click不会复用旧归属；右键不强行关闭。外部首次点击执行原动作后才退出。ContentPicker搜索增加明确onDismiss，空白/Escape退出并清query，clear保留编辑；open/directory/source/close动作先清搜索，防组件卸载取消延后dismiss留下隐藏过滤。
+
+实际hook和ContentSearch、picker JSX/stopSearch/open回调级13例绿，旧源码同测红；field-interaction、刷新8例、tsc与diff通过。非作者审查无阻断。测试不挂载React、不操作真实浏览器；保留初版harness的Node capture移除与TypeScript转译错误日志，区分其与业务red。证据field-dismiss-receipt.json及对应日志。
+
+下一步：独立核PageField onBlur及ContentPathField/PathField的选择焦点链，先报告新路径；root集成后按受影响范围验证。整包E未完成。
