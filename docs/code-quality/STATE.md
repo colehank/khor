@@ -2,15 +2,15 @@
 
 更新：2026-10-28。**本轮实现与既定业务验收已完成，已合并main并完成Mac/iOS/集群发布；当前进入实际使用反馈，未开始下一轮实现。** 原失败测试及下一轮问题保留，不声称全仓逐行重构或全测试/平台全绿。交付见[DELIVERY](DELIVERY.md)，范围和用户决定见[PLAN](PLAN.md)。此前详细检查点保留在[历史](history/STATE-before-os-business-closeout-20261028.md)，不能按其中“当前运行/缺权限/0拖放”重新启动。
 
-## 最新进展：工作区独立 Lab 已就绪，待用户验收
+## 最新进展：工作区第二版 Lab 已就绪，待用户验收
 
-用户明确“好的 lab吧”，授权按已对齐方案制作独立 Lab；具体交接见 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)。未选工作区右侧空白；选后左树名字/branch，右侧共用 session Tabs 和三个操作；无标签显示最近打开。提交列表和详情共用稳定标签，当前目标与标题随具体 commit 变化，返回保留列表位置。主产品、会话连续性/内容交互/浏览器三个专项仍未开工，不合并 main 或 ship。
+用户针对第一版要求保留正式文件树/list、搜索和新建；去掉标签内容重复标题和提交返回按钮；标题左/branch 右，下一行机器：路径；最新提交摘要点开后在左栏原位显示日志。第二版已按该反馈完成。右上顺序为会话、VS Code、…；左侧连续选提交更新右侧同一枚提交标签，打开日志本身不打断文件。详细决定与第一版历史见 [WORKSPACE-LAYOUT](WORKSPACE-LAYOUT.md)。三个 S/C/B 专项及正式产品仍未开工，不合并 main 或 ship。
 
-Lab：`/Volumes/disk0/Khor/worktrees/current/khor-workspace-layout-lab`，分支 `lab/workspace-layout-20261028`，提交 `b4b4f6c7dc5f642d146fba15ea8c7d7fd5cbed46`，基线 main `e7c335c8`；入口 <http://localhost:23832/lab/workspace-layout.html>。两个工作区、240 条提交、18 个变动文件均为模拟数据，全部 `/api/*` 被隔离服务截断，不操作真实仓库或 session。服务记录与检查在 `/Volumes/disk0/Khor/evidence/labs/workspace-layout-20261028`。代码与启动说明见 Lab 的 `apps/gui/lab/workspace-layout.md`。
+Lab：`/Volumes/disk0/Khor/worktrees/current/khor-workspace-layout-lab`，分支 `lab/workspace-layout-20261028`，提交 `b20eb7384d0222f46de4f13d284e78c07078b8a9`，基线 main `e7c335c8`；入口 <http://localhost:23832/lab/workspace-layout.html>。复用正式 SideList、PaneBar、SideFind、FileTree、Hits、Tabs 和 CommitPage；新建/搜索使用隔离内存 API，全部 `/api/*` 被截断，不操作真实文件、仓库或 session。240 条提交和 18 个 diff 文件均为样例。
 
-独立桌面/390×844流程检查、完整240条模拟分页与短hash区分通过；CommitPage 的重复 MenuViewport、透明 sticky 标题已在本 Lab 分支 red→green，保留跳转/焦点回归。独立审查发现的位置丢失与搜索不回顶已修正并复测通过：文件跨标签/工作区保持纵横位置及草稿，提交异步加载后恢复位置且继续接受滚轮/键盘/点击，搜索实际回顶。正式后端完整历史分页和外部内容/Git自动更新仍属下一轮，用户验收尚未完成。main 和正式 App 未替换。
+最终组合验证：TypeScript、5 组布局/搜索/新建/窄屏/分页检查、7 组 commit 菜单/材质/焦点/独立页与标签模式检查、3 组草稿和位置检查通过。fixture 接口边界 14 项检查及随后同路径重新添加工作区的定向检查已留档。窄屏当前标签保持标题，可横向查看其它标签。证据位于 `/Volumes/disk0/Khor/evidence/labs/workspace-layout-20261028/v2`，启动说明在 Lab 的 `apps/gui/lab/workspace-layout.md`。用户视觉/体感验收未完成；不冒真实原生/iPhone验收。正式后端完整历史分页和文件/Git自动更新仍属下一轮。
 
-此前运行版本核验已确认用户看到的两项 commit 视觉问题存在于最新 ship 源码，不是旧 App：PID79598/inode36154987、SHA a6ab09…7f9af2、前端 BjJjcA2m 与收据匹配；这些是当时核验记录，不作为现在 PID 存活证明。
+此前运行版本核验已确认用户看到的两项 commit 视觉问题存在于最新 ship 源码，不是旧 App：PID79598/inode36154987、SHA a6ab09…7f9af2、前端 BjJjcA2m 与收据匹配；这些是当时核验记录，不作为现在 PID 存活证明。main 与正式 App 本次未改动或重启。
 
 ## 浏览器五项问题已登记，仍未开始下一轮
 
