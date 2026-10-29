@@ -48,6 +48,7 @@ pub enum ContentEvent {
     Update(serde_json::Value),
     Turn { stop: String },
     CaptureGap { opening: String, interrupted: bool },
+    PromptOrigin { turn: String, token: String, start: u64, end: u64 },
     Reference,
 }
 impl From<Utterance> for ContentEvent {

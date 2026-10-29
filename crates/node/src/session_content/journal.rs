@@ -74,6 +74,7 @@ enum Record<'a, T: Serialize> {
         images: &'a [(String, String)],
         files: &'a [(String, String)],
     },
+    PromptOrigin { turn: &'a str, token: &'a str, start: u64, end: u64 },
     Turn {
         turn: &'a str,
         outcome: Outcome,
@@ -275,6 +276,7 @@ impl Journal {
         text: &str,
         images: &[(String, String)],
         files: &[(String, String)],
+        token: Option<&str>,
     ) -> Result<(), String> {
         if self.pending {
             return Err("journal bootstrap has not committed".into());
@@ -285,15 +287,23 @@ impl Journal {
         if turn.is_empty() || turn.len() > 256 {
             return Err("invalid journal turn identity".into());
         }
+        if token.is_some_and(|token|token.is_empty() || token.len()>128 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b"._:-".contains(&b))) {
+            return Err("invalid journal client token".into());
+        }
         let prompt: Record<'_, ()> = Record::Prompt {
             turn,
             text,
             images,
             files,
         };
-        self.append(&prompt)?;
+        let range = self.append_range(&prompt)?;
         self.manifest.active_turn = Some(turn.to_owned());
-        self.persist()
+        self.persist()?;
+        if let Some(token) = token {
+            let origin: Record<'_, ()> = Record::PromptOrigin { turn, token, start:range.start, end:range.end };
+            self.append(&origin)?;
+        }
+        Ok(())
     }
 
     pub fn finish(
@@ -316,20 +326,27 @@ impl Journal {
     }
 
     fn append<T: Serialize>(&mut self, record: &T) -> Result<(), String> {
+        self.append_range(record).map(|_| ())
+    }
+
+    fn append_range<T: Serialize>(&mut self, record: &T) -> Result<std::ops::Range<u64>, String> {
         self.ensure_writable()?;
         let result = (|| {
+            let start = self.file.seek(SeekFrom::End(0))?;
             let mut writer = BufWriter::with_capacity(64 * 1024, &mut self.file);
             serde_json::to_writer(&mut writer, record).map_err(io::Error::other)?;
             writer.write_all(b"\n")?;
-            writer.flush()
+            writer.flush()?;
+            drop(writer);
+            Ok::<_,io::Error>(start..self.file.seek(SeekFrom::End(0))?)
         })();
-        if let Err(error) = result {
-            self.poisoned = true;
-            return Err(format!(
-                "journal append failed; capture must retire: {error}"
-            ));
+        match result {
+            Ok(range) => Ok(range),
+            Err(error) => {
+                self.poisoned = true;
+                Err(format!("journal append failed; capture must retire: {error}"))
+            }
         }
-        Ok(())
     }
 
     fn persist(&mut self) -> Result<(), String> {
@@ -447,6 +464,16 @@ pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
         return vec![ContentEvent::Reference];
     };
     match object.get("kind").and_then(|v| v.as_str()) {
+        Some("prompt_origin") => {
+            let (Some(turn),Some(token),Some(start),Some(end)) = (
+                object.get("turn").and_then(|v|v.as_str()), object.get("token").and_then(|v|v.as_str()),
+                object.get("start").and_then(|v|v.as_u64()), object.get("end").and_then(|v|v.as_u64()),
+            ) else { return vec![ContentEvent::Reference]; };
+            if turn.is_empty() || turn.len()>256 || token.is_empty() || token.len()>128 || start>=end {
+                return vec![ContentEvent::Reference];
+            }
+            vec![ContentEvent::PromptOrigin { turn:turn.into(), token:token.into(), start, end }]
+        }
         Some("update") => {
             let Some(notification) = object.remove("notification") else {
                 return vec![ContentEvent::Reference];
@@ -455,6 +482,14 @@ pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
                 notification.clone(),
             )
             .is_err()
+            {
+                return vec![ContentEvent::Reference];
+            }
+            // This outer turn is written by the journal only after a local
+            // prompt is persisted. An optional agent echo is source detail,
+            // rather than a second user input; keep its exact raw record.
+            if object.get("turn").and_then(|v|v.as_str()).is_some_and(|turn|!turn.is_empty() && turn.len()<=256)
+                && notification["update"]["sessionUpdate"] == "user_message_chunk"
             {
                 return vec![ContentEvent::Reference];
             }
@@ -651,7 +686,7 @@ mod tests {
         assert!(!f.current().exists());
         assert!(
             journal
-                .accept("early", "not sent", &[], &[])
+                .accept("early", "not sent", &[], &[], None)
                 .unwrap_err()
                 .contains("bootstrap")
         );
@@ -685,6 +720,7 @@ mod tests {
                 "你好",
                 &[("image/png".into(), image.clone())],
                 &[("文档.md".into(), "正文".into())],
+                None,
             )
             .unwrap();
         let delta = serde_json::json!({"sessionUpdate":"agent_message_chunk","text":"same"});
@@ -705,12 +741,86 @@ mod tests {
     }
 
     #[test]
+    fn origin_records_preserve_large_prompt_ranges_without_deduplicating_reused_tokens() {
+        let f=Fixture::new();
+        let mut journal=Journal::open(&f.0,f.identity(),Opening::New).unwrap();
+        journal.commit_base().unwrap();
+        let image="图".repeat(70_000);
+        for turn in ["first-turn","second-turn"] {
+            journal.accept(turn,"same words",&[("image/png".into(),image.clone())],&[],Some("same-client-token")).unwrap();
+            journal.finish(turn,Outcome::Ended,Some("EndTurn")).unwrap();
+        }
+        let bytes=std::fs::read(f.current().join("records.jsonl")).unwrap();
+        let mut offset=0;let mut count=0;
+        for line in bytes.split_inclusive(|b|*b==b'\n') {
+            let record:serde_json::Value=serde_json::from_slice(line).unwrap();
+            if record["kind"]=="prompt_origin" {
+                count+=1;assert!(line.len()<512);
+                let start=record["start"].as_u64().unwrap() as usize;
+                let end=record["end"].as_u64().unwrap() as usize;
+                assert_eq!(end,offset);assert!(end-start>64*1024);
+                let prompt:serde_json::Value=serde_json::from_slice(&bytes[start..end]).unwrap();
+                assert_eq!(prompt["kind"],"prompt");assert_eq!(prompt["turn"],record["turn"]);
+                assert_eq!(prompt["images"][0][1],image);
+                assert!(matches!(&parse_record(std::str::from_utf8(line).unwrap())[0],super::super::ContentEvent::PromptOrigin {token,..} if token=="same-client-token"));
+            }
+            offset+=line.len();
+        }
+        assert_eq!(count,2,"client token is correlation, never a deduplication identity");
+    }
+
+    #[test]
+    fn failed_acceptance_manifest_does_not_publish_a_prompt_origin() {
+        let f=Fixture::new();
+        let mut journal=Journal::open(&f.0,f.identity(),Opening::New).unwrap();
+        journal.commit_base().unwrap();
+        let manifest=f.current().join("manifest.json");
+        std::fs::remove_file(&manifest).unwrap();
+        std::fs::create_dir(&manifest).unwrap();
+        assert!(journal.accept("not-dispatched","original unsent input",&[],&[],Some("client-token")).is_err());
+        let records=f.records();
+        let rows:Vec<serde_json::Value>=records.lines().map(|line|serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(rows.len(),1);assert_eq!(rows[0]["kind"],"prompt");
+        assert_eq!(rows[0]["text"],"original unsent input");
+        assert!(!records.contains("prompt_origin"));
+        assert!(journal.capture(crate::SessionId("failed-view".into())).unwrap_err().contains("failed"));
+        assert!(journal.note(&serde_json::json!({"not":"dispatched"})).unwrap_err().contains("failed"));
+    }
+
+    #[test]
+    fn local_turn_echoes_keep_raw_records_without_duplicating_canonical_prompts() {
+        let f=Fixture::new();
+        let mut journal=Journal::open(&f.0,f.identity(),Opening::New).unwrap();
+        let user=serde_json::json!({"sessionId":f.identity().native_id,"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"same text"}}});
+        // A replay/bootstrap user chunk has no local prompt provenance.
+        journal.note(&user).unwrap();journal.commit_base().unwrap();
+        for turn in ["local-one","local-two"] {
+            journal.accept(turn,"same text",&[],&[],None).unwrap();
+            journal.note(&user).unwrap();journal.finish(turn,Outcome::Ended,Some("EndTurn")).unwrap();
+        }
+        let bytes=std::fs::read(f.current().join("records.jsonl")).unwrap();
+        let mut file=std::fs::File::open(f.current().join("records.jsonl")).unwrap();
+        let page=crate::adaptor::transcript_page::read_page(&mut file,"owned-journal",None,parse_record,&||false).unwrap();
+        let users=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::Update(update) if update["update"]["sessionUpdate"]=="user_message_chunk")).count();
+        assert_eq!(users,3,"OWNED_ECHO_DUPLICATION: bootstrap plus two different recorded turns must remain three user messages");
+        let echoes:Vec<_>=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::Reference)).collect();
+        assert_eq!(echoes.len(),2,"every associated echo remains an inspectable raw record");
+        let mut turns=Vec::new();
+        for echo in echoes {
+            let raw:serde_json::Value=serde_json::from_slice(&bytes[echo.position.start as usize..echo.position.end as usize]).unwrap();
+            assert_eq!(raw["kind"],"update");assert_eq!(raw["notification"],user);
+            turns.push(raw["turn"].as_str().unwrap().to_owned());
+        }
+        assert_eq!(turns,["local-one","local-two"]);
+    }
+
+    #[test]
     fn existing_capture_is_exclusive_and_reopen_preserves_unknown_turn_and_partial_bytes() {
         let f = Fixture::new();
         let mut journal = Journal::open(&f.0, f.identity(), Opening::Resume).unwrap();
         journal.commit_base().unwrap();
         journal
-            .accept("unknown-turn", "accepted", &[], &[])
+            .accept("unknown-turn", "accepted", &[], &[], None)
             .unwrap();
         assert!(
             Journal::open(&f.0, f.identity(), Opening::Resume)
@@ -761,7 +871,7 @@ mod tests {
         fs::create_dir(f.current().join("manifest.json")).unwrap();
         assert!(
             journal
-                .accept("turn", "received but not dispatched", &[], &[])
+                .accept("turn", "received but not dispatched", &[], &[], None)
                 .is_err()
         );
         assert!(

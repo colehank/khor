@@ -369,7 +369,7 @@ mod tests {
         };
         let mut writer = Journal::open(&tree.path(), identity, Opening::New).unwrap();
         writer.commit_base().unwrap();
-        writer.accept("turn", "canonical text", &[], &[]).unwrap();
+        writer.accept("turn", "canonical text", &[], &[], None).unwrap();
         let reference = ContentReference::observed(&observation);
         let binding = ReadBinding::new(
             SessionId("observe/view-with-no-file".into()),

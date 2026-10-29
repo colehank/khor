@@ -102,6 +102,7 @@ async fn a_big_turn_reaches_a_far_agent_in_slices() {
         text: "look".into(),
         images: vec![("image/png".into(), picture.clone())],
         files: vec![],
+        token: None,
     };
 
     // The control, the old way: one frame. On its own face, so what it

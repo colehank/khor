@@ -22,6 +22,8 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
   let timer: number | null = null;
   let failures = 0;
   let catchingUp = false;
+  let wakePending = false;
+  let initialBefore: string | null = null;
   const publish = () => {
     if (!closed) changed(state);
   };
@@ -37,18 +39,19 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
           schedule();
       }, Math.min(5000, 700 * 2 ** Math.min(failures, 3)));
   };
-  async function load(direction: HistoryDirection) {
+  async function load(direction: HistoryDirection, before?: string | null) {
     if (closed)
       return;
     if (pending && direction !== 'tail')
       return;
-    const cursor = direction === 'tail' ? null : direction === 'older' ? state.window.older : state.window.newer;
+    const cursor = direction === 'tail' ? before === undefined ? initialBefore : before : direction === 'older' ? state.window.older : state.window.newer;
     if (direction !== 'tail' && cursor === null)
       return;
     if (direction !== 'newer') catchingUp = false;
     pending?.abort();
     const controller = new AbortController();
     pending = controller;
+    wakePending = false;
     state = { ...state, busy: true, error: null };
     publish();
     try {
@@ -56,6 +59,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
       if (closed || pending !== controller || !page)
         return;
       failures = 0;
+      initialBefore = null;
       catchingUp = direction === 'newer' && page.has_more;
       state = { ...state, window: receiveHistoryPage(state.window, page, direction), loaded: true,
         reset: page.reset, error: null };
@@ -71,19 +75,27 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
         pending = null;
         state = { ...state, busy: false };
         publish();
-        schedule();
+        if (wakePending && state.loaded && !state.error && watch && canFollow() && (state.window.latest || catchingUp))
+          void load('newer');
+        else schedule();
       }
     }
   }
   return {
-    start: () => {
-      if (canFollow()) return load('tail');
+    start: (before?: string) => {
+      initialBefore = before ?? null;
+      if (canFollow()) return load('tail', before);
       schedule();
     },
     older: () => load('older'),
     newer: () => load('newer'),
-    latest: () => load('tail'),
+    latest: () => load('tail', null),
     record: source.record,
+    wake() {
+      wakePending = true;
+      if (!pending && state.loaded && watch && canFollow() && (state.window.latest || catchingUp))
+        void load('newer');
+    },
     pause() {
       pending?.abort();
       pending = null;

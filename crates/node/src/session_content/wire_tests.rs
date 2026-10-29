@@ -409,7 +409,7 @@ async fn canonical_content_routes_without_metadata_owner_and_cancels_through_bus
     writer.note(&notification).unwrap();
     writer.commit_base().unwrap();
     writer
-        .accept("turn", "accepted without echo", &[], &[])
+        .accept("turn", "accepted without echo", &[], &[], None)
         .unwrap();
     drop(writer);
     let writer = Journal::open(&root_b, identity, Opening::Resume).unwrap();

@@ -277,6 +277,31 @@ test('verified journal gap is system content and an ACP lookalike stays provider
   assert.equal(paintHistory([spoof])[0].who,'agent');
   assert.equal(paintHistory([spoof])[0].text,'literal');
 });
+test('a hidden capture keeps its exact EOF as both hydration and follow boundary', async () => {
+  let visible = false;
+  const calls = [], initial = deferred();
+  const source = { page: async (cursor, newer) => { calls.push([cursor,newer]); return calls.length===1 ? initial.promise : page('live',{newer:'later'}); }, dispose:async()=>({failures:0,lastError:null}) };
+  const reader = historyReader(source,()=>{},()=>visible,{schedule:()=>1,cancel:()=>{}});
+  reader.start('trusted-fence');
+  assert.deepEqual(calls,[]);
+  visible = true; reader.resume(); await flush();
+  assert.deepEqual(calls,[['trusted-fence',false]]);
+  reader.wake(); reader.wake();
+  initial.resolve(page('past',{newer:'trusted-fence'})); await flush(); await flush();
+  assert.deepEqual(calls,[['trusted-fence',false],['trusted-fence',true]]);
+  await reader.dispose();
+});
+test('wake during follow preserves one fresh intent without concurrent IO or body duplication', async () => {
+  const later=deferred(),calls=[];let state;
+  const source={page:async(cursor,newer)=>{calls.push([cursor,newer]);if(calls.length===2)return later.promise;return page(calls.length===1?'past':'latest',{newer:calls.length===1?'fence':'end'});},dispose:async()=>({failures:0,lastError:null})};
+  const reader=historyReader(source,s=>{state=s;},()=>true,{schedule:()=>1,cancel:()=>{}});
+  await reader.start('fence');reader.wake();await flush();
+  reader.wake();reader.wake();assert.equal(calls.length,2);
+  later.resolve(page('middle',{newer:'middle-end'}));await flush();await flush();
+  assert.deepEqual(calls,[['fence',false],['fence',true],['middle-end',true]]);
+  assert.deepEqual(historyEntries(state.window).map(e=>e.key),['past:0','middle:0','latest:0']);
+  await reader.dispose();
+});
 let failures = 0;
 for (const [name, run] of checks) {
   try {

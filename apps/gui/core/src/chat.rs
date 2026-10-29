@@ -36,6 +36,10 @@ use ts_rs::TS;
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatFrame {
+    PromptRecorded { turn: String, token: String, #[ts(type = "number")] start: u64, #[ts(type = "number")] end: u64 },
+    Captured { token: String, result: CapturedContent },
+    /// Canonical content advanced. The bounded history reader owns its body.
+    ContentChanged,
     CaptureGap { opening: String, interrupted: bool },
     /// One live update.
     Note {
@@ -144,6 +148,17 @@ pub enum ChatFrame {
         error: Option<String>,
     },
 }
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CapturedContent {
+    Available { binding: String, cursor: String },
+    Unavailable { reason: CaptureUnavailable },
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureUnavailable { NotReady, ReplayInFlight, Unavailable }
 
 /// What a poll answers: the frames since the cursor, the next cursor,
 /// and whether the conversation has ended — `gone` covers both the
@@ -343,7 +358,27 @@ fn frame_of(note: GuiNote) -> ChatFrame {
     let parse =
         |s: String| serde_json::from_str(&s).unwrap_or_else(|_| serde_json::Value::String(s));
     match note {
-        GuiNote::Note(s) => ChatFrame::Note { update: parse(s) },
+        GuiNote::Note(s) => {
+            let update = parse(s);
+            match update.get("update").and_then(|u|u.get("sessionUpdate")).and_then(|v|v.as_str()) {
+                Some("agent_message_chunk" | "agent_thought_chunk" | "user_message_chunk" | "tool_call" | "tool_call_update") => ChatFrame::ContentChanged,
+                _ => ChatFrame::Note { update },
+            }
+        },
+        GuiNote::Captured { token, result } => {
+            let result = match result {
+                Ok(fence) => match (fence.binding.encode(), serde_json::to_string(&fence.cursor)) {
+                    (Ok(binding), Ok(cursor)) => CapturedContent::Available { binding, cursor },
+                    _ => CapturedContent::Unavailable { reason: CaptureUnavailable::Unavailable },
+                },
+                Err(reason) => CapturedContent::Unavailable { reason: match reason {
+                    khor_node::gui_host::CaptureFailure::NotReady => CaptureUnavailable::NotReady,
+                    khor_node::gui_host::CaptureFailure::ReplayInFlight => CaptureUnavailable::ReplayInFlight,
+                    khor_node::gui_host::CaptureFailure::Unavailable => CaptureUnavailable::Unavailable,
+                } },
+            };
+            ChatFrame::Captured { token: token.iter().map(|byte|format!("{byte:02x}")).collect(), result }
+        },
         GuiNote::History(s) => ChatFrame::History { update: parse(s) },
         GuiNote::HistoryEnd => ChatFrame::HistoryEnd,
         GuiNote::Ask {
@@ -738,6 +773,7 @@ fn send_turn(
         text,
         images,
         files,
+        token: sending.token.clone(),
     };
     let mut sent = write_op_guarded(
         &chat.conn,
@@ -801,6 +837,7 @@ pub enum Control {
     },
     Stop,
     Replay,
+    Capture([u8; 16]),
 }
 
 fn retire_cancelled_upload(chat: &Chat) {
@@ -968,6 +1005,7 @@ pub fn submit_control(
         }
         Control::Stop => GuiOp::Stop,
         Control::Replay => GuiOp::Replay,
+        Control::Capture(token) => GuiOp::Capture { token },
     };
     let chat = chat_of(root, id, lease)?;
     let target = chat.clone();
@@ -1053,6 +1091,21 @@ pub fn chat_stop(root: &Path, id: &str, lease: &str) -> Result<(), String> {
 }
 pub fn chat_replay(root: &Path, id: &str, lease: &str) -> Result<(), String> {
     submit_control(root, id, lease, Control::Replay)?.wait()
+}
+
+pub fn capture_token(token: &str) -> Result<[u8; 16], String> {
+    if token.len() != 32 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("Invalid capture token".into());
+    }
+    let mut bytes = [0;16];
+    for (at, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&token[at*2..at*2+2],16).map_err(|_|"Invalid capture token")?;
+    }
+    Ok(bytes)
+}
+
+pub fn chat_capture(root: &Path, id: &str, lease: &str, token: &str) -> Result<(), String> {
+    submit_control(root, id, lease, Control::Capture(capture_token(token)?))?.wait()
 }
 
 #[derive(Serialize, TS)]
@@ -1323,6 +1376,22 @@ fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
             ContentEvent::Update(update)=>Some(ChatFrame::Note { update }),
             ContentEvent::Turn { stop }=>Some(ChatFrame::Turn { stop }),
             ContentEvent::CaptureGap { opening, interrupted }=>Some(ChatFrame::CaptureGap { opening, interrupted }),
+            ContentEvent::PromptOrigin { turn, token, start, end } => {
+                // The sole journal writer puts this small origin immediately
+                // after its complete prompt. Never trust an arbitrary old range.
+                if start >= end || end != event.position.start {
+                    None
+                } else {
+                    if end-start > 64*1024 {
+                        let position = khor_node::adaptor::transcript_page::Position { start, end, item:0 };
+                        expanded_references.push(HistoryRecordRef {
+                            start, end, missing_start:false, missing_end:false, item:None,
+                            cursor:serde_json::to_string(&page.cursor_before(position)).map_err(|e|e.to_string())?,
+                        });
+                    }
+                    Some(ChatFrame::PromptRecorded { turn, token, start, end })
+                }
+            },
             ContentEvent::Reference=>None,
         };
         let entry = frame.map(|frame|HistoryEntry {
@@ -1664,7 +1733,7 @@ mod old_host_tests {
         .to_string();
         assert!(matches!(
             over_the_wire(&OldNote::Note(said.clone())),
-            ChatFrame::Note { .. }
+            ChatFrame::ContentChanged
         ));
         assert!(matches!(
             over_the_wire(&OldNote::History(said)),
@@ -2087,8 +2156,26 @@ mod bounded_history_response_tests {
         assert!(!response.references[0].cursor.is_empty());
         assert!(response.encoded_bytes<=HISTORY_PAYLOAD_BYTES);
     }
+
+    #[test]
+    fn malformed_origin_exposes_its_own_record_without_trusting_a_foreign_range() {
+        fn parse(_: &str)->Vec<khor_node::session_content::ContentEvent> {
+            vec![khor_node::session_content::ContentEvent::PromptOrigin {turn:"bad".into(),token:"client".into(),start:500,end:900}]
+        }
+        let fixture=RecordFixture::new("bad-origin",b"bad-origin\n");
+        let mut file=std::fs::File::open(&fixture.0).unwrap();
+        let page=khor_node::adaptor::transcript_page::read_page(&mut file,"journal",None,parse,&||false).unwrap();
+        let response=history_page_response("view",page,false,&||false).unwrap();
+        assert!(response.entries.is_empty());assert_eq!(response.references.len(),1);
+        assert_eq!((response.references[0].start,response.references[0].end),(0,11));
+        assert!(response.encoded_bytes<=HISTORY_PAYLOAD_BYTES);
+    }
 }
 
 #[cfg(test)]
 #[path = "chat/history_bridge_tests.rs"]
 mod history_bridge_tests;
+
+#[cfg(test)]
+#[path = "chat/journal_recovery_tests.rs"]
+mod journal_recovery_tests;

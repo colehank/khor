@@ -607,6 +607,7 @@ fn managed_host_case_worker() {
                 text: "first accepted prompt".into(),
                 images: vec![("image/png".into(), "aW1hZ2U=".into())],
                 files: vec![("original.txt".into(), "原文".into())],
+                token: None,
             }).unwrap();
             await_turn(&notes_a, "EndTurn", "capture identical chunk");
             let token_a = [1; 16];
@@ -692,6 +693,7 @@ fn managed_host_case_worker() {
                     text: "original user words".into(),
                     images: vec![("image/png".into(), image.clone())],
                     files: vec![("文档.txt".into(), "原文".into())],
+                    token: None,
                 },
             )
             .unwrap();

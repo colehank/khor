@@ -439,6 +439,7 @@ fn op_event(connection: usize, op: &GuiOp) -> serde_json::Value {
             text,
             images,
             files,
+            ..
         } => (
             "SayWith",
             text.len()

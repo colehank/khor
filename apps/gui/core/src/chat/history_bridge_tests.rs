@@ -42,9 +42,9 @@ impl Drop for Scratch {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
-struct AdmissionTransport(Option<tokio::task::JoinHandle<()>>);
+pub(super) struct AdmissionTransport(Option<tokio::task::JoinHandle<()>>);
 impl AdmissionTransport {
-    async fn start(root: &Path) -> Self {
+    pub(super) async fn start(root: &Path) -> Self {
         let node = Arc::new(Node::open(root.to_path_buf()).unwrap());
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await

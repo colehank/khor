@@ -257,7 +257,7 @@ fn send_tokens_are_optional_bounded_and_never_encoded_on_the_host_wire() {
         )
         .unwrap();
         assert!(
-            matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(), GuiOp::SayWith { text, images, files } if text == "hi" && images.is_empty() && files.is_empty())
+            matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(), GuiOp::SayWith { text, images, files, token } if text == "hi" && images.is_empty() && files.is_empty() && token == expected)
         );
         pending.wait().unwrap();
         let frames = &attached.chat.frames.lock().unwrap().held;
@@ -272,6 +272,44 @@ fn send_tokens_are_optional_bounded_and_never_encoded_on_the_host_wire() {
             );
         }
     }
+}
+
+#[test]
+fn capture_tokens_are_view_specific_and_an_old_lease_cannot_capture_the_replacement() {
+    let mut attached = Attached::new();
+    let b = begin_view(Path::new("."), &attached.id).unwrap();
+    open_chat_with(Path::new("."), &attached.id, &b, || panic!("second view must share the current socket")).unwrap();
+    let a_token = "00112233445566778899aabbccddeeff";
+    let b_token = "ffeeddccbbaa99887766554433221100";
+    for (lease, token) in [(&attached.lease,a_token),(&b,b_token)] {
+        chat_capture(Path::new("."),&attached.id,lease,token).unwrap();
+        assert!(matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(),GuiOp::Capture { token:actual } if actual==capture_token(token).unwrap()));
+    }
+    chat_leave(Path::new("."),&attached.id,&attached.lease).unwrap();
+    assert!(chat_capture(Path::new("."),&attached.id,&attached.lease,a_token).is_err());
+    chat_capture(Path::new("."),&attached.id,&b,b_token).unwrap();
+    assert!(matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(),GuiOp::Capture { token } if token==capture_token(b_token).unwrap()));
+    chat_leave(Path::new("."),&attached.id,&b).unwrap();
+}
+
+#[test]
+fn capture_failures_are_typed_and_live_body_updates_are_only_bounded_wake_signals() {
+    for bad in ["", "short", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "秘密秘密秘密秘密秘密"] {
+        assert!(capture_token(bad).is_err());
+    }
+    for (failure,expected) in [
+        (khor_node::gui_host::CaptureFailure::NotReady,"not_ready"),
+        (khor_node::gui_host::CaptureFailure::ReplayInFlight,"replay_in_flight"),
+        (khor_node::gui_host::CaptureFailure::Unavailable,"unavailable"),
+    ] {
+        let frame=frame_of(GuiNote::Captured {token:[3;16],result:Err(failure)});
+        let value=serde_json::to_value(frame).unwrap();
+        assert_eq!(value["token"],"03".repeat(16));assert_eq!(value["result"]["reason"],expected);
+    }
+    let frame=frame_of(GuiNote::Note(serde_json::json!({"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"x".repeat(1024*1024)}}}).to_string()));
+    assert!(matches!(frame,ChatFrame::ContentChanged));
+    assert!(serde_json::to_vec(&frame).unwrap().len()<64);
+    assert!(matches!(frame_of(GuiNote::Note(serde_json::json!({"update":{"sessionUpdate":"current_mode_update","currentModeId":"plan"}}).to_string())),ChatFrame::Note {update} if update["update"]["currentModeId"]=="plan"));
 }
 
 #[test]

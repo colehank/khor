@@ -101,20 +101,21 @@ type Item = (
   | { who: "sys"; text: string }
   | { who: "seal" }) & { historyKey?: string };
 
-/** Hosted replay commits atomically; an observed past is a bounded page projection. */
-type Painting = {
-  past: Item[];
-  arriving: ChatFrame[];
-  replayFailed: boolean;
-  live: Item[];
-};
-
-const BLANK: Painting = { past: [], arriving: [], replayFailed: false, live: [] };
-
-function discardReplay(paint: Painting): Painting {
-  return paint.arriving.length || paint.replayFailed
-    ? { ...paint, arriving: [], replayFailed: false }
-    : paint;
+/** Canonical pages own all body content. Live paint holds only current
+ * optimistic inputs and bounded control notices; unresolved permissions remain actionable. */
+type Painting = { past: Item[]; live: Item[] };
+const BLANK: Painting = { past: [], live: [] };
+function boundedLive(items: Item[]): Item[] {
+  let transient = 0;
+  return items.slice().reverse().filter(item => {
+    if (item.who === 'ask' && item.answer === null) return true;
+    return ++transient <= 32;
+  }).reverse();
+}
+function acceptHistory(previous: Painting, entries: Parameters<typeof paintHistory>[0]): Painting {
+  const recorded = new Set(entries.flatMap(entry => entry.frame.kind === 'prompt_recorded' ? [entry.frame.token] : []));
+  return { ...previous, past: paintHistory(entries),
+    live: previous.live.filter(item => item.who !== 'user' || !item.token || !recorded.has(item.token)) };
 }
 
 /** One `ToolCallContent`, the protocol's three-tag union. */
@@ -518,42 +519,17 @@ function BusyFor({ since }: { since: number }) {
 /** One poll's worth of frames, folded into the picture. Answers the
     same object when nothing was painted, so React stops there. */
 function absorb(paint: Painting, frames: ChatFrame[]): Painting {
-  let { past, arriving, replayFailed, live } = paint;
+  const live = paint.live.slice();
   let moved = false;
-  for (const f of frames) {
-    if (f.kind === "history") {
-      if (replayFailed) continue;
-      if (arriving === paint.arriving) arriving = arriving.slice();
-      arriving.push(f);
-      continue;
-    }
-    if (f.kind === "control_result" && f.operation === "replay" && f.error !== null) {
-      replayFailed = true;
-      arriving = [];
-      continue;
-    }
-    if (f.kind === "history_end") {
-      // Failure and cancellation also close with history_end. Only a
-      // successful replay, including an empty one, replaces known history.
-      if (!replayFailed) {
-        const rebuilt: Item[] = [];
-        for (const h of arriving) eat(rebuilt, h, true);
-        past = rebuilt;
-      }
-      arriving = [];
-      replayFailed = false;
-      moved = true;
-      continue;
-    }
-    if (live === paint.live) live = live.slice();
-    // This view already paints its own sends; replay paints user text above.
-    if (eat(live, f, false)) moved = true;
+  for (const frame of frames) {
+    if (frame.kind === 'ask' || frame.kind === 'answered' || frame.kind === 'refused' || frame.kind === 'unsent')
+      moved = eat(live, frame, false) || moved;
   }
-  if (!moved && arriving === paint.arriving) return paint;
-  return { past, arriving, replayFailed, live };
+  if (!moved) return paint;
+  return {...paint, live: boundedLive(live)};
 }
 
-/** Hosted sessions consume live ACP frames; external sessions read bounded pages. */
+/** Every session reads bounded canonical pages; hosted sessions also keep a control attachment. */
 export function ChatView({
   id,
   still: recorded = false,
@@ -585,6 +561,8 @@ export function ChatView({
   const [history, setHistory] = useState<HistoryReaderState | null>(null);
   const historyView = useRef<ReturnType<typeof historyReader> | null>(null);
   const [historyEpoch, setHistoryEpoch] = useState(0);
+  const [captureWhy, setCaptureWhy] = useState<string | null>(null);
+  const captureNow = useRef<(() => void) | null>(null);
   const historyAnchor = useRef<{ key: string; top: number } | null>(null);
   const [loaded, setLoaded] = useState(false);
   /** The agent's own commands, as of the last frame that carried a set. */
@@ -669,14 +647,8 @@ export function ChatView({
       Keyed by the protocol's own id, so a line keeps its state while
       new frames land above and below it. */
   const [open, setOpen] = useState<Set<string>>(new Set());
-  /** What the agent on the other end said it can do, from the handshake.
-      **Nothing read this frame until now** — `replays` had crossed the
-      wire since the day it was added, with `gui_host`'s own note saying
-      a face must act on it, and no face did. That was survivable while
-      both agents khor spoke to were ones khor wrote (both replay); it
-      is not survivable now that khor ships a registry snapshot, because
-      3 of the registry's 32 probed agents do not replay and 19 refuse
-      to open a session before a login. */
+  /** Handshake capabilities govern live controls; journal availability
+      independently governs whether recorded content can be read. */
   const [facts, setFacts] = useState<{
     /** The agent's own name for itself (ACP `agentInfo`). */
     name: string | null;
@@ -788,7 +760,8 @@ export function ChatView({
     let draftOwner = chatDraftOwner(id);
     const reading = {};
     reader.current = reading;
-    setPaint(discardReplay);
+    setPaint(BLANK);
+    setCaptureWhy(null);
     setLoaded(false);
     setInteractions([]);setProtocol(null);setNotice(null);setControlError(null);setSettings(null);setUsage(null);
     let cursor = 0;
@@ -798,27 +771,28 @@ export function ChatView({
       setGone(true);
       return;
     }
-    if (still) {
-      if (!binding) {
-        setGone(true); setOpenWhy(gui.content_no_source);
-        return;
-      }
+    let historyCleanup: (() => void) | null = null;
+    const installHistory = (readBinding: string, before?: string) => {
+      historyCleanup?.();
+      let disposed = false;
       historyAnchor.current = null;
-      setPaint(BLANK); setHistory(null); setGone(false); setOpenWhy(null);
-      setTitle(null); setPlan([]); setOpen(new Set()); toBottom();
+      setHistoryEpoch(epoch => epoch + 1);
+      setPaint(previous => ({...previous, past: []})); setHistory(null); setLoaded(false); setGone(false); setOpenWhy(null);
+      if (still) { setTitle(null); setPlan([]); }
+      setOpen(new Set()); toBottom();
       const source = historySource(id, {
-        begin: () => beginHistoryRequest(id, binding),
-        cancel: key => cancelHistoryRequest(id, binding, key),
-        page: (view, key, cursor, newer) => fetchHistoryPage(view, binding, key, cursor, newer),
-        record: (view, key, cursor, from) => fetchHistoryRecord(view, binding, key, cursor, from),
+        begin: () => beginHistoryRequest(id, readBinding),
+        cancel: key => cancelHistoryRequest(id, readBinding, key),
+        page: (view, key, cursor, newer) => fetchHistoryPage(view, readBinding, key, cursor, newer),
+        record: (view, key, cursor, from) => fetchHistoryRecord(view, readBinding, key, cursor, from),
       });
       let previousPages: HistoryReaderState['window']['pages'] | null = null;
       const view = historyReader(source, state => {
-        if (stopped) return;
+        if (stopped || disposed) return;
         setHistory(state); setLoaded(state.loaded);
         if (previousPages !== state.window.pages) {
           previousPages = state.window.pages;
-          setPaint({ ...BLANK, past: paintHistory(historyEntries(state.window)) });
+          setPaint(previous => acceptHistory(previous, historyEntries(state.window)));
           if (state.reset) {
             historyAnchor.current = null;
             setHistoryEpoch(epoch => epoch + 1); setOpen(new Set()); toBottom();
@@ -835,25 +809,76 @@ export function ChatView({
       const observer = new ResizeObserver(visibility);
       if (scroller.current) observer.observe(scroller.current);
       document.addEventListener('visibilitychange', visibility);
-      void view.start();
-      return () => {
-        stopped = true; observer.disconnect();
+      void view.start(before);
+      historyCleanup = () => {
+        disposed = true; observer.disconnect();
         document.removeEventListener('visibilitychange', visibility);
         if (historyView.current === view) historyView.current = null;
         void view.dispose().then(result => {
           if (result.failures) console.warn('History cleanup failed', result);
         });
       };
+    };
+    if (still) {
+      if (!binding) { setGone(true); setOpenWhy(gui.content_no_source); return; }
+      installHistory(binding);
+      return () => { stopped = true; historyCleanup?.(); };
     }
     const attachment = chatAttachment(id);
     attachedChat.current = attachment;
+    let captureToken: string | null = null;
+    let wakeVersion = 0;
+    let captureVersion = 0;
+    let captureTimer: number | null = null;
+    let captureFailures = 0;
+    let captureTransient = false;
+    let captureAwaiting = false;
+    let finished = false;
+    const retryCapture = () => {
+      if (captureTimer !== null || stopped || finished) return;
+      captureFailures = Math.min(3, captureFailures + 1);
+      captureTimer = window.setTimeout(() => {
+        captureTimer = null;
+        if (stopped || finished) return;
+        if (document.hidden || !scroller.current?.clientHeight) retryCapture();
+        else capture(false);
+      }, Math.min(5000, 500 * 2 ** captureFailures));
+    };
+    const capture = (reset = true) => {
+      if (captureTimer !== null) { window.clearTimeout(captureTimer); captureTimer = null; }
+      if (reset) captureFailures = 0;
+      const token = crypto.randomUUID().replaceAll('-', '');
+      captureToken = token;
+      captureVersion = wakeVersion;
+      captureAwaiting = true;
+      void attachment.capture(token).catch(error => {
+        if (!stopped && captureToken === token) {
+          captureAwaiting = false;
+          setCaptureWhy(String(error));
+        }
+      });
+    };
+    const receiveCapture = (frame: Extract<ChatFrame, {kind: 'captured'}>) => {
+      if (stopped || frame.token !== captureToken) return;
+      captureAwaiting = false;
+      if (frame.result.kind === 'available') {
+        if (captureTimer !== null) { window.clearTimeout(captureTimer); captureTimer = null; }
+        captureTransient = false; captureFailures = 0; setCaptureWhy(null);
+        installHistory(frame.result.binding, frame.result.cursor);
+        if (wakeVersion > captureVersion) historyView.current?.wake();
+      } else {
+        captureTransient = frame.result.reason === 'not_ready' || frame.result.reason === 'replay_in_flight';
+        setCaptureWhy(gui.history_read_failed);
+        if (captureTransient) retryCapture();
+      }
+    };
+    captureNow.current = capture;
     // A self-scheduling wait rather than an interval, because the wait
     // changes length: an interval would have to be torn down and rebuilt
     // to change pace, and two of them briefly overlapping is two polls
     // racing on one cursor.
     let timer: number | null = null;
     let asking = false;
-    let finished = false;
     let retryDelay = 0;
     let retryNotBefore = 0;
     const tick = () => {
@@ -890,7 +915,6 @@ export function ChatView({
           }
           if (batch.lost || retired) unconfirmedChatDrafts(id, draftOwner, inactive ? {reader: reading} : undefined);
           if (inactive) return;
-          setLoaded(true);
           cursor = batch.next;
           setSending(batch.sending_of > 0 ? [batch.sending, batch.sending_of] : null);
           const held = retired ? null : (batch.stall ?? null);
@@ -932,22 +956,16 @@ export function ChatView({
               setUnsent(notice);
             }
           }
-          // **The past this face was holding is no longer backed by
-          // anything.** The attachment's frame list is capped
-          // (`khor_gui_core::chat::FRAME_CAP`), and this says the trim
-          // reached past where this reader had got to — so the paint,
-          // which was built by absorbing those frames one at a time, is
-          // now a picture with a hole in it that nothing will fill.
-          //
-          // Rebuilt the way a face that never saw them would: clear, and
-          // ask for history. The frames in *this* batch are still
-          // absorbed below, because they are the newest and the replay
-          // lands in `past` regardless of when it arrives.
-          if (batch.lost) {
-            setPaint(BLANK);
-            attachment.replay().catch(() => {});
-          }
+          if (batch.lost) capture();
           if (batch.frames.length) {
+            for (const frame of batch.frames) {
+              if (frame.kind === 'content_changed') {
+                wakeVersion += 1;
+                historyView.current?.wake();
+                if (!historyView.current && captureTransient && !captureAwaiting && !document.hidden && scroller.current?.clientHeight) capture(false);
+              }
+              if (frame.kind === 'captured') receiveCapture(frame);
+            }
             for(const f of batch.frames){
               if(f.kind==='turn'||f.kind==='gone')setInTurn(false);
               if(f.kind==='turning')setInTurn(true);
@@ -1018,8 +1036,8 @@ export function ChatView({
             setPaint((prev) => absorb(prev, batch.frames));
           }
           if (retired) {
-            setPaint(discardReplay);
-            setGone(true);
+            if (captureTimer !== null) { window.clearTimeout(captureTimer); captureTimer = null; }
+                    setGone(true);
           }
           outcome = retired ? "ended" : "live";
         })
@@ -1065,8 +1083,8 @@ export function ChatView({
             setInTurn(false);
             setSending(null);
           }
-          attachment.replay().catch(() => {});
         }
+        capture();
         tick();
       })
       .catch((e: unknown) => {
@@ -1078,8 +1096,11 @@ export function ChatView({
     return () => {
       stopped = true;
       if (timer !== null) window.clearTimeout(timer);
+      if (captureTimer !== null) window.clearTimeout(captureTimer);
+      if (captureNow.current === capture) captureNow.current = null;
       pollNow.current = () => {};
       if (attachedChat.current === attachment) attachedChat.current = null;
+      historyCleanup?.();
       void attachment.dispose().then(result => {
         if (result.failures) console.warn("Chat attachment cleanup failed", result);
       });
@@ -1310,7 +1331,7 @@ export function ChatView({
     setInTurn(true);
     files.clear();
     setDocs([]);
-    setPaint(previous => ({...previous, live: [...previous.live, {who: "user", text: full, token: draft.token}]}));
+    setPaint(previous => ({...previous, live: boundedLive([...previous.live, {who: "user", text: full, token: draft.token}])}));
     sent.current = line;
     lastSay.current = draft;
     setUnsent(null);
@@ -1324,7 +1345,7 @@ export function ChatView({
     if (!draft) return;
     discardChatDraft(id, previous.token, previous.owner);
     setInTurn(true);
-    setPaint(paint => ({...paint, live: [...paint.live, {who: "user", text: draft.full, token: draft.token}]}));
+    setPaint(paint => ({...paint, live: boundedLive([...paint.live, {who: "user", text: draft.full, token: draft.token}])}));
     sent.current = draft.text.trim();
     lastSay.current = draft;
     setUnsent(null);
@@ -1467,13 +1488,16 @@ export function ChatView({
             no stream). It is here for the agents in the registry that
             do, and because a face that cannot read a field is the
             reason attaching one of them would otherwise need code. */}
-        {still && <div className="space-y-in py-row" data-history-controls>
+        {history && <div className="space-y-in py-row" data-history-controls>
           <p className="text-caption text-muted-foreground">{gui.history_loaded_only}</p>
           {history?.window.older && <Button size="sm" disabled={history.busy} onClick={loadOlderHistory}>{gui.history_older}</Button>}
           {history?.reset && <p role="status" className="text-caption text-muted-foreground">{gui.history_changed}</p>}
           {history?.error != null && <div role="alert" className="text-caption text-destructive">
             {gui.history_read_failed} <Button size="sm" onClick={() => void historyView.current?.latest()}>{gui.region_retry}</Button>
           </div>}
+        </div>}
+        {!still && captureWhy && <div role="alert" data-chat-capture-error className="text-caption text-destructive">
+          {captureWhy} <Button size="sm" onClick={() => captureNow.current?.()}>{gui.region_retry}</Button>
         </div>}
         {title && (
           <div data-chat-title className="pb-1 text-title-md font-title text-foreground">
@@ -1503,15 +1527,15 @@ export function ChatView({
             onRetry={() => setAttempt((n) => n + 1)}
           />
         )}
-        {facts && items.length === 0 && (facts.needsLogin || !facts.replays) && (
+        {facts && items.length === 0 && facts.needsLogin && (
           <div data-chat-facts className="pb-1 text-caption text-muted-foreground">
-            {facts.needsLogin ? gui.chat_needs_login : gui.chat_no_replay}
+            {gui.chat_needs_login}
           </div>
         )}
         {/* An empty conversation says so, once and quietly (V18) — never
             a blank page; not while a turn is coming, and not over the
             line above when that one explains the emptiness better. */}
-        {facts && items.length === 0 && !inTurn && !facts.needsLogin && facts.replays && (
+        {facts && items.length === 0 && !inTurn && !facts.needsLogin && loaded && (
           <div data-chat-empty className="pt-group text-center text-callout text-muted-foreground">
             {gui.chat_empty}
           </div>
@@ -1561,11 +1585,11 @@ export function ChatView({
               {item.text}
             </div>
           );
-          return still ? <div key={`${historyEpoch}:${item.historyKey ?? i}`} data-history-key={item.historyKey}>{content}</div> : content;
+          return item.historyKey ? <div key={`${historyEpoch}:${item.historyKey}`} data-history-key={item.historyKey}>{content}</div> : content;
         })}
-        {still && history && <HistoryRecords key={`${id}:${historyEpoch}`} references={historyReferences(history.window)}
+        {history && <HistoryRecords key={`${id}:${historyEpoch}`} references={historyReferences(history.window)}
           read={(cursor, from, signal) => historyView.current?.record(cursor, from, signal) ?? Promise.resolve(null)} />}
-        {still && history && !history.window.latest && <Button size="sm" disabled={history.busy}
+        {history && !history.window.latest && <Button size="sm" disabled={history.busy}
           onClick={() => void historyView.current?.newer()}>{gui.history_newer}</Button>}
         {notice&&<div data-chat-notice role={notice.severity==='error'?'alert':'status'} className="rounded-md bg-fill p-row text-callout"><strong>{notice.title}</strong>{notice.message&&<p>{notice.message}</p>}<Button size="sm" onClick={()=>setNotice(null)}>关闭</Button></div>}
         {controlError&&<p role="alert" className="text-destructive">{controlError}</p>}
@@ -1607,7 +1631,7 @@ export function ChatView({
             data-chat-bottom
             data-fresh={fresh}
             className="pointer-events-auto shadow"
-            onClick={() => { toBottom(); if (still && history && !history.window.latest) void historyView.current?.latest(); }}
+            onClick={() => { toBottom(); if (history && !history.window.latest) void historyView.current?.latest(); }}
           >
             {/* The back chevron, turned to point the way this goes.
                 Turned rather than drawn again: a second glyph would be

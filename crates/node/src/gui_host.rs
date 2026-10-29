@@ -114,15 +114,13 @@ pub enum GuiOp {
     /// `images` are `(mime, base64)`; `files` are `(name, text)` and
     /// ride as the protocol's embedded resources.
     ///
-    /// **Both lists on the one variant, and it never grows a third**:
-    /// this frame is positional msgpack, so the shape it ships with is
-    /// the shape it keeps. Anything else attachable later gets its own
-    /// variant at the tail, which fails loudly on an old host instead
-    /// of being misread as this one.
+    /// The client token correlates its optimistic draft with the canonical
+    /// accepted prompt. It does not identify or deduplicate an agent turn.
     SayWith {
         text: String,
         images: Vec<(String, String)>,
         files: Vec<(String, String)>,
+        token: Option<String>,
     },
     /// Put the session in one of the modes the agent listed
     /// ([`GuiNote::Settings`]), by the agent's own id. Tail-appended.
@@ -1433,7 +1431,7 @@ match event {
                                 active_operation = process_control.begin_operation();
                                 if active_operation.is_none() { break Some("ACP process is retiring".into()); }
                                 let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
-                                if let Err(why)=journal.accept(&turn,&text,&[],&[]) { let _=execution.finish(&why); break Some(why); }
+                                if let Err(why)=journal.accept(&turn,&text,&[],&[],None) { let _=execution.finish(&why); break Some(why); }
                                 journal_turn=Some(turn);
                                 delegated = Some(execution);
                                 cancellation_sent = None;
@@ -1458,9 +1456,9 @@ match event {
                     // things that have each been got wrong once already
                     // and must not exist twice.
                     Some((who, op @ (GuiOp::Say(_) | GuiOp::SayWith { .. }))) => {
-                        let (text, images, files) = match op {
-                            GuiOp::Say(t) => (t, Vec::new(), Vec::new()),
-                            GuiOp::SayWith { text, images, files } => (text, images, files),
+                        let (text, images, files, token) = match op {
+                            GuiOp::Say(t) => (t, Vec::new(), Vec::new(), None),
+                            GuiOp::SayWith { text, images, files, token } => (text, images, files, token),
                             _ => unreachable!("the pattern above admits nothing else"),
                         };
                         if in_turn.is_some() || replay.is_some() || controlling {
@@ -1479,7 +1477,7 @@ match event {
                         active_operation = process_control.begin_operation();
                         if active_operation.is_none() { break Some("ACP process is retiring".into()); }
                         let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
-                        if let Err(why)=journal.accept(&turn,&text,&images,&files) { break Some(why); }
+                        if let Err(why)=journal.accept(&turn,&text,&images,&files,token.as_deref()) { break Some(why); }
                         journal_turn=Some(turn);
                         let _ = live.report(&id, State::Busy, Source::Reported);
                         let handle = handle.clone();
@@ -2063,6 +2061,7 @@ mod parts_tests {
             text: "keep this".into(),
             images: vec![("image/png".into(), picture.clone())],
             files: vec![],
+            token: None,
         };
         let bytes = crate::proto::encode(&op).unwrap();
         let mut parts = Reassembly::default();
@@ -2087,6 +2086,7 @@ mod parts_tests {
             text: "look".into(),
             images: vec![("image/png".into(), picture.clone())],
             files: vec![],
+            token: None,
         };
         let reader = std::thread::spawn(move || {
             let mut parts = Reassembly::default();
@@ -2117,6 +2117,7 @@ mod parts_tests {
                 text: "next".into(),
                 images: vec![],
                 files: vec![],
+                token: None,
             },
         )
         .unwrap();

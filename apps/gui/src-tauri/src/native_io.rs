@@ -26,6 +26,7 @@ pub(crate) const COMMANDS: &[&str] = &[
     "chat_set_option",
     "chat_stop",
     "chat_replay",
+    "chat_capture",
     "chat_say",
     "term_key",
     "term_resize",
@@ -126,6 +127,10 @@ fn parse<R: Runtime>(invoke: &Invoke<R>, name: &'static str) -> Result<Request, 
         },
         "chat_stop" => Control::Stop,
         "chat_replay" => Control::Replay,
+        "chat_capture" => {
+            let token: String = arg!("token");
+            Control::Capture(chat::capture_token(&token).map_err(InvokeError::from)?)
+        },
         "chat_say" => {
             let text = arg!("text");
             let images = argument::<R, Option<Vec<(String, String)>>>(invoke, name, "images")?
@@ -364,6 +369,8 @@ mod tests {
             true
         }
         #[tauri::command]
+        pub fn chat_capture(id: String, lease: String, token: String) -> bool { true }
+        #[tauri::command]
         pub fn chat_say(
             id: String,
             lease: String,
@@ -430,6 +437,7 @@ mod tests {
                 original::chat_set_option,
                 original::chat_stop,
                 original::chat_replay,
+                original::chat_capture,
                 original::chat_say,
                 original::term_key,
                 original::term_resize,
@@ -477,6 +485,10 @@ mod tests {
             (
                 "chat_replay",
                 json!({"id":"fixture","lease":"fixture-lease"}),
+            ),
+            (
+                "chat_capture",
+                json!({"id":"fixture","lease":"fixture-lease","token":"00112233445566778899aabbccddeeff"}),
             ),
             (
                 "chat_say",
