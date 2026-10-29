@@ -67,7 +67,7 @@ def environment():
     # Hash values so credentials accidentally carried in CARGO_* are not printed.
     names = {"PATH", "CC", "CXX", "AR", "CFLAGS", "CPPFLAGS", "CXXFLAGS", "LDFLAGS",
              "SDKROOT", "MACOSX_DEPLOYMENT_TARGET", "IPHONEOS_DEPLOYMENT_TARGET",
-             "KHOR_AGENT_BUNDLE"}
+             "KHOR_AGENT_BUNDLE", "TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS"}
     names.update(n for n in os.environ if n.startswith(("CARGO", "RUST", "KHOR_", "CC_", "CXX_", "AR_", "PKG_CONFIG")))
     return {n: key(os.environ.get(n)) for n in sorted(names)}
 

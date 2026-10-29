@@ -227,6 +227,40 @@ class ProvenanceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "inputs changed"):
                 p.verify_build(prepared, rows)
 
+    def test_tauri_environment_records_unset_and_hashes_values(self):
+        names = ("TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS")
+        absent = p.environment()
+        for name in names:
+            with self.subTest(name=name):
+                self.assertEqual(absent[name], p.key(None))
+                os.environ[name] = "private config value"
+                present = p.environment()
+                self.assertEqual(present[name], p.key("private config value"))
+                self.assertNotIn("private config value", json.dumps(present))
+                os.environ.pop(name)
+                self.assertEqual(p.environment(), absent)
+
+    def test_tauri_environment_set_change_and_remove_invalidate_producer_keys(self):
+        for name in ("TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS"):
+            for previous, current in ((None, "A"), ("A", "B"), ("A", None)):
+                with self.subTest(name=name, previous=previous, current=current):
+                    if previous is None:
+                        os.environ.pop(name, None)
+                    else:
+                        os.environ[name] = previous
+                    prepared = self.prepare()
+                    rows = self.rows()
+                    if current is None:
+                        os.environ.pop(name, None)
+                    else:
+                        os.environ[name] = current
+                    changed = self.prepare()
+                    self.assertNotEqual(prepared["package_keys"], changed["package_keys"])
+                    with self.assertRaisesRegex(ValueError, "inputs changed"):
+                        p.verify_build(prepared, rows)
+                    self.assertEqual(changed["package_keys"], self.prepare()["package_keys"])
+            os.environ.pop(name, None)
+
     def test_wrong_artifact_or_unknown_depfile_source_cannot_reach_native_runner(self):
         receipt, rows = self.initial()
         Path(rows[1]["executable"]).write_bytes(b"other tree binary")
@@ -416,6 +450,17 @@ class ProvenanceTests(unittest.TestCase):
             row["fresh"] = True
         with self.assertRaisesRegex(ValueError, "no current invocation"):
             p.verify_build(prepared, [generated, *rows])
+
+    def test_tauri_build_script_environment_is_known_even_when_unset(self):
+        self.add_generator()
+        prepared = self.prepare()
+        rows = self.rows()
+        generated = self.generated_row(prepared, current=True)
+        marker = Path(generated["out_dir"]).parent / "output"
+        marker.write_text("cargo::rerun-if-env-changed=TAURI_CONFIG\n"
+                          "cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS\n")
+        receipt = p.verify_build(prepared, [generated, *rows])
+        self.assertEqual(len(receipt["generated"]), 1)
 
     def test_build_script_unrecorded_input_is_rejected(self):
         self.add_generator()
