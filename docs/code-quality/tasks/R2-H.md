@@ -68,3 +68,41 @@ core真测试3项通过（14.31s构建/0.04s执行），覆盖序列化预算截
 全GUI TypeScript直接命令tsc --noEmit --pretty false exit0，API使用真实生成类型；无手写TS结构。Tauri命令注册源码尚未独立编译完整App，不把core compile当整个native通过。当前工作树将提交纵向服务片段，下一步仍是newer、记录chunk、取消贯通、GUI有界缓存与ChatView实际消费，旧全量follow尚未替换。
 
 纵向服务片段提交：2950ddb2d581860c4cef367e373b7cb514c49191，作者树clean。内盘任务独立恢复bundle round2-history-2950ddb2.bundle，收据round2-history-checkpoint.json；不修改root的全局refs/manifest，待root下一检查点整合。
+
+## eca83a8b newer/chunk/lease 稳定服务检查点
+
+已提交eca83a8b，位于C接口依赖bb21b8d3/f6d9819及ChatView独立C1胶水efeaa12b之后；root只需各自cherry-pick对应胶水/服务提交，不把C依赖副本重复整合。C1普通path/URL进入会话内容，无cwd也保留URL，去launch及旧preview分支。
+
+服务实际实现read_next（正向record内item续接、小半行等待、巨大pending引用并前进）、64KiB显式raw record chunk（base64 bytes，无lossy文本转码）、begin→单次claim→worker check→RAII释放及cancel。先begin握手多一次轻量RTT，客户端离页时未完成begin在应答后cancel而不派IO。unclaimed lease有30s admission期限并cap64；claimed cancel只标stop并保留容量直到worker drop，避免取消后仍不可中断的worker逃出上限。sync256KiB读、Node::open/目录定位途中不可强制中断的边界保留。
+
+真实gen→Node10→core预算4→request生命周期3全部exit0；newer-worker/source-manifest.json对每个新/改文件逐路径存全文，包含新history_request.rs，运行后Rust8文件SHA逐一相同（verified-rust-source.json）。原始日志/results.json不变。Node覆盖正反300事件/半行追加/巨大pending/原字节chunk/取消与旧5项；core正向wire budget后newer续接；请求3项含cancel-before-claim、claimed容量占用/释放和过期。Tauri源码仅语法/接线，未完整native App编译，GUI仍未真实消费。
+
+eca真实生成产物已在任何catalog改动前整体快照到newer-worker/generated-eca83a8b，SHA256 manifest为generated-eca83a8b.json（158 TS+inventory=159文件）；producer与git show eca完全一致。root可按明确快照同步ignored绑定，无需重编同源。native槽已释放。
+
+现正写GUI有界cache和lease source模型（尚未提交/验证）；独审指出并正在修：空页推进游标不能被另一方向非空页回退、输运失败须cancel未claim lease、dispose须追踪in-flight取消与begin、清理错误摘要有界。下一步接ChatView取代旧全量follow，并以源文本稳定key/锚点验证；随后按需raw chunk viewer必须streaming UTF8解码且显式逐段读取、不自动拼全记录。catalog zh/en仅history_*新键已获root单独写权，需真实producer生成。
+
+## GUI实际消费纵向片段（待固定提交）
+
+ChatView只读still分支已移除from=0的followHistory消费，使用historySource（独立lease owner）、historyReader（单页操作/可见性/自动有界追赶）、history-window（8页/512entries/2MiB响应预算取先到者）。旧RPC目前仍在源码，已确认无GUI消费者；下一个小片段删除，live replay不变。
+
+首读tail、older/newer显式加载、离页/隐藏取消在途请求；未完成begin应答后cancel且不派IO，异步工作输运失败先cancel再释放owner，dispose追踪begin/work/cancel并给有界错误摘要。响应代次隔离不称作强制中断同步IO；不可中断Node::open/路径定位/单次有界读边界仍保持。自动跟随has_more可逐批追赶；用户阅读离开尾部暂停。
+
+GUI帧投影每entry保留稳定source key，避免prepend把相邻历史正文合成一个无界段；工具结果跨保留页按call ID关联，缺call时先显示结果本身，可继续加载更早内容，不回头全文件补索引。内容pages身份不变的cursor-only poll不重建paint/Markdown；older空页或失败完成清锚点，内容prepend按可见历史节点保留位置。reset同时清缓存、raw viewer、展开状态和旧锚点。实际DOM锚点/原生长历史观感仍需隔离Lab/App验收，不以单元测试冒实机通过。
+
+HistoryRecords仅显式读取64KiB原字节区段，streaming TextDecoder跨段保留中文/emoji边界；仅一段正文驻留，不自动递归拼完整记录。换引用/重头读先清next，首次失败不能沿用旧offset。raw引用元数据同样计入页字节预算；当前引用入口集中位于已加载内容下方，最终视觉待Lab检查。
+
+catalog zh/en仅新增9个history_*词条；真实cargo run -p khor-catalog --bin gen_ts --locked exit0，临时文件成功后原子发布，source/output SHA见history/gui-consumer/catalog-gen.json，native槽已释放。C1根App胶水432d98ce仅作为依赖cherry-pick到H的c57d3ae4，root无需重复集成依赖。iOS validator胶水8449f825仅两行，依赖C ec9cf06c，不冒本地完整iOS编译。
+
+18项JS定向检查已通过（包括缓存双端/空页游标、lease失败/退出、backlog连追、cursor-only内容身份、UTF8流、真实HistoryRecords.load回调换引用失败、稳定段落key、缺call结果）。全GUI TypeScript通过；最后reset锚点/内部key修正后同命令按新源快照复验中，最终以gui-consumer/final/results.json为准。第一次gui-consumer/results.json记录的是前一固定片段，不用于冒最新diff。无用户App操作，无main/ship。
+
+## 已固定GUI消费、旧RPC清理与验收Lab
+
+GUI实际消费提交77168f9b6bada5563103dad1e791dccc0bf570a8；非作者逐10路径git-show SHA与gui-consumer/final/source-manifest核同，18JS与全tsc exit0/unchanged=true成立。真实catalog产物已独立快照gui-consumer/generated-catalog-77168f9b.ts（SHA b499d69dc0c94876441b97ac1a37d3bba9c377b6ea33f8cb5e1896d58c586d58），同名.json记录两语言源与git-show一致，供root无需重gen同步ignored产物。
+
+旧全量GUI只读入口已单独删除为a3e9b6ad：GUI fetchHistory/followHistory、core history/history_follow/Followed、dev分派、Tauri命令/registry均已无入口；mobile-static的history_page/record要求async，begin/cancel纯内存admission入sync名单。Node vendor transcript_of/follow保留其他消费，live replay/resume未改。真实gen空staging成功exit0/68.993s（Rust源unchanged），mobile-static[]、tsc exit0，证据retire-full-read/source-manifest.json、result.json、gui-checks.json与generated输出逐文件SHA。native槽已释放，Tauri整App仍未编译；独审5文件diff无阻断。
+
+独立实际ChatView still Lab为499dbe4f：lab/history-reader.{html,tsx}、scripts/history-preview.vite.ts/history-fixture.mjs四文件。实例仅127.0.0.1:23836，URL /lab/history-reader.html，PID88855（以history-lab.json与实际进程为准）。只stub原始API输运，不替换生产ChatView/source/cache/reader/Markdown。20万逻辑记录按128条惰性生成，不写大记录文件；raw396000bytes仅64KiB按需分段。GET /__history_fixture记录pages/entries/bytes/lease/cancel/chunkranges、最近64页，未知和已退役API显式400并记账。控件追加500条、下一页延迟3s、隐藏面板、卸载视图、替换来源；供root浏览器验首屏、DOM有界、prepend锚点、自动追赶、退出取消与原始字节。Vite依赖缓存目前52MiB、外盘仍约20GiB；不是新Rust缓存。最后fixture修改触发一次Vite自动重启后已冻结源码，避免验收中改变来源。
+
+当前Lab视觉/浏览器结果待root回传，不能用模块测试或输运fixture冒真实磁盘巨历史/UI原生验收。真实提供者路径解析只枚举文件名/metadata，不先扫描待加载transcript正文；Node::open/目录定位尚非可强制中断，全请求成本不等于256KiB正文读预算。该限制继续保留，暂不扩通用索引治理。
+
+独审补充：a3e9b6ad source-manifest含6源（含未改producer）均与git-show匹配，真实gen/mobile[]/tsc收据无阻断；499dbe4f直接消费真实ChatView且未知API拒绝的边界已核。Lab raw分支未模拟cursor generation/identity拒收，也未延迟raw读；故该Lab只用于分段展示/UTF8及page可视/退出取消，不计raw旧来源/取消已验。按既定范围不为此扩新矩阵，生产backend仍按其定向源测试与明确限制评估。

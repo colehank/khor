@@ -52,3 +52,19 @@ root已批准SessionContent/MachineFiles/SideWorkspace、lib/drafts.ts、use-dra
 实际hook与生产owner计数表达式9项旧红新绿，包含saved/discard、隐藏保留、多实例、既有Workspace隔离、无双计、无中间0与StrictMode replay；最终tsc/diff通过。证据draft-count-receipt.json与red/green/types日志。测试不挂载React、不冒原生退出；最后一键立即Quit、上游onDraft被动回报间隙和拒写/退出流程仍待真实App验收。
 
 当前作者树全部源码已提交，Lab23834唯一实例保持待用户手工拖选反馈。下一步root集成本片段后验组合；作者等待真实R11反馈或再约定R27外部text/组词结束接纳策略。R28尚未确切入口复现。
+
+## 外部text接纳：merge owner迟到覆盖checkpoint
+
+提交 `cb67db78c2fc400bea83725b91b9448d152c0aca`，review-ready，非作者审查无阻断。真实merge闭包在磁盘读取/合并计算期间输入、输入后撤销、组词起止无docChanged、身份失效或后续冲突action后仍会覆盖新text/merge base。新版本复用fileRefresh的编辑revision checkpoint及已有overwriteEpoch action票据；两个异步边界核对，file/edit/clashes整体接纳，旧错误不替换当前反馈，旧finally不清新action忙状态。不重定义Draft.by，不重跑已失效合并。
+
+9项实际merge/onText/setEdit回调回归旧红新绿；刷新8项、草稿计数9项和最终tsc/diff通过。证据file-merge-receipt.json与red/green/types/组合日志，纯控制回包未运行浏览器或真实IME。
+
+外部text来源契约梳理：初载/theirs是显式加载并卸载旧editor；again按编辑revision接纳；onLanded保留当前text只更新base/digest；mine读取leaving最新text并受action/保存血统保护；merge现已按编辑revision/action接纳。CodeEditor仅最后out字符串判断echo仍是API边界；人工n→ni→host n只能证明任意旧props危险，没有真实React旧echo乱序证据，未加textRevision/onText元数据。
+
+未完：Mac真实IME、R11真实两框拖选、R28确切宿主、上游onDraft被动回报间隙/真实退出，以及组词期间自动保存策略与最终候选事务交接。父任务允许先承接独立C包调查，E未被标done；Lab23834/PID3175保持待用户反馈。
+
+## R11浏览器真实DOM验收进展（root执行）
+
+root告知Playwright工具fallback已完成Chromium DOM 1000/390×URL/path×左右外放8场景全绿，选区/焦点保留、键入替换精确。证据input/browser-fields/drag-corrected-report.json；原Home未清Mac全选触发native drag-existing-selection的假失败及textbox/combobox locator错误保留在single-trace/label-controls，修正测试前提后通过。
+
+因此不凭立即onBlur候选新增PageField/PathField补丁。R11已得浏览器实际拖选覆盖，原生WK及用户实际场景仍待；原待用户手工反馈为此前工具不可用时状态，当前由此检查点更新。Lab服务继续由root协调保留/结束。

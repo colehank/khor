@@ -58,3 +58,53 @@ H服务固定版2950ddb2d581860c4cef367e373b7cb514c49191独审无阻断。真实
 posthoc-2950-source.json和两份全文已核对git show：transcript_page.rs SHA9983493db537492f2ca0bbebd42d19d9137a6f40921d6a5916f3953ba0365e64；core chat.rs SHAd291a565cc46b84daa1da70027287cfdb3562728f9a46a7af0876e8f85713293。binary明确仅事后观测，不冒原日志producer身份。
 
 纠正前一节“final-source.patch未包含”判断：只查diff header的推断不准确。实际final capture在tracked diff之后raw追加新增模块全文，字节包含检查为true；缺的是unified路径标头，不是源内容。早期page-test-source确实不是补set_len后的字节，保持历史。已告root这一纠正，原日志不改，作者无需重复测试；root已安排的集成固定版定向验证继续。
+
+## 后续merge与双端游标（进行中）
+
+E实际merge异步覆盖片段初审无阻断：refresh checkpoint复用编辑revision/composing，overwriteEpoch约束动作归属，读取与计算两个await边界接纳前复核，file/edit/clashes一起更新，失效错误不盖新反馈，finally只当前action清working。作者9例执行真实merge/onText/setEdit回调，尚待固定提交/既定types与回归收据；没有为人工props replay扩公共textRevision或重定义Draft.by。CodeEditor一般外部text契约仍未完，真实IME不冒通过。
+
+H newer在开发中曾把older页同record的newer指向record.end，存在跳过该record后续item的风险；已提前指出，作者已改为older页newer保持输入exclusive上边界（record/item），tail页newer才用尾消费边界。core将forward wire截断按最后承接item+1保续接并has_more；拟300事件双向/正向预算回归对应此风险。此处尚未编译，不下固定版通过结论。
+
+E merge固定cb67db78c2fc400bea83725b91b9448d152c0aca独审无阻断；干净树、3源SHA与file-merge-receipt一致。9例真实回调、刷新8、草稿9与types收据通过。没有公共textRevision/Draft血统变更；真实React/IME、autosave marked-text策略仍需验证。已告root可checkpoint。
+
+H取消lease新模块初稿审查曾发现claimed取消直接remove，导致尚在不可中断IO/路径查找的worker提前释放MAX_REQUESTS容量；已要求并确认源码改为claimed只置stop留entry到RAII drop、unclaimed立即移除，取消测试增加保留/释放断言。此风险源码层已解除，等作者实际编译/定向结果。begin/cancel/page在core dispatcher/Tauri/GUI api的参数注册一致。新版newer和原生取消仍未给固定提交，不冒全链通过。
+
+## C1 prose检查点与H前端接纳（进行中）
+
+C新树khor-round2-content的prose首稿发现两处问题已修：无条件反斜杠归一会改变POSIX文件名，现仅Windows drive/UNC归一；PathLink失败后静态不可点击且错误跨目标复用，现按目标隔离并保留重试。内部open/openPage均await，捕获实际async provider失败。固定bb21b8d3d9a07e4f912dac79ae57cfdbe69ed404的5源SHA与prose-intent-receipt逐git-show核对一致；13项回调/URI/Web交接、types通过收据，无阻断。f6d9819d移除linkHome.launch与Workspace旧host opener分支已读，无阻断；App/ChatView供应和TerminalPane路由仍需各唯一owner接线，不计C1完整完成。没有真实OS opener/Web file handoff验收；noopener window.open的null不当成成功/拦截判断。
+
+H前端未提交稿初审指出：history-source若work在native claim前输运失败，finally遗失已注册lease；abort取消Promise不被dispose等待，可能提前返回空清理结果。已要求失败路径取消再忘记、跟踪去重在途cancel及有界错误记录。history-window空payload页推进的边界游标，不能在下一次反方向非空页无淘汰时被留存page旧metadata覆盖，否则重复重扫plumbing/恢复已结束older；已要求只在对应端实际淘汰时重建该端cursor并补两例。等待修正源码，尚不下新版通过结论。
+
+## 固定newer服务与root App路由独审
+
+H服务固定eca83a8b：9文件逐git-show SHA与newer-worker/source-manifest完全匹配；Node10/core4/request3及真实gen exit0日志已读。claimed cancel保留entry到RAII drop的容量修正、older页newer record/item、正向wire续接、64KiB原字节chunk均已核。无阻断；同源Cargo结果可复用，不要求重复全测试。Tauri完整App未编译，GUI source/cache两项反馈属下一未提交模型，不计此服务片段或用户S1通过。
+
+root集成树HEAD3f4487e7上的未提交App.tsx+check-session-link-routing.mjs独审无阻断：selectedRow存在即供应sessionHome，缺cwd仍有URL上下文；普通路径/URL同步dispatch既有事件，listener读取每render更新refs，inColumn的session前台路径走openContent，按来源machine解析设备并将内容绑定selectedRow.id。移除workspace查表/host opener fallback符合用户意图。4例脚本证明provider参数/无cwd/null分支，未执行真实listener/DOM/OS；完整链由源码追踪确认。既有事件只有machine不含sessionID，依赖可见当前session同步激活的既定契约，未引入跨会话异步路径。root修改为非作者独审，未由root自审。
+
+## C终端片段初审（尚未固定）
+
+URL/OSC8/path统一意图与桌面selection/非主按钮/TUI tracking守卫方向合理；局部linkFailure独立于终端why，并由action ticket/身份layout清理拒收迟到错误，不使opener失败停终端。
+
+已指出待修：真实fileLink仍只取pathname，system file://server/share或Windows drive可能丢authority/盘符语义，现19例stub fileLink未覆盖实际转换；coarse tapped URL/path尚绕统一guard，需保留触摸选择与应用鼠标归属，显式菜单打开保持明确意图。与作者核旧协议后纠正建议：launchOn原生仅http(s)/绝对路径，不能直接传raw file URI；open_link也仅http(s)。应准确转换或明确失败，不静默改目标，不顺势放开任意scheme。作者补Web/内部URL同旧http(s)语义约束属保留现契约，并非可达性预检。
+
+H前端source/cache前两处反馈已见源码修正：work失败cancel后忘记lease，jobs/cancelling跟踪使dispose等取消结果，cleanup有界计数/摘要；空页推进cursor仅在对应端实际淘汰后重建。等待固定测试/commit；ChatView真实消费仍未审。
+
+C终端固定ec9cf06c328c622dcd430fad572556f9af25575f最终独审无阻断，7记录源SHA逐git-show匹配。先前两点已修：system OSC8 file原URI交客户端opener保authority/drive，touch tapped和异步path回包共享selection/TUI guard。root批准的system_target只作为显式系统http(s)/file://允许边界，page_only不变，无新URL依赖/不冒完整RFC parser。Rust validator2项实际日志无spawn；terminal21/prose16/real-xterm构造links/types收据通过。完整Tauri/iOS、DOM真实命中、OS实际启动与TUI触摸仍待验；可checkpoint集成，不计C1完成。
+
+H真实GUI首稿新增反馈待修：自动跟随收到newer has_more时window.latest=false而调度停住，需分开自动追赶与用户离开尾部；空poll只推进cursor也按whole-window identity重建相同paint/Markdown，应按pages内容身份触发重画并正确结束空older anchor。HistoryRecords换引用/restart未清next，首次新读取失败后可能沿旧offset读新ref，应清continuation。已发作者，未据未完成稿冒通过。
+
+H GUI上述三项已见最终源码修正：catchingUp跨pause/resume保留且older/latest清除，自动newer按有界页继续；ChatView按window.pages身份重建paint，cursor-only完成清anchor，内容页一次finally发布保留anchor到layout；raw restart先清next。historyKey同时用于外wrapper与内部消息组件。gui-consumer/final的18项真实模块/回调JS、tsc日志exit0且unchanged=true已读，无新增源码阻断；等待固定ref核完整manifest。仍无实际WebView/原生可视滚动、OS退出、巨历史全链首屏观感验收，不据此关闭S1。
+
+C3当前ContentPicker返回工作区小片段初审无阻断：只改scope/source/query并退出搜索/编辑，不改address/exit/tabs/cwd；desktop复用toolbar返回，mobile正常流按钮，browser也可直回会话工作区。6项实际update/callback证据只覆盖状态语义，待固定ref/types；真实按钮布局与跨root切换未保存草稿需Lab核，未冒DOM已验。
+
+H GUI固定77168f9b6bada5563103dad1e791dccc0bf570a8，10路径逐git-show SHA与gui-consumer/final/source-manifest全部一致，18JS+tsc固定源收据可复用，独审无阻断。仍保留上述真实界面/全链验收限制。C3作者补核：picker的SideWorkspace经onOpenContent委托，不在本地创建FilePage；打开文件由上层SessionContent独立kept FilePage及drafts持有，picker root-key切换不会卸载文档owner；此为静态链核对，非真实未保存草稿验收。
+
+C3固定a965c16fd4581f4a7136d3fc46a76376b4817da7，3源SHA与workspace-return-receipt逐git-show一致，6项导航/实际callback、field13回归、types收据通过，独审无阻断。真实desktop/mobile placement、浏览器picker按钮、dirty文档DOM保留仍待隔离Lab，不据此标C3完成。
+
+H旧全量history/history_follow RPC移除当前5文件diff初审无阻断：GUI API/core dispatch/Tauri注册同步删除，Followed无GUI tracked消费者；Node vendor transcript_of/follow及live replay保留。mobile命令inventory把page/record归async阻塞、begin/cancel归无IO admission与源码相符。等固定ref及既定producer/types/mobile-static收据，不扩矩阵。
+
+H移除旧RPC固定a3e9b6ad524dc491d09c3dfad6b8c1bc9cf0f8c1独审无阻断：retire-full-read/source-manifest六路径含producer逐git-show核一致；gen实际日志编译/运行完成，68.993s exit0/unchanged=true；mobile-static原日志[]、types空日志与exit0收据一致。同源既定证据可复用。
+
+H Lab固定499dbe4f只读核：入口直接import真实ChatView，middleware仅替换API输运；旧history/history_follow明确400记legacy，其他未知API明确400记unknown；20万逻辑记录按128条惰性生成，非预建全量DOM。Lab不能证明真实磁盘读取预算；raw-record fixture不校验cursor来源generation/identity且delay仅page，不能外推raw旧来源拒收或raw取消已验。已告root按真实页面消费/滚动/有界页退出范围验，不为fixture限制扩矩阵。
+
+C未提交content-links/workspace-return Lab隔离边界只读核：入口直接import真实TerminalPane、SessionContentPane及既有两navigation/content hooks；base Vite无backend/proxy插件，fixture拦全部/api/*本地结束，write_text409、git_*400、tabs_focus仅改内存active，没有用户backend/文件/会话写入通路。terminal入口window.open只记日志返回null，不外发。范围限制：未知API当前200 null，能保证本地隔离但不能证明没有意外API调用；workspace-return入口未覆写window.open，no-op opener结论仅terminal页。已告root/作者，不改服务、不触发HMR。
