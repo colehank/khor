@@ -666,7 +666,8 @@ function FileBody({
 
   /** Refresh a clean file without replacing intervening edits or marked text.
       The original disk version must also remain the draft's merge base. */
-  const again = () => {
+  const readNeeded = useCallback(() => {
+    if (!refresh.current.needsRead()) return;
     const {file,edit} = accepted.current;
     if (kindOf(path) !== "text" || file === null || (edit !== null && edit.text !== file.text)) return;
     void refresh.current.read(
@@ -681,7 +682,12 @@ function FileBody({
         setDiffAt((n) => n + 1);
       },
     ).catch(() => {});
-  };
+  }, [machine, path, acceptBuffer]);
+  const again = useCallback(() => {
+    refresh.current.requestRead();
+    readNeeded();
+  }, [readNeeded]);
+  useEffect(() => { readNeeded(); }, [file, edit, readNeeded]);
 
   /** **A write landed**, from this mount or from one that left the file
       a moment ago (`lib/save-road`). The disk is the text written, so
@@ -1112,7 +1118,10 @@ function FileBody({
           hunks={hunks}
           blamed={blamed}
           goLine={goLine}
-          onComposition={(active) => refresh.current.setComposing(active)}
+          onComposition={(active) => {
+            refresh.current.setComposing(active);
+            if (!active) readNeeded();
+          }}
           onText={(t) => {
             setEdit(e => e === null ? null : {...e, text: t});
           }}
