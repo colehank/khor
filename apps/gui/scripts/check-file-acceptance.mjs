@@ -12,11 +12,15 @@ function visit(node) {
     if(name==='take'&&declaration.initializer?.parameters?.[0]?.type?.getText(source)==='FileText')callbacks.loaded=node.getText(source);
   }
   if(ts.isCallExpression(node)&&node.expression.getText(source)==='onLanded')callbacks.landed=node.arguments[2].getText(source);
+  if(ts.isCallExpression(node)&&node.expression.getText(source)==='useEffect') {
+    const effect=node.arguments[0];
+    if(effect&&ts.isArrowFunction(effect)&&ts.isCallExpression(effect.body)&&effect.body.expression.getText(source)==='publishDraft')callbacks.passive=effect.getText(source);
+  }
   if(ts.isJsxAttribute(node)&&['onText','onChunks'].includes(node.name.getText(source)))callbacks[node.name.getText(source)]=node.initializer.expression.getText(source);
   ts.forEachChild(node,visit);
 }
 visit(source);
-for(const name of ['acceptBuffer','setEdit','setClashes','publishDraft','flush','save','merge','mine','theirs','loaded','landed','onText','onChunks']) {
+for(const name of ['acceptBuffer','setEdit','setClashes','publishDraft','flush','save','merge','mine','theirs','loaded','landed','passive','onText','onChunks']) {
   assert(callbacks[name],name+' production callback found');
   callbacks[name]=(await transform(callbacks[name],{loader:'tsx'})).code;
 }
@@ -33,11 +37,11 @@ function fixture({text='A',digest='A',clashes=null,mergeClashes=1,by='line',reta
   publication.current=()=>{publishedStates.push(accepted.current);publishDraft(accepted.current.edit);};
   let resolveOverwrite;
   const overwrite=new Promise(resolve=>resolveOverwrite=resolve);
-  const env={accepted,refresh,acceptBuffer,setEdit,setClashes,setOops:()=>{},setDiffAt:()=>{},savedRef:{current:null},bytesOf:text=>Buffer.byteLength(text),machine:'fixture',path:'/note',roadOf:()=>road,write:async(_machine,_path,draft,options)=>{writes.push({draft,options});},leavingCallbacks:{current:{onDraft,onSaved:()=>{}}},confirmSaved:()=>{},overwriteEpoch,setWorking:()=>{},forget:()=>{},onDraft,setReread:()=>{},working:false,fetchFileText:async()=>({text:'B',digest:'B',at_ms:2}),mergeFileText:async()=>({text:'merged',clashes:mergeClashes}),said:error=>error.message,readForOverwrite:()=>overwrite,remember:()=>{},live:true,draft:retained?accepted.current.edit:undefined,newLine:()=> 'loaded-line'};
+  const env={accepted,bufferLive:live,edit:accepted.current.edit,publishDraft,refresh,acceptBuffer,setEdit,setClashes,setOops:()=>{},setDiffAt:()=>{},savedRef:{current:null},bytesOf:text=>Buffer.byteLength(text),machine:'fixture',path:'/note',roadOf:()=>road,write:async(_machine,_path,draft,options)=>{writes.push({draft,options});},leavingCallbacks:{current:{onDraft,onSaved:()=>{}}},confirmSaved:()=>{},overwriteEpoch,setWorking:()=>{},forget:()=>{},onDraft,setReread:()=>{},working:false,fetchFileText:async()=>({text:'B',digest:'B',at_ms:2}),mergeFileText:async()=>({text:'merged',clashes:mergeClashes}),said:error=>error.message,readForOverwrite:()=>overwrite,remember:()=>{},live:true,draft:retained?accepted.current.edit:undefined,newLine:()=> 'loaded-line'};
   const bind=(name,expression=false)=>Function(...Object.keys(env),expression?'return '+callbacks[name]:callbacks[name]+';return '+(name==='loaded'?'take':name)+';')(...Object.values(env));
   const type=Function('setEdit','return '+callbacks.onText)(setEdit);
   const chunks=Function('setClashes','return '+callbacks.onChunks)(setClashes);
-  return {accepted,live,projections,published,publishedStates,writes,road,type,chunks,landed:bind('landed',true),flush:bind('flush'),save:bind('save'),merge:bind('merge'),mine:bind('mine'),loaded:bind('loaded'),resolveOverwrite,theirs:bind('theirs')};
+  return {accepted,live,projections,published,publishedStates,writes,road,type,chunks,landed:bind('landed',true),passive:bind('passive',true),flush:bind('flush'),save:bind('save'),merge:bind('merge'),mine:bind('mine'),loaded:bind('loaded'),resolveOverwrite,theirs:bind('theirs')};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const results=[];
@@ -60,5 +64,7 @@ await test('initial load preserves edits made to a retained draft while IO was p
 const overwriteRead={file:{text:'B',digest:'B',at_ms:2},pin:text=>({text,was:'B',by:'fresh'})};
 await test('overwrite read pins the latest text and the next same-task edit to one new line',async()=>{const f=fixture({text:'mine'});f.mine();f.type('typed during read');f.resolveOverwrite(overwriteRead);await tick();assert.equal(f.accepted.current.file.digest,'B');assert.deepEqual(f.accepted.current.edit,{text:'typed during read',was:'B',by:'fresh'});f.type('typed after pin');f.save(true);assert.deepEqual(f.writes.at(-1).draft,{text:'typed after pin',was:'B',by:'fresh'});});
 await test('discard invalidates an overwrite read before it can accept or write',async()=>{const f=fixture({text:'mine'});f.mine();f.theirs();f.resolveOverwrite(overwriteRead);await tick();assert.equal(f.accepted.current.edit,null);assert.equal(f.writes.length,0);});
+await test('a deferred passive publication cannot replace a newer accepted edit with its old projection',()=>{const f=fixture();f.type('B');f.passive();assert.equal(f.published.at(-1)?.text,'B');});
+await test('layout departure rejects an overwrite before passive epoch cleanup',async()=>{const f=fixture({text:'mine'});f.mine();f.live.current=false;f.resolveOverwrite(overwriteRead);await tick();assert.equal(f.writes.length,0);assert.equal(f.accepted.current.edit.text,'mine');});
 console.log(JSON.stringify({passed:results.filter(r=>r.pass).length,total:results.length,results},null,2));
 assert(results.every(r=>r.pass),'accepted file draft/base/flush contract');

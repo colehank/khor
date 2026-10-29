@@ -633,7 +633,7 @@ function FileBody({
     else onDraft(pending);
   }, [onDraft, reportDraftCount]);
   publishAccepted.current = () => publishDraft(accepted.current.edit);
-  useEffect(() => publishDraft(edit), [edit, file, publishDraft]);
+  useEffect(() => publishDraft(accepted.current.edit), [edit, file, publishDraft]);
 
   /** How many lines the text has, counted the way `\n` does — the spine
       blame is laid along. */
@@ -850,7 +850,7 @@ function FileBody({
     setOops(null);
     readForOverwrite(machine, path)
       .then((read) => {
-        if (action !== overwriteEpoch.current) return;
+        if (action !== overwriteEpoch.current || !bufferLive.current) return;
         const latest = accepted.current.edit;
         if (latest === null || latest.by !== by) return;
         const pin = read.pin(latest.text);
