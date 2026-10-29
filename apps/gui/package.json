@@ -79,6 +79,8 @@
     "scroll-health": "node scripts/check-scroll-health.mjs",
     "deck-scrub": "node scripts/check-deck-scrub.mjs",
     "scroll-surfaces": "node scripts/check-scroll-surfaces.mjs",
+    "sticky-fade": "node scripts/check-sticky-fade.mjs",
+    "commit-sticky-jump": "node scripts/check-commit-sticky-jump.mjs",
     "file-deck": "node scripts/check-file-deck.mjs",
     "field-interaction": "node scripts/check-field-interaction.mjs",
     "content-toolbar": "node scripts/check-content-toolbar.mjs",

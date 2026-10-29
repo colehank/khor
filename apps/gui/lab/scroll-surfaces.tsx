@@ -26,11 +26,16 @@ function Lab(){
        scroll.scrollTop=0;await wait();
        const first=scroll.firstElementChild!.getBoundingClientRect().top,range=scroll.scrollHeight-scroll.clientHeight;
        scroll.scrollTop=180;await wait();
-       const paint=getComputedStyle(head,'::before'),sr=scroll.getBoundingClientRect(),hr=head.getBoundingClientRect();
-       const clear=paint.backgroundColor==='rgba(0, 0, 0, 0)';
-       const separated=sr.top>=hr.bottom-1;
-       const pass=head.hasAttribute('data-scrolled')&&first>=hr.bottom-1&&(!transparent||(clear&&separated));
-       results.push({pane:pane.dataset.scrollProof,theme,transparent,opacity,pass,background:paint.backgroundColor,separated,range,top:scroll.scrollTop});
+       const paint=getComputedStyle(head,'::before'),title=getComputedStyle(head),body=getComputedStyle(scroll);
+       const sr=scroll.getBoundingClientRect(),hr=head.getBoundingClientRect();
+       const clear=paint.backgroundColor==='rgba(0, 0, 0, 0)'&&title.backgroundColor==='rgba(0, 0, 0, 0)';
+       const titleFull=title.maskImage==='none'&&title.opacity==='1';
+       const noDivider=(parseFloat(title.borderBottomWidth)||0)===0&&title.boxShadow==='none';
+       const fadeStart=sr.top+(parseFloat(scroll.style.getPropertyValue('--sticky-fade-start'))||0);
+       const fadeEnd=fadeStart+(parseFloat(scroll.style.getPropertyValue('--sticky-fade-length'))||0);
+       const bodyFades=scroll.hasAttribute('data-sticky-fading')&&body.maskImage!=='none'&&Math.abs(fadeStart-hr.top)<1&&fadeEnd>=hr.bottom;
+       const pass=head.hasAttribute('data-scrolled')&&first>=hr.bottom-1&&clear&&titleFull&&noDivider&&bodyFades;
+       results.push({pane:pane.dataset.scrollProof,theme,transparent,opacity,pass,clear,titleFull,noDivider,bodyFades,fadeStart,fadeEnd,headTop:hr.top,headBottom:hr.bottom,range,first,top:scroll.scrollTop});
      }
    }
    material(true);document.documentElement.dataset.theme='dark';await wait();
