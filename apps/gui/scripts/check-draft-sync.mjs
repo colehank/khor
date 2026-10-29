@@ -19,7 +19,22 @@ const adapters = owners.map(name => {
   assert(declaration && callback, `${name} production draft state/callback located`);
   return `export function ${name}(file, draftKey=file) { ${declaration} ${count ?? ''} return {drafts, onDraft: ${callback}}; }`;
 });
-const bundle = await build({stdin:{contents:`import * as hooks from './src/hooks/use-draft-count'; import {useState} from 'react'; const {useDraftCount,useDraftState}=hooks; ${adapters.join('\n')} export {draftCount} from './src/lib/drafts';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false,plugins:[{name:'aliases',setup(b){b.onResolve({filter:/^@\/lib\/drafts$/},()=>({path:process.cwd()+'/src/lib/drafts.ts'}));b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const useState=(...a)=>globalThis.draftFixture.state(...a); export const useRef=(...a)=>globalThis.draftFixture.ref(...a); export const useCallback=(...a)=>globalThis.draftFixture.callback(...a); export const useLayoutEffect=(...a)=>globalThis.draftFixture.effect(...a);`}));}}]});
+const fileSource=ts.createSourceFile('FileView.tsx',readFileSync('src/views/FileView.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+let fileCount, publish, onText;
+function visitFile(node) {
+  if(ts.isCallExpression(node)&&node.expression.getText(fileSource)==='useDraftCount') {
+    let statement=node;
+    while(!ts.isVariableStatement(statement)&&!ts.isExpressionStatement(statement))statement=statement.parent;
+    fileCount=statement.getText(fileSource);
+  }
+  if(ts.isVariableStatement(node)&&node.declarationList.declarations.some(d=>d.name.getText(fileSource)==='publishDraft'))publish=node.getText(fileSource);
+  if(ts.isJsxAttribute(node)&&node.name.getText(fileSource)==='onText')onText=node.initializer.expression.getText(fileSource);
+  ts.forEachChild(node,visitFile);
+}
+visitFile(fileSource);
+assert(fileCount&&publish&&onText,'FileBody reporting and editor callback located');
+adapters.push(`export function StandaloneFile(mode) { const [body,setBody]=useState('A'); const file={text:'A'}; const onDraft=mode==='delegated'?()=>{}:undefined; const dirty=body!==file.text; const leaving=useRef({edit:{text:body}}); const setEdit=next=>setBody(typeof next==='function'?next(leaving.current.edit).text:next.text); ${fileCount} ${publish} return {onText:${onText}}; }`);
+const bundle = await build({stdin:{contents:`import * as hooks from './src/hooks/use-draft-count'; import {useState,useRef,useCallback} from 'react'; const {useDraftCount,useDraftState}=hooks; ${adapters.join('\n')} export {draftCount} from './src/lib/drafts';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false,plugins:[{name:'aliases',setup(b){b.onResolve({filter:/^@\/lib\/drafts$/},()=>({path:process.cwd()+'/src/lib/drafts.ts'}));b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const useState=(...a)=>globalThis.draftFixture.state(...a); export const useRef=(...a)=>globalThis.draftFixture.ref(...a); export const useCallback=(...a)=>globalThis.draftFixture.callback(...a); export const useLayoutEffect=(...a)=>globalThis.draftFixture.effect(...a);`}));}}]});
 const api = await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 function mount(name) {
   const slots = [];
@@ -84,5 +99,13 @@ for (const name of owners) {
     callback({text:'late'}); assert.equal(api.draftCount(),1,'unmounted owner cannot revive registration');
   });
 }
+test('standalone FileBody protects edit and clears undo before React commit',make=>{
+  const owner=make('StandaloneFile'), onText=owner.render().onText;
+  onText('typed');assert.equal(api.draftCount(),1,'standalone edit must protect Quit before React commits');
+  onText('A');assert.equal(api.draftCount(),0,'undo to accepted disk contents clears protection');
+});
+test('delegated FileBody never adds a second count',make=>{
+  const owner=make('StandaloneFile');owner.render('delegated').onText('typed');assert.equal(api.draftCount(),0);
+});
 console.log(JSON.stringify({passed:results.filter(r=>r.pass).length,total:results.length,results},null,2));
 assert(results.every(r=>r.pass),'synchronous production-owner draft protection');

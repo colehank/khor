@@ -5,18 +5,22 @@ import {execFileSync} from 'node:child_process';
 import {build} from 'esbuild';
 import ts from 'typescript';
 const legacy=process.argv.includes('--legacy');
-const bundle=await build({stdin:{contents:(legacy?'export const useDraftCount=()=>{};':"export {useDraftCount} from './src/hooks/use-draft-count';")+"export {draftCount,watchDrafts,reportDrafts} from './src/lib/drafts';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false,plugins:[{name:'draft-hook-alias',setup(b){b.onResolve({filter:/^@\/lib\/drafts$/},()=>({path:process.cwd()+'/src/lib/drafts.ts'}));}},{name:'layout-fixture',setup(b){b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const useRef=current=>globalThis.ownerRef(current);export const useLayoutEffect=(effect,deps)=>globalThis.layoutEffect(effect,deps);export const useState=()=>{throw new Error("unexpected state in count-only test")};export const useCallback=()=>{throw new Error("unexpected callback in count-only test")};'}));}}]});
+const bundle=await build({stdin:{contents:(legacy?'export const useDraftCount=()=>{};':"export {useDraftCount} from './src/hooks/use-draft-count';")+"export {draftCount,watchDrafts,reportDrafts} from './src/lib/drafts';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false,plugins:[{name:'draft-hook-alias',setup(b){b.onResolve({filter:/^@\/lib\/drafts$/},()=>({path:process.cwd()+'/src/lib/drafts.ts'}));}},{name:'layout-fixture',setup(b){b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const useRef=current=>globalThis.ownerRef(current);export const useLayoutEffect=(effect,deps)=>globalThis.layoutEffect(effect,deps);export const useState=()=>{throw new Error("unexpected state in count-only test")};export const useCallback=fn=>fn;'}));}}]});
 const {useDraftCount,draftCount,watchDrafts,reportDrafts}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 const sources={session:'src/views/SessionContent.tsx',machine:'src/views/MachineFiles.tsx',side:'src/views/SideWorkspace.tsx',local:'src/views/FileView.tsx'};
 const code=Object.fromEntries(Object.entries(sources).map(([name,path])=>[name,legacy?execFileSync('git',['show','e7c335c8:apps/gui/'+path],{encoding:'utf8'}):readFileSync(path,'utf8')]));
 function mount(kind,initial){
  let ref,cleanup,values=initial;
- let expression=code[kind].match(/  ?useDraftCount\(([^;]+)\);/)?.[1];
- if(!expression){
-  const source=ts.createSourceFile(sources[kind],code[kind],ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
-  const visit=node=>{if(ts.isCallExpression(node)&&node.expression.getText(source)==='useDraftState')expression=`(${node.arguments[1].getText(source)})(drafts)`;ts.forEachChild(node,visit);};
-  visit(source);
- }
+ let expression;
+ const source=ts.createSourceFile(sources[kind],code[kind],ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ const visit=node=>{
+  if(ts.isCallExpression(node)) {
+   if(node.expression.getText(source)==='useDraftCount')expression=node.arguments[0].getText(source);
+   if(node.expression.getText(source)==='useDraftState')expression=`(${node.arguments[1].getText(source)})(drafts)`;
+  }
+  ts.forEachChild(node,visit);
+ };
+ visit(source);
  const render=()=>{
   globalThis.ownerRef=current=>ref??=( {current} );
   globalThis.layoutEffect=(effect,deps)=>{if(deps.length===0){if(!cleanup)cleanup=effect();}else effect();};

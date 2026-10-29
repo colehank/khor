@@ -615,14 +615,16 @@ function FileBody({
       One fact, one place. */
   const canEdit = (edit?.was ?? "") !== "";
   const dirty = file !== null && edit !== null && edit.text !== file.text;
-  useDraftCount(onDraft === undefined && dirty ? 1 : 0);
+  const reportDraftCount = useDraftCount(onDraft === undefined && dirty ? 1 : 0);
   useEffect(() => onCanEdit?.(canEdit), [canEdit, onCanEdit]);
 
   const publishDraft = useCallback((next: Draft | null) => {
     // A read in flight cannot clear the retained owner's existing draft.
-    if (onDraft === undefined || file === null || next === null) return;
-    onDraft(next.text === file.text ? null : next);
-  }, [file, onDraft]);
+    if (file === null || next === null) return;
+    const pending = next.text === file.text ? null : next;
+    if (onDraft === undefined) reportDraftCount(pending === null ? 0 : 1);
+    else onDraft(pending);
+  }, [file, onDraft, reportDraftCount]);
   useEffect(() => publishDraft(edit), [edit, publishDraft]);
 
   /** How many lines the text has, counted the way `\n` does — the spine

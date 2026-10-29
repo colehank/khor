@@ -8,7 +8,7 @@ const source=legacy?execFileSync('git',['show','e7c335c8:apps/gui/src/views/File
 const mergeSource=source.match(/  const merge = \(\) => \{[\s\S]*?\n  \};/)?.[0];
 const editSource=source.match(/  const setEdit = useCallback\([\s\S]*?\n  \);/)?.[0];
 const textSource=source.match(/          onText=\{(\(t\) => \{[\s\S]*?\n          \})\}/)?.[1];
-const publishSource=source.match(/  const publishDraft = useCallback\([\s\S]*?\n  \}, \[file, onDraft\]\);/)?.[0];
+const publishSource=source.match(/  const publishDraft = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0];
 assert(mergeSource&&editSource&&textSource&&(legacy||publishSource),'production merge, edit and draft callbacks exist');
 const compile=async source=>(await transform(source,{loader:'tsx'})).code;
 const mergeCode=await compile(mergeSource),editCode=await compile(editSource),publishCode=publishSource?await compile(publishSource):null;
@@ -21,7 +21,7 @@ function fixture(){
  const leaving={current:{edit}};
  const setEdit=Function('useCallback','setOwn','draft','refresh',editCode+';return setEdit;')(f=>f,update=>{edit=update(edit);leaving.current.edit=edit;},undefined,refresh);
  const published=[];
- const publishDraft=publishCode?Function('useCallback','file','onDraft',publishCode+';return publishDraft;')(f=>f,file,value=>published.push(value)):undefined;
+ const publishDraft=publishCode?Function('useCallback','file','onDraft','reportDraftCount',publishCode+';return publishDraft;')(f=>f,file,value=>published.push(value),()=>{throw new Error('delegated editor must not count twice');}):undefined;
  const type=Function('leaving','setEdit','publishDraft','return '+textSource)(leaving,setEdit,publishDraft);
  const env={edit,file,working:false,refresh,overwriteEpoch,leaving,
   setWorking:value=>busy=value,setOops:value=>{if(value!==null)errors.push(value);},

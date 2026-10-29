@@ -17,10 +17,13 @@ function useDraftRegistration(initialCount:number) {
  * A private symbol keeps parallel panes and React roots independent. */
 export function useDraftCount(count:number) {
   const state=useDraftRegistration(count);
-  useLayoutEffect(()=>{
-    state.count=count;
-    if(state.active)reportDrafts(state.owner,count);
-  },[count,state]);
+  const report=useCallback((next:number)=>{
+    if(!state.active)return;
+    state.count=next;
+    reportDrafts(state.owner,next);
+  },[state]);
+  useLayoutEffect(()=>{report(count);},[count,report]);
+  return report;
 }
 
 /** Quit can run before React commits the editor's next render. */
