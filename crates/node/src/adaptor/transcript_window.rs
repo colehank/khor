@@ -9,7 +9,7 @@ use std::ops::Range;
 pub const SCAN_BYTES: usize = 256 * 1024;
 pub const INLINE_RECORD_BYTES: usize = 64 * 1024;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TranscriptWindow {
     pub range: Range<u64>,

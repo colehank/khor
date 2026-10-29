@@ -16,6 +16,8 @@ pub const SLICE: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
+    /// Bounded independent observation reads; never opens an agent host.
+    ContentRead { action: crate::session_content::remote::Action },
     /// Recoverable authenticated pairing. Every body is a canonical blob chunk.
     Pair { action: PairAction },
     /// The only current document transport. Mutating operations wait for
@@ -959,6 +961,7 @@ pub enum DocumentInventory {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
+    ContentRead { reply: crate::session_content::remote::Reply },
     /// One bounded recoverable pairing step. No full document or roster inline.
     Paired {
         reply: PairReply,
@@ -1408,7 +1411,8 @@ impl Request {
     pub fn is_reading(&self) -> bool {
         matches!(
             self,
-            Request::DocTransfer { .. }
+            Request::ContentRead { action: crate::session_content::remote::Action::Cancel { .. } }
+                | Request::DocTransfer { .. }
                 | Request::Fetch { .. }
                 | Request::Sessions
                 | Request::Usage
@@ -1580,12 +1584,18 @@ pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {
 
 pub fn encode_request(request: &Request) -> Result<Vec<u8>, String> {
     match request {
+        Request::ContentRead { action } => action.validate()?,
         Request::DocTransfer { action } => crate::link::documents::validate_action(action)?,
         Request::Pair { action } => crate::link::pairing::validate_pair_action(action)?,
         Request::Vouch { action } => crate::link::pairing::validate_vouch_action(action)?,
         _ => (),
     }
     let bytes = encode(request)?;
+    if matches!(request, Request::ContentRead { .. })
+        && bytes.len() > crate::session_content::remote::METADATA_WIRE_BYTES
+    {
+        return Err("content request envelope exceeds its wire budget".into());
+    }
     if matches!(
         request,
         Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }
@@ -1597,11 +1607,17 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, String> {
 }
 pub fn encode_response(response: &Response) -> Result<Vec<u8>, String> {
     match response {
+        Response::ContentRead { reply } => reply.validate()?,
         Response::DocTransfer { reply } => crate::link::documents::validate_reply(reply)?,
         Response::Paired { reply } => crate::link::pairing::validate_pair_reply(reply)?,
         _ => (),
     }
     let bytes = encode(response)?;
+    if let Response::ContentRead { reply } = response {
+        if bytes.len() > reply.wire_limit() {
+            return Err("content response envelope exceeds its wire budget".into());
+        }
+    }
     if matches!(
         response,
         Response::DocTransfer { .. } | Response::Paired { .. } | Response::Vouched { .. }
@@ -1620,6 +1636,12 @@ pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, String> {
 /// The decoder can leave trailing bytes, so re-encoding cannot enforce this cap.
 pub fn question(bytes: &[u8]) -> Result<Request, String> {
     let request = decode::<Request>(bytes)?;
+    if let Request::ContentRead { action } = &request {
+        if bytes.len() > crate::session_content::remote::METADATA_WIRE_BYTES {
+            return Err("content request envelope exceeds its wire budget".into());
+        }
+        action.validate()?;
+    }
     if matches!(
         &request,
         Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }
@@ -1657,6 +1679,12 @@ fn answer_inner(bytes: &[u8], body_bytes: Option<&mut Option<usize>>) -> Result<
     }
 
     let mut response = decode::<Response>(bytes)?;
+    if let Response::ContentRead { reply } = &response {
+        if bytes.len() > reply.wire_limit() {
+            return Err("content response envelope exceeds its wire budget".into());
+        }
+        reply.validate()?;
+    }
     if let Some(body_bytes) = body_bytes {
         *body_bytes = Some(match &response {
             Response::DocTransfer {

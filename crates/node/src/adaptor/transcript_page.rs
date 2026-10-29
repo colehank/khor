@@ -26,6 +26,9 @@ impl Cursor {
     pub fn is_for_source(&self, source: &str) -> bool {
         self.source == source
     }
+    pub(crate) fn record_range(&self) -> Range<u64> {
+        self.position.start..self.position.end
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -79,7 +82,7 @@ impl<T> Page<T> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileVersion {
     file: String,
@@ -137,7 +140,7 @@ fn check_cancelled(cancelled: &impl Fn() -> bool) -> Result<(), String> {
 
 pub const WINDOW_WIRE_BYTES: usize = transcript_window::SCAN_BYTES + 16 * 1024;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedRead {
     observation: FileVersion,
@@ -164,7 +167,11 @@ impl PreparedRead {
         }
         Ok(())
     }
-    fn validate_request(&self, cursor: Option<&Cursor>, newer: bool) -> Result<(), String> {
+    pub(crate) fn validate_request(
+        &self,
+        cursor: Option<&Cursor>,
+        newer: bool,
+    ) -> Result<(), String> {
         self.validate()?;
         if self.forward != (newer && !self.reset) {
             return Err("transcript window has another read direction".into());
@@ -212,9 +219,6 @@ impl PreparedRead {
             }
         }
         Ok(())
-    }
-    pub(crate) fn reset(&mut self) {
-        self.reset = true;
     }
 }
 
@@ -687,8 +691,11 @@ fn parse_forward<T>(
     })
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RecordChunk {
     pub offset: u64,
+    #[serde(with = "serde_bytes")]
     pub bytes: Vec<u8>,
     pub next: Option<u64>,
 }

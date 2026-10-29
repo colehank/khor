@@ -10,6 +10,10 @@ use std::{
 #[path = "session_content/reference.rs"]
 mod reference;
 pub use reference::{ContentLocator, ContentReference, ReadBinding};
+#[path = "session_content/requests.rs"]
+pub(crate) mod requests;
+#[path = "session_content/remote.rs"]
+pub mod remote;
 
 #[path = "session_content/journal.rs"]
 pub(crate) mod journal;
@@ -18,7 +22,7 @@ mod observations;
 pub use observations::refuse_control;
 pub(crate) use observations::{ListedCandidate, Observation, ObservationKind};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Unavailable {
     NoSource,
     Unreadable,
@@ -63,6 +67,22 @@ impl Provider {
             Some("claude") => Some(Self::Claude),
             Some("codex") => Some(Self::Codex),
             _ => None,
+        }
+    }
+    pub(crate) fn content_parser(self) -> fn(&str) -> Vec<ContentEvent> {
+        match self {
+            Self::Claude => |text| {
+                adaptor::claude::utterances_of(text)
+                    .into_iter()
+                    .map(ContentEvent::Native)
+                    .collect()
+            },
+            Self::Codex => |text| {
+                adaptor::codex::utterances_of(text)
+                    .into_iter()
+                    .map(ContentEvent::Native)
+                    .collect()
+            },
         }
     }
 }
@@ -319,20 +339,7 @@ impl ContentSource {
         match self {
             Self::Native(source) => {
                 let (file, _) = source.open()?;
-                let parse: fn(&str) -> Vec<ContentEvent> = match source.provider {
-                    Provider::Claude => |text| {
-                        adaptor::claude::utterances_of(text)
-                            .into_iter()
-                            .map(ContentEvent::Native)
-                            .collect()
-                    },
-                    Provider::Codex => |text| {
-                        adaptor::codex::utterances_of(text)
-                            .into_iter()
-                            .map(ContentEvent::Native)
-                            .collect()
-                    },
-                };
+                let parse = source.provider.content_parser();
                 Ok((file, parse))
             }
             Self::Journal(source) => Ok((source.open()?, journal::parse_record)),
@@ -536,3 +543,7 @@ mod tests {
         assert!(ObservationBinding::read(&fixture.0, "another-home", &id).is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "session_content/wire_tests.rs"]
+pub(crate) mod wire_tests;

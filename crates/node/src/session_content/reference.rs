@@ -33,6 +33,15 @@ impl ContentReference {
         }
         encode(self).map(|_| ())
     }
+    pub(crate) fn parser(&self) -> Result<fn(&str) -> Vec<super::ContentEvent>, String> {
+        self.validate()?;
+        match self.namespace {
+            ObservationNamespace::Native => super::Provider::of(Some(&self.agent))
+                .map(super::Provider::content_parser)
+                .ok_or_else(|| "unknown native content provider".into()),
+            ObservationNamespace::Acp => Ok(super::journal::parse_record),
+        }
+    }
     pub(crate) fn resolve(
         &self,
         root: &std::path::Path,

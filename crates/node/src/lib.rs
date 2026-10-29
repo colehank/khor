@@ -525,6 +525,7 @@ pub struct Node {
     /// lifecycle and why). Shared so a `WireWatch` taken before `serve`
     /// consumes the node still sees what the serve does with them.
     pub(crate) wires: Arc<wires::Wires>,
+    pub(crate) content_responses: Arc<tokio::sync::Semaphore>,
     /// The resident's own handle on itself, set by `serve`: what lets a
     /// task the node spawns (a borrow that re-fetches its wire, a far
     /// stream answered concurrently) outlive the call that started it.
@@ -1147,6 +1148,7 @@ impl Node {
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             wires: Arc::default(),
+            content_responses: Arc::new(tokio::sync::Semaphore::new(link::CONTENT_RESPONSES)),
             me: std::sync::OnceLock::new(),
             agent_generation: std::sync::OnceLock::new(),
             ears: Mutex::new(None),

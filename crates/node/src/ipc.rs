@@ -21,8 +21,28 @@ pub struct Handoff {
     pub op: Op,
 }
 
+pub(crate) fn validate_handoff(handoff: &Handoff, bytes: usize) -> Result<(), String> {
+    if let Op::ContentRead { action } = &handoff.op {
+        action.validate()?;
+        if bytes > crate::session_content::remote::METADATA_WIRE_BYTES {
+            return Err("content handoff exceeds its serialized wire budget".into());
+        }
+    }
+    Ok(())
+}
+pub(crate) fn validate_reply(reply: &Reply, bytes: usize) -> Result<(), String> {
+    if let Reply::ContentRead { reply } = reply {
+        reply.validate()?;
+        if bytes > reply.wire_limit() {
+            return Err("content handoff reply exceeds its serialized wire budget".into());
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Op {
+    ContentRead { action: crate::session_content::remote::Action },
     Pair {
         ticket: String,
     },
@@ -528,6 +548,7 @@ impl Op {
     /// the bug this table exists to end.
     fn table(&self) -> (&'static str, std::time::Duration) {
         match self {
+            Op::ContentRead { .. } => ("ContentRead", DEADLINE_FAR),
             Op::RecognitionOn { .. } => ("RecognitionOn", DEADLINE_FAR),
             Op::SubscriptionsOn { .. } => ("SubscriptionsOn", DEADLINE_FAR),
             Op::Hops => ("Hops", DEADLINE_LOCAL),
@@ -595,6 +616,7 @@ impl Op {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Reply {
+    ContentRead { reply: crate::session_content::remote::Reply },
     Paired {
         name: String,
     },
@@ -897,10 +919,9 @@ async fn exchange(
     cookie: &str,
     op: Op,
 ) -> Result<Reply, String> {
-    let frame = proto::encode(&Handoff {
-        cookie: cookie.to_owned(),
-        op,
-    })?;
+    let handoff = Handoff { cookie: cookie.to_owned(), op };
+    let frame = proto::encode(&handoff)?;
+    validate_handoff(&handoff, frame.len())?;
     stream
         .write_all(&frame)
         .await
@@ -912,7 +933,9 @@ async fn exchange(
         .read_to_end(&mut bytes)
         .await
         .map_err(msg::no_reply_from_serve)?;
-    proto::decode(&bytes).map(heard)
+    let reply = proto::decode(&bytes)?;
+    validate_reply(&reply, bytes.len())?;
+    Ok(heard(reply))
 }
 
 /// **The resident's words, in this process's language** (round NET-9):

@@ -1024,6 +1024,7 @@ const RELAY_HEAD_START: Duration = Duration::from_millis(1500);
 /// pause cannot take every thread this one has. QUIC's own stream limit
 /// (100 open bidirectional streams) is what holds the asker beyond it.
 const STREAMS_AT_ONCE: usize = 32;
+pub(crate) const CONTENT_RESPONSES: usize = 32;
 
 /// How long a pairing ticket can be used after it is minted.
 ///
@@ -2266,15 +2267,34 @@ impl Node {
             .read_to_end(&mut bytes)
             .await
             .map_err(msg::handoff_unreadable)?;
-        let reply = match proto::decode::<ipc::Handoff>(&bytes) {
-            Ok(h) if h.cookie == cookie => self.run_handoff_within(ep, h.op).await,
-            Ok(_) => ipc::Reply::Refused {
-                why: msg::handoff_wrong_cookie().into(),
-            },
-            Err(e) => ipc::Reply::Refused { why: e },
+        let handoff = proto::decode::<ipc::Handoff>(&bytes).and_then(|handoff| {
+            if handoff.cookie != cookie {
+                return Err(msg::handoff_wrong_cookie().into());
+            }
+            ipc::validate_handoff(&handoff, bytes.len())?;
+            Ok(handoff)
+        });
+        // Declared before payloads so the owner outlives their buffers on drop.
+        let content_response = match &handoff {
+            Ok(handoff) if matches!(&handoff.op, ipc::Op::ContentRead {
+                action: crate::session_content::remote::Action::Window { .. }
+                    | crate::session_content::remote::Action::Record { .. }
+            }) => self.content_response_permit().map(Some),
+            _ => Ok(None),
         };
+        let reply = match (handoff, &content_response) {
+            (Ok(handoff), Ok(permit)) => self.run_handoff_within(ep, handoff.op, permit.clone()).await,
+            (Err(why), _) => ipc::Reply::Refused { why },
+            (_, Err(why)) => ipc::Reply::Refused { why: why.clone() },
+        };
+        let frame = proto::encode(&reply)?;
+        ipc::validate_reply(&reply, frame.len())?;
+        #[cfg(test)]
+        if matches!(&content_response, Ok(Some(_))) {
+            crate::session_content::wire_tests::pause_response(self.root()).await;
+        }
         stream
-            .write_all(&proto::encode(&reply)?)
+            .write_all(&frame)
             .await
             .map_err(msg::cant_reply)?;
         stream.shutdown().await.map_err(msg::cant_close_stream)?;
@@ -2286,10 +2306,11 @@ impl Node {
     /// reaches a caller that is about to stop waiting, and **named in the
     /// log** — a stuck op is a fault in something this serve talks to,
     /// and the log is where somebody goes looking for which.
-    async fn run_handoff_within(&self, ep: &iroh::Endpoint, op: ipc::Op) -> ipc::Reply {
+    async fn run_handoff_within(&self, ep: &iroh::Endpoint, op: ipc::Op,
+        response: Option<crate::session_content::remote::ResponsePermit>) -> ipc::Reply {
         let (name, deadline) = (op.name(), op.deadline());
         let mine = deadline.saturating_sub(Duration::from_millis(500));
-        match tokio::time::timeout(mine, self.run_handoff(ep, op)).await {
+        match tokio::time::timeout(mine, self.run_handoff(ep, op, response)).await {
             Ok(reply) => reply,
             Err(_) => {
                 let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
@@ -2305,8 +2326,15 @@ impl Node {
         }
     }
 
-    async fn run_handoff(&self, ep: &iroh::Endpoint, op: ipc::Op) -> ipc::Reply {
+    async fn run_handoff(&self, ep: &iroh::Endpoint, op: ipc::Op,
+        response: Option<crate::session_content::remote::ResponsePermit>) -> ipc::Reply {
         match op {
+            ipc::Op::ContentRead { action } => {
+                match self.content_read_with(ep, action, response).await {
+                    Ok(reply) => ipc::Reply::ContentRead { reply },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::Pair { ticket } => {
                 // Routed pairing reports the serve's own addresses: they
                 // outlive this exchange, unlike a one-shot endpoint's.
@@ -3826,7 +3854,8 @@ impl Node {
             let (node, ep, remote, mut done) =
                 (self.clone(), ep.clone(), remote.clone(), done.clone());
             tokio::spawn(async move {
-                let _seat = seat;
+                let mut seat = Some(seat);
+                let mut content_response = None;
                 let early = recv.is_0rtt();
                 let Ok(bytes) = recv.read_to_end(MAX_FRAME).await else {
                     return;
@@ -3872,17 +3901,35 @@ impl Node {
                                 return;
                             }
                         }
-                        #[cfg(test)]
-                        let response = node.dispatch_wire(&remote, req, &ep, &wire_tag).await;
-                        #[cfg(not(test))]
-                        let response = node.dispatch(&remote, req, &ep).await;
-                        response
+                        let admission = if matches!(&req, Request::ContentRead {
+                            action: crate::session_content::remote::Action::Window { .. }
+                                | crate::session_content::remote::Action::Record { .. }
+                        }) && node.admit(&remote).is_ok() {
+                            node.content_response_permit().map(|permit| {
+                                content_response = Some(permit);
+                                drop(seat.take());
+                            })
+                        } else { Ok(()) };
+                        match admission {
+                            Err(why) => Response::Refused { why },
+                            Ok(()) => {
+                                #[cfg(test)]
+                                let response = node.dispatch_wire(&remote, req, &ep, &wire_tag, content_response.clone()).await;
+                                #[cfg(not(test))]
+                                let response = node.dispatch(&remote, req, &ep, content_response.clone()).await;
+                                response
+                            }
+                        }
                     }
                     Err(e) => Response::Refused { why: e },
                 };
                 let Ok(frame) = proto::encode_response(&resp) else {
                     return;
                 };
+                #[cfg(test)]
+                if content_response.is_some() {
+                    crate::session_content::wire_tests::pause_response(node.root()).await;
+                }
                 if send.write_all(&frame).await.is_ok() {
                     #[cfg(test)]
                     documents::flow_tests::reply_written(&wire_tag, &resp);
@@ -3893,11 +3940,12 @@ impl Node {
         Ok(())
     }
 
-    async fn dispatch(&self, remote: &str, req: Request, ep: &iroh::Endpoint) -> Response {
+    async fn dispatch(&self, remote: &str, req: Request, ep: &iroh::Endpoint,
+        response: Option<crate::session_content::remote::ResponsePermit>) -> Response {
         #[cfg(test)]
-        let result = self.dispatch_inner(remote, req, ep, None).await;
+        let result = self.dispatch_inner(remote, req, ep, None, response).await;
         #[cfg(not(test))]
-        let result = self.dispatch_inner(remote, req, ep).await;
+        let result = self.dispatch_inner(remote, req, ep, response).await;
         match result {
             Ok(resp) => resp,
             Err(why) => Response::Refused { why },
@@ -3911,8 +3959,9 @@ impl Node {
         req: Request,
         ep: &iroh::Endpoint,
         tag: &documents::flow_tests::FrameTag,
+        response: Option<crate::session_content::remote::ResponsePermit>,
     ) -> Response {
-        match self.dispatch_inner(remote, req, ep, Some(tag)).await {
+        match self.dispatch_inner(remote, req, ep, Some(tag), response).await {
             Ok(response) => response,
             Err(why) => Response::Refused { why },
         }
@@ -3924,6 +3973,7 @@ impl Node {
         req: Request,
         ep: &iroh::Endpoint,
         #[cfg(test)] wire_tag: Option<&documents::flow_tests::FrameTag>,
+        response: Option<crate::session_content::remote::ResponsePermit>,
     ) -> Result<Response, String> {
         // **One gate, before any arm** (docs/CONNECT.md 名单是信任的唯一
         // 出处): in the table, and on the roster. `Pair` is the one
@@ -3951,6 +4001,12 @@ impl Node {
             }
         }
         match req {
+            Request::ContentRead { action } => {
+                let reader = crate::session_content::requests::Reader::Peer(
+                    crate::device_id_from_hex(remote)?
+                );
+                Ok(Response::ContentRead { reply: self.content_read_here(reader, action, response).await? })
+            }
             Request::Pair { action } => {
                 let response = self.answer_pair(remote, action).await?;
                 self.nudge(ep, false);
@@ -11435,7 +11491,7 @@ impl Node {
                 .filter_map(|(kind, held)| Some((reading_request(&kind)?, kind, held)))
                 .map(|(req, kind, held)| async move {
                     let answer =
-                        tokio::time::timeout(READING_BY, Box::pin(self.dispatch(remote, req, ep)))
+                        tokio::time::timeout(READING_BY, Box::pin(self.dispatch(remote, req, ep, None)))
                             .await;
                     (kind, held, answer)
                 })
@@ -11601,17 +11657,121 @@ impl Node {
         self.endpoint_file().ok().flatten().map(|f| f.pid)
     }
 
-    fn endpoint_file(&self) -> Result<Option<EndpointFile>, String> {
-        let path = self.root().join(".khor").join("endpoint.json");
-        let Ok(text) = fs::read_to_string(&path) else {
-            return Ok(None);
-        };
-        let file: EndpointFile = serde_json::from_str(&text).map_err(msg::endpoint_file_garbled)?;
-        if pid_alive(file.pid) {
-            Ok(Some(file))
-        } else {
-            Ok(None)
+    fn content_response_permit(&self) -> Result<crate::session_content::remote::ResponsePermit, String> {
+        self.content_responses.clone().try_acquire_owned().map(std::sync::Arc::new)
+            .map_err(|_| "too many buffered content responses".into())
+    }
+
+    /// Independent content reads never pass through session reach/attach.
+    pub async fn content_read(
+        &self,
+        action: crate::session_content::remote::Action,
+    ) -> Result<crate::session_content::remote::Reply, String> {
+        use crate::session_content::requests;
+        action.validate()?;
+        if action.home() == self.device() {
+            return self.content_read_here(requests::Reader::local(self.root()), action, None).await;
         }
+        if let Some(reply) = self.via_serve(ipc::Op::ContentRead { action: action.clone() }).await {
+            return match reply? {
+                ipc::Reply::ContentRead { reply } => {
+                    reply.validate_for(&action)?;
+                    Ok(reply)
+                }
+                ipc::Reply::Refused { why } => Err(why),
+                _ => Err("resident returned another content reply".into()),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await.map_err(|error| error.to_string())?;
+        let answer = self.content_read_with(&ep, action, None).await;
+        ep.close().await;
+        answer
+    }
+
+    async fn content_read_with(
+        &self,
+        ep: &iroh::Endpoint,
+        action: crate::session_content::remote::Action,
+        response: Option<crate::session_content::remote::ResponsePermit>,
+    ) -> Result<crate::session_content::remote::Reply, String> {
+        use crate::session_content::requests;
+        action.validate()?;
+        let home = action.home();
+        if home == self.device() {
+            return self.content_read_here(requests::Reader::local(self.root()), action, response).await;
+        }
+        let device = self.devices()?.into_iter().find(|device| device.id == home.hex())
+            .ok_or("content home is no longer paired")?;
+        let request = Request::ContentRead { action: action.clone() };
+        match self.ask_on(ep, &device, &request).await? {
+            Response::ContentRead { reply } => {
+                reply.validate_for(&action)?;
+                Ok(reply)
+            }
+            Response::Refused { why } => Err(why),
+            _ => Err("peer returned another content reply".into()),
+        }
+    }
+
+    async fn content_read_here(
+        &self,
+        reader: crate::session_content::requests::Reader,
+        action: crate::session_content::remote::Action,
+        response: Option<crate::session_content::remote::ResponsePermit>,
+    ) -> Result<crate::session_content::remote::Reply, String> {
+        use crate::session_content::remote::{self, Action};
+        action.validate()?;
+        let (root, home) = (self.root().to_path_buf(), self.device());
+        let active = remote::admit_here(home, &reader, &action)?;
+        if matches!(action, Action::Begin { .. } | Action::Cancel { .. }) {
+            return remote::execute_here(&root, home, reader, action, active);
+        }
+        // Claim and move into the worker before yielding: cancellation of this await
+        // cannot release capacity while its blocking worker is still running.
+        let (reply, _response) = tokio::task::spawn_blocking(move || {
+            let reply = remote::execute_here(&root, home, reader, action, active)?;
+            // Payload precedes owner in the output, including an abandoned await.
+            Ok::<_, String>((reply, response))
+        }).await.map_err(|error| format!("content read worker failed: {error}"))??;
+        Ok(reply)
+    }
+
+    fn endpoint_file(&self) -> Result<Option<EndpointFile>, String> {
+        endpoint_file_at(self.root())
+    }
+}
+
+fn endpoint_file_at(root: &std::path::Path) -> Result<Option<EndpointFile>, String> {
+    let path = root.join(".khor").join("endpoint.json");
+    let Ok(text) = fs::read_to_string(&path) else {
+        return Ok(None);
+    };
+    let file: EndpointFile = serde_json::from_str(&text).map_err(msg::endpoint_file_garbled)?;
+    Ok(pid_alive(file.pid).then_some(file))
+}
+
+pub(crate) async fn content_on_resident(
+    root: &std::path::Path,
+    action: crate::session_content::remote::Action,
+) -> Result<crate::session_content::remote::Reply, String> {
+    action.validate()?;
+    let file = endpoint_file_at(root)?.ok_or("content resident is not available")?;
+    if file.ipc_port == 0 {
+        return Err("content resident has no handoff port".into());
+    }
+    let reply = ipc::call_refreshing(file.ipc_port, &file.ipc_cookie,
+        ipc::Op::ContentRead { action: action.clone() }, || {
+            let latest = endpoint_file_at(root).ok().flatten()?;
+            Some((latest.ipc_port, latest.ipc_cookie))
+        }).await?;
+    match reply {
+        ipc::Reply::ContentRead { reply } => {
+            reply.validate_for(&action)?;
+            Ok(reply)
+        }
+        ipc::Reply::Refused { why } => Err(why),
+        _ => Err("resident returned another content reply".into()),
     }
 }
 
