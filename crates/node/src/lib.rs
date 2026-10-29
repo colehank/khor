@@ -5605,25 +5605,8 @@ impl Node {
             let record = session_content::Observation::read(&self.root, id)
                 .map_err(|_| Unavailable::Unreadable)?
                 .ok_or(Unavailable::NoSource)?;
-            if record.reference.home != self.device() {
-                return Err(Unavailable::RemoteNotConnected);
-            }
-            if record.reference.namespace==khor_core::ObservationNamespace::Acp {
-                return session_content::journal::Source::find(&self.root,session_content::journal::Identity {
-                    home:record.reference.home,
-                    agent:record.reference.agent,
-                    native_id:record.reference.native_id,
-                }).map(|source|source.map(ContentSource::Journal)).map_err(|_|Unavailable::Unreadable);
-            }
-            let Some(provider) = record.native_provider() else {
-                return Ok(None);
-            };
-            return NativeTranscript::resolve(
-                &self.root,
-                provider,
-                &live::clean_leaf(&record.reference.native_id),
-                Some(&record.reference.native_id),
-            ).map(|source|source.map(ContentSource::Native));
+            return session_content::ContentReference::observed(&record.reference)
+                .resolve(&self.root,self.device());
         }
         let directory=self.live.dir_of(id);
         if let Some(journal)=session_content::journal::Source::registered(&self.root,self.device(),id,directory.as_deref())

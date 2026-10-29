@@ -2,17 +2,20 @@
 //!
 //! A window is not a parsed conversation. Edge fragments remain explicit so
 //! callers cannot silently discard a large record or parse an unfinished write.
+use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Range;
 
 pub const SCAN_BYTES: usize = 256 * 1024;
 pub const INLINE_RECORD_BYTES: usize = 64 * 1024;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TranscriptWindow {
     pub range: Range<u64>,
     pub before: Option<u64>,
     pub observed_len: u64,
+    #[serde(with = "serde_bytes")]
     bytes: Vec<u8>,
     begins_record: bool,
 }
@@ -34,6 +37,18 @@ pub enum Record<'a> {
 }
 
 impl TranscriptWindow {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.bytes.len() >= SCAN_BYTES
+            || self.range.start > self.range.end
+            || self.range.end - self.range.start != self.bytes.len() as u64
+            || self.range.end > self.observed_len
+            || self.before != (self.range.start > 0).then_some(self.range.start)
+            || (self.range.start == 0 && !self.begins_record)
+        {
+            return Err("invalid or over-budget transcript window".into());
+        }
+        Ok(())
+    }
     /// Ranges include their newline. Only Inline records may be parsed here;
     /// oversized records and fragments require a separate bounded fetch path.
     pub fn records(&self) -> impl Iterator<Item = Record<'_>> {

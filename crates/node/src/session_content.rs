@@ -7,6 +7,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "session_content/reference.rs"]
+mod reference;
+pub use reference::{ContentLocator, ContentReference, ReadBinding};
+
 #[path = "session_content/journal.rs"]
 pub(crate) mod journal;
 #[path = "session_content/observations.rs"]

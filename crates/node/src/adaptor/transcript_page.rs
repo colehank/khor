@@ -79,13 +79,15 @@ impl<T> Page<T> {
     }
 }
 
-struct Observation {
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileVersion {
     file: String,
     len: u64,
     modified: (u64, u32),
 }
 
-impl Observation {
+impl FileVersion {
     fn of(file: &File) -> io::Result<Self> {
         let metadata = file.metadata()?;
         let modified = metadata
@@ -133,6 +135,242 @@ fn check_cancelled(cancelled: &impl Fn() -> bool) -> Result<(), String> {
     }
 }
 
+pub const WINDOW_WIRE_BYTES: usize = transcript_window::SCAN_BYTES + 16 * 1024;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreparedRead {
+    observation: FileVersion,
+    window: Option<transcript_window::TranscriptWindow>,
+    forward: bool,
+    reset: bool,
+}
+impl PreparedRead {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.observation.file.is_empty()
+            || self.observation.file.len() > 256
+            || self.observation.modified.1 >= 1_000_000_000
+        {
+            return Err("invalid transcript file version".into());
+        }
+        if let Some(window) = &self.window {
+            window.validate()?;
+            if window.observed_len > self.observation.len {
+                return Err("transcript changed while reading its window".into());
+            }
+        }
+        if crate::proto::encode(self)?.len() > WINDOW_WIRE_BYTES {
+            return Err("serialized transcript window exceeds its wire budget".into());
+        }
+        Ok(())
+    }
+    fn validate_request(&self, cursor: Option<&Cursor>, newer: bool) -> Result<(), String> {
+        self.validate()?;
+        if self.forward != (newer && !self.reset) {
+            return Err("transcript window has another read direction".into());
+        }
+        if let Some(cursor) = cursor.filter(|_| !self.reset) {
+            if self.observation.changed(cursor) {
+                return Err("transcript window has another file version".into());
+            }
+            if self
+                .window
+                .as_ref()
+                .is_some_and(|window| window.observed_len < cursor.len)
+            {
+                return Err("transcript window predates its cursor".into());
+            }
+        }
+        let cursor = cursor.filter(|_| !self.reset);
+        if let Some(window) = &self.window {
+            let (start, end) = if self.forward {
+                let cursor = cursor.ok_or("forward window has no cursor")?;
+                let start = cursor.position.start;
+                (
+                    start,
+                    start
+                        .saturating_add((transcript_window::SCAN_BYTES - 1) as u64)
+                        .min(window.observed_len),
+                )
+            } else {
+                let end = cursor
+                    .map(|cursor| {
+                        if cursor.position.item == 0 {
+                            cursor.position.start
+                        } else {
+                            cursor.position.end
+                        }
+                    })
+                    .unwrap_or(window.observed_len);
+                (
+                    end.saturating_sub((transcript_window::SCAN_BYTES - 1) as u64),
+                    end,
+                )
+            };
+            if window.range != (start..end) {
+                return Err("transcript window does not match its requested range".into());
+            }
+        }
+        Ok(())
+    }
+    pub(crate) fn reset(&mut self) {
+        self.reset = true;
+    }
+}
+
+fn check_cursor(source: &str, cursor: Option<&Cursor>) -> Result<(), String> {
+    if let Some(cursor) = cursor {
+        if cursor.source != source {
+            return Err("history cursor belongs to another session".into());
+        }
+        if cursor.position.start > cursor.position.end
+            || cursor.position.end > cursor.len
+            || cursor
+                .pending
+                .as_ref()
+                .is_some_and(|pending| pending.start > cursor.position.start)
+        {
+            return Err("invalid history cursor range".into());
+        }
+    }
+    Ok(())
+}
+
+/// Only IO and file identity validation happen here. Local and remote readers
+/// pass the same bounded result to `parse_prepared`.
+pub fn prepare_read(
+    file: &mut File,
+    source: &str,
+    cursor: Option<&Cursor>,
+    newer: bool,
+    cancelled: &impl Fn() -> bool,
+) -> Result<PreparedRead, String> {
+    check_cancelled(cancelled)?;
+    check_cursor(source, cursor)?;
+    if newer && cursor.is_none() {
+        return Err("newer history requires a cursor".into());
+    }
+    let observation = FileVersion::of(file).map_err(|e| e.to_string())?;
+    let reset = cursor.is_some_and(|cursor| observation.changed(cursor));
+    let cursor = cursor.filter(|_| !reset);
+    if let Some(cursor) = cursor {
+        if cursor.position.end > observation.len {
+            return Err("invalid history cursor range".into());
+        }
+    }
+    let forward = newer && !reset;
+    if let Some(cursor) = cursor.filter(|_| forward) {
+        if cursor.waiting_for_append
+            && observation.len == cursor.len
+            && observation.modified == cursor.modified
+        {
+            return Ok(PreparedRead {
+                observation,
+                window: None,
+                forward,
+                reset,
+            });
+        }
+    }
+    let window = if forward {
+        transcript_window::read_forward_window(
+            file,
+            cursor
+                .expect("forward requires a validated cursor")
+                .position
+                .start,
+        )
+    } else {
+        let before = cursor.map(|cursor| {
+            if cursor.position.item == 0 {
+                cursor.position.start
+            } else {
+                cursor.position.end
+            }
+        });
+        transcript_window::read_window(file, before)
+    }
+    .map_err(|e| e.to_string())?;
+    check_cancelled(cancelled)?;
+    let observation = FileVersion::of(file).map_err(|e| e.to_string())?;
+    if forward && cursor.is_some_and(|cursor| observation.changed(cursor)) {
+        let mut prepared = prepare_read(file, source, None, false, cancelled)?;
+        prepared.reset = true;
+        return Ok(prepared);
+    }
+    if observation.len < window.observed_len {
+        return Err("transcript changed while reading its window".into());
+    }
+    let prepared = PreparedRead {
+        observation,
+        window: Some(window),
+        forward,
+        reset,
+    };
+    prepared.validate_request(cursor, newer)?;
+    Ok(prepared)
+}
+
+pub fn parse_prepared<T>(
+    prepared: PreparedRead,
+    source: &str,
+    cursor: Option<&Cursor>,
+    newer: bool,
+    parse: fn(&str) -> Vec<T>,
+    cancelled: &impl Fn() -> bool,
+) -> Result<Page<T>, String> {
+    check_cancelled(cancelled)?;
+    check_cursor(source, cursor)?;
+    prepared.validate_request(cursor, newer)?;
+    let cursor = cursor.filter(|_| !prepared.reset);
+    let PreparedRead {
+        observation,
+        window,
+        forward,
+        reset,
+    } = prepared;
+    match (window, forward) {
+        (Some(window), false) => {
+            parse_older(window, observation, source, cursor, reset, parse, cancelled)
+        }
+        (Some(window), true) => parse_forward(
+            window,
+            observation,
+            source,
+            cursor.ok_or("forward window has no cursor")?,
+            parse,
+            cancelled,
+        ),
+        (None, true) => {
+            let cursor = cursor.ok_or("unchanged window has no cursor")?;
+            if !cursor.waiting_for_append
+                || observation.changed(cursor)
+                || observation.len != cursor.len
+                || observation.modified != cursor.modified
+            {
+                return Err("invalid unchanged transcript window".into());
+            }
+            Ok(Page {
+                events: vec![],
+                references: vec![],
+                older: None,
+                newer: cursor.clone(),
+                has_more: false,
+                reset: false,
+                origin: observation.cursor(
+                    source,
+                    Position {
+                        start: 0,
+                        end: 0,
+                        item: 0,
+                    },
+                ),
+            })
+        }
+        (None, false) => Err("tail window has no bytes".into()),
+    }
+}
+
 /// Tail when cursor is None; otherwise the events before the supplied position.
 /// Append preserves an older-page cursor. Replacement, shrink and same-length
 /// rewrites restart at the tail and report reset. In-place rewrites that also
@@ -144,33 +382,19 @@ pub fn read_page<T>(
     parse: fn(&str) -> Vec<T>,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Page<T>, String> {
-    check_cancelled(cancelled)?;
-    let observation = Observation::of(file).map_err(|e| e.to_string())?;
-    if cursor.is_some_and(|cursor| cursor.source != source) {
-        return Err("history cursor belongs to another session".to_owned());
-    }
-    if cursor.is_some_and(|cursor| {
-        cursor.position.start > cursor.position.end || cursor.position.end > cursor.len
-    }) {
-        return Err("invalid history cursor range".to_owned());
-    }
-    let reset = cursor.is_some_and(|cursor| observation.changed(cursor));
-    let cursor = cursor.filter(|_| !reset);
-    if let Some(cursor) = cursor {
-        if cursor.position.start > cursor.position.end || cursor.position.end > observation.len {
-            return Err("invalid history cursor range".to_owned());
-        }
-    }
-    let before = cursor.map(|cursor| {
-        if cursor.position.item == 0 {
-            cursor.position.start
-        } else {
-            cursor.position.end
-        }
-    });
-    let window = transcript_window::read_window(file, before).map_err(|e| e.to_string())?;
-    check_cancelled(cancelled)?;
-    let observation = Observation::of(file).map_err(|error| error.to_string())?;
+    let prepared = prepare_read(file, source, cursor, false, cancelled)?;
+    parse_prepared(prepared, source, cursor, false, parse, cancelled)
+}
+
+fn parse_older<T>(
+    window: transcript_window::TranscriptWindow,
+    observation: FileVersion,
+    source: &str,
+    cursor: Option<&Cursor>,
+    reset: bool,
+    parse: fn(&str) -> Vec<T>,
+    cancelled: &impl Fn() -> bool,
+) -> Result<Page<T>, String> {
     let mut events = VecDeque::with_capacity(EVENT_LIMIT);
     let mut references = Vec::new();
     let mut leading_end = None;
@@ -325,28 +549,18 @@ pub fn read_next<T>(
     parse: fn(&str) -> Vec<T>,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Page<T>, String> {
-    check_cancelled(cancelled)?;
-    let observation = Observation::of(file).map_err(|error| error.to_string())?;
-    if cursor.source != source {
-        return Err("history cursor belongs to another session".to_owned());
-    }
-    if cursor.position.start > cursor.position.end || cursor.position.end > cursor.len {
-        return Err("invalid history cursor range".to_owned());
-    }
-    if observation.changed(cursor) {
-        let mut page = read_page(file, source, None, parse, cancelled)?;
-        page.reset = true;
-        return Ok(page);
-    }
-    if cursor.position.start > cursor.position.end
-        || cursor.position.end > observation.len
-        || cursor
-            .pending
-            .as_ref()
-            .is_some_and(|pending| pending.start > cursor.position.start)
-    {
-        return Err("invalid history cursor range".to_owned());
-    }
+    let prepared = prepare_read(file, source, Some(cursor), true, cancelled)?;
+    parse_prepared(prepared, source, Some(cursor), true, parse, cancelled)
+}
+
+fn parse_forward<T>(
+    window: transcript_window::TranscriptWindow,
+    observation: FileVersion,
+    source: &str,
+    cursor: &Cursor,
+    parse: fn(&str) -> Vec<T>,
+    cancelled: &impl Fn() -> bool,
+) -> Result<Page<T>, String> {
     let origin = observation.cursor(
         source,
         Position {
@@ -355,29 +569,6 @@ pub fn read_next<T>(
             item: 0,
         },
     );
-    if cursor.waiting_for_append
-        && observation.len == cursor.len
-        && observation.modified == cursor.modified
-    {
-        return Ok(Page {
-            events: vec![],
-            references: vec![],
-            older: None,
-            newer: cursor.clone(),
-            has_more: false,
-            reset: false,
-            origin,
-        });
-    }
-    let window = transcript_window::read_forward_window(file, cursor.position.start)
-        .map_err(|error| error.to_string())?;
-    check_cancelled(cancelled)?;
-    let observation = Observation::of(file).map_err(|error| error.to_string())?;
-    if observation.changed(cursor) {
-        let mut page = read_page(file, source, None, parse, cancelled)?;
-        page.reset = true;
-        return Ok(page);
-    }
     let mut newer = observation.cursor(source, cursor.position.clone());
     let mut pending = cursor.pending.clone();
     let mut events = Vec::with_capacity(EVENT_LIMIT);
@@ -513,7 +704,7 @@ pub fn read_record_chunk(
 ) -> Result<RecordChunk, String> {
     use std::io::{Read, Seek, SeekFrom};
     check_cancelled(cancelled)?;
-    let observation = Observation::of(file).map_err(|error| error.to_string())?;
+    let observation = FileVersion::of(file).map_err(|error| error.to_string())?;
     if source != cursor.source || observation.changed(cursor) {
         return Err("history record changed; reload its page".to_owned());
     }
@@ -533,7 +724,7 @@ pub fn read_record_chunk(
         .map_err(|error| error.to_string())?;
     check_cancelled(cancelled)?;
     if bytes.len() as u64 != count
-        || Observation::of(file)
+        || FileVersion::of(file)
             .map_err(|error| error.to_string())?
             .changed(cursor)
     {
@@ -769,7 +960,7 @@ mod tests {
     #[test]
     fn append_preserves_cursor_while_replacement_and_shrink_reset() {
         let fixture = Fixture::new("history-file-generation", b"one\ntwo\n");
-        let cursor = Observation::of(&File::open(&fixture.path).unwrap())
+        let cursor = FileVersion::of(&File::open(&fixture.path).unwrap())
             .unwrap()
             .cursor(
                 "source",
@@ -804,7 +995,7 @@ mod tests {
     #[test]
     fn cursor_is_scoped_to_source_and_corrupt_ranges_are_rejected() {
         let fixture = Fixture::new("history-cursor-scope", b"one\ntwo\n");
-        let mut cursor = Observation::of(&File::open(&fixture.path).unwrap())
+        let mut cursor = FileVersion::of(&File::open(&fixture.path).unwrap())
             .unwrap()
             .cursor(
                 "source",
@@ -839,5 +1030,187 @@ mod tests {
             assert!(pages < 10);
         }
         assert_eq!(pages, 4);
+    }
+
+    #[test]
+    fn prepared_wire_round_trip_keeps_record_item_continuations() {
+        let text = (0..300)
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+            + "\n";
+        let fixture = Fixture::new("prepared-wire-items", text.as_bytes());
+        let mut file = File::open(&fixture.path).unwrap();
+        let prepared = prepare_read(&mut file, "source", None, false, &|| false).unwrap();
+        let wire = crate::proto::encode(&prepared).unwrap();
+        assert!(wire.len() <= WINDOW_WIRE_BYTES);
+        let prepared: PreparedRead = crate::proto::decode(&wire).unwrap();
+        let tail = parse_prepared(prepared, "source", None, false, parse, &|| false).unwrap();
+        assert_eq!(words(&tail), words(&fixture.page(None)));
+        let cursor = tail.older.clone().unwrap();
+        let prepared = prepare_read(&mut file, "source", Some(&cursor), false, &|| false).unwrap();
+        let prepared = crate::proto::decode(&crate::proto::encode(&prepared).unwrap()).unwrap();
+        let older =
+            parse_prepared(prepared, "source", Some(&cursor), false, parse, &|| false).unwrap();
+        let prepared =
+            prepare_read(&mut file, "source", Some(&older.newer), true, &|| false).unwrap();
+        let prepared = crate::proto::decode(&crate::proto::encode(&prepared).unwrap()).unwrap();
+        let forward = parse_prepared(prepared, "source", Some(&older.newer), true, parse, &|| {
+            false
+        })
+        .unwrap();
+        assert_eq!(words(&forward), words(&tail));
+    }
+
+    #[test]
+    fn serialized_window_budget_includes_binary_payload_and_invalid_metadata_is_rejected() {
+        fn forbidden(_: &str) -> Vec<Utterance> {
+            panic!("giant raw record parsed inline");
+        }
+        let fixture = Fixture::new(
+            "prepared-wire-budget",
+            &vec![255; transcript_window::SCAN_BYTES * 2],
+        );
+        let mut file = File::open(&fixture.path).unwrap();
+        let prepared = prepare_read(&mut file, "source", None, false, &|| false).unwrap();
+        let bytes = crate::proto::encode(&prepared).unwrap();
+        assert!(
+            bytes.len() <= WINDOW_WIRE_BYTES,
+            "binary bytes must use the existing bytes codec"
+        );
+        let prepared = crate::proto::decode(&bytes).unwrap();
+        let page = parse_prepared(prepared, "source", None, false, forbidden, &|| false).unwrap();
+        assert!(page.events.is_empty());
+        assert!(!page.references.is_empty());
+        let mut prepared = prepare_read(&mut file, "source", None, false, &|| false).unwrap();
+        prepared.observation.file = "x".repeat(257);
+        assert!(parse_prepared(prepared, "source", None, false, forbidden, &|| false).is_err());
+    }
+
+    #[test]
+    fn prepared_io_does_not_parse_after_cancellation_and_replacement_still_resets() {
+        let fixture = Fixture::new("prepared-cancel-reset", b"first\n");
+        let before = fixture.page(None);
+        let mut file = File::open(&fixture.path).unwrap();
+        let prepared = prepare_read(&mut file, "source", None, false, &|| false).unwrap();
+        assert!(
+            parse_prepared(prepared, "source", None, false, parse, &|| true)
+                .err()
+                .unwrap()
+                .contains("cancelled")
+        );
+        drop(file);
+        let old = fixture.path.with_extension("old");
+        std::fs::rename(&fixture.path, &old).unwrap();
+        std::fs::write(&fixture.path, b"second\n").unwrap();
+        let mut file = File::open(&fixture.path).unwrap();
+        let prepared =
+            prepare_read(&mut file, "source", Some(&before.newer), true, &|| false).unwrap();
+        let prepared = crate::proto::decode(&crate::proto::encode(&prepared).unwrap()).unwrap();
+        let reset = parse_prepared(
+            prepared,
+            "source",
+            Some(&before.newer),
+            true,
+            parse,
+            &|| false,
+        )
+        .unwrap();
+        assert!(reset.reset);
+        assert_eq!(words(&reset), ["second"]);
+    }
+    #[test]
+    fn prepared_wire_is_bound_to_request_direction_range_and_file_version() {
+        fn forbidden(_: &str) -> Vec<Utterance> {
+            panic!("inconsistent wire response reached its parser");
+        }
+        let fixture = Fixture::new("prepared-request-scope", b"first\n");
+        let cursor = fixture.page(None).newer;
+        let fresh = || {
+            prepare_read(
+                &mut File::open(&fixture.path).unwrap(),
+                "source",
+                Some(&cursor),
+                true,
+                &|| false,
+            )
+            .unwrap()
+        };
+        let mut invalid_cursor = cursor.clone();
+        invalid_cursor.pending = Some(PendingRecord {
+            start: cursor.position.start + 1,
+            missing_start: false,
+        });
+        assert!(
+            parse_prepared(
+                fresh(),
+                "source",
+                Some(&invalid_cursor),
+                true,
+                forbidden,
+                &|| false
+            )
+            .err()
+            .unwrap()
+            .contains("cursor range")
+        );
+        let mut response = fresh();
+        response.observation.file = "another-file".into();
+        assert!(
+            parse_prepared(response, "source", Some(&cursor), true, forbidden, &|| {
+                false
+            })
+            .err()
+            .unwrap()
+            .contains("version")
+        );
+        let mut response = fresh();
+        let window = response.window.as_mut().unwrap();
+        window.range = 0..0;
+        window.before = None;
+        assert!(
+            parse_prepared(response, "source", Some(&cursor), true, forbidden, &|| {
+                false
+            })
+            .err()
+            .unwrap()
+            .contains("range")
+        );
+        assert!(
+            parse_prepared(fresh(), "source", Some(&cursor), false, forbidden, &|| {
+                false
+            })
+            .err()
+            .unwrap()
+            .contains("direction")
+        );
+        let mut response = fresh();
+        response.window.as_mut().unwrap().observed_len += 1;
+        assert!(
+            parse_prepared(response, "source", Some(&cursor), true, forbidden, &|| {
+                false
+            })
+            .err()
+            .unwrap()
+            .contains("changed")
+        );
+        let mut response = fresh();
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&fixture.path)
+            .unwrap()
+            .write_all(b"second\n")
+            .unwrap();
+        response.observation = FileVersion::of(&File::open(&fixture.path).unwrap()).unwrap();
+        let page = parse_prepared(response, "source", Some(&cursor), true, forbidden, &|| {
+            false
+        })
+        .unwrap();
+        assert!(
+            page.events.is_empty(),
+            "a concurrent append is read on the next window"
+        );
+        assert_eq!(words(&next(&fixture, &page.newer)), ["second"]);
     }
 }

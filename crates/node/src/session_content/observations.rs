@@ -1,4 +1,4 @@
-use super::{Provider, read_metadata, write_metadata};
+use super::{read_metadata, write_metadata};
 use crate::{KindSurface, Node};
 use khor_core::{
     DeviceId, Kind, Millis, ObservationNamespace, ObservationRef, Session, SessionId, kind,
@@ -146,11 +146,6 @@ impl Observation {
             observation: Some(self.reference.clone()),
             can_control: false,
         }
-    }
-    pub fn native_provider(&self) -> Option<Provider> {
-        (self.reference.namespace == ObservationNamespace::Native)
-            .then(|| Provider::of(Some(&self.reference.agent)))
-            .flatten()
     }
 }
 
