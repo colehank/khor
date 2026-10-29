@@ -24,7 +24,7 @@
 // they are kept and the lexer restarts at that boundary. The gate checks
 // this agrees with lexing the whole text, prefix by prefix
 // (`scripts/check-md.mjs`).
-import { Lexer } from "marked";
+import { Lexer, type Token } from "marked";
 import remend from "remend";
 
 /** A text cut into blocks, kept so the next, longer text can reuse it. */
@@ -171,44 +171,71 @@ export function mend(tail: string): string {
   return remend(tail, { katex: false, htmlTags: false, singleTilde: false, linkMode: "text-only" });
 }
 
-/** Display math written the LaTeX way, `\[ … \]` and `\( … \)`, as the
-    `$$` the parser reads. Agents write both, and neither has a price to
-    be mistaken for (`dollarsPandoc` is the single `$`'s rule). Code —
-    fenced or inline — is left alone. */
+/** Bracket formulas share the dollar parser. Only their two-character
+    delimiters change, so source positions and line breaks remain intact.
+    The existing lexer protects code; an uncertain raw stays as written. */
 export function bracketMath(text: string): string {
   if (!text.includes("\\(") && !text.includes("\\[")) return text;
-  const out: string[] = [];
-  let fence: string | null = null;
-  for (const line of text.split("\n")) {
-    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-    if (fence !== null) {
-      if (f && f[1][0] === fence[0] && f[1].length >= fence.length && line.slice(f[0].length).trim() === "") fence = null;
-      out.push(line);
-      continue;
+  const protectedRanges: [number, number][] = [];
+  let at = 0;
+  for (const token of new Lexer({ gfm: true }).blockTokens(text)) {
+    if (!text.startsWith(token.raw, at)) {
+      protectedRanges.push([at, text.length]);
+      break;
     }
-    if (f) {
-      fence = f[1];
-      out.push(line);
-      continue;
+    const end = at + token.raw.length;
+    if (holdsCode(token) || token.type === "html") {
+      protectedRanges.push([at, end]);
+    } else {
+      const inlineRanges: [number, number][] = [];
+      let offset = at;
+      for (const inline of Lexer.lexInline(token.raw)) {
+        if (!text.startsWith(inline.raw, offset)) {
+          break;
+        }
+        if (holdsCode(inline) || inline.type === "html") inlineRanges.push([offset, offset + inline.raw.length]);
+        offset += inline.raw.length;
+      }
+      protectedRanges.push(...(offset === end ? inlineRanges : [[at, end] as [number, number]]));
     }
-    // Outside inline code only: split on backtick runs and convert the
-    // even pieces.
-    out.push(
-      line
-        .split(/(`+[^`]*`+)/)
-        .map((piece, i) =>
-          i % 2 === 1
-            ? piece
-            : piece
-                .replace(/^(\s*)\\\[\s*$/, "$1$$$$")
-                .replace(/^(\s*)\\\]\s*$/, "$1$$$$")
-                .replace(/\\\[(.+?)\\\]/g, "$$$$$1$$$$")
-                .replace(/\\\((.+?)\\\)/g, "$$$$$1$$$$"),
-        )
-        .join(""),
-    );
+    at = end;
   }
-  return out.join("\n");
+  const out: string[] = [];
+  at = 0;
+  for (const [start, end] of protectedRanges) {
+    if (end <= at) continue;
+    out.push(bracketPairs(text.slice(at, start)), text.slice(Math.max(at, start), end));
+    at = end;
+  }
+  out.push(bracketPairs(text.slice(at)));
+  return out.join("");
+}
+
+function holdsCode(token: Token): boolean {
+  if (token.type === "code" || token.type === "codespan") return true;
+  if ("tokens" in token && token.tokens?.some(holdsCode)) return true;
+  return "items" in token && token.items.some(holdsCode);
+}
+
+function bracketPairs(text: string): string {
+  const out: string[] = [];
+  let copied = 0;
+  let open: { at: number; close: string } | null = null;
+  for (const match of text.matchAll(/\\+([()[\]])/g)) {
+    const slashes = match[0].length - 1;
+    if (slashes % 2 === 0) continue;
+    const at = match.index + slashes - 1;
+    const mark = match[1];
+    if (open === null) {
+      if (mark === "(" || mark === "[") open = { at, close: mark === "(" ? ")" : "]" };
+    } else if (mark === open.close) {
+      out.push(text.slice(copied, open.at), "$$", text.slice(open.at + 2, at), "$$");
+      copied = at + 2;
+      open = null;
+    }
+  }
+  out.push(text.slice(copied));
+  return out.join("");
 }
 
 /**
@@ -320,7 +347,7 @@ const PANDOC_PAIR = /\$[^\s$](?:[^$\n]*[^\s\\$])?\$(?!\d)/;
 
 export function needsOf(text: string, file: boolean): Needs {
   return {
-    math: (file ? text.includes("$") : PANDOC_PAIR.test(text) || text.includes("$$") || /\\[([]/.test(text)) || /^ {0,3}(`{3,}|~{3,})\s*math\b/m.test(text),
+    math: (file ? text.includes("$") : PANDOC_PAIR.test(text) || text.includes("$$")) || /\\[([]/.test(text) || /^ {0,3}(`{3,}|~{3,})\s*math\b/m.test(text),
     // A letter first, so a clock (`10:30:45`) does not fetch the table.
     emoji: /:(?:[a-z][a-z0-9_+-]*|[+-]1):/i.test(text),
   };

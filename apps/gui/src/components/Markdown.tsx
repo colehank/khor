@@ -526,7 +526,7 @@ type Kit = {
  * | `~one~` | text (「3~5 天」) | struck (GitHub) |
  * | `$x$` | math by pandoc's rule (`dollarsPandoc`): 「$5 和 $10」 text | math (GitHub) |
  * | `$$x$$`, ```` ```math ```` | math | math |
- * | `\\( \\)`, `\\[ \\]` | math (`bracketMath`) | text (GitHub) |
+ * | `\\( \\)`, `\\[ \\]` | math (`bracketMath`) | math (`bracketMath`) |
  * | raw HTML | text | GitHub's allow-list (`lib/md/file`) |
  * | heading anchors | none | GitHub's slugs |
  * | pictures | alt | read from the file's machine |
@@ -671,7 +671,7 @@ export const Markdown = memo(function Markdown({
   // The last cut, so the next (longer) text re-lexes only its tail.
   const last = useRef<Cut | null>(null);
   const blocks = useMemo(() => {
-    if (doc) return [text];
+    if (doc) return [bracketMath(text)];
     last.current = cut(bracketMath(text), last.current);
     return grouped(last.current);
   }, [text, doc]);
