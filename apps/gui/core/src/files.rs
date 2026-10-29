@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use khor_node::Node;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// A directory answer: where it is about (absolute, the far machine's
@@ -585,45 +585,166 @@ pub async fn stat_text(root: &Path, machine: &str, path: &str) -> Result<FileSta
     })
 }
 
-/// Which of a tree's open levels changed on that machine since `seq`
-/// (`Node::dirs_changed`, round NET-4): the far machine watches them and
-/// the resident holds the answer. `unavailable` when it cannot be
-/// watched (this machine, a satellite, an older khor, no resident) —
-/// the tree then asks its levels, as before. `unreported`: the asked
-/// levels watched on a network mount, where a change another host makes
-/// is never heard (`khor_node::watch`); a face asks those again now and
-/// then rather than trust a quiet answer.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DirWatchScope {
+    Entries { path: String },
+    Workspace { root: String },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum DirWatchCoverageMode {
+    Pending,
+    Native,
+    Polling,
+    Partial,
+    Unavailable,
+}
+
 #[derive(Debug, Clone, Serialize, TS)]
-pub struct DirWatch {
-    #[ts(type = "number")]
-    pub seq: u64,
+pub struct DirWatchCoverage {
+    pub scope: u32,
+    pub mode: DirWatchCoverageMode,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct DirWatchBatch {
+    pub cursor: String,
+    pub reset: bool,
     pub dirs: Vec<String>,
-    pub unavailable: bool,
-    pub unreported: Vec<String>,
+    pub workspace: bool,
+    pub coverage: Vec<DirWatchCoverage>,
+    pub retry_ms: u32,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct DirWatchOpened {
+    pub id: String,
+    pub machine_id: String,
+    pub batch: DirWatchBatch,
+}
+
+impl From<khor_node::watch::Batch> for DirWatchBatch {
+    fn from(batch: khor_node::watch::Batch) -> Self {
+        use khor_node::watch::CoverageMode as Mode;
+        Self {
+            cursor: batch.cursor,
+            reset: batch.reset,
+            dirs: batch.dirs,
+            workspace: batch.workspace,
+            coverage: batch
+                .coverage
+                .into_iter()
+                .map(|coverage| DirWatchCoverage {
+                    scope: coverage.scope,
+                    mode: match coverage.mode {
+                        Mode::Pending => DirWatchCoverageMode::Pending,
+                        Mode::Native => DirWatchCoverageMode::Native,
+                        Mode::Polling => DirWatchCoverageMode::Polling,
+                        Mode::Partial => DirWatchCoverageMode::Partial,
+                        Mode::Unavailable => DirWatchCoverageMode::Unavailable,
+                    },
+                    reason: coverage.reason,
+                })
+                .collect(),
+            retry_ms: batch.retry_ms,
+        }
+    }
+}
+
+pub async fn dirs_begin(
+    root: &Path,
+    machine: &str,
+    scopes: Vec<DirWatchScope>,
+) -> Result<DirWatchOpened, String> {
+    let node = Node::open(root.to_path_buf())?;
+    let scopes = scopes
+        .into_iter()
+        .map(|scope| match scope {
+            DirWatchScope::Entries { path } => khor_node::watch::Scope::Entries { path },
+            DirWatchScope::Workspace { root } => khor_node::watch::Scope::Workspace { root },
+        })
+        .collect();
+    let opened = node.dirs_begin(machine, scopes).await?;
+    Ok(DirWatchOpened {
+        id: opened.id,
+        machine_id: opened.machine_id,
+        batch: opened.batch.into(),
+    })
 }
 
 pub async fn dirs_wait(
     root: &Path,
-    machine: &str,
-    dirs: Vec<String>,
-    since: u64,
-    wait_ms: u64,
-) -> Result<DirWatch, String> {
-    let n = Node::open(root.to_path_buf())?;
-    let c = n
-        .dirs_changed(
-            machine,
-            &dirs,
-            since,
-            std::time::Duration::from_millis(wait_ms),
-        )
-        .await?;
-    Ok(DirWatch {
-        seq: c.seq,
-        dirs: c.dirs,
-        unavailable: c.unavailable,
-        unreported: c.unreported,
-    })
+    machine_id: &str,
+    id: &str,
+    cursor: Option<&str>,
+    wait_ms: u32,
+) -> Result<DirWatchBatch, String> {
+    let node = Node::open(root.to_path_buf())?;
+    Ok(node
+        .dirs_wait(machine_id, id, cursor, wait_ms)
+        .await?
+        .into())
+}
+
+pub async fn dirs_leave(root: &Path, machine_id: &str, id: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?
+        .dirs_leave(machine_id, id)
+        .await
+}
+
+#[cfg(test)]
+mod directory_watch_tests {
+    use super::*;
+
+    #[test]
+    fn directory_watch_contract_preserves_scope_tags_and_bounded_backend_facts() {
+        assert_eq!(
+            serde_json::to_value(DirWatchScope::Entries {
+                path: "/fixture".into()
+            })
+            .unwrap(),
+            serde_json::json!({"kind":"entries","path":"/fixture"})
+        );
+        assert_eq!(
+            serde_json::to_value(DirWatchScope::Workspace {
+                root: "/fixture".into()
+            })
+            .unwrap(),
+            serde_json::json!({"kind":"workspace","root":"/fixture"})
+        );
+        use khor_node::watch::CoverageMode as Mode;
+        for (mode, expected) in [
+            (Mode::Pending, "pending"),
+            (Mode::Native, "native"),
+            (Mode::Polling, "polling"),
+            (Mode::Partial, "partial"),
+            (Mode::Unavailable, "unavailable"),
+        ] {
+            let batch: DirWatchBatch = khor_node::watch::Batch {
+                cursor: "epoch:42".into(),
+                reset: true,
+                dirs: vec!["/fixture".into()],
+                workspace: true,
+                coverage: vec![khor_node::watch::Coverage {
+                    scope: 0,
+                    mode,
+                    reason: Some("provider fact".into()),
+                }],
+                retry_ms: 1000,
+            }
+            .into();
+            let json = serde_json::to_value(batch).unwrap();
+            assert_eq!(json["coverage"][0]["mode"], expected);
+            assert_eq!(json["cursor"], "epoch:42");
+            assert_eq!(json["reset"], true);
+            assert_eq!(json["workspace"], true);
+            assert_eq!(json["retry_ms"], 1000);
+            assert_eq!(json["coverage"][0]["reason"], "provider fact");
+        }
+    }
 }
 
 /// Text files up to this size are read whole and editable. Chosen at 64 MB:
