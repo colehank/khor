@@ -146,7 +146,8 @@ import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
 import { SideWorkspace } from "@/views/SideWorkspace";
 import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
-import { WorkspacesNow } from "@/views/WorkspacesNow";
+import { WorkspaceMemories, workspaceIdentity } from "@/views/workspace/workspace-memory";
+import { WorkspaceDraftOwner } from "@/views/workspace/use-workspace-memory";
 import { LockScreen } from "@/views/LockScreen";
 import { inSettings, moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
 import { StorePage, StoreScreen } from "@/views/StorePage";
@@ -679,6 +680,7 @@ export default function App() {
   // It lives here rather than in the landing so that arriving from
   // somewhere else is a state already set, not a landing being told to
   // remember something after it mounts.
+  const [workspaceMemories] = useState(() => new WorkspaceMemories());
   const [openWs, setOpenWs] = useState<{
     device: string;
     machine: string;
@@ -1445,7 +1447,7 @@ export default function App() {
   // …keyed by the row that is open too (V06): two machines' pages are
   // two places, and one's scroll is not the other's.
   const openRow =
-    landing === "devices" ? (selectedDevice ?? "") : landing === "sessions" ? (selected ?? "") : landing === "workspaces" ? (openWs?.path ?? "") : "";
+    landing === "devices" ? (selectedDevice ?? "") : landing === "sessions" ? (selected ?? "") : landing === "workspaces" ? (openWs ? workspaceIdentity(openWs) : "") : "";
   const placeKey = narrow
     ? `${morePage ? `more:${morePage}` : landing}:${switchingTabs ? "tabs" : screen}:${screen === "detail" ? openRow : ""}`
     : `${morePage ?? landing}:${openRow}`;
@@ -3016,11 +3018,10 @@ export default function App() {
     // detail and on the narrow one is the list alone.
     openWs ? (
       <WorkspacePane
-        // Remounted per workspace: the tree's position, the open file
-        // and both switches are this workspace's, and carrying them
-        // into the next one would show somebody a path that is not
-        // under the project they just opened.
-        key={`${openWs.device} ${openWs.path}`}
+        memory={workspaceMemories.retain(openWs)}
+        // Views detach on navigation; the identity's model retains its
+        // tabs, drafts and reading state without background view work.
+        key={workspaceIdentity(openWs)}
         // The tree in the list column (wide), while the list is drilled
         // into this workspace (`wsTree`); the narrow face's tree is a
         // screen of the pane's own.
@@ -3090,15 +3091,9 @@ export default function App() {
         onRevealSeen={() => setReveal(null)}
         narrow={narrow}
         listOpen={!narrow && !listPane.collapsed}
-        onBack={() => setScreen("list")}
+        onBack={() => { setOpenWs(null); setWsTree(false); setScreen("list"); }}
       />
-    ) : narrow ? null : (
-      // **The landing's overview** (10-layout 「每个落地页有一个总览」,
-      // 2026-09-28): the workspaces this face opened last, each with its
-      // machine, path, branch and last change — the board was a blank
-      // slab here. Wide only: on the narrow face the list is the screen.
-      <WorkspacesNow devices={devices} onOpen={openWorkspace} />
-    )
+    ) : null
   ) : landing === "devices" && !openDevice && selectedDevice !== null && !devicesRead ? (
     // A machine asked for (⌘K) before the device table has answered
     // once: its card has never been read, so the board shows the
@@ -3911,6 +3906,7 @@ export default function App() {
     <HereHostsProvider value={hosts}>
     <FullScreenProvider value={claimFull}>
     <TooltipProvider>
+      {workspaceMemories.entries().map(([key, memory]) => <WorkspaceDraftOwner key={key} memory={memory} />)}
       {narrow ? (
         // **As tall as `#root`, not the screen** (2026-10-02): `#root`
         // follows what the soft keyboard leaves (`lib/viewport`), and a

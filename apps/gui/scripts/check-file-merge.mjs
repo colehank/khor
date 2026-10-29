@@ -8,9 +8,10 @@ const source=legacy?execFileSync('git',['show','e7c335c8:apps/gui/src/views/File
 const mergeSource=source.match(/  const merge = \(\) => \{[\s\S]*?\n  \};/)?.[0];
 const editSource=source.match(/  const setEdit = useCallback\([\s\S]*?\n  \);/)?.[0];
 const textSource=source.match(/          onText=\{(\(t\) => \{[\s\S]*?\n          \})\}/)?.[1];
-assert(mergeSource&&editSource&&textSource,'production merge and edit callbacks exist');
+const publishSource=source.match(/  const publishDraft = useCallback\([\s\S]*?\n  \}, \[file, onDraft\]\);/)?.[0];
+assert(mergeSource&&editSource&&textSource&&(legacy||publishSource),'production merge, edit and draft callbacks exist');
 const compile=async source=>(await transform(source,{loader:'tsx'})).code;
-const mergeCode=await compile(mergeSource),editCode=await compile(editSource);
+const mergeCode=await compile(mergeSource),editCode=await compile(editSource),publishCode=publishSource?await compile(publishSource):null;
 const {fileRefresh}=await import('data:text/javascript;base64,'+Buffer.from((await build({entryPoints:['src/lib/file-refresh.ts'],bundle:true,format:'esm',write:false})).outputFiles[0].text).toString('base64'));
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -19,7 +20,9 @@ function fixture(){
  let edit={text:'mine',was:'base',by:'line'},file={text:'base',digest:'base'},busy=false,clashes=null,errors=[],mergeCalls=0;
  const leaving={current:{edit}};
  const setEdit=Function('useCallback','setOwn','draft','refresh',editCode+';return setEdit;')(f=>f,update=>{edit=update(edit);leaving.current.edit=edit;},undefined,refresh);
- const type=Function('leaving','setEdit','return '+textSource)(leaving,setEdit);
+ const published=[];
+ const publishDraft=publishCode?Function('useCallback','file','onDraft',publishCode+';return publishDraft;')(f=>f,file,value=>published.push(value)):undefined;
+ const type=Function('leaving','setEdit','publishDraft','return '+textSource)(leaving,setEdit,publishDraft);
  const env={edit,file,working:false,refresh,overwriteEpoch,leaving,
   setWorking:value=>busy=value,setOops:value=>{if(value!==null)errors.push(value);},
   fetchFileText:()=>read.promise,machine:'fixture',path:'/note',

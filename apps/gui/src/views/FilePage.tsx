@@ -30,7 +30,7 @@
  */
 import { useFileHandoff, type FileHandoffControl } from "@/hooks/use-file-handoff";
 import { FileHandoffStatus } from "@/components/FileHandoff";
-import { useEffect, useLayoutEffect, useRef, useState, Fragment, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, Fragment, type ReactNode, type Dispatch, type SetStateAction } from "react";
 
 import { launchOn, pullTemp, reveal } from "@/api";
 import type { CodeWindow } from "@/components/CodeWindow";
@@ -307,6 +307,7 @@ export function FileVerbs(props: Parameters<typeof useFileVerbs>[0]) {
 // ── the page ──────────────────────────────────────────────────────
 
 export function FilePage({
+  faceControl,
   machine,
   path,
   here,
@@ -333,6 +334,8 @@ export function FilePage({
 }: {
   /** Owned by the open file/tab, not by its temporary source view. */
   editorHistory?: EditorHistorySlot;
+  /** A retained host owns both the current face and changes to it. */
+  faceControl?: { value: "source" | "preview"; set: Dispatch<SetStateAction<"source" | "preview">> };
   /* **Inside the session's 附栏 this is the same page, with the main
      area's deck** (UX-40 §4, the owner 2026-10-07 02:10: 「打开一个文件或
      地址，是不是得和主区一样，下方有一个自己的甲板，而不是在左上角点返回和
@@ -411,7 +414,10 @@ export function FilePage({
       the finger is, a drag scrolls. Every file opens as source (2026-10-13)
       but a notebook, which opens as its preview (`defaultFaceOf`); the more
       menu turns between the two and keeps the place. */
-  const [face, setFace] = useState<"source" | "preview">(() => defaultFaceOf(path));
+  const [localFace, setLocalFace] = useState<"source" | "preview">(() => defaultFaceOf(path));
+  const face = faceControl?.value ?? localFace;
+  const setFace = faceControl?.set ?? setLocalFace;
+  const controlledFace = faceControl !== undefined;
   const handoff = useFileHandoff(machine,path);
   const verbs = useFileVerbs({
     machine,
@@ -437,10 +443,10 @@ export function FilePage({
   const [reads, setReads] = useState(0);
 
   useEffect(() => {
-    setFace(defaultFaceOf(path));
+    if (!controlledFace) setLocalFace(defaultFaceOf(path));
     setRev(null);
     restore.current = null;
-  }, [machine, path]);
+  }, [machine, path, controlledFace]);
   const dirty = draft !== undefined;
 
   // The face changed: put the reader where they were, before paint.

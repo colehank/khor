@@ -272,6 +272,7 @@ export function CodeEditor({
     const retained = saved?.key === historyKey && saved.text === text ? saved : undefined;
     const v = new EditorView({
       parent: box.current!,
+      scrollTo: retained?.scroll,
       state: EditorState.create({
         doc: text,
         selection: retained?.selection,
@@ -345,6 +346,7 @@ export function CodeEditor({
         text: v.state.doc.toString(),
         selection: v.state.selection,
         history: v.state.field(historyField),
+        scroll: v.scrollSnapshot(),
       };
       v.destroy();
       cb.current.onComposition?.(false);

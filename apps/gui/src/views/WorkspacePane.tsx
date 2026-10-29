@@ -60,10 +60,10 @@ import { fileKind } from "@/components/SessionFace";
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { Tabs } from "@/browse/Tabs";
 import { cli, gui } from "@/gen/catalog";
-import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth, type PaneWidth } from "@/hooks/use-list-width";
-import { reportDrafts } from "@/lib/drafts";
+import type { WorkspaceMemory } from "@/views/workspace/workspace-memory";
+import { useWorkspaceField } from "@/views/workspace/use-workspace-memory";
 import { requestFileLocation } from "@/lib/file-location";
 import { directoryOf } from "@/lib/paths";
 import { movedFilePath, useFileObjectActions } from "@/lib/file-actions";
@@ -97,6 +97,7 @@ import { useFullScreen } from "@/lib/full-screen";
 import { WorkspaceEmpty, rememberOpened, storedOpened } from "@/views/WorkspaceEmpty";
 
 export function WorkspacePane({
+  memory,
   machine,
   machineFace,
   here,
@@ -120,6 +121,7 @@ export function WorkspacePane({
   listOpen,
   onBack,
 }: {
+  memory: WorkspaceMemory;
   machine: string;
   /** Whether this workspace is on the machine khor is running on.
       Handed down to the tree, whose 拉过来 is a direction and not an
@@ -233,7 +235,7 @@ export function WorkspacePane({
 }) {
   // Where the tree is standing. Starts at the workspace and walks down;
   // `root` changing is a different workspace, not a step.
-  const [at, setAt] = useState(root);
+  const [at, setAt] = useWorkspaceField(memory, "at", () => root);
   /** Every file open in the middle column, in the order they were
       opened, by absolute path. **Remembered per workspace in this
       face's own storage** (工作区批⑧) — a set of open tabs is a habit
@@ -243,14 +245,11 @@ export function WorkspacePane({
       The tab's id on the strip is `机器:绝对路径`; what is kept here is
       the path alone, because the machine is this pane's and a stored id
       that disagreed with it would be a tab pointing at another disk. */
-  const [tabs, setTabs] = useState<string[]>(() => storedTabs(machine, root));
+  const [tabs, setTabs] = useWorkspaceField(memory, "tabs", () => storedTabs(machine, root));
   // The file view is replaced when tabs or viewport layouts change; its
   // undo stack belongs to the open tab. Release it with the tab, not at
   // autosave, and never keep another workspace's history in this map.
-  const historyScope = JSON.stringify([machine, root]);
-  const histories = useRef({ scope: historyScope, files: new Map<string, EditorHistorySlot>() });
-  if (histories.current.scope !== historyScope) histories.current = { scope: historyScope, files: new Map() };
-  const historyFiles = histories.current.files;
+  const historyFiles = memory.histories;
   const historyOf = (path: string): EditorHistorySlot => {
     let slot = historyFiles.get(path);
     if (!slot) historyFiles.set(path, slot = {});
@@ -266,7 +265,7 @@ export function WorkspacePane({
       state as well as in storage so the list under an empty column
       changes as tabs are opened and closed, rather than being whatever
       it was when this pane mounted. */
-  const [recent, setRecent] = useState<string[]>(() => storedOpened(machine, root));
+  const [recent, setRecent] = useWorkspaceField(memory, "recent", () => storedOpened(machine, root));
   /** A line a press in a conversation asked for (ruling 35: 行号后缀
       `:12` 认得, 跳到那一行). **Stamped with the moment it was asked**,
       because pressing the same path twice is two requests and the second
@@ -275,41 +274,14 @@ export function WorkspacePane({
   const [goLine, setGoLine] = useState<{ path: string; line: number; at: number } | null>(
     null,
   );
-  const [file, setFile] = useState<string | null>(() => tabs[0] ?? null);
-  /** Which screen the **narrow** face is standing on (2026-09-16 ruling
-      33:「窄屏条件下,工作区几乎不可用」— the user).
-   *
-   * **A workspace is three columns, and a phone has room for one.**
-   * Until now the narrow face simply dropped two of them: the tree and
-   * the sessions were drawn only `!narrow`, so what was left was the
-   * middle column alone with no way into the tree — a person could not
-   * reach a file at all, which is what 「几乎不可用」 names. docs/UX.md
-   * has the shape for this and it is not「fit three columns in」:
-   * 「窄档是『处理一件事』:一次一屏,有退路」.
-   *
-   * So the columns become screens with one way between them: the tree
-   * opens a file, the file's strip carries a 「←」 back to the tree, and
-   * the switch at the head of the tree walks to the sessions, which
-   * carry a 「←」 back.
-   *
-   * **Three screens, not four** (2026-09-17 ruling 46). The editor was
-   * the fourth for one batch; it is a window of its own now and a
-   * window is not a screen of this face.
-   *
-   * **It opens on the tree** (UX-23 §2, the owner 2026-10-05: list →
-   * tree → file, a level at a time, Files' folders): a workspace chosen
-   * from the list is its tree, and the file left open is one press
-   * further. ⚠️ 墓碑: 「unless a file was left open」 — it opened on that
-   * file, a level skipped.
-   *
-   * Wide ignores this entirely: `narrow` is what reads it, and the
-   * three columns are all on screen there. */
-  const [screen, setScreen] = useState<"tree" | "file" | "sessions">("tree");
+  const [file, setFile] = useWorkspaceField(memory, "file", () => tabs[0] ?? null);
+  /** Narrow shows one column at a time; wide ignores this retained choice. */
+  const [screen, setScreen] = useWorkspaceField(memory, "screen", () => "tree");
   /** Which tab is the **preview**: opened by one click, and replaced by
       the next one rather than joined by it (VS Code's arrangement, and
       the user asked for VS Code's). `null` when every open tab is
       pinned. A double click, or typing in it, pins it. */
-  const [preview, setPreview] = useState<string | null>(null);
+  const [preview, setPreview] = useWorkspaceField(memory, "preview", () => null);
   /** When each tab was last in front, for 标签页上限 (`browse/tab-limit`).
       A ref: it is read when a tab is opened, and a change to it is not
       something the screen draws. */
@@ -324,13 +296,18 @@ export function WorkspacePane({
    *
    * Every newly opened or selected file starts as source (2026-10-13),
    * a notebook as its preview (`defaultFaceOf`, 2026-10-20). */
-  const [face, setFace] = useState<"source" | "preview">(() => (file === null ? "source" : defaultFaceOf(file)));
+  const [face, setFace] = useWorkspaceField(memory, "face", () => (file === null ? "source" : defaultFaceOf(file)));
   /** A revision from the file's git 历史, shown where the file is
       (round UX-4); cleared when another file comes to the front. */
-  const [rev, setRev] = useState<GitCommit | null>(null);
-  const [revCompare, setRevCompare] = useState(false);
-  useEffect(() => setRev(null), [file]);
-  useEffect(() => setFace(file === null ? "source" : defaultFaceOf(file)), [machine, file]);
+  const [rev, setRev] = useWorkspaceField(memory, "rev", () => null);
+  const [revCompare, setRevCompare] = useWorkspaceField(memory, "revCompare", () => false);
+  const previousFile = useRef({ machine, file });
+  useEffect(() => {
+    if (previousFile.current.machine === machine && previousFile.current.file === file) return;
+    previousFile.current = { machine, file };
+    setRev(null);
+    setFace(file === null ? "source" : defaultFaceOf(file));
+  }, [machine, file, setRev, setFace]);
   /** The middle column, where the reader's place is read and put back. */
   const mid = useRef<HTMLDivElement>(null);
   const handoff = useFileHandoff(machine, file ?? "", !narrow && file !== null, mid);
@@ -375,7 +352,7 @@ export function WorkspacePane({
       2026-09-12 clicking another row in the tree threw the typing away
       with no warning; now walking away and back finds it where it was,
       and the head says how many are waiting. */
-  const [drafts, setDrafts] = useState<Map<string, Draft>>(new Map());
+  const [drafts, setDrafts] = useWorkspaceField(memory, "drafts", () => new Map());
   /** The open file reads first under a finger, 「编辑」 / 「保存」 on its
       tab (P1, `hooks/use-read-first`). */
   const readFirst = useReadFirst(file, file !== null && drafts.has(file), () => setSaveAt((n) => n + 1));
@@ -885,17 +862,6 @@ export function WorkspacePane({
     said.current = now;
     if (stopped) setGitAt((n) => n + 1);
   }, [mine]);
-  // 退出时还有草稿要拦 (ruling 39). **Reported rather than asked for**:
-  // the guard runs outside React, at the moment a window is closing, and
-  // a count it had to go looking for would be a count it could fail to
-  // find. Keyed by this workspace so two panes open at once add up, and
-  // the unmount reports none — a pane that went away owes nothing.
-  useEffect(() => {
-    const who = `${machine}:${root}`;
-    reportDrafts(who, drafts.size);
-    return () => reportDrafts(who, 0);
-  }, [machine, root, drafts]);
-
   /** The choices this column's filter offers: **the state words and
       nothing else** (工作区批⑩). The other three axes the sessions
       landing offers — machine, category, workspace — are two thirds of
@@ -1788,7 +1754,7 @@ export function WorkspacePane({
         {!narrow && tree && (
           <SideSeat>
             <div data-ws-side-head className="flex min-w-0 flex-1 items-center gap-in">
-              <GlassCircle aria-label={gui.back} data-ws-list-back onClick={() => side?.set(false)}>
+              <GlassCircle aria-label={gui.back} data-ws-list-back onClick={onBack}>
                 <IconBack />
               </GlassCircle>
               <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
@@ -2049,6 +2015,7 @@ export function WorkspacePane({
             // A diff keeps the strip's view; it has nothing to edit.
             <FilePage
               key={`${machine} ${file}`}
+              faceControl={{ value: face, set: setFace }}
               machine={machine}
               path={file}
               here={here}

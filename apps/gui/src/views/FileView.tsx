@@ -52,6 +52,7 @@ import {
 import { CodeEditor, preloadEditor } from "@/components/CodeEditor.lazy";
 import { editorIn, focusAtTop } from "@/lib/code/place";
 import type { EditorHistorySlot } from "@/lib/code/history";
+import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
 import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
 import { Markdown } from "@/components/Markdown";
@@ -367,6 +368,8 @@ function FileBody({
   goLine?: { line: number; at: number } | null;
 }) {
   const localHistory = useRef<EditorHistorySlot>({});
+  const history = editorHistory ?? localHistory.current;
+  const previewScroll = useKeptScrollRef(JSON.stringify([machine, path]), history.preview ??= {});
   const nativeOffice = kindOf(path) === "doc" && handoff.previewSupported;
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
@@ -387,21 +390,8 @@ function FileBody({
   useEffect(() => {
     preloadEditor();
   }, []);
-  /** The buffer: this mount's own once it has one, and the pane's draft
-      until then.
-      **That order, and it is the second spelling of it** (工作区批⑧).
-      It read `draft ?? own` while every `setEdit` also handed the new
-      value straight up to the pane in the same tick — so the two could
-      not disagree. Reporting the draft from an effect made them able
-      to: the pane's copy is now one render behind, and a buffer read
-      from behind is a buffer that never moves. A merge landed in `own`
-      and the screen went on showing the text from before it, for as
-      long as the file stayed open (`check-face` 4b-bis).
-
-      `own` is never staler than `draft` — `draft` is derived from it —
-      so preferring it is not a race won by luck. What the fallback is
-      still for is the beat after a remount, when this mount has read
-      nothing yet and the pane is holding what somebody typed. */
+  // A retained draft supplies the first frame after remount. Once this
+  // view accepts a buffer, its own copy also owns load/save/merge updates.
   const edit = own ?? draft ?? null;
   const refresh = useRef(fileRefresh());
   useLayoutEffect(() => () => refresh.current.invalidate(), [machine, path]);
@@ -628,28 +618,12 @@ function FileBody({
   useDraftCount(onDraft === undefined && dirty ? 1 : 0);
   useEffect(() => onCanEdit?.(canEdit), [canEdit, onCanEdit]);
 
-  // **「a draft」means「the buffer differs from the disk」, and it is
-  // reported from one place** (工作区批⑧). Until this batch every
-  // `setEdit` handed the buffer up, including the one that *loads* the
-  // file and the one that re-pins it after a save — so the pane counted
-  // a freshly opened file as unsaved, and a save could never take the
-  // count back down. Nobody noticed while the only reader was a line in
-  // a head saying 「N 个文件未存」; the tab's dot is a mark per file,
-  // and a dot that never goes out is the kind of wrong somebody stares
-  // at (「保存成功了,圆点消失」).
-  //
-  // Derived here rather than spelled at each writer because the two
-  // halves move on different beats: a keystroke replaces the buffer, a
-  // save replaces khor's reading of the file, and a rule written at
-  // five call sites is a rule that will disagree with itself.
-  //
-  // **Silent until the file has arrived.** On a remount the pane is
-  // already holding the draft and `file` is null for a beat; reporting
-  // then would throw away what somebody typed before the read lands.
-  useEffect(() => {
-    if (onDraft === undefined || file === null || edit === null) return;
-    onDraft(edit.text === file.text ? null : edit);
-  }, [edit, file, onDraft]);
+  const publishDraft = useCallback((next: Draft | null) => {
+    // A read in flight cannot clear the retained owner's existing draft.
+    if (onDraft === undefined || file === null || next === null) return;
+    onDraft(next.text === file.text ? null : next);
+  }, [file, onDraft]);
+  useEffect(() => publishDraft(edit), [edit, publishDraft]);
 
   /** How many lines the text has, counted the way `\n` does — the spine
       blame is laid along. */
@@ -1086,6 +1060,7 @@ function FileBody({
           because there is nothing there to focus. */}
       {(face ?? defaultFaceOf(path)) === "preview" && renders !== null ? (
         <div
+          ref={previewScroll}
           data-file-preview={renders}
           {...groundAttr(ground.ground)}
           className={cn("min-h-0 flex-1 overflow-auto", renders === "html" && "flex flex-col")}
@@ -1109,7 +1084,7 @@ function FileBody({
         // editor's own extensions (`lib/code`). Writable exactly when the
         // whole file is here and nobody is reading it first.
         <CodeEditor
-          editorHistory={editorHistory ?? localHistory.current}
+          editorHistory={history}
           historyKey={JSON.stringify([machine, path])}
           path={path}
           text={body}
@@ -1124,8 +1099,14 @@ function FileBody({
             // `leaving` comes a task later; a tab closed in that gap
             // wrote the text without its last key (face save i, cm-b).
             const s = leaving.current;
-            if (s.edit !== null) leaving.current = { ...s, edit: { ...s.edit, text: t } };
-            setEdit((e) => (e === null ? e : { ...e, text: t }));
+            if (s.edit !== null) {
+              const next = { ...s.edit, text: t };
+              leaving.current = { ...s, edit: next };
+              setEdit(next);
+              publishDraft(next);
+            } else {
+              setEdit((e) => (e === null ? e : { ...e, text: t }));
+            }
           }}
           onSave={() => save(true)}
           // A merge waiting on the person: the disk's text (the merge set
