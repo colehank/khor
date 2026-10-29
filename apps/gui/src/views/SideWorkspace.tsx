@@ -1,3 +1,6 @@
+import { useDirectoryWatch } from "@/hooks/use-directory-watch";
+import { useHidden } from "@/hooks/use-hidden";
+import { directoryScopeIsNative, directoryWatchScopes } from "@/lib/directory-watch";
 import {useDraftState} from '@/hooks/use-draft-count';
 /**
  * **The 附栏's 工作区 seat is the workspace's own tree** (UX-39 §5, the owner
@@ -128,6 +131,29 @@ export function SideWorkspace({
   onRead?: (path: string) => void;
 }) {
   const [file, setFile] = useState<string | null>(spot ? spot.file : (start?.path ?? null));
+  const [readAt, setReadAt] = useState(0);
+  const hidden = useHidden();
+  const fileParent = file === null ? null : file.slice(0, file.lastIndexOf("/")) || "/";
+  const observation = useDirectoryWatch(machine, directoryWatchScopes(null, fileParent === null ? [] : [fileParent]).scopes);
+  const wasHidden = useRef(hidden);
+  useEffect(() => {
+    const returned = wasHidden.current && !hidden;
+    wasHidden.current = hidden;
+    if (returned && fileParent !== null) setReadAt(n => n + 1);
+  }, [hidden, fileParent]);
+  const fileCovered = fileParent !== null && directoryScopeIsNative(observation, { kind: "entries", path: fileParent });
+  useEffect(() => {
+    const batch = observation.batch;
+    if (fileParent !== null && observation.status === "watching" && batch !== null &&
+        (batch.reset || batch.dirs.includes(fileParent))) setReadAt(n => n + 1);
+  }, [observation.batch, observation.status, fileParent]);
+  useEffect(() => {
+    if (fileParent === null || hidden || fileCovered) return;
+    const refresh = () => { if (!document.hidden) setReadAt(n => n + 1); };
+    const slow = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(slow); window.removeEventListener("focus", refresh); };
+  }, [fileParent, hidden, fileCovered]);
   /** A line hit's line, for the file it opened (`FilePage`'s `goLine`). */
   const [goLine, setGoLine] = useState<{ path: string; line: number; at: number } | null>(null);
   // A seat come back to (`spot`) has already answered the `start` it
@@ -290,6 +316,7 @@ export function SideWorkspace({
           />
         ) : (
           <>{treeHead?.(() => setHistoryOpen(true), checkout?.machine===machine&&checkout.root===root?checkout.repo:git!==null)}<FileTree
+            watchActive={file === null && commit === null}
             key={`${machine} ${root}`}
             machine={machine}
             root={root}
@@ -337,6 +364,7 @@ export function SideWorkspace({
             key={file}
             machine={machine}
             path={file}
+            readAt={readAt}
             here={here}
             git
             goLine={goLine?.path === file ? goLine : null}

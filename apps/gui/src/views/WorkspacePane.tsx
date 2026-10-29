@@ -44,6 +44,8 @@ import type { Avatar } from "@/gen/bindings/Avatar";
 import { Tabs } from "@/browse/Tabs";
 import { cli, gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
+import { useDirectoryWatch } from "@/hooks/use-directory-watch";
+import { directoryScopeIsNative, directoryWatchScopes } from "@/lib/directory-watch";
 import { roomBeside, useListWidth, type PaneWidth } from "@/hooks/use-list-width";
 import type { WorkspaceMemory } from "@/views/workspace/workspace-memory";
 import { useWorkspaceField } from "@/views/workspace/use-workspace-memory";
@@ -627,81 +629,68 @@ export function WorkspacePane({
   /** Esc, and emptying the box: the two ways back to the tree. */
   const dropHunt = () => setHunt("");
 
-  // **Asked once per workspace, not once per step of the tree.** The
-  // answer covers the whole checkout and does not change while a person
-  // walks it; re-asking on every directory would spend 54 ms of somebody
-  // else's machine to redraw marks that did not move.
-  //
-  // **A refusal is not kept and not said** (工作区批⑦). 「文件打开不是
-  // git 就不用显示,不必显示这个『这个路径不在 git 仓库里』」— the user,
-  // 2026-09-15. Until then the sentence the node sent back lived beside
-  // the branch, which meant a directory that is simply not a checkout
-  // wore a line of apology every time it was opened. Both roads end in
-  // `git === null`, the tree paints no marks, and that is the whole of
-  // what khor has to say: 「不是 checkout」 and 「读不了」 look the same
-  // on the glass because neither of them is a fact about a file.
+  const [liveHead, setLiveHead] = useState<{ known: boolean; id: string | null }>({ known: false, id: null });
+  useLayoutEffect(() => {
+    if (hidden || root === "") return;
+    return memory.metadata.attach(async () => {
+      const [status, head] = await Promise.allSettled([
+        fetchGitStatus(machine, root), fetchGitHistory(machine, root, null, 1),
+      ]);
+      return {
+        status: status.status === "fulfilled" ? status.value : null,
+        headKnown: head.status === "fulfilled",
+        head: head.status === "fulfilled" ? head.value.head : null,
+        commit: head.status === "fulfilled" ? head.value.commits[0] ?? null : null,
+      };
+    }, facts => {
+      setGit(facts.status);
+      setBranch(facts.status?.branch ?? "");
+      setHeadCommit(facts.commit);
+      setLiveHead({ known: facts.headKnown, id: facts.head });
+    }, () => {
+      setGit(null);
+      setBranch("");
+      setHeadCommit(null);
+      setLiveHead({ known: false, id: null });
+    });
+  }, [memory, machine, root, hidden, setBranch, setHeadCommit]);
+  const gitAsked = useRef(gitAt);
   useEffect(() => {
-    setGit(null);
-    if (root === "") return;
-    let live = true;
-    fetchGitStatus(machine, root)
-      .then((g) => {
-        if (!live) return;
-        setGit(g);
-        setBranch(g.branch);
-      })
-      .catch(() => {
-        if (!live) return;
-        setGit(null);
-        setBranch("");
-      });
-    return () => {
-      live = false;
-    };
-  }, [machine, root, gitAt]);
+    if (gitAsked.current === gitAt) return;
+    gitAsked.current = gitAt;
+    memory.metadata.invalidate();
+  }, [memory, gitAt]);
 
-  // The live HEAD summary is separate from the log's retained snapshot.
+  const [treeWatchEntries, setTreeWatchEntries] = useState<string[]>([]);
+  const fileParent = file === null ? null : file.slice(0, file.lastIndexOf("/")) || "/";
+  const watchPlan = directoryWatchScopes(root === "" ? null : root,
+    [...(fileParent === null ? [] : [fileParent]), ...treeWatchEntries]);
+  const observation = useDirectoryWatch(machine, watchPlan.scopes, root !== "");
   useEffect(() => {
-    if (root === "") return;
-    let live = true;
-    fetchGitHistory(machine, root, null, 1)
-      .then((l) => {
-        if (!live) return;
-        setHeadCommit(l.commits[0] ?? null);
-      })
-      .catch(() => {
-        if (!live) return;
-        setHeadCommit(null);
-      });
-    return () => {
-      live = false;
-    };
-  }, [machine, root, gitAt]);
+    const batch = observation.batch;
+    if (observation.status !== "watching" || batch === null) return;
+    if (batch.reset || batch.workspace) memory.metadata.invalidate();
+    if (fileParent !== null && (batch.reset || batch.dirs.includes(fileParent))) setReadAt(n => n + 1);
+  }, [observation.batch, observation.status, memory, fileParent]);
 
-  // **Asked again on the way back into the window, and never on a
-  // timer** (工作区批7). The marks answer 「what differs from HEAD on
-  // that machine」, and they are re-asked when the pane opens, when the
-  // tree walks, and after khor's own save — which covers every change
-  // khor made. What it did not cover is the change somebody *else*
-  // made while this window sat in the background, and that is the one
-  // a person comes back to and reads as current.
-  //
-  // A poll was the other road and it is the worse one: every beat is a
-  // dial plus a `git status` walk on somebody else's machine, for an
-  // answer that is almost always the one already on screen. Coming
-  // back to the window is the moment the staleness starts to mislead,
-  // so it is the moment to ask. A repository still changes under a
-  // pane somebody is staring at without touching; that is left
-  // unasked on purpose rather than paid for once every few seconds.
-  //
-  // **The open file rides the same trigger** (工作区批⑩). Its staleness
-  // starts misleading at exactly the same moment for exactly the same
-  // reason — 「khor 里最常改文件的是 agent」 — and giving it a beat of
-  // its own would be two answers to one question about when a screen
-  // has gone old.
+  const workspaceCovered = directoryScopeIsNative(observation, { kind: "workspace", root });
+  const fileCovered = fileParent === null || directoryScopeIsNative(observation, { kind: "entries", path: fileParent }) ||
+    fileParent === root && workspaceCovered;
+  useEffect(() => {
+    if (hidden || root === "" || workspaceCovered && fileCovered) return;
+    const refresh = () => {
+      if (document.hidden) return;
+      if (!workspaceCovered) memory.metadata.invalidate();
+      if (!fileCovered) setReadAt(n => n + 1);
+    };
+    const slow = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(slow); window.removeEventListener("focus", refresh); };
+  }, [memory, root, hidden, workspaceCovered, fileCovered]);
+
+  // A returning text view rechecks through its existing accepted-read owner.
   useEffect(() => {
     if (hidden) return;
-    setGitAt((n) => n + 1);
     setReadAt((n) => n + 1);
   }, [hidden]);
 
@@ -1482,7 +1471,8 @@ export function WorkspacePane({
                 address bar are the point — docs/WORKSPACE.md 第二轮 says
                 so in the user's own terms. */}
             {historyOpen ? (
-              <WorkspaceHistory machine={machine} root={root} query={historyQuery} memory={memory.repositoryHistory} active={commit?.id ?? null} onOpen={openCommit} />
+              <WorkspaceHistory machine={machine} root={root} query={historyQuery} memory={memory.repositoryHistory}
+                    liveHead={liveHead} active={commit?.id ?? null} onOpen={openCommit} />
             ) : hunt.trim() !== "" ? (
               <Hits
                 found={found}
@@ -1536,6 +1526,8 @@ export function WorkspacePane({
                 open={file}
                 onOpen={open}
                 previewOnClick
+                observation={observation}
+                onWatchEntries={setTreeWatchEntries}
                 onDiff={openDiff}
                 onGone={path=>{for(const tab of tabs)if(movedFilePath(fileOf(tab),path,path)!==null)drop(tab);}}
                 onMoved={moved}

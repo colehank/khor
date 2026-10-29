@@ -8,13 +8,14 @@ import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
 import { ago } from "@/words";
 import type { WorkspaceHistoryMemory } from "./workspace-history";
 
-export function WorkspaceHistory({ machine, root, query, memory, active, onOpen }: {
+export function WorkspaceHistory({ machine, root, query, memory, active, onOpen, liveHead }: {
   machine: string;
   root: string;
   query: string;
   memory: WorkspaceHistoryMemory;
   active: string | null;
   onOpen: (commit: GitCommitSummary, pinned: boolean) => void;
+  liveHead?: { known: boolean; id: string | null };
 }) {
   const view = useSyncExternalStore(memory.subscribe, memory.snapshot, memory.snapshot);
   const [since, setSince] = useState(Date.now);
@@ -38,6 +39,10 @@ export function WorkspaceHistory({ machine, root, query, memory, active, onOpen 
   const commits = current?.data.commits.filter(commit => `${commit.id} ${commit.subject} ${commit.author}`.toLocaleLowerCase().includes(needle)) ?? [];
   let previous = "";
   return <div key={place} ref={reading} data-workspace-log data-files-list aria-busy={view.busy} className="min-h-0 flex-1 overflow-y-auto">
+    {current !== null && liveHead?.known && liveHead.id !== current.data.head && <div data-workspace-log-updated className="flex items-center justify-between gap-in px-page py-in text-caption text-muted-foreground">
+      <span>{gui.git_history_updated}</span>
+      <button type="button" disabled={view.busy} onClick={() => memory.invalidate()} className="min-h-touch text-foreground disabled:opacity-50">{gui.file_reread}</button>
+    </div>}
     {current === null && view.busy ? <Waiting since={since} /> : current !== null && <div data-workspace-log-list>{commits.map(commit => {
       const day = new Date(commit.when_ms).toLocaleDateString();
       const startsDay = day !== previous;
