@@ -48,6 +48,6 @@ G最后eaaf7c39→b84187b7仅CodeDiff/SessionSide两小hunk，独审固定指纹
 
 证据根 `/Volumes/disk0/Khor/evidence/round2`：input/browser-fields、content/browser、history分阶段、glass/browser及integration各固定SHA收据。原失败/harness错误均保留，不回填旧报告。G完整范围见glass/gates-receipt.json与browser/verification-scope.json。
 
-内盘恢复 `/Users/zgh/Library/Caches/khor-code-quality/recovery`，最新已核包 round2-46f03ca5.bundle，SHAabd8d12cfbe573d6b4d631c4745cda0398ab243a47fe5cbce558d3394a996c26，快照round2-source-checkpoint-46f03ca5含A2/G当时实际diff/新增文件/真实生成类型与204文档逐SHA镜像；后续checkpoint继续更新，不按旧包覆盖现场。外盘不在先读内盘RESUME及manifest。
+内盘恢复 `/Users/zgh/Library/Caches/khor-code-quality/recovery`，最新已核包 round2-d4232d11.bundle，SHA4d2fabf88efb62631a4fc6584743288d51fc3648837fa40cd75f58357faa9b93，快照round2-source-checkpoint-d4232d11含A/W/G当时实际diff/新增文件/真实生成类型与205文档逐SHA镜像；后续checkpoint继续更新，不按旧包覆盖现场。外盘不在先读内盘RESUME及manifest。
 
 隔离Labs沿原owner保留：23832参考、23834字段、23835内容/材质、23836历史，PID以实际现场为准。API受控，不操作真实文件/发送消息；浏览器证据不冒WK原生材质/真机触屏。当前没有新全App构建或用户App重启。上轮交付见[DELIVERY](DELIVERY.md)。
