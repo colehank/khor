@@ -244,23 +244,17 @@ export function TerminalSection() {
             onPick={(w) => setTermWake(w as Wake)}
           />
         )}
-        {/* The key row above the keyboard, and its editor — the one the
-            row's 「…」 opens (`views/TermKeys`). A finger's only. */}
-        {coarse && (
-          <>
-            <button
-              type="button"
-              data-setting-row="nav"
-              data-setting-row-name="term-key-row"
-              onClick={() => setEditingKeys(true)}
-              className={cn(ROW, "w-full text-left")}
-            >
-              <span className="min-w-0 flex-1 text-body">{gui.term_key_row}</span>
-              <IconChevronRight className="size-affordance text-tertiary" />
-            </button>
-            <KeyRowEditor open={editingKeys} onOpenChange={setEditingKeys} />
-          </>
-        )}
+        <button
+          type="button"
+          data-setting-row="nav"
+          data-setting-row-name="term-key-row"
+          onClick={() => setEditingKeys(true)}
+          className={cn(ROW, "w-full text-left")}
+        >
+          <span className="min-w-0 flex-1 text-body">{gui.term_key_row}</span>
+          <IconChevronRight className="size-affordance text-tertiary" />
+        </button>
+        <KeyRowEditor open={editingKeys} onOpenChange={setEditingKeys} />
         {/* Where the key row starts with a hardware keyboard (UX-12 ruling
             3, `lib/term-keys-hw`); the deck's circle toggles it either way.
             A finger's device only. */}
