@@ -1406,19 +1406,6 @@ export const chatAnswer = (id: string, ask: number, option: string | null) =>
   call<null>("chat_answer", { id, ask, option });
 export const chatReplay = (id: string) => call<null>("chat_replay", { id });
 export const chatLeave = (id: string) => call<null>("chat_leave", { id });
-/** A discovered session's recorded past: the vendor's transcript in
-    replay-shaped frames, whole, ending in history_end — so the same
-    fold paints it and a live replay alike. */
-export const fetchHistory = (id: string) => call<ChatFrame[]>("history", { id });
-
-/** A discovered session's transcript, **followed**: whatever it has said
-    since `from`, and where to continue.
-
-    Appended lines come back as `note` frames and append; a rewound file
-    (a compaction) comes back whole as `history` + `history_end` and
-    repaints. Both shapes are ones the fold already knows — see
-    `chat::history_follow` for why that split is the design and not a
-    convenience. */
 export const beginHistoryRequest = () => call<string>("history_begin");
 export const cancelHistoryRequest = (requestKey: string) => call<null>("history_cancel", { requestKey });
 export const fetchHistoryRecord = (id: string, requestKey: string, cursor: string, from: number) =>
@@ -1426,8 +1413,6 @@ export const fetchHistoryRecord = (id: string, requestKey: string, cursor: strin
 export const fetchHistoryPage = (id: string, requestKey: string, cursor: string | null = null, newer = false) =>
   call<HistoryPage>("history_page", { id, cursor, newer, requestKey });
 
-export const followHistory = (id: string, from: number) =>
-  call<{ frames: ChatFrame[]; at: number; following: boolean }>("history_follow", { id, from });
 /** One machine's directory — order, cap and the answered-about path
     all come from the node; `""` asks for that machine's home. */
 export const fetchLs = (machine: string, path: string) =>

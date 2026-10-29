@@ -860,21 +860,6 @@ fn chat_leave(id: String) -> Result<(), String> {
     khor_gui_core::chat::chat_leave(&id)
 }
 
-/// A discovered session's recorded past — the vendor's transcript in
-/// replay-shaped frames (`khor_gui_core::chat::history`).
-#[tauri::command]
-async fn history(id: String) -> Result<Vec<khor_gui_core::chat::ChatFrame>, String> {
-    off_main(move || khor_gui_core::chat::history(&Node::root_from_env(), &id)).await
-}
-
-/// A discovered conversation, **followed**: whatever its transcript has
-/// said since `from`, and where to continue. The read-only half of
-/// watching a session that is running in its own terminal.
-#[tauri::command]
-async fn history_follow(id: String, from: u64) -> Result<khor_gui_core::chat::Followed, String> {
-    off_main(move || khor_gui_core::chat::history_follow(&Node::root_from_env(), &id, from)).await
-}
-
 #[tauri::command]
 fn history_begin() -> Result<String, String> {
     khor_gui_core::chat::history_begin()
@@ -5284,8 +5269,6 @@ pub fn run() {
             page_icons,
             open_link,
             chat_leave,
-            history,
-            history_follow,
             history_begin,
             history_cancel,
             history_page,

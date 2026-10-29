@@ -1032,80 +1032,6 @@ pub fn chat_replay(id: &str) -> Result<(), String> {
     submit_control(id, Control::Replay)?.wait()
 }
 
-/// The recorded past of a session khor did not open: the vendor's own
-/// transcript, translated into the frames a live replay wears — which
-/// is the very translation claude-code-acp's `loadSession` performs,
-/// one process closer. Static and whole: no attachment, no cursor, and
-/// the answer ends with [`ChatFrame::HistoryEnd`] like any replay, so
-/// one fold paints both kinds of past.
-pub fn history(root: &Path, id: &str) -> Result<Vec<ChatFrame>, String> {
-    let n = Node::open(root.to_path_buf())?;
-    let said = n.transcript_of(&SessionId(id.to_owned()))?;
-    let mut frames: Vec<ChatFrame> = said
-        .into_iter()
-        // **The one translation, shared with the live stream.** This
-        // used to be a third hand-written copy of it, and the copies
-        // drifted the moment the live one learned anything: tool lines
-        // here went on saying `Bash` while a watched conversation
-        // showed the command, its status and its diff. Almost
-        // everything a person reads in an existing conversation comes
-        // through here, so the copy that mattered most was the one that
-        // never got fixed.
-        .filter_map(khor_node::replayed_update)
-        .map(|update| {
-            let update = serde_json::to_value(&update).unwrap_or(serde_json::Value::Null);
-            ChatFrame::History {
-                update: serde_json::json!({ "sessionId": id, "update": update }),
-            }
-        })
-        .collect();
-    frames.push(ChatFrame::HistoryEnd);
-    Ok(frames)
-}
-
-/// A discovered conversation, followed: whatever its transcript has
-/// said since `from`, and where to continue.
-///
-/// **Appended lines come back as `note` frames, not `history` ones**,
-/// and that is what makes this work without touching the fold: a
-/// `history` batch is closed by `HistoryEnd` and *replaces* the past,
-/// which is right for a first read and wrong for a continuation — it
-/// would leave the pane holding only the newest paragraph. Notes
-/// append, which is exactly what an appended line is.
-///
-/// A rewound file (compaction, rotation) comes back the other way:
-/// whole, as `history`, ending in `HistoryEnd`, so the pane repaints.
-/// Byte 400 of a new file is not byte 400 of the old one, and appending
-/// across that seam would splice two conversations together.
-pub fn history_follow(root: &Path, id: &str, from: u64) -> Result<Followed, String> {
-    let n = Node::open(root.to_path_buf())?;
-    let follow = n.transcript_follow(&SessionId(id.to_owned()), from)?;
-    let kind_of = |update: serde_json::Value| {
-        let wrapped = serde_json::json!({ "sessionId": id, "update": update });
-        if follow.rewound {
-            ChatFrame::History { update: wrapped }
-        } else {
-            ChatFrame::Note { update: wrapped }
-        }
-    };
-    let mut frames: Vec<ChatFrame> = follow
-        .said
-        .into_iter()
-        // The one translation, shared with the live stream — see
-        // `history` above for why there is exactly one.
-        .filter_map(khor_node::replayed_update)
-        .map(|u| kind_of(serde_json::to_value(&u).unwrap_or(serde_json::Value::Null)))
-        .collect();
-    if follow.rewound {
-        frames.push(ChatFrame::HistoryEnd);
-    }
-    Ok(Followed {
-        frames,
-        at: follow.at,
-        following: follow.following,
-    })
-}
-
 /// One bounded external-history response. Record references explicitly retain
 /// content that cannot safely be expanded into an inline response.
 #[derive(Serialize, TS)]
@@ -1372,22 +1298,6 @@ fn history_page_response(
         response.encoded_bytes = encoded_bytes;
     }
     Ok(response)
-}
-
-/// [`history_follow`]'s answer: what to paint, and where to continue.
-#[derive(Serialize, TS)]
-#[ts(export)]
-pub struct Followed {
-    pub frames: Vec<ChatFrame>,
-    /// Byte offset to hand back next time. **Carried by the caller
-    /// rather than remembered here**: this function opens the node and
-    /// answers, and a cursor kept on this side would be one per
-    /// process, shared by every face watching every session.
-    pub at: u64,
-    /// Whether asking again can say anything new. `false` is a record
-    /// nothing can seek: this answer is the whole of it, and a caller
-    /// that kept asking would re-read the file forever.
-    pub following: bool,
 }
 
 /// Detaches one holder; the socket closes when the last one leaves

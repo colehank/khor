@@ -606,13 +606,6 @@ pub fn answer(
                 .unwrap_or(false),
             &arg("requestKey")?,
         )?),
-        "history_follow" => to_json(&crate::chat::history_follow(
-            root,
-            &arg("id")?,
-            args.get("from")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0),
-        )?),
         "chat_poll" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
         // The bridge answers one request at a time: a held wait would
         // hold every other call behind it, so it is the poll here.
@@ -740,7 +733,6 @@ pub fn answer(
             crate::chat::chat_leave(&arg("id")?)?;
             Ok("null".to_owned())
         }
-        "history" => to_json(&crate::chat::history(root, &arg("id")?)?),
         "ls" => to_json(&rt.block_on(crate::files::ls(root, &arg("machine")?, &arg("path")?))?),
         "pull" => {
             to_json(&rt.block_on(crate::files::pull(root, &arg("machine")?, &arg("path")?))?)
