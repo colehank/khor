@@ -2300,9 +2300,7 @@ export default function App() {
   const pageTitle =
     landing === "devices" && openDevice
       ? openDevice.shown
-      : landing === "workspaces" && openWs
-        ? openWs.path.split("/").filter(Boolean).pop() || openWs.machine
-        : // Nothing picked: the head is empty (the redesign). The
+      : // Nothing picked: the head is empty (the redesign). The
           // landing's name and count are the left block's head now, and
           // saying them again over the content is the name said twice.
           "";
@@ -3018,6 +3016,7 @@ export default function App() {
     // detail and on the narrow one is the list alone.
     openWs ? (
       <WorkspacePane
+        status={stale ? gui.backend_unreachable : undefined}
         memory={workspaceMemories.retain(openWs)}
         // Views detach on navigation; the identity's model retains its
         // tabs, drafts and reading state without background view work.
@@ -4221,7 +4220,7 @@ export default function App() {
                 </Tabs>
               ) : (
                 <div ref={sideMain} className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <Region
+                  {landing === "workspaces" && openWs !== null ? <div data-ws-region data-region data-region-kind="tabs" className="flex min-h-0 flex-1 flex-col"><Fault name="detail" reset={seamAt}>{detail}</Fault></div> : <Region
                     kind={sessions ? "tabs" : "detail"}
                     title={pageTitle}
                     // The open machine's verbs, and nothing else: with
@@ -4231,7 +4230,6 @@ export default function App() {
                     // offers; an act that makes something lives on ＋
                     // alone (10-layout 「一个动作只有一个家」).
                     actions={machineVerbs}
-                    flush={landing === "workspaces" && openWs !== null}
                     capped={landing === "devices" && selectedDevice !== null && machineBody === "dashboard"}
                     // 过期 / 离线 (第十七轮 §6): what is on the board is the
                     // last answer, and R0 says so — never a banner inside.
@@ -4244,7 +4242,7 @@ export default function App() {
                     <Fault name="detail" reset={seamAt}>
                       {detail}
                     </Fault>
-                  </Region>
+                  </Region>}
                 </div>
               )}
             </>

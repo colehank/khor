@@ -149,6 +149,7 @@ export type TabFace = {
       place this app uses the slope, because what it marks is exactly
       「this is not settled」. */
   preview?: boolean;
+  onPin?: () => void;
   /* ⚠️ 墓碑 (UX-34, 2026-10-06): `glyph` — what a file tab wore instead
      of a face — went with UX-32's WorkspacePane: a file tab's seat is the
      assembly (the machine's face, the file's kind as the mark) like every
@@ -893,6 +894,7 @@ export function TabStrip({
               <button
                 type="button"
                 data-tab-open={f.id}
+                onDoubleClick={f.onPin}
                 role={nested ? "tab" : undefined}
                 aria-selected={nested ? on : undefined}
                 tabIndex={nested ? (on ? 0 : -1) : undefined}

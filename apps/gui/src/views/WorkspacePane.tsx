@@ -1,25 +1,7 @@
-// One workspace, open (工作区批2). Three columns under one head: the
-// tree, the file, and the sessions living in this project.
-//
-// **Both side columns are switched from the head, never from
-// themselves.** A column that is collapsed cannot carry the control
-// that brings it back, so the pair lives in a place that does not move.
-// Left switches the tree, right switches the sessions — the two ends
-// they act on. **Since 2026-09-28 that place is R0** (the page's own
-// buttons at its right end, D9): the sessions switch stands over the
-// column it opens, VS Code beside it, and R0 says what this is — the
-// name, then 「⎇ 分支 · N 个文件已修改 · 机器:路径」 under it.
-//
-// **Why the sessions column is the one that yields.** Counted across
-// the shell: rail, workspace list, tree, file, sessions is five columns
-// side by side, and nothing readable survives that. The sessions have a
-// whole landing of their own on the rail; the tree and the file have no
-// second address. So when the workspace list is open, this opens with
-// the sessions folded, and opening them is one press away.
 import { useFileHandoff } from "@/hooks/use-file-handoff";
 import { sessionInWorkspace } from "@/lib/session-cwd";
 import type { EditorHistorySlot } from "@/lib/code/history";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
 import {
@@ -35,16 +17,19 @@ import {
   type GitLog,
   type SessionRow,
 } from "@/api";
+import { MachineAvatar } from "@/components/Avatar";
+import { WorkspaceHistory } from "@/views/workspace/WorkspaceHistory";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBack, IconBranch, IconEye, IconFiles, IconPlus, IconSearch, IconSessions } from "@/components/icons";
+import { IconBack, IconBranch, IconHistory, IconMore, IconEye, IconSessions } from "@/components/icons";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { DeeperHeads, NarrowHead, SideSeat } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
-import { PageAction, PageSubtitle, PageTitleAside } from "@/components/Region";
+import { RegionLead, WindowControls } from "@/components/Region";
+import { WINDOW_DRAG } from "@/components/shell";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import {
   DropdownMenu,
@@ -52,11 +37,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { stalestTab, useTabsLimit } from "@/browse/tab-limit";
 import { type TabFace } from "@/browse/TabStrip";
 import { fileKind } from "@/components/SessionFace";
+import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { Tabs } from "@/browse/Tabs";
 import { cli, gui } from "@/gen/catalog";
@@ -76,11 +60,10 @@ import {
   sessionOptions,
   storedWords,
 } from "@/lib/session-filter";
-import { band } from "@/lib/scroll-edge";
-import { endsOnEnter } from "@/lib/field-swipe";
 import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
-import { basename } from "@/words";
+import { band } from "@/lib/scroll-edge";
+import { ago, basename } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { SessionsList } from "@/views/SessionsList";
 import { FilesPane } from "@/views/FilesPane";
@@ -88,11 +71,11 @@ import { FileTree } from "@/views/FileTree";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { beginEditing, defaultFaceOf, FileView, rendererOf, type Draft } from "@/views/FileView";
 import { DiffView, diffLabel } from "@/views/DiffView";
-import { RevisionView, revisionRenders, shortId, HistorySheet } from "@/views/FileHistory";
-import { useRepositoryHistory } from "@/hooks/use-repository-history";
+import { RevisionView, revisionRenders, shortId } from "@/views/FileHistory";
+import { closeWorkspaceTab, emptyWorkspaceTabs, openWorkspaceTab, pinWorkspaceTab, renameWorkspaceFiles, selectWorkspaceTab, selectedWorkspaceTarget, workspaceTabId, type WorkspaceTarget } from "@/views/workspace/workspace-tabs";
 import { CommitPage } from "@/views/CommitPage";
 import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
-import { FilePage, FileVerbs, placeAt, topLine } from "@/views/FilePage";
+import { FileVerbs, placeAt, topLine } from "@/views/FilePage";
 import { useFullScreen } from "@/lib/full-screen";
 import { WorkspaceEmpty, rememberOpened, storedOpened } from "@/views/WorkspaceEmpty";
 
@@ -120,8 +103,10 @@ export function WorkspacePane({
   side,
   listOpen,
   onBack,
+  status,
 }: {
   memory: WorkspaceMemory;
+  status?: string;
   machine: string;
   /** Whether this workspace is on the machine khor is running on.
       Handed down to the tree, whose 拉过来 is a direction and not an
@@ -235,20 +220,32 @@ export function WorkspacePane({
 }) {
   // Where the tree is standing. Starts at the workspace and walks down;
   // `root` changing is a different workspace, not a step.
+  const regionLead = useContext(RegionLead);
   const [at, setAt] = useWorkspaceField(memory, "at", () => root);
-  /** Every file open in the middle column, in the order they were
-      opened, by absolute path. **Remembered per workspace in this
-      face's own storage** (工作区批⑧) — a set of open tabs is a habit
-      about one screen, the same class of thing as a column's width, and
-      it belongs nowhere near the replicated documents.
-
-      The tab's id on the strip is `机器:绝对路径`; what is kept here is
-      the path alone, because the machine is this pane's and a stored id
-      that disagreed with it would be a tab pointing at another disk. */
-  const [tabs, setTabs] = useWorkspaceField(memory, "tabs", () => storedTabs(machine, root));
+  const [content, setContent] = useWorkspaceField(memory, "content", () => {
+    const items = storedTabs(machine, root).map(targetOf);
+    return { ...emptyWorkspaceTabs(), items, active: items[0] ? workspaceTabId(items[0]) : null };
+  });
+  const tabs = content.items.filter((target) => target.kind !== "commit").map(keyOf);
+  const selected = selectedWorkspaceTarget(content);
+  const file = selected === null || selected.kind === "commit" ? null : keyOf(selected);
+  const commit = selected?.kind === "commit" ? selected.commit : null;
+  const setFile = useCallback((path: string) => {
+    setContent((was) => selectWorkspaceTab(was, workspaceTabId(targetOf(path))));
+  }, [setContent]);
+  const pin = useCallback((id: string) => setContent((was) => pinWorkspaceTab(was, id)), [setContent]);
   // The file view is replaced when tabs or viewport layouts change; its
   // undo stack belongs to the open tab. Release it with the tab, not at
   // autosave, and never keep another workspace's history in this map.
+  const commitState = (id: string) => {
+    let state = memory.commits.get(id);
+    if (!state) memory.commits.set(id, state = { collapsed: new Set(), scroll: {} });
+    return state;
+  };
+  useEffect(() => {
+    const open = new Set(content.items.flatMap((item) => item.kind === "commit" ? [item.commit.id] : []));
+    for (const id of memory.commits.keys()) if (!open.has(id)) memory.commits.delete(id);
+  }, [content, memory]);
   const historyFiles = memory.histories;
   const historyOf = (path: string): EditorHistorySlot => {
     let slot = historyFiles.get(path);
@@ -274,14 +271,9 @@ export function WorkspacePane({
   const [goLine, setGoLine] = useState<{ path: string; line: number; at: number } | null>(
     null,
   );
-  const [file, setFile] = useWorkspaceField(memory, "file", () => tabs[0] ?? null);
   /** Narrow shows one column at a time; wide ignores this retained choice. */
   const [screen, setScreen] = useWorkspaceField(memory, "screen", () => "tree");
-  /** Which tab is the **preview**: opened by one click, and replaced by
-      the next one rather than joined by it (VS Code's arrangement, and
-      the user asked for VS Code's). `null` when every open tab is
-      pinned. A double click, or typing in it, pins it. */
-  const [preview, setPreview] = useWorkspaceField(memory, "preview", () => null);
+  const preview = content.preview;
   /** When each tab was last in front, for 标签页上限 (`browse/tab-limit`).
       A ref: it is read when a tab is opened, and a change to it is not
       something the screen draws. */
@@ -310,7 +302,7 @@ export function WorkspacePane({
   }, [machine, file, setRev, setFace]);
   /** The middle column, where the reader's place is read and put back. */
   const mid = useRef<HTMLDivElement>(null);
-  const handoff = useFileHandoff(machine, file ?? "", !narrow && file !== null, mid);
+  const handoff = useFileHandoff(machine, file ?? "", file !== null, mid);
   /** Where to put the reader once the face has changed (a source line). */
   const restore = useRef<number | null>(null);
   /** A ✓ waiting on its save before the face goes back to reading. */
@@ -497,7 +489,6 @@ export function WorkspacePane({
       is where the box is asked for, and that hand-back is skipped — the
       caret goes to the box. A plain dismissal (Esc, a press outside)
       chose nothing and gives ＋ its focus as usual. */
-  const madeFromMenu = useRef<"file" | "dir" | null>(null);
   /** Which session this column is standing in, by id, or `null` for
       the list. **Dropped when the workspace changes** along with the
       tree's position and the open file: a session belongs to one
@@ -542,14 +533,8 @@ export function WorkspacePane({
       than `git_status`. Using `git_log` with path=root is one call and
       always has the data. */
   const [headCommit, setHeadCommit] = useState<GitLog["commits"][0] | null>(null);
-  /** Whether the repository history sheet is open (WS-LAB item 1).
-      Both the commit line in the tree and the branch chip in R0's aside
-      open the same sheet. */
-  const {historyOpen,setHistoryOpen,commit,setCommit,backToHistory} = useRepositoryHistory(machine,root);
-  /** **The commit a row of 提交历史 opened** (COMMITS-BRIEF item 3): a page
-      where the file stands on the wide face, a screen on the phone.
-      Opening a file puts it away (`open`). */
-
+  const [historyOpen, setHistoryOpen] = useWorkspaceField(memory, "historyOpen", () => false);
+  const [historyQuery, setHistoryQuery] = useWorkspaceField(memory, "historyQuery", () => "");
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
@@ -886,69 +871,27 @@ export function WorkspacePane({
     [machine, root],
   );
 
-  /** A file was pressed in the tree.
-   *
-   * **One click opens a preview, the next one replaces it** (工作区批⑧,
-   * VS Code's arrangement, which is what was asked for). The preview is
-   * a real tab in every way but one: it is the tab the next glance is
-   * allowed to take. A double click pins it, and so does typing in it —
-   * both are a person saying they are staying.
-   *
-   * **A pinned tab is never taken back down to a preview** (a bug found
-   * 2026-09-16). One click on a file that is already open and already
-   * pinned used to make it the preview again, and from that moment the
-   * next file pressed in the tree would take its seat — so a tab
-   * somebody had deliberately kept disappeared under a press that says
-   * nothing about keeping or dropping anything. VS Code demotes
-   * nothing, ever; a tab leaves when it is closed.
-   */
-  const open = useCallback(
-    (path: string, pinned: boolean) => {
-      setFile(path);
-      setCommit(null);
-      // 最近打开过的文件 (ruling 37). **The file, never the diff key**:
-      // what a person wants back is the file, and a diff is a look at
-      // one rather than a thing to reopen.
-      if (diffOf(path) === null) setRecent(rememberOpened(machine, root, path));
-      // …and on the narrow face, pressing a file in the tree is how you
-      // get to the file: one screen at a time, and this is the step
-      // (ruling 33). Said here rather than in the tree, because which
-      // screens exist is this pane's fact and not the tree's.
-      setScreen("file");
-      // Read before the tabs move, because what happens to the preview
-      // seat depends on whether this file was already on the strip.
-      const known = tabs.includes(path);
-      setTabs((was) => {
-        if (was.includes(path)) return was;
-        // The preview seat, if there is one, is where a fresh glance
-        // goes; otherwise the tab joins the end.
-        let now =
-          !pinned && preview !== null && was.includes(preview)
-            ? was.map((p) => (p === preview ? path : p))
-            : [...was, path];
-        // 标签页上限 (第三轮 第 4 条): the tab touched longest ago goes —
-        // never the one just opened, never one holding unsaved work.
-        const gone = stalestTab(now, limit, touched.current, (p) => p === path || drafts.has(p));
-        if (gone !== null) now = now.filter((p) => p !== gone);
-        remember(now);
-        return now;
-      });
-      setPreview((was) => {
-        if (pinned) return was === path ? null : was;
-        // Already on the strip and not the preview: it is pinned, and
-        // one click is not the gesture that unpins anything. The
-        // preview seat — somebody else's tab, or none — is left alone.
-        if (known && was !== path) return was;
-        return path;
-      });
-    },
-    [tabs, preview, remember, machine, root, limit, drafts],
-  );
+  const openTarget = useCallback((target: WorkspaceTarget, pinned: boolean) => {
+    let next = openWorkspaceTab(memory.read("content"), target, pinned);
+    const active = workspaceTabId(target);
+    const gone = stalestTab(next.items.map(workspaceTabId), limit, touched.current, (id) => {
+      const item = next.items.find((item) => workspaceTabId(item) === id);
+      return id === active || item?.kind === "file" && memory.read("drafts").has(item.path);
+    });
+    if (gone !== null) next = closeWorkspaceTab(next, gone);
+    setContent(next);
+    remember(next.items.filter((item) => item.kind !== "commit").map(keyOf));
+    setScreen("file");
+  }, [memory, setContent, limit, remember, setScreen]);
+  const open = useCallback((path: string, pinned: boolean) => {
+    if (diffOf(path) === null) setRecent(rememberOpened(machine, root, path));
+    openTarget(targetOf(path), pinned);
+  }, [machine, root, setRecent, openTarget]);
+  const openCommit = (value: GitCommit, pinned = false) => openTarget({ kind: "commit", commit: value }, pinned);
 
-  // What 「touched」 means for the limit: this tab was put in front.
   useEffect(() => {
-    if (file !== null) touched.current.set(file, Date.now());
-  }, [file]);
+    if (content.active !== null) touched.current.set(content.active, Date.now());
+  }, [content.active]);
 
   /** git's letter was pressed: open that file **against HEAD** in a
       tab of its own (工作区第五轮 第 38 条).
@@ -988,20 +931,9 @@ export function WorkspacePane({
     (from: string, to: string) => {
       const after = (p: string) =>
         p === from ? to : p.startsWith(`${from}/`) ? `${to}${p.slice(from.length)}` : p;
-      // A tab is a key: an ordinary one is its path, a diff tab's wraps
-      // it. Both move, and neither changes kind.
-      const key = (k: string) => {
-        const d = diffOf(k);
-        return d === null ? after(k) : diffKey(after(d));
-      };
-      setTabs((was) => {
-        const now = was.map(key);
-        if (now.every((p, i) => p === was[i])) return was;
-        remember(now);
-        return now;
-      });
-      setFile((was) => (was === null ? was : key(was)));
-      setPreview((was) => (was === null ? was : key(was)));
+      const next = renameWorkspaceFiles(memory.read("content"), after);
+      setContent(next);
+      remember(next.items.filter((item) => item.kind !== "commit").map(keyOf));
       setDrafts((was) => {
         const now = new Map<string, Draft>();
         for (const [p, d] of was) now.set(after(p), d);
@@ -1011,7 +943,7 @@ export function WorkspacePane({
       setRecent((was) => was.map(after));
       setGitAt((n) => n + 1);
     },
-    [remember],
+    [memory, setContent, remember],
   );
 
   /** Take a tab off the strip. **Never asks here** — whether there is
@@ -1019,19 +951,9 @@ export function WorkspacePane({
       is what both of its answers end in. */
   const drop = useCallback(
     (path: string) => {
-      setTabs((was) => {
-        const at = was.indexOf(path);
-        if (at < 0) return was;
-        const now = was.filter((p) => p !== path);
-        remember(now);
-        // **The neighbour, not the first tab.** Closing the third of
-        // five and landing on the first is a jump a person has to
-        // undo; the one that slid into this seat is where the eye
-        // already is.
-        setFile((open) => (open === path ? (now[at] ?? now[at - 1] ?? null) : open));
-        return now;
-      });
-      setPreview((was) => (was === path ? null : was));
+      const next = closeWorkspaceTab(memory.read("content"), workspaceTabId(targetOf(path)));
+      setContent(next);
+      remember(next.items.filter((item) => item.kind !== "commit").map(keyOf));
       setDrafts((was) => {
         if (!was.has(path)) return was;
         // **Thrown away on purpose** (不保存): the write the file's view
@@ -1043,7 +965,7 @@ export function WorkspacePane({
       });
       setClosing((was) => (was === path ? null : was));
     },
-    [remember, machine],
+    [remember, machine, memory, setContent],
   );
 
   /** Close a tab. **Something typed in it is saved on the way out**
@@ -1055,7 +977,7 @@ export function WorkspacePane({
       with nothing telling them why (docs/UX.md 做了但没变化). */
   const shut = useCallback(
     (path: string) => {
-      if (!drafts.has(path)) return drop(path);
+      if (!memory.read("drafts").has(path)) return drop(path);
       const r = roadOf(machine, path);
       // The front file's view writes what it would have written at the
       // end of the pause; a tab behind wrote its text as it was left,
@@ -1067,7 +989,7 @@ export function WorkspacePane({
       }
       setClosing(path);
     },
-    [drafts, drop, machine],
+    [memory, drop, machine],
   );
 
   // The save the sheet asked for, made by the view that holds the
@@ -1107,22 +1029,22 @@ export function WorkspacePane({
   // editor is not open」: the editor has a column of its own (ruling 45)
   // and the file is still on screen beside it. A press inside the
   // editor's own window never reaches this page — its ⌘W is VS Code's.
-  useTabHost(
-    tabs.length > 0
-      ? {
-          count: tabs.length,
-          front: file !== null,
-          close: () => {
-            if (file !== null) shut(file);
-          },
-          step: (by) => {
-            const at = file === null ? -1 : tabs.indexOf(file);
-            const next = tabs[(at + by + tabs.length) % tabs.length];
-            if (next !== undefined) setFile(next);
-          },
-        }
-      : null,
-  );
+  const closeTab = (id: string) => {
+    const target = memory.read("content").items.find((item) => workspaceTabId(item) === id);
+    if (!target) return;
+    if (target.kind === "commit") setContent((was) => closeWorkspaceTab(was, id));
+    else shut(keyOf(target));
+  };
+  useTabHost(content.items.length > 0 ? {
+    count: content.items.length,
+    front: content.active !== null,
+    close: () => { if (content.active !== null) closeTab(content.active); },
+    step: (by) => {
+      const at = content.items.findIndex((item) => workspaceTabId(item) === content.active);
+      const target = content.items[(at + by + content.items.length) % content.items.length];
+      if (target) setContent((was) => selectWorkspaceTab(was, workspaceTabId(target)));
+    },
+  } : null);
 
   // **`⌘B` folds and unfolds the tree** (VS Code's key for its side
   // bar), and it is the one way back that no other fold can hide: the
@@ -1204,7 +1126,17 @@ export function WorkspacePane({
       nothing (its own head says so). */
   const tabFaces: TabFace[] = useMemo(
     () =>
-      tabs.map((key) => {
+      content.items.map((target) => {
+        const id = workspaceTabId(target);
+        if (target.kind === "commit") return {
+          id, label: target.commit.subject, title: `${target.commit.subject} · ${target.commit.id}`,
+          face: machineFace, path: target.commit.id, machine,
+          preview: preview === id,
+          onPin: () => pin(id),
+          mark: { key: "history", glyph: (className: string) => <IconHistory className={className} /> },
+          menu: contentMenu(id),
+        };
+        const key = keyOf(target);
         // A diff tab is a tab about a file, so everything below that
         // reads a path reads the **file's** — the icon, the second
         // line, the hover title. Only the name says which face of it is
@@ -1212,7 +1144,8 @@ export function WorkspacePane({
         const path = fileOf(key);
         const isDiff = diffOf(key) !== null;
         return {
-        id: `${machine}:${key}`,
+        id,
+        onPin: () => pin(id),
         label: isDiff ? diffLabel(basename(path)) : basename(path),
         face: machineFace,
         path,
@@ -1227,7 +1160,7 @@ export function WorkspacePane({
         note: key === file ? fileNote : null,
         // A diff has nothing to type in, so it never carries a dot.
         dirty: !isDiff && drafts.has(key),
-        preview: preview === key,
+        preview: preview === id,
         // The file's own kind on the tab too (2026-09-16:「标签页打开了,
         // 最上方也要有 icon」) — the same icon the tree drew for it, as
         // the mark on the machine's face, the way every pill's seat is
@@ -1279,74 +1212,32 @@ export function WorkspacePane({
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tabs, machine, machineFace, root, drafts, preview, shut, file, fileNote, readFirst.item?.label, readFirst.item === null, roads],
+    [content, machine, machineFace, root, drafts, preview, shut, file, fileNote, readFirst.item?.label, readFirst.item === null, roads],
   );
 
-  /** 关闭 / 关闭其他 / 复制路径 / 复制相对路径.
-      **Two copy items and not one with a switch**: the absolute path is
-      what a command line and another machine take, the relative one is
-      what this project's own documents take, and neither stands in for
-      the other. A clipboard refusal rejects, which is how `RowMenu`
-      keeps the menu open over the press that failed. */
+  function closeOthers(id: string) {
+    for (const item of memory.read("content").items) {
+      const other = workspaceTabId(item);
+      if (other !== id) closeTab(other);
+    }
+    setContent((was) => selectWorkspaceTab(was, id));
+  }
+  function contentMenu(id: string): RowAction[] {
+    return [
+      { key: "close", label: gui.close, run: () => closeTab(id) },
+      { key: "close-others", label: gui.tab_close_others, run: () => closeOthers(id) },
+    ];
+  }
   function tabMenu(key: string): RowAction[] {
-    // What gets copied is the **file's** path, on a diff tab too: a
-    // diff has no address of its own that anything else could use.
     const path = fileOf(key);
     return [
-      { key: "close", label: gui.close, run: () => shut(key) },
-      {
-        key: "close-others",
-        label: gui.tab_close_others,
-        run: () => {
-          for (const p of tabs) if (p !== key) shut(p);
-          setFile(key);
-        },
-      },
-      {
-        key: "copy-path",
-        label: gui.tab_copy_path,
-        run: () => navigator.clipboard.writeText(path),
-      },
-      {
-        key: "copy-rel",
-        label: gui.tab_copy_rel,
-        run: () => navigator.clipboard.writeText(under(root, path)),
-      },
+      ...contentMenu(workspaceTabId(targetOf(key))),
+      { key: "copy-path", label: gui.tab_copy_path, run: () => navigator.clipboard.writeText(path) },
+      { key: "copy-rel", label: gui.tab_copy_rel, run: () => navigator.clipboard.writeText(under(root, path)) },
     ];
   }
 
-  /** The two switches (2026-09-17 ruling 47). **One column each, and
-      neither can be reached from anywhere else**: the sessions fold
-      away, and the editor is a window this face has no other handle on.
-   *
-   * **Where they stand moved twice.** The strip's far end carried them
-   * until ruling 47 (「取消现在固定在标签页位置的」), then the head of
-   * the tree — the one row the narrow face drew before a file was open
-   * (「窄屏进入工作区, 没有到vscode和session的按钮」). **Since 2026-09-28
-   * they are the page's own buttons at R0's right end** (D9, the machine
-   * page's mechanism: `PageAction`), VS Code and then the sessions at
-   * the far right, over the column they open; on the narrow face, the
-   * right end of the window's first row (`NarrowHead`), which is on
-   * every one of the three screens rather than only the tree's. The
-   * tree's head is a search box and ＋ now, like every list's.
-   *
-   * Toolbar buttons, the size of the machine page's three: the rail's
-   * 24-canvas glyph at its own 24 in a `ctl-md` box (2026-09-30, the
-   * owner: 「顶部右侧的几个 icon 太小了, 明显没有把空间充分利用上」— the
-   * 20 they were drawn at left a 38 row mostly air), `--hit` around it,
-   * a `Tooltip` naming each (the design system's `Toolbar`). On is the
-   * grey block (`toolClass`). */
-  // **The machine head's grammar** (the redesign, 2026-10-02, the owner
-  // approving): the sessions switch — this page's one switch — in a
-  // glass capsule, and VS Code, which opens a page of its own, a glass
-  // circle to its right; the head's size (`--head-ctl`) and chosen
-  // states. ⚠️ 墓碑: two ghost toolbar buttons, VS Code first.
-  /** **The phone's file is a full-screen page** (round UX-3): the file
-      screen of the narrow face, for anything but a diff. */
-  const onPage = narrow && screen === "file" && file !== null && diffOf(file) === null;
-  /** The commit page is up: in the middle column, or the phone's screen. */
-  const commitShown = commit !== null && (!narrow || screen === "file");
-  useFullScreen(onPage || (narrow && commitShown));
+  useFullScreen(narrow && screen === "file");
   /** What the view hands back about its unsaved copy, for one file.
       **Nothing is written when nothing changed** (reported from an effect,
       `FileView`); typing pins a preview tab (「在里面打了字,就钉住」). */
@@ -1359,7 +1250,7 @@ export function WorkspacePane({
       else now.set(path, d);
       return now;
     });
-    if (d !== null) setPreview((was) => (was === path ? null : was));
+    if (d !== null) pin(workspaceTabId({ kind: "file", path }));
   };
   /** 编辑 at the same place, and ✓ back to reading there (round UX-3). */
   const editHere = () => {
@@ -1374,11 +1265,20 @@ export function WorkspacePane({
     restore.current = topLine(mid.current);
     setFace("preview");
   };
+  const shortcuts = <GlassCapsule size="head" data-ws-switch-pair>
+    <GlassItem aria-label={gui.ws_sessions_toggle} aria-pressed={sessions} data-ws-sessions-switch on={sessions} onClick={() => showSessions(!sessions)}><IconSessions /></GlassItem>
+    {root !== "" && codeWin.offered && <CodeButton code={codeWin} className="h-head-item-h w-head-item-h rounded-full data-[on=true]:glass-sel" />}
+  </GlassCapsule>;
+  const workspaceActions = [
+    ...(!narrow ? [{ key: "tree", label: gui.workspace_tree, run: () => side?.set(!tree) }] : []),
+    { key: "refresh", label: gui.file_reread, run: () => { setReadAt(n => n + 1); setGitAt(n => n + 1); } },
+    { key: "close-others", label: gui.tab_close_others, run: () => { const id = memory.read("content").active; if (id !== null) closeOthers(id); } },
+  ];
   /** **The file's verbs at the strip's right end** (round UX-3, the Mac):
       分享, 「…」, and 编辑 where the file has a face to read it on — the
       phone's file page's circles, beside the tab they are about. */
   const fileTail =
-    !narrow && file !== null && diffOf(file) === null && rev !== null ? (
+    file !== null && diffOf(file) === null && rev !== null ? (
       // A revision from git 历史 where the file was (round UX-4): back to
       // the file as it is, and the compare switch.
       <div data-ws-file-tail className="flex flex-none items-center gap-in px-2">
@@ -1412,7 +1312,7 @@ export function WorkspacePane({
           <IconBranch />
         </GlassCircle>
       </div>
-    ) : !narrow && file !== null && diffOf(file) === null ? (
+    ) : file !== null && diffOf(file) === null ? (
       <div data-ws-file-tail className="flex flex-none items-center gap-in px-2">
         <FileVerbs
           handoff={handoff}
@@ -1428,7 +1328,10 @@ export function WorkspacePane({
           onLocate={() => { requestFileLocation(machine, file); setHunt(""); if(root === "")setAt(directoryOf(file)); setScreen("tree"); side?.set(true); }}
           history={git !== null}
           previewing={face === "preview"}
-          faceToggle={rendererOf(file) !== null ? { face, run: face === "preview" ? editHere : readHere } : undefined}
+          toolbar={{ leading: shortcuts, actions: [
+            ...(rendererOf(file) !== null ? [{ key: "face", label: face === "preview" ? gui.file_face_source : gui.file_face_preview, run: face === "preview" ? editHere : readHere }] : []),
+            ...workspaceActions,
+          ] }}
           onRevision={(c) => {
             setRev(c);
             setRevCompare(false);
@@ -1437,209 +1340,45 @@ export function WorkspacePane({
         />
       </div>
     ) : null;
-  const sessionsItem = (
-    <GlassItem
-      aria-label={gui.ws_sessions_toggle}
-      aria-pressed={sessions}
-      data-ws-sessions-switch
-      on={sessions}
-      onClick={() => showSessions(!sessions)}
-      className={cn(narrow && "!w-head-item-h")}
-    >
-      <IconSessions />
-    </GlassItem>
-  );
-  const switches = (
-    <div data-ws-switches className="flex flex-none items-center gap-in">
-      {/* **The tree's own switch, on the wide head** (P4, 2026-10-03, the
-          owner's ruling). Pressing the open workspace's row again folds the
-          tree (ruling 2026-09-16), and since the row's chevron went (F2)
-          nothing on the page said the tree was put away or how to bring it
-          back. **It and 会话栏 share one capsule** (UX-4): both switch what
-          this page shows, which is what a capsule holds — the machine
-          page's 会话/文件/浏览 — and VS Code, which opens a page of its
-          own, stays the circle beside them (the 2026-10-02 ruling on the
-          workspace's tool row). ⚠️ 墓碑: two circles side by side, from when
-          会话栏 was the only switch (W-V9). Narrow has no column to fold
-          (the tree is a screen there), so 会话栏 is alone and a circle. */}
-      {narrow ? (
-        <div data-size="head" className="group/cap glass grid size-head-ctl flex-none place-items-center rounded-full">
-          {sessionsItem}
-        </div>
-      ) : (
-        <GlassCapsule size="head" data-ws-switch-pair>
-          <GlassItem
-            aria-label={gui.workspace_tree}
-            aria-pressed={tree}
-            data-ws-tree-switch
-            on={tree}
-            // The list column between the workspaces and this one's tree
-            // (UX-23 §2).
-            onClick={() => side?.set(!tree)}
-          >
-            <IconFiles />
-          </GlassItem>
-          {sessionsItem}
-        </GlassCapsule>
-      )}
-      {/* **Only where there is an editor to open.** A machine without
-          one, and a machine that could not be asked, both answer empty
-          and both get no circle — offering a button that fails is worse
-          than offering nothing (`khor_gui_core::code`). **Never on the
-          web face**: the tunnel in front of somebody's editor is bound to
-          127.0.0.1 on the machine running the resident serve, which a
-          phone reading khor's web face is not. */}
-      {root !== "" && codeWin.offered && (
-        <div className="glass grid size-head-ctl flex-none place-items-center rounded-full">
-          <CodeButton code={codeWin} className="h-head-item-h w-head-item-h rounded-full data-[on=true]:glass-sel" />
-        </div>
-      )}
+
+  const switches = <div data-ws-switches className="flex flex-none items-center gap-in">
+    {status && <span data-region-caption className="min-w-0 truncate text-caption text-tertiary">{status}</span>}
+    {file !== null && diffOf(file) === null && rev === null ? fileTail : <>{fileTail}{shortcuts}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild><GlassCircle aria-label={gui.rail_more} data-ws-more><IconMore /></GlassCircle></DropdownMenuTrigger>
+        <DropdownMenuContent align="end">{workspaceActions.map(action => <DropdownMenuItem key={action.key} onSelect={action.run}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent>
+      </DropdownMenu>
+    </>}
+    <WindowControls />
+  </div>;
+
+  const branch = headGit?.branch ?? "";
+  const workspaceTitle = (
+    <div data-ws-side-head className="flex min-w-0 items-center gap-in">
+      {!narrow && <GlassCircle aria-label={gui.back} data-ws-list-back onClick={onBack}><IconBack /></GlassCircle>}
+      <PaneBar inline seat="side" title={root === "" ? machine : basename(root)}
+        searchLabel={gui.tree_search} query={historyOpen ? historyQuery : hunt}
+        onQuery={historyOpen ? setHistoryQuery : setHunt}
+        actions={root === "" ? undefined : [
+          { key: "file", label: gui.file_new, afterClose: true, onSelect: () => { setHistoryOpen(false); dropHunt(); setMake({ kind: "file", at: Date.now() }); } },
+          { key: "dir", label: gui.dir_new, afterClose: true, onSelect: () => { setHistoryOpen(false); dropHunt(); setMake({ kind: "dir", at: Date.now() }); } },
+        ]} />
     </div>
   );
-
-  /** R0's second line (2026-09-28): 「⎇ main · peer:/home/peer/work」,
-      **the workspace list row's own words** — its branch corner and its
-      subtitle (`机器:路径`, never shortened to `~`). Built from the
-      status this pane already asked for (`headGit`), so R0 costs the
-      far machine nothing. Not a checkout, or not answered: the location
-      alone. A detached HEAD names no branch. **No count of changed
-      files** (2026-09-30, the owner: 「还是不写多少个文件已修改这样的 git
-      注释吧」): the list row keeps its 「N 个文件已修改」 corner, where
-      one scans for which workspace has work in it; the head is where
-      one already is, and says only where. */
-  const branch = headGit !== null && headGit.branch !== "" ? headGit.branch : "";
-  const where = `${machine}:${root}`;
-  /** **Cut in the middle, keeping the machine and the last segment**
-      (Finder's path, Xcode's title): the head of the path takes the
-      ellipsis and the directory's own name never does (`useMiddleCut`). */
-  const cutAt = Math.max(where.lastIndexOf("/"), 0);
-  const fit = useMiddleCut(where, cutAt);
-  const whereCut = fit.keep < cutAt;
-  /** The tooltip is the whole value, and only while the value is cut:
-      over a value showing in full it would be noise. */
-  const [whereTip, setWhereTip] = useState(false);
-  /** **Beside the name, on its line** (2026-09-30:「标题旁边是 git
-      branch」): the branch and nothing more — what qualifies the name.
-      Nothing for a directory that is not a repository. It gives way
-      before the name does (`PageHead`). */
-  const aside = branch !== "" && (
-    // On the name's baseline: the text is what lines up, and the glyph
-    // centres on it (a glyph has no baseline of its own).
-    // **WS-LAB item 1**: pressing the branch chip also opens the repo's
-    // history sheet — one handler, two doors (commit line + chip).
-    <button
-      type="button"
-      data-ws-head-branch
-      // The finger floor (`app.css`'s `::after` reach for `data-glass-hit`):
-      // the chip is a line of caption text, 19 tall, and a press target.
-      data-glass-hit
-      onClick={() => setHistoryOpen(true)}
-      className="flex min-w-0 items-baseline gap-xxs hover:text-foreground"
-    >
-      <IconBranch className="size-kind-mark-glyph flex-none self-center" />
-      <span className="truncate">{branch}</span>
-    </button>
-  );
-  /** **The second line is the location and nothing else** (2026-09-30:
-      「下方完整目录」) — the one long value, with the whole line to itself
-      now, cut in the middle as before. */
-  const subtitle = (
-    // `callout` on `caption`'s leading: R0 is 38 since 2026-09-29 and the
-    // name over this line is set a rung tight to fit it (`PageHead`).
-    <div data-ws-subtitle className="flex min-w-0 flex-1 items-center gap-xxs text-callout text-muted-foreground">
-      <Tooltip open={whereTip && whereCut} onOpenChange={setWhereTip}>
-        <TooltipTrigger asChild>
-          {/* **Selectable, and a focus stop so it can be.** R0 moves the
-              window (`shell.ts`, `deep`): a press on plain text there
-              starts a drag, not a selection, and tauri leaves alone only
-              what has a tab stop or a role. The stop also brings the
-              whole value up for a keyboard (the tooltip opens on focus).
-              `data-selectable`: a path is a value people copy
-              (30-behavior 选字与手). */}
-          <span
-            ref={fit.ref}
-            data-ws-head-where={where}
-            data-cut={whereCut ? "" : undefined}
-            data-selectable
-            tabIndex={0}
-            // `flex-1`: the room it is given is the rest of the line,
-            // whatever it holds — the width the cut is fitted to.
-            className="flex min-w-0 flex-1 overflow-hidden whitespace-nowrap rounded-xs focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
-          >
-            {/* **The ellipsis butts against the tail** (2026-09-28). A
-                `text-overflow` ellipsis on the head left up to a glyph of
-                blank between 「…」 and 「/billing-worker」 — it drops
-                whole characters and keeps the box. So the head is cut to
-                fit by measure (`useMiddleCut`), draws its own 「…」 as
-                an `::after` (not text: never copied, never selectable),
-                and the characters it gave up stay in the text at no
-                width — a selection copies the whole value and a screen
-                reader reads it whole. */}
-            <span data-ws-where-head className={cn("flex-none", whereCut && "after:content-['…']")}>
-              {where.slice(0, fit.keep)}
-            </span>
-            {whereCut && (
-              <span className="w-0 flex-none overflow-hidden">
-                {where.slice(fit.keep, cutAt)}
-              </span>
-            )}
-            <span data-ws-where-tail className="min-w-0 truncate">
-              {where.slice(cutAt)}
-            </span>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="[overflow-wrap:anywhere]">
-          {where}
-        </TooltipContent>
-      </Tooltip>
+  const workspaceMetadata = <div ref={band} data-band data-ws-sidebar-heading className="flex min-w-0 flex-none flex-col gap-in px-page pb-in">
+    <div data-ws-location className="flex min-w-0 items-start gap-xxs text-callout text-muted-foreground">
+      <span title={machine} aria-label={machine} className="flex h-lh flex-none items-center"><MachineAvatar face={machineFace} className="size-[1em]" /></span>
+      <span aria-hidden="true">:</span><span data-selectable className="min-w-0 flex-1 [overflow-wrap:anywhere]">{root}</span>
     </div>
-  );
+    {(headCommit !== null || branch !== "") && <button type="button" data-commit-line data-history-return={historyOpen || undefined}
+      className="workspace-commit-line flex min-w-0 items-center gap-in text-left text-caption text-muted-foreground hover:text-foreground"
+      onClick={() => setHistoryOpen(was => !was)}>
+      {historyOpen ? <><span className="flex size-[var(--tree-slot)] flex-none items-center justify-center"><IconBack className="size-affordance" /></span><span className="min-w-0 flex-1 truncate">返回文件</span><span className="max-w-[40%] truncate">{branch}</span></>
+        : <><span className="flex size-[var(--tree-slot)] flex-none items-center justify-center"><IconBranch className="size-affordance" /></span><span className="max-w-[40%] truncate">{branch}</span><span className="min-w-0 flex-1 truncate">{headCommit?.subject}</span></>}
+      {headCommit && <span className="flex-none">{ago(headCommit.when_ms)}</span>}
+    </button>}
+  </div>;
 
-  /** The ＋ at the head of the tree (2026-09-28): the same anatomy as
-      every list's head — a search box, then ＋ — and a menu of two,
-      because what a folder holds decides which of the two is being made
-      (the catalog's `file-new` note). Each starts the tree's own
-      in-place name box, the one a folder's right-click opens; where it
-      goes is `FileTree`'s rule (`picked`). No ellipsis: nothing asks
-      again, the name is typed where it will stand. ⌘N stays the
-      landing's 「+」 (添加工作区…). */
-  const treeNew = (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        {/* A glass circle beside the glass field, the list heads' own
-            grammar (筛选/＋ and the search circle) — it was a bare ghost
-            glyph, the one head control on the page without the material. */}
-        <GlassCircle aria-label={gui.new_item} data-tree-new>
-          <IconPlus />
-        </GlassCircle>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        onCloseAutoFocus={(e) => {
-          const kind = madeFromMenu.current;
-          if (kind === null) return;
-          madeFromMenu.current = null;
-          e.preventDefault();
-          // A search in the box is the tree put away; the box this opens
-          // is drawn on the tree, so the tree comes back first.
-          dropHunt();
-          setMake({ kind, at: Date.now() });
-        }}
-      >
-        {(["file", "dir"] as const).map((kind) => (
-          <DropdownMenuItem
-            key={kind}
-            data-tree-new-item={kind}
-            onSelect={() => {
-              madeFromMenu.current = kind;
-            }}
-          >
-            {kind === "file" ? gui.file_new : gui.dir_new}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 
   return (
     // **`h-full`, not `flex-1`.** The slot this lands in (App.tsx) is a
@@ -1653,70 +1392,13 @@ export function WorkspacePane({
     // — which is what lets a conversation in the right-hand column turn
     // a path into a press on the middle one (ruling 35, `linkHome`).
     <LinkHomeProvider value={linkHome}>
-    {/* **The narrow face's head: 「‹」 and the workspace's name**, in the
-        window's first row like every other detail screen's (`NarrowHead`,
-        2026-09-28 — an open workspace on a phone had neither a name nor a
-        way out). 「‹」 is one screen back: from the tree to the list,
-        from a file or the sessions to the tree / the file. The two backs
-        the file strip and the sessions column each drew for themselves
-        (ruling 33) are this one now. A session opened in the column is
-        a screen deeper, and its own head takes the row (`DeeperHeads`).
-
-        **…and the page's two buttons at its right end** (2026-09-28): the
-        switches R0 carries on the wide face, here on every one of the
-        three screens. Under the name, **the branch and nothing else** —
-        a phone's head has no room for the location — and **not even the
-        branch when it does not fit**: the line is one line tall and wraps
-        what does not fit onto a second one that is clipped, behind an
-        empty first item so that a lone branch can wrap too. Dropped
-        whole rather than cut to 「ma…」. */}
-    {narrow && !onPage && !commitShown && (
-      <NarrowHead>
-        {() => (
-          <>
-            <GlassCircle
-              aria-label={gui.back}
-              {...(screen === "tree" ? { "data-back": "" } : { "data-ws-back": "" })}
-              onClick={() =>
-                screen === "tree" ? onBack?.() : screen === "sessions" ? showSessions(false) : setScreen("tree")
-              }
-            >
-              <IconBack />
-            </GlassCircle>
-            {/* The pair on R0's tight leading (`PageHead`, 2026-09-29):
-                the first row is 38 under a mouse, and 20 + 16 left one
-                pixel over and under. */}
-            <div className="flex min-w-0 flex-1 flex-col justify-center">
-              <span data-ws-head-name className="min-w-0 truncate text-title-sm font-title">
-                {root === "" ? machine : basename(root)}
-              </span>
-              {branch !== "" && (
-                <div data-ws-head-sub className="flex h-lh flex-wrap overflow-hidden text-callout text-muted-foreground">
-                  {/* A line tall, or the first line would be 0 high and
-                      the wrapped branch would land inside the clip. */}
-                  <span aria-hidden="true" className="h-lh w-0" />
-                  <span data-ws-head-branch className="flex flex-none items-center gap-xxs whitespace-nowrap">
-                    <IconBranch className="size-kind-mark-glyph flex-none" />
-                    {branch}
-                  </span>
-                </div>
-              )}
-            </div>
-            {switches}
-          </>
-        )}
-      </NarrowHead>
-    )}
-    {/* **R0, on the wide face** (2026-09-28; split 2026-09-30): the
-        branch and the change count beside the name the shell already put
-        there, the location on the second line, and the two switches at
-        the right end. Written here because the facts and the presses
-        are this pane's; seated there by the shell (`Region`). The
-        browsing face (`root` empty) is a machine's disk rather than a
-        workspace, and keeps its own crumbs bar below for 「where」. */}
-    {!narrow && root !== "" && aside && <PageTitleAside>{aside}</PageTitleAside>}
-    {!narrow && root !== "" && <PageSubtitle>{subtitle}</PageSubtitle>}
-    {!narrow && <PageAction>{switches}</PageAction>}
+    <RegionLead.Provider value={null}>
+    {narrow && screen !== "file" && <NarrowHead>{() => screen === "tree" ? <>
+      <GlassCircle aria-label={gui.back} data-back onClick={onBack}><IconBack /></GlassCircle>{workspaceTitle}
+    </> : <>
+      <GlassCircle aria-label={gui.back} data-ws-back onClick={() => screen === "sessions" ? showSessions(false) : setScreen("tree")}><IconBack /></GlassCircle>
+      <span className="flex-1" />
+    </>}</NarrowHead>}
     <DeeperHeads>
     <div className="flex h-full min-h-0 flex-col">
       {/* **The head row is gone** (工作区批⑧). It held the workspace's
@@ -1752,16 +1434,7 @@ export function WorkspacePane({
             「‹ 工作区名」 where the list's title stands; ‹ is the way back to
             the workspaces (the head of a folder in Files). */}
         {!narrow && tree && (
-          <SideSeat>
-            <div data-ws-side-head className="flex min-w-0 flex-1 items-center gap-in">
-              <GlassCircle aria-label={gui.back} data-ws-list-back onClick={onBack}>
-                <IconBack />
-              </GlassCircle>
-              <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
-                {root === "" ? machine : basename(root)}
-              </h1>
-            </div>
-          </SideSeat>
+          <SideSeat>{workspaceTitle}</SideSeat>
         )}
         {(narrow ? screen === "tree" : tree) && (
           <ListPane
@@ -1819,70 +1492,7 @@ export function WorkspacePane({
             // to them before a file was open; they are the page's own
             // buttons now — R0's right end, and on narrow the first
             // row's (`NarrowHead`), which every screen has.
-            head={
-            <div
-              data-tree-head
-              data-pane-head
-              // **A pane's head height, not `--ctl-md`.** The ruling
-              // wrote 「高 --ctl-md」 and the search box inside is the
-              // finger's floor itself (44), so a 30-tall row would have
-              // held a control standing out of it — and the whole
-              // reason this row exists is that a phone can reach it
-              // (「窄档的树屏也有这一行」). Since 2026-09-20 it is
-              // `--pane-head`, which is the same token `PaneBar` and
-              // the tab band wear: this *is* a pane's head, and 第 5 条
-              // is that the one below it measures the same.
-              // Spaced as `PaneBar` spaces a list's head (`gap-in`,
-              // `px-2`), since this is the same anatomy.
-              // In to the page's left line, where the tree's first mark
-              // stands (F2.7; W08) — the field's edge is the line.
-              data-search-glass
-              // **A band** (`lib/scroll-edge`, round HEADS): the tree passes
-              // under it on glass, and its hairline is the band's — drawn
-              // only while a row is under it.
-              ref={band}
-              data-band
-              className="flex min-h-pane-head flex-none items-center gap-in px-page"
-            >
-              <div data-search-wrap className="relative min-w-0 flex-1">
-                <IconSearch className="pointer-events-none absolute top-1/2 left-2 z-10 -translate-y-1/2 text-tertiary" />
-                <Input
-                  data-tree-search
-                  data-search-field
-                  type="search"
-                  // The return key ends the box under a finger, and the
-                  // keyboard goes (UX-43 §3).
-                  enterKeyHint="search"
-                  aria-label={gui.tree_search}
-                  placeholder={gui.tree_search}
-                  value={hunt}
-                  onChange={(e) => setHunt(e.target.value)}
-                  // Esc is the other way back to the tree, and it is the
-                  // one a hand already on the keyboard reaches for.
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") dropHunt();
-                    endsOnEnter(e);
-                  }}
-                  // `min-h-touch` for `PaneBar`'s reason, written down
-                  // there: the vendored control's own `h-ctl-md` cannot
-                  // be lifted off by `cn()`, so a floor is what beats it
-                  // without fighting it.
-                  // **The one search-field look** (components/
-                  // SearchField, 2026-09-28): `fill`, `radius-sm`,
-                  // `ctl-md`, the magnifier at the left in `tertiary`.
-                  // It was a borderless line — the one search box in the
-                  // app that did not read as one. Not L0's, so no ⌘K.
-                  // The look is `ui/input`'s own since 2026-09-28
-                  // (components/TextField); room for the magnifier here.
-                  className="pl-7"
-                />
-              </div>
-              {/* A machine's whole disk (`FilesPane`) has no name box
-                  to open, and an ＋ that could only do nothing is worse
-                  than none (`PaneBar`'s judgment). */}
-              {root !== "" && treeNew}
-            </div>
-            }
+            head={workspaceMetadata}
           >
             {/* **Two trees, one ruling apart** (工作区批⑦). A project
                 gets `FileTree`: rooted, expandable, with no way above
@@ -1890,7 +1500,9 @@ export function WorkspacePane({
                 看它的文件 opens) keeps `FilesPane`, where 上一级 and the
                 address bar are the point — docs/WORKSPACE.md 第二轮 says
                 so in the user's own terms. */}
-            {hunt.trim() !== "" ? (
+            {historyOpen ? (
+              <WorkspaceHistory machine={machine} root={root} query={historyQuery} refresh={gitAt} active={commit?.id ?? null} onOpen={openCommit} />
+            ) : hunt.trim() !== "" ? (
               <Hits
                 found={found}
                 error={huntError}
@@ -1942,16 +1554,14 @@ export function WorkspacePane({
                 marks={marks}
                 open={file}
                 onOpen={open}
+                previewOnClick
                 onDiff={openDiff}
                 onGone={path=>{for(const tab of tabs)if(movedFilePath(fileOf(tab),path,path)!==null)drop(tab);}}
                 onMoved={moved}
                 onMade={() => setGitAt((n) => n + 1)}
-                // The head's ＋ (`treeNew`), taken once.
+                // A new-item request is consumed once by the actual tree.
                 make={make}
                 onMakeSeen={() => setMake(null)}
-                // **WS-LAB item 1**: commit line above the tree.
-                headCommit={headCommit}
-                onCommitLine={() => setHistoryOpen(true)}
               />
             )}
           </ListPane>
@@ -1970,83 +1580,8 @@ export function WorkspacePane({
           // a `min-width` it would be a wedge instead of a stop: the
           // three columns would simply overflow the window, and the
           // face would scroll sideways rather than the seam refusing.
-          className="relative flex min-w-0 flex-1 flex-col"
+          className={cn("relative flex min-w-0 flex-1 flex-col", narrow && "pt-safe-top")}
         >
-          {/* **One tab per open file, and the three switches at the far
-              end of it** (工作区批⑧, the user's own layout: 「标签页的
-              最右侧,显示现有的文件、session 和 vscode 切换」).
-
-              The strip is `browse/TabStrip` itself, not a second
-              drawing of one: a tab is a tab, and two components that
-              both paint tabs is the failure `PaneBar` warns about one
-              landing over. What this face hands it that a browsing tab
-              does not have is the second line, the dot and the preview
-              slope; what it does not hand it is 「+」, because a tab
-              here is a file somebody pressed in the tree and there is
-              nothing a bare new tab could open.
-
-              **Its far end is empty since 2026-09-17** (ruling 47:
-              「取消现在固定在标签页位置的」). The two column switches
-              moved to the head of the tree, where the narrow face can
-              reach them without opening a file first (and on 2026-09-28
-              on to R0's right end), and the 预览 eye moved onto the tab
-              it is about. What is left on the strip is tabs. */}
-          {/* **`Tabs`, the one tab strip** (docs/SHELL.md 第四轮 第 9 条): the
-              strip, the count that opens and closes the switcher, the
-              switcher over the file. This strip was the one seat without
-              a count until the third round — the wiring each seat did for
-              itself, forgotten in one of them, which is why it lives in
-              one place now. */}
-          {commitShown && commit !== null ? (
-            <CommitPage
-              key={commit.id}
-              machine={machine}
-              root={root}
-              commit={commit}
-              edgeToEdge={narrow}
-              onBack={() => {
-                backToHistory();
-                if (narrow && file === null) setScreen("tree");
-              }}
-            />
-          ) : onPage && file !== null ? (
-            // **The phone's file is the file page** (round UX-3): no head,
-            // no strip — the name over the text and the circles under it.
-            // A diff keeps the strip's view; it has nothing to edit.
-            <FilePage
-              key={`${machine} ${file}`}
-              faceControl={{ value: face, set: setFace }}
-              machine={machine}
-              path={file}
-              here={here}
-              git
-              draft={drafts.get(file)}
-              editorHistory={historyOf(file)}
-              onDraft={draftOf(file)}
-              saveAt={saveAt}
-              readAt={readAt}
-              goLine={goLine !== null && goLine.path === file ? goLine : null}
-              onSaved={() => setGitAt((n) => n + 1)}
-              onNote={setFileNote}
-              onLocate={() => { requestFileLocation(machine, file!); setHunt(""); if(root === "")setAt(directoryOf(file!)); setScreen("tree"); side?.set(true); }}
-              onBack={() => setScreen("tree")}
-              onGone={(p) => {
-                drop(p);
-                setGitAt((n) => n + 1);
-                setScreen("tree");
-              }}
-              onMoved={moved}
-              code={codeWin}
-              history={git !== null}
-              // The open files in the deck's tabs circle (UX-25).
-              tabs={{
-                faces: tabFaces,
-                active: `${machine}:${file}`,
-                onFocus: (id) => setFile(id.slice(machine.length + 1)),
-                onClose: (id) => shut(id.slice(machine.length + 1)),
-              }}
-            />
-          ) : (
           <div ref={readFirst.box} className="contents">
           <Tabs
             // **The session tabs' capsule** (UX-25, the owner 2026-10-05:
@@ -2054,20 +1589,23 @@ export function WorkspacePane({
             // kind in the icon seat, one line of name, × on the one in
             // front and under the pointer. ⚠️ 墓碑: the VS Code-style strip.
             faces={tabFaces}
-            active={file === null ? "" : `${machine}:${file}`}
-            onFocus={(id) => setFile(id.slice(machine.length + 1))}
-            onClose={(id) => shut(id.slice(machine.length + 1))}
-            stripData={{ "data-ws-tab-strip": "" }}
-            tail={fileTail}
+            head={narrow ? <GlassCircle aria-label={gui.back} data-ws-back onClick={() => setScreen("tree")}><IconBack /></GlassCircle> : regionLead}
+            active={content.active ?? ""}
+            onFocus={(id) => setContent((was) => selectWorkspaceTab(was, id))}
+            onClose={closeTab}
+            stripData={{ ...WINDOW_DRAG, "data-ws-tab-strip": "" }}
+            tail={switches}
             frontAct
-            bodyClass="flex flex-col"
+            bodyClass="relative isolate flex flex-col"
             // This strip heads the middle column, between the tree and
             // the sessions column — not the region (第十三轮 第 5 条's
             // board is the sessions landing's), so the file lies flat
             // under it on the card's colour.
             frame={false}
           >
-          {file === null ? (
+          {commit !== null ? (
+            <CommitPage key={commit.id} machine={machine} root={root} commit={commit} presentation="tab" state={commitState(commit.id)} onBack={() => {}} />
+          ) : file === null ? (
             // 中栏没有标签时 (ruling 37). Not a blank: what was open last
             // time. Where this is and what branch it is on are R0's
             // since 2026-09-28 — said once (`WorkspaceEmpty`'s head).
@@ -2122,7 +1660,6 @@ export function WorkspacePane({
           )}
           </Tabs>
           </div>
-          )}
         </div>
         )}
         {(narrow ? screen === "sessions" : sessions) && (
@@ -2297,84 +1834,20 @@ export function WorkspacePane({
           setClosing(null);
         }}
       />
-      {/* **The repository's 提交历史** (WS-LAB item 1, COMMITS-BRIEF): the
-          same sheet the file page opens, asked of the root, its rows
-          GitHub's three lines; a row opens the commit's page. */}
-      <HistorySheet
-        open={historyOpen}
-        onOpenChange={setHistoryOpen}
-        machine={machine}
-        path={root}
-        repo
-        onPick={(c) => {
-          setCommit(c);
-          if (narrow) setScreen("file");
-        }}
-      />
+
     </div>
     </DeeperHeads>
+    </RegionLead.Provider>
     </LinkHomeProvider>
   );
 }
 
-/** One canvas for every measure, made on first use. */
-let ruler: CanvasRenderingContext2D | null = null;
-
-/**
- * **How much of a value's head fits in front of its tail**, with 「…」
- * between them (R0's location, 2026-09-28): the tail is `value` from
- * `cut` on (the last segment, `/billing-worker`), the head everything
- * before it. Answers `keep` — the head's first `keep` characters are
- * drawn, then the ellipsis, then the tail; `keep === cut` is the whole
- * value, uncut.
- *
- * **Measured, not left to `text-overflow`**: that drops whole characters
- * and keeps its box, so the ellipsis stood up to a glyph away from the
- * tail (「acme-corporation/… /billing-worker」). Here the head is exactly
- * as wide as what it draws. The machine (`peer:`) is never given up; if
- * even that and the tail do not fit, the tail truncates at its end.
- * Re-measured whenever the box is resized — dragging the window, the
- * list's seam, the R0 buttons coming and going.
- */
-function useMiddleCut(value: string, cut: number) {
-  const [box, setBox] = useState<HTMLElement | null>(null);
-  const [keep, setKeep] = useState(cut);
-  useLayoutEffect(() => {
-    if (box === null || cut <= 0) {
-      setKeep(cut);
-      return;
-    }
-    const fit = () => {
-      const room = box.clientWidth;
-      if (room <= 0) return;
-      ruler ??= document.createElement("canvas").getContext("2d");
-      if (ruler === null) return;
-      const cs = getComputedStyle(box);
-      ruler.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-      const wide = (s: string) => ruler?.measureText(s).width ?? 0;
-      // A pixel spare: the canvas and the line can round a kern apart.
-      const fits = (s: string) => wide(s) <= room - 1;
-      if (fits(value)) {
-        setKeep(cut);
-        return;
-      }
-      const tail = value.slice(cut);
-      const floor = Math.min(value.indexOf(":") + 1, cut);
-      let lo = floor;
-      let hi = cut - 1;
-      while (lo < hi) {
-        const mid = Math.ceil((lo + hi) / 2);
-        if (fits(`${value.slice(0, mid)}…${tail}`)) lo = mid;
-        else hi = mid - 1;
-      }
-      setKeep(lo);
-    };
-    fit();
-    const watch = new ResizeObserver(fit);
-    watch.observe(box);
-    return () => watch.disconnect();
-  }, [box, value, cut]);
-  return { ref: setBox, keep };
+function targetOf(key: string): WorkspaceTarget {
+  const path = diffOf(key);
+  return path === null ? { kind: "file", path: key } : { kind: "diff", path };
+}
+function keyOf(target: Exclude<WorkspaceTarget, { kind: "commit" }>): string {
+  return target.kind === "file" ? target.path : diffKey(target.path);
 }
 
 /** How long the box waits after the last keystroke before it asks

@@ -26,7 +26,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { EmptyState, RegionState, Waiting } from "@/components/RegionState";
-import { dirsWait, fetchLs, makeDir, makeFile, renamePath, type DirListing } from "@/api";
+import { dirsWait, fetchLs, pullFile, makeDir, makeFile, renamePath, type DirListing } from "@/api";
+import { useHereHosts } from "@/lib/here";
 import { useHidden } from "@/hooks/use-hidden";
 import { EditableName } from "@/components/EditableName";
 import { RemoveDialog } from "@/components/RemoveDialog";
@@ -34,7 +35,6 @@ import { useFileObjectActions } from "@/lib/file-actions";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconChevronRight } from "@/components/icons";
-import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { pathDrag } from "@/lib/path-drag";
@@ -42,7 +42,7 @@ import { consumeFileLocation, fileLocationAncestors, onFileLocation, pendingFile
 import { onTreeChanged, sameMachine, treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
-import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
+import { Mark, markInk, useRemoveFlow } from "@/views/fileRow";
 import { ago } from "@/words";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 
@@ -135,6 +135,7 @@ export function FileTree({
   onMade,
   make,
   onMakeSeen,
+  previewOnClick = false,
   headCommit,
   onCommitLine,
 }: {
@@ -182,6 +183,7 @@ export function FileTree({
       tree — would open a name box nobody asked for. */
   make?: { kind: "file" | "dir"; at: number } | null;
   onMakeSeen?: () => void;
+  previewOnClick?: boolean;
   /** HEAD's first commit, for the commit line above the tree (WS-LAB
       item 1). `null` when the root is not a repository or the log has
       not arrived yet. `undefined` when the caller does not provide it
@@ -250,11 +252,11 @@ export function FileTree({
     });
     setTries((n) => n + 1);
   };
-  const { took, take, takes } = useTake(machine);
   /** 单击文件: whether one click keeps the tab, or takes the preview
       seat the next click replaces (`khor config`). Double click pins
       either way, so 「预览」 is not a road with no exit. */
-  const clickPins = useSetting("files-click") === "pin";
+  const configuredClickPins = useSetting("files-click") === "pin";
+  const clickPins = !previewOnClick && configuredClickPins;
   // **The open file is not marked on the narrow face** (2026-10-02, the
   // lists' rule, `SideList`): there the tree and the file it opened are
   // two screens, never side by side, so coming back to the tree there is
@@ -583,6 +585,7 @@ export function FileTree({
    * is the success face — it has no line to say 已复制 on — and a refusal
    * rejects, so the menu stays open with the item saying so (`RowMenu`). */
   const objectActions = useFileObjectActions(here, root);
+  const takes = useHereHosts();
   const menu = (full: string, isDir: boolean): RowAction[] => [
     ...(isDir
       ? [
@@ -599,6 +602,7 @@ export function FileTree({
         ]
       : []),
     ...objectActions(full),
+    ...(!isDir && !here && takes ? [{ key: "take", label: gui.take_file, run: async () => { await pullFile(machine, full); } }] : []),
     {
       key: "rename",
       label: gui.rename,
@@ -987,50 +991,11 @@ export function FileTree({
                       )}
                     </button>
                   </RowMenu>
-                  <Mark
-                    mark={mark}
-                    onPress={onDiff === undefined ? undefined : () => onDiff(r.full)}
-                  />
-                  {took?.path === r.full ? (
-                    <span
-                      data-took={took.state}
-                      className={cn(
-                        "max-w-[50%] truncate text-caption",
-                        took.state === "failed" ? "text-state-failed" : "text-muted-foreground",
-                      )}
-                    >
-                      {took.word}
-                    </span>
-                  ) : (
-                    !here && takes && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        data-take={r.name}
-                        // **Drawn where somebody is, VS Code's row-action
-                        // rule** (2026-09-28 audit 第 15 条): the row under
-                        // the pointer, the row the keyboard is in, the open
-                        // row — and every row under a finger, which has no
-                        // hover to summon it with. On every row at once it
-                        // was the loudest word in the tree, repeated down
-                        // a column that is about names.
-                        //
-                        // **Hidden by opacity, never removed**: it stays in
-                        // the tab order, and the focus that lands on it is
-                        // what draws it (`group-focus-within`). Its place is
-                        // kept too, so a row does not change shape when the
-                        // pointer arrives.
-                        className={cn(
-                          "min-h-[var(--tree-row)] min-w-touch flex-none transition-opacity",
-                          open !== r.full &&
-                            "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
-                        )}
-                        onClick={() => take(r.full)}
-                      >
-                        {gui.take_file}
-                      </Button>
-                    )
-                  )}
+                  <span data-tree-mark-slot className="flex size-[var(--tree-slot)] flex-none items-center justify-center">
+                    <Mark mark={mark} onPress={onDiff === undefined ? undefined : () => onDiff(r.full)} />
+                  </span>
+
+
                 </div>
               );
               // One row, or a row and the box being typed under it.

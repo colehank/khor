@@ -127,6 +127,8 @@ const HOLD_MS = 900;
 /** 分享 and 「…」: what one file offers besides reading it. Drawn as two
     glass circles by the page, and at the right end of the workspace's
     tab strip on a Mac (`FileVerbs`). */
+type FileMenuAction = { key: string; label: string; run: () => void };
+
 function useFileVerbs({
   machine,
   path,
@@ -138,8 +140,10 @@ function useFileVerbs({
   previewing,
   faceToggle,
   handoff,
+  additionalActions = [],
 }: {
   handoff?: FileHandoffControl;
+  additionalActions?: readonly FileMenuAction[];
   /** The file page's face (UX-14): 字号 and 预览背景 are offered only
       while the file is shown rendered. Left out (the Mac's workspace
       strip), they are offered as before. */
@@ -185,7 +189,7 @@ function useFileVerbs({
       });
   const previewKind = rendererOf(path) !== null || kind === "image" || kind === "svg" || kind === "pdf";
   const textKind = kind === "text";
-  const menu: { key: string; label: string; run: () => void }[] = [
+  const menu: FileMenuAction[] = [
     ...(kind === "doc" && handoff?.previewSupported ? [{key:"native-preview",label:gui.file_face_preview,run:handoff.preview}] : []),
     ...(onLocate ? [{key:"locate",label:gui.file_locate,run:onLocate}] : []),
     ...(native ? [
@@ -205,6 +209,7 @@ function useFileVerbs({
       ? [{ key: "blame", label: blame.on ? gui.blame_hide : gui.blame_show, run: () => blame.set(!blame.on) }]
       : []),
     ...(code?.offered ? [{ key: "code", label: gui.file_in_code, run: () => code.want() }] : []),
+    ...additionalActions,
   ];
   // The menu can still receive pointer-leave while its exit animation runs.
   // Let its focus scope leave before a navigation action focuses the tree.
@@ -290,12 +295,15 @@ function useFileVerbs({
 
 /** The Mac's workspace strip carries the same verbs at its right end
     (round UX-3): 分享 and 「…」, beside the tab they are about. */
-export function FileVerbs(props: Parameters<typeof useFileVerbs>[0]) {
+export function FileVerbs({ toolbar, ...props }: Omit<Parameters<typeof useFileVerbs>[0], "additionalActions"> & {
+  toolbar?: { leading: ReactNode; actions: readonly FileMenuAction[] };
+}) {
   const own = useFileHandoff(props.machine, props.path, !props.handoff);
   const handoff = props.handoff ?? own;
-  const v = useFileVerbs({...props,handoff});
+  const v = useFileVerbs({...props,handoff,additionalActions:toolbar?.actions});
   return (
     <div ref={own.owner} data-file-verbs className="flex flex-none items-center gap-in">
+      {toolbar?.leading}
       {v.moreCircle}
       {v.dialogs}
       <FileHandoffStatus handoff={handoff}/>

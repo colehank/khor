@@ -77,12 +77,12 @@ const onPage = EditorView.theme({
   ".cm-oldNumbers .cm-gutterElement > div": { height: "var(--text-mono--line-height)" },
 });
 
-const reading = (lang: Compartment, before: string): Extension => [
+const reading = (lang: Compartment, before: string, full: boolean): Extension => [
   oldNumbers,
   lineNumbers(),
   EditorState.readOnly.of(true),
   EditorView.editable.of(false),
-  unifiedMergeView({ original: before, mergeControls: false, gutter: true, collapseUnchanged: { margin: 3 } }),
+  unifiedMergeView({ original: before, mergeControls: false, gutter: true, collapseUnchanged: full ? undefined : { margin: 3 } }),
   codeHighlight,
   codeTheme,
   diffTheme,
@@ -91,19 +91,19 @@ const reading = (lang: Compartment, before: string): Extension => [
   lang.of([]),
 ];
 
-export function CommitDiff({ path, before, after }: { path: string; before: string; after: string }) {
+export function CommitDiff({ path, before, after, full = false }: { path: string; before: string; after: string; full?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const lang = useRef(new Compartment());
 
   useLayoutEffect(() => {
-    const v = new EditorView({ parent: box.current!, state: EditorState.create({ doc: after, extensions: reading(lang.current, before) }) });
+    const v = new EditorView({ parent: box.current!, state: EditorState.create({ doc: after, extensions: reading(lang.current, before, full) }) });
     view.current = v;
     return () => {
       v.destroy();
       view.current = null;
     };
-  }, [before, after]);
+  }, [before, after, full]);
 
   useEffect(() => {
     let live = true;

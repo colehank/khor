@@ -1,15 +1,17 @@
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { EditorHistorySlot } from "@/lib/code/history";
 import type { Draft } from "@/views/FileView";
+import type { CommitPageState } from "@/views/CommitPage";
+import type { WorkspaceTabs } from "./workspace-tabs";
 
 export type WorkspaceIdentity = { device: string; path: string };
 export type WorkspaceFields = {
   at: string;
-  tabs: string[];
+  content: WorkspaceTabs;
   recent: string[];
-  file: string | null;
+  historyOpen: boolean;
+  historyQuery: string;
   screen: "tree" | "file" | "sessions";
-  preview: string | null;
   face: "source" | "preview";
   rev: GitCommit | null;
   revCompare: boolean;
@@ -23,6 +25,7 @@ export function workspaceIdentity(identity: WorkspaceIdentity): string {
 
 /** Retained state has no DOM, timers or IO. Its view can detach completely. */
 export class WorkspaceMemory {
+  readonly commits = new Map<string, CommitPageState>();
   readonly histories = new Map<string, EditorHistorySlot>();
   private values = new Map<keyof WorkspaceFields, unknown>();
   private listeners = new Set<() => void>();

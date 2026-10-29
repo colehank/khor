@@ -8,18 +8,18 @@ function test(name,run){try{run();results.push({name,pass:true});console.log('PA
 const identity=(device,path)=>({device,path});
 test('the same path on two devices has separate drafts and selected tabs',()=>{
  const owners=new WorkspaceMemories(),a=owners.retain(identity('machine-a','/project')),b=owners.retain(identity('machine-b','/project'));
- a.ensure('drafts',()=>new Map());b.ensure('drafts',()=>new Map());a.ensure('file',()=>null);b.ensure('file',()=>null);
- a.update('drafts',()=>new Map([['/project/a.txt',{text:'dirty A',by:'A'}]]));a.update('file','/project/a.txt');
- assert.equal(b.draftCount(),0);assert.equal(b.read('file'),null);assert.notEqual(workspaceIdentity(identity('a b','c')),workspaceIdentity(identity('a','b c')));
+ a.ensure('drafts',()=>new Map());b.ensure('drafts',()=>new Map());a.ensure('content',()=>({items:[],active:null,preview:null}));b.ensure('content',()=>({items:[],active:null,preview:null}));
+ a.update('drafts',()=>new Map([['/project/a.txt',{text:'dirty A',by:'A'}]]));a.update('content',{items:[{kind:'file',path:'/project/a.txt'}],active:'file-a',preview:null});
+ assert.equal(b.draftCount(),0);assert.equal(b.read('content').active,null);assert.notEqual(workspaceIdentity(identity('a b','c')),workspaceIdentity(identity('a','b c')));
 });
 test('removing every view subscription retains exact draft and history owners for reselect',()=>{
  const owners=new WorkspaceMemories(),key=identity('a','/project'),a=owners.retain(key),draft={text:'last edit',by:'draft'};
- a.ensure('drafts',()=>new Map());a.ensure('tabs',()=>[]);a.ensure('file',()=>null);
+ a.ensure('drafts',()=>new Map());a.ensure('content',()=>({items:[],active:null,preview:null}));
  let notifications=0;const detach=a.subscribe(()=>notifications++);
- a.update('drafts',new Map([['/project/a.txt',draft]]));a.update('tabs',['/project/a.txt']);a.update('file','/project/a.txt');
+ a.update('drafts',new Map([['/project/a.txt',draft]]));a.update('content',{items:[{kind:'file',path:'/project/a.txt'}],active:'file-a',preview:null});
  const history={};a.histories.set('/project/a.txt',history);detach();
  const returned=owners.retain(key);assert.equal(returned,a);assert.equal(returned.read('drafts').get('/project/a.txt'),draft);assert.equal(returned.histories.get('/project/a.txt'),history);assert.equal(returned.draftCount(),1);
- a.update('file',null);assert.equal(notifications,3,'a detached view is not notified by later model changes');
+ a.update('content',{items:[],active:null,preview:null});assert.equal(notifications,2,'a detached view is not notified by later model changes');
 });
 test('an old view completion still updates its own workspace after another selection',()=>{
  const owners=new WorkspaceMemories(),a=owners.retain(identity('a','/one')),b=owners.retain(identity('a','/two'));
@@ -27,9 +27,9 @@ test('an old view completion still updates its own workspace after another selec
  const completed=()=>a.update('drafts',new Map());completed();assert.equal(a.draftCount(),0);assert.equal(b.read('drafts').get('/two/b').text,'B');
 });
 test('functional updates read the latest owner value and unchanged values do not notify',()=>{
- const owner=new WorkspaceMemories().retain(identity('a','/project'));owner.ensure('tabs',()=>[]);let calls=0;owner.subscribe(()=>calls++);
- owner.update('tabs',tabs=>[...tabs,'a']);owner.update('tabs',tabs=>[...tabs,'b']);const same=owner.read('tabs');owner.update('tabs',same);
- assert.deepEqual(owner.read('tabs'),['a','b']);assert.equal(calls,2);owner.ensure('tabs',()=>['discarded initial value']);assert.equal(owner.read('tabs'),same);
+ const owner=new WorkspaceMemories().retain(identity('a','/project'));owner.ensure('recent',()=>[]);let calls=0;owner.subscribe(()=>calls++);
+ owner.update('recent',tabs=>[...tabs,'a']);owner.update('recent',tabs=>[...tabs,'b']);const same=owner.read('recent');owner.update('recent',same);
+ assert.deepEqual(owner.read('recent'),['a','b']);assert.equal(calls,2);owner.ensure('recent',()=>['discarded initial value']);assert.equal(owner.read('recent'),same);
 });
 test('the actual App workspace back callback clears only selection and display state',()=>{
  const app=readFileSync('src/App.tsx','utf8');
