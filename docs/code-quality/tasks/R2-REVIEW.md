@@ -108,3 +108,21 @@ H移除旧RPC固定a3e9b6ad524dc491d09c3dfad6b8c1bc9cf0f8c1独审无阻断：ret
 H Lab固定499dbe4f只读核：入口直接import真实ChatView，middleware仅替换API输运；旧history/history_follow明确400记legacy，其他未知API明确400记unknown；20万逻辑记录按128条惰性生成，非预建全量DOM。Lab不能证明真实磁盘读取预算；raw-record fixture不校验cursor来源generation/identity且delay仅page，不能外推raw旧来源拒收或raw取消已验。已告root按真实页面消费/滚动/有界页退出范围验，不为fixture限制扩矩阵。
 
 C未提交content-links/workspace-return Lab隔离边界只读核：入口直接import真实TerminalPane、SessionContentPane及既有两navigation/content hooks；base Vite无backend/proxy插件，fixture拦全部/api/*本地结束，write_text409、git_*400、tabs_focus仅改内存active，没有用户backend/文件/会话写入通路。terminal入口window.open只记日志返回null，不外发。范围限制：未知API当前200 null，能保证本地隔离但不能证明没有意外API调用；workspace-return入口未覆写window.open，no-op opener结论仅terminal页。已告root/作者，不改服务、不触发HMR。
+
+C Lab固定8819e11c后未知API改为400并bounded unknown记账，write409/no-op名单显式，原未知成功限制由此解除；terminal专属window.open替身范围不变。e58f21a1仅增trash_here=false，实际core实现为TRASH_HERE常量能力查询，非删除动作。C3四项实际UI流程结果（desktop/mobile最新cwd返回保dirty同DOM、browser回workspace保address）与原最后unknown断言失败分别保留；workspace-return-trash-capability.json只证HTTP增量query，不把原整脚本失败改绿。固定Lab隔离无阻断。
+
+H browser/reader-check.json十三项与reader-full-check脚本对应：5次prepend原节点top133不变，DOM不超过512，追加500跨四连续页，raw分块<=64KiB且UTF8无替换字，reset清raw、hide/unmount后page取消并停止轮询，legacy0/unknown空。真实ChatView加本地transport的可视链证据有效；不覆盖真实磁盘预算或raw取消，未外推全H完成。
+
+A/R005观察方案审查：总体“所有托管ACP统一记录、外部按实际source能力、缺源明确Unavailable、不把list/load当无副作用旁观”的方向成立。已向root/作者指出A3前两关键契约缺口：Event::Note-only会漏合法不回显用户输入的agent（Say/SayWith直接prompt_with），需同一owner持久已接纳prompt/附件及turn结果/取消/失败/不确定状态，并定义可选echo关联；start_resume初始load的Note排在Event::Ready前，不属于GuiOp::Replay状态，若普通append会每次resume重复整史，初始load和显式Replay都须独立snapshot/import generation经Ready/fence事务提交。可选messageId不保证存在，不能按文本hash吞合法重复delta。官方v1 prompt-turn/session-setup核对支持上述判断，未升级本地锁定schema。
+
+A3另需写明byte队列预算、seq/epoch/commit offset、正常关闭drain/fence、write与fsync保证区别、partial尾行恢复；A1 probe纯读且remote不回落本地路径。观察binding/backend控制权限须覆盖各控制入口，不只隐藏composer，同时不干扰既有interactive owner。上述不阻A1先行，root已收、H作者待补卡；我未扩为新实现线。
+
+B/R016限定只读调查（未改代码/启动App/访问用户session/新增网络探测）：root当前head-summary.json两HTTPS HEAD均200/TLS验证0只排除当前CLI基础连接故障。实际Mac链BrowserPane本机→open_page machine空→无Khor借网proxy/shim，仍可能使用系统代理；on_navigation全allow。page_fail.rs丢弃WKNavigation参数，word仅顶层domain/code/description/url，无underlying链/导航代次；page-fail.ts把-1004无法连接与-1005连接丢失并为“连接被拒绝”。BrowseLanding只按tab接fail，迟到旧导航失败覆盖当前结果是源码风险，未证明为截图根因。现唯一已证问题为分类过宽/证据不足，不能称网站403或ECONNREFUSED。
+
+B最小后续App对照建议：同一binary/本机exit两个新tab分别打开用户完整lan HTTPS与public HTTPS，采实际start/commit/fail/finish的tab+WKNavigation身份、失败与当前URL、原NSError及underlying链、实际exit/Khor proxy；若失败仅原目标重试及fresh/reuse对照。不加入可达性门槛或全网排查。Mac Info.plist已有NSLocalNetworkUsageDescription、无ATS例外；iOS有NSAllowsArbitraryLoadsInWebContent，不能据手机能开推出Mac同路径。Apple TN3179指出WKWebView流量豁免local-network access，当前无证据先加隐私/ATS例外；ATS/TLS应据真实-1022/相关错误而定。[Apple TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)。已告root供后续B作者，不视为第三实施线。
+
+CJK末列宽字符换行窄修当前diff独审无阻断：只跳末列code0、下一行soft-wrapped且首格width2的合成padding，核同本地xterm6 InputHandler overflow清oldRow code0/width1；不trim typed code32空格、不拼hardline。实际producer四例覆盖path/URL及typed空格/hardline，绝对target/各wrapped row/linecol/cell mapping与故障相称，待固定提交和原DOM用例复测。
+
+CJK固定40a828a3022d18dd96063cf63b210b7d6def30cd两源SHA逐git-show与wide-wrap-receipt一致，独审无阻断。真实xterm旧2红/2绿→新4绿、links/intent21/types收据已核；root同40cols实际浏览器红绿的物理行内容一致，pointerfalse→true、目录probe1、单次完整绝对路径且dirfalse。最初夹具cwd过于接近文件父目录可能掩盖断开的filename，已保原日志，最终cwd/session-root与绝对from断言修正证据范围。未外推native WK/iPhone触摸。
+
+A1首稿独审暂有待确认源归属/代次风险：native_content只leaf且resolve先Claude再Codex不消费provider事实，通用入口可能按同名leaf误指另一agent记录；已要求从既有source/vendor事实选择/歧义拒绝，unknown测试补collision，完整binding仍属A2。ObservedSession旧content不带查询key，同id换home/source effect后才清空，已建议结果带查询key或组件重挂，防旧available跨来源。纯读/remote拒本机推断方向合理，尚未给A1固定版通过。

@@ -45,3 +45,18 @@ C3完整SessionContentPane Lab入口与types已备（workspace-return.html），
 root修正实际observer节点与按前缀识别逻辑行后，终端真实DOM19项通过：宽→窄→宽各软折行片段、OSC8+Meta四种、拖选不误开、app mouse。browser/link-actions.json/terminal-verified.png及耐久terminal-link-check.js保留；前两harness失败独存，不改生产追绿。
 
 root允许本批结束后扩fixture，23835已单例重启为PID92646/exec53679（旧82610按精确PID正常TERM退出143）。workspace-return.html现已开放：实际SessionContentPane/useSessionContent/useContentNavigation/FilePage，内存tabs/fixed read_text、write_text明确本地409拒写，所有/api由本地fixture答复。HTML/tabs_list/types绿，DOM待root。server02.log与content-links-server.json记录新PID/源SHA；未启动用户App/session或真实外部opener。
+
+
+Lab精确提交`8819e11c4321bd94d5c621a5d1a1740a94d743ee`，C树干净。root要求最后一次收紧：unknown API不再200null，明确400并有最多100项unknown记录；GET/__content-fixture-stats公开requests/unknown/deniedWrites。null白名单只本地term transport握手/字节/diagnostic，不运行session；其余正常空值按专用入口列出。Vite内部重启但PID92646保持、两个Lab类型检查通过，C3 HTMLready/root DOM待验。系统window.open不外发仅terminal页覆写，C3流程不外推外部打开全隔离。
+
+
+C3 root真实浏览器四项业务均通过：desktop/mobile最新cwd返回并显示notes、原CodeMirror DOM对象同一且未保存文本保留；两布局browser source回workspace保留address与dirty DOM。原脚本最后隔离断言有8次unknown trash_here，失败workspace-return-failure.json/四项业务结果均保留，不改旧结论。
+
+图无覆盖后定点核trash_here：api.ts1530调用boolean；core/files.rs215只读TRASH_HERE常量，api.rs808仅to_json，无删除/写入。最小Lab补显式false提交`e58f21a1`，仅HTTP增量核status200/false与GET stats unknown[]（workspace-return-trash-capability.json），不重跑已绿四业务流程。该fixture补充不改生产，也不外推原生Mac/WK等真人验收。后续G按root独有路径授权接棒。
+
+
+## C2 中文宽字卡末列的已复现修复
+
+Root追加同真实TerminalPane夹具发现CJK字刚好落末列时路径失效（普通ASCII19项不覆盖此边界）：xterm6把字移到下一isWrapped行，将旧末cell清为code0/width1；logical把它补成space后拆断路径。已核真实InputHandler overflow producer，提交`40a828a3022d18dd96063cf63b210b7d6def30cd`仅跳“末col code0＋next isWrapped＋next首cell width2”的合成padding，typed space code32保留、硬行不拼、原cell坐标保留。
+
+真实xterm producer4项旧e58源2fail(path/URL)/2pass(合法空格/hardline)→新4pass，检查每wrapped行、绝对路径from起点与line12/col3。初harness把cwd设为filename parent导致裸filename重新解析掩盖pathbug，初log保留，最终按真实session root固定，没改产品追绿。既有links/intent21/types/diff绿；root原同40col浏览器case红→绿（pointer true、parent probe1、唯一内部完整绝对中文file且dirfalse），red/green json/png都保留。独审源码无阻断，收据wide-wrap-receipt.json；具体边界修复不外推所有原生触摸。G此间只任务卡，恢复其首片段。

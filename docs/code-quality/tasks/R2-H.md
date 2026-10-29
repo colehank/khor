@@ -106,3 +106,11 @@ GUI实际消费提交77168f9b6bada5563103dad1e791dccc0bf570a8；非作者逐10�
 当前Lab视觉/浏览器结果待root回传，不能用模块测试或输运fixture冒真实磁盘巨历史/UI原生验收。真实提供者路径解析只枚举文件名/metadata，不先扫描待加载transcript正文；Node::open/目录定位尚非可强制中断，全请求成本不等于256KiB正文读预算。该限制继续保留，暂不扩通用索引治理。
 
 独审补充：a3e9b6ad source-manifest含6源（含未改producer）均与git-show匹配，真实gen/mobile[]/tsc收据无阻断；499dbe4f直接消费真实ChatView且未知API拒绝的边界已核。Lab raw分支未模拟cursor generation/identity拒收，也未延迟raw读；故该Lab只用于分段展示/UTF8及page可视/退出取消，不计raw旧来源/取消已验。按既定范围不为此扩新矩阵，生产backend仍按其定向源测试与明确限制评估。
+
+## 实际ChatView浏览器验收回传与A交接
+
+root在冻结23836实际ChatView上完成13项浏览器检查，证据history/browser/reader-check.json：近期首屏有界只读；empty polls保DOM身份；连续5次older精确保留可见节点top且淘汰后DOM<=512；追加500条分四批连续无空隙；raw单段<=64KiB与UTF8；来源reset清raw；hide/unmount取消后lease归零且不再poll；legacy0/unknown[]。首脚本仅中文按钮标签写错导致harness超时，原记录保留；后续只跑未验阶段，未冒前8项重跑。该验收是原始API fixture上的真实GUI，不是用户供应商文件/完整原生App现场。root接收后继续安排A，main/ship不变。
+
+按root交接，H作者正在只读调查A/R005而非空等，冻结ChatView/Lab不改。40个known launch snapshot+任意用户argv的能力/来源矩阵、当前native provider/托管ACP缺durable journal、ACP import直接resume等实际缺口已落evidence/round2/history/observation-survey/R005-observation-survey.md，source.json逐路径SHA。官方当前v1文档及本地锁SDK schema核对均表明list是元数据、load是恢复/回放且带MCP上下文；没有独立readonly observer承诺，不能推导load必然抢占或必然无副作用。计划统一native source与所有托管ACP canonical journal，复用S1读/缓存链；完整最小切片与paths待root分配后实施，不开始S大范围。
+
+root提醒：下一次ChatView必要改动时清除该模块已失效的长段历史/tombstone注释及过时全量replay陈述，保留现行不明显的契约理由；不另开全仓注释专项。
