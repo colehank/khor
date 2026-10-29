@@ -1407,14 +1407,15 @@ export const chatAnswer = (id: string, ask: number, option: string | null) =>
   call<null>("chat_answer", { id, ask, option });
 export const chatReplay = (id: string) => call<null>("chat_replay", { id });
 export const chatLeave = (id: string) => call<null>("chat_leave", { id });
-export const fetchSessionContent = (id: string, machine: string | null = null) =>
-  call<SessionContent>("session_content", { id, machine });
-export const beginHistoryRequest = () => call<string>("history_begin");
-export const cancelHistoryRequest = (requestKey: string) => call<null>("history_cancel", { requestKey });
-export const fetchHistoryRecord = (id: string, requestKey: string, cursor: string, from: number) =>
-  call<HistoryRecordChunk>("history_record", { id, requestKey, cursor, from });
-export const fetchHistoryPage = (id: string, requestKey: string, cursor: string | null = null, newer = false) =>
-  call<HistoryPage>("history_page", { id, cursor, newer, requestKey });
+export const fetchSessionContent = (id: string, locator: string) =>
+  call<SessionContent>("session_content", { id, locator });
+export const beginHistoryRequest = (id: string, binding: string) => call<string>("history_begin", { id, binding });
+export const cancelHistoryRequest = (id: string, binding: string, requestKey: string) =>
+  call<null>("history_cancel", { id, binding, requestKey });
+export const fetchHistoryRecord = (id: string, binding: string, requestKey: string, cursor: string, from: number) =>
+  call<HistoryRecordChunk>("history_record", { id, binding, requestKey, cursor, from });
+export const fetchHistoryPage = (id: string, binding: string, requestKey: string, cursor: string | null = null, newer = false) =>
+  call<HistoryPage>("history_page", { id, binding, cursor, newer, requestKey });
 
 /** One machine's directory — order, cap and the answered-about path
     all come from the node; `""` asks for that machine's home. */

@@ -54,6 +54,8 @@ pub struct SessionRow {
     pub word: Option<String>,
     /// Machine holding the canonical observation record, distinct from content home.
     pub observation_owner: Option<String>,
+    /// Bounded canonical read selector; independent of metadata ownership.
+    pub content_locator: Option<String>,
     pub can_control: bool,
     /// ms; `number` on the TS side — serde_json sends a number, and
     /// 2^53 outlives every timestamp and unread count in question.
@@ -1100,6 +1102,8 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 .flatten()
                 .map(RowEnding::from);
             SessionRow {
+                content_locator: khor_node::session_content::ContentLocator::of(&v.session)
+                    .and_then(|locator| locator.encode()).ok(),
                 observation_owner: v
                     .session
                     .observation

@@ -65,7 +65,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 function fixture(row = {}) {
   const values = [], dependencies = [], cleanups = [], effects = [], requests = [], calls = [];
   let stateIndex = 0, effectIndex = 0, updates = 0;
-  let currentRow = {id: 'tui/session', home: 'local', word: 'idle', category: 'custom-acp-agent', ...row};
+  let currentRow = {id: 'tui/session', home: 'local', content_locator: 'locator:local', word: 'idle', category: 'custom-acp-agent', ...row};
   const bindings = {
     useState(initial) {
       const index = stateIndex++;
@@ -114,7 +114,7 @@ const cases = [
   ['journal capture scope is distinct from execution and keeps the real read-only reader', async () => {
     const f=fixture({word:null,kind:'observe',can_control:false});
     f.render();
-    f.requests[0].resolve({kind:'available',following:true,capture:{opening:'resume',gaps:2}});
+    f.requests[0].resolve({kind: 'available', binding: 'binding:local',following:true,capture:{opening:'resume',gaps:2}});
     await flush();
     const tree=f.render();
     const header=tree.children[0],reader=tree.children[1];
@@ -124,6 +124,7 @@ const cases = [
     assert.equal(reader.type,'real-chat-view');
     assert.equal(reader.props.still,true);
     assert.equal(reader.props.watch,true);
+    assert.equal(reader.props.binding,'binding:local');
     f.render(); assert.equal(f.calls.length,1,'scope does not create another polling owner');
     f.dispose();
   }],
@@ -175,54 +176,68 @@ const cases = [
     assert.equal(isTerminal({kind: 'tui', mux: true, attachable: true, can_control: true}), true);
     assert.equal(isTerminal({kind: 'shell', mux: true, attachable: true, can_control: true}), true);
   }],
-  ['observation metadata owner stays separate from content home', async () => {
-    const f = fixture({id: 'observe/source', kind: 'observe', observation_owner: 'metadata-owner', home: 'content-home'});
-    f.render(); assert.deepEqual(f.calls, [['observe/source', 'metadata-owner']]);
-    f.requests[0].resolve({kind: 'available', following: true}); await flush();
-    const view = f.render(); assert.equal(view.props.machine, 'metadata-owner'); assert.equal(view.props.home, 'content-home');
+  ['content opens from its canonical locator while metadata owner stays offline', async () => {
+    const f = fixture({id: 'observe/source', kind: 'observe', observation_owner: 'offline-owner', home: 'content-home', content_locator:'locator:content-home'});
+    f.render(); assert.deepEqual(f.calls, [['observe/source', 'locator:content-home']]);
+    f.requests[0].resolve({kind:'available',binding:'binding:content-home',following:true}); await flush();
+    const view = f.render(); assert.equal(view.props.machine, 'content-home'); assert.equal(view.props.home, 'content-home');
+    assert.equal(view.props.binding,'binding:content-home');
   }],
-  ['same observation changing metadata owner cannot reuse old capability', async () => {
-    const f = fixture({id: 'observe/source', observation_owner: 'first-owner'});
-    f.render(); f.requests[0].resolve({kind: 'available', following: true}); await flush();
-    assert.equal(f.render().type, 'real-chat-view');
-    f.updateRow({observation_owner: 'second-owner'});
-    assert.equal(f.render().props['data-session-content'], 'loading');
-    assert.deepEqual(f.calls.at(-1), ['observe/source', 'second-owner']); f.dispose();
+  ['metadata owner changes do not replace a still-valid canonical source binding', async () => {
+    const f = fixture({id:'observe/source', observation_owner:'first-owner'});
+    f.render(); f.requests[0].resolve({kind:'available',binding:'binding:original-source',following:true}); await flush();
+    assert.equal(f.render().type,'real-chat-view');
+    f.updateRow({observation_owner:'second-offline-owner'});
+    const view=f.render(); assert.equal(view.type,'real-chat-view');
+    assert.equal(view.props.binding,'binding:original-source'); assert.equal(f.calls.length,1); f.dispose();
   }],
   ['any registered agent routes by actual readable source, never by vendor', async () => {
     const f = fixture();
     assert.equal(f.render().props['data-session-content'], 'loading');
-    f.requests[0].resolve({kind: 'available', following: true}); await flush();
+    f.requests[0].resolve({kind: 'available', binding: 'binding:local', following: true}); await flush();
     const view = f.render(); assert.equal(view.type, 'real-chat-view'); assert.equal(view.props.still, true);
-    assert.equal(view.props.category, 'custom-acp-agent'); assert.equal(view.props.watch, true); assert.deepEqual(f.calls, [['tui/session', null]]);
+    assert.equal(view.props.category, 'custom-acp-agent'); assert.equal(view.props.watch, true); assert.deepEqual(f.calls, [['tui/session', 'locator:local']]);
   }],
   ['snapshot source renders existing content without claiming a follow capability', async () => {
-    const f = fixture(); f.render(); f.requests[0].resolve({kind: 'available', following: false}); await flush();
+    const f = fixture(); f.render(); f.requests[0].resolve({kind: 'available', binding: 'binding:local', following: false}); await flush();
     assert.equal(f.render().props.watch, false);
   }],
   ['source unavailable is explicit and retry rechecks only this opened session', async () => {
     const f = fixture(); f.render(); f.requests[0].resolve({kind: 'unavailable', reason: 'no_source'}); await flush();
     const view = f.render(); assert.equal(view.props['data-session-content'], 'unavailable');
     findButton(view).props.onClick(); f.render(); assert.equal(f.requests.length, 2); assert.equal(f.calls[1][0], 'tui/session');
-    f.dispose(); f.requests[1].resolve({kind: 'available', following: true});
+    f.dispose(); f.requests[1].resolve({kind: 'available', binding: 'binding:local', following: true});
   }],
   ['remote home is sent intact and cannot fall through to local file guessing', async () => {
-    const f = fixture({source: {machine: 'remote'}, home: 'Remote Device'}); f.render();
-    assert.deepEqual(f.calls, [['tui/session', 'Remote Device']]);
+    const f = fixture({source: {machine: 'metadata-peer'}, home: 'Remote Device', content_locator:'locator:remote-device'}); f.render();
+    assert.deepEqual(f.calls, [['tui/session', 'locator:remote-device']]);
     f.requests[0].resolve({kind: 'unavailable', reason: 'remote_not_connected'}); await flush();
     assert.equal(f.render().props['data-session-content'], 'unavailable');
   }],
   ['same ID changing home cannot reuse a previous readable capability', async () => {
-    const f = fixture(); f.render(); f.requests[0].resolve({kind: 'available', following: true}); await flush();
+    const f = fixture(); f.render(); f.requests[0].resolve({kind: 'available', binding: 'binding:local', following: true}); await flush();
     assert.equal(f.render().type, 'real-chat-view');
-    f.updateRow({source: {machine: 'new-home'}, home: 'New Home'});
+    f.updateRow({source: {machine: 'new-metadata-owner'}, home: 'New Home', content_locator:'locator:new-home'});
     assert.equal(f.render().props['data-session-content'], 'loading');
-    assert.deepEqual(f.calls.at(-1), ['tui/session', 'New Home']);
+    assert.deepEqual(f.calls.at(-1), ['tui/session', 'locator:new-home']);
     f.dispose(); f.requests.at(-1).resolve({kind: 'unavailable', reason: 'remote_not_connected'});
+  }],
+  ['a missing locator never falls through to metadata owner or local source guessing', async () => {
+    const f=fixture({content_locator:null,observation_owner:'other-owner',home:'other-home'});
+    f.render(); const view=f.render(); assert.equal(view.props['data-session-content'],'unavailable');
+    assert.equal(f.calls.length,0); f.dispose();
+  }],
+  ['same view changing source rejects the old late result before opening history', async () => {
+    const f=fixture(); f.render();
+    f.updateRow({content_locator:'locator:next-source',home:'Next Source'}); f.render();
+    f.requests[0].resolve({kind:'available',binding:'binding:stale',following:true}); await flush();
+    assert.equal(f.render().props['data-session-content'],'loading');
+    f.requests[1].resolve({kind:'available',binding:'binding:next-source',following:true}); await flush();
+    assert.equal(f.render().props.binding,'binding:next-source'); f.dispose();
   }],
   ['leaving during probe rejects late state without starting live control', async () => {
     const f = fixture(); f.render(); f.dispose(); const updates = f.updates();
-    f.requests[0].resolve({kind: 'available', following: true}); await flush(); assert.equal(f.updates(), updates);
+    f.requests[0].resolve({kind: 'available', binding: 'binding:local', following: true}); await flush(); assert.equal(f.updates(), updates);
   }],
   ['query failure is visible and remains retryable', async () => {
     const f = fixture(); f.render(); f.requests[0].reject(new Error('home unavailable')); await flush();

@@ -567,6 +567,7 @@ function absorb(paint: Painting, frames: ChatFrame[]): Painting {
 export function ChatView({
   id,
   still: recorded = false,
+  binding,
   watch = true,
   ended = false,
   category = null,
@@ -576,12 +577,8 @@ export function ChatView({
 }: {
   id: string;
   onReading?: SessionReading;
-  still?: boolean;
   watch?: boolean;
-  /** **The conversation is over: its host is gone** (UX-4, decided; the
-      row's 失败). Not opened — there is nobody to attach to — and read
-      off the vendor's record where there is one (claude), as a
-      discovered session is; 「对话已结束」 in the input's place, no 重试. */
+  /** Ended live hosts do not attach. Stored content uses the read-only branch. */
   ended?: boolean;
   /** The machine this conversation runs on, by the name a person reads
       (`SessionRow::home`) — what a file's caption says it is on. */
@@ -592,7 +589,7 @@ export function ChatView({
   /** The row's vendor (`SessionRow::category`): which mark and which
       name the composer's who seat wears. */
   category?: string | null;
-}) {
+} & ({ still: true; binding: string } | { still?: false; binding?: never })) {
   const still = recorded;
   const [paint, setPaint] = useState<Painting>(BLANK);
   const [history, setHistory] = useState<HistoryReaderState | null>(null);
@@ -804,12 +801,18 @@ export function ChatView({
       return;
     }
     if (still) {
+      if (!binding) {
+        setGone(true); setOpenWhy(gui.content_no_source);
+        return;
+      }
       historyAnchor.current = null;
       setPaint(BLANK); setHistory(null); setGone(false); setOpenWhy(null);
       setTitle(null); setPlan([]); setOpen(new Set()); toBottom();
       const source = historySource(id, {
-        begin: beginHistoryRequest, cancel: cancelHistoryRequest,
-        page: fetchHistoryPage, record: fetchHistoryRecord,
+        begin: () => beginHistoryRequest(id, binding),
+        cancel: key => cancelHistoryRequest(id, binding, key),
+        page: (view, key, cursor, newer) => fetchHistoryPage(view, binding, key, cursor, newer),
+        record: (view, key, cursor, from) => fetchHistoryRecord(view, binding, key, cursor, from),
       });
       let previousPages: HistoryReaderState['window']['pages'] | null = null;
       const view = historyReader(source, state => {
@@ -1078,7 +1081,7 @@ export function ChatView({
       pollNow.current = () => {};
       chatLeave(id).catch(() => {});
     };
-  }, [id, still, ended, attempt, watch]);
+  }, [binding, id, still, ended, attempt, watch]);
 
   useLayoutEffect(() => {
     const anchor = historyAnchor.current;

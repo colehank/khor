@@ -863,55 +863,52 @@ fn chat_leave(id: String) -> Result<(), String> {
 #[tauri::command]
 async fn session_content(
     id: String,
-    machine: Option<String>,
+    locator: String,
 ) -> Result<khor_gui_core::chat::SessionContent, String> {
-    off_main(move || {
-        khor_gui_core::chat::session_content(&Node::root_from_env(), &id, machine.as_deref())
-    })
-    .await
+    khor_gui_core::chat::session_content(&Node::root_from_env(), &id, &locator).await
 }
 #[tauri::command]
-fn history_begin() -> Result<String, String> {
-    khor_gui_core::chat::history_begin()
+async fn history_begin(id: String, binding: String) -> Result<String, String> {
+    khor_gui_core::chat::history_begin(&Node::root_from_env(), &id, &binding).await
 }
 #[tauri::command]
-fn history_cancel(request_key: String) -> Result<(), String> {
-    khor_gui_core::chat::history_cancel(&request_key)
+async fn history_cancel(id: String, binding: String, request_key: String) -> Result<(), String> {
+    khor_gui_core::chat::history_cancel(&Node::root_from_env(), &id, &binding, &request_key).await
 }
 #[tauri::command]
 async fn history_record(
     id: String,
+    binding: String,
     cursor: String,
     from: u64,
     request_key: String,
 ) -> Result<khor_gui_core::chat::HistoryRecordChunk, String> {
-    off_main(move || {
-        khor_gui_core::chat::history_record(
-            &Node::root_from_env(),
-            &id,
-            &cursor,
-            from,
-            &request_key,
-        )
-    })
+    khor_gui_core::chat::history_record(
+        &Node::root_from_env(),
+        &id,
+        &binding,
+        &cursor,
+        from,
+        &request_key,
+    )
     .await
 }
 #[tauri::command]
 async fn history_page(
     id: String,
+    binding: String,
     cursor: Option<String>,
     newer: bool,
     request_key: String,
 ) -> Result<khor_gui_core::chat::HistoryPage, String> {
-    off_main(move || {
-        khor_gui_core::chat::history_page(
-            &Node::root_from_env(),
-            &id,
-            cursor.as_deref(),
-            newer,
-            &request_key,
-        )
-    })
+    khor_gui_core::chat::history_page(
+        &Node::root_from_env(),
+        &id,
+        &binding,
+        cursor.as_deref(),
+        newer,
+        &request_key,
+    )
     .await
 }
 

@@ -1042,7 +1042,7 @@ pub fn chat_replay(id: &str) -> Result<(), String> {
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionContent {
-    Available { following: bool, capture: Option<ContentCapture> },
+    Available { binding: String, following: bool, capture: Option<ContentCapture> },
     Unavailable { reason: ContentUnavailable },
 }
 
@@ -1064,27 +1064,67 @@ pub enum ContentUnavailable {
     AmbiguousSource,
 }
 
-pub fn session_content(
+async fn content_node(
+    root: &Path,
+    request: Option<std::sync::Arc<khor_node::session_content::remote::ClientRead>>,
+) -> Result<Node, String> {
+    let root = root.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        if let Some(request) = &request {
+            request.check()?;
+        }
+        let node = Node::open(root)?;
+        if let Some(request) = &request {
+            request.check()?;
+        }
+        Ok::<_, String>((node, request))
+    })
+    .await
+    .map_err(|error| format!("content node worker failed: {error}"))?
+    .map(|(node, _request)| node)
+}
+
+fn content_binding(
+    id: &str,
+    binding: &str,
+) -> Result<khor_node::session_content::ReadBinding, String> {
+    khor_node::session_content::ReadBinding::decode(binding, &SessionId(id.to_owned()))
+}
+
+pub async fn session_content(
     root: &Path,
     id: &str,
-    machine: Option<&str>,
+    locator: &str,
 ) -> Result<SessionContent, String> {
-    use khor_node::session_content::{Availability, Unavailable};
-    Ok(
-        match Node::open(root.to_path_buf())?.session_content(&SessionId(id.to_owned()), machine)? {
-            Availability::Available { following, capture } => SessionContent::Available { following,
-                capture: capture.map(|capture|ContentCapture { opening:capture.opening.to_owned(), gaps:capture.gaps }),
+    use khor_node::session_content::{
+        ContentLocator, Unavailable,
+        remote::{Action, Reply, Resolution},
+    };
+    let locator = ContentLocator::decode(locator, &SessionId(id.to_owned()))?;
+    let node = content_node(root, None).await?;
+    match node.content_read(Action::Resolve { locator }).await? {
+        Reply::Resolved(Resolution::Available {
+            binding,
+            following,
+            capture,
+        }) => Ok(SessionContent::Available {
+            binding: binding.encode()?,
+            following,
+            capture: capture.map(|capture| ContentCapture {
+                opening: capture.opening,
+                gaps: capture.gaps,
+            }),
+        }),
+        Reply::Resolved(Resolution::Unavailable(reason)) => Ok(SessionContent::Unavailable {
+            reason: match reason {
+                Unavailable::NoSource => ContentUnavailable::NoSource,
+                Unavailable::Unreadable => ContentUnavailable::Unreadable,
+                Unavailable::RemoteNotConnected => ContentUnavailable::RemoteNotConnected,
+                Unavailable::AmbiguousSource => ContentUnavailable::AmbiguousSource,
             },
-            Availability::Unavailable(reason) => SessionContent::Unavailable {
-                reason: match reason {
-                    Unavailable::NoSource => ContentUnavailable::NoSource,
-                    Unavailable::Unreadable => ContentUnavailable::Unreadable,
-                    Unavailable::RemoteNotConnected => ContentUnavailable::RemoteNotConnected,
-                    Unavailable::AmbiguousSource => ContentUnavailable::AmbiguousSource,
-                },
-            },
-        },
-    )
+        }),
+        _ => Err("content resolver returned another reply".into()),
+    }
 }
 
 /// One bounded history response. Record references explicitly retain
@@ -1121,14 +1161,11 @@ pub struct HistoryRecordRef {
     pub cursor: String,
 }
 
-#[path = "chat/history_request.rs"]
-mod history_request;
-
-pub fn history_begin() -> Result<String, String> {
-    history_request::begin()
+pub async fn history_begin(root: &Path, id: &str, binding: &str) -> Result<String, String> {
+    khor_node::session_content::remote::begin(root, &content_binding(id, binding)?).await
 }
-pub fn history_cancel(key: &str) -> Result<(), String> {
-    history_request::cancel(key)
+pub async fn history_cancel(root: &Path, id: &str, binding: &str, key: &str) -> Result<(), String> {
+    khor_node::session_content::remote::cancel(root, &content_binding(id, binding)?, key).await
 }
 
 #[derive(Serialize, TS)]
@@ -1141,29 +1178,41 @@ pub struct HistoryRecordChunk {
     pub next: Option<u64>,
 }
 
-pub fn history_record(
+pub async fn history_record(
     root: &Path,
     id: &str,
+    binding: &str,
     cursor: &str,
     from: u64,
     request_key: &str,
 ) -> Result<HistoryRecordChunk, String> {
     use base64::Engine as _;
-    let request = history_request::Request::claim(request_key)?;
+    let request = khor_node::session_content::remote::ClientRead::claim(
+        root,
+        content_binding(id, binding)?,
+        request_key,
+    )?;
     request.check()?;
     if cursor.len() > 4096 {
-        return Err("history cursor exceeds its byte budget".to_owned());
+        return Err("history cursor exceeds its byte budget".into());
     }
     let cursor =
         serde_json::from_str(cursor).map_err(|error| format!("invalid history cursor: {error}"))?;
-    let node = Node::open(root.to_path_buf())?;
-    let chunk = node.transcript_record(&SessionId(id.to_owned()), &cursor, from, request.flag())?;
-    request.check()?;
-    Ok(HistoryRecordChunk {
-        offset: chunk.offset,
-        data: base64::engine::general_purpose::STANDARD.encode(chunk.bytes),
-        next: chunk.next,
+    let node = content_node(root, Some(request.clone())).await?;
+    let chunk = node.content_record(&request, cursor, from).await?;
+    tokio::task::spawn_blocking(move || {
+        request.check()?;
+        let response = HistoryRecordChunk {
+            offset: chunk.offset,
+            data: base64::engine::general_purpose::STANDARD.encode(chunk.bytes),
+            next: chunk.next,
+        };
+        request.check()?;
+        Ok::<_, String>((response, request))
     })
+    .await
+    .map_err(|error| format!("history record projection failed: {error}"))?
+    .map(|(response, _request)| response)
 }
 
 const HISTORY_PAYLOAD_BYTES: usize = 512 * 1024;
@@ -1190,33 +1239,39 @@ fn encoded_size(value: &impl Serialize) -> Result<usize, String> {
     Ok(counter.0)
 }
 
-pub fn history_page(
+pub async fn history_page(
     root: &Path,
     id: &str,
+    binding: &str,
     cursor: Option<&str>,
     newer: bool,
     request_key: &str,
 ) -> Result<HistoryPage, String> {
-    let request = history_request::Request::claim(request_key)?;
-    request.check()?;
-    if cursor.is_some_and(|cursor| cursor.len() > 4096) {
-        return Err("history cursor exceeds its byte budget".to_owned());
-    }
-    let cursor: Option<khor_node::adaptor::transcript_page::Cursor> = cursor
-        .map(serde_json::from_str)
-        .transpose()
-        .map_err(|e| format!("invalid history cursor: {e}"))?;
-    let node = Node::open(root.to_path_buf())?;
-    let page = node.transcript_page(
-        &SessionId(id.to_owned()),
-        cursor.as_ref(),
-        newer,
-        request.flag(),
+    let request = khor_node::session_content::remote::ClientRead::claim(
+        root,
+        content_binding(id, binding)?,
+        request_key,
     )?;
     request.check()?;
-    history_page_response(id, page, newer, &|| {
-        request.flag().load(std::sync::atomic::Ordering::Acquire)
+    if cursor.is_some_and(|cursor| cursor.len() > 4096) {
+        return Err("history cursor exceeds its byte budget".into());
+    }
+    let cursor = cursor
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|error| format!("invalid history cursor: {error}"))?;
+    let node = content_node(root, Some(request.clone())).await?;
+    let page = node.content_page(&request, cursor, newer).await?;
+    let id = id.to_owned();
+    tokio::task::spawn_blocking(move || {
+        request.check()?;
+        let response = history_page_response(&id, page, newer, &|| request.check().is_err())?;
+        request.check()?;
+        Ok::<_, String>((response, request))
     })
+    .await
+    .map_err(|error| format!("history page projection failed: {error}"))?
+    .map(|(response, _request)| response)
 }
 
 fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
@@ -2019,3 +2074,7 @@ mod bounded_history_response_tests {
         assert!(response.encoded_bytes<=HISTORY_PAYLOAD_BYTES);
     }
 }
+
+#[cfg(test)]
+#[path = "chat/history_bridge_tests.rs"]
+mod history_bridge_tests;

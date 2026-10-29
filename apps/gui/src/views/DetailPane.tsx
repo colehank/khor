@@ -26,21 +26,25 @@ function ObservedSession({ row, onReading }: { row: SessionRow; onReading?: Sess
   const [answer, setAnswer] = useState<{key: string; content: SessionContent} | null>(null);
   const [fault, setFault] = useState<{key: string; message: string} | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const machine = row.observation_owner ?? (row.source ? row.home : null);
-  const queryKey = JSON.stringify([row.id, machine]);
+  const locator = row.content_locator;
+  const queryKey = JSON.stringify([row.id, locator]);
   const content = answer?.key === queryKey ? answer.content : null;
   const failure = fault?.key === queryKey ? fault.message : null;
   useEffect(() => {
     let stopped = false;
     setAnswer(null); setFault(null);
-    fetchSessionContent(row.id, machine).then(answer => {
+    if (!locator) {
+      setAnswer({ key: queryKey, content: { kind: 'unavailable', reason: 'no_source' } });
+      return;
+    }
+    fetchSessionContent(row.id, locator).then(answer => {
       if (!stopped) setAnswer({key: queryKey, content: answer});
     }, error => { if (!stopped) setFault({key: queryKey, message: String(error)}); });
     return () => { stopped = true; };
-  }, [row.id, machine, queryKey, attempt]);
+  }, [row.id, locator, queryKey, attempt]);
   if (content?.kind === 'available') {
-    const history=<ChatView id={row.id} still watch={content.following} category={row.category}
-      home={row.home} machine={machine} ended={row.word === 'failed'} onReading={onReading} />;
+    const history=<ChatView id={row.id} still binding={content.binding} watch={content.following} category={row.category}
+      home={row.home} machine={row.home} ended={row.word === 'failed'} onReading={onReading} />;
     if (!content.capture) return history;
     return <>
       <div data-history-capture className="px-row py-in text-caption text-muted-foreground" role="status">

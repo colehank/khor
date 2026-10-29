@@ -144,8 +144,6 @@ export function checkMobileSources(gui) {
     "add_start", "promote_start", "add_read", "ssh_config_hosts",
     // Handoff workers own the filesystem and network work; these only register/read/cancel jobs.
     "file_handoff_start", "file_handoff_state", "file_handoff_cancel",
-    // History lease admission/cancellation never reads or parses a transcript.
-    "history_begin", "history_cancel",
   ]);
   // The ones that waited on the main thread on 2026-10-02, named so the
   // red says which: each must be `async`.
@@ -165,7 +163,7 @@ export function checkMobileSources(gui) {
     // its own snapshot by design (`khor_node::Node::day_strips`). Measured
     // at 31 ms held on a scratch app, with key→echo max 35 ms in the same
     // window against a p95 of 12 ms.
-    "day_strips", "history_page", "history_record",
+    "day_strips", "session_content", "history_begin", "history_cancel", "history_page", "history_record",
   ];
   {
     const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(async\s+)?fn\s+([a-z_0-9]+)/g;
