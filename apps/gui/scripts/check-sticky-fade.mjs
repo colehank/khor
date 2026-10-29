@@ -1,0 +1,36 @@
+// Execute the production band owner with controlled layout/observers.
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+class Style{values=new Map();getPropertyValue(k){return this.values.get(k)??'';}setProperty(k,v){this.values.set(k,v);}removeProperty(k){this.values.delete(k);}}
+class Box{
+ constructor({top=0,height=400,overflowY='visible',attrs=[]}={}){this.rect={top,bottom:top+height,height};this.offsetHeight=height;this.css={overflowY,paddingTop:'0px'};this.style=new Style();this.attrs=new Set(attrs);this.children=[];this.parentElement=null;this.scrollTop=0;}
+ append(...nodes){for(const n of nodes){this.children.push(n);n.parentElement=this;}}
+ get nextElementSibling(){const peers=this.parentElement?.children??[];return peers[peers.indexOf(this)+1]??null;}
+ getBoundingClientRect(){return this.rect;}
+ hasAttribute(k){return this.attrs.has(k);}setAttribute(k){this.attrs.add(k);}removeAttribute(k){this.attrs.delete(k);}toggleAttribute(k,on=!this.hasAttribute(k)){on?this.attrs.add(k):this.attrs.delete(k);}
+ matches(s){return s.split(',').some(v=>v.trim().startsWith('[')&&this.hasAttribute(v.trim().slice(1,-1)));}
+ closest(s){for(let n=this;n;n=n.parentElement)if(n.matches(s))return n;return null;}
+ querySelectorAll(s){return this.children.flatMap(n=>[...(n.matches(s)?[n]:[]),...n.querySelectorAll(s)]);}
+ querySelector(s){return s.startsWith(':scope > ')?this.children.find(n=>n.matches(s.slice(9)))??null:this.querySelectorAll(s)[0]??null;}
+}
+const mutations=[],resizes=[],frames=new Map(),events=new Map();let frameId=0;
+globalThis.HTMLElement=Box;globalThis.Element=Box;
+globalThis.getComputedStyle=node=>({...node.css,getPropertyValue:k=>k==='--gap-pane'?'24px':node.style.getPropertyValue(k)});
+globalThis.requestAnimationFrame=fn=>{frames.set(++frameId,fn);return frameId;};globalThis.cancelAnimationFrame=id=>frames.delete(id);
+globalThis.ResizeObserver=class{constructor(fn){this.fn=fn;resizes.push(this);}observe(){}unobserve(){}disconnect(){}};
+globalThis.MutationObserver=class{constructor(fn){this.fn=fn;mutations.push(this);}observe(){}disconnect(){}};
+globalThis.document={addEventListener:(kind,fn)=>events.set(kind,fn)};
+const code=(await build({entryPoints:['src/lib/scroll-edge.ts'],bundle:true,format:'esm',write:false})).outputFiles[0].text;
+const {band,followScrollEdge}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));followScrollEdge();
+const flush=()=>{const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn());};
+const results=[];
+function test(name,run){try{run();results.push({name,pass:true});console.log('PASS',name);}catch(error){results.push({name,pass:false,error:error.message});console.error('FAIL',name,error.message);}}
+function fixture(scroll=50){const parent=new Box(),head=new Box({height:56,attrs:['data-band']}),scroller=new Box({overflowY:'auto'});parent.append(head,scroller);scroller.scrollTop=scroll;const stop=band(head);return {parent,head,scroller,stop};}
+test('a scrolling body fades from the primary title top to its natural tail',()=>{const f=fixture();try{assert(f.scroller.hasAttribute('data-sticky-fading'));assert.equal(f.scroller.style.getPropertyValue('--sticky-fade-start'),'0px');assert.equal(f.scroller.style.getPropertyValue('--sticky-fade-length'),'80px');}finally{f.stop();}});
+test('scroll events coalesce and returning to rest restores the complete body',()=>{const f=fixture(0);try{assert(!f.scroller.hasAttribute('data-sticky-fading'));f.scroller.scrollTop=40;events.get('scroll')({target:f.scroller});events.get('scroll')({target:f.scroller});assert.equal(frames.size,1);flush();assert(f.scroller.hasAttribute('data-sticky-fading'));f.scroller.scrollTop=0;events.get('scroll')({target:f.scroller});flush();assert(!f.scroller.hasAttribute('data-sticky-fading'));}finally{f.stop();}});
+test('header resize updates the same owner without changing scroll position',()=>{const f=fixture();try{f.head.rect={top:0,bottom:72,height:72};f.head.offsetHeight=72;resizes.at(-1).fn([]);flush();assert.equal(f.scroller.style.getPropertyValue('--sticky-fade-length'),'96px');assert.equal(f.scroller.scrollTop,50);}finally{f.stop();}});
+test('replacing the owned scroller releases old fade attributes and geometry',()=>{const f=fixture();try{const before=f.scroller,next=new Box({overflowY:'auto'});next.scrollTop=30;f.parent.children[1]=next;next.parentElement=f.parent;mutations.at(-1).fn([{target:f.parent}]);assert(!before.hasAttribute('data-sticky-fading'));assert.equal(before.style.getPropertyValue('--sticky-fade-length'),'');assert(next.hasAttribute('data-sticky-fading'));}finally{f.stop();}});
+test('explicit secondary headings stay clear while their body yields under them',()=>{const parent=new Box(),head=new Box({height:56,attrs:['data-band']}),scroller=new Box({overflowY:'auto'}),group=new Box({attrs:['data-sticky-group']}),secondary=new Box({top:56,height:32,attrs:['data-sticky-head']}),body=new Box({top:-80,attrs:['data-sticky-body']});parent.append(head,scroller);scroller.append(group);group.append(secondary,body);const stop=band(head);try{assert(!secondary.hasAttribute('data-sticky-held'),'resting header must not blur the first body row');scroller.scrollTop=100;events.get('scroll')({target:scroller});flush();assert(secondary.hasAttribute('data-sticky-held'),'only a scrolling held header draws blur');assert(!scroller.hasAttribute('data-sticky-fading'),'do not mask the whole nested group');assert(!secondary.hasAttribute('data-sticky-fading'),'held heading remains full opacity');assert.equal(body.style.getPropertyValue('--sticky-fade-start'),'136px');assert.equal(body.style.getPropertyValue('--sticky-fade-length'),'56px');}finally{stop();}});
+test('a synchronous rediscovery cancels the older queued paint before unmount',()=>{const f=fixture();events.get('scroll')({target:f.scroller});mutations.at(-1).fn([{target:f.parent}]);f.stop();flush();assert(!f.head.hasAttribute('data-scrolled'));assert.equal(frames.size,0);});
+test('unmount cancels pending frame and removes only the owned fade state',()=>{const f=fixture();events.get('scroll')({target:f.scroller});f.stop();flush();assert(!f.scroller.hasAttribute('data-sticky-fading'));assert.equal(f.scroller.style.getPropertyValue('--sticky-fade-start'),'');assert.equal(frames.size,0);});
+console.log(JSON.stringify({passed:results.filter(v=>v.pass).length,total:results.length,results},null,2));assert(results.every(v=>v.pass),'sticky fade ownership regressions');

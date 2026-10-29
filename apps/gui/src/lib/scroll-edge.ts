@@ -1,24 +1,6 @@
-// What a page's head does when its content scrolls (`app.css`
-// `[data-band]`): the round HEADS rule, 2026-10-03 (the owner:「各种上滑
-// 但需要保持标题的…和 apple 一样，标题那块毛玻璃」).
-//
-// **A head is a band.** It stays where it is; the scroller under it is
-// pulled up to the top of the band's parent, so its first rows start
-// under the band and pass beneath it, and once the scroller is off its
-// top the band wears the glass bar (the ground, translucent, blurred,
-// with a hairline under it). At rest the band is the plain ground.
-//
-// A head opts in with `ref={band}` and `data-band`; the element right
-// after it is the box that is pulled up (`under`). Which scroller is the
-// band's is found, not declared: the scrollable box standing at the very
-// top of `under`, reached through boxes that start there too. A screen
-// whose top is not a scroller (a toolbar, a terminal) is not pulled up
-// and its head simply stays plain — nothing passes under it.
-// Transparent desktop windows keep the rows below the head instead: the
-// shared CSS cancels both overlap and padding, retaining one tint plane.
-//
-// Scrollers with no band over them keep the old fade (`EDGED`, the audit
-// fix plan F4.11): their top edge fades once scrolled.
+// The band owns its scroller and the fading content beneath its title.
+// Window colour belongs to the window surface, never to the band.
+// Explicit sticky groups keep their headings separate from their bodies.
 
 /** Scrollers whose top edge fades once scrolled, where no band covers
     them (`app.css` `[data-scrolled]:not([data-band-scroll])`). */
@@ -39,6 +21,7 @@ type Band = {
 const TERMINAL = "[data-terminal], .xterm";
 
 const owner = new WeakMap<HTMLElement, Band>();
+const fadeOwner = new WeakMap<HTMLElement, Band>();
 
 /** Every band on screen, by its `find`. */
 const live = new Set<() => void>();
@@ -105,10 +88,59 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
   const b: Band = {
     head,
     scroller: null,
-    sync: () => {
-      const on = !!b.scroller && b.scroller.scrollTop > EDGE;
-      if (on !== head.hasAttribute("data-scrolled")) head.toggleAttribute("data-scrolled", on);
-    },
+    sync: () => { if (!frame) frame = requestAnimationFrame(paint); },
+  };
+  let frame = 0;
+  let targets: { body: HTMLElement; heading: boolean; groupHead: HTMLElement | null }[] = [];
+  const clearFades = () => {
+    for (const {body} of targets) {
+      size.unobserve(body);
+      if (fadeOwner.get(body) !== b) continue;
+      body.removeAttribute('data-sticky-fading');
+      body.removeAttribute('data-sticky-held');
+      body.style.removeProperty('--sticky-fade-start');
+      body.style.removeProperty('--sticky-fade-length');
+      fadeOwner.delete(body);
+    }
+    targets = [];
+  };
+  function paint() {
+    frame = 0;
+    const on = !!b.scroller && b.scroller.scrollTop > EDGE;
+    const main = head!.getBoundingClientRect();
+    const tail = parseFloat(getComputedStyle(parent!).getPropertyValue('--gap-pane')) || 0;
+    const values = targets.map(({body,heading,groupHead}) => {
+      const rect = body.getBoundingClientRect(), top = rect.top;
+      const group = !heading && groupHead?.getBoundingClientRect();
+      const held = group && group.top <= main.bottom + 1 && group.bottom > main.bottom;
+      const start = (held ? group.top : main.top) - top;
+      const end = (held ? group.bottom : main.bottom) + (heading ? 0 : tail) - top;
+      return {body,start,length:end-start,active:on && end>0,material:heading && on && rect.top<=main.bottom+1 && rect.bottom>main.bottom};
+    });
+    head!.toggleAttribute('data-scrolled',on);
+    for (const {body,start,length,active,material} of values) {
+      if (fadeOwner.get(body) !== b) continue;
+      body.toggleAttribute('data-sticky-fading',active);
+      body.toggleAttribute('data-sticky-held',material);
+      if (!active) continue;
+      body.style.setProperty('--sticky-fade-start',`${start}px`);
+      body.style.setProperty('--sticky-fade-length',`${length}px`);
+    }
+  }
+  const discoverFades = () => {
+    clearFades();
+    const scroller = b.scroller;
+    if (!scroller) return;
+    const marked = [...scroller.querySelectorAll<HTMLElement>('[data-sticky-head], [data-sticky-body]')].filter(body => {
+      for (let at=body.parentElement;at && at!==scroller;at=at.parentElement)
+        if (at.querySelector(':scope > [data-band]')) return false;
+      return true;
+    });
+    targets = (marked.length ? marked : [scroller]).map(body => ({
+      body,heading:body.hasAttribute('data-sticky-head'),
+      groupHead:body.closest('[data-sticky-group]')?.querySelector<HTMLElement>(':scope > [data-sticky-head]') ?? null,
+    }));
+    for (const {body} of targets) { fadeOwner.set(body,b);size.observe(body); }
   };
   // **The band's height is on its parent before the first paint**
   // (2026-10-03, the owner's phone: a page opened with its facts row under
@@ -120,10 +152,12 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
     if (parent.style.getPropertyValue("--band-h") !== h) parent.style.setProperty("--band-h", h);
   };
   measure();
-  const size = new ResizeObserver(measure);
+  const size = new ResizeObserver(() => { measure();b.sync(); });
   size.observe(head);
 
   const release = (el: HTMLElement) => {
+    clearFades();
+    size.unobserve(el);
     el.removeAttribute("data-band-scroll");
     el.style.removeProperty("--band-pad");
     if (owner.get(el) === b) owner.delete(el);
@@ -138,12 +172,15 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
         // Its own top padding, read before the band's is added to it.
         found.style.setProperty("--band-pad", getComputedStyle(found).paddingTop);
         found.setAttribute("data-band-scroll", "");
+        size.observe(found);
         owner.set(found, b);
       }
       b.scroller = found;
       parent.toggleAttribute("data-band-over", !!found);
     }
-    b.sync();
+    discoverFades();
+    cancelAnimationFrame(frame);
+    paint();
   };
   // Screens come and go under a head (a list's swap, a page opened):
   // look again **in the same frame**. A mutation observer answers in the
@@ -163,6 +200,9 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
   live.add(find);
   return () => {
     live.delete(find);
+    cancelAnimationFrame(frame);
+    frame = 0;
+    clearFades();
     size.disconnect();
     tree.disconnect();
     if (b.scroller) release(b.scroller);
