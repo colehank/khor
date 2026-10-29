@@ -5,6 +5,7 @@ export function fileRefresh() {
   let request = 0;
   let composing = false;
   let readNeeded = false;
+  let requestedVersion = 0;
   const invalidate = () => { revision += 1; };
   const checkpoint = () => {
     if (composing) return null;
@@ -14,8 +15,9 @@ export function fileRefresh() {
   return {
     invalidate,
     checkpoint,
-    requestRead() { readNeeded = true; },
+    requestRead() { readNeeded = true; requestedVersion += 1; },
     needsRead() { return readNeeded; },
+    requestVersion() { return requestedVersion; },
     setComposing(next: boolean) {
       if (composing === next) return;
       composing = next;
@@ -25,9 +27,10 @@ export function fileRefresh() {
       const current = checkpoint();
       if (current === null) return;
       const id = ++request;
+      const requestedAt = requestedVersion;
       const value = await load();
       if (!current() || id !== request) return;
-      readNeeded = false;
+      if (requestedAt === requestedVersion) readNeeded = false;
       if (value !== null) accept(value);
     },
   };

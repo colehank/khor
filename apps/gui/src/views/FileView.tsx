@@ -407,6 +407,7 @@ function FileBody({
     preloadEditor();
   }, []);
   const refresh = useRef(fileRefresh());
+  const refreshReading = useRef(false);
   useLayoutEffect(() => {
     bufferLive.current = true;
     return () => { bufferLive.current = false; refresh.current.invalidate(); };
@@ -666,10 +667,14 @@ function FileBody({
 
   /** Refresh a clean file without replacing intervening edits or marked text.
       The original disk version must also remain the draft's merge base. */
-  const readNeeded = useCallback(() => {
-    if (!bufferLive.current || !refresh.current.needsRead()) return;
+  const readNeeded = useCallback(function checkRead(): void {
+    if (!bufferLive.current || refreshReading.current || !refresh.current.needsRead()) return;
     const {file,edit} = accepted.current;
     if (kindOf(path) !== "text" || file === null || (edit !== null && edit.text !== file.text)) return;
+    if (refresh.current.checkpoint() === null) return;
+    const requestedAt = refresh.current.requestVersion();
+    refreshReading.current = true;
+    let failed = false;
     void refresh.current.read(
       () => fetchFileStat(machine, path)
         .then((now) => (unchanged(file, now) ? null : fetchFileText(machine, path)))
@@ -681,7 +686,10 @@ function FileBody({
         acceptBuffer(was => ({...was, file: f, edit: {text: f.text, was: f.digest, by: newLine()}}));
         setDiffAt((n) => n + 1);
       },
-    ).catch(() => {});
+    ).catch(() => { failed = true; }).finally(() => {
+      refreshReading.current = false;
+      if (!failed || refresh.current.requestVersion() !== requestedAt) checkRead();
+    });
   }, [machine, path, acceptBuffer]);
   const again = useCallback(() => {
     refresh.current.requestRead();
