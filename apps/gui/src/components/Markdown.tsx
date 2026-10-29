@@ -1,4 +1,5 @@
-import {linkIntent,openSystemUrl} from "@/lib/content-link-intent";
+import {assertPageUrl,openSystemUrl} from "@/lib/client-opener";
+import {linkIntent} from "@/lib/content-link-intent";
 // Agents write markdown. Until this file, the conversation face painted
 // their text as one pre-wrapped run: a table arrived as pipes, a code
 // block as three backticks and its indentation, a numbered list as the
@@ -331,6 +332,7 @@ function Link({ href, children, className: _className, ...rest }: { href?: strin
       onClick={async (e) => {
         if (anchor) { jump(e.currentTarget, href); return; }
         try {
+          assertPageUrl(href);
           if (linkIntent(e) === "internal" && home?.openPage) await home.openPage(href);
           else await openSystemUrl(href);
         } catch { setRefused(true); }

@@ -1,3 +1,5 @@
+import {linkIntent,canActivateTerminalLink,type LinkIntent} from "@/lib/content-link-intent";
+import {assertPageUrl,openSystemUrl,openSystemPath,openSystemFileUri} from "@/lib/client-opener";
 import { useReadingSession, type SessionReading } from "@/hooks/use-session-attention";
 // A live terminal for a session khor hosts (docs/handoff 终端画屏) —
 // drawn by xterm.js, fed bytes.
@@ -41,9 +43,8 @@ import { useReadingSession, type SessionReading } from "@/hooks/use-session-atte
 // And the four things a terminal *emulator* leaves to the window
 // around it, each set to what iTerm2 does out of the box (the app's
 // rule: defaults over settings, aligned to iTerm):
-//   - **links** open on ⌘-click (`WebLinksAddon`), through the same
-//     `open_link` the conversation pane uses — the whitelist of schemes
-//     is khor's, not the addon's;
+//   - **links** open internally on click, or in the client system with
+//     a modifier; xterm owns selection and application mouse protocols;
 //   - **a selection is a copy** (`onSelectionChange` → clipboard), so
 //     there is no ⌘C to remember and nothing to lose by clicking away;
 //     where the program has the mouse (a tmux khor attached), the
@@ -306,17 +307,11 @@ function asksToFind(ev: KeyboardEvent): boolean {
   return IS_MAC ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && ev.shiftKey;
 }
 
-/** Where a link goes. In the app, through khor (`open_link`: the
-    scheme whitelist is the same one the conversation pane's links go
-    through). In a browser, the browser's own new tab — `open` on the
-    serving machine would open it on the wrong screen when the face is
-    being read from a phone. */
-function follow(uri: string, machine: string | null | undefined) {
-  // **In the app, a browsing tab through the terminal's own machine**
-  // (roadmap 3.2): a dev server's `localhost:3000` printed on a far
-  // machine is that machine's. A browser face keeps its own tab.
-  if (inApp) askOpenUrl(machine ?? "", uri);
-  else window.open(uri, "_blank", "noopener");
+/** Internal URLs use the same session content route on app and web. */
+async function follow(uri: string, machine: string | null | undefined, intent:LinkIntent='internal') {
+  assertPageUrl(uri);
+  if(intent==='system')await openSystemUrl(uri);
+  else askOpenUrl(machine??'',uri);
 }
 
 /** Base64 → bytes, the shape `term.write` takes. The api boundary is
@@ -1306,6 +1301,19 @@ export function TerminalPane({
   // for a person, and throwing it away is what once flattened all of
   // them into one wrong word.
   const [why, setWhy] = useState<string | null>(null);
+  const [linkFailure,setLinkFailure]=useState<string|null>(null);
+  const linkAction=useRef(0);
+  useLayoutEffect(()=>{
+    linkAction.current++;setLinkFailure(null);
+    return()=>{linkAction.current++;};
+  },[id,machine]);
+  const activateLink=async(open:()=>void|Promise<void>)=>{
+    const action=++linkAction.current;
+    setLinkFailure(null);
+    try{await open();}
+    catch(error){if(action===linkAction.current)setLinkFailure(said(error));}
+  };
+
   // **Until the attachment is made, the pane says it is coming**
   // (2026-10-02, the phone: a far machine that had dropped off left the
   // board blank for the reach's whole wait). A never-seen region shows
@@ -1453,7 +1461,8 @@ export function TerminalPane({
     const font = fontOf(box);
     /** Opens an OSC 8 `file://` link; set once the session's machine
         and the path opener are known (below). */
-    let fileLink = (_uri: string) => {};
+    let fileLink = (_uri: string, _intent:LinkIntent='internal') => {};
+    const openUrl=(uri:string,intent:LinkIntent='internal')=>{void activateLink(()=>follow(uri,machine,intent));};
     const term = new Terminal({
       // The unicode addon is a proposed API; without this flag it throws.
       allowProposedApi: true,
@@ -1472,9 +1481,10 @@ export function TerminalPane({
       linkHandler: {
         allowNonHttpProtocols: true,
         activate: (ev, uri) => {
-          if (!(ev.metaKey || ev.ctrlKey)) return;
-          if (/^https?:/i.test(uri)) follow(uri, machine);
-          else if (/^file:/i.test(uri)) fileLink(uri);
+          if(!canActivateTerminalLink(ev,term))return;
+          const intent=linkIntent(ev);
+          if (/^https?:/i.test(uri)) openUrl(uri,intent);
+          else if (/^file:/i.test(uri)) fileLink(uri,intent);
         },
       },
       // **A secondary click does not select** (the terminal audit, item
@@ -1626,12 +1636,11 @@ export function TerminalPane({
     term.loadAddon(search);
     searchRef.current = search;
     const found = search.onDidChangeResults((r) => setHits({ at: r.resultIndex, of: r.resultCount }));
-    // Links underline on hover and open on ⌘-click, iTerm2's gesture.
-    // A plain click on a URL in a terminal is more often the start of a
-    // selection than a wish to leave, so the modifier is the intent.
+    // Activation uses the same intent for detected URLs, paths and OSC8.
+    // xterm keeps ownership of selection drags and application mouse input.
     term.loadAddon(
       new WebLinksAddon((ev, uri) => {
-        if (ev.metaKey || ev.ctrlKey) follow(uri, machine);
+        if(canActivateTerminalLink(ev,term))openUrl(uri,linkIntent(ev));
       }),
     );
     // **Pictures in place** (roadmap 3.3): sixel and iTerm2's inline
@@ -1875,20 +1884,21 @@ export function TerminalPane({
     hooks.__find = () => setFinding(true);
     // For the gates, as `__xterm` is.
     (box as HTMLDivElement & { __marks?: Marks }).__marks = marks;
-    // **Paths and URLs open khor's own views** (roadmap 3.1, 3.2): under
-    // a mouse a ⌘-click on an underlined path; under a finger a tap.
+    // Plain links stay in session content; modifiers ask the client system.
     const here = machine ?? "";
     // After an attach the face has no marks and no OSC 7 of its own until
     // the next prompt (the host's snapshot carries neither, item 46), and
     // a relative path printed before it was no link (the terminal audit,
     // item 53); the host's ledger still knows where the shell stands.
     const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd() ?? doingRef.current?.cwd ?? undefined;
-    const openPath = (t: { path: string; dir: boolean; line: number | null }) =>
-      askOpenPath(here, t.path, t.dir, t.line);
-    fileLink = (uri) => {
+    const openPath = (t: { path: string; dir: boolean; line: number | null },intent:LinkIntent='internal') => {
+      void activateLink(()=>intent==='system'?openSystemPath(t.path):askOpenPath(here,t.path,t.dir,t.line));
+    };
+    fileLink = (uri,intent='internal') => {
+      if(intent==='system'){void activateLink(()=>openSystemFileUri(uri));return;}
       try {
         const path = decodeURIComponent(new URL(uri).pathname);
-        if (path) openPath({ path, dir: path.endsWith("/"), line: null });
+        if (path) openPath({ path, dir: path.endsWith("/"), line: null },intent);
       } catch {
         /* not a URL: nothing to open */
       }
@@ -1896,15 +1906,16 @@ export function TerminalPane({
     const linked = term.registerLinkProvider(pathLinks(term, here, cwdAt, openPath));
     const tapped = (row: number, col: number) => {
       if (picture(row, col)) return true;
+      if(!canActivateTerminalLink({},term))return false;
       const url = urlAt(term, row, col);
       if (url) {
         if (/^file:/i.test(url)) fileLink(url);
-        else follow(url, machine);
+        else openUrl(url);
         return true;
       }
       void pathsOn(term, here, cwdAt, row).then((found) => {
         const hit = found.find((f) => covers(f, row, col));
-        if (hit) openPath(hit.target);
+        if (hit&&canActivateTerminalLink({},term)) openPath(hit.target);
       });
       return false;
     };
@@ -2565,7 +2576,7 @@ export function TerminalPane({
         });
       const offer = () => (at ? showEditMenuAt(at, items.slice(), p.text) : offerEditMenu(items.slice()));
       const url = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(p.text) ? p.text : urlAt(term, p.from.row, p.from.col);
-      if (url) open(() => (/^file:/i.test(url) ? fileLink(url) : follow(url, machine)));
+      if (url) open(() => (/^file:/i.test(url) ? fileLink(url) : openUrl(url)));
       items.push({
         id: "paste",
         title: menu.paste,
@@ -3538,6 +3549,10 @@ export function TerminalPane({
       {/* ⚠️ 墓碑 (NOTICE-BRIEF, IMG_5412): reconnecting was a bubble
           floating at the top of the screen it held (`RejoinPill`), over
           the program's text. It is the session pill's now. */}
+      {linkFailure&&<div data-term-link-error role="alert" className="absolute inset-x-row bottom-row z-20 flex items-center gap-in rounded-lg bg-popover px-row py-in text-callout shadow-(--shadow-float)">
+        <span className="min-w-0 flex-1 break-words">{linkFailure}</span>
+        <button type="button" aria-label={gui.close} className="grid min-h-touch min-w-touch place-items-center" onMouseDown={e=>e.preventDefault()} onClick={()=>{linkAction.current++;setLinkFailure(null);}}><IconClose className="size-affordance"/></button>
+      </div>}
       {opening && !why && openedAt !== null && (
         <div data-term-opening className="absolute inset-0 z-10 bg-card font-sans">
           <Waiting

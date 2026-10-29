@@ -1,3 +1,4 @@
+import {openSystemPath} from "@/lib/client-opener";
 // 会话里的路径可点 (工作区第五轮 第 35 条). The remark pass that finds
 // paths in an agent's prose, and the thing it turns them into.
 //
@@ -32,7 +33,7 @@
 // has already made those, and they belong to the other half of this
 // ruling (`Markdown`'s `Link`).
 import { useEffect, useState } from "react";
-import { linkIntent, openSystemPath, type LinkModifiers } from "@/lib/content-link-intent";
+import { linkIntent, type LinkModifiers } from "@/lib/content-link-intent";
 
 import { pathsIn } from "@/lib/paths";
 import { useLinkHome, underRoot } from "@/views/linkHome";

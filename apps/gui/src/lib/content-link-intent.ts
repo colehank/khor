@@ -1,7 +1,6 @@
-import {inApp,launchOn,openLink} from '@/api';
-
+export type LinkIntent = 'internal'|'system';
 export type LinkModifiers = {metaKey?:boolean;ctrlKey?:boolean};
-export const linkIntent = (event:LinkModifiers):'internal'|'system' => event.metaKey||event.ctrlKey?'system':'internal';
+export const linkIntent = (event:LinkModifiers):LinkIntent => event.metaKey||event.ctrlKey?'system':'internal';
 
 /** Represent the same filesystem target for a browser's local file handoff. */
 export function fileUri(path:string):string {
@@ -18,14 +17,9 @@ export function fileUri(path:string):string {
   return uri.href;
 }
 
-export async function openSystemUrl(url:string):Promise<void> {
-  if(inApp){await openLink(url);return;}
-  window.open(url,'_blank','noopener');
-}
-
-export async function openSystemPath(path:string):Promise<void> {
-  if(inApp){await launchOn('',path);return;}
-  // Browser file access may be refused by that client. Never route a
-  // local handoff to the web server's operating-system opener instead.
-  window.open(fileUri(path),'_blank','noopener');
+/** xterm's linkifier also activates on a mouse-up inside a selection.
+ * Keep selection and application mouse input separate from link intent. */
+export function canActivateTerminalLink(event:LinkModifiers&{button?:number},term:{hasSelection:()=>boolean;modes:{mouseTrackingMode:string}}):boolean {
+  if(event.button!==undefined&&event.button!==0||term.hasSelection())return false;
+  return linkIntent(event)==='system'||term.modes.mouseTrackingMode==='none';
 }
