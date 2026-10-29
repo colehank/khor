@@ -79,14 +79,17 @@ function topScroller(under: HTMLElement): HTMLElement | null {
 /**
  * Makes `head` a band (a React 19 ref callback: the cleanup is the
  * return). Its height is written on its parent as `--band-h`, which the
- * pulled-up box and its scroller read.
+ * pulled-up box and its scroller read. A visually reordered toolbar can
+ * explicitly locate its DOM body; native content supplies no body.
  */
-export function band(head: HTMLElement | null): (() => void) | undefined {
+export function band(head: HTMLElement | null, locateUnder?: () => HTMLElement | null): (() => void) | undefined {
   if (!head?.parentElement) return;
+  let under: HTMLElement | null = null;
   return watchBand(head, head.parentElement, () => {
-    const under = head.nextElementSibling;
+    const candidate = locateUnder ? locateUnder() : head.nextElementSibling;
+    under = candidate instanceof HTMLElement ? candidate : null;
     return under instanceof HTMLElement ? topScroller(under) : null;
-  });
+  }, locateUnder ? () => under : undefined);
 }
 
 /** A standalone scroll port with sticky groups but no fixed outer title.
@@ -96,13 +99,20 @@ export function stickyGroups(scroller: HTMLElement | null): (() => void) | undef
   return watchBand(null, scroller, () => scroller);
 }
 
-function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => HTMLElement | null): () => void {
+function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => HTMLElement | null, locateOverlap?: () => HTMLElement | null): () => void {
   const b: Band = {
     head,
     scroller: null,
     sync: () => { if (!frame) frame = requestAnimationFrame(paint); },
   };
   let frame = 0, stylesDirty = true, portPadding = 0;
+  let overlap: HTMLElement | null = null;
+  const setOverlap = (next: HTMLElement | null) => {
+    if (next === overlap) return;
+    overlap?.removeAttribute('data-band-under');
+    overlap = next;
+    overlap?.setAttribute('data-band-under', '');
+  };
   const stickyTops = new Map<HTMLElement,number>();
   let targets: { body: HTMLElement; heading: boolean; groupHead: HTMLElement | null }[] = [];
   const clearFades = () => {
@@ -191,6 +201,7 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
   if (head) size.observe(head);
 
   const release = (el: HTMLElement) => {
+    setOverlap(null);
     clearFades();
     size.unobserve(el);
     el.removeAttribute(head ? 'data-band-scroll' : 'data-sticky-scroll');
@@ -213,6 +224,7 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
       b.scroller = found;
       if (head) parent.toggleAttribute("data-band-over", !!found);
     }
+    setOverlap(found && locateOverlap ? locateOverlap() : null);
     discoverFades();
     cancelAnimationFrame(frame);
     paint();
@@ -241,6 +253,7 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
     size.disconnect();
     tree.disconnect();
     if (b.scroller) release(b.scroller);
+    setOverlap(null);
     if (head) {
       parent.removeAttribute("data-band-over");
       parent.style.removeProperty("--band-h");

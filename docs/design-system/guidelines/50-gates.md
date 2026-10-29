@@ -579,7 +579,7 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 ### 固定标题材质与触屏间歇滚动（2026-10-19，2026-10-29 更新）
 
 - `npm run scroll-surfaces`：启动隔离 Vite／Chromium，点击同一 `lab/scroll-surfaces.html` 检查按钮，验证共享 band／正式 PaneBar 的三类标题 × 明暗 × 实色／透明 × 0／45／100 共 36 项。标题无分割线／独立调色底且文字满值，正文渐隐起点对齐标题顶端、终点覆盖标题下沿；首行、范围与 180 的阅读位置跨材质保持。Chrome 图案背景只能验证 CSS 合成，不代替原生透明／毛玻璃。原生 Mac、Windows、Linux 多列表滚动另验。
-- `npm run sticky-fade`：不启动浏览器，执行正式 scroll-edge owner 的 13 项受控几何／observer 检查，包含局部口不改布局、先注册 owner 保持、静止／held、flush 收口、普通兄弟正文、边框／既有内边距／sticky top 及卸载清理。并非真实 CSS／原生叠层验收。
+- `npm run sticky-fade`：不启动浏览器，执行正式 scroll-edge owner 的 14 项受控几何／observer 检查，包含局部口不改布局、显式 DOM 正文／原生空端及 overlap 清理、先注册 owner 保持、静止／held、flush 收口、普通兄弟正文、边框／既有内边距／sticky top 及卸载清理。并非真实 CSS／原生叠层验收。
 - `npm run commit-sticky-jump`：不启动浏览器，执行正式 CommitPage 跳文件回调的 4 项检查，覆盖实际 scroll-padding、局部口零偏移、重复跳转和缺失目标。宽窄回切、首行不遮挡及阅读布局由正式 CommitPage Lab 实测。
 - 固定标题正式组件隔离页：`lab/sticky-fade.html` 明暗 × 三外观 × 宽窄、动态标题、二级 sticky 和减少透明；`lab/sticky-consumers.html` 宽窄回切／跳文件／静止与小幅滚动；`lab/sticky-machine.html` 既有列轨、页面滚动、排序、窄屏卡片／裁剪。2026-10-29 实测收据在第二轮 G 任务卡；原先 2026-10-19 的 36 项是旧布局历史，不替代新契约验收。
 - `npm run scroll-health`：不启动浏览器的生产计时模型与被动事件监听生命周期测试，纳入默认前端检查。增加的是下一次卡顿的限频诊断，不是已确认修复；iPhone 上须复现后读取该设备的诊断记录，不能用 Mac 的 face-notes 代替。

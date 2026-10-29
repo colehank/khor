@@ -2323,7 +2323,8 @@ aside[data-side] {
     transition: none;
   }
 }
-[data-band-over] > [data-band] + * {
+[data-band-over] > [data-band] + *,
+[data-band-over] > [data-band-under] {
   margin-top: calc(-1 * var(--band-h));
 }
 [data-band-scroll] {

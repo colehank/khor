@@ -8,13 +8,14 @@ import { useMemo, useState } from "react";
 
 import { IconChevronDown, IconChevronRight, IconChevronUp } from "@/components/icons";
 import { cellOrder, type Peek } from "@/lib/term-peek";
+import {stickyGroups} from "@/lib/scroll-edge";
 
 /** Levels open when the tree is first drawn. */
 const OPEN_LEVELS = 2;
 
 export function TermPeek({ peek }: { peek: Peek }) {
   return (
-    <div data-term-peek-body className="min-h-0 flex-1 overflow-auto text-callout" style={{ fontFamily: "var(--font-term)" }}>
+    <div ref={peek.kind === "table" ? stickyGroups : undefined} data-term-peek-body className="min-h-0 flex-1 overflow-auto text-callout" style={{ fontFamily: "var(--font-term)" }}>
       {peek.kind === "table" ? <Table head={peek.head} rows={peek.rows} /> : <Tree name={null} value={peek.value} depth={0} />}
     </div>
   );
@@ -29,11 +30,11 @@ function Table({ head, rows }: { head: string[]; rows: string[][] }) {
     return out;
   }, [rows, by]);
   return (
-    <table className="min-w-full border-collapse">
-      <thead className="sticky top-0 bg-background">
+    <table data-sticky-group className="min-w-full border-collapse">
+      <thead data-sticky-head className="sticky top-0 bg-background">
         <tr>
           {head.map((h, k) => (
-            <th key={k} className="border-b border-border p-0 text-left font-title whitespace-nowrap">
+            <th key={k} className="p-0 text-left font-title whitespace-nowrap">
               <button
                 type="button"
                 data-term-peek-col={k}
@@ -48,7 +49,7 @@ function Table({ head, rows }: { head: string[]; rows: string[][] }) {
           ))}
         </tr>
       </thead>
-      <tbody>
+      <tbody data-sticky-body="flush">
         {shown.map((r, i) => (
           <tr key={i} className="border-b border-border">
             {r.map((v, k) => (
