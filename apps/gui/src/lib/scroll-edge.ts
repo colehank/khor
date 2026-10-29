@@ -11,7 +11,7 @@ export const EDGED = "[data-nav-clear], [data-pane-body], [data-files-list]";
 const EDGE = 2;
 
 type Band = {
-  head: HTMLElement;
+  head: HTMLElement | null;
   scroller: HTMLElement | null;
   /** Whether the scroller is off its top. */
   sync: () => void;
@@ -82,9 +82,21 @@ function topScroller(under: HTMLElement): HTMLElement | null {
  * pulled-up box and its scroller read.
  */
 export function band(head: HTMLElement | null): (() => void) | undefined {
-  if (!head) return;
-  const parent = head.parentElement;
-  if (!parent) return;
+  if (!head?.parentElement) return;
+  return watchBand(head, head.parentElement, () => {
+    const under = head.nextElementSibling;
+    return under instanceof HTMLElement ? topScroller(under) : null;
+  });
+}
+
+/** A standalone scroll port with sticky groups but no fixed outer title.
+ * Existing owners win; a later registration never takes their port. */
+export function stickyGroups(scroller: HTMLElement | null): (() => void) | undefined {
+  if (!scroller || owner.has(scroller)) return;
+  return watchBand(null, scroller, () => scroller);
+}
+
+function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => HTMLElement | null): () => void {
   const b: Band = {
     head,
     scroller: null,
@@ -107,17 +119,19 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
   function paint() {
     frame = 0;
     const on = !!b.scroller && b.scroller.scrollTop > EDGE;
-    const main = head!.getBoundingClientRect();
+    const edge = b.scroller?.getBoundingClientRect().top ?? 0;
+    const main = head?.getBoundingClientRect() ?? {top:edge,bottom:edge};
     const tail = parseFloat(getComputedStyle(parent!).getPropertyValue('--gap-pane')) || 0;
     const values = targets.map(({body,heading,groupHead}) => {
       const rect = body.getBoundingClientRect(), top = rect.top;
       const group = !heading && groupHead?.getBoundingClientRect();
       const held = group && group.top <= main.bottom + 1 && group.bottom > main.bottom;
       const start = (held ? group.top : main.top) - top;
-      const end = (held ? group.bottom : main.bottom) + (heading ? 0 : tail) - top;
+      const flush = held && body.dataset.stickyBody === 'flush';
+      const end = (held ? group.bottom : main.bottom) + (heading || flush ? 0 : tail) - top;
       return {body,start,length:end-start,active:on && end>0,material:heading && on && rect.top<=main.bottom+1 && rect.bottom>main.bottom};
     });
-    head!.toggleAttribute('data-scrolled',on);
+    head?.toggleAttribute('data-scrolled',on);
     for (const {body,start,length,active,material} of values) {
       if (fadeOwner.get(body) !== b) continue;
       body.toggleAttribute('data-sticky-fading',active);
@@ -136,7 +150,7 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
         if (at.querySelector(':scope > [data-band]')) return false;
       return true;
     });
-    targets = (marked.length ? marked : [scroller]).map(body => ({
+    targets = (marked.length ? marked : head ? [scroller] : []).map(body => ({
       body,heading:body.hasAttribute('data-sticky-head'),
       groupHead:body.closest('[data-sticky-group]')?.querySelector<HTMLElement>(':scope > [data-sticky-head]') ?? null,
     }));
@@ -148,35 +162,36 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
   // that attaches the head, and again by every `find`; the observer only
   // follows later changes (a font, folded verbs).
   const measure = () => {
+    if (!head) return;
     const h = `${head.offsetHeight}px`;
     if (parent.style.getPropertyValue("--band-h") !== h) parent.style.setProperty("--band-h", h);
   };
   measure();
   const size = new ResizeObserver(() => { measure();b.sync(); });
-  size.observe(head);
+  if (head) size.observe(head);
 
   const release = (el: HTMLElement) => {
     clearFades();
     size.unobserve(el);
-    el.removeAttribute("data-band-scroll");
-    el.style.removeProperty("--band-pad");
+    el.removeAttribute(head ? 'data-band-scroll' : 'data-sticky-scroll');
+    if (head) el.style.removeProperty("--band-pad");
     if (owner.get(el) === b) owner.delete(el);
   };
   const find = () => {
     measure();
-    const under = head.nextElementSibling;
-    const found = under instanceof HTMLElement ? topScroller(under) : null;
+    let found = locate();
+    if (found && owner.has(found) && owner.get(found) !== b) found = null;
     if (found !== b.scroller) {
       if (b.scroller) release(b.scroller);
       if (found) {
         // Its own top padding, read before the band's is added to it.
-        found.style.setProperty("--band-pad", getComputedStyle(found).paddingTop);
-        found.setAttribute("data-band-scroll", "");
+        if (head) found.style.setProperty("--band-pad", getComputedStyle(found).paddingTop);
+        found.setAttribute(head ? 'data-band-scroll' : 'data-sticky-scroll', "");
         size.observe(found);
         owner.set(found, b);
       }
       b.scroller = found;
-      parent.toggleAttribute("data-band-over", !!found);
+      if (head) parent.toggleAttribute("data-band-over", !!found);
     }
     discoverFades();
     cancelAnimationFrame(frame);
@@ -206,9 +221,11 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
     size.disconnect();
     tree.disconnect();
     if (b.scroller) release(b.scroller);
-    parent.removeAttribute("data-band-over");
-    parent.style.removeProperty("--band-h");
-    head.removeAttribute("data-scrolled");
+    if (head) {
+      parent.removeAttribute("data-band-over");
+      parent.style.removeProperty("--band-h");
+      head.removeAttribute("data-scrolled");
+    }
   };
 }
 

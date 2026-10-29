@@ -2390,6 +2390,7 @@ aside[data-side] {
   transition: opacity var(--dur-180) var(--ease-out);
 }
 [data-band][data-scrolled]::before, [data-sticky-head][data-sticky-held]::before { opacity: 1; }
+[data-sticky-group]:has(> [data-sticky-body="flush"]) > [data-sticky-head]::before { bottom: 0; }
 [data-sticky-fading] {
   --sticky-content-mask: linear-gradient(to bottom,
     transparent var(--sticky-fade-start),
@@ -2421,7 +2422,7 @@ aside[data-side] {
 /* **Where no band covers a scroller, its top edge still fades** once
    scrolled (the audit fix plan F4.11; N21), rather than a row being cut
    mid-glyph by the box's edge: 20 of mask (`lib/scroll-edge` `EDGED`). */
-:is([data-nav-clear], [data-pane-body], [data-files-list])[data-scrolled]:not([data-band-scroll]) {
+:is([data-nav-clear], [data-pane-body], [data-files-list])[data-scrolled]:not([data-band-scroll], [data-sticky-scroll]) {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-head));
   mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-head));
 }
