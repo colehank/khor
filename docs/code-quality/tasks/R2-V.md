@@ -12,6 +12,8 @@
 
 OS退出harness需区分GUI拥有的临时进程与应跨GUI退出保留的持久宿主。调整归属/退出契约前核真实脚本和当前产品生命周期，不把仍活着的用户agent误当泄漏并kill。正常GUI退出及重连/恢复验收保留，不能以忽略所有进程存活追绿。原失败独立保留；实施时先给具体owned PGID/host identity/cleanup语义及最小验证。
 
+L05只读定位已完成（完整绝对artifact指针见R2-REVIEW的V段）：旧launcher把全部观测App后代都要求随CmdQ消失，误包括已证明的私有持久Shell host/child。修正应先按private home+sessionID+host启动身份/子树分类，Quit门验GUI临时集合终止，另验持久者活且可重连；accepted独立检查，fixture结束再显式清理自己私有host并验无remaining。不能忽略全部后代/杀真实用户agent，也不能声称原10s末唯一阻塞PID（旧log无末态名单）。本定位未改harness/未跑App，原失败保留。
+
 ## 资源与完成边界
 
 唯一native槽、共享target、jobs1/incremental0、外盘TMP沿执行计划；源码/生成输入/产物真实指纹与accepted run关联。纯Python检查只能证环境key规则，不能代替实际Tauri producer。main/ship未授权。
