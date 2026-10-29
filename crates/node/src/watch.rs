@@ -1,52 +1,19 @@
-//! **A directory tree pushed, not asked** (round NET-4): the machine
-//! that holds the directories watches the ones a face has open and says
-//! when one changed; the face asks `Ls` for those alone.
-//!
-//! # Why a watch, and what it replaces
-//!
-//! A tree asked every level it remembers open each time it mounted, and
-//! every level touched after khor's own changes, and still missed a
-//! change made over there by anyone else (an agent writing files is the
-//! common one) until somebody walked away and back. A watcher answers
-//! the question a tree actually has — *did anything here change?* — at
-//! the moment it changes. The same shape as an editor's file watcher
-//! (VS Code's remote server watches the folders open in its explorer and
-//! pushes changes to the client) and as LSP's `didChangeWatchedFiles`.
-//!
-//! # The two halves
-//!
-//! - **Over there** ([`serve`]): one `Request::Watch` on its own stream
-//!   names up to [`MAX_WATCH`] directories. Each is watched alone, not
-//!   recursively (`notify`: FSEvents on macOS, inotify on Linux), the
-//!   stream says which it took (`Response::Watching`), and then one
-//!   `Response::Changed` per burst of changes (gathered for
-//!   [`GATHER`]) until the asker lets the stream go.
-//! - **Here** ([`Watches`], in the resident): per machine, the set of
-//!   directories faces have asked about lately, each on a stream; a
-//!   counter that moves with every change; and the long-poll a face holds
-//!   (`ipc::Op::WatchOn`): *which of these changed since `since`?* A
-//!   directory not wanted for [`KEEP`] is let go. A directory whose
-//!   stream started after `since` counts as changed — nobody was watching
-//!   it then — and so does every one when the machine cannot watch, which
-//!   the answer says (`unavailable`), so the face goes back to asking.
-//!
-//! # What a watch cannot hear
-//!
-//! A directory on a network mount (NFS, SMB, …) is watched like any
-//! other, and the watcher hears what this host does there — but not what
-//! another host sharing the mount does (turing and hinton share an NFS
-//! home: a file turing writes into it is never an event on hinton). So
-//! the far half says which of the directories it took sit on such a
-//! mount (`unreported`, store-c), and a face holding one of them asks it
-//! again now and then instead of trusting a quiet answer.
+//! Resident-owned directory observations. Leases own shared local notify or
+//! authenticated remote streams; reads only consume bounded epoch/sequence logs.
 
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+mod native;
 mod owned;
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::sync::{
+    Arc, Mutex, Weak,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
 use crate::proto::{self, Request, Response};
+use owned::{Effects, Owned, Start, Ticket};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -100,34 +67,807 @@ fn changes_files(kind: notify::EventKind) -> bool {
     )
 }
 
-/// The most directories one watch takes: the levels a person has open
-/// in one tree, not a disk.
-pub const MAX_WATCH: usize = 64;
-
-/// How long changes are gathered into one `Changed`: a build writing a
-/// hundred files is one answer, not a hundred.
 pub const GATHER: Duration = Duration::from_millis(150);
+const FRAME_BYTES: usize = 128 * 1024;
 
-/// How long a directory stays watched after a face last asked about it
-/// — long enough that walking back to a tree a minute later finds it
-/// still current.
-pub const KEEP: Duration = Duration::from_secs(60);
+#[derive(Clone)]
+pub(crate) enum Route {
+    Here,
+    Peer {
+        node: Weak<crate::Node>,
+        endpoint: iroh::Endpoint,
+        target: crate::DeviceInfo,
+    },
+    Unavailable(String),
+}
 
-/// A frame on a watch stream: length, then the response.
-async fn write_frame(send: &mut iroh::endpoint::SendStream, resp: &Response) -> Result<(), String> {
-    let body = proto::encode(resp)?;
-    let mut frame = Vec::with_capacity(4 + body.len());
-    frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
-    frame.extend_from_slice(&body);
-    send.write_all(&frame).await.map_err(|e| e.to_string())
+struct Job {
+    ticket: Ticket,
+    cancel: Arc<AtomicBool>,
+    stop: tokio::sync::watch::Sender<bool>,
+    active: bool,
+    task: tokio::task::JoinHandle<()>,
+}
+
+#[derive(Default)]
+struct Running {
+    closed: bool,
+    routes: HashMap<String, Route>,
+    jobs: HashMap<u64, Job>,
+    expiry: Option<tokio::task::JoinHandle<()>>,
+    observer: Option<tokio::task::JoinHandle<()>>,
+    retries: HashMap<u64, Instant>,
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    plans: HashMap<u64, Arc<native::Plan>>,
+}
+
+pub struct Watches {
+    owned: Mutex<Owned>,
+    running: Mutex<Running>,
+    arrived: Arc<tokio::sync::Notify>,
+    deadlines: Arc<tokio::sync::Notify>,
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    native: Arc<Mutex<Option<native::Native>>>,
+}
+
+impl Watches {
+    fn source(
+        weak: Weak<Self>,
+        start: Start,
+        route: Route,
+        cancel: Arc<AtomicBool>,
+        stopped: tokio::sync::watch::Receiver<bool>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        Box::pin(async move {
+            match route {
+                Route::Here => {
+                    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+                    Self::local_source(weak, start, cancel).await;
+                    #[cfg(not(any(
+                        target_os = "macos",
+                        target_os = "windows",
+                        target_os = "linux"
+                    )))]
+                    Self::failed(
+                        weak,
+                        start.ticket,
+                        false,
+                        "This machine cannot observe directories".into(),
+                    );
+                }
+                Route::Unavailable(reason) => Self::failed(weak, start.ticket, false, reason),
+                Route::Peer {
+                    node,
+                    endpoint,
+                    target,
+                } => {
+                    let ticket = start.ticket;
+                    let mut established = false;
+                    let result = tokio::select! {
+                        _ = cancelled(stopped) => Ok(()),
+                        result = Self::remote_source(&weak, start, node, endpoint, target, &mut established) => result,
+                    };
+                    if let Err(error) = result {
+                        Self::failed(weak, ticket, established, error);
+                    } else if let Some(watches) = weak.upgrade() {
+                        if !established {
+                            watches.completed(ticket, CoverageMode::Unavailable, None);
+                        }
+                        watches.finished(ticket);
+                    }
+                }
+            }
+        })
+    }
+
+    fn finished(&self, ticket: Ticket) {
+        let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
+        if running
+            .jobs
+            .get(&ticket.source)
+            .is_some_and(|job| job.ticket == ticket)
+        {
+            running.jobs.remove(&ticket.source);
+        }
+    }
+
+    fn failed(weak: Weak<Self>, ticket: Ticket, established: bool, reason: String) {
+        let Some(watches) = weak.upgrade() else {
+            return;
+        };
+        if established {
+            let _ = watches
+                .owned
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .coverage(ticket.source, CoverageMode::Unavailable, Some(reason), true);
+        } else {
+            watches.completed(ticket, CoverageMode::Unavailable, Some(reason));
+        }
+        watches.finished(ticket);
+        watches.arrived.notify_waiters();
+    }
+
+    async fn remote_source(
+        weak: &Weak<Self>,
+        start: Start,
+        node: Weak<crate::Node>,
+        endpoint: iroh::Endpoint,
+        target: crate::DeviceInfo,
+        established: &mut bool,
+    ) -> Result<(), String> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        let connect = async {
+            let node = node
+                .upgrade()
+                .ok_or("Directory watch resident stopped before dialing")?;
+            let line = node
+                .line_to(&endpoint, &target, crate::wires::Proto::Main)
+                .await
+                .map_err(|e| format!("Directory watch connection failed: {e:?}"))?;
+            let conn = line.conn.clone();
+            drop(node);
+            let (mut send, recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
+            send.write_all(&proto::encode(&Request::Watch { scope: start.scope })?)
+                .await
+                .map_err(|e| e.to_string())?;
+            send.finish().map_err(|e| e.to_string())?;
+            Ok::<_, String>((conn, recv))
+        };
+        let (_conn, mut recv) = tokio::time::timeout_at(deadline, connect)
+            .await
+            .map_err(|_| "Directory watch initialization timed out")??;
+        let mut first = true;
+        loop {
+            let read = read_frame(&mut recv);
+            let response = if *established {
+                read.await?
+            } else {
+                tokio::time::timeout_at(deadline, read)
+                    .await
+                    .map_err(|_| "Directory watch initialization timed out")??
+            };
+            let batch = match response {
+                Response::Watching { batch } if first => batch,
+                Response::Changed { batch } if !first => batch,
+                Response::Refused { why } => return Err(why),
+                _ => return Err("Directory watch returned an unexpected frame".into()),
+            };
+            first = false;
+            if serde_json::to_vec(&batch).map_err(|e| e.to_string())?.len() > FRAME_BYTES
+                || batch.coverage.len() != 1
+                || batch.coverage[0].scope != 0
+            {
+                return Err("Directory watch returned an invalid batch".into());
+            }
+            let Some(watches) = weak.upgrade() else {
+                return Ok(());
+            };
+            if !watches
+                .owned
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .current(start.ticket)
+            {
+                return Ok(());
+            }
+            let coverage = &batch.coverage[0];
+            if !*established && coverage.mode != CoverageMode::Pending {
+                if !watches.completed(start.ticket, coverage.mode, coverage.reason.clone()) {
+                    return Ok(());
+                }
+                *established = true;
+            } else if *established {
+                watches
+                    .owned
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .coverage(
+                        start.ticket.source,
+                        coverage.mode,
+                        coverage.reason.clone(),
+                        batch.reset,
+                    )?;
+            }
+            if batch.reset || !batch.dirs.is_empty() || batch.workspace {
+                watches
+                    .owned
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .changed(start.ticket.source, batch.dirs, batch.reset)?;
+            }
+            watches.arrived.notify_waiters();
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    async fn local_source(weak: Weak<Self>, start: Start, cancel: Arc<AtomicBool>) {
+        let Some(watches) = weak.upgrade() else {
+            return;
+        };
+        let native = watches.native.clone();
+        let ticket = start.ticket;
+        drop(watches);
+        let prepared = tokio::task::spawn_blocking(move || {
+            let mut receiver = None;
+            let mut changes = native::Installed {
+                partial: None,
+                reset_sources: Default::default(),
+                partial_sources: Default::default(),
+            };
+            for attempt in 0..3 {
+                if cancel.load(Ordering::Acquire) {
+                    return Ok(None);
+                }
+                let mut plan = native::Plan::prepare(&start.scope)?;
+                {
+                    let mut pool = native.lock().unwrap_or_else(|p| p.into_inner());
+                    if cancel.load(Ordering::Acquire) {
+                        return Ok(None);
+                    }
+                    if pool.is_none() {
+                        let (opened, rx) = native::Native::new()?;
+                        receiver = Some((opened.identity().to_owned(), rx));
+                        *pool = Some(opened);
+                    }
+                    let pool = pool.as_mut().expect("initialized notify pool");
+                    let removed = pool.remove(ticket.source);
+                    changes.reset_sources.extend(removed.reset_sources);
+                    changes.partial_sources.extend(removed.partial_sources);
+                    let installed = pool.install(ticket.source, &plan);
+                    changes.partial = installed.partial;
+                    changes.reset_sources.extend(installed.reset_sources);
+                    changes.partial_sources.extend(installed.partial_sources);
+                }
+                let stable = plan.still_current();
+                if matches!(stable, Ok(false)) && attempt < 2 {
+                    continue;
+                }
+                let retry = matches!(stable, Ok(false));
+                if retry {
+                    changes.partial =
+                        Some("Git watch identity changed during initialization".into());
+                }
+                if let Err(error) = stable {
+                    changes.partial = Some(error);
+                }
+                plan.registered();
+                return Ok::<_, String>(Some((plan, changes, receiver, retry)));
+            }
+            unreachable!("bounded initialization attempts return")
+        })
+        .await;
+        let Some(watches) = weak.upgrade() else {
+            return;
+        };
+        match prepared {
+            Ok(Ok(Some((plan, material, receiver, retry)))) => {
+                let reason = material.partial.clone();
+                watches.material_changed(material);
+                if let Some((identity, rx)) = receiver {
+                    watches.observe_native(identity, rx);
+                }
+                {
+                    let mut running = watches.running.lock().unwrap_or_else(|p| p.into_inner());
+                    running.plans.insert(ticket.source, Arc::new(plan));
+                    if retry {
+                        running
+                            .retries
+                            .insert(ticket.source, Instant::now() + Duration::from_secs(3));
+                    }
+                }
+                let mode = if reason.is_some() {
+                    CoverageMode::Partial
+                } else {
+                    CoverageMode::Native
+                };
+                if !watches.completed(ticket, mode, reason) {
+                    watches.stop_source(ticket.source);
+                }
+                watches.finished(ticket);
+                watches.deadlines.notify_one();
+            }
+            Ok(Ok(None)) => {
+                watches.completed(ticket, CoverageMode::Unavailable, None);
+                watches.finished(ticket);
+                watches.stop_source(ticket.source);
+            }
+            Ok(Err(error)) => Self::failed(weak, ticket, false, error),
+            Err(error) => Self::failed(weak, ticket, false, error.to_string()),
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    fn material_changed(&self, changes: native::Installed) {
+        let mut owned = self.owned.lock().unwrap_or_else(|p| p.into_inner());
+        for source in changes.reset_sources {
+            let _ = owned.changed(source, Vec::new(), true);
+        }
+        for source in changes.partial_sources {
+            let _ = owned.coverage(
+                source,
+                CoverageMode::Partial,
+                Some("A shared directory watch needs reestablishment".into()),
+                true,
+            );
+        }
+        self.arrived.notify_waiters();
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    fn observe_native(self: &Arc<Self>, identity: String, mut rx: tokio::sync::mpsc::Receiver<()>) {
+        let pool = self.native.lock().unwrap_or_else(|p| p.into_inner());
+        if !pool
+            .as_ref()
+            .is_some_and(|native| native.identity() == identity)
+        {
+            return;
+        }
+        let weak = Arc::downgrade(self);
+        let task = tokio::spawn(async move {
+            while rx.recv().await.is_some() {
+                tokio::time::sleep(GATHER).await;
+                while rx.try_recv().is_ok() {}
+                let Some(watches) = weak.upgrade() else {
+                    return;
+                };
+                let dirty = {
+                    let native = watches.native.lock().unwrap_or_else(|p| p.into_inner());
+                    let Some(native) = native.as_ref() else {
+                        return;
+                    };
+                    if native.identity() != identity {
+                        return;
+                    }
+                    native.drain()
+                };
+                let plans: Vec<_> = watches
+                    .running
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .plans
+                    .iter()
+                    .map(|(id, plan)| (*id, plan.clone()))
+                    .collect();
+                for (source, plan) in plans {
+                    if let Some(change) = plan.change(&dirty) {
+                        let effects = {
+                            let mut owned = watches.owned.lock().unwrap_or_else(|p| p.into_inner());
+                            let _ = owned.changed(source, change.dirs, change.reset);
+                            if let Some(error) = dirty.error() {
+                                let _ = owned.coverage(
+                                    source,
+                                    CoverageMode::Partial,
+                                    Some(error.into()),
+                                    true,
+                                );
+                            }
+                            change.replan.then(|| owned.replan(source))
+                        };
+                        if let Some(Ok(effects)) = effects {
+                            watches.apply(effects);
+                        }
+                    }
+                }
+                watches.arrived.notify_waiters();
+            }
+        });
+        let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
+        if running.closed {
+            task.abort();
+        } else {
+            running.observer = Some(task);
+        }
+    }
+
+    pub(crate) fn new() -> Result<Self, String> {
+        Ok(Self {
+            owned: Mutex::new(Owned::new(crate::link::fresh_hex()?)),
+            running: Mutex::new(Running::default()),
+            arrived: Arc::new(tokio::sync::Notify::new()),
+            deadlines: Arc::new(tokio::sync::Notify::new()),
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            native: Arc::new(Mutex::new(None)),
+        })
+    }
+
+    pub(crate) fn begin(
+        self: &Arc<Self>,
+        machine: String,
+        scopes: Vec<Scope>,
+        route: Route,
+    ) -> Result<Opened, String> {
+        let id = crate::link::fresh_hex()?;
+        let effects = {
+            let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            if running.closed {
+                return Err("Directory watch resident has stopped".into());
+            }
+            let effects = self.owned.lock().unwrap_or_else(|p| p.into_inner()).begin(
+                id.clone(),
+                machine.clone(),
+                scopes,
+                Instant::now(),
+            )?;
+            running.routes.insert(machine.clone(), route);
+            if running.expiry.is_none() {
+                let weak = Arc::downgrade(self);
+                let deadlines = self.deadlines.clone();
+                running.expiry = Some(tokio::spawn(Self::expire_loop(weak, deadlines)));
+            }
+            effects
+        };
+        self.apply(effects);
+        self.deadlines.notify_one();
+        let batch = self
+            .owned
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .read(&machine, &id, None)?;
+        Ok(Opened {
+            id,
+            machine_id: machine,
+            batch,
+        })
+    }
+
+    pub(crate) async fn wait(
+        self: &Arc<Self>,
+        machine: &str,
+        id: &str,
+        cursor: Option<&str>,
+        longest: Duration,
+    ) -> Result<Batch, String> {
+        self.owned
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .enter_wait(machine, id, Instant::now())?;
+        let _waiting = Waiting {
+            watches: Arc::downgrade(self),
+            id: id.into(),
+        };
+        self.deadlines.notify_one();
+        let deadline = tokio::time::Instant::now() + longest.min(Duration::from_secs(20));
+        loop {
+            let notified = self.arrived.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let mut batch = self
+                .owned
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .read(machine, id, cursor)?;
+            if batch.reset
+                || cursor != Some(batch.cursor.as_str())
+                || tokio::time::Instant::now() >= deadline
+            {
+                batch.retry_ms = if longest.is_zero() { 1000 } else { 0 };
+                return Ok(batch);
+            }
+            let _ = tokio::time::timeout_at(deadline, notified).await;
+        }
+    }
+
+    pub(crate) fn leave(self: &Arc<Self>, machine: &str, id: &str) -> Result<(), String> {
+        let effects = self
+            .owned
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .leave(machine, id)?;
+        self.apply(effects);
+        self.arrived.notify_waiters();
+        self.deadlines.notify_one();
+        Ok(())
+    }
+
+    fn apply(self: &Arc<Self>, effects: Effects) {
+        {
+            let running = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            for source in &effects.stop {
+                if let Some(job) = running.jobs.get(source) {
+                    job.cancel.store(true, Ordering::Release);
+                    job.stop.send_replace(true);
+                }
+            }
+        }
+        for source in effects.stop {
+            self.stop_source(source);
+        }
+        for start in effects.start {
+            let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            if running.closed
+                || !self
+                    .owned
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .current(start.ticket)
+            {
+                drop(running);
+                self.completed(start.ticket, CoverageMode::Unavailable, None);
+                continue;
+            }
+            let route = running
+                .routes
+                .get(&start.machine)
+                .expect("source route")
+                .clone();
+            let cancel = Arc::new(AtomicBool::new(false));
+            let (stop, stopped) = tokio::sync::watch::channel(false);
+            let weak = Arc::downgrade(self);
+            let cancelled = cancel.clone();
+            let ticket = start.ticket;
+            if let Some(previous) = running.jobs.remove(&ticket.source) {
+                previous.cancel.store(true, Ordering::Release);
+                previous.stop.send_replace(true);
+                previous.task.abort();
+            }
+            let task =
+                tokio::spawn(
+                    async move { Self::source(weak, start, route, cancelled, stopped).await },
+                );
+            running.jobs.insert(
+                ticket.source,
+                Job {
+                    ticket,
+                    cancel,
+                    stop,
+                    active: false,
+                    task,
+                },
+            );
+        }
+    }
+
+    fn completed(
+        self: &Arc<Self>,
+        ticket: Ticket,
+        mode: CoverageMode,
+        reason: Option<String>,
+    ) -> bool {
+        let result = self
+            .owned
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .initialized(ticket, mode, reason);
+        let Ok((accepted, effects)) = result else {
+            return false;
+        };
+        if accepted {
+            if let Some(job) = self
+                .running
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .jobs
+                .get_mut(&ticket.source)
+            {
+                if job.ticket == ticket {
+                    job.active = true;
+                }
+            }
+        }
+        self.arrived.notify_waiters();
+        self.apply(effects);
+        accepted
+    }
+
+    fn stop_source(&self, source: u64) {
+        {
+            let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            running.retries.remove(&source);
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            running.plans.remove(&source);
+            if let Some(job) = running.jobs.get(&source) {
+                job.cancel.store(true, Ordering::Release);
+                job.stop.send_replace(true);
+                if job.active {
+                    job.task.abort();
+                }
+            }
+            if running.jobs.get(&source).is_some_and(|job| job.active) {
+                running.jobs.remove(&source);
+            }
+            let book = self.owned.lock().unwrap_or_else(|p| p.into_inner());
+            running
+                .routes
+                .retain(|machine, _| book.has_machine(machine));
+        }
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+        {
+            let multi_thread = tokio::runtime::Handle::try_current().is_ok_and(|handle| {
+                handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
+            });
+            if multi_thread {
+                tokio::task::block_in_place(|| self.remove_native(source));
+            } else {
+                self.remove_native(source);
+            }
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    fn remove_native(&self, source: u64) {
+        let mut pool = self.native.lock().unwrap_or_else(|p| p.into_inner());
+        if self
+            .owned
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .is_empty()
+        {
+            if let Some(task) = self
+                .running
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .observer
+                .take()
+            {
+                task.abort();
+            }
+            pool.take();
+        } else if let Some(native) = pool.as_mut() {
+            self.material_changed(native.remove(source));
+        }
+    }
+
+    async fn expire_loop(weak: Weak<Self>, deadlines: Arc<tokio::sync::Notify>) {
+        loop {
+            let notified = deadlines.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let next = {
+                let Some(watches) = weak.upgrade() else {
+                    return;
+                };
+                let now = Instant::now();
+                let effects = watches
+                    .owned
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .expire(now);
+                watches.apply(effects);
+                let due: Vec<_> = watches
+                    .running
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .retries
+                    .iter()
+                    .filter(|(_, at)| **at <= now)
+                    .map(|(id, _)| *id)
+                    .collect();
+                for source in due {
+                    watches
+                        .running
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .retries
+                        .remove(&source);
+                    let effects = watches
+                        .owned
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .replan(source);
+                    if let Ok(effects) = effects {
+                        watches.apply(effects);
+                    }
+                }
+                watches.arrived.notify_waiters();
+                let owner = watches
+                    .owned
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .next_expiry();
+                let retry = watches
+                    .running
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .retries
+                    .values()
+                    .copied()
+                    .min();
+                owner.into_iter().chain(retry).min()
+            };
+            match next {
+                Some(at) => {
+                    let _ = tokio::time::timeout_at(at.into(), notified).await;
+                }
+                None => notified.await,
+            }
+        }
+    }
+
+    pub(crate) async fn shutdown(self: &Arc<Self>) {
+        let effects = {
+            self.running
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .closed = true;
+            self.owned.lock().unwrap_or_else(|p| p.into_inner()).close()
+        };
+        self.apply(effects);
+        self.arrived.notify_waiters();
+        let jobs = {
+            let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(task) = running.expiry.take() {
+                task.abort();
+            }
+            if let Some(task) = running.observer.take() {
+                task.abort();
+            }
+            std::mem::take(&mut running.jobs)
+        };
+        for (_, job) in jobs {
+            let _ = job.task.await;
+        }
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+        {
+            self.native.lock().unwrap_or_else(|p| p.into_inner()).take();
+        }
+    }
+}
+
+impl Drop for Watches {
+    fn drop(&mut self) {
+        let running = self.running.get_mut().unwrap_or_else(|p| p.into_inner());
+        if let Some(task) = running.expiry.take() {
+            task.abort();
+        }
+        if let Some(task) = running.observer.take() {
+            task.abort();
+        }
+        for (_, job) in running.jobs.drain() {
+            job.cancel.store(true, Ordering::Release);
+            job.stop.send_replace(true);
+            if job.active {
+                job.task.abort();
+            }
+        }
+    }
+}
+
+struct Waiting {
+    watches: Weak<Watches>,
+    id: String,
+}
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        if let Some(watches) = self.watches.upgrade() {
+            watches
+                .owned
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .finish_wait(&self.id);
+        }
+    }
+}
+
+async fn cancelled(mut stopped: tokio::sync::watch::Receiver<bool>) {
+    while !*stopped.borrow_and_update() {
+        if stopped.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
+async fn write_frame(
+    send: &mut iroh::endpoint::SendStream,
+    response: &Response,
+) -> Result<(), String> {
+    let body = proto::encode(response)?;
+    if body.len() > FRAME_BYTES + 1024 {
+        return Err("Directory watch response exceeds its byte budget".into());
+    }
+    send.write_all(&(body.len() as u32).to_be_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    send.write_all(&body).await.map_err(|e| e.to_string())
 }
 
 async fn read_frame(recv: &mut iroh::endpoint::RecvStream) -> Result<Response, String> {
     let mut len = [0u8; 4];
     recv.read_exact(&mut len).await.map_err(|e| e.to_string())?;
     let len = u32::from_be_bytes(len) as usize;
-    if len > proto::MAX_FRAME {
-        return Err(khor_catalog::msg::frame_too_big(len));
+    if len > FRAME_BYTES + 1024 {
+        return Err("Directory watch frame exceeds its byte budget".into());
     }
     let mut body = vec![0u8; len];
     recv.read_exact(&mut body)
@@ -136,381 +876,111 @@ async fn read_frame(recv: &mut iroh::endpoint::RecvStream) -> Result<Response, S
     proto::answer(&body)
 }
 
-/// **The far half**: watches `dirs` and writes what changes to `send`
-/// until the asker lets the stream go. The asker is already admitted
-/// (`link::Node::handle`).
-pub(crate) async fn serve(dirs: Vec<String>, mut send: iroh::endpoint::SendStream) {
-    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-    {
-        use notify::Watcher;
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<std::path::PathBuf>();
-        let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            if let Ok(event) = res {
-                if !changes_files(event.kind) {
-                    return;
-                }
-                for path in event.paths {
-                    let _ = tx.send(path);
-                }
-            }
-        });
-        let Ok(mut watcher) = watcher else {
-            let _ = write_frame(
-                &mut send,
-                &Response::Refused {
-                    why: khor_catalog::msg::watch_unavailable().into(),
-                },
-            )
-            .await;
-            let _ = send.finish();
-            return;
-        };
-        let mut taken: Vec<String> = Vec::new();
-        for dir in dirs.into_iter().take(MAX_WATCH) {
-            let path = std::path::Path::new(&dir);
-            if path.is_absolute()
-                && path.is_dir()
-                && watcher
-                    .watch(path, notify::RecursiveMode::NonRecursive)
-                    .is_ok()
-            {
-                taken.push(dir);
-            }
-        }
-        let unreported = taken
-            .iter()
-            .filter(|d| crate::keeper::on_network_fs(std::path::Path::new(d.as_str())))
-            .cloned()
-            .collect();
-        if write_frame(
-            &mut send,
-            &Response::Watching {
-                dirs: taken.clone(),
-                unreported,
-            },
-        )
-        .await
-        .is_err()
-        {
-            return;
-        }
-        // Each watched directory by the path the watcher reports it under
-        // as well as the one it was asked as: FSEvents speaks canonical
-        // paths (`/private/var/…` for a `/var/…` that was asked), and the
-        // answer must name the directory the way the asker does.
-        let mut known: HashMap<std::path::PathBuf, String> = HashMap::new();
-        for d in &taken {
-            known.insert(std::path::PathBuf::from(d), d.clone());
-            if let Ok(canon) = std::fs::canonicalize(d) {
-                known.insert(canon, d.clone());
-            }
-        }
-        // A path names a directory that changed: itself when it is one of
-        // the watched (renamed, removed), else its parent (a name inside
-        // it came, went or was written).
-        let dir_of = |p: &std::path::Path| -> Option<String> {
-            known.get(p).or_else(|| known.get(p.parent()?)).cloned()
-        };
-        loop {
-            tokio::select! {
-                first = rx.recv() => {
-                    let Some(first) = first else { break };
-                    let mut changed: Vec<String> = Vec::new();
-                    let mut take = |p: std::path::PathBuf| {
-                        if let Some(d) = dir_of(&p)
-                            && !changed.contains(&d)
-                        {
-                            changed.push(d);
-                        }
-                    };
-                    take(first);
-                    let until = tokio::time::Instant::now() + GATHER;
-                    while let Ok(Some(p)) = tokio::time::timeout_at(until, rx.recv()).await {
-                        take(p);
-                    }
-                    if changed.is_empty() {
-                        continue;
-                    }
-                    if write_frame(&mut send, &Response::Changed { dirs: changed }).await.is_err() {
-                        break;
-                    }
-                }
-                _ = send.stopped() => break,
-            }
-        }
-        drop(watcher);
+pub(crate) struct Subscription {
+    watches: Arc<Watches>,
+    opened: Opened,
+    node: Weak<crate::Node>,
+    peer: String,
+}
+
+impl Subscription {
+    pub(crate) fn local(
+        node: &Arc<crate::Node>,
+        peer: String,
+        scope: Scope,
+    ) -> Result<Self, String> {
+        node.admit(&peer)?;
+        let watches = node.watches.clone();
+        let opened = watches.begin(node.device_str().into(), vec![scope], Route::Here)?;
+        Ok(Self {
+            watches,
+            opened,
+            node: Arc::downgrade(node),
+            peer,
+        })
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    {
-        let _ = dirs;
-        let _ = write_frame(
-            &mut send,
-            &Response::Refused {
-                why: khor_catalog::msg::watch_unavailable().into(),
-            },
-        )
-        .await;
+
+    pub(crate) async fn serve(self, mut send: iroh::endpoint::SendStream) {
+        let result = async {
+            write_frame(&mut send, &Response::Watching { batch: self.opened.batch.clone() }).await?;
+            let mut cursor = self.opened.batch.cursor.clone();
+            loop {
+                let batch = tokio::select! {
+                    _ = send.stopped() => return Ok::<(), String>(()),
+                    batch = self.watches.wait(&self.opened.machine_id, &self.opened.id, Some(&cursor), Duration::from_secs(20)) => batch?,
+                };
+                let node = self.node.upgrade().ok_or("Directory watch resident stopped")?;
+                node.admit(&self.peer)?;
+                if node.paused() || crate::pause::peer_on(node.root(), &self.peer) { return Err("Directory watch peer is paused".into()); }
+                drop(node);
+                cursor = batch.cursor.clone();
+                write_frame(&mut send, &Response::Changed { batch }).await?;
+            }
+        }.await;
+        let _ = result;
         let _ = send.finish();
     }
 }
 
-/// What a face is told (`Watches::wait`): the counter now, the
-/// directories that changed since the one it gave, whether that machine
-/// cannot be watched (the face then asks, as before), and which of the
-/// directories asked about are watched on a network mount, where another
-/// host's changes go unheard (module head; the face asks those again now
-/// and then).
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DirChanges {
-    pub seq: u64,
-    pub dirs: Vec<String>,
-    pub unavailable: bool,
-    #[serde(default)]
-    pub unreported: Vec<String>,
-}
-
-/// One directory a face asked about.
-struct Dir {
-    /// The counter when its stream said it took it; `None` while the
-    /// stream is starting, or after it ended.
-    from: Option<u64>,
-    wanted: Instant,
-    /// Which stream carries it.
-    stream: u64,
-    /// On a network mount (`Response::Watching`'s `unreported`).
-    unreported: bool,
-}
-
-#[derive(Default)]
-struct Machine {
-    seq: u64,
-    /// Recent changes, oldest first, as (counter, directory).
-    log: VecDeque<(u64, String)>,
-    /// The counter of the newest change the log has let go of: a face
-    /// further behind than this cannot be told what it missed.
-    log_floor: u64,
-    dirs: HashMap<String, Dir>,
-    /// Streams, by number, and the task reading each.
-    streams: HashMap<u64, tokio::task::JoinHandle<()>>,
-    next_stream: u64,
-    unavailable: bool,
-}
-
-/// How many changes a machine's log keeps: a face further behind than
-/// this is told every directory changed, and asks them all once.
-const LOG_MAX: usize = 1024;
-
-/// **The near half**, in the resident: per machine, what faces asked to
-/// have watched and what changed (module head).
-#[derive(Default)]
-pub struct Watches {
-    machines: Mutex<HashMap<String, Machine>>,
-    arrived: tokio::sync::Notify,
-}
-
-impl Watches {
-    /// Which of `dirs` on machine `id` changed since `since`, waiting up
-    /// to `longest` for one to. `open` starts a stream for directories
-    /// not yet watched: it is handed their list and must run the stream,
-    /// calling back through [`Watches::took`], [`Watches::changed`] and
-    /// [`Watches::ended`].
-    pub(crate) async fn wait(
-        self: &Arc<Self>,
-        id: &str,
-        dirs: &[String],
-        since: u64,
-        longest: Duration,
-        open: impl FnOnce(u64, Vec<String>) -> tokio::task::JoinHandle<()>,
-    ) -> DirChanges {
-        {
-            let mut all = self.machines.lock().unwrap_or_else(|p| p.into_inner());
-            let m = all.entry(id.to_owned()).or_default();
-            if m.seq == 0 {
-                m.seq = 1;
-            }
-            let now = Instant::now();
-            // Let go of what nobody asked about for a while: a stream
-            // whose every directory is stale ends.
-            m.dirs
-                .retain(|d, dir| dirs.contains(d) || now.duration_since(dir.wanted) < KEEP);
-            let live: HashSet<u64> = m.dirs.values().map(|d| d.stream).collect();
-            m.streams.retain(|n, task| {
-                let keep = live.contains(n);
-                if !keep {
-                    task.abort();
-                }
-                keep
-            });
-            let mut fresh = Vec::new();
-            for d in dirs.iter().take(MAX_WATCH) {
-                match m.dirs.get_mut(d) {
-                    Some(dir) => dir.wanted = now,
-                    None => fresh.push(d.clone()),
-                }
-            }
-            if !fresh.is_empty() && !m.unavailable {
-                let n = m.next_stream;
-                m.next_stream += 1;
-                for d in &fresh {
-                    m.dirs.insert(
-                        d.clone(),
-                        Dir {
-                            from: None,
-                            wanted: now,
-                            stream: n,
-                            unreported: false,
-                        },
-                    );
-                }
-                m.streams.insert(n, open(n, fresh));
-            }
-        }
-        let deadline = tokio::time::Instant::now() + longest;
-        loop {
-            let woke = self.arrived.notified();
-            tokio::pin!(woke);
-            woke.as_mut().enable();
-            {
-                let all = self.machines.lock().unwrap_or_else(|p| p.into_inner());
-                let m = &all[id];
-                if m.unavailable {
-                    return DirChanges {
-                        seq: m.seq,
-                        dirs: dirs.to_vec(),
-                        unavailable: true,
-                        unreported: Vec::new(),
-                    };
-                }
-                let lost = since < m.log_floor;
-                // Not watched yet (its stream is starting): unknown, and
-                // unknown is changed — the face asks. Said only once the
-                // wait is over, so a stream that takes in time answers in
-                // the ordinary way.
-                let mut starting: Vec<String> = Vec::new();
-                let mut changed: Vec<String> = Vec::new();
-                for d in dirs {
-                    match m.dirs.get(d).and_then(|dir| dir.from) {
-                        None => starting.push(d.clone()),
-                        Some(from) if from > since || lost => changed.push(d.clone()),
-                        Some(_) => {
-                            if m.log.iter().any(|(s, c)| *s > since && c == d) {
-                                changed.push(d.clone());
-                            }
-                        }
-                    }
-                }
-                let over = tokio::time::Instant::now() >= deadline;
-                if (!changed.is_empty() && starting.is_empty()) || over {
-                    changed.extend(starting);
-                    let unreported = dirs
-                        .iter()
-                        .filter(|d| m.dirs.get(*d).is_some_and(|dir| dir.unreported))
-                        .cloned()
-                        .collect();
-                    return DirChanges {
-                        seq: m.seq,
-                        dirs: changed,
-                        unavailable: false,
-                        unreported,
-                    };
-                }
-            }
-            let _ = tokio::time::timeout_at(deadline, woke).await;
-        }
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        let _ = self.watches.leave(&self.opened.machine_id, &self.opened.id);
     }
-
-    /// Stream `n` of machine `id` took these directories (and not the
-    /// others it was asked for, which are dropped: a directory that is
-    /// gone, or not a directory); `unreported` are the ones on a network
-    /// mount.
-    fn took(&self, id: &str, n: u64, taken: &[String], unreported: &[String]) {
-        let mut all = self.machines.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(m) = all.get_mut(id) {
-            m.seq += 1;
-            let at = m.seq;
-            m.dirs.retain(|d, dir| dir.stream != n || taken.contains(d));
-            for (d, dir) in m.dirs.iter_mut().filter(|(_, dir)| dir.stream == n) {
-                dir.from = Some(at);
-                dir.unreported = unreported.contains(d);
-            }
-        }
-        self.arrived.notify_waiters();
-    }
-
-    fn changed(&self, id: &str, dirs: Vec<String>) {
-        let mut all = self.machines.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(m) = all.get_mut(id) {
-            m.seq += 1;
-            let at = m.seq;
-            for d in dirs {
-                m.log.push_back((at, d));
-            }
-            while m.log.len() > LOG_MAX {
-                if let Some((s, _)) = m.log.pop_front() {
-                    m.log_floor = s;
-                }
-            }
-        }
-        self.arrived.notify_waiters();
-    }
-
-    /// Stream `n` ended: its directories are not watched any more, and
-    /// are started again by the next face that asks. `refused` when that
-    /// machine said it cannot watch at all.
-    fn ended(&self, id: &str, n: u64, refused: bool) {
-        let mut all = self.machines.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(m) = all.get_mut(id) {
-            m.dirs.retain(|_, dir| dir.stream != n);
-            m.streams.remove(&n);
-            if refused {
-                m.unavailable = true;
-            }
-        }
-        self.arrived.notify_waiters();
-    }
-}
-
-/// **Runs one watch stream** for the near half: asks `dirs` of the far
-/// machine on a stream of the held wire and reports into `watches`
-/// until the stream ends.
-pub(crate) async fn run(
-    watches: Arc<Watches>,
-    id: String,
-    n: u64,
-    conn: iroh::endpoint::Connection,
-    dirs: Vec<String>,
-) {
-    let refused = async {
-        let (mut send, mut recv) = conn.open_bi().await.map_err(|_| false)?;
-        let ask = proto::encode(&Request::Watch { dirs }).map_err(|_| false)?;
-        send.write_all(&ask).await.map_err(|_| false)?;
-        send.finish().map_err(|_| false)?;
-        match read_frame(&mut recv).await.map_err(|_| false)? {
-            Response::Watching { dirs, unreported } => watches.took(&id, n, &dirs, &unreported),
-            // An older khor refuses the frame (it does not know the
-            // question), and one that cannot watch says so: either way
-            // this machine's tree is asked, as before.
-            Response::Refused { .. } => return Err(true),
-            _ => return Err(false),
-        }
-        loop {
-            match read_frame(&mut recv).await.map_err(|_| false)? {
-                Response::Changed { dirs } => watches.changed(&id, dirs),
-                _ => return Err(false),
-            }
-        }
-        #[allow(unreachable_code)]
-        Ok::<(), bool>(())
-    }
-    .await
-    .err()
-    .unwrap_or(false);
-    watches.ended(&id, n, refused);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    async fn native_ready(watches: &Arc<Watches>, opened: &Opened) -> Batch {
+        let mut batch = opened.batch.clone();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while batch
+                .coverage
+                .iter()
+                .any(|c| c.mode == CoverageMode::Pending)
+            {
+                batch = watches
+                    .wait(
+                        &opened.machine_id,
+                        &opened.id,
+                        Some(&batch.cursor),
+                        Duration::from_secs(2),
+                    )
+                    .await
+                    .unwrap();
+            }
+        })
+        .await
+        .expect("native initialization deadline");
+        assert!(
+            batch
+                .coverage
+                .iter()
+                .all(|c| c.mode == CoverageMode::Native),
+            "{batch:?}"
+        );
+        batch
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    async fn changed(watches: &Arc<Watches>, opened: &Opened, batch: &Batch) -> Batch {
+        let result = watches
+            .wait(
+                &opened.machine_id,
+                &opened.id,
+                Some(&batch.cursor),
+                Duration::from_secs(3),
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            result.cursor, batch.cursor,
+            "a real filesystem write must invalidate"
+        );
+        result
+    }
 
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     #[test]
@@ -548,117 +1018,332 @@ mod tests {
         }
     }
 
-    /// **The near half's arithmetic**, without a wire: a directory
-    /// watched since before `since` and quiet is not changed; one that
-    /// changed is; one whose stream started after `since` is; and a
-    /// machine that refused says so, with every directory.
-    #[tokio::test]
-    async fn changed_since_means_what_a_face_holds_is_stale() {
-        let w = Arc::new(Watches::default());
-        let dirs = vec!["/a".to_owned(), "/b".to_owned()];
-        let mut started = 0;
-        let open = |_: u64, _: Vec<String>| {
-            started += 1;
-            tokio::spawn(async {})
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn native_workspace_observes_atomic_save_nested_rename_and_outside_file_parent() {
+        let checkout = crate::git::repository_history_tests::Checkout::new();
+        let workspace = checkout.0.join("workspace");
+        let outside = checkout.0.join("outside");
+        std::fs::create_dir_all(workspace.join("ignored/deep")).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(checkout.0.join(".gitignore"), b"workspace/ignored/\n").unwrap();
+        std::fs::write(workspace.join("draft.txt"), b"before").unwrap();
+        let watches = Arc::new(Watches::new().unwrap());
+        let opened = watches
+            .begin(
+                "local".into(),
+                vec![
+                    Scope::Workspace {
+                        root: workspace.display().to_string(),
+                    },
+                    Scope::Entries {
+                        path: outside.display().to_string(),
+                    },
+                ],
+                Route::Here,
+            )
+            .unwrap();
+        let mut batch = native_ready(&watches, &opened).await;
+        std::fs::write(workspace.join("draft.tmp"), b"after").unwrap();
+        std::fs::rename(workspace.join("draft.tmp"), workspace.join("draft.txt")).unwrap();
+        batch = changed(&watches, &opened, &batch).await;
+        assert!(batch.workspace);
+        assert!(batch.reset || batch.dirs.contains(&workspace.display().to_string()));
+        std::fs::write(
+            workspace.join("ignored/deep/中文.txt"),
+            b"observed despite ignore",
+        )
+        .unwrap();
+        batch = changed(&watches, &opened, &batch).await;
+        assert!(batch.workspace);
+        assert!(
+            batch.reset
+                || batch
+                    .dirs
+                    .contains(&workspace.join("ignored/deep").display().to_string())
+        );
+        std::fs::rename(
+            workspace.join("ignored/deep/中文.txt"),
+            workspace.join("moved.txt"),
+        )
+        .unwrap();
+        batch = changed(&watches, &opened, &batch).await;
+        assert!(
+            batch.reset
+                || (batch.dirs.contains(&workspace.display().to_string())
+                    && batch
+                        .dirs
+                        .contains(&workspace.join("ignored/deep").display().to_string()))
+        );
+        std::fs::write(outside.join("current.txt"), b"outside root").unwrap();
+        batch = changed(&watches, &opened, &batch).await;
+        assert!(batch.reset || batch.dirs.contains(&outside.display().to_string()));
+        watches.shutdown().await;
+        assert_eq!(watches.owned.lock().unwrap().counts(), (0, 0, 0, 0));
+        assert!(watches.native.lock().unwrap().is_none());
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn native_readonly_file_and_git_reads_do_not_create_an_invalidation_loop() {
+        let (checkout, _) = crate::git::repository_history_tests::linear(1);
+        let path = checkout.0.join(".gitignore");
+        std::fs::write(&path, b"ignored\n").unwrap();
+        let watches = Arc::new(Watches::new().unwrap());
+        let opened = watches
+            .begin(
+                "local".into(),
+                vec![Scope::Workspace {
+                    root: checkout.0.display().to_string(),
+                }],
+                Route::Here,
+            )
+            .unwrap();
+        let batch = native_ready(&watches, &opened).await;
+        for _ in 0..20 {
+            std::fs::read(&path).unwrap();
+            crate::git::watch_plan(&checkout.0).unwrap();
+            gix::open(&checkout.0).unwrap().head().unwrap();
+        }
+        let quiet = watches
+            .wait(
+                "local",
+                &opened.id,
+                Some(&batch.cursor),
+                Duration::from_millis(500),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            quiet.cursor, batch.cursor,
+            "read-only access must not feed back into fresh-stat refreshes"
+        );
+        assert!(!quiet.reset && quiet.dirs.is_empty() && !quiet.workspace);
+        watches.shutdown().await;
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn native_linked_worktree_covers_common_refs_packed_refs_and_detached_head() {
+        let (checkout, marks) = crate::git::repository_history_tests::linear(2);
+        let linked = checkout.0.join("linked");
+        checkout.git(&[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "topic/deep",
+            linked.to_str().unwrap(),
+            &marks[&1],
+        ]);
+        let watches = Arc::new(Watches::new().unwrap());
+        let opened = watches
+            .begin(
+                "local".into(),
+                vec![Scope::Workspace {
+                    root: linked.display().to_string(),
+                }],
+                Route::Here,
+            )
+            .unwrap();
+        let mut batch = native_ready(&watches, &opened).await;
+        checkout.git(&["update-ref", "refs/heads/topic/deep", &marks[&2]]);
+        batch = changed(&watches, &opened, &batch).await;
+        assert!(
+            batch.workspace,
+            "a common-dir ref outside the linked root invalidates metadata"
+        );
+        checkout.git(&["pack-refs", "--all"]);
+        batch = changed(&watches, &opened, &batch).await;
+        assert!(batch.workspace);
+        checkout.git(&[
+            "-C",
+            linked.to_str().unwrap(),
+            "switch",
+            "--quiet",
+            "--detach",
+            &marks[&1],
+        ]);
+        batch = changed(&watches, &opened, &batch).await;
+        assert!(batch.workspace);
+        let reopened = Opened {
+            id: opened.id.clone(),
+            machine_id: opened.machine_id.clone(),
+            batch,
         };
-        // The stream is starting: at the deadline, not knowing is
-        // changed — the face asks.
-        let first = w.wait("m", &dirs, 0, Duration::from_millis(50), open).await;
-        assert!(first.dirs.len() == 2 && !first.unavailable);
-        assert_eq!(started, 1, "one stream for both");
-        w.took("m", 0, &dirs, &[]);
-        // Everything is news to a face that holds nothing.
-        let all = w
-            .wait(
-                "m",
-                &dirs,
-                0,
-                Duration::from_millis(50),
-                |_, _| unreachable!(),
+        native_ready(&watches, &reopened).await;
+        assert_eq!(
+            crate::git::watch_plan(&linked).unwrap().unwrap().reference,
+            None
+        );
+        watches.shutdown().await;
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn native_idle_deadline_releases_the_last_handle_without_another_wait() {
+        let checkout = crate::git::repository_history_tests::Checkout::new();
+        let watches = Arc::new(Watches::new().unwrap());
+        let opened = watches
+            .begin(
+                "local".into(),
+                vec![Scope::Entries {
+                    path: checkout.0.display().to_string(),
+                }],
+                Route::Here,
             )
-            .await;
-        assert_eq!(all.dirs.len(), 2);
-        assert!(all.unreported.is_empty(), "a local disk hears every change");
-        let since = all.seq;
-        // Quiet: nothing changed since.
-        let quiet = w
-            .wait(
-                "m",
-                &dirs,
-                since,
-                Duration::from_millis(50),
-                |_, _| unreachable!(),
-            )
-            .await;
-        assert!(quiet.dirs.is_empty());
-        // One changed, and only it is named.
-        let waiter = {
-            let w = w.clone();
-            let dirs = dirs.clone();
-            tokio::spawn(async move {
-                w.wait(
-                    "m",
-                    &dirs,
-                    since,
-                    Duration::from_secs(5),
-                    |_, _| unreachable!(),
-                )
+            .unwrap();
+        native_ready(&watches, &opened).await;
+        assert!(
+            watches
+                .native
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .handle_count()
+                > 0
+        );
+        watches
+            .owned
+            .lock()
+            .unwrap()
+            .set_expiry(&opened.id, Instant::now() + Duration::from_millis(40));
+        watches.deadlines.notify_one();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                if watches.owned.lock().unwrap().counts().0 == 0
+                    && watches
+                        .native
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .map_or(0, |native| native.handle_count())
+                        == 0
+                {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("the resident deadline, not a subsequent client request, retires the handle");
+        assert!(
+            watches
+                .wait("local", &opened.id, None, Duration::ZERO)
                 .await
+                .is_err()
+        );
+        watches.shutdown().await;
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn native_aliases_share_physical_handles_but_keep_independent_leases() {
+        let checkout = crate::git::repository_history_tests::Checkout::new();
+        let target = checkout.0.join("target");
+        let alias = checkout.0.join("alias");
+        std::fs::create_dir(&target).unwrap();
+        std::os::unix::fs::symlink(&target, &alias).unwrap();
+        let watches = Arc::new(Watches::new().unwrap());
+        let first = watches
+            .begin(
+                "local".into(),
+                vec![Scope::Entries {
+                    path: target.display().to_string(),
+                }],
+                Route::Here,
+            )
+            .unwrap();
+        native_ready(&watches, &first).await;
+        let before = watches
+            .native
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .handle_count();
+        let second = watches
+            .begin(
+                "local".into(),
+                vec![Scope::Entries {
+                    path: alias.display().to_string(),
+                }],
+                Route::Here,
+            )
+            .unwrap();
+        let batch = native_ready(&watches, &second).await;
+        assert_eq!(
+            watches
+                .native
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .handle_count(),
+            before
+        );
+        watches.leave("local", &first.id).unwrap();
+        std::fs::write(target.join("new.txt"), b"alias kept").unwrap();
+        let batch = changed(&watches, &second, &batch).await;
+        assert_eq!(batch.dirs, vec![alias.display().to_string()]);
+        watches.leave("local", &second.id).unwrap();
+        assert!(watches.native.lock().unwrap().is_none());
+        watches.shutdown().await;
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn native_held_wait_is_cancelled_by_leave_and_a_late_initialization_cannot_reopen() {
+        let checkout = crate::git::repository_history_tests::Checkout::new();
+        let watches = Arc::new(Watches::new().unwrap());
+        let scopes = vec![Scope::Entries {
+            path: checkout.0.display().to_string(),
+        }];
+        let opened = watches
+            .begin("local".into(), scopes.clone(), Route::Here)
+            .unwrap();
+        let batch = native_ready(&watches, &opened).await;
+        let held = {
+            let watches = watches.clone();
+            let id = opened.id.clone();
+            tokio::spawn(async move {
+                watches
+                    .wait("local", &id, Some(&batch.cursor), Duration::from_secs(20))
+                    .await
             })
         };
         tokio::time::sleep(Duration::from_millis(20)).await;
-        w.changed("m", vec!["/b".to_owned()]);
-        let one = waiter.await.unwrap();
-        assert_eq!(one.dirs, vec!["/b".to_owned()]);
-        // The stream ended: the next ask starts another, and until it
-        // takes, nothing is claimed quiet.
-        w.ended("m", 0, false);
-        let again = w
-            .wait("m", &dirs, one.seq, Duration::from_millis(50), |n, d| {
-                assert_eq!((n, d.len()), (1, 2));
-                tokio::spawn(async {})
-            })
-            .await;
-        assert_eq!(again.dirs.len(), 2, "watched again: not known, so changed");
-        // Taken again, `/b` now on a network mount: said with every answer
-        // that asks about it, and only it.
-        w.took("m", 1, &dirs, &["/b".to_owned()]);
-        let after = w
-            .wait(
-                "m",
-                &dirs,
-                one.seq,
-                Duration::from_millis(50),
-                |_, _| unreachable!(),
-            )
-            .await;
-        assert_eq!(
-            after.dirs.len(),
-            2,
-            "watched again only since after `since`: both may have changed"
+        assert!(!held.is_finished());
+        assert!(
+            watches
+                .wait("local", &opened.id, None, Duration::ZERO)
+                .await
+                .is_err(),
+            "one wait per owner"
         );
-        assert_eq!(after.unreported, vec!["/b".to_owned()]);
-        let only_a = w
-            .wait(
-                "m",
-                &dirs[..1],
-                after.seq,
-                Duration::from_millis(20),
-                |_, _| unreachable!(),
-            )
-            .await;
-        assert!(only_a.unreported.is_empty(), "not asked about, not said");
-        // A machine that cannot watch.
-        w.ended("m", 1, true);
-        let no = w
-            .wait(
-                "m",
-                &dirs,
-                after.seq,
-                Duration::from_millis(50),
-                |_, _| unreachable!(),
-            )
-            .await;
-        assert!(no.unavailable && no.dirs.len() == 2);
+        watches.leave("local", &opened.id).unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), held)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_err()
+        );
+        for _ in 0..10 {
+            let pending = watches
+                .begin("local".into(), scopes.clone(), Route::Here)
+                .unwrap();
+            watches.leave("local", &pending.id).unwrap();
+            assert!(
+                watches
+                    .wait("local", &pending.id, None, Duration::ZERO)
+                    .await
+                    .is_err()
+            );
+        }
+        watches.shutdown().await;
+        assert_eq!(watches.owned.lock().unwrap().counts(), (0, 0, 0, 0));
+        assert!(watches.native.lock().unwrap().is_none());
     }
 }

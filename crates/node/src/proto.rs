@@ -506,14 +506,10 @@ pub enum Request {
     /// (round NET-4). Answered as [`Response::Stat`]; a khor that
     /// predates it refuses, and the face reads the file as before.
     Stat { path: String },
-    /// **Watch these directories and say when one changes** (round
-    /// NET-4, `crate::watch`): asked on a stream of its own, which stays
-    /// open — answered first with [`Response::Watching`] and then one
-    /// [`Response::Changed`] per burst of changes, each as a length-
-    /// prefixed frame, until the asker lets the stream go. A khor that
-    /// predates it refuses, and so does one that cannot watch; the
-    /// asker's faces then ask `Ls`, as before.
-    Watch { dirs: Vec<String> },
+    /// A stream-owned observation (`crate::watch`). The admitted peer holds
+    /// a bounded lease until this stream closes; frames carry coverage
+    /// fences and subsequent invalidations, never file contents.
+    Watch { scope: crate::watch::Scope },
     /// The commands run on that machine, searched (roadmap 2.6,
     /// `crate::commands::search_history`). Answered as
     /// [`Response::History`]. **A new variant, the request changing
@@ -1241,21 +1237,10 @@ pub enum Response {
         at_ms: u64,
         digest: String,
     },
-    /// [`Request::Watch`]'s first frame: the directories it is watching
-    /// (one that is gone, or not a directory, is left out), and which of
-    /// them sit on a network mount (`unreported`, store-c): there a
-    /// change made by another host sharing it is never told to the
-    /// watcher, so a quiet answer about them is not a fact.
-    Watching {
-        dirs: Vec<String>,
-        #[serde(default)]
-        unreported: Vec<String>,
-    },
-    /// One burst of changes on a [`Request::Watch`] stream: the watched
-    /// directories whose listings changed.
-    Changed {
-        dirs: Vec<String>,
-    },
+    /// The stream's initial coverage state.
+    Watching { batch: crate::watch::Batch },
+    /// A coverage fence, invalidation burst, or quiet heartbeat.
+    Changed { batch: crate::watch::Batch },
     /// The answer to [`Request::History`], newest first.
     History {
         hits: Vec<crate::commands::HistoryHit>,
@@ -2212,7 +2197,12 @@ mod tests {
                 },
                 &b"Stat"[..],
             ),
-            (Request::Watch { dirs: Vec::new() }, &b"Watch"[..]),
+            (
+                Request::Watch {
+                    scope: crate::watch::Scope::Entries { path: "/fixture".into() },
+                },
+                &b"Watch"[..],
+            ),
             (
                 Request::DropFile {
                     token: String::new(),
@@ -2298,20 +2288,51 @@ mod tests {
         assert!(matches!(decode::<Request>(&ask), Ok(Request::Watched)));
     }
 
-    /// A watch's first frame says which of the directories it took are on
-    /// a network mount (store-c), and that list crosses intact.
     #[test]
-    fn a_watch_says_which_directories_it_cannot_fully_hear() {
-        let sent = Response::Watching {
-            dirs: vec!["/home/t/khor-drop".into(), "/srv/a".into()],
-            unreported: vec!["/home/t/khor-drop".into()],
-        };
-        match decode::<Response>(&encode(&sent).unwrap()).unwrap() {
-            Response::Watching { dirs, unreported } => {
-                assert_eq!(dirs.len(), 2);
-                assert_eq!(unreported, vec!["/home/t/khor-drop".to_owned()]);
+    fn directory_watch_frames_keep_scope_and_coverage_fences() {
+        for scope in [
+            crate::watch::Scope::Entries {
+                path: "/fixture".into(),
+            },
+            crate::watch::Scope::Workspace {
+                root: "/fixture".into(),
+            },
+        ] {
+            let frame = encode(&Request::Watch {
+                scope: scope.clone(),
+            })
+            .unwrap();
+            match decode::<Request>(&frame).unwrap() {
+                Request::Watch { scope: decoded } => assert_eq!(decoded, scope),
+                other => panic!("decoded wrong: {other:?}"),
             }
-            other => panic!("decoded wrong: {other:?}"),
+        }
+        let batch = crate::watch::Batch {
+            cursor: "epoch:42".into(),
+            reset: true,
+            dirs: vec!["/srv/a".into()],
+            workspace: true,
+            coverage: vec![crate::watch::Coverage {
+                scope: 0,
+                mode: crate::watch::CoverageMode::Partial,
+                reason: Some("Network filesystem".into()),
+            }],
+            retry_ms: 1000,
+        };
+        for sent in [
+            Response::Watching {
+                batch: batch.clone(),
+            },
+            Response::Changed {
+                batch: batch.clone(),
+            },
+        ] {
+            match decode::<Response>(&encode(&sent).unwrap()).unwrap() {
+                Response::Watching { batch: decoded } | Response::Changed { batch: decoded } => {
+                    assert_eq!(decoded, batch)
+                }
+                other => panic!("decoded wrong: {other:?}"),
+            }
         }
     }
 

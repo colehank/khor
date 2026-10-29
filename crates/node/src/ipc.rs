@@ -318,15 +318,19 @@ pub enum Op {
         machine: String,
         path: String,
     },
-    /// Which of these directories on that machine changed since `since`
-    /// (`crate::watch::Watches`), held up to `wait_ms` (at most
-    /// [`WATCH_WAIT`]) for one to — 0 asks without waiting, which is what
-    /// a tree coming back on screen does. Tail-appended.
-    WatchOn {
+    WatchBegin {
         machine: String,
-        dirs: Vec<String>,
-        since: u64,
-        wait_ms: u64,
+        scopes: Vec<crate::watch::Scope>,
+    },
+    WatchWait {
+        machine_id: String,
+        id: String,
+        cursor: Option<String>,
+        wait_ms: u32,
+    },
+    WatchLeave {
+        machine_id: String,
+        id: String,
     },
     /// A machine's commands, searched (roadmap 2.6); answered with
     /// [`Reply::History`]. Tail-appended.
@@ -493,7 +497,7 @@ pub enum Op {
 /// from for three of these is taken to be gone.
 pub const FACE_BEAT: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// How long a [`Op::WatchOn`] is held when nothing changes: under
+/// How long a [`Op::WatchWait`] is held when nothing changes: under
 /// [`DEADLINE_FAR`], which bounds it.
 pub const WATCH_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
 
@@ -557,7 +561,9 @@ impl Op {
             Op::Connections => ("Connections", DEADLINE_LOCAL),
             Op::LetGo { .. } => ("LetGo", DEADLINE_LOCAL),
             Op::StatOn { .. } => ("StatOn", DEADLINE_FAR),
-            Op::WatchOn { .. } => ("WatchOn", DEADLINE_FAR),
+            Op::WatchBegin { .. } => ("WatchBegin", DEADLINE_LOCAL),
+            Op::WatchWait { .. } => ("WatchWait", DEADLINE_FAR),
+            Op::WatchLeave { .. } => ("WatchLeave", DEADLINE_LOCAL),
             Op::DropBorrow { .. } => ("DropBorrow", DEADLINE_LOCAL),
             Op::Ls { .. } => ("Ls", DEADLINE_FAR),
             Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),
@@ -704,10 +710,9 @@ pub enum Reply {
         at_ms: u64,
         digest: String,
     },
-    /// Tail-appended with [`Op::WatchOn`].
-    DirsChanged {
-        changes: crate::watch::DirChanges,
-    },
+    WatchOpened { opened: crate::watch::Opened },
+    WatchChanged { batch: crate::watch::Batch },
+    WatchLeft,
     /// Tail-appended with [`Op::GitStatusOn`]: the branch, the marked
     /// paths, and whether the list was cut.
     GitStatus {

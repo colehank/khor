@@ -1876,16 +1876,16 @@ mod status_tests {
 }
 
 #[cfg(test)]
-mod repository_history_tests {
+pub(crate) mod repository_history_tests {
     use super::*;
     use std::io::Write;
     use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    struct Checkout(PathBuf);
+    pub(crate) struct Checkout(pub(crate) PathBuf);
 
     impl Checkout {
-        fn new() -> Self {
+        pub(crate) fn new() -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1916,7 +1916,7 @@ mod repository_history_tests {
             cmd
         }
 
-        fn git(&self, args: &[&str]) -> Vec<u8> {
+        pub(crate) fn git(&self, args: &[&str]) -> Vec<u8> {
             let output = self.command().args(args).output().unwrap();
             assert!(
                 output.status.success(),
@@ -2000,7 +2000,7 @@ mod repository_history_tests {
         stream.push_str("deleteall\n\n");
     }
 
-    fn linear(count: usize) -> (Checkout, BTreeMap<usize, String>) {
+    pub(crate) fn linear(count: usize) -> (Checkout, BTreeMap<usize, String>) {
         let checkout = Checkout::new();
         let mut stream = String::new();
         for i in 1..=count {

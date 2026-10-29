@@ -2225,6 +2225,7 @@ impl Node {
         // share it, including a GUI request falling back to this process.
         crate::khor_agent::runtime::seal(node.root(), false)?;
         drop(handoffs);
+        node.watches.shutdown().await;
         ep.close().await;
         services.abort_all();
         // Aborted handlers release their API admissions. Their separately
@@ -2255,7 +2256,7 @@ impl Node {
     }
 
     async fn handle_handoff(
-        &self,
+        self: &std::sync::Arc<Self>,
         mut stream: tokio::net::TcpStream,
         ep: &iroh::Endpoint,
         cookie: &str,
@@ -2306,7 +2307,7 @@ impl Node {
     /// reaches a caller that is about to stop waiting, and **named in the
     /// log** — a stuck op is a fault in something this serve talks to,
     /// and the log is where somebody goes looking for which.
-    async fn run_handoff_within(&self, ep: &iroh::Endpoint, op: ipc::Op,
+    async fn run_handoff_within(self: &std::sync::Arc<Self>, ep: &iroh::Endpoint, op: ipc::Op,
         response: Option<crate::session_content::remote::ResponsePermit>) -> ipc::Reply {
         let (name, deadline) = (op.name(), op.deadline());
         let mine = deadline.saturating_sub(Duration::from_millis(500));
@@ -2326,7 +2327,7 @@ impl Node {
         }
     }
 
-    async fn run_handoff(&self, ep: &iroh::Endpoint, op: ipc::Op,
+    async fn run_handoff(self: &std::sync::Arc<Self>, ep: &iroh::Endpoint, op: ipc::Op,
         response: Option<crate::session_content::remote::ResponsePermit>) -> ipc::Reply {
         match op {
             ipc::Op::ContentRead { action } => {
@@ -2605,24 +2606,43 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
-            ipc::Op::WatchOn {
-                machine,
-                dirs,
-                since,
+            ipc::Op::WatchBegin { machine, scopes } => {
+                match self.watch_begin_with(ep, &machine, scopes) {
+                    Ok(opened) => ipc::Reply::WatchOpened { opened },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::WatchWait {
+                machine_id,
+                id,
+                cursor,
                 wait_ms,
-            } => match self
-                .watch_with(
-                    ep,
-                    &machine,
-                    &dirs,
-                    since,
-                    Duration::from_millis(wait_ms).min(ipc::WATCH_WAIT),
-                )
-                .await
-            {
-                Ok(changes) => ipc::Reply::DirsChanged { changes },
-                Err(why) => ipc::Reply::Refused { why },
-            },
+            } => {
+                let result = async {
+                    let machine_id = crate::device_id_from_hex(&machine_id)?.hex();
+                    self.watches
+                        .wait(
+                            &machine_id,
+                            &id,
+                            cursor.as_deref(),
+                            Duration::from_millis(u64::from(wait_ms)).min(ipc::WATCH_WAIT),
+                        )
+                        .await
+                }
+                .await;
+                match result {
+                    Ok(batch) => ipc::Reply::WatchChanged { batch },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::WatchLeave { machine_id, id } => {
+                let result = crate::device_id_from_hex(&machine_id)
+                    .and_then(|machine| self.watches.leave(&machine.hex(), &id));
+                match result {
+                    Ok(()) => ipc::Reply::WatchLeft,
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::CarryIn { carrier } => match self.carry_hosted(&carrier).await {
                 Ok((addr, cookie)) => ipc::Reply::Piping { addr, cookie },
                 Err(why) => ipc::Reply::Refused { why },
@@ -3863,7 +3883,7 @@ impl Node {
                 // **A watch keeps its stream** (`crate::watch`): answered
                 // as it goes, not once — through the same gate as every
                 // other request.
-                if let Ok(Request::Watch { dirs }) = proto::question(&bytes) {
+                if let Ok(Request::Watch { scope }) = proto::question(&bytes) {
                     if early && *done.borrow() != Some(true) {
                         while done.borrow().is_none() {
                             if done.changed().await.is_err() {
@@ -3874,8 +3894,14 @@ impl Node {
                             return;
                         }
                     }
-                    match node.admit(&remote) {
-                        Ok(()) => crate::watch::serve(dirs, send).await,
+                    let admitted = node.admit(&remote).and_then(|()| {
+                        crate::watch::Subscription::local(&node, remote.clone(), scope)
+                    });
+                    match admitted {
+                        Ok(subscription) => {
+                            drop(seat.take());
+                            subscription.serve(send).await;
+                        }
                         Err(why) => {
                             if let Ok(frame) = proto::encode(&Response::Refused { why }) {
                                 let mut out = (frame.len() as u32).to_be_bytes().to_vec();
@@ -7169,98 +7195,95 @@ impl Node {
         }
     }
 
-    /// The **first slice** of a file on any machine, for looking at it
-    /// rather than taking it: `(total, at_ms, bytes)`.
-    ///
-    /// **One slice, never a loop.** `pull_path` loops because it is
-    /// spending this machine's disk on a whole file; this is spending a
-    /// screen on as much as fits, and one [`proto::SLICE`] is 256 KB.
-    /// Measured on this repo's neighbours (1525 tracked files): 98% are
-    /// under that, and of the 31 that are not, 27 are png/pdf/icns/mp4
-    /// — files no code view was ever going to paint. Four text files in
-    /// 1525 are cut, and `total` is what says so.
-    ///
-    /// So the caller never has to guess: `bytes.len() < total` means
-    /// there is more, and what it does about that is a question about a
-    /// screen, which is why the limit is not decided here.
-    ///
-    /// A satellite's file does not come through this road — the sponsor
-    /// serves those off a staging copy with `SatFetchPath`, which is
-    /// the account already in docs/handoff/001.md.
-    /// **Which of these directories on `machine` changed since `since`**
-    /// (round NET-4, `crate::watch`), held up to `wait` (at most
-    /// `ipc::WATCH_WAIT`) for one to. Only a resident watches: with none, and for this machine
-    /// itself or a satellite (a tree here is asked off this disk; a
-    /// satellite has no watcher of khor's), the answer is `unavailable`,
-    /// and the face asks the tree as before.
-    pub async fn dirs_changed(
+    /// Open a resident-owned observation. Only this step resolves a display
+    /// name; subsequent operations use the stable machine id in its answer.
+    pub async fn dirs_begin(
         &self,
         machine: &str,
-        dirs: &[String],
-        since: u64,
-        wait: Duration,
-    ) -> Result<crate::watch::DirChanges, String> {
-        let unavailable = || crate::watch::DirChanges {
-            seq: since,
-            dirs: dirs.to_vec(),
-            unavailable: true,
-            unreported: Vec::new(),
-        };
-        if machine.is_empty() || machine == self.name() {
-            return Ok(unavailable());
-        }
-        match self
-            .via_serve(ipc::Op::WatchOn {
-                machine: machine.to_owned(),
-                dirs: dirs.to_vec(),
-                since,
-                wait_ms: wait.as_millis() as u64,
+        scopes: Vec<crate::watch::Scope>,
+    ) -> Result<crate::watch::Opened, String> {
+        let reply = self
+            .via_serve(ipc::Op::WatchBegin {
+                machine: machine.into(),
+                scopes,
             })
             .await
-        {
-            Some(reply) => match reply? {
-                ipc::Reply::DirsChanged { changes } => Ok(changes),
-                ipc::Reply::Refused { why } => Err(why),
-                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
-            },
-            None => Ok(unavailable()),
+            .ok_or("Directory watching requires a live resident")??;
+        match reply {
+            ipc::Reply::WatchOpened { opened } => Ok(opened),
+            ipc::Reply::Refused { why } => Err(why),
+            other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
         }
     }
 
-    async fn watch_with(
+    pub async fn dirs_wait(
         &self,
+        machine_id: &str,
+        id: &str,
+        cursor: Option<&str>,
+        wait_ms: u32,
+    ) -> Result<crate::watch::Batch, String> {
+        let machine_id = crate::device_id_from_hex(machine_id)?.hex();
+        let reply = self
+            .via_serve(ipc::Op::WatchWait {
+                machine_id,
+                id: id.into(),
+                cursor: cursor.map(str::to_owned),
+                wait_ms,
+            })
+            .await
+            .ok_or("Directory watching requires a live resident")??;
+        match reply {
+            ipc::Reply::WatchChanged { batch } => Ok(batch),
+            ipc::Reply::Refused { why } => Err(why),
+            other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    pub async fn dirs_leave(&self, machine_id: &str, id: &str) -> Result<(), String> {
+        let machine_id = crate::device_id_from_hex(machine_id)?.hex();
+        let reply = self
+            .via_serve(ipc::Op::WatchLeave {
+                machine_id,
+                id: id.into(),
+            })
+            .await
+            .ok_or("Directory watching requires a live resident")??;
+        match reply {
+            ipc::Reply::WatchLeft => Ok(()),
+            ipc::Reply::Refused { why } => Err(why),
+            other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    fn watch_begin_with(
+        self: &std::sync::Arc<Self>,
         ep: &iroh::Endpoint,
         machine: &str,
-        dirs: &[String],
-        since: u64,
-        wait: Duration,
-    ) -> Result<crate::watch::DirChanges, String> {
-        let (channel, home) = self.resolve(machine)?;
-        let target = self
-            .devices_loaded()?
-            .doc
-            .by_name(&channel)
-            .ok_or_else(|| msg::machine_left_table(&channel))?;
-        if home == self.device() || target.sponsor.is_some() {
-            return Ok(crate::watch::DirChanges {
-                seq: since,
-                dirs: dirs.to_vec(),
-                unavailable: true,
-                unreported: Vec::new(),
-            });
-        }
-        let line = self
-            .line_to(ep, &target, wires::Proto::Main)
-            .await
-            .map_err(|e| unreached_words(&target.name, e))?;
-        let watches = self.watches.clone();
-        let id = target.id.clone();
-        Ok(self
-            .watches
-            .wait(&target.id, dirs, since, wait, |n, fresh| {
-                tokio::spawn(crate::watch::run(watches, id, n, line.conn.clone(), fresh))
-            })
-            .await)
+        scopes: Vec<crate::watch::Scope>,
+    ) -> Result<crate::watch::Opened, String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        let route = if home == self.device() {
+            crate::watch::Route::Here
+        } else {
+            let target = self
+                .devices_loaded()?
+                .doc
+                .by_name(&channel)
+                .ok_or_else(|| msg::machine_left_table(&channel))?;
+            if target.sponsor.is_some() {
+                crate::watch::Route::Unavailable(
+                    "This machine cannot observe its hosted filesystem".into(),
+                )
+            } else {
+                crate::watch::Route::Peer {
+                    node: std::sync::Arc::downgrade(self),
+                    endpoint: ep.clone(),
+                    target,
+                }
+            }
+        };
+        self.watches.begin(home.hex(), scopes, route)
     }
 
     /// What a file on any machine is now, without its bytes

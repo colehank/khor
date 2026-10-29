@@ -443,8 +443,7 @@ pub struct Node {
     /// id, with its stamp — handed back on the next ask so an unchanged
     /// day does not cross again (round NET-4, `Request::LoadSince`).
     pub(crate) days_held: Arc<Mutex<std::collections::HashMap<String, (u64, khor_core::CpuDay)>>>,
-    /// The directories faces asked to have watched on other machines,
-    /// and what changed in them (round NET-4, `watch::Watches`).
+    /// Resident-owned directory observations and their bounded invalidation logs.
     pub(crate) watches: Arc<watch::Watches>,
     /// **Gone to the background** (`link::suspending`) until `resume`:
     /// no pump, no visits, no rounds — see the serve loop.
@@ -1131,7 +1130,7 @@ impl Node {
             rounds: Arc::default(),
             readings_held: Arc::default(),
             days_held: Arc::default(),
-            watches: Arc::default(),
+            watches: Arc::new(watch::Watches::new()?),
             resting: Arc::default(),
             face_seen: Arc::default(),
             nudged: Arc::default(),

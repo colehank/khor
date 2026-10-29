@@ -115,13 +115,25 @@ impl Owned {
             })
             .collect();
         let additional = existing.iter().filter(|id| id.is_none()).count();
+        let restarting: Vec<_> = existing
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|id| self.sources[id].mode == CoverageMode::Unavailable)
+            .collect();
         let available = INIT_RUNNING - self.running.len() + INIT_QUEUED - self.queued.len();
-        if self.sources.len() + additional > SOURCES || additional > available {
+        if self.sources.len() + additional > SOURCES || additional + restarting.len() > available {
             return Err("Directory watch initialization budget exceeded".into());
         }
         self.next_source
             .checked_add(additional as u64)
             .ok_or("Directory watch source IDs exhausted")?;
+        for id in &restarting {
+            self.sources[id]
+                .generation
+                .checked_add(1)
+                .ok_or("Directory watch plan generations exhausted")?;
+        }
         let mut owned = Vec::with_capacity(scopes.len());
         for (scope, existing) in scopes.into_iter().zip(existing) {
             let source = if let Some(id) = existing {
@@ -151,6 +163,16 @@ impl Owned {
                 id
             };
             owned.push(source);
+        }
+        for id in restarting {
+            let source = self.sources.get_mut(&id).expect("reserved restart");
+            source.generation += 1;
+            source.mode = CoverageMode::Pending;
+            source.reason = None;
+            self.queued.push_back(Ticket {
+                source: id,
+                generation: source.generation,
+            });
         }
         self.logs.entry(machine.clone()).or_default();
         self.owners.insert(
@@ -278,6 +300,9 @@ impl Owned {
     pub fn enter_wait(&mut self, machine: &str, id: &str, now: Instant) -> Result<(), String> {
         self.owner(machine, id)?;
         let owner = self.owners.get_mut(id).expect("validated owner");
+        if owner.expires <= now {
+            return Err("Directory watch lease has expired".into());
+        }
         if owner.waiting {
             return Err("Directory watch already has a pending wait".into());
         }
@@ -379,6 +404,14 @@ impl Owned {
             return Ok(Effects::default());
         }
         self.owner(machine, id)?;
+        let stop = self.release(machine, id);
+        Ok(Effects {
+            start: self.start_queued(),
+            stop,
+        })
+    }
+
+    fn release(&mut self, machine: &str, id: &str) -> Vec<u64> {
         let owner = self.owners.remove(id).expect("validated owner");
         let mut stop = Vec::new();
         for id in owner.sources {
@@ -394,10 +427,7 @@ impl Owned {
         if !self.owners.values().any(|owner| owner.machine == machine) {
             self.logs.remove(machine);
         }
-        Ok(Effects {
-            start: self.start_queued(),
-            stop,
-        })
+        stop
     }
 
     pub fn expire(&mut self, now: Instant) -> Effects {
@@ -409,15 +439,114 @@ impl Owned {
             .collect();
         let mut effects = Effects::default();
         for (id, machine) in expired {
-            let removed = self.leave(&machine, &id).expect("expiry owns this lease");
-            effects.start.extend(removed.start);
-            effects.stop.extend(removed.stop);
+            effects.stop.extend(self.release(&machine, &id));
         }
+        effects.start = self.start_queued();
         effects
     }
 
     pub fn next_expiry(&self) -> Option<Instant> {
         self.owners.values().map(|o| o.expires).min()
+    }
+
+    pub fn current(&self, ticket: Ticket) -> bool {
+        self.sources
+            .get(&ticket.source)
+            .is_some_and(|source| source.generation == ticket.generation)
+    }
+
+    pub fn has_machine(&self, machine: &str) -> bool {
+        self.sources
+            .values()
+            .any(|source| source.machine == machine)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sources.is_empty()
+    }
+
+    pub fn replan(&mut self, source: u64) -> Result<Effects, String> {
+        let Some(current) = self.sources.get(&source) else {
+            return Ok(Effects::default());
+        };
+        if self
+            .running
+            .iter()
+            .chain(self.queued.iter())
+            .any(|t| t.source == source)
+        {
+            return Ok(Effects::default());
+        }
+        if self.queued.len() >= INIT_QUEUED && self.running.len() >= INIT_RUNNING {
+            self.coverage(
+                source,
+                CoverageMode::Partial,
+                Some("Directory watch reinitialization queue is full".into()),
+                true,
+            )?;
+            return Ok(Effects::default());
+        }
+        let generation = current
+            .generation
+            .checked_add(1)
+            .ok_or("Directory watch plan generations exhausted")?;
+        let current = self.sources.get_mut(&source).expect("known source");
+        current.generation = generation;
+        current.mode = CoverageMode::Pending;
+        current.reason = None;
+        self.queued.push_back(Ticket { source, generation });
+        self.changed(source, Vec::new(), true)?;
+        Ok(Effects {
+            start: self.start_queued(),
+            stop: Vec::new(),
+        })
+    }
+
+    pub fn coverage(
+        &mut self,
+        source: u64,
+        mode: CoverageMode,
+        reason: Option<String>,
+        reset: bool,
+    ) -> Result<(), String> {
+        let Some(current) = self.sources.get_mut(&source) else {
+            return Ok(());
+        };
+        let reason = reason.map(bounded_reason);
+        let changed = current.mode != mode || current.reason != reason;
+        current.mode = mode;
+        current.reason = reason;
+        if reset || changed {
+            self.changed(source, Vec::new(), true)?;
+        }
+        Ok(())
+    }
+
+    pub fn close(&mut self) -> Effects {
+        let stop = self.sources.keys().copied().collect();
+        self.owners.clear();
+        self.sources.clear();
+        self.queued.clear();
+        self.logs.clear();
+        Effects {
+            start: Vec::new(),
+            stop,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn counts(&self) -> (usize, usize, usize, usize) {
+        (
+            self.owners.len(),
+            self.sources.len(),
+            self.running.len(),
+            self.queued.len(),
+        )
+    }
+
+    #[cfg(test)]
+    pub fn set_expiry(&mut self, id: &str, at: Instant) {
+        self.owners.get_mut(id).expect("test lease").expires = at;
     }
 }
 
@@ -733,5 +862,92 @@ mod tests {
         );
         assert_eq!(book.owners.len(), OWNERS);
         assert_eq!(book.sources.len(), 1);
+    }
+
+    #[test]
+    fn replans_publish_pending_and_only_the_current_generation_can_establish() {
+        let now = Instant::now();
+        let mut book = Owned::new("epoch".into());
+        let start = begin(&mut book, "A", "machine", vec![entry("/root")], now)
+            .start
+            .pop()
+            .unwrap();
+        ready(&mut book, vec![start.clone()], CoverageMode::Native, None);
+        let before = book.read("machine", "A", None).unwrap().cursor;
+        let newer = book
+            .replan(start.ticket.source)
+            .unwrap()
+            .start
+            .pop()
+            .unwrap();
+        assert!(newer.ticket.generation > start.ticket.generation);
+        let pending = book.read("machine", "A", Some(&before)).unwrap();
+        assert!(pending.reset);
+        assert_eq!(pending.coverage[0].mode, CoverageMode::Pending);
+        assert!(
+            !book
+                .initialized(start.ticket, CoverageMode::Native, None)
+                .unwrap()
+                .0
+        );
+        assert!(book.replan(start.ticket.source).unwrap().start.is_empty());
+        ready(&mut book, vec![newer], CoverageMode::Native, None);
+        let established = book.read("machine", "A", Some(&pending.cursor)).unwrap();
+        assert!(established.reset);
+        assert_eq!(established.coverage[0].mode, CoverageMode::Native);
+    }
+
+    #[test]
+    fn only_an_explicit_begin_restarts_an_unavailable_shared_source() {
+        let now = Instant::now();
+        let mut book = Owned::new("epoch".into());
+        let starts = begin(&mut book, "A", "machine", vec![entry("/root")], now).start;
+        ready(
+            &mut book,
+            starts,
+            CoverageMode::Unavailable,
+            Some("Disconnected".into()),
+        );
+        book.enter_wait("machine", "A", now).unwrap();
+        book.finish_wait("A");
+        assert_eq!(
+            book.read("machine", "A", None).unwrap().coverage[0].mode,
+            CoverageMode::Unavailable
+        );
+        assert!(book.running.is_empty());
+        let starts = begin(&mut book, "B", "machine", vec![entry("/root")], now).start;
+        assert_eq!(starts.len(), 1);
+        ready(&mut book, starts, CoverageMode::Native, None);
+        for id in ["A", "B"] {
+            assert_eq!(
+                book.read("machine", id, None).unwrap().coverage[0].mode,
+                CoverageMode::Native
+            );
+        }
+    }
+
+    #[test]
+    fn expiration_never_renews_a_dead_owner_or_starts_another_expired_queue() {
+        let now = Instant::now();
+        let mut book = Owned::new("epoch".into());
+        begin(
+            &mut book,
+            "A",
+            "machine",
+            (0..4).map(|i| entry(&format!("/first/{i}"))).collect(),
+            now,
+        );
+        begin(
+            &mut book,
+            "B",
+            "machine",
+            (0..64).map(|i| entry(&format!("/next/{i}"))).collect(),
+            now,
+        );
+        assert!(book.enter_wait("machine", "A", now + IDLE).is_err());
+        let expired = book.expire(now + IDLE);
+        assert_eq!(expired.stop.len(), 68);
+        assert!(expired.start.is_empty());
+        assert_eq!(book.counts(), (0, 0, 4, 0));
     }
 }
