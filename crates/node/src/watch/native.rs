@@ -350,7 +350,12 @@ impl Plan {
                 if self.workspace {
                     let parent = path.parent().unwrap_or(path);
                     let parent = parent.strip_prefix(&self.root).unwrap_or(Path::new(""));
-                    if let Some(parent) = Path::new(&self.asked).join(parent).to_str() {
+                    let asked = if parent.as_os_str().is_empty() {
+                        PathBuf::from(&self.asked)
+                    } else {
+                        Path::new(&self.asked).join(parent)
+                    };
+                    if let Some(parent) = asked.to_str() {
                         dirs.insert(parent.to_owned());
                     } else {
                         reset = true;
@@ -440,6 +445,18 @@ impl Native {
         let heard = raw.clone();
         let changed = revision.clone();
         let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+            #[cfg(test)]
+            if std::env::var_os("KHOR_TEST_WATCH_TRACE").is_some() {
+                match &event {
+                    Ok(event) => eprintln!(
+                        "watch-native kind={:?} rescan={} paths={:?}",
+                        event.kind,
+                        event.need_rescan(),
+                        event.paths.iter().take(16).collect::<Vec<_>>()
+                    ),
+                    Err(error) => eprintln!("watch-native error={error}"),
+                }
+            }
             if event.as_ref().is_ok_and(|event| !changes_files(event.kind)) {
                 return;
             }
@@ -690,6 +707,16 @@ mod tests {
         let change = plan.change(&Dirty { raw }).unwrap();
         assert_eq!(change.dirs, vec!["/alias/root/from", "/alias/root/to"]);
         assert!(!change.reset);
+        let mut raw = Raw::default();
+        raw.take(Ok(notify::Event::new(EventKind::Create(
+            notify::event::CreateKind::File,
+        ))
+        .add_path("/real/root/file.txt".into())));
+        assert_eq!(
+            plan.change(&Dirty { raw }).unwrap().dirs,
+            vec!["/alias/root"],
+            "root parent spelling must not gain a trailing separator"
+        );
     }
 
     #[test]

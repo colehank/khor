@@ -638,6 +638,7 @@ impl Watches {
         for source in effects.stop {
             self.stop_source(source);
         }
+        let retrying = !effects.retry.is_empty();
         {
             let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
             let owned = self.owned.lock().unwrap_or_else(|p| p.into_inner());
@@ -649,7 +650,9 @@ impl Watches {
                 }
             }
         }
-        self.deadlines.notify_one();
+        if retrying {
+            self.deadlines.notify_one();
+        }
         for start in effects.start {
             let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
             if running.closed
