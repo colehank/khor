@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 
-from native_provenance import key, read_messages, require_provenance
+from native_provenance import key, read_messages, regular, require_provenance
 
 
 SUITES = {
@@ -91,6 +91,55 @@ def remaining(rows, owned):
     return [row for pid, row in rows.items()
             if (pid in owned and row["start"] == owned[pid]["start"])
             or row["group"] in groups]
+
+
+def persistent_session_owners(rows, owned, *, fixture_root, home, session_dir, session_id):
+    """Admit only a private fixture session's proven host ancestry.
+
+    The caller pins this before Quit. It remains distinct from remaining():
+    no process name or shared process group grants a persistence exemption.
+    """
+    fixture_root, home, session_dir = map(lambda p: Path(p).absolute(),
+                                        (fixture_root, home, session_dir))
+    if any(path.resolve() != path for path in (fixture_root, home, session_dir)):
+        raise ValueError("Fixture ownership paths must not use symlinks")
+    if home == fixture_root or not home.is_relative_to(fixture_root):
+        raise ValueError("Persistent home must belong to this private fixture")
+    if session_dir.parent != home / ".khor/sessions":
+        raise ValueError("Persistent session must belong to the private home")
+    meta_path, host_path = session_dir / "meta.json", session_dir / "host.json"
+    regular(meta_path)
+    regular(host_path)
+    meta, host = json.loads(meta_path.read_text()), json.loads(host_path.read_text())
+    host_pid, child_pid = host.get("host_pid"), host.get("child_pid")
+    if (any(type(pid) is not int or pid <= 0 for pid in (host_pid, child_pid))
+            or host_pid == child_pid or not session_id or meta.get("id") != session_id
+            or meta.get("pid") != host_pid):
+        raise ValueError("Persistent session marker identity does not match")
+    for pid in (host_pid, child_pid):
+        original, current = owned.get(pid), rows.get(pid)
+        if (not original or not current or not original.get("start")
+                or current["start"] != original["start"]
+                or current["executable"] != original["executable"]):
+            raise ValueError("Persistent process birth identity is not proven")
+    if rows[host_pid]["group"] != host_pid or owned[host_pid]["group"] != host_pid:
+        raise ValueError("Persistent host is not its own observed process group")
+    if rows[child_pid]["parent"] != host_pid or owned[child_pid]["parent"] != host_pid:
+        raise ValueError("Persistent child does not belong to the proven host")
+    selected = {host_pid, child_pid}
+    while True:
+        children = {pid for pid, row in owned.items() if row["parent"] in selected}
+        if children <= selected:
+            break
+        selected.update(children)
+    return {pid: owned[pid] for pid in selected}
+
+
+def remaining_temporary(rows, owned, persistent):
+    """Subtract exact admitted identities, retaining all other strict blockers."""
+    return [row for row in remaining(rows, owned)
+            if row["pid"] not in persistent
+            or row["start"] != persistent[row["pid"]]["start"]]
 
 
 def stop_observed_groups(process, owned):
