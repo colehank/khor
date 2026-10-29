@@ -7,7 +7,7 @@
 1. 读 [ROUND-2-EXECUTION](ROUND-2-EXECUTION.md) 与当前 [A](tasks/R2-A.md)、[G](tasks/R2-G.md)、[REVIEW](tasks/R2-REVIEW.md) 卡；核实际refs/diff/agents/进程，不按摘要覆盖外盘内容。
 2. 当前两个作者：round2_history在khor-round2-history/fix/round2-history做A2收口；round2_input在khor-round2-content/fix/round2-content做G剩余固定标题。root集成/总账，round2_reviewer只读独审；无第三实现线。
 3. **native槽当前已释放**：A2 final-1和补编译closure-2全部真实进程终态，由作者明确释放。旧running.json/PID不是仍运行的证明；新批先核现场再授槽。保持共享target、jobs1/incremental0、外盘TMPDIR；不重启用户App或真实session。
-4. 下一动作：A2已固定3ff8013c并集成6f103d9b；G ContentToolbar/TermPeek已集成46f03ca5，完成最后SessionSide固定标题后交W。A作者整理A3最小事务/路径准备，不直接扩写。A3/A4仍待后续明确路径，不把A2当全部ACP观看完成。
+4. 下一动作：A2已固定3ff8013c并集成6f103d9b；G ContentToolbar/TermPeek已集成46f03ca5，补齐SessionSide与只读CodeDiff既有固定标签后交W。A3a已明确派发最小writer/事务及读链，A4排队；不把A2当全部ACP观看完成。
 
 ## 最新进展
 
@@ -15,15 +15,15 @@
 
 A2 `history/observation-a2-check/final-1/result.json`：三lib check、最新9项原生测试、空staging真实bindings/catalog全部exit0，163.322s，作者Rust/catalog/Cargo输入前后不变。三处nullable胶水后15JS/types/mobile-static/words绿、源码不变；None不计busy/blocked，也不触发busy已结束的刷新。补编译closure-2四命令CLI+web、Node三个已改integration tests、gui seen_snapshot、sync/commands tests全exit0/28.539s；首批缺dist setup失败保留，随后真实Vite建277文件/15,154,979字节再检查，不伪造资产。Tauri仍待V/最终App准备。
 
-集成真实产物161 bindings＋catalog逐SHA核复制，输入核对为**327相同＋1已审差异**：web.rs仅既有C1 system_target/open_link函数体/测试/注释，WebBorrow与gen根/api签名不变；保两SHA和完整patch，不谎称328全同。初次严格核验在写入前停止，补独审确认后才同步。集成15观察JS/types/words过；生成收据integration/generated-6f103d9b.json。SessionSide现已明确交给G，A3全ACP canonical journal/replay事务、A4内容home只读网络路由均未开始。
+集成真实产物161 bindings＋catalog逐SHA核复制，输入核对为**327相同＋1已审差异**：web.rs仅既有C1 system_target/open_link函数体/测试/注释，WebBorrow与gen根/api签名不变；保两SHA和完整patch，不谎称328全同。初次严格核验在写入前停止，补独审确认后才同步。集成15观察JS/types/words过；生成收据integration/generated-6f103d9b.json。SessionSide现已明确交给G，A3a现已派发，A4内容home只读网络路由未开始。A3a唯一journal writer位于gui_host单loop，首次bootstrap pending+消费fence后原子base；已有canonical时replay只运行时回放，不覆盖/重复append/版本堆积。保accepted文字/图片/文件与turn边界；实际New/Load/Resume开源事实由acp Handle叶字段提供，Ready或forwarder fence均不冒完整历史，宿主须消费完有限Notes。覆盖范围如实，离线外部段不文本hash伪融合。具体paths/两小提交与预算见R2-A；新增native批尚未授权。
 
-**G：主材质、CommitPage、Machine、R013菜单及工具条/TermPeek已集成，剩SessionSide。** 主band14e0cc6d、局部/Commit250d64ed、Machine/frontier535c3fb5、路径菜单f6755103、规则/既有门867c1446、工具条/TermPeek46f03ca5。固定源码均独审无阻断，集成owner13/jump4/字段13/types绿。Machine实际宽窄/列轨/物理sticky边界/排序/普通兄弟fade5项绿，未新建内滚动。R013实际12项绿，修的是工具条菜单错误内联/被正文挡点击：显式overlay与stack；原表单adaptive和网页禁推荐保留。
+**G：主材质、CommitPage、Machine、R013菜单及工具条/TermPeek已集成，剩SessionSide及CodeDiff固定标签。** 主band14e0cc6d、局部/Commit250d64ed、Machine/frontier535c3fb5、路径菜单f6755103、规则/既有门867c1446、工具条/TermPeek46f03ca5。固定源码均独审无阻断，集成owner13/jump4/字段13/types绿。Machine实际宽窄/列轨/物理sticky边界/排序/普通兄弟fade5项绿，未新建内滚动。R013实际12项绿，修的是工具条菜单错误内联/被正文挡点击：显式overlay与stack；原表单adaptive和网页禁推荐保留。
 
 G既有scroll-surfaces门36项真实全绿。Face精确sticky段原2rAF采样opacity0.815295失败保留；真实同held 0/100/240ms为0.815758/0.999314/精确1，几何不变，180ms产品动效未改。仅门改有界等待终态，exact1/flush/排序等保障保留，精确段绿，**不称完整Face套件绿**。7路径规则/门指纹与收据一致，集成17定向/语法/types通过。
 
 新消费者547a9496→46f03ca5：ContentToolbar对DOM末位/CSS order的landing用显式locateUnder，默认邻接不变、同owner/observer与仅自身under marker清理；TermPeek真实tbody/表头消费共用材质。14受控checks、实际extras12与原SessionContentPane菜单/脏CodeMirror同DOM宽窄2项绿；tbody mask的实际截图像素差证明有paint，非只computed attrs。初Lab缺CSS和CM fill假设两harness失败保留，Lab/生产分提交，独审无阻断；集成owner14/字段13/types均终态绿（integration/checks-46f03ca5.json）。
 
-G当前仅剩SessionSide：固定A2单文件基线后只做SideBody固定头小接线，避免回退nullable。SeatHead在SideWorkspace普通滚动流内不是固定组块，排除不改；底部输入/任务操作、横轴sticky及原生网页正文亦不冒作DOM固定标题处理。原生WebView的empty端仅DOM占位尺寸验证，未冒真实WK材质。完成G后轮换W，已验参考与正式缺口在R2-W。
+G当前剩SessionSide与CodeDiff：固定A2单文件基线后只做SideBody固定头小接线，避免回退nullable。SeatHead在SideWorkspace普通滚动流内不是固定组块，排除不改；底部输入/任务操作、横轴sticky及原生网页正文亦不冒作DOM固定标题处理。原生WebView的empty端仅DOM占位尺寸验证，未冒真实WK材质。CodeDiff盘点漏项已查依赖：wide实际单cm-mergeView口、两个cm-scroller为visible，不造双滚动框架；root仅授固定label行band及真实宽窄/位置基线验收，不改editor状态，narrow不新增标题。完成这两项封G后轮换W，已验参考与正式缺口在R2-W。
 
 ## 全轮完成边界
 
