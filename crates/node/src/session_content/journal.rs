@@ -104,6 +104,12 @@ pub(crate) struct Journal {
     _lock: File,
 }
 
+#[derive(Debug)]
+pub(crate) struct ReadBoundary {
+    pub binding: super::ReadBinding,
+    pub cursor: crate::adaptor::transcript_page::Cursor,
+}
+
 impl Journal {
     pub fn bind(&self, directory: &Path) -> Result<(), String> {
         if let Some(bytes) = super::read_metadata(&directory.join("journal.json"))? {
@@ -197,6 +203,27 @@ impl Journal {
 
     pub fn is_pending(&self) -> bool {
         self.pending
+    }
+
+    pub fn capture(&self, view: crate::SessionId) -> Result<ReadBoundary, String> {
+        use super::reference::{ContentReference, ReadBinding};
+        self.ensure_writable()?;
+        if self.pending {
+            return Err("capture has not committed its opening".into());
+        }
+        // append flushes each complete record; observing it does not add a durability barrier.
+        let binding = ReadBinding::new(view, ContentReference {
+            home: self.manifest.identity.home,
+            namespace: khor_core::ObservationNamespace::Acp,
+            agent: self.manifest.identity.agent.clone(),
+            native_id: self.manifest.identity.native_id.clone(),
+        })?;
+        let mut published = File::open(self.directory.join("current/records.jsonl"))
+            .map_err(|error| error.to_string())?;
+        let cursor = crate::adaptor::transcript_page::capture_eof(
+            &self.file, &mut published, &binding.source_id(),
+        )?;
+        Ok(ReadBoundary { binding, cursor })
     }
 
     pub fn abort_base(&mut self) -> Result<(), String> {
@@ -590,6 +617,30 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn capture_requires_a_committed_current_file_and_preserves_canonical_identity() {
+        let f = Fixture::new();
+        let mut journal = Journal::open(&f.0, f.identity(), Opening::New).unwrap();
+        let view = crate::SessionId("view".into());
+        assert!(journal.capture(view.clone()).unwrap_err().contains("committed"));
+        journal.note(&serde_json::json!({"text":"same"})).unwrap();
+        journal.commit_base().unwrap();
+        let fence = journal.capture(view.clone()).unwrap();
+        assert_eq!(fence.binding.view(), &view);
+        assert_eq!(fence.binding.reference().home, f.identity().home);
+        assert_eq!(fence.binding.reference().native_id, f.identity().native_id);
+        assert_eq!(fence.binding.reference().namespace, khor_core::ObservationNamespace::Acp);
+        assert!(fence.cursor.is_for_source(&fence.binding.source_id()));
+        assert!(fence.binding.encode().unwrap().len() <= super::super::reference::METADATA_BYTES);
+        let path = f.current().join("records.jsonl");
+        let content = fs::read(&path).unwrap();
+        fs::rename(&path, path.with_extension("retired")).unwrap();
+        fs::write(&path, content).unwrap();
+        assert!(journal.capture(view.clone()).unwrap_err().contains("identity changed"));
+        journal.poisoned = true;
+        assert!(journal.capture(view).unwrap_err().contains("failed"));
     }
 
     #[test]

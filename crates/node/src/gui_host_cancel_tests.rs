@@ -342,6 +342,10 @@ fn hosted_acp_journal_captures_inputs_and_does_not_append_replays() {
     run_host_case("journal");
 }
 #[test]
+fn no_load_capture_fences_bound_identical_chunks_for_independent_views() {
+    run_host_case("capture-no-load");
+}
+#[test]
 fn first_resume_capture_records_its_actual_partial_origin() {
     run_host_case("journal-resume");
 }
@@ -465,6 +469,39 @@ fn next_note(notes: &mpsc::Receiver<GuiNote>, deadline: Instant) -> GuiNote {
         .recv_timeout(deadline.saturating_duration_since(Instant::now()))
         .expect("host did not publish its expected completion")
 }
+
+fn await_capture(notes: &mpsc::Receiver<GuiNote>, expected: [u8; 16]) -> CaptureFence {
+    let deadline = Instant::now() + Duration::from_secs(4);
+    loop {
+        match next_note(notes, deadline) {
+            GuiNote::Captured { token, result } => {
+                assert_eq!(token, expected, "a view received another view's capture");
+                return result.unwrap();
+            }
+            GuiNote::Gone => panic!("capture retired the live ACP process"),
+            _ => {}
+        }
+    }
+}
+
+fn capture_page(
+    node: &crate::Node,
+    fence: &CaptureFence,
+    newer: bool,
+) -> crate::adaptor::transcript_page::Page<crate::session_content::ContentEvent> {
+    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+        let key = node.content_begin(&fence.binding).await.unwrap();
+        let request = crate::session_content::remote::ClientRead::claim(node.root(), fence.binding.clone(), &key).unwrap();
+        node.content_page(&request, Some(fence.cursor.clone()), newer).await.unwrap()
+    })
+}
+
+fn capture_chunks(page: &crate::adaptor::transcript_page::Page<crate::session_content::ContentEvent>) -> usize {
+    page.events.iter().filter(|event| matches!(&event.payload,
+        crate::session_content::ContentEvent::Update(note)
+            if note["update"]["content"]["text"] == "capture identical chunk"
+    )).count()
+}
 fn await_turn(notes: &mpsc::Receiver<GuiNote>, expected: &str, final_text: &str) {
     let deadline = Instant::now() + Duration::from_secs(4);
     let mut final_note = false;
@@ -553,6 +590,89 @@ fn managed_host_case_worker() {
     let root = scratch.join("store");
     std::fs::create_dir(&root).unwrap();
     match case.as_str() {
+        "capture-no-load" => {
+            unsafe {
+                std::env::set_var(VENDOR_ENV, "acp:capture-fixture");
+                std::env::remove_var(RESUME_ENV);
+            }
+            let (host, mut a, notes_a) = open_host(&root, &scratch, "journal-no-load");
+            let deadline = Instant::now() + Duration::from_secs(4);
+            loop {
+                if let GuiNote::Agent { replays, .. } = next_note(&notes_a, deadline) {
+                    assert!(!replays, "fixture must actually advertise NoLoad");
+                    break;
+                }
+            }
+            write_frame(&mut a, &GuiOp::SayWith {
+                text: "first accepted prompt".into(),
+                images: vec![("image/png".into(), "aW1hZ2U=".into())],
+                files: vec![("original.txt".into(), "原文".into())],
+            }).unwrap();
+            await_turn(&notes_a, "EndTurn", "capture identical chunk");
+            let token_a = [1; 16];
+            write_frame(&mut a, &GuiOp::Capture { token: token_a }).unwrap();
+            let first = await_capture(&notes_a, token_a);
+
+            let mut b = extra_face(&root, &scratch, "journal-no-load");
+            let mut reader = b.try_clone().unwrap();
+            let (tx, notes_b) = mpsc::channel();
+            std::thread::spawn(move || {
+                while let Ok(note) = read_frame::<GuiNote>(&mut reader) {
+                    let end = matches!(note, GuiNote::Gone);
+                    if tx.send(note).is_err() || end { break; }
+                }
+            });
+            write_frame(&mut b, &GuiOp::Say("second accepted prompt".into())).unwrap();
+            await_turn(&notes_b, "EndTurn", "capture identical chunk");
+            let token_b = [2; 16];
+            write_frame(&mut b, &GuiOp::Capture { token: token_b }).unwrap();
+            let second = await_capture(&notes_b, token_b);
+            assert_eq!(first.binding, second.binding);
+            assert_ne!(first.cursor, second.cursor);
+            // A's new reply is an in-stream barrier after B's response.
+            // await_capture rejects any leaked B reply before that barrier.
+            write_frame(&mut a, &GuiOp::Capture { token: token_a }).unwrap();
+            let latest_a = await_capture(&notes_a, token_a);
+            assert_eq!(latest_a.cursor, second.cursor);
+            for (token, fence) in [(token_a, &first), (token_b, &second)] {
+                assert!(crate::proto::encode(&captured_note(token, Ok(fence.clone()))).unwrap().len() <= CAPTURE_WIRE_BYTES);
+            }
+            let node = crate::Node::open(root.clone()).unwrap();
+            let before = capture_page(&node, &first, false);
+            let after = capture_page(&node, &first, true);
+            let all = capture_page(&node, &second, false);
+            assert!(!before.reset && !after.reset && !all.reset);
+            assert_eq!(capture_chunks(&before), 1);
+            assert_eq!(capture_chunks(&after), 1);
+            assert_eq!(capture_chunks(&all), 2);
+            assert!(before.events.len() <= crate::adaptor::transcript_page::EVENT_LIMIT);
+            assert!(after.events.len() <= crate::adaptor::transcript_page::EVENT_LIMIT);
+            let records = first.binding.reference().resolve(&root, node.device()).unwrap().unwrap();
+            let (mut file, _) = records.open().unwrap();
+            let mut text = String::new();
+            file.read_to_string(&mut text).unwrap();
+            let rows: Vec<serde_json::Value> = text.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+            assert_eq!(rows.iter().filter(|row| row["kind"] == "prompt").count(), 2);
+            let prompt = rows.iter().find(|row| row["text"] == "first accepted prompt").unwrap();
+            assert_eq!(prompt["images"][0][1], "aW1hZ2U=");
+            assert_eq!(prompt["files"][0][1], "原文");
+            assert_eq!(rows.iter().filter(|row| row["notification"]["update"]["content"]["text"] == "capture identical chunk").count(), 2);
+            a.shutdown(std::net::Shutdown::Write).unwrap();
+            loop {
+                match notes_a.recv_timeout(Duration::from_secs(4)) {
+                    Ok(GuiNote::Captured { .. }) => panic!("B's fence reached view A"),
+                    Ok(_) => {},
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(error) => panic!("half-closed view did not finish: {error}"),
+                }
+            }
+            assert_alive(process_pid(&scratch, "journal-no-load"));
+            close_host(host, &mut b, &notes_b, process_pid(&scratch, "journal-no-load"));
+            let received = std::fs::read_to_string(scratch.join("journal-no-load/received.jsonl")).unwrap();
+            let calls: Vec<serde_json::Value> = received.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+            assert_eq!(calls.iter().filter(|call| call["method"] == "session/new").count(), 1);
+            assert!(!calls.iter().any(|call| call["method"] == "session/load" || call["method"] == "session/resume"));
+        }
         "journal" => {
             unsafe {
                 std::env::set_var(VENDOR_ENV, "acp:journal-fixture");

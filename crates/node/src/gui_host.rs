@@ -163,6 +163,33 @@ pub enum GuiOp {
         operation: String,
         payload: String,
     },
+    /// A per-view read boundary; it never asks the agent to replay.
+    Capture { token: [u8; 16] },
+}
+
+pub const CAPTURE_WIRE_BYTES: usize = 20 * 1024;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureFence {
+    pub binding: crate::session_content::ReadBinding,
+    pub cursor: crate::adaptor::transcript_page::Cursor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CaptureFailure {
+    NotReady,
+    ReplayInFlight,
+    Unavailable,
+}
+
+fn captured_note(token: [u8; 16], result: Result<CaptureFence, CaptureFailure>) -> GuiNote {
+    let note = GuiNote::Captured { token, result };
+    if crate::proto::encode(&note).is_ok_and(|bytes| bytes.len() <= CAPTURE_WIRE_BYTES) {
+        note
+    } else {
+        GuiNote::Captured { token, result: Err(CaptureFailure::Unavailable) }
+    }
 }
 
 /// How big one [`GuiOp::Part`] is: well under the host's frame cap, and
@@ -440,6 +467,10 @@ pub enum GuiNote {
         operation: String,
         data: Option<String>,
         error: Option<String>,
+    },
+    Captured {
+        token: [u8; 16],
+        result: Result<CaptureFence, CaptureFailure>,
     },
 }
 
@@ -1345,12 +1376,23 @@ match event {
                     };
                     if bootstrap.is_running() {
                         match &op {
+                            Some((who,GuiOp::Capture{token}))=> { fanout.send_to(*who, &captured_note(*token, Err(CaptureFailure::NotReady))); continue; },
                             Some((who,GuiOp::Replay))=> { if !replay_wanted.contains(who) { replay_wanted.push(*who); } continue; },
                             Some((_,GuiOp::Close|GuiOp::Stop))|None=>{},
                             Some((who,_))=> { fanout.send_to(*who,&GuiNote::Refused { why:refused::TURN_IN_FLIGHT.to_owned() }); continue; },
                         }
                     }
                     match op {
+                    Some((who, GuiOp::Capture { token })) => {
+                        let result = if replay.is_some() {
+                            Err(CaptureFailure::ReplayInFlight)
+                        } else {
+                            journal.capture(id.clone())
+                                .map(|boundary| CaptureFence { binding: boundary.binding, cursor: boundary.cursor })
+                                .map_err(|_| CaptureFailure::Unavailable)
+                        };
+                        fanout.send_to(who, &captured_note(token, result));
+                    }
                     Some((who,GuiOp::ElicitAnswer{ask,response}))=>{
                         let accepted=elicits.iter().position(|(id,_,_)|*id==ask).and_then(|at|{
                             let value:serde_json::Value=serde_json::from_str(&response).ok()?;

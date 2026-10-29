@@ -77,9 +77,9 @@ try:
                 continue
             answer(request_id, {
                 'protocolVersion': 2 if mode == 'handshake-refuse' else 1,
-                'agentCapabilities': {'loadSession': True,
+                'agentCapabilities': {'loadSession': mode != 'journal-no-load',
                                       **({'sessionCapabilities': {'resume': {}}} if mode == 'journal-resume' else {}),
-                                      **({'promptCapabilities': {'image': True, 'embeddedContext': True}} if mode == 'journal-load' else {})},
+                                      **({'promptCapabilities': {'image': True, 'embeddedContext': True}} if mode in ('journal-load', 'journal-no-load') else {})},
                 'authMethods': [{'id': 'synthetic', 'name': 'Synthetic', 'type': 'agent'}],
                 'agentInfo': {'name': 'synthetic-q037', 'version': '1'},
             })
@@ -114,6 +114,11 @@ try:
             turns += 1
             pending = request_id
             mark('prompt', {'id': request_id, 'turn': turns})
+            if mode == 'journal-no-load':
+                note('capture identical chunk')
+                answer(request_id, {'stopReason': 'end_turn'})
+                pending = None
+                continue
             if mode == 'journal-load':
                 captures = list((root.parent / 'store/.khor/acp-journal').glob('*/current/records.jsonl'))
                 prompts = [json.loads(record) for path in captures for record in path.read_text().splitlines() if json.loads(record).get('kind') == 'prompt']

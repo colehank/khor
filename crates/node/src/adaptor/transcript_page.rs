@@ -82,12 +82,48 @@ impl<T> Page<T> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileVersion {
     file: String,
     len: u64,
     modified: (u64, u32),
+}
+
+/// Capture only an already-published complete EOF. The writer and the
+/// independently opened read path must still identify the same file.
+pub(crate) fn capture_eof(
+    writer: &File,
+    published: &mut File,
+    source: &str,
+) -> Result<Cursor, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    if source.is_empty() || source.len() > 256 {
+        return Err("invalid capture source identity".into());
+    }
+    if !writer.metadata().map_err(|error| error.to_string())?.is_file()
+        || !published.metadata().map_err(|error| error.to_string())?.is_file()
+    {
+        return Err("capture source is not a regular file".into());
+    }
+    let before = FileVersion::of(writer).map_err(|error| error.to_string())?;
+    if FileVersion::of(published).map_err(|error| error.to_string())? != before {
+        return Err("published capture file identity changed".into());
+    }
+    if before.len > 0 {
+        published.seek(SeekFrom::End(-1)).map_err(|error| error.to_string())?;
+        let mut last = [0];
+        published.read_exact(&mut last).map_err(|error| error.to_string())?;
+        if last != [b'\n'] {
+            return Err("capture ends inside an incomplete record".into());
+        }
+    }
+    if FileVersion::of(writer).map_err(|error| error.to_string())? != before
+        || FileVersion::of(published).map_err(|error| error.to_string())? != before
+    {
+        return Err("capture changed while observing its EOF".into());
+    }
+    Ok(before.cursor(source, Position { start: before.len, end: before.len, item: 0 }))
 }
 
 impl FileVersion {
@@ -795,6 +831,42 @@ mod tests {
             .unwrap()
             .write_all(bytes)
             .unwrap();
+    }
+
+    #[test]
+    fn capture_eof_separates_identical_records_without_scanning_history() {
+        let fixture = Fixture::new("capture-eof", b"same\n");
+        let writer = File::open(&fixture.path).unwrap();
+        let mut published = File::open(&fixture.path).unwrap();
+        let cursor = capture_eof(&writer, &mut published, "source").unwrap();
+        assert_eq!(cursor.record_range(), 5..5);
+        append(&fixture, b"same\n");
+        let before = fixture.page(Some(&cursor));
+        let after = next(&fixture, &cursor);
+        assert_eq!(words(&before), ["same"]);
+        assert_eq!(words(&after), ["same"]);
+        assert_eq!(before.events[0].position.start, 0);
+        assert_eq!(after.events[0].position.start, 5);
+        let empty = Fixture::new("capture-empty", b"");
+        let writer = File::open(&empty.path).unwrap();
+        let mut published = File::open(&empty.path).unwrap();
+        let cursor = capture_eof(&writer, &mut published, "source").unwrap();
+        assert_eq!(cursor.record_range(), 0..0);
+        assert!(empty.page(Some(&cursor)).events.is_empty());
+    }
+
+    #[test]
+    fn capture_eof_rejects_an_incomplete_or_replaced_published_file() {
+        let partial = Fixture::new("capture-partial", b"partial");
+        let writer = File::open(&partial.path).unwrap();
+        let mut published = File::open(&partial.path).unwrap();
+        assert!(capture_eof(&writer, &mut published, "source").unwrap_err().contains("incomplete"));
+        let fixture = Fixture::new("capture-replaced", b"same\n");
+        let writer = File::open(&fixture.path).unwrap();
+        std::fs::rename(&fixture.path, fixture.path.with_extension("retired")).unwrap();
+        std::fs::write(&fixture.path, b"same\n").unwrap();
+        let mut published = File::open(&fixture.path).unwrap();
+        assert!(capture_eof(&writer, &mut published, "source").unwrap_err().contains("identity changed"));
     }
 
     #[test]
