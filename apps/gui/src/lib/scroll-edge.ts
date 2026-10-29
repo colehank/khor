@@ -102,7 +102,8 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
     scroller: null,
     sync: () => { if (!frame) frame = requestAnimationFrame(paint); },
   };
-  let frame = 0;
+  let frame = 0, stylesDirty = true, portPadding = 0;
+  const stickyTops = new Map<HTMLElement,number>();
   let targets: { body: HTMLElement; heading: boolean; groupHead: HTMLElement | null }[] = [];
   const clearFades = () => {
     for (const {body} of targets) {
@@ -115,21 +116,33 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
       fadeOwner.delete(body);
     }
     targets = [];
+    stickyTops.clear();
+    stylesDirty = true;
   };
   function paint() {
     frame = 0;
     const on = !!b.scroller && b.scroller.scrollTop > EDGE;
+    if (stylesDirty) {
+      stylesDirty = false;
+      portPadding = b.scroller ? parseFloat(getComputedStyle(b.scroller).paddingTop) || 0 : 0;
+      for (const {body,heading,groupHead} of targets) {
+        for (const header of [heading ? body : null,groupHead])
+          if (header && !stickyTops.has(header)) stickyTops.set(header,parseFloat(getComputedStyle(header).top) || 0);
+      }
+    }
     const edge = b.scroller?.getBoundingClientRect().top ?? 0;
+    const stickyEdge = (header:HTMLElement) => edge+(b.scroller?.clientTop ?? 0)+portPadding+(stickyTops.get(header) ?? 0);
     const main = head?.getBoundingClientRect() ?? {top:edge,bottom:edge};
     const tail = parseFloat(getComputedStyle(parent!).getPropertyValue('--gap-pane')) || 0;
     const values = targets.map(({body,heading,groupHead}) => {
       const rect = body.getBoundingClientRect(), top = rect.top;
       const group = !heading && groupHead?.getBoundingClientRect();
-      const held = group && group.top <= main.bottom + 1 && group.bottom > main.bottom;
+      const boundary = groupHead ? stickyEdge(groupHead) : main.bottom;
+      const held = group && group.top <= boundary + 1 && group.bottom > boundary;
       const start = (held ? group.top : main.top) - top;
       const flush = held && body.dataset.stickyBody === 'flush';
       const end = (held ? group.bottom : main.bottom) + (heading || flush ? 0 : tail) - top;
-      return {body,start,length:end-start,active:on && end>0,material:heading && on && rect.top<=main.bottom+1 && rect.bottom>main.bottom};
+      return {body,start,length:end-start,active:on && end>0,material:heading && on && rect.top<=stickyEdge(body)+1 && rect.bottom>stickyEdge(body)};
     });
     head?.toggleAttribute('data-scrolled',on);
     for (const {body,start,length,active,material} of values) {
@@ -145,12 +158,19 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
     clearFades();
     const scroller = b.scroller;
     if (!scroller) return;
-    const marked = [...scroller.querySelectorAll<HTMLElement>('[data-sticky-head], [data-sticky-body]')].filter(body => {
-      for (let at=body.parentElement;at && at!==scroller;at=at.parentElement)
-        if (at.querySelector(':scope > [data-band]')) return false;
-      return true;
-    });
-    targets = (marked.length ? marked : head ? [scroller] : []).map(body => ({
+    const marker = '[data-sticky-head], [data-sticky-body]';
+    const branches = marker+', [data-band]';
+    const bodies:HTMLElement[] = [];
+    const visit = (body:HTMLElement) => {
+      // An inner primary band keeps its own content owner.
+      if (body.matches('[data-band]') || body.querySelector(':scope > [data-band]')) return;
+      if (body.matches(marker) || !body.querySelector(branches)) { bodies.push(body);return; }
+      for (const child of body.children) if (child instanceof HTMLElement) visit(child);
+    };
+    if (scroller.querySelector(branches)) {
+      for (const child of scroller.children) if (child instanceof HTMLElement) visit(child);
+    } else if (head) bodies.push(scroller);
+    targets = bodies.map(body => ({
       body,heading:body.hasAttribute('data-sticky-head'),
       groupHead:body.closest('[data-sticky-group]')?.querySelector<HTMLElement>(':scope > [data-sticky-head]') ?? null,
     }));
@@ -167,7 +187,7 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
     if (parent.style.getPropertyValue("--band-h") !== h) parent.style.setProperty("--band-h", h);
   };
   measure();
-  const size = new ResizeObserver(() => { measure();b.sync(); });
+  const size = new ResizeObserver(() => { measure();stylesDirty=true;stickyTops.clear();b.sync(); });
   if (head) size.observe(head);
 
   const release = (el: HTMLElement) => {

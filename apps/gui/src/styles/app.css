@@ -1401,118 +1401,28 @@ aside[data-side] {
   display: grid;
   column-gap: var(--gap-in);
 }
-[data-load-top] [data-top-row],
+[data-load-top] [data-top-row] { display: contents; }
+/* A real header/body box keeps one material and fade per section.
+   Subgrid retains the parent tracks; the rows themselves still use contents. */
+[data-load-top] :is([data-top-heads], [data-top-body]) {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  column-gap: inherit;
+}
 [data-load-top] [data-top-heads] {
-  display: contents;
-}
-
-/* **The column heads stay at the top of the window while the rows go
-   past them.** 2026-09-04:「拖动进程列表的时候,表头要悬浮,不要被拖走,
-   这种基础的都搞错」.
-
-   ⚠️ **The class was there and did nothing, and the reason is worth
-   keeping.** `[data-top-heads]` carried `sticky top-0 bg-card` — but it
-   is `display: contents`, so **it has no box**, and an element with no
-   box cannot be positioned, cannot be a containing block, and cannot
-   paint a background. Measured before this rule: `position` computed
-   `static` and scrolling the window to its end took the heads from 737
-   to **−2675**. A utility that reads correctly and is inert is worse
-   than a missing one.
-
-   So the stickiness goes on the **cells**, which are the real boxes —
-   they are the grid's first row, and each sticks to the scroll port's
-   top on its own. The ground comes with them, or the rows would slide
-   through the words. */
-/* **The scroll port must clip what it paints, not only what it hit-tests.**
-
-   2026-09-11. The user reported a band above the sticky head three
-   times: the bottom sliver of a row that had been scrolled away, still
-   sitting there while the table stood still.
-
-   **Measured from inside the running app** — no browser here
-   reproduces it, so a temporary command printed the numbers to stderr.
-   Asking `elementsFromPoint` one, four and eight pixels above the head
-   answered `DIV < DIV < DIV`: containers, no row, no cell. **That
-   reading sent two fixes to the wrong place.** Walking the DOM by
-   geometry instead found it immediately:
-
-     {tag: SPAN, data: "c,topPid", top: 411, height: 18}   headTop: 427
-
-   A real PID cell, laid out 411→429 while the port's visible area
-   starts at 427: **sixteen pixels of it sit above the port**, which
-   `overflow-y: auto` is supposed to cut. Hit testing agrees they are
-   cut — which is exactly why the point queries found nothing there —
-   **and they are painted anyway**. One row, every column, the sliver
-   the user kept pointing at.
-
-   `clip-path` is not a hint and not a containment promise: it is a
-   shape every descendant's ink is cut to, and it is what finally
-   removed the band (measured: screenshot before and after).
-
-   ⚠️ **Two things that did not work, so nobody tries them again.**
-   `box-shadow` reaching up from the head (`a19dc6b`) painted nothing —
-   coloured red and photographed, there was no red: outside the clip
-   there is nothing to paint on. `will-change: transform` on the port
-   changed which layer drew the band, not whether it was clipped.
-   `contain: paint` alone left it unchanged too, measured the same way,
-   so it is not here either. */
-[data-load-top-box] {
-  clip-path: inset(0);
-}
-
-[data-load-top] [data-top-heads] > * {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--card);
 }
-
-/* **The heads have to read as heads.** 2026-09-04:「表头要明显,现在看起来
-   就是上面的散点图的 X 和 y 设置是下面表的表头」 — two rows of small muted
-   words, one under the other, and nothing saying which belonged to what.
-   The separation between the two blocks is `[data-top-seam]` in the
-   markup; this is the other half, the head standing up on its own.
-
-   **Weight and ink and one hairline, and that is all.** No ground, no
-   box: the same restraint as everywhere else on this card, and the same
-   two channels the rail and the reading words use. The rule under the
-   heads is what a table's head has always been — it says 「everything
-   below this line is rows」 — and it doubles as the edge the rows slide
-   under while the heads stay put. */
+/* WK once painted clipped row slivers above the scroll port despite
+   overflow clipping; retain its explicit paint boundary. */
+[data-load-top-box] { clip-path: inset(0); }
 [data-load-top] [data-top-heads] > * {
   color: var(--foreground);
   font-weight: var(--font-weight-title);
-  /* ⚠️ **Tombstone: a second shadow reaching 12px upward, 2026-09-11.**
-     It was aimed at a band above the head on the user's screen, with
-     the bottom sliver of a scrolled-away row showing through it. **It
-     never painted a pixel.** The head sits at exactly 0 from the scroll
-     port's top, so anything drawn above it is outside the port's clip —
-     measured by painting this shadow red and photographing it: no red,
-     anywhere. A fix that cannot reach the place it is aimed at.
-
-     What the attempt did leave behind, worth keeping: **the same
-     selector is declared twice in this file, and a second `box-shadow`
-     replaces the first outright rather than adding to it.** The first
-     attempt landed in the other block and was silently dropped; the
-     gate read it back as 1px and said so. If a second shadow is ever
-     wanted here, it goes on this line, comma-separated.
-
-     The band itself is still unexplained — see docs/handoff. */
-  box-shadow: inset 0 calc(-1 * var(--hair)) 0 0 var(--border);
-}
-/* ⚠️ **The rule has to be continuous, and per-cell it was not.** The
-   heads are grid items with `--gap-in` between them, and a shadow drawn
-   inside each one stops at each gap: on screen it reads as a row of
-   dashes rather than as the line a table's head sits on. Seen at 3× in
-   a screenshot after the measurements said the head was 600 against the
-   body's 400 and「明显」 was still not what a reader saw.
-
-   Each head but the last is widened by exactly the gap and padded back
-   by it, so the boxes touch and the shadow runs across, while every
-   word stays on the pixel it was on. */
-[data-load-top] [data-top-heads] > *:not(:last-child) {
-  margin-inline-end: calc(-1 * var(--gap-in));
-  padding-inline-end: var(--gap-in);
+  background: transparent;
+  box-shadow: none;
 }
 
 /* **Nothing in this table wraps.** 2026-09-04:「表的内容,比如"内存"是不
@@ -1629,6 +1539,7 @@ aside[data-side] {
 [data-tight] > [data-load-top] [data-top-heads] {
   display: none;
 }
+[data-tight] > [data-load-top] [data-top-body] { display: block; }
 [data-tight] > [data-load-top] [data-top-row] {
   /* **Three lines, and the quantities share the third.** A two-column
      grid put every quantity on a line of its own — measured: a row 89
@@ -1675,7 +1586,7 @@ aside[data-side] {
 /* No head row on a phone, so no rule for one: the first row's own
    hairline would stand under the seam's, an empty band between two
    lines (F4 review). */
-[data-tight] > [data-load-top] [data-top-heads] + [data-top-row] {
+[data-tight] > [data-load-top] [data-top-body] > [data-top-row]:first-child {
   border-block-start: 0;
 }
 /* Wide: a gutter before 命令, so a right-aligned number never runs into
