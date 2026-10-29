@@ -1,4 +1,4 @@
-//! Event pages over vendor JSONL windows. Record positions remain in cursors
+//! Event pages over JSONL windows. Record positions remain in cursors
 //! because one record can expand to more than one response page.
 use std::{collections::VecDeque, fs::File, io, ops::Range, time::UNIX_EPOCH};
 
@@ -23,7 +23,9 @@ pub struct Cursor {
 }
 
 impl Cursor {
-    pub fn is_for_source(&self, source: &str) -> bool { self.source == source }
+    pub fn is_for_source(&self, source: &str) -> bool {
+        self.source == source
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -39,9 +41,9 @@ pub struct Position {
     pub item: usize,
 }
 
-pub struct Event {
+pub struct Event<T = Utterance> {
     pub position: Position,
-    pub utterance: Utterance,
+    pub payload: T,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,8 +53,8 @@ pub struct Reference {
     pub missing_end: bool,
 }
 
-pub struct Page {
-    pub events: Vec<Event>,
+pub struct Page<T = Utterance> {
+    pub events: Vec<Event<T>>,
     pub references: Vec<Reference>,
     pub older: Option<Cursor>,
     pub reset: bool,
@@ -61,7 +63,7 @@ pub struct Page {
     origin: Cursor,
 }
 
-impl Page {
+impl<T> Page<T> {
     pub fn cursor_before(&self, position: Position) -> Cursor {
         Cursor {
             position,
@@ -135,13 +137,13 @@ fn check_cancelled(cancelled: &impl Fn() -> bool) -> Result<(), String> {
 /// Append preserves an older-page cursor. Replacement, shrink and same-length
 /// rewrites restart at the tail and report reset. In-place rewrites that also
 /// grow need a provider generation signal; length alone cannot detect them.
-pub fn read_page(
+pub fn read_page<T>(
     file: &mut File,
     source: &str,
     cursor: Option<&Cursor>,
-    parse: fn(&str) -> Vec<Utterance>,
+    parse: fn(&str) -> Vec<T>,
     cancelled: &impl Fn() -> bool,
-) -> Result<Page, String> {
+) -> Result<Page<T>, String> {
     check_cancelled(cancelled)?;
     let observation = Observation::of(file).map_err(|e| e.to_string())?;
     if cursor.is_some_and(|cursor| cursor.source != source) {
@@ -206,7 +208,7 @@ pub fn read_page(
                             end: range.end,
                             item,
                         },
-                        utterance,
+                        payload: utterance,
                     });
                 }
             }
@@ -316,13 +318,13 @@ pub fn read_page(
 /// Continue after a newer cursor without replaying the existing transcript.
 /// Incomplete inline-sized records keep their start; oversized pending records
 /// advance by byte windows and remain references until their newline arrives.
-pub fn read_next(
+pub fn read_next<T>(
     file: &mut File,
     source: &str,
     cursor: &Cursor,
-    parse: fn(&str) -> Vec<Utterance>,
+    parse: fn(&str) -> Vec<T>,
     cancelled: &impl Fn() -> bool,
-) -> Result<Page, String> {
+) -> Result<Page<T>, String> {
     check_cancelled(cancelled)?;
     let observation = Observation::of(file).map_err(|error| error.to_string())?;
     if cursor.source != source {
@@ -414,7 +416,7 @@ pub fn read_next(
                             end: range.end,
                             item,
                         },
-                        utterance,
+                        payload: utterance,
                     });
                 }
                 newer.position = Position {
@@ -577,7 +579,7 @@ mod tests {
     fn words(page: &Page) -> Vec<&str> {
         page.events
             .iter()
-            .map(|event| match &event.utterance {
+            .map(|event| match &event.payload {
                 Utterance::Agent(text) => text.as_str(),
                 _ => panic!("unexpected event"),
             })

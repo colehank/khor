@@ -39,8 +39,15 @@ function ObservedSession({ row, onReading }: { row: SessionRow; onReading?: Sess
     return () => { stopped = true; };
   }, [row.id, machine, queryKey, attempt]);
   if (content?.kind === 'available') {
-    return <ChatView id={row.id} still watch={content.following} category={row.category}
+    const history=<ChatView id={row.id} still watch={content.following} category={row.category}
       home={row.home} machine={machine} ended={row.word === 'failed'} onReading={onReading} />;
+    if (!content.capture) return history;
+    return <>
+      <div data-history-capture className="px-row py-in text-caption text-muted-foreground" role="status">
+        <p>{gui.history_capture_scope}</p>
+      </div>
+      {history}
+    </>;
   }
   const reason = content?.kind === 'unavailable' ? {
     no_source: gui.content_no_source,

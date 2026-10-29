@@ -5524,7 +5524,7 @@ impl Node {
         }
     }
 
-    /// A bounded page of an external transcript, latest events first loaded
+    /// A bounded page of the selected read-only source, initially loaded
     /// from the tail. The cursor is scoped to this session and file identity.
     pub fn transcript_page(
         &self,
@@ -5532,11 +5532,11 @@ impl Node {
         cursor: Option<&adaptor::transcript_page::Cursor>,
         newer: bool,
         cancelled: &std::sync::atomic::AtomicBool,
-    ) -> Result<adaptor::transcript_page::Page, String> {
+    ) -> Result<adaptor::transcript_page::Page<session_content::ContentEvent>, String> {
         if cancelled.load(std::sync::atomic::Ordering::Acquire) {
             return Err("history request cancelled".to_owned());
         }
-        let (mut file, parse, source) = self.external_transcript(id)?;
+        let (mut file, parse, source) = self.opened_content(id)?;
         let cancelled = || cancelled.load(std::sync::atomic::Ordering::Acquire);
         if cursor.is_some_and(|cursor| !cursor.is_for_source(&source)) {
             let mut page =
@@ -5562,7 +5562,7 @@ impl Node {
         if cancelled.load(std::sync::atomic::Ordering::Acquire) {
             return Err("history request cancelled".to_owned());
         }
-        let (mut file, _, source) = self.external_transcript(id)?;
+        let (mut file, _, source) = self.opened_content(id)?;
         adaptor::transcript_page::read_record_chunk(&mut file, &source, cursor, from, &|| {
             cancelled.load(std::sync::atomic::Ordering::Acquire)
         })
@@ -5588,7 +5588,9 @@ impl Node {
         };
         let availability = source.availability();
         if !id.0.starts_with("observe/") && matches!(availability, Availability::Available { .. }) {
-            ObservationBinding::save(&self.root, self.device_str(), id, &source)?;
+            if let session_content::ContentSource::Native(source)=&source {
+                ObservationBinding::save(&self.root, self.device_str(), id, source)?;
+            }
         }
         Ok(availability)
     }
@@ -5597,14 +5599,21 @@ impl Node {
         &self,
         id: &SessionId,
         register: bool,
-    ) -> Result<Option<session_content::NativeTranscript>, session_content::Unavailable> {
-        use session_content::{NativeTranscript, ObservationBinding, Provider, Unavailable};
+    ) -> Result<Option<session_content::ContentSource>, session_content::Unavailable> {
+        use session_content::{ContentSource, NativeTranscript, ObservationBinding, Provider, Unavailable};
         if id.0.starts_with("observe/") {
             let record = session_content::Observation::read(&self.root, id)
                 .map_err(|_| Unavailable::Unreadable)?
                 .ok_or(Unavailable::NoSource)?;
             if record.reference.home != self.device() {
                 return Err(Unavailable::RemoteNotConnected);
+            }
+            if record.reference.namespace==khor_core::ObservationNamespace::Acp {
+                return session_content::journal::Source::find(&self.root,session_content::journal::Identity {
+                    home:record.reference.home,
+                    agent:record.reference.agent,
+                    native_id:record.reference.native_id,
+                }).map(|source|source.map(ContentSource::Journal)).map_err(|_|Unavailable::Unreadable);
             }
             let Some(provider) = record.native_provider() else {
                 return Ok(None);
@@ -5614,12 +5623,16 @@ impl Node {
                 provider,
                 &live::clean_leaf(&record.reference.native_id),
                 Some(&record.reference.native_id),
-            );
+            ).map(|source|source.map(ContentSource::Native));
+        }
+        let directory=self.live.dir_of(id);
+        if let Some(journal)=session_content::journal::Source::registered(&self.root,self.device(),id,directory.as_deref())
+            .map_err(|_|Unavailable::Unreadable)? {
+            return Ok(Some(ContentSource::Journal(journal)));
         }
         let Some(leaf) = id.0.strip_prefix("tui/") else {
             return Ok(None);
         };
-        let directory = self.live.dir_of(id);
         let registered = session_content::registered(id, directory.as_deref())
             .map_err(|_| Unavailable::Unreadable)?;
         let binding = ObservationBinding::read(&self.root, self.device_str(), id)
@@ -5631,10 +5644,10 @@ impl Node {
             return match binding.filter(|binding| binding.matches(provider, &leaf)) {
                 Some(binding) => binding.resolve(&self.root),
                 None => NativeTranscript::resolve(&self.root, provider, &leaf, None),
-            };
+            }.map(|source|source.map(ContentSource::Native));
         }
         if let Some(binding) = binding {
-            return binding.resolve(&self.root);
+            return binding.resolve(&self.root).map(|source|source.map(ContentSource::Native));
         }
         if !register {
             return Ok(None);
@@ -5653,15 +5666,15 @@ impl Node {
             provider = Some(found);
         }
         match provider {
-            Some(provider) => NativeTranscript::resolve(&self.root, provider, leaf, None),
+            Some(provider) => NativeTranscript::resolve(&self.root, provider, leaf, None).map(|source|source.map(ContentSource::Native)),
             None => Ok(None),
         }
     }
 
-    fn external_transcript(
+    fn opened_content(
         &self,
         id: &SessionId,
-    ) -> Result<(std::fs::File, session_content::Parser, String), String> {
+    ) -> Result<(std::fs::File, fn(&str)->Vec<session_content::ContentEvent>, String), String> {
         let source = self
             .selected_content(id, false)
             .map_err(|reason| format!("content source unavailable: {reason:?}"))?

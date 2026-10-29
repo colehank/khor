@@ -1,6 +1,7 @@
 import type { HistoryEntry } from '@/gen/bindings/HistoryEntry';
 import { applyAcpUpdate, type AcpItem, type AcpUpdate } from './acp-view';
-export type HistoryItem = AcpItem & {
+import { gui } from '@/gen/catalog';
+export type HistoryItem = (AcpItem | { who: 'sys'; text: string }) & {
   historyKey: string;
 };
 export function paintHistory(entries: HistoryEntry[]): HistoryItem[] {
@@ -9,6 +10,10 @@ export function paintHistory(entries: HistoryEntry[]): HistoryItem[] {
   })[] = [];
   for (const entry of entries) {
     const frame = entry.frame;
+    if (frame.kind === 'capture_gap') {
+      out.push({who: 'sys', text: gui.history_capture_gap(1), historyKey: `${entry.key}:capture`});
+      continue;
+    }
     if (frame.kind !== 'note' && frame.kind !== 'history')
       continue;
     const carried = frame.update as {

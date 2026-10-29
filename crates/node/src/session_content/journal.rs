@@ -41,6 +41,15 @@ pub(crate) enum Opening {
     Load,
     Resume,
 }
+impl Opening {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::New => "new",
+            Self::Load => "load",
+            Self::Resume => "resume",
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -96,6 +105,16 @@ pub(crate) struct Journal {
 }
 
 impl Journal {
+    pub fn bind(&self, directory: &Path) -> Result<(), String> {
+        if let Some(bytes) = super::read_metadata(&directory.join("journal.json"))? {
+            let identity: Identity = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            if identity != self.manifest.identity {
+                return Err("session already names another journal source".into());
+            }
+        }
+        let bytes = serde_json::to_vec(&self.manifest.identity).map_err(|e| e.to_string())?;
+        super::write_metadata(&directory.join("journal.json"), &bytes)
+    }
     pub fn open(root: &Path, identity: Identity, opening: Opening) -> Result<Self, String> {
         identity.validate()?;
         let directory = identity.directory(root);
@@ -178,6 +197,17 @@ impl Journal {
 
     pub fn is_pending(&self) -> bool {
         self.pending
+    }
+
+    pub fn abort_base(&mut self) -> Result<(), String> {
+        if !self.pending {
+            return Ok(());
+        }
+        fs::remove_dir_all(self.directory.join("pending"))
+            .map_err(|e| format!("journal pending cleanup failed: {e}"))?;
+        self.pending = false;
+        self.poisoned = true;
+        Ok(())
     }
 
     pub fn note<T: Serialize>(&mut self, notification: &T) -> Result<(), String> {
@@ -315,6 +345,171 @@ impl Journal {
         // Preserve interrupted bytes as an explicit raw record instead of joining new JSON onto them.
         self.file.write_all(b"\n").map_err(|e| e.to_string())?;
         Ok(true)
+    }
+}
+
+pub(crate) struct Source {
+    path: PathBuf,
+    manifest: Manifest,
+}
+impl Source {
+    pub fn identity(&self) -> &Identity {
+        &self.manifest.identity
+    }
+    pub fn find(root: &Path, identity: Identity) -> Result<Option<Self>, String> {
+        identity.validate()?;
+        let current = identity.directory(root).join("current");
+        let Some(manifest) = read_manifest(&current)? else {
+            return if current.exists() {
+                Err("committed journal manifest is missing".into())
+            } else {
+                Ok(None)
+            };
+        };
+        if manifest.version != VERSION || manifest.identity != identity {
+            return Err("journal source identity changed".into());
+        }
+        Ok(Some(Self {
+            path: current.join("records.jsonl"),
+            manifest,
+        }))
+    }
+    pub fn registered(
+        root: &Path,
+        home: DeviceId,
+        id: &crate::SessionId,
+        directory: Option<&Path>,
+    ) -> Result<Option<Self>, String> {
+        let Some(directory) = directory else {
+            return Ok(None);
+        };
+        let Some(bytes) = super::read_metadata(&directory.join("journal.json"))? else {
+            return Ok(None);
+        };
+        let identity: Identity = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+        if identity.home != home || crate::adaptor::id_for(&identity.native_id) != *id {
+            return Err("journal registration belongs to another session or home".into());
+        }
+        Self::find(root, identity)
+    }
+    pub fn capture(&self) -> super::Capture {
+        super::Capture {
+            opening: self.manifest.opening.key(),
+            gaps: self.manifest.gaps,
+        }
+    }
+    pub fn source_id(&self, id: &crate::SessionId) -> String {
+        serde_json::to_string(&(VERSION, "acp_journal", id, &self.manifest.identity))
+            .expect("journal identity serializes")
+    }
+    pub fn open(&self) -> io::Result<File> {
+        let file = File::open(&self.path)?;
+        if !file.metadata()?.is_file() {
+            return Err(io::Error::other("journal source is not a file"));
+        }
+        Ok(file)
+    }
+}
+
+pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
+    use super::ContentEvent;
+    let Ok(mut record) = serde_json::from_str::<serde_json::Value>(text) else {
+        return vec![ContentEvent::Reference];
+    };
+    let Some(object) = record.as_object_mut() else {
+        return vec![ContentEvent::Reference];
+    };
+    match object.get("kind").and_then(|v| v.as_str()) {
+        Some("update") => {
+            let Some(notification) = object.remove("notification") else {
+                return vec![ContentEvent::Reference];
+            };
+            if serde_json::from_value::<agent_client_protocol::schema::v1::SessionNotification>(
+                notification.clone(),
+            )
+            .is_err()
+            {
+                return vec![ContentEvent::Reference];
+            }
+            vec![ContentEvent::Update(notification)]
+        }
+        Some("prompt") => {
+            let Some(text) = object.get("text").and_then(|v| v.as_str()) else {
+                return vec![ContentEvent::Reference];
+            };
+            if object.get("turn").and_then(|v| v.as_str()).is_none()
+                || !object.get("images").is_some_and(|v| v.is_array())
+                || !object.get("files").is_some_and(|v| v.is_array())
+            {
+                return vec![ContentEvent::Reference];
+            }
+            let mut updates = vec![ContentEvent::Update(
+                serde_json::json!({"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":text}}}),
+            )];
+            if let Some(images) = object.get("images").and_then(|v| v.as_array()) {
+                for image in images {
+                    let (Some(mime), Some(data)) = (
+                        image.get(0).and_then(|v| v.as_str()),
+                        image.get(1).and_then(|v| v.as_str()),
+                    ) else {
+                        return vec![ContentEvent::Reference];
+                    };
+                    updates.push(ContentEvent::Update(serde_json::json!({"update":{"sessionUpdate":"user_message_chunk","content":{"type":"image","mimeType":mime,"data":data}}})));
+                }
+            }
+            if let Some(files) = object.get("files").and_then(|v| v.as_array()) {
+                for file in files {
+                    let (Some(name), Some(text)) = (
+                        file.get(0).and_then(|v| v.as_str()),
+                        file.get(1).and_then(|v| v.as_str()),
+                    ) else {
+                        return vec![ContentEvent::Reference];
+                    };
+                    updates.push(ContentEvent::Update(serde_json::json!({"update":{"sessionUpdate":"user_message_chunk","content":{"type":"resource","resource":{"uri":format!("file://{name}"),"text":text}}}})));
+                }
+            }
+            updates
+        }
+        Some("turn") => {
+            if object.get("turn").and_then(|v| v.as_str()).is_none()
+                || object
+                    .get("detail")
+                    .is_none_or(|v| !v.is_null() && !v.is_string())
+            {
+                return vec![ContentEvent::Reference];
+            }
+            let fallback = match object.get("outcome").and_then(|v| v.as_str()) {
+                Some("ended") => "EndTurn",
+                Some("cancelled") => "Cancelled",
+                Some("failed") => "Failed",
+                Some("unknown") => "Unknown",
+                _ => return vec![ContentEvent::Reference],
+            };
+            vec![ContentEvent::Turn {
+                stop: object
+                    .get("detail")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(fallback)
+                    .to_owned(),
+            }]
+        }
+        Some("gap") => match object.get("opening").and_then(|v| v.as_str()) {
+            Some(opening @ ("new" | "load" | "resume"))
+                if object
+                    .get("incomplete_record")
+                    .is_some_and(|v| v.is_boolean())
+                    && object
+                        .get("interrupted_turn")
+                        .is_some_and(|v| v.is_null() || v.is_string()) =>
+            {
+                vec![ContentEvent::CaptureGap {
+                    opening: opening.to_owned(),
+                    interrupted: object.get("interrupted_turn").is_some_and(|v| !v.is_null()),
+                }]
+            }
+            _ => vec![ContentEvent::Reference],
+        },
+        _ => vec![ContentEvent::Reference],
     }
 }
 
@@ -539,6 +734,65 @@ mod tests {
             read_manifest(&f.current())
                 .unwrap_err()
                 .contains("byte budget")
+        );
+    }
+
+    #[test]
+    fn journal_parser_preserves_prompt_blocks_original_stop_and_unparsed_records() {
+        use super::super::ContentEvent;
+        let prompt = serde_json::json!({"kind":"prompt","turn":"turn","text":"words","images":[["image/png","pixels"]],"files":[["note.md","body"]]});
+        let events = parse_record(&prompt.to_string());
+        assert_eq!(events.len(), 3);
+        assert!(
+            matches!(&events[0],ContentEvent::Update(update) if update["update"]["content"]["text"]=="words")
+        );
+        assert!(
+            matches!(&events[1],ContentEvent::Update(update) if update["update"]["content"]["data"]=="pixels")
+        );
+        assert!(
+            matches!(&events[2],ContentEvent::Update(update) if update["update"]["content"]["resource"]["text"]=="body")
+        );
+        let turn = r#"{"kind":"turn","turn":"turn","outcome":"ended","detail":"MaxTokens"}"#;
+        assert!(matches!(&parse_record(turn)[0],ContentEvent::Turn {stop} if stop=="MaxTokens"));
+        for damaged in [
+            "{\"interrupted\":",
+            r#"{"kind":"prompt","text":"would lose attachments"}"#,
+        ] {
+            assert!(matches!(
+                parse_record(damaged).as_slice(),
+                [ContentEvent::Reference]
+            ));
+        }
+    }
+
+    #[test]
+    fn reader_opens_committed_journal_without_becoming_another_writer() {
+        let f = Fixture::new();
+        let mut writer = Journal::open(&f.0, f.identity(), Opening::Load).unwrap();
+        assert!(Source::find(&f.0, f.identity()).unwrap().is_none());
+        writer.note(&serde_json::json!({"sessionId":"provider/full/id","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"recorded"}}})).unwrap();
+        writer.commit_base().unwrap();
+        let source = Source::find(&f.0, f.identity()).unwrap().unwrap();
+        let mut file = source.open().unwrap();
+        let page = crate::adaptor::transcript_page::read_page(
+            &mut file,
+            &source.source_id(&crate::SessionId("alias".into())),
+            None,
+            parse_record,
+            &|| false,
+        )
+        .unwrap();
+        assert_eq!(page.events.len(), 1);
+        assert_eq!(
+            source.capture(),
+            super::super::Capture {
+                opening: "load",
+                gaps: 0
+            }
+        );
+        assert!(
+            Journal::open(&f.0, f.identity(), Opening::Resume).is_err(),
+            "reading must not release or replace the live writer"
         );
     }
 }

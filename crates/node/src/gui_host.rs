@@ -52,11 +52,10 @@
 //! real adapter, and re-loading a live session works) and relays the
 //! replayed updates as [`GuiNote::History`] frames **to that connection
 //! only** — broadcast history would repaint every other face's past.
-//! The host still buffers nothing: a second copy here would be a
-//! transcript nobody owns. A replay asked for mid-turn waits for the
-//! turn to end — the live updates already on screen are the same
-//! content, and a load answered during a turn would interleave the two
-//! indistinguishably (the protocol does not tag replayed updates).
+//! The host owns the durable ACP capture. Its first opening batch commits
+//! atomically; later loads remain runtime replays and never duplicate that
+//! capture. Replays wait for the turn to end because ACP does not identify
+//! replayed notifications separately from live ones.
 
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -71,6 +70,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::host::{Hello, HostFile, Welcome, host_file_path, read_frame, write_frame};
 use crate::live::{LiveKind, Source};
+use crate::session_content::journal::{Identity as JournalIdentity, Journal, Opening as JournalOpening, Outcome as JournalOutcome};
 
 /// What a connected face may do to the conversation.
 #[derive(Serialize, Deserialize)]
@@ -920,6 +920,23 @@ fn gui_host_main_with_timeouts(
         let dir = live
             .dir_of(&id)
             .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let registered_agent = std::env::var(VENDOR_ENV).ok().or_else(|| {
+            std::fs::read(dir.join("meta.json")).ok()
+                .and_then(|bytes|serde_json::from_slice::<crate::live::Meta>(&bytes).ok())
+                .and_then(|meta|meta.category)
+        }).unwrap_or_else(|| {
+            let launch=serde_json::to_vec(&cmd).expect("launcher identity serializes");
+            format!("launcher:{}",blake3::hash(&launch).to_hex())
+        });
+        let opening=match handle.opened_by() {
+            khor_acp::OpenedBy::New=>JournalOpening::New,
+            khor_acp::OpenedBy::Load=>JournalOpening::Load,
+            khor_acp::OpenedBy::Resume=>JournalOpening::Resume,
+        };
+        let mut journal=Journal::open(&root,JournalIdentity {
+            home:khor_core::DeviceId(*key.public().as_bytes()), agent:registered_agent, native_id:handle.session().0.to_string(),
+        },opening)?;
+        journal.bind(&dir)?;
 
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -940,7 +957,6 @@ fn gui_host_main_with_timeouts(
             })
             .map_err(|e| e.to_string())?,
         )?;
-        std::fs::write(&ready, &id.0).map_err(|e| e.to_string())?;
 
         let fanout = Arc::new(Fanout::new());
         let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, GuiOp, bool)>();
@@ -1019,6 +1035,7 @@ fn gui_host_main_with_timeouts(
         let loop_live = live.clone();
         let loop_id = id.clone();
         let loop_fanout = fanout.clone();
+        let loop_ready = ready.clone();
         let ending = rt.block_on(async move {
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
         // The pending asks, each with the very note it was announced
@@ -1038,6 +1055,8 @@ fn gui_host_main_with_timeouts(
         let mut in_turn: Option<tokio::task::AbortHandle> = None;
         let mut tasks = tokio::task::JoinSet::new();
         let mut active_operation = None;
+        let mut bootstrap=Bootstrap::AwaitReady;
+        let mut journal_turn:Option<String>=None;
         // Read once here rather than off the handle at each use: this
         // is what the handshake said, and it cannot change while the
         // connection lives.
@@ -1079,7 +1098,14 @@ fn gui_host_main_with_timeouts(
         delegation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut event_burst = 0usize;
         let ending = 'conversation: loop {
-            if pending_completion.is_none() && in_turn.is_none() && replay.is_none() && !controlling && !replay_wanted.is_empty() {
+            if bootstrap.is_drained() {
+                if journal.is_pending() {
+                    if let Err(why)=journal.commit_base() { break Some(why); }
+                }
+                if let Err(why)=std::fs::write(&loop_ready,&id.0) { break Some(why.to_string()); }
+                bootstrap=Bootstrap::Live;
+            }
+            if !bootstrap.is_running() && pending_completion.is_none() && in_turn.is_none() && replay.is_none() && !controlling && !replay_wanted.is_empty() {
                 active_operation = process_control.begin_operation();
                 let Some(operation) = active_operation.clone() else { break Some("ACP process is retiring".into()); };
                 replay = Some(Replay::start(std::mem::take(&mut replay_wanted), handle.clone(), operation, process_control.clone(), completion_tx.clone(), &mut tasks));
@@ -1088,6 +1114,14 @@ fn gui_host_main_with_timeouts(
                 let pending = pending_completion.take().unwrap();
                 match pending.completion {
 HostCompletion::Turn { result, .. } => {
+                    if let Some(turn)=journal_turn.take() {
+                        let (outcome,detail)=match &result {
+                            Ok(stop) if stop=="Cancelled"=>(JournalOutcome::Cancelled,Some(stop.as_str())),
+                            Ok(stop)=>(JournalOutcome::Ended,Some(stop.as_str())),
+                            Err(why)=>(JournalOutcome::Unknown,Some(why.as_str())),
+                        };
+                        if let Err(why)=journal.finish(&turn,outcome,detail) { break Some(why); }
+                    }
 let turn = Some(result);
                     in_turn = None;
                     cancellation_sent = None;
@@ -1155,6 +1189,10 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                 biased;
                 progress = completion_rx.recv() => {
                     match progress {
+                        Some(HostProgress::BootstrapFenced { result })=> {
+                            if let Err(why)=result { break Some(format!("ACP bootstrap event fence failed: {why}")); }
+                            if let Err(why)=bootstrap.fenced(events.len()) { break Some(why); }
+                        },
                         Some(HostProgress::Resolved { completion, acknowledged }) => {
                             if active_operation.as_ref() != Some(completion.operation()) || pending_completion.is_some() {
                                 break Some("ACP completion belongs to an inactive operation".into());
@@ -1199,8 +1237,13 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                 incoming = next_host_input(&mut events, &mut ops_rx, event_burst >= 32, pause_closed_events(deferred_ending.is_some(), pending_completion.as_ref().and_then(|pending| pending.remaining))) => match incoming {
                     HostInput::Event(event) => { event_burst = event_burst.saturating_add(1);
                         if let Some(remaining) = pending_completion.as_mut().and_then(|pending| pending.remaining.as_mut()) { *remaining = remaining.saturating_sub(1); }
+                        bootstrap.consume_event();
 match event {
                     Some(khor_acp::Event::Note(n)) => {
+                        if n.session_id!=*handle.session() { break Some("ACP update belongs to another session".into()); }
+                        if (!bootstrap.is_running() && replay.as_ref().is_none_or(|active|active.delivery.is_some())) || (bootstrap.is_running() && journal.is_pending()) {
+                            if let Err(why)=journal.note(&n) { break Some(why); }
+                        }
                         let json = serde_json::to_string(&n).unwrap_or_default();
                         if let Some(replay)=replay.as_mut().filter(|active| active.delivery.is_none()){replay.push(json);continue;}
                         if matches!(n.update, SessionUpdate::AvailableCommandsUpdate(_)) {
@@ -1277,7 +1320,12 @@ match event {
                             let _=live.report(&id,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
                         }
                     }
-                    Some(khor_acp::Event::Ready { .. }) => {}
+                    Some(khor_acp::Event::Ready { session }) => {
+                        if session!=*handle.session() { break Some("ACP opening belongs to another session".into()); }
+                        if let Err(why)=bootstrap.begin_fence() { break Some(why); }
+                        let handle=handle.clone(); let tx=completion_tx.clone();
+                        tasks.spawn(async move { let _=tx.send(HostProgress::BootstrapFenced { result:handle.fence_events().await }); });
+                    }
                     // A channel that just stops is an ending too, and
                     // painting it any other way would need a word khor
                     // does not have.
@@ -1295,6 +1343,13 @@ match event {
                         Some((who, op, stopped)) => (Some((who, op)), stopped),
                         None => (None, false),
                     };
+                    if bootstrap.is_running() {
+                        match &op {
+                            Some((who,GuiOp::Replay))=> { if !replay_wanted.contains(who) { replay_wanted.push(*who); } continue; },
+                            Some((_,GuiOp::Close|GuiOp::Stop))|None=>{},
+                            Some((who,_))=> { fanout.send_to(*who,&GuiNote::Refused { why:refused::TURN_IN_FLIGHT.to_owned() }); continue; },
+                        }
+                    }
                     match op {
                     Some((who,GuiOp::ElicitAnswer{ask,response}))=>{
                         let accepted=elicits.iter().position(|(id,_,_)|*id==ask).and_then(|at|{
@@ -1332,9 +1387,12 @@ match event {
                             continue;
                         }
                         match crate::delegation::HostedTask::claim(&root, &id, &task, &message) {
-                            Ok((execution, text)) => {
+                            Ok((mut execution, text)) => {
                                 active_operation = process_control.begin_operation();
                                 if active_operation.is_none() { break Some("ACP process is retiring".into()); }
+                                let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
+                                if let Err(why)=journal.accept(&turn,&text,&[],&[]) { let _=execution.finish(&why); break Some(why); }
+                                journal_turn=Some(turn);
                                 delegated = Some(execution);
                                 cancellation_sent = None;
                                 let _ = live.report(&id, State::Busy, Source::Reported);
@@ -1378,6 +1436,9 @@ match event {
                         }
                         active_operation = process_control.begin_operation();
                         if active_operation.is_none() { break Some("ACP process is retiring".into()); }
+                        let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
+                        if let Err(why)=journal.accept(&turn,&text,&images,&files) { break Some(why); }
+                        journal_turn=Some(turn);
                         let _ = live.report(&id, State::Busy, Source::Reported);
                         let handle = handle.clone();
                         let tx = completion_tx.clone();
@@ -1564,6 +1625,15 @@ match event {
         };
 
         asks.clear(); elicits.clear();
+        let mut ending=if let Some(turn)=journal_turn.take() {
+            match journal.finish(&turn,JournalOutcome::Unknown,ending.as_deref()) {
+                Ok(())=>ending,
+                Err(why)=>Some(match ending { Some(previous)=>format!("{previous}; {why}"),None=>why }),
+            }
+        } else { ending };
+        if let Err(why)=journal.abort_base() {
+            ending=Some(match ending { Some(previous)=>format!("{previous}; {why}"),None=>why });
+        }
         handle.request_shutdown();
 
         tasks.abort_all();
@@ -1580,6 +1650,11 @@ match event {
         process_lifecycle.request_shutdown();
         rt.block_on(process_lifecycle.confirmed_exit())
             .map_err(|why| format!("ACP process cleanup is unconfirmed: {why}"))?;
+
+        if !ready.exists() {
+            std::fs::write(refusal_path(&ready),ending.as_deref().unwrap_or("ACP closed before the initial capture committed"))
+                .map_err(|why|why.to_string())?;
+        }
 
         fanout.send(&GuiNote::Gone);
 
@@ -1603,6 +1678,28 @@ match event {
                 .unwrap_or_default(),
             stderr.lock().unwrap_or_else(|p| p.into_inner()).len()
         )),
+    }
+}
+
+enum Bootstrap {
+    AwaitReady,
+    Fencing,
+    Draining(usize),
+    Live,
+}
+impl Bootstrap {
+    fn is_running(&self) -> bool { !matches!(self,Self::Live) }
+    fn is_drained(&self) -> bool { matches!(self,Self::Draining(0)) }
+    fn begin_fence(&mut self) -> Result<(),String> {
+        if !matches!(self,Self::AwaitReady) { return Err("ACP Ready belongs to an inactive opening".into()); }
+        *self=Self::Fencing; Ok(())
+    }
+    fn fenced(&mut self, remaining:usize) -> Result<(),String> {
+        if !matches!(self,Self::Fencing) { return Err("ACP event fence belongs to an inactive opening".into()); }
+        *self=Self::Draining(remaining); Ok(())
+    }
+    fn consume_event(&mut self) {
+        if let Self::Draining(remaining)=self { *remaining=remaining.saturating_sub(1); }
     }
 }
 
@@ -1634,6 +1731,7 @@ impl HostCompletion {
     }
 }
 enum HostProgress {
+    BootstrapFenced { result:Result<(),String> },
     Resolved {
         completion: HostCompletion,
         acknowledged: bool,

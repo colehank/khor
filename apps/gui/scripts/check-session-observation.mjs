@@ -111,6 +111,22 @@ function findButton(node) {
   return null;
 }
 const cases = [
+  ['journal capture scope is distinct from execution and keeps the real read-only reader', async () => {
+    const f=fixture({word:null,kind:'observe',can_control:false});
+    f.render();
+    f.requests[0].resolve({kind:'available',following:true,capture:{opening:'resume',gaps:2}});
+    await flush();
+    const tree=f.render();
+    const header=tree.children[0],reader=tree.children[1];
+    assert.equal(header.props['data-history-capture'],true);
+    assert.equal(header.children[0].children[0],'history_capture_scope');
+    assert.equal(header.children.length,1,'the header does not freeze a once-queried interval count as a current total');
+    assert.equal(reader.type,'real-chat-view');
+    assert.equal(reader.props.still,true);
+    assert.equal(reader.props.watch,true);
+    f.render(); assert.equal(f.calls.length,1,'scope does not create another polling owner');
+    f.dispose();
+  }],
   ['workspace refresh requires a known busy-to-finished transition', async () => {
     const said = {current: new Map()}; let refreshes = 0;
     const run = word => Function('mine', 'said', 'setGitAt', busySource + '\neffect();')(

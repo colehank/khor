@@ -311,6 +311,13 @@ impl Ask {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpenedBy {
+    New,
+    Load,
+    Resume,
+}
+
 /// A live conversation with one agent process.
 pub struct Handle {
     conn: ConnectionTo<Agent>,
@@ -322,6 +329,7 @@ pub struct Handle {
     environment: Environment,
     facts: Facts,
     settings: Settings,
+    opened_by: OpenedBy,
     close: Arc<CloseGate>,
     event_fence: EventFence,
 }
@@ -333,6 +341,7 @@ impl Drop for Handle {
 }
 
 impl Handle {
+    pub fn opened_by(&self) -> OpenedBy { self.opened_by }
     /// Forward the finite batch of events already accepted before this call.
     /// Call after an RPC response before publishing its UI completion. This is
     /// independent of close admission: a delivered response remains delivered.
@@ -895,7 +904,7 @@ async fn start_transport(
     environment: Environment,
 ) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
     let (events_tx, mut events_rx) = mpsc::unbounded_channel::<Event>();
-    type Opened = Result<(ConnectionTo<Agent>, SessionId, Facts, Settings), Refusal>;
+    type Opened = Result<(ConnectionTo<Agent>, SessionId, Facts, Settings, OpenedBy), Refusal>;
     let (ready_tx, mut ready_rx) = oneshot::channel::<Opened>();
     let (close_tx, close_rx) = oneshot::channel::<()>();
     let (result_tx, result_rx) = tokio::sync::watch::channel(None);
@@ -963,8 +972,8 @@ async fn start_transport(
                 // timeout became the only thing a person ever saw.
                 let refused = opened.as_ref().err().map(|r| r.said().to_owned());
                 if let Some(tx) = ready_tx.take() {
-                    let _ = tx.send(opened.map(|(session, facts, settings)| {
-                        (connection.clone(), session, facts, settings)
+                    let _ = tx.send(opened.map(|(session, facts, settings, opened_by)| {
+                        (connection.clone(), session, facts, settings, opened_by)
                     }));
                 }
                 if let Some(said) = refused {
@@ -993,7 +1002,7 @@ async fn start_transport(
     });
 
     let mut opening_notes = Vec::new();
-    let (conn, session, facts, settings) = loop {
+    let (conn, session, facts, settings, opened_by) = loop {
         tokio::select! {
             biased;
             result=&mut ready_rx=>break result.map_err(|_|Refusal::Wont("the agent ended before a session existed".into()))??,
@@ -1026,6 +1035,7 @@ async fn start_transport(
             environment: retained_environment,
             facts,
             settings,
+            opened_by,
             close: opening.0.take().expect("opening owns its close gate"),
             event_fence,
         },
@@ -1048,7 +1058,7 @@ async fn open_one(
     resume: Option<String>,
     cwd: PathBuf,
     environment: Environment,
-) -> Result<(SessionId, Facts, Settings), Refusal> {
+) -> Result<(SessionId, Facts, Settings, OpenedBy), Refusal> {
     if environment
         .additional_directories
         .iter()
@@ -1124,7 +1134,7 @@ async fn open_one(
     // like one that lists none; what was missing was the whole surface
     // (a face could see the mode a session was in, and had no way to
     // put it in another).
-    let (session, settings) = match resume {
+    let (session, settings, opened_by) = match resume {
         Some(sid) => {
             let sid = SessionId::new(sid);
             if caps.session_capabilities.resume.is_some() {
@@ -1144,6 +1154,7 @@ async fn open_one(
                         modes: loaded.modes,
                         options: loaded.config_options.unwrap_or_default(),
                     },
+                    OpenedBy::Resume,
                 ));
             }
             let mut request = LoadSessionRequest::new(sid.clone(), cwd);
@@ -1161,6 +1172,7 @@ async fn open_one(
                     modes: loaded.modes,
                     options: loaded.config_options.unwrap_or_default(),
                 },
+                OpenedBy::Load,
             )
         }
         None => {
@@ -1179,10 +1191,11 @@ async fn open_one(
                     modes: opened.modes,
                     options: opened.config_options.unwrap_or_default(),
                 },
+                OpenedBy::New,
             )
         }
     };
-    Ok((session, facts, settings))
+    Ok((session, facts, settings, opened_by))
 }
 
 /// Preserve the diagnostic carried in ACP error.data. SDK 3 rejects a wire

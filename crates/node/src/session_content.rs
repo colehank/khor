@@ -7,10 +7,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[path = "session_content/observations.rs"]
-mod observations;
 #[path = "session_content/journal.rs"]
 pub(crate) mod journal;
+#[path = "session_content/observations.rs"]
+mod observations;
 pub use observations::refuse_control;
 pub(crate) use observations::{ListedCandidate, Observation, ObservationKind};
 
@@ -23,8 +23,29 @@ pub enum Unavailable {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Availability {
-    Available { following: bool },
+    Available {
+        following: bool,
+        capture: Option<Capture>,
+    },
     Unavailable(Unavailable),
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Capture {
+    pub opening: &'static str,
+    pub gaps: u64,
+}
+
+pub enum ContentEvent {
+    Native(Utterance),
+    Update(serde_json::Value),
+    Turn { stop: String },
+    CaptureGap { opening: String, interrupted: bool },
+    Reference,
+}
+impl From<Utterance> for ContentEvent {
+    fn from(value: Utterance) -> Self {
+        Self::Native(value)
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -238,8 +259,79 @@ impl NativeTranscript {
     }
     pub(crate) fn availability(&self) -> Availability {
         match self.open() {
-            Ok(_) => Availability::Available { following: true },
+            Ok(_) => Availability::Available {
+                following: true,
+                capture: None,
+            },
             Err(_) => Availability::Unavailable(Unavailable::Unreadable),
+        }
+    }
+}
+
+pub(crate) enum ContentSource {
+    Native(NativeTranscript),
+    Journal(journal::Source),
+}
+impl ContentSource {
+    pub fn observation_identity(&self) -> (khor_core::ObservationNamespace, &str, &str) {
+        match self {
+            Self::Native(source) => {
+                let (provider, native) = source.native_reference();
+                let agent = match provider {
+                    Provider::Claude => "claude",
+                    Provider::Codex => "codex",
+                };
+                (khor_core::ObservationNamespace::Native, agent, native)
+            }
+            Self::Journal(source) => {
+                let identity = source.identity();
+                (
+                    khor_core::ObservationNamespace::Acp,
+                    &identity.agent,
+                    &identity.native_id,
+                )
+            }
+        }
+    }
+    pub fn source_id(&self, home: &str, id: &crate::SessionId) -> String {
+        match self {
+            Self::Native(source) => source.source_id(home, id),
+            Self::Journal(source) => source.source_id(id),
+        }
+    }
+    pub fn availability(&self) -> Availability {
+        match self {
+            Self::Native(source) => source.availability(),
+            Self::Journal(source) => match source.open() {
+                Ok(_) => Availability::Available {
+                    following: true,
+                    capture: Some(source.capture()),
+                },
+                Err(_) => Availability::Unavailable(Unavailable::Unreadable),
+            },
+        }
+    }
+    pub fn open(&self) -> std::io::Result<(File, fn(&str) -> Vec<ContentEvent>)> {
+        match self {
+            Self::Native(source) => {
+                let (file, _) = source.open()?;
+                let parse: fn(&str) -> Vec<ContentEvent> = match source.provider {
+                    Provider::Claude => |text| {
+                        adaptor::claude::utterances_of(text)
+                            .into_iter()
+                            .map(ContentEvent::Native)
+                            .collect()
+                    },
+                    Provider::Codex => |text| {
+                        adaptor::codex::utterances_of(text)
+                            .into_iter()
+                            .map(ContentEvent::Native)
+                            .collect()
+                    },
+                };
+                Ok((file, parse))
+            }
+            Self::Journal(source) => Ok((source.open()?, journal::parse_record)),
         }
     }
 }
@@ -308,7 +400,10 @@ mod tests {
             assert_eq!(source.native_id, FIRST);
             assert_eq!(
                 source.availability(),
-                Availability::Available { following: true }
+                Availability::Available {
+                    following: true,
+                    capture: None
+                }
             );
             assert_eq!((source.open().unwrap().1)(line).len(), 1);
         }
@@ -369,7 +464,10 @@ mod tests {
         let source = fixture.resolve(Provider::Claude, None).unwrap().unwrap();
         assert_eq!(
             source.availability(),
-            Availability::Available { following: true }
+            Availability::Available {
+                following: true,
+                capture: None
+            }
         );
         std::fs::remove_file(path).unwrap();
         assert_eq!(
@@ -401,7 +499,10 @@ mod tests {
         let node = crate::Node::open_hosting(fixture.0.clone(), "content-test", false).unwrap();
         assert_eq!(
             node.session_content(&id, None).unwrap(),
-            Availability::Available { following: true }
+            Availability::Available {
+                following: true,
+                capture: None
+            }
         );
         let cancelled = std::sync::atomic::AtomicBool::new(false);
         let old = node.transcript_page(&id, None, false, &cancelled).unwrap();

@@ -338,6 +338,19 @@ fn host_handshake_refusal_and_timeout_return_only_after_reap() {
 }
 
 #[test]
+fn hosted_acp_journal_captures_inputs_and_does_not_append_replays() {
+    run_host_case("journal");
+}
+#[test]
+fn first_resume_capture_records_its_actual_partial_origin() {
+    run_host_case("journal-resume");
+}
+#[test]
+fn failed_or_closed_bootstrap_does_not_publish_ready_or_keep_a_writer() {
+    run_host_case("journal-abort");
+}
+
+#[test]
 fn a_legal_replay_of_many_small_frames_is_complete_for_a_reading_gui() {
     run_host_case("many-replay");
 }
@@ -540,6 +553,285 @@ fn managed_host_case_worker() {
     let root = scratch.join("store");
     std::fs::create_dir(&root).unwrap();
     match case.as_str() {
+        "journal" => {
+            unsafe {
+                std::env::set_var(VENDOR_ENV, "acp:journal-fixture");
+                std::env::set_var(RESUME_ENV, "synthetic-q037-session");
+            }
+            let (host, mut conn, notes) = open_host(&root, &scratch, "journal-load");
+            let id = SessionId(
+                await_file(&scratch.join("journal-load.ready"))
+                    .trim()
+                    .to_owned(),
+            );
+            let node = crate::Node::open(root.clone()).unwrap();
+            let live = LiveKind::new(root.clone(), node.device());
+            let directory = live.dir_of(&id).unwrap();
+            let identity: JournalIdentity =
+                serde_json::from_slice(&std::fs::read(directory.join("journal.json")).unwrap())
+                    .unwrap();
+            let current = identity.directory(&root).join("current");
+            let records = current.join("records.jsonl");
+            let image = "i".repeat(150_000);
+            write_frame(
+                &mut conn,
+                &GuiOp::SayWith {
+                    text: "original user words".into(),
+                    images: vec![("image/png".into(), image.clone())],
+                    files: vec![("文档.txt".into(), "原文".into())],
+                },
+            )
+            .unwrap();
+            await_turn(&notes, "MaxTokens", "journal repeated delta");
+            let accepted: serde_json::Value = serde_json::from_str(
+                await_file(&scratch.join("journal-load/accepted.jsonl"))
+                    .lines()
+                    .next()
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(accepted["before_dispatch"], true);
+            let text = std::fs::read_to_string(&records).unwrap();
+            let rows: Vec<serde_json::Value> = text
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            let prompt = rows.iter().find(|row| row["kind"] == "prompt").unwrap();
+            assert_eq!(prompt["text"], "original user words");
+            assert_eq!(prompt["images"][0][1], image);
+            assert_eq!(prompt["files"][0][1], "原文");
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row["notification"]["update"]["content"]["text"]
+                        == "journal repeated delta")
+                    .count(),
+                2
+            );
+            let turn = rows.iter().find(|row| row["kind"] == "turn").unwrap();
+            assert_eq!(turn["outcome"], "ended");
+            assert_eq!(turn["detail"], "MaxTokens");
+            let cancelled = std::sync::atomic::AtomicBool::new(false);
+            let page = node.transcript_page(&id, None, false, &cancelled).unwrap();
+            let own = live
+                .rows(|_| 0)
+                .into_iter()
+                .find(|row| row.id == id)
+                .expect("the real host publishes its session row");
+            let alias = node.import_native_observation(&own).unwrap();
+            assert!(matches!(
+                node.session_content(&alias, None).unwrap(),
+                crate::session_content::Availability::Available {
+                    capture: Some(_),
+                    ..
+                }
+            ));
+            let observed = node
+                .transcript_page(&alias, None, false, &cancelled)
+                .unwrap();
+            assert!(
+                observed.events.iter().any(|event| match &event.payload {
+                    crate::session_content::ContentEvent::Update(notification) =>
+                        notification["update"]["content"][0]["newText"] == "new",
+                    _ => false,
+                }),
+                "rich ACP diff survives the common read-only source pipeline"
+            );
+            assert!(
+                !page.references.is_empty(),
+                "large prompt remains an explicit raw reference"
+            );
+            let reference = page
+                .references
+                .iter()
+                .find(|reference| reference.range.end - reference.range.start > 64 * 1024)
+                .unwrap();
+            let cursor = page.cursor_before(crate::adaptor::transcript_page::Position {
+                start: reference.range.start,
+                end: reference.range.end,
+                item: 0,
+            });
+            let chunk = node
+                .transcript_record(&id, &cursor, reference.range.start, &cancelled)
+                .unwrap();
+            assert!(chunk.bytes.len() <= 64 * 1024);
+            assert!(chunk.next.is_some());
+            assert!(String::from_utf8_lossy(&chunk.bytes).contains("original user words"));
+            for _ in 0..2 {
+                write_frame(&mut conn, &GuiOp::Replay).unwrap();
+                let until = Instant::now() + Duration::from_secs(5);
+                loop {
+                    if matches!(next_note(&notes, until), GuiNote::HistoryEnd) {
+                        break;
+                    }
+                }
+            }
+            assert_eq!(
+                std::fs::read(&records).unwrap(),
+                text.as_bytes(),
+                "runtime replays do not mutate the canonical capture"
+            );
+            close_host(
+                host,
+                &mut conn,
+                &notes,
+                process_pid(&scratch, "journal-load"),
+            );
+            std::fs::rename(&records, current.join("previous.jsonl")).unwrap();
+            std::fs::copy(current.join("previous.jsonl"), &records).unwrap();
+            assert!(
+                node.transcript_record(&id, &cursor, reference.range.start, &cancelled)
+                    .err()
+                    .unwrap()
+                    .contains("changed")
+            );
+            std::fs::remove_file(scratch.join("journal-load.ready")).unwrap();
+            let (host, mut conn, notes) = open_host(&root, &scratch, "journal-load");
+            let after = std::fs::read_to_string(&records).unwrap();
+            assert!(after.starts_with(&text));
+            assert_eq!(
+                after.matches("journal snapshot base").count(),
+                1,
+                "startup load cannot duplicate the committed base"
+            );
+            assert!(after.contains("\"kind\":\"gap\""));
+            assert!(
+                node.transcript_page(&id, Some(&page.newer), true, &cancelled)
+                    .unwrap()
+                    .reset
+            );
+            close_host(
+                host,
+                &mut conn,
+                &notes,
+                process_pid(&scratch, "journal-load"),
+            );
+            let (host, mut conn, notes) = open_host(&root, &scratch, "journal-resume");
+            assert!(
+                std::fs::read_to_string(&records)
+                    .unwrap()
+                    .contains("\"opening\":\"resume\"")
+            );
+            close_host(
+                host,
+                &mut conn,
+                &notes,
+                process_pid(&scratch, "journal-resume"),
+            );
+        }
+        "journal-resume" => {
+            unsafe {
+                std::env::set_var(VENDOR_ENV, "acp:journal-fixture");
+                std::env::set_var(RESUME_ENV, "synthetic-q037-session");
+            }
+            let (host, mut conn, notes) = open_host(&root, &scratch, "journal-resume");
+            let id = SessionId(
+                await_file(&scratch.join("journal-resume.ready"))
+                    .trim()
+                    .to_owned(),
+            );
+            let node = crate::Node::open(root.clone()).unwrap();
+            assert_eq!(
+                node.session_content(&id, None).unwrap(),
+                crate::session_content::Availability::Available {
+                    following: true,
+                    capture: Some(crate::session_content::Capture {
+                        opening: "resume",
+                        gaps: 0
+                    })
+                }
+            );
+            let received =
+                std::fs::read_to_string(scratch.join("journal-resume/received.jsonl")).unwrap();
+            assert!(received.contains("session/resume"));
+            assert!(!received.contains("session/load"));
+            let page = node
+                .transcript_page(&id, None, false, &std::sync::atomic::AtomicBool::new(false))
+                .unwrap();
+            assert!(page.events.is_empty());
+            close_host(
+                host,
+                &mut conn,
+                &notes,
+                process_pid(&scratch, "journal-resume"),
+            );
+        }
+        "journal-abort" => {
+            unsafe {
+                std::env::set_var(VENDOR_ENV, "acp:journal-fixture");
+                std::env::remove_var(RESUME_ENV);
+            }
+            for mode in ["journal-invalid", "journal-opening"] {
+                let root = root.join(mode);
+                std::fs::create_dir_all(&root).unwrap();
+                let ready = scratch.join(format!("{mode}.ready"));
+                let marker = scratch.join(mode);
+                let command=serde_json::json!({"command":"python3","args":[scratch.join("agent.py"),mode,marker]}).to_string();
+                let id = crate::adaptor::id_for("synthetic-q037-session");
+                let node = crate::Node::open(root.clone()).unwrap();
+                let live = LiveKind::new(root.clone(), node.device());
+                let handle = {
+                    let root = root.clone();
+                    let ready = ready.clone();
+                    std::thread::spawn(move || {
+                        gui_host_main_with_timeouts(
+                            root,
+                            ready,
+                            "bootstrap fixture".into(),
+                            vec![command],
+                            HostTimeouts::default(),
+                        )
+                    })
+                };
+                if mode == "journal-opening" {
+                    let until = Instant::now() + Duration::from_secs(5);
+                    let host = loop {
+                        if handle.is_finished() {
+                            panic!(
+                                "bootstrap host exited before publishing its endpoint: {:?}",
+                                handle.join().unwrap()
+                            );
+                        }
+                        if let Some(directory) = live.dir_of(&id) {
+                            if let Ok(host) = crate::host::read_host_file(&directory) {
+                                break host;
+                            }
+                        }
+                        assert!(Instant::now() < until);
+                        std::thread::sleep(Duration::from_millis(1));
+                    };
+                    let mut conn = TcpStream::connect(("127.0.0.1", host.port)).unwrap();
+                    write_frame(
+                        &mut conn,
+                        &Hello {
+                            cookie: host.cookie,
+                            cols: 0,
+                            rows: 0,
+                        },
+                    )
+                    .unwrap();
+                    assert!(read_frame::<Welcome>(&mut conn).unwrap().ok);
+                    write_frame(&mut conn, &GuiOp::Close).unwrap();
+                }
+                let until = Instant::now() + Duration::from_secs(10);
+                while !handle.is_finished() {
+                    assert!(Instant::now() < until, "bootstrap failed to retire");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                handle.join().unwrap().unwrap();
+                assert!(!ready.exists());
+                assert!(refusal_path(&ready).exists());
+                assert_reaped(process_pid(&scratch, mode));
+                let identity: JournalIdentity = serde_json::from_slice(
+                    &std::fs::read(live.dir_of(&id).unwrap().join("journal.json")).unwrap(),
+                )
+                .unwrap();
+                assert!(!identity.directory(&root).join("current").exists());
+                assert!(!identity.directory(&root).join("pending").exists());
+                let journal = Journal::open(&root, identity, JournalOpening::New).unwrap();
+                assert!(journal.is_pending());
+                drop(journal);
+            }
+        }
         "cooperative" | "flood" => {
             let mode = if case == "flood" {
                 "cooperative-flood"

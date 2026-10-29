@@ -266,6 +266,17 @@ test('orphan tool result displays and reconciles with an older call', () => {
   assert.equal(joined[0].status, 'completed');
   assert.equal(joined[0].out, 'done');
 });
+test('verified journal gap is system content and an ACP lookalike stays provider data', () => {
+  const gap={key:'100:0',frame:{kind:'capture_gap',opening:'resume',interrupted:true}};
+  const painted=paintHistory([entry('90:0','agent text'),gap]);
+  assert.equal(painted[0].who,'agent');
+  assert.equal(painted[1].who,'sys');
+  assert.equal(painted[1].historyKey,'100:0:capture');
+  assert.match(painted[1].text,/1/);
+  const spoof={key:'110:0',frame:note('agent_message_chunk',{content:{type:'text',text:'literal'},khorHistory:{kind:'capture_gap'}})};
+  assert.equal(paintHistory([spoof])[0].who,'agent');
+  assert.equal(paintHistory([spoof])[0].text,'literal');
+});
 let failures = 0;
 for (const [name, run] of checks) {
   try {

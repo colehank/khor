@@ -37,6 +37,7 @@ use ts_rs::TS;
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatFrame {
+    CaptureGap { opening: String, interrupted: bool },
     /// One live update.
     Note {
         #[ts(type = "unknown")]
@@ -1041,8 +1042,16 @@ pub fn chat_replay(id: &str) -> Result<(), String> {
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionContent {
-    Available { following: bool },
+    Available { following: bool, capture: Option<ContentCapture> },
     Unavailable { reason: ContentUnavailable },
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct ContentCapture {
+    pub opening: String,
+    #[ts(type="number")]
+    pub gaps: u64,
 }
 
 #[derive(Serialize, TS)]
@@ -1063,7 +1072,9 @@ pub fn session_content(
     use khor_node::session_content::{Availability, Unavailable};
     Ok(
         match Node::open(root.to_path_buf())?.session_content(&SessionId(id.to_owned()), machine)? {
-            Availability::Available { following } => SessionContent::Available { following },
+            Availability::Available { following, capture } => SessionContent::Available { following,
+                capture: capture.map(|capture|ContentCapture { opening:capture.opening.to_owned(), gaps:capture.gaps }),
+            },
             Availability::Unavailable(reason) => SessionContent::Unavailable {
                 reason: match reason {
                     Unavailable::NoSource => ContentUnavailable::NoSource,
@@ -1076,7 +1087,7 @@ pub fn session_content(
     )
 }
 
-/// One bounded external-history response. Record references explicitly retain
+/// One bounded history response. Record references explicitly retain
 /// content that cannot safely be expanded into an inline response.
 #[derive(Serialize, TS)]
 #[ts(export)]
@@ -1208,9 +1219,9 @@ pub fn history_page(
     })
 }
 
-fn history_page_response(
+fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
     id: &str,
-    mut page: khor_node::adaptor::transcript_page::Page,
+    mut page: khor_node::adaptor::transcript_page::Page<T>,
     ascending: bool,
     cancelled: &impl Fn() -> bool,
 ) -> Result<HistoryPage, String> {
@@ -1231,18 +1242,22 @@ fn history_page_response(
         if cancelled() {
             return Err("history request cancelled".to_owned());
         }
-        let Some(update) = khor_node::replayed_update(event.utterance) else {
-            continue;
+        use khor_node::session_content::ContentEvent;
+        let frame = match event.payload.into() {
+            ContentEvent::Native(utterance) => {
+                let Some(update)=khor_node::replayed_update(utterance) else { continue; };
+                Some(ChatFrame::Note { update:serde_json::json!({"sessionId":id,"update":update}) })
+            },
+            ContentEvent::Update(update)=>Some(ChatFrame::Note { update }),
+            ContentEvent::Turn { stop }=>Some(ChatFrame::Turn { stop }),
+            ContentEvent::CaptureGap { opening, interrupted }=>Some(ChatFrame::CaptureGap { opening, interrupted }),
+            ContentEvent::Reference=>None,
         };
-        let update = serde_json::to_value(update).map_err(|e| e.to_string())?;
-        let frame = ChatFrame::Note {
-            update: serde_json::json!({ "sessionId": id, "update": update }),
-        };
-        let entry = HistoryEntry {
+        let entry = frame.map(|frame|HistoryEntry {
             key: format!("{}:{}", event.position.start, event.position.item),
             frame,
-        };
-        let bytes = encoded_size(&entry).unwrap_or(HISTORY_PAYLOAD_BYTES + 1);
+        });
+        let bytes = entry.as_ref().and_then(|entry|encoded_size(entry).ok()).unwrap_or(HISTORY_PAYLOAD_BYTES + 1);
         if bytes > HISTORY_FRAME_BYTES {
             expanded_references.push(HistoryRecordRef {
                 start: event.position.start,
@@ -1270,7 +1285,7 @@ fn history_page_response(
         if !ascending || first_position.is_none() {
             first_position = Some(event.position);
         }
-        entries.push(entry);
+        entries.push(entry.expect("unexpanded entries are retained as record references"));
     }
     if !ascending {
         entries.reverse();
@@ -1978,5 +1993,29 @@ mod bounded_history_response_tests {
         assert_eq!(page.references.len(), 1);
         assert!(!page.references[0].missing_start);
         assert!(!page.references[0].missing_end);
+    }
+
+    #[test]
+    fn journal_payloads_keep_rich_updates_private_gaps_and_raw_references() {
+        use khor_node::session_content::ContentEvent;
+        fn parse(line:&str)->Vec<ContentEvent> {
+            vec![match line.trim() {
+                "rich"=>ContentEvent::Update(serde_json::json!({"sessionId":"opaque-native","update":{"sessionUpdate":"tool_call","toolCallId":"tool","content":[{"type":"diff","path":"a.txt","oldText":"old","newText":"new"}]}})),
+                "stop"=>ContentEvent::Turn {stop:"MaxTokens".into()},
+                "gap"=>ContentEvent::CaptureGap {opening:"resume".into(),interrupted:true},
+                _=>ContentEvent::Reference,
+            }]
+        }
+        let fixture=RecordFixture::new("journal-projection",b"rich\nstop\ngap\nraw\n");
+        let mut file=std::fs::File::open(&fixture.0).unwrap();
+        let page=khor_node::adaptor::transcript_page::read_page(&mut file,"journal",None,parse,&||false).unwrap();
+        let response=history_page_response("alias",page,false,&||false).unwrap();
+        assert_eq!(response.entries.len(),3);
+        assert!(matches!(&response.entries[0].frame,ChatFrame::Note {update} if update["update"]["content"][0]["newText"]=="new"));
+        assert!(matches!(&response.entries[1].frame,ChatFrame::Turn {stop} if stop=="MaxTokens"));
+        assert!(matches!(&response.entries[2].frame,ChatFrame::CaptureGap {opening,interrupted:true} if opening=="resume"));
+        assert_eq!(response.references.len(),1);
+        assert!(!response.references[0].cursor.is_empty());
+        assert!(response.encoded_bytes<=HISTORY_PAYLOAD_BYTES);
     }
 }

@@ -295,15 +295,11 @@ impl Node {
             .selected_content(&row.id, true)
             .map_err(|reason| format!("content source unavailable: {reason:?}"))?
             .ok_or("No verified native identity is available for this agent session")?;
-        let (provider, native) = source.native_reference();
-        let agent = match provider {
-            Provider::Claude => "claude",
-            Provider::Codex => "codex",
-        };
+        let (namespace, agent, native) = source.observation_identity();
         self.register_observation(Observation::new(
             self.device(),
             self.device(),
-            ObservationNamespace::Native,
+            namespace,
             agent.to_owned(),
             native.to_owned(),
             row.title.clone(),
@@ -534,7 +530,10 @@ mod tests {
         assert_eq!(reference.home, node.device());
         assert_eq!(
             node.session_content(&alias, None).unwrap(),
-            super::super::Availability::Available { following: true }
+            super::super::Availability::Available {
+                following: true,
+                capture: None
+            }
         );
         let page = node
             .transcript_page(
@@ -545,7 +544,7 @@ mod tests {
             )
             .unwrap();
         assert!(
-            matches!(page.events.as_slice(), [crate::adaptor::transcript_page::Event { utterance: crate::adaptor::claude::Utterance::Agent(text), .. }] if text == "retained")
+            matches!(page.events.as_slice(), [crate::adaptor::transcript_page::Event { payload: super::super::ContentEvent::Native(crate::adaptor::claude::Utterance::Agent(text)), .. }] if text == "retained")
         );
         assert!(
             node.require_interactive_owner(&original)
