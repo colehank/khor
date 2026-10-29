@@ -12237,7 +12237,7 @@ async fn wait_for(job: &crate::road::Job) -> Result<(u64, Vec<String>), String> 
 }
 
 /// A dial's failure as the sentence a person reads.
-fn unreached_words(name: &str, e: DialFailure) -> String {
+pub(crate) fn unreached_words(name: &str, e: DialFailure) -> String {
     match e {
         DialFailure::TimedOut => msg::machine_unreachable_timeout(name),
         DialFailure::Refused(why) | DialFailure::Asleep(why) => msg::cant_reach_named(name, why),

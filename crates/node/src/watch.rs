@@ -214,7 +214,7 @@ impl Watches {
             let line = node
                 .line_to(&endpoint, &target, crate::wires::Proto::Main)
                 .await
-                .map_err(|e| format!("Directory watch connection failed: {e:?}"))?;
+                .map_err(|e| crate::link::unreached_words(&target.name, e))?;
             let conn = line.conn.clone();
             drop(node);
             let (mut send, recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
