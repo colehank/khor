@@ -75,8 +75,8 @@ pub struct Tab {
     #[serde(default)]
     pub title: String,
     /// Put at the top by a person (docs/SHELL.md 第二轮). A pinned tab
-    /// sorts above every unpinned one and cannot be closed until it is
-    /// unpinned.
+    /// sorts above every unpinned one. Page tabs can still be deleted;
+    /// other kinds must be unpinned before closing.
     #[serde(default)]
     pub pinned: bool,
     /// When a person last put this tab in front or pointed it somewhere,
@@ -547,9 +547,9 @@ pub fn focus(root: &Path, kind: &str, id: &str) -> Result<(), String> {
 /// leaves the list empty: this is a store, and 「what a landing with no
 /// tabs draws」 is the face's decision, not a row invented down here.
 ///
-/// **A pinned tab is refused**: a pin is a person saying 「keep this
-/// one」, so it has to be taken off before the tab can go — the same
-/// sentence for the window and for `khor tabs close`.
+/// A page can be deleted while pinned, in this same ledger transaction.
+/// Other kinds retain their protection: unpin before closing. GUI and
+/// `khor tabs close` use this one rule.
 pub fn close(root: &Path, kind: &str, id: &str) -> Result<(), String> {
     change(root, kind, |open| {
         let at = open
@@ -557,7 +557,7 @@ pub fn close(root: &Path, kind: &str, id: &str) -> Result<(), String> {
             .iter()
             .position(|t| t.id == id)
             .ok_or_else(|| msg::no_such_tab(id))?;
-        if open.tabs[at].pinned {
+        if kind != "page" && open.tabs[at].pinned {
             return Err(msg::tab_pinned().into());
         }
         let was_front = open.active == id;
@@ -998,20 +998,56 @@ mod tests {
         assert_eq!(order(&r), ["a", "b"]);
     }
 
-    /// **A pinned tab cannot be closed until it is unpinned** — the
-    /// ruling's 「关不掉之前要先取消置顶」, held here so the terminal and
-    /// the window are refused alike.
     #[test]
-    fn a_pinned_tab_refuses_to_close_until_unpinned() {
-        let r = root("pin-close");
+    fn a_pinned_non_page_tab_refuses_to_close_until_unpinned() {
+        let r = root("pin-close-code");
+        let a = open(&r.0, "code", "m", "a").unwrap();
+        pin(&r.0, "code", &a, true).unwrap();
+        let before = fs::read(path_for_tests(&r.0)).unwrap();
+        let said = close(&r.0, "code", &a).unwrap_err();
+        assert_eq!(said, msg::tab_pinned());
+        assert_eq!(fs::read(path_for_tests(&r.0)).unwrap(), before);
+        assert_eq!(list(&r.0, "code").tabs.len(), 1);
+        pin(&r.0, "code", &a, false).unwrap();
+        close(&r.0, "code", &a).unwrap();
+        assert!(list(&r.0, "code").tabs.is_empty());
+    }
+
+    #[test]
+    fn deleting_a_pinned_page_preserves_other_tabs_and_kinds() {
+        let r = root("pin-close-page");
+        let a = open(&r.0, "page", "m", "a").unwrap();
+        let b = open(&r.0, "page", "m", "b").unwrap();
+        let code = open(&r.0, "code", "m", "code").unwrap();
+        pin(&r.0, "page", &a, true).unwrap();
+        pin(&r.0, "code", &code, true).unwrap();
+        focus(&r.0, "page", &a).unwrap();
+        let survivor = list(&r.0, "page")
+            .tabs
+            .into_iter()
+            .find(|t| t.id == b)
+            .unwrap();
+        let other_kind = list(&r.0, "code");
+        close(&r.0, "page", &a).unwrap();
+        let after = list(&r.0, "page");
+        assert_eq!(after.active, b);
+        assert_eq!(after.tabs, vec![survivor]);
+        assert_eq!(list(&r.0, "code"), other_kind);
+        // A failed repeat must not alter the persisted table.
+        let persisted = fs::read(path_for_tests(&r.0)).unwrap();
+        assert!(close(&r.0, "page", &a).is_err());
+        assert_eq!(fs::read(path_for_tests(&r.0)).unwrap(), persisted);
+    }
+
+    #[test]
+    fn deleting_the_last_pinned_page_leaves_an_empty_ledger() {
+        let r = root("pin-close-last");
         let a = open(&r.0, "page", "m", "a").unwrap();
         pin(&r.0, "page", &a, true).unwrap();
-        let said = close(&r.0, "page", &a).unwrap_err();
-        assert_eq!(said, msg::tab_pinned());
-        assert_eq!(list(&r.0, "page").tabs.len(), 1, "and nothing was closed");
-        pin(&r.0, "page", &a, false).unwrap();
         close(&r.0, "page", &a).unwrap();
-        assert_eq!(list(&r.0, "page").tabs.len(), 0);
+        let after = list(&r.0, "page");
+        assert!(after.tabs.is_empty());
+        assert!(after.active.is_empty());
     }
 
     /// Pinning a tab that is not there is refused by name, like every

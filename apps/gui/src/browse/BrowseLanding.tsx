@@ -218,8 +218,8 @@ export function BrowseLanding({
       the next screen (the shell's list ⇄ detail pair). */
   const opened = () => onOpen?.();
   // ⌘W, ⌃⇥ / ⌃⇧⇥ on this landing's tabs (`lib/shortcuts`, 2026-09-28): the
-  // tab in front closes — a pinned one is refused by the node, as its
-  // row menu's 删除 is — and the steps walk the column's order.
+  // tab in front closes through the same node action as its row menu;
+  // the steps walk the column's order.
   useTabHost(
     tabs.ready
       ? {
@@ -275,23 +275,8 @@ export function BrowseLanding({
   const deviceOf = (id: string | null) => (id ? (devices.find((d) => d.id === id) ?? null) : null);
   const machine = deviceOf(tabs.current.device);
 
-  /**
-   * A tab's own menu: **置顶, what this column has of its own, then 删除
-   * last behind a line** (2026-09-28 audit 第 16 条, Apple HIG; until then
-   * docs/SHELL.md 第二轮's 「头两项永远是置顶、删除」).
-   *
-   * ⚠️ 墓碑 (2026-10-02): the last item was 删除, asked first since 第四轮
-   * (`tab_remove_confirm`), beside a × that never asked. The × went to
-   * this menu (one act, one home) and the owner named the act 关闭 — a
-   * page is closed, nothing is deleted — so it asks nothing, like
-   * Chrome's. A pinned tab is refused by the node; that sentence is the
-   * note.
-   *
-   * No 「在系统浏览器中打开」: the ruling asked for it where a road
-   * already exists, and none does — a page here leaves through the
-   * machine the tab names, and the system browser would take it out
-   * through this one.
-   */
+  // Page rows share the other lists' pin and delete actions. Deleting a
+  // pinned page is one close request; the node updates the ledger atomically.
   const menuOf = (t: BrowseTab): RowAction[] => {
     const k = (action: string) => `${t.id}:${action}`;
     const answered = (action: string) => (p: Promise<void>) =>
@@ -331,11 +316,9 @@ export function BrowseLanding({
         : []),
       // 删除 last, behind a line (2026-09-28 audit 第 16 条, Apple HIG).
       {
-        // **关闭, not 删除** (the owner, 2026-10-02): a page is closed, like
-        // a tab in the session switcher — nothing is deleted, so nothing
-        // is asked first and the item is not drawn as destructive.
         key: "close",
-        label: gui.close,
+        label: kind.kind === "page" ? gui.delete : gui.close,
+        destructive: kind.kind === "page",
         note: refused.get(k("close")),
         run: () => answered("close")(tabs.close(t.id)),
       },
@@ -393,12 +376,8 @@ export function BrowseLanding({
       find: `${label} ${t.title} ${t.path}`,
       selected: on,
       menu: menuOf(t),
-      // **Slid left, 关闭 closes the page** (UX-44 §3), in the 附栏's
-      // list, in red at the row's end; a full swipe closes it at once. The
-      // menu's own word (the lead, 2026-10-07: a page is closed, not
-      // deleted — the owner's 2026-10-02 ruling), so finger and mouse say
-      // one act one way. ⚠️ 墓碑: 「删除」 on this swipe, the first cut.
-      swipe: bare ? { key: "close", label: gui.close, run: () => tabs.close(t.id) } : undefined,
+      // Page swipes use the menu's pin/delete pair in both list hosts.
+      swipe: bare && kind.kind !== "page" ? { key: "close", label: gui.close, run: () => tabs.close(t.id) } : undefined,
       onOpen: () => {
         tabs.focus(t.id);
         opened();
