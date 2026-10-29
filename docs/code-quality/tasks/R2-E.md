@@ -1,7 +1,7 @@
 # E 输入与草稿完整性
 
 状态 working；2026-10-29用户“开始吧”授权下一轮实现。main/ship未授权。
-owner: round2_input；工作树 /Volumes/disk0/Khor/worktrees/current/khor-round2-input，fix/round2-input，基线e7c335c8。
+当前owner root（L03接纳收口），工作树 /Volumes/disk0/Khor/worktrees/current/khor-round2-math，fix/round2-draft-sync；旧输入作者round2_input已转W。下方首批记录是历史检查点，最新交付见末尾与STATE。
 条目 R2-011/012/027/028/L03；先完成R2-027迟到读取/组词最小复现与保护，不声称整包完成。
 允许写：CodeEditor/FileView及其纯模型/定向测试；其他输入hook/路径/草稿入口需先向root报告新路径所有权。禁止改历史链、全局App/TerminalPane/样式/生成协议。
 规则见EDITOR-INPUT、ROUND-2-EXECUTION、ENGINEERING。先图谱、失败证据、最小修复、职责整理；不要用定时延迟掩盖竞态。记录真实IME尚未验证。
@@ -91,3 +91,29 @@ root复用干净math树创建fix/round2-draft-sync基于4cf7cb91，固定a0c34d1
 72591cae→d4dcc1a5已独审并集成。useDraftCount返回稳定report，FileView实际publishDraft无上游时同步0/1、有上游只委托不双计。真实onText/publish/计数defer commit旧7/8（standalone首键0期1）→新8/8；原count9、刷新8、merge9、types0。source指纹在standalone-candidate.json。standalone-merge.log只测试callback依赖提取器旧匹配失败，修提取及注入report dependency后9绿，原失败保留。
 
 接下来真实旧回调3例已复现，文件input/draft-sync/file-acceptance-probe.mjs及file-acceptance-red.log：①cleanA→typeB→flush为0写，期1；②onLanded B后同task typeA误回报null，应脏A；③onLanded B后typeC投影最终Draft.was仍A，期B。测试实际抽生产onLanded/onText/setEdit/publish/flush、React setter延队列，未改产品、非真实OS证明。Root下一片需要唯一accepted file/edit状态贯穿基线/草稿/flush，并保merge/clash拒写；独审先核最小设计，不加全局正文store、不拿两片计数绿关闭E。
+
+
+### 下一片accepted owner设计交接（非作者只读建议，尚未实施）
+
+最小快照限定FileBody {file,edit,clashes}，React只投影，不能每render回写旧数据；setFile/setEdit/setClashes先按accepted计算同步推进。publish/save/flush读同一快照，flush当次现算file/edit非null、digest非空、text异于base、clashes严格null，且现有roadOf(machine,path).trouble.kind不是clash；failed仍允许重试，不另建road trouble镜像。clashes===0依原合同也不得自动保存，直到onChunks left0或显式save；不能缓存旧autosave布尔给首键后的离开判断。
+
+共同接纳点：onLanded按最新edit，仅by匹配才重钉was且不改text；merge的file/base+merged edit+clashes(含0)成对；mine fresh file+pin成对；take/again clean file+edit成对、retained draft保留；theirs显式清edit并防旧draft prop复活。foreign by迟到landed是否应清clashes需先真实反例再改，不能顺势扩save-road实现。下一片测试除当前3红外须覆盖merge clashes0/1后立即flush不写、路况即时clash拒写/failed可重试、空digest拒写、onChunks left0放行、foreign by不改当前pin/许可。只是最小合同提案，必须落实实际源码/独审，不作已完成。
+
+
+## L03 accepted state正式片段（2026-10-29）
+
+固定1f80871c＋4aaf1aa0→Root1eae761a＋2a00fbed，5最终源，独审通过已集成。FileBody唯一accepted {file,edit,clashes}，React只投影，accept先同步快照→发布→投影；初载/again/land/merge/mine成对更新，publish/save/flush读最新接纳与现有roadOf。冲突0和1都阻自动保存，failed仍可重试、digest空拒写、显式Save按原合同可确认。theirs清edit不fallback旧draft；FileBody以machine/path标识独立挂载；卸载拒接纳，mine读回也须活跃才写。
+
+真实基线72591四反例（含foreign by误清合并许可）已红；新18回调绿后独审指出旧passive effect与late mine窗口，增加真实两例18/20红→20/20绿。effect改读accepted.current.edit；mine guard同时核bufferLive。accepted-review-candidate.json含最终五SHA；原sync8/count9/refresh8/merge9/types绿，Root集成20/sync8/refresh8/merge9/types0。实际测试执行生产AST提取回调、受控延迟React投影及输运，不冒整组件/物理Mac。初始unused setFile types失败保留，删未用wrapper后最终绿。
+
+W正式browser验已交这两固定依赖，以实际新FileView补CM首键→切workspace/回文件/Undo组合，结果以其真实证据为准。Mac IME/ShiftLeft/OS Quit仍未完成，不重复既有拖放；后续须准备直接可用的编辑器实例后再约人工。
+
+
+### 显式standalone discard最后同步点
+
+7a583b13→Root5c636c07，独审通过，仅theirs无onDraft时同步reportDraftCount(0)，上游仍onDraft(null)，不改读flight nextnull保护。实际theirs+真实hook延commit旧8/9（discard后count仍1）→新9/9，20accepted callbacks/types0。收据accepted-discard-candidate.json；Root集成sync9/types另见integration-discard日志。W持有完整前4链，末片只独立模式，正式W组合不外推standalone或物理Mac。
+
+
+### R2-028入口确认与只读排除（待用户文本回复）
+
+非作者17源准确指纹见input/shift-left-source-review.json（ffaa443b88430691fea9eba8dcb48ed924d2737aebdc4878c96de4c80246fcb1），实际xterm6/锁项与HEAD5c636c07匹配。当前未找到普通ShiftLeft被global shortcuts/textarea/native menu误截获；terminal普通路径预期CSI 1;2D，经onData→termKey。源码不证明Mac WK实际产生了事件/字节，不加猜测防御。Root已用async问题问用户当时终端Codex/GUI会话/文件编辑器，**尚未答复**；不要重复问或猜宿主。物理验收分GUI选区[3,4]、私有raw PTY实际字节、最后才真实TUI模式/keybinding；shell不具选择能力不等于Khor错误。尚无新App实例/人工操作请求。
