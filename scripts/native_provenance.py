@@ -372,7 +372,7 @@ def generated_output(row, prepared, package, priors):
     out.relative_to(Path(prepared["target_dir"]))
     if not out.is_dir() or out.resolve() != out.absolute():
         raise ValueError("Generated output directory is absent or has symlink ancestors")
-    files = {str(p): regular(p) for p in sorted(out.rglob("*"))
+    files = {str(p): {**regular(p), "ctime_ns": p.lstat().st_ctime_ns} for p in sorted(out.rglob("*"))
              if not p.is_dir() or p.is_symlink()}
     marker = regular(out.parent / "output")
     package_root = Path(next(p["manifest_path"] for p in prepared["metadata"]["packages"]
@@ -398,8 +398,10 @@ def generated_output(row, prepared, package, priors):
                 and {p: content(s) for p, s in g["files"].items()}
                 == {p: content(s) for p, s in files.items()}]
     if not previous:
+        # Darwin copies can retain mtime (and birth time). ctime records
+        # current filesystem state changes, within this trusted Cargo invocation.
         if marker["mtime_ns"] < prepared["prepared_ns"] or any(
-                s["mtime_ns"] < prepared["prepared_ns"] for s in files.values()):
+                max(s["mtime_ns"], s["ctime_ns"]) < prepared["prepared_ns"] for s in files.values()):
             raise ValueError("Generated output has no current invocation or matching prior receipt")
     return {"package_key": prepared["package_keys"][package], "out_dir": str(out),
             "files": files, "invocation_marker": marker}

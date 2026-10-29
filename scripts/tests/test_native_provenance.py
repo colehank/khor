@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -393,6 +394,54 @@ class ProvenanceTests(unittest.TestCase):
         for row in rows[:-1]:
             row["fresh"] = True
         self.assertEqual(len(p.verify_build(reused, [generated, *rows])["generated"]), 1)
+
+    def test_current_generation_copy_preserves_old_mtime(self):
+        self.add_generator()
+        source = self.base / "template.rs"
+        source.write_text('const KEY: &str = "copied";\n')
+        os.utime(source, ns=(1, 1))
+        prepared = self.prepare()
+        generated = self.generated_row(prepared, current=True)
+        copied = Path(generated["out_dir"]) / "generated.rs"
+        shutil.copy2(source, copied)
+        self.assertEqual(copied.stat().st_mtime_ns, 1)
+        self.assertGreaterEqual(copied.stat().st_ctime_ns, prepared["prepared_ns"])
+        receipt = p.verify_build(prepared, [generated, *self.rows()])
+        stamp = receipt["generated"][0]["files"][str(copied)]
+        self.assertEqual(stamp["sha256"], p.digest(source))
+        self.assertEqual(stamp["mtime_ns"], 1)
+        self.assertEqual(stamp["ctime_ns"], copied.stat().st_ctime_ns)
+
+    def test_current_marker_does_not_admit_unchanged_old_generated_file(self):
+        self.add_generator()
+        generated = self.generated_row(self.prepare(), current=True)
+        file = Path(generated["out_dir"]) / "generated.rs"
+        before = file.stat()
+        prepared = self.prepare()
+        marker = file.parent.parent / "output"
+        marker.write_text("cargo::rerun-if-changed=input.toml\n")
+        self.assertLess(before.st_mtime_ns, prepared["prepared_ns"])
+        self.assertLess(before.st_ctime_ns, prepared["prepared_ns"])
+        with self.assertRaisesRegex(ValueError, "no current invocation"):
+            p.verify_build(prepared, [generated, *self.rows()])
+
+    def test_current_generated_file_does_not_admit_an_old_marker(self):
+        self.add_generator()
+        prepared = self.prepare()
+        generated = self.generated_row(prepared, current=True)
+        marker = Path(generated["out_dir"]).parent / "output"
+        os.utime(marker, ns=(1, 1))
+        with self.assertRaisesRegex(ValueError, "no current invocation"):
+            p.verify_build(prepared, [generated, *self.rows()])
+
+    def test_compiler_artifact_still_requires_current_mtime(self):
+        prepared = self.prepare()
+        rows = self.rows()
+        artifact = Path(rows[0]["filenames"][0])
+        os.utime(artifact, ns=(1, 1))
+        self.assertGreaterEqual(artifact.stat().st_ctime_ns, prepared["prepared_ns"])
+        with self.assertRaisesRegex(ValueError, "artifact predates"):
+            p.verify_build(prepared, rows)
 
     def test_returning_to_A_checks_each_target_and_generated_output(self):
         source = self.add_generator()
