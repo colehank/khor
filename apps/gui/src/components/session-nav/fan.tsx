@@ -40,7 +40,9 @@ function TitleWords({text}:{text:string}){
 /** A fresh layer owns one continuous cyclic position per contact. */
 export function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];state:FanState;frame:Frame;phase:string;duration:number}){
   const lastDirection=useRef(0);if(state.direction)lastDirection.current=state.direction;
-  const position=useDeckArcPosition(state.hot??Math.max(0,faces.findIndex(f=>f.id===state.ids[0])),Math.max(1,state.ids.length),lastDirection.current,duration);
+  const closing=phase==='settling'||phase==='fading';
+  const animated=useDeckArcPosition(closing?state.target:state.position,Math.max(1,state.ids.length),lastDirection.current,duration,!closing,false);
+  const position=closing?animated:state.position;
   const items=fanItems(position,state.ids.length,frame),candidate=state.hot===null?null:faces.find(f=>f.id===state.ids[state.hot!]);
   const extent=frame.placement==='right'&&!frame.horizontal?Math.max(.5,(frame.slots-1)/2):2;
   const steering=state.cursor??(state.deflection??0)*2,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0))*extent/2);
@@ -55,7 +57,7 @@ export function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];sta
     </div>
     <div className="lab-fan-steering" aria-hidden="true">
       <svg className="lab-fan-guide" width={frame.width} height={frame.height}><path d={guide}/></svg>
-      {[-1,1].map(side=>{const t=side*extent*.6,p=outerPoint(frame,t),q=outerPoint(frame,t+.02),rotation=Math.atan2(q.y-p.y,q.x-p.x)*180/Math.PI;return <span key={side} className="lab-fan-cue" style={{left:p.x,top:p.y,rotate:`${rotation}deg`}}><DeckRateCue side={side} state={{...state,overview:state.armed}} x={0}/></span>;})}
+      {[-1,1].map(side=>{const t=side*extent*.6,p=outerPoint(frame,t),q=outerPoint(frame,t+.02),rotation=Math.atan2(q.y-p.y,q.x-p.x)*180/Math.PI;return <span key={side} className="lab-fan-cue" style={{left:p.x,top:p.y,rotate:`${rotation}deg`}}><DeckRateCue side={side} state={{...state,direction:-state.direction,overview:state.armed}} x={0}/></span>;})}
       <span className="deck-selector-origin" data-lab-fan-neutral data-paused={state.direction===0||undefined} style={{left:neutral.x,top:neutral.y}}/>
       <span className="lab-fan-cursor" data-lab-fan-cursor style={{left:cursor.x,top:cursor.y}}/>
 
@@ -119,11 +121,11 @@ export function SessionFanNavigator({faces,active,onFocus,onOverview,hidden}:Pic
   const visible=!!closing||shown?.phase==='fan'||shown?.phase==='overview',candidate=shown?.hot==null?null:faces.find(f=>f.id===shown.ids[shown.hot!]),current=faces.find(f=>f.id===active);
   const avatarFace=shown?.cancelArmed?current:candidate??current;
   return <div ref={root} className="lab-compose-nav" data-lab-session-navigation data-fan-open={visible||undefined}>
-    <GlassCircle ref={button} tip={false} data-session-avatar data-lab-compose-avatar data-lab-fan-avatar data-expanded={expanded||undefined} aria-label={`切换会话：${titleOf(current)}`} aria-expanded={expanded||visible} aria-description="点击展开药丸；长按轻推后斜向上下拨动预选，保持偏移循环翻选，弧上回中暂停，继续反拨倒退；回到原头像松手取消；向左上推远后松手展开全部标签，回撤恢复扫选" onPointerDown={down} onPointerMove={e=>{if(contact.current?.pointer===e.pointerId)engine.move({x:e.clientX,y:e.clientY});}} onPointerUp={e=>finish(e.pointerId,{x:e.clientX,y:e.clientY})} onPointerCancel={cancel} onLostPointerCapture={()=>{if(contact.current)cancel();}} onContextMenu={e=>e.preventDefault()} onClick={e=>{if(e.detail===0||pendingTap.current){cancel();toggle();}}} onKeyDown={e=>{if(e.key==='ArrowUp'){e.preventDefault();overview();}}}>
+    <GlassCircle ref={button} tip={false} data-session-avatar data-lab-compose-avatar data-lab-fan-avatar data-expanded={expanded||undefined} aria-label={`切换会话：${titleOf(current)}`} aria-expanded={expanded||visible} aria-description="点击展开药丸；长按后候选跟随斜向上下移动，越过阈值吸附，保持偏移循环翻选，弧上回中暂停，继续反拨倒退；回到原头像松手取消；向左上推远后松手展开全部标签，回撤恢复扫选" onPointerDown={down} onPointerMove={e=>{if(contact.current?.pointer===e.pointerId)engine.move({x:e.clientX,y:e.clientY});}} onPointerUp={e=>finish(e.pointerId,{x:e.clientX,y:e.clientY})} onPointerCancel={cancel} onLostPointerCapture={()=>{if(contact.current)cancel();}} onContextMenu={e=>e.preventDefault()} onClick={e=>{if(e.detail===0||pendingTap.current){cancel();toggle();}}} onKeyDown={e=>{if(e.key==='ArrowUp'){e.preventDefault();overview();}}}>
       {avatarFace&&<span key={avatarFace.id} data-lab-fan-avatar-preview={avatarFace.id} className="lab-fan-avatar-face"><TabAvatar f={avatarFace} bare="size-tab-face" seat="tab"/></span>}
     </GlassCircle>
     {expanded&&<SessionPill faces={faces} active={active} onFocus={focus} onOverview={overview}/>}
     {visible&&shown&&shownFrame&&<FanLayer faces={faces} state={shown} frame={shownFrame} phase={closing?.phase??shown.phase} duration={closing?SETTLE_MS:timing.current.follow}/>}
-    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.cancelArmed?'松手取消，离开原头像可恢复预选':shown?.lane==='overview'?shown.armed?'松手展开全部标签':'向左上推远展开，回撤恢复扫选':candidate?`预选 ${titleOf(candidate)}，松手切换，弧上回中暂停，回到原头像松手取消`:'斜向上下轻拨预选，保持偏移循环翻选，回中暂停，向左上推远展开全部标签':''}</span>
+    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.cancelArmed?'松手取消，离开原头像可恢复预选':shown?.lane==='overview'?shown.armed?'松手展开全部标签':'向左上推远展开，回撤恢复扫选':candidate?`预选 ${titleOf(candidate)}，松手切换，弧上回中暂停，回到原头像松手取消`:'斜向上下跟手预选，越过阈值吸附，保持偏移循环翻选，回中暂停，向左上推远展开全部标签':''}</span>
   </div>;
 }

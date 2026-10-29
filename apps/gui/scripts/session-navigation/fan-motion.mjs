@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
-import {build} from 'esbuild';
-const bundle=await build({stdin:{contents:"export * from './src/components/session-nav/state';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false});
-const {thumbFanJoystick}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+import {fanFixture,deckJoystick,memoryClock} from './fixture.mjs';
+import {fanFrame,fanPoint} from '../../src/components/session-nav/geometry.ts';
+const layout={left:0,top:0,width:390,height:650,touch:44,gap:12,originX:354,originY:680};
 let checks=0;
-function make(){let now=0,next=0;const jobs=new Map(),clock={now:()=>now,request:f=>{jobs.set(++next,f);return next;},cancel:id=>jobs.delete(id)},fan=thumbFanJoystick(()=>{},clock);const origin={x:350,y:500},neutral={x:325,y:475};fan.start(origin,['a','b','c','d','e'],'a');const advance=ms=>{for(let end=now+ms;now<end;){now=Math.min(end,now+16);const run=[...jobs.values()];jobs.clear();run.forEach(f=>f());}};advance(288);fan.move(neutral);return {fan,neutral,advance,move:(up,left=up*.35)=>fan.move({x:neutral.x-left,y:neutral.y-up})};}
-// The old polar-only controller ignores this whole diagonal stroke.
-for(const slope of [-.5,0,.35,1]){const {fan,move,advance}=make();move(18,18*slope);assert.equal(fan.read().hot,1,'upward straight/diagonal travel selects immediately');move(0,0);advance(4000);assert.equal(fan.read().hot,1);move(-28,28*Math.abs(slope));assert.equal(fan.read().hot,0,'the same diagonal path reverses');fan.cancel();checks++;}
+for(const slope of [-.5,0,.35,1]){const f=fanFixture();f.acquire();f.move(18,18*slope);assert.equal(f.fan.read().hot,0);assert(f.fan.read().position<0,'straight/diagonal upward travel follows before selection');const frame=fanFrame(layout);assert(fanPoint(frame,-f.fan.read().position).y<fanPoint(frame,0).y,'the same candidate physically follows the finger upward');f.move(40,40*slope);assert.equal(f.fan.read().hot,4);f.move(0,0);f.advance(4000);assert.equal(f.fan.read().hot,4);f.move(-60,60*Math.abs(slope));assert.equal(f.fan.read().hot,0,'the same diagonal path reverses after a deliberate threshold');f.fan.cancel();checks++;}
 {
- const {fan,move}=make();move(3,1);assert.equal(fan.read().hot,0);assert(fan.read().cursor>0,'cursor follows below selection threshold');const first=fan.read().cursor;move(6,2);assert(fan.read().cursor>first);assert.equal(fan.read().hot,0);fan.cancel();checks++;
+ const f=fanFixture();f.acquire();f.move(3,1);assert.equal(f.fan.read().hot,0);assert(f.fan.read().cursor>0);const first=f.fan.read().cursor;f.move(6,2);assert(f.fan.read().cursor>first);assert(f.fan.read().position<0);assert.equal(f.fan.read().hot,0);f.fan.cancel();checks++;
 }
 {
- const {fan,move,advance}=make();for(const [up,left] of [[2,8],[-3,-9],[4,-5],[-4,5],[0,0]])move(up,left);advance(4000);assert.equal(fan.read().hot,0,'small hand tremor stays neutral');move(18);move(55);assert.equal(fan.read().hot,1,'continued travel changes speed without skipping candidates');move(0,0);const paused=fan.read().hot;advance(4000);assert.equal(fan.read().hot,paused);fan.cancel();checks++;
+ const f=fanFixture();f.acquire();for(const [up,left] of [[2,8],[-3,-9],[4,-5],[-4,5],[0,0]])f.move(up,left);f.advance(4000);assert.equal(f.fan.read().hot,0);f.move(40);f.move(60);assert.equal(f.fan.read().hot,4);f.move(0,0);const paused=f.fan.read().hot;f.advance(4000);assert.equal(f.fan.read().hot,paused);f.fan.cancel();checks++;
 }
-console.log(`${checks} diagonal travel, immediate subthreshold cursor, tremor, no skips and return-pause checks passed.`);
+{
+ const time=memoryClock(),pill=deckJoystick(5,0,()=>{},()=>{},()=>{},time.clock);pill.start(0,0);time.advance(288);pill.move(17,0);const frame=fanFrame({...layout,placement:'bottom'});assert(fanPoint(frame,-pill.read().position).x>fanPoint(frame,0).x,'the bottom pill candidate physically follows a rightward thumb');assert.equal(pill.read().preview,0);pill.cancel();assert.equal(time.jobs.size,0);checks++;
+}
+console.log(`${checks} diagonal/bottom physical direction, continuous follow, tremor and pause checks passed.`);

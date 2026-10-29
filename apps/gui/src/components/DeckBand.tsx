@@ -28,7 +28,7 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
   const latest=useRef({faces,active,onFocus,onTitle,onOverview,tuning});latest.current={faces,active,onFocus,onTitle,onOverview,tuning};
   const at=Math.max(0,faces.findIndex(f=>f.id===active));
   const [state,setState]=useState<DeckScrubState>({opened:at,preview:at,position:at,mode:'idle',source:'swipe',direction:0,holding:false,...holdTiming(0,250)});
-  const [steering,setSteering]=useState<DeckJoystickState>({phase:'idle',preview:at,dx:0,dy:0,direction:0,interval:tuning.slowMs,overview:false,tier:0,pulse:0});
+  const [steering,setSteering]=useState<DeckJoystickState>({phase:'idle',preview:at,dx:0,dy:0,direction:0,interval:tuning.slowMs,overview:false,tier:0,pulse:0,position:at,target:at});
   const alive=useRef(true),prior=useRef(at),focusDirection=useRef(0);
   const focus=(index:number)=>{const now=latest.current,f=now.faces[index];if(f&&f.id!==now.active)now.onFocus(f.id);};
   const engine=useMemo(()=>deckScrubber(faces.length,at,s=>{
@@ -152,7 +152,7 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
 
   const exploring=steering.phase==='steering'||steering.phase==='pull';
   const following=state.mode==='swipe'||state.mode==='settling';
-  const position=useDeckPosition(exploring?steering.preview:state.preview,faces.length,exploring?steering.direction:focusDirection.current,following?state.position:undefined,ids);
+  const position=useDeckPosition(exploring?steering.preview:state.preview,faces.length,exploring?steering.direction:focusDirection.current,exploring?steering.position:following?state.position:undefined,ids);
   const anchor=Math.round(position),slots=nearbySlots(position,faces.length,1),past=state.mode==='swipe'&&state.preview!==state.opened;
   const previewing=state.mode==='swipe'&&!state.holding,selecting=state.mode==='swipe';
   return <>

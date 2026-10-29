@@ -18,7 +18,7 @@ export const BLINK_MS = 1_000;
 // Original-file transfer progress, independent of animation timing.
 export const FILE_HANDOFF_POLL_MS = 200;
 
-// Approved joystick trial: first candidate responds at once, then a stable
-// slow / medium / fast reading rhythm. These are not universal reaction times.
+// Approved hold rhythm starts after each candidate finishes snapping.
+// Slow / medium / fast are reading intervals, not universal reaction times.
 export const DECK_JOYSTICK_HOLD_MS = 280;
 export const DECK_JOYSTICK_REPEAT_MS = [1400,1000,700] as const;

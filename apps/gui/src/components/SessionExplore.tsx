@@ -13,11 +13,11 @@ function PillExplore({band,faces,state,origin,reach}:Props){
   const [frame,setFrame]=useState(measure);
   useLayoutEffect(()=>{const update=()=>setFrame(measure()),observer=new ResizeObserver(update);observer.observe(band.current!.closest('[data-session-screen]')!);window.addEventListener('resize',update);window.visualViewport?.addEventListener('resize',update);return()=>{observer.disconnect();window.removeEventListener('resize',update);window.visualViewport?.removeEventListener('resize',update);};},[band]);
   const start={x:origin,y:frame.originY};
-  const fan:FanState={phase:state.overview?'overview':'fan',lane:state.overview||state.phase==='pull'?'overview':'fan',held:true,origin:start,point:{x:start.x+state.dx,y:start.y+state.dy},ids:faces.map(f=>f.id),hot:state.preview,armed:state.overview,direction:state.direction,tier:state.tier,interval:state.interval,pulse:state.pulse,deflection:Math.max(-1,Math.min(1,state.dx/reach)),acquired:true};
+  const fan:FanState={phase:state.overview?'overview':'fan',lane:state.overview||state.phase==='pull'?'overview':'fan',held:true,origin:start,point:{x:start.x+state.dx,y:start.y+state.dy},ids:faces.map(f=>f.id),hot:state.preview,position:state.position,target:state.target,armed:state.overview,direction:state.direction,tier:state.tier,interval:state.interval,pulse:state.pulse,deflection:Math.max(-1,Math.min(1,state.dx/reach)),acquired:true};
   return <FanLayer faces={faces} state={fan} frame={frame} phase={fan.phase} duration={parseFloat(getComputedStyle(band.current!).getPropertyValue('--dur-120'))}/>;
 }
 export function DeckExplore(props:Props){
   const screen=props.band.current?.closest('[data-session-screen]');
-  const enabled=screen?.hasAttribute('data-session-navigation-root')||!!props.band.current?.closest('[data-lab-session-pill]');
+  const enabled=props.placement!=='top'&&(!!screen||!!props.band.current?.closest('[data-lab-session-pill]'));
   return enabled?<PillExplore {...props}/>:<DefaultExplore {...props}/>;
 }

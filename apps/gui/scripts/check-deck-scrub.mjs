@@ -156,17 +156,17 @@ function fixture(count=12,initial=3){
  return {e,advance,commits,frames,overviews:()=>overviews,hold:()=>advance(DEFAULTS.holdMs+16),move:(dx,dy=0)=>e.move(200+dx,500+dy)};
 }
 {
- const f=fixture();f.hold();assert.equal(f.e.read().phase,'steering');f.move(12);assert.equal(f.e.read().preview,4,'a short push immediately selects the adjacent item');
- assert.deepEqual(f.commits,[]);f.advance(1500);assert(f.e.read().preview>4,'stationary offset keeps browsing without a separate dwell');
+ const f=fixture();f.hold();assert.equal(f.e.read().phase,'steering');f.move(12);assert.equal(f.e.read().preview,3,'small motion follows without changing identity');assert(f.e.read().position<3);f.move(32);assert.equal(f.e.read().preview,2,'crossing the approved threshold accepts the adjacent identity');
+ assert.deepEqual(f.commits,[]);f.advance(1800);assert(f.e.read().target<2,'stationary offset keeps browsing after snap and reading interval');
  f.move(0);const paused=f.e.read().preview;f.advance(4000);assert.equal(f.e.read().preview,paused,'return to origin pauses indefinitely');
- f.move(-12);assert.equal(f.e.read().preview,(paused+11)%12,'other side responds immediately');f.move(0);const target=f.e.read().preview;
+ f.move(-50);assert.equal(f.e.read().preview,(paused+1)%12,'deliberate reverse crosses the approved threshold');f.move(0);const target=f.e.read().preview;
  f.e.release();f.e.release();f.move(56);assert.deepEqual(f.commits,target===3?[]:[target]);assert.equal(f.frames.size,0);
 }
 {
- const slow=fixture(),fast=fixture();slow.hold();fast.hold();slow.move(12);fast.move(56);slow.advance(1200);fast.advance(1200);
+ const slow=fixture(),fast=fixture();slow.hold();fast.hold();slow.move(32);fast.move(60);fast.move(60);slow.advance(2400);fast.advance(2400);
  assert.equal(slow.e.read().tier,1);assert.equal(fast.e.read().tier,3);
  assert(fast.e.read().pulse>slow.e.read().pulse,'each advance supplies one arrow beat');
- assert(fast.e.read().preview>slow.e.read().preview,'larger offset advances faster over the same time');
+ assert(fast.e.read().target<slow.e.read().target,'larger offset advances farther in the same direction over the same time');
  assert(fast.e.read().interval<slow.e.read().interval);slow.e.cancel();fast.e.cancel();
 }
 {
@@ -193,20 +193,22 @@ for(const count of [0,1]){
  const f=fixture();f.move(0,-20);assert.equal(f.e.read().phase,'pull');assert(!f.e.read().overview);f.move(0,-60);assert(f.e.read().overview);f.move(0,-20);assert(!f.e.read().overview);f.e.release();assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
 }
 {
- const f=fixture();f.hold();f.move(12);assert.equal(f.e.read().tier,1);f.move(30);assert.equal(f.e.read().tier,2);f.move(56);assert.equal(f.e.read().tier,3);f.move(0);assert.equal(f.e.read().tier,0);assert.equal(f.e.read().direction,0);f.e.cancel();
+ const f=fixture();f.hold();f.move(12);assert.equal(f.e.read().tier,1);f.move(40);assert.equal(f.e.read().tier,2);f.move(60);assert.equal(f.e.read().tier,3);f.move(0);assert.equal(f.e.read().tier,0);assert.equal(f.e.read().direction,0);f.e.cancel();
 }
-for(const [offset,tier,interval] of [[12,1,1400],[30,2,1000],[56,3,700]]){
- const f=fixture();f.hold();f.move(offset);assert.equal(f.e.read().tier,tier);assert.equal(f.e.read().interval,interval);assert.equal(f.e.read().pulse,1);
- f.advance(interval-24);assert.equal(f.e.read().pulse,1,'the first immediate candidate gets a full reading interval');
- f.advance(48);assert.equal(f.e.read().pulse,2,'repeat starts at the advertised gear interval');
- f.advance(interval*3);assert.equal(f.e.read().pulse,5,'each gear keeps a predictable repeat rhythm');f.e.cancel();
+for(const [offset,tier,interval] of [[32,1,1400],[40,2,1000],[60,3,700]]){
+ const f=fixture();f.hold();f.move(32);f.move(offset);assert.equal(f.e.read().tier,tier);assert.equal(f.e.read().interval,interval);assert.equal(f.e.read().pulse,1);
+ const settle=()=>{for(let elapsed=0;f.e.read().position!==f.e.read().target&&elapsed<300;elapsed+=16)f.advance(16);assert.equal(f.e.read().position,f.e.read().target);};
+ settle();for(let expected=2;expected<=5;expected++){
+  f.advance(interval-24);assert.equal(f.e.read().pulse,expected-1,'each completed snap receives its full advertised reading interval');
+  f.advance(48);assert.equal(f.e.read().pulse,expected,'each accepted auto candidate supplies one rate beat');settle();
+ }f.e.cancel();
 }
 {
- const f=fixture();f.hold();f.move(12);f.move(25);assert.equal(f.e.read().tier,1);f.move(28);assert.equal(f.e.read().tier,2);
- for(const offset of [25,26,25,27]){f.move(offset);assert.equal(f.e.read().tier,2,'small boundary jitter does not change gear');}
- f.move(22);assert.equal(f.e.read().tier,1);f.move(44);assert.equal(f.e.read().tier,3);f.move(41);assert.equal(f.e.read().tier,3);f.move(37);assert.equal(f.e.read().tier,2);
+ const f=fixture();f.hold();f.move(12);f.move(25);assert.equal(f.e.read().tier,1);f.move(40);assert.equal(f.e.read().tier,2);
+ for(const offset of [35,36,34,37]){f.move(offset);assert.equal(f.e.read().tier,2,'small boundary jitter does not change gear');}
+ f.move(28);assert.equal(f.e.read().tier,1);f.move(60);assert.equal(f.e.read().tier,3);f.move(52);assert.equal(f.e.read().tier,3);f.move(45);assert.equal(f.e.read().tier,2);
  assert.equal(f.e.read().pulse,1,'gear changes do not skip or restart the candidate');f.e.cancel();
 }
-console.log('Production joystick: 1400/1000/700ms gears, reading time, boundary hysteresis, immediate short push, rate beats, indefinite pause, reversal, direct up/retraction, cancellation, swipe, tap and single/empty states passed');
+console.log('Production joystick: 1400/1000/700ms gears, reading time, boundary hysteresis, continuous threshold follow, snap then rate beats, indefinite pause, reversal, direct up/retraction, cancellation, swipe, tap and single/empty states passed');
 
 }
