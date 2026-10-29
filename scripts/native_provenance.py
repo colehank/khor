@@ -136,6 +136,8 @@ def build_state(root, metadata, tools, request):
         extras = {}
         if package["name"] == "khor-web":
             extras["apps/gui/dist"] = tree(root / "apps/gui/dist")
+        if package["name"] == "khor-gui":
+            extras["apps/gui/src-tauri/capabilities"] = tree(root / "apps/gui/src-tauri/capabilities")
         if package["name"] == "khor-node":
             for name in ("apps/agent/providers.json", "scripts/install.sh"):
                 extras[name] = tree(root / name)

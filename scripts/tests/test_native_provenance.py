@@ -462,6 +462,76 @@ class ProvenanceTests(unittest.TestCase):
         receipt = p.verify_build(prepared, [generated, *rows])
         self.assertEqual(len(receipt["generated"]), 1)
 
+    def gui_capabilities(self):
+        package = self.metadata["packages"][1]
+        previous = self.root / "app"
+        directory = self.root / "apps/gui/src-tauri"
+        directory.parent.mkdir(parents=True)
+        previous.rename(directory)
+        package.update(name="khor-gui", manifest_path=str(directory / "Cargo.toml"))
+        package["targets"][0]["src_path"] = str(directory / "src/lib.rs")
+        (directory / "Cargo.toml").write_text("[package]\nname='khor-gui'\nversion='0.1.0'\n[lib]\nname='app'\n")
+        self.request["package"] = "khor-gui"
+        return self.put("apps/gui/src-tauri/capabilities/default.json", '{"permissions":["A"]}\n').parent
+
+    def test_gui_capabilities_directory_is_frozen_and_admitted_as_declared(self):
+        directory = self.gui_capabilities()
+        script = self.put("apps/gui/src-tauri/build.rs", "fn main() {}\n")
+        self.metadata["packages"][1]["targets"].append(
+            {"name": "build-script-build", "kind": ["custom-build"],
+             "edition": "2024", "src_path": str(script)})
+        prepared = self.prepare()
+        out = self.target / "debug/build/app-output/out"
+        out.mkdir(parents=True)
+        (out / "permissions.rs").write_text("const PERMISSIONS: &[&str] = &[];\n")
+        marker = out.parent / "output"
+        marker.write_text(f"cargo::rerun-if-changed={directory}\n")
+        generated = {"reason": "build-script-executed", "package_id": "app", "out_dir": str(out)}
+        receipt = p.verify_build(prepared, [generated, *self.rows()])
+        self.assertEqual(len(receipt["generated"]), 1)
+        self.assertEqual(prepared["states"]["app"]["extra_inputs"]["apps/gui/src-tauri/capabilities"],
+                         {"default.json": p.digest(directory / "default.json")})
+        marker.write_text(f"cargo::rerun-if-changed={self.root}\n")
+        with self.assertRaisesRegex(ValueError, "outside its producer key"):
+            p.verify_build(prepared, [generated, *self.rows()])
+
+    def test_gui_capabilities_set_change_and_remove_invalidate_the_producer_key(self):
+        directory = self.gui_capabilities()
+        source = directory / "default.json"
+        original = source.read_bytes()
+        before = self.prepare()
+        stamp = source.stat()
+        source.write_bytes(original + b" ")
+        os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        changed = self.prepare()
+        self.assertNotEqual(before["package_keys"], changed["package_keys"])
+        source.write_bytes(original)
+        self.assertEqual(before["package_keys"], self.prepare()["package_keys"])
+        extra = directory / "new.json"
+        extra.write_text("{}\n")
+        added = self.prepare()
+        self.assertNotEqual(before["package_keys"], added["package_keys"])
+        extra.unlink()
+        self.assertEqual(before["package_keys"], self.prepare()["package_keys"])
+        source.unlink()
+        self.assertNotEqual(before["package_keys"], self.prepare()["package_keys"])
+
+    def test_gui_capabilities_symlink_root_and_member_are_rejected(self):
+        directory = self.gui_capabilities()
+        source = directory / "default.json"
+        real = source.with_name("real.json")
+        source.rename(real)
+        source.symlink_to(real.name)
+        with self.assertRaisesRegex(ValueError, "nonregular|regular.*symlink"):
+            self.prepare()
+        source.unlink()
+        real.rename(source)
+        moved = directory.with_name("real-capabilities")
+        directory.rename(moved)
+        directory.symlink_to(moved.name, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "nonregular|regular.*symlink"):
+            self.prepare()
+
     def test_build_script_unrecorded_input_is_rejected(self):
         self.add_generator()
         prepared = self.prepare()
