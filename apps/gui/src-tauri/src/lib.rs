@@ -825,13 +825,13 @@ fn open_link(url: String) -> Result<(), String> {
 /// The phone's half (docs/IOS.md 第二步): **the system opens the page**,
 /// in whatever browser the person uses — an app's sandbox has no program
 /// to hand a URL to, and the desktop road's `xdg-open` came back as a raw
-/// OS error. The same whitelist as the desktop (`web::page_only`), asked
+/// OS error. The same system-target validation as the desktop, asked
 /// before anything leaves; UIKit wants the main thread, so the hand-over
 /// runs there and this answers once it is queued.
 #[cfg(target_os = "ios")]
 #[tauri::command]
 fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    khor_gui_core::web::page_only(&url)?;
+    khor_gui_core::web::system_target(&url)?;
     app.run_on_main_thread(move || {
         use objc2::MainThreadMarker;
         use objc2_foundation::{NSDictionary, NSString, NSURL};
