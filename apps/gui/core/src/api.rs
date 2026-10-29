@@ -200,23 +200,24 @@ pub fn answer(
             &opt_str("machine")?.unwrap_or_default(),
             &arg("path")?,
         ))?),
-        // One slice of a file, for reading. `pull` is the other verb
-        // and it spends a disk; this one spends a screen.
-        // The bridge answers one request at a time, and this one is held
-        // open: it says a tree cannot be watched here, so the web face
-        // asks its levels as before.
-        "dirs_wait" => to_json(&crate::files::DirWatch {
-            seq: num("since")?,
-            dirs: match args.get("dirs") {
-                Some(serde_json::Value::Array(a)) => a
-                    .iter()
-                    .filter_map(|d| d.as_str().map(str::to_owned))
-                    .collect(),
-                _ => Vec::new(),
-            },
-            unavailable: true,
-            unreported: Vec::new(),
-        }),
+        "dirs_begin" => {
+            let scopes: Vec<crate::files::DirWatchScope> = serde_json::from_value(
+                args.get("scopes").cloned().ok_or("missing arg: scopes")?,
+            ).map_err(|error| error.to_string())?;
+            to_json(&rt.block_on(crate::files::dirs_begin(root, &arg("machine")?, scopes))?)
+        }
+        "dirs_wait" => {
+            // Validate the same wire shape as native, but never hold the
+            // serial HTTP bridge while waiting for a filesystem event.
+            u32::try_from(num("wait_ms")?).map_err(|_| "wait_ms exceeds u32".to_owned())?;
+            to_json(&rt.block_on(crate::files::dirs_wait(
+                root, &arg("machine_id")?, &arg("id")?, opt_str("cursor")?.as_deref(), 0,
+            ))?)
+        }
+        "dirs_leave" => {
+            rt.block_on(crate::files::dirs_leave(root, &arg("machine_id")?, &arg("id")?))?;
+            Ok("null".into())
+        }
         "stat_text" => to_json(&rt.block_on(crate::files::stat_text(
             root,
             &arg("machine")?,
@@ -1292,6 +1293,10 @@ pub fn answer(
         other => Err(format!("no such command: {other}")),
     }
 }
+
+#[cfg(test)]
+#[path = "api/watch_bridge_tests.rs"]
+mod watch_bridge_tests;
 
 fn to_json<T: serde::Serialize>(v: &T) -> Result<String, String> {
     serde_json::to_string(v).map_err(|e| e.to_string())

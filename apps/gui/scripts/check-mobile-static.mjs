@@ -164,6 +164,7 @@ export function checkMobileSources(gui) {
     // at 31 ms held on a scratch app, with key→echo max 35 ms in the same
     // window against a p95 of 12 ms.
     "day_strips", "session_content", "history_begin", "history_cancel", "history_page", "history_record",
+    "dirs_begin", "dirs_wait", "dirs_leave",
   ];
   {
     const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(async\s+)?fn\s+([a-z_0-9]+)/g;

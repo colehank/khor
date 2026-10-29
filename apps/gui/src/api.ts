@@ -32,7 +32,11 @@ import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
 import type { FileText } from "./gen/bindings/FileText";
 import type { FileStat } from "./gen/bindings/FileStat";
-import type { DirWatch } from "./gen/bindings/DirWatch";
+import type { DirWatchScope } from "./gen/bindings/DirWatchScope";
+import type { DirWatchCoverageMode } from "./gen/bindings/DirWatchCoverageMode";
+import type { DirWatchCoverage } from "./gen/bindings/DirWatchCoverage";
+import type { DirWatchBatch } from "./gen/bindings/DirWatchBatch";
+import type { DirWatchOpened } from "./gen/bindings/DirWatchOpened";
 import type { GitStatus } from "./gen/bindings/GitStatus";
 import type { Editor } from "./gen/bindings/Editor";
 import type { GitRow } from "./gen/bindings/GitRow";
@@ -118,7 +122,11 @@ export type {
   WorkspaceRow,
   FileText,
   FileStat,
-  DirWatch,
+  DirWatchScope,
+  DirWatchCoverageMode,
+  DirWatchCoverage,
+  DirWatchBatch,
+  DirWatchOpened,
   GitStatus,
   GitRow,
   GitDiff,
@@ -1431,11 +1439,13 @@ export const fetchHistoryPage = (id: string, binding: string, requestKey: string
     all come from the node; `""` asks for that machine's home. */
 export const fetchLs = (machine: string, path: string) =>
   call<DirListing>("ls", { machine, path });
-/** Which of these open levels changed on that machine since `since`,
-    held up to `waitMs` for one to (`khor_gui_core::files::dirs_wait`):
-    the far machine watches them. `unavailable` says ask instead. */
-export const dirsWait = (machine: string, dirs: string[], since: number, waitMs: number) =>
-  call<DirWatch>("dirs_wait", { machine, dirs, since, wait_ms: waitMs });
+/** Begin resolves the machine once; subsequent calls use its pinned DeviceId. */
+export const dirsBegin = (machine: string, scopes: DirWatchScope[]) =>
+  call<DirWatchOpened>("dirs_begin", { machine, scopes });
+export const dirsWait = (machine_id: string, id: string, cursor: string | null, waitMs: number) =>
+  call<DirWatchBatch>("dirs_wait", { machine_id, id, cursor, wait_ms: waitMs });
+export const dirsLeave = (machine_id: string, id: string) =>
+  call<null>("dirs_leave", { machine_id, id });
 /** Takes a file into this machine's downloads; answers where it
     landed — the place was chosen silently, so it must be said. */
 export const pullFile = (machine: string, path: string) =>

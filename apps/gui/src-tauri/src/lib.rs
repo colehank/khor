@@ -219,18 +219,27 @@ async fn touched(machine: Option<String>, path: String) -> Result<i64, String> {
     .await
 }
 
-/// Which of a tree's open levels changed on that machine
-/// (`khor_gui_core::files::dirs_wait`): held up to `wait_ms`, so async.
-/// Its arguments are named as the bridge names them (`wait_ms`), one
-/// spelling for both doors.
+#[tauri::command(rename_all = "snake_case")]
+async fn dirs_begin(
+    machine: String,
+    scopes: Vec<khor_gui_core::files::DirWatchScope>,
+) -> Result<khor_gui_core::files::DirWatchOpened, String> {
+    khor_gui_core::files::dirs_begin(&Node::root_from_env(), &machine, scopes).await
+}
+
 #[tauri::command(rename_all = "snake_case")]
 async fn dirs_wait(
-    machine: String,
-    dirs: Vec<String>,
-    since: u64,
-    wait_ms: u64,
-) -> Result<khor_gui_core::files::DirWatch, String> {
-    khor_gui_core::files::dirs_wait(&Node::root_from_env(), &machine, dirs, since, wait_ms).await
+    machine_id: String,
+    id: String,
+    cursor: Option<String>,
+    wait_ms: u32,
+) -> Result<khor_gui_core::files::DirWatchBatch, String> {
+    khor_gui_core::files::dirs_wait(&Node::root_from_env(), &machine_id, &id, cursor.as_deref(), wait_ms.min(20_000)).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn dirs_leave(machine_id: String, id: String) -> Result<(), String> {
+    khor_gui_core::files::dirs_leave(&Node::root_from_env(), &machine_id, &id).await
 }
 
 /// What an open file is now, without its bytes
@@ -5264,7 +5273,9 @@ pub fn run() {
             pdf_here,
             read_text,
             stat_text,
+            dirs_begin,
             dirs_wait,
+            dirs_leave,
             git_status,
             checkout,
             git_diff,

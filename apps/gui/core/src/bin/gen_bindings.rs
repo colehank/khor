@@ -53,7 +53,11 @@ macro_rules! roots {
         $visit!(khor_gui_core::files::FileText);
         $visit!(khor_gui_core::file_handoff::FileHandoff);
         $visit!(khor_gui_core::files::FileStat);
-        $visit!(khor_gui_core::files::DirWatch);
+        $visit!(khor_gui_core::files::DirWatchScope);
+        $visit!(khor_gui_core::files::DirWatchCoverageMode);
+        $visit!(khor_gui_core::files::DirWatchCoverage);
+        $visit!(khor_gui_core::files::DirWatchBatch);
+        $visit!(khor_gui_core::files::DirWatchOpened);
         $visit!(khor_gui_core::git::GitStatus);
         $visit!(khor_gui_core::git::GitDiff);
         $visit!(khor_gui_core::git::GitLog);
