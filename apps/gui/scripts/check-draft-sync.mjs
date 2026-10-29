@@ -21,19 +21,25 @@ const adapters = owners.map(name => {
 });
 const fileSource=ts.createSourceFile('FileView.tsx',readFileSync('src/views/FileView.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 let fileCount, publish, onText;
+const fileDeclarations={};
 function visitFile(node) {
   if(ts.isCallExpression(node)&&node.expression.getText(fileSource)==='useDraftCount') {
     let statement=node;
     while(!ts.isVariableStatement(statement)&&!ts.isExpressionStatement(statement))statement=statement.parent;
     fileCount=statement.getText(fileSource);
   }
-  if(ts.isVariableStatement(node)&&node.declarationList.declarations.some(d=>d.name.getText(fileSource)==='publishDraft'))publish=node.getText(fileSource);
+  if(ts.isVariableStatement(node))for(const declaration of node.declarationList.declarations) {
+    const name=ts.isArrayBindingPattern(declaration.name)?declaration.name.elements[0].getText(fileSource):declaration.name.getText(fileSource);
+    fileDeclarations[name]=node.getText(fileSource);
+    if(name==='publishDraft')publish=node.getText(fileSource);
+  }
   if(ts.isJsxAttribute(node)&&node.name.getText(fileSource)==='onText')onText=node.initializer.expression.getText(fileSource);
   ts.forEachChild(node,visitFile);
 }
 visitFile(fileSource);
 assert(fileCount&&publish&&onText,'FileBody reporting and editor callback located');
-adapters.push(`export function StandaloneFile(mode) { const [body,setBody]=useState('A'); const file={text:'A'}; const onDraft=mode==='delegated'?()=>{}:undefined; const dirty=body!==file.text; const leaving=useRef({edit:{text:body}}); const setEdit=next=>setBody(typeof next==='function'?next(leaving.current.edit).text:next.text); ${fileCount} ${publish} return {onText:${onText}}; }`);
+const acceptedDeclarations=['buffer','accepted','bufferLive','publishAccepted','acceptBuffer','setEdit'].map(name=>{assert(fileDeclarations[name],name);return fileDeclarations[name];}).join('\n');
+adapters.push(`export function StandaloneFile(mode) { const draft={text:'A',was:'A',by:'line'}; const refresh={current:{invalidate(){}}}; const onDraft=mode==='delegated'?()=>{}:undefined; ${acceptedDeclarations} const {file,edit}=buffer; const dirty=file!==null&&edit!==null&&edit.text!==file.text; ${fileCount} ${publish} publishAccepted.current=()=>publishDraft(accepted.current.edit); return {onText:${onText}, ready:()=>acceptBuffer(was=>({...was,file:{text:'A'}}))}; }`);
 const bundle = await build({stdin:{contents:`import * as hooks from './src/hooks/use-draft-count'; import {useState,useRef,useCallback} from 'react'; const {useDraftCount,useDraftState}=hooks; ${adapters.join('\n')} export {draftCount} from './src/lib/drafts';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false,plugins:[{name:'aliases',setup(b){b.onResolve({filter:/^@\/lib\/drafts$/},()=>({path:process.cwd()+'/src/lib/drafts.ts'}));b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const useState=(...a)=>globalThis.draftFixture.state(...a); export const useRef=(...a)=>globalThis.draftFixture.ref(...a); export const useCallback=(...a)=>globalThis.draftFixture.callback(...a); export const useLayoutEffect=(...a)=>globalThis.draftFixture.effect(...a);`}));}}]});
 const api = await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 function mount(name) {
@@ -68,7 +74,7 @@ function mount(name) {
     }
     return result;
   }
-  render(); commit();
+  render(); commit(); if(result.ready){result.ready();commit();}
   return {render,commit,unmount(){for(const s of slots)s?.cleanup?.();},replay(){for(const s of slots)s?.cleanup?.();for(const s of slots)if(s?.setup)s.cleanup=s.setup();}};
 }
 const results=[];

@@ -73,6 +73,7 @@ import {
   PAUSE_MS,
   readForOverwrite,
   reopened,
+  roadOf,
   useRoad,
   write,
 } from "@/lib/save-road";
@@ -252,7 +253,7 @@ export function FileView(props: Omit<Parameters<typeof FileBody>[0],"handoff"> &
   const own=useFileHandoff(props.machine,props.path,!props.handoff);
   const handoff=props.handoff??own;
   return <div ref={own.owner} data-file-body className="relative flex min-h-0 flex-1 flex-col">
-    <FileBody {...props} handoff={handoff}/>
+    <FileBody key={JSON.stringify([props.machine,props.path])} {...props} handoff={handoff}/>
     {!props.handoff&&<FileHandoffStatus handoff={handoff}/>}
   </div>;
 }
@@ -376,13 +377,28 @@ function FileBody({
       asking — `text`, which is the road this view already had. */
   const [look, setLook] = useState<Preview | null>(null);
   const [lookError, setLookError] = useState<string | null>(null);
-  const [file, setFile] = useState<FileText | null>(null);
-  /** The working copy, and the digest it is pinned to. **One piece of
-      state, not two**: a save replaces both at once (the text it wrote
-      and the digest the far machine answered), and holding them apart
-      is how a second save gets pinned to a digest that belongs to
-      different bytes. `null` until the file arrives. */
-  const [own, setOwn] = useState<Draft | null>(null);
+  const [buffer, projectBuffer] = useState(() => ({
+    file: null as FileText | null,
+    edit: (draft ?? null) as Draft | null,
+    // Zero still requires review; null means no unresolved merge.
+    clashes: null as number | null,
+  }));
+  const {file, edit, clashes} = buffer;
+  const accepted = useRef(buffer);
+  const bufferLive = useRef(true);
+  const publishAccepted = useRef<() => void>(() => {});
+  // React is a projection: save callbacks and editor transactions can share a task.
+  const acceptBuffer = useCallback((change: (was: typeof buffer) => typeof buffer) => {
+    if (!bufferLive.current) return;
+    const next = change(accepted.current);
+    if (next === accepted.current) return;
+    accepted.current = next;
+    publishAccepted.current();
+    projectBuffer(next);
+  }, []);
+  const setClashes = useCallback((next: number | null) => {
+    acceptBuffer(was => ({...was, clashes: next}));
+  }, [acceptBuffer]);
   // **The editor's chunk, fetched while the file is read** (CM-BRIEF §2):
   // the strip's 「编辑」 focuses the editor inside its own press
   // (`beginEditing`), so the module has to be resident before the press
@@ -390,17 +406,17 @@ function FileBody({
   useEffect(() => {
     preloadEditor();
   }, []);
-  // A retained draft supplies the first frame after remount. Once this
-  // view accepts a buffer, its own copy also owns load/save/merge updates.
-  const edit = own ?? draft ?? null;
   const refresh = useRef(fileRefresh());
-  useLayoutEffect(() => () => refresh.current.invalidate(), [machine, path]);
+  useLayoutEffect(() => {
+    bufferLive.current = true;
+    return () => { bufferLive.current = false; refresh.current.invalidate(); };
+  }, [machine, path]);
   const setEdit = useCallback(
     (next: Draft | null | ((was: Draft | null) => Draft | null)) => {
       refresh.current.invalidate();
-      setOwn((was) => (typeof next === "function" ? next(was ?? draft ?? null) : next));
+      acceptBuffer(was => ({...was, edit: typeof next === "function" ? next(was.edit) : next}));
     },
-    [draft],
+    [acceptBuffer],
   );
   /** A way out of a clash is under way (a read, a merge, an overwrite). */
   const [working, setWorking] = useState(false);
@@ -422,12 +438,6 @@ function FileBody({
   const trouble = road.trouble;
   /** A way out that could not even ask the machine (its read failed). */
   const [oops, setOops] = useState<string | null>(null);
-  /** How many clashes the last merge left, or `null` when the box holds
-      nothing merged. **Its own state rather than a word inside
-      `saved`**: `saved` is what the *file* did and a merge does nothing
-      to the file — reusing it would paint 「refused」 red over a box
-      that is merely waiting to be saved. */
-  const [clashes, setClashes] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [took, setTook] = useState<string | null>(null);
   const [diff, setDiff] = useState<GitDiff | null>(null);
@@ -500,23 +510,19 @@ function FileBody({
     if (kindOf(path) !== "text") {
       // Nothing to decode as text, and asking would spend a slice on a
       // file this view is not going to paint as code.
-      setFile(null);
-      setEdit(null);
+      acceptBuffer(was => ({...was, file: null, edit: null, clashes: null}));
       return;
     }
-    setFile(null);
-    if (draft === undefined) setEdit(null);
+    acceptBuffer(was => ({...was, file: null, edit: draft ?? null, clashes: null}));
     setOops(null);
     setError(null);
     setTook(null);
     const take = (f: FileText) => {
       if (!live) return;
       remember(machine, path, f);
-      setFile(f);
-      // **Only when nobody is holding one.** A draft means somebody
-      // typed here and walked away; overwriting it with what is on
-      // disk is the loss this whole arrangement exists to stop.
-      if (draft === undefined) setEdit({ text: f.text, was: f.digest, by: newLine() });
+      acceptBuffer(was => ({...was, file: f,
+        edit: draft === undefined ? {text: f.text, was: f.digest, by: newLine()} : was.edit,
+      }));
     };
     const read = () =>
       fetchFileText(machine, path)
@@ -620,12 +626,14 @@ function FileBody({
 
   const publishDraft = useCallback((next: Draft | null) => {
     // A read in flight cannot clear the retained owner's existing draft.
-    if (file === null || next === null) return;
-    const pending = next.text === file.text ? null : next;
+    const base = accepted.current.file;
+    if (base === null || next === null) return;
+    const pending = next.text === base.text ? null : next;
     if (onDraft === undefined) reportDraftCount(pending === null ? 0 : 1);
     else onDraft(pending);
-  }, [file, onDraft, reportDraftCount]);
-  useEffect(() => publishDraft(edit), [edit, publishDraft]);
+  }, [onDraft, reportDraftCount]);
+  publishAccepted.current = () => publishDraft(accepted.current.edit);
+  useEffect(() => publishDraft(edit), [edit, file, publishDraft]);
 
   /** How many lines the text has, counted the way `\n` does — the spine
       blame is laid along. */
@@ -659,7 +667,8 @@ function FileBody({
   /** Refresh a clean file without replacing intervening edits or marked text.
       The original disk version must also remain the draft's merge base. */
   const again = () => {
-    if (kindOf(path) !== "text" || file === null || dirty) return;
+    const {file,edit} = accepted.current;
+    if (kindOf(path) !== "text" || file === null || (edit !== null && edit.text !== file.text)) return;
     void refresh.current.read(
       () => fetchFileStat(machine, path)
         .then((now) => (unchanged(file, now) ? null : fetchFileText(machine, path)))
@@ -667,8 +676,8 @@ function FileBody({
       (f) => {
         if (f.digest === file.digest) return;
         remember(machine, path, f);
-        setFile(f);
-        setEdit({ text: f.text, was: f.digest, by: newLine() });
+        refresh.current.invalidate();
+        acceptBuffer(was => ({...was, file: f, edit: {text: f.text, was: f.digest, by: newLine()}}));
         setDiffAt((n) => n + 1);
       },
     ).catch(() => {});
@@ -686,13 +695,17 @@ function FileBody({
   useEffect(
     () =>
       onLanded(machine, path, (l) => {
-        setFile((f) =>
-          f === null ? f : { ...f, text: l.text, digest: l.digest, at_ms: l.at_ms, total: bytesOf(l.text) },
-        );
-        setEdit((e) => (e === null || e.by !== l.by ? e : { ...e, was: l.digest }));
+        refresh.current.invalidate();
+        acceptBuffer(was => {
+          const edit = was.edit;
+          const sameLine = edit !== null && edit.by === l.by;
+          return {
+            file: was.file === null ? null : {...was.file, text: l.text, digest: l.digest, at_ms: l.at_ms, total: bytesOf(l.text)},
+            edit: sameLine ? {...edit, was: l.digest} : edit,
+            clashes: sameLine ? null : was.clashes,
+          };
+        });
         setOops(null);
-        // A merge saved is a merge answered (✓ over undecided places).
-        setClashes(null);
         // The gutter is about HEAD and the file just moved, so it is
         // wrong until it is asked again. Same for the tree's marks,
         // which this view does not hold (`onSaved`, and `treeChanged`
@@ -708,16 +721,14 @@ function FileBody({
       clash — the other side may have gone back — and the button says
       已保存 when it lands, or at once when there is nothing to write. */
   const save = (asked = false) => {
-    if (edit === null || !canEdit) return;
-    // Before the read lands the buffer can only be the pane's draft —
-    // something typed and not written — so it is written as it stands.
-    if (file !== null && !dirty) {
-      if (asked && !road.busy) confirmSaved(machine, path);
+    const current = accepted.current;
+    if (current.edit === null || current.edit.was === "") return;
+    if (current.file !== null && current.edit.text === current.file.text) {
+      if (asked && !roadOf(machine, path).busy) confirmSaved(machine, path);
       return;
     }
-    // The answer is heard by `onLanded` above and the trouble by
-    // `useRoad`; the promise has nothing left to say.
-    write(machine, path, edit, { asked }).catch(() => {});
+    if (!asked && (current.clashes !== null || roadOf(machine, path).trouble?.kind === "clash")) return;
+    write(machine, path, current.edit, { asked }).catch(() => {});
   };
   const saveRef = useRef(save);
   saveRef.current = save;
@@ -739,20 +750,22 @@ function FileBody({
 
   /** **Leaving the file writes it** — another tab, the tab closed, the
       page left — and so does the app being hidden or quit (`holdFlush`,
-      which `lib/save-road` calls). Read through a ref: the unmount sees
-      the last render, not the first. The pane hears the landing through
+      which `lib/save-road` calls). Read the accepted transaction even
+      before React commits it. The pane hears the landing through
       `orphan` when no view of this file is mounted by then. */
-  const leaving = useRef({ edit, autosave, onDraft, onSaved });
-  leaving.current = { edit, autosave, onDraft, onSaved };
+  const leavingCallbacks = useRef({onDraft, onSaved});
+  leavingCallbacks.current = {onDraft, onSaved};
   useEffect(() => {
     reopened(machine, path);
     const flush = () => {
-      const s = leaving.current;
-      if (!s.autosave || s.edit === null) return null;
-      return write(machine, path, s.edit, {
+      const current = accepted.current;
+      if (current.file === null || current.edit === null || current.edit.was === "" ||
+          current.edit.text === current.file.text || current.clashes !== null ||
+          roadOf(machine, path).trouble?.kind === "clash") return null;
+      return write(machine, path, current.edit, {
         orphan: () => {
-          s.onDraft?.(null);
-          s.onSaved?.();
+          leavingCallbacks.current.onDraft?.(null);
+          leavingCallbacks.current.onSaved?.();
         },
       }).catch(() => {});
     };
@@ -769,8 +782,8 @@ function FileBody({
     setWorking(false);
     forget(machine, path);
     setOops(null);
-    setClashes(null);
-    setEdit(null);
+    refresh.current.invalidate();
+    acceptBuffer(was => ({...was, edit: null, clashes: null}));
     onDraft?.(null);
     setReread((n) => n + 1);
   };
@@ -790,6 +803,7 @@ function FileBody({
    * count says how many times it did not.
    */
   const merge = () => {
+    const {file,edit} = accepted.current;
     if (edit === null || file === null || working) return;
     const current = refresh.current.checkpoint();
     if (current === null) return;
@@ -806,9 +820,12 @@ function FileBody({
           if (!accepts()) return;
           // The buffer and its merge base move together, only while this
           // action still owns the unchanged line of editing.
-          setFile((f) => (f === null ? f : { ...f, text: now.text, digest: now.digest, at_ms: now.at_ms }));
-          setEdit((e) => (e === null ? e : { ...e, text: m.text, was: now.digest }));
-          setClashes(m.clashes);
+          refresh.current.invalidate();
+          acceptBuffer(was => ({
+            file: was.file === null ? null : {...was.file, text: now.text, digest: now.digest, at_ms: now.at_ms},
+            edit: was.edit === null ? null : {...was.edit, text: m.text, was: now.digest},
+            clashes: m.clashes,
+          }));
           forget(machine, path);
         });
       })
@@ -825,6 +842,7 @@ function FileBody({
    * it is the gap the person just chose to accept — the button says so.
    */
   const mine = () => {
+    const {edit} = accepted.current;
     if (edit === null || working) return;
     const action = ++overwriteEpoch.current;
     const by = edit.by;
@@ -833,16 +851,15 @@ function FileBody({
     readForOverwrite(machine, path)
       .then((read) => {
         if (action !== overwriteEpoch.current) return;
-        const latest = leaving.current.edit;
+        const latest = accepted.current.edit;
         if (latest === null || latest.by !== by) return;
         const pin = read.pin(latest.text);
         if (pin === null) return;
         // New typing belongs to the fresh base too. The write and the next
         // keystroke must share this new line, rather than the old line's head.
         remember(machine, path, read.file);
-        setFile(read.file);
-        setEdit(pin);
-        leaving.current = { ...leaving.current, edit: pin };
+        refresh.current.invalidate();
+        acceptBuffer(was => ({...was, file: read.file, edit: pin}));
         return write(machine, path, pin, { asked: true });
       })
       .catch((e: unknown) => {
@@ -1096,19 +1113,7 @@ function FileBody({
           goLine={goLine}
           onComposition={(active) => refresh.current.setComposing(active)}
           onText={(t) => {
-            // **The leaving write sees the key at once.** CodeMirror's
-            // input is not a React event, so the render that refreshes
-            // `leaving` comes a task later; a tab closed in that gap
-            // wrote the text without its last key (face save i, cm-b).
-            const s = leaving.current;
-            if (s.edit !== null) {
-              const next = { ...s.edit, text: t };
-              leaving.current = { ...s, edit: next };
-              setEdit(next);
-              publishDraft(next);
-            } else {
-              setEdit((e) => (e === null ? e : { ...e, text: t }));
-            }
+            setEdit(e => e === null ? null : {...e, text: t});
           }}
           onSave={() => save(true)}
           // A merge waiting on the person: the disk's text (the merge set

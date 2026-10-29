@@ -20,9 +20,11 @@ async function test(name, run) {try {await run();tests.push({name,pass:true});co
 function fixture() {
  const refresh={current:makeRefresh()}, pending=[], applied=[];
  let shown='A', remembered=[];
- const setEdit = Function('useCallback','setOwn','draft','refresh',editCode+'; return setEdit;')(f=>f, update=>{shown=update({text:shown})?.text ?? '';},undefined,refresh);
+ const accepted={current:{file:file('A'),edit:{text:'A'},clashes:null}};
+ const acceptBuffer=change=>{const before=accepted.current;accepted.current=change(before);shown=accepted.current.edit?.text??'';if(accepted.current.file!==before.file)applied.push(accepted.current.file?.text);};
+ const setEdit = Function('useCallback','setOwn','draft','refresh','acceptBuffer',editCode+'; return setEdit;')(f=>f, update=>{shown=update({text:shown})?.text ?? '';},undefined,refresh,acceptBuffer);
  const onText=Function('leaving','setEdit','return '+textCallback)({current:{edit:null}},setEdit);
- const env={kindOf:()=> 'text',path:'/fixture.txt',machine:'fixture',file:file('A'),dirty:false,refresh,
+ const env={kindOf:()=> 'text',path:'/fixture.txt',machine:'fixture',file:file('A'),dirty:false,refresh,accepted,acceptBuffer,
  fetchFileStat:async()=>file('changed'), unchanged:()=>false,
  fetchFileText:()=>{const d=deferred();pending.push(d);return d.promise;},
  remember:(_,__,f)=>remembered.push(f.text),setFile:f=>applied.push(f.text),

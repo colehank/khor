@@ -18,12 +18,13 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(){
  const read=deferred(),merged=deferred(),refresh={current:fileRefresh()},overwriteEpoch={current:0};
  let edit={text:'mine',was:'base',by:'line'},file={text:'base',digest:'base'},busy=false,clashes=null,errors=[],mergeCalls=0;
- const leaving={current:{edit}};
- const setEdit=Function('useCallback','setOwn','draft','refresh',editCode+';return setEdit;')(f=>f,update=>{edit=update(edit);leaving.current.edit=edit;},undefined,refresh);
+ const leaving={current:{edit}},accepted={current:{file,edit,clashes}};
+ const acceptBuffer=change=>{accepted.current=change(accepted.current);({file,edit,clashes}=accepted.current);leaving.current.edit=edit;};
+ const setEdit=Function('useCallback','setOwn','draft','refresh','acceptBuffer',editCode+';return setEdit;')(f=>f,update=>{edit=update(edit);leaving.current.edit=edit;},undefined,refresh,acceptBuffer);
  const published=[];
- const publishDraft=publishCode?Function('useCallback','file','onDraft','reportDraftCount',publishCode+';return publishDraft;')(f=>f,file,value=>published.push(value),()=>{throw new Error('delegated editor must not count twice');}):undefined;
+ const publishDraft=publishCode?Function('useCallback','file','onDraft','reportDraftCount','accepted',publishCode+';return publishDraft;')(f=>f,file,value=>published.push(value),()=>{throw new Error('delegated editor must not count twice');},accepted):undefined;
  const type=Function('leaving','setEdit','publishDraft','return '+textSource)(leaving,setEdit,publishDraft);
- const env={edit,file,working:false,refresh,overwriteEpoch,leaving,
+ const env={edit,file,working:false,refresh,overwriteEpoch,leaving,accepted,acceptBuffer,
   setWorking:value=>busy=value,setOops:value=>{if(value!==null)errors.push(value);},
   fetchFileText:()=>read.promise,machine:'fixture',path:'/note',
   mergeFileText:()=>{mergeCalls++;return merged.promise;},
