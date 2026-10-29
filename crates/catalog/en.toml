@@ -1748,6 +1748,15 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+history_older = "Load older content"
+history_newer = "Load newer content"
+history_record = "Read original record"
+history_record_note = "This content is not expanded. Read it in sections as needed."
+history_record_next = "Read next section"
+history_record_restart = "Read from start"
+history_loaded_only = "Search and copy include loaded content only."
+history_changed = "The record changed. Showing the latest content."
+history_read_failed = "Could not read history"
 agent-compatible-provider = "OpenAI-compatible service"
 agent-model-account = "Model account"
 agent-usage-account = "Usage account"

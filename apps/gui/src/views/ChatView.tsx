@@ -61,7 +61,7 @@ import { useReadingSession, type SessionReading } from "@/hooks/use-session-atte
 import { offerTabAct } from "@/lib/tab-acts";
 import { failedNotice, offerNotice, rejoinNotice, type PillNotice } from "@/lib/pill-notices";
 import { takeHandOff, askOpenPath, askOpenUrl } from "@/lib/composer-handoff";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   chatAnswer,
@@ -74,7 +74,10 @@ import {
   chatSetOption,
   chatStop,
   chatWait,
-  followHistory,
+  beginHistoryRequest,
+  cancelHistoryRequest,
+  fetchHistoryPage,
+  fetchHistoryRecord,
   inApp,
   rejoinNow,
   type ChatFrame,
@@ -104,6 +107,12 @@ import { lasting, word } from "@/words";
 import { imeKey } from "@/lib/ime";
 import { applyAcpUpdate } from "@/lib/acp-view";
 
+import { historySource } from '@/lib/history-source';
+import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
+import { historyEntries, historyReferences } from '@/lib/history-window';
+import { paintHistory } from '@/lib/history-paint';
+import { HistoryRecords } from '@/components/history/HistoryRecords';
+
 /**
  * How often to ask for frames, while a turn runs and while none does.
  *
@@ -132,21 +141,8 @@ const IDLE_MS = 500;
     NET-2, piece 6). */
 const WAIT_MS = 1000;
 const FAILED_MS_MOST = 5000;
-/**
- * How often a *discovered* conversation's transcript is re-read.
- *
- * **Slower than the live pane on purpose, and the reason is what is
- * being watched.** A hosted conversation polls at 50ms during a turn
- * because khor is the thing streaming it and the latency is khor's own.
- * A discovered one is a file somebody else is appending to: the writer
- * flushes in bursts, so a faster read finds the same bytes again and
- * pays for the finding. 700ms is under the eye's tolerance for「it is
- * happening」and an order of magnitude off the wasteful end.
- */
-const STILL_MS = 700;
-
 /** One painted item, folded from the protocol's chunks. */
-type Item =
+type Item = (
   | import("@/lib/acp-view").AcpCompaction
   | import("@/lib/acp-view").AcpResource
   | { who: "user"; text: string; token?: string }
@@ -165,7 +161,7 @@ type Item =
       answer: string | null;
     }
   | { who: "sys"; text: string }
-  | { who: "seal" };
+  | { who: "seal" }) & { historyKey?: string };
 
 /**
  * The painting, kept as items rather than as frames.
@@ -602,7 +598,7 @@ function BusyFor({ since }: { since: number }) {
 
 /** One poll's worth of frames, folded into the picture. Answers the
     same object when nothing was painted, so React stops there. */
-function absorb(paint: Painting, frames: ChatFrame[], readOnly = false): Painting {
+function absorb(paint: Painting, frames: ChatFrame[]): Painting {
   let { past, arriving, replayFailed, live } = paint;
   let moved = false;
   for (const f of frames) {
@@ -631,31 +627,14 @@ function absorb(paint: Painting, frames: ChatFrame[], readOnly = false): Paintin
       continue;
     }
     if (live === paint.live) live = live.slice();
-    // **Whether a live user line is painted depends on whether this
-    // face is the one that said it.** A hosted conversation paints its
-    // own words first-hand as they are sent, so the protocol's echo of
-    // them is skipped — painting both doubles every message. A
-    // *followed* conversation says nothing: it is a record of somebody
-    // else's terminal, and every user line in it is one this face has
-    // never seen.
-    //
-    // Found by the smoke, which watches a recorded conversation whose
-    // whole content is one user line: the follower sent it down the
-    // live path and the fold dropped it, so a page that had been
-    // painting fine went blank — silently, because agent text still
-    // came through.
-    if (eat(live, f, readOnly)) moved = true;
+    // This view already paints its own sends; replay paints user text above.
+    if (eat(live, f, false)) moved = true;
   }
   if (!moved && arriving === paint.arriving) return paint;
   return { past, arriving, replayFailed, live };
 }
 
-/**
- * `still` paints a conversation khor is not holding: a discovered
- * session's recorded past, fetched once as replay-shaped frames — same
- * fold, same painting, no attachment, no polling, and no input, since
- * there is no protocol channel to say anything into.
- */
+/** Hosted sessions consume live ACP frames; external sessions read bounded pages. */
 export function ChatView({
   id,
   still: recorded = false,
@@ -687,6 +666,10 @@ export function ChatView({
       ended claude conversation, whose transcript outlives its host. */
   const still = recorded || (ended && category === "claude");
   const [paint, setPaint] = useState<Painting>(BLANK);
+  const [history, setHistory] = useState<HistoryReaderState | null>(null);
+  const historyView = useRef<ReturnType<typeof historyReader> | null>(null);
+  const [historyEpoch, setHistoryEpoch] = useState(0);
+  const historyAnchor = useRef<{ key: string; top: number } | null>(null);
   const [loaded, setLoaded] = useState(false);
   /** The agent's own commands, as of the last frame that carried a set. */
   const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
@@ -789,7 +772,7 @@ export function ChatView({
   // back does — and a single flag would have to pick one of those to
   // lie about. Both are cleared by arriving at the bottom, which is the
   // only way this pair can go to zero (docs/UX.md 角标可归零).
-  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom } = useChatScroll(paint);
+  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, following } = useChatScroll(paint);
   const box = useRef<HTMLTextAreaElement>(null);
   const coarse = useCoarse();
   // The box takes the keys the moment this pane opens, and any key
@@ -892,58 +875,44 @@ export function ChatView({
       return;
     }
     if (still) {
-      // **Read-only, but not read-once.** This used to fetch the
-      // transcript a single time, on the reasoning that a discovered
-      // session has「no attachment, no polling, and no input, since
-      // there is no protocol channel to say anything into」. That is
-      // true of *input* — there is still no way to speak here, and the
-      // composer stays a read-only line with 接管 beside it. It was
-      // never true of output: the agent's transcript is growing on disk
-      // the whole time, and khor already reads its tail every few
-      // seconds for the row's preview line. So a session running in its
-      // own terminal sat frozen on screen while the row beside it
-      // updated.
-      //
-      // Followed by byte offset, so the cost is what was *said* rather
-      // than the size of the file — the biggest transcript on this
-      // machine is 280 MB, and re-reading it to find one new paragraph
-      // is what made this read-once in the first place.
-      let from = 0;
-      let timer: number | null = null;
-      const tick = () => {
-        followHistory(id, from)
-          .then((batch) => {
-            if (stopped) return;
-            setLoaded(true);
-            from = batch.at;
-            if (batch.frames.length > 0) {
-              setPaint((prev) => absorb(prev, batch.frames, true));
-            }
-            // **Some records cannot be followed**, and khor says which
-            // — a codex rollout, or a leaf nothing resolves. There the
-            // answer is the whole file and asking again returns the
-            // same file, so this stops: the read-once behaviour it
-            // replaced, kept where following is not on offer. Without
-            // it the pane re-read and repainted the entire transcript
-            // every 700 ms, which the smoke found as a flake.
-            if (!batch.following) stopped = true;
-          })
-          .catch(() => {
-            // A transcript that cannot be read at all is a conversation
-            // with no record — the same fact `fetchHistory` reported,
-            // and the same answer. Only on the *first* read: a follow
-            // that fails later is a moment, not an ending, and calling
-            // it one would blank a conversation that is on screen.
-            if (!stopped && from === 0) setGone(true);
-          })
-          .finally(() => {
-            if (!stopped) timer = window.setTimeout(tick, STILL_MS);
-          });
+      historyAnchor.current = null;
+      setPaint(BLANK); setHistory(null); setGone(false); setOpenWhy(null);
+      setTitle(null); setPlan([]); setOpen(new Set()); toBottom();
+      const source = historySource(id, {
+        begin: beginHistoryRequest, cancel: cancelHistoryRequest,
+        page: fetchHistoryPage, record: fetchHistoryRecord,
+      });
+      let previousPages: HistoryReaderState['window']['pages'] | null = null;
+      const view = historyReader(source, state => {
+        if (stopped) return;
+        setHistory(state); setLoaded(state.loaded);
+        if (previousPages !== state.window.pages) {
+          previousPages = state.window.pages;
+          setPaint({ ...BLANK, past: paintHistory(historyEntries(state.window)) });
+          if (state.reset) {
+            historyAnchor.current = null;
+            setHistoryEpoch(epoch => epoch + 1); setOpen(new Set()); toBottom();
+          }
+        } else if (!state.busy) historyAnchor.current = null;
+      }, () => !document.hidden && (scroller.current?.clientHeight ?? 0) > 0 && following.current, {
+        schedule: (run, delay) => window.setTimeout(run, delay), cancel: timer => window.clearTimeout(timer),
+      });
+      historyView.current = view;
+      const visibility = () => {
+        if (document.hidden || !scroller.current?.clientHeight) view.pause();
+        else view.resume();
       };
-      tick();
+      const observer = new ResizeObserver(visibility);
+      if (scroller.current) observer.observe(scroller.current);
+      document.addEventListener('visibilitychange', visibility);
+      void view.start();
       return () => {
-        stopped = true;
-        if (timer !== null) window.clearTimeout(timer);
+        stopped = true; observer.disconnect();
+        document.removeEventListener('visibilitychange', visibility);
+        if (historyView.current === view) historyView.current = null;
+        void view.dispose().then(result => {
+          if (result.failures) console.warn('History cleanup failed', result);
+        });
       };
     }
     // A self-scheduling wait rather than an interval, because the wait
@@ -1181,6 +1150,30 @@ export function ChatView({
       chatLeave(id).catch(() => {});
     };
   }, [id, still, ended, attempt]);
+
+  useLayoutEffect(() => {
+    const anchor = historyAnchor.current;
+    const element = scroller.current;
+    if (!anchor || !element) return;
+    const node = [...element.querySelectorAll<HTMLElement>('[data-history-key]')]
+      .find(candidate => candidate.dataset.historyKey === anchor.key);
+    if (node) {
+      element.scrollTop += node.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.top;
+      onScroll();
+    }
+    historyAnchor.current = null;
+  }, [paint]);
+  const loadOlderHistory = () => {
+    const element = scroller.current;
+    if (element) {
+      const top = element.getBoundingClientRect().top;
+      const node = [...element.querySelectorAll<HTMLElement>('[data-history-key]')]
+        .find(candidate => candidate.getBoundingClientRect().bottom > top);
+      if (node?.dataset.historyKey) historyAnchor.current = { key: node.dataset.historyKey, top: node.getBoundingClientRect().top - top };
+      following.current = false;
+    }
+    void historyView.current?.older();
+  };
 
   // The paces, and one rule covering all of them: **a shorter pace has
   // to take effect at once, a longer one never does.** Waiting out a
@@ -1539,6 +1532,14 @@ export function ChatView({
             no stream). It is here for the agents in the registry that
             do, and because a face that cannot read a field is the
             reason attaching one of them would otherwise need code. */}
+        {still && <div className="space-y-in py-row" data-history-controls>
+          <p className="text-caption text-muted-foreground">{gui.history_loaded_only}</p>
+          {history?.window.older && <Button size="sm" disabled={history.busy} onClick={loadOlderHistory}>{gui.history_older}</Button>}
+          {history?.reset && <p role="status" className="text-caption text-muted-foreground">{gui.history_changed}</p>}
+          {history?.error != null && <div role="alert" className="text-caption text-destructive">
+            {gui.history_read_failed} <Button size="sm" onClick={() => void historyView.current?.latest()}>{gui.region_retry}</Button>
+          </div>}
+        </div>}
         {title && (
           <div data-chat-title className="pb-1 text-title-md font-title text-foreground">
             {title}
@@ -1580,15 +1581,15 @@ export function ChatView({
             {gui.chat_empty}
           </div>
         )}
-        {items.map((item, i) =>
-          item.who === "user" ? (
+        {items.map((item, i) => {
+          const content = item.who === "user" ? (
             // **The files a line carried are cards under it** (round CHAT
             // item 2), not the `@<path>` lines the agent was told them
             // in (`lib/paths`).
             (() => {
               const { words, paths } = splitAttachments(item.text);
               return (
-                <div key={i} className="flex flex-col items-end gap-in py-row">
+                <div key={item.historyKey ?? i} className="flex flex-col items-end gap-in py-row">
                   {words && (
                     <Bubble align="end" variant="muted"><BubbleContent data-said className="text-read"><Markdown text={words} /></BubbleContent></Bubble>
                   )}
@@ -1605,7 +1606,7 @@ export function ChatView({
               );
             })()
           ) : item.who === "agent" || item.who === "thought" || item.who === "tool" || item.who === "compaction" || item.who === "resource" ? (
-            <AgentContent key={item.who === "tool" ? `${id}:${item.id}` : `${id}:${i}`} item={item}
+            <AgentContent key={item.historyKey ?? (item.who === "tool" ? `${id}:${item.id}` : `${id}:${i}`)} item={item}
               streaming={inTurn && i === items.length - 1} active={inTurn}
               open={item.who === "tool" && open.has(item.id)} onOpenFile={openFile}
               onOpenChange={(shown) => { if (item.who === "tool") setOpen((now) => {
@@ -1621,11 +1622,16 @@ export function ChatView({
               onAnswer={(option) => chatAnswer(id, item.ask, option)}
             />
           ) : (
-            <div key={i} className="text-caption" style={{ color: "var(--state-errored)" }}>
+            <div key={item.historyKey ?? i} className="text-caption" style={{ color: "var(--state-errored)" }}>
               {item.text}
             </div>
-          ),
-        )}
+          );
+          return still ? <div key={`${historyEpoch}:${item.historyKey ?? i}`} data-history-key={item.historyKey}>{content}</div> : content;
+        })}
+        {still && history && <HistoryRecords key={`${id}:${historyEpoch}`} references={historyReferences(history.window)}
+          read={(cursor, from, signal) => historyView.current?.record(cursor, from, signal) ?? Promise.resolve(null)} />}
+        {still && history && !history.window.latest && <Button size="sm" disabled={history.busy}
+          onClick={() => void historyView.current?.newer()}>{gui.history_newer}</Button>}
         {notice&&<div data-chat-notice role={notice.severity==='error'?'alert':'status'} className="rounded-md bg-fill p-row text-callout"><strong>{notice.title}</strong>{notice.message&&<p>{notice.message}</p>}<Button size="sm" onClick={()=>setNotice(null)}>关闭</Button></div>}
         {controlError&&<p role="alert" className="text-destructive">{controlError}</p>}
         {savedDrafts.map(({draft, reason}) => (
@@ -1666,7 +1672,7 @@ export function ChatView({
             data-chat-bottom
             data-fresh={fresh}
             className="pointer-events-auto shadow"
-            onClick={toBottom}
+            onClick={() => { toBottom(); if (still && history && !history.window.latest) void historyView.current?.latest(); }}
           >
             {/* The back chevron, turned to point the way this goes.
                 Turned rather than drawn again: a second glyph would be

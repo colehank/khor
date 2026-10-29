@@ -2709,6 +2709,15 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+history_older = "加载更早内容"
+history_newer = "加载后续内容"
+history_record = "读取原始记录"
+history_record_note = "这段内容尚未展开，可按需分段读取"
+history_record_next = "读取下一段"
+history_record_restart = "从头读取"
+history_loaded_only = "搜索和复制仅包含已加载的内容"
+history_changed = "记录已更新，已返回最新内容"
+history_read_failed = "读取历史记录失败"
 agent-compatible-provider = "OpenAI 兼容服务"
 agent-model-account = "模型账户"
 agent-usage-account = "额度查询"
