@@ -49,6 +49,7 @@ export function PathField({
   keepHome = true,
   files = false,
   placement = "below",
+  menuLayout = "adaptive",
   onKeyDown,
   ...rest
 }: Omit<ComponentProps<"input">, "value" | "onChange" | "onKeyDown"> & {
@@ -68,6 +69,8 @@ export function PathField({
   files?: boolean;
   /** Bottom-deck completion opens above the field, inside the sheet. */
   placement?: "above" | "below";
+  /** Toolbars keep suggestions floating; forms may grow inline on narrow screens. */
+  menuLayout?: "adaptive" | "overlay";
   onKeyDown?: ComponentProps<"input">["onKeyDown"];
 }) {
   const seat = useRef<HTMLDivElement>(null);
@@ -229,7 +232,7 @@ export function PathField({
       window.removeEventListener('resize', sync);
       window.visualViewport?.removeEventListener('resize', sync);
     };
-  }, [open, menuKey, placement]);
+  }, [open, menuKey, placement, menuLayout]);
 
   const take = (name: string) => {
     if (!fresh) return;
@@ -284,7 +287,7 @@ export function PathField({
       />
       {/* Hangs under the box, no overlay (20-states 浮层: 搜索结果垂在框
           下面). The app's one menu, so it reads as the omnibox's does.
-          **In the flow on a narrow face** (UX-4): a dialog there is a
+          **In the flow in narrow forms** (UX-4, adaptive layout): a dialog there is a
           sheet at the foot of the screen that scrolls its own content
           (`ui/dialog`), so a list hung out of it ran off the window and
           over the sheet's buttons, and one turned upward was cut at the
@@ -307,7 +310,7 @@ export function PathField({
               at,
             }}
             onPick={take}
-            className={placement === "above" ? "absolute bottom-full z-20 mb-in w-full rounded-lg shadow-(--shadow-float)" : "absolute top-full z-20 mt-1 w-full rounded-lg shadow-(--shadow-float) [[data-narrow]_&]:static"}
+            className={placement === "above" ? "absolute bottom-full z-20 mb-in w-full rounded-lg shadow-(--shadow-float)" : `absolute top-full z-20 mt-1 w-full rounded-lg shadow-(--shadow-float)${menuLayout === "adaptive" ? " [[data-narrow]_&]:static" : ""}`}
           />
         </div>
       )}
