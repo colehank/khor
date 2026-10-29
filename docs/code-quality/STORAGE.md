@@ -30,3 +30,9 @@
 内盘可用5.597GB、距既定5GiB门仅约228MB，不启动新编译。确认本任务recovery/runtime-artifacts下23个文件均owned regular files、lsof无持有后，归档到 `/Volumes/disk0/Khor/evidence/archives/runtime-artifacts-20261027/historical-binaries.zip`，SHA256 `94ce0218b7ea5e6dc42e33f535e40aaf41f18097c4129852c32f40434b25a8f3`。逐成员解压流SHA与原字节核齐，二次核原inode/mtime/size/SHA后，只移除14个>50MB的内盘历史编译副本，释放3,076,318,184B；9个小metadata原件保留，所有源码/日志/WIP不动。实测内盘可用8,672,993,280B。
 
 完整23成员SHA、原mode/mtime与位置在同目录manifest.json；内盘原runtime-artifacts/ARCHIVE.json指向该档案。需要旧原始可执行文件时按manifest恢复指定成员及mode/mtime；归档不冒新的编译来源证明。现役shared quality-target、用户App/release未动，本次没有创建新工作副本或放宽资源门。
+
+## 2026-10-29：第二轮旧编译归档迁外盘
+
+A4本轮定向验证在reference5通过后实测内盘低于5GiB，按门停止未启动的26项，未并发续编译。仅将本任务recovery下cache-offload-20261028-01.zip、cache-offload-20261028-02.zip、node-old-large-variants-before-669fe9f8.zip三份历史编译归档迁至 `/Volumes/disk0/Khor/archives/recovery-compiled-20261029`。逐份核uid/regular/inode/size/mtime、lsof无持有及迁后全文件SHA，原路径原子替换为兼容软链接；共2,983,487,798字节，源码恢复包、当前构建缓存、用户App/数据均未移动。双盘manifest记录每文件SHA和原身份，旧档案内容保留。迁后内盘6,110,167,040B，外盘15,145,791,488B；不能把此时可用值当后续恒定值。
+
+外盘收据 `archives/recovery-compiled-20261029/manifest.json`，内盘 `recovery/compiled-archives-offload-20261029.json`。本次迁移不冒新编译来源或历史任务重新验收。

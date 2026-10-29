@@ -68,3 +68,10 @@ root已批准SessionContent/MachineFiles/SideWorkspace、lib/drafts.ts、use-dra
 root告知Playwright工具fallback已完成Chromium DOM 1000/390×URL/path×左右外放8场景全绿，选区/焦点保留、键入替换精确。证据input/browser-fields/drag-corrected-report.json；原Home未清Mac全选触发native drag-existing-selection的假失败及textbox/combobox locator错误保留在single-trace/label-controls，修正测试前提后通过。
 
 因此不凭立即onBlur候选新增PageField/PathField补丁。R11已得浏览器实际拖选覆盖，原生WK及用户实际场景仍待；原待用户手工反馈为此前工具不可用时状态，当前由此检查点更新。Lab服务继续由root协调保留/结束。
+
+
+## W交叉验证对L03的新增实际证据（2026-10-29，root协调记录）
+
+W真实CM交易后同批切workspace已复现末17字丢，FileView同步onDraft红绿后恢复；同dispatch后model.draftCount=1而Quit所读draftCount()=0也已实际复现，W新增WorkspaceDraftOwner改model生命周期同步订阅后probe1/1。两者是既定E/L03交叉风险，不是整E或OS退出完成证明，原red/green见workspace证据目录。
+
+root定点查当前其它入口：SessionContent、MachineFiles、SideWorkspace仍是React state草稿集合＋useDraftCount(count) layout发布，FileBody无上游入口也沿原布局报告。W本片段只修新WorkspaceMemory owner；不能把W 1/1当所有FilePage入口已同步。尚未用这些真实组件重跑同批probe，状态为待证风险。后续L03收口需对应实际入口检查最后已接受edit→Quit读数/移除保存→0/隐藏保留/卸载只清自身及真实Mac立即Quit；若确认同一间隙，按现单一owner窄修，不增加全局正文store/重复计数。不打断当前W阅读位置或A3 native批，不偷偷移到下一轮。
