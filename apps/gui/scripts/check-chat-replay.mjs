@@ -1,3 +1,4 @@
+import {installAttachmentLeases} from "./fixtures/attachment-leases.mjs";
 // Actual ChatView/React and production api.ts; only Tauri invoke is a fixture.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -53,6 +54,7 @@ async function run(engine, name) {
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('response', response => { if (response.status() >= 400) networkErrors.push({url: response.url(), status: response.status()}); });
+    await page.addInitScript(installAttachmentLeases);
     await page.addInitScript(({scenario}) => {
       const empty = {frames: [], next: 0, gone: false, lost: false, sending: 0, sending_of: 0, stall: null};
       const wire = window.__chatWire = {calls: [], pending: [],
@@ -63,6 +65,8 @@ async function run(engine, name) {
         transformCallback: () => 0, unregisterCallback: () => {}, convertFileSrc: path => path,
         invoke: async (cmd, args = {}) => {
           const call = {cmd, args, at: Date.now()}; wire.calls.push(call);
+          const admission = window.__attachmentLeases(cmd,args);
+          if (admission.handled) return admission.value;
           if (cmd === 'chat_wait' || cmd === 'chat_poll') {
             return new Promise((resolve, reject) => wire.pending.push({resolve, reject, call}));
           }

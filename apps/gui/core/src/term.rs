@@ -31,8 +31,8 @@ mod upload;
 pub use upload::{term_drop_folder, term_drop_stage_into, term_drop_stage_native};
 
 use std::collections::{HashMap, VecDeque};
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use base64::Engine;
@@ -146,7 +146,8 @@ pub struct TermChunk {
     pub stall: Option<Miss>,
 }
 
-struct Term {
+pub(crate) struct Term {
+    far: Option<String>,
     /// The write half. One lock per op so keystrokes never interleave.
     conn: crate::connection::Connection,
     commands: crate::command_queue::CommandQueue,
@@ -165,8 +166,6 @@ struct Term {
     /// Rung whenever the feed grows or a flag above changes: what a
     /// [`term_wait`] sleeps on instead of the face polling on a beat.
     arrived: tokio::sync::Notify,
-    /// Open count, for React's double-mount, exactly as chat explains.
-    holds: AtomicUsize,
     /// Nobody holds it any more: a pipe that ends now is not asked for
     /// again (`crate::rejoin`).
     left: AtomicBool,
@@ -211,9 +210,38 @@ fn plock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn terms() -> &'static Mutex<HashMap<String, Arc<Term>>> {
-    static TERMS: OnceLock<Mutex<HashMap<String, Arc<Term>>>> = OnceLock::new();
-    TERMS.get_or_init(|| Mutex::new(HashMap::new()))
+fn terms() -> &'static crate::attachments::Registry<Term> {
+    static TERMS: OnceLock<crate::attachments::Registry<Term>> = OnceLock::new();
+    TERMS.get_or_init(Default::default)
+}
+impl crate::attachments::Resource for Term {
+    fn is_live(&self) -> bool {
+        !self.gone.load(Ordering::Acquire) && !self.left.load(Ordering::Acquire)
+    }
+}
+impl Term {
+    fn close(&self) {
+        self.left.store(true, Ordering::Release);
+        self.commands.close();
+        self.conn.close();
+        self.arrived.notify_waiters();
+    }
+}
+pub(crate) fn expire_views() {
+    terms().expire();
+}
+pub(crate) fn begin_view(root: &Path, id: &str) -> Result<String, String> {
+    terms().begin(root, id)
+}
+fn configure_join(term: Arc<Term>, cols: u16, rows: u16, history: u32) -> Result<(), String> {
+    let target = term.clone();
+    term.commands
+        .submit(move || {
+            resize(&target, cols, rows)?;
+            keep_history(&target, history);
+            Ok(())
+        })?
+        .wait()
 }
 
 /// [`Node::reach`] from a synchronous caller, on a thread of its own.
@@ -241,62 +269,43 @@ pub(crate) fn reach_blocking(
     .map_err(|_| khor_catalog::msg::reach_thread_died().to_string())?
 }
 
-/// Attaches to the session's host at `cols`×`rows`, idempotently (an
-/// already-open terminal keeps its screen; a dead one is replaced). The
-/// host resizes its PTY to this size, so the whole screen repaints and
-/// the attacher sees a full frame rather than a fragment.
-///
-/// **The registry is not held while the attachment is made** (2026-10-02,
-/// the phone that froze): a far terminal is reached over the network,
-/// which takes up to the reach's deadline when that machine has dropped
-/// off, and every other terminal's poll, key and resize takes this same
-/// lock. Held across the reach, one unreachable machine stopped every
-/// terminal on screen — and those doors answer the window. So the lock
-/// is taken to look, let go, and taken again to put the new attachment
-/// in; an open that raced this one and got there first is the one kept.
-///
-/// `history` is the face's 历史行数 (item 56, [`keep_history`]); 0 says
-/// nothing.
-pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> Result<(), String> {
+/// Claims one view lease and sizes its shared terminal resource.
+/// Network attachment runs outside the registry lock; a concurrent winner is shared.
+/// `history` sets the host ring size; zero keeps the existing setting.
+pub fn term_open(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    cols: u16,
+    rows: u16,
+    history: u32,
+) -> Result<(), String> {
     khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
-    if hold_if_open(id) {
-        // **The face joining still says its size** (item 33): another face
-        // may have sized the pty since. Unchanged, the kernel signals
-        // nothing; a socket that just ended is the stream's to report.
-        let _ = term_resize(id, cols, rows);
-        if let Ok(term) = term_of(id) {
-            let target = term.clone();
-            term.commands
-                .submit(move || {
-                    keep_history(&target, history);
-                    Ok(())
-                })?
-                .wait()?;
-        }
+    open_terminal_with(root, id, lease, cols, rows, history, || {
+        attach(root, id, cols, rows)
+    })
+}
+fn open_terminal_with(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    cols: u16,
+    rows: u16,
+    history: u32,
+    connect: impl FnOnce() -> Result<(std::net::TcpStream, Option<String>), String>,
+) -> Result<(), String> {
+    let opening = terms().claim(root, id, lease)?;
+    if let Some(term) = opening.share()? {
+        configure_join(term, cols, rows, history)?;
+        opening.check()?;
         return Ok(());
     }
-    let attached = attach(root, id, cols, rows);
-    let mut registry = plock(terms());
-    // A leave that came while this open was reaching takes its hold
-    // (`crate::landing`): nobody is there to read what it attached.
-    let left = plock(landing()).land(id);
-    let (conn, far) = attached?;
-    if left {
-        let _ = conn.shutdown(std::net::Shutdown::Both);
-        return Ok(());
-    }
-    if let Some(theirs) = registry.get(id)
-        && !theirs.gone.load(Ordering::Relaxed)
-    {
-        // Another open made it while this one was reaching: theirs is
-        // the attachment, and this connection goes unused.
-        theirs.holds.fetch_add(1, Ordering::Relaxed);
-        let _ = conn.shutdown(std::net::Shutdown::Both);
-        return Ok(());
-    }
+    let (conn, far) = connect()?;
+    opening.check()?;
     let sid = SessionId(id.to_owned());
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let term = Arc::new(Term {
+        far: far.clone(),
         conn: crate::connection::Connection::new(conn)?,
         commands: Default::default(),
         // No scrollback: the parser answers modes now, not history —
@@ -306,12 +315,17 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
         gone: AtomicBool::new(false),
         stall: Mutex::new(None),
         arrived: tokio::sync::Notify::new(),
-        holds: AtomicUsize::new(1),
         left: AtomicBool::new(false),
         feed: Mutex::new(Feed::default()),
         fed: AtomicU64::new(0),
         history: AtomicU32::new(0),
     });
+    let (term, fresh) = opening.publish(term)?;
+    if !fresh {
+        configure_join(term, cols, rows, history)?;
+        opening.check()?;
+        return Ok(());
+    }
     let target = term.clone();
     let initial = term.commands.submit(move || {
         keep_history(&target, history);
@@ -388,9 +402,8 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
         reader.conn.close();
         reader.arrived.notify_waiters();
     });
-    registry.insert(id.to_owned(), term.clone());
-    drop(registry);
     initial.wait()?;
+    opening.check()?;
     Ok(())
 }
 
@@ -431,30 +444,6 @@ fn attach(
         }
     };
     Ok((conn, far))
-}
-
-/// An open terminal under `id` takes one more hold and answers yes; a
-/// dead one is taken out, the open is written down as on its way
-/// (`crate::landing`), and the answer is no — the look `term_open`
-/// makes before it reaches, with the lock let go again at once.
-fn hold_if_open(id: &str) -> bool {
-    let mut registry = plock(terms());
-    if let Some(term) = registry.get(id) {
-        if !term.gone.load(Ordering::Relaxed) {
-            term.holds.fetch_add(1, Ordering::Relaxed);
-            return true;
-        }
-        registry.remove(id);
-    }
-    plock(landing()).begin(id);
-    false
-}
-
-/// Terminal opens still reaching, and leaves that came before them.
-/// Taken only while [`terms`] is held.
-fn landing() -> &'static Mutex<crate::landing::Landing> {
-    static LANDING: OnceLock<Mutex<crate::landing::Landing>> = OnceLock::new();
-    LANDING.get_or_init(Default::default)
 }
 
 /// An attachment made again (`crate::rejoin`) starts a new life: the
@@ -621,22 +610,21 @@ fn take_since(
     (g.bytes.iter().skip(from).copied().collect(), end, false)
 }
 
-fn term_of(id: &str) -> Result<Arc<Term>, String> {
+fn term_of(root: &Path, id: &str, lease: &str) -> Result<Arc<Term>, String> {
     khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
-    terms()
-        .lock()
-        .unwrap()
-        .get(id)
-        .cloned()
-        .ok_or_else(|| khor_catalog::msg::no_such_session(id))
+    terms().control(root, id, lease)
+}
+fn term_reader(root: &Path, id: &str, lease: &str) -> Result<Arc<Term>, String> {
+    khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
+    terms().read(root, id, lease)
 }
 
 /// The feed so far, for a face that just attached: reset the emulator,
 /// write these bytes, then tail from `seq` with [`term_stream`]. The
 /// host supplies its initial replay, so this carries the history kept
 /// plus everything since this attachment opened.
-pub fn term_attach(id: &str) -> Result<TermStart, String> {
-    let term = term_of(id)?;
+pub fn term_attach(root: &Path, id: &str, lease: &str) -> Result<TermStart, String> {
+    let term = term_reader(root, id, lease)?;
     let (bytes, seq) = take_all(&term.feed, &term.fed);
     Ok(TermStart {
         bytes: B64.encode(bytes),
@@ -646,20 +634,26 @@ pub fn term_attach(id: &str) -> Result<TermStart, String> {
 
 /// A socket and its feed may exist before xterm does. Only the renderer
 /// can say that replay is over and live queries now have a responder.
-pub fn term_ready(id: &str) -> Result<(), String> {
-    submit_ready(id)?.wait()
+pub fn term_ready(root: &Path, id: &str, lease: &str) -> Result<(), String> {
+    submit_ready(root, id, lease)?.wait()
 }
-pub fn submit_ready(id: &str) -> Result<crate::command_queue::Pending<()>, String> {
-    submit(id, |term| {
+pub fn submit_ready(
+    root: &Path,
+    id: &str,
+    lease: &str,
+) -> Result<crate::command_queue::Pending<()>, String> {
+    submit(root, id, lease, |term| {
         write_frame(&mut *plock(&term.conn), &ClientOp::Ready)
     })
 }
 
 fn submit<T: Send + 'static>(
+    root: &Path,
     id: &str,
+    lease: &str,
     work: impl FnOnce(Arc<Term>) -> Result<T, String> + Send + 'static,
 ) -> Result<crate::command_queue::Pending<T>, String> {
-    let term = term_of(id)?;
+    let term = term_of(root, id, lease)?;
     let target = term.clone();
     term.commands.submit(move || work(target))
 }
@@ -777,8 +771,10 @@ pub async fn history(
 /// **The prompt before or after the one in view, for a tmux row** (item
 /// 21): tmux holds that screen and its history, so tmux moves there
 /// (`khor_node::Node::jump_prompt_anywhere`), on the row's own machine.
-pub async fn prompt(root: &Path, id: &str, up: bool) -> Result<(), String> {
+pub async fn prompt(root: &Path, id: &str, lease: &str, up: bool) -> Result<(), String> {
+    let _attachment = term_of(root, id, lease)?;
     let n = Node::open(root.to_path_buf())?;
+    term_of(root, id, lease)?;
     n.jump_prompt_anywhere(&SessionId(id.to_owned()), up).await
 }
 
@@ -786,8 +782,10 @@ pub async fn prompt(root: &Path, id: &str, up: bool) -> Result<(), String> {
 /// `Node::tmux_wheel_anywhere`): `rows` up when positive. False when no
 /// tmux client is in front of the row's terminal: the face keeps the
 /// wheel. 0 rows only asks.
-pub async fn scroll(root: &Path, id: &str, rows: i32) -> Result<bool, String> {
+pub async fn scroll(root: &Path, id: &str, lease: &str, rows: i32) -> Result<bool, String> {
+    let _attachment = term_of(root, id, lease)?;
     let n = Node::open(root.to_path_buf())?;
+    term_of(root, id, lease)?;
     n.tmux_wheel_anywhere(&SessionId(id.to_owned()), rows).await
 }
 
@@ -826,9 +824,11 @@ pub struct PaneHistory {
 pub async fn pane_history(
     root: &Path,
     id: &str,
+    lease: &str,
     since: Option<PaneAnchor>,
 ) -> Result<PaneHistory, String> {
     use khor_node::adaptor::tmux::HistoryAnchor;
+    let term = term_of(root, id, lease)?;
     let n = Node::open(root.to_path_buf())?;
     let since = since.map(|a| HistoryAnchor {
         pane: a.pane,
@@ -836,7 +836,7 @@ pub async fn pane_history(
         tail: a.tail,
     });
     let h = n
-        .pane_history_anywhere(&SessionId(id.to_owned()), since)
+        .pane_history(term.far.as_deref().unwrap_or(""), id, since)
         .await?;
     Ok(PaneHistory {
         pane: h.pane,
@@ -858,16 +858,19 @@ pub async fn pane_history(
 }
 
 /// The bytes since `since` — see [`TermChunk`] for the two flags.
-pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
-    let term = term_of(id)?;
+pub fn term_stream(root: &Path, id: &str, lease: &str, since: u64) -> Result<TermChunk, String> {
+    let term = term_reader(root, id, lease)?;
+    Ok(stream_of(&term, since))
+}
+fn stream_of(term: &Term, since: u64) -> TermChunk {
     let (bytes, seq, reset) = take_since(&term.parser, &term.feed, &term.fed, since);
-    Ok(TermChunk {
+    TermChunk {
         bytes: B64.encode(bytes),
         seq,
         gone: term.gone.load(Ordering::Relaxed),
         reset,
         stall: plock(&term.stall).clone(),
-    })
+    }
 }
 
 /// [`term_stream`], **pushed rather than polled**: answers the moment the
@@ -880,27 +883,36 @@ pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
 /// of these open at a time (the bridge's HTTP loop serves one request at
 /// a time, so the browser face keeps the beat).
 pub async fn term_wait(
+    root: &Path,
     id: &str,
+    lease: &str,
     since: u64,
     longest: std::time::Duration,
 ) -> Result<TermChunk, String> {
-    let term = term_of(id)?;
+    let term = term_reader(root, id, lease)?;
     let woke = term.arrived.notified();
     tokio::pin!(woke);
     woke.as_mut().enable();
     if term.fed.load(Ordering::Relaxed) == since && !term.gone.load(Ordering::Relaxed) {
         let _ = tokio::time::timeout(longest, woke).await;
     }
-    term_stream(id, since)
+    Ok(stream_of(&term, since))
 }
 
 /// Keystrokes, as the bytes a terminal would send — the face translates
 /// keys to bytes, this layer stays a pipe.
-pub fn term_key(id: &str, bytes: Vec<u8>) -> Result<(), String> {
-    submit_key(id, bytes)?.wait()
+pub fn term_key(root: &Path, id: &str, lease: &str, bytes: Vec<u8>) -> Result<(), String> {
+    submit_key(root, id, lease, bytes)?.wait()
 }
-pub fn submit_key(id: &str, bytes: Vec<u8>) -> Result<crate::command_queue::Pending<()>, String> {
-    submit(id, move |term| write_input(&mut *plock(&term.conn), &bytes))
+pub fn submit_key(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    bytes: Vec<u8>,
+) -> Result<crate::command_queue::Pending<()>, String> {
+    submit(root, id, lease, move |term| {
+        write_input(&mut *plock(&term.conn), &bytes)
+    })
 }
 
 /// The most input bytes one frame to the host carries (T-16, the terminal
@@ -1112,26 +1124,38 @@ pub(crate) fn deliver_blocking(
 pub fn term_drop(
     root: &Path,
     id: &str,
+    lease: &str,
     paths: &[String],
     from: Option<&str>,
     into: Option<&str>,
 ) -> DropEnd {
-    begin_drop(id).run_paths(root, paths, from, into)
+    match begin_drop(root, id, lease) {
+        Ok(job) => job.run_paths(root, paths, from, into),
+        Err(why) => drop_refused(why),
+    }
 }
 
 /// Register cancellation and capture the attachment on the caller's thread.
 /// Transfers run later, but neither a late cancel nor a reopened id can change
 /// which job/terminal this request belongs to.
 pub struct DropJob {
+    root: PathBuf,
     held: Held,
-    attachment: Result<Arc<Term>, String>,
+    attachment: Arc<Term>,
 }
-
-pub fn begin_drop(id: &str) -> DropJob {
-    DropJob {
-        held: Held::begin(id),
-        attachment: term_of(id),
+fn drop_refused(why: String) -> DropEnd {
+    DropEnd {
+        landed: Vec::new(),
+        miss: Some(crate::miss::read(&why, None)),
     }
+}
+pub fn begin_drop(root: &Path, id: &str, lease: &str) -> Result<DropJob, String> {
+    let attachment = term_of(root, id, lease)?;
+    Ok(DropJob {
+        root: root.to_path_buf(),
+        held: Held::begin(root, id, lease),
+        attachment,
+    })
 }
 
 impl DropJob {
@@ -1154,11 +1178,11 @@ impl DropJob {
     }
 
     pub fn run(self, root: &Path, items: &[DropItem], into: Option<&str>) -> DropEnd {
-        let id = &self.held.id;
+        if root != self.root { return drop_refused("drop belongs to another root".into()); }
         let ended =
-            drop_items_text(root, id, items, into, &self.held).and_then(|(landed, text)| {
+            drop_items_text(root, self.attachment.far.as_deref(), items, into, &self.held).and_then(|(landed, text)| {
                 if !text.is_empty() {
-                    term_paste(self.attachment.clone()?, text, self.held.stopped.clone())?
+                    term_paste(self.attachment.clone(), text, self.held.stopped.clone())?
                         .wait()?;
                 }
                 Ok(landed)
@@ -1166,10 +1190,7 @@ impl DropJob {
         match ended {
             Ok(landed) => DropEnd { landed, miss: None },
             Err(why) => {
-                let far = Node::open(root.to_path_buf())
-                    .ok()
-                    .and_then(|n| n.far_machine(&SessionId(id.to_owned())).ok().flatten());
-                let mut miss = crate::miss::read(&why, far.as_deref());
+                let mut miss = crate::miss::read(&why, self.attachment.far.as_deref());
                 if miss.kind == MissKind::Cancelled {
                     miss.raw.clear();
                 }
@@ -1192,8 +1213,17 @@ pub struct DropItem {
     pub keep: bool,
 }
 
-pub fn term_drop_items(root: &Path, id: &str, items: &[DropItem], into: Option<&str>) -> DropEnd {
-    begin_drop(id).run(root, items, into)
+pub fn term_drop_items(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    items: &[DropItem],
+    into: Option<&str>,
+) -> DropEnd {
+    match begin_drop(root, id, lease) {
+        Ok(job) => job.run(root, items, into),
+        Err(why) => drop_refused(why),
+    }
 }
 
 /// What [`term_drop`] answers: where the files landed, or the failure.
@@ -1208,7 +1238,7 @@ pub struct DropEnd {
 #[cfg(test)]
 fn drop_text(
     root: &Path,
-    id: &str,
+    target: Option<&str>,
     paths: &[String],
     from: Option<&str>,
     into: Option<&str>,
@@ -1222,20 +1252,18 @@ fn drop_text(
             keep: false,
         })
         .collect::<Vec<_>>();
-    drop_items_text(root, id, &items, into, held)
+    drop_items_text(root, target, &items, into, held)
 }
 
 fn drop_items_text(
     root: &Path,
-    id: &str,
+    target: Option<&str>,
     items: &[DropItem],
     into: Option<&str>,
     held: &Held,
 ) -> Result<(Vec<String>, String), String> {
     let n = Node::open(root.to_path_buf())?;
-    let to = n
-        .far_machine(&SessionId(id.to_owned()))?
-        .unwrap_or_default();
+    let to = target.unwrap_or("");
     let here = if to.is_empty()
         && into.is_none()
         && items
@@ -1256,7 +1284,7 @@ fn drop_items_text(
             })
             .collect::<Result<Vec<_>, _>>()
     } else {
-        drop_items_blocking(root, id, &to, into, items, &held.stopped)
+        drop_items_blocking(root, &held.view, to, into, items, &held.stopped)
     };
     if let Err(why) = &here
         && !held.stopped()
@@ -1394,87 +1422,82 @@ fn land_staged(root: &Path, staged: &str) -> Result<String, String> {
 /// One terminal's drop under way: the share of it landed (0 to 1), and
 /// whether it was cancelled.
 struct Dropping {
+    root: PathBuf,
+    id: String,
     share: f32,
     stopped: Arc<AtomicBool>,
 }
-
-/// Each terminal's drop under way.
 fn dropping() -> &'static Mutex<HashMap<String, Dropping>> {
     static DROPPING: OnceLock<Mutex<HashMap<String, Dropping>>> = OnceLock::new();
     DROPPING.get_or_init(Default::default)
 }
-
-/// A drop's place in [`dropping`], for as long as [`term_drop`] runs:
-/// there from its first line, gone when it returns, however it returns.
 struct Held {
-    id: String,
+    view: String,
     stopped: Arc<AtomicBool>,
 }
-
 impl Held {
-    fn begin(id: &str) -> Held {
+    fn begin(root: &Path, id: &str, view: &str) -> Self {
         let stopped = Arc::new(AtomicBool::new(false));
-        plock(dropping()).insert(
-            id.to_owned(),
+        if let Some(previous) = plock(dropping()).insert(
+            view.to_owned(),
             Dropping {
+                root: root.to_path_buf(),
+                id: id.to_owned(),
                 share: 0.0,
                 stopped: stopped.clone(),
             },
-        );
-        Held {
-            id: id.to_owned(),
+        ) {
+            previous.stopped.store(true, Ordering::Release);
+        }
+        Self {
+            view: view.to_owned(),
             stopped,
         }
     }
-
     fn stopped(&self) -> bool {
         self.stopped.load(Ordering::Relaxed)
     }
 }
-
 impl Drop for Held {
     fn drop(&mut self) {
         let mut all = plock(dropping());
-        // Its own entry only: a face never starts a second drop on one
-        // terminal before the first is over, and this keeps it so.
         if all
-            .get(&self.id)
+            .get(&self.view)
             .is_some_and(|d| Arc::ptr_eq(&d.stopped, &self.stopped))
         {
-            all.remove(&self.id);
+            all.remove(&self.view);
         }
     }
 }
-
-/// **How far this terminal's drop has got** (item 60), for its pill's
-/// line: the share landed, whole files and the bytes of the one under
-/// way, or `None` when nothing is being dropped.
-pub fn term_drop_progress(id: &str) -> Option<f32> {
-    plock(dropping()).get(id).map(|d| d.share)
-}
-
-/// **The drop under way on terminal `id`, cancelled** (item 71, the
-/// owner 2026-10-07: the pill's × while files go in). It stops before
-/// its next file, the pull under way stops at its next slice on
-/// whichever machine runs it, and [`term_drop`] pastes nothing. With no
-/// drop on `id` it does nothing.
-///
-/// `staged` are files a face staged for a drop it will now never ask
-/// for — the phone's picks, cancelled while they were being staged —
-/// which go now rather than waiting out [`STAGED_FOR`]. Only what
-/// [`term_drop_stage`] made is taken for one.
-pub fn term_drop_cancel(root: &Path, id: &str, staged: &[String]) {
-    cancel_drop(id);
-    term_drop_forget(root, staged);
-}
-
-/// Set the current job's flag before an IPC handler returns; cleanup can wait.
-pub fn cancel_drop(id: &str) {
-    if let Some(d) = plock(dropping()).get(id) {
-        d.stopped.store(true, Ordering::Relaxed);
+pub fn term_drop_progress(root: &Path, id: &str, lease: &str) -> Result<Option<f32>, String> {
+    let all = plock(dropping());
+    let Some(job) = all.get(lease) else {
+        return Ok(None);
+    };
+    if job.root != root || job.id != id {
+        return Err("drop belongs to another view".into());
     }
+    Ok(Some(job.share))
 }
-
+pub fn term_drop_cancel(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    staged: &[String],
+) -> Result<(), String> {
+    cancel_drop(root, id, lease)?;
+    term_drop_forget(root, staged);
+    Ok(())
+}
+pub fn cancel_drop(root: &Path, id: &str, lease: &str) -> Result<(), String> {
+    if let Some(job) = plock(dropping()).get(lease) {
+        if job.root != root || job.id != id {
+            return Err("drop belongs to another view".into());
+        }
+        job.stopped.store(true, Ordering::Release);
+    }
+    Ok(())
+}
 pub fn term_drop_forget(root: &Path, staged: &[String]) {
     for path in staged {
         if let Some(dir) = staged_dir(root, path) {
@@ -1546,14 +1569,16 @@ fn drop_items_blocking(
 
 /// Write the host's Forget, clear the local screen/feed, then request an
 /// optional same-stream shell redraw. Successful writes return true.
-pub fn term_forget(id: &str, redraw: bool) -> Result<bool, String> {
-    submit_forget(id, redraw)?.wait()
+pub fn term_forget(root: &Path, id: &str, lease: &str, redraw: bool) -> Result<bool, String> {
+    submit_forget(root, id, lease, redraw)?.wait()
 }
 pub fn submit_forget(
+    root: &Path,
     id: &str,
+    lease: &str,
     redraw: bool,
 ) -> Result<crate::command_queue::Pending<bool>, String> {
-    submit(id, move |term| forget(&term, redraw))
+    submit(root, id, lease, move |term| forget(&term, redraw))
 }
 fn forget(term: &Term, redraw: bool) -> Result<bool, String> {
     {
@@ -1570,15 +1595,17 @@ fn forget(term: &Term, redraw: bool) -> Result<bool, String> {
 /// A resize: the PTY is told (so programs repaint at the new size) and
 /// the local screen is set to match, so the bytes that repaint arrive
 /// into a screen already the right shape.
-pub fn term_resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
-    submit_resize(id, cols, rows)?.wait()
+pub fn term_resize(root: &Path, id: &str, lease: &str, cols: u16, rows: u16) -> Result<(), String> {
+    submit_resize(root, id, lease, cols, rows)?.wait()
 }
 pub fn submit_resize(
+    root: &Path,
     id: &str,
+    lease: &str,
     cols: u16,
     rows: u16,
 ) -> Result<crate::command_queue::Pending<()>, String> {
-    submit(id, move |term| resize(&term, cols, rows))
+    submit(root, id, lease, move |term| resize(&term, cols, rows))
 }
 fn resize(term: &Term, cols: u16, rows: u16) -> Result<(), String> {
     // Never a wide character split at the new edge (item 57b): the next
@@ -1590,24 +1617,10 @@ fn resize(term: &Term, cols: u16, rows: u16) -> Result<(), String> {
 
 /// Drops one hold; the last one out closes the socket (chat's rule, and
 /// for the same double-mount reason).
-pub fn term_leave(id: &str) -> Result<(), String> {
-    let mut registry = plock(terms());
-    match registry.get(id) {
-        Some(term) => {
-            if term.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
-                term.left.store(true, Ordering::Relaxed);
-                let term = registry.remove(id).unwrap();
-                drop(registry);
-                term.commands.close();
-                term.conn.close();
-                return Ok(());
-            }
-        }
-        // Its open may still be reaching: the hold it would take is
-        // this leave's (`crate::landing`).
-        None => {
-            plock(landing()).leave_early(id);
-        }
+pub fn term_leave(root: &Path, id: &str, lease: &str) -> Result<(), String> {
+    cancel_drop(root, id, lease)?;
+    if let Some(term) = terms().leave(root, id, lease)? {
+        term.close();
     }
     Ok(())
 }
@@ -2000,7 +2013,7 @@ mod tests {
             gone: AtomicBool::new(false),
             stall: Mutex::new(None),
             arrived: tokio::sync::Notify::new(),
-            holds: AtomicUsize::new(1),
+            far: None,
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
@@ -2008,9 +2021,15 @@ mod tests {
         });
         push_feed(&term.feed, &term.fed, b"\x1b[31mhi");
         let id = format!("tui/feed-doors-{}", std::process::id());
-        plock(terms()).insert(id.clone(), term.clone());
+        let root = Path::new(".");
+        let lease = terms().begin(root, &id).unwrap();
+        terms()
+            .claim(root, &id, &lease)
+            .unwrap()
+            .publish(term.clone())
+            .unwrap();
 
-        let start = term_attach(&id).unwrap();
+        let start = term_attach(root, &id, &lease).unwrap();
         assert_eq!(
             B64.decode(start.bytes.as_bytes()).unwrap(),
             b"\x1b[31mhi",
@@ -2020,12 +2039,12 @@ mod tests {
 
         push_feed(&term.feed, &term.fed, b"!");
         term.gone.store(true, Ordering::Relaxed);
-        let chunk = term_stream(&id, start.seq).unwrap();
+        let chunk = term_stream(root, &id, &lease, start.seq).unwrap();
         assert_eq!(B64.decode(chunk.bytes.as_bytes()).unwrap(), b"!");
         assert!(chunk.gone, "a torn socket reaches the face");
         assert!(!chunk.reset);
 
-        plock(terms()).remove(&id);
+        term_leave(root, &id, &lease).unwrap();
     }
 
     /// **A face that joins an attachment already open still says its
@@ -2048,20 +2067,26 @@ mod tests {
             gone: AtomicBool::new(false),
             stall: Mutex::new(None),
             arrived: tokio::sync::Notify::new(),
-            holds: AtomicUsize::new(1),
+            far: None,
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
             history: AtomicU32::new(0),
         });
         let id = format!("shell/held-size-{}", std::process::id());
-        plock(terms()).insert(id.clone(), term.clone());
+        let root = Path::new(".");
+        let lease = terms().begin(root, &id).unwrap();
+        terms()
+            .claim(root, &id, &lease)
+            .unwrap()
+            .publish(term.clone())
+            .unwrap();
 
-        term_open(Path::new("/nonexistent"), &id, 46, 30, 0).unwrap();
-        assert_eq!(
-            term.holds.load(Ordering::Relaxed),
-            2,
-            "held, not attached again"
+        let joined = terms().begin(root, &id).unwrap();
+        term_open(root, &id, &joined, 46, 30, 0).unwrap();
+        assert!(
+            Arc::ptr_eq(&terms().control(root, &id, &joined).unwrap(), &term),
+            "the second view shares the held resource instead of reconnecting"
         );
         match khor_node::host::read_frame::<ClientOp>(&mut host) {
             Ok(ClientOp::Resize { cols, rows }) => assert_eq!((cols, rows), (46, 30)),
@@ -2074,7 +2099,8 @@ mod tests {
             "the mode oracle follows"
         );
 
-        plock(terms()).remove(&id);
+        term_leave(root, &id, &joined).unwrap();
+        term_leave(root, &id, &lease).unwrap();
     }
 
     /// **A pushed wait answers when the bytes arrive, not on a beat**
@@ -2092,14 +2118,20 @@ mod tests {
             gone: AtomicBool::new(false),
             stall: Mutex::new(None),
             arrived: tokio::sync::Notify::new(),
-            holds: AtomicUsize::new(1),
+            far: None,
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
             history: AtomicU32::new(0),
         });
         let id = format!("tui/feed-wait-{}", std::process::id());
-        plock(terms()).insert(id.clone(), term.clone());
+        let root = Path::new(".");
+        let lease = terms().begin(root, &id).unwrap();
+        terms()
+            .claim(root, &id, &lease)
+            .unwrap()
+            .publish(term.clone())
+            .unwrap();
 
         let mut lags = Vec::new();
         for _ in 0..20 {
@@ -2112,7 +2144,7 @@ mod tests {
                 feeder.arrived.notify_waiters();
                 at
             });
-            let chunk = term_wait(&id, since, std::time::Duration::from_secs(2))
+            let chunk = term_wait(root, &id, &lease, since, std::time::Duration::from_secs(2))
                 .await
                 .unwrap();
             let answered = std::time::Instant::now();
@@ -2131,13 +2163,13 @@ mod tests {
         // Nothing new: it waits, then answers with nothing.
         let since = term.fed.load(Ordering::Relaxed);
         let began = std::time::Instant::now();
-        let chunk = term_wait(&id, since, std::time::Duration::from_millis(200))
+        let chunk = term_wait(root, &id, &lease, since, std::time::Duration::from_millis(200))
             .await
             .unwrap();
         assert!(began.elapsed() >= std::time::Duration::from_millis(190));
         assert!(chunk.bytes.is_empty());
 
-        plock(terms()).remove(&id);
+        term_leave(root, &id, &lease).unwrap();
     }
 }
 
@@ -2271,14 +2303,20 @@ mod burst_tests {
             gone: AtomicBool::new(false),
             stall: Mutex::new(None),
             arrived: tokio::sync::Notify::new(),
-            holds: AtomicUsize::new(1),
+            far: None,
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
             history: AtomicU32::new(0),
         });
         let id = format!("tui/burst-{}", std::process::id());
-        plock(terms()).insert(id.clone(), term.clone());
+        let root = Path::new(".");
+        let lease = terms().begin(root, &id).unwrap();
+        terms()
+            .claim(root, &id, &lease)
+            .unwrap()
+            .publish(term.clone())
+            .unwrap();
 
         let producer = term.clone();
         let done = Arc::new(AtomicBool::new(false));
@@ -2315,7 +2353,7 @@ mod burst_tests {
         let (mut since, mut resets, mut parsed) = (0u64, 0u32, 0usize);
         let mut screen = vt100::Parser::new(24, 80, 0);
         loop {
-            let chunk = term_stream(&id, since).unwrap();
+            let chunk = term_stream(root, &id, &lease, since).unwrap();
             let bytes = B64.decode(chunk.bytes.as_bytes()).unwrap();
             if chunk.reset {
                 resets += 1;
@@ -2338,7 +2376,7 @@ mod burst_tests {
         }
         let caught_up = std::time::Instant::now();
         let ended = burst.join().unwrap();
-        plock(terms()).remove(&id);
+        term_leave(root, &id, &lease).unwrap();
         eprintln!(
             "[burst] 4 MiB of yes: {resets} resets, the face parsed {:.1} MiB, last screen {:?} after the burst ended",
             parsed as f64 / (1 << 20) as f64,
@@ -2417,16 +2455,16 @@ mod stage_tests {
         let root = fresh("cancel");
         let a = term_drop_stage(&root, "a.png", &mut &b"one"[..]).unwrap();
         let b = term_drop_stage(&root, "b.png", &mut &b"two"[..]).unwrap();
-        let held = Held::begin("stage-test/cancel");
+        let held = Held::begin(&root, "stage-test/cancel", "stage-test/cancel-view");
         assert_eq!(
-            term_drop_progress("stage-test/cancel"),
+            term_drop_progress(&root, "stage-test/cancel", "stage-test/cancel-view").unwrap(),
             Some(0.0),
             "held from the start"
         );
-        term_drop_cancel(&root, "stage-test/cancel", &[]);
+        term_drop_cancel(&root, "stage-test/cancel", "stage-test/cancel-view", &[]).unwrap();
         let out = drop_text(
             &root,
-            "stage-test/cancel",
+            None,
             &[a.clone(), b.clone()],
             None,
             None,
@@ -2447,15 +2485,14 @@ mod stage_tests {
         );
         drop(held);
         assert_eq!(
-            term_drop_progress("stage-test/cancel"),
+            term_drop_progress(&root, "stage-test/cancel", "stage-test/cancel-view").unwrap(),
             None,
             "gone when it returns"
         );
         // Uncancelled, the same road gives the paste.
         let c = term_drop_stage(&root, "c.png", &mut &b"three"[..]).unwrap();
-        let held = Held::begin("stage-test/cancel");
-        let (landed, text) =
-            drop_text(&root, "stage-test/cancel", &[c], None, None, &held).unwrap();
+        let held = Held::begin(&root, "stage-test/cancel", "stage-test/cancel-view");
+        let (landed, text) = drop_text(&root, None, &[c], None, None, &held).unwrap();
         let at = khor_node::drops::dir_for(&root)
             .join("c.png")
             .display()
@@ -2475,14 +2512,24 @@ mod stage_tests {
             from: None,
             keep: true,
         }];
-        let held = Held::begin("stage-test/native-retry");
-        term_drop_cancel(&root, "stage-test/native-retry", &[]);
-        assert!(drop_items_text(&root, "stage-test/native-retry", &items, None, &held).is_err());
+        let held = Held::begin(
+            &root,
+            "stage-test/native-retry",
+            "stage-test/native-retry-view",
+        );
+        term_drop_cancel(
+            &root,
+            "stage-test/native-retry",
+            "stage-test/native-retry-view",
+            &[],
+        )
+        .unwrap();
+        assert!(drop_items_text(&root, None, &items, None, &held).is_err());
         assert!(Path::new(&folder).join("nested/a.txt").is_file());
         drop(held);
-        let held = Held::begin("stage-test/native-retry");
+        let held = Held::begin(&root, "stage-test/native-retry", "stage-test/native-retry-view");
         let (landed, text) =
-            drop_items_text(&root, "stage-test/native-retry", &items, None, &held).unwrap();
+            drop_items_text(&root, None, &items, None, &held).unwrap();
         assert_eq!(text, shell_quote(&landed[0]));
         assert!(Path::new(&landed[0]).join("nested/empty").is_dir());
         assert_eq!(
@@ -2507,11 +2554,11 @@ mod stage_tests {
         let a = term_drop_stage(&root, "a.txt", &mut &b"abc"[..]).unwrap();
         let b = term_drop_stage(&root, "missing.txt", &mut &b"def"[..]).unwrap();
         std::fs::remove_file(&b).unwrap();
-        let held = Held::begin("stage-test/batch-retry");
+        let held = Held::begin(&root, "stage-test/batch-retry", "stage-test/batch-retry-view");
         assert!(
             drop_text(
                 &root,
-                "stage-test/batch-retry",
+                None,
                 &[a.clone(), b],
                 None,
                 None,
@@ -2533,8 +2580,8 @@ mod stage_tests {
     #[test]
     fn a_cancel_with_no_drop_does_nothing_but_take_what_was_staged() {
         let root = fresh("cancel-none");
-        term_drop_cancel(&root, "stage-test/none", &[]);
-        let held = Held::begin("stage-test/none");
+        term_drop_cancel(&root, "stage-test/none", "stage-test/none-view", &[]).unwrap();
+        let held = Held::begin(&root, "stage-test/none", "stage-test/none-view");
         assert!(!held.stopped(), "the next drop is not born cancelled");
         drop(held);
         let a = term_drop_stage(&root, "a.png", &mut &b"one"[..]).unwrap();
@@ -2543,8 +2590,10 @@ mod stage_tests {
         term_drop_cancel(
             &root,
             "stage-test/none",
+            "stage-test/none-view",
             &[a.clone(), beside.display().to_string()],
-        );
+        )
+        .unwrap();
         assert!(
             !Path::new(&a).parent().unwrap().exists(),
             "the staged file's directory went"

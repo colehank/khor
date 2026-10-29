@@ -22,7 +22,8 @@ pub mod file_handoff;
 pub mod files;
 pub mod git;
 pub mod import;
-mod landing;
+mod attachments;
+pub use attachments::{AttachmentKind, attachment_begin};
 pub mod launch;
 pub mod miss;
 pub mod qr;
@@ -2684,19 +2685,22 @@ pub fn percent_decoded(v: &str) -> Option<String> {
     percent_decode(v)
 }
 
-pub fn chat_put_args(query: &str) -> Option<(String, String)> {
+pub fn chat_put_args(query: &str) -> Option<(String, String, String)> {
     let mut id = None;
+    let mut lease = None;
     let mut name = None;
     for pair in query.split('&') {
         let (k, v) = pair.split_once('=')?;
         match k {
             "id" => id = Some(percent_decode(v)?),
+            "lease" => lease = Some(percent_decode(v)?),
             "name" => name = Some(percent_decode(v)?),
             _ => {}
         }
     }
-    match (id, name) {
-        (Some(i), Some(n)) if !i.is_empty() && !n.is_empty() => Some((i, n)),
+    match (id, lease, name) {
+        (Some(id), Some(lease), Some(name))
+            if !id.is_empty() && !lease.is_empty() && !name.is_empty() => Some((id, lease, name)),
         _ => None,
     }
 }
@@ -3275,3 +3279,5 @@ pub async fn agent_recognition(
         })
         .collect())
 }
+
+

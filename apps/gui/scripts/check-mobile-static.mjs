@@ -120,7 +120,7 @@ export function checkMobileSources(gui) {
     "set_lock_timeout", "unlock", "doctor_fix",
     // Attachment reads and leave only touch memory or interrupt a socket;
     // ordered writes are admitted by native_io and complete asynchronously.
-    "chat_poll", "chat_leave", "term_attach", "term_stream", "term_leave", "term_drop_progress",
+    "attachment_begin", "chat_poll", "chat_leave", "term_attach", "term_stream", "term_leave", "term_drop_progress",
     // Answers the build knows, or plain memory.
     "console_catalog", // static command descriptors; no node/network work
     "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",

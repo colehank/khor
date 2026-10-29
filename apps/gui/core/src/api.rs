@@ -591,7 +591,13 @@ pub fn answer(
         "hooks_state" => to_json(&crate::hooks_state(root)?),
         "install_hooks" => to_json(&crate::install_hooks(root)?),
         "uninstall_hooks" => to_json(&crate::uninstall_hooks(root)?),
-        "chat_open" => to_json(&crate::chat::chat_open(root, &arg("id")?)?),
+        "attachment_begin" => {
+            let kind =
+                serde_json::from_value(args.get("kind").cloned().ok_or("missing arg: kind")?)
+                    .map_err(|e| format!("invalid attachment kind: {e}"))?;
+            to_json(&crate::attachment_begin(root, &arg("id")?, kind)?)
+        }
+        "chat_open" => to_json(&crate::chat::chat_open(root, &arg("id")?, &arg("lease")?)?),
         "session_content" => to_json(&rt.block_on(crate::chat::session_content(root,&arg("id")?,&arg("locator")?))?),
         "history_begin" => to_json(&rt.block_on(crate::chat::history_begin(root,&arg("id")?,&arg("binding")?))?),
         "history_cancel" => {
@@ -605,10 +611,15 @@ pub fn answer(
             root,&arg("id")?,&arg("binding")?,opt_str("cursor")?.as_deref(),
             args.get("newer").and_then(serde_json::Value::as_bool).unwrap_or(false),&arg("requestKey")?,
         ))?),
-        "chat_poll" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
+        "chat_poll" => to_json(&crate::chat::chat_poll(root, &arg("id")?, &arg("lease")?, num("since")?)?),
         // The bridge answers one request at a time: a held wait would
         // hold every other call behind it, so it is the poll here.
-        "chat_wait" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
+        "chat_wait" => to_json(&crate::chat::chat_poll(
+            root,
+            &arg("id")?,
+            &arg("lease")?,
+            num("since")?,
+        )?),
         // Files already on this machine (a drop's or a picker's paths),
         // put where the conversation's machine keeps files (round CHAT).
         "chat_put_paths" => {
@@ -622,6 +633,7 @@ pub fn answer(
             to_json(&crate::chat::chat_put_paths(
                 root,
                 &arg("id")?,
+                &arg("lease")?,
                 &paths,
                 opt_str("into")?.as_deref().unwrap_or(""),
             )?)
@@ -669,14 +681,28 @@ pub fn answer(
                 Some(serde_json::Value::String(token)) => Some(token.clone()),
                 _ => return Err("token must be a string or null".into()),
             };
-            let pending = crate::chat::submit_say_with_token(&id, text, images, files, token)?;
+            let pending = crate::chat::submit_say_with_token(
+                root,
+                &id,
+                &arg("lease")?,
+                text,
+                images,
+                files,
+                token,
+            )?;
             std::thread::spawn(move || {
                 let _ = pending.wait();
             });
             Ok("null".to_owned())
         }
         "chat_answer" => {
-            crate::chat::chat_answer(&arg("id")?, num("ask")?, opt_str("option")?)?;
+            crate::chat::chat_answer(
+                root,
+                &arg("id")?,
+                &arg("lease")?,
+                num("ask")?,
+                opt_str("option")?,
+            )?;
             Ok("null".to_owned())
         }
         "page_icons" => to_json(&crate::web::page_icons(root)),
@@ -690,11 +716,11 @@ pub fn answer(
             Ok("null".to_owned())
         }
         "chat_stop" => {
-            crate::chat::chat_stop(&arg("id")?)?;
+            crate::chat::chat_stop(root, &arg("id")?, &arg("lease")?)?;
             Ok("null".to_owned())
         }
         "chat_set_mode" => {
-            crate::chat::chat_set_mode(&arg("id")?, &arg("mode")?)?;
+            crate::chat::chat_set_mode(root, &arg("id")?, &arg("lease")?, &arg("mode")?)?;
             Ok("null".to_owned())
         }
         // `value` is handed over as it came — a string or a bool — and
@@ -702,7 +728,9 @@ pub fn answer(
         // named (`chat::chat_set_option`).
         "chat_respond" => {
             crate::chat::chat_respond(
+                root,
                 &arg("id")?,
+                &arg("lease")?,
                 num("ask")?,
                 args.get("response").ok_or("missing response")?,
             )?;
@@ -710,7 +738,9 @@ pub fn answer(
         }
         "chat_control" => {
             crate::chat::chat_control(
+                root,
                 &arg("id")?,
+                &arg("lease")?,
                 &arg("token")?,
                 &arg("operation")?,
                 args.get("payload").unwrap_or(&serde_json::Value::Null),
@@ -721,15 +751,21 @@ pub fn answer(
             let value = args
                 .get("value")
                 .ok_or_else(|| "missing arg: value".to_owned())?;
-            crate::chat::chat_set_option(&arg("id")?, &arg("option")?, value)?;
+            crate::chat::chat_set_option(
+                root,
+                &arg("id")?,
+                &arg("lease")?,
+                &arg("option")?,
+                value,
+            )?;
             Ok("null".to_owned())
         }
         "chat_replay" => {
-            crate::chat::chat_replay(&arg("id")?)?;
+            crate::chat::chat_replay(root, &arg("id")?, &arg("lease")?)?;
             Ok("null".to_owned())
         }
         "chat_leave" => {
-            crate::chat::chat_leave(&arg("id")?)?;
+            crate::chat::chat_leave(root, &arg("id")?, &arg("lease")?)?;
             Ok("null".to_owned())
         }
         "ls" => to_json(&rt.block_on(crate::files::ls(root, &arg("machine")?, &arg("path")?))?),
@@ -832,21 +868,31 @@ pub fn answer(
             crate::term::term_open(
                 root,
                 &arg("id")?,
+                &arg("lease")?,
                 num("cols")? as u16,
                 num("rows")? as u16,
                 history,
             )?;
             Ok("null".to_owned())
         }
-        "term_attach" => to_json(&crate::term::term_attach(&arg("id")?)?),
+        "term_attach" => to_json(&crate::term::term_attach(
+            root,
+            &arg("id")?,
+            &arg("lease")?,
+        )?),
         "term_ready" => {
-            crate::term::term_ready(&arg("id")?)?;
+            crate::term::term_ready(root, &arg("id")?, &arg("lease")?)?;
             to_json(&())
         }
         // A dead terminal row's page (P5-SHELL): its last screen or its
         // commands. A read.
         "term_ended" => to_json(&crate::term::ended(root, &arg("id")?)?),
-        "term_stream" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
+        "term_stream" => to_json(&crate::term::term_stream(
+            root,
+            &arg("id")?,
+            &arg("lease")?,
+            num("since")?,
+        )?),
         // A machine's commands, searched (roadmap 2.6). A read.
         "term_history" => to_json(&rt.block_on(crate::term::history(
             root,
@@ -865,14 +911,27 @@ pub fn answer(
                         .map_err(|e| format!("arg is not an anchor: since ({e})"))?,
                 ),
             };
-            to_json(&rt.block_on(crate::term::pane_history(root, &arg("id")?, since))?)
+            to_json(&rt.block_on(crate::term::pane_history(
+                root,
+                &arg("id")?,
+                &arg("lease")?,
+                since,
+            ))?)
         }
         // ⌘K kept by the feed and the host's ring (term-attach).
-        "term_forget" => to_json(&crate::term::term_forget(&arg("id")?, flag("redraw")?)?),
+        "term_forget" => to_json(&crate::term::term_forget(
+            root,
+            &arg("id")?,
+            &arg("lease")?,
+            flag("redraw")?,
+        )?),
         // A tmux row's prompts, moved between by tmux (item 21).
-        "term_prompt" => {
-            to_json(&rt.block_on(crate::term::prompt(root, &arg("id")?, flag("up")?))?)
-        }
+        "term_prompt" => to_json(&rt.block_on(crate::term::prompt(
+            root,
+            &arg("id")?,
+            &arg("lease")?,
+            flag("up")?,
+        ))?),
         // The wheel over a shell's own tmux client (item 58).
         "term_scroll" => {
             // Signed: up is positive.
@@ -883,14 +942,20 @@ pub fn answer(
             to_json(&rt.block_on(crate::term::scroll(
                 root,
                 &arg("id")?,
+                &arg("lease")?,
                 rows.clamp(-1000, 1000) as i32,
             ))?)
         }
         // The bridge answers one request at a time, so it never holds one
         // open: here a wait is the stream's answer as it stands.
-        "term_wait" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
+        "term_wait" => to_json(&crate::term::term_stream(
+            root,
+            &arg("id")?,
+            &arg("lease")?,
+            num("since")?,
+        )?),
         "term_key" => {
-            crate::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
+            crate::term::term_key(root, &arg("id")?, &arg("lease")?, arg("keys")?.into_bytes())?;
             Ok("null".to_owned())
         }
         "term_drop_items" => {
@@ -903,6 +968,7 @@ pub fn answer(
             to_json(&crate::term::term_drop_items(
                 root,
                 &arg("id")?,
+                &arg("lease")?,
                 &items,
                 args.get("into").and_then(|v| v.as_str()),
             ))
@@ -941,12 +1007,17 @@ pub fn answer(
             to_json(&crate::term::term_drop(
                 root,
                 &arg("id")?,
+                &arg("lease")?,
                 &paths,
                 from,
                 into,
             ))
         }
-        "term_drop_progress" => to_json(&crate::term::term_drop_progress(&arg("id")?)),
+        "term_drop_progress" => to_json(&crate::term::term_drop_progress(
+            root,
+            &arg("id")?,
+            &arg("lease")?,
+        )?),
         // The pill's × while files go in (item 71). Behind the bridge it
         // reaches a drop under way because `term_drop` runs on a thread
         // of its own there (`bin/bridge.rs`).
@@ -960,15 +1031,21 @@ pub fn answer(
                         .collect()
                 })
                 .unwrap_or_default();
-            crate::term::term_drop_cancel(root, &arg("id")?, &staged);
+            crate::term::term_drop_cancel(root, &arg("id")?, &arg("lease")?, &staged)?;
             Ok("null".to_owned())
         }
         "term_resize" => {
-            crate::term::term_resize(&arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
+            crate::term::term_resize(
+                root,
+                &arg("id")?,
+                &arg("lease")?,
+                num("cols")? as u16,
+                num("rows")? as u16,
+            )?;
             Ok("null".to_owned())
         }
         "term_leave" => {
-            crate::term::term_leave(&arg("id")?)?;
+            crate::term::term_leave(root, &arg("id")?, &arg("lease")?)?;
             Ok("null".to_owned())
         }
         // Where this person has been, one kind at a time — the two

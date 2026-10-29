@@ -13,11 +13,10 @@
 //! head): updates pass through as the protocol's own JSON, and what to
 //! paint is the face's judgment.
 
-use std::collections::HashMap;
 #[cfg(test)]
 use std::net::TcpStream;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 #[path = "chat_send.rs"]
@@ -273,7 +272,7 @@ impl Frames {
     }
 }
 
-struct Chat {
+pub(crate) struct Chat {
     /// The write half. One lock per op so frames never interleave.
     conn: crate::connection::Connection,
     commands: crate::command_queue::CommandQueue,
@@ -291,13 +290,6 @@ struct Chat {
     arrived: tokio::sync::Notify,
     /// Bytes of the turn on its way sent so far, and in all (0: none).
     sending: (AtomicU64, AtomicU64),
-    /// How many opens hold this attachment. React mounts an effect,
-    /// cleans it up, and mounts again — two holders of one id, in an
-    /// order the wire does not preserve; without the count, whichever
-    /// leave lands last closes the survivor's connection out from
-    /// under it (seen live: the pane polled a registry its own first
-    /// mount had emptied).
-    holds: AtomicUsize,
     /// Nobody holds it any more: a pipe that ends now is not asked for
     /// again (`crate::rejoin`).
     left: AtomicBool,
@@ -318,9 +310,30 @@ impl Drop for SendJob {
     }
 }
 
-fn chats() -> &'static Mutex<HashMap<String, Arc<Chat>>> {
-    static CHATS: OnceLock<Mutex<HashMap<String, Arc<Chat>>>> = OnceLock::new();
-    CHATS.get_or_init(|| Mutex::new(HashMap::new()))
+fn chats() -> &'static crate::attachments::Registry<Chat> {
+    static CHATS: OnceLock<crate::attachments::Registry<Chat>> = OnceLock::new();
+    CHATS.get_or_init(Default::default)
+}
+
+impl crate::attachments::Resource for Chat {
+    fn is_live(&self) -> bool {
+        !self.gone.load(Ordering::Acquire) && !self.left.load(Ordering::Acquire)
+    }
+}
+impl Chat {
+    fn close(&self) {
+        self.left.store(true, Ordering::Release);
+        self.commands.close();
+        self.turns.close();
+        self.conn.close();
+        self.arrived.notify_waiters();
+    }
+}
+pub(crate) fn expire_views() {
+    chats().expire();
+}
+pub(crate) fn begin_view(root: &Path, id: &str) -> Result<String, String> {
+    chats().begin(root, id)
 }
 
 fn frame_of(note: GuiNote) -> ChatFrame {
@@ -390,60 +403,28 @@ fn frame_of(note: GuiNote) -> ChatFrame {
     }
 }
 
-/// Attaches to the session's host, idempotently: an already-open chat
-/// stays as it is (its frames and cursor survive a second open), a
-/// dead one is replaced by a fresh attachment. Answers whether this
-/// call attached anew — the caller that asks for history on open must
-/// not ask twice for one attachment (React mounts effects twice in
-/// dev, and a host answers every replay it is asked for).
-///
-/// **The registry is not held while the attachment is made**, for the
-/// terminal's reason (`crate::term::term_open`): a far conversation is
-/// reached over the network, and every other conversation's poll and
-/// send take this same lock.
-pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
+/// Claims one view lease, sharing the live resource or opening a new one.
+/// Only the caller that opens a new resource asks the host for replay.
+/// The registry lock is released before any network connection is attempted.
+pub fn chat_open(root: &Path, id: &str, lease: &str) -> Result<bool, String> {
     khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
-    {
-        let mut registry = chats()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(chat) = registry.get(id) {
-            if !chat.gone.load(Ordering::Relaxed) {
-                chat.holds.fetch_add(1, Ordering::Relaxed);
-                return Ok(false);
-            }
-            registry.remove(id);
-        }
-        landing()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .begin(id);
+    open_chat_with(root, id, lease, || attach(root, id))
+}
+
+fn open_chat_with(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    connect: impl FnOnce() -> Result<(khor_node::gui_host::Attached, Option<String>), String>,
+) -> Result<bool, String> {
+    let opening = chats().claim(root, id, lease)?;
+    if opening.share()?.is_some() {
+        opening.check()?;
+        return Ok(false);
     }
-    let attached = attach(root, id);
-    let mut registry = chats()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // A leave that came while this open was reaching takes its hold
-    // (`crate::landing`).
-    let left = landing()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .land(id);
-    let (attached, far) = attached?;
+    let (attached, far) = connect()?;
+    opening.check()?;
     let conn = attached.stream;
-    if left {
-        let _ = conn.shutdown(std::net::Shutdown::Both);
-        return Ok(false);
-    }
-    if let Some(theirs) = registry.get(id)
-        && !theirs.gone.load(Ordering::Relaxed)
-    {
-        // Another open made it while this one was reaching: theirs is
-        // the attachment, and this connection goes unused.
-        theirs.holds.fetch_add(1, Ordering::Relaxed);
-        let _ = conn.shutdown(std::net::Shutdown::Both);
-        return Ok(false);
-    }
     let sid = SessionId(id.to_owned());
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let chat = Arc::new(Chat {
@@ -457,9 +438,13 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         far: far.clone(),
         arrived: tokio::sync::Notify::new(),
         sending: (AtomicU64::new(0), AtomicU64::new(0)),
-        holds: AtomicUsize::new(1),
         left: AtomicBool::new(false),
     });
+    let (chat, fresh) = opening.publish(chat)?;
+    if !fresh {
+        opening.check()?;
+        return Ok(false);
+    }
     let reader = chat.clone();
     let root = root.to_path_buf();
     std::thread::spawn(move || {
@@ -525,7 +510,7 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         reader.conn.close();
         reader.arrived.notify_waiters();
     });
-    registry.insert(id.to_owned(), chat);
+    opening.check()?;
     Ok(true)
 }
 
@@ -575,32 +560,24 @@ fn attach(
     Ok((conn, far))
 }
 
-/// Conversation opens still reaching, and leaves that came before them.
-/// Taken only while [`chats`] is held.
-fn landing() -> &'static Mutex<crate::landing::Landing> {
-    static LANDING: OnceLock<Mutex<crate::landing::Landing>> = OnceLock::new();
-    LANDING.get_or_init(Default::default)
-}
-
-fn chat_of(id: &str) -> Result<Arc<Chat>, String> {
+fn chat_of(root: &Path, id: &str, lease: &str) -> Result<Arc<Chat>, String> {
     khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
-    chats()
-        .lock()
-        .unwrap()
-        .get(id)
-        .cloned()
-        .ok_or_else(|| khor_catalog::msg::no_such_session(id))
+    chats().control(root, id, lease)
+}
+fn chat_reader(root: &Path, id: &str, lease: &str) -> Result<Arc<Chat>, String> {
+    khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
+    chats().read(root, id, lease)
 }
 
 /// The frames since `since` — instantly, whatever has arrived so far.
-pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
-    let chat = chat_of(id)?;
+pub fn chat_poll(root: &Path, id: &str, lease: &str, since: u64) -> Result<ChatBatch, String> {
+    let chat = chat_reader(root, id, lease)?;
+    Ok(chat_batch(&chat, since))
+}
+fn chat_batch(chat: &Chat, since: u64) -> ChatBatch {
     let frames = chat.frames.lock().unwrap();
-    // Everything this reader has not seen, in the list's own terms: its
-    // cursor counts frames from the beginning of the attachment, and
-    // `dropped` is how far the front has moved since.
     let (from, lost) = frames.since(since);
-    Ok(ChatBatch {
+    ChatBatch {
         frames: frames.held[from..].to_vec(),
         next: frames.dropped + frames.held.len() as u64,
         gone: chat.gone.load(Ordering::Relaxed),
@@ -608,7 +585,7 @@ pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
         sending: chat.sending.0.load(Ordering::Relaxed),
         sending_of: chat.sending.1.load(Ordering::Relaxed),
         stall: chat.stall.lock().unwrap().clone(),
-    })
+    }
 }
 
 /// [`chat_poll`], **held open until a frame lands** (or the attachment
@@ -622,11 +599,13 @@ pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
 /// open at a time instead; the bridge answers one request at a time, so
 /// the browser face keeps the beat.
 pub async fn chat_wait(
+    root: &Path,
     id: &str,
+    lease: &str,
     since: u64,
     longest: std::time::Duration,
 ) -> Result<ChatBatch, String> {
-    let chat = chat_of(id)?;
+    let chat = chat_reader(root, id, lease)?;
     let woke = chat.arrived.notified();
     tokio::pin!(woke);
     woke.as_mut().enable();
@@ -637,12 +616,12 @@ pub async fn chat_wait(
     if next == since && !chat.gone.load(Ordering::Relaxed) {
         let _ = tokio::time::timeout(longest, woke).await;
     }
-    chat_poll(id, since)
+    Ok(chat_batch(&chat, since))
 }
 
 /// One user turn.
-pub fn chat_say(id: &str, text: &str) -> Result<(), String> {
-    chat_say_with(id, text, Vec::new(), Vec::new())
+pub fn chat_say(root: &Path, id: &str, lease: &str, text: &str) -> Result<(), String> {
+    chat_say_with(root, id, lease, text, Vec::new(), Vec::new())
 }
 
 /// One user turn with things attached: images as `(mime, base64)`,
@@ -668,23 +647,27 @@ pub fn chat_say(id: &str, text: &str) -> Result<(), String> {
 /// conversation itself — an `Unsent` frame, the failure in parts — and
 /// gets its words back.
 pub fn chat_say_with(
+    root: &Path,
     id: &str,
+    lease: &str,
     text: &str,
     images: Vec<(String, String)>,
     files: Vec<(String, String)>,
 ) -> Result<(), String> {
-    submit_say(id, text.to_owned(), images, files)?.wait()
+    submit_say(root, id, lease, text.to_owned(), images, files)?.wait()
 }
 
 /// Capture this attachment and the end of its admitted controls before dispatching.
 /// Turns wait for those controls, while later Stop can pass between their slices.
 pub fn submit_say(
+    root: &Path,
     id: &str,
+    lease: &str,
     text: String,
     images: Vec<(String, String)>,
     files: Vec<(String, String)>,
 ) -> Result<crate::command_queue::Pending<()>, String> {
-    submit_say_with_token(id, text, images, files, None)
+    submit_say_with_token(root, id, lease, text, images, files, None)
 }
 
 pub fn validate_send_token(token: Option<&str>) -> Result<(), String> {
@@ -701,14 +684,16 @@ pub fn validate_send_token(token: Option<&str>) -> Result<(), String> {
 }
 
 pub fn submit_say_with_token(
+    root: &Path,
     id: &str,
+    lease: &str,
     text: String,
     images: Vec<(String, String)>,
     files: Vec<(String, String)>,
     token: Option<String>,
 ) -> Result<crate::command_queue::Pending<()>, String> {
     validate_send_token(token.as_deref())?;
-    let chat = chat_of(id)?;
+    let chat = chat_of(root, id, lease)?;
     let mut sends = chat.sends.lock().unwrap();
     sends.retain(|send| send.strong_count() > 0);
     let sending = Arc::new(Sending::new(token));
@@ -867,8 +852,12 @@ fn cancelled_notices(chat: &Chat, sends: &[(Arc<Sending>, Stage)], reconnect: bo
     chat.arrived.notify_waiters();
 }
 
-fn submit_stop(id: &str) -> Result<crate::command_queue::Pending<()>, String> {
-    let chat = chat_of(id)?;
+fn submit_stop(
+    root: &Path,
+    id: &str,
+    lease: &str,
+) -> Result<crate::command_queue::Pending<()>, String> {
+    let chat = chat_of(root, id, lease)?;
     let mut sends = chat.sends.lock().unwrap();
     sends.retain(|send| send.strong_count() > 0);
     let signal = Arc::new(StopSignal::default());
@@ -923,11 +912,13 @@ fn submit_stop(id: &str) -> Result<crate::command_queue::Pending<()>, String> {
 
 /// Validate before enqueueing, retaining the core errors used by every skin.
 pub fn submit_control(
+    root: &Path,
     id: &str,
+    lease: &str,
     command: Control,
 ) -> Result<crate::command_queue::Pending<()>, String> {
     if matches!(command, Control::Stop) {
-        return submit_stop(id);
+        return submit_stop(root, id, lease);
     }
     let op = match command {
         Control::Answer { ask, option } => GuiOp::Answer { ask, option },
@@ -978,7 +969,7 @@ pub fn submit_control(
         Control::Stop => GuiOp::Stop,
         Control::Replay => GuiOp::Replay,
     };
-    let chat = chat_of(id)?;
+    let chat = chat_of(root, id, lease)?;
     let target = chat.clone();
     chat.commands
         .submit(move || write_frame(&mut *target.conn.lock().unwrap(), &op))
@@ -986,12 +977,26 @@ pub fn submit_control(
 
 /// Chosen option id, or None to refuse. Synchronous bridge callers still wait
 /// until the op left; native IPC awaits the same submitted command instead.
-pub fn chat_answer(id: &str, ask: u64, option: Option<String>) -> Result<(), String> {
-    submit_control(id, Control::Answer { ask, option })?.wait()
+pub fn chat_answer(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    ask: u64,
+    option: Option<String>,
+) -> Result<(), String> {
+    submit_control(root, id, lease, Control::Answer { ask, option })?.wait()
 }
-pub fn chat_respond(id: &str, ask: u64, response: &serde_json::Value) -> Result<(), String> {
+pub fn chat_respond(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    ask: u64,
+    response: &serde_json::Value,
+) -> Result<(), String> {
     submit_control(
+        root,
         id,
+        lease,
         Control::Respond {
             ask,
             response: response.clone(),
@@ -1000,13 +1005,17 @@ pub fn chat_respond(id: &str, ask: u64, response: &serde_json::Value) -> Result<
     .wait()
 }
 pub fn chat_control(
+    root: &Path,
     id: &str,
+    lease: &str,
     token: &str,
     operation: &str,
     payload: &serde_json::Value,
 ) -> Result<(), String> {
     submit_control(
+        root,
         id,
+        lease,
         Control::Operation {
             token: token.into(),
             operation: operation.into(),
@@ -1017,12 +1026,20 @@ pub fn chat_control(
 }
 /// The agent's Settings/Refused frame carries the outcome; this result says
 /// only that the op left, as it did before commands acquired a queue.
-pub fn chat_set_mode(id: &str, mode: &str) -> Result<(), String> {
-    submit_control(id, Control::SetMode(mode.into()))?.wait()
+pub fn chat_set_mode(root: &Path, id: &str, lease: &str, mode: &str) -> Result<(), String> {
+    submit_control(root, id, lease, Control::SetMode(mode.into()))?.wait()
 }
-pub fn chat_set_option(id: &str, option: &str, value: &serde_json::Value) -> Result<(), String> {
+pub fn chat_set_option(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    option: &str,
+    value: &serde_json::Value,
+) -> Result<(), String> {
     submit_control(
+        root,
         id,
+        lease,
         Control::SetOption {
             option: option.into(),
             value: value.clone(),
@@ -1031,11 +1048,11 @@ pub fn chat_set_option(id: &str, option: &str, value: &serde_json::Value) -> Res
     .wait()
 }
 /// Ends the running turn, not the session; never waits for a whole turn's queue.
-pub fn chat_stop(id: &str) -> Result<(), String> {
-    submit_control(id, Control::Stop)?.wait()
+pub fn chat_stop(root: &Path, id: &str, lease: &str) -> Result<(), String> {
+    submit_control(root, id, lease, Control::Stop)?.wait()
 }
-pub fn chat_replay(id: &str) -> Result<(), String> {
-    submit_control(id, Control::Replay)?.wait()
+pub fn chat_replay(root: &Path, id: &str, lease: &str) -> Result<(), String> {
+    submit_control(root, id, lease, Control::Replay)?.wait()
 }
 
 #[derive(Serialize, TS)]
@@ -1415,31 +1432,12 @@ fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
 }
 
 /// Detaches one holder; the socket closes when the last one leaves
-/// (`Chat::holds`). **Not a close**: the session and its agent live
+/// **Not a session close**: the session and its agent live
 /// on, and closing is [`crate::close_session`]'s job — a detail view
 /// going away must not take the conversation with it.
-pub fn chat_leave(id: &str) -> Result<(), String> {
-    let mut registry = chats().lock().unwrap();
-    match registry.get(id) {
-        Some(chat) => {
-            if chat.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
-                chat.left.store(true, Ordering::Relaxed);
-                let chat = registry.remove(id).unwrap();
-                drop(registry);
-                chat.commands.close();
-                chat.turns.close();
-                chat.conn.close();
-                return Ok(());
-            }
-        }
-        // Its open may still be reaching: the hold it would take is
-        // this leave's (`crate::landing`).
-        None => {
-            landing()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .leave_early(id);
-        }
+pub fn chat_leave(root: &Path, id: &str, lease: &str) -> Result<(), String> {
+    if let Some(chat) = chats().leave(root, id, lease)? {
+        chat.close();
     }
     Ok(())
 }
@@ -1733,11 +1731,16 @@ mod wait_tests {
             far: None,
             arrived: tokio::sync::Notify::new(),
             sending: (AtomicU64::new(0), AtomicU64::new(0)),
-            holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
         });
         let id = format!("chat-wait-{}", std::process::id());
-        chats().lock().unwrap().insert(id.clone(), chat.clone());
+        let root = Path::new(".");
+        let lease = chats().begin(root, &id).unwrap();
+        chats()
+            .claim(root, &id, &lease)
+            .unwrap()
+            .publish(chat.clone())
+            .unwrap();
 
         let mut lags = Vec::new();
         for n in 0..20u64 {
@@ -1749,7 +1752,7 @@ mod wait_tests {
                 feeder.arrived.notify_waiters();
                 at
             });
-            let batch = chat_wait(&id, n, std::time::Duration::from_secs(2))
+            let batch = chat_wait(root, &id, &lease, n, std::time::Duration::from_secs(2))
                 .await
                 .unwrap();
             let answered = std::time::Instant::now();
@@ -1767,13 +1770,13 @@ mod wait_tests {
 
         // Nothing new: it waits, then answers with nothing.
         let began = std::time::Instant::now();
-        let batch = chat_wait(&id, 20, std::time::Duration::from_millis(200))
+        let batch = chat_wait(root, &id, &lease, 20, std::time::Duration::from_millis(200))
             .await
             .unwrap();
         assert!(
             batch.frames.is_empty() && began.elapsed() >= std::time::Duration::from_millis(190)
         );
-        chats().lock().unwrap().remove(&id);
+        chat_leave(root, &id, &lease).unwrap();
     }
 }
 
@@ -1801,11 +1804,13 @@ mod wait_tests {
 pub fn chat_put_paths(
     root: &Path,
     id: &str,
+    lease: &str,
     paths: &[String],
     into: &str,
 ) -> Result<Vec<String>, String> {
+    let chat = chat_of(root, id, lease)?;
     let n = Node::open(root.to_path_buf())?;
-    if let Some(machine) = n.far_machine(&SessionId(id.to_owned()))? {
+    if let Some(machine) = chat.far.as_ref() {
         return crate::term::deliver_blocking(root, &machine, paths, into);
     }
     let into = khor_node::road::tidy_setting(into)?;
@@ -1861,10 +1866,12 @@ pub fn chat_put_paths(
 pub fn chat_put(
     root: &Path,
     id: &str,
+    lease: &str,
     name: &str,
     into: &str,
     body: &mut dyn std::io::Read,
 ) -> Result<String, String> {
+    chat_of(root, id, lease)?;
     let staged = crate::save_upload(root, name, body)?;
     // Placed under its own name, not the staging one's stamp.
     let named = staged.with_file_name(khor_node::transfer::safe_name(name));
@@ -1877,7 +1884,7 @@ pub fn chat_put(
     // Placed here by a copy, or there by a delivery that has finished
     // fetching when it returns (`deliver_blocking` accepts before it
     // answers): either way the staged bytes are read by nobody now.
-    let out = chat_put_paths(root, id, &[named.display().to_string()], into);
+    let out = chat_put_paths(root, id, lease, &[named.display().to_string()], into);
     let _ = std::fs::remove_file(&named);
     out?.into_iter()
         .next()
@@ -1901,13 +1908,20 @@ mod put_tests {
         std::fs::write(&src, "# notes\n").unwrap();
         let given = [src.display().to_string()];
 
-        let first = chat_put_paths(&root, "gui/nowhere", &given, "").expect("placed");
-        let again = chat_put_paths(&root, "gui/nowhere", &given, "").expect("placed again");
+        let id = "gui/put-fixture";
+        let lease = begin_view(&root, id).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_peer, _) = listener.accept().unwrap();
+        open_chat_with(&root, id, &lease, || Ok((khor_node::gui_host::Attached { stream }, None))).unwrap();
+        let first = chat_put_paths(&root, id, &lease, &given, "").expect("placed");
+        let again = chat_put_paths(&root, id, &lease, &given, "").expect("placed again");
 
         let want = root.join("khor-drop").join("notes.md");
         assert_eq!(first, vec![want.display().to_string()]);
         assert_eq!(again, first);
         assert_eq!(std::fs::read_to_string(&want).unwrap(), "# notes\n");
+        chat_leave(&root, id, &lease).unwrap();
         let _ = std::fs::remove_dir_all(&root);
     }
 }

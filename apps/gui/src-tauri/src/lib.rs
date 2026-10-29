@@ -795,13 +795,22 @@ fn uninstall_hooks() -> Result<khor_gui_core::HooksState, String> {
 /// A conversation on another machine is reached over the network
 /// ([`off_main`]).
 #[tauri::command]
-async fn chat_open(id: String) -> Result<bool, String> {
-    off_main(move || khor_gui_core::chat::chat_open(&Node::root_from_env(), &id)).await
+fn attachment_begin(id: String, kind: khor_gui_core::AttachmentKind) -> Result<String, String> {
+    khor_gui_core::attachment_begin(&Node::root_from_env(), &id, kind)
 }
 
 #[tauri::command]
-fn chat_poll(id: String, since: u64) -> Result<khor_gui_core::chat::ChatBatch, String> {
-    khor_gui_core::chat::chat_poll(&id, since)
+async fn chat_open(id: String, lease: String) -> Result<bool, String> {
+    off_main(move || khor_gui_core::chat::chat_open(&Node::root_from_env(), &id, &lease)).await
+}
+
+#[tauri::command]
+fn chat_poll(
+    id: String,
+    lease: String,
+    since: u64,
+) -> Result<khor_gui_core::chat::ChatBatch, String> {
+    khor_gui_core::chat::chat_poll(&Node::root_from_env(), &id, &lease, since)
 }
 
 /// The conversation, pushed: held open until a frame lands
@@ -809,10 +818,18 @@ fn chat_poll(id: String, since: u64) -> Result<khor_gui_core::chat::ChatBatch, S
 #[tauri::command]
 async fn chat_wait(
     id: String,
+    lease: String,
     since: u64,
     ms: u64,
 ) -> Result<khor_gui_core::chat::ChatBatch, String> {
-    khor_gui_core::chat::chat_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
+    khor_gui_core::chat::chat_wait(
+        &Node::root_from_env(),
+        &id,
+        &lease,
+        since,
+        std::time::Duration::from_millis(ms.min(2000)),
+    )
+    .await
 }
 
 /// A page's site icon, through the page's own exit (docs/SHELL.md 第四轮).
@@ -868,8 +885,8 @@ fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn chat_leave(id: String) -> Result<(), String> {
-    khor_gui_core::chat::chat_leave(&id)
+fn chat_leave(id: String, lease: String) -> Result<(), String> {
+    khor_gui_core::chat::chat_leave(&Node::root_from_env(), &id, &lease)
 }
 
 #[tauri::command]
@@ -1135,11 +1152,18 @@ fn pdf_here() -> bool {
 /// A terminal on another machine is reached over the network
 /// ([`off_main`]).
 #[tauri::command]
-async fn term_open(id: String, cols: u16, rows: u16, history: Option<u32>) -> Result<(), String> {
+async fn term_open(
+    id: String,
+    lease: String,
+    cols: u16,
+    rows: u16,
+    history: Option<u32>,
+) -> Result<(), String> {
     off_main(move || {
         khor_gui_core::term::term_open(
             &Node::root_from_env(),
             &id,
+            &lease,
             cols,
             rows,
             history.unwrap_or(0),
@@ -1156,13 +1180,17 @@ async fn term_ended(id: String) -> Result<Option<khor_gui_core::term::EndedPage>
 }
 
 #[tauri::command]
-fn term_attach(id: String) -> Result<khor_gui_core::term::TermStart, String> {
-    khor_gui_core::term::term_attach(&id)
+fn term_attach(id: String, lease: String) -> Result<khor_gui_core::term::TermStart, String> {
+    khor_gui_core::term::term_attach(&Node::root_from_env(), &id, &lease)
 }
 
 #[tauri::command]
-fn term_stream(id: String, since: u64) -> Result<khor_gui_core::term::TermChunk, String> {
-    khor_gui_core::term::term_stream(&id, since)
+fn term_stream(
+    id: String,
+    lease: String,
+    since: u64,
+) -> Result<khor_gui_core::term::TermChunk, String> {
+    khor_gui_core::term::term_stream(&Node::root_from_env(), &id, &lease, since)
 }
 
 /// The stream, pushed: held open until the feed grows (`term::term_wait`).
@@ -1187,15 +1215,15 @@ async fn term_history(
 
 /// A tmux row's prompts, moved between by tmux (item 21, `term::prompt`).
 #[tauri::command]
-async fn term_prompt(id: String, up: bool) -> Result<(), String> {
-    khor_gui_core::term::prompt(&Node::root_from_env(), &id, up).await
+async fn term_prompt(id: String, lease: String, up: bool) -> Result<(), String> {
+    khor_gui_core::term::prompt(&Node::root_from_env(), &id, &lease, up).await
 }
 
 /// The wheel over a shell's own tmux client (item 58, `term::scroll`):
 /// true when tmux took it.
 #[tauri::command]
-async fn term_scroll(id: String, rows: i32) -> Result<bool, String> {
-    khor_gui_core::term::scroll(&Node::root_from_env(), &id, rows).await
+async fn term_scroll(id: String, lease: String, rows: i32) -> Result<bool, String> {
+    khor_gui_core::term::scroll(&Node::root_from_env(), &id, &lease, rows).await
 }
 
 /// A tmux row's front pane history from an anchor on (item 31,
@@ -1203,18 +1231,27 @@ async fn term_scroll(id: String, rows: i32) -> Result<bool, String> {
 #[tauri::command]
 async fn term_pane_history(
     id: String,
+    lease: String,
     since: Option<khor_gui_core::term::PaneAnchor>,
 ) -> Result<khor_gui_core::term::PaneHistory, String> {
-    khor_gui_core::term::pane_history(&Node::root_from_env(), &id, since).await
+    khor_gui_core::term::pane_history(&Node::root_from_env(), &id, &lease, since).await
 }
 
 #[tauri::command]
 async fn term_wait(
     id: String,
+    lease: String,
     since: u64,
     ms: u64,
 ) -> Result<khor_gui_core::term::TermChunk, String> {
-    khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
+    khor_gui_core::term::term_wait(
+        &Node::root_from_env(),
+        &id,
+        &lease,
+        since,
+        std::time::Duration::from_millis(ms.min(2000)),
+    )
+    .await
 }
 
 /// **A command that finished while nobody was looking, said by the system**
@@ -1423,13 +1460,13 @@ fn joy_haptic(app: tauri::AppHandle, kind: String) {
 /// How far a terminal's drop has got, for its pill's line (item 60):
 /// memory.
 #[tauri::command]
-fn term_drop_progress(id: String) -> Option<f32> {
-    khor_gui_core::term::term_drop_progress(&id)
+fn term_drop_progress(id: String, lease: String) -> Result<Option<f32>, String> {
+    khor_gui_core::term::term_drop_progress(&Node::root_from_env(), &id, &lease)
 }
 
 #[tauri::command]
-fn term_leave(id: String) -> Result<(), String> {
-    khor_gui_core::term::term_leave(&id)
+fn term_leave(id: String, lease: String) -> Result<(), String> {
+    khor_gui_core::term::term_leave(&Node::root_from_env(), &id, &lease)
 }
 
 /// Where this person has been, of one kind, most recent first
@@ -3357,8 +3394,12 @@ async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
             .and_then(|v| v.to_str().ok())
             .map(|v| khor_gui_core::percent_decoded(v).unwrap_or_else(|| v.to_owned()))
     };
-    let (Some(id), Some(name)) = (header("x-khor-chat"), header("x-khor-name")) else {
-        return Err("chat_put needs the x-khor-chat and x-khor-name headers".to_owned());
+    let (Some(id), Some(lease), Some(name)) = (
+        header("x-khor-chat"),
+        header("x-khor-lease"),
+        header("x-khor-name"),
+    ) else {
+        return Err("chat_put needs x-khor-chat, x-khor-lease and x-khor-name headers".to_owned());
     };
     // The directory on the conversation's machine, when the person chose one.
     let into = header("x-khor-into").unwrap_or_default();
@@ -3367,6 +3408,7 @@ async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
         khor_gui_core::chat::chat_put(
             &Node::root_from_env(),
             &id,
+            &lease,
             &name,
             &into,
             &mut bytes.as_slice(),
@@ -3403,6 +3445,7 @@ async fn term_drop_stage(request: tauri::ipc::Request<'_>) -> Result<String, Str
 #[tauri::command]
 async fn term_drop_items(
     id: String,
+    lease: String,
     items: Vec<khor_gui_core::term::DropItem>,
     into: Option<String>,
 ) -> Result<khor_gui_core::term::DropEnd, String> {
@@ -3410,6 +3453,7 @@ async fn term_drop_items(
         Ok(khor_gui_core::term::term_drop_items(
             &Node::root_from_env(),
             &id,
+            &lease,
             &items,
             into.as_deref(),
         ))
@@ -3499,6 +3543,7 @@ async fn term_pick_folders(
 #[tauri::command]
 async fn chat_put_paths(
     id: String,
+    lease: String,
     paths: Vec<String>,
     into: Option<String>,
 ) -> Result<Vec<String>, String> {
@@ -3506,6 +3551,7 @@ async fn chat_put_paths(
         khor_gui_core::chat::chat_put_paths(
             &Node::root_from_env(),
             &id,
+            &lease,
             &paths,
             into.as_deref().unwrap_or(""),
         )
@@ -5282,6 +5328,7 @@ pub fn run() {
             hooks_state,
             install_hooks,
             uninstall_hooks,
+            attachment_begin,
             chat_open,
             chat_poll,
             chat_wait,

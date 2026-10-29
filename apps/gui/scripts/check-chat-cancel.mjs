@@ -1,3 +1,4 @@
+import {installAttachmentLeases} from "./fixtures/attachment-leases.mjs";
 // Real ChatView + production API; IPC replies and selected files are synthetic.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -24,7 +25,7 @@ const until = async (check, what) => {
   const end = Date.now() + 8000;
   while (!await check()) { assert(Date.now() < end, what); await wait(20); }
 };
-const files = ['src/views/ChatView.tsx', 'src/views/chat-files.tsx', 'src/api.ts', 'src/App.tsx', 'src/lib/chat-drafts.ts', 'src/gen/bindings/ChatFrame.ts', '../../crates/catalog/zh.toml', '../../crates/catalog/en.toml', 'scripts/check-chat-cancel.mjs', 'scripts/fixtures/chat-cancel-cases.mjs', 'scripts/fixtures/chat-cancel-wire.mjs', 'scripts/quality-preview.vite.ts', 'scripts/session-navigation-preview.vite.ts', 'scripts/ai-elements-preview.vite.ts'];
+const files = ['src/lib/attachment-view.ts', 'scripts/fixtures/attachment-leases.mjs', 'src/views/ChatView.tsx', 'src/views/chat-files.tsx', 'src/api.ts', 'src/App.tsx', 'src/lib/chat-drafts.ts', 'src/gen/bindings/ChatFrame.ts', '../../crates/catalog/zh.toml', '../../crates/catalog/en.toml', 'scripts/check-chat-cancel.mjs', 'scripts/fixtures/chat-cancel-cases.mjs', 'scripts/fixtures/chat-cancel-wire.mjs', 'scripts/quality-preview.vite.ts', 'scripts/session-navigation-preview.vite.ts', 'scripts/ai-elements-preview.vite.ts'];
 const fingerprint = () => Object.fromEntries(files.map(file => [file, createHash('sha256').update(readFileSync(join(gui, file))).digest('hex')]));
 const sources = fingerprint(), results = [];
 writeFileSync(join(fixture, 'index.html'), '<div id="root"></div><script type="module" src="./probe.tsx"></script>');
@@ -53,6 +54,7 @@ async function run(engine, name) {
     const app = scenario.startsWith('app-');
     const session = app ? 'gui/ai-elements-review' : 'alpha';
     const http = app || scenario === 'web-admission';
+    await page.addInitScript(installAttachmentLeases);
     await page.addInitScript(installChatCancelWire, {scenario, http});
     const attach = async selected => {
       const before = await page.locator('[data-chat-pending-file]').count();

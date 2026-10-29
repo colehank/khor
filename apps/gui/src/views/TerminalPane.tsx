@@ -65,7 +65,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, rejoinNow, said, termAttach, termReady, termDrop, termDropCancel, termDropProgress, termDropItems, termDropForget, termEnded, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait, type Miss } from "@/api";
+import { terminalAttachment, bellHaptic, faceNote, inApp, rejoinNow, said, termDropForget, termEnded, type Miss } from "@/api";
 import { addAttachments, deviceAttachments, droppedAttachments, prepareAttachments, type Attachment, type PreparedDrop } from "@/lib/term-attachments";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
@@ -1247,6 +1247,7 @@ export function TerminalPane({
       `null` for one hosted here. What a wait and a reconnect name. */
   machine?: string | null;
 }) {
+  const attachmentRef = useRef<ReturnType<typeof terminalAttachment> | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -1458,6 +1459,8 @@ export function TerminalPane({
     const box = boxRef.current;
     const mount = mountRef.current;
     if (!box || !mount) return;
+    let attachment = terminalAttachment(id);
+    attachmentRef.current = attachment;
     const font = fontOf(box);
     /** Opens an OSC 8 `file://` link; set once the session's machine
         and the path opener are known (below). */
@@ -1875,7 +1878,7 @@ export function TerminalPane({
       const atPrompt = normal && !marks.running() && !!at?.input && !at.output;
       term.clear();
       if (!normal) return;
-      void termForget(id, atPrompt).catch(() => {
+      void attachment.forget(atPrompt).catch(() => {
         if (atPrompt) term.input("\x0c", true);
       });
     };
@@ -2049,6 +2052,7 @@ export function TerminalPane({
         attachment ended, or no answer at all. */
     const tick = async (): Promise<"live" | "ended" | "failed"> => {
       const mine = generation;
+      const reading = attachment;
       // **The place this ask was made from.** An ask that left before the
       // join set `seq` (a poll the page's own focus effect started while
       // the open was still reaching) comes back with everything since 0 —
@@ -2061,7 +2065,7 @@ export function TerminalPane({
         // NET-2): the node answers the moment bytes arrive, so an echo
         // no longer waits for the next beat. Elsewhere, the beat.
         const pushed = inApp && pace.current === LIVE_MS;
-        const b = await (pushed ? termWait(id, seq, WAIT_MS) : termStream(id, seq));
+        const b = await (pushed ? reading.wait(seq, WAIT_MS) : reading.stream(seq));
         if (stopped || mine !== generation || from !== seq) return "live";
         const gap = performance.now() - lastBeat;
         lastBeat = performance.now();
@@ -2090,7 +2094,8 @@ export function TerminalPane({
         if (stopped || mine !== generation) return "live";
         // A remote pipe may have rejoined before its first Ready reached
         // the host. A fresh feed needs the renderer's acknowledgement too.
-        if (b.reset && !b.gone && !b.stall) await termReady(id);
+        if (b.reset && !b.gone && !b.stall) await reading.ready();
+        if (stopped || mine !== generation) return "live";
         seq = b.seq;
         if (b.gone) setGone(true);
         const held = b.gone ? null : (b.stall ?? null);
@@ -2156,13 +2161,18 @@ export function TerminalPane({
         setWhy(null);
         setOpenedAt(Date.now());
       }
-      const opened = again
-        ? termLeave(id)
-            .catch(() => {})
-            .then(() => termOpen(id, term.cols, term.rows, termHistory()))
-        : termOpen(id, term.cols, term.rows, termHistory());
+      const previous = attachment;
+      if (again) {
+        attachment = terminalAttachment(id);
+        attachmentRef.current = attachment;
+        void previous.dispose().then(result => {
+          if (result.failures) console.warn("Terminal attachment cleanup failed", result);
+        });
+      }
+      const joining = attachment;
+      const opened = joining.open(term.cols, term.rows, termHistory());
       return opened
-        .then(() => termAttach(id))
+        .then(() => joining.attach())
         .then(async (a) => {
           if (stopped || mine !== generation) return;
           setJoining(false);
@@ -2227,11 +2237,11 @@ export function TerminalPane({
           // Wired only now: a resize racing the open would size a pty
           // the open is about to size again.
           resizing ??= term.onResize(({ cols, rows }) => {
-            termResize(id, cols, rows).catch(() => {});
+            attachment.resize(cols, rows).catch(() => {});
           });
           if (again) {
             fit.fit();
-            termResize(id, term.cols, term.rows).catch(() => {});
+            joining.resize(term.cols, term.rows).catch(() => {});
             term.scrollToBottom();
             // A reload keeps the terminal the focus, and the keyboard as
             // it was.
@@ -2239,7 +2249,7 @@ export function TerminalPane({
           }
           // Socket attachment precedes rendering. Release automatic shell
           // input only after replay no longer suppresses live query replies.
-          await termReady(id);
+          await joining.ready();
           if (stopped || mine !== generation) return;
           void loop();
         })
@@ -2317,23 +2327,28 @@ export function TerminalPane({
     // frame, and a paste bigger than that used to go as one. A chunk is
     // 16 Ki characters — 64 KiB at most once UTF-8 encoded — and the
     // chunks keep their order like everything else here.
-    let outbox = "";
+    let outbox: { view: ReturnType<typeof terminalAttachment>; bytes: string } | null = null;
     let sending = false;
     let scrollHealthNotes: ReturnType<typeof notesScrollHealth> | null = null;
     const send = (bytes: string) => {
-      outbox += bytes;
+      const view = attachment;
+      if (outbox?.view === view) outbox.bytes += bytes;
+      else outbox = { view, bytes };
       if (sending) return;
       sending = true;
       void (async () => {
         while (outbox && !stopped) {
+          const batch = outbox;
+          if (batch.view !== attachment) { outbox = null; continue; }
           // Never split a surrogate pair across two frames.
-          let cut = Math.min(outbox.length, CHUNK_CHARS);
-          if (cut < outbox.length && /[\ud800-\udbff]/.test(outbox[cut - 1])) cut -= 1;
-          const next = outbox.slice(0, cut);
-          outbox = outbox.slice(cut);
-          const started = performance.now(), queued = next.length + outbox.length;
+          let cut = Math.min(batch.bytes.length, CHUNK_CHARS);
+          if (cut < batch.bytes.length && /[\ud800-\udbff]/.test(batch.bytes[cut - 1])) cut -= 1;
+          const next = batch.bytes.slice(0, cut);
+          batch.bytes = batch.bytes.slice(cut);
+          if (!batch.bytes) outbox = null;
+          const started = performance.now(), queued = next.length + batch.bytes.length;
           scrollHealthNotes?.sending(started, queued);
-          await termKey(id, next).catch(() => {});
+          await batch.view.key(next).catch(() => {});
           scrollHealthNotes?.sent(started, performance.now(), queued);
         }
         sending = false;
@@ -2394,7 +2409,7 @@ export function TerminalPane({
         return;
       }
       sizedAt = performance.now();
-      termResize(id, term.cols, term.rows).catch(() => {});
+      attachment.resize(term.cols, term.rows).catch(() => {});
     };
     const data = term.onData((d) => {
       const reply = isReply(d);
@@ -2519,12 +2534,12 @@ export function TerminalPane({
       history?.approached();
       return history?.pane() ?? null;
     });
-    const shellTmux = SHELL_ROW(id) ? followsShellTmux(term, (rows) => termScroll(id, rows)) : null;
+    const shellTmux = SHELL_ROW(id) ? followsShellTmux(term, (rows) => attachment.scroll(rows)) : null;
     const unwheel =
-      shellTmux && !window.matchMedia("(pointer: coarse)").matches ? wheelsToShellTmux(box, term, shellTmux, (rows) => termScroll(id, rows)) : () => {};
+      shellTmux && !window.matchMedia("(pointer: coarse)").matches ? wheelsToShellTmux(box, term, shellTmux, (rows) => attachment.scroll(rows)) : () => {};
     const viaTmux = () => (TMUX_ROW.test(id) || !!shellTmux?.front()) && term.buffer.active.type === "alternate";
     (box as HTMLDivElement & { __jump?: (dir: -1 | 1) => void }).__jump = (dir) => {
-      if (viaTmux()) void termPrompt(id, dir < 0).catch(() => {});
+      if (viaTmux()) void attachment.prompt(dir < 0).catch(() => {});
       else jumpToPrompt(term, marks, dir);
     };
     // The menu's ⌘⇧; and the key sheet's 历史命令 (roadmap 2.6).
@@ -2709,7 +2724,7 @@ export function TerminalPane({
         seat: historyRef.current!,
         scroller: scrollerRef.current!,
         room: roomRef.current!,
-        read: (since) => termPaneHistory(id, since),
+        read: (since) => attachment.paneHistory(since),
         changed: () => native.sync(),
         moved: (to) => {
           historyUp = to;
@@ -2930,7 +2945,10 @@ export function TerminalPane({
       termRef.current = null;
       searchRef.current = null;
       keysRef.current = null;
-      termLeave(id).catch(() => {});
+      if (attachmentRef.current === attachment) attachmentRef.current = null;
+      void attachment.dispose().then(result => {
+        if (result.failures) console.warn("Terminal attachment cleanup failed", result);
+      });
     };
   }, [id, attempt]);
 
@@ -3050,6 +3068,8 @@ export function TerminalPane({
       onLanded?: () => void,
     ): Promise<boolean> => {
       if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return false;
+      const attachment = attachmentRef.current;
+      if (!attachment || attachment.id !== id) return false;
       // A fresh send supersedes the previous failed attempt. Its
       // staged bytes and retry affordance must not linger after a
       // successful retry from the selection panel.
@@ -3063,7 +3083,7 @@ export function TerminalPane({
       let cancelled = false;
       let made: PreparedDrop | null = null;
       const watch = window.setInterval(() => {
-        termDropProgress(id).then((p) => p !== null && !cancelled && setDropShare(p), () => {});
+        attachment.dropProgress().then((p) => p !== null && !cancelled && setDropShare(p), () => {});
       }, DROP_LOOK_MS);
       const settle = () => {
         window.clearInterval(watch);
@@ -3077,7 +3097,7 @@ export function TerminalPane({
         cancelled = true;
         window.clearInterval(watch);
         setDropStopping(true);
-        cancellation = termDropCancel(id).catch(() => {});
+        cancellation = attachment.dropCancel().catch(() => {});
       };
       try {
         made = typeof paths === "function" ? await paths(() => cancelled) : Array.isArray(paths)
@@ -3090,7 +3110,7 @@ export function TerminalPane({
         // no existing wire frame changes for single-file transfers.
         const first = made.items[0]?.from ?? null;
         const simple = made.items.every((x) => x.from === first && !x.keep);
-        const end = await (simple ? termDrop(id, made.items.map((x) => x.path), first, into) : termDropItems(id, made.items, into));
+        const end = await (simple ? attachment.drop(made.items.map((x) => x.path), first, into) : attachment.dropItems(made.items, into));
         if (end?.miss) {
           const retry = made;
           if (!cancelled) fail(end.miss, names,

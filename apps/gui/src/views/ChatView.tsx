@@ -3,7 +3,7 @@ import { awaitChatDraftReceipt, chatDraftOwner, completeChatDraft, discardChatDr
 import {useSessionDraft} from '@/hooks/use-session-draft';
 import {unifiedSession,AcpHeader,SessionAdd} from "@/views/SessionPreferences";
 import {AgentInteraction,type InteractionRequest} from "@/components/AgentInteraction";
-import {chatRespond,chatControl} from "@/api";
+import {chatAttachment} from "@/api";
 import {configOptions,type AgentProtocol} from "@/lib/acp-session";
 import { useReadingSession, type SessionReading } from "@/hooks/use-session-attention";
 import { offerTabAct } from "@/lib/tab-acts";
@@ -12,16 +12,6 @@ import { takeHandOff, askOpenPath, askOpenUrl } from "@/lib/composer-handoff";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
-  chatAnswer,
-  chatLeave,
-  chatOpen,
-  chatPoll,
-  chatReplay,
-  chatSay,
-  chatSetMode,
-  chatSetOption,
-  chatStop,
-  chatWait,
   beginHistoryRequest,
   cancelHistoryRequest,
   fetchHistoryPage,
@@ -607,6 +597,11 @@ export function ChatView({
   // is said (`Waiting`) rather than an empty page.
   const [openWhy, setOpenWhy] = useState<string | null>(null);
   const [openedAt, setOpenedAt] = useState<number | null>(null);
+  const attachedChat = useRef<ReturnType<typeof chatAttachment> | null>(null);
+  const withChat = <T,>(work: (view: ReturnType<typeof chatAttachment>) => Promise<T>): Promise<T> => {
+    const view = attachedChat.current;
+    return view?.id === id ? work(view) : Promise.reject(new Error("chat view is not attached"));
+  };
   const [attempt, setAttempt] = useState(0);
   // **The tab pill's third seat is this conversation's re-attach**
   // (UX-33): the same attempt its 重试 makes.
@@ -642,7 +637,7 @@ export function ChatView({
   const [interactions,setInteractions]=useState<{ask:number;request:InteractionRequest}[]>([]);
   const [notice,setNotice]=useState<{title:string;message?:string;severity?:string}|null>(null);
   const [controlError,setControlError]=useState<string|null>(null);
-  const control=(operation:string,payload:Record<string,unknown>={})=>chatControl(id,crypto.randomUUID(),operation,payload).catch(e=>setControlError(String(e)));
+  const control=(operation:string,payload:Record<string,unknown>={})=>withChat(view => view.control(crypto.randomUUID(),operation,payload)).catch(e=>setControlError(String(e)));
   /** The directory on the conversation's machine its files go to, picked
       above the box (「存到」, `SendInto`); `null` is its receive location.
       Read as each file is added: a file is put there when it is chosen. */
@@ -653,7 +648,10 @@ export function ChatView({
       `shots` carried pictures as base64 inside the prompt, gated on the
       agent's capabilities; every file is now a path on the machine, and
       a picture also rides inline where the agent takes pictures. */
-  const files = usePendingFiles(id, into);
+  const files = usePendingFiles({
+    put: (file, target) => withChat(view => view.put(file, target)),
+    putPaths: (paths, target) => withChat(view => view.putPaths(paths, target)),
+  }, into);
   const [pickOpen, setPickOpen] = useState(false);
   /** A terminal block handed to the next conversation (roadmap 2.3), as
       `[name, text]`: it rides as the prompt's own text, there being no
@@ -847,6 +845,8 @@ export function ChatView({
         });
       };
     }
+    const attachment = chatAttachment(id);
+    attachedChat.current = attachment;
     // A self-scheduling wait rather than an interval, because the wait
     // changes length: an interval would have to be torn down and rebuilt
     // to change pace, and two of them briefly overlapping is two polls
@@ -873,7 +873,7 @@ export function ChatView({
       asking = true;
       let outcome: "live" | "ended" | "failed" = "failed";
       const pushed = inApp && pace.current !== HIDDEN_MS;
-      (pushed ? chatWait(id, cursor, WAIT_MS) : chatPoll(id, cursor))
+      (pushed ? attachment.wait(cursor, WAIT_MS) : attachment.poll(cursor))
         .then((batch) => {
           // Receipts may arrive after this view was switched away. They can
           // settle the original open tab, but never paint or call its old API.
@@ -945,7 +945,7 @@ export function ChatView({
           // lands in `past` regardless of when it arrives.
           if (batch.lost) {
             setPaint(BLANK);
-            chatReplay(id).catch(() => {});
+            attachment.replay().catch(() => {});
           }
           if (batch.frames.length) {
             for(const f of batch.frames){
@@ -1049,7 +1049,7 @@ export function ChatView({
     setGone(false);
     setOpenWhy(null);
     setOpenedAt(Date.now());
-    chatOpen(id)
+    attachment.open()
       .then((fresh) => {
         if (stopped) return;
         setOpenedAt(null);
@@ -1065,7 +1065,7 @@ export function ChatView({
             setInTurn(false);
             setSending(null);
           }
-          chatReplay(id).catch(() => {});
+          attachment.replay().catch(() => {});
         }
         tick();
       })
@@ -1079,7 +1079,10 @@ export function ChatView({
       stopped = true;
       if (timer !== null) window.clearTimeout(timer);
       pollNow.current = () => {};
-      chatLeave(id).catch(() => {});
+      if (attachedChat.current === attachment) attachedChat.current = null;
+      void attachment.dispose().then(result => {
+        if (result.failures) console.warn("Chat attachment cleanup failed", result);
+      });
     };
   }, [binding, id, still, ended, attempt, watch]);
 
@@ -1229,7 +1232,7 @@ export function ChatView({
           name: o.name,
           note: o.description ?? null,
           on: o.currentValue === true,
-          onToggle: () => void chatSetOption(id, o.id, o.currentValue !== true).catch(() => {}),
+          onToggle: () => void withChat(view => view.setOption(o.id, o.currentValue !== true)).catch(() => {}),
         }
       : {
           kind: "values",
@@ -1244,7 +1247,7 @@ export function ChatView({
             note: v.value.description ?? null,
             heading: v.heading,
           })),
-          onPick: (v) => void chatSetOption(id, o.id, v).catch(() => {}),
+          onPick: (v) => void withChat(view => view.setOption(o.id, v)).catch(() => {}),
         },
   );
   /** Who is answering, for the capsule's who seat. */
@@ -1280,14 +1283,14 @@ export function ChatView({
           note: modeNote(m.id, settings.modes?.availableModes ?? []),
         })),
       ]}
-      onPick={(v) => void chatSetMode(id, v).catch(() => {})}
+      onPick={(v) => void withChat(view => view.setMode(v)).catch(() => {})}
     />
   ) : mode !== null && modeSaid(mode) !== null ? (
     <ModeSeat current={mode} word={modeSaid(mode) ?? mode} />
   ) : null;
 
   const issueDraft = (draft: ChatDraft) => {
-    chatSay(draft.session, draft.full, [...draft.images], [...draft.documents], draft.token).catch(() => {
+    withChat(view => view.id === draft.session ? view.say(draft.full, [...draft.images], [...draft.documents], draft.token) : Promise.reject(new Error("draft belongs to another session"))).catch(() => {
       awaitChatDraftReceipt(draft.session, draft.token, draft.owner);
       if (mounted.current && currentSession.current === draft.session && reader.current === draft.reader && lastSay.current?.token === draft.token) setInTurn(false);
     });
@@ -1551,7 +1554,7 @@ export function ChatView({
               options={item.options}
               answer={item.answer}
               canAnswer={!still && !gone}
-              onAnswer={(option) => chatAnswer(id, item.ask, option)}
+              onAnswer={(option) => withChat(view => view.answer(item.ask, option))}
             />
           ) : (
             <div key={item.historyKey ?? i} className="text-caption" style={{ color: "var(--state-errored)" }}>
@@ -1576,7 +1579,7 @@ export function ChatView({
             <Button size="sm" variant="ghost" data-chat-draft-drop onClick={() => discardDraft(draft)} className="min-h-touch pointer-fine:min-h-ctl-md">{gui.chat_discard_draft}</Button>
           </div>
         ))}
-        {interactions.map(({ask,request})=><AgentInteraction key={`${id}:${ask}`} request={request} onAnswer={response=>chatRespond(id,ask,response)}/>)}
+        {interactions.map(({ask,request})=><AgentInteraction key={`${id}:${ask}`} request={request} onAnswer={response=>withChat(view => view.respond(ask,response))}/>)}
         {waiting && (
           <div data-chat-thinking className="flex items-center gap-1.5 text-caption">
             <ToolDot status="in_progress" />
@@ -1854,7 +1857,7 @@ export function ChatView({
                         const stopping = lastSay.current?.token;
                         const stoppingReader = reader.current;
                         setControlError(null);
-                        chatStop(id).catch((error: unknown) => {
+                        withChat(view => view.stop()).catch((error: unknown) => {
                           if (mounted.current && currentSession.current === id && reader.current === stoppingReader && lastSay.current?.token === stopping) {
                             setControlError(String((error as {message?: string})?.message ?? error));
                           }
