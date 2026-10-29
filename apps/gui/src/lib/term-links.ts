@@ -115,6 +115,10 @@ function logical(term: Terminal, y: number): { text: string; at: Cell[]; first: 
       const c = line.getCell(x);
       if (!c) break;
       if (c.getWidth() === 0) continue;
+      // xterm moves a wide character to the next soft-wrapped row and
+      // clears the unused last cell to code 0. A typed space is code 32.
+      const next = x === term.cols - 1 ? b.getLine(row + 1) : undefined;
+      if (c.getCode() === 0 && next?.isWrapped && next.getCell(0)?.getWidth() === 2) continue;
       at[text.length] = { x, y: row };
       text += c.getChars() || " ";
     }
