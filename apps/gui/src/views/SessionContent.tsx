@@ -1,4 +1,4 @@
-import {useDraftCount} from '@/hooks/use-draft-count';
+import {useDraftState} from '@/hooks/use-draft-count';
 /** Desktop session content. The session's terminal stays in its own pane;
  * these are its files and pages, using the same node tab handles throughout. */
 import { useEffect, useLayoutEffect, useRef, useState, Fragment, type ComponentProps } from "react";
@@ -129,8 +129,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
   viewOrder.current=viewOrder.current.filter(key=>byHandle.has(key));
   for(const key of byHandle.keys())if(!viewOrder.current.includes(key))viewOrder.current.push(key);
   const views=viewOrder.current.map(key=>byHandle.get(key)!);
-  const [drafts, setDrafts] = useState<Record<string, Draft | undefined>>({});
-  useDraftCount(Object.values(drafts).filter(Boolean).length);
+  const [drafts, setDrafts] = useDraftState<Record<string, Draft | undefined>>({}, drafts=>Object.values(drafts).filter(Boolean).length);
   const [focused, setFocused] = useState(false);
   const state = session ? navigation.get(session) : null;
   const selected = content.active(session);

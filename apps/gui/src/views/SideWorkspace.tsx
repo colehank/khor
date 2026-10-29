@@ -1,4 +1,4 @@
-import {useDraftCount} from '@/hooks/use-draft-count';
+import {useDraftState} from '@/hooks/use-draft-count';
 /**
  * **The 附栏's 工作区 seat is the workspace's own tree** (UX-39 §5, the owner
  * 2026-10-06 22:00: 「工作区就不能出工作区外了，顶级不可返回目录就是该
@@ -183,8 +183,7 @@ export function SideWorkspace({
       }),
     [machine, here, root],
   );
-  const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map());
-  useDraftCount(drafts.size);
+  const [drafts, setDrafts] = useDraftState<Map<string, Draft>>(() => new Map(), drafts=>drafts.size);
   // The hunt: asked 300 ms after the typing stops, a late answer to an
   // old question thrown away (`WorkspacePane`'s, the same rule).
   const [localHunt, setLocalHunt] = useState("");
