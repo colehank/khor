@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-const files={tree:"src/views/FileTree.tsx",workspace:"src/views/WorkspacePane.tsx",store:"src/views/StorePage.tsx",side:"src/views/SideWorkspace.tsx"};
+const files={tree:"src/views/FileTree.tsx",workspace:"src/views/WorkspacePane.tsx",store:"src/views/StorePage.tsx",side:"src/views/SideWorkspace.tsx",session:"src/views/SessionContent.tsx",picker:"src/views/MobileSessionContent.tsx"};
 const parsed=Object.fromEntries(Object.entries(files).map(([key,path])=>[key,ts.createSourceFile(path,readFileSync(path,"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)]));
 function find(file,predicate){const source=parsed[file],found=[];const visit=node=>{if(predicate(node,source))found.push(node);ts.forEachChild(node,visit);};visit(source);assert.equal(found.length,1,`one real ${file} callback must match`);return {node:found[0],source};}
 function effect(file,needle){const {node,source}=find(file,(node,source)=>ts.isCallExpression(node)&&node.expression.getText(source)==="useEffect"&&node.arguments[0]?.getText(source).includes(needle));return node.arguments[0].getText(source);}
@@ -50,17 +50,36 @@ check("storage fallback reentry reads the retained location without relying on f
  callback(fallbackEffect,{dir:"/receive",hidden:false,covered:false,fileCovered:true,fileParent:null,listed:{dir:"/receive",rows:[]},setAgain:fn=>{reads=fn(reads);},window,document:{hidden:false},UNHEARD_MS:60000})();assert.equal(reads,1);
 });
 check("sidebar visible file has its own exact parent observer and readAt seam",()=>{
- const notify=effect("side","const batch = observation.batch");let readAt=0;const values={fileParent:"/outside",setReadAt:fn=>{readAt=fn(readAt);}};
+ const notify=effect("side","const batch = observation.batch");let readAt=0;const values={visible:true,fileParent:"/outside",setReadAt:fn=>{readAt=fn(readAt);}};
  callback(notify,{...values,observation:{status:"watching",batch:batch({dirs:["/outside"]})}})();assert.equal(readAt,1);
  callback(notify,{...values,observation:{status:"watching",batch:batch({dirs:["/elsewhere"]})}})();assert.equal(readAt,1);
  const {node,source}=find("side",node=>ts.isJsxAttribute(node)&&node.name.getText(parsed.side)==="readAt");assert.equal(callback(`()=>${node.initializer.expression.getText(source)}`,{readAt})(),1);
 });
 check("sidebar file visibility return rechecks without a focus event",()=>{
- const returned=effect("side","const returned = wasHidden.current");let readAt=0;const wasHidden={current:true};
- callback(returned,{wasHidden,hidden:false,fileParent:"/outside",setReadAt:fn=>{readAt=fn(readAt);}})();assert.equal(readAt,1);assert.equal(wasHidden.current,false);
+ const returned=effect("side","const returned = !wasVisible.current");let readAt=0;const wasVisible={current:false};
+ callback(returned,{wasVisible,visible:true,fileParent:"/outside",setReadAt:fn=>{readAt=fn(readAt);}})();assert.equal(readAt,1);assert.equal(wasVisible.current,true);
 });
 check("invisible sidebar tree cannot retain its own lease under a file or commit",()=>{
  const {node,source}=find("side",node=>ts.isJsxAttribute(node)&&node.name.getText(parsed.side)==="watchActive");const expression=`()=>${node.initializer.expression.getText(source)}`;
- assert.equal(callback(expression,{file:null,commit:null})(),true);assert.equal(callback(expression,{file:"/a",commit:null})(),false);assert.equal(callback(expression,{file:null,commit:{id:"hash"}})(),false);
+ assert.equal(callback(expression,{active:true,file:null,commit:null})(),true);assert.equal(callback(expression,{active:true,file:"/a",commit:null})(),false);assert.equal(callback(expression,{active:true,file:null,commit:{id:"hash"}})(),false);assert.equal(callback(expression,{active:false,file:null,commit:null})(),false);
+});
+check("a retained inactive sidebar cannot consume a late directory pulse",()=>{
+ const notify=effect("side","const batch = observation.batch");let reads=0;
+ callback(notify,{visible:false,fileParent:"/outside",setReadAt:()=>reads++,observation:{status:"watching",batch:batch({reset:true})}})();
+ assert.equal(reads,0,"inactive retained sidebar must not request fresh file content");
+});
+check("a retained inactive sidebar owns no fallback timer or focus read",()=>{
+ const fallback=effect("side","const slow = window.setInterval(refresh, 60_000)");let timers=0,listeners=0;
+ callback(fallback,{visible:false,hidden:false,fileParent:"/outside",fileCovered:false,window:{setInterval:()=>++timers,addEventListener:()=>listeners++},document:{hidden:false}})();
+ assert.equal(timers,0,"inactive retained sidebar must not start fallback IO");assert.equal(listeners,0);
+});
+check("retained host visibility and content source reach the actual sidebar observer",()=>{
+ function activeAt(file,tag,values){const {node,source}=find(file,(node,source)=>ts.isJsxSelfClosingElement(node)&&node.tagName.getText(source)===tag);const prop=node.attributes.properties.find(prop=>ts.isJsxAttribute(prop)&&prop.name.getText(source)==="active");assert.ok(prop,`${tag} must receive its retained host activity`);return callback(`()=>${prop.initializer.expression.getText(source)}`,values)();}
+ const {node,source}=find("side",(node,source)=>ts.isCallExpression(node)&&node.expression.getText(source)==="useDirectoryWatch");
+ for(const pickerShow of [false,true])for(const selected of ["workspace","browser"]){
+  const active=activeAt("session","ContentPicker",{pickerShow});
+  const sidebar=activeAt("picker","SideWorkspace",{active,state:{source:selected}});
+  assert.equal(callback(`()=>${node.arguments[2].getText(source)}`,{active:sidebar})(),pickerShow&&selected==="workspace");
+ }
 });
 console.log(`${count} actual directory-watch consumer callback checks passed (no DOM)`);
