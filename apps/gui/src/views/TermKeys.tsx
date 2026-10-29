@@ -53,7 +53,9 @@ import { Switch } from "@/components/settings/Switch";
 import { Dialog, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
-import { afterKey, GROUPS, KEYS, KEY_BY_NAME, pressLatch, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
+import { afterKey, GROUPS, KEYS, keyDefinition, pressLatch, setKeyRow, useKeyRow, type KeyDef, type Mods } from "@/lib/term-keys";
+import { pressKeyAction } from "@/lib/term-key-codec";
+import type { KeyRowEntry } from "@/lib/term-key-model";
 import { keyPanelGone, toggleKeyPanel, useKeyPanel, useKeyPanelKind, type PanelKind } from "@/lib/key-panel";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { useHeldKey } from "@/lib/key-repeat";
@@ -83,6 +85,10 @@ const lockedOf = (k: KeyDef, mods: Mods) => (k.name === "ctrl" || k.name === "al
     `TerminalPane` reads them for whatever xterm hands out, and these
     bytes are already in their modified form. */
 function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void, images: (files: File[]) => void) {
+  if (k.action) {
+    pressKeyAction(t, k.action);
+    return;
+  }
   if (k.name === "ctrl" || k.name === "alt") {
     onMods(pressLatch(mods, k.name, performance.now()));
     return;
@@ -143,7 +149,7 @@ export function TermKeys({
   onMods: (m: Mods) => void;
 }) {
   const row = useKeyRow();
-  const shown = row.filter((s) => s.on).flatMap((s) => KEY_BY_NAME.get(s.name) ?? []);
+  const shown = row.filter((s) => s.on).flatMap((s) => keyDefinition(s) ?? []);
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
     // A repeat after the first key: the latches have let go already.
@@ -445,14 +451,14 @@ function KeyRowList() {
   const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const move = (name: string, to: number) => {
-    const from = row.findIndex((s) => s.name === name);
+    const from = row.findIndex((s) => s.id === name);
     const at = Math.max(0, Math.min(row.length - 1, to));
     if (from < 0 || from === at) return;
-    const next = row.filter((s) => s.name !== name);
+    const next = row.filter((s) => s.id !== name);
     next.splice(at, 0, row[from]);
     setKeyRow(next);
   };
-  const toggle = (name: string) => setKeyRow(row.map((s): RowSeat => (s.name === name ? { ...s, on: !s.on } : s)));
+  const toggle = (name: string) => setKeyRow(row.map((s): KeyRowEntry => (s.id === name ? { ...s, on: !s.on } : s)));
   /** Where a row dragged to `y` lands: after every other row whose middle
       is above the pointer. */
   const slotAt = (name: string, y: number): number => {
@@ -467,17 +473,17 @@ function KeyRowList() {
   return (
     <div ref={box} data-key-row-list className="flex flex-col">
       {row.map((s) => {
-        const k = KEY_BY_NAME.get(s.name);
+        const k = keyDefinition(s);
         if (!k) return null;
         return (
           <div
-            key={s.name}
-            data-key-row-seat={s.name}
-            data-dragging={dragging === s.name || undefined}
-            className={cn("flex min-h-touch items-center gap-row border-b", dragging === s.name && "bg-fill")}
+            key={s.id}
+            data-key-row-seat={s.id}
+            data-dragging={dragging === s.id || undefined}
+            className={cn("flex min-h-touch items-center gap-row border-b", dragging === s.id && "bg-fill")}
           >
             <span className="min-w-0 flex-1 truncate text-body">{k.cap}</span>
-            <Switch on={s.on} label={nameOf(k)} onToggle={() => toggle(s.name)} />
+            <Switch on={s.on} label={nameOf(k)} onToggle={() => toggle(s.id)} />
             <button
               type="button"
               data-key-row-grip
@@ -487,17 +493,17 @@ function KeyRowList() {
               className="grid min-h-touch min-w-touch flex-none cursor-grab touch-none place-items-center rounded-full text-tertiary [&_svg]:size-4"
               onPointerDown={(e) => {
                 e.currentTarget.setPointerCapture(e.pointerId);
-                setDragging(s.name);
+                setDragging(s.id);
               }}
               onPointerMove={(e) => {
-                if (dragging === s.name) move(s.name, slotAt(s.name, e.clientY));
+                if (dragging === s.id) move(s.id, slotAt(s.id, e.clientY));
               }}
               onPointerUp={() => setDragging(null)}
               onPointerCancel={() => setDragging(null)}
               onKeyDown={(e: KeyboardEvent<HTMLButtonElement>) => {
                 if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
                 e.preventDefault();
-                move(s.name, row.findIndex((r) => r.name === s.name) + (e.key === "ArrowUp" ? -1 : 1));
+                move(s.id, row.findIndex((r) => r.id === s.id) + (e.key === "ArrowUp" ? -1 : 1));
               }}
             >
               <IconGrip />

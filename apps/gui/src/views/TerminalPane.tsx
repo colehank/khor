@@ -119,6 +119,7 @@ import { useKeyRowOpen } from "@/lib/key-row-open";
 import { iipSizes } from "@/lib/term-iip";
 import { promptMarks } from "@/lib/term-prompt-sp";
 import { kittyFlags, kittyKey, kittyNamed, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
+import { isEncodedKeyInput } from "@/lib/term-key-codec";
 import { afterKey, typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
@@ -2412,7 +2413,8 @@ export function TerminalPane({
       attachment.resize(term.cols, term.rows).catch(() => {});
     };
     const data = term.onData((d) => {
-      const reply = isReply(d);
+      const preencoded = isEncodedKeyInput(term);
+      const reply = !preencoded && isReply(d);
       if (replaying > 0 && (reply || isFocusReport(d))) return;
       // The field let go for a touch or a selection (item 54) is not the
       // person leaving the terminal: the program is not told.
@@ -2423,7 +2425,7 @@ export function TerminalPane({
       // An answer to a live question is not a key: it neither takes a
       // latch nor waits for one.
       if (!reply && !MOUSE_REPORT.test(d)) blink.typed();
-      if ((m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
+      if (!preencoded && (m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
         out = d.length === 1 ? (kittyTyped(term, d, m.ctrl, m.alt) ?? typed(d, m)) : d;
         latch(afterKey(m));
       }

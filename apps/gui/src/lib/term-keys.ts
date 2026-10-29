@@ -16,15 +16,18 @@
 //
 // **The row is this device's** (`localStorage`, like the terminal's font
 // and size in `lib/term-font` and `lib/type-size`): the keys shown and their
-// order. ⚠️ In this branch only: the real store, after sign-off, is a file
-// under khor's home served to the app and the web face alike. A face that
-// refuses storage keeps the default row for the session.
+// order. A face that refuses storage keeps changes for this window.
 import { useEffect, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 
 import { gui } from "@/gen/catalog";
 import { heardFrom } from "@/lib/other-windows";
 import { kittyNamed, kittyTyped, shiftEnter } from "@/lib/term-kitty";
+import { actionCaption, cursorKey, tildeKey as tilde, ss3Key as ss3, typed } from "@/lib/term-key-codec";
+export { cursorKey, typed } from "@/lib/term-key-codec";
+import { decodeKeyRow, serializeKeyRow, type CustomKeyAction, type KeyRowEntry, type KeyRowProblem } from "@/lib/term-key-model";
+
+export { ctrlOf } from "@/lib/term-kitty";
 
 /** The latched modifiers the next key goes out with, and which of them
     are locked (item 69): a locked one stays after the key. */
@@ -62,52 +65,6 @@ export function afterKey(m: Mods): Mods {
   return { ctrl: !!m.lock?.ctrl, alt: !!m.lock?.alt, lock: m.lock };
 }
 
-/** The control form of one typed character, or `null` where Ctrl does
-    not change it. The table every terminal agrees on: `@`–`_` and the
-    letters fold to 0x00–0x1f, `?` is DEL, space is NUL, `/` is 0x1f (the
-    key `_` shares on a US keyboard, which is what xterm sends for ⌃/). */
-export function ctrlOf(ch: string): string | null {
-  if (ch.length !== 1) return null;
-  if (ch === "?") return "\x7f";
-  if (ch === " ") return "\x00";
-  if (ch === "/") return "\x1f";
-  const up = ch.toUpperCase().charCodeAt(0);
-  if (up >= 0x40 && up <= 0x5f) return String.fromCharCode(up & 0x1f);
-  return null;
-}
-
-/** A typed character under the latches: its control form for Ctrl, an
-    `ESC` before it for Alt. */
-export function typed(ch: string, mods: Mods): string {
-  const c = mods.ctrl ? (ctrlOf(ch) ?? ch) : ch;
-  return mods.alt ? `\x1b${c}` : c;
-}
-
-/** xterm's modifier parameter: 1 + Shift 1 + Alt 2 + Ctrl 4. */
-function modParam(mods: Mods): number {
-  return 1 + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0);
-}
-
-/** A key whose plain form is `ESC [ <letter>` or, in application mode,
-    `ESC O <letter>` — the arrows, Home and End. */
-export function cursorKey(term: Terminal, letter: string, mods: Mods): string {
-  const m = modParam(mods);
-  if (m > 1) return `\x1b[1;${m}${letter}`;
-  return term.modes.applicationCursorKeysMode ? `\x1bO${letter}` : `\x1b[${letter}`;
-}
-
-/** A key spelled `ESC [ <n> ~` — PgUp, Ins, F5 and up. */
-function tilde(n: number, mods: Mods): string {
-  const m = modParam(mods);
-  return m > 1 ? `\x1b[${n};${m}~` : `\x1b[${n}~`;
-}
-
-/** F1–F4: `ESC O P`…`S`, and the CSI form with a modifier. */
-function ss3(letter: string, mods: Mods): string {
-  const m = modParam(mods);
-  return m > 1 ? `\x1b[1;${m}${letter}` : `\x1bO${letter}`;
-}
-
 export type KeyGroup = "move" | "mod" | "symbol" | "function";
 
 export type KeyDef = {
@@ -125,6 +82,7 @@ export type KeyDef = {
       latches, paste or the function keys: a one-shot sent twice is a
       different act. */
   repeats?: true;
+  action?: CustomKeyAction;
 };
 
 const SYMBOLS = ["/", "-", "|", ":", "~", "`", "^", "&", "*", "$", "#", "@", "!", "%", "(", ")", "[", "]", "{", "}", "<", ">", "=", "+", "_", ";", "'", '"', "\\", "?"];
@@ -203,88 +161,56 @@ export const GROUPS: { group: KeyGroup; label: string }[] = [
   { group: "function", label: gui.keys_group_function },
 ];
 
-/** One place in the row: a key and whether it is drawn. */
-export type RowSeat = { name: string; on: boolean };
-
-/** The row as it was before it could be edited (2026-10-02): the escape
-    and the modifier, what moves through a form, paste, then the
-    characters a shell lives on. Every other key follows, off. */
-const DEFAULT_ON = ["esc", "ctrl", "tab", "backtab", "paste", "/", "-", "|", ":"];
-
-/** **Keys that came after a row was stored, drawn on** (UX-41): a key
-    appended off is a key nobody finds. Each goes in on, before the key
-    named (inside the row's first screenful), or last. Empty since 📎
-    left the row for its own seat. */
-const LATER_ON: Record<string, string> = {};
-
-export function defaultRow(): RowSeat[] {
-  const on = DEFAULT_ON.map((name) => ({ name, on: true }));
-  const rest = KEYS.filter((k) => !DEFAULT_ON.includes(k.name)).map((k) => ({ name: k.name, on: false }));
-  return [...on, ...rest];
-}
-
+const DEFAULT_ON = new Set(["esc", "ctrl", "tab", "backtab", "paste", "/", "-", "|", ":"]);
 const STORE = "khor.term-key-row";
 const CHANGED = "khor:term-key-row";
+const names = KEYS.map(key => key.name);
 
-/** This session's row once it has been set, for a face whose storage
-    refuses it. */
-let session: RowSeat[] | null = null;
-
-/** The stored row, cleaned: unknown names dropped, each key once, and a
-    key the store does not name yet (a later version's) appended off. */
-export function keyRow(): RowSeat[] {
-  if (session) return session;
-  let raw: unknown = null;
-  try {
-    raw = JSON.parse(window.localStorage.getItem(STORE) ?? "null");
-  } catch {
-    raw = null;
-  }
-  if (!Array.isArray(raw)) return defaultRow();
-  const seen = new Set<string>();
-  const row: RowSeat[] = [];
-  for (const s of raw) {
-    const name = (s as RowSeat)?.name;
-    if (typeof name !== "string" || !KEY_BY_NAME.has(name) || seen.has(name)) continue;
-    seen.add(name);
-    row.push({ name, on: (s as RowSeat).on === true });
-  }
-  for (const k of KEYS) {
-    if (seen.has(k.name)) continue;
-    const before = LATER_ON[k.name];
-    if (before === undefined) {
-      row.push({ name: k.name, on: false });
-      continue;
-    }
-    const at = row.findIndex((s) => s.name === before);
-    row.splice(at < 0 ? row.length : at, 0, { name: k.name, on: true });
-  }
-  return row;
+export function defaultRow(): KeyRowEntry[] {
+  const first = [...DEFAULT_ON].filter(name => KEY_BY_NAME.has(name));
+  const rest = names.filter(name => !DEFAULT_ON.has(name));
+  return [...first, ...rest].map(name => ({ id: name, kind: "builtin", name, on: DEFAULT_ON.has(name) }));
+}
+export function keyDefinition(entry: KeyRowEntry): KeyDef | undefined {
+  if (entry.kind === "builtin") return KEY_BY_NAME.get(entry.name);
+  return { name: entry.id, cap: entry.label || actionCaption(entry), group: null, action: entry };
 }
 
-export function setKeyRow(row: RowSeat[]) {
-  session = row;
-  try {
-    window.localStorage.setItem(STORE, JSON.stringify(row));
-  } catch {
-    // Kept for this session only.
-  }
-  window.dispatchEvent(new CustomEvent(CHANGED, { detail: row }));
+export type KeyRowState = { entries: KeyRowEntry[]; problem: KeyRowProblem | null; temporary: boolean };
+let current: KeyRowState | null = null;
+function rowState(): KeyRowState {
+  if (current) return current;
+  let raw: string | null;
+  try { raw = window.localStorage.getItem(STORE); }
+  catch { return current = { entries: defaultRow(), problem: null, temporary: true }; }
+  if (raw === null) return current = { entries: defaultRow(), problem: null, temporary: false };
+  const decoded = decodeKeyRow(raw, names);
+  return current = decoded.ok
+    ? { entries: decoded.entries, problem: null, temporary: false }
+    : { entries: defaultRow(), problem: decoded.problem, temporary: false };
 }
-
-// Set in another window of this app (the Mac's settings window,
-// `lib/other-windows`): heard here as if set here.
+export function keyRow(): KeyRowEntry[] { return rowState().entries; }
+export function setKeyRow(entries: KeyRowEntry[]): void {
+  const raw = serializeKeyRow(entries, names);
+  const normalized = decodeKeyRow(raw, names);
+  if (!normalized.ok) throw new Error("invalid key row");
+  let temporary = false;
+  try { window.localStorage.setItem(STORE, raw); }
+  catch { temporary = true; }
+  current = { entries: normalized.entries, problem: null, temporary };
+  window.dispatchEvent(new CustomEvent(CHANGED));
+}
 heardFrom(STORE, () => {
-  session = null;
-  window.dispatchEvent(new CustomEvent(CHANGED, { detail: keyRow() }));
+  current = null;
+  window.dispatchEvent(new CustomEvent(CHANGED));
 });
-
-export function useKeyRow(): RowSeat[] {
-  const [row, setRow] = useState(keyRow);
+export function useKeyRowState(): KeyRowState {
+  const [state, setState] = useState(rowState);
   useEffect(() => {
-    const changed = (e: Event) => setRow((e as CustomEvent<RowSeat[]>).detail);
+    const changed = () => setState(rowState());
     window.addEventListener(CHANGED, changed);
     return () => window.removeEventListener(CHANGED, changed);
   }, []);
-  return row;
+  return state;
 }
+export function useKeyRow(): KeyRowEntry[] { return useKeyRowState().entries; }
