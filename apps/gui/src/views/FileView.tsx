@@ -784,7 +784,8 @@ function FileBody({
     setOops(null);
     refresh.current.invalidate();
     acceptBuffer(was => ({...was, edit: null, clashes: null}));
-    onDraft?.(null);
+    if (onDraft === undefined) reportDraftCount(0);
+    else onDraft(null);
     setReread((n) => n + 1);
   };
 

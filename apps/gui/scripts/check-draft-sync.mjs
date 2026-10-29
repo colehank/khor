@@ -38,8 +38,8 @@ function visitFile(node) {
 }
 visitFile(fileSource);
 assert(fileCount&&publish&&onText,'FileBody reporting and editor callback located');
-const acceptedDeclarations=['buffer','accepted','bufferLive','publishAccepted','acceptBuffer','setEdit'].map(name=>{assert(fileDeclarations[name],name);return fileDeclarations[name];}).join('\n');
-adapters.push(`export function StandaloneFile(mode) { const draft={text:'A',was:'A',by:'line'}; const refresh={current:{invalidate(){}}}; const onDraft=mode==='delegated'?()=>{}:undefined; ${acceptedDeclarations} const {file,edit}=buffer; const dirty=file!==null&&edit!==null&&edit.text!==file.text; ${fileCount} ${publish} publishAccepted.current=()=>publishDraft(accepted.current.edit); return {onText:${onText}, ready:()=>acceptBuffer(was=>({...was,file:{text:'A'}}))}; }`);
+const acceptedDeclarations=['buffer','accepted','bufferLive','publishAccepted','acceptBuffer','setEdit','theirs'].map(name=>{assert(fileDeclarations[name],name);return fileDeclarations[name];}).join('\n');
+adapters.push(`export function StandaloneFile(mode) { const draft={text:'A',was:'A',by:'line'}; const refresh={current:{invalidate(){}}}; const overwriteEpoch={current:0}; const machine='fixture',path='/note'; const setWorking=()=>{},forget=()=>{},setOops=()=>{},setReread=()=>{}; const onDraft=mode==='delegated'?()=>{}:undefined; ${acceptedDeclarations} const {file,edit}=buffer; const dirty=file!==null&&edit!==null&&edit.text!==file.text; ${fileCount} ${publish} publishAccepted.current=()=>publishDraft(accepted.current.edit); return {onText:${onText}, discard:theirs, ready:()=>acceptBuffer(was=>({...was,file:{text:'A'}}))}; }`);
 const bundle = await build({stdin:{contents:`import * as hooks from './src/hooks/use-draft-count'; import {useState,useRef,useCallback} from 'react'; const {useDraftCount,useDraftState}=hooks; ${adapters.join('\n')} export {draftCount} from './src/lib/drafts';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false,plugins:[{name:'aliases',setup(b){b.onResolve({filter:/^@\/lib\/drafts$/},()=>({path:process.cwd()+'/src/lib/drafts.ts'}));b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const useState=(...a)=>globalThis.draftFixture.state(...a); export const useRef=(...a)=>globalThis.draftFixture.ref(...a); export const useCallback=(...a)=>globalThis.draftFixture.callback(...a); export const useLayoutEffect=(...a)=>globalThis.draftFixture.effect(...a);`}));}}]});
 const api = await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 function mount(name) {
@@ -112,6 +112,9 @@ test('standalone FileBody protects edit and clears undo before React commit',mak
 });
 test('delegated FileBody never adds a second count',make=>{
   const owner=make('StandaloneFile');owner.render('delegated').onText('typed');assert.equal(api.draftCount(),0);
+});
+test('standalone discard releases protection before React commits',make=>{
+  const owner=make('StandaloneFile'),editor=owner.render();editor.onText('typed');assert.equal(api.draftCount(),1);editor.discard();assert.equal(api.draftCount(),0);
 });
 console.log(JSON.stringify({passed:results.filter(r=>r.pass).length,total:results.length,results},null,2));
 assert(results.every(r=>r.pass),'synchronous production-owner draft protection');
