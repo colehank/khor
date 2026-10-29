@@ -1032,6 +1032,45 @@ pub fn chat_replay(id: &str) -> Result<(), String> {
     submit_control(id, Control::Replay)?.wait()
 }
 
+#[derive(Serialize, TS)]
+#[ts(export)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SessionContent {
+    Available { following: bool },
+    Unavailable { reason: ContentUnavailable },
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentUnavailable {
+    NoSource,
+    Unreadable,
+    RemoteNotConnected,
+    AmbiguousSource,
+}
+
+pub fn session_content(
+    root: &Path,
+    id: &str,
+    machine: Option<&str>,
+) -> Result<SessionContent, String> {
+    use khor_node::session_content::{Availability, Unavailable};
+    Ok(
+        match Node::open(root.to_path_buf())?.session_content(&SessionId(id.to_owned()), machine)? {
+            Availability::Available { following } => SessionContent::Available { following },
+            Availability::Unavailable(reason) => SessionContent::Unavailable {
+                reason: match reason {
+                    Unavailable::NoSource => ContentUnavailable::NoSource,
+                    Unavailable::Unreadable => ContentUnavailable::Unreadable,
+                    Unavailable::RemoteNotConnected => ContentUnavailable::RemoteNotConnected,
+                Unavailable::AmbiguousSource => ContentUnavailable::AmbiguousSource,
+                },
+            },
+        },
+    )
+}
+
 /// One bounded external-history response. Record references explicitly retain
 /// content that cannot safely be expanded into an inline response.
 #[derive(Serialize, TS)]

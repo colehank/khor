@@ -861,6 +861,16 @@ fn chat_leave(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn session_content(
+    id: String,
+    machine: Option<String>,
+) -> Result<khor_gui_core::chat::SessionContent, String> {
+    off_main(move || {
+        khor_gui_core::chat::session_content(&Node::root_from_env(), &id, machine.as_deref())
+    })
+    .await
+}
+#[tauri::command]
 fn history_begin() -> Result<String, String> {
     khor_gui_core::chat::history_begin()
 }
@@ -5269,6 +5279,7 @@ pub fn run() {
             page_icons,
             open_link,
             chat_leave,
+            session_content,
             history_begin,
             history_cancel,
             history_page,

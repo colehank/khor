@@ -2709,6 +2709,11 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+content_ambiguous_source = "有多个会话记录匹配此身份，无法确定内容来源"
+content_loading = "正在读取会话内容来源"
+content_no_source = "没有可读取的会话记录"
+content_unreadable = "会话记录暂时无法读取"
+content_remote_not_connected = "尚未连接到这台机器的会话内容来源"
 history_older = "加载更早内容"
 history_newer = "加载后续内容"
 history_record = "读取原始记录"

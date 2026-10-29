@@ -101,11 +101,11 @@ test('dispose waits for abort cancellation with bounded failure summary', async 
   assert.equal(result.failures, 1);
   assert.equal(result.lastError.length, 512);
 });
-function fixture(visible = true) {
+function fixture(visible = true, watch = true) {
   let canFollow = visible, callback = null;
   const calls = [], changes = [], responses = [];
   const source = historySource('s', { begin: async () => `lease:${calls.length}`, cancel: async (key) => calls.push(['cancel', key]), page: (id, key, cursor, newer) => { calls.push(['page', cursor, newer]); const response = deferred(); responses.push(response); return response.promise; } });
-  const reader = historyReader(source, state => changes.push(state), () => canFollow, { schedule: run => { callback = run; return 1; }, cancel: () => { callback = null; } });
+  const reader = historyReader(source, state => changes.push(state), () => canFollow, { schedule: run => { callback = run; return 1; }, cancel: () => { callback = null; } }, watch);
   return { reader, calls, changes, responses, visible: value => { canFollow = value; }, tick: () => { const run = callback; callback = null; run?.(); } };
 }
 test('hidden start does no IO; visible reader keeps one page active', async () => {
@@ -123,6 +123,18 @@ test('hidden start does no IO; visible reader keeps one page active', async () =
   assert.equal(f.responses.length, 1);
   f.responses[0].resolve(page('tail'));
   await flush();
+  await f.reader.dispose();
+});
+test('snapshot reader loads its tail but never starts incremental polling', async () => {
+  const f = fixture(true, false);
+  void f.reader.start();
+  await flush();
+  f.responses[0].resolve(page('snapshot'));
+  await flush();
+  f.tick();
+  f.reader.resume();
+  await flush();
+  assert.equal(f.responses.length, 1);
   await f.reader.dispose();
 });
 test('away pauses follow; latest rejects a late prior response', async () => {

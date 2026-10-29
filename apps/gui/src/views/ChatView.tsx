@@ -6,58 +6,6 @@ import {AgentInteraction,type InteractionRequest} from "@/components/AgentIntera
 import {chatRespond,chatControl} from "@/api";
 import {configOptions,type AgentProtocol} from "@/lib/acp-session";
 import { useReadingSession, type SessionReading } from "@/hooks/use-session-attention";
-// The conversation face of a GUI session: history above, the live
-// stream below, one input. The frames come through the chat registry
-// (`khor_gui_core::chat`) by polling — the cursor means nothing is lost
-// between polls, so the cadence only shapes latency, not truth.
-//
-// What gets painted is this face's judgment (the host relays, it does
-// not curate — `gui_host` module head): message and thought chunks
-// merge into running text, tool calls take a line each, everything
-// else in the protocol is left unpainted this batch. Two deliberate
-// judgments to know about:
-//
-// - **The user's own words are painted first-hand.** Saying happens
-//   here, so the bubble goes up when the op goes out; the protocol's
-//   *live* echo of user text is skipped (painting both would double
-//   every message), while *replayed* user text is painted — in history
-//   this face said nothing, the record is all there is. The cost: a
-//   line said from another attached face shows up only via replay.
-// - **Tool lines carry status now, and the note they replace was right
-//   when it was written.** It said: `tool_call_update` is not painted,
-//   so a line shows a title and no status, because "no status is honest
-//   where a stale *running* would be a lie shaped like a fact." The
-//   premise was that nothing ever sent a status — khor's own claude
-//   垫片 built every `ToolCall` with the default and never followed it
-//   up, so a painted status could only have been invented here. The
-//   垫片 now reports both ends (`cagent`: `InProgress` at `tool_use`,
-//   `Completed`/`Failed` at the `tool_result` riding a user line), so
-//   the status is a fact off the wire and the old note's own reasoning
-//   is what says to paint it.
-//   **`pending` is still never seen from this agent** and is drawn like
-//   `in_progress` if it ever arrives: a third agent may use it, and the
-//   two readings differ by "has not started" versus "is running",
-//   which is not a difference a reader of this line can act on.
-// - **Both sides are markdown now, and the second half of this note is
-//   a tombstone.** It read: the agent's text is markdown and the user's
-//   is verbatim, because「they typed those characters, and an asterisk
-//   they meant as an asterisk must not come back as emphasis」.
-//
-//   That reasoning is still true and it is still the cost. It was
-//   overruled deliberately, by the person reading this app, after two
-//   things showed up together: a user line is where a **message from
-//   another agent session** arrives (see `utterances_of` — `user` is
-//   the CLI's word for「went in through the prompt」, not for「a person
-//   wrote this」), and the people writing into this box write markdown.
-//   A wall of raw source on one side of a conversation and rendered
-//   text on the other reads as a bug, and it was one half of the time.
-//
-//   **What was traded away, said plainly:** a literal asterisk, or
-//   underscore, or leading `#`, typed as itself, now comes back as
-//   emphasis or a heading. Nothing warns about it. If that turns out to
-//   cost more than the walls of source did, the way back is this one
-//   element — the fold and the frames are unchanged, which is why the
-//   change is reversible and this note can be short.
 import { offerTabAct } from "@/lib/tab-acts";
 import { failedNotice, offerNotice, rejoinNotice, type PillNotice } from "@/lib/pill-notices";
 import { takeHandOff, askOpenPath, askOpenUrl } from "@/lib/composer-handoff";
@@ -163,26 +111,7 @@ type Item = (
   | { who: "sys"; text: string }
   | { who: "seal" }) & { historyKey?: string };
 
-/**
- * The painting, kept as items rather than as frames.
- *
- * **Nothing here is recomputed from the whole conversation.** Each poll
- * folds only the frames it carried into what is already painted, which
- * is what lets the cadence be fast: refolding thousands of frames is
- * affordable eight times a minute and not twenty times a second.
- *
- * The two halves are not a tidiness: history is a *state* and the live
- * stream is a *stream*. A replay arriving twice (a reconnect, a second
- * asker on this attachment) must replace the past, never stack it —
- * so the past is rebuilt whole from `arriving` when its end marker
- * lands, and `live` is never touched by that. One still arriving keeps
- * the previous picture until then.
- *
- * They are also two arrays rather than one because text merges only
- * within an array: the old fold pushed a `seal` between them to stop a
- * replayed line and a live one running together, and two arrays say
- * the same thing without an item that exists to be filtered out.
- */
+/** Hosted replay commits atomically; an observed past is a bounded page projection. */
 type Painting = {
   past: Item[];
   arriving: ChatFrame[];
@@ -638,6 +567,7 @@ function absorb(paint: Painting, frames: ChatFrame[]): Painting {
 export function ChatView({
   id,
   still: recorded = false,
+  watch = true,
   ended = false,
   category = null,
   machine = null,
@@ -647,6 +577,7 @@ export function ChatView({
   id: string;
   onReading?: SessionReading;
   still?: boolean;
+  watch?: boolean;
   /** **The conversation is over: its host is gone** (UX-4, decided; the
       row's 失败). Not opened — there is nobody to attach to — and read
       off the vendor's record where there is one (claude), as a
@@ -662,9 +593,7 @@ export function ChatView({
       name the composer's who seat wears. */
   category?: string | null;
 }) {
-  /** Read from a record rather than attached: a discovered session, or an
-      ended claude conversation, whose transcript outlives its host. */
-  const still = recorded || (ended && category === "claude");
+  const still = recorded;
   const [paint, setPaint] = useState<Painting>(BLANK);
   const [history, setHistory] = useState<HistoryReaderState | null>(null);
   const historyView = useRef<ReturnType<typeof historyReader> | null>(null);
@@ -896,7 +825,7 @@ export function ChatView({
         } else if (!state.busy) historyAnchor.current = null;
       }, () => !document.hidden && (scroller.current?.clientHeight ?? 0) > 0 && following.current, {
         schedule: (run, delay) => window.setTimeout(run, delay), cancel: timer => window.clearTimeout(timer),
-      });
+      }, watch);
       historyView.current = view;
       const visibility = () => {
         if (document.hidden || !scroller.current?.clientHeight) view.pause();
@@ -1149,7 +1078,7 @@ export function ChatView({
       pollNow.current = () => {};
       chatLeave(id).catch(() => {});
     };
-  }, [id, still, ended, attempt]);
+  }, [id, still, ended, attempt, watch]);
 
   useLayoutEffect(() => {
     const anchor = historyAnchor.current;

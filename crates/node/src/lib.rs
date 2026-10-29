@@ -83,6 +83,7 @@ pub(crate) mod roads;
 pub mod satellite;
 pub mod secret;
 pub mod serves;
+pub mod session_content;
 pub mod shell_start;
 mod store_owner;
 pub mod subscriptions;
@@ -5451,13 +5452,18 @@ impl Node {
         if cancelled.load(std::sync::atomic::Ordering::Acquire) {
             return Err("history request cancelled".to_owned());
         }
-        let (mut file, parse) = self.external_transcript(id)?;
+        let (mut file, parse, source) = self.external_transcript(id)?;
         let cancelled = || cancelled.load(std::sync::atomic::Ordering::Acquire);
+        if cursor.is_some_and(|cursor| !cursor.is_for_source(&source)) {
+            let mut page = adaptor::transcript_page::read_page(&mut file, &source, None, parse, &cancelled)?;
+            page.reset = true;
+            return Ok(page);
+        }
         if newer {
             let cursor = cursor.ok_or_else(|| "newer history requires a cursor".to_owned())?;
-            adaptor::transcript_page::read_next(&mut file, &id.0, cursor, parse, &cancelled)
+            adaptor::transcript_page::read_next(&mut file, &source, cursor, parse, &cancelled)
         } else {
-            adaptor::transcript_page::read_page(&mut file, &id.0, cursor, parse, &cancelled)
+            adaptor::transcript_page::read_page(&mut file, &source, cursor, parse, &cancelled)
         }
     }
 
@@ -5471,39 +5477,96 @@ impl Node {
         if cancelled.load(std::sync::atomic::Ordering::Acquire) {
             return Err("history request cancelled".to_owned());
         }
-        let (mut file, _) = self.external_transcript(id)?;
-        adaptor::transcript_page::read_record_chunk(&mut file, &id.0, cursor, from, &|| {
+        let (mut file, _, source) = self.external_transcript(id)?;
+        adaptor::transcript_page::read_record_chunk(&mut file, &source, cursor, from, &|| {
             cancelled.load(std::sync::atomic::Ordering::Acquire)
         })
+    }
+
+    /// Opening observation may register its source in Khor metadata; it never starts an agent.
+    pub fn session_content(
+        &self,
+        id: &SessionId,
+        machine: Option<&str>,
+    ) -> Result<session_content::Availability, String> {
+        use session_content::{Availability, ObservationBinding, Unavailable};
+        if let Some(machine) = machine {
+            let (_, home) = self.resolve_machine(machine)?;
+            if home.hex() != self.device_str() {
+                return Ok(Availability::Unavailable(Unavailable::RemoteNotConnected));
+            }
+        }
+        let source = match self.selected_content(id, true) {
+            Ok(Some(source)) => source,
+            Ok(None) => return Ok(Availability::Unavailable(Unavailable::NoSource)),
+            Err(reason) => return Ok(Availability::Unavailable(reason)),
+        };
+        let availability = source.availability();
+        if matches!(availability, Availability::Available { .. }) {
+            ObservationBinding::save(&self.root, self.device_str(), id, &source)?;
+        }
+        Ok(availability)
+    }
+
+    fn selected_content(
+        &self,
+        id: &SessionId,
+        register: bool,
+    ) -> Result<Option<session_content::NativeTranscript>, session_content::Unavailable> {
+        use session_content::{NativeTranscript, ObservationBinding, Provider, Unavailable};
+        let Some(leaf) = id.0.strip_prefix("tui/") else {
+            return Ok(None);
+        };
+        let directory = self.live.dir_of(id);
+        let registered = session_content::registered(id, directory.as_deref())
+            .map_err(|_| Unavailable::Unreadable)?;
+        let binding = ObservationBinding::read(&self.root, self.device_str(), id)
+            .map_err(|_| Unavailable::Unreadable)?;
+        if let Some((provider, leaf)) = registered {
+            let Some(provider) = provider else {
+                return Ok(None);
+            };
+            return match binding.filter(|binding| binding.matches(provider, &leaf)) {
+                Some(binding) => binding.resolve(&self.root),
+                None => NativeTranscript::resolve(&self.root, provider, &leaf, None),
+            };
+        }
+        if let Some(binding) = binding {
+            return binding.resolve(&self.root);
+        }
+        if !register {
+            return Ok(None);
+        }
+        let mut provider = None;
+        for row in self.every_session().map_err(|_| Unavailable::Unreadable)? {
+            if row.source.is_some() || row.session.id != *id {
+                continue;
+            }
+            let Some(found) = Provider::of(row.session.category.as_deref()) else {
+                return Ok(None);
+            };
+            if provider.is_some_and(|previous| previous != found) {
+                return Err(Unavailable::AmbiguousSource);
+            }
+            provider = Some(found);
+        }
+        match provider {
+            Some(provider) => NativeTranscript::resolve(&self.root, provider, leaf, None),
+            None => Ok(None),
+        }
     }
 
     fn external_transcript(
         &self,
         id: &SessionId,
-    ) -> Result<(std::fs::File, fn(&str) -> Vec<adaptor::claude::Utterance>), String> {
-        let leaf =
-            id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI))
-                .ok_or_else(|| "session has no external transcript source".to_owned())?;
-        let leaf = self
-            .live
-            .vendor_leaf_of(id)
-            .unwrap_or_else(|| leaf.to_owned());
-        let claude = adaptor::claude::Claude::at(adaptor::claude_home(&self.root));
-        let (path, parse): (_, fn(&str) -> Vec<adaptor::claude::Utterance>) =
-            if let Some((path, _)) = claude.transcript_path(&leaf) {
-                (path, adaptor::claude::utterances_of)
-            } else {
-                let codex = adaptor::codex::Codex::at(adaptor::codex_home(&self.root));
-                let full = codex
-                    .full_session_id(&leaf)
-                    .ok_or_else(|| "no transcript source".to_owned())?;
-                let path = codex
-                    .rollout_path(&full)
-                    .ok_or_else(|| "no transcript source".to_owned())?;
-                (path, adaptor::codex::utterances_of)
-            };
-        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-        Ok((file, parse))
+    ) -> Result<(std::fs::File, session_content::Parser, String), String> {
+        let source = self
+            .selected_content(id, false)
+            .map_err(|reason| format!("content source unavailable: {reason:?}"))?
+            .ok_or_else(|| "no registered transcript source".to_owned())?;
+        let identity = source.source_id(self.device_str(), id);
+        let (file, parser) = source.open().map_err(|error| error.to_string())?;
+        Ok((file, parser, identity))
     }
 
     /// A discovered conversation, followed: what its transcript has said

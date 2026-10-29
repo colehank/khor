@@ -15,7 +15,7 @@ type Clock = {
 };
 /** A reader has one page operation at a time. Following pauses while reading
  * away from the tail; explicit navigation never races an automatic page merge. */
-export function historyReader(source: Source, changed: (state: HistoryReaderState) => void, canFollow: () => boolean, clock: Clock) {
+export function historyReader(source: Source, changed: (state: HistoryReaderState) => void, canFollow: () => boolean, clock: Clock, watch = true) {
   let state: HistoryReaderState = { window: EMPTY_HISTORY_WINDOW, loaded: false, busy: false, error: null, reset: false };
   let closed = false;
   let pending: AbortController | null = null;
@@ -28,10 +28,10 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
   const schedule = () => {
     if (timer !== null)
       clock.cancel(timer);
-    if (!closed)
+    if (!closed && (!state.loaded || watch))
       timer = clock.schedule(() => {
         timer = null;
-        if (!pending && canFollow() && (!state.loaded || state.window.latest || catchingUp))
+        if (!pending && canFollow() && (!state.loaded || (watch && (state.window.latest || catchingUp))))
           void load(state.loaded ? 'newer' : 'tail');
         else
           schedule();
@@ -92,7 +92,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
       schedule();
     },
     resume() {
-      if (!pending && canFollow() && (!state.loaded || state.window.latest || catchingUp))
+      if (!pending && canFollow() && (!state.loaded || (watch && (state.window.latest || catchingUp))))
         void load(state.loaded ? 'newer' : 'tail');
     },
     async dispose() {

@@ -19,6 +19,7 @@ macro_rules! roots {
         $visit!(khor_gui_core::SeenMessage);
         $visit!(khor_gui_core::launch::LaunchPreset);
         $visit!(khor_gui_core::SessionRow);
+        $visit!(khor_gui_core::chat::SessionContent);
         $visit!(khor_gui_core::term::EndedPage);
         $visit!(khor_gui_core::DeviceRow);
         $visit!(khor_gui_core::import::CandidateRow);

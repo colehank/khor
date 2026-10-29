@@ -1,3 +1,4 @@
+import type { SessionContent } from "./gen/bindings/SessionContent";
 import type { HistoryRecordChunk } from "./gen/bindings/HistoryRecordChunk";
 // The one transport seam. Three ways in, one set of commands
 // (`khor_gui_core::api`): the app talks tauri IPC, browser verification
@@ -1406,6 +1407,8 @@ export const chatAnswer = (id: string, ask: number, option: string | null) =>
   call<null>("chat_answer", { id, ask, option });
 export const chatReplay = (id: string) => call<null>("chat_replay", { id });
 export const chatLeave = (id: string) => call<null>("chat_leave", { id });
+export const fetchSessionContent = (id: string, machine: string | null = null) =>
+  call<SessionContent>("session_content", { id, machine });
 export const beginHistoryRequest = () => call<string>("history_begin");
 export const cancelHistoryRequest = (requestKey: string) => call<null>("history_cancel", { requestKey });
 export const fetchHistoryRecord = (id: string, requestKey: string, cursor: string, from: number) =>

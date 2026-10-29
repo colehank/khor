@@ -585,6 +585,11 @@ pub fn answer(
         "install_hooks" => to_json(&crate::install_hooks(root)?),
         "uninstall_hooks" => to_json(&crate::uninstall_hooks(root)?),
         "chat_open" => to_json(&crate::chat::chat_open(root, &arg("id")?)?),
+        "session_content" => to_json(&crate::chat::session_content(
+            root,
+            &arg("id")?,
+            opt_str("machine")?.as_deref(),
+        )?),
         "history_begin" => to_json(&crate::chat::history_begin()?),
         "history_cancel" => {
             crate::chat::history_cancel(&arg("requestKey")?)?;

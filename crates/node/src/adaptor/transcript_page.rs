@@ -22,6 +22,10 @@ pub struct Cursor {
     waiting_for_append: bool,
 }
 
+impl Cursor {
+    pub fn is_for_source(&self, source: &str) -> bool { self.source == source }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 struct PendingRecord {
     start: u64,

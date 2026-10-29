@@ -200,6 +200,31 @@ impl Codex {
         uuid_in_name(path.file_name()?.to_str()?).map(str::to_owned)
     }
 
+    pub(crate) fn unique_session_id(
+        &self,
+        leaf: &str,
+        exact: Option<&str>,
+    ) -> Result<Option<String>, ()> {
+        let mut chosen = None;
+        for rollout in self.rollouts() {
+            let Some(native) = rollout
+                .path
+                .file_name()
+                .and_then(|part| part.to_str())
+                .and_then(uuid_in_name)
+            else {
+                continue;
+            };
+            if crate::live::clean_leaf(native) != leaf || exact.is_some_and(|id| id != native) {
+                continue;
+            }
+            if chosen.as_ref().is_some_and(|previous| previous != native) {
+                return Err(());
+            }
+            chosen = Some(native.to_owned());
+        }
+        Ok(chosen)
+    }
     /// A writer belongs to a thread, possibly inside a shared daemon. It is
     /// never permission to terminate that daemon or guess a terminal PID.
     pub(crate) fn has_writer(&self, uuid: &str) -> Result<bool, String> {

@@ -3,7 +3,8 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { programOf, shortDir } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
-import { type SessionRow } from "@/api";
+import { fetchSessionContent, type SessionRow } from "@/api";
+import type { SessionContent } from "@/gen/bindings/SessionContent";
 import { StatusWord } from "@/components/StatusWord";
 import { SessionFace } from "@/components/SessionFace";
 import { EditableName, useSinglePress } from "@/components/EditableName";
@@ -20,6 +21,41 @@ import { cn } from "@/lib/utils";
 import { ChatView } from "@/views/ChatView";
 import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
+
+function ObservedSession({ row, onReading }: { row: SessionRow; onReading?: SessionReading }) {
+  const [answer, setAnswer] = useState<{key: string; content: SessionContent} | null>(null);
+  const [fault, setFault] = useState<{key: string; message: string} | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const machine = row.source ? row.home : null;
+  const queryKey = JSON.stringify([row.id, machine]);
+  const content = answer?.key === queryKey ? answer.content : null;
+  const failure = fault?.key === queryKey ? fault.message : null;
+  useEffect(() => {
+    let stopped = false;
+    setAnswer(null); setFault(null);
+    fetchSessionContent(row.id, machine).then(answer => {
+      if (!stopped) setAnswer({key: queryKey, content: answer});
+    }, error => { if (!stopped) setFault({key: queryKey, message: String(error)}); });
+    return () => { stopped = true; };
+  }, [row.id, machine, queryKey, attempt]);
+  if (content?.kind === 'available') {
+    return <ChatView id={row.id} still watch={content.following} category={row.category}
+      home={row.home} machine={machine} ended={row.word === 'failed'} onReading={onReading} />;
+  }
+  const reason = content?.kind === 'unavailable' ? {
+    no_source: gui.content_no_source,
+    unreadable: gui.content_unreadable,
+    remote_not_connected: gui.content_remote_not_connected,
+    ambiguous_source: gui.content_ambiguous_source,
+  }[content.reason] : failure ?? gui.content_loading;
+  return <div className="grid min-h-0 flex-1 place-items-center p-row text-center text-callout text-muted-foreground" data-session-content={content?.kind ?? (failure ? 'failed' : 'loading')}>
+    <div className="space-y-in">
+      <StatusWord word={row.word} />
+      <p>{reason}</p>
+      {(content || failure) && <Button size="sm" onClick={() => setAttempt(value => value + 1)}>{gui.region_retry}</Button>}
+    </div>
+  </div>;
+}
 
 /** **The terminal arrives when a terminal does** (UX-6, the phone's first
     frame): xterm, its renderer and addons were a quarter of the bundle the
@@ -532,7 +568,7 @@ export function DetailPane({
         // hosts, and the one they are typing into wins. The row menu's
         // 转为 GUI 显示 is the other way round, on purpose.
         null
-      ) : row && row.kind === "gui" ? (
+      ) : row && row.kind === "gui" && row.word !== "failed" ? (
         // A conversation khor holds, and the only thing it has: there
         // is no terminal under it to show. Keyed so switching sessions
         // remounts the chat — its cursor, frames and attachment all
@@ -563,12 +599,8 @@ export function DetailPane({
         // and no bridge. Remote hosted sessions are on the ledger (their
         // host is elsewhere), and fall through to the facts below.
         null
-      ) : row && row.category === "claude" ? (
-        // A discovered claude session: its recorded past, read from
-        // the vendor's own transcript. Claude only, this batch — the
-        // other vendors' records are on the ledger, and their rows
-        // keep the facts pane below rather than an empty chat.
-        <ChatView key={row.id} id={row.id} still onReading={onReading} />
+      ) : row && (row.kind === "tui" || row.kind === "gui") ? (
+        <ObservedSession key={row.id} row={row} onReading={onReading} />
       ) : !row && empty ? (
         // The network's now: the biggest canvas in the app stops
         // reading "pick something" and starts showing what there is

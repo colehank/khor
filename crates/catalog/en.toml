@@ -1748,6 +1748,11 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+content_ambiguous_source = "Multiple session records match this identity; the content source is ambiguous"
+content_loading = "Reading session content source"
+content_no_source = "No readable session record"
+content_unreadable = "The session record cannot be read right now"
+content_remote_not_connected = "The session content source on this machine is not connected yet"
 history_older = "Load older content"
 history_newer = "Load newer content"
 history_record = "Read original record"
