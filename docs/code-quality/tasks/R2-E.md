@@ -2,7 +2,7 @@
 
 状态 working；2026-10-29用户“开始吧”授权下一轮实现。main/ship未授权。
 当前owner root（L03接纳收口），工作树 /Volumes/disk0/Khor/worktrees/current/khor-round2-math，fix/round2-draft-sync；旧输入作者round2_input已转W。下方首批记录是历史检查点，最新交付见末尾与STATE。
-条目 R2-011/012/027/028/L03；先完成R2-027迟到读取/组词最小复现与保护，不声称整包完成。
+条目 R2-011/012/027/L03（R2-028已按用户最新澄清交M，见末尾）；先完成R2-027迟到读取/组词最小复现与保护，不声称整包完成。
 允许写：CodeEditor/FileView及其纯模型/定向测试；其他输入hook/路径/草稿入口需先向root报告新路径所有权。禁止改历史链、全局App/TerminalPane/样式/生成协议。
 规则见EDITOR-INPUT、ROUND-2-EXECUTION、ENGINEERING。先图谱、失败证据、最小修复、职责整理；不要用定时延迟掩盖竞态。记录真实IME尚未验证。
 证据 /Volumes/disk0/Khor/evidence/round2/input；更新本卡记录实际文件、接口、验证、下一步（仅本卡可以由owner写中央文档）。native/Cargo槽须root协调。保持用户App/会话。
@@ -117,3 +117,19 @@ W正式browser验已交这两固定依赖，以实际新FileView补CM首键→�
 ### R2-028入口确认与只读排除（待用户文本回复）
 
 非作者17源准确指纹见input/shift-left-source-review.json（ffaa443b88430691fea9eba8dcb48ed924d2737aebdc4878c96de4c80246fcb1），实际xterm6/锁项与HEAD5c636c07匹配。当前未找到普通ShiftLeft被global shortcuts/textarea/native menu误截获；terminal普通路径预期CSI 1;2D，经onData→termKey。源码不证明Mac WK实际产生了事件/字节，不加猜测防御。Root已用async问题问用户当时终端Codex/GUI会话/文件编辑器，**尚未答复**；不要重复问或猜宿主。物理验收分GUI选区[3,4]、私有raw PTY实际字节、最后才真实TUI模式/keybinding；shell不具选择能力不等于Khor错误。尚无新App实例/人工操作请求。
+
+
+### 用户已回答ShiftLeft入口（2026-10-29）
+
+用户明确“codex输入区，是因为根本没有组合键的配置机制”。原入口异步问题已答，不要重复询问，不继续把该条当Mac物理键盘拦截bug。R2-028交M唯一实施，依R2-026自定义终端组合键，以可保存Shift＋Left并在Codex输入区使用验收。17源排除记录仍是真实有限源码证据，不冒配置功能已实现；E的Mac文件中文输入/退出保护验收不变。
+
+
+## 2026-10-29 ce69 同源 Mac 编辑验收准备（Root）
+
+已实际完成 native-editor-ce69e0bd：11阶段0，outer11064终态0/254.270s，2167源与环境稳定，provenance完整/remaining[]/cleanup无错。GUI SHA06e3809ca745ecacb8e3e6d947ea70cda83feb30a63d54bd9320ba1f7c79e9d7；CLI SHA531221ce20337204d2607324f9c27b0efe9332a0064433ba21e02ba10f571039。收据独审通过；仅build，不是行为验收。
+
+独立 `evidence/round2/validation/app-ce69-editor` 已准备 file-only launcher/contract/passive observer/outer owned runner，当前待独审、未执行/无App。拟由实际CLI在私有KHOR_HOME登记EditorAcceptance（不启session/helper/provider），CUA进input.txt，用户只键入固定中文。被动记录实际CM组词和落盘；随后仅锁该私有父目录使atomic-write失败，实际最后键q→CmdQ/取消，证实拒写/原生prevented/磁盘未改再恢复权限，真实保存包含q并正常Quit。预算outer300/runtime270/双盘5GiB，所有源/二进制/helper pin与TMP/owner清理保留。
+
+准备与独审完成后再问用户可用性，不重做L05拖放。不把R2-028强行作为物理Mac ShiftLeft验收：用户已明确其缺终端组合键配置，M负责。E仍需上述真实IME/退出证据；任何脚本或合成事件绿均不替代它。
+
+focused E准入独审通过，唯一oracle缺口已收紧：被动记录全部chat_*/term_*及attachment_begin，final禁止其call，未替换actual invoke。actual私有CLI预检outer12997终态0，ws add/ls实际0、source稳定/无App/无session helper/TMP净。脚本/contract/预检小件镜像在validation-app-ce69-editor-preparation。已问当前3分钟可用性；未收到回答前不启动限时App。
