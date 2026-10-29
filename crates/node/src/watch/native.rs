@@ -1,6 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 
 use notify::{EventKind, RecursiveMode, Watcher};
 
@@ -96,6 +99,7 @@ pub(super) struct Plan {
     root: PathBuf,
     exists: bool,
     workspace: bool,
+    manual: bool,
     control: Vec<PathBuf>,
     aliases: Vec<PathBuf>,
     targets: BTreeMap<Target, bool>,
@@ -122,6 +126,7 @@ impl Plan {
             root,
             exists: path.is_dir(),
             workspace,
+            manual: cfg!(target_os = "linux"),
             control: Vec::new(),
             aliases: Vec::new(),
             targets: BTreeMap::new(),
@@ -166,8 +171,9 @@ impl Plan {
         } else if !workspace {
             let root = plan.root.clone();
             plan.add_nearest(&root, true)?;
-        } else if cfg!(target_os = "linux") {
-            plan.walk_directories();
+        } else if plan.manual {
+            let root = plan.root.clone();
+            plan.add_nearest(&root, true)?;
         } else {
             plan.targets.insert(
                 Target {
@@ -200,6 +206,28 @@ impl Plan {
             && (!self.workspace || crate::git::watch_plan(path)? == self.git))
     }
 
+    #[cfg(test)]
+    pub fn use_manual_tree(&mut self) {
+        self.manual = true;
+        self.targets.remove(&Target {
+            path: self.root.clone(),
+            recursive: true,
+        });
+        self.targets.insert(
+            Target {
+                path: self.root.clone(),
+                recursive: false,
+            },
+            true,
+        );
+    }
+
+    pub fn expand_tree(&mut self, install: impl FnMut(&Path) -> Result<(), String>) {
+        if self.workspace && self.exists && self.manual {
+            self.walk_directories(install);
+        }
+    }
+
     fn add_nearest(&mut self, wanted: &Path, critical: bool) -> Result<(), String> {
         let mut path = wanted;
         while !path.is_dir() {
@@ -218,7 +246,7 @@ impl Plan {
         Ok(())
     }
 
-    fn walk_directories(&mut self) {
+    fn walk_directories(&mut self, mut install: impl FnMut(&Path) -> Result<(), String>) {
         let mut pending = vec![self.root.clone()];
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         while let Some(path) = pending.pop() {
@@ -227,13 +255,16 @@ impl Plan {
                     Some("Directory watch initialization reached its tree budget".into());
                 return;
             }
-            self.targets.insert(
-                Target {
+            self.targets
+                .entry(Target {
                     path: path.clone(),
                     recursive: false,
-                },
-                false,
-            );
+                })
+                .or_insert(false);
+            if let Err(error) = install(&path) {
+                self.partial = Some(error);
+                return;
+            }
             let entries = match std::fs::read_dir(&path) {
                 Ok(entries) => entries,
                 Err(error) => {
@@ -303,8 +334,8 @@ impl Plan {
             }
             if path == &self.root || (self.workspace && path.starts_with(&self.root)) {
                 changed = true;
-                replan |= *identity_changed
-                    && (!self.workspace || path == &self.root || cfg!(target_os = "linux"));
+                replan |=
+                    *identity_changed && (!self.workspace || path == &self.root || self.manual);
                 replan |= self.workspace
                     && (path == &self.root.join(".git")
                         || self
@@ -375,12 +406,25 @@ struct Handle {
 /// A resident's physical notify handles. Lease and coverage decisions stay in watch.rs.
 pub(super) struct Native {
     identity: String,
+    revision: Arc<AtomicU64>,
     watcher: notify::RecommendedWatcher,
     raw: Arc<Mutex<Raw>>,
     handles: BTreeMap<PathBuf, Handle>,
 }
 
 impl Native {
+    pub fn revision(&self) -> Arc<AtomicU64> {
+        self.revision.clone()
+    }
+    #[cfg(test)]
+    pub fn has_pending(&self) -> bool {
+        let raw = self.raw.lock().unwrap_or_else(|p| p.into_inner());
+        !raw.paths.is_empty() || raw.reset
+    }
+    #[cfg(test)]
+    pub fn watches_directory(&self, path: &Path) -> bool {
+        self.handles.get(path).is_some_and(|handle| handle.active)
+    }
     pub fn identity(&self) -> &str {
         &self.identity
     }
@@ -390,13 +434,18 @@ impl Native {
     }
     pub fn new() -> Result<(Self, tokio::sync::mpsc::Receiver<()>), String> {
         let identity = crate::link::fresh_hex()?;
+        let revision = Arc::new(AtomicU64::new(0));
         let raw = Arc::new(Mutex::new(Raw::default()));
         let (wake, rx) = tokio::sync::mpsc::channel(1);
         let heard = raw.clone();
+        let changed = revision.clone();
         let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
             if event.as_ref().is_ok_and(|event| !changes_files(event.kind)) {
                 return;
             }
+            let _ = changed.fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1)
+            });
             heard.lock().unwrap_or_else(|p| p.into_inner()).take(event);
             let _ = wake.try_send(());
         })
@@ -404,6 +453,7 @@ impl Native {
         Ok((
             Self {
                 identity,
+                revision,
                 watcher,
                 raw,
                 handles: BTreeMap::new(),
@@ -413,12 +463,32 @@ impl Native {
     }
 
     pub fn install(&mut self, source: u64, plan: &Plan) -> Installed {
+        self.install_targets(source, &plan.targets, plan.partial.clone())
+    }
+
+    pub fn install_directory(&mut self, source: u64, path: &Path) -> Installed {
+        let targets = BTreeMap::from([(
+            Target {
+                path: path.to_owned(),
+                recursive: false,
+            },
+            false,
+        )]);
+        self.install_targets(source, &targets, None)
+    }
+
+    fn install_targets(
+        &mut self,
+        source: u64,
+        wanted: &BTreeMap<Target, bool>,
+        partial: Option<String>,
+    ) -> Installed {
         let mut installed = Installed {
-            partial: plan.partial.clone(),
+            partial,
             reset_sources: BTreeSet::new(),
             partial_sources: BTreeSet::new(),
         };
-        let mut targets: Vec<_> = plan.targets.iter().collect();
+        let mut targets: Vec<_> = wanted.iter().collect();
         targets.sort_by_key(|(_, critical)| !**critical);
         for (target, critical) in targets {
             if cfg!(target_os = "macos") && target.path.to_str().is_none() {
@@ -604,6 +674,7 @@ mod tests {
             root: "/real/root".into(),
             exists: true,
             workspace: true,
+            manual: false,
             control: Vec::new(),
             aliases: Vec::new(),
             targets: BTreeMap::new(),
@@ -628,6 +699,7 @@ mod tests {
             root: "/root/child".into(),
             exists: true,
             workspace: false,
+            manual: false,
             control: Vec::new(),
             aliases: Vec::new(),
             targets: BTreeMap::new(),

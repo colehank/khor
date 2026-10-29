@@ -12,6 +12,8 @@ const PATH_BYTES: usize = 64 * 1024;
 const LOG_ENTRIES: usize = 1024;
 const LOG_BYTES: usize = 256 * 1024;
 const IDLE: Duration = Duration::from_secs(60);
+pub(super) const INITIALIZING_CHANGED: &str =
+    "Directory contents kept changing during initialization";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct Ticket {
@@ -30,6 +32,7 @@ pub(super) struct Start {
 pub(super) struct Effects {
     pub start: Vec<Start>,
     pub stop: Vec<u64>,
+    pub retry: Vec<u64>,
 }
 
 struct Owner {
@@ -46,6 +49,10 @@ struct Source {
     generation: u64,
     mode: CoverageMode,
     reason: Option<String>,
+    replan_needed: bool,
+    followup_used: bool,
+    #[cfg(test)]
+    first_native_generation: Option<u64>,
 }
 
 #[derive(serde::Serialize)]
@@ -154,6 +161,10 @@ impl Owned {
                         generation: 1,
                         mode: CoverageMode::Pending,
                         reason: None,
+                        replan_needed: false,
+                        followup_used: false,
+                        #[cfg(test)]
+                        first_native_generation: None,
                     },
                 );
                 self.queued.push_back(Ticket {
@@ -169,6 +180,8 @@ impl Owned {
             source.generation += 1;
             source.mode = CoverageMode::Pending;
             source.reason = None;
+            source.replan_needed = false;
+            source.followup_used = false;
             self.queued.push_back(Ticket {
                 source: id,
                 generation: source.generation,
@@ -187,6 +200,7 @@ impl Owned {
         Ok(Effects {
             start: self.start_queued(),
             stop: Vec::new(),
+            retry: Vec::new(),
         })
     }
 
@@ -196,12 +210,14 @@ impl Owned {
             let Some(ticket) = self.queued.pop_front() else {
                 break;
             };
-            let Some(source) = self.sources.get(&ticket.source) else {
+            let Some(source) = self.sources.get_mut(&ticket.source) else {
                 continue;
             };
             if source.generation != ticket.generation {
                 continue;
             }
+            // A queued plan starts reading after any earlier invalidation.
+            source.replan_needed = false;
             self.running.insert(ticket);
             ready.push(Start {
                 ticket,
@@ -226,6 +242,52 @@ impl Owned {
             .sources
             .get(&ticket.source)
             .is_some_and(|s| s.generation == ticket.generation);
+        if accepted && self.sources[&ticket.source].replan_needed {
+            let source = self
+                .sources
+                .get_mut(&ticket.source)
+                .expect("accepted source");
+            if source.followup_used {
+                source.replan_needed = false;
+                source.mode = CoverageMode::Partial;
+                source.reason = Some(INITIALIZING_CHANGED.into());
+                self.changed(ticket.source, Vec::new(), true)?;
+                return Ok((
+                    true,
+                    Effects {
+                        start: self.start_queued(),
+                        stop: Vec::new(),
+                        retry: vec![ticket.source],
+                    },
+                ));
+            }
+            source.generation = source
+                .generation
+                .checked_add(1)
+                .ok_or("Directory watch plan generations exhausted")?;
+            source.replan_needed = false;
+            source.followup_used = true;
+            source.mode = CoverageMode::Pending;
+            source.reason = None;
+            let fresh = Ticket {
+                source: ticket.source,
+                generation: source.generation,
+            };
+            // Give an already queued source the released slot before enqueuing
+            // this followup; queued work never grows beyond its 64 slots.
+            let mut start = self.start_queued();
+            self.queued.push_back(fresh);
+            start.extend(self.start_queued());
+            self.changed(ticket.source, Vec::new(), true)?;
+            return Ok((
+                true,
+                Effects {
+                    start,
+                    stop: Vec::new(),
+                    retry: Vec::new(),
+                },
+            ));
+        }
         if accepted {
             let source = self
                 .sources
@@ -233,6 +295,13 @@ impl Owned {
                 .expect("accepted source");
             source.mode = mode;
             source.reason = reason.map(bounded_reason);
+            source.followup_used = false;
+            #[cfg(test)]
+            if mode == CoverageMode::Native {
+                source
+                    .first_native_generation
+                    .get_or_insert(source.generation);
+            }
             self.changed(ticket.source, Vec::new(), true)?;
         }
         Ok((
@@ -240,6 +309,7 @@ impl Owned {
             Effects {
                 start: self.start_queued(),
                 stop: Vec::new(),
+                retry: Vec::new(),
             },
         ))
     }
@@ -408,6 +478,7 @@ impl Owned {
         Ok(Effects {
             start: self.start_queued(),
             stop,
+            retry: Vec::new(),
         })
     }
 
@@ -465,6 +536,10 @@ impl Owned {
         self.sources.is_empty()
     }
 
+    pub fn has_source(&self, source: u64) -> bool {
+        self.sources.contains_key(&source)
+    }
+
     pub fn replan(&mut self, source: u64) -> Result<Effects, String> {
         let Some(current) = self.sources.get(&source) else {
             return Ok(Effects::default());
@@ -475,6 +550,11 @@ impl Owned {
             .chain(self.queued.iter())
             .any(|t| t.source == source)
         {
+            let current = self.sources.get_mut(&source).expect("known source");
+            if !current.replan_needed {
+                current.replan_needed = true;
+                self.changed(source, Vec::new(), true)?;
+            }
             return Ok(Effects::default());
         }
         if self.queued.len() >= INIT_QUEUED && self.running.len() >= INIT_RUNNING {
@@ -484,7 +564,10 @@ impl Owned {
                 Some("Directory watch reinitialization queue is full".into()),
                 true,
             )?;
-            return Ok(Effects::default());
+            return Ok(Effects {
+                retry: vec![source],
+                ..Effects::default()
+            });
         }
         let generation = current
             .generation
@@ -494,11 +577,13 @@ impl Owned {
         current.generation = generation;
         current.mode = CoverageMode::Pending;
         current.reason = None;
+        current.followup_used = false;
         self.queued.push_back(Ticket { source, generation });
         self.changed(source, Vec::new(), true)?;
         Ok(Effects {
             start: self.start_queued(),
             stop: Vec::new(),
+            retry: Vec::new(),
         })
     }
 
@@ -531,6 +616,7 @@ impl Owned {
         Effects {
             start: Vec::new(),
             stop,
+            retry: Vec::new(),
         }
     }
 
@@ -547,6 +633,12 @@ impl Owned {
     #[cfg(test)]
     pub fn set_expiry(&mut self, id: &str, at: Instant) {
         self.owners.get_mut(id).expect("test lease").expires = at;
+    }
+
+    #[cfg(test)]
+    pub fn first_native_generation(&self, id: &str) -> Option<u64> {
+        let source = self.owners[id].sources[0];
+        self.sources[&source].first_native_generation
     }
 }
 
@@ -949,5 +1041,92 @@ mod tests {
         assert_eq!(expired.stop.len(), 68);
         assert!(expired.start.is_empty());
         assert_eq!(book.counts(), (0, 0, 4, 0));
+    }
+
+    #[test]
+    fn changes_during_initialization_coalesce_one_fresh_plan_without_publishing_old_native() {
+        let now = Instant::now();
+        let mut book = Owned::new("epoch".into());
+        let start = begin(&mut book, "A", "machine", vec![entry("/root")], now)
+            .start
+            .pop()
+            .unwrap();
+        for _ in 0..100 {
+            assert!(book.replan(start.ticket.source).unwrap().start.is_empty());
+        }
+        assert_eq!(book.counts(), (1, 1, 1, 0));
+        let (accepted, fresh) = book
+            .initialized(start.ticket, CoverageMode::Native, None)
+            .unwrap();
+        assert!(
+            accepted,
+            "the actual worker finished and releases its physical slot"
+        );
+        assert_eq!(
+            fresh.start.len(),
+            1,
+            "pending initialization must enqueue exactly one fresh plan"
+        );
+        assert_eq!(
+            book.read("machine", "A", None).unwrap().coverage[0].mode,
+            CoverageMode::Pending
+        );
+        assert_eq!(book.first_native_generation("A"), None);
+        assert_eq!(fresh.start[0].ticket.generation, 2);
+        ready(&mut book, fresh.start, CoverageMode::Native, None);
+        assert_eq!(book.first_native_generation("A"), Some(2));
+        assert_eq!(book.counts(), (1, 1, 0, 0));
+
+        let mut full = Owned::new("epoch".into());
+        let starts = begin(
+            &mut full,
+            "A",
+            "machine",
+            (0..4).map(|i| entry(&format!("/first/{i}"))).collect(),
+            now,
+        )
+        .start;
+        begin(
+            &mut full,
+            "B",
+            "machine",
+            (0..64).map(|i| entry(&format!("/next/{i}"))).collect(),
+            now,
+        );
+        full.replan(starts[0].ticket.source).unwrap();
+        let (_, next) = full
+            .initialized(starts[0].ticket, CoverageMode::Native, None)
+            .unwrap();
+        assert_eq!(next.start.len(), 1);
+        assert_ne!(
+            next.start[0].ticket.source, starts[0].ticket.source,
+            "already queued sources keep their turn"
+        );
+        assert_eq!(full.counts(), (2, 68, 4, 64));
+        assert_eq!(full.first_native_generation("A"), None);
+
+        let mut busy = Owned::new("epoch".into());
+        let first = begin(&mut busy, "A", "machine", vec![entry("/busy")], now)
+            .start
+            .pop()
+            .unwrap();
+        busy.replan(first.ticket.source).unwrap();
+        let (_, next) = busy
+            .initialized(first.ticket, CoverageMode::Native, None)
+            .unwrap();
+        let fresh = next.start[0].ticket;
+        busy.replan(fresh.source).unwrap();
+        let (_, deferred) = busy.initialized(fresh, CoverageMode::Native, None).unwrap();
+        assert!(
+            deferred.start.is_empty(),
+            "continuous changes cannot spin immediate rebuilds"
+        );
+        assert_eq!(deferred.retry, vec![fresh.source]);
+        assert_eq!(
+            busy.read("machine", "A", None).unwrap().coverage[0].mode,
+            CoverageMode::Partial
+        );
+        assert_eq!(busy.first_native_generation("A"), None);
+        assert_eq!(busy.counts(), (1, 1, 0, 0));
     }
 }

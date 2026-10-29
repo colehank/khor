@@ -108,6 +108,16 @@ pub struct Watches {
     deadlines: Arc<tokio::sync::Notify>,
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     native: Arc<Mutex<Option<native::Native>>>,
+    #[cfg(test)]
+    test_manual_tree: AtomicBool,
+    #[cfg(test)]
+    test_walk_gate: Mutex<Option<WalkGate>>,
+}
+
+#[cfg(test)]
+struct WalkGate {
+    walked: tokio::sync::oneshot::Sender<()>,
+    resume: std::sync::mpsc::Receiver<()>,
 }
 
 impl Watches {
@@ -287,6 +297,14 @@ impl Watches {
         };
         let native = watches.native.clone();
         let ticket = start.ticket;
+        #[cfg(test)]
+        let manual = watches.test_manual_tree.load(Ordering::Acquire);
+        #[cfg(test)]
+        let mut gate = if matches!(&start.scope, Scope::Workspace { .. }) {
+            watches.test_walk_gate.lock().unwrap().take()
+        } else {
+            None
+        };
         drop(watches);
         let prepared = tokio::task::spawn_blocking(move || {
             let mut receiver = None;
@@ -300,7 +318,11 @@ impl Watches {
                     return Ok(None);
                 }
                 let mut plan = native::Plan::prepare(&start.scope)?;
-                {
+                #[cfg(test)]
+                if manual {
+                    plan.use_manual_tree();
+                }
+                let (revision, baseline) = {
                     let mut pool = native.lock().unwrap_or_else(|p| p.into_inner());
                     if cancel.load(Ordering::Acquire) {
                         return Ok(None);
@@ -318,6 +340,36 @@ impl Watches {
                     changes.partial = installed.partial;
                     changes.reset_sources.extend(installed.reset_sources);
                     changes.partial_sources.extend(installed.partial_sources);
+                    let revision = pool.revision();
+                    let baseline = revision.load(Ordering::Acquire);
+                    (revision, baseline)
+                };
+                plan.expand_tree(|path| {
+                    let mut pool = native.lock().unwrap_or_else(|p| p.into_inner());
+                    if cancel.load(Ordering::Acquire) {
+                        return Err("Directory watch initialization cancelled".into());
+                    }
+                    let pool = pool.as_mut().ok_or("Directory watch pool was retired")?;
+                    let installed = pool.install_directory(ticket.source, path);
+                    changes.reset_sources.extend(installed.reset_sources);
+                    changes.partial_sources.extend(installed.partial_sources);
+                    if let Some(error) = installed.partial {
+                        return Err(error);
+                    }
+                    Ok(())
+                });
+                if let Some(error) = &plan.partial {
+                    changes.partial = Some(error.clone());
+                }
+                #[cfg(test)]
+                if let Some(gate) = gate.take() {
+                    let _ = gate.walked.send(());
+                    gate.resume
+                        .recv_timeout(Duration::from_secs(5))
+                        .map_err(|e| e.to_string())?;
+                }
+                if cancel.load(Ordering::Acquire) {
+                    return Ok(None);
                 }
                 let stable = plan.still_current();
                 if matches!(stable, Ok(false)) && attempt < 2 {
@@ -332,7 +384,7 @@ impl Watches {
                     changes.partial = Some(error);
                 }
                 plan.registered();
-                return Ok::<_, String>(Some((plan, changes, receiver, retry)));
+                return Ok::<_, String>(Some((plan, changes, receiver, retry, revision, baseline)));
             }
             unreachable!("bounded initialization attempts return")
         })
@@ -341,8 +393,8 @@ impl Watches {
             return;
         };
         match prepared {
-            Ok(Ok(Some((plan, material, receiver, retry)))) => {
-                let reason = material.partial.clone();
+            Ok(Ok(Some((plan, material, receiver, retry, revision, baseline)))) => {
+                let mut reason = material.partial.clone();
                 watches.material_changed(material);
                 if let Some((identity, rx)) = receiver {
                     watches.observe_native(identity, rx);
@@ -355,6 +407,15 @@ impl Watches {
                             .retries
                             .insert(ticket.source, Instant::now() + Duration::from_secs(3));
                     }
+                }
+                if baseline == u64::MAX {
+                    reason = Some("Directory watch native revision exhausted".into());
+                } else if revision.load(Ordering::Acquire) != baseline {
+                    let _ = watches
+                        .owned
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .replan(ticket.source);
                 }
                 let mode = if reason.is_some() {
                     CoverageMode::Partial
@@ -468,6 +529,10 @@ impl Watches {
             deadlines: Arc::new(tokio::sync::Notify::new()),
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             native: Arc::new(Mutex::new(None)),
+            #[cfg(test)]
+            test_manual_tree: AtomicBool::new(false),
+            #[cfg(test)]
+            test_walk_gate: Mutex::new(None),
         })
     }
 
@@ -573,6 +638,18 @@ impl Watches {
         for source in effects.stop {
             self.stop_source(source);
         }
+        {
+            let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
+            let owned = self.owned.lock().unwrap_or_else(|p| p.into_inner());
+            for source in effects.retry {
+                if owned.has_source(source) {
+                    running
+                        .retries
+                        .insert(source, Instant::now() + Duration::from_secs(3));
+                }
+            }
+        }
+        self.deadlines.notify_one();
         for start in effects.start {
             let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
             if running.closed
@@ -645,8 +722,8 @@ impl Watches {
                 }
             }
         }
-        self.arrived.notify_waiters();
         self.apply(effects);
+        self.arrived.notify_waiters();
         accepted
     }
 
@@ -936,10 +1013,10 @@ mod tests {
     async fn native_ready(watches: &Arc<Watches>, opened: &Opened) -> Batch {
         let mut batch = opened.batch.clone();
         tokio::time::timeout(Duration::from_secs(5), async {
-            while batch
-                .coverage
-                .iter()
-                .any(|c| c.mode == CoverageMode::Pending)
+            while batch.coverage.iter().any(|c| {
+                c.mode == CoverageMode::Pending
+                    || c.reason.as_deref() == Some(owned::INITIALIZING_CHANGED)
+            }) || !watches.running.lock().unwrap().retries.is_empty()
             {
                 batch = watches
                     .wait(
@@ -1342,6 +1419,123 @@ mod tests {
                     .is_err()
             );
         }
+        watches.shutdown().await;
+        assert_eq!(watches.owned.lock().unwrap().counts(), (0, 0, 0, 0));
+        assert!(watches.native.lock().unwrap().is_none());
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn native_manual_tree_rechecks_a_nested_creation_drained_before_the_new_plan_exists() {
+        let checkout = crate::git::repository_history_tests::Checkout::new();
+        let workspace = checkout.0.join("workspace");
+        let deep = workspace.join("already/deep");
+        let observer = checkout.0.join("observer");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::create_dir(&observer).unwrap();
+        let watches = Arc::new(Watches::new().unwrap());
+        let existing = watches
+            .begin(
+                "local".into(),
+                vec![Scope::Entries {
+                    path: observer.display().to_string(),
+                }],
+                Route::Here,
+            )
+            .unwrap();
+        native_ready(&watches, &existing).await;
+        watches.test_manual_tree.store(true, Ordering::Release);
+        let (walked, reached) = tokio::sync::oneshot::channel();
+        let (resume, blocked) = std::sync::mpsc::channel();
+        *watches.test_walk_gate.lock().unwrap() = Some(WalkGate {
+            walked,
+            resume: blocked,
+        });
+        let opened = watches
+            .begin(
+                "local".into(),
+                vec![Scope::Workspace {
+                    root: workspace.display().to_string(),
+                }],
+                Route::Here,
+            )
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), reached)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            watches
+                .native
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .watches_directory(&deep),
+            "the existing nested parent was registered before its children were enumerated"
+        );
+        assert_eq!(
+            watches.running.lock().unwrap().plans.len(),
+            1,
+            "the new plan is not yet handed off"
+        );
+        let counter = watches.native.lock().unwrap().as_ref().unwrap().revision();
+        let before = counter.load(Ordering::Acquire);
+        let new = deep.join("new");
+        std::fs::create_dir(&new).unwrap();
+        std::fs::write(new.join("child.txt"), b"created in the initialization gap").unwrap();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                let drained = !watches
+                    .native
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .has_pending();
+                if counter.load(Ordering::Acquire) > before && drained {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("the already running observer drained a real nested-directory event");
+        assert_eq!(watches.running.lock().unwrap().plans.len(), 1);
+        assert_eq!(
+            watches
+                .owned
+                .lock()
+                .unwrap()
+                .first_native_generation(&opened.id),
+            None
+        );
+        resume.send(()).unwrap();
+        let batch = native_ready(&watches, &opened).await;
+        assert!(
+            watches
+                .owned
+                .lock()
+                .unwrap()
+                .first_native_generation(&opened.id)
+                .unwrap()
+                >= 2,
+            "the stale first walk cannot publish full coverage"
+        );
+        assert!(
+            watches
+                .native
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .watches_directory(&new),
+            "a fresh walk registered the new nested parent"
+        );
+        std::fs::write(new.join("child.txt"), b"modified after native coverage").unwrap();
+        let changed = changed(&watches, &opened, &batch).await;
+        assert!(changed.workspace);
+        assert!(changed.reset || changed.dirs.contains(&new.display().to_string()));
         watches.shutdown().await;
         assert_eq!(watches.owned.lock().unwrap().counts(), (0, 0, 0, 0));
         assert!(watches.native.lock().unwrap().is_none());
