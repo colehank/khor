@@ -25,9 +25,9 @@
 //!
 //! What the face is told comes from polling the views (every 400 ms):
 //! where each page is once a load ends (`page:went`), its title
-//! (`page:title`) and whether it is loading (`page:load`) — the desktop's
-//! three events; the loading is also observed, so it is told the moment
-//! it changes (`load_heard`, UX-38 §2). A link that asks for a new window
+//! (`page:title`). Navigation identity, real estimated progress and outcomes
+//! come directly from the same page_navigation owner as on the Mac. Loading
+//! false is not a success event. A link that asks for a new window
 //! is told as `page:popup`, and the face opens it as a new tab beside this
 //! one — the desktop's answer (`on_new_window`), the UI delegate's
 //! `createWebView` (`PageAsk`, UX-42 §15). ⚠️ 墓碑: a script made every
@@ -66,7 +66,7 @@ struct Page {
     /// What the face was last told, so a poll reports changes only.
     told_url: String,
     told_title: String,
-    loading: bool,
+    navigation: crate::page_navigation::ViewKey,
     /// Whether the page could step back and forward when the face was
     /// last told (`page:steps`, round UX-3: the deck greys ← and draws →
     /// only where there is somewhere to go).
@@ -119,19 +119,12 @@ define_class!(
             change: *mut AnyObject,
             _context: *mut std::ffi::c_void,
         ) {
-            // SAFETY: KVO hands the key path as an NSString.
-            let loading = !key.is_null() && unsafe { (*(key as *const NSString)).to_string() } == "loading";
-            if loading {
-                // Heard on the beat after: a load begun from inside this
-                // module (`open`, `step`) fires while the pages are held.
-                // So the value is the change's own, taken now: read again
-                // on that beat, a load quicker than it is `false` twice
-                // and says nothing (UX-42, audit row 6).
-                let view = object as usize;
-                let now = new_bool(change);
-                if let Some(app) = APP.get() {
-                    let _ = app.run_on_main_thread(move || load_heard(view, now));
-                }
+            // Navigation facts are captured synchronously. Only immutable
+            // revision snapshots cross the event queue, never a raw value
+            // that could be applied to a later load in this same view.
+            let name = if key.is_null() { String::new() } else { unsafe { (&*(key as *const NSString)).to_string() } };
+            if name == "estimatedProgress" {
+                navigation_progress(object);
             } else {
                 scrolled(object);
             }
@@ -149,14 +142,23 @@ define_class!(
     impl PageFail {
         // SAFETY: the signatures are WKNavigationDelegate's.
         #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
-        fn failed_early(&self, view: *mut AnyObject, _nav: *mut AnyObject, error: *mut AnyObject) {
-            failed(view, error);
+        fn failed_early(&self, view: *mut AnyObject, nav: *mut AnyObject, error: *mut AnyObject) {
+            failed(view, nav, error);
         }
 
         #[unsafe(method(webView:didFailNavigation:withError:))]
-        fn failed_late(&self, view: *mut AnyObject, _nav: *mut AnyObject, error: *mut AnyObject) {
-            failed(view, error);
+        fn failed_late(&self, view: *mut AnyObject, nav: *mut AnyObject, error: *mut AnyObject) {
+            failed(view, nav, error);
         }
+
+        #[unsafe(method(webView:didStartProvisionalNavigation:))]
+        fn started(&self, view: *mut AnyObject, nav: *mut AnyObject) { navigation_started(view, nav); }
+
+        #[unsafe(method(webView:didCommitNavigation:))]
+        fn committed(&self, view: *mut AnyObject, nav: *mut AnyObject) { navigation_committed(view, nav); }
+
+        #[unsafe(method(webView:didFinishNavigation:))]
+        fn finished(&self, view: *mut AnyObject, nav: *mut AnyObject) { navigation_finished(view, nav); }
 
         // **A download is never silent** (UX-42 §16): what the page
         // cannot show, an attachment, and a link with `download` become a
@@ -532,44 +534,138 @@ fn popped(view: *mut AnyObject, action: *mut AnyObject) {
     }
 }
 
-/// **A load that failed says why** (UX-22): `page:fail` with the error
-/// (`page_fail::word`), and the light out at once rather than at the next
-/// poll.
-fn failed(view: *mut AnyObject, error: *mut AnyObject) {
-    let Some(app) = APP.get() else { return };
-    // SAFETY: WebKit hands a live NSError.
-    let Some(text) = (unsafe { crate::page_fail::word(error) }) else {
-        return;
-    };
-    let found = PAGES.with(|pages| {
-        let mut pages = pages.try_borrow_mut().ok()?;
-        let (tab, page) = pages
-            .iter_mut()
-            .find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view)?;
-        page.loading = false;
-        Some((tab.clone(), page.proxy.clone(), page.exit.clone()))
-    });
-    let Some((tab, proxy, exit)) = found else {
-        return;
-    };
-    // SAFETY: a live NSError.
-    unsafe { crate::page_trust::offered(&tab, &exit, error) };
-    let mut parts = text.splitn(4, '|');
-    let (code, domain, _, url) = (
-        parts.next(),
-        parts.next(),
-        parts.next(),
-        parts.next().unwrap_or_default().to_owned(),
+fn tell_navigation(change: Option<crate::page_navigation::Changed>) {
+    if let (Some(app), Some(change)) = (APP.get(), change) {
+        let _ = app.emit_to(change.face, "page:navigation", change.state);
+    }
+}
+
+fn navigation_url(view: *mut AnyObject) -> String {
+    if view.is_null() {
+        return String::new();
+    }
+    unsafe {
+        let url: *mut AnyObject = msg_send![view, URL];
+        if url.is_null() {
+            return String::new();
+        }
+        let text: Option<Retained<NSString>> = msg_send![url, absoluteString];
+        text.map(|text| text.to_string()).unwrap_or_default()
+    }
+}
+
+fn navigation_started(view: *mut AnyObject, navigation: *mut AnyObject) {
+    let target = navigation_url(view);
+    tell_navigation(
+        crate::page_navigation::with_pages(|pages| {
+            pages
+                .key(view as usize)
+                .and_then(|key| pages.started(key, navigation as usize, target))
+        })
+        .flatten(),
     );
-    // **A loopback address the page went to on its own** (a link, a
-    // redirect; UX-38 §1): refused because it went to the phone's own
-    // port. Piped to the machine's, then asked again, once per port.
-    if let (Some(proxy), Some((host, port))) = (&proxy, khor_gui_core::web::loopback_of(&url)) {
-        if domain == Some("NSURLErrorDomain")
-            && code == Some("-1004")
-            && !khor_gui_core::web::loopback_held(port)
-        {
-            let (proxy, app, tab) = (proxy.clone(), app.clone(), tab.clone());
+}
+
+fn navigation_progress(view: *mut AnyObject) {
+    if view.is_null() {
+        return;
+    }
+    let value: f64 = unsafe { msg_send![view, estimatedProgress] };
+    tell_navigation(
+        crate::page_navigation::with_pages(|pages| {
+            pages
+                .key(view as usize)
+                .and_then(|key| pages.progressed(key, value))
+        })
+        .flatten(),
+    );
+}
+
+fn navigation_committed(view: *mut AnyObject, navigation: *mut AnyObject) {
+    let url = navigation_url(view);
+    if url == "about:blank" {
+        return;
+    }
+    tell_navigation(
+        crate::page_navigation::with_pages(|pages| {
+            pages
+                .key(view as usize)
+                .and_then(|key| pages.committed(key, navigation as usize, url))
+        })
+        .flatten(),
+    );
+}
+
+fn navigation_finished(view: *mut AnyObject, navigation: *mut AnyObject) {
+    let url = navigation_url(view);
+    if url == "about:blank" {
+        return;
+    }
+    let title: Option<Retained<NSString>> = unsafe { msg_send![view, title] };
+    let route_failed =
+        title.is_some_and(|title| title.to_string() == khor_node::tunnel::PAGE_FAILED_TITLE);
+    tell_navigation(
+        crate::page_navigation::with_pages(|pages| {
+            pages.key(view as usize).and_then(|key| {
+                if route_failed {
+                    pages.failed(
+                        key,
+                        navigation as usize,
+                        crate::page_navigation::route_error(url),
+                    )
+                } else {
+                    pages.finished(key, navigation as usize, url)
+                }
+            })
+        })
+        .flatten(),
+    );
+}
+
+/// Keep the actual NSError even when a proxy is configured. In particular
+/// -1005 is connection-lost evidence, not proof that the route was refused.
+fn failed(view: *mut AnyObject, navigation: *mut AnyObject, error: *mut AnyObject) {
+    let Some(app) = APP.get() else { return };
+    let Some(raw) = (unsafe { crate::page_fail::details(error) }) else {
+        return;
+    };
+    let raw_target = raw.target.clone();
+    let change = crate::page_navigation::with_pages(|pages| {
+        pages
+            .key(view as usize)
+            .and_then(|key| pages.failed(key, navigation as usize, raw))
+    })
+    .flatten();
+    let Some(change) = change else { return };
+    unsafe {
+        crate::page_trust::offered(&change.state.tab, &change.state.exit, error);
+    }
+    // Preserve the existing loopback tunnel repair, pinned to this exact
+    // view/navigation. Its late completion cannot navigate a new load/tab.
+    let retry = change
+        .state
+        .error
+        .as_ref()
+        .filter(|error| error.domain == "NSURLErrorDomain" && error.code == "-1004")
+        .and_then(|error| {
+            khor_gui_core::web::loopback_of(&raw_target)
+                .map(|(host, port)| (raw_target.clone(), host, port))
+        });
+    let tab = change.state.tab.clone();
+    let issued = change.state.navigation.clone();
+    let key = crate::page_navigation::with_pages(|pages| pages.key(view as usize)).flatten();
+    let proxy = PAGES
+        .with(|pages| {
+            pages
+                .try_borrow()
+                .ok()
+                .and_then(|pages| pages.get(&tab).map(|page| page.proxy.clone()))
+        })
+        .flatten();
+    tell_navigation(Some(change));
+    if let (Some(key), Some(proxy), Some((url, host, port))) = (key, proxy, retry) {
+        if !khor_gui_core::web::loopback_held(port) {
+            let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 if khor_gui_core::web::hold_loopback(&host, port, &proxy)
                     .await
@@ -578,94 +674,26 @@ fn failed(view: *mut AnyObject, error: *mut AnyObject) {
                     return;
                 }
                 let _ = app.run_on_main_thread(move || {
-                    if let Some(page) = PAGES.with(|p| p.borrow().get(&tab).map(|p| p.view.clone()))
+                    let current = crate::page_navigation::with_pages(|pages| {
+                        pages.state(key).is_some_and(|state| {
+                            state.navigation == issued
+                                && state.phase == khor_gui_core::web::PageNavigationPhase::Failed
+                        })
+                    })
+                    .unwrap_or(false);
+                    if !current {
+                        return;
+                    }
+                    if let Some(page) =
+                        PAGES.with(|pages| pages.borrow().get(&tab).map(|page| page.view.clone()))
                     {
-                        // SAFETY: main thread, a live view.
-                        unsafe { load(&page, &url) };
+                        unsafe {
+                            load(&page, &url);
+                        }
                     }
                 });
             });
-            return;
         }
-    }
-    // A CONNECT the machine could not carry through: WebKit asks eight
-    // times and then says the connection was lost (measured: -1005 on
-    // every status a proxy answers), which is the route's failure, not
-    // the site's.
-    let text = if proxy.is_some()
-        && domain == Some("NSURLErrorDomain")
-        && code == Some("-1005")
-        && khor_gui_core::web::loopback_of(&url).is_none()
-    {
-        format!("route|khor||{url}")
-    } else {
-        text
-    };
-    let _ = app.emit_to(
-        "main",
-        "page:load",
-        PageWord {
-            tab: tab.clone(),
-            text: "finished".into(),
-        },
-    );
-    let _ = app.emit_to("main", "page:fail", PageWord { tab, text });
-}
-
-/// **Whether the page is loading, as WebKit says it** (UX-38 §2): the
-/// view's `loading` observed, so a load is `started` and `finished` the
-/// moment it is — the deck's line runs exactly as long. ⚠️ 墓碑: only the
-/// 400 ms poll told it, so a load quicker than a beat said nothing and a
-/// new page's first load never said `started`; the face lit the line from
-/// its own errand instead, and coming back to a tab ran it for the whole
-/// ceiling with nothing loading (measured on the simulator: 30 s).
-///
-/// `now` is the value the change carried (`NSKeyValueChangeNewKey`), so a
-/// load that began and ended inside one beat is still `started` then
-/// `finished`, and the face's hold (`use-loading`'s `SETTLE_MS`) shows
-/// its line briefly; `None` (no value in the change) reads the view.
-fn load_heard(view: usize, now: Option<bool>) {
-    let Some(app) = APP.get() else { return };
-    let word = PAGES.with(|pages| {
-        let mut pages = pages.try_borrow_mut().ok()?;
-        let (tab, page) = pages
-            .iter_mut()
-            .find(|(_, p)| Retained::as_ptr(&p.view) as usize == view)?;
-        let loading: bool = now.unwrap_or_else(|| unsafe { msg_send![&*page.view, isLoading] });
-        if loading == page.loading {
-            return None;
-        }
-        page.loading = loading;
-        Some(PageWord {
-            tab: tab.clone(),
-            text: if loading { "started" } else { "finished" }.into(),
-        })
-    });
-    if let Some(w) = word {
-        let _ = app.emit_to("main", "page:load", w);
-    }
-}
-
-unsafe extern "C" {
-    /// Foundation's key for a KVO change's new value.
-    static NSKeyValueChangeNewKey: *const AnyObject;
-}
-
-/// A KVO change's new value, as a bool (`isLoading` arrives boxed in an
-/// `NSNumber`).
-fn new_bool(change: *mut AnyObject) -> Option<bool> {
-    if change.is_null() {
-        return None;
-    }
-    // SAFETY: KVO hands the change as an NSDictionary, and the new value
-    // of a BOOL property is an NSNumber (or NSNull, never for this one).
-    unsafe {
-        let v: *mut AnyObject = msg_send![change, objectForKey: NSKeyValueChangeNewKey];
-        if v.is_null() {
-            return None;
-        }
-        let number: bool = msg_send![v, isKindOfClass: class!(NSNumber)];
-        number.then(|| msg_send![v, boolValue])
     }
 }
 
@@ -1110,11 +1138,26 @@ unsafe fn frame_of(face: *mut AnyObject, at: PageBox) -> NSRect {
 }
 
 unsafe fn load(view: &AnyObject, url: &str) {
+    tell_navigation(
+        crate::page_navigation::with_pages(|pages| {
+            pages
+                .key(view as *const AnyObject as usize)
+                .and_then(|key| pages.request(key, url.to_owned()))
+        })
+        .flatten(),
+    );
     let text = NSString::from_str(url);
     let u: Option<Retained<AnyObject>> = unsafe { msg_send![class!(NSURL), URLWithString: &*text] };
     let Some(u) = u else { return };
     let req: Retained<AnyObject> = unsafe { msg_send![class!(NSURLRequest), requestWithURL: &*u] };
-    let _: Option<Retained<AnyObject>> = unsafe { msg_send![view, loadRequest: &*req] };
+    let navigation: Option<Retained<AnyObject>> = unsafe { msg_send![view, loadRequest: &*req] };
+    if let Some(navigation) = navigation {
+        crate::page_navigation::with_pages(|pages| {
+            if let Some(key) = pages.key(view as *const AnyObject as usize) {
+                pages.expect(key, Retained::as_ptr(&navigation) as usize);
+            }
+        });
+    }
 }
 
 unsafe fn add_script(controller: *mut AnyObject, source: &str) {
@@ -1177,6 +1220,34 @@ unsafe fn store_for(exit: &str) -> Option<Retained<AnyObject>> {
     let uuid: Option<Retained<AnyObject>> = unsafe { msg_send![a, initWithUUIDString: &*text] };
     let uuid = uuid?;
     unsafe { msg_send![class!(WKWebsiteDataStore), dataStoreForIdentifier: &*uuid] }
+}
+
+/// The same dynamic Ground asset as the main UI, including retained views
+/// when the app's chosen interface style changes. This changes the native
+/// default/under-page surface, never the document's CSS background.
+unsafe fn paint_ground(view: &AnyObject) {
+    unsafe {
+        crate::wear_the_ground(view as *const AnyObject as *mut std::ffi::c_void);
+    }
+    let name = NSString::from_str("Ground");
+    unsafe {
+        let ground: *mut AnyObject = msg_send![class!(UIColor), colorNamed: &*name];
+        let can: bool =
+            msg_send![view, respondsToSelector: objc2::sel!(setUnderPageBackgroundColor:)];
+        if can && !ground.is_null() {
+            let _: () = msg_send![view, setUnderPageBackgroundColor: ground];
+        }
+    }
+}
+
+pub fn repaint_ground() {
+    PAGES.with(|pages| {
+        for page in pages.borrow().values() {
+            unsafe {
+                paint_ground(&page.view);
+            }
+        }
+    });
 }
 
 /// Opens or re-points `tab`'s page. `Err` when the phone cannot carry a
@@ -1259,6 +1330,7 @@ pub fn open(
             let ua = NSString::from_str(agent);
             let _: () = msg_send![&*view, setCustomUserAgent: &*ua];
         }
+        paint_ground(&view);
         // The page's own back and forward, as Safari's edge swipes.
         let _: () = msg_send![&*view, setAllowsBackForwardNavigationGestures: true];
         FAIL.with(|f| {
@@ -1274,16 +1346,28 @@ pub fn open(
         let _: () = msg_send![parent, addSubview: &*view];
         crate::menu_overlay::ios::raise();
         let scroll: Retained<AnyObject> = msg_send![&*view, scrollView];
+        let (navigation, initial) = crate::page_navigation::with_pages(|pages| {
+            pages.attach(
+                Retained::as_ptr(&view) as usize,
+                "main".into(),
+                tab.to_owned(),
+                url.to_owned(),
+                exit.to_owned(),
+                wiring.proxy.is_some(),
+            )
+        })
+        .flatten()
+        .ok_or("page navigation identity unavailable")?;
+        tell_navigation(Some(initial));
         WATCH.with(|w| {
             let pan:*mut AnyObject=msg_send![&*scroll,panGestureRecognizer];
             let _:()=msg_send![pan,addTarget:&**w,action:objc2::sel!(sheetPan:)];
             let key = NSString::from_str("contentOffset");
             // 1: NSKeyValueObservingOptionNew.
             let _: () = msg_send![&*scroll, addObserver: &**w, forKeyPath: &*key, options: 1usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
-            let key = NSString::from_str("loading");
+            let key = NSString::from_str("estimatedProgress");
             let _: () = msg_send![&*view, addObserver: &**w, forKeyPath: &*key, options: 1usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
         });
-        load(&view, url);
         PAGES.with(|pages| {
             pages.borrow_mut().insert(
                 tab.to_owned(),
@@ -1294,9 +1378,7 @@ pub fn open(
                     url: url.to_owned(),
                     told_url: url.to_owned(),
                     told_title: String::new(),
-                    // Not yet: the load just begun is heard as `started`
-                    // (`load_heard`, after this insert).
-                    loading: false,
+                    navigation,
                     told_steps: None,
                     sheet_scrolls: vec![scroll.clone()],
                     scroll,
@@ -1308,6 +1390,10 @@ pub fn open(
                 },
             );
         });
+        let view = PAGES.with(|pages| pages.borrow().get(tab).map(|page| page.view.clone()));
+        if let Some(view) = view {
+            load(&view, url);
+        }
     }
     Ok(())
 }
@@ -1355,11 +1441,12 @@ pub fn hide(tab: &str, hidden: bool) {
     crate::menu_overlay::ios::raise();
 }
 
-/// Stops watching a page's scroll view and its loading, before the page goes.
+/// Remove this view's KVO/navigation owner before releasing its handles.
 fn unwatch(page: &Page) {
+    crate::page_navigation::with_pages(|pages| pages.detach(page.navigation));
     WATCH.with(|w| {
         let key = NSString::from_str("contentOffset");
-        let load = NSString::from_str("loading");
+        let load = NSString::from_str("estimatedProgress");
         unsafe {
             for view in &page.sheet_scrolls {
                 let pan: *mut AnyObject = msg_send![&**view, panGestureRecognizer];
@@ -1448,7 +1535,9 @@ pub fn step(tab: &str, way: &str) {
                     // 重试 (UX-22): the address asked for, again — a
                     // failed load leaves the view on the page before it.
                     "retry" => {
-                        load(&page.view, &page.url);
+                        let target = crate::page_navigation::retry_target(tab)
+                            .unwrap_or_else(|| page.url.clone());
+                        load(&page.view, &target);
                         None
                     }
                     // 「仍然访问」 (UX-42 §14): the certificate passed
@@ -1495,32 +1584,13 @@ fn tell(app: &tauri::AppHandle) {
             }
             unsafe {
                 let loading: bool = msg_send![&*page.view, isLoading];
-                if loading != page.loading {
-                    page.loading = loading;
-                    let word = if loading { "started" } else { "finished" };
-                    words.push((
-                        "page:load",
-                        PageWord {
-                            tab: tab.clone(),
-                            text: word.into(),
-                        },
-                    ));
-                }
                 let title: Option<Retained<NSString>> = msg_send![&*page.view, title];
                 let title = title.map(|t| t.to_string()).unwrap_or_default();
                 if title != page.told_title {
                     page.told_title = title.clone();
                     // The borrow's own page for an address the machine
                     // could not reach (UX-22): a failed load, not a title.
-                    if title == khor_node::tunnel::PAGE_FAILED_TITLE {
-                        words.push((
-                            "page:fail",
-                            PageWord {
-                                tab: tab.clone(),
-                                text: format!("route|khor||{}", page.url),
-                            },
-                        ));
-                    } else {
+                    if title != khor_node::tunnel::PAGE_FAILED_TITLE {
                         words.push((
                             "page:title",
                             PageWord {
@@ -1659,8 +1729,7 @@ pub struct DeckProgress {
     h: f64,
     clip: DeckClip,
     color: String,
-    ms: f64,
-    ease: [f32; 4],
+    share: f64,
 }
 
 /// One stop of the rim's gradient: a colour at a share of the line.
@@ -1718,10 +1787,6 @@ thread_local! {
     /// The tabs a deck was ever drawn for, by the tag their deck carries.
     static DECK_TABS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static DECK_TARGET: Retained<DeckTarget> = unsafe { msg_send![DeckTarget::class(), new] };
-    /// When each tab's progress line began running: a reading redraws the
-    /// whole deck, and the sweep picks up where it was rather than
-    /// starting over at every change of title during a load.
-    static RUNS: RefCell<HashMap<String, std::time::Instant>> = RefCell::new(HashMap::new());
 }
 
 /// UIKit's `UIEdgeInsets`, for the page's scroll view.
@@ -1851,7 +1916,6 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         }
     });
     let Some(dr) = drawing else {
-        RUNS.with(|r| r.borrow_mut().remove(tab));
         inset(tab, 0.0);
         return;
     };
@@ -1944,11 +2008,8 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
             let _: () = msg_send![&*lab, setLineBreakMode: 4isize];
             let _: () = msg_send![&*view, addSubview: &*lab];
         }
-        match &dr.progress {
-            Some(p) => run_line(&view, tab, p),
-            None => {
-                RUNS.with(|r| r.borrow_mut().remove(tab));
-            }
+        if let Some(progress) = &dr.progress {
+            run_line(&view, progress);
         }
         let mut pill = None;
         DECK_TARGET.with(|target| {
@@ -2125,17 +2186,12 @@ unsafe fn view_shadow(deck: &AnyObject, g: &DeckGlass, sh: &DeckShadow) {
     }
 }
 
-/// **The progress line under the pill** (UX-35 §2; UX-33 §2 in the DOM):
-/// a 2-pt run along the capsule's bottom edge, clipped to its corners,
-/// swept from the left over and over in the DOM's period and curve —
-/// Safari's — until a reading comes without it. The DOM pill is the
-/// source of truth; this draws what it read.
-unsafe fn run_line(deck: &AnyObject, tab: &str, p: &DeckProgress) {
-    let since = RUNS.with(|r| {
-        *r.borrow_mut()
-            .entry(tab.to_owned())
-            .or_insert_with(std::time::Instant::now)
-    });
+/// Draw the issued navigation estimate once. The frontend removes the
+/// successful line after 1; there is no repeating native animation.
+unsafe fn run_line(deck: &AnyObject, p: &DeckProgress) {
+    if !p.share.is_finite() || !(0.0..=1.0).contains(&p.share) {
+        return;
+    }
     unsafe {
         let a: Allocated<AnyObject> = msg_send![class!(UIView), alloc];
         let clip: Retained<AnyObject> =
@@ -2152,34 +2208,8 @@ unsafe fn run_line(deck: &AnyObject, tab: &str, p: &DeckProgress) {
         // Grown from its left end: the anchor first, then the frame, so
         // the frame lands where it was read.
         let _: () = msg_send![layer, setAnchorPoint: NSPoint::new(0.0, 0.5)];
-        let _: () = msg_send![&*line, setFrame: rect(p.x - p.clip.x, p.y - p.clip.y, p.w, p.h)];
-        if p.ms > 0.0 {
-            let key = NSString::from_str("transform.scale.x");
-            let anim: Retained<AnyObject> =
-                msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key];
-            let from: Retained<AnyObject> = msg_send![class!(NSNumber), numberWithDouble: 0.0f64];
-            let to: Retained<AnyObject> = msg_send![class!(NSNumber), numberWithDouble: 1.0f64];
-            let _: () = msg_send![&*anim, setFromValue: &*from];
-            let _: () = msg_send![&*anim, setToValue: &*to];
-            let period = p.ms / 1000.0;
-            let _: () = msg_send![&*anim, setDuration: period];
-            let _: () = msg_send![&*anim, setRepeatCount: f32::INFINITY];
-            let _: () = msg_send![&*anim, setRemovedOnCompletion: false];
-            let _: () = msg_send![&*anim, setTimeOffset: since.elapsed().as_secs_f64() % period];
-            // `functionWithControlPoints::::` has unnamed parts, which
-            // `msg_send!` cannot spell.
-            let [c1x, c1y, c2x, c2y] = p.ease;
-            let curve: *mut AnyObject = objc2::runtime::MessageReceiver::send_message(
-                class!(CAMediaTimingFunction),
-                objc2::sel!(functionWithControlPoints::::),
-                (c1x, c1y, c2x, c2y),
-            );
-            if !curve.is_null() {
-                let _: () = msg_send![&*anim, setTimingFunction: curve];
-            }
-            let name = NSString::from_str("progress");
-            let _: () = msg_send![layer, addAnimation: &*anim, forKey: &*name];
-        }
+        let _: () =
+            msg_send![&*line, setFrame: rect(p.x - p.clip.x, p.y - p.clip.y, p.w * p.share, p.h)];
         let _: () = msg_send![&*clip, addSubview: &*line];
         let _: () = msg_send![deck, addSubview: &*clip];
     }

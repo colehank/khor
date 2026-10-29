@@ -24,10 +24,34 @@ pub(crate) struct Changed {
     pub state: PageNavigationState,
 }
 
+/// Native input keeps an exact retry target separately from its bounded
+/// diagnostic projection. It is not a public/serializable wire type.
+pub(crate) struct Failure {
+    pub error: PageNavigationError,
+    pub target: String,
+}
+
+/// Only the borrow producer's explicit failure document uses this reason;
+/// the presence of a proxy or a generic connection-lost error does not.
+pub(crate) fn route_error(url: String) -> Failure {
+    Failure {
+        target: url.clone(),
+        error: PageNavigationError {
+            domain: "khor".into(),
+            code: "route".into(),
+            description: String::new(),
+            url,
+            underlying: Vec::new(),
+            truncated: false,
+        },
+    }
+}
+
 struct Page {
     key: ViewKey,
     face: String,
     native_navigation: Option<usize>,
+    failed_target: Option<String>,
     state: PageNavigationState,
 }
 
@@ -52,6 +76,10 @@ pub(crate) fn snapshot(tab: &str) -> Option<PageNavigationState> {
     with_pages(|pages| pages.snapshot(tab)).flatten()
 }
 
+pub(crate) fn retry_target(tab: &str) -> Option<String> {
+    with_pages(|pages| pages.retry_target(tab)).flatten()
+}
+
 fn estimate(value: f64) -> Option<f64> {
     // A WebKit estimate of 1 can precede didFinish. It is still loading
     // until that navigation's success callback, never a synthetic finish.
@@ -66,6 +94,54 @@ fn active(phase: &PageNavigationPhase) -> bool {
 }
 
 impl Pages {
+    /// Wry platforms without a WK object use an issued builder-instance
+    /// key. These tokens identify our event/request stream, not OS nav IDs.
+    #[cfg(any(not(any(target_os = "macos", target_os = "ios")), test))]
+    pub(crate) fn attach_wry(
+        &mut self,
+        face: String,
+        tab: String,
+        target: String,
+        exit: String,
+        proxied: bool,
+    ) -> Option<(ViewKey, Changed)> {
+        let address = usize::try_from(self.serial.checked_add(1)?).ok()?;
+        self.attach(address, face, tab, target, exit, proxied)
+    }
+
+    #[cfg(any(not(any(target_os = "macos", target_os = "ios")), test))]
+    pub(crate) fn wry_started(&mut self, key: ViewKey, target: String) -> Option<Changed> {
+        let issued = usize::try_from(self.serial.checked_add(1)?).ok()?;
+        self.started(key, issued, target)
+    }
+
+    #[cfg(any(not(any(target_os = "macos", target_os = "ios")), test))]
+    pub(crate) fn wry_finished(&mut self, key: ViewKey, url: String) -> Option<Changed> {
+        let navigation = self
+            .views
+            .get(&key.address)
+            .filter(|page| page.key == key)?
+            .native_navigation?;
+        self.update_navigation(key, navigation, |page| {
+            page.state.phase = PageNavigationPhase::Settled;
+            page.state.url = url;
+            page.state.estimate = None;
+            page.state.error = None;
+            page.failed_target = None;
+            true
+        })
+    }
+
+    #[cfg(any(not(any(target_os = "macos", target_os = "ios")), test))]
+    pub(crate) fn wry_failed(&mut self, key: ViewKey, failure: Failure) -> Option<Changed> {
+        let navigation = self
+            .views
+            .get(&key.address)
+            .filter(|page| page.key == key)?
+            .native_navigation?;
+        self.failed(key, navigation, failure)
+    }
+
     pub(crate) fn attach(
         &mut self,
         address: usize,
@@ -100,6 +176,7 @@ impl Pages {
                 key,
                 face: face.clone(),
                 native_navigation: None,
+                failed_target: None,
                 state: state.clone(),
             },
         );
@@ -113,11 +190,32 @@ impl Pages {
         self.views.get(&address).map(|page| page.key)
     }
 
+    pub(crate) fn key_for_tab(&self, tab: &str) -> Option<ViewKey> {
+        self.views
+            .values()
+            .find(|page| page.state.tab == tab)
+            .map(|page| page.key)
+    }
+
+    pub(crate) fn state(&self, key: ViewKey) -> Option<&PageNavigationState> {
+        self.views
+            .get(&key.address)
+            .filter(|page| page.key == key)
+            .map(|page| &page.state)
+    }
+
     pub(crate) fn snapshot(&self, tab: &str) -> Option<PageNavigationState> {
         self.views
             .values()
             .find(|page| page.state.tab == tab)
             .map(|page| page.state.clone())
+    }
+
+    pub(crate) fn retry_target(&self, tab: &str) -> Option<String> {
+        self.views
+            .values()
+            .find(|page| page.state.tab == tab)
+            .and_then(|page| page.failed_target.clone())
     }
 
     pub(crate) fn detach(&mut self, key: ViewKey) {
@@ -137,10 +235,30 @@ impl Pages {
             page.state.navigation.clear();
             page.state.estimate = None;
             page.state.error = None;
+            page.failed_target = None;
             true
         })
     }
 
+    /// Bind the navigation returned by an explicit loadRequest before the
+    /// runloop can deliver callbacks for the replaced request. Internal
+    /// links are instead issued synchronously by their didStart callback.
+    pub(crate) fn expect(&mut self, key: ViewKey, navigation: usize) {
+        if navigation == 0 {
+            return;
+        }
+        if let Some(page) = self
+            .views
+            .get_mut(&key.address)
+            .filter(|page| page.key == key && page.state.phase == PageNavigationPhase::Opening)
+        {
+            page.native_navigation = Some(navigation);
+        }
+    }
+
+    /// Invoke synchronously in the native didStart callback. If an adapter
+    /// needs to defer delivery, defer the returned immutable Changed only.
+    /// Replaying a raw start later would incorrectly issue a fresh load.
     pub(crate) fn started(
         &mut self,
         key: ViewKey,
@@ -155,16 +273,26 @@ impl Pages {
             if page.native_navigation == Some(navigation) && active(&page.state.phase) {
                 return false;
             }
+            let opening = page.state.phase == PageNavigationPhase::Opening;
+            let expected = opening && page.native_navigation.is_some();
+            if expected && page.native_navigation != Some(navigation) {
+                return false;
+            }
             page.native_navigation = Some(navigation);
             page.state.navigation = serial.to_string();
             page.state.phase = PageNavigationPhase::Started;
-            page.state.requested_url = target;
+            if page.state.requested_url.is_empty() || !opening {
+                page.state.requested_url = target;
+            }
             page.state.estimate = None;
             page.state.error = None;
+            page.failed_target = None;
             true
         })
     }
 
+    /// Capture progress in the native callback, not in a later dispatch.
+    /// This result, including its issued revision, is safe to queue.
     pub(crate) fn progressed(&mut self, key: ViewKey, value: f64) -> Option<Changed> {
         let value = estimate(value)?;
         self.update(key, |page| {
@@ -203,6 +331,21 @@ impl Pages {
             page.state.url = url;
             page.state.estimate = Some(1.0);
             page.state.error = None;
+            page.failed_target = None;
+            true
+        })
+    }
+
+    /// Explicitly accepted user stop, not a fabricated NSError or success.
+    /// SDK download callbacks are not enough to infer a top-level cancel.
+    pub(crate) fn cancelled(&mut self, key: ViewKey) -> Option<Changed> {
+        self.update(key, |page| {
+            if page.state.phase != PageNavigationPhase::Opening && !active(&page.state.phase) {
+                return false;
+            }
+            page.state.phase = PageNavigationPhase::Cancelled;
+            page.state.error = None;
+            page.failed_target = None;
             true
         })
     }
@@ -211,10 +354,15 @@ impl Pages {
         &mut self,
         key: ViewKey,
         navigation: usize,
-        error: PageNavigationError,
+        failure: Failure,
     ) -> Option<Changed> {
         self.update_navigation(key, navigation, |page| {
-            let error = bounded_error(error);
+            page.failed_target = Some(if failure.target.is_empty() {
+                page.state.requested_url.clone()
+            } else {
+                failure.target
+            });
+            let error = bounded_error(failure.error);
             page.state.phase = if (error.domain == "NSURLErrorDomain" && error.code == "-999")
                 || (error.domain == "WebKitErrorDomain" && error.code == "102")
             {
@@ -317,14 +465,17 @@ mod tests {
             .unwrap()
             .0
     }
-    fn error(code: &str) -> PageNavigationError {
-        PageNavigationError {
-            domain: "NSURLErrorDomain".into(),
-            code: code.into(),
-            description: "actual refusal".into(),
-            url: "https://failed.test".into(),
-            underlying: vec![],
-            truncated: false,
+    fn error(code: &str) -> Failure {
+        Failure {
+            target: "https://failed.test".into(),
+            error: PageNavigationError {
+                domain: "NSURLErrorDomain".into(),
+                code: code.into(),
+                description: "actual refusal".into(),
+                url: "https://failed.test".into(),
+                underlying: vec![],
+                truncated: false,
+            },
         }
     }
 
@@ -417,10 +568,36 @@ mod tests {
             .started(key, 11, "https://second.test".into())
             .unwrap();
         assert!(pages.failed(key, 10, error("-999")).is_none());
+        assert!(
+            pages.retry_target("tab").is_none(),
+            "late failure cannot install a recovery target for the new load"
+        );
         assert_eq!(
             pages.snapshot("tab").unwrap().requested_url,
             "https://second.test"
         );
+    }
+
+    #[test]
+    fn an_explicit_request_binds_its_native_navigation_before_callbacks_arrive() {
+        let mut pages = Pages::default();
+        let key = attach(&mut pages, 1);
+        pages.started(key, 10, "https://first.test".into()).unwrap();
+        pages.request(key, "https://second.test".into()).unwrap();
+        pages.expect(key, 11);
+        let pending = pages.snapshot("tab").unwrap();
+        assert!(
+            pages
+                .started(key, 10, "https://first.test".into())
+                .is_none()
+        );
+        assert_eq!(pages.snapshot("tab").unwrap(), pending);
+        // WK URL may still show the old document in the first callback.
+        let current = pages
+            .started(key, 11, "https://first.test".into())
+            .unwrap()
+            .state;
+        assert_eq!(current.requested_url, "https://second.test");
     }
 
     #[test]
@@ -461,8 +638,93 @@ mod tests {
     }
 
     #[test]
-    fn raw_error_fields_and_underlying_chain_are_bounded_on_utf8_boundaries() {
+    fn bounded_diagnostics_do_not_truncate_the_exact_retry_target() {
+        let mut pages = Pages::default();
+        let key = attach(&mut pages, 1);
+        pages.started(key, 10, "https://first.test".into()).unwrap();
+        let target = format!("https://failed.test/{}", "中".repeat(3000));
         let mut raw = error("-1004");
+        raw.target = target.clone();
+        raw.error.url = target.clone();
+        let failed = pages.failed(key, 10, raw).unwrap().state;
+        assert!(failed.error.unwrap().url.len() <= 4096);
+        assert_eq!(pages.retry_target("tab"), Some(target));
+        pages.request(key, "https://next.test".into()).unwrap();
+        assert!(pages.retry_target("tab").is_none());
+    }
+
+    #[test]
+    fn wry_events_keep_unknown_progress_without_inventing_an_os_navigation_id() {
+        let mut pages = Pages::default();
+        let (key, _) = pages
+            .attach_wry(
+                "main".into(),
+                "tab".into(),
+                "https://first.test".into(),
+                "exit".into(),
+                true,
+            )
+            .unwrap();
+        let started = pages
+            .wry_started(key, "https://first.test".into())
+            .unwrap()
+            .state;
+        assert_eq!(started.estimate, None);
+        let finished = pages
+            .wry_finished(key, "https://first.test".into())
+            .unwrap()
+            .state;
+        assert_eq!(finished.phase, PageNavigationPhase::Settled);
+        assert_eq!(finished.estimate, None);
+        pages.wry_started(key, "https://first.test".into()).unwrap();
+        let failed = pages
+            .wry_failed(key, route_error("https://first.test".into()))
+            .unwrap()
+            .state;
+        assert_eq!(failed.phase, PageNavigationPhase::Failed);
+        assert_eq!(failed.estimate, None);
+        assert!(
+            pages
+                .wry_finished(key, "https://first.test".into())
+                .is_none()
+        );
+        let (_, _) = pages
+            .attach_wry(
+                "main".into(),
+                "tab".into(),
+                "https://first.test".into(),
+                "exit".into(),
+                true,
+            )
+            .unwrap();
+        assert!(
+            pages
+                .wry_finished(key, "https://first.test".into())
+                .is_none(),
+            "old builder callback cannot affect replacement"
+        );
+    }
+
+    #[test]
+    fn accepted_user_stop_is_cancelled_without_inventing_an_error_or_success() {
+        let mut pages = Pages::default();
+        let key = attach(&mut pages, 1);
+        pages.started(key, 10, "https://first.test".into()).unwrap();
+        pages.progressed(key, 0.4);
+        let cancelled = pages.cancelled(key).unwrap().state;
+        assert_eq!(cancelled.phase, PageNavigationPhase::Cancelled);
+        assert_eq!(cancelled.estimate, Some(0.4));
+        assert!(cancelled.error.is_none());
+        assert!(
+            pages
+                .finished(key, 10, "https://first.test".into())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn raw_error_fields_and_underlying_chain_are_bounded_on_utf8_boundaries() {
+        let mut raw = error("-1004").error;
         raw.description = "中".repeat(2000);
         raw.underlying = (0..5)
             .map(|_| PageNavigationCause {
