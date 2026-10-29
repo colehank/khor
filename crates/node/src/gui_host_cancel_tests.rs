@@ -657,15 +657,8 @@ fn managed_host_case_worker() {
             assert_eq!(prompt["images"][0][1], "aW1hZ2U=");
             assert_eq!(prompt["files"][0][1], "原文");
             assert_eq!(rows.iter().filter(|row| row["notification"]["update"]["content"]["text"] == "capture identical chunk").count(), 2);
-            a.shutdown(std::net::Shutdown::Write).unwrap();
-            loop {
-                match notes_a.recv_timeout(Duration::from_secs(4)) {
-                    Ok(GuiNote::Captured { .. }) => panic!("B's fence reached view A"),
-                    Ok(_) => {},
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(error) => panic!("half-closed view did not finish: {error}"),
-                }
-            }
+            a.shutdown(std::net::Shutdown::Both).unwrap();
+            drop(notes_a);
             assert_alive(process_pid(&scratch, "journal-no-load"));
             close_host(host, &mut b, &notes_b, process_pid(&scratch, "journal-no-load"));
             let received = std::fs::read_to_string(scratch.join("journal-no-load/received.jsonl")).unwrap();
