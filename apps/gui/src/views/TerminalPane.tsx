@@ -2415,11 +2415,12 @@ export function TerminalPane({
     const data = term.onData((d) => {
       const preencoded = isEncodedKeyInput(term);
       const reply = !preencoded && isReply(d);
-      if (replaying > 0 && (reply || isFocusReport(d))) return;
+      const focusReport = !preencoded && isFocusReport(d);
+      if (replaying > 0 && (reply || focusReport)) return;
       // The field let go for a touch or a selection (item 54) is not the
       // person leaving the terminal: the program is not told.
-      if (isFocusReport(d) && selectionHolds()) return;
-      if (!reply && !isFocusReport(d)) ownSize();
+      if (focusReport && selectionHolds()) return;
+      if (!reply && !focusReport) ownSize();
       let out = d;
       const m = modsRef.current;
       // An answer to a live question is not a key: it neither takes a

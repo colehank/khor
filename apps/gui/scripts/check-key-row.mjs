@@ -10,7 +10,7 @@ const windowBefore=globalThis.window;
 const storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>{if(refuseStorage)throw Error('fixture storage unavailable');values.set(key,value)}};
 globalThis.window=Object.assign(new EventTarget(),{localStorage:storage});
 const alias={name:'alias',setup(b){b.onResolve({filter:/^@\//},args=>b.resolve(`./src/${args.path.slice(2)}`,{resolveDir:process.cwd(),kind:args.kind}))}};
-const built=await build({stdin:{contents:`export * from './src/lib/term-key-model';export * from './src/lib/term-key-codec';export * from './src/lib/term-keys';export * from './src/lib/term-kitty';export {Terminal} from '@xterm/xterm';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',plugins:[alias]});
+const built=await build({stdin:{contents:`export * from './src/lib/term-key-model';export * from './src/lib/term-key-codec';export * from './src/lib/term-keys';export * from './src/lib/term-kitty';export * from './src/lib/term-replies';export {Terminal} from '@xterm/xterm';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',plugins:[alias]});
 const module={exports:{}};Function('module','exports',built.outputFiles[0].text)(module,module.exports);
 const m=module.exports, names=m.KEYS.map(key=>key.name);
 const stroke=(key,mods={})=>({key,ctrl:false,alt:false,shift:false,...mods});
@@ -60,9 +60,12 @@ test('malformed saved data remains intact until explicit save and same-window pu
   const broken=JSON.stringify({version:20,entries:[]});values.set(STORE,broken);refresh();
   assert.deepEqual(m.keyRow(),m.defaultRow());assert.equal(values.get(STORE),broken);
   let events=0;const count=()=>events++;window.addEventListener('khor:term-key-row',count);
-  m.setKeyRow([custom()]);assert.equal(events,1);assert.equal(JSON.parse(values.get(STORE)).version,1);
+  assert.throws(()=>m.setKeyRow([custom()]),/reset/,'an ordinary edit must not overwrite damaged saved data');
+  assert.equal(values.get(STORE),broken);assert.equal(events,0);
+  m.resetKeyRow();assert.equal(events,1);
+  m.setKeyRow([custom()]);assert.equal(events,2);assert.equal(JSON.parse(values.get(STORE)).version,1);
   const before=values.get(STORE);assert.throws(()=>m.setKeyRow([custom('bad',{stroke:stroke('not-a-key')})]));
-  assert.equal(events,1);assert.equal(values.get(STORE),before);window.removeEventListener('khor:term-key-row',count);
+  assert.equal(events,2);assert.equal(values.get(STORE),before);window.removeEventListener('khor:term-key-row',count);
 });
 test('storage failure keeps local edits and cross-window updates replace that cache',()=>{
   refuseStorage=true;m.setKeyRow([custom('local')]);assert.equal(m.keyRow()[0].id,'custom:local');
@@ -130,5 +133,25 @@ test('production onData keeps locks out of custom input and preserves ordinary i
   } finally {t.dispose()}
 });
 
-try {for(const [name,run] of tests){await run();console.log(`ok ${name}`)}console.log(JSON.stringify({passed:tests.length}))}
+test('production callback does not drop a custom focus-shaped sequence but still filters real focus reports',async()=>{
+  const source=readFileSync(resolve('src/views/TerminalPane.tsx'),'utf8');
+  const ast=ts.createSourceFile('pane.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let callback;
+  function visit(node){if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&node.expression.name.text==='onData'&&node.expression.expression.getText(ast)==='term')callback=node.arguments[0].getText(ast);ts.forEachChild(node,visit)}visit(ast);assert(callback);
+  const js=ts.transpileModule(`const handler=${callback};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const focusLike={kind:'sequence',steps:[stroke('Escape'),stroke('BracketLeft'),stroke('KeyI',{shift:true})]};
+  for(const [replaying,selected] of [[1,false],[0,true]]){
+    const t=await terminal(),sent=[];
+    try {
+      const parameters=['term','isEncodedKeyInput','isReply','replaying','isFocusReport','selectionHolds','ownSize','modsRef','MOUSE_REPORT','blink','kittyTyped','typed','latch','afterKey','send','predict'];
+      const handler=Function(...parameters,`${js};return handler;`)(t.term,m.isEncodedKeyInput,m.isReply,replaying,m.isFocusReport,()=>selected,()=>{},{current:{ctrl:false,alt:false}},/^not-a-mouse-report$/,{typed(){}},m.kittyTyped,m.typed,()=>{},m.afterKey,value=>sent.push(value),{typed(){}});
+      t.term.onData(handler);
+      assert.equal(m.encodeKeyAction(t.term,focusLike),'\x1b[I');
+      m.pressKeyAction(t.term,focusLike);assert.deepEqual(sent,['\x1b[I'],'explicit user input must reach its terminal');
+      t.term.input('\x1b[I',false);assert.deepEqual(sent,['\x1b[I'],'ordinary automatic focus reports remain suppressed');
+    } finally {t.dispose()}
+  }
+});
+const selected = process.argv[2] ? tests.filter(([name])=>name===process.argv[2]) : tests;
+assert(selected.length,'unknown selected key-row test');
+try {for(const [name,run] of selected){await run();console.log(`ok ${name}`)}console.log(JSON.stringify({passed:selected.length}))}
 finally {if(windowBefore===undefined)delete globalThis.window;else globalThis.window=windowBefore;}

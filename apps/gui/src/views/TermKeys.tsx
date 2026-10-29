@@ -53,7 +53,7 @@ import { Switch } from "@/components/settings/Switch";
 import { Dialog, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
-import { afterKey, GROUPS, KEYS, keyDefinition, pressLatch, setKeyRow, useKeyRow, type KeyDef, type Mods } from "@/lib/term-keys";
+import { afterKey, GROUPS, KEYS, keyDefinition, pressLatch, setKeyRow, useKeyRow, useKeyRowState, type KeyDef, type Mods } from "@/lib/term-keys";
 import { pressKeyAction } from "@/lib/term-key-codec";
 import type { KeyRowEntry } from "@/lib/term-key-model";
 import { keyPanelGone, toggleKeyPanel, useKeyPanel, useKeyPanelKind, type PanelKind } from "@/lib/key-panel";
@@ -447,10 +447,11 @@ export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChan
 
 /** The editor's list: the seats, their switches and grips. */
 function KeyRowList() {
-  const row = useKeyRow();
+  const { entries: row, problem } = useKeyRowState();
   const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const move = (name: string, to: number) => {
+    if (problem !== null) return;
     const from = row.findIndex((s) => s.id === name);
     const at = Math.max(0, Math.min(row.length - 1, to));
     if (from < 0 || from === at) return;
@@ -458,7 +459,7 @@ function KeyRowList() {
     next.splice(at, 0, row[from]);
     setKeyRow(next);
   };
-  const toggle = (name: string) => setKeyRow(row.map((s): KeyRowEntry => (s.id === name ? { ...s, on: !s.on } : s)));
+  const toggle = (name: string) => problem === null && setKeyRow(row.map((s): KeyRowEntry => (s.id === name ? { ...s, on: !s.on } : s)));
   /** Where a row dragged to `y` lands: after every other row whose middle
       is above the pointer. */
   const slotAt = (name: string, y: number): number => {
@@ -483,10 +484,11 @@ function KeyRowList() {
             className={cn("flex min-h-touch items-center gap-row border-b", dragging === s.id && "bg-fill")}
           >
             <span className="min-w-0 flex-1 truncate text-body">{k.cap}</span>
-            <Switch on={s.on} label={nameOf(k)} onToggle={() => toggle(s.id)} />
+            <Switch on={s.on} label={nameOf(k)} disabled={problem !== null} onToggle={() => toggle(s.id)} />
             <button
               type="button"
               data-key-row-grip
+              disabled={problem !== null}
               data-sheet-hold
               aria-label={nameOf(k)}
               aria-keyshortcuts="ArrowUp ArrowDown"

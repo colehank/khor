@@ -191,6 +191,11 @@ function rowState(): KeyRowState {
 }
 export function keyRow(): KeyRowEntry[] { return rowState().entries; }
 export function setKeyRow(entries: KeyRowEntry[]): void {
+  if (rowState().problem !== null) throw new Error("reset damaged key row before editing");
+  commitRow(entries);
+}
+export function resetKeyRow(): void { commitRow(defaultRow()); }
+function commitRow(entries: KeyRowEntry[]): void {
   const raw = serializeKeyRow(entries, names);
   const normalized = decodeKeyRow(raw, names);
   if (!normalized.ok) throw new Error("invalid key row");
