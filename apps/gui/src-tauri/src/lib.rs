@@ -366,6 +366,18 @@ async fn git_log(machine: String, path: String) -> Result<khor_gui_core::git::Gi
 }
 
 #[tauri::command]
+async fn git_history(
+    machine: String,
+    dir: String,
+    cursor: Option<String>,
+    limit: u32,
+) -> Result<khor_gui_core::git::GitHistoryPage, String> {
+    khor_gui_core::git::history(
+        &Node::root_from_env(), &machine, &dir, cursor.as_deref(), limit,
+    ).await
+}
+
+#[tauri::command]
 async fn git_blame(machine: String, path: String) -> Result<khor_gui_core::git::GitBlame, String> {
     khor_gui_core::git::blame(&Node::root_from_env(), &machine, &path).await
 }
@@ -5211,6 +5223,7 @@ pub fn run() {
             checkout,
             git_diff,
             git_log,
+            git_history,
             git_blame,
             git_show,
             git_commit,

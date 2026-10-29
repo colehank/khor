@@ -247,6 +247,13 @@ pub fn answer(
         "git_log" => {
             to_json(&rt.block_on(crate::git::log(root, &arg("machine")?, &arg("path")?))?)
         }
+        "git_history" => to_json(&rt.block_on(crate::git::history(
+            root,
+            &arg("machine")?,
+            &arg("dir")?,
+            opt_str("cursor")?.as_deref(),
+            u32::try_from(num("limit")?).map_err(|_| "limit exceeds u32".to_owned())?,
+        ))?),
         "git_blame" => {
             to_json(&rt.block_on(crate::git::blame(root, &arg("machine")?, &arg("path")?))?)
         }
