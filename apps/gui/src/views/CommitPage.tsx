@@ -12,10 +12,11 @@ import { Waiting } from "@/components/RegionState";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
+import type { GitCommitSummary } from "@/gen/bindings/GitCommitSummary";
 import type { GitCommitFile } from "@/gen/bindings/GitCommitFile";
 import type { GitCommitShow } from "@/gen/bindings/GitCommitShow";
 import { cn } from "@/lib/utils";
-import { authorLine, bodyOf, shortId } from "@/views/FileHistory";
+import { authorLine, bodyOf } from "@/views/FileHistory";
 import { markInk } from "@/views/fileRow";
 import { ago, basename } from "@/words";
 import { useKeptScrollRef, type KeptScrollSlot } from "@/hooks/use-kept-scroll";
@@ -37,7 +38,7 @@ export function CommitPage({
   root: string;
   /** The row that was pressed: the head is drawn from it at once, before
       the files arrive. */
-  commit: GitCommit;
+  commit: GitCommit | GitCommitSummary;
   onBack: () => void;
   /** The main workspace owns the full phone viewport; inset sheets do not. */
   edgeToEdge?: boolean;
@@ -72,7 +73,9 @@ export function CommitPage({
       live = false;
     };
   }, [machine, root, commit.id]);
-  const body = bodyOf(commit);
+  const metadata = shown?.commit.id === commit.id ? shown.commit : "body" in commit ? commit : null;
+  const subject = metadata?.subject ?? commit.subject;
+  const body = metadata === null ? "" : bodyOf(metadata);
   const scroller = useRef<HTMLDivElement>(null);
   const selectedFile = useRef<string | null>(null);
   // Ref cleanup runs before a width-mode registration takes the same port.
@@ -107,7 +110,7 @@ export function CommitPage({
           <IconBack />
         </GlassCircle>
         <span className="min-w-0 flex-1" />
-        <span className="flex-none font-mono text-callout text-tertiary">{shortId(commit)}</span>
+        <span className="flex-none font-mono text-callout text-tertiary">{commit.id.slice(0, 7)}</span>
       </div>}
       <div
         ref={attachScroller}
@@ -116,7 +119,7 @@ export function CommitPage({
       >
         <header data-sticky-body data-selectable className="flex flex-col gap-1 px-row py-in">
           <h1 data-commit-title className="text-title-sm text-foreground">
-            {commit.subject}
+            {subject}
           </h1>
           {body !== "" && (
             <p data-commit-message className="whitespace-pre-wrap text-body text-muted-foreground">
@@ -124,7 +127,7 @@ export function CommitPage({
             </p>
           )}
           <span data-commit-by className="text-callout text-muted-foreground">
-            {authorLine(commit)} · {ago(commit.when_ms)} · <span className="font-mono">{commit.id}</span>
+            {metadata === null ? gui.commit_authored_one(commit.author) : authorLine(metadata)} · {ago(metadata?.when_ms ?? commit.when_ms)} · <span className="font-mono">{commit.id}</span>
           </span>
         </header>
         {refused !== null ? (
@@ -185,7 +188,7 @@ export function CommitPage({
           </>
         )}
       </div>
-      {narrow && presentation === "page" && <HistoryDeck title={shortId(commit)} subtitle={commit.subject} onBack={onBack} commit/>}
+      {narrow && presentation === "page" && <HistoryDeck title={commit.id.slice(0, 7)} subtitle={subject} onBack={onBack} commit/>}
     </div>
   );
 }

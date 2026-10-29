@@ -1,9 +1,9 @@
-import type { GitCommit } from "@/gen/bindings/GitCommit";
+import type { GitCommitSummary } from "@/gen/bindings/GitCommitSummary";
 
 export type WorkspaceTarget =
   | { kind: "file"; path: string }
   | { kind: "diff"; path: string }
-  | { kind: "commit"; commit: GitCommit };
+  | { kind: "commit"; commit: GitCommitSummary };
 
 export type WorkspaceTabs = {
   items: WorkspaceTarget[];

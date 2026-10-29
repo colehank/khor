@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 
 import {
   fetchGitStatus,
-  fetchGitLog,
+  fetchGitHistory,
 
   searchIn,
   widenWindow,
@@ -14,7 +14,6 @@ import {
   type Found,
   type SearchHit,
   type GitStatus,
-  type GitLog,
   type SessionRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -40,7 +39,7 @@ import {
 import { stalestTab, useTabsLimit } from "@/browse/tab-limit";
 import { type TabFace } from "@/browse/TabStrip";
 import { fileKind } from "@/components/SessionFace";
-import type { GitCommit } from "@/gen/bindings/GitCommit";
+import type { GitCommitSummary } from "@/gen/bindings/GitCommitSummary";
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { Tabs } from "@/browse/Tabs";
 import { cli, gui } from "@/gen/catalog";
@@ -517,22 +516,10 @@ export function WorkspacePane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
   const [git, setGit] = useState<GitStatus | null>(null);
-  /** …and the last **answer**, for R0's second line (2026-09-28).
-      `git` goes back to null while each re-ask is in flight — after a
-      save, on the way back into the window — and a branch that blinked
-      out of the title every time somebody saved would be the head
-      flickering over a fact that did not change. A refusal still
-      clears it: 「不是 checkout」 says nothing, here as in the tree. */
-  const [headGit, setHeadGit] = useState<GitStatus | null>(null);
-  /** HEAD's first commit, for the tree's commit line (WS-LAB item 1).
-      Re-asked alongside `git` on every `gitAt` bump — the same trigger
-      the marks ride, which is also the moment the commit may have moved.
-      `fetchGitLog(machine, root)` rather than extending GitStatus: the
-      Rust-side status walk does carry subject/id for the workspace list
-      row (`GitSegment`), but that field arrives via a different IPC path
-      than `git_status`. Using `git_log` with path=root is one call and
-      always has the data. */
-  const [headCommit, setHeadCommit] = useState<GitLog["commits"][0] | null>(null);
+  // Keep the last header facts through detach so restoring a log does not
+  // grow an initially empty header after its reading position was restored.
+  const [branch, setBranch] = useWorkspaceField(memory, "branch", () => "");
+  const [headCommit, setHeadCommit] = useWorkspaceField(memory, "headCommit", () => null);
   const [historyOpen, setHistoryOpen] = useWorkspaceField(memory, "historyOpen", () => false);
   const [historyQuery, setHistoryQuery] = useWorkspaceField(memory, "historyQuery", () => "");
   /** Bumped to ask the marks again. A counter for the same reason the
@@ -661,28 +648,23 @@ export function WorkspacePane({
       .then((g) => {
         if (!live) return;
         setGit(g);
-        setHeadGit(g);
+        setBranch(g.branch);
       })
       .catch(() => {
         if (!live) return;
         setGit(null);
-        setHeadGit(null);
+        setBranch("");
       });
     return () => {
       live = false;
     };
   }, [machine, root, gitAt]);
 
-  // **HEAD commit for the tree's commit line** (WS-LAB item 1): asked
-  // on the same `gitAt` beat as git status — a commit always changes
-  // the marks too, so the two answers stay in step. `fetchGitLog` with
-  // path=root gives the repository-level log; its first entry is HEAD.
-  // A non-repository, an empty repo, or a network failure all resolve
-  // to `null` and the commit line is simply omitted.
+  // The live HEAD summary is separate from the log's retained snapshot.
   useEffect(() => {
     if (root === "") return;
     let live = true;
-    fetchGitLog(machine, root)
+    fetchGitHistory(machine, root, null, 1)
       .then((l) => {
         if (!live) return;
         setHeadCommit(l.commits[0] ?? null);
@@ -887,7 +869,7 @@ export function WorkspacePane({
     if (diffOf(path) === null) setRecent(rememberOpened(machine, root, path));
     openTarget(targetOf(path), pinned);
   }, [machine, root, setRecent, openTarget]);
-  const openCommit = (value: GitCommit, pinned = false) => openTarget({ kind: "commit", commit: value }, pinned);
+  const openCommit = (value: GitCommitSummary, pinned = false) => openTarget({ kind: "commit", commit: value }, pinned);
 
   useEffect(() => {
     if (content.active !== null) touched.current.set(content.active, Date.now());
@@ -1271,7 +1253,7 @@ export function WorkspacePane({
   </GlassCapsule>;
   const workspaceActions = [
     ...(!narrow ? [{ key: "tree", label: gui.workspace_tree, run: () => side?.set(!tree) }] : []),
-    { key: "refresh", label: gui.file_reread, run: () => { setReadAt(n => n + 1); setGitAt(n => n + 1); } },
+    { key: "refresh", label: gui.file_reread, run: () => { setReadAt(n => n + 1); setGitAt(n => n + 1); memory.repositoryHistory.invalidate(); } },
     { key: "close-others", label: gui.tab_close_others, run: () => { const id = memory.read("content").active; if (id !== null) closeOthers(id); } },
   ];
   /** **The file's verbs at the strip's right end** (round UX-3, the Mac):
@@ -1352,12 +1334,11 @@ export function WorkspacePane({
     <WindowControls />
   </div>;
 
-  const branch = headGit?.branch ?? "";
   const workspaceTitle = (
     <div data-ws-side-head className="flex min-w-0 items-center gap-in">
       {!narrow && <GlassCircle aria-label={gui.back} data-ws-list-back onClick={onBack}><IconBack /></GlassCircle>}
       <PaneBar inline seat="side" title={root === "" ? machine : basename(root)}
-        searchLabel={gui.tree_search} query={historyOpen ? historyQuery : hunt}
+        searchLabel={historyOpen ? gui.git_history_search_page : gui.tree_search} query={historyOpen ? historyQuery : hunt}
         onQuery={historyOpen ? setHistoryQuery : setHunt}
         actions={root === "" ? undefined : [
           { key: "file", label: gui.file_new, afterClose: true, onSelect: () => { setHistoryOpen(false); dropHunt(); setMake({ kind: "file", at: Date.now() }); } },
@@ -1501,7 +1482,7 @@ export function WorkspacePane({
                 address bar are the point — docs/WORKSPACE.md 第二轮 says
                 so in the user's own terms. */}
             {historyOpen ? (
-              <WorkspaceHistory machine={machine} root={root} query={historyQuery} refresh={gitAt} active={commit?.id ?? null} onOpen={openCommit} />
+              <WorkspaceHistory machine={machine} root={root} query={historyQuery} memory={memory.repositoryHistory} active={commit?.id ?? null} onOpen={openCommit} />
             ) : hunt.trim() !== "" ? (
               <Hits
                 found={found}

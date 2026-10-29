@@ -1,8 +1,10 @@
 import type { GitCommit } from "@/gen/bindings/GitCommit";
+import type { GitCommitSummary } from "@/gen/bindings/GitCommitSummary";
 import type { EditorHistorySlot } from "@/lib/code/history";
 import type { Draft } from "@/views/FileView";
 import type { CommitPageState } from "@/views/CommitPage";
 import type { WorkspaceTabs } from "./workspace-tabs";
+import { WorkspaceHistoryMemory } from "./workspace-history";
 
 export type WorkspaceIdentity = { device: string; path: string };
 export type WorkspaceFields = {
@@ -11,6 +13,8 @@ export type WorkspaceFields = {
   recent: string[];
   historyOpen: boolean;
   historyQuery: string;
+  branch: string;
+  headCommit: GitCommitSummary | null;
   screen: "tree" | "file" | "sessions";
   face: "source" | "preview";
   rev: GitCommit | null;
@@ -25,6 +29,7 @@ export function workspaceIdentity(identity: WorkspaceIdentity): string {
 
 /** Retained state has no DOM, timers or IO. Its view can detach completely. */
 export class WorkspaceMemory {
+  readonly repositoryHistory = new WorkspaceHistoryMemory();
   readonly commits = new Map<string, CommitPageState>();
   readonly histories = new Map<string, EditorHistorySlot>();
   private values = new Map<keyof WorkspaceFields, unknown>();
