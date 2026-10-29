@@ -1748,6 +1748,9 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+git-history-search-page = "Search commits on this page"
+git-history-newer = "Newer"
+git-history-older = "Older"
 agent_list_unknown_home = "Source machine unknown; refresh the list"
 session_state_unknown = "No execution state is available"
 session_observation = "Read-only record"

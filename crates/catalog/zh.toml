@@ -2709,6 +2709,9 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+git-history-search-page = "搜索当前页提交"
+git-history-newer = "较新"
+git-history-older = "更早"
 agent_list_unknown_home = "来源机器未知，需重新查询"
 session_state_unknown = "未提供运行状态"
 session_observation = "只读记录"
