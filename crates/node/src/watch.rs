@@ -40,11 +40,65 @@
 //! mount (`unreported`, store-c), and a face holding one of them asks it
 //! again now and then instead of trusting a quiet answer.
 
+mod owned;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::proto::{self, Request, Response};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Scope {
+    Entries { path: String },
+    Workspace { root: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageMode {
+    Pending,
+    Native,
+    Polling,
+    Partial,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Coverage {
+    pub scope: u32,
+    pub mode: CoverageMode,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Batch {
+    pub cursor: String,
+    pub reset: bool,
+    pub dirs: Vec<String>,
+    pub workspace: bool,
+    pub coverage: Vec<Coverage>,
+    pub retry_ms: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Opened {
+    pub id: String,
+    pub machine_id: String,
+    pub batch: Batch,
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn changes_files(kind: notify::EventKind) -> bool {
+    !matches!(
+        kind,
+        notify::EventKind::Access(_)
+            | notify::EventKind::Modify(notify::event::ModifyKind::Metadata(
+                notify::event::MetadataKind::AccessTime
+            ))
+    )
+}
 
 /// The most directories one watch takes: the levels a person has open
 /// in one tree, not a disk.
@@ -92,6 +146,9 @@ pub(crate) async fn serve(dirs: Vec<String>, mut send: iroh::endpoint::SendStrea
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<std::path::PathBuf>();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(event) = res {
+                if !changes_files(event.kind) {
+                    return;
+                }
                 for path in event.paths {
                     let _ = tx.send(path);
                 }
@@ -454,6 +511,42 @@ pub(crate) async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn read_access_is_not_a_file_change() {
+        use notify::{
+            EventKind,
+            event::{AccessKind, AccessMode, MetadataKind, ModifyKind},
+        };
+        for kind in [
+            EventKind::Access(AccessKind::Read),
+            EventKind::Access(AccessKind::Open(AccessMode::Read)),
+            EventKind::Access(AccessKind::Close(AccessMode::Read)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::AccessTime)),
+        ] {
+            assert!(!changes_files(kind), "{kind:?}");
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn writes_and_directory_identity_changes_still_invalidate() {
+        use notify::{
+            EventKind,
+            event::{CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode},
+        };
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Create(CreateKind::Folder),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Remove(RemoveKind::Folder),
+        ] {
+            assert!(changes_files(kind), "{kind:?}");
+        }
+    }
 
     /// **The near half's arithmetic**, without a wire: a directory
     /// watched since before `since` and quiet is not changed; one that

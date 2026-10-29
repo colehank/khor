@@ -162,6 +162,65 @@ pub fn is_checkout(root: &Path) -> bool {
     root.join(".git").exists()
 }
 
+/// The control directories and reference identity a workspace observer must
+/// cover. Missing ref directories are kept: the watcher starts at their
+/// nearest existing ancestor and replans after creation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GitWatchPlan {
+    pub directories: Vec<PathBuf>,
+    pub reference: Option<BString>,
+    pub upstream: Option<BString>,
+}
+
+pub(crate) fn watch_plan(path: &Path) -> Result<Option<GitWatchPlan>, String> {
+    let Some(root) = repo_root(path) else {
+        return Ok(None);
+    };
+    let repo = gix::open(root).map_err(|e| e.to_string())?;
+    let absolute = |path: &Path| {
+        if path.is_absolute() {
+            path.to_owned()
+        } else {
+            repo.current_dir().join(path)
+        }
+    };
+    let git_dir = absolute(repo.git_dir());
+    let common_dir = absolute(repo.common_dir());
+    let mut directories = std::collections::BTreeSet::from([git_dir.clone(), common_dir.clone()]);
+    if let Some(parent) = repo.index_path().parent() {
+        directories.insert(absolute(parent));
+    }
+    if let Some(worktree) = repo.workdir() {
+        directories.insert(absolute(worktree));
+    }
+    let head = repo.head().map_err(|e| e.to_string())?;
+    let reference = head.referent_name().map(|name| name.as_bstr().to_owned());
+    let upstream = head
+        .referent_name()
+        .and_then(|name| repo.branch_remote_tracking_ref_name(name, gix::remote::Direction::Fetch))
+        .transpose()
+        .map_err(|e| e.to_string())?
+        .map(|name| name.as_bstr().to_owned());
+    for name in reference.iter().chain(upstream.iter()) {
+        let relative = gix::path::from_bstr(name.as_bstr());
+        if relative.components().count() > 64 {
+            return Err("Git reference exceeds watch path depth budget".to_owned());
+        }
+        if let Some(parent) = relative.parent() {
+            directories.insert(git_dir.join(parent));
+            directories.insert(common_dir.join(parent));
+        }
+    }
+    if directories.len() > 16 {
+        return Err("Git control directories exceed watch budget".to_owned());
+    }
+    Ok(Some(GitWatchPlan {
+        directories: directories.into_iter().collect(),
+        reference,
+        upstream,
+    }))
+}
+
 /// What differs from HEAD across one workspace.
 ///
 /// `root` must be the checkout itself — the workspace list only ever
@@ -2221,5 +2280,110 @@ mod repository_history_tests {
                 .map(|i| marks[&i].clone())
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn git_watch_plan_keeps_unborn_nested_refs_and_tracks_identity_changes() {
+        let checkout = Checkout::new();
+        checkout.git(&["symbolic-ref", "HEAD", "refs/heads/topic/deep/main"]);
+        let unborn = watch_plan(&checkout.0).unwrap().unwrap();
+        assert_eq!(
+            unborn.reference.as_ref().unwrap().as_bstr(),
+            b"refs/heads/topic/deep/main".as_bstr()
+        );
+        assert!(
+            unborn
+                .directories
+                .contains(&checkout.0.join(".git/refs/heads/topic/deep"))
+        );
+        assert!(!checkout.0.join(".git/refs/heads/topic/deep").exists());
+        checkout.git(&["symbolic-ref", "HEAD", "refs/heads/other/deep/main"]);
+        let switched = watch_plan(&checkout.0).unwrap().unwrap();
+        assert_ne!(unborn, switched);
+        assert!(switched.directories.contains(&checkout.0.join(".git")));
+    }
+
+    #[test]
+    fn git_watch_plan_uses_real_linked_worktree_gitdir_and_common_refs() {
+        let (checkout, marks) = linear(1);
+        let linked = checkout.0.join("linked");
+        checkout.git(&[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "topic/deep",
+            linked.to_str().unwrap(),
+            &marks[&1],
+        ]);
+        let repo = gix::open(&linked).unwrap();
+        assert!(linked.join(".git").is_file());
+        assert_ne!(repo.git_dir(), repo.common_dir());
+        let plan = watch_plan(&linked).unwrap().unwrap();
+        assert!(plan.directories.contains(&repo.git_dir().to_path_buf()));
+        assert!(plan.directories.contains(&repo.common_dir().to_path_buf()));
+        assert!(
+            plan.directories
+                .contains(&repo.common_dir().join("refs/heads/topic"))
+        );
+        assert!(
+            !plan.directories.contains(&linked.join(".git")),
+            "a linked marker file is not a watch directory"
+        );
+        assert_eq!(
+            plan.reference.as_ref().unwrap().as_bstr(),
+            b"refs/heads/topic/deep".as_bstr()
+        );
+    }
+
+    #[test]
+    fn git_watch_plan_covers_upstream_and_external_index_without_a_status_walk() {
+        let (checkout, _) = linear(1);
+        checkout.git(&[
+            "config",
+            "remote.origin.url",
+            "https://fixture.invalid/repo",
+        ]);
+        checkout.git(&[
+            "config",
+            "remote.origin.fetch",
+            "+refs/heads/*:refs/remotes/origin/*",
+        ]);
+        checkout.git(&["config", "branch.main.remote", "origin"]);
+        checkout.git(&["config", "branch.main.merge", "refs/heads/topic/deep"]);
+        let external = checkout.0.join("external-index/state/index");
+        checkout.git(&[
+            "config",
+            "gitoxide.core.indexFile",
+            external.to_str().unwrap(),
+        ]);
+        let plan = watch_plan(&checkout.0).unwrap().unwrap();
+        assert_eq!(
+            plan.upstream.as_ref().unwrap().as_bstr(),
+            b"refs/remotes/origin/topic/deep".as_bstr()
+        );
+        assert!(
+            plan.directories
+                .contains(&checkout.0.join(".git/refs/remotes/origin/topic"))
+        );
+        assert!(
+            plan.directories
+                .contains(&external.parent().unwrap().to_path_buf())
+        );
+    }
+
+    #[test]
+    fn git_watch_plan_handles_plain_folders_and_detached_head() {
+        let checkout = Checkout::new();
+        let plain = checkout.0.join("plain");
+        std::fs::create_dir(&plain).unwrap();
+        std::fs::rename(checkout.0.join(".git"), checkout.0.join("git-not-a-marker")).unwrap();
+        assert_eq!(watch_plan(&plain).unwrap(), None);
+        let (checkout, marks) = linear(1);
+        checkout.git(&["update-ref", "--no-deref", "HEAD", &marks[&1]]);
+        let detached = watch_plan(&checkout.0).unwrap().unwrap();
+        assert_eq!(detached.reference, None);
+        assert_eq!(detached.upstream, None);
+        assert!(detached.directories.contains(&checkout.0.join(".git")));
     }
 }
