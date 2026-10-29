@@ -31,7 +31,7 @@ import {useDraftCount} from "@/hooks/use-draft-count";
 // broken, which is the failure `check-acp` 第二批 names.
 import { useFileHandoff, type FileHandoffControl } from "@/hooks/use-file-handoff";
 import { FileHandoffAction, FileHandoffStatus } from "@/components/FileHandoff";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fileRefresh } from "@/lib/file-refresh";
 
 import {
@@ -57,6 +57,7 @@ import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
+import { IconClose } from "@/components/icons";
 import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { blameOfLines, useBlameShown } from "@/lib/blame";
@@ -182,6 +183,41 @@ export function rendererOf(path: string): "md" | "table" | "html" | "ipynb" | nu
   return null;
 }
 
+/** Payload stays in React; the request slot retains only ownership and one latest intent. */
+function previewRequests<T>() {
+  let active = false;
+  let lifetime = 0;
+  let generation = 0;
+  let reading = false;
+  let next: { generation: number; read: () => Promise<T>; land: (value: T) => void; fail: (error: unknown) => void } | null = null;
+  const run = () => {
+    if (!active || reading || next === null) return;
+    const request = next;
+    next = null;
+    const identity = lifetime;
+    const owns = () => active && identity === lifetime && request.generation === generation;
+    reading = true;
+    void Promise.resolve().then(async () => {
+      if (!owns()) return;
+      try {
+        const value = await request.read();
+        if (owns()) request.land(value);
+      } catch (error) {
+        if (owns()) request.fail(error);
+      }
+    }).finally(() => { reading = false; run(); });
+  };
+  return {
+    activate() { active = true; lifetime += 1; },
+    leave() { active = false; lifetime += 1; generation += 1; next = null; },
+    ask(read: () => Promise<T>, land: (value: T) => void, fail: (error: unknown) => void) {
+      if (!active) return;
+      next = { generation: ++generation, read, land, fail };
+      run();
+    },
+  };
+}
+
 /** A file khor will not paint, and the one thing it can still do about
     it. **One component for the three refusals** (too big, not text,
     nothing khor knows) because they differ only in the sentence — and
@@ -191,15 +227,13 @@ function Away({
   onTake,
   took,
   path,
-  machine,
   total,
   handoff,
   preview = false,
 }: {
   preview?:boolean;
   path:string;
-  machine:string;
-  total?:number;
+  total?:number | null;
   handoff:FileHandoffControl;
   word: string;
   onTake: () => void;
@@ -207,18 +241,12 @@ function Away({
 }) {
   // Not on a phone (docs/IOS.md 第二步): it takes no files (`useTake`).
   const takes = useHereHosts();
-  const [size,setSize]=useState(total);
-  useEffect(()=>{
-    setSize(total);if(total!==undefined)return;
-    let alive=true;void fetchFileStat(machine,path).then(s=>{if(alive)setSize(s.total);}).catch(()=>{});
-    return()=>{alive=false;};
-  },[machine,path,total]);
   const name=path.split("/").pop()??path;
   const type=name.includes(".")?name.slice(name.lastIndexOf(".")+1).toUpperCase():null;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
       <span data-file-fallback-name className="max-w-full break-words text-body text-foreground">{name}</span>
-      <span className="text-callout text-muted-foreground">{[type,size===undefined?null:sizeWord(size)].filter(Boolean).join(" · ")}</span>
+      <span className="text-callout text-muted-foreground">{[type,total==null?null:sizeWord(total)].filter(Boolean).join(" · ")}</span>
       {word && <span className="text-callout text-muted-foreground">{word}</span>}
       <FileHandoffAction handoff={handoff} preview={preview}/>
       {takes && !handoff.supported && (
@@ -375,8 +403,13 @@ function FileBody({
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
       asking — `text`, which is the road this view already had. */
-  const [look, setLook] = useState<Preview | null>(null);
-  const [lookError, setLookError] = useState<string | null>(null);
+  const previewKey = JSON.stringify([machine, path]);
+  const [lookValue, setLookValue] = useState<{ key: string; preview: Preview | null; total: number | null } | null>(null);
+  const [lookFailure, setLookFailure] = useState<{ key: string; error: string } | null>(null);
+  const look = lookValue?.key === previewKey ? lookValue.preview : null;
+  const lookTotal = lookValue?.key === previewKey ? lookValue.total : null;
+  const lookError = lookFailure?.key === previewKey ? lookFailure.error : null;
+  const previewReader = useRef(previewRequests<{ preview: Preview | null; total: number }>());
   const [buffer, projectBuffer] = useState(() => ({
     file: null as FileText | null,
     edit: (draft ?? null) as Draft | null,
@@ -490,21 +523,26 @@ function FileBody({
     return () => URL.revokeObjectURL(pdfAt);
   }, [pdfAt]);
 
-  // **Asked first and alone: what is this.** The node answers with the
-  // content, so a file that turns out to be a picture never has its
-  // bytes decoded as text on the way (`khor_gui_core::files::preview`).
+  const previewMode = kindOf(path) === "text" || kindOf(path) === "doc" && handoff.previewSupported === null
+    ? null : nativeOffice ? "stat" : "preview";
+  useLayoutEffect(() => {
+    if (previewMode === null) return;
+    previewReader.current.activate();
+    return () => previewReader.current.leave();
+  }, [machine, path, previewMode]);
   useEffect(() => {
-    let live = true;
-    setLook(null);
-    setLookError(null);
-    if (kindOf(path) === "text" || (kindOf(path) === "doc" && handoff.previewSupported !== false)) return;
-    fetchPreview(machine, path)
-      .then((p) => live && setLook(p))
-      .catch((e: unknown) => live && setLookError(String(e instanceof Error ? e.message : e)));
-    return () => {
-      live = false;
-    };
-  }, [machine, path, reread, nativeOffice, handoff.previewSupported]);
+    if (previewMode === null) return;
+    setLookFailure(null);
+    previewReader.current.ask(async () => {
+      if (previewMode === "stat") {
+        const stat = await fetchFileStat(machine, path);
+        return { preview: null, total: stat.total };
+      }
+      const preview = await fetchPreview(machine, path);
+      return { preview, total: preview.total };
+    }, value => setLookValue({ key: previewKey, ...value }),
+    error => setLookFailure({ key: previewKey, error: said(error) }));
+  }, [machine, path, previewMode, previewKey, reread, readAt]);
 
   useEffect(() => {
     let live = true;
@@ -894,16 +932,23 @@ function FileBody({
       .catch((e: unknown) => setTook(said(e)));
   };
 
-  // ── the three screens that are not a code view ──────────────────
-  if (nativeOffice) return <Away machine={machine} path={path} handoff={handoff} preview word="" onTake={take} took={took}/>;
+  const previewSurface = (children: ReactNode) => <div data-file-preview className="relative flex min-h-0 flex-1 flex-col">
+    {children}
+    {lookError !== null && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center p-2">
+      <div role="alert" data-file-preview-error className="pointer-events-auto flex max-w-full items-center gap-3 rounded-lg border bg-popover px-3 py-1.5 text-callout text-muted-foreground shadow-(--shadow-float)">
+        <span className="min-w-0 break-words">{lookError}</span>
+        <Button size="sm" onClick={() => setReread(n => n + 1)} className="min-h-touch">{gui.region_retry}</Button>
+        <button type="button" aria-label={gui.close} onClick={() => setLookFailure(null)} className="grid min-h-touch min-w-touch place-items-center"><IconClose className="size-affordance" /></button>
+      </div>
+    </div>}
+  </div>;
+  if (nativeOffice) return previewSurface(<Away path={path} handoff={handoff} total={lookTotal} preview word="" onTake={take} took={took}/>);
   if (kindOf(path) !== "text") {
-    if (lookError !== null) {
-      return <Away machine={machine} path={path} handoff={handoff} word={lookError} onTake={take} took={took}/>;
-    }
-    if (look === null) return <div className="flex-1" />;
+    if (look === null) return previewSurface(lookError === null ? <div className="flex-1" /> :
+      <Away path={path} handoff={handoff} total={lookTotal} word="" onTake={take} took={took} />);
     if (look.cut) {
-      return (
-        <Away machine={machine} path={path} handoff={handoff} total={look.total} word={gui.file_preview_too_big} onTake={take} took={took} />
+      return previewSurface(
+        <Away path={path} handoff={handoff} total={look.total} word={gui.file_preview_too_big} onTake={take} took={took} />
       );
     }
     if (look.kind === "image" || look.kind === "svg") {
@@ -912,7 +957,7 @@ function FileBody({
       // document it would run them, and khor would owe itself a
       // sanitiser. An image element renders the same drawing and runs
       // nothing — the browser's own rule, not khor's.
-      return (
+      return previewSurface(
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
           <img
             ref={pinch}
@@ -930,7 +975,7 @@ function FileBody({
       // than `<object>`: both reach the same viewer, and a frame is the
       // one of the two whose failure mode is a blank rectangle rather
       // than a silent fallback to nothing.
-      return (
+      return previewSurface(
         <div className="flex min-h-0 flex-1 flex-col">
           <iframe
             data-pdf-frame
@@ -942,7 +987,7 @@ function FileBody({
       );
     }
     if (look.kind === "doc" || look.kind === "pdf") {
-      return (
+      return previewSurface(
         <div className="flex min-h-0 flex-1 flex-col">
           {look.empty ? (
             <div className="flex flex-1 items-center justify-center p-6 text-body text-foreground">
@@ -979,7 +1024,7 @@ function FileBody({
         </div>
       );
     }
-    return <Away machine={machine} path={path} handoff={handoff} word={gui.file_not_text} onTake={take} took={took} />;
+    return previewSurface(<Away path={path} handoff={handoff} total={look.total} word={gui.file_not_text} onTake={take} took={took} />);
   }
 
   if (error !== null) {
@@ -988,7 +1033,7 @@ function FileBody({
   if (file === null) return <div className="flex-1" />;
 
   if (file.binary) {
-    return <Away machine={machine} path={path} handoff={handoff} total={file.total} word={gui.file_not_text} onTake={take} took={took}/>;
+    return <Away path={path} handoff={handoff} total={file.total} word={gui.file_not_text} onTake={take} took={took}/>;
   }
 
   // **Nothing is drawn about HEAD while the buffer differs from disk.**
