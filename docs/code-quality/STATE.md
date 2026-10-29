@@ -1,47 +1,44 @@
 # 第二轮：当前执行状态
 
-更新：2026-10-29。用户已授权实施，目标**完成第二轮** active。范围**29条反馈＋5遗留，共34项**（用户最新追加R2-029公式）。本轮main合并/ship未授权；main e7c335c8干净。当前集成树 `/Volumes/disk0/Khor/worktrees/current/khor-round2`，integrate/round2，冻结HEAD **b338ced27796b42538304c64180e5e5940b391f5**，tracked干净。前一份详细状态见[归档](history/STATE-before-round2-b338ced2-20261029.md)，其中旧运行PID/权限不代表现场。
+更新：2026-10-29。目标 **完成第二轮** active，范围 **29条反馈＋5遗留，共34项**。用户已授权实施；**本轮 main 合并/ship 未授权**。main `/Users/zgh/Desktop/working/khor` 保持 e7c335c8。最新集成 `/Volumes/disk0/Khor/worktrees/current/khor-round2`，`integrate/round2`，**34f84dcb**，tracked clean。具体旧批次/原失败见[归档](history/STATE-before-round2-4cf-sync-20261029.md)及任务卡；旧“当前运行”句不再代表现场。
 
-## compact后执行入口
+## 恢复入口与调度
 
-1. 读本文、[ROUND-2-EXECUTION](ROUND-2-EXECUTION.md)及当前[R2-A](tasks/R2-A.md)、[R2-W](tasks/R2-W.md)、[R2-V](tasks/R2-V.md)、[R2-029](tasks/R2-029.md)、[REVIEW](tasks/R2-REVIEW.md)，核实际refs/diff/进程/资源。不要按摘要覆盖外盘未提交源码。
-2. **当前所有native批已终态，槽空闲；无新App。** b338全链exec26633/240.681s与GUI-only exec99067/31.391s均Cargo正常0、strict生成文件时间证明失败，source/env稳、owners空/TMP清理。原result false保留。详下段；root仅离线诊断V复制时间判定，不继续盲重试。下一批须重新授槽并核现场，不能凭旧running.json/PID重启。Root tracked仍b338干净，真实gen已完整生成，后续checkpoint可在核没有新producer写时捕获。
-3. 作者round2_history在history树，首6源3e9376ee已集成，继续A4 transport/actual content-home，只改独立作者树、不并发Cargo。round2_input回workspace树，准备fix/round2-workspace-ui基于Root2a5a416b的正式布局/内容标签片段；旧60bcea9a Lab提交保留但不整支带入生产。独审round2_reviewer只读，root协调及小公式补丁已独审收齐。
-4. 原生继续共用target、jobs1/incremental0、外盘TMP、5GiB floor；不结束用户App/真实agent/session，不清共享缓存。重用槽先核实际终态/owner，记录新授权。
+1. 读本文、[执行计划](ROUND-2-EXECUTION.md)、当前任务卡，再核实际 refs/diff/agent/进程；不按摘要覆盖外盘未提交源。`.codegraph` 无索引时跳过；code-review-graph 可能落后当前 branch，零覆盖后才定点读源。
+2. 两实现线：`round2_history` 在 history 树做 A4 Core/GUI 接线；`round2_input` 在新 git 树做 W 全分支历史分页。`round2_reviewer` 固定版本只读审查。root 负责集成/恢复，并做小 E 同步计数补丁，不另开大型实现线。
+3. **唯一 native/Cargo 槽当前已释放**；W Git red/green均终态，A4 shared-1 严格失败终态101/96.76s；Core+Tauri lib check0，command_tables1/2（旧finder漏跨行or-pattern），尚未gen。A4桥bridge-1 已终态0/83.10s，无本任务 App 实例/待用户操作。用户现有 release/khor-gui 进程不能误分类成私有验收实例，不触碰。复用槽先核实际终态；预检非0必须停止后续启动，不以“未碰用户进程”掩盖启动编排失败。
+4. native 共用 target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`，jobs1/incremental0、外盘专用 TMP、每阶段5GiB floor。不得结束用户 App、真实会话，或清共享缓存。
+5. shared `core/api.rs`/`core/lib.rs`/Tauri/生成导出由 A4 唯一 owner 接 W DTO，接口稳定后一次真实 gen。现 Root gen 为 ca83 真产物；不能手写新绑定或把过渡 types 通过冒新 shape 已生成。
 
-## 最新交付与证据
+## 已实现、证据与未完成
 
-| 包 | 已实现/验证 | 仍需完成 |
+| 包 | 当前证据 | 剩余工作 |
 | --- | --- | --- |
-| E 输入/草稿 | 刷新迟到/merge接纳/路径拖选/搜索退出修复；浏览器字段8路径等已过；W同步接收末编辑和model级计数 | 真实Mac IME、回复ShiftLeft、最后按键→OS Quit；SessionContent/MachineFiles/SideWorkspace其他入口layout count风险未实测，见R2-E |
-| H 长历史 | 有界IO/页/记录/缓存/取消lease；实际ChatView 20万逻辑记录13项、后端定向验证 | source全文搜索/复制需求仍有缺口；最终原生组合，不能以loaded-only冒完整源搜索 |
-| C 打开/导航 | 普通内部/Cmd客户端系统直接分流；软折行及CJK占位修复；返回最新cwd且保脏编辑器；终端19+CJK4/实际4流程 | 真实原生组合验收 |
-| G 材质 | 全部既定DOM消费者封口，完整适用/排除见glass/CONSUMERS.md；实际菜单/表格/CodeDiff/SessionSide有证据 | 原生外观、组合及物理触屏验收；不再扩普通标题 |
-| W 工作区 | 首片段45f61261→3a9ae447：唯一memory/单current Pane；末编辑丢17字、Quit count1/0、源码700→0、预览800→0均先红后绿；宽窄/Undo/selection等已验 | 正式最终布局/独立commit slot/当前分支完整分页/真实watch尚未完成；原生整壳/IME/OS Quit未验 |
-| A 统一观看 | A2 readonly身份/权限已集成；A3 writer d4232d11及host/read540ea302已集成；A4首6源3e9376ee→5c612223，canonical引用/请求及版本范围校验 | 远端内容home实际只读路由、真实两node互通、全部能力边界；首slice不冒完整A4 |
-| S 恢复/生命周期 | 前链基础可用，未交付本轮完整恢复 | 完整GUI/终端恢复、取消deadline及native close遗留；startup forwarding有界性等既定缺口 |
-| B 浏览器 | 先前只读调查，旧WK拒绝根因未知；CLI200不是WK修复证据 | 五项正式实现及原生/mobile验收 |
-| M 移动 | 跟手/键行方案与已验参考保存 | 正式接入连续跟手、自定义键行/真机验收 |
-| D/N | N一次源定位记录多Busy入口；旧卡死未知 | 固定调查/并发夹具及明确结果，不能以H绿代替D |
-| V 构建/验收 | L04 f964cf9d、L05 helper0a885e25已集成；caps8bf8c424→2a5a416b窄修，Root28测试0/.237s；离线caller11测试绿 | 新同源GUI严格来源/实际私有OS退出与持久host重连验收 |
-| R2-029 公式 | ecf36408→b338ced2，复用共享转换入口/现marked保护代码与转义；实际完整MD gate+9文件例+7source合同及最终tsc均0，独审固定3SHA匹配 | 原生组合确认，见[R2-029](tasks/R2-029.md) |
+| E 输入/草稿 | 迟到刷新/merge拒收、字段选择和搜索退出定向绿；W 编辑接纳与同步计数已验。root a0c34d13→2dc9d635 三集合owner同步登记：旧源3个首编辑前commit漏报，修后6/6、旧count9/9、types0，独审核准已集成 | standalone首键计数72591cae→d4dcc1a5已独审，8同步/9计数/8刷新/9merge/types绿。accepted base/flush三实际回调反例已红，待修；真实Mac IME、ShiftLeft、最后按键→正常Quit组合 |
+| H 长历史 | 有界IO/页/记录/缓存/取消；实际ChatView 20万逻辑记录等定向证据 | source全文搜索/复制缺口、最终原生组合；loaded DOM不冒完整源搜索 |
+| C 内容打开/导航 | 点击内部/Cmd系统直接分流；软折行/CJK路径；返回最新cwd保草稿；定向真实浏览器及终端绿 | 原生组合验收 |
+| G 材质 | 既定DOM消费者封口，消费者/排除详glass/CONSUMERS.md；菜单/表格/CodeDiff/SessionSide证据 | 三种窗口材质、深浅色和原生/触屏组合 |
+| W 工作区 | 0f5a75af→3f16f146，正式布局/独立commit/fullhash身份/shared preview/pin/dirty Undo/单菜单；最后真实FullScreen窄屏6组绿。集成tabs6/memory5/types0 | Git分页c6b0c766→7bfc5164已独审集成，旧merge4/6及260→200真实红，新Node9绿；Core mapper check0。UI分页消费正在实现，真实watch/相关旧Face与原生组合待做 |
+| A 外部观看 | A1/A2身份能力、A3 journal capture已集成；A4服务ced98d3b→4cf7cb91，生产check+12绿，真实双Node含取消/断线/版本/响应上限 | Core/GUI binding41ed240b→26dda9c2已独审集成，parent-key cde0bf01→34f84dcb已修owner-only更新重挂；shared实际Core/Tauri check0，真实gen尚未运行；全能力边界与组合待完 |
+| S 恢复/生命周期 | 基础链及持久宿主认证重连证据 | 完整GUI/terminal恢复、取消deadline、close/reopen竞态、startup forwarding有界性 |
+| B 浏览器 | 已只读调查；真实WK拒绝根因仍未知 | 五项正式实现与原生/mobile验收；CLI200不冒WK修复 |
+| M 移动 | 已验连续跟手/键行参考已保存 | 正式跟手接入、自定义键行及触屏验收 |
+| D/N | 旧卡死未知；Busy已定位多个入口但未复现归因 | 限定调查/并发夹具、明确结果，不能因H绿关闭D |
+| V 工具 | **L04/L05 done**：ca83 GUI/CLI/core actual+strict绿；focused L05真实正常退出、认证replay、私有清理绿，独审核准 | 不替代E/S或全轮验收，旧270s失败保留 |
+| R2-029 | ecf36408→b338ced2；共享括号公式转换，保护code/escape，MD gate+9文件+7合同/types0，独审 | 原生文件渲染组合 |
 
-A3证据：writer6 IO；vertical2/3分批31项，不冒同一个固定SHA一次全绿。实际161 TS bindings+inventory/catalog生成并同步；Root集成history/observations/workspace定向与types绿，收据integration/checks-540ea302-*。A3仅持久捕获和读链，不替代S live chatReplay/agent重启恢复。
+## 当前固定版本与下一动作
 
-A4首片段：local1仅test PathBuf借用编译失败，原日志保留；local2 reference5通过后内盘floor停止余26，exit90不是全绿。资源恢复后同一test exe（SHA8260f05d…cbf7b）直接执行page14/window8/observations4=26，全0/1.801s。两批414既有输入逐SHA相同，另requests未接mod草稿单独记录不冒编入；独审固定6源一致。未跑gen/App/远端互通。
+- Root集成 34f84dcb；W正式源0f5a75af、Lab2d85a50d独立，Lab不进生产。A4固定Node服务ced98d3b，真实417输入前后同，transport-4 90.773s全绿；原编译/夹具失败不回填。
+- A4 history树固定41ed桥已集成26dda9c2；metadata owner更新不重挂cde父key已集成34f84dcb。新增locator/binding按真实content home固定。shared4注册＋W mapper生产Core/Tauri check已真0；command_tables旧逐行finder漏7个既有跨行or-pattern命令，1/2失败停、未gen，源码前后892输入同。已批准仅测试finder修正+反例，不能加ONE_SIDED；固定独审后定向tables→真实bindings/catalog，不重无变化lib check。GUI Lab四路径另授，待gen源stable后准备新端口，23837已有W旧Lab。
+- W Git作者树固定c6b0c766，Node red2（非编译失败）/green9实际0、源前后同，ownedTMP/子进程清理，独审核准已集成7bfc5164。新RepositoryLog独立旧path log，完整all-parent snapshot、40/100页、JSON≤256KiB、shallow明确不完整；Core mapper后续shared check已0。下一UI消费获准：正式平面log行/日期链＋末尾较新/更早轻导航，固定page0＋7页LRU≤2MiB payload，不保无界cursor链；淘汰回访从可用前页/首page.next重走，披露深页成本。显式刷新才重建snapshot、失败保旧页可retry，返回保页/scroll；不冒全branch搜索。watch后片未做。
+- root E复用math树，fix/round2-draft-sync。a0三集合→2dc独审/集成；72591standalone→d4独审/集成。真实回调defer commit tests8/8、原count9/9、刷新8/merge9/types0；初始夹具setup失败均保留。继续FileView accepted-base/flush：`input/draft-sync/file-acceptance-probe.mjs`实际AST取onLanded/onText/setEdit/publish/flush，当前3/3业务红：首键后flush未写、保存B后同task回A错误clear、继续C仍was=A不是B。未改这片产品，非作者正核accepted状态与merge/clash permission的最小设计；这是既定L03/E缺口，不是新增专项。
+- 之后按既定队列推进W watch、A→S、B/M及H/E既定缺口；新独立问题仅登记下一轮，不静默缩减原34项。
 
-V旧native3：所有生成、types/Vite、CLI与指定test编译strict均0；GUI编译0但strict仅capabilities目录未入key而拒绝。没有运行旧partial GUI，原result false保留。已完成精确两行extra tree窄修，unknown目录及symlink仍拒；本次b338重新全链证明。Node编译缓存仅本批用NODE_DISABLE_COMPILE_CACHE=1禁用，入本批contract，不改来源模型。GUI是devUrl/devtools私有测试变体，不能当ship产物；CLI另嵌真实Vite生产资产。
+## 恢复、资源与验收边界
 
-## 资源、恢复与下一动作
+内盘恢复根 `/Users/zgh/Library/Caches/khor-code-quality/recovery`。旧完整b338 bundle已verify；copytime/library增量及A4/W固定包另存。root正在更新34f完整checkpoint（含当前两作者真实dirty/新增源及E固定提交），以实际新receipt为准。旧包/原失败保留，不能覆盖更晚外盘源。历史3份编译ZIP已双SHA迁external archives，内部兼容链接；源码恢复包仍内盘。
 
-A4 floor时内盘约3.06GiB；本任务三份历史编译ZIP经uid/原身份/lsof/双端SHA核齐迁至 `archives/recovery-compiled-20261029`，原路径软链接，共2,983,487,798字节；源码恢复包仍内盘。迁后内盘6,110,167,040B/外盘15,145,791,488B，后续每阶段仍实测。见[STORAGE](STORAGE.md)及双盘manifest。旧自有Labs23835/23836/23837经PID/出生/cwd/监听核后仅停各服务器，证据/源码保留；未停用户Chrome/App。23832/23834状态需现场核。
+V最终native-gui-ca83fe58 exit0/254.051s，GUI SHA8939bab13bfd14f7ef8ee2d7c8eec4b1cfeba3ae10c88b614b72fa3f6c687619。是隔离devUrl/devtools变体，非ship或当前4cf完整产物。先前人工复合OS批270s超时/cleanup权限失败保原结果；私有剩余已按身份清理。focused L05 outer80421 exit0：term_open→ready→drop各1、chat调用0；真实CmdQ正常exit0、host认证replay139B、remaining[]。仅证明该单项，不是新GUI完整重启恢复/IME验收。**用户目前无需操作，也不再重复已验拖放。**
 
-内盘最新完整源码恢复点仍round2-d4232d11.bundle（SHA4d2fabf88efb62631a4fc6584743288d51fc3648837fa40cd75f58357faa9b93），不能拿它覆盖当前refs。新增V/A4各自内盘备份在任务卡；root需在本批实际gen终态后更新b338完整bundle/refs/dirty源码/文档与真实gen镜像（勿与producer写gen竞态）。
-
-下一动作：V离线检查真实Darwin复制反例；仍须严格构建通过才准备私有App/观察器/退出重连验收，不先启动partial产物。两作者继续W前端片段与A4远端接线，相关后端/生成器变更按共享路径一次交接。新独立问题只登记后续轮次；已约定34项缺口必须继续完成。Clean Code按状态/资源唯一owner、规则与效果分离、错误/取消明确、必要注释和重复旧实现移除逐片段审查，不以格式量或零注释判完成。
-
-最近已告用户：剩余约10–16小时有效工程时间，设备验收另列；尚未收尾。不得按提交数算完成比例，不把已有实现替代未完成项。
-
-## b338原生构建最新终态
-
-`validation/native-b338ced2`全链catalog/bindings/types/Vite/CLI/core均strict0，GUI实际Cargo0但generated_output拒绝旧mtime且无prior。没有运行App。只做一次GUI-only窄操作：按exact Cargo OUT_DIR、uid/regular/逐SHA/inode/lsof核齐后把原out整体rename至`native-gui-b338ced2/retained-gui-generated-out`，不删除/触碰旧字节或改mtime；相同源/env/4合法prior真实重生成，再原strict仍拒绝（31.391s），已停止重试。`fresh-output-timestamps.json`显示仅新生成capabilities.json/acl-manifests.json仍保旧mtime，实际ctime均本次生成后；额外核birthtime也被复制保留。Root将按既定V L04窄缺陷审查时间判断，未经审查/回归不得绕过或冒native成功。W/A4源码两线继续。
+Clean Code逐片段落实命名、状态/资源唯一owner、纯规则与效果分离、失败/取消明确、移除替代旧路；必要平台/并发注释保留，不以格式量或零注释算完成。最近告用户剩余约 **8–12小时有效开发验证，人工/真机另列**，尚未收尾；不按提交数算完成比例。

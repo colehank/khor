@@ -75,3 +75,19 @@ root告知Playwright工具fallback已完成Chromium DOM 1000/390×URL/path×左�
 W真实CM交易后同批切workspace已复现末17字丢，FileView同步onDraft红绿后恢复；同dispatch后model.draftCount=1而Quit所读draftCount()=0也已实际复现，W新增WorkspaceDraftOwner改model生命周期同步订阅后probe1/1。两者是既定E/L03交叉风险，不是整E或OS退出完成证明，原red/green见workspace证据目录。
 
 root定点查当前其它入口：SessionContent、MachineFiles、SideWorkspace仍是React state草稿集合＋useDraftCount(count) layout发布，FileBody无上游入口也沿原布局报告。W本片段只修新WorkspaceMemory owner；不能把W 1/1当所有FilePage入口已同步。尚未用这些真实组件重跑同批probe，状态为待证风险。后续L03收口需对应实际入口检查最后已接受edit→Quit读数/移除保存→0/隐藏保留/卸载只清自身及真实Mac立即Quit；若确认同一间隙，按现单一owner窄修，不增加全局正文store/重复计数。不打断当前W阅读位置或A3 native批，不偷偷移到下一轮。
+
+
+## L03同步集合owner片段（2026-10-29，root）
+
+root复用干净math树创建fix/round2-draft-sync基于4cf7cb91，固定a0c34d13（6源），待非作者独审。useDraftState持唯一accepted集合ref和React投影；pure updater在回调里计算，accepted→同步report→project，不在React updater中发布副作用。private registration由layout激活/卸载清自身，StrictMode replay恢复保留count；卸载后的旧setter拒收。SessionContent/MachineFiles/SideWorkspace全部setDrafts路径统一用该setter，包括移动/删除。无新global正文store，原useDraftCount保留FileView独立模式。
+
+实际三个生产state声明/onDraft由TS AST抽取、真实hook编译，夹具延后React commit：旧prod3/6（全部first edit期待1实0），新6/6；同task两文件、重复draft、保存清零、隐藏、多owner、StrictMode/latecallback涵盖。原count9/9及tsc0。证据input/draft-sync/candidate.json逐SHA；red-correct-lifecycle.log为真实业务red。首red.log的replay夹具次序错误、count.log的fixture缺两个unused React export均保留并明确；不回填旧结果。
+
+本片不覆盖FileView standalone accepted disk base/flush时序，更不冒真实Mac输入/OS Quit。root下一片先独立复现这些路径，不扩global退出规则。
+
+
+## L03 standalone同步首键片段与接纳基线复现
+
+72591cae→d4dcc1a5已独审并集成。useDraftCount返回稳定report，FileView实际publishDraft无上游时同步0/1、有上游只委托不双计。真实onText/publish/计数defer commit旧7/8（standalone首键0期1）→新8/8；原count9、刷新8、merge9、types0。source指纹在standalone-candidate.json。standalone-merge.log只测试callback依赖提取器旧匹配失败，修提取及注入report dependency后9绿，原失败保留。
+
+接下来真实旧回调3例已复现，文件input/draft-sync/file-acceptance-probe.mjs及file-acceptance-red.log：①cleanA→typeB→flush为0写，期1；②onLanded B后同task typeA误回报null，应脏A；③onLanded B后typeC投影最终Draft.was仍A，期B。测试实际抽生产onLanded/onText/setEdit/publish/flush、React setter延队列，未改产品、非真实OS证明。Root下一片需要唯一accepted file/edit状态贯穿基线/草稿/flush，并保merge/clash拒写；独审先核最小设计，不加全局正文store、不拿两片计数绿关闭E。
