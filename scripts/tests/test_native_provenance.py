@@ -395,6 +395,34 @@ class ProvenanceTests(unittest.TestCase):
             row["fresh"] = True
         self.assertEqual(len(p.verify_build(reused, [generated, *rows])["generated"]), 1)
 
+    def library_row(self):
+        directory = self.target / "debug/deps"
+        directory.mkdir(parents=True)
+        files = [directory / ("libapp" + suffix) for suffix in (".a", ".dylib", ".rlib")]
+        for path in files:
+            path.write_text("synthetic library: " + path.suffix)
+        dep = directory / "app.d"
+        dep.write_text("".join(f"{path}: {self.root / 'app/src/lib.rs'}\n" for path in [dep, *files]))
+        return {"filenames": [str(path) for path in files], "executable": None,
+                "target": {"name": "app", "kind": ["staticlib", "cdylib", "rlib"],
+                           "src_path": str(self.root / "app/src/lib.rs")}}, dep
+
+    def test_static_and_dynamic_library_row_uses_the_rustc_crate_depinfo(self):
+        row, dep = self.library_row()
+        for primary in row["filenames"][:2]:
+            with self.subTest(primary=primary):
+                current = {**row, "filenames": [primary, *(name for name in row["filenames"] if name != primary)]}
+                files, paired = p.artifact_files(current, self.root, self.target)
+                self.assertEqual(paired["path"], str(dep))
+                self.assertEqual(set(files), {*row["filenames"], str(dep)})
+                self.assertTrue(set(row["filenames"]).issubset(paired["targets"]))
+
+    def test_library_depinfo_must_name_the_reported_primary_artifact(self):
+        row, dep = self.library_row()
+        dep.write_text(f"{dep}: {self.root / 'app/src/lib.rs'}\n")
+        with self.assertRaisesRegex(ValueError, "Missing unique paired"):
+            p.artifact_files(row, self.root, self.target)
+
     def test_current_generation_copy_preserves_old_mtime(self):
         self.add_generator()
         source = self.base / "template.rs"

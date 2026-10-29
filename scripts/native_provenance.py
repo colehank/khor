@@ -318,7 +318,7 @@ def artifact_files(row, root, target_dir):
             raise ValueError("Expected one content-paired normal executable")
         paired = candidates[0]
         files[str(paired)] = regular(paired)
-    stem = paired.stem.removeprefix("lib") if paired.suffix in (".rlib", ".rmeta") else paired.name
+    stem = paired.stem.removeprefix("lib") if paired.suffix in (".rlib", ".rmeta", ".a", ".dylib") else paired.name
     candidates = [paired.parent / (stem + ".d")]
     if row["target"]["kind"] == ["custom-build"]:
         candidates = list(paired.parent.glob("*.d"))
