@@ -19,7 +19,7 @@ const gui = fileURLToPath(new URL('..', import.meta.url));
 assert(existsSync(join(gui, 'src/gen/catalog.ts')), 'Generate the catalog/bindings before running the component fixture');
 const evidence = process.env.CHAT_REPLAY_CHECK_DIR || mkdtempSync(join(tmpdir(), 'khor-chat-replay-'));
 mkdirSync(evidence, {recursive: true});
-const sourceFiles = ['src/views/ChatView.tsx', 'scripts/check-chat-replay.mjs', 'scripts/fixtures/chat-replay-cases.mjs', 'src/api.ts', 'src/lib/acp-view.ts', 'src/gen/bindings/ChatFrame.ts', 'src/gen/catalog.ts'];
+const sourceFiles = ['src/lib/attachment-view.ts', 'src/gen/bindings/AttachmentKind.ts', 'scripts/fixtures/attachment-leases.mjs', 'src/views/ChatView.tsx', 'scripts/check-chat-replay.mjs', 'scripts/fixtures/chat-replay-cases.mjs', 'src/api.ts', 'src/lib/acp-view.ts', 'src/gen/bindings/ChatFrame.ts', 'src/gen/catalog.ts'];
 const fingerprint = () => Object.fromEntries(sourceFiles.map(file => [file, createHash('sha256').update(readFileSync(join(gui, file))).digest('hex')]));
 const sources = fingerprint(), results = [];
 const fixture = mkdtempSync(join(gui, '.chat-replay-check-'));
