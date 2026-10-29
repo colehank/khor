@@ -28,13 +28,13 @@ const file = text => ({text,digest:text,total:text.length,at_ms:1,cut:false,bina
 const tests = [];
 async function test(name, run) {try {await run();tests.push({name,pass:true});console.log('PASS', name);} catch(e){tests.push({name,pass:false,error:e.message});console.error('FAIL',name,e.message);}}
 function fixture() {
- const refresh={current:makeRefresh()}, pending=[], applied=[];
+ const refresh={current:makeRefresh()},bufferLive={current:true},pending=[],applied=[];
  let shown='A', remembered=[];
  const accepted={current:{file:file('A'),edit:{text:'A'},clashes:null}};
  const acceptBuffer=change=>{const before=accepted.current;accepted.current=change(before);shown=accepted.current.edit?.text??'';if(accepted.current.file!==before.file)applied.push(accepted.current.file?.text);};
  const setEdit = Function('useCallback','setOwn','draft','refresh','acceptBuffer',editCode+'; return setEdit;')(f=>f, update=>{shown=update({text:shown})?.text ?? '';},undefined,refresh,acceptBuffer);
  const onText=Function('leaving','setEdit','return '+textCallback)({current:{edit:null}},setEdit);
- const env={kindOf:()=> 'text',path:'/fixture.txt',machine:'fixture',file:file('A'),dirty:false,refresh,accepted,acceptBuffer,
+ const env={kindOf:()=> 'text',path:'/fixture.txt',machine:'fixture',file:file('A'),dirty:false,refresh,accepted,acceptBuffer,bufferLive,
  fetchFileStat:async()=>file('changed'), unchanged:()=>false,
  fetchFileText:()=>{const d=deferred();pending.push(d);return d.promise;},
  remember:(_,__,f)=>remembered.push(f.text),setFile:f=>applied.push(f.text),
@@ -42,7 +42,7 @@ function fixture() {
  const bound=Function(...Object.keys(env),'useCallback',refreshCode+';return {again,readNeeded:typeof readNeeded==="undefined"?undefined:readNeeded};')(...Object.values(env),f=>f);
  const again=bound.again;
  const compose=compositionCallback?Function('refresh','readNeeded','return '+compositionCallback)(refresh,bound.readNeeded):()=>{};
- return {again,resume:bound.readNeeded,compose,refresh,pending,applied,get shown(){return shown;},get remembered(){return remembered;},type:onText};
+ return {again,resume:bound.readNeeded,compose,refresh,pending,applied,unmount(){bufferLive.current=false;refresh.current.invalidate();},get shown(){return shown;},get remembered(){return remembered;},type:onText};
 }
 await test('clean refresh still accepts changed disk contents',async()=>{const f=fixture();f.again();await tick();f.pending[0].resolve(file('B'));await tick();assert.equal(f.shown,'B');});
 await test('typing while refresh is pending preserves draft and merge base',async()=>{const f=fixture();f.again();await tick();f.type('nihao');f.pending[0].resolve(file('B'));await tick();assert.equal(f.shown,'nihao');assert.deepEqual(f.applied,[]);assert.deepEqual(f.remembered,[]);});
@@ -58,6 +58,7 @@ if(!legacy){
  await test('a refresh blocked by a draft retries only after the buffer becomes clean',async()=>{const f=fixture();f.type('draft');f.again();await tick();assert.equal(f.pending.length,0);f.resume();await tick();assert.equal(f.pending.length,0);f.type('A');f.resume();await tick();assert.equal(f.pending.length,1);f.pending[0].resolve(file('B'));await tick();assert.equal(f.shown,'B');});
  await test('a completed unchanged read consumes the request without replaying it on composition end',async()=>{const f=fixture();f.again();await tick();f.pending[0].resolve(null);await tick();f.compose(true);f.compose(false);await tick();assert.equal(f.pending.length,1);assert.equal(f.refresh.current.needsRead(),false);});
  await test('failed text read and its existing fallback retain only the need for a later fresh request',async()=>{const f=fixture();f.again();await tick();f.pending[0].reject(new Error('fixture offline'));await tick();f.pending[1].reject(new Error('fixture fallback offline'));await tick();assert.equal(f.refresh.current.needsRead(),true);f.resume();await tick();assert.equal(f.pending.length,3);f.pending[2].resolve(file('B'));await tick();assert.equal(f.shown,'B');assert.equal(f.refresh.current.needsRead(),false);});
+ await test('late composition end after departure cannot start the deferred disk read',async()=>{const f=fixture();f.compose(true);f.again();f.unmount();f.compose(false);await tick();assert.equal(f.pending.length,0);});
 }
 console.log(JSON.stringify({legacy,passed:tests.filter(t=>t.pass).length,total:tests.length,tests},null,2));
 assert(tests.every(t=>t.pass), 'file refresh behavior regressions');

@@ -667,7 +667,7 @@ function FileBody({
   /** Refresh a clean file without replacing intervening edits or marked text.
       The original disk version must also remain the draft's merge base. */
   const readNeeded = useCallback(() => {
-    if (!refresh.current.needsRead()) return;
+    if (!bufferLive.current || !refresh.current.needsRead()) return;
     const {file,edit} = accepted.current;
     if (kindOf(path) !== "text" || file === null || (edit !== null && edit.text !== file.text)) return;
     void refresh.current.read(
