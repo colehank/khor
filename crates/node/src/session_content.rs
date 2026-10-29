@@ -9,6 +9,8 @@ use std::{
 
 #[path = "session_content/observations.rs"]
 mod observations;
+#[path = "session_content/journal.rs"]
+pub(crate) mod journal;
 pub use observations::refuse_control;
 pub(crate) use observations::{ListedCandidate, Observation, ObservationKind};
 
