@@ -111,6 +111,24 @@ function findButton(node) {
   return null;
 }
 const cases = [
+  ['metadata owner changes preserve the actual parent observation mount', async () => {
+    const keys = [];
+    function visit(node) {
+      if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText(file) === 'ObservedSession') {
+        const attribute = node.attributes.properties.find(item => ts.isJsxAttribute(item) && item.name.getText(file) === 'key');
+        assert(attribute?.initializer && ts.isJsxExpression(attribute.initializer) && attribute.initializer.expression);
+        const expression = ts.transpile(`const key = ${attribute.initializer.expression.getText(file)};`, { target: ts.ScriptTarget.ES2022 });
+        keys.push(Function('row', expression + '\nreturn key;'));
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(file); assert.equal(keys.length, 2, 'both real parent observation branches are checked');
+    for (const key of keys) {
+      const row = {id:'observe/one',content_locator:'same-source',home:'content-home',observation_owner:'owner-a'};
+      assert.equal(key(row), key({...row,observation_owner:'owner-b'}), 'metadata owner must not remount the reader');
+      assert.notEqual(key(row), key({...row,id:'observe/two'}), 'different views keep separate component identities');
+    }
+  }],
   ['journal capture scope is distinct from execution and keeps the real read-only reader', async () => {
     const f=fixture({word:null,kind:'observe',can_control:false});
     f.render();

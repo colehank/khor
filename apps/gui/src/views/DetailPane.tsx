@@ -575,7 +575,7 @@ export function DetailPane({
         // to.
         <MachineChat key={row.id} id={row.id} active={active} onSession={onSession} sessions={sessions} />
       ) : row && isObserved(row) ? (
-        <ObservedSession key={JSON.stringify([row.id, row.observation_owner, row.home])} row={row} onReading={onReading} />
+        <ObservedSession key={row.id} row={row} onReading={onReading} />
       ) : row && row.kind === "gui" && row.word !== "failed" ? (
         // A conversation khor holds, and the only thing it has: there
         // is no terminal under it to show. Keyed so switching sessions
