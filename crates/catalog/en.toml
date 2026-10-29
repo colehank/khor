@@ -1749,6 +1749,7 @@ journal-why-punched = "{0} round(s) of hole punching, none of its candidates ans
 
 [gui]
 git-history-search-page = "Search commits on this page"
+git-history-updated = "New repository history is available"
 git-history-newer = "Newer"
 git-history-older = "Older"
 agent_list_unknown_home = "Source machine unknown; refresh the list"

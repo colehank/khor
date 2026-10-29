@@ -2710,6 +2710,7 @@ journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
 git-history-search-page = "搜索当前页提交"
+git-history-updated = "提交记录有更新"
 git-history-newer = "较新"
 git-history-older = "更早"
 agent_list_unknown_home = "来源机器未知，需重新查询"
