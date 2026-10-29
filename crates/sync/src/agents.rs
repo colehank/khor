@@ -166,10 +166,17 @@ pub struct Seen {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Answer {
     /// It listed. Possibly nothing — and here that really is nothing.
-    Sessions { rows: Vec<Seen> },
+    Sessions {
+        #[serde(default)]
+        home: Option<[u8; 32]>,
+        rows: Vec<Seen>,
+    },
     /// It does not implement `session/list`, which the protocol allows
     /// (20 of 32 registry agents did on 2026-08-30).
-    Cannot,
+    Cannot {
+        #[serde(default)]
+        home: Option<[u8; 32]>,
+    },
 }
 
 pub struct AgentDoc {
@@ -436,14 +443,26 @@ mod tests {
 
         // 2) Asked, and it cannot list. **Not the same as (1)** — that
         //    is the whole assertion.
-        doc.set_seen("gem", &Answer::Cannot).unwrap();
-        assert_eq!(doc.seen("gem"), Some(Answer::Cannot));
+        doc.set_seen("gem", &Answer::Cannot { home: None }).unwrap();
+        assert_eq!(doc.seen("gem"), Some(Answer::Cannot { home: None }));
         assert_ne!(doc.seen("gem"), None, "asked-and-cannot is not never-asked");
 
         // 3) It listed, and has none. Not the same as (2) either.
-        doc.set_seen("empty", &Answer::Sessions { rows: vec![] })
-            .unwrap();
-        assert_eq!(doc.seen("empty"), Some(Answer::Sessions { rows: vec![] }));
+        doc.set_seen(
+            "empty",
+            &Answer::Sessions {
+                home: None,
+                rows: vec![],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            doc.seen("empty"),
+            Some(Answer::Sessions {
+                home: None,
+                rows: vec![]
+            })
+        );
         assert_ne!(doc.seen("empty"), doc.seen("gem"));
 
         // 4) It listed, and has some — through the doc, so the
@@ -465,11 +484,18 @@ mod tests {
                 updated_at: None,
             },
         ];
-        doc.set_seen("cacp", &Answer::Sessions { rows: rows.clone() })
-            .unwrap();
-        let Some(Answer::Sessions { rows: back }) = doc.seen("cacp") else {
+        doc.set_seen(
+            "cacp",
+            &Answer::Sessions {
+                home: Some([7; 32]),
+                rows: rows.clone(),
+            },
+        )
+        .unwrap();
+        let Some(Answer::Sessions { home, rows: back }) = doc.seen("cacp") else {
             panic!("wanted sessions")
         };
+        assert_eq!(home, Some([7; 32]));
         assert_eq!(back, rows);
         assert_eq!(back[1].title, None);
         assert_eq!(back[1].updated_at, None);
@@ -494,6 +520,7 @@ mod tests {
         doc.set_seen(
             "gem",
             &Answer::Sessions {
+                home: None,
                 rows: vec![Seen {
                     id: "old".into(),
                     cwd: String::new(),

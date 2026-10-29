@@ -165,7 +165,7 @@ export function SessionsList({
       setTurnRefused((m) => new Map(m).set(r.id, String(e instanceof Error ? e.message : e)));
     // Somebody else's machine hosts it; the act happens where the
     // process is.
-    if (r.source) return [];
+    if (r.source || r.kind === "observe") return [];
     if (r.kind === "gui") {
       return [
         {
@@ -293,7 +293,7 @@ export function SessionsList({
     // The machine's face carries the row; the halo is the state, the
     // mark the kind (`FaceMark`, which `SessionFace` also wears).
     face: { machine: r.face },
-    halo: r.word,
+    halo: r.word ?? undefined,
     mark: sessionKind(r.kind, r.category),
     // Double-click the title to rename it in place — the component the
     // detail header wears, so the two cannot drift. `nested`: it sits
@@ -373,7 +373,7 @@ export function SessionsList({
             </span>
           )}
           {r.unread === 0 && rung?.has(r.id) && <BellMark />}
-          <StatusWord word={r.word} />
+          <StatusWord word={r.word} absent={r.kind === "observe" ? gui.session_observation : undefined} />
         </span>
         {r.at_ms > 0 &&
           (r.quiet ? (
@@ -401,7 +401,7 @@ export function SessionsList({
       "data-kind": r.kind,
       "data-imported": r.imported,
       "data-mux": r.mux,
-      "data-word": r.word,
+      "data-word": r.word ?? undefined,
       "data-pinned": r.pinned,
       "data-quiet": r.quiet,
       "data-source": r.source?.device,

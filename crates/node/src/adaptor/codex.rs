@@ -1443,7 +1443,7 @@ mod current {
             .discovering(Arc::new(Discovery::at(base).with_procs(Procs::default())));
         let first = kind.rows(|_| 0);
         assert_eq!(first.len(), 1);
-        assert_eq!(first[0].state.state, State::Busy);
+        assert_eq!(first[0].state.unwrap().state, State::Busy);
 
         let mut f = OpenOptions::new().append(true).open(path).unwrap();
         writeln!(f, "{}", item("AgentMessage", "latest answer")).unwrap();
@@ -1458,13 +1458,19 @@ mod current {
         let next = kind.rows(|_| 0);
         assert_eq!(next.len(), 1);
         assert_eq!(next[0].last.as_deref(), Some("latest answer"));
-        assert_eq!((next[0].state.state, next[0].unread), (State::Done, 1));
+        assert_eq!(
+            (next[0].state.unwrap().state, next[0].unread),
+            (State::Done, 1)
+        );
         let seen_at = "2026-08-06T13:49:20Z"
             .parse::<jiff::Timestamp>()
             .unwrap()
             .as_millisecond();
         let seen = kind.rows(|_| seen_at);
-        assert_eq!((seen[0].state.state, seen[0].unread), (State::Idle, 0));
+        assert_eq!(
+            (seen[0].state.unwrap().state, seen[0].unread),
+            (State::Idle, 0)
+        );
         drop(writer);
         assert!(kind.rows(|_| 0).is_empty());
     }

@@ -132,7 +132,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         .find(|v| v.session.id == id)
         .expect("the live row should reach the other device");
     assert_eq!(
-        view.session.state.state,
+        view.session.state.unwrap().state,
         State::Blocked,
         "等准许,从别的设备看得到"
     );
@@ -145,7 +145,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     assert!(
         views
             .iter()
-            .any(|v| v.session.id == ephemeral && v.session.state.state == State::Busy),
+            .any(|v| v.session.id == ephemeral && v.session.state.unwrap().state == State::Busy),
         "the ephemeral row travels too"
     );
 
@@ -159,7 +159,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     let views = b.sessions().unwrap();
     let view = views.iter().find(|v| v.session.id == id).unwrap();
     assert_eq!(
-        (view.session.state.state, view.session.unread),
+        (view.session.state.unwrap().state, view.session.unread),
         (State::Done, 1),
         "turn done, unread on every device"
     );
@@ -171,7 +171,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     let views = b.sessions().unwrap();
     let view = views.iter().find(|v| v.session.id == id).unwrap();
     assert_eq!(
-        (view.session.state.state, view.session.unread),
+        (view.session.state.unwrap().state, view.session.unread),
         (State::Idle, 0),
         "looked at on beta clears the row everywhere"
     );
@@ -209,7 +209,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         .unwrap()
         .session;
     assert_eq!(
-        row.state.state,
+        row.state.unwrap().state,
         State::Failed,
         "a dead process with no recorded ending"
     );
@@ -219,7 +219,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         .unwrap();
     let views = b.sessions().unwrap();
     let view = views.iter().find(|v| v.session.id == id).unwrap();
-    assert_eq!(view.session.state.state, State::Failed);
+    assert_eq!(view.session.state.unwrap().state, State::Failed);
 
     // ── wire control: Act stays off live sessions ───────────
     let alpha_info = b

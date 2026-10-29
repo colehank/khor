@@ -1748,6 +1748,9 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+agent_list_unknown_home = "Source machine unknown; refresh the list"
+session_state_unknown = "No execution state is available"
+session_observation = "Read-only record"
 content_ambiguous_source = "Multiple session records match this identity; the content source is ambiguous"
 content_loading = "Reading session content source"
 content_no_source = "No readable session record"
@@ -2229,7 +2232,7 @@ new-session-seen-asking = "Asking…"
 new-session-seen-unasked = "Haven't asked yet"
 new-session-seen-cannot = "It can't list its conversations — that's optional in the protocol."
 new-session-seen-none = "It says it has no conversations."
-chat-readonly = "Read-only — it's running in its own terminal"
+chat-readonly = "Read-only session"
 chat-busy-for = "Busy for {0}"
 takeover-busy = "It's busy — taking over interrupts this turn. The terminal there will end; the conversation continues here."
 takeover-calm = "The terminal there will end; the conversation continues here."

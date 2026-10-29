@@ -859,7 +859,7 @@ export function WorkspacePane({
   const marks = useMemo(() => folded(root, git), [root, git]);
   /** What each of this project's sessions was saying the last time the
       rows moved, by id. */
-  const said = useRef(new Map<string, string>());
+  const said = useRef(new Map<string, string | null>());
   // **An agent stopping is a reason to ask git again** (工作区批⑩:
   // 「这个工作区里的会话从 busy 变到别的状态时,git 标记重问一次」).
   // The thing that most often changes files in a khor workspace is an
@@ -876,11 +876,11 @@ export function WorkspacePane({
   // the shell polls, this compares two polls, and a session that was
   // never seen busy has nothing to have stopped from.
   useEffect(() => {
-    const now = new Map<string, string>();
+    const now = new Map<string, string | null>();
     let stopped = false;
     for (const r of mine) {
       now.set(r.id, r.word);
-      if (said.current.get(r.id) === "busy" && r.word !== "busy") stopped = true;
+      if (said.current.get(r.id) === "busy" && r.word !== null && r.word !== "busy") stopped = true;
     }
     said.current = now;
     if (stopped) setGitAt((n) => n + 1);

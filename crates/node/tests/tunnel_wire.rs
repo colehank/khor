@@ -445,7 +445,7 @@ async fn wait_borrow_state(node: &Node, id: &str, want: khor_core::State) -> boo
     for _ in 0..40 {
         if let Ok(views) = node.sessions()
             && let Some(v) = views.iter().find(|v| v.session.id.0 == id)
-            && v.session.state.state == want
+            && v.session.state.unwrap().state == want
         {
             return true;
         }

@@ -98,7 +98,7 @@ export function useStatusBar(rows: SessionRow[]): {
     // A word that changed while this app was watching is exactly
     // "something happened just now"; a row first seen already finished
     // is history, and history is what the list is for.
-    const moved: SessionRow[] = [];
+    const moved: {id: string; title: string; word: string}[] = [];
     for (const r of rows) {
       // Rule 1 and 2 together: a process-class fact, read off a row.
       // The carrier changed in 传输并入对话批 — transfers no longer
@@ -112,14 +112,14 @@ export function useStatusBar(rows: SessionRow[]): {
       // strip stays deaf to chatter — it is not a notification centre
       // (the module head's whole point).
       // The broadcast's pulls are transfers too (STORE-BRIEF phase 3).
-      if (r.kind !== "broadcast") continue;
+      if (r.kind !== "broadcast" || r.word === null) continue;
       const before = seen.current.get(r.id);
       seen.current.set(r.id, r.word);
       if (dropped.current.has(r.id)) continue;
       if (before === undefined || before === r.word) continue;
       const pressed = PRESS.includes(r.word);
       const was = PRESS.includes(before) || before === "blocked";
-      if (pressed || was) moved.push(r);
+      if (pressed || was) moved.push({id: r.id, title: r.title, word: r.word});
     }
     setLive((prev) => {
       const byId = new Map(prev.map((i) => [i.id, i]));
@@ -135,7 +135,7 @@ export function useStatusBar(rows: SessionRow[]): {
         });
       }
       // A row that left the list takes its line with it.
-      const alive = new Set(rows.map((r) => r.id));
+      const alive = new Set(rows.filter(r => r.word !== null).map((r) => r.id));
       const next = [...byId.values()].filter((i) => alive.has(i.id));
       const same =
         next.length === prev.length &&

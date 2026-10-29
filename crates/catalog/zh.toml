@@ -2709,6 +2709,9 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+agent_list_unknown_home = "来源机器未知，需重新查询"
+session_state_unknown = "未提供运行状态"
+session_observation = "只读记录"
 content_ambiguous_source = "有多个会话记录匹配此身份，无法确定内容来源"
 content_loading = "正在读取会话内容来源"
 content_no_source = "没有可读取的会话记录"
@@ -3607,7 +3610,7 @@ new-session-seen-asking = "查询中…"
 new-session-seen-unasked = "尚未查询"
 new-session-seen-cannot = "它不支持列出对话（协议中这一项是可选的）"
 new-session-seen-none = "它没有任何对话"
-chat-readonly = "只读——它正在自己的终端中运行"
+chat-readonly = "只读会话"
 # The running turn, in the conversation, with how long it has been
 # running. **The duration is the whole reason this sentence exists.**
 #

@@ -232,7 +232,7 @@ export function SessionSide({
 
 /** Whose 附栏 this is: the session's face and title, as its list row
     draws them (`SessionFace`). */
-export type SideWho = { face: Avatar | null; title: string; word: string; kind: string; category: string | null };
+export type SideWho = { face: Avatar | null; title: string; word: string | null; kind: string; category: string | null };
 
 /**
  * The 附栏's inside — the one head and the seat's page — which is also

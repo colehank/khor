@@ -401,6 +401,7 @@ fn frame_of(note: GuiNote) -> ChatFrame {
 /// reached over the network, and every other conversation's poll and
 /// send take this same lock.
 pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
+    khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
     {
         let mut registry = chats()
             .lock()
@@ -541,10 +542,12 @@ fn attach(
     // reaching for it answered a terminal's sentence from the far machine
     // (「没有可连接的终端：tui/…」) or a command line's from this one.
     // Read off the row both machines already share, so no wire changes.
-    if n.sessions()?
-        .iter()
-        .any(|v| v.session.id == sid && v.session.state.state == khor_core::State::Failed)
-    {
+    if n.sessions()?.iter().any(|v| {
+        v.session.id == sid
+            && v.session
+                .state
+                .is_some_and(|stamp| stamp.state == khor_core::State::Failed)
+    }) {
         return Err(khor_catalog::msg::chat_ended().into());
     }
     // **The fork is on the row, not on a flag** (`Node::far_machine`),
@@ -561,6 +564,7 @@ fn attach(
             khor_node::gui_host::connect_at(&addr, &cookie)?
         }
         None => {
+            n.require_interactive_owner(&sid)?;
             let dir = n
                 .session_dir(&sid)
                 .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
@@ -578,6 +582,7 @@ fn landing() -> &'static Mutex<crate::landing::Landing> {
 }
 
 fn chat_of(id: &str) -> Result<Arc<Chat>, String> {
+    khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
     chats()
         .lock()
         .unwrap()
@@ -1064,7 +1069,7 @@ pub fn session_content(
                     Unavailable::NoSource => ContentUnavailable::NoSource,
                     Unavailable::Unreadable => ContentUnavailable::Unreadable,
                     Unavailable::RemoteNotConnected => ContentUnavailable::RemoteNotConnected,
-                Unavailable::AmbiguousSource => ContentUnavailable::AmbiguousSource,
+                    Unavailable::AmbiguousSource => ContentUnavailable::AmbiguousSource,
                 },
             },
         },

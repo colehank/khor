@@ -123,7 +123,7 @@ fn a_later_file_or_note_does_not_hide_an_agent_waiting_for_approval() {
         .block_on(node.note("a later note", &[]))
         .unwrap();
     let session = row(&node).session;
-    assert_eq!(session.state.state, khor_core::State::Blocked);
+    assert_eq!(session.state.unwrap().state, khor_core::State::Blocked);
     assert_eq!(session.last.as_deref(), Some("current agent answer"));
 }
 
@@ -156,7 +156,10 @@ fn agent_progress_and_approval_have_their_own_visible_versions() {
     node.record_command(&record).unwrap();
     node.seen_snapshot(&board, &[old]).unwrap();
     assert_eq!(row(&node).session.unread, 1);
-    assert_eq!(row(&node).session.state.state, khor_core::State::Blocked);
+    assert_eq!(
+        row(&node).session.state.unwrap().state,
+        khor_core::State::Blocked
+    );
     node.seen_snapshot(
         &board,
         &[SeenMessage {
@@ -230,7 +233,7 @@ fn failed_and_interrupted_receipts_keep_distinct_row_states() {
         command.status = status.into();
         command.ended_at_ms = Some(101);
         node.record_command(&command).unwrap();
-        assert_eq!(row(&node).session.state.state, state);
+        assert_eq!(row(&node).session.state.unwrap().state, state);
     }
 }
 

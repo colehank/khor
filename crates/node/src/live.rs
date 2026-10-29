@@ -157,6 +157,11 @@ pub enum Seat {
     View,
 }
 
+enum AddressPreference {
+    Host,
+    Seat,
+}
+
 /// How a word got onto a registry row.
 ///
 /// Only exists to answer one question, and the question is asked in
@@ -667,6 +672,42 @@ impl LiveKind {
         })
     }
 
+    fn owns_agent_endpoint(&self, id: &SessionId, procs: &crate::adaptor::Procs) -> bool {
+        let Some(dir) = self.dir(id) else {
+            return false;
+        };
+        let Ok((meta, state)) = read_pair(&dir) else {
+            return false;
+        };
+        let Ok(host) = crate::host::read_host_file(&dir) else {
+            return false;
+        };
+        let Some(process) = procs.get(host.host_pid) else {
+            return false;
+        };
+        let written_ms = crate::host::host_file_path(&dir)
+            .metadata()
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|time| time.as_millis());
+        if state.exit.is_some()
+            || meta.pid != Some(host.host_pid)
+            || written_ms.is_none_or(|written| {
+                process.started_ms < 0 || process.started_ms as u128 > written
+            })
+        {
+            return false;
+        }
+        if meta.kind == khor_core::kind::GUI && host.child_pid == host.host_pid {
+            return true;
+        }
+        let Some(child) = procs.get(host.child_pid) else {
+            return false;
+        };
+        child.ppid == Some(host.host_pid)
+    }
+
     /// The kind and title on record, when a registry entry exists.
     pub fn on_record(&self, id: &SessionId) -> Option<(String, String)> {
         let dir = self.dir(id)?;
@@ -703,6 +744,21 @@ impl LiveKind {
             .any(|row| row.id == *id && row.kind.0 == khor_core::kind::SHELL && row.term && row.mux)
     }
 
+    pub(crate) fn require_input_owner(&self, id: &SessionId) -> Result<(), String> {
+        crate::session_content::refuse_control(id)?;
+        let current = self.seated(&|_| 0, &|_| false);
+        if current.input_owners.contains(id) {
+            return Ok(());
+        }
+        if current.rows.iter().any(|row| row.id == *id) {
+            return Err(
+                "This agent runs outside Khor; import it for observation or resume explicitly"
+                    .into(),
+            );
+        }
+        Err(msg::no_such_session(&id.0))
+    }
+
     /// Stands a host up for a discovered multiplexer session, so the
     /// terminal can attach to it like any hosted row (docs/handoff tmux
     /// 接桥). The host runs a **grouped** tmux client
@@ -716,6 +772,30 @@ impl LiveKind {
     /// Idempotent: a second open finds the host and does nothing — two
     /// clicks must not stand up two clients.
     pub fn attach_multiplexed(&self, id: &SessionId) -> Result<Seat, String> {
+        self.require_input_owner(id)?;
+        self.attach_owned(id)
+    }
+
+    fn attach_owned(&self, id: &SessionId) -> Result<Seat, String> {
+        let resource = id.0.starts_with("shell/")
+            || self
+                .on_record(id)
+                .is_some_and(|(kind, _)| kind == khor_core::kind::SHELL);
+        if !resource {
+            let dir = self
+                .dir_of(id)
+                .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+            let meta = read_meta(&dir)?;
+            if meta.kind == khor_core::kind::TUI
+                && crate::host::read_host_file(&dir)
+                    .is_ok_and(|host| crate::link::pid_alive(host.host_pid))
+            {
+                return Ok(Seat::Host);
+            }
+            return Err(
+                "This agent has no owned terminal; an external terminal view is read-only".into(),
+            );
+        }
         if let Some(dir) = self.dir_of(id) {
             // A viewer already up is the answer for an agent in tmux; a
             // host already up is the answer for a tmux session khor
@@ -1027,13 +1107,31 @@ impl LiveKind {
     ///
     /// Blocking: the bridge sweeps and may start a host.
     pub fn terminal_address(&self, id: &SessionId) -> Result<crate::host::HostFile, String> {
-        if let Some(dir) = self.dir_of(id)
-            && let Ok(hf) = crate::host::read_host_file(&dir)
-            && crate::link::pid_running(hf.host_pid)
+        self.input_address(id, AddressPreference::Host)
+    }
+
+    /// A terminal client uses the current seat, including a view beside a GUI host.
+    pub(crate) fn terminal_view_address(
+        &self,
+        id: &SessionId,
+    ) -> Result<crate::host::HostFile, String> {
+        self.input_address(id, AddressPreference::Seat)
+    }
+
+    fn input_address(
+        &self,
+        id: &SessionId,
+        preference: AddressPreference,
+    ) -> Result<crate::host::HostFile, String> {
+        self.require_input_owner(id)?;
+        if matches!(preference, AddressPreference::Host)
+            && let Some(dir) = self.dir_of(id)
+            && let Ok(host) = crate::host::read_host_file(&dir)
+            && crate::link::pid_running(host.host_pid)
         {
-            return Ok(hf);
+            return Ok(host);
         }
-        let seat = self.attach_multiplexed(id)?;
+        let seat = self.attach_owned(id)?;
         let dir = self
             .dir_of(id)
             .ok_or_else(|| msg::not_a_session_id(&id.0))?;
@@ -1231,7 +1329,7 @@ impl LiveKind {
             .rows
             .into_iter()
             .find(|r| r.id == *id)
-            .map(|r| r.state.at.0 as i64);
+            .and_then(|r| r.state.map(|stamp| stamp.at.0 as i64));
         Ok(shown.map_or(own, |s| s.max(own)))
     }
 
@@ -1417,17 +1515,17 @@ impl LiveKind {
                     // the family it is a fallback *for*.
                     let (state, unread) =
                         settle_done(sighting.word, sighting.at_ms, watermark(&id.0));
-                    out[seat].state = StateStamp {
+                    out[seat].state = Some(StateStamp {
                         state,
                         at: Millis(sighting.at_ms.max(0) as u64),
-                    };
+                    });
                     out[seat].unread = unread;
                     raw[seat] = sighting.word;
                 } else if sighting.word == State::Failed && unpinned.contains(&&id) {
-                    out[seat].state = StateStamp {
+                    out[seat].state = Some(StateStamp {
                         state: State::Failed,
                         at: Millis(sighting.at_ms.max(0) as u64),
-                    };
+                    });
                     out[seat].unread = 0;
                     raw[seat] = State::Failed;
                 }
@@ -1436,14 +1534,16 @@ impl LiveKind {
             let (state, unread) = settle_done(sighting.word, sighting.at_ms, watermark(&id.0));
             raw.push(sighting.word);
             out.push(Session {
+                observation: None,
+                can_control: false,
                 id,
                 kind: Kind(kind.to_owned()),
                 title: sighting.title,
                 home: self.device,
-                state: StateStamp {
+                state: Some(StateStamp {
                     state,
                     at: Millis(sighting.at_ms.max(0) as u64),
-                },
+                }),
                 unread,
                 // A discovered 失败 is the crash rule: the status file
                 // outlived its process, so nothing is behind this row
@@ -1641,16 +1741,18 @@ impl LiveKind {
             live_pids.push(Vec::new());
             last_seat.push(Some(n.seat.clone()));
             out.push(Session {
+                observation: None,
+                can_control: false,
                 id: SessionId(n.id.clone()),
                 kind: Kind(khor_core::kind::TUI.to_owned()),
                 title: n.title.clone(),
                 home: self.device,
                 // Never shown as it stands: the seating either dresses
                 // it in the host's form or folds it.
-                state: StateStamp {
+                state: Some(StateStamp {
                     state: State::Done,
                     at: Millis(0),
-                },
+                }),
                 unread: 0,
                 dead: true,
                 unbacked: false,
@@ -1778,7 +1880,8 @@ impl LiveKind {
                         && last_seat[i].as_deref() == Some(host.id.0.as_str())
                 })
                 .collect();
-            let newest = |rows: &[usize]| rows.iter().copied().max_by_key(|&i| out[i].state.at.0);
+            let newest =
+                |rows: &[usize]| rows.iter().copied().max_by_key(|&i| out[i].activity_at());
             let open = |i: usize| registered.get(i).is_some_and(|r| r.open);
             let on_list = |i: usize| listed(&out[i].id.0);
             let which = |rows: &[usize], keep: &dyn Fn(usize) -> bool| -> Vec<usize> {
@@ -1866,14 +1969,16 @@ impl LiveKind {
                     let sighting = &found.sighting;
                     raw.push(sighting.word);
                     out.push(Session {
+                        observation: None,
+                        can_control: false,
                         id: host.id.clone(),
                         kind: Kind(found.kind.to_owned()),
                         title: sighting.title.clone(),
                         home: self.device,
-                        state: StateStamp {
+                        state: Some(StateStamp {
                             state: sighting.word,
                             at: Millis(sighting.at_ms.max(0) as u64),
-                        },
+                        }),
                         // A multiplexer cannot say 完成, so there is
                         // nothing here that could be unread (docs/UX.md
                         // 角标可归零).
@@ -2089,10 +2194,10 @@ impl LiveKind {
                     }
                     r.kind = Kind(khor_core::kind::SHELL.to_owned());
                     r.category = Some(khor_core::category::SHELL.to_owned());
-                    r.state = StateStamp {
+                    r.state = Some(StateStamp {
                         state: word,
                         at: Millis(at_ms.max(0) as u64),
-                    };
+                    });
                     r.unread = 0;
                     // The tmux session is there — nothing ended.
                     r.dead = false;
@@ -2104,19 +2209,19 @@ impl LiveKind {
                     r.mux = true;
                 }
                 Form::Agent { from, mux } => {
-                    let (state, unread) = settle_done(
-                        raw[from],
-                        out[from].state.at.0 as i64,
-                        watermark(&out[k].id.0),
-                    );
                     let agent = out[from].clone();
+                    let Some(stamp) = agent.state else {
+                        continue;
+                    };
+                    let (state, unread) =
+                        settle_done(raw[from], stamp.at.0 as i64, watermark(&out[k].id.0));
                     let r = &mut out[k];
                     r.kind = agent.kind;
                     r.category = agent.category;
-                    r.state = StateStamp {
+                    r.state = Some(StateStamp {
                         state,
-                        at: agent.state.at,
-                    };
+                        at: stamp.at,
+                    });
                     r.unread = unread;
                     r.dead = false;
                     r.unbacked = false;
@@ -2197,10 +2302,10 @@ impl LiveKind {
                         bell_ms: own.bell_ms,
                         ..front
                     });
-                    r.state = StateStamp {
+                    r.state = Some(StateStamp {
                         state: word,
                         at: Millis(at_ms.max(0) as u64),
-                    };
+                    });
                     // A multiplexer cannot say 完成.
                     r.unread = 0;
                     r.last = None;
@@ -2213,10 +2318,10 @@ impl LiveKind {
         // row is looked at past the command's end ([`failed_command`]).
         for r in out.iter_mut() {
             if let Some(at) = failed_command(r, watermark(&r.id.0)) {
-                r.state = StateStamp {
+                r.state = Some(StateStamp {
                     state: State::Failed,
                     at: Millis(at),
-                };
+                });
                 r.unread = 0;
                 r.dead = false;
             }
@@ -2281,8 +2386,25 @@ impl LiveKind {
                     .to_owned();
             }
         }
+        for row in &mut out {
+            let resource = registered
+                .iter()
+                .find(|entry| entry.row.id == row.id)
+                .is_some_and(|entry| entry.row.kind.0 == khor_core::kind::SHELL);
+            row.can_control = if resource || row.id.0.starts_with("shell/") {
+                row.term
+            } else {
+                self.owns_agent_endpoint(&row.id, procs)
+            };
+        }
+        let input_owners = out
+            .iter()
+            .filter(|row| row.can_control)
+            .map(|row| row.id.clone())
+            .collect();
         out.retain(|r| !folded.contains(&r.id));
         Seated {
+            input_owners,
             rows: out,
             worn,
             folded_bridges,
@@ -2400,14 +2522,16 @@ impl LiveKind {
                 seat: read_seat(&e.path()),
                 dir: e.path(),
                 row: Session {
+                    observation: None,
+                    can_control: false,
                     id,
                     kind: Kind(meta.kind.clone()),
                     title: meta.title.clone(),
                     home: self.device,
-                    state: StateStamp {
+                    state: Some(StateStamp {
                         state: word,
                         at: Millis(at.max(0) as u64),
-                    },
+                    }),
                     unread,
                     dead,
                     unbacked,
@@ -2490,6 +2614,7 @@ impl LiveKind {
 /// What the seating in [`LiveKind::rows`] decided, beyond the rows.
 struct Seated {
     rows: Vec<Session>,
+    input_owners: Vec<SessionId>,
     /// `(holder, agent)`: the holder wears the agent row's form and the
     /// agent row folded into it.
     worn: Vec<(SessionId, SessionId)>,
@@ -2819,7 +2944,9 @@ pub const QUIET_EXITS: [i32; 2] = [130, 141];
 /// looking at the row covers it and the word goes back to 空闲. A command
 /// that starts is running, and the next end decides again.
 fn failed_command(r: &Session, seen: i64) -> Option<u64> {
-    if r.kind.0 != khor_core::kind::SHELL || r.state.state != State::Idle {
+    if r.kind.0 != khor_core::kind::SHELL
+        || !r.state.is_some_and(|stamp| stamp.state == State::Idle)
+    {
         return None;
     }
     let d = r.doing.as_ref()?;
@@ -3232,12 +3359,174 @@ mod tests {
                 .unwrap_or_else(|| panic!("{id} lists: {rows:?}"))
         };
         assert!(
+            !of("tui/11111111-1111-4111-8111").can_control,
+            "a foreign agent in tmux is read-only"
+        );
+        assert!(
+            k.require_input_owner(&sid("tui/11111111-1111-4111-8111"))
+                .unwrap_err()
+                .contains("outside Khor")
+        );
+        assert!(
             of("tui/11111111-1111-4111-8111").mux,
             "its process sits in tmux"
         );
         assert!(
             !of("tui/22222222-2222-4222-8222").mux,
             "control: in no tmux, not multiplexed"
+        );
+    }
+
+    #[test]
+    fn input_capability_requires_current_host_and_child_ownership() {
+        use crate::adaptor::{Proc, Procs};
+        let root = tmp("input-owner");
+        let k = kind_at(&root);
+        let id = sid("tui/ownership");
+        k.register(&id, "tui", "fixture", Some(4100), Some("claude"))
+            .unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        let proc = |name: &str, parent| Proc {
+            name: name.into(),
+            started_ms: 0,
+            cwd: None,
+            ppid: parent,
+        };
+        let procs = Procs::of([
+            (4100, proc("khor", None)),
+            (4101, proc("claude", Some(4100))),
+        ]);
+        assert!(
+            !k.owns_agent_endpoint(&id, &procs),
+            "hook metadata alone cannot grant input"
+        );
+        let marker = crate::host::HostFile {
+            port: 1234,
+            cookie: "fixture".into(),
+            host_pid: 4100,
+            child_pid: 4101,
+        };
+        fs::write(
+            crate::host::view_file_path(&dir),
+            serde_json::to_vec(&marker).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            !k.owns_agent_endpoint(&id, &procs),
+            "a foreign tmux lens is not the agent owner"
+        );
+        fs::write(
+            crate::host::host_file_path(&dir),
+            serde_json::to_vec(&marker).unwrap(),
+        )
+        .unwrap();
+        assert!(k.owns_agent_endpoint(&id, &procs));
+        let foreign = Procs::of([(4101, proc("claude", Some(1)))]);
+        assert!(
+            !k.owns_agent_endpoint(&id, &foreign),
+            "a dead host marker cannot control an outside writer"
+        );
+        let detached = Procs::of([(4100, proc("khor", None)), (4101, proc("claude", Some(1)))]);
+        assert!(!k.owns_agent_endpoint(&id, &detached));
+        let future = Proc {
+            started_ms: now_ms() + 100_000,
+            ..proc("another process", None)
+        };
+        assert!(
+            !k.owns_agent_endpoint(
+                &id,
+                &Procs::of([(4100, future), (4101, proc("claude", Some(4100)))])
+            ),
+            "a PID reused after the marker is not its owner"
+        );
+        k.reseat(&id, "gui", "fixture", Some(4100)).unwrap();
+        let ghost = crate::host::HostFile {
+            child_pid: 4100,
+            ..marker
+        };
+        fs::write(
+            crate::host::host_file_path(&dir),
+            serde_json::to_vec(&ghost).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            k.owns_agent_endpoint(&id, &procs),
+            "the GUI host owns its agent connection directly"
+        );
+        let own_pid = std::process::id();
+        k.reseat(&id, "gui", "fixture", Some(own_pid)).unwrap();
+        let own_host = crate::host::HostFile {
+            host_pid: own_pid,
+            child_pid: own_pid,
+            port: 1234,
+            cookie: "host".into(),
+        };
+        let view = crate::host::HostFile {
+            host_pid: own_pid,
+            child_pid: own_pid,
+            port: 4321,
+            cookie: "foreign-view".into(),
+        };
+        fs::write(
+            crate::host::host_file_path(&dir),
+            serde_json::to_vec(&own_host).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            crate::host::view_file_path(&dir),
+            serde_json::to_vec(&view).unwrap(),
+        )
+        .unwrap();
+        let viewer = k.discovering(Arc::new(crate::adaptor::Discovery::empty().with_procs(
+            Procs::of([
+                (
+                    own_pid,
+                    Proc {
+                        name: "khor-fixture".into(),
+                        started_ms: 0,
+                        cwd: None,
+                        ppid: None,
+                    },
+                ),
+                (
+                    4101,
+                    Proc {
+                        name: "agent-fixture".into(),
+                        started_ms: 0,
+                        cwd: None,
+                        ppid: Some(own_pid),
+                    },
+                ),
+            ]),
+        )));
+        assert_eq!(
+            viewer.terminal_address(&id).unwrap().port,
+            1234,
+            "the protocol reaches its own GUI host"
+        );
+        assert!(
+            viewer
+                .terminal_view_address(&id)
+                .err()
+                .expect("GUI cannot target a terminal view")
+                .contains("external terminal view is read-only"),
+            "a live GUI host cannot authorize input into the foreign view beside it"
+        );
+        viewer.reseat(&id, "tui", "fixture", Some(own_pid)).unwrap();
+        let own_pty = crate::host::HostFile {
+            child_pid: 4101,
+            ..own_host
+        };
+        fs::write(
+            crate::host::host_file_path(&dir),
+            serde_json::to_vec(&own_pty).unwrap(),
+        )
+        .unwrap();
+        let address = viewer.terminal_view_address(&id).unwrap();
+        assert_eq!(
+            (address.port, address.cookie.as_str()),
+            (1234, "host"),
+            "the agent terminal only targets its proved PTY, never a foreign view"
         );
     }
 
@@ -3271,12 +3560,12 @@ mod tests {
             .unwrap();
 
         let row = &k.rows(|_| 0)[0];
-        assert_eq!((row.state.state, row.unread), (State::Busy, 0));
+        assert_eq!((row.state.unwrap().state, row.unread), (State::Busy, 0));
 
         k.report(&id, State::Blocked, Source::Reported).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!(
-            (row.state.state, row.unread),
+            (row.state.unwrap().state, row.unread),
             (State::Blocked, 0),
             "waiting for approval"
         );
@@ -3284,17 +3573,21 @@ mod tests {
         k.report(&id, State::Done, Source::Reported).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!(
-            (row.state.state, row.unread),
+            (row.state.unwrap().state, row.unread),
             (State::Done, 1),
             "turn done, not looked at"
         );
         let row = &k.rows(|_| i64::MAX)[0];
-        assert_eq!((row.state.state, row.unread), (State::Idle, 0), "looked at");
+        assert_eq!(
+            (row.state.unwrap().state, row.unread),
+            (State::Idle, 0),
+            "looked at"
+        );
 
         k.record_exit(&id, 0).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!(
-            (row.state.state, row.unread),
+            (row.state.unwrap().state, row.unread),
             (State::Idle, 0),
             "a clean tui exit is idle"
         );
@@ -3305,7 +3598,7 @@ mod tests {
         k.record_exit(&id2, 3).unwrap();
         let row = k.rows(|_| 0).into_iter().find(|r| r.id == id2).unwrap();
         assert_eq!(
-            (row.state.state, row.unread),
+            (row.state.unwrap().state, row.unread),
             (State::Failed, 0),
             "failed sinks, no badge"
         );
@@ -3323,9 +3616,9 @@ mod tests {
             .unwrap();
         k.record_exit(&id, 0).unwrap();
         let row = &k.rows(|_| 0)[0];
-        assert_eq!((row.state.state, row.unread), (State::Done, 1));
+        assert_eq!((row.state.unwrap().state, row.unread), (State::Done, 1));
         let row = &k.rows(|_| i64::MAX)[0];
-        assert_eq!((row.state.state, row.unread), (State::Idle, 0));
+        assert_eq!((row.state.unwrap().state, row.unread), (State::Idle, 0));
     }
 
     /// The missing-ending rule: a dead pid with no recorded exit is 失败
@@ -3340,7 +3633,7 @@ mod tests {
         k.register(&id, "shell", "x", Some(dead_pid()), None)
             .unwrap();
         let row = &k.rows(|_| 0)[0];
-        assert_eq!(row.state.state, State::Failed);
+        assert_eq!(row.state.unwrap().state, State::Failed);
         assert!(
             k.report(&id, State::Busy, Source::Reported).unwrap_err() == msg::session_over(&id.0),
             "a dead session refuses reports by name"
@@ -3351,7 +3644,7 @@ mod tests {
         k.report(&id2, State::Busy, Source::Reported).unwrap();
         let row = k.rows(|_| 0).into_iter().find(|r| r.id == id2).unwrap();
         assert_eq!(
-            row.state.state,
+            row.state.unwrap().state,
             State::Busy,
             "no pid on record = the word stands"
         );
@@ -3377,7 +3670,7 @@ mod tests {
 
         // Control first: with no host file, a dead recorded pid is the
         // ordinary missing ending.
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Failed);
+        assert_eq!(k.rows(|_| 0)[0].state.unwrap().state, State::Failed);
 
         fs::write(
             crate::host::host_file_path(&dir),
@@ -3393,7 +3686,7 @@ mod tests {
         .unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!(
-            row.state.state,
+            row.state.unwrap().state,
             State::Errored,
             "the host is khor's, the child is the user's work, and it is still running"
         );
@@ -3413,7 +3706,7 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Failed);
+        assert_eq!(k.rows(|_| 0)[0].state.unwrap().state, State::Failed);
     }
 
     /// **A marker file outlives the process it names.** `term` is the
@@ -3501,7 +3794,7 @@ mod tests {
         k.record_exit(&id, 7).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!(
-            row.state.state,
+            row.state.unwrap().state,
             State::Idle,
             "the first recorded ending wins"
         );
@@ -3540,7 +3833,7 @@ mod tests {
         let rows = k.rows(|_| 0);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id.0, "tui/11111111-1111-4111-8111");
-        assert_eq!(rows[0].state.state, State::Blocked);
+        assert_eq!(rows[0].state.unwrap().state, State::Blocked);
         assert_eq!(rows[0].title, "one-aa");
 
         // Now the hook registers the same claude session and reports a
@@ -3556,7 +3849,7 @@ mod tests {
         assert_eq!(rows.len(), 1, "one session, one row — not two");
         assert_eq!(rows[0].id, id);
         assert_eq!(
-            (rows[0].state.state, rows[0].unread),
+            (rows[0].state.unwrap().state, rows[0].unread),
             (State::Done, 1),
             "the registered row wins: it is the only one that can say 完成"
         );
@@ -3610,7 +3903,7 @@ mod tests {
         let rows = k.rows(|_| 0);
         assert_eq!(rows.len(), 1, "still one session");
         assert_eq!(
-            rows[0].state.state,
+            rows[0].state.unwrap().state,
             State::Blocked,
             "the vendor's own file outranks a guess about its screen",
         );
@@ -3618,7 +3911,7 @@ mod tests {
         // Control: the identical disagreement, reported instead of read.
         k.report(&id, State::Idle, Source::Reported).unwrap();
         assert_eq!(
-            k.rows(|_| 0)[0].state.state,
+            k.rows(|_| 0)[0].state.unwrap().state,
             State::Idle,
             "control: a reported word still wins, so the source is the only thing deciding",
         );
@@ -3714,7 +4007,7 @@ mod tests {
         );
 
         assert_eq!(
-            k.rows(|_| 0)[0].state.state,
+            k.rows(|_| 0)[0].state.unwrap().state,
             State::Idle,
             "an entry from before this field stands against the sweep",
         );
@@ -3872,7 +4165,7 @@ mod tests {
             rows[0].category.as_deref(),
             Some(khor_core::category::SHELL)
         );
-        assert_eq!(rows[0].state.state, State::Idle);
+        assert_eq!(rows[0].state.unwrap().state, State::Idle);
         assert!(
             rows[0].term,
             "a discovered tmux session is exactly what the bridge attaches to"
@@ -4202,7 +4495,7 @@ mod tests {
             let row = &rows[0];
             assert_eq!(row.category.as_deref(), Some("claude"), "{poll} poll");
             assert_eq!(
-                row.state.state,
+                row.state.unwrap().state,
                 State::Blocked,
                 "{poll} poll: claude's own word"
             );
@@ -4415,7 +4708,10 @@ mod tests {
             assert_eq!(terminal.unread, 0);
             let thread = rows.iter().find(|r| r.id != id).unwrap();
             assert_eq!(thread.last.as_deref(), Some("latest answer"));
-            assert_eq!((thread.state.state, thread.unread), (State::Done, 1));
+            assert_eq!(
+                (thread.state.unwrap().state, thread.unread),
+                (State::Done, 1)
+            );
         }
         drop(writer);
         // Parallel process spawns can briefly inherit the writer descriptor
@@ -4689,7 +4985,7 @@ mod tests {
                 .into_iter()
                 .find(|r| r.id == id)
                 .expect("the row");
-            (r.state.state, r.state.at.0, r.dead)
+            (r.state.unwrap().state, r.state.unwrap().at.0, r.dead)
         };
         ended(2, false);
         assert_eq!(
@@ -4816,7 +5112,7 @@ mod tests {
                 );
                 assert_eq!(terminal.kind.0, khor_core::kind::TUI, "{label}");
                 assert!(terminal.state_known(), "{label}");
-                assert_eq!(terminal.state.state, State::Done, "{label}");
+                assert_eq!(terminal.state.unwrap().state, State::Done, "{label}");
                 assert_eq!(terminal.last.as_deref(), Some(answer), "{label}");
                 assert_eq!(terminal.unread, 1, "{label}");
                 assert_eq!(
@@ -5002,7 +5298,7 @@ mod tests {
             let current = rows.iter().find(|r| r.id == aid).unwrap();
             assert_eq!(current.category.as_deref(), Some("codex"));
             assert!(current.state_known());
-            assert_eq!(current.state.state, State::Done);
+            assert_eq!(current.state.unwrap().state, State::Done);
             assert_eq!(current.last.as_deref(), Some("LATEST_A"));
         }
         select(b);
@@ -5027,7 +5323,7 @@ mod tests {
         let rows = k.rows(|_| 0);
         let current = rows.iter().find(|r| r.id == cid).unwrap();
         assert_eq!(current.category.as_deref(), Some("codex"));
-        assert_eq!(current.state.state, State::Idle);
+        assert_eq!(current.state.unwrap().state, State::Idle);
         assert!(
             current.last.is_none(),
             "a selected new thread has no invented preview"
@@ -5084,7 +5380,7 @@ mod tests {
         assert_eq!(terminal.kind.0, khor_core::kind::SHELL);
         assert_eq!(terminal.category.as_deref(), Some("shell"));
         assert!(terminal.state_known());
-        assert_eq!(terminal.state.state, State::Busy);
+        assert_eq!(terminal.state.unwrap().state, State::Busy);
         assert_eq!(
             terminal.doing.as_ref().unwrap().command.as_deref(),
             Some("codex")
@@ -5300,7 +5596,7 @@ mod tests {
         assert_eq!(row.category.as_deref(), Some(khor_core::category::SHELL));
         assert!(!row.dead, "nothing ended: the tmux session is still there");
         assert_eq!(
-            row.state.state,
+            row.state.unwrap().state,
             State::Idle,
             "the terminal's own word — a shell at its prompt — not the agent's ending"
         );
@@ -5403,7 +5699,7 @@ mod tests {
                 "{how}: nothing ended — the tmux session is still there"
             );
             assert_eq!(
-                row.state.state,
+                row.state.unwrap().state,
                 State::Idle,
                 "{how}: the terminal's own word, not the agent's ending"
             );
@@ -5456,7 +5752,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, agent);
         assert_eq!(
-            rows[0].state.state,
+            rows[0].state.unwrap().state,
             State::Failed,
             "its host is gone: the ending stands"
         );
@@ -5569,7 +5865,11 @@ mod tests {
         );
         assert_eq!(row.kind.0, khor_core::kind::TUI, "now an agent");
         assert_eq!(row.category.as_deref(), Some("claude"));
-        assert_eq!(row.state.state, State::Blocked, "wearing claude's own word");
+        assert_eq!(
+            row.state.unwrap().state,
+            State::Blocked,
+            "wearing claude's own word"
+        );
         assert!(row.term && row.mux);
         assert_eq!(
             k.worn_by(&bridge, |_| false).map(|s| s.0),
@@ -5923,7 +6223,7 @@ mod tests {
         assert_eq!(row.kind.0, khor_core::kind::TUI);
         assert_eq!(row.category.as_deref(), Some("claude"));
         assert_eq!(
-            (row.state.state, row.unread),
+            (row.state.unwrap().state, row.unread),
             (State::Done, 1),
             "claude's 完成, unread against the terminal's own watermark"
         );
@@ -6005,7 +6305,7 @@ mod tests {
         let rows = k.rows(|_| 0);
         assert_eq!(rows.len(), 1, "still one row");
         assert_eq!(
-            rows[0].state.state,
+            rows[0].state.unwrap().state,
             State::Failed,
             "the registry had no pid; the vendor file did, and it says the process is gone"
         );
@@ -6024,7 +6324,7 @@ mod tests {
             },
         )])));
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(alive);
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy);
+        assert_eq!(k.rows(|_| 0)[0].state.unwrap().state, State::Busy);
     }
 
     /// **失败 says which** (P5-SHELL item 3): a recorded exit is the exit;
@@ -6050,7 +6350,14 @@ mod tests {
         assert_eq!(k.ending(&alive), None, "a running session has not ended");
         assert_eq!(k.ending(&sid("shell/nobody")), None);
         let rows = k.rows(|_| 0);
-        let word = |id: &SessionId| rows.iter().find(|r| &r.id == id).unwrap().state.state;
+        let word = |id: &SessionId| {
+            rows.iter()
+                .find(|r| &r.id == id)
+                .unwrap()
+                .state
+                .unwrap()
+                .state
+        };
         assert_eq!(
             (word(&exited), word(&killed)),
             (State::Failed, State::Failed),

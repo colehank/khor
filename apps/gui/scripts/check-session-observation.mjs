@@ -4,9 +4,58 @@ import ts from 'typescript';
 const path = new URL('../src/views/DetailPane.tsx', import.meta.url);
 const source = readFileSync(path, 'utf8');
 const file = ts.createSourceFile(path.pathname, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+assert.equal(file.parseDiagnostics.length, 0, 'real detail view has valid TSX syntax');
 const declaration = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'ObservedSession');
 assert(declaration, 'real observation component exists');
 const compiled = ts.transpile(declaration.getText(file), { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React });
+
+const terminalDeclaration = file.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])
+  .find(node => node.name.getText(file) === 'isTerminal');
+assert(terminalDeclaration?.initializer);
+const terminalSource = ts.transpile(`const isTerminal = ${terminalDeclaration.initializer.getText(file)};`, { target: ts.ScriptTarget.ES2022 });
+const isTerminal = Function(terminalSource + '\nreturn isTerminal;')();
+
+const observedDeclaration = file.statements.flatMap(node => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])
+  .find(node => node.name.getText(file) === 'isObserved');
+assert(observedDeclaration?.initializer);
+const observedSource = ts.transpile(`const isObserved = ${observedDeclaration.initializer.getText(file)};`, {target: ts.ScriptTarget.ES2022});
+const isObserved = Function(observedSource + '\nreturn isObserved;')();
+const statusPath = new URL('../src/components/StatusWord.tsx', import.meta.url);
+const statusFile = ts.createSourceFile(statusPath.pathname, readFileSync(statusPath, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const statusDeclaration = statusFile.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'StatusWord');
+assert(statusDeclaration);
+const statusSource = ts.transpile(statusDeclaration.getText(statusFile).replace(/^export /, ''), {target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React});
+const StatusWord = Function('React', 'cn', 'word', statusSource + '\nreturn StatusWord;')(
+  {createElement: (type, props, ...children) => ({type, props: props ?? {}, children})},
+  (...classes) => classes.filter(Boolean).join(' '), key => key === null ? 'Unknown execution' : key,
+);
+const wordsPath = new URL('../src/words.ts', import.meta.url);
+const wordsFile = ts.createSourceFile(wordsPath.pathname, readFileSync(wordsPath, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+const wordDeclaration = wordsFile.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'word');
+assert(wordDeclaration);
+const wordSource = ts.transpile(wordDeclaration.getText(wordsFile).replace(/^export /, ''), {target: ts.ScriptTarget.ES2022});
+const executionWord = Function('gui', 'state', wordSource + '\nreturn word;')(
+  {session_state_unknown: 'Unknown execution', thread_unbound: 'Unbound thread'}, {busy: 'Busy'},
+);
+const workspacePath = new URL('../src/views/WorkspacePane.tsx', import.meta.url);
+const workspaceFile = ts.createSourceFile(workspacePath.pathname, readFileSync(workspacePath, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+let busyEffect;
+function findBusyEffect(node) {
+  if (ts.isCallExpression(node) && node.expression.getText(workspaceFile) === 'useEffect') {
+    const callback = node.arguments[0];
+    if (callback?.getText(workspaceFile).includes('said.current') && callback.getText(workspaceFile).includes('setGitAt')) busyEffect = callback;
+  }
+  ts.forEachChild(node, findBusyEffect);
+}
+findBusyEffect(workspaceFile); assert(busyEffect, 'real workspace refresh effect exists');
+const busySource = ts.transpile(`const effect = ${busyEffect.getText(workspaceFile)};`, {target: ts.ScriptTarget.ES2022});
+const importPath = new URL('../src/views/ImportDialog.tsx', import.meta.url);
+const importSource = ts.createSourceFile(importPath.pathname, readFileSync(importPath, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const markDeclaration = importSource.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'markOf');
+assert(markDeclaration);
+const markSource = ts.transpile(markDeclaration.getText(importSource), {target: ts.ScriptTarget.ES2022});
+const markOf = Function(markSource + '\nreturn markOf;')();
+
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -62,6 +111,68 @@ function findButton(node) {
   return null;
 }
 const cases = [
+  ['workspace refresh requires a known busy-to-finished transition', async () => {
+    const said = {current: new Map()}; let refreshes = 0;
+    const run = word => Function('mine', 'said', 'setGitAt', busySource + '\neffect();')(
+      [{id: 'session', word}], said, change => { refreshes = change(refreshes); },
+    );
+    run('busy'); run(null); assert.equal(refreshes, 0);
+    run('idle'); assert.equal(refreshes, 0);
+    run('busy'); run('done'); assert.equal(refreshes, 1);
+    run('done'); assert.equal(refreshes, 1);
+  }],
+  ['missing execution never becomes an idle or unbound-thread word', async () => {
+    assert.equal(executionWord(null), 'Unknown execution'); assert.equal(executionWord(''), 'Unknown execution');
+    assert.equal(executionWord('busy'), 'Busy');
+  }],
+  ['an observation role is neutral text and never an execution word', async () => {
+    const role = StatusWord({word: null, absent: 'Read-only record'});
+    assert.equal(role.props['data-status-word'], undefined);
+    assert.equal(role.props['data-status-unavailable'], true);
+    assert.deepEqual(role.children, ['Read-only record']);
+    const execution = StatusWord({word: 'busy', absent: 'Read-only record'});
+    assert.equal(execution.props['data-status-word'], 'busy');
+  }],
+  ['displayed shell form never grants an outside agent input', async () => {
+    const outside = {kind: 'shell', mux: true, attachable: true, can_control: false, ended: null};
+    assert.equal(isTerminal(outside), false); assert.equal(isObserved(outside), true);
+    assert.equal(isObserved({...outside, can_control: true}), false);
+    assert.equal(isObserved({...outside, ended: {kind: 'exit', code: 0}}), false);
+    assert.equal(isObserved({kind: 'observe', can_control: true}), true);
+  }],
+  ['positive and negative agent-list answers only apply to their execution home', async () => {
+    assert.equal(markOf(undefined, 'A'), 'reading');
+    assert.equal(markOf({said: 'unasked'}, 'A'), 'unasked');
+    for (const said of ['cannot', 'sessions']) {
+      const answer = {said, rows: [], home: 'B'};
+      assert.equal(markOf(answer, 'A'), 'unasked');
+      assert.equal(markOf({...answer, home: null}, 'A'), 'unknown-home');
+      assert.equal(markOf({...answer, home: 'A'}, 'A'), said === 'cannot' ? 'cannot' : 'none');
+    }
+  }],
+  ['foreign agent multiplexers cannot bypass read-only routing', async () => {
+    assert.equal(isTerminal({kind: 'tui', mux: true, attachable: true, can_control: false}), false);
+    assert.equal(isTerminal({kind: 'gui', mux: true, attachable: true, can_control: false}), false);
+    const ownGui = {kind: 'gui', mux: true, attachable: true, can_control: true};
+    assert.equal(isTerminal(ownGui), false); assert.equal(isObserved(ownGui), false);
+    assert.equal(isTerminal({kind: 'observe', mux: true, attachable: true, can_control: true}), false);
+    assert.equal(isTerminal({kind: 'tui', mux: true, attachable: true, can_control: true}), true);
+    assert.equal(isTerminal({kind: 'shell', mux: true, attachable: true, can_control: true}), true);
+  }],
+  ['observation metadata owner stays separate from content home', async () => {
+    const f = fixture({id: 'observe/source', kind: 'observe', observation_owner: 'metadata-owner', home: 'content-home'});
+    f.render(); assert.deepEqual(f.calls, [['observe/source', 'metadata-owner']]);
+    f.requests[0].resolve({kind: 'available', following: true}); await flush();
+    const view = f.render(); assert.equal(view.props.machine, 'metadata-owner'); assert.equal(view.props.home, 'content-home');
+  }],
+  ['same observation changing metadata owner cannot reuse old capability', async () => {
+    const f = fixture({id: 'observe/source', observation_owner: 'first-owner'});
+    f.render(); f.requests[0].resolve({kind: 'available', following: true}); await flush();
+    assert.equal(f.render().type, 'real-chat-view');
+    f.updateRow({observation_owner: 'second-owner'});
+    assert.equal(f.render().props['data-session-content'], 'loading');
+    assert.deepEqual(f.calls.at(-1), ['observe/source', 'second-owner']); f.dispose();
+  }],
   ['any registered agent routes by actual readable source, never by vendor', async () => {
     const f = fixture();
     assert.equal(f.render().props['data-session-content'], 'loading');

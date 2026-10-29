@@ -258,6 +258,7 @@ pub(crate) fn reach_blocking(
 /// `history` is the face's 历史行数 (item 56, [`keep_history`]); 0 says
 /// nothing.
 pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> Result<(), String> {
+    khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
     if hold_if_open(id) {
         // **The face joining still says its size** (item 33): another face
         // may have sized the pty since. Unchanged, the kernel signals
@@ -420,33 +421,13 @@ fn attach(
             khor_node::host::connect_at(&addr, &cookie, cols, rows)?
         }
         None => {
-            // A row this machine does not host yet may still have a
-            // terminal to be had — a discovered tmux session, or an
-            // agent sitting inside one (its row's `term` said so). The
-            // bridge stands a host up under this very id (grouped
-            // client — `LiveKind::attach_multiplexed` has the judgment,
-            // including refusing rows with no route), and from here on
-            // it is any hosted session.
-            // **The seat decides the address.** A row can have a host
-            // of its own *and* sit in the person's tmux (a conversation
-            // khor started, resumed in a terminal), and then the
-            // terminal belongs to the viewer bridged onto tmux, never
-            // to the ghost. `attach_tmux` is the one judgment of which
-            // it is; a row in no tmux with a live host answers `Host`
-            // from its file and one sweep, which is what the ordinary
-            // open costs now.
-            let seat = match n.attach_tmux(&sid) {
-                Ok(seat) => seat,
-                Err(_) if n.is_hosted(&sid) => khor_node::live::Seat::Host,
-                Err(e) => return Err(e),
-            };
-            let dir = n
-                .session_dir(&sid)
-                .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
-            match seat {
-                khor_node::live::Seat::View => khor_node::host::connect_view(&dir, cols, rows)?,
-                khor_node::live::Seat::Host => khor_node::host::connect(&dir, cols, rows)?,
-            }
+            let host = n.terminal_address(&sid)?;
+            khor_node::host::connect_at(
+                &format!("127.0.0.1:{}", host.port),
+                &host.cookie,
+                cols,
+                rows,
+            )?
         }
     };
     Ok((conn, far))
@@ -641,6 +622,7 @@ fn take_since(
 }
 
 fn term_of(id: &str) -> Result<Arc<Term>, String> {
+    khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
     terms()
         .lock()
         .unwrap()
@@ -2621,5 +2603,66 @@ mod stage_tests {
         assert_eq!(names, ["a b-2.png", "a b.png"], "no part file left");
         assert_eq!(std::fs::read(drop_dir.join("a b-2.png")).unwrap(), b"two");
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod input_ownership_tests {
+    use super::*;
+    struct Scratch(std::path::PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    #[test]
+    fn stale_host_marker_cannot_bypass_attach_ownership_refusal() {
+        let root =
+            Scratch(std::env::temp_dir().join(format!("khor-attach-owner-{}", std::process::id())));
+        std::fs::create_dir_all(root.0.join(".claude")).unwrap();
+        std::fs::create_dir_all(root.0.join(".codex")).unwrap();
+        let node = Node::open(root.0.clone()).unwrap();
+        let id = SessionId("tui/foreign-owner-fixture".into());
+        let live = khor_node::live::LiveKind::new(root.0.clone(), node.device());
+        live.register(
+            &id,
+            "tui",
+            "External agent",
+            Some(std::process::id()),
+            Some("fixture-agent"),
+        )
+        .unwrap();
+        let dir = live.dir_of(&id).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let marker = khor_node::host::HostFile {
+            port: listener.local_addr().unwrap().port(),
+            cookie: "fixture".into(),
+            host_pid: std::process::id(),
+            child_pid: 0,
+        };
+        std::fs::write(
+            khor_node::host::host_file_path(&dir),
+            serde_json::to_vec(&marker).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            node.is_hosted(&id),
+            "the legacy fallback's weaker predicate is true"
+        );
+        assert!(
+            node.attach_tmux(&id).unwrap_err().contains("outside Khor"),
+            "the old Err(_) if is_hosted branch would swallow this ownership refusal"
+        );
+        assert!(
+            attach(&root.0, &id.0, 80, 24)
+                .unwrap_err()
+                .contains("outside Khor")
+        );
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "ownership refusal must precede any host connection fallback"
+        );
     }
 }

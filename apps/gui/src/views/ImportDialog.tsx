@@ -49,9 +49,11 @@ import { useHereHosts } from "@/lib/here";
 import { ago, basename } from "@/words";
 
 /** What one agent's recorded answer is, as the section's mark. */
-function markOf(answer: AgentSaid | undefined): string {
+function markOf(answer: AgentSaid | undefined, home: string | null): string {
   if (answer === undefined) return "reading";
   if (answer.said === "unasked") return "unasked";
+  if (answer.home === null) return "unknown-home";
+  if (home === null || answer.home !== home) return "unasked";
   if (answer.said === "cannot") return "cannot";
   return answer.rows.length === 0 ? "none" : "sessions";
 }
@@ -121,11 +123,7 @@ export function ImportDialog({
   const field = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const why = (e: unknown) => setError(String(e instanceof Error ? e.message : e));
-  /** **A phone neither lists an agent's conversations nor asks for them**
-      (docs/IOS.md 第二步): one is reopened on this machine, and asking
-      starts the agent here — a phone starts nothing. The node leaves
-      them out of the candidates there; this leaves out the section that
-      would ask. */
+  // Reading saved candidates is available on every device; asking starts an agent here.
   const here = useHereHosts();
 
   const reload = () =>
@@ -284,9 +282,11 @@ export function ImportDialog({
             <div data-import-agents className="flex min-w-0 flex-none flex-col gap-1 border-t pt-row text-callout">
               <span className="text-muted-foreground">{gui.import_agents}</span>
               {registered.map((a) => {
-                const mark = markOf(said[a.name]);
+                const mark = markOf(said[a.name], devices.find(device => device.me)?.id ?? null);
                 const sentence =
-                  mark === "unasked"
+                  mark === "unknown-home"
+                    ? gui.agent_list_unknown_home
+                    : mark === "unasked"
                     ? gui.new_session_seen_unasked
                     : mark === "cannot"
                       ? gui.new_session_seen_cannot

@@ -104,7 +104,7 @@ export type TabFace = {
       the corner is the kind; 2026-09-02:「标签页的标签头像应该和
       session列表一致」). A browsing tab has none and keeps the bare
       machine face. */
-  session?: { word: string; kind: string; category: string | null };
+  session?: { word: string | null; kind: string; category: string | null };
   /** A browsing page's kind mark on its machine's face (the redesign):
       the face says which machine, the mark that it is a page. */
   mark?: KindMark;
@@ -1351,7 +1351,7 @@ export function TabSwitcher({
               pinned: false,
               face: { machine: f.face },
               mark: f.session ? sessionKind(f.session.kind, f.session.category) : f.mark,
-              halo: f.session?.word,
+              halo: f.session?.word ?? undefined,
               title: (
                 <span data-tab-label data-tab-name className="block truncate">
                   {f.title ?? f.label}

@@ -26,7 +26,7 @@ function ObservedSession({ row, onReading }: { row: SessionRow; onReading?: Sess
   const [answer, setAnswer] = useState<{key: string; content: SessionContent} | null>(null);
   const [fault, setFault] = useState<{key: string; message: string} | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const machine = row.source ? row.home : null;
+  const machine = row.observation_owner ?? (row.source ? row.home : null);
   const queryKey = JSON.stringify([row.id, machine]);
   const content = answer?.key === queryKey ? answer.content : null;
   const failure = fault?.key === queryKey ? fault.message : null;
@@ -50,7 +50,7 @@ function ObservedSession({ row, onReading }: { row: SessionRow; onReading?: Sess
   }[content.reason] : failure ?? gui.content_loading;
   return <div className="grid min-h-0 flex-1 place-items-center p-row text-center text-callout text-muted-foreground" data-session-content={content?.kind ?? (failure ? 'failed' : 'loading')}>
     <div className="space-y-in">
-      <StatusWord word={row.word} />
+      <StatusWord word={row.word} absent={row.kind === "observe" ? gui.session_observation : undefined} />
       <p>{reason}</p>
       {(content || failure) && <Button size="sm" onClick={() => setAttempt(value => value + 1)}>{gui.region_retry}</Button>}
     </div>
@@ -255,7 +255,8 @@ export function closeWarning(
 // address and the kind is the behaviour.
 /** Whether a row is shown as a terminal here — and so whether the deck's
     pill opens its directory (UX-17, `SessionPlaceSheet`). */
-export const isTerminal = (r: SessionRow) => r.kind !== "broadcast" && (r.mux || (r.kind !== "gui" && r.attachable));
+export const isTerminal = (r: SessionRow) => r.can_control && r.kind !== "observe" && r.kind !== "broadcast" && r.kind !== "gui" && (r.mux || r.attachable);
+export const isObserved = (r: SessionRow) => r.kind === "observe" || (!r.can_control && (r.kind === "tui" || r.kind === "gui" || (r.kind === "shell" && !r.ended)));
 
 export function DetailPane({
   row,
@@ -333,7 +334,10 @@ export function DetailPane({
     if (!openIds) return;
     setKept((k) => (k.every((t) => openIds.includes(t.id)) ? k : k.filter((t) => openIds.includes(t.id))));
   }, [openIds]);
-  const keptHere = openIds ? kept : kept.filter((t) => t.id === row?.id);
+  const keptHere = (openIds ? kept : kept.filter((t) => t.id === row?.id)).filter(tab => {
+    const current = row?.id === tab.id ? row : sessions?.find(item => item.id === tab.id);
+    return !current || isTerminal(current) || !!current.ended;
+  });
   const terminalShown = row !== null && (isTerminal(row) || keptHere.some((t) => t.id === row.id));
   /** Whether this pane is the narrow session page's content, with its
       tabs in the bar under it (`components/SessionBar`, 2026-10-02): no
@@ -559,15 +563,8 @@ export function DetailPane({
         // the draft and the scroll with the conversation they belonged
         // to.
         <MachineChat key={row.id} id={row.id} active={active} onSession={onSession} sessions={sessions} />
-      ) : row && row.mux ? (
-        // **The face follows the host** (2026-09-01: 「什么宿主跑的就用
-        // 什么显示」). The process sits in the person's own tmux, so
-        // the terminal is where they are — even for a `gui` row, which
-        // is what a conversation khor started becomes once the person
-        // resumes it in a terminal (`claude -r`): one session, two
-        // hosts, and the one they are typing into wins. The row menu's
-        // 转为 GUI 显示 is the other way round, on purpose.
-        null
+      ) : row && isObserved(row) ? (
+        <ObservedSession key={JSON.stringify([row.id, row.observation_owner, row.home])} row={row} onReading={onReading} />
       ) : row && row.kind === "gui" && row.word !== "failed" ? (
         // A conversation khor holds, and the only thing it has: there
         // is no terminal under it to show. Keyed so switching sessions
@@ -615,7 +612,7 @@ export function DetailPane({
             // read as two lines of equal news about a session nobody can
             // see.
             <div>
-              <StatusWord word={row.word} />
+              <StatusWord word={row.word} absent={row.kind === "observe" ? gui.session_observation : undefined} />
               <div className="text-callout">{row.kind}</div>
             </div>
           ) : (

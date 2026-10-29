@@ -95,18 +95,24 @@ pub enum AgentSaid {
     /// implemented it on 2026-08-30). **A recorded refusal, not a
     /// missing answer**: it is why the next person is not sent to
     /// start the same process for the same nothing.
-    Cannot,
+    Cannot { home: Option<String> },
     /// It answered. Possibly with nothing, and here that really is
     /// nothing.
-    Sessions { rows: Vec<SeenSession> },
+    Sessions {
+        home: Option<String>,
+        rows: Vec<SeenSession>,
+    },
 }
 
 impl From<Option<khor_node::AgentAnswer>> for AgentSaid {
     fn from(a: Option<khor_node::AgentAnswer>) -> Self {
         match a {
             None => AgentSaid::Unasked,
-            Some(khor_node::AgentAnswer::Cannot) => AgentSaid::Cannot,
-            Some(khor_node::AgentAnswer::Sessions { rows }) => AgentSaid::Sessions {
+            Some(khor_node::AgentAnswer::Cannot { home }) => AgentSaid::Cannot {
+                home: home.map(|home| khor_core::DeviceId(home).hex()),
+            },
+            Some(khor_node::AgentAnswer::Sessions { home, rows }) => AgentSaid::Sessions {
+                home: home.map(|home| khor_core::DeviceId(home).hex()),
                 rows: rows
                     .into_iter()
                     .map(|r| SeenSession {
@@ -248,14 +254,19 @@ mod tests {
     fn an_empty_listing_and_a_question_never_asked_do_not_serialise_alike() {
         let unasked = serde_json::to_string(&AgentSaid::from(None)).unwrap();
         let cannot =
-            serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Cannot))).unwrap();
+            serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Cannot {
+                home: None,
+            })))
+            .unwrap();
         let none =
             serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Sessions {
+                home: None,
                 rows: vec![],
             })))
             .unwrap();
         let some =
             serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Sessions {
+                home: None,
                 rows: vec![khor_node::AgentSeen {
                     id: "sess-1".into(),
                     cwd: "/w/khor".into(),
@@ -300,6 +311,7 @@ mod tests {
     #[test]
     fn a_recorded_conversation_carries_where_it_lives() {
         let said = AgentSaid::from(Some(khor_node::AgentAnswer::Sessions {
+            home: Some([7; 32]),
             rows: vec![khor_node::AgentSeen {
                 id: "s".into(),
                 cwd: "/w/khor".into(),
@@ -307,9 +319,10 @@ mod tests {
                 updated_at: None,
             }],
         }));
-        let AgentSaid::Sessions { rows } = said else {
+        let AgentSaid::Sessions { home, rows } = said else {
             panic!("a listing")
         };
+        assert_eq!(home, Some(khor_core::DeviceId([7; 32]).hex()));
         assert_eq!(rows[0].cwd, "/w/khor");
         // A conversation nobody named stays unnamed rather than
         // becoming an empty string on screen.

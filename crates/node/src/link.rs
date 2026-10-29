@@ -12701,14 +12701,16 @@ mod rows_by_change {
 
     fn row(id: &str, command: &str) -> Session {
         Session {
+            observation: None,
+            can_control: false,
             id: SessionId(id.into()),
             kind: khor_core::Kind(khor_core::kind::SHELL.into()),
             title: id.into(),
             home: DeviceId([1; 32]),
-            state: khor_core::StateStamp {
+            state: Some(khor_core::StateStamp {
                 state: State::Busy,
                 at: khor_core::Millis(1),
-            },
+            }),
             unread: 0,
             place: None,
             mux: false,

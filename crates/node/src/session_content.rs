@@ -7,6 +7,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "session_content/observations.rs"]
+mod observations;
+pub use observations::refuse_control;
+pub(crate) use observations::{ListedCandidate, Observation, ObservationKind};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unavailable {
     NoSource,
@@ -84,6 +89,28 @@ pub(crate) struct ObservationBinding {
     provider: Provider,
     native_id: String,
 }
+fn write_metadata(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() as u64 > METADATA_BYTES {
+        return Err("observation metadata exceeds its byte budget".into());
+    }
+    let previous = read_metadata(path)?;
+    if previous.as_deref() == Some(bytes) {
+        return Ok(());
+    }
+    std::fs::create_dir_all(path.parent().expect("binding has a parent"))
+        .map_err(|error| error.to_string())?;
+    let was = previous
+        .as_deref()
+        .map(crate::files::digest)
+        .unwrap_or_default();
+    crate::files::write_whole(
+        path.to_str().ok_or("observation path is not UTF-8")?,
+        bytes,
+        &was,
+    )
+    .map(|_| ())
+}
+
 impl ObservationBinding {
     fn path(root: &Path, id: &crate::SessionId) -> PathBuf {
         root.join(".khor/observations")
@@ -132,22 +159,7 @@ impl ObservationBinding {
             native_id: source.native_id.clone(),
         };
         let bytes = serde_json::to_vec(&binding).map_err(|error| error.to_string())?;
-        if bytes.len() as u64 > METADATA_BYTES {
-            return Err("observation binding exceeds its byte budget".into());
-        }
-        let path = Self::path(root, id);
-        let previous = read_metadata(&path)?;
-        if previous.as_deref() == Some(&bytes) {
-            return Ok(());
-        }
-        std::fs::create_dir_all(path.parent().expect("binding has a parent"))
-            .map_err(|error| error.to_string())?;
-        let was = previous
-            .as_deref()
-            .map(crate::files::digest)
-            .unwrap_or_default();
-        let path = path.to_str().ok_or("observation path is not UTF-8")?;
-        crate::files::write_whole(path, &bytes, &was).map(|_| ())
+        write_metadata(&Self::path(root, id), &bytes)
     }
 }
 
@@ -207,6 +219,9 @@ impl NativeTranscript {
                 })
             }
         })
+    }
+    pub(crate) fn native_reference(&self) -> (Provider, &str) {
+        (self.provider, &self.native_id)
     }
     pub(crate) fn source_id(&self, home: &str, id: &crate::SessionId) -> String {
         serde_json::to_string(&(1, home, &id.0, self.provider, &self.native_id))

@@ -51,7 +51,10 @@ pub struct SessionRow {
     pub id: String,
     pub kind: String,
     pub title: String,
-    pub word: String,
+    pub word: Option<String>,
+    /// Machine holding the canonical observation record, distinct from content home.
+    pub observation_owner: Option<String>,
+    pub can_control: bool,
     /// ms; `number` on the TS side — serde_json sends a number, and
     /// 2^53 outlives every timestamp and unread count in question.
     #[ts(type = "number")]
@@ -1076,6 +1079,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .map(|a| {
             let (v, group) = (a.view, a.group);
             let state_known = v.session.state_known();
+            let at_ms = v.session.activity_at().map_or(0, |at| at.0);
             let hosted = n.is_hosted(&v.session.id);
             // The row itself says whether its home can stand a terminal
             // up (`Session::term` — hosted, a discovered tmux session,
@@ -1096,6 +1100,12 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 .flatten()
                 .map(RowEnding::from);
             SessionRow {
+                observation_owner: v
+                    .session
+                    .observation
+                    .as_ref()
+                    .map(|record| record.owner.hex()),
+                can_control: v.session.can_control,
                 ended,
                 attachable,
                 home: machines
@@ -1119,12 +1129,12 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 id: v.session.id.0,
                 kind: v.session.kind.0,
                 title: v.session.title,
-                word: if state_known {
-                    v.session.state.state.key().to_owned()
-                } else {
-                    String::new()
-                },
-                at_ms: if state_known { v.session.state.at.0 } else { 0 },
+                word: v
+                    .session
+                    .state
+                    .filter(|_| state_known)
+                    .map(|stamp| stamp.state.key().to_owned()),
+                at_ms,
                 unread: v.session.unread,
                 source: v
                     .source

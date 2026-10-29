@@ -2192,13 +2192,13 @@ mod tests {
         assert_eq!(row.id.0, "tui/55e-fakeuuid");
         assert_eq!(row.title, "proj");
         assert_eq!(
-            row.state.state,
+            row.state.unwrap().state,
             State::Idle,
             "started, waiting for the first prompt"
         );
 
         hook(&k, &payload("UserPromptSubmit", "")).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy);
+        assert_eq!(k.rows(|_| 0)[0].state.unwrap().state, State::Busy);
 
         let idle_note = payload(
             "Notification",
@@ -2206,7 +2206,7 @@ mod tests {
         );
         assert!(matches!(hook(&k, &idle_note).unwrap(), Hooked::Ignored));
         assert_eq!(
-            k.rows(|_| 0)[0].state.state,
+            k.rows(|_| 0)[0].state.unwrap().state,
             State::Busy,
             "long-idle must not become 待批"
         );
@@ -2216,15 +2216,15 @@ mod tests {
             r#","message":"Claude needs your permission to use Bash""#,
         );
         hook(&k, &ask).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Blocked);
+        assert_eq!(k.rows(|_| 0)[0].state.unwrap().state, State::Blocked);
 
         hook(&k, &payload("Stop", "")).unwrap();
         let row = &k.rows(|_| 0)[0];
-        assert_eq!((row.state.state, row.unread), (State::Done, 1));
+        assert_eq!((row.state.unwrap().state, row.unread), (State::Done, 1));
 
         hook(&k, &payload("SessionEnd", "")).unwrap();
         assert_eq!(
-            k.rows(|_| 0)[0].state.state,
+            k.rows(|_| 0)[0].state.unwrap().state,
             State::Idle,
             "a clean end is idle"
         );

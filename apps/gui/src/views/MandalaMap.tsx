@@ -353,7 +353,7 @@ export function MandalaMap({
  * the same device table this row's `name` comes from). Moved here from
  * `MarkPlace` when that retired (2026-09-28).
  */
-export function waitingOn(devices: DeviceRow[], rows: { home: string; word: string }[]): Record<string, number> {
+export function waitingOn(devices: DeviceRow[], rows: { home: string; word: string | null }[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const d of devices) {
     const n = rows.filter((r) => r.home === d.name && r.word === "blocked").length;

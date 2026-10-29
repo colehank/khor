@@ -101,7 +101,7 @@ export function SessionFace({
 }: {
   face: Avatar | null;
   /** The state key (`busy`…) — the halo's colour, never a display word. */
-  word: string;
+  word: string | null;
   kind: string;
   category: string | null;
   /** A list row's (the switcher's rows too) or a tab's — see `FaceMark`'s
@@ -112,7 +112,7 @@ export function SessionFace({
   return (
     <FaceMark
       face={{ machine: face }}
-      halo={word}
+      halo={word ?? undefined}
       mark={sessionKind(kind, category)}
       size={size}
       className={className}

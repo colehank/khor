@@ -406,7 +406,7 @@ fn a_word_reported_by_another_process_loses_to_the_vendors_live_file() {
             .unwrap()
             .into_iter()
             .find(|v| v.session.id == id)
-            .map(|v| v.session.state.state)
+            .map(|v| v.session.state.unwrap().state)
             .expect("the planted file surfaces as a row")
     };
     assert_eq!(
@@ -752,14 +752,16 @@ fn only_dead_seen_and_old_rows_are_stale() {
     let hours = |h: u64| h * 60 * 60 * 1000;
     let now = hours(1000);
     let row = |dead: bool, unread: u64, died_at: u64| Session {
+        observation: None,
+        can_control: false,
         id: SessionId("shell/x".into()),
         kind: khor_core::Kind(khor_core::kind::SHELL.into()),
         title: "probe".into(),
         home: DeviceId([1; 32]),
-        state: khor_core::StateStamp {
+        state: Some(khor_core::StateStamp {
             state: State::Failed,
             at: khor_core::Millis(died_at),
-        },
+        }),
         unread,
         place: None,
         mux: false,
@@ -891,7 +893,7 @@ fn an_unvouched_live_word_goes_quiet_and_a_vouched_one_never_does() {
     let o = view(&orphan);
     assert!(o.quiet, "a day-silent 忙碌 nobody can vouch for must grey");
     assert_eq!(
-        o.session.state.state,
+        o.session.state.unwrap().state,
         State::Busy,
         "…and the word itself never changes"
     );
@@ -3514,8 +3516,8 @@ fn a_local_read_clears_a_cached_remote_badge_before_sync() {
         .session;
     row.kind = khor_core::Kind(khor_core::kind::GUI.to_owned());
     row.id = SessionId("shell/remote-read".into());
-    row.state.state = State::Done;
-    row.state.at.0 = 100;
+    row.state.as_mut().unwrap().state = State::Done;
+    row.state.as_mut().unwrap().at.0 = 100;
     row.unread = 1;
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
     let shown = || {
@@ -3529,14 +3531,14 @@ fn a_local_read_clears_a_cached_remote_badge_before_sync() {
     assert_eq!(shown().unread, 1);
     n.seen(&row.id).unwrap();
     assert_eq!(shown().unread, 0, "do not wait for a network round trip");
-    assert_eq!(shown().state.state, State::Idle);
+    assert_eq!(shown().state.unwrap().state, State::Idle);
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
     assert_eq!(
         shown().unread,
         0,
         "a stale peer report cannot revive a badge"
     );
-    row.state.at.0 = 200;
+    row.state.as_mut().unwrap().at.0 = 200;
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
     let fresh = n
         .sessions()
@@ -3570,8 +3572,8 @@ fn a_local_read_clears_a_cached_remote_badge_before_sync() {
         0
     );
     assert!(n.seen_through(&row.id, -1).is_err());
-    row.state.state = State::Busy;
-    row.state.at.0 = 300;
+    row.state.as_mut().unwrap().state = State::Busy;
+    row.state.as_mut().unwrap().at.0 = 300;
     row.unread = 0;
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
     n.seen_through(&row.id, 999).unwrap();
@@ -3583,12 +3585,13 @@ fn a_local_read_clears_a_cached_remote_badge_before_sync() {
             .unwrap()
             .session
             .state
+            .unwrap()
             .state,
         State::Busy,
         "reading must not change a running session's state"
     );
-    row.state.state = State::Done;
-    row.state.at.0 = 400;
+    row.state.as_mut().unwrap().state = State::Done;
+    row.state.as_mut().unwrap().at.0 = 400;
     row.unread = 1;
     n.cache_peer_rows(&peer, "remote", &[row.clone()]).unwrap();
     assert_eq!(

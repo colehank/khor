@@ -114,16 +114,18 @@ impl ChatKind {
             .count() as u64;
         let at = msgs.last().map(|m| m.at.max(0) as u64).unwrap_or(0);
         Session {
+            observation: None,
+            can_control: false,
             id: Self::session_id(channel),
             kind: Kind(kind::BROADCAST.to_owned()),
             title: channel.to_owned(),
             home,
             // docs/SESSION.md device chat: unseen content = Done, seen =
             // Idle; the first four words are unreachable (no process).
-            state: StateStamp {
+            state: Some(StateStamp {
                 state: if unread > 0 { State::Done } else { State::Idle },
                 at: Millis(at),
-            },
+            }),
             unread,
             // Never dead: the other machine can always speak again, so
             // there is no state this row cannot move out of on its own.
@@ -211,7 +213,7 @@ impl ChatKind {
         let event = Event {
             session: row.id.clone(),
             seq: msgs.len() as u64,
-            at: row.state.at,
+            at: row.activity_at().ok_or("chat has no recorded activity")?,
             payload: serde_json::to_vec(&payload).map_err(|e| e.to_string())?,
         };
         Ok(Told {

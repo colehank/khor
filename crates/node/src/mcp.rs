@@ -496,7 +496,7 @@ pub(crate) fn call_with_parent(
                 out.push_str(&format!(
                     "{}\t{}\t{}\t{}\n",
                     v.session.id.0,
-                    v.session.state.state.key(),
+                    v.session.state.map(|stamp| stamp.state.key()).unwrap_or(""),
                     v.session.title,
                     where_
                 ));
