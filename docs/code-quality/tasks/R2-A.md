@@ -56,3 +56,15 @@ root已重新授唯一native槽，exec37393，observation-a1-retry/running.json�
 所有native句柄已终态并向root释放唯一槽，无全App构建/用户会话操作。独审当前身份/namespace/queryKey主体无阻断，精确ref/指纹最终审待回传。root要求下一A2/3必要UI接线把gui.chat_readonly的“它正在自己的终端中运行”改中性“只读会话/历史”，因为following不能证明writer当前运行；不为此中断A1或重gen。另exact绑定helper可少做目录遍历为非阻断观察，当前只记录不追加优化专项。
 
 A1仍不等于R005全部完成：A2观察导入与控制边界、A3全部托管ACP journal、A4 home路由继续按既定顺序。
+
+## A2已授权实施契约与依赖轴
+
+root已授A2完整观察导入及必要Option执行轴；不使用短命缓存，不借thread_unbound/Idle伪造未知。观察Khor ID为observe/hash(JSON tuple(version, content-home DeviceId, registered-agent key, exact native ID))，和原tui/gui交互ID分离；记录角色为observation，执行状态真None，普通producer Some。记录更新时间/导入时间独立真实元数据，不装StateStamp。统一KindSurface/sessions/list/peer路径承接，不做仅GUI旁路。
+
+既有tmux/shell授权托管导入不被全局改坏。ACP list导入只登记Khor own metadata/binding/roster，不resume/reopen/spawn/load。显式恢复独立动作；任何attach/prompt/cancel/load/takeover/set-option/permission response不得把observer alias翻译成native控制ID。删除只移除本地观察记录/roster，不kill真实writer。content-home从binding核对，不能用row.source(peer报告轴)省略machine而猜本机。
+
+执行轴最小改变core::Session.state: Option<StateStamp>；ordinary Some、observer None，不增第七State。SessionRow.word同义nullable；UI无运行光环、不计Idle；state分组/stale/quiet/dead/unread/seen、CLI/MCP与peer均不得unwrap_or(Idle)。需要记录时间的地方读观察元数据，普通执行时间仍读Some stamp。此为A2领域边界必要前置，不重写S运行代次。
+
+已定位需适配Rust：crates/core/src/lib.rs；crates/node/src/{lib,session_content,chat,mcp,live,list,tests}.rs；crates/node/src/adaptor/{claude,codex}.rs；crates/commands/src/lib.rs；crates/node/tests/{live,tunnel_wire,broadcast}.rs；apps/gui/core/src/{lib,chat}.rs、tests/seen_snapshot.rs；wide等编译器发现的真实构造点同属已授必要适配。新的ObserverKind/KindSurface在session_content owner内，权限不默认继承runtime control。
+
+已授UI接点ImportDialog/SessionsList、core/import桥；必要nullable接线由H唯一写StatusWord/SessionFace/Face/TabStrip/use-status-bar/session-filter/words/SessionSide/SessionContent/DetailPane/api/types。G独占app.css/scroll-edge/CommitPage/MachineCard/check-face；不得并发写，若nullable诊断涉及这些文件交root/G最小补丁。App必要胶水另报root。H的23836 Lab源码继续冻结，不操作用户App。

@@ -60,3 +60,21 @@ root已授实际接口：watchBand私有共用注册体，band既有API，sticky
 CommitPage desktop现有头ref=band，narrow port callback依[narrow] detach cleanup后重新注册，cleanup仅同node清scroller.current；metadata/stat与diff正文为body，section/group和file-bar/head分开。共享paint/observer/生命周期没有复制。独审初diff无阻断。实际CommitPage Lab /lab/sticky-consumers.html已ready，同23835/PID92646，仅本地git_commit两文件固定diff；Labtypes绿，root正在验宽窄owner、静止首diff/held、标题满值与跳转，不改Machine源干扰此批。
 
 Machine盘点更正：load-top-box只是clip盒，Top明确流在页面中，没有自己的overflow口；不得新增内滚动。已标table targets会使现marked优先分支漏掉charts/metadata的问题必须随consumer解决（对regular blocks显式body边界或自动拾未标兄弟），不mask含sticky的祖先，不逐cell目标。实际布局/最近primary port待继续核，Machine尚未改。
+
+
+### Commit实际遮挡→定点修复中
+
+root真实W→N→W抓新primary跳文件遮挡：primaryBottom124/bar124–156，bodyTop104（52px被吃），narrow local bodyTop152=barBottom152正确；原jump-inspect.json/图保留。jump现扣实际getComputedStyle(box).scrollPaddingTop，local auto解析0；真实callback4项旧2fail→新4pass，重复跳转/无目标保位置。
+
+root批准无间距diff/表格显式role data-sticky-body="flush"：仅group真实held时正文tail0，在header.bottom满值；同group:has(>flushbody)派生head伪层bottom0，免默认24px blur仍糊首行。无新增空白/不猜文件类型/不新增同步状态；普通段落保原gap-pane。新增flush边界先红→owner11绿，types/diff绿；真实增量DOM待root，源再次冻结。Machine尚未写，不因Commit验收扩大并行实现。
+
+root同时已批准按含sticky分支递归的discovery：有markers时深入该分支，普通无sticky兄弟整块body，显式head/body止步；不mask含sticky祖先，不逐cell。等当前root批结束才写，解决Machine charts/metadata不能漏fade。G稳定后按docs50做必要设计规矩/正式脚本入口最小接线，不起工具治理；旧band tint+hairline/透明取消overlap规则需更新。
+
+
+## 局部owner/Commit consumer固定checkpoint
+
+生产`660f7e2fa872d8e578ba2c5a3f5d199c323bc7e6`（5文件），独立Lab`babb78218aad32038526b26515f51e7c1bb8f86b`（5文件），树干净。11owner/flush检查、jump4（旧2fail→新4）、types与Labtypes绿。commit-receipt.json含5源SHA、原red/green分开及实际范围。
+
+Root真实宽1200→窄390→宽1200增量jump-verified：wide bodyTop156=barBottom156（旧104），narrow152=152；只一port marker、primary52/local0 padding，flush head::before bottom0，body mask none为已满值、未加空白。首次harness误要求必须有mask，原first-mask-expectation失败保存；没有放宽产品。随后commit-fade-states四项静止/小滚也绿：宽窄静止首diff无提前material、标题mask none/opacity1；jump后多滚12px正文fade endpoint=header.bottom，标题仍满值、伪层bottom0，unknownAPI空。
+
+当前root浏览器批结束，后续继续Machine+frontier regular siblings，不重跑21主band。root已授权check-face机器头旧rule约19007–19327最小适配，先取得真实consumer/原旧预期红证据；保列对齐/清晰度/裁剪/滚动，观察新无边线/材质/fade，不能直接删判据或跑38k全face。
