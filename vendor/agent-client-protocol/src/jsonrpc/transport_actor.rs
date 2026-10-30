@@ -85,6 +85,7 @@ impl TransportFrame {
     /// serialized. Malformed frames return their original wire text unchanged.
     pub fn to_json(&self) -> Result<String, crate::Error> {
         match self {
+            Self::Admitted { frame, .. } => frame.to_json(),
             Self::Single(message) => {
                 serde_json::to_string(message).map_err(crate::Error::into_internal_error)
             }
