@@ -81,7 +81,7 @@ impl RootAdmission {
         Ok(RootPermit {
             id,
             root: root.into(),
-            wait_until: None,
+            wait_remaining: None,
             _thread: PhantomData,
         })
     }
@@ -155,9 +155,10 @@ impl Drop for RootWaiter {
 pub(crate) struct RootPermit {
     id: u64,
     root: PathBuf,
-    // Only ordinary construction can wait for the OS trust fence. The same
-    // deadline starts before local admission; attach must not reset its budget.
-    wait_until: Option<Instant>,
+    // Only ordinary construction can wait for the OS trust fence. Freeze the
+    // allowance left after local admission: constructor CPU/filesystem work
+    // between admission and attach is not lock contention.
+    wait_remaining: Option<Duration>,
     _thread: PhantomData<Rc<()>>,
 }
 impl RootPermit {
@@ -178,7 +179,11 @@ impl RootPermit {
                 return Err(Error::busy());
             }
             if let Some(mut permit) = admission.ordinary(root, &mut waiter)? {
-                permit.wait_until = Some(until);
+                permit.wait_remaining = Some(until.saturating_duration_since(Instant::now()));
+                drop(admission);
+                if permit.wait_remaining.is_some_and(|left| left.is_zero()) {
+                    return Err(Error::busy());
+                }
                 return Ok(permit);
             }
             let remaining = until.saturating_duration_since(Instant::now());
@@ -209,10 +214,12 @@ impl RootPermit {
                 }
                 let ready = admission.ordinary(root, &mut waiter)?;
                 if let Some(mut permit) = ready {
-                    permit.wait_until = Some(
-                        Instant::now()
-                            + until.saturating_duration_since(tokio::time::Instant::now()),
-                    );
+                    permit.wait_remaining =
+                        Some(until.saturating_duration_since(tokio::time::Instant::now()));
+                    drop(admission);
+                    if permit.wait_remaining.is_some_and(|left| left.is_zero()) {
+                        return Err(Error::busy());
+                    }
                     return Ok(permit);
                 }
             }
@@ -231,8 +238,8 @@ impl RootPermit {
         // carry a wait budget, including devices apply under its State lease.
         if owned
             .permit
-            .wait_until
-            .is_some_and(|until| METADATA_HELD.get() || Instant::now() >= until)
+            .wait_remaining
+            .is_some_and(|left| METADATA_HELD.get() || left.is_zero())
         {
             return Err(Error::busy());
         }
@@ -249,23 +256,28 @@ impl RootPermit {
         if file.metadata().map_err(error)?.len() != 0 {
             return Err("unexpected trust mutation gate bytes".into());
         }
+        // Start spending the remaining allowance only when this exact OS
+        // lease is contended. Filesystem validation above is not lock waiting.
+        let mut waiting_until = None;
         loop {
-            if owned
-                .permit
-                .wait_until
-                .is_some_and(|until| Instant::now() >= until)
-            {
+            if waiting_until.is_some_and(|until| Instant::now() >= until) {
                 return Err(Error::busy());
             }
             match file.try_lock() {
-                Ok(()) => break,
+                Ok(()) => {
+                    if let Some(until) = waiting_until {
+                        owned.permit.wait_remaining =
+                            Some(until.saturating_duration_since(Instant::now()));
+                    }
+                    break;
+                }
                 Err(fs::TryLockError::WouldBlock) => {
-                    let remaining = owned
-                        .permit
-                        .wait_until
-                        .map(|until| until.saturating_duration_since(Instant::now()))
-                        .filter(|remaining| !remaining.is_zero())
-                        .ok_or_else(Error::busy)?;
+                    let allowance = owned.permit.wait_remaining.ok_or_else(Error::busy)?;
+                    let until = *waiting_until.get_or_insert_with(|| Instant::now() + allowance);
+                    let remaining = until.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        return Err(Error::busy());
+                    }
                     // Retry only this exact OS lease, never Node construction,
                     // metadata, trust recovery or publication side effects.
                     std::thread::sleep(remaining.min(Duration::from_millis(5)));
@@ -991,7 +1003,7 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_attach_keeps_its_deadline_and_control_never_waits() {
+    fn ordinary_attach_spends_only_remaining_wait_and_control_never_waits() {
         let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let fixture = Fixture::new();
         private_trust_root(&fixture.0);
@@ -1005,12 +1017,12 @@ mod tests {
 
         let mut expired = RootPermit::acquire(&fixture.0).unwrap();
         assert!(
-            expired.wait_until.is_some(),
-            "ordinary admission must retain its deadline"
+            expired.wait_remaining.is_some(),
+            "ordinary admission must retain its remaining allowance"
         );
-        // The previously spent local-admission budget may not be restarted by
-        // attach. Injecting an expired monotonic deadline avoids a sleep guess.
-        expired.wait_until = Some(Instant::now());
+        // An actually exhausted local-admission allowance may not be restarted
+        // by attach. Constructor elapsed time alone does not exhaust it.
+        expired.wait_remaining = Some(Duration::ZERO);
         let started = Instant::now();
         let error = expired
             .attach()
@@ -1022,8 +1034,21 @@ mod tests {
             "attach reset the admission budget"
         );
 
+        // OS contention receives only what local admission left, not a fresh
+        // OPEN_WAIT. A held physical file makes the timeout decision exact.
+        let mut partly_spent = RootPermit::acquire(&fixture.0).unwrap();
+        let remaining = Duration::from_millis(20);
+        partly_spent.wait_remaining = Some(remaining);
+        let started = Instant::now();
+        assert_eq!(
+            partly_spent.attach().err().unwrap().kind,
+            crate::proto::DocTransferFailure::Busy
+        );
+        assert!(started.elapsed() >= remaining);
+        assert!(started.elapsed() < OPEN_WAIT, "OS wait reset the allowance");
+
         let control = RootPermit::try_acquire(&fixture.0).unwrap();
-        assert!(control.wait_until.is_none());
+        assert!(control.wait_remaining.is_none());
         let started = Instant::now();
         assert_eq!(
             control.attach().err().unwrap().kind,
@@ -1048,10 +1073,10 @@ mod tests {
         drop(metadata);
         drop(file);
 
-        // Expiry is checked before EVERY try, including a now-free gate; a
-        // late release cannot resurrect a constructor's exhausted admission.
+        // Exhaustion is checked even for a free gate. This is spent lock wait,
+        // not the old absolute idle-deadline premise corrected by the gap test.
         let mut expired_free = RootPermit::acquire(&fixture.0).unwrap();
-        expired_free.wait_until = Some(Instant::now());
+        expired_free.wait_remaining = Some(Duration::ZERO);
         assert_eq!(
             expired_free
                 .attach()
