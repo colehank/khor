@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 
 /// Caller-stable action identity. Admission validates the unsigned decimal
 /// epoch and exactly 32 lowercase hexadecimal nonce characters before action.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct RecoveryToken {
     pub epoch: String,
     pub nonce: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryExecution {
     Live,
@@ -22,7 +22,7 @@ pub enum RecoveryExecution {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryAction {
     Join,
@@ -31,7 +31,7 @@ pub enum RecoveryAction {
     None,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoverySupport {
     Resume,
@@ -40,7 +40,7 @@ pub enum RecoverySupport {
     Unsupported,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct NativeRecovery {
     pub agent: String,
     /// The complete qualified provider identity; never derived from a row label.
@@ -63,7 +63,7 @@ pub struct SessionRecovery {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RecoveryResult {
     /// Published only after the recovered run reaches Ready.
@@ -92,7 +92,7 @@ pub enum RecoveryResult {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ShellRunResult {
     /// A fresh shell SID linked to the previous SID, without command replay.

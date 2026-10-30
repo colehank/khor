@@ -28,7 +28,7 @@ impl DeviceId {
 
 /// Network-unique, stable across reconnects. Minting is kind-specific;
 /// everything outside the kind treats it as opaque.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ts_rs::TS)]
 pub struct SessionId(pub String);
 
 /// Kinds are an open set: a client older than the kind must still render
