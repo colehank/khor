@@ -64,7 +64,7 @@ function transport() {
       });
     }
   };
-  const note = (key, text) => ({key, frame: {kind: 'note', update: {update: {sessionUpdate: 'agent_message_chunk', content: {type: 'text', text}}}}});
+  const note = (key, text, record = null, starts_message = true) => ({key, record, starts_message, frame: {kind: 'note', update: {update: {sessionUpdate: 'agent_message_chunk', content: {type: 'text', text}}}}});
   let serial = 0;
   const invoke = async (cmd, args = {}) => {
     wire.calls.push({cmd, args});
@@ -88,14 +88,18 @@ function transport() {
     }
     if (cmd === 'history_page') {
       const tag = args.binding.slice(-1);
-      const end = args.cursor ? Number(args.cursor.split(':').at(-1)) : 1300;
-      const start = Math.max(0, end - 128);
-      const references = !args.newer && end > 1281 && start <= 1280 ? [ref(false, tag), ref(true, tag)] : [];
-      const entries = args.newer ? [] : Array.from({length: end - start}, (_, k) => start + k)
-        .filter(i => i !== 1280 && i !== 1281).map(i => note(`${i * 1_000_000}:0`, `${tag} row ${i}${i === 50 ? ' needleOld' : ''}`));
-      const page = {entries, references, older: start ? `f:${tag}:${start}` : null, newer: `f:${tag}:${end}`, has_more: false, reset: false, encoded_bytes: 0};
+      if(args.cursor !== null && (!new RegExp(`^f:${tag}:[0-9]+$`).test(args.cursor))) throw new Error('page cursor belongs to another fixed source');
+      const at = args.cursor ? Number(args.cursor.split(':').at(-1)) : 1300;
+      const start = args.newer ? at : Math.max(0, at - 128), end = args.newer ? Math.min(1300, at + 128) : at;
+      const references = end > 1281 && start <= 1280 ? [ref(false, tag), ref(true, tag)] : [];
+      // Fixed complete Native messages, not SDK chunks. These DTO ranges and
+      // cursors are scene facts; no product normalization/source algorithm runs here.
+      const entries = Array.from({length: end - start}, (_, k) => start + k)
+        .filter(i => i !== 1280 && i !== 1281).map(i => note(`${i * 1_000_000}:0`, `${tag} row ${i}${i === 50 ? ' needleOld' : ''}`,
+          {start:i * 1_000_000,end:(i + 1) * 1_000_000,item:0,cursor:`f:${tag}:${i}`,missing_start:false,missing_end:false}));
+      const page = {entries, references, older: start ? `f:${tag}:${start}` : null, newer: `f:${tag}:${end}`, has_more: args.newer && end < 1300, reset: false, encoded_bytes: 0};
       page.encoded_bytes = encoder.encode(JSON.stringify(page)).length + 20;
-      if (!args.newer && ((wire.holdCopy && args.cursor === `f:${tag}:148`) || (wire.holdInitial && args.cursor === null))) {
+      if (!args.newer && ((wire.holdCopy && args.newer) || (wire.holdInitial && args.cursor === null))) {
         wire.holdCopy = false; wire.holdInitial = false; wire.order.push('page-held'); wire.heldKey = args.requestKey; return new Promise(resolve => {wire.held = () => resolve(page);}).finally(() => {delete wire.leases[args.requestKey];});
       }
       // Node's claimed Request drops on completed page/record IO. Only
