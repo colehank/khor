@@ -2581,15 +2581,26 @@ async fn page_steps(
     #[cfg(desktop)]
     {
         use tauri::Manager;
-        let Some(view) = app.get_webview(&page_label(&tab)) else {
-            return Ok(None);
-        };
         let (tx, rx) = tokio::sync::oneshot::channel();
-        view.with_webview(move |native| {
-            let _ = tx.send(page_history::desktop(native).map(Some));
+        let query_app = app.clone();
+        app.run_on_main_thread(move || {
+            let query = || {
+                let Some(view) = query_app.get_webview(&page_label(&tab)) else {
+                    return Ok(None);
+                };
+                // Wry runs with_webview inline on its main thread. Keeping the
+                // lookup here prevents close from discarding a queued query.
+                let (reply, result) = std::sync::mpsc::sync_channel(1);
+                view.with_webview(move |native| {
+                    let _ = reply.send(page_history::desktop(native).map(Some));
+                })
+                .map_err(|error| error.to_string())?;
+                result.try_recv().map_err(|error| error.to_string())?
+            };
+            let _ = tx.send(query());
         })
-        .map_err(|e| e.to_string())?;
-        rx.await.map_err(|e| e.to_string())?
+        .map_err(|error| error.to_string())?;
+        rx.await.map_err(|error| error.to_string())?
     }
     #[cfg(target_os = "ios")]
     {
