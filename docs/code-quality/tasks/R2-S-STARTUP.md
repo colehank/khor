@@ -106,3 +106,15 @@ SDK七链handoff component-handoff.json e3b5156c4612b064cd8d743d65c337fbaf311092
 231e原候选保留；`27d6434494db35ad0baf2cf22b717422433a2a6e`仅修新长Load测试。64KiB正文加JSON包装本来就超过原inline64KiB，正确结果为Reference；现经同binding/cursor真实content_record每段≤64KiB读取最后完整ref，核offset连续/完整raw/1024全文，不减payload、不调生产阈值。外层强核owned helper唯一1passed/0failed/0ignored再透出stdout；执行门只对long-load期望inner+parent两条各1summary，避免零case假绿。源回执e9561d35ea0d18aedbdabb994740d18a308a3cc27c2b992dda537a14cfcf212d与10叶/git-show双盘同。
 
 待审runner位于 `event-store-native-source-2/run.py`，SHA a2fbaf1eca221277ef7f7ffe3abebd5391f0c31b1b05e6c5db29044eccfc4993，contract d62c6d804f8fb9e074fa168fc6b5bd7128b492eda2b97fbf1afb370ee2300b44；AST0/22source+2helper pins0/HEADclean已纯核。沿原V全链与guard硬门，尚未metadata/编译/实际测试，候Root正式单槽。不可把source-only修正写成原231e实际失败或已转绿。
+
+### Store实际组合118.53s全绿（限定本片，不关闭整S）
+
+Root清理已独审的旧666专用缓存后，正式授source3：driver `2e78be1949158c5a0172bf2d4d1d3e973668a88e17a0402d9091f19b09b793c4` / contract `12b8df98b692086ff48a3994a30872f0f6dcd7a4578f0a1f16036519baaa7690`。仅加前置KHOR_AGENT_BUNDLE必须unset，既有build.rs/not(khor_embedded_agent)是支持的libtest变体；focused实际Python→acp_process→ByteStreams不走KhorAgent/sidecar。原150MB copies估计被纠正为历史363+22MB至少约400MB规划头寸，非硬上界；实际本次ACP23,465,768B、Node287,135,800B，不回填旧估计。
+
+**actual95235 terminal0 /118.530588s**，driver64896。host-filtered locked fullmetadata0；原V no-prior prepare/actualCargoJSON verify/require与私有SHA copy各ACP/Node全0；ACP finite-prefix6 / bounded-store6 / 原SDKpressure1，Node原Closed scheduler1 / failed-bootstrap parent1+ownedhelper1 / 新long-load parent1+ownedhelper1全部强summary通过。共16 parent＋2 helper不是18独立场景。27d/source/env全同，无timeout/forced/remaining/privatefootprint，TMP entries[]且目录已删，native已正式交回Root。
+
+真实长Load payload **67,174,400B/1025条** 经owned ByteStreams→Store→canonical **67,352,665B**。producer16/32/64MiB阶段仍无HostReady，最终Ready时current完整/有序无重复，canonical同binding/cursor原raw引用分块读末行1024全文；Load1/New0，原Close/Gone/childreap/私有partgone强验过。RSS实际进程样本13136→27072→27120→38000KiB，非kernel峰/8MiB硬RSS，也不将私有预算单测等同整个进程所有队列。SDK原pressure峰8347600B/127，pending complete line65730另计，child65144已消失/retained0/Readyfalse/Load1New0；巨帧分支本次覆盖Khor Store9MiB，不冒SDK单巨wire路径已实测。
+
+actual-receipt **97b82bea3d3e3a500798c990c9b20549246860330b91176007a00fef1f016388**、result **0dc562015ba52afeb7523c1d6af52156de554e5ce3863d8d7ea6c148a1904872**，位于event-store-native-source-3。actual ACPcopy **3a2aac9a4d0c29bfa012ab63ba595a5a9fdaaa1c874ca05aff7ab78c5d62cb38** / Nodecopy **cafaa586341c472689cc70934502d0483b82bb61100d9b5e7c10a8c4f6277e23**；49小件与两完整gzip镜像内盘startup-event-store-27d64344-actual1，mirror-manifest **8d8ef24a830363a0afc4bcfdf76a8dadad063568e47b9f9401295a04ed3500f7**。压缩前UID501/regular/nlink1/无打开句柄/源SHA、压缩后流式解压SHA均核，原私有exe未删。
+
+仍保边界：无当前GUI/App/发布/全平台证明；管理认证复用仅本批编译，未单独auth peer行为。Node依赖ACP非test编译有一个仅测试用stats getter dead-code warning，后续必要清理可cfg(test)，此刻保27d已验源不改；不是业务失败。旧Replay死API仍待退役（不再造spool），当前互动/Stop/Close/历史完整等语义迁移和H恢复、当前App组合均需继续，不据本片绿标整S完成。已交非作者实际尾审，未重跑或弱化原断言。
