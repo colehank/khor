@@ -623,15 +623,20 @@ impl<'a> Held<'a> {
         {
             return Err("initial cleanup belongs to another transport owner".into());
         }
-        match (authority.actual_pid, receipt) {
+        let provider = match (authority.actual_pid, receipt) {
             (Some(pid), Ok(receipt)) => self.confirmed_exit(&authority.key, pid, receipt),
             _ => self.cleanup_unknown(&authority.key),
-        }?;
-        // This retires only the matching Khor slot, independently of whether
-        // the provider was actually reaped or remained Unknown. A run key may
-        // not have reached the outer loop after partial publication failure.
-        retire_slot(self.gate, &authority.key.arguments.id, &authority.key.arguments.native,
-            &authority.key.run_id, authority.issuing_pid)
+        };
+        // The key/Control/epoch were validated under this still-held gate.
+        // Even if the attempt file is unwritable, exact same-run Meta cleanup
+        // is independently safe and must not be skipped by that first error.
+        let slot = retire_slot(self.gate, &authority.key.arguments.id, &authority.key.arguments.native,
+            &authority.key.run_id, authority.issuing_pid);
+        match (provider, slot) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(why), Ok(())) | (Ok(()), Err(why)) => Err(why),
+            (Err(provider), Err(slot)) => Err(format!("{provider}; Khor slot cleanup: {slot}")),
+        }
     }
 
     pub(super) fn reserve(
@@ -1363,6 +1368,11 @@ mod tests {
     }
 
     fn partial_new_settlement() {
+        for blocked in [false, true] {
+            partial_new_settlement_with(blocked);
+        }
+    }
+    fn partial_new_settlement_with(blocked: bool) {
         use crate::session_content::journal::Opening;
         let root = Scratch::new();
         let row = root.0.join("row");
@@ -1406,18 +1416,30 @@ mod tests {
         );
         assert!(failed.is_err());
         assert!(held.ready_run(&native, std::process::id(), None).is_err());
-        held.settle_initial(&authority, &control, Err(()), |gate, id, native, run, pid| {
+        if blocked {
+            fs::create_dir(row.join("recovery-attempt.part")).unwrap();
+        }
+        let settled = held.settle_initial(&authority, &control, Err(()), |gate, id, native, run, pid| {
             crate::live::retire_gui_slot_held(gate, id, native, run, pid, 1)
-        }).unwrap();
+        });
+        assert_eq!(settled.is_err(), blocked);
         let meta = held.gate.read_meta().unwrap();
         assert_eq!(meta.gui_run.as_ref().unwrap().state.exit, Some(1));
         let doc = read(&row).unwrap().unwrap();
         let latest = doc.latest.unwrap();
         assert_eq!(latest.phase, Phase::PublishingRun);
         assert!(latest.result.is_none());
-        assert!(matches!(latest.provider, Provider::Unknown { reason: UnknownReason::CleanupUnconfirmed, .. }));
+        assert!(matches!(latest.provider, Provider::Unknown { reason, .. }
+            if reason == if blocked { UnknownReason::BirthUnavailable } else { UnknownReason::CleanupUnconfirmed }));
         assert_eq!(original, fs::read(native.directory(&root.0).join("current/records.jsonl")).unwrap());
         assert!(held.ready_run(&native, std::process::id(), None).is_err());
+        drop(held);
+        drop(gate);
+        if blocked {
+            fs::remove_dir(row.join("recovery-attempt.part")).unwrap();
+        }
+        let mut gate = RowGate::acquire(&row).unwrap();
+        let mut held = Held::load(&mut gate).unwrap();
         let mut newer = meta;
         let run = newer.gui_run.as_mut().unwrap();
         run.id = "d".repeat(32);
