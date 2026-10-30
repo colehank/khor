@@ -6,11 +6,11 @@
 
 ## 实际进度与剩余关键工作
 
-Root `integrate/round2@337389902092ef2caaed015c61ab389601b85422` clean。16ee后仅五个test/helper/preview文件变化，生产UI/Rust未变；最新337为fixture onOpen传入实际admitted lease，并独立核对AI答案lease。当前179生成文件、278 dist资产仍为已审255→16ee lineage，不冒新当前原生producer。
+Root `integrate/round2@ae9030a25dcb015d644cb7f57402dfa07af5c059` clean。337之后已独审整合H首片8a0fe08e：Node读取来源事实starts_message贯通Core普通与giant投影，9路径含4必要test模式适配，writer字节不变。只源码/parse检查，不冒编译、生成或分组行为已通过。增量bundle fccf6288、receipt3ee8a94e，verify0并双盘。当前179生成文件、278 dist资产仍是先前255→16ee lineage，因新增HistoryEntry字段已需最终真生成，不冒当前产物。
 
 **尚在实现阶段，不是仅剩验收。** S3审计确认既定目标仍缺：跨次运行代次拒写、启动provider前唯一恢复reservation、显式能力驱动恢复入口、普通Shell新运行与前任关系。另需保留Load/Resume实际收到的新历史：Load完整新display base保旧代，Resume追加实际新Note，不再跳过启动记录。设计v2已独审；尚未实现，不称可用。
 
-H实际生产函数红例确认：两个合法同channel hel/lo分片在共享ACP投影合为hello，但canonical paint错误拆两条。需由读侧真实来源区别完整Native/Prompt与ACP chunk，保Turn/Gap、可选messageId、稳定折叠状态、分页阅读点与原文/copy预算。设计已独审，AI原断言保持；该红例不能冒AI折叠失败唯一原因。
+H首读取片已经整合；TS分组与阅读消费仍待。H实际生产函数红例确认：两个合法同channel hel/lo分片在共享ACP投影合为hello，但canonical paint错误拆两条。需由读侧真实来源区别完整Native/Prompt与ACP chunk，保Turn/Gap、可选messageId、稳定折叠状态、分页阅读点与原文/copy预算。设计已独审，AI原断言保持；该红例不能冒AI折叠失败唯一原因。
 
 用户最新询问进度，已修正剩余估计为 **3–5个工作日**（包含桌面/手机实际验收，配合验收等待另计）。此前1–2天偏乐观，遗漏上述实现缺口。范围保持34项，不追加独立问题。
 
@@ -20,9 +20,9 @@ H实际生产函数红例确认：两个合法同channel hel/lo分片在共享AC
 
 | owner | 实际分支及本次边界 |
 | --- | --- |
-| Root | `khor-round2` / `integrate/round2@33738990`；协调、有限集成、总账。 |
-| H | 同原worktree，保旧6eda分支，新 `fix/round2-chunk-grouping@33738990`。先独占 `crates/node/src/session_content.rs`、`journal.rs::parse_record`、`reference.rs::body_projection` 与必要读取测试，及Core chat.rs history producer/projection。首片固定ref→非作者审→交还三Node叶，之后只写已设计TS投影/身份/锚点/find消费端。禁止writer/GUIHost/ACP改动；设计系统已读。 |
-| input | `fix/round2-recovery-contract@33738990`；首片仅 `crates/node/src/live.rs`、`gui_host.rs`、`lib.rs`：RunKey、短row OS gate、旧report/exit同临界区拒写、必要cfgtests源码。三读取叶暂不写；H交还并顺序接入后另排reservation/Load片。 |
+| Root | `khor-round2` / `integrate/round2@ae9030a2`；协调、有限集成、总账。 |
+| H | 同原worktree，保旧6eda分支，新 `fix/round2-chunk-grouping@33738990`。首读取片8a0fe08e固定、非作者通过并Root整合ae9030a2后，已正式交还三Node叶与4test；继续已设计TS投影/身份/锚点/find消费端。禁止writer/GUIHost/ACP改动；设计系统已读。 |
+| input | `fix/round2-recovery-contract@33738990`；首片仅 `crates/node/src/live.rs`、`gui_host.rs`、`lib.rs`：RunKey、短row OS gate、旧report/exit同临界区拒写、必要cfgtests源码。H三读取叶/4test已交还，可顺序接入8a0fe08e；首RunKey片固定交审后，获授下一有界reservation/Load事务slice（含必要ACP capability guard源码），不得混成大提交；Shell/public routing尚未授。 |
 | reviewer | 非作者只读审小片、来源/预算/并发和具体Clean Code边界；不写产品/不自动重跑。idle用followup_task唤醒。 |
 
 恢复Core/API/UI阶段尚未授写。先稳定Node合同，再由唯一owner接线、一次真生成。不能两作者同时写共享叶，不能靠大冲突收尾。新独立问题仅NEXT-ROUND。
@@ -48,7 +48,7 @@ H实际生产函数红例确认：两个合法同channel hel/lo分片在共享AC
 
 - 61197 terminal1：CLI实际0＋原V/copy；GUI外盘原5GiB门中止，非产品断言。48383 GUI-only terminal1/103.539s：Cargo0但原V拒旧生成缓存。只读聚合已确认唯一GUI精确OUT的hash资产复用；最终源稳定后，仅该OUT完整SHA/身份/lsof核并可逆retain，再真实cold构建。未retain，旧16ee准备已过期，不能直接启动。
 - 最终顺序：H/S源码与独审集成→真实gen/catalog一次→noEmit/Vite与受影响consumer→C/Core定向原生→最后当前CLI/GUI生产构建。C会改shared target CLI，所以在最终生产前。未受影响Store64MiB/A/B/旧H不重跑；H读取变化只跑实际影响的原文/预算/投影回归。
-- 完整S仍需同host正常Quit重挂、host退出/重启/断线、显式恢复/新Shell；当前NoLoad准备只证明其中一小场景。私有home/peer，不操作用户真实会话，不用真实模型/API。
+- 完整S仍需同host正常Quit重挂、host退出/重启/断线、显式恢复/新Shell；当前NoLoad准备只拟验证其中一小场景。私有home/peer，不操作用户真实会话，不用真实模型/API。
 - E真实Mac IME/路径选区/草稿所有入口与保存退出仍待；passive observer需要匹配当前devUrl GUI变体，默认GUI不能冒接线。系统Save/Copy仍待，A5只有production origin＋Find partial，原Save超时无Copy/正常Quit。不开自动A6。
 - iOS正式archive/signing流程已有有效基础，旧包仅模拟器。本轮physical私有Lab与reachable设备尚缺，tunnel/DDI unavailable不推唯一SDK原因。需真机连续手势/键行/viewport/fixed底栏/滑删验收。人验前重新询问可用性，旧回答不复用。
 
