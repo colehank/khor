@@ -35,7 +35,7 @@
 | S 连续性 | view lease `94131dc8→9112f1b7`、Registry9＋43、三lib检查/实际gen、真实ChatView5；Node Capture ac535+b14分源5实际绿，无ACP load/resume，原半关闭cleanup失败保留 | Core/GUI canonical hydration实际闭包、startup字节/队列有界、完整宿主丢失/重启；L01原040 retry deadline与L02原page_steps竞态独立未解。 |
 | B 浏览器 | B5已Root5c集成：实际Node3、回调7及types过；B1–4私有导航owner/前端32纯规则绿，H单writer接四DTO/两label/native glue | 真实typedgen/native/WK进度、主题初始底色、错误实证、手机几何/真实swipe。非WK Wry只知终结，新增Settled清pending而不伪造成功100；CLI200不是WK根因。 |
 | C/G/Q | 内容点击/Cmd分流、软折行路径/返回cwd；共用渐隐材质；括号公式转换均source/定向门过 | 原生/深浅材质/触屏/文件渲染组合。 |
-| D/N | 旧卡死未知、Busy多入口已定位 | 限定诊断与并发夹具；H绿不能关闭D。 |
+| D/N | D当前材料限定调查/最小实际卡死采集步骤已落R2-D，原根因仍unknown；Busy多入口已定位 | D真实现场仍缺，H绿不能关闭；N一固定私有并发夹具待input B固定后接。 |
 | V | **L04/L05 done**（真实来源/严格产物/正常CmdQ及宿主认证replay范围） | 不代替E/S/整轮验收。 |
 
 ## 最新固定证据
