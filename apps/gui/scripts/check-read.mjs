@@ -1,3 +1,4 @@
+import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // The reading gate: a conversation is the one surface in this app that
 // is *read* rather than scanned, and until 2026-08-30 nothing measured
 // it. It borrowed the dashboard's aux size (12.5), ran to whatever width
@@ -225,7 +226,7 @@ fn still_arriving() {`;
 
 const frames = [
   {
-    kind: "history",
+    kind: "note",
     update: {
       update: {
         sessionUpdate: "user_message_chunk",
@@ -234,16 +235,15 @@ const frames = [
     },
   },
   {
-    kind: "history",
+    kind: "note",
     update: { update: { sessionUpdate: "tool_call", title: "Read src/views/ChatView.tsx" } },
   },
   {
-    kind: "history",
+    kind: "note",
     update: {
       update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: AGENT_TEXT } },
     },
   },
-  { kind: "history_end" },
 ];
 
 const row = (id, kind, title) => ({
@@ -260,6 +260,7 @@ const row = (id, kind, title) => ({
   group: "",
   face: null,
   hosted: true,
+  can_control: kind === "gui",
   attachable: false,
   last: null,
   via: null,
@@ -664,7 +665,6 @@ try {
     await page.route("**/dir_pins", json([]));
     await page.route("**/web_pins", json([]));
     await page.route("**/recents", json([]));
-    await page.route("**/chat_open", json(true));
     // The machine conversation's whole readout. Its body is the same
     // sample, so both faces are measured on one text and a difference
     // in the numbers is a difference in the faces.
@@ -690,13 +690,9 @@ try {
       }),
     );
     let served = false;
-    await page.route("**/chat_poll", (r) => {
-      const body = served
-        ? { frames: [], next: 4, gone: false, lost: false }
-        : { frames, next: 4, gone: false, lost: false };
-      served = true;
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
-    });
+    await routeCanonicalChat(page, {ids: ['gui/read-gate'], takeFrames: () => {
+      if (served) return [];served = true;return frames;
+    }});
     await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
     await wait(900);
     const nth = which === "machine" ? 1 : 0;

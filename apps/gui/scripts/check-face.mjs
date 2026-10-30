@@ -1,3 +1,4 @@
+import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // The type gate, rendered half: what the letterforms actually weigh on
 // the glass. The static half (`check-type.mjs`) proves nobody wrote a
 // stray literal; this half proves the tokens land — a stylesheet layer,
@@ -294,6 +295,7 @@ try {
     ...row(n, word),
     id: `${kind}/ws-${n}`,
     kind,
+    can_control: kind === "gui",
     title: `ws-session-${n}`,
     place,
     last,
@@ -1876,41 +1878,12 @@ try {
     // conversation and not this ruling's business, but a fixture that
     // did it would put a percent-encoded 另外 in this gate's own log.
     "看 src/one.rs:3 那一段,还有 https://example.test/x 。另外 src/ghost.rs 不在树里";
-  await page.route("**/chat_open", (r) =>
-    r.fulfill({ contentType: "application/json", body: "true" }),
-  );
-  await page.route("**/chat_leave", (r) =>
-    r.fulfill({ contentType: "application/json", body: "null" }),
-  );
-  await page.route("**/chat_replay", (r) =>
-    r.fulfill({ contentType: "application/json", body: "null" }),
-  );
-  await page.route("**/chat_poll", (r) => {
-    const since = (r.request().postDataJSON() ?? {}).since ?? 0;
-    return r.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        frames:
-          since > 0
-            ? []
-            : [
-                {
-                  kind: "history",
-                  update: {
-                    update: {
-                      sessionUpdate: "agent_message_chunk",
-                      content: { type: "text", text: CHAT_SAID },
-                    },
-                  },
-                },
-                { kind: "history_end" },
-              ],
-        next: 1,
-        gone: false,
-        lost: false,
-      }),
-    });
-  });
+  const agentFixtureIds = ['gui/ws-2', 'gui/ws-4'];
+  const servedAgentBodies = new Set();
+  await routeCanonicalChat(page, {ids: agentFixtureIds, takeFrames: id => {
+    if (servedAgentBodies.has(id)) return [];servedAgentBodies.add(id);
+    return [{kind: 'note', update: {update: {sessionUpdate: 'agent_message_chunk', content: {type: 'text', text: CHAT_SAID}}}}];
+  }});
   // The settings dialog's body. **Without this the settings stop judged
   // one control — the dialog's own close button — while its name said
   // 「settings」**: `FaceSettings` paints nothing at all until
@@ -38995,7 +38968,7 @@ try {
       };
       const chatRow = { ...base, id: "wide/all", kind: "broadcast", title: "广播", category: "khor", hosted: false, attachable: false, place: null };
       const agentRow = {
-        ...base, id: "gui/afix-agent", kind: "gui", title: "afix-agent", category: "claude", attachable: false,
+        ...base, id: "gui/afix-agent", kind: "gui", title: "afix-agent", category: "claude", attachable: false, can_control: true,
         source: { device: "f".repeat(64), age_ms: 0 },
       };
       const line = (id, from_me, text) => ({
@@ -39003,27 +38976,17 @@ try {
         retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
         to: [], note: null, pushed: false,
       });
-      const frame = (update) => ({ kind: "history", update: { update } });
+      let agentBodyServed = false;
+      await routeCanonicalChat(page, {ids: ['gui/afix-agent'], takeFrames: () => {
+        if (agentBodyServed) return [];agentBodyServed = true;
+        return [
+          {kind: 'note', update: {update: {sessionUpdate: "agent_message_chunk", content: {type: "text", text: `链接在这里 ${LONG} 。`}}}},
+          {kind: 'note', update: {update: {sessionUpdate: "tool_call", toolCallId: "t-long", title: `Fetch ${LONG}`, kind: "fetch", status: "completed"}}},
+        ];
+      }});
       const routesA = [
         ["**/sessions", json([chatRow, agentRow])],
-        ["**/machine_log", json({ messages: [line("m-in", false, `看这个 ${LONG}`), line("m-out", true, LONG)], broken: 0 })],
-        [
-          "**/chat_poll",
-          (r) =>
-            json({
-              frames:
-                ((r.request().postDataJSON() ?? {}).since ?? 0) > 0
-                  ? []
-                  : [
-                      frame({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `链接在这里 ${LONG} 。` } }),
-                      frame({ sessionUpdate: "tool_call", toolCallId: "t-long", title: `Fetch ${LONG}`, kind: "fetch", status: "completed" }),
-                      { kind: "history_end" },
-                    ],
-              next: 1,
-              gone: false,
-              lost: false,
-            })(r),
-        ],
+        ["**/machine_log", json({messages: [line("m-in", false, `看这个 ${LONG}`), line("m-out", true, LONG)], broken: 0})],
       ];
       for (const [glob, run] of routesA) await page.route(glob, run);
       await page.evaluate(() => window.localStorage.clear());

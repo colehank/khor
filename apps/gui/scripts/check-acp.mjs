@@ -1,3 +1,4 @@
+import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // The ACP-surface gate: what the conversation face draws from the
 // *protocol's* frames, as opposed to from its own text.
 //
@@ -43,11 +44,8 @@
 //      to its transcript and nothing to the stream), so this claim is
 //      about registry agents — and an ability nothing exercises is one
 //      nobody finds out is broken.
-//   8. the handshake's facts reach the face, and only while there is
-//      something for them to explain. `ChatFrame::Agent` had carried
-//      `replays` since the day it was added, with `gui_host`'s own note
-//      saying a face must act on it — **and no face read the frame at
-//      all**. Both agents khor wrote replay, so nothing ever showed.
+//   8. handshake facts reach the face: login explains an empty composer,
+//      while NoLoad does not deny independently captured canonical content.
 //   9. a `plan` reaches the screen in order, and a finished step reads
 //      differently from the one being worked. **claude sends no plan
 //      either** — measured 2026-08-30, its tool list on this machine
@@ -119,7 +117,7 @@ const DELTA_L = 3;
  * reason two calls to the same tool do not fold into one line. */
 const frames = [
   {
-    kind: "history",
+    kind: "note",
     update: {
       update: {
         sessionUpdate: "user_message_chunk",
@@ -129,40 +127,40 @@ const frames = [
   },
   // An edit, which carries its own diff — the payload shape khor's
   // 垫片 builds out of claude's `old_string`/`new_string`.
-  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_ok", title: "Edit src/lib.rs", kind: "edit", status: "in_progress",
+  { kind: "note", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_ok", title: "Edit src/lib.rs", kind: "edit", status: "in_progress",
     rawInput: { file_path: "/w/khor/src/lib.rs", old_string: "let x = 1;", new_string: "let x = 2;" },
     locations: [{ path: "/w/khor/src/lib.rs" }],
     content: [{ type: "diff", path: "/w/khor/src/lib.rs", oldText: "let x = 1;", newText: "let x = 2;" }] } } },
-  { kind: "history", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_ok", status: "completed" } } },
+  { kind: "note", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_ok", status: "completed" } } },
   // A failed shell command that said why.
-  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_bad", title: "跑一遍测试", kind: "execute", status: "in_progress",
+  { kind: "note", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_bad", title: "跑一遍测试", kind: "execute", status: "in_progress",
     rawInput: { command: "cargo test -p khor-node", description: "跑一遍测试" } } } },
-  { kind: "history", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_bad", status: "failed",
+  { kind: "note", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_bad", status: "failed",
     content: [{ type: "content", content: { type: "text", text: "error[E0425]: cannot find value `x`" } }] } } },
   // A call still running, with nothing behind it — the one line that
   // must **not** grow a control, because a control onto nothing is
   // worse than no control.
-  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_run", title: "Grep kind_of", kind: "search", status: "in_progress" } } },
+  { kind: "note", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_run", title: "Grep kind_of", kind: "search", status: "in_progress" } } },
   // Batch 2. `used`/`size` are the shape claude actually puts on the
   // wire (captured 2026-08-30: 32126 tokens against a 1 000 000 window),
   // so the share the face prints is a real one and not a round number
   // chosen to make the arithmetic obvious.
-  { kind: "history", update: { update: { sessionUpdate: "usage_update", used: 320000, size: 1000000, cost: { amount: 0.38777300000000003, currency: "USD" } } } },
+  { kind: "note", update: { update: { sessionUpdate: "usage_update", used: 320000, size: 1000000, cost: { amount: 0.38777300000000003, currency: "USD" } } } },
   // A title, which claude never sends — see `ChatView`'s note. In the
   // fixture because the *face's* ability to read it is what the next
   // batch depends on, and an ability nothing exercises is one nobody
   // finds out is broken.
-  { kind: "history", update: { update: { sessionUpdate: "session_info_update", title: "把工具调用的状态接上" } } },
+  { kind: "note", update: { update: { sessionUpdate: "session_info_update", title: "把工具调用的状态接上" } } },
   // A plan, which claude also never sends — its 128-tool list here has
   // nothing todo-shaped. Three entries so all three statuses are
   // present at once, which is what claim 9 measures them against.
-  { kind: "history", update: { update: { sessionUpdate: "plan", entries: [
+  { kind: "note", update: { update: { sessionUpdate: "plan", entries: [
     { content: "读那个文件", status: "completed", priority: "medium" },
     { content: "改那个文件", status: "in_progress", priority: "high" },
     { content: "跑测试", status: "pending", priority: "low" },
   ] } } },
   {
-    kind: "history",
+    kind: "note",
     update: {
       update: {
         sessionUpdate: "agent_message_chunk",
@@ -170,13 +168,12 @@ const frames = [
       },
     },
   },
-  { kind: "history_end" },
 ];
 
 const row = (id, kind, title) => ({
   id, kind, title, word: "idle", at_ms: Date.now(), unread: 0, source: null,
   pinned: false, stale: false, category: "claude", group: "", face: null,
-  hosted: true, attachable: false, last: null, via: null, via_face: null, home: "gate",
+  hosted: true, can_control: kind === "gui", attachable: false, last: null, via: null, via_face: null, home: "gate",
 });
 const ROWS = [row("gui/acp-gate", "gui", "acp-gate-agent")];
 
@@ -396,7 +393,6 @@ try {
     await page.route("**/dir_pins", json([]));
     await page.route("**/web_pins", json([]));
     await page.route("**/recents", json([]));
-    await page.route("**/chat_open", json(true));
     // What the face actually put on the wire when 发送 was pressed.
     // **Attaching and sending are two claims**: a chip on screen and a
     // frame carrying the file are different facts, and the first is
@@ -411,12 +407,9 @@ try {
       r.fulfill({ contentType: "application/json", body: "null" });
     });
     let served = false;
-    await page.route("**/chat_poll", (r) => {
-      const body = served ? { frames: [], next: 4, gone: false, lost: false }
-                          : { frames: feed, next: 4, gone: false, lost: false };
-      served = true;
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
-    });
+    await routeCanonicalChat(page, {ids: ['gui/acp-gate'], takeFrames: () => {
+      if (served) return [];served = true;return feed;
+    }});
     await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
     await wait(900);
     await page.locator("[data-list] [data-row-open]").nth(0).click();
@@ -478,16 +471,15 @@ try {
   // exists while there is nothing to explain it away, and adding it to
   // a painted conversation would assert the opposite of the rule.
   for (const [label, agentFrame, want] of [
-    ["cannot replay", { kind: "agent", name: "reg", replays: false, images: false, embeds: false, lists: false, needs_login: false }, words.chat_no_replay],
+    ["NoLoad canonical source", { kind: "agent", name: "reg", replays: false, images: false, embeds: false, lists: false, needs_login: false }, null],
     ["needs a login", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: true }, words.chat_needs_login],
     ["ordinary agent", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, null],
   ]) {
-    const m = await look({ scheme: "dark", motion: "no-preference", frames: [agentFrame, { kind: "history_end" }] });
+    const m = await look({ scheme: "dark", motion: "no-preference", frames: [agentFrame, ...(agentFrame.replays ? [] : [{kind: "note", update: {update: {sessionUpdate: "agent_message_chunk", content: {type: "text", text: "Captured NoLoad history"}}}}])] });
     if (m.errs.length) fail(`facts/${label}: the page threw — ${m.errs[0]}`);
-    // The positive control: this fixture paints no conversation, so the
-    // *column* is what proves the face got that far. Without it a
-    // never-rendered chat would satisfy the "ordinary agent" row by
-    // being absent, which is the negative-assertion trap.
+    if (!agentFrame.replays && !m.text.includes("Captured NoLoad history")) fail("NoLoad: the canonical body is missing");
+    // Empty ordinary/login fixtures still require the real column. The
+    // NoLoad fixture additionally requires its positive canonical body.
     if (!m.column) {
       fail(`facts/${label}: probe dead — the conversation face never painted`);
       continue;
@@ -521,8 +513,7 @@ try {
       scheme: "dark",
       motion: "no-preference",
       frames: [
-        { kind: "history", update: { update: { sessionUpdate: "current_mode_update", currentModeId: id } } },
-        { kind: "history_end" },
+        { kind: "note", update: { update: { sessionUpdate: "current_mode_update", currentModeId: id } } },
       ],
     });
     if (m.errs.length) fail(`mode/${id}: the page threw — ${m.errs[0]}`);
@@ -580,7 +571,6 @@ try {
             ],
           },
         },
-        { kind: "history_end" },
       ],
       openAdd: true,
     });
@@ -625,7 +615,7 @@ try {
     const none = await look({
       scheme: "dark",
       motion: "no-preference",
-      frames: [{ kind: "settings", settings: { modes: null, options: [] } }, { kind: "history_end" }],
+      frames: [{ kind: "settings", settings: { modes: null, options: [] } },],
     });
     if (none.modeMenu || none.options.length) {
       fail("settings: an agent with nothing to set must draw no controls");
@@ -634,17 +624,8 @@ try {
     }
   }
 
-  // ── batch 3c: an old host's frames ───────────────────────────────
-  //
-  // The owner's running conversations are hosted by the binary before the
-  // redesign (`khor-gui _host`), and the new face attaches to them. That
-  // host names no model in its settings (`khor_acp::Settings.model` came
-  // with the redesign), keeps no usage to hand a face on attach, and its
-  // settings frame is `{ modes, options }` alone. The wire half is
-  // `khor-gui-core`'s `old_host_tests` (the old note, encoded, read by the
-  // new reader); this is the drawing half: those frames, as gui-core hands
-  // them on, must draw a whole conversation with nothing invented — no
-  // dial without a reading, no model, the mode seat on the old mode.
+  // Current settings may omit a selected model. Preserve body/mode/composer
+  // and absence-of-invented-model/usage assertions without an old host codec.
   {
     const m = await look({
       scheme: "dark",
@@ -665,24 +646,23 @@ try {
             options: [],
           },
         },
-        { kind: "history", update: { sessionId: "s", update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "旧宿主上的一句话" } } } },
-        { kind: "history", update: { sessionId: "s", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "旧宿主的回答" } } } },
-        { kind: "history_end" },
+        { kind: "note", update: { sessionId: "s", update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "旧宿主上的一句话" } } } },
+        { kind: "note", update: { sessionId: "s", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "旧宿主的回答" } } } },
       ],
     });
-    if (m.errs.length) fail(`old host: the page threw — ${m.errs[0]}`);
+    if (m.errs.length) fail(`optional model: the page threw — ${m.errs[0]}`);
     if (!m.column || !m.input) {
-      fail(`old host: the conversation did not draw (column ${m.column}, input ${m.input})`);
+      fail(`optional model: the conversation did not draw (column ${m.column}, input ${m.input})`);
     } else {
       for (const said of ["旧宿主上的一句话", "旧宿主的回答"]) {
-        if (!m.text.includes(said)) fail(`old host: ${JSON.stringify(said)} is not on the page`);
+        if (!m.text.includes(said)) fail(`optional model: ${JSON.stringify(said)} is not on the page`);
       }
       if (!m.modeMenu || m.modeMenu.id !== "default") {
-        fail(`old host: the mode seat wears ${JSON.stringify(m.modeMenu)}, wanted the old host's current mode (default)`);
+        fail(`optional model: the mode seat wears ${JSON.stringify(m.modeMenu)}, wanted the current mode (default)`);
       }
-      if (m.usage) fail(`old host: a context dial was drawn with no reading from the host (${JSON.stringify(m.usage)})`);
-      if (!m.who) fail("old host: the composer's who seat is missing — with no reading it is the agent's mark");
-      if (!m.errs.length) console.log("old host · a conversation from an old host draws: words, mode seat on default, no dial, no model");
+      if (m.usage) fail(`optional model: a context dial was drawn with no reading from the host (${JSON.stringify(m.usage)})`);
+      if (!m.who) fail("optional model: the composer's who seat is missing — with no reading it is the agent's mark");
+      if (!m.errs.length) console.log("optional model · current payload draws: words, mode seat on default, no dial, no model");
     }
   }
 
@@ -716,7 +696,7 @@ try {
     const m = await look({
       scheme: "dark",
       motion: "no-preference",
-      frames: agentFrame ? [agentFrame, { kind: "history_end" }] : [{ kind: "history_end" }],
+      frames: agentFrame ? [agentFrame,] : [],
       paste: true,
       send: true,
     });

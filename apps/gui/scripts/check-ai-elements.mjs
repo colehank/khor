@@ -1,3 +1,4 @@
+import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // Production App / ChatView, with only the bridge replaced. No test UI.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -57,7 +58,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const note = (sessionUpdate, rest) => ({ kind: "note", update: { update: { sessionUpdate, ...rest } } });
 const thought = (text) => note("agent_thought_chunk", { content: { type: "text", text } });
 const longPath = `/work/${"nested-project/".repeat(12)}src/session.ts`;
-const history = (sessionUpdate, rest) => ({ ...note(sessionUpdate, rest), kind: "history" });
+const history = (sessionUpdate, rest) => ({ ...note(sessionUpdate, rest), kind: "note" });
 const reviewFrames = () => [
   history("user_message_chunk", { content: { type: "text", text: "修一下工作区里的撤销快捷键，切换文件后也要保留编辑状态。" } }),
   history("agent_message_chunk", { content: { type: "text", text: "我先检查编辑器的快捷键绑定和文件切换时的状态保存。" } }),
@@ -67,7 +68,6 @@ const reviewFrames = () => [
   history("tool_call", { toolCallId: "review-edit", title: "Edit /work/khor/apps/gui/src/components/CodeEditor.tsx", kind: "edit", status: "completed", rawInput: { file_path: "/work/khor/apps/gui/src/components/CodeEditor.tsx" }, content: [{ type: "diff", path: "/work/khor/apps/gui/src/components/CodeEditor.tsx", oldText: "const extensions = [\n  defaultKeymap,\n  languageSupport,\n];", newText: "const extensions = [\n  history(),\n  keymap.of([...historyKeymap, ...defaultKeymap]),\n  languageSupport,\n];" }] }),
   history("tool_call", { toolCallId: "review-test", title: "编辑历史回归通过", kind: "execute", status: "completed", rawInput: { command: "npm run editor-history" }, content: [{ type: "content", content: { type: "text", text: "Undo / redo passed\nHistory retained across file switches\nNo cross-file history changes" } }] }),
   history("agent_message_chunk", { content: { type: "text", text: "快捷键和编辑历史已经接好。\n\n- **⌘Z / ⇧⌘Z** 交给当前编辑器处理\n- 切换文件后，撤销和重做历史各自保留\n- 预览与源码切换不会重置历史\n\n浏览器回归已通过，接下来检查 Mac 原生窗口中的系统菜单。" } }),
-  { kind: "history_end" },
   { kind: "ask", ask: 99, title: "打开独立的 Mac 测试窗口，验证系统菜单的撤销与重做？", options: [["allow-once", "本次允许"], ["deny", "暂不运行"]] },
 ];
 const results = [];
@@ -117,26 +117,23 @@ try {
     currentPage = page;
     page.on("pageerror", (error) => { errors.push(error.message); console.error(error.message); });
     const reply = (value) => (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
-    const row = (id, title) => ({ id, kind: "gui", title, word: "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "claude", group: "", face: null, hosted: true, attachable: false, last: null, via: null, via_face: null, home: "gate" });
+    const row = (id, title) => ({ id, kind: "gui", title, word: "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "claude", group: "", face: null, hosted: true, can_control: true, attachable: false, last: null, via: null, via_face: null, home: "gate" });
     await page.route("**/sessions", reply([row("gui/elements-a", "Elements A"), row("gui/elements-b", "Elements B")]));
     await page.route("**/devices", reply([{ id: "e".repeat(64), name: "gate", me: true, face: null, pinned: false, vitals: null, hop: null, sponsor: null, watch: [], watched: null, seat: { left: 50, top: 50 }, hosts: true }]));
     for (const path of ["dir_pins", "web_pins", "recents"]) await page.route(`**/${path}`, reply([]));
-    for (const path of ["chat_replay", "chat_leave", "chat_say", "chat_stop"]) await page.route(`**/${path}`, reply(null));
+    for (const path of ["chat_say", "chat_stop"]) await page.route(`**/${path}`, reply(null));
     await page.route("**/hooks_state", reply({ installed: false }));
     await page.route("**/quota", reply({ quota: null, trouble: null }));
     let reviewPending = false;
-    await page.route("**/chat_open", (route) => {
-      if (reviewPending) { queue = reviewFrames(); reviewPending = false; }
-      return reply(true)(route);
-    });
     await page.route("**/tabs_list", reply({ tabs: [], active: "" }));
-    let queue = [{ kind: "history_end" }, { kind: "turning" }, thought("先检查工作区。")], otherQueue = [], cursor = 0;
-    await page.route("**/chat_poll", (route) => {
-      const id = JSON.parse(route.request().postData()).id;
-      const frames = id === "gui/elements-a" ? queue : otherQueue;
-      if (id === "gui/elements-a") queue = []; else otherQueue = [];
-      cursor += frames.length;
-      return reply({ frames, next: cursor, gone: false, lost: false, stall: null })(route);
+    let queue = [{kind: "turning"}, thought("先检查工作区。")], otherQueue = [];
+    await routeCanonicalChat(page, {ids: ['gui/elements-a', 'gui/elements-b'],
+      onOpen: () => {if (reviewPending) {queue = reviewFrames();reviewPending = false;}},
+      takeFrames: id => {
+        const frames = id === 'gui/elements-a' ? queue : otherQueue;
+        if (id === 'gui/elements-a') queue = [];else otherQueue = [];
+        return frames;
+      },
     });
     let reject = true, holdAnswer = true, releaseAnswer;
     await page.route("**/chat_answer", async (route) => {
@@ -310,7 +307,7 @@ try {
     assert(Math.abs((await reading.boundingBox()).y - readingTop) <= 2, "reading history keeps its paragraph in place when the plan above changes height");
     // Different sessions may use the same numeric ask ID. The local
     // optimistic answer must not make the next session unanswerable.
-    otherQueue = [{ kind: "history_end" }, { kind: "ask", ask: 31, title: "Another session", options: [["different", "另一会话的选项"]] }];
+    otherQueue = [ { kind: "ask", ask: 31, title: "Another session", options: [["different", "另一会话的选项"]] }];
     if (width < 600) {
       await page.locator("[data-session-bar]").getByRole("button", { name: /^(返回|Back)$/ }).click();
     }

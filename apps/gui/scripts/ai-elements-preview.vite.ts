@@ -1,3 +1,4 @@
+import {canonicalChatFixture} from './fixtures/canonical-chat-routes.mjs';
 // An isolated fixture bridge in front of the production App. Never
 // installed in the normal Vite config, native app, or production build.
 import { defineConfig, mergeConfig, type Plugin } from "vite";
@@ -5,8 +6,8 @@ import base from "../vite.config";
 import providers from "../../agent/providers.json";
 
 type Frame = Record<string, unknown>;
-const update = (sessionUpdate: string, rest: Record<string, unknown>, history = true): Frame => ({
-  kind: history ? "history" : "note", update: { update: { sessionUpdate, ...rest } },
+const update = (sessionUpdate: string, rest: Record<string, unknown>): Frame => ({
+  kind: "note", update: { update: { sessionUpdate, ...rest } },
 });
 const text = (value: string) => ({ content: { type: "text", text: value } });
 const ids = ["gui/ai-elements-review", "gui/ai-elements-plan", "gui/ai-elements-stream", "gui/codex-review", "wide/all"];
@@ -30,14 +31,13 @@ function sample(index: number): Frame[] {
     update("tool_call_update", { toolCallId: "codex-command", status: "completed", content: [{ type: "content", content: { type: "text", text: "3 checks passed" } }] }),
     update("tool_call", { toolCallId: "codex-patch", title: "fileChange", kind: "edit", status: "completed", locations: [{ path: "/preview/src/CodeEditor.tsx" }], rawOutput: { changes: [{ path: "/preview/src/CodeEditor.tsx", kind: { type: "update" }, diff: "@@ -12,4 +12,5 @@\n const extensions = [\n-  keymap.of(defaultKeymap),\n+  history(),\n+  keymap.of([...historyKeymap, ...defaultKeymap]),\n   languageSupport,\n ];" }] } }),
     update("plan", { entries: [{ content: "检查快捷键", status: "completed" }, { content: "验证修改", status: "completed" }] }),
-    update("agent_message_chunk", text("检查完成。展开工具可看到执行结果与原始补丁；未把补丁片段当成完整文件。")), { kind: "history_end" },
+    update("agent_message_chunk", text("检查完成。展开工具可看到执行结果与原始补丁；未把补丁片段当成完整文件。")),
   ];
-  if (index === 2) return [boot(), update("user_message_chunk", text("演示一轮流式思考和回复。")), { kind: "history_end" }];
+  if (index === 2) return [boot(), update("user_message_chunk", text("演示一轮流式思考和回复。")),];
   if (index === 1) return [boot(),
     update("user_message_chunk", text("检查这次改动，并在发布前让我确认。")),
     update("agent_message_chunk", text("代码检查已经完成，正在等待最后一项确认。")),
-    update("plan", { entries: [{ content: "读取改动和影响范围", status: "completed" }, { content: "运行前端检查", status: "completed" }, { content: "确认后执行下一步", status: "in_progress" }] }),
-    { kind: "history_end" }, { kind: "ask", ask: 201, title: "运行独立的原生 App 验收？这个示例只改变预览状态。", options: [["allow-once", "本次允许"], ["deny", "暂不运行"]] },
+    update("plan", { entries: [{ content: "读取改动和影响范围", status: "completed" }, { content: "运行前端检查", status: "completed" }, { content: "确认后执行下一步", status: "in_progress" }] }), { kind: "ask", ask: 201, title: "运行独立的原生 App 验收？这个示例只改变预览状态。", options: [["allow-once", "本次允许"], ["deny", "暂不运行"]] },
   ];
   return [boot(),
     update("user_message_chunk", text("修一下编辑器的撤销快捷键，切换文件后也要保留历史。")),
@@ -47,8 +47,7 @@ function sample(index: number): Frame[] {
     update("tool_call", { toolCallId: "preview-edit", title: "Edit CodeEditor.tsx", kind: "edit", status: "completed", content: [{ type: "diff", path: "/preview/src/CodeEditor.tsx", oldText: editorSource(false), newText: editorSource(true) }] }),
     update("tool_call", { toolCallId: "preview-test", title: "Run npm run editor-history", kind: "execute", status: "completed", rawInput: { command: "npm run editor-history" }, content: [{ type: "content", content: { type: "text", text: "✓ undo / redo\n✓ switch files\n✓ return from preview\n3 checks passed" } }] }),
     update("tool_call", { toolCallId: "preview-error", title: "Run native window check", kind: "execute", status: "failed", rawInput: { command: "npm run editor-history-native" }, content: [{ type: "content", content: { type: "text", text: "This preview does not start native applications.\nOpen the confirmation below to inspect the approval UI." } }] }),
-    update("agent_message_chunk", text("快捷键和编辑历史已接好。\n\n- **⌘Z / ⇧⌘Z** 交给当前编辑器\n- 每个文件保留自己的撤销历史\n- 源码与预览切换不会重置历史\n\n浏览器检查已通过，原生窗口检查需要另行确认。")),
-    { kind: "history_end" }, { kind: "ask", ask: 101, title: "打开独立窗口，验证系统菜单的撤销与重做？", options: [["allow-once", "本次允许"], ["deny", "暂不运行"]] },
+    update("agent_message_chunk", text("快捷键和编辑历史已接好。\n\n- **⌘Z / ⇧⌘Z** 交给当前编辑器\n- 每个文件保留自己的撤销历史\n- 源码与预览切换不会重置历史\n\n浏览器检查已通过，原生窗口检查需要另行确认。")), { kind: "ask", ask: 101, title: "打开独立窗口，验证系统菜单的撤销与重做？", options: [["allow-once", "本次允许"], ["deny", "暂不运行"]] },
   ];
 }
 
@@ -70,6 +69,14 @@ function previewBridge(terminal = false): Plugin {
   const initialPreferences=structuredClone(preferences);
   const sampleWithSettings=(i:number)=>{const source=sample(i);return [source[0],{kind:'settings',settings:preferences[i]},...source.slice(1)];};
   let frames = ids.map((_, i) => sampleWithSettings(i));
+  const makeCanonical = () => canonicalChatFixture({ids: ids.slice(0, 4),
+    takeFrames: (id: string) => {
+      const index = ids.indexOf(id);
+      return frames[index].splice(0).filter(frame => frame.kind !== 'turning' || streaming.has(index));
+    },
+    onOpen: (id: string) => {const index = ids.indexOf(id);if (index === 2 && generation[index] === 0) run(index);},
+  });
+  let canonical = makeCanonical();
   const streaming = new Set<number>();
   const generation = ids.map(() => 0);
   const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -146,9 +153,9 @@ function previewBridge(terminal = false): Plugin {
     const revision = ++generation[index];
     const publish = (frame: Frame) => { if (generation[index] === revision) frames[index].push(frame); };
     const thought = ["先检查输入。", "\n确认消息、思考与工具调用各自的状态。", "\n使用上游的文字与展开方式，不替换成应用诊断图标。"];
-    thought.forEach((part, i) => later(() => publish(update("agent_thought_chunk", text(part), false)), 300 + i * 650));
+    thought.forEach((part, i) => later(() => publish(update("agent_thought_chunk", text(part))), 300 + i * 650));
     const chunks = message.match(/.{1,5}/gu) ?? [];
-    chunks.forEach((part, i) => later(() => publish(update("agent_message_chunk", text(part), false)), 2500 + i * 180));
+    chunks.forEach((part, i) => later(() => publish(update("agent_message_chunk", text(part))), 2500 + i * 180));
     later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, 2800 + chunks.length * 180);
   }
   return {
@@ -171,6 +178,7 @@ function previewBridge(terminal = false): Plugin {
           preferences.splice(0,preferences.length,...structuredClone(initialPreferences));
           modelConfig={home:device.id,account:account.id,model:account.default_model,options:{thought_level:"medium",auto_compaction:true}};
           frames = ids.map((_, i) => sampleWithSettings(i));
+          canonical = makeCanonical();
           khorUpdates = [...initialKhorUpdates];
           res.setHeader("content-type", "application/json"); res.end("true"); return;
         }
@@ -191,6 +199,12 @@ function previewBridge(terminal = false): Plugin {
           const value=path==='term_attach'?{bytes:Buffer.from(screen).toString('base64'),seq:1}:['term_stream','term_wait'].includes(path)?{bytes:'',seq:1,gone:false,reset:false,stall:null}:null;
           res.setHeader('content-type','application/json');res.setHeader('cache-control','no-store');res.end(JSON.stringify(value));return;
         }
+        const projected = canonical.answer(path, body);
+        if (projected !== null) {
+          res.setHeader('content-type', 'application/json');res.setHeader('cache-control', 'no-store');
+          const finish = () => projected.finish?.();res.once('close', finish);
+          res.end(JSON.stringify(projected.value), finish);return;
+        }
         const index = Math.max(0, ids.indexOf(String(body.id)));
         let answer: unknown = null;
         switch (path) {
@@ -201,12 +215,11 @@ function previewBridge(terminal = false): Plugin {
           case "__ai_preview/answers":answer=interactionAnswers;break;
           case "chat_respond":interactionAnswers.push(body);frames[index].push({kind:'elicit_answered',ask:body.ask,response:{action:'accept'}});break;
           case "chat_control":frames[index].push({kind:'control_result',token:body.token,operation:body.operation,data:{},error:null});break;
-          case "sessions": answer = ids.map((id, i) => ({ id, kind: i === 4 ? "broadcast" : "gui", title: titles[i], word: streaming.has(i) ? "busy" : "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: i === 4 ? "khor" : i === 3 ? "codex" : "claude", group: "", face: null, hosted: true, attachable: false, last: "隔离示例 · 不连接真实智能体", via: null, via_face: null, home: device.name })); if(terminal)(answer as Frame[]).push({id:'shell/layout-lab',kind:'shell',title:'终端 · 布局试验',word:'idle',at_ms:Date.now(),unread:0,source:null,pinned:false,stale:false,category:'shell',group:'',face:null,hosted:true,attachable:true,last:'隔离终端示例',via:null,via_face:null,home:device.name,mux:false});break;
+          case "sessions": answer = ids.map((id, i) => ({ id, kind: i === 4 ? "broadcast" : "gui", title: titles[i], word: streaming.has(i) ? "busy" : "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: i === 4 ? "khor" : i === 3 ? "codex" : "claude", group: "", face: null, hosted: true, can_control: true, attachable: false, last: "隔离示例 · 不连接真实智能体", via: null, via_face: null, home: device.name })); if(terminal)(answer as Frame[]).push({id:'shell/layout-lab',kind:'shell',title:'终端 · 布局试验',word:'idle',at_ms:Date.now(),unread:0,source:null,pinned:false,stale:false,category:'shell',group:'',face:null,hosted:true,attachable:true,last:'隔离终端示例',via:null,via_face:null,home:device.name,mux:false});break;
           case "devices": answer = [device]; break;
           case "machine_log": answer = { messages: [khorReceipt()], broken: 0 }; break;
           case "khor_agent": answer = agentAction(body); break;
           case "console_catalog": answer = []; break;
-          case "chat_open": if (index === 2 && generation[index] === 0) run(index); answer = true; break;
           case "chat_set_mode": preferences[index].modes.currentModeId=String(body.mode);frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});break;
           case "chat_set_option": {
             const option=preferences[index].options.find(o=>o.id===body.option);
@@ -214,12 +227,7 @@ function previewBridge(terminal = false): Plugin {
             if(body.option==='model')preferences[index].model=String(body.value);
             frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});break;
           }
-          case "chat_replay": break;
-          case "chat_poll": case "chat_wait": {
-            const since = Math.max(0, Number(body.since) || 0);
-            answer = { frames: frames[index].slice(since).filter(f=>f.kind!=='turning'||streaming.has(index)), next: frames[index].length, gone: false, lost: false, stall: null }; break;
-          }
-          case "chat_answer": later(() => frames[index].push({ kind: "answered", ask: body.ask, option: body.option }, update("agent_message_chunk", text(body.option === "deny" ? "已取消。这次预览没有执行任何系统操作。" : "已确认。此处仅演示确认状态，不执行系统操作。"), false)), 900); break;
+          case "chat_answer": later(() => frames[index].push({ kind: "answered", ask: body.ask, option: body.option }, update("agent_message_chunk", text(body.option === "deny" ? "已取消。这次预览没有执行任何系统操作。" : "已确认。此处仅演示确认状态，不执行系统操作。"))), 900); break;
           case "chat_say": run(index, "收到。这是验收环境的示例回复，没有调用模型或执行命令。你可以展开上面的工具调用，检查输出与复制按钮。"); break;
           case "chat_stop": generation[index]++; streaming.delete(index); frames[index].push({ kind: "turn", stop: "Cancelled" }); break;
           case "tabs_list": answer = { tabs: [], active: "" }; break;
@@ -227,7 +235,7 @@ function previewBridge(terminal = false): Plugin {
           case "hooks_state": answer = { installed: false }; break;
           case "quota": answer = { quota: null, trouble: null }; break;
           case "config": case "dir_pins": case "web_pins": case "recents": case "workspaces": case "agents": case "quota_board": answer = []; break;
-          case "seen_snapshot": case "seen": case "session_seen": case "chat_leave": break;
+          case "seen_snapshot": case "seen": case "session_seen": break;
           default: res.statusCode = 400; answer = `验收环境未提供 ${path}`;
         }
         res.setHeader("content-type", "application/json; charset=utf-8");
