@@ -4,13 +4,13 @@
 
 ## 当前源码、分工与运行
 
-Root `integrate/round2@992e6380800741ed023084d9ce842fd9154490e0` clean。两作者＋独立reviewer；Root只集成/验证/协调，不开第三实现线。
+Root `integrate/round2@cc92d47f04cf4aaac2b1a43109633fdbb6a2a15e` clean。两作者＋独立reviewer；Root只集成/验证/协调，不开第三实现线。
 
-- input独占Node/ACP恢复：known2f已Root整合e313并实际验证；5da capability/private stable-token与ad30 execution/action分离已独审并整合c820/4bf（只有源码，未编译/运行）。3da＋1c11＋914 Meta-path公开3动作与typed纯拒绝已独审整合284/34b/2a（无编译/运行）；7313＋0799 logical-ID/有限3alias生产组件已独审整合473/92d。ed947＋c4已非作者源审并整合8bf/992：精确完整身份/正式published才投影canonical和控制；两个readonly删除入口持同physical journal与row guard完成删除，任意Meta/Attempt（含Reserved/Unknown）阻删除。没有当前编译/运行证明。author最后补权威纯Observation快照/私有Ref hint/public native_at（8源WIP），不宣外部观察已能恢复。已授权Node lib/live/recovery_attempt/gui_host/必要session_recovery.rs、ACP accessor，后继link/ipc/proto/shell_start/Meta关系；不写Core/TS。能力不提前改旧Meta，绑定同epoch/full native/agent/effective launch；offer不探provider。后继同一≤16KiB文档须区分current execution owner与latest action/result各一份，Join不撤live生产者key，同token结束后仍不重新spawn。generic close旧问题仅NEXT。
+- input独占Node/ACP恢复：known2f已Root整合e313并实际验证；5da capability/private stable-token与ad30 execution/action分离已独审并整合c820/4bf（只有源码，未编译/运行）。3da＋1c11＋914 Meta-path公开3动作与typed纯拒绝已独审整合284/34b/2a（无编译/运行）；7313＋0799 logical-ID/有限3alias生产组件已独审整合473/92d。ed947＋c4已非作者源审并整合8bf/992：精确完整身份/正式published才投影canonical和控制；两个readonly删除入口持同physical journal与row guard完成删除，任意Meta/Attempt（含Reserved/Unknown）阻删除。没有当前编译/运行证明。最后abad＋154已独审并集成309f/cc92：权威Observation只读快照、现两条私有offer/native Ref数据转发、目标home真实来源重验、同逻辑SID admission与同File保存Ref已接；原R7内增真实owned-files零写offer/Unknown只读/注入正退出事实检查（未执行），不冒真实OS退出。当前作者clean，无已知生产后继，仍不宣整体恢复已可用。已授权Node lib/live/recovery_attempt/gui_host/必要session_recovery.rs、ACP accessor，后继link/ipc/proto/shell_start/Meta关系；不写Core/TS。能力不提前改旧Meta，绑定同epoch/full native/agent/effective launch；offer不探provider。后继同一≤16KiB文档须区分current execution owner与latest action/result各一份，Join不撤live生产者key，同token结束后仍不重新spawn。generic close旧问题仅NEXT。
 - H独占Core/API/GUI消费：ac953共享serde DTO、e122贡献锚点、e211当前turn夹具均已独审整合。d549薄Core facade已独审整合74076（尚依赖未接齐Node接口，无编译证明）；b8/4c传输与cwd、74目录DTO及3f Core观察adapter均已独审整合；UI7ed→3ad→f617→3d→a8→1452→4b已源审并按精确小片集成至d197（没有React/IDB/类型/运行证明）。H正在复用98901原Recovery13 harness并明确增加4组当前真实DetailPane/RecoveryActions/真实IDB/Terminal owner验证，不改已固定生产源，不新wizard、不改model配置；core recovery.rs及SessionId仅加现ts-rs10元数据（依赖原有，不改锁/版本），GUI只映射home.hex避免平行enum。另一个极小原H测试夹具修正（见下）独立提交，不混产品。Node接口未固定前不真实gen/compile，生成文件不手写。
 - reviewer非作者只读审源码/真实结果/Clean Code，无自主runtime；idle用followup_task。源码授权不等于构建授权。
 
-当前Native/browser/App/maintenance槽均 **FREE**；最近browser actual28700完整H已terminal0/独审，38247 ACP完整绿亦保。旧句柄不重poll。以内部 `current-runtime.json` 与实际tool handle为准，不能因观察超时重启，不poll历史terminal句柄。
+当前 **Native槽RUNNING：Root actual28762**，生产源冻结cc92；browser/App/maintenance均FREE。最近browser actual28700完整H已terminal0/独审，38247 ACP完整绿亦保。旧句柄不重poll。以内部 `current-runtime.json` 与实际tool handle为准，不能因观察超时重启，不poll历史terminal句柄。
 
 ## 已确认结果与明确限制
 
@@ -52,3 +52,9 @@ Root `integrate/round2@992e6380800741ed023084d9ce842fd9154490e0` clean。两作�
 定向清理已释放外104.715GiB、内4.004+1.775GiB；当前外约112GiB、系统13GiB/recovery2.2GiB，发布缓存117GiB/quality40GiB。源码/会话/正式发布与保护target未删，部分khor*只是兼容链接。每批严格外20/内10GiB保留量＋显式峰值，e70 preflight原件随批保存；原5GiB只紧急停止线。同quality target/jobs1/incremental0/offline，私有程序批末退役、不gzip和双盘大payload，日志截图外盘唯一。quality50GiB/recovery5GiB先复核再开下一批，不扩空间治理（见STORAGE）。
 
 先本页/PLAN/STORAGE，再实际Git/dirty/runtime；作者任务卡dirty不得全局stage，不按摘要覆盖。当前小bundle链各经gitverify0并双盘；最新b7相对298 bundle `fd8855d68e4d562953f084dcf05e35dc563056dc054d235c9d15582bd627f8a3`/11973B，后326相对b7的source bundle `5d74efbafea607fb71a8ef1d44a38ed5c4c449bfbc454d1550e073c9a1fe920b`/6510B已verify0双盘。两作者当前dirty bytes逐文件保current-author-source/manifest，非整体原子，不覆盖后来源。内部 `/Users/zgh/Library/Caches/khor-code-quality/recovery` 的RESUME/refs/docs/runtime按逐文件事实同步，不称全局原子。历史binary/source SHA仅历史，退役payload不冒仍在。
+
+## 当前统一生成批（2026-10-31）
+
+- actual45451 terminal1/6.052s：metadata与catalog build均0，但wrapper移植漏原compile-only `--test gate`，prepared全图catalog＋core与实际仅catalog不符，被原V正确拒绝。result `25941d421d09ed05f4ae33284371634b02ce34a1c5a741eb5ebe919e7b0b4a20`；未stage/publish，源/env稳、owner空、TMP清，非产品业务红，原false保。
+- 仅恢复原catalog编译目标（不执行gate），run2 SHA `2971fc8a388e8f274cf3036fe2ad739305a00ebf5149a02f7514dfbfc09b16fc`已独审，fresh e70 reserve20/10＋peak6/2后actual28762正在运行；catalog stage已到，bindings正编译，尚无本批通过声明。不要poll已终态45451；runtime以真实28762/current-runtime为准。
+- H只改3测试源的Recovery17片743已fixed clean，原13assert保＋4明确S3组，正在非作者审。Root本批不受作者树变动影响；该片后继若仅测试delta，按精确源映射复用生产types/assets，不为script变更重gen。
