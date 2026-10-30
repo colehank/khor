@@ -398,7 +398,7 @@ function titleIn(frame: ChatFrame): string | null | undefined {
 type Cost = { amount: number; currency: string };
 
 function updateOf(frame: ChatFrame): Update | null {
-  if (frame.kind !== "note" && frame.kind !== "history") return null;
+  if (frame.kind !== "note") return null;
   const carried = frame.update;
   if (typeof carried !== "object" || carried === null) return null;
   const inner = (carried as { update?: unknown }).update;

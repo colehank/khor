@@ -14,7 +14,7 @@ export function paintHistory(entries: HistoryEntry[]): HistoryItem[] {
       out.push({who: 'sys', text: gui.history_capture_gap(1), historyKey: `${entry.key}:capture`});
       continue;
     }
-    if (frame.kind !== 'note' && frame.kind !== 'history')
+    if (frame.kind !== 'note')
       continue;
     const carried = frame.update as {
       update?: AcpUpdate;
