@@ -991,7 +991,10 @@ fn managed_host_case_worker() {
             let node = crate::Node::open(root.clone()).unwrap();
             let row = LiveKind::new(root.clone(), node.device()).dir_of(&id).unwrap();
             let attempt: serde_json::Value = serde_json::from_slice(&std::fs::read(row.join("recovery-attempt.json")).unwrap()).unwrap();
-            assert_eq!(attempt["latest"]["support"], serde_json::json!({"load":false,"resume":true}));
+            // This fixture advertises both capabilities. Persist the actual
+            // Initialize facts; the resume1/load0/new0 checks below independently
+            // prove which opening was selected, even when Load is available.
+            assert_eq!(attempt["latest"]["support"], serde_json::json!({"load":true,"resume":true}));
             assert_eq!(
                 node.session_content(&id, None).unwrap(),
                 crate::session_content::Availability::Available {
