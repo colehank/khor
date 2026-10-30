@@ -6,7 +6,7 @@ import ts from 'typescript';
 const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint', 'acp-view'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
 const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
-const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity, historyReferenceBetween } = module.exports;
+const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity, historyReferenceBetween, historyContributionPoint, historyContributionPresent } = module.exports;
 // Read the production AgentContent prop itself: this counterexample must fail
 // on the old overall-tail rule rather than on a missing helper/export.
 const chatSource = ts.createSourceFile('ChatView.tsx', readFileSync(resolve('src/views/ChatView.tsx'),'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -354,6 +354,20 @@ test('retained contribution identity is bounded and assigned one to one', () => 
   const reset = retainHistoryIdentity([],paintHistory([chunk('10:0','prefix'),chunk('20:0','middle'),chunk('30:0','tail')]));
   assert.equal(reset[0].displayKey,reset[0].historyKey,'reset has no old owner map');
   assert.notEqual(reset[0].displayKey,recent[0].displayKey);
+  const words=index=>`entry${index} carries${index} stable${index} visible${index} words${index} across${index} this${index} retained${index} contribution${index}. `;
+  const entries=Array.from({length:640},(_,index)=>chunk(`opaque-${index}`,words(index)));
+  const filled=paintHistory(entries.slice(128))[0], capped=paintHistory(entries.slice(0,512))[0];
+  const offset=49,sample=words(200).slice(offset-24,offset+24);
+  const point=historyContributionPoint(filled,sample,-24);
+  assert.deepEqual(point,{entry:'opaque-200',offset},'the real shared body locates the retained contribution, not a group-tail distance');
+  assert.equal(historyContributionPresent(capped,point,sample,-24),true,'newer tail eviction does not retire a still-present source point');
+  assert.equal(capped.historyEntries.includes('opaque-639'),false);
+  assert.equal(historyContributionPresent(capped,{entry:'opaque-639',offset},words(639).slice(offset-24,offset+24),-24),false);
+  assert.equal(filled.historyTextSpans.length,512);assert.equal(capped.historyTextSpans.length,512);
+  assert.equal(paintHistory(entries.slice(0,513))[0].historyTextSpans,null,'optional provenance is unavailable rather than growing beyond its budget');
+  assert.equal(historyContributionPoint(paintHistory([chunk('duplicate-a','repeat'),chunk('duplicate-b','repeat')])[0],'repeat',0),null);
+  assert.deepEqual(paintHistory([chunk('u16-a','😀'),chunk('u16-b','Z')])[0].historyTextSpans,
+    [{entry:'u16-a',from:0,to:2},{entry:'u16-b',from:2,to:3}]);
 });
 test('prepend preserves paragraph keys and does not concatenate records', () => {
   const recent = [entry('20:0', 'second'), entry('30:0', 'third')], before = paintHistory(recent), after = paintHistory([entry('10:0', 'first'), ...recent]);

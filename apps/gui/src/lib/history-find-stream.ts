@@ -77,7 +77,7 @@ function retire(out: HistoryPaintStep[]): HistoryPaintStep[] | null {
   }
   if (facts.length > 512 || utf8.encode(JSON.stringify(facts)).length > 512 * 1024)
     return null;
-  if (last && plain(last)) facts.push({...last,text:'',historyEntries:last.historyEntries.slice(-1),historyRecords:last.historyRecords.slice(-1)});
+  if (last && plain(last)) facts.push({...last,text:'',historyEntries:last.historyEntries.slice(-1),historyRecords:last.historyRecords.slice(-1),historyTextSpans:[]});
   else if (last && last.who !== 'tool' && last.who !== 'compaction') facts.push({who:'boundary'});
   return facts;
 }

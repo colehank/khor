@@ -2,12 +2,17 @@ import type { HistoryRecordRef } from '@/gen/bindings/HistoryRecordRef';
 import type { HistoryEntry } from '@/gen/bindings/HistoryEntry';
 import { applyAcpUpdate, type AcpItem, type AcpUpdate } from './acp-view';
 import { gui } from '@/gen/catalog';
+export type HistoryTextSpan = {entry: string; from: number; to: number};
+export type HistoryContributionPoint = {entry: string; offset: number};
 export type HistoryItem = (AcpItem | { who: 'sys'; text: string }) & {
   historyKey: string;
   displayKey?: string;
   /** Contributions belong only to the currently retained bounded window. */
   historyEntries: string[];
   historyRecords: { entry: string; record: HistoryRecordRef | null }[];
+  /** UTF16 offsets into this bounded painted body, not raw-file byte ranges.
+   * null means this optional anchor metadata exceeded its contribution budget. */
+  historyTextSpans?: HistoryTextSpan[] | null;
 };
 /** Ordering comes from checked physical ranges plus the parser item slot.
  * An overlapping or whole-record reference without a comparable slot is unknown. */
@@ -57,8 +62,14 @@ export function appendHistoryEntry(out: HistoryPaintStep[], entry: HistoryEntry,
   applyAcpUpdate(out, orphan ? { ...update, sessionUpdate: 'tool_call', title: update.title ?? update.toolCallId } : update);
   for (let index = 0; index < out.length; index += 1) {
     if (out[index].who === 'boundary' || out[index] === before[index]) continue;
-    const prior = before[index] as HistoryItem | undefined;
-    out[index] = { ...out[index],
+    const prior = before[index] as HistoryItem | undefined, next = out[index];
+    const from=prior && 'text' in prior ? prior.text.length : 0;
+    const spans='text' in next
+      ? prior?.historyTextSpans===null || (prior?.historyTextSpans?.length ?? 0)>=512 ? null
+        : [...(prior?.historyTextSpans ?? []),{entry:entry.key,from,to:next.text.length}]
+      : undefined;
+    out[index] = { ...next,
+      ...(spans===undefined ? {} : {historyTextSpans:spans}),
       historyKey: prior?.historyKey ?? `${entry.key}:${index - start}`,
       historyEntries: [...(prior?.historyEntries ?? []), entry.key],
       historyRecords: [...(prior?.historyRecords ?? []), {entry: entry.key, record}],
@@ -72,6 +83,26 @@ export function paintHistory(entries: HistoryEntry[], references: HistoryRecordR
   let previousRecord: HistoryRecordRef | null = null;
   for (const entry of entries) previousRecord = appendHistoryEntry(out, entry, references, previousRecord);
   return out.filter((item): item is HistoryItem => item.who !== 'boundary');
+}
+
+/** A visible DOM sample earns a source-relative anchor only if it occurs
+ * once in the actual shared projected body. Markdown syntax is not guessed. */
+export function historyContributionPoint(item: HistoryItem, sample: string, sampleFrom: number): HistoryContributionPoint | null {
+  if(!sample || sample.length>48 || !('text' in item) || !item.historyTextSpans)return null;
+  const start=item.text.indexOf(sample);
+  if(start<0 || item.text.indexOf(sample,start+1)>=0)return null;
+  const at=start-sampleFrom, span=item.historyTextSpans.find(span=>at>=span.from && at<span.to);
+  return span ? {entry:span.entry,offset:at-span.from} : null;
+}
+
+/** The exact contribution must still be retained and unchanged. A nearby
+ * identical phrase in another record does not inherit this reading position. */
+export function historyContributionPresent(item: HistoryItem, point: HistoryContributionPoint, sample: string, sampleFrom: number): boolean {
+  if(!sample || sample.length>48 || !Number.isSafeInteger(point.offset) || !('text' in item) || !item.historyTextSpans)return false;
+  const spans=item.historyTextSpans.filter(span=>span.entry===point.entry);
+  if(spans.length!==1 || point.offset<0 || point.offset>=spans[0].to-spans[0].from)return false;
+  const at=spans[0].from+point.offset+sampleFrom;
+  return at>=0 && item.text.slice(at,at+sample.length)===sample;
 }
 
 /** Canonical body and live controls have separate owners. Only contributions

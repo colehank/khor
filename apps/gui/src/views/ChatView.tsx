@@ -47,7 +47,7 @@ import { useHistoryExport } from '@/hooks/use-history-export';
 import type { FindHit } from '@/lib/history-find-model';
 import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
 import { historyEntries, historyReferences } from '@/lib/history-window';
-import { paintHistory, retainHistoryIdentity, latestHistoryBody, type HistoryItem } from '@/lib/history-paint';
+import { paintHistory, retainHistoryIdentity, latestHistoryBody, historyContributionPoint, historyContributionPresent, type HistoryContributionPoint, type HistoryItem } from '@/lib/history-paint';
 import { HistoryRecords } from '@/components/history/HistoryRecords';
 
 /** Live control/state waits stay responsive while idle polling backs off. */
@@ -98,7 +98,7 @@ function acceptHistory(previous: Painting, entries: Parameters<typeof paintHisto
     live: previous.live.filter(item => item.who !== 'user' || !item.token || !recorded.has(item.token)) };
 }
 
-type HistoryTextPoint = { tail: number; sampleFrom: number; sample: string; top: number; entries: string[] };
+type HistoryTextPoint = { tail: number; sampleFrom: number; sample: string; top: number; entries: string[]; contribution: HistoryContributionPoint | null };
 function historyTextLength(root: HTMLElement): number {
   const nodes = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let size = 0;
@@ -131,7 +131,7 @@ function historyTextRect(root: HTMLElement, at: number): DOMRect | null {
 }
 /** A bounded rendered-text point, scoped to the same retained source suffix.
  * The short sample rejects changed Markdown text; it never identifies a message. */
-function captureHistoryTextPoint(root: HTMLElement, viewport: HTMLElement, entries: string[]): HistoryTextPoint | null {
+function captureHistoryTextPoint(root: HTMLElement, viewport: HTMLElement, item: HistoryItem): HistoryTextPoint | null {
   const doc = root.ownerDocument as Document & {
     caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
     caretRangeFromPoint?: (x: number, y: number) => Range | null;
@@ -158,12 +158,43 @@ function captureHistoryTextPoint(root: HTMLElement, viewport: HTMLElement, entri
   const rect = at >= 0 ? historyTextRect(root, at) : null;
   if (!rect || !rect.height) return null;
   const from = Math.max(0, at - 24), to = Math.min(length, at + 24);
-  return { tail: length - at, sampleFrom: from - at,
-    sample: historyTextSlice(root, from, to), top: rect.top - view.top, entries: entries.slice() };
+  const sample=historyTextSlice(root,from,to), sampleFrom=from-at;
+  return { tail: length - at, sampleFrom, sample, top: rect.top - view.top,
+    entries: item.historyEntries.slice(), contribution:historyContributionPoint(item,sample,sampleFrom) };
 }
-function restoreHistoryTextPoint(root: HTMLElement, viewport: HTMLElement, point: HistoryTextPoint, entries: string[]): boolean {
-  if (entries.length < point.entries.length || point.entries.some((key, index) => key !== entries[entries.length - point.entries.length + index])) return false;
-  const at = historyTextLength(root) - point.tail;
+/** Search only the mounted bounded card for this short exact DOM sample.
+ * Chunking avoids constructing another whole rendered-message string. */
+function uniqueHistoryTextSample(root: HTMLElement, sample: string): number | null {
+  if(!sample || sample.length>48)return null;
+  const nodes=root.ownerDocument.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+  let offset=0, carry='', found: number | null=null;
+  while(nodes.nextNode()){
+    const text=(nodes.currentNode as Text).data;
+    for(let start=0;start<text.length;start+=65536){
+      const chunk=text.slice(start,start+65536), joined=carry+chunk;
+      for(let at=joined.indexOf(sample);at>=0;at=joined.indexOf(sample,at+1)){
+        if(found!==null)return null;
+        found=offset-carry.length+at;
+      }
+      offset+=chunk.length;carry=sample.length>1?joined.slice(-(sample.length-1)):'';
+    }
+  }
+  return found;
+}
+function restoreHistoryTextPoint(root: HTMLElement, viewport: HTMLElement, point: HistoryTextPoint, item: HistoryItem): boolean {
+  let at: number;
+  if(point.contribution){
+    if(!historyContributionPresent(item,point.contribution,point.sample,point.sampleFrom))return false;
+    const sampleAt=uniqueHistoryTextSample(root,point.sample);
+    if(sampleAt===null)return false;
+    at=sampleAt-point.sampleFrom;
+  }else{
+    // Complex Markdown without proven source mapping retains the original
+    // strict suffix fallback; it never substitutes a different contribution.
+    const entries=item.historyEntries;
+    if (entries.length < point.entries.length || point.entries.some((key, index) => key !== entries[entries.length - point.entries.length + index])) return false;
+    at=historyTextLength(root)-point.tail;
+  }
   if (at < 0 || historyTextSlice(root, at + point.sampleFrom, at + point.sampleFrom + point.sample.length) !== point.sample) return false;
   const rect = historyTextRect(root, at);
   if (!rect || !rect.height) return false;
@@ -1182,7 +1213,7 @@ export function ChatView({
     if (node) {
       acceptRestoredPosition(anchor.ticket, () => {
         const item = paint.past.find(item => (item.displayKey ?? item.historyKey) === anchor.key);
-        if (!anchor.point || !item || !restoreHistoryTextPoint(node, element, anchor.point, item.historyEntries))
+        if (!anchor.point || !item || !restoreHistoryTextPoint(node, element, anchor.point, item))
           element.scrollTop += node.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.top;
       });
     }
@@ -1217,7 +1248,7 @@ export function ChatView({
       if (node?.dataset.historyKey) {
         const item = paint.past.find(item => (item.displayKey ?? item.historyKey) === node.dataset.historyKey);
         historyAnchor.current = { key: node.dataset.historyKey, top: node.getBoundingClientRect().top - top,
-          ticket: capturePositionTicket(), point: item ? captureHistoryTextPoint(node, element, item.historyEntries) : null };
+          ticket: capturePositionTicket(), point: item ? captureHistoryTextPoint(node, element, item) : null };
       }
       following.current = false; readingLatest.current = false;
     }
