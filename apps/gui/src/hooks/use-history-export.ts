@@ -69,6 +69,7 @@ export function useHistoryExport(id: string, binding: string | null) {
       if (current.current === operation) { current.current = null; setBusy(false); setNotice(null); }
     }, finished };
   };
-  return { busy, notice, available: !!binding && (inApp || !!picker()), run, stop, clearNotice: () => setNotice(null) };
+  return { busy, notice, available: !!binding && (inApp || !!picker()), run, stop,
+    clearNotice: () => { if (!current.current) setNotice(null); } };
 }
 export type HistoryExportControl = ReturnType<typeof useHistoryExport>;

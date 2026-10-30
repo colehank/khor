@@ -44,7 +44,7 @@ export function HistorySearch({ id, binding, open, stop, exporter, onClose, onJu
       if (before?.isConnected) before.focus({ preventScroll: true });
     };
   }, [id, binding, open, language]);
-  const clear = () => { retire(); setState(null); setExcerpt(null); setNotice(null); copying.current = null; setCopyBusy(false); };
+  const clear = () => { retire(); exporter.clearNotice(); setState(null); setExcerpt(null); setNotice(null); copying.current = null; setCopyBusy(false); };
   const begin = () => {
     clear();
     try {
@@ -64,6 +64,7 @@ export function HistorySearch({ id, binding, open, stop, exporter, onClose, onJu
   const inspect = async (hit: FindHit) => {
     const owner = current.current;
     if (!owner) return;
+    exporter.clearNotice();
     setNotice(null);
     if (!hit.record) { onJump(hit); return; }
     try {
@@ -74,6 +75,7 @@ export function HistorySearch({ id, binding, open, stop, exporter, onClose, onJu
   const copy = async (hit: FindHit) => {
     const owner = current.current;
     if (!owner || copying.current) return;
+    exporter.clearNotice();
     copying.current = owner; setCopyBusy(true); setNotice(null);
     const body = owner.inspect(hit, 'copy').then(answer => { if (!answer.complete) throw new Error('incomplete'); return answer.text; });
     try {
@@ -128,7 +130,7 @@ export function HistorySearch({ id, binding, open, stop, exporter, onClose, onJu
       </ContextMenu>)}
       {state && !state.done && !state.error && !state.reset && <Button size="sm" disabled={!!busy} onClick={() => { setExcerpt(null); setNotice(null); current.current?.next(); }}>{gui.history_find_more}</Button>}
       {!!state?.unsearchedRanges && <p role="status" className="text-muted-foreground">{gui.history_find_partial}</p>}
-      {(notice || exporter.notice) && <p role="status">{notice ?? exporter.notice}</p>}
+      {(notice || exporter.notice) && <p role="status">{exporter.notice ?? notice}</p>}
       {excerpt && <section data-history-find-context className="space-y-in">
         <p className="text-muted-foreground">{gui.history_match_excerpt}</p>
         <pre data-selectable className="overflow-auto whitespace-pre-wrap break-all">{excerpt.answer.text.slice(0, excerpt.hit.from - excerpt.answer.from)}<mark className="bg-brand-wash text-brand-ink">{excerpt.answer.text.slice(excerpt.hit.from - excerpt.answer.from, excerpt.hit.to - excerpt.answer.from)}</mark>{excerpt.answer.text.slice(excerpt.hit.to - excerpt.answer.from)}</pre>
