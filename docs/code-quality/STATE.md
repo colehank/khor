@@ -6,11 +6,11 @@
 
 ## 实际进度与剩余关键工作
 
-Root `integrate/round2@ae9030a25dcb015d644cb7f57402dfa07af5c059` clean。337之后已独审整合H首片8a0fe08e：Node读取来源事实starts_message贯通Core普通与giant投影，9路径含4必要test模式适配，writer字节不变。只源码/parse检查，不冒编译、生成或分组行为已通过。增量bundle fccf6288、receipt3ee8a94e，verify0并双盘。当前179生成文件、278 dist资产仍是先前255→16ee lineage，因新增HistoryEntry字段已需最终真生成，不冒当前产物。
+Root `integrate/round2@300de46f5d0164cc53dcac08082aa3e2f5ed44f0` clean。337之后已独审整合H首片8a0fe08e：Node读取来源事实starts_message贯通Core普通与giant投影，9路径含4必要test模式适配，writer字节不变。只源码/parse检查，不冒编译、生成或分组行为已通过。增量bundle fccf6288、receipt3ee8a94e，verify0并双盘。当前179生成文件、278 dist资产仍是先前255→16ee lineage，因新增HistoryEntry字段已需最终真生成，不冒当前产物。
 
 **尚在实现阶段，不是仅剩验收。** S3审计确认既定目标仍缺：跨次运行代次拒写、启动provider前唯一恢复reservation、显式能力驱动恢复入口、普通Shell新运行与前任关系。另需保留Load/Resume实际收到的新历史：Load完整新display base保旧代，Resume追加实际新Note，不再跳过启动记录。设计v2已独审；尚未实现，不称可用。
 
-H首读取片已经整合；TS分组与阅读消费仍待。H实际生产函数红例确认：两个合法同channel hel/lo分片在共享ACP投影合为hello，但canonical paint错误拆两条。需由读侧真实来源区别完整Native/Prompt与ACP chunk，保Turn/Gap、可选messageId、稳定折叠状态、分页阅读点与原文/copy预算。设计已独审，AI原断言保持；该红例不能冒AI折叠失败唯一原因。
+H读取首片及TS分组纯规则已整合（90a2→3d45f8ba、845c→0066e68d），阅读消费仍待。H原实际生产函数红例确认：两个合法同channel hel/lo分片在共享ACP投影合为hello，但canonical paint错误拆两条。需由读侧真实来源区别完整Native/Prompt与ACP chunk，保Turn/Gap、可选messageId、稳定折叠状态、分页阅读点与原文/copy预算。设计已独审，分组规则已修，Root实际25/25且独审；a5b9→300de46f已接有界1:1 displayKey、非首贡献导航及合法required DTO；olderanchor/find-copy消费尚未接完，AI原断言保持且未重验。该红例不能冒AI折叠失败唯一原因。
 
 用户最新询问进度，已修正剩余估计为 **3–5个工作日**（包含桌面/手机实际验收，配合验收等待另计）。此前1–2天偏乐观，遗漏上述实现缺口。范围保持34项，不追加独立问题。
 
@@ -20,9 +20,9 @@ H首读取片已经整合；TS分组与阅读消费仍待。H实际生产函数�
 
 | owner | 实际分支及本次边界 |
 | --- | --- |
-| Root | `khor-round2` / `integrate/round2@ae9030a2`；协调、有限集成、总账。 |
+| Root | `khor-round2` / `integrate/round2@300de46f`；协调、有限集成、总账。 |
 | H | 同原worktree，保旧6eda分支，新 `fix/round2-chunk-grouping@33738990`。首读取片8a0fe08e固定、非作者通过并Root整合ae9030a2后，已正式交还三Node叶与4test；继续已设计TS投影/身份/锚点/find消费端。禁止writer/GUIHost/ACP改动；设计系统已读。 |
-| input | `fix/round2-recovery-contract@33738990`；首片仅 `crates/node/src/live.rs`、`gui_host.rs`、`lib.rs`：RunKey、短row OS gate、旧report/exit同临界区拒写、必要cfgtests源码。H三读取叶/4test已交还，可顺序接入8a0fe08e；首RunKey片固定交审后，获授下一有界reservation/Load事务slice（含必要ACP capability guard源码），不得混成大提交；Shell/public routing尚未授。 |
+| input | `fix/round2-recovery-contract@33738990`；首片仅 `crates/node/src/live.rs`、`gui_host.rs`、`lib.rs`：RunKey、短row OS gate、旧report/exit同临界区拒写、必要cfgtests源码。自审发现try0读会被filter_map当缺行，Root同意GUI state内嵌GuiRun，由单Meta原子快照唯一owner，持写锁仍能读完整GUI快照；旧state.json数据保留，不另造cache/service或扩全Shell重构，固定后独审。H三读取叶/4test已交还，可顺序接入8a0fe08e；首RunKey片固定交审后，获授下一有界reservation/Load事务slice（含必要ACP capability guard源码），不得混成大提交；Shell/public routing尚未授。 |
 | reviewer | 非作者只读审小片、来源/预算/并发和具体Clean Code边界；不写产品/不自动重跑。idle用followup_task唤醒。 |
 
 恢复Core/API/UI阶段尚未授写。先稳定Node合同，再由唯一owner接线、一次真生成。不能两作者同时写共享叶，不能靠大冲突收尾。新独立问题仅NEXT-ROUND。
@@ -36,9 +36,11 @@ H首读取片已经整合；TS分组与阅读消费仍待。H实际生产函数�
 | ACP定向 | 63174 terminal0，3exact各1pass；原wrapper类型错失败保。 |
 | Node定向 | 60432 terminal0/175.606s，13父＋7辅助；actual stub＋3Node selected均真实no-prior验证，来源/清理闭合。result45e9a355。 |
 | 恢复界面 | 98901 terminal0，13项真实ChatView/Capture/H reader/paint over controlled transport；result23b3e579，不冒WK/App/系统Save/全S。 |
+| 集成身份 | Root300实际26/26 exit0/0.228s，9源前后同；resultfec4d49d/log2552a53e双盘独审。a5b9源片独审整合；增量bundle d956099a7dd2d69d726be5e3e2295476e3f2fc14a75149a17922ba33e84879a9/receipt 2d4ebdd0cfcb0a9e5d37377aaff3ed58ec4f5e0f31ab4985f46bef6397893799，verify0双盘。不冒真实锚点或fullAI。 |
+| 集成纯投影 | Root0066实际node check-history-reader exit0/0.213s、25/25、7源前后同；result ac550fe3/log7323bde6双盘独审。原23与新增边界/mixed-ID断言保留；不冒fullAI/ChatView身份/anchor/find-copy/gen/types/native。增量bundle 8e209561c61d20a8c1be68723f74c4f653bdab81cf54553efb64f8fb0e445f52；receipt bbf45bdf1731971ef0be324945848499197755aeaf94bf7212b48832dda5a9d1。 |
 | 完整Read | 62914 terminal0/17.6122s，完整原脚本，正文主题/窄屏、tool/blockquote与machine实际探针通过；result4ceefb05。 |
 | 完整ACP消费者 | 74275 terminal1/118.113s。配置/权限/NoLoad/login等已有实际通过，附件旧chip探针0/0及旧wizard入口失败，未全绿。main与337上传实际源码相同：通用附件发送存储路径，inline image受images控制。H仅按实际upload完成、真实chips、发送路径/次数和现有registry控件迁移test；不能伪造embed覆盖。 |
-| AI4 | 13652 terminal1/5.238s，首组manual-collapse-survives-chunks失败，未四组完成。生产分组红例独立成立，先修生产不放宽原断言。 |
+| AI4 | 旧13652首组manual-collapse失败保。当前300实际76618 terminal1/36.775s，首组越过manual-collapse与keyboard-open后，在line167 exact下一正文可见30s超时；未四组完成。result524627e1，source/env/tools/gen稳、owned空/TMPabsent，原失败全保。failureJSON只有focus/tools，尚无body/network，原因未知；H获授有界失败诊断-only片后再定必要实际，原assert/timeout/queue/4contexts不变，不加anchor新case混测。 |
 
 消费者三结果汇总 `history/session-recovery/consumer-three-current-337-results/results.json` SHA b6aee6ee；Read4cee、ACPa0b1405e、AI8ee047dc，均已独审镜像。严格源/env/gen稳定、owned空/TMPabsent。旧41905/48444/7229/96347失败保留，不冒绿。
 
