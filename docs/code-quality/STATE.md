@@ -27,7 +27,7 @@ Root666的 `validation/native-current-666200f7` actual19660 terminal0/**226.646s
 
 首 `app-l02-current` 的两case/App0虽成立，但整体timeout/forced cleanup false原样保。ack确实晚于result，原未采timeout阶段，无法判定app-owner wait或ack wait；retry仅诊断/控制短命令，**所有原门/时限/fixture不变**，不反推首失败唯一cause。两个App bundle仅hardlink私有qualified GUI副本，未复制380MB或动user/target。
 
-### H：实现已整合，production browser正在收口
+### H：实现与production browser闭环已整合
 
 H基础五片＋转换事实已在Root，实际17phase/Node4+Core3+tables4＝11通过、真bindings等既有证据见R2-H。新增原文export8后端源 **44fa2fef**＋搜索/复制14源 **5daaad3d**已Root整合511；actual92510 Native6/Core2+tables4＋严格catalog/完整noEmit通过，result **09447d8a…4210**。177管理bindings不变，真实catalog **84476d70…33d07**；Root总179gen/noEmit0。首56136编译E0624/0行为原false保，最小root参数接线后重试。
 
@@ -37,7 +37,7 @@ Browser2在真实UI暴露旧local复制错误遮住已完成原文export成功�
 
 Browser记录均不回填：B1先3组后fixture不存在words locator错；B2真实viewport前三过/第4notice业务红；B3 Chrome launch180s/0page0组，原因未知；B4 Chrome恢复/实际6组过，第7fake ledger把成功IO仍算active，另killpg0 EPERM strictfalse。B4旧PGID事后无成员/ESRCH只作新准入，不改原false。无已证SDK或用户Chrome关联。
 
-**B5实际失败，源/环境/工具/owned/TMP净**：第7两阶段ledger已正确后，document阶段held100确已cancel/drop；zero-height阶段held104 claimed且未cancel、仍有newer轮询。只读发现visibility/canFollow仅看含padding的clientHeight，但缺运行几何与停止时序，不能先断唯一cause。下一仅同7组采mode/hidden/父-scroller rect-client-content尺寸/heldkey-cancel序号，原断言不放宽、无新case；不先改prod或helper。
+**B5实际失败，源/环境/工具/owned/TMP净**：第7两阶段ledger已正确后，document阶段held100确已cancel/drop；zero-height阶段held104 claimed且未cancel、仍有newer轮询。当时只读发现visibility/canFollow只看含padding的clientHeight，尚缺运行几何；随后B6已用原门采样确认并由8f修正，详见最新闭环。B5原false仍保，不倒填。
 
 B5 script **c6f3fffb…6b37** / wrapper **da0b1b84…bad4** / admission **0461eba4…bb85**。只纠正fixture实际生命周期：成功page/record逐key Drop；projection本地解析但home pending待显式cancel；held取消只stop仍claimed，先证明exact cancel恰1/无未取消active，再释放IO/finally后ledger0与不续读，unmount最终0。原7组/300总/180launch/strict不变。当前Chrome launcher/info与Playwright版本前后pin、DEBUG actual argv/stderr、最多三次只采已证私有PID/profile；无用户Chrome/profile访问。未证明WK剪贴板/OS Save、手机或整H完成。
 
@@ -72,7 +72,7 @@ B5 script **c6f3fffb…6b37** / wrapper **da0b1b84…bad4** / admission **0461eb
 
 ## 执行下一步
 
-1. H先定位并修正zero-height取消边界、完成同七组后，按受影响范围整合结果/准备真实系统出口与UI组合，不重旧Native6/11/catalog或无关L01/L02。新whole Root产物须包含当前notice+SDK，旧666只保真实已测范围。
+1. H七组已闭环，接着按冻结平台计划完成正确production variant的当前CLI/GUI、真实系统保存与UI组合，不重旧Native6/11/catalog或无关L01/L02。新whole Root产物须包含当前visibility/notice+SDK，旧666只保真实已测范围。
 2. input继续同S EventStore/NodeByteStreams长base闭包，保存dirty/合同与最小反例；新native单独准入，Root不并第三大产品线。
 3. H在稳定UI交付后可按Root交接做Core/GUI完整恢复，但Node gui_host/journal/lifecycle仍input独占，接口有稳定片再转交，不双写。
 4. 对34项逐条填实际证据再完成审计；D/原WK故障未知不被其它绿关闭，只有用户明确接受延期才缩范围。新独立问题仅记NEXT-ROUND。main/ship等用户指令。
