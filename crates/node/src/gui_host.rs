@@ -823,10 +823,12 @@ fn gui_host_main_with_timeouts(
         environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::self_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
     }
     let retained_environment = environment.clone();
+    let launch = serde_json::to_vec(&(&cwd, &title, &cmd, &retained_environment))
+        .map_err(|error| error.to_string())?;
     // A known native conversation owns the journal's physical writer lock
     // before any upstream process exists. This is not an inherited-FD handoff:
     // the ghost acquires it and later moves that same File into its Journal.
-    let reservation = resume.as_ref().map(|native_id| {
+    let mut reservation = resume.as_ref().map(|native_id| {
         let identity = gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, native_id)?;
         let reservation = JournalReservation::take(&root, identity)?;
         let id = crate::adaptor::id_for(native_id);
@@ -838,11 +840,14 @@ fn gui_host_main_with_timeouts(
         let _ = std::fs::write(refusal_path(&ready), &why);
         why
     })?;
-    let transport = crate::acp_process::spawn(&command).map_err(|why| {
+    let (transport, birth) = crate::acp_process::spawn_observed(&command, |pid, _control| {
+        crate::live::observe_gui_birth(pid)
+    }).map_err(|why| {
         let why = refusal_words(&khor_acp::Refusal::Wont(why));
         let _ = std::fs::write(refusal_path(&ready), &why);
         why
     })?;
+    let provider_pid = transport.provider_pid;
     let process_lifecycle = transport.lifecycle.clone();
     let process_control = transport.control.clone();
     let stderr = transport.stderr.clone();
@@ -852,7 +857,7 @@ fn gui_host_main_with_timeouts(
             khor_acp::start_configured_on(
                 transport.streams,
                 transport.lifecycle,
-                cwd,
+                cwd.clone(),
                 resume.clone(),
                 environment,
             ),
@@ -883,30 +888,53 @@ fn gui_host_main_with_timeouts(
             why
         })?;
 
+    // These owners outlive every local setup error and the async loop. In
+    // particular, a successful handshake never drops its Journal before the
+    // outer same-Transport cleanup has been confirmed or marked Unknown.
+    let mut retained_journal: Option<Journal> = None;
+    let mut initial: Option<crate::live::GuiInitial> = None;
+    let mut birth = Some(birth);
+    let mut new_collision = false;
     let result = (|| -> Result<(), String> {
         // Keep the full provider identity; the row's clean_leaf is only a
         // retained spelling, never authority to replace another conversation.
         let id = crate::adaptor::id_for(&handle.session().0);
         let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
-        let identity = gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, &handle.session().0)?;
-        // New learns its native ID only from the successful response. Check
-        // that exact source before even binding it to an existing logical row.
+        let is_new = handle.opened_by() == khor_acp::OpenedBy::New;
+        let identity = if is_new {
+            // A New response cannot inherit an unrelated old row's agent.
+            gui_new_source_identity(khor_core::DeviceId(*key.public().as_bytes()), &cmd, &handle.session().0)
+        } else {
+            gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, &handle.session().0)?
+        };
+        if is_new {
+            reservation = Some(JournalReservation::take(&root, identity.clone())?);
+            new_collision = true;
+        }
+        // Check the complete source before binding or appending anything.
         live.check_gui_source(&identity)?;
         let opening=match handle.opened_by() {
             khor_acp::OpenedBy::New=>JournalOpening::New,
             khor_acp::OpenedBy::Load=>JournalOpening::Load,
             khor_acp::OpenedBy::Resume=>JournalOpening::Resume,
         };
-        let mut journal = match reservation {
-            Some(reservation) => {
-                if reservation.identity() != &identity {
-                    return Err("ACP opened another identity than its reservation".into());
-                }
-                reservation.into_journal(opening)?
-            }
-            None => Journal::open(&root, identity.clone(), opening)?,
-        };
-        journal.bind(&dir)?;
+        if is_new {
+            initial = Some(live.seed_gui_new(
+                reservation.as_ref().ok_or("New has no exact journal reservation")?,
+                &launch, &process_control, provider_pid,
+                birth.take().ok_or("initial process observation was already consumed")?,
+            )?);
+        }
+        let admission = reservation.as_mut().ok_or("ACP opening has no physical journal reservation")?;
+        if admission.identity() != &identity {
+            return Err("ACP opened another identity than its reservation".into());
+        }
+        retained_journal = Some(admission.open_journal(opening)?);
+        new_collision = false;
+        let journal = retained_journal.as_mut().expect("journal retained until process cleanup");
+        if !is_new {
+            journal.bind(&dir)?;
+        }
         let vendor = std::env::var(VENDOR_ENV).ok();
         // Keep the previous published row during the finite opening prefix.
         // A new execution becomes visible only after its display base commits.
@@ -1030,6 +1058,7 @@ fn gui_host_main_with_timeouts(
         // block_on drops this future before final exit publication. The outer
         // owner retains the exact key, if the opening actually publishes one.
         let run_in_loop = &mut run;
+        let initial_in_loop = initial.as_ref();
         let ending = rt.block_on(async move {
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
         // The pending asks, each with the very note it was announced
@@ -1088,19 +1117,34 @@ fn gui_host_main_with_timeouts(
         let mut event_burst = 0usize;
         let ending = 'conversation: loop {
             if bootstrap.is_drained() {
-                if journal.is_pending() {
-                    if let Err(why)=journal.commit_base() { break Some(why); }
-                } else if let Err(why)=journal.sync_received_prefix() {
-                    break Some(why);
-                }
-                let key = match live.begin_gui_run(
-                    &id, &title, std::process::id(), &identity, vendor.as_deref(), resume.is_some(),
-                ) { Ok(key) => key, Err(why) => break Some(why) };
+                let key = if let Some(initial) = initial_in_loop {
+                    let word = match &*run_in_loop {
+                        RunPublication::Opening(word) => *word,
+                        RunPublication::Live(_) => break Some("GUI opening published twice".into()),
+                    };
+                    match live.publish_gui_new(
+                        initial, journal, &title, vendor.as_deref(), word,
+                        initial_place.as_deref(), &loop_ready,
+                    ) { Ok(key) => key, Err(why) => break Some(why) }
+                } else {
+                    // Known-native preghost/epoch admission is the next small
+                    // production wiring slice; it never uses the New authority.
+                    if journal.is_pending() {
+                        if let Err(why)=journal.commit_base() { break Some(why); }
+                    } else if let Err(why)=journal.sync_received_prefix() {
+                        break Some(why);
+                    }
+                    match live.begin_gui_run(
+                        &id, &title, std::process::id(), &identity, vendor.as_deref(), resume.is_some(),
+                    ) { Ok(key) => key, Err(why) => break Some(why) }
+                };
                 if let Err(why) = run_in_loop.publish(&live, key) { break Some(why); }
-                if let Some(cwd) = &initial_place {
-                    if let Err(why) = live.learn_place(&id, cwd) { break Some(why); }
+                if initial_in_loop.is_none() {
+                    if let Some(cwd) = &initial_place {
+                        if let Err(why) = live.learn_place(&id, cwd) { break Some(why); }
+                    }
+                    if let Err(why)=std::fs::write(&loop_ready,&id.0) { break Some(why.to_string()); }
                 }
-                if let Err(why)=std::fs::write(&loop_ready,&id.0) { break Some(why.to_string()); }
                 bootstrap=Bootstrap::Live;
             }
             if pending_completion.as_ref().is_some_and(|pending| pending.remaining == Some(0)) {
@@ -1623,6 +1667,38 @@ match event {
     })();
     process_lifecycle.request_shutdown();
     let retired = rt.block_on(process_lifecycle.confirmed_exit());
+    let settled = if let Some(initial) = &initial {
+        live.settle_gui_new(initial, retired.as_ref().map_err(|_| ()))
+    } else if retired.is_err() && new_collision {
+        // Only the exact actual-New agent/native reservation can quarantine
+        // its old bound row. A same short SID or missing reservation is never
+        // authority to freeze someone else's source.
+        match &reservation {
+            Some(reservation) => live.quarantine_gui_new(reservation),
+            None => Err("unconfirmed New has no exact reservation".into()),
+        }
+    } else {
+        Ok(())
+    };
+    if retired.is_err() && settled.is_err()
+        && (retained_journal.is_some() || reservation.as_ref().is_some_and(|value| value.holds_file()))
+    {
+        let why = format!("ACP cleanup and its durable Unknown record are unconfirmed: {}; {}",
+            retired.as_ref().err().expect("cleanup error"),
+            settled.as_ref().err().expect("publication error"));
+        // Refuse the opener within its existing budget; the ghost itself keeps
+        // its exact resource rather than returning and silently unlocking it.
+        let _ = std::fs::write(refusal_path(&ready), &why);
+        eprintln!("{why}");
+        hold_uncertain_gui_owner(reservation.take(), retained_journal.take(), initial.take());
+    }
+    // Release only after actual cleanup or a durable Unknown. A failed write
+    // plus unconfirmed cleanup parks the existing ghost above, without retry.
+    let result = match (result, settled) {
+        (outcome, Ok(())) => outcome,
+        (outcome, Err(why)) => Err(format!("{}GUI cleanup publication is uncertain: {why}",
+            outcome.err().map(|why| format!("{why}; ")).unwrap_or_default())),
+    };
     match (result, retired) {
         (Ok(()), Ok(_)) => Ok(()),
         (Err(why), Ok(_)) => Err(why),
@@ -1634,6 +1710,21 @@ match event {
                 .unwrap_or_default(),
             stderr.lock().unwrap_or_else(|p| p.into_inner()).len()
         )),
+    }
+}
+
+/// No listener or GuiOp::Close is promised on this pre-publication failure.
+/// Retaining this existing ghost is fail-closed only for its current lifetime:
+/// explicit OS termination/crash releases the File, and a failed durable write
+/// cannot provide cross-crash safety. No retry, timer, new control plane or
+/// second resource registry is created here.
+fn hold_uncertain_gui_owner(
+    _reservation: Option<JournalReservation>,
+    _journal: Option<Journal>,
+    _initial: Option<crate::live::GuiInitial>,
+) -> ! {
+    loop {
+        std::thread::park();
     }
 }
 
@@ -1799,6 +1890,18 @@ async fn next_host_input(
     std::future::poll_fn(|cx| {
         poll_host_input(cx, |cx| events.poll_recv(cx), ops, prefer_ops, events_closed)
     }).await
+}
+
+fn gui_new_source_identity(
+    home: khor_core::DeviceId,
+    cmd: &[String],
+    native_id: &str,
+) -> JournalIdentity {
+    let agent = std::env::var(VENDOR_ENV).unwrap_or_else(|_| {
+        let launch = serde_json::to_vec(cmd).expect("launcher identity serializes");
+        format!("launcher:{}", blake3::hash(&launch).to_hex())
+    });
+    JournalIdentity { home, agent, native_id: native_id.to_owned() }
 }
 
 fn gui_source_identity(

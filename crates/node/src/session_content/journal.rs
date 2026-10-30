@@ -169,7 +169,7 @@ pub(crate) struct Journal {
     poisoned: bool,
     base_prepared: bool,
     lease: Arc<()>,
-    _lock: File,
+    _lock: Option<File>,
 }
 
 /// Identity of this one Journal owner across moves, not another File or lock.
@@ -187,7 +187,7 @@ pub(crate) struct ReadBoundary {
 pub(crate) struct JournalReservation {
     directory: PathBuf,
     identity: Identity,
-    lock: File,
+    lock: Option<File>,
     generation: Option<String>,
     lease: Arc<()>,
 }
@@ -213,7 +213,7 @@ impl JournalReservation {
         Ok(Self {
             directory,
             identity,
-            lock,
+            lock: Some(lock),
             generation,
             lease: Arc::new(()),
         })
@@ -221,6 +221,10 @@ impl JournalReservation {
 
     pub fn identity(&self) -> &Identity {
         &self.identity
+    }
+
+    pub(crate) fn holds_file(&self) -> bool {
+        self.lock.is_some()
     }
 
     pub(crate) fn lease(&self) -> JournalLease {
@@ -242,7 +246,14 @@ impl JournalReservation {
 
     /// Move the very same physical File owner into the journal. No unlock,
     /// duplicated handle, close/reopen window or second reservation occurs.
-    pub fn into_journal(self, opening: Opening) -> Result<Journal, String> {
+    pub fn into_journal(mut self, opening: Opening) -> Result<Journal, String> {
+        self.open_journal(opening)
+    }
+
+    /// Runtime handoff retains this exact File on every setup failure. Only a
+    /// fully constructed Journal takes it; callers keep this reservation until
+    /// the actual provider cleanup or durable Unknown has been established.
+    pub(crate) fn open_journal(&mut self, opening: Opening) -> Result<Journal, String> {
         Journal::from_reservation(self, opening)
     }
 }
@@ -270,7 +281,7 @@ impl Journal {
         &self.manifest.identity
     }
     pub(crate) fn owns_lease(&self, lease: &JournalLease) -> bool {
-        !self.poisoned && Arc::ptr_eq(&self.lease, &lease.0)
+        !self.poisoned && self._lock.is_some() && Arc::ptr_eq(&self.lease, &lease.0)
     }
     pub fn bind(&self, directory: &Path) -> Result<(), String> {
         check_binding(directory, &self.manifest.identity)?;
@@ -280,14 +291,14 @@ impl Journal {
     pub fn open(root: &Path, identity: Identity, opening: Opening) -> Result<Self, String> {
         JournalReservation::take(root, identity)?.into_journal(opening)
     }
-    fn from_reservation(reservation: JournalReservation, opening: Opening) -> Result<Self, String> {
-        let JournalReservation {
-            directory,
-            identity,
-            lock,
-            generation,
-            lease,
-        } = reservation;
+    fn from_reservation(reservation: &mut JournalReservation, opening: Opening) -> Result<Self, String> {
+        if reservation.lock.is_none() {
+            return Err("journal reservation has already handed off its File".into());
+        }
+        let directory = reservation.directory.clone();
+        let identity = reservation.identity.clone();
+        let generation = reservation.generation.clone();
+        let lease = reservation.lease.clone();
         if active_generation(&directory)? != generation {
             return Err("journal generation changed during its reservation".into());
         }
@@ -327,7 +338,7 @@ impl Journal {
                     poisoned: false,
                     base_prepared: false,
                     lease,
-                    _lock: lock,
+                    _lock: None,
                 };
                 let gap: Record<'_, ()> = Record::Gap {
                     opening,
@@ -349,7 +360,7 @@ impl Journal {
                     poisoned: false,
                     base_prepared: false,
                     lease,
-                    _lock: lock,
+                    _lock: None,
                 }
             }
         } else {
@@ -373,7 +384,7 @@ impl Journal {
                 poisoned: false,
                 base_prepared: false,
                 lease,
-                _lock: lock,
+                _lock: None,
             }
         };
         if !journal.pending {
@@ -388,6 +399,7 @@ impl Journal {
             journal.manifest.gaps = journal.manifest.gaps.saturating_add(1);
             journal.persist()?;
         }
+        journal._lock = Some(reservation.lock.take().expect("reservation still owns its File"));
         Ok(journal)
     }
 
@@ -952,19 +964,21 @@ mod tests {
     #[test]
     fn native_reservation_keeps_the_same_exclusive_file_owner_through_journal_open() {
         let f = Fixture::new();
-        let reservation = JournalReservation::take(&f.0, f.identity()).unwrap();
+        let mut reservation = JournalReservation::take(&f.0, f.identity()).unwrap();
         #[cfg(unix)]
         let descriptor = {
             use std::os::fd::AsRawFd;
-            reservation.lock.as_raw_fd()
+            reservation.lock.as_ref().unwrap().as_raw_fd()
         };
         assert!(JournalReservation::take(&f.0, f.identity()).is_err());
         assert!(!f.identity().directory(&f.0).join("pending").exists());
-        let journal = reservation.into_journal(Opening::New).unwrap();
+        let journal = reservation.open_journal(Opening::New).unwrap();
+        assert!(!reservation.holds_file());
+        assert!(reservation.open_journal(Opening::New).is_err());
         #[cfg(unix)]
         {
             use std::os::fd::AsRawFd;
-            assert_eq!(journal._lock.as_raw_fd(), descriptor);
+            assert_eq!(journal._lock.as_ref().unwrap().as_raw_fd(), descriptor);
         }
         assert!(JournalReservation::take(&f.0, f.identity()).is_err());
         drop(journal);

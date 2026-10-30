@@ -492,6 +492,7 @@ impl LiveKind {
         if !dir.exists() {
             return Ok(());
         }
+        recovery_attempt::check_unquarantined(&dir)?;
         let legacy = self.legacy_gui_source(&id)?;
         let gate = RowGate::try_acquire(&dir)?;
         let previous = gate.read_meta_or_new()?;
@@ -534,24 +535,52 @@ impl LiveKind {
             None
         };
         let run_id = crate::link::fresh_hex()?;
+        fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
+        let gate = RowGate::acquire(&dir)?;
+        self.begin_gui_run_held(
+            &gate, id, title, pid, native, category, resume, legacy.as_ref(), &run_id, State::Idle, None,
+        )
+    }
+
+    // The Attempt publisher already owns this exact short row gate. It supplies
+    // its durable run ID and opening state; this helper must not reacquire it.
+    fn begin_gui_run_held(
+        &self,
+        gate: &RowGate,
+        id: &SessionId,
+        title: &str,
+        pid: u32,
+        native: &crate::session_content::journal::Identity,
+        category: Option<&str>,
+        resume: bool,
+        legacy: Option<&(Option<String>, crate::session_content::journal::Identity)>,
+        run_id: &str,
+        word: State,
+        place: Option<&Path>,
+    ) -> Result<RunKey, String> {
+        let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        if gate.dir != dir || native.home != self.device
+            || crate::adaptor::id_for(&native.native_id) != *id
+        {
+            return Err("GUI publication has another row gate or source".into());
+        }
+        recovery_attempt::check_unquarantined(&dir)?;
         let run = GuiRun {
-            id: run_id.clone(),
+            id: run_id.to_owned(),
             started_ms: now_ms(),
             state: LiveState {
-                gui_run: Some(run_id),
-                word: State::Idle,
+                gui_run: Some(run_id.to_owned()),
+                word,
                 at_ms: now_ms(),
                 exit: None,
                 source: Some(Source::Reported),
             },
         };
-        fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
-        let gate = RowGate::acquire(&dir)?;
         let previous = gate.read_meta_or_new()?;
         if previous.is_some() && !resume {
             return Err(msg::session_already_exists(&id.0));
         }
-        gate.check_native(id, previous.as_ref(), native, legacy.as_ref())?;
+        gate.check_native(id, previous.as_ref(), native, legacy)?;
         if let Some(meta) = &previous {
             if meta
                 .pid
@@ -579,11 +608,14 @@ impl LiveKind {
         meta.pid = Some(pid);
         meta.gui_native = Some(native.clone());
         meta.gui_run = Some(run.clone());
+        if meta.place.is_none() {
+            meta.place = place.map(|cwd| cwd.display().to_string());
+        }
         // A fresh row keeps the legacy file shape for stored data, but this
         // generation's only live state is published inside its atomic Meta.
         // Reopening never rewrites the old state.json.
         if fresh {
-            gate.write_state(State::Idle, None, Source::Reported, None)?;
+            gate.write_state(word, None, Source::Reported, None)?;
         }
         gate.write_meta(&meta)?;
         gate.sync_meta()?;
@@ -3274,6 +3306,107 @@ fn check_run(meta: &Meta, key: &RunKey) -> Result<(), String> {
         return Err("GUI execution has been superseded".into());
     }
     Ok(())
+}
+
+/// Only this invocation's synchronous pre-supervisor observer constructs these
+/// facts. No serialized PID or later process lookup can replace this capture.
+pub(crate) struct GuiBirth {
+    host: Option<recovery_attempt::ProcessStamp>,
+    provider: Option<recovery_attempt::ProcessStamp>,
+}
+pub(crate) fn observe_gui_birth(actual_pid: Option<u32>) -> GuiBirth {
+    let host = proc_identity::current_host().ok();
+    let provider = host.as_ref().and_then(|host| proc_identity::child(actual_pid, host).ok());
+    GuiBirth { host, provider }
+}
+
+/// The successful New invocation retains the same Journal and Control owners
+/// through publication and the outer, actual process cleanup result.
+pub(crate) struct GuiInitial {
+    directory: PathBuf,
+    authority: recovery_attempt::InitialNewAuthority,
+    control: Arc<crate::agent_process::Control>,
+}
+impl LiveKind {
+    pub(crate) fn seed_gui_new(
+        &self,
+        reservation: &crate::session_content::journal::JournalReservation,
+        launch: &[u8],
+        control: &Arc<crate::agent_process::Control>,
+        actual_pid: Option<u32>,
+        birth: GuiBirth,
+    ) -> Result<GuiInitial, String> {
+        let native = reservation.identity();
+        self.check_gui_source(native)?;
+        let id = crate::adaptor::id_for(&native.native_id);
+        let directory = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        fs::create_dir_all(&directory).map_err(msg::cant_make_session_dir)?;
+        let mut gate = RowGate::acquire(&directory)?;
+        let authority = recovery_attempt::Held::load(&mut gate)?.seed_initial_new(
+            recovery_attempt::Arguments::initial_new(native.clone(), launch)?,
+            recovery_attempt::NewInvocation {
+                reservation, control, actual_pid, host: birth.host, provider: birth.provider,
+            },
+        )?;
+        Ok(GuiInitial { directory, authority, control: control.clone() })
+    }
+
+    pub(crate) fn publish_gui_new(
+        &self,
+        initial: &GuiInitial,
+        journal: &mut crate::session_content::journal::Journal,
+        title: &str,
+        category: Option<&str>,
+        word: State,
+        place: Option<&Path>,
+        ready: &Path,
+    ) -> Result<RunKey, String> {
+        // The potentially long finite prefix is durable before the short gate.
+        journal.prepare_base()?;
+        let native = journal.identity().clone();
+        let id = crate::adaptor::id_for(&native.native_id);
+        let mut gate = RowGate::acquire(&initial.directory)?;
+        let mut held = recovery_attempt::Held::load(&mut gate)?;
+        held.publish_initial_base(&initial.authority, journal, &initial.control, |gate, journal| {
+            journal.publish_base()?;
+            journal.bind(&gate.dir)
+        })?;
+        held.publish_initial_run(&initial.authority, journal, &initial.control, |gate, _, run_id| {
+            let key = self.begin_gui_run_held(
+                gate, &id, title, std::process::id(), &native, category, false, None, run_id, word, place,
+            )?;
+            // This is the actual existing opener marker, not a synthetic Ready.
+            // Any failure leaves durable PublishingRun/partial publication and
+            // cannot reenter the callback using a lost or repeated token.
+            fs::write(ready, &id.0).map_err(|error| error.to_string())?;
+            Ok(key)
+        })
+    }
+
+    pub(crate) fn quarantine_gui_new(
+        &self,
+        reservation: &crate::session_content::journal::JournalReservation,
+    ) -> Result<(), String> {
+        let native = reservation.identity();
+        if native.home != self.device {
+            return Err("unconfirmed New belongs to another home".into());
+        }
+        let id = crate::adaptor::id_for(&native.native_id);
+        let directory = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let mut gate = RowGate::acquire(&directory)?;
+        recovery_attempt::Held::load(&mut gate)?.quarantine_new(reservation)
+    }
+
+    pub(crate) fn settle_gui_new(
+        &self,
+        initial: &GuiInitial,
+        receipt: Result<&khor_acp::ProcessExit, ()>,
+    ) -> Result<(), String> {
+        let mut gate = RowGate::acquire(&initial.directory)?;
+        recovery_attempt::Held::load(&mut gate)?.settle_initial(
+            &initial.authority, &initial.control, receipt,
+        )
+    }
 }
 
 /// One short cross-process row transaction. No caller keeps this over a spawn,

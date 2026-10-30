@@ -238,11 +238,25 @@ struct Latest {
 struct Document {
     version: u8,
     high_water: u64,
-    latest: Latest,
+    latest: Option<Latest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cleanup_barrier: Option<Identity>,
 }
 impl Document {
     fn validate(&self) -> Result<(), String> {
-        let v = &self.latest;
+        if let Some(barrier) = &self.cleanup_barrier {
+            Arguments::initial_new(barrier.clone(), b"cleanup-barrier")?;
+        }
+        let Some(v) = &self.latest else {
+            return if self.version == VERSION && self.high_water == 0 && self.cleanup_barrier.is_some() {
+                Ok(())
+            } else {
+                Err("empty recovery document is not an admissible row".into())
+            };
+        };
+        if self.cleanup_barrier.as_ref().is_some_and(|barrier| barrier != &v.arguments.native) {
+            return Err("cleanup barrier belongs to another exact native source".into());
+        }
         if self.version != VERSION || self.high_water != v.token.epoch {
             return Err("invalid recovery high-water record".into());
         }
@@ -448,7 +462,8 @@ impl<'a> Held<'a> {
         self.store(Document {
             version: VERSION,
             high_water: 1,
-            latest: Latest {
+            cleanup_barrier: None,
+            latest: Some(Latest {
                 token,
                 arguments,
                 run_id,
@@ -458,7 +473,7 @@ impl<'a> Held<'a> {
                 provider,
                 generation: None,
                 result: None,
-            },
+            }),
         })?;
         Ok(authority)
     }
@@ -491,6 +506,9 @@ impl<'a> Held<'a> {
         phase: Phase,
     ) -> Result<(), String> {
         let value = self.current(&authority.key)?;
+        if self.has_cleanup_barrier() {
+            return Err("native source has an unconfirmed New cleanup".into());
+        }
         let same_transport = authority
             .control
             .upgrade()
@@ -516,6 +534,60 @@ impl<'a> Held<'a> {
         }
         Ok(())
     }
+    fn has_cleanup_barrier(&self) -> bool {
+        self.document.as_ref().is_some_and(|doc| doc.cleanup_barrier.is_some())
+    }
+
+    /// A colliding real New was refused and its actual cleanup is unconfirmed.
+    /// This is not a new provider claim: preserve every old attempt/result and
+    /// only quarantine an exactly bound source while its File is still held.
+    pub(super) fn quarantine_new(
+        &mut self,
+        reservation: &JournalReservation,
+    ) -> Result<(), String> {
+        self.ensure()?;
+        if !reservation.holds_file() {
+            return Err("New quarantine no longer holds its exact journal File".into());
+        }
+        let native = reservation.identity();
+        let meta = self.gate.read_meta_or_new()?;
+        let bound = crate::session_content::journal::bound_identity(&self.gate.dir)?;
+        if bound.as_ref().is_none_or(|bound| bound != native)
+            && meta.as_ref().and_then(|meta| meta.gui_native.as_ref()) != Some(native)
+        {
+            return Err("unconfirmed New is not proven to be this row's exact source".into());
+        }
+        reservation.check_binding(&self.gate.dir)?;
+        let mut next = self.document.clone().unwrap_or(Document {
+            version: VERSION, high_water: 0, latest: None, cleanup_barrier: None,
+        });
+        if next.latest.as_ref().is_some_and(|latest| &latest.arguments.native != native)
+            || next.cleanup_barrier.as_ref().is_some_and(|barrier| barrier != native)
+        {
+            return Err("unconfirmed New cannot quarantine another source".into());
+        }
+        next.cleanup_barrier = Some(native.clone());
+        self.store(next)
+    }
+
+    pub(super) fn settle_initial(
+        &mut self,
+        authority: &InitialNewAuthority,
+        control: &Arc<Control>,
+        receipt: Result<&khor_acp::ProcessExit, ()>,
+    ) -> Result<(), String> {
+        self.current(&authority.key)?;
+        if authority.issuing_pid != std::process::id()
+            || !authority.control.upgrade().is_some_and(|owner| Arc::ptr_eq(&owner, control))
+        {
+            return Err("initial cleanup belongs to another transport owner".into());
+        }
+        match (authority.actual_pid, receipt) {
+            (Some(pid), Ok(receipt)) => self.confirmed_exit(&authority.key, pid, receipt),
+            _ => self.cleanup_unknown(&authority.key),
+        }
+    }
+
     pub(super) fn reserve(
         &mut self,
         arguments: Arguments,
@@ -525,11 +597,15 @@ impl<'a> Held<'a> {
         self.ensure()?;
         arguments.validate()?;
         token.validate()?;
+        if self.has_cleanup_barrier() {
+            return Ok(Reservation::UnknownOwner);
+        }
         if arguments.operation != Operation::RecoverNative {
             return Err("initial New cannot enter preghost recovery reservation".into());
         }
         if self.document.as_ref().is_some_and(|doc| {
-            let origin = &doc.latest.arguments;
+            let Some(latest) = &doc.latest else { return true; };
+            let origin = &latest.arguments;
             origin.home != arguments.home
                 || origin.id != arguments.id
                 || origin.native != arguments.native
@@ -545,7 +621,7 @@ impl<'a> Held<'a> {
                 .document
                 .as_ref()
                 .ok_or("missing latest recovery attempt")?
-                .latest;
+                .latest.as_ref().ok_or("recovery row is quarantined without an attempt")?;
             if token != latest.token || arguments != latest.arguments {
                 return Err("recovery token was reused with different arguments".into());
             }
@@ -566,9 +642,10 @@ impl<'a> Held<'a> {
         // Meta.exit, a dead host, a free journal or absent leader are not a
         // substitute for this attempt's actual foreground cleanup receipt.
         if self.document.as_ref().is_some_and(|doc| {
-            !matches!(doc.latest.provider, Provider::Exited { .. })
-                && !(doc.latest.phase == Phase::Refused
-                    && matches!(doc.latest.provider, Provider::NotStarted))
+            let Some(latest) = &doc.latest else { return true; };
+            !matches!(latest.provider, Provider::Exited { .. })
+                && !(latest.phase == Phase::Refused
+                    && matches!(latest.provider, Provider::NotStarted))
         }) {
             return Ok(Reservation::UnknownOwner);
         }
@@ -594,7 +671,8 @@ impl<'a> Held<'a> {
         self.store(Document {
             version: VERSION,
             high_water: token.epoch,
-            latest: Latest {
+            cleanup_barrier: None,
+            latest: Some(Latest {
                 token,
                 arguments,
                 run_id,
@@ -604,7 +682,7 @@ impl<'a> Held<'a> {
                 provider: Provider::NotStarted,
                 generation: None,
                 result: None,
-            },
+            }),
         })?;
         Ok(Reservation::Start(key))
     }
@@ -781,6 +859,9 @@ impl<'a> Held<'a> {
     }
     fn check_live(&self, key: &AttemptKey, phase: Phase) -> Result<(), String> {
         let value = self.current(key)?;
+        if self.has_cleanup_barrier() {
+            return Err("native source has an unconfirmed New cleanup".into());
+        }
         if value.arguments.operation != Operation::RecoverNative
             || value.phase != phase
             || !matches!(value.provider, Provider::Owned { .. })
@@ -795,7 +876,7 @@ impl<'a> Held<'a> {
             .document
             .as_ref()
             .ok_or("recovery attempt is missing")?
-            .latest;
+            .latest.as_ref().ok_or("recovery row has no publishing attempt")?;
         if key.token != latest.token
             || key.arguments != latest.arguments
             || key.run_id != latest.run_id
@@ -811,7 +892,7 @@ impl<'a> Held<'a> {
     ) -> Result<(), String> {
         self.current(key)?;
         let mut next = self.document.clone().ok_or("recovery attempt is missing")?;
-        update(&mut next.latest)?;
+        update(next.latest.as_mut().ok_or("recovery row has no mutable attempt")?)?;
         self.store(next)
     }
     fn store(&mut self, value: Document) -> Result<(), String> {
@@ -838,9 +919,21 @@ impl<'a> Held<'a> {
     }
 }
 
+pub(super) fn check_unquarantined(directory: &Path) -> Result<(), String> {
+    if read(directory)?.as_ref().is_some_and(|doc| doc.cleanup_barrier.is_some()) {
+        Err("native source has an unconfirmed New cleanup".into())
+    } else {
+        Ok(())
+    }
+}
+
 /// Read-only offer helper: no row lock acquisition, file creation or PID probe.
 pub(super) fn next_epoch(directory: &Path) -> Result<u64, String> {
-    let high = read(directory)?.map_or(0, |value| value.high_water);
+    let value = read(directory)?;
+    if value.as_ref().is_some_and(|doc| doc.cleanup_barrier.is_some()) {
+        return Err("native source has an unconfirmed New cleanup".into());
+    }
+    let high = value.map_or(0, |value| value.high_water);
     high.checked_add(1)
         .ok_or_else(|| "recovery attempt epoch is exhausted".into())
 }
@@ -1136,7 +1229,7 @@ mod tests {
         // history of tokens. Exhaustion fails rather than wrapping to epoch 1.
         let mut exhausted = held.document.clone().unwrap();
         exhausted.high_water = u64::MAX;
-        exhausted.latest.token.epoch = u64::MAX;
+        exhausted.latest.as_mut().unwrap().token.epoch = u64::MAX;
         held.store(exhausted).unwrap();
         assert!(next_epoch(&scratch.0).is_err());
         assert!(fs::metadata(held.gate.dir.join(NAME)).unwrap().len() <= BYTES as u64);
@@ -1161,7 +1254,7 @@ mod tests {
         let mut writes = 0;
         let failed: Result<(), String> = held.publish_base(&key, None, |gate| {
             assert_eq!(
-                read(&gate.dir).unwrap().unwrap().latest.phase,
+                read(&gate.dir).unwrap().unwrap().latest.unwrap().phase,
                 Phase::PublishingBase
             );
             writes += 1;
@@ -1195,7 +1288,7 @@ mod tests {
         held.publish_base(&next, None, |_| Ok(())).unwrap();
         let failed: Result<(), String> = held.publish_run(&next, |gate, _| {
             assert_eq!(
-                read(&gate.dir).unwrap().unwrap().latest.phase,
+                read(&gate.dir).unwrap().unwrap().latest.unwrap().phase,
                 Phase::PublishingRun
             );
             writes += 1;
@@ -1224,6 +1317,35 @@ mod tests {
 
     fn initial_new_cases() {
         use crate::session_content::journal::Opening;
+        let native = Identity {
+            home: DeviceId([7; 32]), agent: "fixture".into(), native_id: "barrier-only".into(),
+        };
+        let empty = Document { version: VERSION, high_water: 0, latest: None, cleanup_barrier: None };
+        assert!(empty.validate().is_err());
+        let mut barrier_only = Document { cleanup_barrier: Some(native), ..empty };
+        barrier_only.validate().unwrap();
+        barrier_only.high_water = 1;
+        assert!(barrier_only.validate().is_err());
+        {
+            let root = Scratch::new();
+            let row = root.0.join("row");
+            fs::create_dir(&row).unwrap();
+            let native = Identity {
+                home: DeviceId([7; 32]), agent: "fixture".into(), native_id: "bound-before-meta".into(),
+            };
+            fs::write(row.join("journal.json"), serde_json::to_vec(&native).unwrap()).unwrap();
+            let reservation = JournalReservation::take(&root.0, native.clone()).unwrap();
+            let mut gate = RowGate::acquire(&row).unwrap();
+            let mut held = Held::load(&mut gate).unwrap();
+            held.quarantine_new(&reservation).unwrap();
+            let document = read(&row).unwrap().unwrap();
+            assert_eq!(document.high_water, 0);
+            assert!(document.latest.is_none());
+            assert_eq!(document.cleanup_barrier, Some(native.clone()));
+            assert!(matches!(held.reserve(
+                Arguments::native(native, None, b"explicit retry").unwrap(), token(1, 'a'), None,
+            ).unwrap(), Reservation::UnknownOwner));
+        }
         for revoke in [false, true] {
             let root = Scratch::new();
             let row = root.0.join("row");
@@ -1300,7 +1422,8 @@ mod tests {
                 })
                 .unwrap();
                 if revoke {
-                    held.cleanup_unknown(&authority.key).unwrap();
+                    assert!(held.settle_initial(&authority, &wrong_control, Err(())).is_err());
+                    held.settle_initial(&authority, &control, Err(())).unwrap();
                     assert!(
                         held.publish_initial_run(&authority, &mut journal, &control, |_, _, _| {
                             writes += 1;
@@ -1356,10 +1479,10 @@ mod tests {
                         ),
                         "new works now but its missing birth does not become future recovery proof"
                     );
-                    held.confirmed_exit(
-                        &authority.key,
-                        20,
-                        &khor_acp::ProcessExit { code: Some(0) },
+                    held.settle_initial(
+                        &authority,
+                        &control,
+                        Ok(&khor_acp::ProcessExit { code: Some(0) }),
                     )
                     .unwrap();
                     let next = start(held.reserve(recovery, token(2, 'b'), None).unwrap());
@@ -1382,7 +1505,7 @@ mod tests {
             let pending = native.directory(&root.0).join("pending");
             fs::create_dir(&pending).unwrap();
             fs::write(pending.join("old-part"), b"do not erase on New collision").unwrap();
-            let existing = JournalReservation::take(&root.0, native.clone()).unwrap();
+            let mut existing = JournalReservation::take(&root.0, native.clone()).unwrap();
             {
                 let mut gate = RowGate::acquire(&row).unwrap();
                 let mut held = Held::load(&mut gate).unwrap();
@@ -1406,7 +1529,26 @@ mod tests {
                     "New cannot reset a prior/pending high-water"
                 );
             }
-            assert!(existing.into_journal(Opening::New).is_err());
+            assert!(existing.open_journal(Opening::New).is_err());
+            assert!(existing.holds_file());
+            assert!(JournalReservation::take(&root.0, native.clone()).is_err());
+            {
+                let mut gate = RowGate::acquire(&row).unwrap();
+                let before = read(&row).unwrap().unwrap();
+                let old_latest = serde_json::to_vec(&before.latest).unwrap();
+                let mut held = Held::load(&mut gate).unwrap();
+                held.quarantine_new(&existing).unwrap();
+                let after = read(&row).unwrap().unwrap();
+                assert_eq!(before.high_water, after.high_water);
+                assert_eq!(old_latest, serde_json::to_vec(&after.latest).unwrap());
+                assert_eq!(after.cleanup_barrier, Some(native.clone()));
+                assert!(matches!(held.reserve(
+                    Arguments::native(native.clone(), None, b"barrier retry").unwrap(),
+                    token(after.high_water + 1, 'e'), None,
+                ).unwrap(), Reservation::UnknownOwner));
+                assert!(next_epoch(&row).is_err());
+            }
+            drop(existing);
             assert_eq!(
                 fs::read(native.directory(&root.0).join("current/records.jsonl")).unwrap(),
                 before
