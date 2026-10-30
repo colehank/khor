@@ -895,6 +895,8 @@ fn start_event_forwarder(
 #[cfg(test)]
 #[path = "event_fence_tests.rs"]
 mod event_fence_tests;
+#[cfg(all(test, unix))]
+mod startup_pressure_tests;
 
 async fn start_transport(
     agent: impl agent_client_protocol::ConnectTo<Client>,
@@ -909,11 +911,19 @@ async fn start_transport(
     let (close_tx, close_rx) = oneshot::channel::<()>();
     let (result_tx, result_rx) = tokio::sync::watch::channel(None);
     let close = Arc::new(CloseGate::new(close_tx, result_rx, lifecycle));
+    #[cfg(all(test, unix))]
+    let startup_pressure = startup_pressure_tests::current();
+    #[cfg(all(test, unix))]
+    if let Some(pressure) = &startup_pressure {
+        pressure.attach(&close);
+    }
     let mut opening = Opening(Some(close.clone()));
     let driver_close = close.clone();
     let driver_cleanup = Opening(Some(close.clone()));
 
     let notes = events_tx.clone();
+    #[cfg(all(test, unix))]
+    let notes_pressure = startup_pressure.clone();
     let asks = events_tx.clone();
     let elicits = events_tx.clone();
     let completions = events_tx.clone();
@@ -928,6 +938,10 @@ async fn start_transport(
             .builder()
             .on_receive_notification(
                 async move |n: SessionNotification, _cx| {
+                    #[cfg(all(test, unix))]
+                    if let Some(pressure) = &notes_pressure {
+                        pressure.note().await;
+                    }
                     let _ = notes.send(Event::Note(n));
                     Ok(())
                 },
@@ -1022,6 +1036,10 @@ async fn start_transport(
     }
     while let Ok(event) = events_rx.try_recv() {
         let _ = forward.send(event);
+    }
+    #[cfg(all(test, unix))]
+    if let Some(pressure) = &startup_pressure {
+        pressure.opened();
     }
     let _ = forward.send(Event::Ready {
         session: session.clone(),

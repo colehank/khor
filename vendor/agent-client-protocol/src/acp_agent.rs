@@ -163,6 +163,7 @@ impl AcpAgentConfig {
 pub struct AcpAgent {
     config: AcpAgentConfig,
     debug_callback: Option<DebugCallback>,
+    ingress: Option<crate::IngressBudget>,
 }
 
 impl std::fmt::Debug for AcpAgent {
@@ -184,7 +185,14 @@ impl AcpAgent {
         Self {
             config,
             debug_callback: None,
+            ingress: None,
         }
+    }
+
+    /// Use one physical input's resource owner; clones of its observer are read-only.
+    pub fn with_ingress_budget(mut self, ingress: crate::IngressBudget) -> Self {
+        self.ingress = Some(ingress);
+        self
     }
 
     /// Create an ACP agent for the Claude Agent adapter.
@@ -739,7 +747,8 @@ impl<Counterpart: AcpAgentCounterpartRole> crate::ConnectTo<Counterpart> for Acp
         // Race the protocol against child process exit.
         // Also run stderr collection concurrently.
         let protocol_future = crate::ConnectTo::<Counterpart>::connect_to(
-            crate::Lines::new(outgoing_sink, incoming_lines),
+            crate::Lines::new(outgoing_sink, incoming_lines)
+                .with_ingress_budget(self.ingress.unwrap_or_default()),
             client,
         );
 

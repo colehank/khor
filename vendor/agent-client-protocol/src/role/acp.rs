@@ -201,7 +201,7 @@ impl ClientProtocolConnector {
                 // This normalization is only a probe for the connection-reuse
                 // optimization. A request that cannot be represented in v1
                 // can still be valid v2 traffic and must reach the agent.
-                let v2_initialize_as_v1 = normalize_v2_initialize_params_for_reuse(&initialize);
+                let v2_initialize_as_v1 = normalize_v2_initialize_params_for_reuse(&initialize.0);
                 let (client, agent_connection, initialize_response) =
                     send_initialize_and_receive(client, agent_connection, initialize).await?;
 
@@ -212,14 +212,14 @@ impl ClientProtocolConnector {
                     let (fallback_client, fallback_initialize) =
                         start_client_protocol(ClientProtocol::V1, fallback_client).await?;
                     let v1_initialize =
-                        validated_initialize_params::<InitializeRequest>(&fallback_initialize)?;
+                        validated_initialize_params::<InitializeRequest>(&fallback_initialize.0)?;
 
                     if v2_initialize_as_v1
                         .as_ref()
                         .is_ok_and(|v2_initialize| v2_initialize == &v1_initialize)
                     {
                         let fallback_response = initialize_response.with_id(
-                            initialize_request_id(&fallback_initialize)
+                            initialize_request_id(&fallback_initialize.0)
                                 .expect("validated initialize request has an id"),
                         );
                         // The v2 implementation will never receive its initialize response once
@@ -228,6 +228,8 @@ impl ClientProtocolConnector {
                         // owns are released promptly.
                         drop(client);
                         fallback_client.send(fallback_response)?;
+                        // The initialize was fully handled by this reuse decision.
+                        drop(fallback_initialize);
                         return pipe_protocol_peers_until_done(fallback_client, agent_connection)
                             .await;
                     }
@@ -240,6 +242,7 @@ impl ClientProtocolConnector {
                         fallback_client,
                         agent_connection,
                         initialize_response,
+                        fallback_initialize,
                     ));
                     return connect_client_protocol(ClientProtocol::V1, v1.create(), agent()).await;
                 }
@@ -943,6 +946,7 @@ fn send_initialize_error(
     }
 
     let response = match frame {
+        TransportFrame::Admitted { frame, .. } => return send_initialize_error(tx, frame, error),
         TransportFrame::Single(entry) => {
             let Some(response) = response_for_message(entry, &error) else {
                 return Ok(());
@@ -1106,7 +1110,7 @@ impl RunningProtocolPeer {
         }
     }
 
-    async fn next_message(self) -> Result<Option<(RawJsonRpcMessage, Self)>, crate::Error> {
+    async fn next_message(self) -> Result<Option<(InitialMessage, Self)>, crate::Error> {
         let Some((frame, peer)) = self.next_frame().await? else {
             return Ok(None);
         };
@@ -1125,9 +1129,14 @@ impl RunningProtocolPeer {
 }
 
 #[cfg(feature = "unstable_protocol_v2")]
-fn initialize_message(frame: TransportFrame) -> Result<RawJsonRpcMessage, crate::Error> {
+type InitialMessage = (RawJsonRpcMessage, Vec<crate::FrameAdmission>);
+
+#[cfg(feature = "unstable_protocol_v2")]
+fn initialize_message(frame: TransportFrame) -> Result<InitialMessage, crate::Error> {
+    let (frame, admission) = frame.unpack_admission();
     match frame {
-        TransportFrame::Single(message) => Ok(message),
+        TransportFrame::Admitted { .. } => unreachable!("admission unpacked above"),
+        TransportFrame::Single(message) => Ok((message, admission)),
         TransportFrame::Malformed { error, .. } => Err(error),
         TransportFrame::Batch(_) => Err(crate::Error::invalid_request()
             .data("ACP initialize request and response messages must be sent individually")),
@@ -1139,6 +1148,7 @@ fn initialize_message_mut(
     frame: &mut TransportFrame,
 ) -> Result<Option<&mut RawJsonRpcMessage>, crate::Error> {
     match frame {
+        TransportFrame::Admitted { frame, .. } => initialize_message_mut(frame),
         TransportFrame::Single(RawJsonRpcMessage::Response(_)) => Ok(None),
         TransportFrame::Single(entry) => Ok(Some(entry)),
         TransportFrame::Malformed { raw, .. } if raw_is_response_only_shape(raw) => Ok(None),
@@ -1346,7 +1356,7 @@ impl SupportedClientProtocols {
 async fn start_client_protocol(
     protocol: ClientProtocol,
     client: DynConnectTo<Agent>,
-) -> Result<(RunningProtocolPeer, RawJsonRpcMessage), crate::Error> {
+) -> Result<(RunningProtocolPeer, InitialMessage), crate::Error> {
     let client = RunningProtocolPeer::new(client);
     let Some((initialize, client)) = client.next_message().await? else {
         return Err(crate::Error::invalid_request().data(format!(
@@ -1354,7 +1364,7 @@ async fn start_client_protocol(
             protocol.name()
         )));
     };
-    ensure_client_initialize_request(protocol, &initialize)?;
+    ensure_client_initialize_request(protocol, &initialize.0)?;
     Ok((client, initialize))
 }
 
@@ -1362,12 +1372,21 @@ async fn start_client_protocol(
 async fn send_initialize_and_receive(
     client: RunningProtocolPeer,
     agent: RunningProtocolPeer,
-    initialize: RawJsonRpcMessage,
+    initialize: InitialMessage,
 ) -> Result<(RunningProtocolPeer, RunningProtocolPeer, InitializeResponse), crate::Error> {
-    agent.send(initialize)?;
+    let (initialize, admissions) = initialize;
+    let mut initialize = TransportFrame::Single(initialize);
+    for admission in admissions {
+        initialize = TransportFrame::Admitted {
+            frame: Box::new(initialize),
+            admission,
+        };
+    }
+    agent.send_frame(initialize)?;
     let Some((response, agent)) = agent.next_message().await? else {
         return Err(crate::Error::internal_error().data("agent closed before initialize response"));
     };
+    let (response, _admission) = response;
     let response = InitializeResponse::from_message(response)?;
     Ok((client, agent, response))
 }

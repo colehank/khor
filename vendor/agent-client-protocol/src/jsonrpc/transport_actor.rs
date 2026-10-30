@@ -118,7 +118,11 @@ async fn transport_outgoing_frames_actor(
     let mut outgoing_lines = pin!(outgoing_lines);
 
     while let Some(frame) = transport_rx.next().await {
+        // Physical forwarding is the final consumer for this relay. Keep its
+        // ownership until the original frame has crossed the actual sink.
+        let (frame, _admission) = frame.unpack_admission();
         let json_rpc_message = match frame {
+            TransportFrame::Admitted { .. } => unreachable!("admission unpacked above"),
             TransportFrame::Single(message) => message,
             TransportFrame::Malformed { raw, .. } => {
                 let raw = malformed_line_value(raw)?;
@@ -297,29 +301,29 @@ pub(super) async fn transport_outgoing_lines_actor(
 pub(super) async fn transport_incoming_lines_actor(
     incoming_lines: impl futures::Stream<Item = std::io::Result<String>>,
     transport_tx: mpsc::UnboundedSender<TransportFrame>,
+    ingress: super::IngressBudget,
 ) -> Result<(), crate::Error> {
     let mut incoming_lines = pin!(incoming_lines);
     while let Some(line_result) = incoming_lines.next().await {
         let line = line_result.map_err(crate::Error::into_internal_error)?;
+        let pending_line = ingress.line(line.len());
+        let admission = ingress.admit(line.len()).await?;
         tracing::trace!(message = %line, "Received JSON-RPC message");
-
-        match parse_incoming_line(&line) {
-            ParsedIncomingLine::Single(message) => {
-                transport_tx
-                    .unbounded_send(TransportFrame::Single(message))
-                    .map_err(crate::Error::into_internal_error)?;
-            }
+        let frame = match parse_incoming_line(&line) {
+            ParsedIncomingLine::Single(message) => TransportFrame::Single(message),
             ParsedIncomingLine::Malformed { raw, error } => {
-                transport_tx
-                    .unbounded_send(TransportFrame::Malformed { raw, error })
-                    .map_err(crate::Error::into_internal_error)?;
+                TransportFrame::Malformed { raw, error }
             }
-            ParsedIncomingLine::Batch(entries) => {
-                transport_tx
-                    .unbounded_send(TransportFrame::Batch(entries))
-                    .map_err(crate::Error::into_internal_error)?;
-            }
-        }
+            ParsedIncomingLine::Batch(entries) => TransportFrame::Batch(entries),
+        };
+        drop(line);
+        drop(pending_line);
+        transport_tx
+            .unbounded_send(TransportFrame::Admitted {
+                frame: Box::new(frame),
+                admission: admission.into_frame(),
+            })
+            .map_err(crate::Error::into_internal_error)?;
     }
     Ok(())
 }

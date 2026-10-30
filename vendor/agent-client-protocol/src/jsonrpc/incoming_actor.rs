@@ -148,6 +148,7 @@ pub(super) async fn incoming_protocol_actor<Counterpart: Role>(
             }
 
             IncomingProtocolMsg::Transport(frame) => {
+                let (frame, _admission) = frame.unpack_admission();
                 let (entries, batch_completion) = frame_entries(frame);
                 for (message, destination) in entries {
                     match message {
@@ -394,6 +395,7 @@ fn frame_entries(
     Option<super::BatchDispatchCompletion>,
 ) {
     let entries: Vec<Result<RawJsonRpcMessage, crate::Error>> = match frame {
+        TransportFrame::Admitted { .. } => unreachable!("admission unpacked before dispatch"),
         TransportFrame::Single(message) => {
             let destination = matches!(&message, RawJsonRpcMessage::Request(_))
                 .then(ResponseDestination::individual);

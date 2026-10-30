@@ -44,15 +44,19 @@ the tree moved from `third_party/agent-client-protocol` to
 `vendored_sources` input-key rule: an excluded dependency's whole source tree
 must participate in cross-run producer/prior keys, not just a full-run snapshot.
 All 114 original file blobs are unchanged in the migration checkpoint; local
-behavior work remains separate. Resource behavior implementation and validation are
-subsequent commits. The root `Cargo.lock` is deliberately not hand-edited; its
+behavior work remains separate. The next checkpoint adds whole-frame ownership
+metering and a saturation/cancellation regression, deliberately without capacity
+waiting. Limiting behavior follows only after that regression produces its
+expected business failure; source-only metering is not a completed bound. The root `Cargo.lock` is deliberately not hand-edited; its
 source change requires a separately authorized real Cargo lock generation. No
 new Cargo command, metadata generation or native test has run for this copy.
 
-The focused verification must exercise the actual
-`AcpAgent -> ConnectTo -> ByteStreams -> protocol` path, distinguish encoded
-window/count/oversize/line/decode terms from measured RSS, cover saturation
-and cancellation, and preserve the existing finite event-fence/4096 contract.
+The focused verification exercises the actual `AcpAgent -> ConnectTo -> Lines
+-> protocol` subprocess path. `AcpAgent` uses `Lines` directly; Khor-owned
+transports use `ByteStreams -> Lines` and require their own handoff coverage.
+These checks distinguish encoded window/count/oversize/line/decode terms from
+measured RSS, cover saturation and cancellation, and preserve the existing
+finite event-fence/4096 contract.
 It must not use a side parser or a protocol stand-in as product evidence.
 
 ## Removal

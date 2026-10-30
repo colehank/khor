@@ -159,13 +159,13 @@ pub use capabilities::*;
 
 pub use jsonrpc::{
     Builder, ByteStreams, CONNECTION_TERMINATED_REASON, Channel, ConnectionContext,
-    ConnectionTermination, ConnectionTo, Dispatch, DynamicHandlerGuard, HandleConnectionClose,
-    HandleDispatchFrom, Handled, INCOMING_TRANSPORT_CLOSED_REASON, IntoHandled, JsonRpcMessage,
-    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, Lines, NullClose, NullHandler,
-    PreparedRequest, RawConnectionContext, RawJsonRpcError, RawJsonRpcMessage, RawJsonRpcParams,
-    RawJsonRpcResponse, Responder, ResponseRouter, SentRequest, TransportBatch,
-    TransportBatchEntry, TransportFrame, UntypedMessage, is_connection_terminated,
-    is_incoming_transport_closed,
+    ConnectionTermination, ConnectionTo, Dispatch, DynamicHandlerGuard, FrameAdmission,
+    HandleConnectionClose, HandleDispatchFrom, Handled, INCOMING_TRANSPORT_CLOSED_REASON,
+    IngressBudget, IngressObserver, IngressStats, IntoHandled, JsonRpcMessage, JsonRpcNotification,
+    JsonRpcRequest, JsonRpcResponse, Lines, NullClose, NullHandler, PreparedRequest,
+    RawConnectionContext, RawJsonRpcError, RawJsonRpcMessage, RawJsonRpcParams, RawJsonRpcResponse,
+    Responder, ResponseRouter, SentRequest, TransportBatch, TransportBatchEntry, TransportFrame,
+    UntypedMessage, is_connection_terminated, is_incoming_transport_closed,
     run::{ChainRun, NullRun, RunWithConnectionTo},
 };
 #[cfg(feature = "unstable_protocol_v2")]

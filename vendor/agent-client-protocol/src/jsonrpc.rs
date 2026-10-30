@@ -29,6 +29,8 @@ pub(crate) mod close;
 mod dynamic_handler;
 pub(crate) mod handlers;
 mod incoming_actor;
+mod ingress;
+pub use ingress::{FrameAdmission, IngressBudget, IngressObserver, IngressStats};
 mod outgoing_actor;
 #[cfg(test)]
 mod prepared_request_tests;
@@ -103,6 +105,13 @@ pub enum TransportFrame {
     },
     /// Entries retained from one non-empty JSON-RPC batch, kept in source order.
     Batch(TransportBatch),
+    /// Local input ownership only. Relays preserve this wrapper; it is never a wire value.
+    Admitted {
+        /// Original frame, unchanged.
+        frame: Box<TransportFrame>,
+        /// Admission retained until the entire frame is dispatched or all copies are dropped.
+        admission: FrameAdmission,
+    },
 }
 
 /// A structurally non-empty JSON-RPC batch retained across framed relays.
@@ -254,11 +263,28 @@ impl Serialize for TransportBatch {
 }
 
 impl TransportFrame {
+    pub(crate) fn unpack_admission(self) -> (Self, Vec<FrameAdmission>) {
+        let mut frame = self;
+        let mut admissions = Vec::new();
+        loop {
+            match frame {
+                Self::Admitted {
+                    frame: inner,
+                    admission,
+                } => {
+                    admissions.push(admission);
+                    frame = *inner;
+                }
+                plain => return (plain, admissions),
+            }
+        }
+    }
     fn inspect_messages(
         &self,
         observer: &mut impl FnMut(&RawJsonRpcMessage) -> Result<(), crate::Error>,
     ) -> Result<(), crate::Error> {
         match self {
+            Self::Admitted { frame, .. } => frame.inspect_messages(observer),
             Self::Single(message) => observer(message),
             Self::Malformed { .. } => Ok(()),
             Self::Batch(batch) => {
@@ -7333,6 +7359,7 @@ impl<T> SentRequest<T> {
 pub struct Lines<OutgoingSink, IncomingStream> {
     outgoing: OutgoingSink,
     incoming: IncomingStream,
+    ingress: Option<IngressBudget>,
 }
 
 impl<OutgoingSink, IncomingStream> Lines<OutgoingSink, IncomingStream>
@@ -7342,11 +7369,25 @@ where
 {
     /// Create a new line stream transport.
     pub fn new(outgoing: OutgoingSink, incoming: IncomingStream) -> Self {
-        Self { outgoing, incoming }
+        Self {
+            outgoing,
+            incoming,
+            ingress: None,
+        }
+    }
+    /// Use one physical input's resource owner; an observer can be retained before moving it here.
+    pub fn with_ingress_budget(mut self, ingress: IngressBudget) -> Self {
+        self.ingress = Some(ingress);
+        self
     }
 
     fn into_channel_transport(self) -> (Channel, crate::ConnectionDriver) {
-        let Self { outgoing, incoming } = self;
+        let Self {
+            outgoing,
+            incoming,
+            ingress,
+        } = self;
+        let ingress = ingress.unwrap_or_default();
         let (channel_for_caller, channel_for_lines) = Channel::duplex();
         let Channel { mut rx, tx } = channel_for_lines;
         let (finish_tx, finish_rx) = oneshot::channel();
@@ -7385,7 +7426,7 @@ where
             async move {
                 futures::try_join!(
                     outgoing,
-                    transport_actor::transport_incoming_lines_actor(incoming, tx),
+                    transport_actor::transport_incoming_lines_actor(incoming, tx, ingress),
                 )?;
                 Ok(())
             }
@@ -7485,6 +7526,7 @@ where
 pub struct ByteStreams<OB, IB> {
     outgoing: OB,
     incoming: IB,
+    ingress: Option<IngressBudget>,
 }
 
 impl<OB, IB> ByteStreams<OB, IB>
@@ -7494,7 +7536,16 @@ where
 {
     /// Create a new byte stream transport.
     pub fn new(outgoing: OB, incoming: IB) -> Self {
-        Self { outgoing, incoming }
+        Self {
+            outgoing,
+            incoming,
+            ingress: None,
+        }
+    }
+    /// Use one physical input's resource owner. This does not change protocol framing.
+    pub fn with_ingress_budget(mut self, ingress: IngressBudget) -> Self {
+        self.ingress = Some(ingress);
+        self
     }
 
     fn into_lines(
@@ -7505,12 +7556,16 @@ where
     > {
         use futures::AsyncBufReadExt;
         use futures::io::BufReader;
-        let Self { outgoing, incoming } = self;
+        let Self {
+            outgoing,
+            incoming,
+            ingress,
+        } = self;
 
         let incoming_lines = Box::pin(BufReader::new(incoming).lines());
         let outgoing_lines = transport_actor::LineWriter::new(outgoing);
 
-        Lines::new(outgoing_lines, incoming_lines)
+        Lines::new(outgoing_lines, incoming_lines).with_ingress_budget(ingress.unwrap_or_default())
     }
 }
 

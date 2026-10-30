@@ -450,7 +450,8 @@ where
                                 },
                                 None => client.rx.next().await,
                             };
-                            let Some(TransportFrame::Single(message)) = frame else {
+                            let frame = frame.map(|frame| frame.unpack_admission());
+                            let Some((TransportFrame::Single(message), _admission)) = frame else {
                                 return Err(backend_failure(backend_error.take().map_or_else(
                                     || "backend closed without a valid response".to_owned(),
                                     |e| e.to_string(),
