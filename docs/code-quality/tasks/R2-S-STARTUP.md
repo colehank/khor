@@ -100,3 +100,9 @@ SDK七链handoff component-handoff.json e3b5156c4612b064cd8d743d65c337fbaf311092
 源用例：原fence4断言语义迁实际Store，新增closing事实门/Closed末seq和opening拒Ready2；Store私有4（sticky failure、等待receiver/idle job取消、delivered question持credit、合法9MiB完整记录），budget1（byte/count/giant/close唤醒/control额度），disk1（真实create_new rotation碰撞/poison/part清理），合ACP12。原SDK pressure源码731dea98未改，拟另精确回归1。Node原raw Closed-before-tail仅抽共享私有poll闭包，原100ms/20ms断言不改，明确只是调度算法证据；新1025×64KiB长Load parent/helper用真实owned ByteStreams→Store→canonical Journal，分producer checkpoint核HostReady尚未发布，最终逐条计序/内容/无重复、actual Capture尾页可读、Load1/New0、正常Close/reap/part清理。RSS仅实际进程样本，非kernel peak/8MiB RSS硬限。保原failed-bootstrap parent/helper组合。
 
 拟实际批：host-filtered locked fullmetadata→原V no-prior ACP/Node libtest各actualCargoJSON/verify/require→私有SHA copy；ACP6+6+1、Node3 parent＋2owned helper，共16parent/2helper（非18独立场景）。300总、双盘5GiB、jobs1/incr0/offline、strict owned/TMP/source/env，no CLI/Core/gen/App。当前只rustfmt私有叶/fixture与diff-check0，尚无此SHA Cargo或实际用例结果；native仍候Root正式单槽授权。Replay退役未写，H清单待跨owner实施，不能把旧32MiB Replay链冒已消除。
+
+#### Reviewer发现的夹具修正27d（无native运行）
+
+231e原候选保留；`27d6434494db35ad0baf2cf22b717422433a2a6e`仅修新长Load测试。64KiB正文加JSON包装本来就超过原inline64KiB，正确结果为Reference；现经同binding/cursor真实content_record每段≤64KiB读取最后完整ref，核offset连续/完整raw/1024全文，不减payload、不调生产阈值。外层强核owned helper唯一1passed/0failed/0ignored再透出stdout；执行门只对long-load期望inner+parent两条各1summary，避免零case假绿。源回执e9561d35ea0d18aedbdabb994740d18a308a3cc27c2b992dda537a14cfcf212d与10叶/git-show双盘同。
+
+待审runner位于 `event-store-native-source-2/run.py`，SHA a2fbaf1eca221277ef7f7ffe3abebd5391f0c31b1b05e6c5db29044eccfc4993，contract d62c6d804f8fb9e074fa168fc6b5bd7128b492eda2b97fbf1afb370ee2300b44；AST0/22source+2helper pins0/HEADclean已纯核。沿原V全链与guard硬门，尚未metadata/编译/实际测试，候Root正式单槽。不可把source-only修正写成原231e实际失败或已转绿。
