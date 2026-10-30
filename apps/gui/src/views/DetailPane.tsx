@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils";
 import { ChatView } from "@/views/ChatView";
 import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
+import { RecoveryActions } from "@/views/RecoveryActions";
+import { tabAct, useTabActs } from "@/lib/tab-acts";
 
 function ObservedSession({ row, onReading }: { row: SessionRow; onReading?: SessionReading }) {
   const [answer, setAnswer] = useState<{key: string; content: SessionContent} | null>(null);
@@ -320,6 +322,13 @@ export function DetailPane({
   onReading?: SessionReading;
 }) {
   const shown = useDayShown();
+  // A view generation is not a replacement session ID. Explicit same-SID
+  // recovery must reopen the outer content lookup as well as the control pipe.
+  const [rejoined, setRejoined] = useState({ id: "", generation: 0 });
+  const [terminalRejoin, setTerminalRejoin] = useState<{ id: string; home: string | null } | null>(null);
+  const actsRevision = useTabActs();
+  const [created, setCreated] = useState<{ id: string; home: string | null; previous: string } | null>(null);
+  const viewKey = row ? JSON.stringify([row.id, row.execution_home, rejoined.id === row.id ? rejoined.generation : 0]) : "";
   // Warm the terminal's chunk once the pane has drawn (`loadTerminal`).
   useEffect(() => {
     const t = window.setTimeout(() => void loadTerminal(), 1500);
@@ -350,6 +359,14 @@ export function DetailPane({
     return !current || isTerminal(current) || !!current.ended;
   });
   const terminalShown = row !== null && (isTerminal(row) || keptHere.some((t) => t.id === row.id));
+  useEffect(() => {
+    if (!terminalRejoin) return;
+    if (!active || row?.id !== terminalRejoin.id || row.execution_home !== terminalRejoin.home || !terminalShown) { setTerminalRejoin(null); return; }
+    const act = tabAct(terminalRejoin.id);
+    // A transfer may currently own this seat with Stop. Wait for the existing
+    // Reload owner, rather than invoking Stop or remounting other kept tabs.
+    if (act?.kind === "reload") { setTerminalRejoin(null); act.run(); }
+  }, [terminalRejoin, row?.id, row?.execution_home, active, terminalShown, actsRevision]);
   /** Whether this pane is the narrow session page's content, with its
       tabs in the bar under it (`components/SessionBar`, 2026-10-02): no
       head then — the bar's tab is this session's face, name and switch,
@@ -565,6 +582,21 @@ export function DetailPane({
           the phone's sheet becomes the same column. */}
       {/* The session and, beside it, its 附栏 (UX-30): a row, the session
           taking what the column leaves. */}
+      {active && row && ["gui", "tui", "observe", "shell"].includes(row.kind) && <RecoveryActions
+        key={JSON.stringify([row.id, row.execution_home])}
+        row={row}
+        previous={created?.id === row.id && created.home === row.execution_home ? created.previous : null}
+        onSession={onSession}
+        onOpened={opened => {
+          if (opened.id === row.id) {
+            if (terminalShown) setTerminalRejoin({ id: row.id, home: row.execution_home });
+            else setRejoined(old => ({ id: row.id, generation: old.id === row.id ? old.generation + 1 : 1 }));
+          } else if (opened.previous === row.id) {
+            setCreated({ id: opened.id, home: row.execution_home, previous: opened.previous });
+            onSession?.(opened.id);
+          }
+        }}
+      />}
       <div data-detail-row className="flex min-h-0 min-w-0 flex-1 flex-row">
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       {terminalShown ? null : row && row.kind === "broadcast" ? (
@@ -575,14 +607,14 @@ export function DetailPane({
         // to.
         <MachineChat key={row.id} id={row.id} active={active} onSession={onSession} sessions={sessions} />
       ) : row && isObserved(row) ? (
-        <ObservedSession key={row.id} row={row} onReading={onReading} />
+        <ObservedSession key={viewKey} row={row} onReading={onReading} />
       ) : row && row.kind === "gui" && row.word !== "failed" ? (
         // A conversation khor holds, and the only thing it has: there
         // is no terminal under it to show. Keyed so switching sessions
         // remounts the chat — its cursor, frames and attachment all
         // belong to one conversation.
         <ChatView
-          key={row.id}
+          key={viewKey}
           id={row.id}
           onReading={onReading}
           category={row.category}
@@ -608,7 +640,7 @@ export function DetailPane({
         // host is elsewhere), and fall through to the facts below.
         null
       ) : row && (row.kind === "tui" || row.kind === "gui") ? (
-        <ObservedSession key={row.id} row={row} onReading={onReading} />
+        <ObservedSession key={viewKey} row={row} onReading={onReading} />
       ) : !row && empty ? (
         // The network's now: the biggest canvas in the app stops
         // reading "pick something" and starts showing what there is
