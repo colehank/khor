@@ -11,8 +11,8 @@
 | R2-003 | A/S | 导入与PTY归属 | 外部导入显示实际能力与可读历史；无原PTY时不伪造可交互画面、不自动启动第二writer。 | 能力/有界链已有定向证据；当前App待测。 |
 | R2-004 | N | 状态查询并发 | 当前CLI在真实root/meta锁竞争后成功查询，原ID保留；try/等待预算及锁序仍成立。 | 8父/2helper实际通过且6源整合；不外推原集群唯一根因。 |
 | R2-005 | A | 全部已接入ACP观看 | 按每个adapter实际能力提供正文/只读/控制入口；外部观察不接管。 | 源码能力矩阵与定向链通过；不是40个已安装agent实测。 |
-| R2-006 | H | 长历史 | 有界分页/渲染/缓存/传输；可取消并保持阅读锚点；搜索、复制或原文出口不把截断冒成完整。 | 基础读取/出口与既有browser已通过；真实chunk分组红例已由来源事实及共享规则修复并25项纯检查通过；ChatView有界身份和非首chunk所属组导航已接；真实阅读文字点及跨贡献复制消费仍待，完整AI4未绿；真实生产WK/系统出口待测。 |
-| R2-007 | S | 统一持久化恢复 | 同一会话身份恢复canonical正文；存活重挂、已退任务和离线明确；不重复load/writer；长合法base无丢失且启动内存受控。 | Store真实67,174,400B payload及有界启动已通过；运行代次拒写/前置reservation/显式恢复/Load新display base与Resume新Note/新Shell关系尚实施中，完整App恢复未完。 |
+| R2-006 | H | 长历史 | 有界分页/渲染/缓存/传输；可取消并保持阅读锚点；搜索、复制或原文出口不把截断冒成完整。 | 基础读取/出口与既有browser已通过；真实chunk分组、读取意图及最新思考定位已修；当前28项纯reader、完整30项Find worker及原AI4桌面/窄屏深浅四组实际通过；真实文字点、跨页query及whole-part复制消费仍待；真实生产WK/系统出口待测。 |
+| R2-007 | S | 统一持久化恢复 | 同一会话身份恢复canonical正文；存活重挂、已退任务和离线明确；不重复load/writer；长合法base无丢失且启动内存受控。 | Store真实67,174,400B payload及有界启动已通过；运行代次拒写5exact已实际通过；前置reservation、Load新display base与Resume新Note已独审待整合；OS事实/Attempt/显式恢复/新Shell关系尚实施中，完整App恢复未完。 |
 | R2-008 | C | 打开意图 | 同一路径/URL普通点击内部，Cmd点击系统；不作可达性预检或额外改写。 | 实现/定向检查已有；当前App点击与Cmd组合待测。 |
 | R2-009 | C | 软折行路径 | 同一生产终端入口长路径在宽/窄屏均可识别并命中，网址对照；不误把硬换行拼为同一路径。 | 实现/定向检查已有；当前App窄屏待测。 |
 | R2-010 | C | 回当前工作区 | 离开session cwd后左上动作回当前工作区，不在推荐列表追加同类项。 | 当前App待测。 |
@@ -43,7 +43,7 @@
 
 ## 实际执行顺序
 
-当前Root300de46f；26项纯reader/projection/identity集成通过。AI4当前76618仍false，首组越过原collapse后在下一正文可见超时，原因待诊断；其它完整consumer证据来源337。尚在实现而非仅剩验收。最新实际结果：Read62914完整通过；ACP74275和AI13652仍未全绿；Recovery98901的13项只证明受控transport上的生产界面。来源、失败及准入均以STATE为准。
+当前Rootdf0d3157；28项纯reader、完整30项Find worker、原AI4桌面/窄屏深浅4组实际通过并独审；R1运行代次5exact在Root4dc实际全绿。尚在实现而非仅剩验收：跨页query/whole-part copy、真实文字点和恢复事务仍需完成。旧Read62914完整通过，完整ACP74275仍false；Recovery98901的13项只证明受控transport生产界面。来源、原失败及准入以STATE为准。
 
 1. H完成真实来源驱动的chunk分组及必要raw/copy/分页消费；S按短row gate与RunKey→provider前reservation→Load/Resume事务→明确恢复/新Shell接线串行关闭既定缺口。两作者分配不重叠源码窗口，固定小片经非作者审后整合。
 2. 接口稳定后一次实际生成/catalog、noEmit/Vite、受影响consumer；再C/Core定向原生，最后同源CLI/GUI生产构建。旧16ee合同不能直接当337当前准入；未受影响的既有Store/A/B与关闭用例不因无关改动全重跑。
