@@ -16,8 +16,8 @@ pub const SLICE: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
-    SessionRecovery { home: khor_core::DeviceId, id: crate::SessionId },
-    RecoverSession { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken },
+    SessionRecovery { home: khor_core::DeviceId, id: crate::SessionId, observation: Option<khor_core::ObservationRef> },
+    RecoverSession { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, observation: Option<khor_core::ObservationRef> },
     NewShellRun { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, cwd: Option<String> },
 
     /// Bounded independent observation reads; never opens an agent host.

@@ -337,7 +337,10 @@ pub(super) enum InputDecision<T> { Continue(T), Refused(String) }
 pub(super) struct JoinCheck { token: Token, arguments: Arguments }
 pub(super) enum JoinAdmission { Previous(Reservation), Check(JoinCheck) }
 pub(super) fn join_arguments(native: Identity, expected: Option<String>) -> Result<Arguments, String> {
-    Arguments::native(native, expected, b"khor/current-execution-join/v1")
+    join_arguments_at(crate::adaptor::id_for(&native.native_id), native, expected)
+}
+pub(super) fn join_arguments_at(id: SessionId, native: Identity, expected: Option<String>) -> Result<Arguments, String> {
+    Arguments::native_at(id, native, expected, b"khor/current-execution-join/v1")
 }
 
 
@@ -1477,6 +1480,49 @@ pub(super) fn offer_action_allowed(directory: &Path) -> Result<bool, String> {
     Ok(document.latest.as_ref().is_some_and(|execution| !matches!(execution.provider, Provider::Unknown { .. } | Provider::Starting | Provider::NotStarted)))
 }
 
+/// Read-only finite-alias fact, never a lease or external-writer probe.
+/// None means empty/different full source; false means unresolved ownership.
+/// Only a matching actual owner receipt or complete foreground-absence fact
+/// can positively qualify a no-Meta observation for explicit recovery.
+pub(super) fn observed_alias_ended(directory: &Path, id: &SessionId, native: &Identity) -> Result<Option<bool>, String> {
+    let document = read(directory)?;
+    let binding = crate::session_content::journal::bound_identity(directory)?;
+    let meta: Option<crate::live::Meta> = match fs::read(directory.join("meta.json")) {
+        Ok(bytes) => Some(serde_json::from_slice(&bytes).map_err(|error| error.to_string())?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.to_string()),
+    };
+    let execution = document.as_ref().and_then(|document| document.latest.as_ref());
+    let mut identities = binding.iter().chain(meta.as_ref().and_then(|meta| meta.gui_native.as_ref()))
+        .chain(execution.map(|execution| &execution.arguments.native))
+        .chain(document.as_ref().and_then(|document| document.cleanup_barrier.as_ref()));
+    let first = identities.next();
+    if identities.any(|other| Some(other) != first) { return Err("observed alias identities disagree".into()); }
+    if first.is_some_and(|identity| identity != native) { return Ok(None); }
+    if first.is_none() { return Ok(if meta.is_none() && document.is_none() { None } else { Some(false) }); }
+    if document.as_ref().is_some_and(|document| document.cleanup_barrier.is_some()) { return Ok(Some(false)); }
+    if let Some(execution) = execution {
+        if &execution.arguments.id != id { return Err("observed alias has another logical owner".into()); }
+        if meta.is_none() && execution.phase == Phase::Refused {
+            return Ok(match execution.provider {
+                Provider::NotStarted => None,
+                Provider::Exited { .. } | Provider::ForegroundAbsent { .. } => Some(true),
+                _ => Some(false),
+            });
+        }
+    }
+    let ended = document.as_ref().is_some_and(|document| document.cleanup_barrier.is_none())
+        && execution.is_some_and(|execution| {
+            execution.arguments.id == *id && execution.phase == Phase::RunPublished
+                && matches!(execution.provider, Provider::Exited { .. } | Provider::ForegroundAbsent { .. })
+                && meta.as_ref().is_some_and(|meta| meta.id == id.0 && meta.kind == khor_core::kind::GUI
+                    && meta.gui_native.as_ref() == Some(native)
+                    && meta.gui_run.as_ref().is_some_and(|run| run.id == execution.run_id && run.state.gui_run.as_ref() == Some(&run.id))
+                    && meta.pid == execution.host.as_ref().map(|host| host.pid).or(execution.unverified_host_pid))
+        });
+    Ok(Some(ended))
+}
+
 pub(super) fn matching_support(
     directory: &Path,
     native: &Identity,
@@ -1939,7 +1985,7 @@ mod tests {
         assert!(crate::Node::recovery_home(&home.hex().to_uppercase()).is_err());
         let token = khor_core::recovery::RecoveryToken { epoch: "1".into(), nonce: "a".repeat(32) };
         for request in [
-            Request::RecoverSession { home, id: id.clone(), expected_run: Some("c".repeat(32)), token: token.clone() },
+            Request::RecoverSession { home, id: id.clone(), expected_run: Some("c".repeat(32)), token: token.clone(), observation: None },
             Request::NewShellRun { home, id: SessionId("shell/old".into()), expected_run: Some("shell/old".into()), token, cwd: Some("/explicit/new-directory".into()) },
         ] {
             assert!(!request.is_reading() && !request.rides_early(), "explicit actions are not read retries or 0RTT");
@@ -1947,7 +1993,7 @@ mod tests {
             let decoded = crate::proto::question(&encoded).unwrap();
             assert_eq!(serde_json::to_value(request).unwrap(), serde_json::to_value(decoded).unwrap());
         }
-        assert!(Request::SessionRecovery { home, id }.is_reading());
+        assert!(Request::SessionRecovery { home, id, observation: None }.is_reading());
         let native = Identity { home, agent: "fixture".into(), native_id: "full-qualified-native".into() };
         let ids = super::super::native_aliases(&native);
         assert_eq!(ids[0], crate::adaptor::id_for(&native.native_id));

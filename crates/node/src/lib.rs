@@ -4009,6 +4009,15 @@ impl Node {
     /// caches are skipped — a stale or missing report only means older
     /// information, never an error.
     fn cached_peer_rows(&self) -> Vec<(String, u64, Session)> {
+        let table = self.devices().ok().map(|devices| devices.into_iter().map(|device| device.id).collect());
+        self.cached_peer_rows_with(table)
+    }
+    fn cached_peer_rows_readonly(&self) -> Vec<(String, u64, Session)> {
+        let table = khor_sync::store::read_snapshot::<khor_sync::devices::DeviceDoc>(&devices_dir(&self.root), self.peer).ok()
+            .map(|doc| doc.all().into_iter().map(|device| device.id).collect());
+        self.cached_peer_rows_with(table)
+    }
+    fn cached_peer_rows_with(&self, table: Option<std::collections::BTreeSet<String>>) -> Vec<(String, u64, Session)> {
         let mut out = Vec::new();
         let Ok(rd) = fs::read_dir(self.peers_dir()) else {
             return out;
@@ -4026,10 +4035,6 @@ impl Node {
         // An unreadable table is a blip, not a verdict on every peer:
         // `None` skips the filter and paints what is cached, rather than
         // blanking a list the person was just looking at.
-        let table: Option<std::collections::BTreeSet<String>> = self
-            .devices()
-            .ok()
-            .map(|devs| devs.into_iter().map(|d| d.id).collect());
         for e in rd.flatten() {
             if let Some(table) = &table
                 && !e.file_name().to_str().is_some_and(|id| table.contains(id))

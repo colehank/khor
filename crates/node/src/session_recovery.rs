@@ -59,6 +59,17 @@ fn native_preparation(
 }
 
 impl LiveKind {
+    fn observed_execution_ended(&self, native: &Identity) -> Result<bool, String> {
+        let mut positive = false;
+        for id in super::native_aliases(native) {
+            let directory = self.dir(&id).ok_or("invalid source alias")?;
+            match recovery_attempt::observed_alias_ended(&directory, &id, native)? {
+                Some(false) => return Ok(false), Some(true) => positive = true, None => {},
+            }
+        }
+        Ok(positive)
+    }
+
     /// Existing CLI convenience: choose one new identity for this explicit
     /// operation, then use exactly the stable admission algorithm below.
     pub(crate) fn prepare_gui_recovery(&self, native: Identity, launch: &[u8]) -> Result<String, String> {
@@ -85,10 +96,16 @@ impl LiveKind {
         expected_run: Option<&str>,
         supplied: &RecoveryToken,
     ) -> Result<NativePreparation, String> {
+        let id = crate::adaptor::id_for(&native.native_id);
+        self.prepare_gui_recovery_target(&id, native, launch, expected_run, supplied, None)
+    }
+    fn prepare_gui_recovery_target(
+        &self, id: &SessionId, native: Identity, launch: &[u8], expected_run: Option<&str>, supplied: &RecoveryToken,
+        observed: Option<&crate::session_content::Observation>,
+    ) -> Result<NativePreparation, String> {
         if native.home != self.device { return Err("recovery source belongs to another execution home".into()); }
         let token = action_token(supplied)?;
-        let arguments = recovery_attempt::Arguments::native(native.clone(), expected_run.map(str::to_owned), launch)?;
-        let id = crate::adaptor::id_for(&native.native_id);
+        let arguments = recovery_attempt::Arguments::native_at(id.clone(), native.clone(), expected_run.map(str::to_owned), launch)?;
         let directory = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         fs::create_dir_all(&directory).map_err(msg::cant_make_session_dir)?;
         let legacy = self.legacy_gui_source(&id)?;
@@ -109,12 +126,16 @@ impl LiveKind {
         if let Some(previous) = previous {
             return native_preparation(previous, &id, &supplied.epoch);
         }
-        self.check_gui_source(&native)?;
         // Preflight the complete manifest and existing binding before even
         // spawning a ghost. The child still acquires and retains its own exact
         // File before provider spawn; the epoch fences this cross-process gap.
         let admission = crate::session_content::journal::JournalReservation::take(&self.root, native.clone())?;
         admission.check_binding(&directory)?;
+        if let Some(record) = observed {
+            if !self.observed_execution_ended(&native)? { return Err("observed execution ownership is unknown".into()); }
+            record.persist_recovery(&self.root, &admission)?;
+        }
+        self.check_gui_source_at(id, &native)?;
         self.fence_native_aliases(&admission, None)?;
         let value = {
             let mut gate = RowGate::acquire(&directory)?;
@@ -143,12 +164,20 @@ impl crate::Node {
     pub(crate) fn check_recovery_token(value: &RecoveryToken) -> Result<(), String> { action_token(value).map(|_| ()) }
     fn recovery_row(&self, id: &SessionId) -> Result<(std::path::PathBuf, super::Meta), String> {
         let directory = self.live.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
-        let meta: super::Meta = serde_json::from_slice(&fs::read(directory.join("meta.json")).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+        let meta = self.recovery_meta(id, &directory)?.ok_or("recovery row has no execution metadata")?;
+        Ok((directory, meta))
+    }
+    fn recovery_meta(&self, id: &SessionId, directory: &std::path::Path) -> Result<Option<super::Meta>, String> {
+        let meta: super::Meta = match fs::read(directory.join("meta.json")) {
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| error.to_string())?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
         if !meta.id.is_empty() && meta.id != id.0 { return Err("recovery row belongs to another session".into()); }
         if meta.shell_run.as_ref().is_some_and(|run| run.previous.0.is_empty() || run.root.0.is_empty() || run.previous.0.len() > 4096 || run.root.0.len() > 4096 || run.previous == *id || run.root == *id) {
             return Err("invalid stored Shell ancestry".into());
         }
-        Ok((directory, meta))
+        Ok(Some(meta))
     }
     fn recovery_native(&self, id: &SessionId, directory: &std::path::Path, meta: &super::Meta) -> Result<Option<Identity>, String> {
         let binding = crate::session_content::journal::bound_identity(directory)?;
@@ -156,12 +185,13 @@ impl crate::Node {
             return Err("recovery metadata and canonical binding disagree".into());
         }
         let native = binding.or_else(|| meta.gui_native.clone()).or(self.live.legacy_gui_source(id)?.map(|(_, native)| native));
-        if native.as_ref().is_some_and(|native| native.home != self.device() || crate::adaptor::id_for(&native.native_id) != *id) {
+        if native.as_ref().is_some_and(|native| native.home != self.device() || !super::matches_logical_source(id, native)) {
             return Err("recovery identity belongs to another execution home or SID".into());
         }
+        if let Some(native) = native.as_ref() { super::check_observed_target(self.root(), id, native)?; }
         Ok(native)
     }
-    fn recovery_launch(&self, meta: &super::Meta, native: Identity, readonly: bool) -> Result<NativeLaunch, String> {
+    fn recovery_launch(&self, title: &str, place: Option<&str>, native: Identity, readonly: bool) -> Result<NativeLaunch, String> {
         // Offer never calls user_path(): its cold initialization runs a login
         // shell. A missing observation simply leaves prior support Unknown.
         let path = if readonly { Self::observed_user_path().ok_or("effective launch environment has not been observed")? } else { Self::user_path() };
@@ -172,19 +202,88 @@ impl crate::Node {
             name => self.agent_or_refuse(name)?,
         };
         let cmd = vec![Self::launch_on(&spec, path)?];
-        let cwd = std::path::PathBuf::from(meta.place.as_deref().ok_or("the session has no recorded working directory")?);
+        let cwd = std::path::PathBuf::from(place.ok_or("the session has no recorded working directory")?);
         if !cwd.is_dir() { return Err(msg::no_such_dir(cwd.display())); }
         let cwd = fs::canonicalize(cwd).map_err(|error| error.to_string())?;
-        let title = meta.title.clone();
+        let title = title.to_owned();
         let context = crate::gui_host::saved_environment(self.root(), &native.native_id)?;
         let encoded = serde_json::to_vec(&(&cwd, &title, &cmd, &context)).map_err(|error| error.to_string())?;
         Ok(NativeLaunch { native, cwd, title, cmd, context, encoded })
     }
 
-    pub(crate) fn session_recovery_here(&self, home: khor_core::DeviceId, id: &SessionId) -> Result<khor_core::recovery::SessionRecovery, String> {
+    /// A forwarded reference is data. Identity/title/cwd are re-resolved from
+    /// the actual execution home's existing source; this does not start or
+    /// probe a provider and does not create an observation/row/attempt.
+    fn recovery_observation(&self, id: &SessionId, hint: Option<&khor_core::ObservationRef>) -> Result<crate::session_content::Observation, String> {
+        use crate::session_content::{Observation, NativeTranscript, Provider};
+        let stored = Observation::read(self.root(), id)?;
+        let reference = hint.or(stored.as_ref().map(|record| &record.reference)).ok_or("observation reference is unavailable")?;
+        Observation::validate_reference(id, self.device(), reference)?;
+        if stored.as_ref().is_some_and(|record| record.reference.home != reference.home || record.reference.namespace != reference.namespace
+            || record.reference.agent != reference.agent || record.reference.native_id != reference.native_id) {
+            return Err("forwarded observation conflicts with the existing full source".into());
+        }
+        let (title, cwd) = match reference.namespace {
+            khor_core::ObservationNamespace::Native => {
+                let provider = Provider::of(Some(reference.agent.as_str())).ok_or("unknown native transcript provider")?;
+                let source = NativeTranscript::resolve(self.root(), provider, &super::clean_leaf(&reference.native_id), Some(&reference.native_id))
+                    .map_err(|_| "native transcript is unreadable or ambiguous".to_owned())?.ok_or("native transcript is unavailable")?;
+                source.open().map_err(|error| error.to_string())?;
+                let cwd = source.recorded_cwd(self.root()).ok_or("native transcript has no recorded working directory")?;
+                (stored.as_ref().map(|record| record.title.clone()).unwrap_or_else(|| reference.native_id.clone()), cwd.to_string_lossy().into_owned())
+            },
+            khor_core::ObservationNamespace::Acp => {
+                let agents = khor_sync::store::read_snapshot::<khor_sync::agents::AgentDoc>(&khor_sync::agents::agents_dir(self.root()), self.peer)?;
+                let listed = match agents.seen(&reference.agent) {
+                    Some(khor_sync::agents::Answer::Sessions { home: Some(home), rows }) if home == self.device().0 => rows.into_iter().find(|row| row.id == reference.native_id),
+                    _ => None,
+                };
+                if let Some(row) = listed {
+                    (row.title.unwrap_or_else(|| reference.native_id.clone()), row.cwd)
+                } else {
+                    // Some real owned agents cannot list. A previously ended
+                    // exact canonical owner is another existing source, not a
+                    // fabricated session/list answer or a new adapter.
+                    let native = Identity { home: self.device(), agent: reference.agent.clone(), native_id: reference.native_id.clone() };
+                    if !self.live.observed_execution_ended(&native)? { return Err("ACP source has no qualified execution-home record".into()); }
+                    crate::session_content::journal::Source::find(self.root(), native.clone())?.ok_or("qualified canonical source is unavailable")?;
+                    let mut previous = None;
+                    for alias in super::native_aliases(&native) {
+                        let directory = self.live.dir(&alias).ok_or("invalid source alias")?;
+                        if recovery_attempt::observed_alias_ended(&directory, &alias, &native)? != Some(true) { continue; }
+                        let meta = self.recovery_meta(&alias, &directory)?.ok_or("qualified execution metadata disappeared")?;
+                        previous = Some((meta.title, meta.place.ok_or("qualified execution has no working directory")?));
+                        break;
+                    }
+                    previous.ok_or("qualified execution-home source disappeared")?
+                }
+            },
+        };
+        if cwd.trim().is_empty() { return Err("observation source has no working directory".into()); }
+        let mut record = Observation::new(reference.owner, reference.home, reference.namespace, reference.agent.clone(), reference.native_id.clone(), title, Some(cwd), reference.updated_at);
+        record.reference = reference.clone();
+        Ok(record)
+    }
+
+    pub(crate) fn session_recovery_here(&self, home: khor_core::DeviceId, id: &SessionId, hint: Option<&khor_core::ObservationRef>) -> Result<khor_core::recovery::SessionRecovery, String> {
         use khor_core::recovery::{SessionRecovery, RecoveryExecution as Execution, RecoveryAction as Action, RecoverySupport, NativeRecovery};
         if home != self.device() { return Err("recovery offer reached another execution home".into()); }
-        let (directory, meta) = self.recovery_row(id)?;
+        if let Some(reference) = hint { crate::session_content::Observation::validate_reference(id, home, reference)?; }
+        let directory = self.live.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let Some(meta) = self.recovery_meta(id, &directory)? else {
+            let record = self.recovery_observation(id, hint)?;
+            let native = Identity { home, agent: record.reference.agent.clone(), native_id: record.reference.native_id.clone() };
+            let ended = self.live.observed_execution_ended(&native)?;
+            let support = self.recovery_launch(&record.title, record.cwd.as_deref(), native.clone(), true).ok()
+                .and_then(|launch| recovery_attempt::matching_support(&directory, &native, &launch.encoded).ok()).unwrap_or(RecoverySupport::Unknown);
+            return Ok(SessionRecovery { id: id.clone(), home, current_run: None,
+                next_attempt_epoch: recovery_attempt::next_epoch(&directory).ok().map(|epoch| epoch.to_string()),
+                execution: if ended { Execution::Ended } else { Execution::Unknown },
+                action: if ended { Action::Native } else { Action::None },
+                native: Some(NativeRecovery { agent: native.agent, native_id: native.native_id, support }), previous: None,
+                reason: if ended { None } else { Some("no confirmed previous execution owner".into()) },
+            });
+        };
         let current_run = meta.gui_run.as_ref().map(|run| run.id.clone());
         let mut offer = SessionRecovery { id: id.clone(), home, current_run, next_attempt_epoch: recovery_attempt::next_epoch(&directory).ok().map(|epoch| epoch.to_string()), execution: Execution::Unknown, action: Action::None, native: None, previous: None, reason: None };
         if meta.kind == khor_core::kind::SHELL {
@@ -201,7 +300,7 @@ impl crate::Node {
         // endpoint and rechecks the same Meta/HostFile under the row gate.
         let observed_live = !gui_slot_ended(&meta) && meta.pid.is_some_and(crate::link::pid_running);
         offer.execution = if observed_live { Execution::Live } else if gui_slot_ended(&meta) { Execution::Ended } else { Execution::Unknown };
-        let support = self.recovery_launch(&meta, native.clone(), true).ok().and_then(|launch| recovery_attempt::matching_support(&directory, &native, &launch.encoded).ok()).unwrap_or(RecoverySupport::Unknown);
+        let support = self.recovery_launch(&meta.title, meta.place.as_deref(), native.clone(), true).ok().and_then(|launch| recovery_attempt::matching_support(&directory, &native, &launch.encoded).ok()).unwrap_or(RecoverySupport::Unknown);
         let admissible = recovery_attempt::offer_action_allowed(&directory)?;
         offer.action = if observed_live { Action::Join } else if admissible { Action::Native } else { Action::None };
         if !admissible && !observed_live { offer.reason = Some("previous execution ownership is unknown".into()); }
@@ -209,27 +308,37 @@ impl crate::Node {
         Ok(offer)
     }
 
-    pub(crate) async fn recover_session_here(&self, home: khor_core::DeviceId, id: &SessionId, expected_run: Option<&str>, supplied: RecoveryToken) -> Result<RecoveryResult, String> {
+    pub(crate) async fn recover_session_here(&self, home: khor_core::DeviceId, id: &SessionId, expected_run: Option<&str>, supplied: RecoveryToken, hint: Option<&khor_core::ObservationRef>) -> Result<RecoveryResult, String> {
         if home != self.device() { return Ok(RecoveryResult::Unavailable { reason: "execution-home-mismatch".into() }); }
         if let Err(reason) = Self::check_recovery_token(&supplied) { return Ok(RecoveryResult::Refused { reason }); }
+        if let Some(reference) = hint { if let Err(reason) = crate::session_content::Observation::validate_reference(id, home, reference) { return Ok(RecoveryResult::Refused { reason }); } }
         self.refuse_unless_hosting()?;
-        let (directory, meta) = self.recovery_row(id)?;
-        if meta.kind != khor_core::kind::GUI { return Ok(RecoveryResult::Refused { reason: "not-a-native-GUI-execution".into() }); }
-        let Some(native) = self.recovery_native(id, &directory, &meta)? else { return Ok(RecoveryResult::Unavailable { reason: "native-identity-unknown".into() }); };
+        let directory = self.live.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         let expected = expected_run.map(str::to_owned);
-        if let Err(reason) = recovery_attempt::join_arguments(native.clone(), expected.clone()) { return Ok(RecoveryResult::Refused { reason }); }
-        let join_live = self.live.clone(); let join_id = id.clone(); let join_native = native.clone();
-        let join_expected = expected.clone(); let join_token = supplied.clone();
-        if let Some(reply) = tokio::task::spawn_blocking(move || join_live.join_recovery_if_live(&join_id, join_native, join_expected, &join_token)).await.map_err(|error| error.to_string())?? { return Ok(reply); }
-        let (_, meta) = self.recovery_row(id)?;
-        let launch = self.recovery_launch(&meta, native, false)?;
+        let (launch, observed) = if let Some(meta) = self.recovery_meta(id, &directory)? {
+            if meta.kind != khor_core::kind::GUI { return Ok(RecoveryResult::Refused { reason: "not-a-native-GUI-execution".into() }); }
+            let Some(native) = self.recovery_native(id, &directory, &meta)? else { return Ok(RecoveryResult::Unavailable { reason: "native-identity-unknown".into() }); };
+            if let Err(reason) = recovery_attempt::join_arguments_at(id.clone(), native.clone(), expected.clone()) { return Ok(RecoveryResult::Refused { reason }); }
+            let join_live = self.live.clone(); let join_id = id.clone(); let join_native = native.clone();
+            let join_expected = expected.clone(); let join_token = supplied.clone();
+            if let Some(reply) = tokio::task::spawn_blocking(move || join_live.join_recovery_if_live(&join_id, join_native, join_expected, &join_token)).await.map_err(|error| error.to_string())?? { return Ok(reply); }
+            let (_, meta) = self.recovery_row(id)?;
+            (self.recovery_launch(&meta.title, meta.place.as_deref(), native, false)?, None)
+        } else {
+            if expected.is_some() { return Ok(RecoveryResult::Refused { reason: "expected-execution-changed".into() }); }
+            let record = self.recovery_observation(id, hint)?;
+            let native = Identity { home, agent: record.reference.agent.clone(), native_id: record.reference.native_id.clone() };
+            if !self.live.observed_execution_ended(&native)? { return Ok(RecoveryResult::Unknown { id: id.clone(), attempt_epoch: supplied.epoch, reason: "observed-execution-owner-unknown".into() }); }
+            (self.recovery_launch(&record.title, record.cwd.as_deref(), native, false)?, Some(record))
+        };
         let live = self.live.clone(); let root = self.root().to_path_buf(); let id = id.clone();
         // All blocking endpoint/FS/ghost work is outside the async bridge. The
         // short row gates below never contain a connect, process spawn or wait.
         tokio::task::spawn_blocking(move || {
-            let arguments = recovery_attempt::Arguments::native(launch.native.clone(), expected.clone(), &launch.encoded)?;
+            let arguments = recovery_attempt::Arguments::native_at(id.clone(), launch.native.clone(), expected.clone(), &launch.encoded)?;
             let token = action_token(&supplied)?;
             let legacy = live.legacy_gui_source(&id)?;
+            fs::create_dir_all(&directory).map_err(msg::cant_make_session_dir)?;
             {
                 let mut gate = RowGate::acquire(&directory)?;
                 let meta = gate.read_meta_or_new()?;
@@ -243,16 +352,16 @@ impl crate::Node {
                 }
                 if meta.as_ref().and_then(|meta| meta.gui_run.as_ref()).map(|run| &run.id) != expected.as_ref() { return Ok(RecoveryResult::Refused { reason: "expected-execution-changed".into() }); }
             }
-            if let Some((_, pids)) = live.sighting_of(&id) && !pids.is_empty() { return Ok(RecoveryResult::Refused { reason: "native-session-running-elsewhere".into() }); }
+            if let Some((_, pids)) = live.sighting_of(&crate::adaptor::id_for(&launch.native.native_id)) && !pids.is_empty() { return Ok(RecoveryResult::Refused { reason: "native-session-running-elsewhere".into() }); }
             let codex = crate::adaptor::codex::Codex::at(crate::adaptor::codex_home(&root));
             if codex.full_session_id(&super::clean_leaf(&launch.native.native_id)).as_deref() == Some(launch.native.native_id.as_str()) && codex.has_writer(&launch.native.native_id)? { return Ok(RecoveryResult::Refused { reason: "native-session-has-a-writer".into() }); }
-            match live.prepare_gui_recovery_stable(launch.native.clone(), &launch.encoded, expected.as_deref(), &supplied)? {
+            match live.prepare_gui_recovery_target(&id, launch.native.clone(), &launch.encoded, expected.as_deref(), &supplied, observed.as_ref())? {
                 NativePreparation::Reply(reply) => Ok(reply),
                 NativePreparation::Spawn(claim) => {
                     let opened = crate::gui_host::spawn_gui_host_claimed(&root, &launch.cwd, &launch.title, &launch.cmd, &launch.native, &launch.context, &claim);
                     // A lost response, timeout or partial publication re-reads
                     // the same token; it never falls back to the CLI fresh ask.
-                    match live.prepare_gui_recovery_stable(launch.native, &launch.encoded, expected.as_deref(), &supplied)? {
+                    match live.prepare_gui_recovery_target(&id, launch.native, &launch.encoded, expected.as_deref(), &supplied, observed.as_ref())? {
                         NativePreparation::Reply(reply) => Ok(reply),
                         NativePreparation::Spawn(_) => Err(format!("accepted recovery action lost its durable result: {opened:?}")),
                     }
@@ -265,7 +374,7 @@ impl crate::Node {
 impl LiveKind {
     fn join_recovery_if_live(&self, id: &SessionId, native: Identity, expected: Option<String>, supplied: &RecoveryToken) -> Result<Option<RecoveryResult>, String> {
         let directory = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
-        let arguments = recovery_attempt::join_arguments(native.clone(), expected.clone())?;
+        let arguments = recovery_attempt::join_arguments_at(id.clone(), native.clone(), expected.clone())?;
         let token = action_token(supplied)?;
         let legacy = self.legacy_gui_source(id)?;
         let (ticket, host_pid) = {

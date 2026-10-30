@@ -283,6 +283,12 @@ impl NativeTranscript {
             }
         })
     }
+    pub(crate) fn recorded_cwd(&self, root: &Path) -> Option<PathBuf> {
+        match self.provider {
+            Provider::Claude => adaptor::claude::Claude::at(adaptor::claude_home(root)).recorded_cwd(&self.native_id),
+            Provider::Codex => adaptor::codex::Codex::at(adaptor::codex_home(root)).recorded_cwd(&self.native_id),
+        }
+    }
     pub(crate) fn native_reference(&self) -> (Provider, &str) {
         (self.provider, &self.native_id)
     }

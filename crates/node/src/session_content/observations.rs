@@ -70,6 +70,27 @@ impl Observation {
         record.validate(id)?;
         Ok(Some(record))
     }
+    /// The hint carries data, never permission to run its source. The execution
+    /// home must independently qualify it before persisting under the Journal.
+    pub(crate) fn validate_reference(id: &SessionId, home: DeviceId, reference: &ObservationRef) -> Result<(), String> {
+        if reference.home != home || reference.agent.is_empty() || reference.native_id.is_empty()
+            || serde_json::to_vec(reference).map_err(|error| error.to_string())?.len() > 4096
+            || Self::id(home, reference.namespace, &reference.agent, &reference.native_id) != *id
+        { return Err("observation reference belongs to another home or full source".into()); }
+        Ok(())
+    }
+    pub(crate) fn persist_recovery(&self, root: &Path, reservation: &super::journal::JournalReservation) -> Result<(), String> {
+        let identity = reservation.identity();
+        Self::validate_reference(&self.id, identity.home, &self.reference)?;
+        if !reservation.holds_file() || self.reference.agent != identity.agent || self.reference.native_id != identity.native_id {
+            return Err("observation recovery does not hold its exact Journal reservation".into());
+        }
+        if let Some(existing) = Self::read(root, &self.id)? {
+            Self::validate_reference(&existing.id, identity.home, &existing.reference)?;
+            return Ok(());
+        }
+        self.save(root)
+    }
     fn validate(&self, id: &SessionId) -> Result<(), String> {
         if self.version != 1
             || self.id != *id
