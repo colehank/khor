@@ -241,17 +241,18 @@ impl crate::Node {
                 if let Some(row) = listed {
                     (row.title.unwrap_or_else(|| reference.native_id.clone()), row.cwd)
                 } else {
-                    // Some real owned agents cannot list. A previously ended
-                    // exact canonical owner is another existing source, not a
-                    // fabricated session/list answer or a new adapter.
+                    // Some real owned agents cannot list. A matching canonical
+                    // binding is also a readable source, even when ownership is
+                    // Unknown. Eligibility is checked separately; this branch
+                    // never turns history/Meta into permission to spawn.
                     let native = Identity { home: self.device(), agent: reference.agent.clone(), native_id: reference.native_id.clone() };
-                    if !self.live.observed_execution_ended(&native)? { return Err("ACP source has no qualified execution-home record".into()); }
                     crate::session_content::journal::Source::find(self.root(), native.clone())?.ok_or("qualified canonical source is unavailable")?;
                     let mut previous = None;
                     for alias in super::native_aliases(&native) {
                         let directory = self.live.dir(&alias).ok_or("invalid source alias")?;
-                        if recovery_attempt::observed_alias_ended(&directory, &alias, &native)? != Some(true) { continue; }
-                        let meta = self.recovery_meta(&alias, &directory)?.ok_or("qualified execution metadata disappeared")?;
+                        if crate::session_content::journal::bound_identity(&directory)?.as_ref() != Some(&native) { continue; }
+                        let Some(meta) = self.recovery_meta(&alias, &directory)? else { continue; };
+                        if meta.gui_native.as_ref() != Some(&native) { continue; }
                         previous = Some((meta.title, meta.place.ok_or("qualified execution has no working directory")?));
                         break;
                     }

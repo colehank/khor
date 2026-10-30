@@ -1976,6 +1976,7 @@ mod tests {
         partial_new_settlement();
         joins_do_not_retire_execution();
         shell_action_is_one_successor();
+        readonly_observed_offer();
     }
 
     fn recovery_wire_admission() {
@@ -1994,6 +1995,13 @@ mod tests {
             assert_eq!(serde_json::to_value(request).unwrap(), serde_json::to_value(decoded).unwrap());
         }
         assert!(Request::SessionRecovery { home, id, observation: None }.is_reading());
+        let reference = khor_core::ObservationRef { owner: DeviceId([3; 32]), home, namespace: khor_core::ObservationNamespace::Acp,
+            agent: "fixture".into(), native_id: "wire-full-native".into(), imported_at: khor_core::Millis(1), updated_at: None };
+        let observed_id = crate::session_content::Observation::id(home, reference.namespace, &reference.agent, &reference.native_id);
+        let request = Request::RecoverSession { home, id: observed_id, expected_run: None,
+            token: khor_core::recovery::RecoveryToken { epoch: "1".into(), nonce: "b".repeat(32) }, observation: Some(reference) };
+        let encoded = crate::proto::encode_request(&request).unwrap();
+        assert_eq!(serde_json::to_value(&request).unwrap(), serde_json::to_value(crate::proto::question(&encoded).unwrap()).unwrap());
         let native = Identity { home, agent: "fixture".into(), native_id: "full-qualified-native".into() };
         let ids = super::super::native_aliases(&native);
         assert_eq!(ids[0], crate::adaptor::id_for(&native.native_id));
@@ -2098,6 +2106,73 @@ mod tests {
         held.finish_shell(&chosen, &next, ActionResult::DirectoryRequired).unwrap();
         assert!(matches!(held.action_replay(&chosen, &next).unwrap(), Some(ActionReplay::Recorded(ActionResult::DirectoryRequired))));
         assert!(matches!(held.action_replay(&args, &one).unwrap(), Some(ActionReplay::Retired)));
+    }
+
+    fn readonly_observed_offer() {
+        use crate::session_content::{Observation, journal::Opening};
+        use khor_core::{ObservationNamespace, recovery::{RecoveryAction, RecoveryExecution}};
+        fn tree(path: &Path) -> Vec<(std::path::PathBuf, Option<Vec<u8>>)> {
+            fn visit(root: &Path, path: &Path, out: &mut Vec<(std::path::PathBuf, Option<Vec<u8>>)>) {
+                for entry in fs::read_dir(path).unwrap() {
+                    let path = entry.unwrap().path();
+                    let relative = path.strip_prefix(root).unwrap().to_path_buf();
+                    if path.is_dir() { out.push((relative, None)); visit(root, &path, out); }
+                    else { out.push((relative, Some(fs::read(path).unwrap()))); }
+                }
+            }
+            let mut out = Vec::new(); visit(path, path, &mut out); out.sort_by(|a, b| a.0.cmp(&b.0)); out
+        }
+        // An actual Node read path over model-owned files. No provider, OS
+        // absence probe, endpoint, capability Initialize or ghost is started.
+        let root = Scratch::new();
+        let node = crate::Node::open_hosting(root.0.clone(), "private-recovery-read-fixture", true).unwrap();
+        let home = node.device();
+        let native = Identity { home, agent: "fixture".into(), native_id: "observed-full-native".into() };
+        let record = Observation::new(home, home, ObservationNamespace::Acp, native.agent.clone(), native.native_id.clone(), "actual canonical title".into(), Some(root.0.to_string_lossy().into_owned()), None);
+        assert_eq!(Observation::validate_reference(&record.id, home, &record.reference), Ok(()));
+        assert!(Observation::validate_reference(&record.id, DeviceId([0; 32]), &record.reference).is_err());
+        assert!(Observation::validate_reference(&SessionId("observe/not-the-source".into()), home, &record.reference).is_err());
+        let reservation = JournalReservation::take(&root.0, native.clone()).unwrap();
+        let control = Arc::new(Control::default());
+        let old_id = crate::adaptor::id_for(&native.native_id);
+        let old_row = node.live.dir_of(&old_id).unwrap(); fs::create_dir_all(&old_row).unwrap();
+        let authority = {
+            let mut gate = RowGate::acquire(&old_row).unwrap();
+            Held::load(&mut gate).unwrap().seed_initial_new(Arguments::initial_new(native.clone(), b"old launch").unwrap(),
+                NewInvocation { reservation: &reservation, control: &control, actual_pid: Some(20), host: None, provider: None, support: None }).unwrap()
+        };
+        let mut journal = reservation.into_journal(Opening::New).unwrap();
+        journal.note(&serde_json::json!({"text":"unchanged canonical history"})).unwrap(); journal.prepare_base().unwrap();
+        {
+            let mut gate = RowGate::acquire(&old_row).unwrap(); let mut held = Held::load(&mut gate).unwrap();
+            held.publish_initial_base(&authority, &mut journal, &control, |_, journal| journal.publish_base()).unwrap();
+            held.publish_initial_run(&authority, &mut journal, &control, |gate, journal, run_id| {
+                journal.bind(&gate.dir)?;
+                gate.write_meta(&crate::live::Meta { shell_run: None, kind: khor_core::kind::GUI.into(), title: record.title.clone(), pid: Some(std::process::id()), started_ms: 1,
+                    gui_native: Some(native.clone()), category: Some(native.agent.clone()), id: old_id.0.clone(), vendor_leaf: None, place: record.cwd.clone(),
+                    gui_run: Some(GuiRun { id: run_id.into(), started_ms: 1, state: LiveState { gui_run: Some(run_id.into()), word: State::Idle, at_ms: 1, exit: Some(0), source: Some(Source::Reported) } }) })
+            }).unwrap();
+            assert_eq!(observed_alias_ended(&old_row, &old_id, &native).unwrap(), Some(false), "free files/slot exit cannot upgrade unknown provider birth");
+            let before = tree(&root.0);
+            let unknown = node.session_recovery_here(home, &record.id, Some(&record.reference)).unwrap();
+            assert_eq!(unknown.execution, RecoveryExecution::Unknown); assert_eq!(unknown.action, RecoveryAction::None);
+            assert_eq!(before, tree(&root.0), "known readable history does not manufacture execution authority or write on offer");
+            held.settle_initial(&authority, &control, Ok(&khor_acp::ProcessExit { code: Some(0) }), |_, _, _, _, _| Ok(())).unwrap();
+        }
+        drop(journal);
+        let before = tree(&root.0);
+        let offer = node.session_recovery_here(home, &record.id, Some(&record.reference)).unwrap();
+        assert_eq!(offer.id, record.id); assert!(offer.current_run.is_none());
+        assert_eq!(offer.execution, RecoveryExecution::Ended); assert_eq!(offer.action, RecoveryAction::Native);
+        assert_eq!(before, tree(&root.0), "real offer does not create an observation, alias row, attempt or store lease");
+        assert!(Observation::read(&root.0, &record.id).unwrap().is_none());
+        assert!(!node.live.dir_of(&record.id).unwrap().exists());
+        assert!(node.require_interactive_owner(&record.id).is_err());
+        let admission = JournalReservation::take(&root.0, native.clone()).unwrap();
+        record.persist_recovery(&root.0, &admission).unwrap();
+        assert_eq!(Observation::read(&root.0, &record.id).unwrap().unwrap().id, record.id);
+        let arguments = Arguments::native_at(record.id.clone(), native, None, b"actual frozen launch").unwrap();
+        assert_eq!(arguments.id, record.id, "logical SID does not become provider id_for at action admission");
     }
 
     fn partial_new_settlement() {
