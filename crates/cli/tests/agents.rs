@@ -596,5 +596,9 @@ fn kind_of(n: &khor_node::gui_host::GuiNote) -> &'static str {
         GuiNote::Settings(_) => "Settings",
         GuiNote::Delegated { .. } => "Delegated",
         GuiNote::Captured { .. } => "Captured",
+        GuiNote::Capabilities(_) => "Capabilities",
+        GuiNote::Elicit { .. } => "Elicit",
+        GuiNote::ElicitAnswered { .. } => "ElicitAnswered",
+        GuiNote::ControlResult { .. } => "ControlResult",
     }
 }
