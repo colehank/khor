@@ -12,13 +12,13 @@
 
 ## 现场与责任
 
-**当前唯一native：H strict11+真bindings/noEmit，实际session94683 / driver19497（signature Cargo19594已0退出，后续phase看running.json），固定f908＋11源60d65f / runner957065，600总界；仅owner poll同handle。** browser FREE，无本轮App/Codex。N metadata session2449已实terminal2/73.869s：Node编译0，父在新root Node::open_hosting初始化先Busy，helper/CLI尚未启动；阶段机制未验。严格owned/source/env/TMP净，已归槽。旧PID不可复用，下一候选仍须独审后Root授唯一槽。jobs1/incremental0/offline、双盘≥5GiB与既定target不变。
+native/Cargo与browser当前FREE，无本轮测试App/Codex。H94683已实terminal0/382.772s，17phase0、11 actual/真bindings/noEmit/source-env-ownedTMP净；N95905已实terminal0/79.661s，compile0＋指定业务红test101（物理gate空闲、meta未持、非等待1053ms后误Busy），不是产品绿，source/env/owned/TMP净。N已获最小累计等待额度source修复权，不自动再开native。此前3个已结束专用Node exe已byte-exact gzip可逆归档，净释放约629MB，CLI914/用户/target/旧结果不动。
 
 | owner | 当前职责与工作副本 |
 | --- | --- |
-| Root | 协调、集成、真实验收、中央状态。`khor-round2` / integrate/round2 **75ff54231aabf6be257f35eb86849fe2b0304c64** tracked clean（cc744＋L02窄叶＋H五个已审源码片段）。固定验证复用 `khor-round2-watch` / validate/round2-session-browser，HEAD仍cc744，不冒与新Root源码相同；旧 watch ref26fdebe7保留。不成为第三条大实现线。 |
-| round2_history | `khor-round2-history` / fix/round2-browser-shared，H五片固定c37已Root集成；作者已cherry同L02叶为 **f90823b17fc30ee0d6a2188622efdec09fae4fd9**。其后工具转换11源候选60d65f已独审、pure22/6Worker，仍dirty固定source，先核diff。负责 H、后续 S；共享 Core API/lib/gen、src/api/catalog、native glue 单 owner。新 H 未混入 cc744。 |
-| round2_input | `khor-round2-input` / fix/round2-state-concurrency **7482cfd15340dfa8f32f48a4a6c724ea6c31244e**。1507根锁修复IO5绿但真实CLI并发仍Busy；7482 metadata阶段诊断又在初始Node构造早fail，正只读查预算起点/owner，不能用预热或重试绕开。N 实际通过后接 S startup 字节/队列，尚未实施后者。 |
+| Root | 协调、集成、真实验收、中央状态。`khor-round2` / integrate/round2 **99a154e175299c5e41f46436b8a2124d9c33b00a** tracked clean（cc744＋L02窄叶＋H五片与工具转换事实）。固定验证复用 `khor-round2-watch` / validate/round2-session-browser，HEAD仍cc744，不冒与新Root源码相同；旧 watch ref26fdebe7保留。不成为第三条大实现线。 |
+| round2_history | `khor-round2-history` / fix/round2-browser-shared，H五片固定c37已Root集成；作者已cherry同L02叶为 **d418709b99d0cd272314fe9689fd84452f2b63c1**。工具转换11源已固定并actual11/gen/types过；其后搜索/复制UI继续source工作，先核diff。负责 H、后续 S；共享 Core API/lib/gen、src/api/catalog、native glue 单 owner。新 H 未混入 cc744。 |
+| round2_input | `khor-round2-input` / fix/round2-state-concurrency **c5715e4055eeaacb69f75855792295acbd1e0e42**。1507原IO5绿但并发positive失败；7482 metadata诊断初始化早fail；c571真正反例已证非等待初始化被扣锁额度，正在最小累计等待source修复，不能预热或重试绕开。N 实际通过后接 S startup 字节/队列，尚未实施后者。 |
 | round2_reviewer | 非作者只读审查源码与原证据，不自行启动 native/browser。H direct giant candidate2 已审；待 N 固定阶段夹具，并核 Root 整合尾。 |
 
 ## 当前集成与证据
@@ -41,13 +41,19 @@ Root **7defb045** 仅修改 `page_steps` desktop：同一个主线程任务内�
 
 源/原Q035两失败raw指针：`history/l02-page-query/candidate-2.json`；内盘源码包 `round2-l02-7defb045.bundle` 已verify，依赖cc744。L01只读预查 `history/l01-readonly-cc744/findings.md`（SHA d5ebedb2…5d1219）：当前四相关源等原040版本；原早于due强断言失败，但旧日志无run/time向量，不先猜根因。
 
-H唯一实际批94683当前已通过metadata、Core+GUI --lib签名check（含L02叶真实编译）、Node4 exact各1pass/0fail。Core3/tables4/gen/noEmit仍在同一批进行，未按预期回填通过；只owner poll同handle，Root不启动第二producer。N源码下一最小反例针对累计锁等待额度与非等待初始化耗时，保持1秒累计等待/try0和原positive FD/IDs，不预热或重试构造绕开早Busy。
+H实际批94683已终态全部通过：Node4/Core3/tables4共11、真bindings/noEmit、Core/GUI签名check。generated.json SHAfffcc2f1ef63e9f44cca6d076c5b60de65c47a10c31e6d30680cda52e8fd7af4；result SHAd241d4f02059e3306690beb4e56d8376f9f2f2596638f8a74cbaec2417a8cdec。177是bindings管理项数（加catalog/lock后总数另核）；Root尚未复制此新gen/11事实源，不能将作者批冒Root全树已验。N源码下一最小反例针对累计锁等待额度与非等待初始化耗时，保持1秒累计等待/try0和原positive FD/IDs，不预热或重试构造绕开早Busy。
 
 ### H 五片已整合（源码，未完成原生/界面验收）
 
 531a6ee→3caa3ebe→4b3fbf86→a5c390b3→c37dcac已无冲突逐枚集成为e442dcea→8ea11a07→b6d7a82a→cdbedc4c→75ff5423。20文件中19逐SHA同c37，Tauri lib.rs逐SHA同含同一L02叶的作者f908，无其他整合差异。Root当前gen仍为cc744的177文件，**没有手写H新DTO、没有新native/pure或完整UI验收**。
 
 整合收据`integration/history-fixed-five/source-receipt.json` SHA5e1c287a…687e8；内盘`round2-history-five-75ff5423.bundle`已verify、依赖7def。作者11源工具转换候选未混入，拟下一唯一批：Node4/Core3/tables4共11＋Core/GUI lib签名check＋实际bindings＋完整noEmit；不Catalog/CLI/App/旧38重复。catalog九源若逐SHA同cc744 actual producer可复用真实产物并保原ignored文件，不重生成或手写。
+
+### H 工具转换事实已整合与Root类型验证
+
+作者固定d418709b已cherry为Root **99a154e1**，十一源逐SHA完全相同。真bindings-stage177项（176TS＋inventory）复制后Root总gen179；仅新增HistoryProjection.ts/HistoryTextTransform.ts并更新inventory，其余旧项全同，catalog45ac不变。Root完整 **tsc --noEmit实际0**，tracked source前后同、clean；原绑定可逆保留，源bundle已verify，恢复镜像`round2/history-tool-transforms-99a154e1`。整合收据SHA15d3148dd722039a9a9f286b42b38b518f64ef6491e7bf69f61f391aa95c6c4e。H actual11来自已核作者批，不冒Root全native frame（Rust baseline另有B5 tabs.rs差异）、UI或App已验。
+
+H继续搜索/复制UI与真实源闭环，不重22pure/11Native。N c571反例原断言须转绿，旧“空闲绝对deadline过期必拒”前提要显式更正；初始化修好后仍需确认metadata阶段，并让原新CLI positive FD/IDs通过，不能提前关闭N。
 
 ## 各包真实缺口
 
