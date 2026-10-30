@@ -259,12 +259,78 @@ struct Latest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     support: Option<InitializedSupport>,
 }
+/// A caller action is not the execution owner. A Join may advance the action
+/// high-water mark while the existing producer continues using its exact key.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum ActionArguments {
+    Native { arguments: Arguments },
+    Shell { home: DeviceId, id: SessionId, expected_run: String, launch_digest: String },
+}
+impl ActionArguments {
+    pub(super) fn shell(home: DeviceId, id: SessionId, expected_run: String, launch: &[u8]) -> Result<Self, String> {
+        let value = Self::Shell { home, id, expected_run, launch_digest: blake3::hash(launch).to_hex().to_string() };
+        value.validate()?;
+        Ok(value)
+    }
+    fn scope(&self) -> (DeviceId, &SessionId) {
+        match self { Self::Native { arguments } => (arguments.home, &arguments.id), Self::Shell { home, id, .. } => (*home, id) }
+    }
+    fn validate(&self) -> Result<(), String> {
+        match self {
+            Self::Native { arguments } => {
+                arguments.validate()?;
+                if arguments.operation != Operation::RecoverNative { return Err("New cannot be an explicit recovery action".into()); }
+            }
+            Self::Shell { id, expected_run, launch_digest, .. } => {
+                if id.0.is_empty() || id.0.len() > 4096 || expected_run != &id.0 {
+                    return Err("a new Shell action must name its exact previous SID".into());
+                }
+                hex(launch_digest, 64)?;
+            }
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "result", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum ActionResult {
+    Join { current_run: Option<String> },
+    ShellPending,
+    ShellOpened { id: SessionId },
+    Refused { reason: String },
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LatestAction { token: Token, arguments: ActionArguments, result: ActionResult }
+impl LatestAction {
+    fn validate(&self) -> Result<(), String> {
+        self.token.validate()?;
+        self.arguments.validate()?;
+        match (&self.arguments, &self.result) {
+            (ActionArguments::Native { arguments }, ActionResult::Join { current_run }) if &arguments.expected_run == current_run => {
+                if let Some(run) = current_run { hex(run, 32)?; }
+            }
+            (ActionArguments::Shell { id: previous, .. }, ActionResult::ShellOpened { id }) if id != previous && !id.0.is_empty() && id.0.len() <= 4096 => {}
+            (ActionArguments::Shell { .. }, ActionResult::ShellPending) => {}
+            (_, ActionResult::Refused { reason }) if !reason.is_empty() && reason.len() <= 256 => {}
+            _ => return Err("recovery action and result disagree".into()),
+        }
+        Ok(())
+    }
+}
+/// None means a never-accepted next token; a retired token cannot become work.
+pub(super) enum ActionReplay { Recorded(ActionResult), Retired }
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Document {
     version: u8,
     high_water: u64,
+    // The one current execution, independent of the most recent caller action.
     latest: Option<Latest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    action: Option<LatestAction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cleanup_barrier: Option<Identity>,
 }
@@ -273,8 +339,20 @@ impl Document {
         if let Some(barrier) = &self.cleanup_barrier {
             Arguments::initial_new(barrier.clone(), b"cleanup-barrier")?;
         }
+        if self.version != VERSION { return Err("invalid recovery document version".into()); }
+        if let Some(action) = &self.action {
+            action.validate()?;
+            if self.high_water != action.token.epoch || self.latest.as_ref().is_some_and(|execution| {
+                let (home, id) = action.arguments.scope();
+                execution.token.epoch >= action.token.epoch || execution.arguments.home != home || &execution.arguments.id != id
+            }) { return Err("action high-water belongs to another execution row".into()); }
+            if self.cleanup_barrier.as_ref().is_some_and(|barrier| match &action.arguments {
+                ActionArguments::Native { arguments } => barrier != &arguments.native,
+                ActionArguments::Shell { .. } => true,
+            }) { return Err("cleanup barrier belongs to another action source".into()); }
+        }
         let Some(v) = &self.latest else {
-            return if self.version == VERSION && self.high_water == 0 && self.cleanup_barrier.is_some() {
+            return if self.action.is_some() || (self.high_water == 0 && self.cleanup_barrier.is_some()) {
                 Ok(())
             } else {
                 Err("empty recovery document is not an admissible row".into())
@@ -283,7 +361,7 @@ impl Document {
         if self.cleanup_barrier.as_ref().is_some_and(|barrier| barrier != &v.arguments.native) {
             return Err("cleanup barrier belongs to another exact native source".into());
         }
-        if self.version != VERSION || self.high_water != v.token.epoch {
+        if self.action.is_none() && self.high_water != v.token.epoch {
             return Err("invalid recovery high-water record".into());
         }
         v.token.validate()?;
@@ -389,6 +467,7 @@ pub(super) struct InitialNewAuthority {
     issuing_pid: u32,
 }
 pub(super) enum Reservation {
+    Joined { current_run: Option<String> },
     Start(AttemptKey),
     Recorded(Recorded),
     /// Never label this Pending without independently proving the exact owner.
@@ -507,6 +586,7 @@ impl<'a> Held<'a> {
         self.store(Document {
             version: VERSION,
             high_water: 1,
+            action: None,
             cleanup_barrier: None,
             latest: Some(Latest {
                 token,
@@ -695,7 +775,7 @@ impl<'a> Held<'a> {
         }
         reservation.check_binding(&self.gate.dir)?;
         let mut next = self.document.clone().unwrap_or(Document {
-            version: VERSION, high_water: 0, latest: None, cleanup_barrier: None,
+            version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None,
         });
         if next.latest.as_ref().is_some_and(|latest| &latest.arguments.native != native)
             || next.cleanup_barrier.as_ref().is_some_and(|barrier| barrier != native)
@@ -792,7 +872,9 @@ impl<'a> Held<'a> {
             return Err("initial New cannot enter preghost recovery reservation".into());
         }
         if self.document.as_ref().is_some_and(|doc| {
-            let Some(latest) = &doc.latest else { return true; };
+            let Some(latest) = &doc.latest else {
+                return doc.action.as_ref().is_none_or(|action| action.arguments.scope() != (arguments.home, &arguments.id));
+            };
             let origin = &latest.arguments;
             origin.home != arguments.home
                 || origin.id != arguments.id
@@ -805,6 +887,16 @@ impl<'a> Held<'a> {
             return Ok(Some(Reservation::Retired));
         }
         if token.epoch == high_water {
+            if let Some(action) = self.document.as_ref().and_then(|doc| doc.action.as_ref()) {
+                if &action.token != token || action.arguments != (ActionArguments::Native { arguments: arguments.clone() }) {
+                    return Err("recovery token was reused with different arguments".into());
+                }
+                return Ok(Some(match &action.result {
+                    ActionResult::Join { current_run } => Reservation::Joined { current_run: current_run.clone() },
+                    ActionResult::Refused { .. } => Reservation::UnknownOwner,
+                    _ => return Err("native token belongs to a Shell action".into()),
+                }));
+            }
             let latest = &self
                 .document
                 .as_ref()
@@ -828,6 +920,76 @@ impl<'a> Held<'a> {
             return Err("recovery epoch is not the next offer".into());
         }
         Ok(None)
+    }
+
+    /// Only the caller which has verified the actual live endpoint may commit
+    /// Join. It revalidates that exact Meta/run under this same short row gate.
+    pub(super) fn join(
+        &mut self, arguments: Arguments, token: Token,
+        legacy: Option<&(Option<String>, Identity)>,
+        validate_live: impl FnOnce(&mut RowGate) -> Result<(), String>,
+    ) -> Result<Reservation, String> {
+        if let Some(previous) = self.replay(&arguments, &token)? { return Ok(previous); }
+        validate_live(self.gate)?;
+        let meta = self.gate.read_meta_or_new()?.ok_or("the joined GUI row disappeared")?;
+        self.gate.check_native(&arguments.id, Some(&meta), &arguments.native, legacy)?;
+        if meta.kind != khor_core::kind::GUI
+            || meta.gui_run.as_ref().map(|run| &run.id) != arguments.expected_run.as_ref()
+            || super::gui_slot_ended(&meta)
+        { return Err("the joined GUI execution changed".into()); }
+        let current_run = arguments.expected_run.clone();
+        let mut next = self.document.clone().unwrap_or(Document {
+            version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None,
+        });
+        next.high_water = token.epoch;
+        next.action = Some(LatestAction { token, arguments: ActionArguments::Native { arguments }, result: ActionResult::Join { current_run: current_run.clone() } });
+        self.store(next)?;
+        Ok(Reservation::Joined { current_run })
+    }
+
+    pub(super) fn action_replay(&self, arguments: &ActionArguments, token: &Token) -> Result<Option<ActionReplay>, String> {
+        self.ensure()?; arguments.validate()?; token.validate()?;
+        if self.has_cleanup_barrier() { return Err("source cleanup is unconfirmed".into()); }
+        let high = self.document.as_ref().map_or(0, |doc| doc.high_water);
+        if token.epoch < high { return Ok(Some(ActionReplay::Retired)); }
+        if token.epoch == high {
+            let action = self.document.as_ref().and_then(|doc| doc.action.as_ref()).ok_or("token belongs to another execution action")?;
+            if &action.token != token || &action.arguments != arguments { return Err("recovery token was reused with different arguments".into()); }
+            return Ok(Some(ActionReplay::Recorded(action.result.clone())));
+        }
+        if Some(token.epoch) != high.checked_add(1) { return Err("recovery epoch is not the next offer".into()); }
+        if self.document.as_ref().is_some_and(|doc| {
+            doc.latest.as_ref().is_some_and(|execution| (execution.arguments.home, &execution.arguments.id) != arguments.scope())
+                || doc.action.as_ref().is_some_and(|previous| previous.arguments.scope() != arguments.scope())
+        }) { return Err("action belongs to another execution row".into()); }
+        Ok(None)
+    }
+    /// This durable pending acceptance precedes existingOnce/shell spawn. An
+    /// interrupted response may replay Pending/Unknown, never create another B.
+    pub(super) fn reserve_shell(
+        &mut self, arguments: ActionArguments, token: Token,
+        validate_ended: impl FnOnce(&mut RowGate) -> Result<(), String>,
+    ) -> Result<Option<ActionReplay>, String> {
+        if !matches!(&arguments, ActionArguments::Shell { .. }) { return Err("not a Shell action".into()); }
+        if let Some(previous) = self.action_replay(&arguments, &token)? { return Ok(Some(previous)); }
+        if self.document.as_ref().and_then(|doc| doc.action.as_ref()).is_some_and(|previous| matches!(previous.result, ActionResult::ShellPending)) {
+            return Err("previous Shell action is unresolved; a new token cannot replay its effects".into());
+        }
+        validate_ended(self.gate)?;
+        let mut next = self.document.clone().unwrap_or(Document { version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None });
+        next.high_water = token.epoch;
+        next.action = Some(LatestAction { token, arguments, result: ActionResult::ShellPending });
+        self.store(next)?;
+        Ok(None)
+    }
+    pub(super) fn finish_shell(&mut self, arguments: &ActionArguments, token: &Token, result: ActionResult) -> Result<(), String> {
+        if !matches!(self.action_replay(arguments, token)?, Some(ActionReplay::Recorded(ActionResult::ShellPending))) {
+            return Err("Shell action is no longer its accepted pending token".into());
+        }
+        if !matches!(result, ActionResult::ShellOpened { .. } | ActionResult::Refused { .. }) { return Err("invalid completed Shell result".into()); }
+        let mut next = self.document.clone().ok_or("Shell action is missing")?;
+        next.action.as_mut().ok_or("Shell action is missing")?.result = result;
+        self.store(next)
     }
 
     pub(super) fn reserve(
@@ -879,6 +1041,7 @@ impl<'a> Held<'a> {
         self.store(Document {
             version: VERSION,
             high_water: token.epoch,
+            action: None,
             cleanup_barrier: None,
             latest: Some(Latest {
                 token,
@@ -1608,6 +1771,64 @@ mod tests {
         drop(gate);
         initial_new_cases();
         partial_new_settlement();
+        joins_do_not_retire_execution();
+        shell_action_is_one_successor();
+    }
+
+    fn joins_do_not_retire_execution() {
+        let scratch = Scratch::new();
+        let native = Identity { home: DeviceId([7; 32]), agent: "fixture".into(), native_id: "join-writer".into() };
+        let original = Arguments::native(native.clone(), None, b"same-config").unwrap();
+        let mut gate = RowGate::acquire(&scratch.0).unwrap();
+        let mut held = Held::load(&mut gate).unwrap();
+        let writer = start(held.reserve(original.clone(), token(1, 'a'), None).unwrap());
+        held.claim_host(&writer, stamp(10, 1)).unwrap();
+        held.starting_provider(&writer).unwrap();
+        held.owned_provider(&writer, stamp(20, 10)).unwrap();
+        held.publish_base(&writer, None, |_| Ok(())).unwrap();
+        held.publish_run(&writer, |gate, run_id| gate.write_meta(&crate::live::Meta {
+            kind: khor_core::kind::GUI.into(), title: "same producer".into(), pid: Some(10), started_ms: 1,
+            gui_native: Some(native.clone()), category: None, id: original.id.0.clone(), vendor_leaf: None, place: None,
+            gui_run: Some(GuiRun { id: run_id.into(), started_ms: 1, state: LiveState {
+                gui_run: Some(run_id.into()), word: State::Idle, at_ms: 1, exit: None, source: Some(Source::Reported),
+            }}),
+        })).unwrap();
+        let join = Arguments::native(native, Some(writer.run_id.clone()), b"same-config").unwrap();
+        let mut checks = 0;
+        assert!(matches!(held.join(join.clone(), token(2, 'b'), None, |_| { checks += 1; Ok(()) }).unwrap(), Reservation::Joined { .. }));
+        let after_join = fs::read(held.gate.dir.join(NAME)).unwrap();
+        assert!(held.current(&writer).is_ok(), "a Join does not replace producer authority");
+        held.record_support(&writer, khor_acp::RecoveryCapabilities { load: true, resume: false }).unwrap();
+        held.confirmed_exit(&writer, 20, &khor_acp::ProcessExit { code: Some(0) }).unwrap();
+        assert!(matches!(held.join(join.clone(), token(2, 'b'), None, |_| { checks += 1; Err("already ended".into()) }).unwrap(), Reservation::Joined { .. }));
+        assert_eq!(checks, 1, "duplicate success returns its accepted Join without another live/spawn decision");
+        let mut conflicting = join.clone(); conflicting.launch_digest = "f".repeat(64);
+        assert!(held.join(conflicting, token(2, 'b'), None, |_| Ok(())).is_err());
+        assert_ne!(fs::read(held.gate.dir.join(NAME)).unwrap(), after_join, "the same producer still records actual exit after Join");
+        assert!(matches!(held.reserve(join, token(2, 'b'), None).unwrap(), Reservation::Joined { .. }));
+        assert!(matches!(held.reserve(original, token(1, 'a'), None).unwrap(), Reservation::Retired));
+        assert_eq!(next_epoch(&scratch.0).unwrap(), 3);
+        assert!(fs::metadata(held.gate.dir.join(NAME)).unwrap().len() <= BYTES as u64);
+    }
+    fn shell_action_is_one_successor() {
+        let scratch = Scratch::new();
+        let mut gate = RowGate::acquire(&scratch.0).unwrap();
+        let mut held = Held::load(&mut gate).unwrap();
+        let previous = SessionId("shell/previous".into());
+        let args = ActionArguments::shell(DeviceId([7; 32]), previous.clone(), previous.0.clone(), b"cwd/defaultshell/emptycommand").unwrap();
+        let one = token(1, 'a'); let mut admissions = 0;
+        assert!(held.reserve_shell(args.clone(), one.clone(), |_| { admissions += 1; Ok(()) }).unwrap().is_none());
+        assert!(matches!(held.reserve_shell(args.clone(), one.clone(), |_| { admissions += 1; Ok(()) }).unwrap(), Some(ActionReplay::Recorded(ActionResult::ShellPending))));
+        assert_eq!(admissions, 1, "response loss cannot invoke existingOnce with a second successor");
+        assert!(held.reserve_shell(args.clone(), token(2, 'b'), |_| { admissions += 1; Ok(()) }).is_err());
+        assert_eq!(admissions, 1, "a fresh token cannot supersede uncertain Shell effects");
+        let second = SessionId("shell/fresh-B".into());
+        held.finish_shell(&args, &one, ActionResult::ShellOpened { id: second.clone() }).unwrap();
+        assert!(matches!(held.action_replay(&args, &one).unwrap(), Some(ActionReplay::Recorded(ActionResult::ShellOpened { id })) if id == second));
+        let changed = ActionArguments::shell(DeviceId([7; 32]), previous.clone(), previous.0, b"different-cwd").unwrap();
+        assert!(held.action_replay(&changed, &one).is_err());
+        assert!(held.finish_shell(&args, &one, ActionResult::ShellOpened { id: SessionId("shell/fresh-C".into()) }).is_err());
+        assert!(fs::metadata(held.gate.dir.join(NAME)).unwrap().len() <= BYTES as u64);
     }
 
     fn partial_new_settlement() {
@@ -1701,7 +1922,7 @@ mod tests {
         let native = Identity {
             home: DeviceId([7; 32]), agent: "fixture".into(), native_id: "barrier-only".into(),
         };
-        let empty = Document { version: VERSION, high_water: 0, latest: None, cleanup_barrier: None };
+        let empty = Document { version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None };
         assert!(empty.validate().is_err());
         let mut barrier_only = Document { cleanup_barrier: Some(native), ..empty };
         barrier_only.validate().unwrap();

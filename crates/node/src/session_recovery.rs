@@ -36,6 +36,7 @@ fn native_preparation(
             if encoded.len() > 16 * 1024 { return Err("GUI claim exceeds its byte budget".into()); }
             return Ok(NativePreparation::Spawn(encoded));
         }
+        Reservation::Joined { current_run } => RecoveryResult::Join { id: id.clone(), current_run },
         Reservation::Recorded(Recorded::Opened { id, run_id }) => RecoveryResult::Opened { id, run_id },
         Reservation::Recorded(Recorded::Refused { reason }) => RecoveryResult::Refused { reason: match reason {
             recovery_attempt::Reason::Unavailable => "unavailable",
