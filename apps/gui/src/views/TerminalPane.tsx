@@ -1281,6 +1281,13 @@ export function TerminalPane({
   // The reload circle's join in flight (`reopen`): its glyph turns.
   const [joining, setJoining] = useState(false);
   const reopenRef = useRef<(() => Promise<void>) | null>(null);
+  const recoveryRetired = useRef(false);
+  const recoveryJoining = useRef(0);
+  const recoverySending = useRef(0);
+  const recoveryOwner = useRef<TerminalRecoveryOwner | null>(null);
+  const recoverySink = useRef(onRecoveryRejoin);
+  recoverySink.current = onRecoveryRejoin;
+  const notifyRecovery = () => recoverySink.current?.(recoveryOwner.current);
   // **The tab pill's third seat is this terminal's re-attach** (UX-33):
   // offered by id while the pane is mounted, with whether it is joining
   // (the pill's line runs then).
@@ -1578,7 +1585,7 @@ export function TerminalPane({
         ?.readText()
         .then((text) => {
           const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(text)));
-          send(`\x1b]52;${target};${b64}\x07`);
+          send(`\x1b]52;${target};${b64}\x07`, true);
         })
         .catch(() => {});
     };
@@ -2162,6 +2169,8 @@ export function TerminalPane({
         come back as any new attacher gets them. A join that fails says
         why in the pane, as a first join does, and can be pressed again. */
     const join = (again: boolean): Promise<void> => {
+      if (recoveryRetired.current) return Promise.resolve();
+      recoveryJoining.current++;
       const mine = ++generation;
       window.clearTimeout(timer);
       if (again) setJoining(true);
@@ -2280,6 +2289,9 @@ export function TerminalPane({
             silentRetry = window.setTimeout(() => void join(true), silentWait);
             silentWait = Math.min(SILENT_RETRY_MOST, silentWait * 2);
           }
+        }).finally(() => {
+          recoveryJoining.current--;
+          notifyRecovery();
         });
     };
     let silentRetry = 0;
@@ -2340,29 +2352,36 @@ export function TerminalPane({
     let outbox: { view: ReturnType<typeof terminalAttachment>; bytes: string } | null = null;
     let sending = false;
     let scrollHealthNotes: ReturnType<typeof notesScrollHealth> | null = null;
-    const send = (bytes: string) => {
+    const send = (bytes: string, protocol = false) => {
+      if (recoveryRetired.current && !protocol) return;
       const view = attachment;
       if (outbox?.view === view) outbox.bytes += bytes;
       else outbox = { view, bytes };
       if (sending) return;
       sending = true;
+      recoverySending.current++;
       void (async () => {
-        while (outbox && !stopped) {
-          const batch = outbox;
-          if (batch.view !== attachment) { outbox = null; continue; }
-          // Never split a surrogate pair across two frames.
-          let cut = Math.min(batch.bytes.length, CHUNK_CHARS);
-          if (cut < batch.bytes.length && /[\ud800-\udbff]/.test(batch.bytes[cut - 1])) cut -= 1;
-          const next = batch.bytes.slice(0, cut);
-          batch.bytes = batch.bytes.slice(cut);
-          if (!batch.bytes) outbox = null;
-          const started = performance.now(), queued = next.length + batch.bytes.length;
-          scrollHealthNotes?.sending(started, queued);
-          await batch.view.key(next).catch(() => {});
-          scrollHealthNotes?.sent(started, performance.now(), queued);
+        try {
+          while (outbox && !stopped) {
+            const batch = outbox;
+            if (batch.view !== attachment) { outbox = null; continue; }
+            // Never split a surrogate pair across two frames.
+            let cut = Math.min(batch.bytes.length, CHUNK_CHARS);
+            if (cut < batch.bytes.length && /[\ud800-\udbff]/.test(batch.bytes[cut - 1])) cut -= 1;
+            const next = batch.bytes.slice(0, cut);
+            batch.bytes = batch.bytes.slice(cut);
+            if (!batch.bytes) outbox = null;
+            const started = performance.now(), queued = next.length + batch.bytes.length;
+            scrollHealthNotes?.sending(started, queued);
+            await batch.view.key(next).catch(() => {});
+            scrollHealthNotes?.sent(started, performance.now(), queued);
+          }
+        } finally {
+          sending = false;
+          recoverySending.current--;
+          notifyRecovery();
+          pollNow.current();
         }
-        sending = false;
-        pollNow.current();
       })();
     };
     // **A paste of more than one line asks first** (roadmap 4.3): how many
@@ -2441,7 +2460,7 @@ export function TerminalPane({
         out = d.length === 1 ? (kittyTyped(term, d, m.ctrl, m.alt) ?? typed(d, m)) : d;
         latch(afterKey(m));
       }
-      send(out);
+      send(out, reply);
       // An answer is not typing; a key is, and a history replay's keys
       // are not anybody's (`lib/term-predict`).
       if (!reply && replaying === 0) predict.typed(out);
@@ -3023,26 +3042,26 @@ export function TerminalPane({
   const activeRef = useRef(active);
   activeRef.current = active;
   const dropping = useRef(false);
-  const recoveryRetired = useRef(false);
-  const recoverySink = useRef(onRecoveryRejoin);
-  recoverySink.current = onRecoveryRejoin;
   const recoveryState = useRef({ joining, opening, dropShare, dropNames });
   recoveryState.current = { joining, opening, dropShare, dropNames };
   useEffect(() => {
-    let alive = true, used = false;
+    let alive = true;
     const idle = () => {
       const state = recoveryState.current;
-      return alive && !dropping.current && !state.joining && !state.opening &&
-        state.dropShare === null && state.dropNames === null && reopenRef.current !== null;
+      return alive && !dropping.current && !recoveryJoining.current && !recoverySending.current &&
+        !state.joining && !state.opening && state.dropShare === null &&
+        state.dropNames === null && reopenRef.current !== null;
     };
-    recoverySink.current?.({ idle, retire: () => { recoveryRetired.current = true; }, rejoin: () => {
-      if (used || recoveryRetired.current || !idle()) return false;
-      used = true;
+    const owner: TerminalRecoveryOwner = { idle, retire: () => { recoveryRetired.current = true; }, rejoin: () => {
+      if (recoveryRetired.current || !idle()) return false;
       void reopenRef.current?.();
       return true;
-    } });
-    return () => { alive = false; recoverySink.current?.(null); };
-  }, [id, attempt, joining, opening, dropShare, dropNames]);
+    } };
+    recoveryOwner.current = owner;
+    notifyRecovery();
+    return () => { alive = false; recoveryOwner.current = null; notifyRecovery(); };
+  }, []);
+  useEffect(() => { notifyRecovery(); }, [joining, opening, dropShare, dropNames]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;

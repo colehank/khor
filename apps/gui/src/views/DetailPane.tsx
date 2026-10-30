@@ -273,11 +273,11 @@ export const isObserved = (r: SessionRow) => r.kind === "observe" || (!r.can_con
 
 type KeptTerminal = {
   id: string; machine: string | null; mux: boolean;
-  home: string | null; generation: number; recovery: TerminalRecoveryOwner | null;
+  home: string | null; generation: number; retired: boolean; recovery: TerminalRecoveryOwner | null;
 };
 const terminalSeat = (row: SessionRow, generation = 0): KeptTerminal => ({
   id: row.id, machine: row.source ? row.home : null, mux: row.mux,
-  home: row.execution_home, generation, recovery: null,
+  home: row.execution_home, generation, retired: false, recovery: null,
 });
 
 export function DetailPane({
@@ -358,11 +358,11 @@ export function DetailPane({
     setKept(old => {
       const seat = old.find(value => value.id === row.id);
       if (!isTerminal(row)) {
-        return seat && seat.home !== row.execution_home && (!seat.recovery || seat.recovery.idle())
+        return seat && (seat.retired || seat.home !== row.execution_home) && (!seat.recovery || seat.recovery.idle())
           ? old.filter(value => value !== seat) : old;
       }
       if (!seat) return [...old, terminalSeat(row)];
-      if (seat.home === row.execution_home || (seat.recovery && !seat.recovery.idle())) return old;
+      if ((!seat.retired && seat.home === row.execution_home) || (seat.recovery && !seat.recovery.idle())) return old;
       return old.map(value => value === seat ? terminalSeat(row, seat.generation + 1) : value);
     });
   }, [row, kept]);
@@ -370,7 +370,9 @@ export function DetailPane({
   // old seat stays mounted until its own existing transfer/join has settled.
   useLayoutEffect(() => {
     if (!row) return;
-    kept.find(seat => seat.id === row.id && seat.home !== row.execution_home)?.recovery?.retire();
+    const seat = kept.find(value => value.id === row.id && (value.retired || value.home !== row.execution_home));
+    seat?.recovery?.retire();
+    if (seat && !seat.retired) setKept(old => old.map(value => value === seat ? { ...value, retired: true } : value));
   }, [row?.id, row?.execution_home, kept]);
   useEffect(() => {
     if (!openIds) return;
@@ -380,12 +382,12 @@ export function DetailPane({
     const current = row?.id === tab.id ? row : sessions?.find(item => item.id === tab.id);
     return !current || isTerminal(current) || !!current.ended || (tab.recovery !== null && !tab.recovery.idle());
   });
-  const waitingForSeat = row !== null && isTerminal(row) && keptHere.some(t => t.id === row.id && t.home !== row.execution_home);
-  const terminalShown = row !== null && !waitingForSeat && (isTerminal(row) || (!!row.ended && keptHere.some((t) => t.id === row.id && t.home === row.execution_home)));
+  const waitingForSeat = row !== null && isTerminal(row) && keptHere.some(t => t.id === row.id && (t.retired || t.home !== row.execution_home));
+  const terminalShown = row !== null && !waitingForSeat && (isTerminal(row) || (!!row.ended && keptHere.some((t) => t.id === row.id && !t.retired && t.home === row.execution_home)));
   useEffect(() => {
     if (!terminalRejoin) return;
     if (!active || row?.id !== terminalRejoin.id || row.execution_home !== terminalRejoin.home || !terminalShown) { setTerminalRejoin(null); return; }
-    const seat = keptHere.find(value => value.id === terminalRejoin.id && value.home === terminalRejoin.home);
+    const seat = keptHere.find(value => value.id === terminalRejoin.id && !value.retired && value.home === terminalRejoin.home);
     // This exact mounted seat rechecks its live drop/opening/joining state.
     // No global id-only act, automatic Stop or same-home unmount is involved.
     if (seat?.recovery?.rejoin()) setTerminalRejoin(null);
@@ -715,7 +717,7 @@ export function DetailPane({
         .slice()
         .sort((a, b) => Number(b.id === row?.id) - Number(a.id === row?.id))
         .map((t) => {
-        const on = terminalShown && t.id === row?.id && t.home === row.execution_home;
+        const on = terminalShown && !t.retired && t.id === row?.id && t.home === row.execution_home;
         return (
           <div
             key={JSON.stringify([t.id, t.home, t.generation])}
@@ -729,7 +731,8 @@ export function DetailPane({
                 onRecoveryRejoin={recovery => setKept(old => {
                   const seat = old.find(value => value.id === t.id);
                   if (!seat) return recovery ? [...old, { ...t, recovery }] : old;
-                  if (seat.home !== t.home || seat.generation !== t.generation || seat.recovery === recovery) return old;
+                  if (seat.home !== t.home || seat.generation !== t.generation) return old;
+                  if (seat.recovery === recovery && !seat.retired && !terminalRejoin) return old;
                   return old.map(value => value === seat ? { ...seat, recovery } : value);
                 })} />
             </Suspense>
