@@ -4,9 +4,18 @@
 
 逐项标准见 [34项验收总账](ROUND-2-ACCEPTANCE.md)，执行规则见 PLAN、ROUND-2-EXECUTION、ENGINEERING。完整前态与证据细节保在 [337检查点前态](history/STATE-before-337-checkpoint-20261030.md)，沿其链接可追溯旧失败，不能回填原false。
 
+## 最新磁盘决定（2026-10-31）
+
+用户指出两盘总被压到5GB且目录乱。已暂停所有新增重型任务并完成定向清理，具体规则优先读 [STORAGE](STORAGE.md)，旧“完整二进制/gzip双盘永久保留”惯例已被替代。
+
+- 外盘原Rust缓存约223GiB/旧实验58.5GiB；24旧cache实际释放104.7152GiB（du109.6048GiB另列），当前可用约112GiB。main/quality/catalog保护target、源码、worktree、会话和正式产物未动。
+- 系统盘248个inactive私有程序/静态库及仅binary压缩包实际释放4.0037GiB；旧轮3195个重复metadata/map/log文件逐SHA一致后改指向外盘唯一原件，实际增加1.7753GiB。原日志未丢，当前轮source/docs/独有证据未动。recovery约8.3→2.2GiB，系统现可用约13.5GiB；16GiB RAM下swap当前约3.8GiB，余量会随内存压力浮动，未手动删swap。
+- 清理事实/完整名单在 `/Volumes/disk0/Khor/maintenance/storage-20261030`。三maintenance任务36625/91738/53452均已实际complete，不恢复poll。reviewer已尾核范围与实际df算式，历史mirror只说明当时事实，不冒当前仍双份。
+- 后续运行先外20GiB/内10GiB保留量＋显式峰值预估；原5GiB仍仅紧急中止。只读preflight脚本已审，6/2估算实际pass只是门验证，不是任何任务准入。原heavy暂停可在各自新合同和存储准入完成后逐批解除；不直接执行旧合同。
+
 ## 实际进度与剩余关键工作
 
-Root `integrate/round2@300de46f5d0164cc53dcac08082aa3e2f5ed44f0` clean。337之后已独审整合H首片8a0fe08e：Node读取来源事实starts_message贯通Core普通与giant投影，9路径含4必要test模式适配，writer字节不变。只源码/parse检查，不冒编译、生成或分组行为已通过。增量bundle fccf6288、receipt3ee8a94e，verify0并双盘。当前179生成文件、278 dist资产仍是先前255→16ee lineage，因新增HistoryEntry字段已需最终真生成，不冒当前产物。
+Root `integrate/round2@c4aa4a3f6675b8a201c0479f54359998cd85f535` clean。337之后已独审整合H首片8a0fe08e：Node读取来源事实starts_message贯通Core普通与giant投影，9路径含4必要test模式适配，writer字节不变。只源码/parse检查，不冒编译、生成或分组行为已通过。增量bundle fccf6288、receipt3ee8a94e，verify0并双盘。当前179生成文件、278 dist资产仍是先前255→16ee lineage，因新增HistoryEntry字段已需最终真生成，不冒当前产物。
 
 **尚在实现阶段，不是仅剩验收。** S3审计确认既定目标仍缺：跨次运行代次拒写、启动provider前唯一恢复reservation、显式能力驱动恢复入口、普通Shell新运行与前任关系。另需保留Load/Resume实际收到的新历史：Load完整新display base保旧代，Resume追加实际新Note，不再跳过启动记录。设计v2已独审；尚未实现，不称可用。
 
@@ -20,9 +29,9 @@ H读取首片及TS分组纯规则已整合（90a2→3d45f8ba、845c→0066e68d�
 
 | owner | 实际分支及本次边界 |
 | --- | --- |
-| Root | `khor-round2` / `integrate/round2@300de46f`；协调、有限集成、总账。 |
+| Root | `khor-round2` / `integrate/round2@c4aa4a3f`；协调、有限集成、总账。 |
 | H | 同原worktree，保旧6eda分支，新 `fix/round2-chunk-grouping@33738990`。首读取片8a0fe08e固定、非作者通过并Root整合ae9030a2后，已正式交还三Node叶与4test；继续已设计TS投影/身份/锚点/find消费端。禁止writer/GUIHost/ACP改动；设计系统已读。 |
-| input | `fix/round2-recovery-contract@33738990`；首片仅 `crates/node/src/live.rs`、`gui_host.rs`、`lib.rs`：RunKey、短row OS gate、旧report/exit同临界区拒写、必要cfgtests源码。自审发现try0读会被filter_map当缺行，Root同意GUI state内嵌GuiRun，由单Meta原子快照唯一owner，持写锁仍能读完整GUI快照；旧state.json数据保留，不另造cache/service或扩全Shell重构，固定后独审。H三读取叶/4test已交还，可顺序接入8a0fe08e；首RunKey片固定交审后，获授下一有界reservation/Load事务slice（含必要ACP capability guard源码），不得混成大提交；Shell/public routing尚未授。 |
+| input | `fix/round2-recovery-contract@33738990`；首片仅 `crates/node/src/live.rs`、`gui_host.rs`、`lib.rs`：RunKey、短row OS gate、旧report/exit同临界区拒写、必要cfgtests源码。首片3efd已独审精确整合Rootc4aa：GUI state内嵌GuiRun单Meta原子快照，GUI读无锁不filter_map缺行，短gate只RMW写且旧代拒；set_pid不退GUI代，显式takeover等host结束→reseat→PTY。5反例只有源码/parse检查，未编未跑；begin_run仍在Journal前，后片事务顺序必须修，不能冒S3完成。旧state数据保留，无新cache/service或全Shell重构。H三读取叶/4test已交还，可顺序接入8a0fe08e；首RunKey片固定交审后，获授下一有界reservation/Load事务slice（含必要ACP capability guard源码），不得混成大提交；Shell/public routing尚未授。 |
 | reviewer | 非作者只读审小片、来源/预算/并发和具体Clean Code边界；不写产品/不自动重跑。idle用followup_task唤醒。 |
 
 恢复Core/API/UI阶段尚未授写。先稳定Node合同，再由唯一owner接线、一次真生成。不能两作者同时写共享叶，不能靠大冲突收尾。新独立问题仅NEXT-ROUND。
@@ -56,6 +65,8 @@ H读取首片及TS分组纯规则已整合（90a2→3d45f8ba、845c→0066e68d�
 
 ## 资源与压缩恢复
 
-共享专用quality-target、jobs1/incremental0/offline、双盘原5GiB门不降低。已完成的精确缓存可恢复归档见前态，停止扩大空间治理；用户release/源/会话数据不清理。旧16ee cold合同、C/Core/E/S草案均不自动成为当前运行准入。
+共享专用quality-target、jobs1/incremental0/offline；新STORAGE保留量＋峰值预准入优先，原5GiB紧急门不降低。已完成的精确缓存可恢复归档见前态，停止扩大空间治理；用户release/源/会话数据不清理。旧16ee cold合同、C/Core/E/S草案均不自动成为当前运行准入。
 
 内盘 `/Users/zgh/Library/Caches/khor-code-quality/recovery` 同步STATE/实际refs/runtime及逐文件SHA镜像；dirty任务卡按文件快照，不声称全局原子。读STATE/PLAN后核实际branch/diff/句柄，不用旧runtime排队文字恢复启动。34项逐项对账＋非作者Clean Code审＋当前集成版本及必要真实平台证据齐备才完成。
+
+源码交接补记：H42e诊断单叶、87d6可信record元数据已源码独审可整合，尚未Rootcherry。H3cd消费片有完整record混后续未知SDK尾时copy-complete误判候选，reviewer已要求窄修；跨page query/whole-group与真实文字点anchor仍OPEN，不以拒绝copy替代原目标。input第二reservation/Load已授source-only，可写remote两真实binding调用与acp_process真实PID/出生事实传出、opt-in stub方法名日志/原unsupported case；无新runtime，公开Core恢复API/Shell路线仍待后续交接。
