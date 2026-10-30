@@ -2,6 +2,7 @@ import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // Production App / ChatView, with only the bridge replaced. No test UI.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -100,13 +101,33 @@ async function checkDisclosureMotion(page, trigger) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await content.evaluate((el) => getComputedStyle(el).animationName), "none", "reduced motion disables the height animation");
 }
-let browser, vite, currentPage, currentTrace;
+// Diagnostic text stays bounded independently of the original assertions.
+const utf8Prefix = (text, limit) => {
+  let result = "", bytes = 0;
+  for (const character of text) {
+    bytes += Buffer.byteLength(character);
+    if (bytes > limit) break;
+    result += character;
+  }
+  return result;
+};
+const utf8Tail = (text, limit) => {
+  const bytes = Buffer.from(text);
+  let start = Math.max(0, bytes.length - limit);
+  while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
+  return bytes.subarray(start).toString("utf8");
+};
+let browser, vite, currentPage, currentTrace, viteStdoutTail = "";
 try {
   vite = spawn("node_modules/.bin/vite", ["--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
     cwd: gui, env: { ...process.env, KHOR_FACE_GATE: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   let ready = false, log = "";
-  vite.stdout.on("data", (b) => { ready ||= String(b).includes(`:${port}`); });
+  const stdoutDecoder = new StringDecoder("utf8");
+  vite.stdout.on("data", (b) => {
+    ready ||= String(b).includes(`:${port}`);
+    viteStdoutTail = utf8Tail(viteStdoutTail + stdoutDecoder.write(b), 4096);
+  });
   vite.stderr.on("data", (b) => { log += b; });
   for (let i = 0; i < 150 && !ready && vite.exitCode === null; i++) await sleep(100);
   assert(ready, log || "Vite did not start");
@@ -115,12 +136,28 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: "reduce", hasTouch: width < 600, isMobile: width < 600 });
     const page = await context.newPage(), errors = [], requests = [], openedLeases = new Map();
     currentPage = page;
-    currentTrace = {requests: [], failed: [], http: [], count: 0};
+    currentTrace = {requests: [], failed: [], http: [], count: 0, commandCounts: {}, opened: [], openCount: 0, navigation: [], viteConsole: []};
     const trace = currentTrace;
     const relevant = new Set(['attachment_begin','chat_open','chat_capture','chat_poll','chat_wait','chat_leave','history_begin','history_page','history_cancel']);
+    // These fixed commands have cumulative counts even after the request tail rolls over.
+    trace.commandCounts = Object.fromEntries([...relevant].map(command => [command, 0]));
+    const navigation = kind => {
+      trace.navigation.push({kind, at: Date.now(), requestSeq: trace.count, url: utf8Prefix(page.url(), 512)});
+      if (trace.navigation.length > 8) trace.navigation.shift();
+    };
+    page.on('framenavigated', frame => {if (frame === page.mainFrame()) navigation('main-frame');});
+    page.on('domcontentloaded', () => navigation('document-ready'));
+    page.on('console', message => {
+      const text = message.text();
+      if (!/\[vite\]|optimized dependencies|dependencies.*(?:optimized|reloading)|vite.*(?:reload|connect|error)/i.test(text)) return;
+      trace.viteConsole.push({at: Date.now(), type: message.type(), text: utf8Prefix(text, 256)});
+      // Console JSON <=4KiB plus the separate stdout tail <=4KiB in failure.json.
+      while (trace.viteConsole.length > 16 || Buffer.byteLength(JSON.stringify(trace.viteConsole)) > 4096) trace.viteConsole.shift();
+    });
     page.on('request', request => {
       const command = new URL(request.url()).pathname.split('/').at(-1);
       if (!relevant.has(command)) return;
+      trace.commandCounts[command]++;
       let args;
       try { args = request.postDataJSON() ?? {}; } catch { args = {}; }
       const summary = {seq: ++trace.count, command, at: Date.now()};
@@ -158,7 +195,12 @@ try {
     await page.route("**/tabs_list", reply({ tabs: [], active: "" }));
     let queue = [{kind: "turning"}, thought("先检查工作区。")], otherQueue = [];
     await routeCanonicalChat(page, {ids: ['gui/elements-a', 'gui/elements-b'],
-      onOpen: (id, lease) => {openedLeases.set(id, lease);if (reviewPending) {queue = reviewFrames();reviewPending = false;}},
+      onOpen: (id, lease) => {
+        // Admission callback facts, independent of later answer requests (not response fields).
+        trace.opened.push({seq: ++trace.openCount, at: Date.now(), requestSeq: trace.count, id: utf8Prefix(id, 256), lease: utf8Prefix(lease, 256)});
+        if (trace.opened.length > 16) trace.opened.shift();
+        openedLeases.set(id, lease);if (reviewPending) {queue = reviewFrames();reviewPending = false;}
+      },
       takeFrames: id => {
         const frames = id === 'gui/elements-a' ? queue : otherQueue;
         if (id === 'gui/elements-a') queue = [];else otherQueue = [];
@@ -372,7 +414,7 @@ try {
       },
       tools: [...document.querySelectorAll("[data-chat-tool]")].slice(0,16).map(el => ({ kind: el.getAttribute("data-tool-kind"), expanded: el.querySelector("[data-tool-toggle]")?.getAttribute("aria-expanded"), text: el.textContent?.slice(0,512) })),
     })).catch(() => null);
-    writeFileSync(join(out, "failure.json"), JSON.stringify({ error: String(error), state, trace: currentTrace }, null, 2));
+    writeFileSync(join(out, "failure.json"), JSON.stringify({ error: String(error), state, trace: currentTrace, viteStdoutTail }, null, 2));
   }
   throw error;
 } finally {
