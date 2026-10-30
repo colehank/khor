@@ -187,3 +187,14 @@ Root production16ee exec61197真实terminal1/190.34s：CLI actual/V/copy成功�
 C仍已准入未执行（16f9437c/7e869a2e、H087f资产），等Root GUI-only实际terminal后明确授。E文件输入只准备 validation/app-16ee-editor-preparation（receipt87db5ab3），原launcher d4edc12a/observerd50ddf13不变，outer只镜像basename695bb4ee；无contract.json不可运行，实际devURL23846变体/CLI/V/source/gen/config及新鲜用户时段待Root，默认custom-protocol GUI不能冒该observer已接。
 
 Root GUI-only48383随后实际false/103.54s（Cargo0，V拒generated output current invocation/matchingprior），严格源/环境/gen/assets/owned/TMP均净，Parent/reviewer仅精确诊断不盲重编。作者C/E/空间保持停止。现productionCLI original+private copy均只读核355300120B/完整SHA **b6360a48d716eea4ac4385dc9610088fe56300e4aea114c93287ac3d0e0713c7**，current-cli-preservation-16ee.json29b12190/原CLIproof88882c89，两个路径均保，未以unbundled normalCLI替代。
+
+
+### Core既有退役闭包草稿（无编译）
+
+Root在消费者fixture收口期间授极窄只读任务：graph旧511无目标覆盖，随后读真实Core测试/清单。`replay-core-native-draft/contract.draft.json` **2cd233e752495bf9d1c0d551fc684fbd3408eaa9fb5499d6a6680f4e2f02e29f** / draft回执 **c304a8a8547198da59184000d42fda5fe6d23273c91902de4bd3fd04e6adcd46** / 内盘mirror33c81654；**head:null/无driver**，非执行合同，不随4个UI/testfixture小HEAD反复pin。观察时Rootffa079c1，Rust/Core未改，最终消费者freeze后同C一次实际source/tools/driver固定。
+
+Package khor-gui-core，runtime只原三exact：`chat::io_tests::controls_keep_fifo_order_and_complete_only_after_their_frames_are_written`；`chat::host_frame_tests::host_frames_keep_protocol_content`；`chat::io_tests::capture_failures_are_typed_and_live_body_updates_are_only_bounded_wake_signals`。真实当前FIFO SetMode/Stop/Capture、length-prefixed MessagePack→当前frame、NotReady/Unavailable typed原因+1MiB正文<64B wake/配置Note均是必要退役接线。**FIFO原case读完三peer帧后wait，没有受控pre-write barrier，不额外冒写前wait尚未完成的时序证明**；无新case/矩阵。
+
+Integration `terminal_current`（新增GUI2拒绝literal）和 `chat_upload_cancel`（GuiOp exhaustive去Replay）仅编译，不冒CorePTY/upload行为绿。本机官方CargoBook确认选integration自动构建ordinary binaries，当前Core有bridge/face_samples/gen_bindings；因此同一次 `cargo test -p khor-gui-core --lib --test terminal_current --test chat_upload_cancel --no-run --locked --offline --message-format=json` 诚实覆盖6selected，各独立原no-priorprepare/verify/require；三normalbin只编不执行、不生成TS。Root明确只runtime Corelibtest需私有copy，其余5留raw+V+实际SHA给target刷新前非作者核，不复制5份大件、不改helper或模型。
+
+资源粗估仅libtestcopy150–350MB，6个target链接输出0.6–1.2GiB＋未知中间输出，单link RSS2–4GiB仅排期非hardmax，暖编译约50–150s＋runtime<5s预期非保证；原300total/双盘5GiB/jobs1/incr0/offline/owned-sourceenv-TMP保持。非作者已窄核范围无阻断，review-boundaries只澄清证明边界，不给运行准入。无metadata/Cargo/native/产品/H脚本写，未重H Native11/6/Store/A/B，C亦等最终HEAD。
