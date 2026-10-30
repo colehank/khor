@@ -126,6 +126,16 @@ fn open_host_with_timeouts(
     TcpStream,
     mpsc::Receiver<GuiNote>,
 ) {
+    let host = launch_host(root, scratch, mode, timeouts);
+    let (conn, notes) = attach_host(root, scratch, mode);
+    (host, conn, notes)
+}
+fn launch_host(
+    root: &std::path::Path,
+    scratch: &std::path::Path,
+    mode: &str,
+    timeouts: HostTimeouts,
+) -> std::thread::JoinHandle<Result<(), String>> {
     let ready = scratch.join(format!("{mode}.ready"));
     let marker = scratch.join(mode);
     let python = std::env::var("KHOR_ACP_TEST_PYTHON").unwrap_or_else(|_| "python3".into());
@@ -145,6 +155,14 @@ fn open_host_with_timeouts(
             )
         })
     };
+    host
+}
+fn attach_host(
+    root: &std::path::Path,
+    scratch: &std::path::Path,
+    mode: &str,
+) -> (TcpStream, mpsc::Receiver<GuiNote>) {
+    let ready = scratch.join(format!("{mode}.ready"));
     let id = khor_core::SessionId(await_file(&ready).trim().to_owned());
     let live = LiveKind::new(root.to_owned(), khor_core::DeviceId([1; 32]));
     let file = crate::host::read_host_file(&live.dir_of(&id).unwrap()).unwrap();
@@ -172,7 +190,7 @@ fn open_host_with_timeouts(
             }
         }
     });
-    (host, conn, rx)
+    (conn, rx)
 }
 
 #[test]
@@ -312,6 +330,10 @@ fn run_host_case(case: &str) {
         std::fs::write(evidence.join("worker.stderr"), &stderr).unwrap();
     }
     assert!(status.success(), "{case}: {stdout}\n{stderr}");
+    assert_eq!(stdout.lines().filter(|line|line.starts_with("test result:")).count(),1,
+        "{case}: owned helper must produce exactly one real test summary: {stdout}");
+    assert!(stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"),
+        "{case}: owned helper did not actually run its case: {stdout}");
 }
 
 #[test]
@@ -319,8 +341,8 @@ fn cooperative_cancel_keeps_its_final_note_order_and_the_same_process() {
     run_host_case("cooperative");
 }
 #[test]
-fn control_then_replay_is_queued_and_keeps_the_same_process() {
-    run_host_case("control-replay");
+fn pending_control_keeps_capture_readable_without_reloading_the_process() {
+    run_host_case("control-capture");
 }
 #[test]
 fn continuous_notes_and_ops_do_not_starve_stop_or_its_completion() {
@@ -340,7 +362,7 @@ fn host_handshake_refusal_and_timeout_return_only_after_reap() {
 }
 
 #[test]
-fn hosted_acp_journal_captures_inputs_and_does_not_append_replays() {
+fn hosted_acp_journal_captures_inputs_without_reappending_captured_history() {
     run_host_case("journal");
 }
 #[test]
@@ -357,23 +379,23 @@ fn failed_or_closed_bootstrap_does_not_publish_ready_or_keep_a_writer() {
 }
 
 #[test]
-fn a_legal_replay_of_many_small_frames_is_complete_for_a_reading_gui() {
-    run_host_case("many-replay");
+fn an_initial_load_of_many_small_records_is_complete_in_canonical_history() {
+    run_host_case("many-load");
 }
 
 #[test]
-fn stopping_a_backpressured_replay_marks_partial_history_before_its_end() {
-    run_host_case("cancel-replay");
+fn stopping_a_flooding_turn_preserves_capture_and_the_next_turn() {
+    run_host_case("stop-capture");
 }
 
 #[test]
-fn closing_a_backpressured_replay_joins_its_waiting_publisher() {
-    run_host_case("close-replay");
+fn closing_a_flooding_turn_reaps_with_an_unread_view() {
+    run_host_case("close-capture");
 }
 
 #[test]
-fn stopping_a_progressing_drip_replay_has_a_bounded_delivery_close() {
-    run_host_case("drip-replay");
+fn a_progressing_giant_note_reader_does_not_hold_stop_or_the_next_turn() {
+    run_host_case("drip-live");
 }
 
 struct DripReader {
@@ -787,19 +809,22 @@ fn managed_host_case_worker() {
             assert!(chunk.bytes.len() <= 64 * 1024);
             assert!(chunk.next.is_some());
             assert!(String::from_utf8_lossy(&chunk.bytes).contains("original user words"));
-            for _ in 0..2 {
-                write_frame(&mut conn, &GuiOp::Replay).unwrap();
-                let until = Instant::now() + Duration::from_secs(5);
-                loop {
-                    if matches!(next_note(&notes, until), GuiNote::HistoryEnd) {
-                        break;
-                    }
-                }
-            }
+            let token=[71;16];
+            write_frame(&mut conn,&GuiOp::Capture{token}).unwrap();
+            let first=await_capture(&notes,token);
+            let _=capture_page(&node,&first,false);
+            let (mut reattached,reattached_notes)=attach_host(&root,&scratch,"journal-load");
+            let token=[72;16];
+            write_frame(&mut reattached,&GuiOp::Capture{token}).unwrap();
+            let second=await_capture(&reattached_notes,token);
+            assert_eq!(first.binding,second.binding,"reattach must preserve canonical source identity");
+            let _=capture_page(&node,&second,false);
+            reattached.shutdown(std::net::Shutdown::Both).unwrap();
+            drop(reattached);drop(reattached_notes);
             assert_eq!(
                 std::fs::read(&records).unwrap(),
                 text.as_bytes(),
-                "runtime replays do not mutate the canonical capture"
+                "repeated Capture and reattach do not mutate the canonical capture"
             );
             close_host(
                 host,
@@ -1025,13 +1050,19 @@ fn managed_host_case_worker() {
             assert_alive(pid);
             close_host(host, &mut conn, &notes, pid);
         }
-        "drip-replay" => {
+        "drip-live" => {
             use std::io::Read;
             use std::os::fd::AsRawFd;
             use std::sync::atomic::{AtomicUsize, Ordering};
-            let mode = "drip-replay";
-            let (host, mut conn, notes) = open_host(&root, &scratch, mode);
+            let mode = "drip-live";
+            let (host, conn, notes) = open_host(&root, &scratch, mode);
             let pid = process_pid(&scratch, mode);
+            // Only the raw view is present when the giant live Note is sent.
+            // Ordinary GUI frame readers reject >1MiB and must not be used as
+            // an unnoticed giant-frame sink. Attach the control view afterward.
+            conn.shutdown(std::net::Shutdown::Both).unwrap();
+            drop(conn);
+            drop(notes);
             let mut reader = extra_face(&root, &scratch, mode);
             let receive_bytes: libc::c_int = 64 * 1024;
             assert_eq!(
@@ -1049,9 +1080,9 @@ fn managed_host_case_worker() {
             reader
                 .set_read_timeout(Some(Duration::from_secs(15)))
                 .unwrap();
-            write_frame(&mut reader, &GuiOp::Replay).unwrap();
+            write_frame(&mut reader, &GuiOp::Say("first".into())).unwrap();
             // Initial capability frames are small. A raw reader deliberately
-            // accepts the legal >1MiB outgoing History, then keeps progressing.
+            // accepts the legal >1MiB outgoing live Note, then keeps progressing.
             let body_length = loop {
                 let mut prefix = [0; 4];
                 reader.read_exact(&mut prefix).unwrap();
@@ -1063,6 +1094,7 @@ fn managed_host_case_worker() {
                 reader.read_exact(&mut body).unwrap();
             };
             assert!(body_length < 32 * 1024 * 1024);
+            let (mut conn, notes) = attach_host(&root, &scratch, mode);
             let progressed = Arc::new(AtomicUsize::new(0));
             let progress = progressed.clone();
             let shutdown = reader.try_clone().unwrap();
@@ -1089,9 +1121,9 @@ fn managed_host_case_worker() {
                 );
                 std::thread::sleep(Duration::from_millis(5));
             }
-            // More than two seconds of real progress must preserve the normal
-            // large frame. Its first frame is still far from complete, so the
-            // 128 queued frames cannot yet free a slot for cancelled/error+End.
+            // A progressing large live frame retains its normal socket policy.
+            // Stop/next-turn processing on a different view cannot wait for this
+            // view to finish reading it. No retired publisher grace is involved.
             assert_alive(pid);
             assert!(reading_started.elapsed() > Duration::from_secs(2));
             let stopped = Instant::now();
@@ -1101,15 +1133,12 @@ fn managed_host_case_worker() {
             write_frame(&mut conn, &GuiOp::Say("after cancellation".into())).unwrap();
             let deadline = stopped + Duration::from_secs(4);
             let mut final_note = false;
-            let mut repeated_stop = false;
+            let mut cancelled = false;
+            let mut final_cancel_note = false;
             loop {
-                if !repeated_stop && stopped.elapsed() >= Duration::from_millis(1500) {
-                    write_frame(&mut conn, &GuiOp::Stop).unwrap();
-                    repeated_stop = true;
-                }
                 assert!(
                     Instant::now() < deadline,
-                    "cancelled replay kept the session busy while its reader continued progressing"
+                    "a progressing view held cooperative Stop or the next turn"
                 );
                 match next_note(&notes, deadline) {
                     GuiNote::Refused { why } if why == refused::TURN_IN_FLIGHT => {
@@ -1123,22 +1152,39 @@ fn managed_host_case_worker() {
                     {
                         final_note = true
                     }
+                    GuiNote::Note(json) if json.contains("synthetic final note after cancel") => {
+                        final_cancel_note = true
+                    }
+                    GuiNote::Turn(stop) if stop == "Cancelled" => {
+                        assert!(
+                            final_cancel_note,
+                            "Cancelled overtook its final accepted Note"
+                        );
+                        cancelled = true;
+                    }
                     GuiNote::Turn(stop) => {
                         assert_eq!(stop, "EndTurn");
-                        assert!(final_note);
+                        assert!(cancelled && final_note);
                         break;
                     }
-                    GuiNote::Gone => panic!("GUI delivery cancellation retired the ACP process"),
+                    GuiNote::Gone => panic!("a slow view retired the cooperative ACP process"),
                     _ => {}
                 }
             }
             assert!(
-                repeated_stop,
-                "the test did not exercise repeated UI cancellation"
+                scratch.join(mode).join("cancel.jsonl").is_file(),
+                "the cooperative Stop must reach the actual SDK peer"
             );
+            while progressed.load(Ordering::Acquire) <= progress_at_stop {
+                assert!(
+                    stopped.elapsed() < Duration::from_secs(3),
+                    "the ongoing reader stopped making progress"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
             assert!(
                 stopped.elapsed() < Duration::from_secs(3),
-                "a repeated Stop renewed the cancellation delivery grace"
+                "the slow view blocked cooperative Stop or the next turn"
             );
             assert!(
                 progressed.load(Ordering::Acquire) > progress_at_stop,
@@ -1149,27 +1195,20 @@ fn managed_host_case_worker() {
             drop(drip);
             close_host(host, &mut conn, &notes, pid);
         }
-        "cancel-replay" | "close-replay" => {
-            let mode = "cancel-replay";
+        "stop-capture" | "close-capture" => {
+            let mode = if case == "close-capture" {
+                "capture-close"
+            } else {
+                "capture-flood"
+            };
             let (host, mut conn, notes) = open_host(&root, &scratch, mode);
             let pid = process_pid(&scratch, mode);
-            let mut history_reader = extra_face(&root, &scratch, mode);
-            history_reader
-                .set_read_timeout(Some(Duration::from_secs(6)))
-                .unwrap();
-            write_frame(&mut history_reader, &GuiOp::Replay).unwrap();
-            // A real first History proves the SDK response/fence has completed;
-            // Stop now cancels UI delivery, not the already-acknowledged RPC.
-            loop {
-                if matches!(
-                    read_frame::<GuiNote>(&mut history_reader).unwrap(),
-                    GuiNote::History(_)
-                ) {
-                    break;
-                }
-            }
-            if case == "close-replay" {
+            let unread = extra_face(&root, &scratch, mode);
+            write_frame(&mut conn, &GuiOp::Say("first".into())).unwrap();
+            await_file(&scratch.join(mode).join("flood-progress.jsonl"));
+            if case == "close-capture" {
                 close_host(host, &mut conn, &notes, pid);
+                drop(unread);
                 return;
             }
             write_frame(&mut conn, &GuiOp::Stop).unwrap();
@@ -1182,78 +1221,152 @@ fn managed_host_case_worker() {
             )
             .unwrap();
             let deadline = Instant::now() + Duration::from_secs(3);
-            loop {
-                if matches!(next_note(&notes, deadline), GuiNote::Refused { .. }) {
-                    break;
-                }
-            }
-            assert_alive(pid);
-            assert!(
-                !scratch.join(mode).join("cancel.jsonl").exists(),
-                "UI delivery cancellation was sent as a new SDK cancel"
-            );
-            let mut received = 1;
-            let mut cancelled = false;
-            loop {
-                match read_frame::<GuiNote>(&mut history_reader).unwrap() {
-                    GuiNote::History(_) => {
-                        assert!(!cancelled);
-                        received += 1;
+            let (mut final_note, mut cancelled, mut refused) = (false, false, false);
+            while !cancelled || !refused {
+                match next_note(&notes, deadline) {
+                    GuiNote::Note(json) if json.contains("synthetic final note after cancel") => {
+                        final_note = true
                     }
-                    GuiNote::ControlResult { token, error, .. } if token == "replay" => {
-                        cancelled = error.is_some_and(|why| why.contains("cancelled"));
+                    GuiNote::Turn(stop) => {
+                        assert_eq!(stop, "Cancelled");
+                        assert!(final_note, "Cancelled overtook its accepted final Note");
+                        cancelled = true;
                     }
-                    GuiNote::HistoryEnd => {
-                        assert!(cancelled, "partial history was presented as complete");
-                        assert!(received < 16384);
-                        break;
-                    }
-                    GuiNote::Gone => panic!("publisher cancellation killed the session"),
+                    GuiNote::Refused { .. } => refused = true,
+                    GuiNote::Gone => panic!("Stop retired the cooperative process"),
                     _ => {}
                 }
             }
+            assert!(
+                scratch.join(mode).join("cancel.jsonl").is_file(),
+                "current-turn Stop must actually cross the SDK cancel path"
+            );
+            assert_alive(pid);
+            let token = [73; 16];
+            write_frame(&mut conn, &GuiOp::Capture { token }).unwrap();
+            let capture = await_capture(&notes, token);
+            let node = crate::Node::open(root.clone()).unwrap();
+            let page = capture_page(&node, &capture, false);
+            assert!(
+                page.events.iter().any(|event| matches!(&event.payload,
+                crate::session_content::ContentEvent::Update(note)
+                    if note.to_string().contains("synthetic final note after cancel"))),
+                "the confirmed cancelled tail must remain in canonical history"
+            );
             write_frame(&mut conn, &GuiOp::Say("next".into())).unwrap();
             await_turn(
                 &notes,
                 "EndTurn",
                 "synthetic final note before normal completion",
             );
+            assert_alive(pid);
+            assert!(
+                !scratch.join(mode).join("load.jsonl").exists(),
+                "Capture must not reload the live agent"
+            );
             close_host(host, &mut conn, &notes, pid);
+            drop(unread);
         }
-        "many-replay" => {
-            let mode = "many-small-replay";
-            let (host, mut conn, notes) = open_host(&root, &scratch, mode);
-            let pid = process_pid(&scratch, mode);
-            write_frame(&mut conn, &GuiOp::Replay).unwrap();
-            let deadline = Instant::now() + Duration::from_secs(12);
-            let mut count = 0;
-            let mut total = 0;
-            loop {
-                match next_note(&notes, deadline) {
-                    GuiNote::History(json) => {
-                        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-                        let text = value["update"]["content"]["text"].as_str().unwrap();
-                        assert!(
-                            text.starts_with(&format!("replay-item-{count}:")),
-                            "history frames were skipped or reordered"
-                        );
-                        count += 1;
-                        total += json.len();
-                    }
-                    GuiNote::HistoryEnd => {
-                        assert_eq!(count, 16384);
-                        assert!(total < 32 * 1024 * 1024);
-                        break;
-                    }
-                    GuiNote::Gone => panic!("a legal reading GUI replay retired its session"),
-                    _ => {}
-                }
+        "many-load" => {
+            let mode = "many-small-load";
+            unsafe {
+                std::env::set_var(RESUME_ENV, "synthetic-q037-session");
             }
+            let deadline = Instant::now() + Duration::from_secs(12);
+            let host = launch_host(&root, &scratch, mode, HostTimeouts::default());
+            // Preserve the original5s basic-handshake bound and12s historical
+            // data probe, now through supported opening rather than live Replay.
+            await_file(&scratch.join(mode).join("load.jsonl"));
+            let ready = scratch.join(format!("{mode}.ready"));
+            while !ready.is_file() {
+                assert!(!host.is_finished());
+                assert!(
+                    Instant::now() < deadline,
+                    "initial history did not commit within the data probe"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let (mut conn, notes) = attach_host(&root, &scratch, mode);
+            let pid = process_pid(&scratch, mode);
+            let token = [74; 16];
+            write_frame(&mut conn, &GuiOp::Capture { token }).unwrap();
+            let capture = await_capture(&notes, token);
+            let node = crate::Node::open(root.clone()).unwrap();
+            let (count, total) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), async {
+                        let mut cursor = Some(capture.cursor.clone());
+                        let mut end = 16384usize;
+                        let mut count = 0;
+                        let mut total = 0;
+                        while let Some(before) = cursor {
+                            assert!(
+                                Instant::now() < deadline,
+                                "canonical pagination exceeded the original12s history probe"
+                            );
+                            let key = node.content_begin(&capture.binding).await.unwrap();
+                            let request = crate::session_content::remote::ClientRead::claim(
+                                &root,
+                                capture.binding.clone(),
+                                &key,
+                            )
+                            .unwrap();
+                            let page = node
+                                .content_page(&request, Some(before), false)
+                                .await
+                                .unwrap();
+                            assert!(!page.reset && page.references.is_empty());
+                            let base = end
+                                .checked_sub(page.events.len())
+                                .expect("history duplicated rows");
+                            for (index, event) in page.events.iter().enumerate() {
+                                let crate::session_content::ContentEvent::Update(note) =
+                                    &event.payload
+                                else {
+                                    panic!("unexpected non-history record")
+                                };
+                                let text = note["update"]["content"]["text"].as_str().unwrap();
+                                assert!(
+                                    text.starts_with(&format!("load-item-{}:", base + index)),
+                                    "history rows were skipped or reordered"
+                                );
+                                total += note.to_string().len();
+                            }
+                            count += page.events.len();
+                            end = base;
+                            cursor = page.older;
+                        }
+                        assert_eq!(end, 0);
+                        (count, total)
+                    })
+                    .await
+                    .expect("canonical data exceeded the original12s history probe")
+                });
+            assert_eq!(count, 16384);
+            assert!(total < 32 * 1024 * 1024);
+            let received =
+                std::fs::read_to_string(scratch.join(mode).join("received.jsonl")).unwrap();
+            assert_eq!(
+                received
+                    .lines()
+                    .filter(
+                        |line| serde_json::from_str::<serde_json::Value>(line).unwrap()["method"]
+                            == "session/load"
+                    )
+                    .count(),
+                1
+            );
+            assert!(!received.lines().any(|line| {
+                serde_json::from_str::<serde_json::Value>(line).unwrap()["method"] == "session/new"
+            }));
             assert_alive(pid);
             close_host(host, &mut conn, &notes, pid);
         }
-        "control-replay" => {
-            let mode = "control-hold";
+        "control-capture" => {
+            let mode = "control-pending";
             let (host, mut conn, notes) = open_host(&root, &scratch, mode);
             let pid = process_pid(&scratch, mode);
             write_frame(
@@ -1261,12 +1374,13 @@ fn managed_host_case_worker() {
                 &GuiOp::Control {
                     token: "hold".into(),
                     operation: "authenticate".into(),
-                    payload: r#"{"methodId":"synthetic"}"#.into(),
+                    payload: "{\"methodId\":\"synthetic\"}".into(),
                 },
             )
             .unwrap();
             await_file(&scratch.join(mode).join("control.jsonl"));
-            write_frame(&mut conn, &GuiOp::Replay).unwrap();
+            let token = [75; 16];
+            write_frame(&mut conn, &GuiOp::Capture { token }).unwrap();
             write_frame(
                 &mut conn,
                 &GuiOp::ElicitAnswer {
@@ -1276,41 +1390,45 @@ fn managed_host_case_worker() {
             )
             .unwrap();
             let deadline = Instant::now() + Duration::from_secs(3);
-            loop {
+            let (mut captured, mut refused) = (None, false);
+            while captured.is_none() || !refused {
                 match next_note(&notes, deadline) {
-                    GuiNote::Refused { .. } => break,
-                    GuiNote::Gone => panic!("Replay killed a pending Control"),
+                    GuiNote::Captured {
+                        token: received,
+                        result,
+                    } => {
+                        assert_eq!(received, token);
+                        captured = Some(result.unwrap());
+                    }
+                    GuiNote::Refused { .. } => refused = true,
+                    GuiNote::ControlResult { .. } => {
+                        panic!("Control completed before the fixture release")
+                    }
+                    GuiNote::Gone => panic!("Capture killed a pending Control"),
                     _ => {}
                 }
             }
+            let node = crate::Node::open(root.clone()).unwrap();
+            let _ = capture_page(&node, &captured.unwrap(), false);
             assert_alive(pid);
             assert!(
                 !scratch.join(mode).join("load.jsonl").exists(),
-                "Replay was not queued behind Control"
+                "Capture must read canonical history without an agent reload"
             );
             std::fs::write(scratch.join(mode).join("release-control"), b"release").unwrap();
             let deadline = Instant::now() + Duration::from_secs(4);
-            let mut controlled = false;
-            let mut history = false;
             loop {
                 match next_note(&notes, deadline) {
                     GuiNote::ControlResult { token, error, .. } if token == "hold" => {
                         assert!(error.is_none());
-                        controlled = true;
-                    }
-                    GuiNote::History(json) => {
-                        assert!(controlled);
-                        history |= json.contains("synthetic replay final note");
-                    }
-                    GuiNote::HistoryEnd => {
-                        assert!(controlled && history);
                         break;
                     }
-                    GuiNote::Gone => panic!("queued Replay retired the process"),
+                    GuiNote::Gone => panic!("canonical capture retired the Control's process"),
                     _ => {}
                 }
             }
             assert_alive(pid);
+            assert!(!scratch.join(mode).join("load.jsonl").exists());
             close_host(host, &mut conn, &notes, pid);
         }
         "slow-gui" => {

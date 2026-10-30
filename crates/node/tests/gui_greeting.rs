@@ -49,7 +49,7 @@ fn exchange(welcome: Welcome) -> (Result<gui_host::Attached, String>, thread::Jo
 fn current_gui_greeting_keeps_a_raw_stream_without_terminal_negotiation() {
     let (result, server) = exchange(Welcome {
         ok: true,
-        why: "khor-gui/1".into(),
+        why: "khor-gui/2".into(),
     });
     let attached = result.unwrap();
     assert_eq!(attached.stream.read_timeout().unwrap(), None);
@@ -60,7 +60,7 @@ fn current_gui_greeting_keeps_a_raw_stream_without_terminal_negotiation() {
 
 #[test]
 fn empty_unknown_terminal_and_other_gui_greetings_are_rejected() {
-    for greeting in ["", "unknown", "khor-host/5", "khor-gui/2"] {
+    for greeting in ["", "unknown", "khor-host/5", "khor-gui/1", "khor-gui/3"] {
         let (result, server) = exchange(Welcome {
             ok: true,
             why: greeting.into(),

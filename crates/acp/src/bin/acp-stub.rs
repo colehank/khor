@@ -166,6 +166,9 @@ async fn main() -> agent_client_protocol::Result<()> {
     // What the settable stub currently has set: (model, fast).
     let set = Arc::new(Mutex::new(("small".to_owned(), false)));
     let set_option = set.clone();
+    // The scripted agent retains the actual context accepted by session/new.
+    let new_context = Arc::new(Mutex::new(String::new()));
+    let prompt_context = new_context.clone();
     let canceled = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let prompt_canceled = canceled.clone();
     Agent
@@ -271,7 +274,7 @@ async fn main() -> agent_client_protocol::Result<()> {
                     format!("stub-session-{}", std::process::id())
                 } else { "stub-session-1".to_owned() };
                 let mut opened = NewSessionResponse::new(session);
-                if extended(){let mut meta=serde_json::Map::new();meta.insert("modelId".into(),serde_json::to_string(&request).unwrap().into());opened.meta=Some(meta);}
+                if extended(){let context=serde_json::to_string(&request).unwrap();*new_context.lock().unwrap()=context.clone();let mut meta=serde_json::Map::new();meta.insert("modelId".into(),context.into());opened.meta=Some(meta);}
                 if settable() {
                     let (model, fast) = set.lock().unwrap().clone();
                     opened.modes = Some(modes_of("careful"));
@@ -325,16 +328,14 @@ async fn main() -> agent_client_protocol::Result<()> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            // The replay contract, scripted: every replayed update goes
-            // out **before** the response — which is the ordering the
-            // real adapter honours and khor_acp::Handle::replay leans on.
+            // Supported initial Load emits the recorded past before its response.
             async move |request: LoadSessionRequest, responder, connection| {
                 if !replays() {
                     return responder
                         .respond_with_error(agent_client_protocol::Error::method_not_found());
                 }
                 let session = request.session_id.clone();
-                if extended(){let inner=connection.clone();return connection.spawn(async move{let response=inner.send_request(question(Some(session.0.as_ref()))).block_task().await?;inner.send_notification(SessionNotification::new(session.clone(),chunk(&format!("load-answer:{} context:{}",serde_json::to_string(&response).unwrap(),serde_json::to_string(&request).unwrap()))))?;responder.respond(LoadSessionResponse::new())});}
+                if extended(){connection.send_notification(SessionNotification::new(session.clone(),chunk(&format!("load-context:{}",serde_json::to_string(&request).unwrap()))))?;return responder.respond(LoadSessionResponse::new());}
                 for text in ["played back: one", "played back: two"] {
                     connection.send_notification(SessionNotification::new(
                         session.clone(),
@@ -355,6 +356,15 @@ async fn main() -> agent_client_protocol::Result<()> {
         .on_receive_request(async move|_request:CloseSessionRequest,responder,_connection|responder.respond(CloseSessionResponse::new()),agent_client_protocol::on_receive_request!())
         .on_receive_request(
             async move |request: PromptRequest, responder, connection| {
+                if extended() {
+                    let context=prompt_context.lock().unwrap().clone();
+                    let inner=connection.clone();
+                    return connection.spawn(async move {
+                        let answer=inner.send_request(question(Some(request.session_id.0.as_ref()))).block_task().await?;
+                        inner.send_notification(SessionNotification::new(request.session_id.clone(),chunk(&format!("prompt-answer:{} context:{}",serde_json::to_string(&answer).unwrap(),context))))?;
+                        responder.respond(PromptResponse::new(StopReason::EndTurn))
+                    });
+                }
                 prompt_canceled.store(false, std::sync::atomic::Ordering::SeqCst);
                 let canceled = prompt_canceled.clone();
                 let session = request.session_id.clone();

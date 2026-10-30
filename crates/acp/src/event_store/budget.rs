@@ -104,6 +104,7 @@ impl Budget {
         self.state().closed = true;
         self.space.notify_waiters();
     }
+    #[cfg(test)]
     pub(super) fn stats(&self) -> BudgetStats {
         *self.state()
     }

@@ -102,10 +102,23 @@ for line in sys.stdin:
         .await
         .unwrap();
 
-    handle
-        .replay()
-        .await
-        .expect("a new unprompted session has an empty history");
+    let opening=handle.fence_events().await.unwrap();
+    let mut initial_notes=Vec::new();
+    let mut ready=false;
+    while events.remaining_through(&opening).unwrap()>0 {
+        match events.recv().await.expect("fresh opening remains readable") {
+            khor_acp::Event::Note(note)=> {
+                let value=serde_json::to_value(&note).unwrap();
+                assert!(!matches!(value["update"]["sessionUpdate"].as_str(),
+                    Some("user_message_chunk"|"agent_message_chunk")),
+                    "an unprompted new session must not invent past messages: {value}");
+                initial_notes.push(serde_json::to_string(&note).unwrap());
+            }
+            khor_acp::Event::Ready{..}=> { assert!(!ready); ready=true; },
+            _=>panic!("a fresh empty opening unexpectedly asked or closed"),
+        }
+    }
+    assert!(ready,"fresh opening must acknowledge its actual session");
     let sid = handle.session().0.to_string();
     assert_eq!(sid.len(), 36, "a minted v4 uuid, dashes and all: {sid}");
     assert_eq!(
@@ -116,7 +129,7 @@ for line in sys.stdin:
 
     // Notes and asks are handled beside the turns: an ask arrives while
     // its prompt is still pending, so a serial drain would deadlock.
-    let notes = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let notes = std::sync::Arc::new(std::sync::Mutex::new(initial_notes));
     let closed = std::sync::Arc::new(std::sync::Mutex::new(None::<Option<String>>));
     let n2 = notes.clone();
     let c2 = closed.clone();
@@ -257,7 +270,7 @@ for line in sys.stdin:
         "the conversation survives a stop: {said}"
     );
 
-    // Replay reads the vendor transcript through the same lossy leaf
+    // Initial Load reads the vendor transcript through the same lossy leaf
     // the id wears — write one for this session and load it back.
     let slug = dir.join("home").join(".claude").join("projects").join("-x");
     std::fs::create_dir_all(&slug).unwrap();
@@ -267,16 +280,8 @@ for line in sys.stdin:
         r#"{{"type":"user","message":{{"role":"user","content":"words from the past"}}}}"#
     )
     .unwrap();
-    handle.replay().await.unwrap();
-    let said = notes.lock().unwrap().join("\n");
-    assert!(
-        said.contains("words from the past"),
-        "the replay must surface the transcript: {said}"
-    );
-    assert!(
-        said.contains("user_message_chunk"),
-        "in the shape history() uses"
-    );
+    // The transcript/rollout is consumed by the supported initial Load below,
+    // after this owner has actually ended. No second load runs on a live agent.
 
     // A dead agent must surface as a Closed the pump can break on —
     // the hang this guards against was found live: a gui host whose
@@ -344,7 +349,21 @@ for line in sys.stdin:
         sid,
         "the resumed session keeps its id"
     );
-    let notes3 = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let opening=handle3.fence_events().await.unwrap();
+    let mut past=Vec::new();
+    let mut ready=false;
+    while events3.remaining_through(&opening).unwrap()>0 {
+        match events3.recv().await.expect("restored opening remains readable") {
+            khor_acp::Event::Note(note)=>past.push(serde_json::to_string(&note).unwrap()),
+            khor_acp::Event::Ready{..}=> { assert!(!ready); ready=true; },
+            _=>panic!("the supported initial Load unexpectedly asked or closed"),
+        }
+    }
+    assert!(ready);
+    let said=past.join("\n");
+    assert!(said.contains("words from the past"),"initial Load must surface the recorded transcript before a new prompt: {said}");
+    assert!(said.contains("user_message_chunk"),"the restored past must retain its normalized user-message shape");
+    let notes3 = std::sync::Arc::new(std::sync::Mutex::new(past));
     let n3 = notes3.clone();
     let pump3 = tokio::spawn(async move {
         while let Some(e) = events3.recv().await {

@@ -44,7 +44,11 @@ def answer(request_id, result):
 
 def flood():
     n = 0
-    large = mode == 'large-flood'
+    if mode == 'drip-live':
+        note('drip-large:' + 'd' * (30 * 1024 * 1024))
+        mark('flood-progress', {'frames': 1})
+        return
+    large = mode in ('large-flood', 'capture-flood', 'capture-close')
     while not stop.wait(.04 if large else .0005):
         try:
             note('synthetic-noise-' + str(n) + 'x' * (256 * 1024 if large else 128))
@@ -94,17 +98,13 @@ try:
             answer(request_id, {})
         elif method == 'session/load':
             mark('load', {'id': request_id})
-            if mode == 'drip-replay':
-                note('drip-large:' + 'd' * (30 * 1024 * 1024))
-                for n in range(4096):
-                    note('drip-tail-' + str(n) + ':' + 't' * 64)
-            elif mode in ('many-small-replay', 'cancel-replay'):
+            if mode == 'many-small-load':
                 for n in range(16384):
-                    note('replay-item-' + str(n) + ':' + 'r' * (1024 if mode == 'cancel-replay' else 64))
+                    note('load-item-' + str(n) + ':' + 'r' * 64)
             elif mode == 'journal-load':
                 note('journal snapshot base')
             else:
-                note('synthetic replay final note')
+                note('synthetic restored final note')
             answer(request_id, {})
         elif method == 'authenticate':
             mark('control', {'id': request_id})
@@ -136,9 +136,9 @@ try:
                 pending = None
                 continue
             note('synthetic prompt admitted')
-            if mode in ('notes-flood', 'cooperative-flood', 'large-flood') and turns == 1:
+            if mode in ('notes-flood', 'cooperative-flood', 'large-flood', 'capture-flood', 'capture-close', 'drip-live') and turns == 1:
                 threading.Thread(target=flood, daemon=True).start()
-            if turns > 1 or mode in ('normal', 'cancel-replay', 'drip-replay'):
+            if turns > 1 or mode == 'normal':
                 note('synthetic final note before normal completion')
                 answer(request_id, {'stopReason': 'end_turn'})
                 pending = None
@@ -147,7 +147,8 @@ try:
                     time.sleep(.1)
         elif method == 'session/cancel':
             mark('cancel', {'prompt': pending, 'at': time.monotonic()})
-            if mode in ('cooperative', 'cooperative-flood') and pending is not None:
+            if mode in ('cooperative', 'cooperative-flood', 'capture-flood', 'capture-close', 'drip-live') and pending is not None:
+                if mode in ('capture-flood', 'capture-close', 'drip-live'): stop.set()
                 note('synthetic final note after cancel')
                 answer(pending, {'stopReason': 'cancelled'})
                 pending = None

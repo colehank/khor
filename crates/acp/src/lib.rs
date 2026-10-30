@@ -107,9 +107,8 @@ pub use management::{manage, manage_on, Management};
 pub struct Facts {
     /// Complete handshake facts; additions never require a vendor-specific GUI.
     pub protocol: serde_json::Value,
-    /// The agent replays its own past (`session/load`). When false,
-    /// [`Handle::replay`] is not worth asking and a face must say the
-    /// past is unavailable rather than paint an empty one.
+    /// The agent advertises initial history loading (`session/load`). When
+    /// false, a face must not present an unsupported restore as an empty past.
     pub replays: bool,
     /// The agent's own name for itself, when it gives one. Never used
     /// to decide anything — khor's answer to "whose session is this"
@@ -329,11 +328,6 @@ pub enum OpenedBy {
 pub struct Handle {
     conn: ConnectionTo<Agent>,
     session: SessionId,
-    /// Where the session lives — kept because `session/load` must name
-    /// the same cwd the session was opened with (the real adapter
-    /// refuses a mismatch).
-    cwd: PathBuf,
-    environment: Environment,
     facts: Facts,
     settings: Settings,
     opened_by: OpenedBy,
@@ -497,33 +491,6 @@ impl Handle {
         Ok(response.stop_reason)
     }
 
-    /// Replays the whole conversation so far: every replayed update
-    /// arrives as [`Event::Note`]. The SDK dispatches notifications before the
-    /// following response; callers must then await [`Handle::fence_events`]
-    /// before draining the returned finite prefix from the public receiver.
-    /// That fence confirms complete records in the owned FIFO; later traffic
-    /// never extends it, and a caller can consume without holding the whole base.
-    ///
-    /// Loading a session that is live on this very connection works
-    /// (probed on the real adapter, 2026-08-17: a second load answers
-    /// with the same replay) — but an agent replays from its own
-    /// transcript, so a session that has never had a turn may refuse
-    /// with "not found" rather than replay nothing.
-    pub async fn replay(&self) -> Result<(), String> {
-        self.close.while_open(self.replay_inner()).await
-    }
-    async fn replay_inner(&self) -> Result<(), String> {
-        let mut request = LoadSessionRequest::new(self.session.clone(), self.cwd.clone());
-        request.mcp_servers = self.environment.mcp_servers.clone();
-        request.additional_directories = self.environment.additional_directories.clone();
-        self.conn
-            .send_request(request)
-            .block_task()
-            .await
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
-
     /// Interrupt the current turn without ending the session.
     pub fn cancel(&self) -> Result<(), String> {
         self.close.check_open()?;
@@ -616,7 +583,7 @@ pub async fn start(
 /// (`session/load` instead of `session/new`) — the takeover path (批C).
 /// The load's replayed updates arrive as [`Event::Note`]s before
 /// [`Event::Ready`]; a caller with nobody attached yet simply drops
-/// them, and the past stays askable through [`Handle::replay`].
+/// them. Later views read the canonical capture rather than reloading the agent.
 pub async fn start_resume(
     command: &str,
     cwd: PathBuf,
@@ -869,8 +836,6 @@ async fn start_transport(
     let opening_events = events.clone();
     let closed = events.clone();
     let failed = events.clone();
-    let home = cwd.clone();
-    let retained_environment = environment.clone();
 
     tokio::spawn(async move {
         let _driver_cleanup = driver_cleanup;
@@ -1000,8 +965,6 @@ async fn start_transport(
         Handle {
             conn,
             session,
-            cwd: home,
-            environment: retained_environment,
             facts,
             settings,
             opened_by,

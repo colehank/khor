@@ -95,7 +95,7 @@ async fn login_before_a_session_answers_structured_input_without_a_model() {
 }
 
 #[tokio::test]
-async fn session_context_survives_replay_while_interactions_remain_answerable() {
+async fn session_context_survives_a_prompt_while_interactions_remain_answerable() {
     let environment=khor_acp::Environment{mcp_servers:vec![serde_json::from_value(serde_json::json!({"name":"tools","type":"http","url":"https://example.test/mcp","headers":[]})).unwrap()],additional_directories:vec![std::env::temp_dir()]};
     let (h, mut rx) = khor_acp::start_configured(
         &stub_with("KHOR_STUB_EXTENDED", "1"),
@@ -113,12 +113,12 @@ async fn session_context_survives_replay_while_interactions_remain_answerable() 
         .contains("example.test/mcp"));
     let _ = next(&mut rx).await;
     let h = std::sync::Arc::new(h);
-    let replay = tokio::spawn({
+    let prompt = tokio::spawn({
         let h = h.clone();
-        async move { h.replay().await }
+        async move { h.prompt("check retained context").await }
     });
     let Event::Elicit(question) = next(&mut rx).await else {
-        panic!("replay asks")
+        panic!("the actual prompt asks")
     };
     let response = question
         .validate(&serde_json::json!({"action":"accept","content":{"count":2}}))
@@ -126,8 +126,8 @@ async fn session_context_survives_replay_while_interactions_remain_answerable() 
     question.answer(response).unwrap();
     let note = text_of(next(&mut rx).await);
     assert!(note.contains("example.test/mcp"));
-    assert!(note.contains("load-answer"));
-    timeout(Duration::from_secs(5), replay)
+    assert!(note.contains("prompt-answer"));
+    timeout(Duration::from_secs(5), prompt)
         .await
         .unwrap()
         .unwrap()
@@ -262,28 +262,26 @@ async fn dropping_an_ask_unanswered_still_ends_the_turn() {
         .expect("the turn resolves");
 }
 
-/// The replay contract: when `replay()` resolves, every replayed update
-/// is **already on the receiver** — drained here with `try_recv`, no
-/// waiting, because the protocol puts the updates before the
-/// `session/load` response and the connection delivers in stream order.
-/// An agent that answered first and replayed after would turn every
-/// history view into a race; this is the assertion that notices.
+/// Supported initial Load records precede its response and belong to one
+/// finite accepted prefix; the FIFO can spill before the receiver is returned.
 #[tokio::test]
-async fn replay_is_all_there_when_the_call_answers() {
-    let (handle, mut rx) = start(STUB, std::env::temp_dir())
-        .await
-        .expect("stub starts");
-    let _ready = next(&mut rx).await;
-    handle.replay().await.expect("the load succeeds");
-    let mut played = Vec::new();
-    while let Ok(event) = rx.try_recv() {
-        played.push(text_of(event));
+async fn initial_load_is_complete_through_its_accepted_prefix() {
+    let (handle, mut rx) = khor_acp::start_resume(STUB, std::env::temp_dir(), "recorded-stub")
+        .await.expect("the initial Load succeeds");
+    let prefix=handle.fence_events().await.unwrap();
+    let mut played=Vec::new();
+    let mut ready=0;
+    while rx.remaining_through(&prefix).unwrap()>0 {
+        match next(&mut rx).await {
+            Event::Note(note)=>played.push(format!("{:?}",note.update)),
+            Event::Ready{..}=>ready+=1,
+            other=>panic!("unexpected opening event: {other:?}"),
+        }
     }
-    assert!(
-        played.iter().any(|t| t.contains("played back: one"))
-            && played.iter().any(|t| t.contains("played back: two")),
-        "both replayed chunks are on the channel before anything is awaited: {played:?}"
-    );
+    assert_eq!(ready,1);
+    assert!(played.iter().any(|text|text.contains("played back: one"))
+        && played.iter().any(|text|text.contains("played back: two")),
+        "the supported initial Load must preserve both recorded chunks: {played:?}");
 }
 
 /// Dropping the handle ends everything: the connection task returns,
@@ -339,14 +337,10 @@ async fn an_agent_that_cannot_replay_says_so_before_anyone_asks() {
         !handle.facts().replays,
         "this stub advertises no load_session"
     );
-    // And the capability is not a decoration: asking anyway really
-    // fails. That is the fact a face must not swallow — a failed load
-    // relays nothing, which paints exactly like a session where nothing
-    // was ever said.
-    assert!(
-        handle.replay().await.is_err(),
-        "control: the load it did not advertise really refuses"
-    );
+    // A supported restore is a separate opening, never a live reload.
+    handle.shutdown().await.unwrap();
+    assert!(khor_acp::start_resume(&cmd,std::env::temp_dir(),"unsupported-past").await.is_err(),
+        "an unadvertised initial restore must not become an empty conversation");
 }
 
 /// **A version this client cannot speak is refused at the handshake.**

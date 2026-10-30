@@ -144,13 +144,26 @@ for line in sys.stdin:
 
     // The session id is codex's own thread uuid — 同源: the rollout on
     // disk wears the same name.
-    handle
-        .replay()
-        .await
-        .expect("a new unprompted session has an empty history");
+    let opening=handle.fence_events().await.unwrap();
+    let mut initial_notes=Vec::new();
+    let mut ready=false;
+    while events.remaining_through(&opening).unwrap()>0 {
+        match events.recv().await.expect("fresh opening remains readable") {
+            khor_acp::Event::Note(note)=> {
+                let value=serde_json::to_value(&note).unwrap();
+                assert!(!matches!(value["update"]["sessionUpdate"].as_str(),
+                    Some("user_message_chunk"|"agent_message_chunk")),
+                    "an unprompted new session must not invent past messages: {value}");
+                initial_notes.push(serde_json::to_string(&note).unwrap());
+            }
+            khor_acp::Event::Ready{..}=> { assert!(!ready); ready=true; },
+            _=>panic!("a fresh empty opening unexpectedly asked or closed"),
+        }
+    }
+    assert!(ready,"fresh opening must acknowledge its actual session");
     assert_eq!(handle.session().0.to_string(), SID);
 
-    let notes = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let notes = std::sync::Arc::new(std::sync::Mutex::new(initial_notes));
     let closed = std::sync::Arc::new(std::sync::Mutex::new(None::<Option<String>>));
     let n2 = notes.clone();
     let c2 = closed.clone();
@@ -337,7 +350,7 @@ for line in sys.stdin:
         "the conversation survives a stop: {said}"
     );
 
-    // Replay reads the rollout under the vendor home, by the thread id
+    // Initial Load reads the rollout under the vendor home, by the thread id
     // in its name — write one and load it back.
     let day = dir
         .join("home")
@@ -360,16 +373,7 @@ for line in sys.stdin:
         r#"{{"type":"event_msg","payload":{{"type":"user_message","message":"words from the past"}}}}"#
     )
     .unwrap();
-    handle.replay().await.unwrap();
-    let said = notes.lock().unwrap().join("\n");
-    assert!(
-        said.contains("words from the past"),
-        "the replay must surface the rollout: {said}"
-    );
-    assert!(
-        said.contains("user_message_chunk"),
-        "in the shape history() uses"
-    );
+    // Supported initial Load below consumes this rollout after the old owner ends.
 
     // A dead agent must surface as a Closed the pump can break on.
     let fake_pid: i32 = std::fs::read_to_string(dir.join("cwd/fake.pid"))
@@ -433,7 +437,21 @@ for line in sys.stdin:
         SID,
         "the resumed session keeps its id"
     );
-    let notes3 = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let opening=handle3.fence_events().await.unwrap();
+    let mut past=Vec::new();
+    let mut ready=false;
+    while events3.remaining_through(&opening).unwrap()>0 {
+        match events3.recv().await.expect("restored opening remains readable") {
+            khor_acp::Event::Note(note)=>past.push(serde_json::to_string(&note).unwrap()),
+            khor_acp::Event::Ready{..}=> { assert!(!ready); ready=true; },
+            _=>panic!("the supported initial Load unexpectedly asked or closed"),
+        }
+    }
+    assert!(ready);
+    let said=past.join("\n");
+    assert!(said.contains("words from the past"),"initial Load must surface the recorded rollout before a new prompt: {said}");
+    assert!(said.contains("user_message_chunk"),"the restored past must retain its normalized user-message shape");
+    let notes3 = std::sync::Arc::new(std::sync::Mutex::new(past));
     let n3 = notes3.clone();
     let pump3 = tokio::spawn(async move {
         while let Some(e) = events3.recv().await {

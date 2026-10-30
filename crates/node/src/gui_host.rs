@@ -43,19 +43,12 @@
 //! The host file and cookie handshake are `host.rs`'s, reused verbatim.
 //! After the welcome the stream carries [`GuiNote`] frames out and
 //! [`GuiOp`] frames in — length-prefixed msgpack like everything else
-//! on this socket, positional arrays, so the wire discipline holds:
-//! new fields go at the tail with defaults, none in the middle.
-//! **Live frames are broadcast; history is asked for.** An attacher
-//! sees the conversation from now on, and one that wants the past sends
-//! [`GuiOp::Replay`]: the host asks the agent itself (`session/load`
-//! replays the whole conversation before it answers — probed on the
-//! real adapter, and re-loading a live session works) and relays the
-//! replayed updates as [`GuiNote::History`] frames **to that connection
-//! only** — broadcast history would repaint every other face's past.
-//! The host owns the durable ACP capture. Its first opening batch commits
-//! atomically; later loads remain runtime replays and never duplicate that
-//! capture. Replays wait for the turn to end because ACP does not identify
-//! replayed notifications separately from live ones.
+//! on this socket. Enum variants use names; their payload/struct fields are
+//! positional. The GUI greeting gates incompatible capabilities/frame sets.
+//! Live updates are broadcast. Each view asks for a token-bound canonical
+//! Capture and reads its own bounded page/raw cursor; it never reloads the
+//! running agent. The first supported Load/Resume commits its finite opening
+//! batch atomically before the host publishes readiness.
 
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -83,16 +76,8 @@ pub enum GuiOp {
         ask: u64,
         option: Option<String>,
     },
-    /// End the conversation: the agent dies with the connection. Held
-    /// at its position — frames are positional msgpack, and an old host
-    /// reading a new client must fail on the frame, never misread an
-    /// earlier variant.
+    /// End the conversation: the agent dies with the connection.
     Close,
-    /// Ask for the conversation so far, replayed by the agent itself
-    /// and answered as [`GuiNote::History`] frames **to this connection
-    /// only**, closed by [`GuiNote::HistoryEnd`]. Sent mid-turn it
-    /// waits for the turn to end (module head). Tail-appended.
-    Replay,
     /// End the turn that is running — not the session. The agent stays,
     /// its conversation stays, and the ending is `Cancelled`, which is
     /// 空闲: stopping it was the user's own act, so nothing is broken.
@@ -100,12 +85,7 @@ pub enum GuiOp {
     Stop,
     /// One user turn with images attached.
     ///
-    /// **Tail-appended, and a separate variant rather than a field on
-    /// [`GuiOp::Say`]** — these frames are positional msgpack, so a
-    /// field added inside `Say` would be read by an old host as a
-    /// different `Say`, silently. A variant at the end fails to decode
-    /// instead, which is the whole rule this enum's `Close` comment
-    /// already states.
+    /// A separate payload keeps [`GuiOp::Say`]'s ordinary text shape explicit.
     ///
     /// `(mime, base64)` pairs. The data is carried rather than a path
     /// because the face that has the image may be on another machine
@@ -177,7 +157,6 @@ pub struct CaptureFence {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CaptureFailure {
     NotReady,
-    ReplayInFlight,
     Unavailable,
 }
 
@@ -200,7 +179,7 @@ pub const PART: usize = 256 * 1024;
 /// so before sending, and the host drops what it was sent.
 pub const MAX_PARTS: usize = 64 * 1024 * 1024;
 
-const GUI_GREETING: &str = "khor-gui/1";
+const GUI_GREETING: &str = "khor-gui/2";
 
 pub struct Attached {
     pub stream: TcpStream,
@@ -356,15 +335,6 @@ pub enum GuiNote {
     Turn(String),
     /// The conversation is over; no more frames follow.
     Gone,
-    /// One replayed update (`session/update` JSON, [`GuiNote::Note`]'s
-    /// shape), answering this connection's [`GuiOp::Replay`] — never
-    /// broadcast. Tail-appended.
-    History(String),
-    /// The replay is complete. Arrives with no [`GuiNote::History`]
-    /// before it when there is nothing to replay **or the load failed**
-    /// — to a face the two are one fact: no past to paint, the live
-    /// stream unaffected. Tail-appended.
-    HistoryEnd,
     /// A turn is already running — told to a face the moment it
     /// attaches, and to nobody else. Without it, a second face opens
     /// on a conversation mid-turn with an inviting empty input, and
@@ -996,7 +966,7 @@ fn gui_host_main_with_timeouts(
         let (joined_tx, mut joined_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
 
         // Attachers: cookie in, frames both ways after the welcome. Each
-        // gets a number so a replay can be answered to its asker alone;
+        // gets a number so a capture can be answered to its asker alone;
         // every other op is the same from anyone.
         {
             let fanout = fanout.clone();
@@ -1073,11 +1043,6 @@ fn gui_host_main_with_timeouts(
         let mut asks: Vec<(u64, khor_acp::Ask, GuiNote)> = Vec::new();
         let mut elicits:Vec<(u64,khor_acp::Elicitation,GuiNote)>=Vec::new();
         let mut next_ask: u64 = 0;
-        // Who asked for history while a turn was running: answered when
-        // the turn ends (module head — a mid-turn load would interleave
-        // replayed and live updates indistinguishably).
-        let mut replay_wanted: Vec<u64> = Vec::new();
-        let mut replay: Option<Replay> = None;
         let (completion_tx, mut completion_rx) = tokio::sync::mpsc::unbounded_channel::<HostProgress>();
         let mut pending_completion: Option<PendingCompletion> = None;
         let mut deferred_ending: Option<Option<String>> = None;
@@ -1134,11 +1099,6 @@ fn gui_host_main_with_timeouts(
                 if let Err(why)=std::fs::write(&loop_ready,&id.0) { break Some(why.to_string()); }
                 bootstrap=Bootstrap::Live;
             }
-            if !bootstrap.is_running() && pending_completion.is_none() && in_turn.is_none() && replay.is_none() && !controlling && !replay_wanted.is_empty() {
-                active_operation = process_control.begin_operation();
-                let Some(operation) = active_operation.clone() else { break Some("ACP process is retiring".into()); };
-                replay = Some(Replay::start(std::mem::take(&mut replay_wanted), handle.clone(), operation, process_control.clone(), completion_tx.clone(), &mut tasks));
-            }
             if pending_completion.as_ref().is_some_and(|pending| pending.remaining == Some(0)) {
                 let pending = pending_completion.take().unwrap();
                 match pending.completion {
@@ -1176,19 +1136,6 @@ let turn = Some(result);
                         }
                         None => {}
                     }
-                    // The turn is over: the replays that waited on it,
-                    // in the order they were asked for.
-                }
-HostCompletion::Replay { generation, result } => {
-                    cancel_elicits(&mut elicits, &fanout);
-                    if result.is_ok() && replay.as_ref().is_some_and(|active| !active.overflow) {
-                        if let Err(why) = replay.as_mut().unwrap().publish(generation, fanout.clone(), completion_tx.clone(), &mut tasks) { break Some(why); }
-                    } else if let Some(active) = replay.take() {
-                        for who in active.who {
-                            fanout.send_to(who, &GuiNote::ControlResult { token: "replay".into(), operation: "replay".into(), data: None, error: Some(result.as_ref().err().cloned().unwrap_or_else(|| "Session history exceeds the replay limit".into())) });
-                            fanout.send_to(who, &GuiNote::HistoryEnd);
-                        }
-                    }
                 }
 HostCompletion::Control { who, token, operation, result, .. } => {
                         controlling=false;
@@ -1200,9 +1147,7 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                     }
 
                 }
-                if replay.as_ref().is_none_or(|active| active.delivery.is_none()) {
-                    if let Some(ending) = deferred_ending.take() { break ending; }
-                }
+                if let Some(ending) = deferred_ending.take() { break ending; }
                 continue;
             }
             while let Some(joined) = tasks.try_join_next() {
@@ -1247,13 +1192,6 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                                 Err(why)=>break Some(format!("ACP response was received but its event fence failed: {why}")),
                             });
                         }
-                        Some(HostProgress::Published { operation }) => {
-                            if replay.as_ref().and_then(|active| active.delivery.as_ref()).is_none_or(|delivery| delivery.operation != operation) {
-                                break Some("ACP history delivery belongs to an inactive replay".into());
-                            }
-                            replay = None;
-                            if let Some(ending) = deferred_ending.take() { break ending; }
-                        }
                         None => break Some("ACP completion channel closed".into()),
                     }
                 }
@@ -1275,11 +1213,10 @@ HostCompletion::Control { who, token, operation, result, .. } => {
 match event {
                     Some(khor_acp::Event::Note(n)) => {
                         if n.session_id!=*handle.session() { break Some("ACP update belongs to another session".into()); }
-                        if (!bootstrap.is_running() && replay.as_ref().is_none_or(|active|active.delivery.is_some())) || (bootstrap.is_running() && journal.is_pending()) {
+                        if !bootstrap.is_running() || journal.is_pending() {
                             if let Err(why)=journal.note(&n) { break Some(why); }
                         }
                         let json = serde_json::to_string(&n).unwrap_or_default();
-                        if let Some(replay)=replay.as_mut().filter(|active| active.delivery.is_none()){replay.push(json);continue;}
                         if matches!(n.update, SessionUpdate::AvailableCommandsUpdate(_)) {
                             commands = Some(json.clone());
                         }
@@ -1364,10 +1301,10 @@ match event {
                     // painting it any other way would need a word khor
                     // does not have.
                     Some(khor_acp::Event::Closed(err)) => {
-                        if pending_completion.is_some() || replay.as_ref().is_some_and(|active| active.delivery.is_some()) { deferred_ending = Some(err); } else { break err; }
+                        if pending_completion.is_some() { deferred_ending = Some(err); } else { break err; }
                     }
                     None => {
-                        if pending_completion.is_some() || replay.as_ref().is_some_and(|active| active.delivery.is_some()) { deferred_ending = Some(None); } else { break None; }
+                        if pending_completion.is_some() { deferred_ending = Some(None); } else { break None; }
                     }
                 }
                     },
@@ -1380,20 +1317,15 @@ match event {
                     if bootstrap.is_running() {
                         match &op {
                             Some((who,GuiOp::Capture{token}))=> { fanout.send_to(*who, &captured_note(*token, Err(CaptureFailure::NotReady))); continue; },
-                            Some((who,GuiOp::Replay))=> { if !replay_wanted.contains(who) { replay_wanted.push(*who); } continue; },
                             Some((_,GuiOp::Close|GuiOp::Stop))|None=>{},
                             Some((who,_))=> { fanout.send_to(*who,&GuiNote::Refused { why:refused::TURN_IN_FLIGHT.to_owned() }); continue; },
                         }
                     }
                     match op {
                     Some((who, GuiOp::Capture { token })) => {
-                        let result = if replay.is_some() {
-                            Err(CaptureFailure::ReplayInFlight)
-                        } else {
-                            journal.capture(id.clone())
-                                .map(|boundary| CaptureFence { binding: boundary.binding, cursor: boundary.cursor })
-                                .map_err(|_| CaptureFailure::Unavailable)
-                        };
+                        let result = journal.capture(id.clone())
+                            .map(|boundary| CaptureFence { binding: boundary.binding, cursor: boundary.cursor })
+                            .map_err(|_| CaptureFailure::Unavailable);
                         fanout.send_to(who, &captured_note(token, result));
                     }
                     Some((who,GuiOp::ElicitAnswer{ask,response}))=>{
@@ -1410,7 +1342,7 @@ match event {
                         }else{fanout.send_to(who,&GuiNote::Refused{why:refused::SETTING_REFUSED.into()});}
                     }
                     Some((who,GuiOp::Control{token,operation,payload}))=>{
-                        if in_turn.is_some()||replay.is_some()||controlling{fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some(refused::TURN_IN_FLIGHT.into())});continue;}
+                        if in_turn.is_some()||controlling{fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some(refused::TURN_IN_FLIGHT.into())});continue;}
                         let parsed=serde_json::from_str(&payload);
                         if token.is_empty()||token.len()>128||payload.len()>16*1024||operation.len()>64||parsed.is_err(){fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some("Invalid session operation".into())});continue;}
                         active_operation = process_control.begin_operation();
@@ -1427,7 +1359,7 @@ match event {
                         });
                     }
                     Some((who, GuiOp::Delegate { task, message })) => {
-                        if in_turn.is_some() || replay.is_some() || controlling {
+                        if in_turn.is_some() || controlling {
                             fanout.send_to(who, &GuiNote::Delegated { task, why: Some("ACP session already has a running turn".into()) });
                             continue;
                         }
@@ -1466,7 +1398,7 @@ match event {
                             GuiOp::SayWith { text, images, files, token } => (text, images, files, token),
                             _ => unreachable!("the pattern above admits nothing else"),
                         };
-                        if in_turn.is_some() || replay.is_some() || controlling {
+                        if in_turn.is_some() || controlling {
                             // One turn at a time; a queue would answer
                             // "who said what when" wrongly on every face.
                             // **Said back, though.** Dropping it in
@@ -1529,12 +1461,11 @@ match event {
                         // agent still working with nobody reading it.
                         // The turn ends the way every turn ends, through
                         // its own `Turn` note.
-                        if in_turn.is_some() || replay.is_some() || controlling {
+                        if in_turn.is_some() || controlling {
                             if let Some(operation) = &active_operation {
                                 process_control.cancel_operation(operation, timeouts.cancel);
                                 let _ = handle.cancel();
                             }
-                            if let Some(delivery) = replay.as_ref().and_then(|active| active.delivery.as_ref()) { delivery.cancel(); }
                             for(ask,_,_)in asks.drain(..){fanout.send(&GuiNote::Answered{ask,option:None});}
                         } else if stopped_upload {
                             let _ = live.report(&id, State::Idle, Source::Reported);
@@ -1582,37 +1513,14 @@ match event {
                     Some((_, GuiOp::Close)) => {asks.clear();elicits.clear();let _=handle.cancel();let _=tokio::time::timeout(std::time::Duration::from_secs(2),handle.control("close",&serde_json::json!({}))).await;break None;},
                     // Put back together by the reader (`Reassembly`).
                     Some((_, GuiOp::Part(_) | GuiOp::Parts)) => {}
-                    Some((who, GuiOp::Replay)) => {
-                        // **The capability decides what a face is
-                        // told, never whether the agent is asked.** An
-                        // agent that under-advertises is a real animal
-                        // — this repo's own stub was one for months,
-                        // implementing `session/load` while claiming
-                        // nothing — and skipping the request on its say
-                        // so would withhold a past it actually has. So
-                        // the load always goes out; `GuiNote::Agent` is
-                        // what keeps an empty answer from reading as an
-                        // empty conversation.
-                        if in_turn.is_some() || controlling {
-                            if !replay_wanted.contains(&who) { replay_wanted.push(who); }
-                        } else if let Some(active)=replay.as_mut(){
-                            if active.delivery.is_some() {
-                                if !replay_wanted.contains(&who) { replay_wanted.push(who); }
-                            } else if !active.who.contains(&who){active.who.push(who);}
-                        } else {
-                            active_operation = process_control.begin_operation();
-                            if active_operation.is_none() { break Some("ACP process is retiring".into()); }
-                            replay=Some(Replay::start(vec![who], handle.clone(), active_operation.clone().unwrap(), process_control.clone(), completion_tx.clone(), &mut tasks));
-                        }
-                    }
                     None => break None,
                     }
                 }
                     },
                 },
                 // A face that arrived mid-ask gets the ask. Nothing
-                // else is re-sent: the conversation's past is what
-                // `Replay` is for, and the row already carries the word.
+                // else is re-sent: the canonical past belongs to each view
+                // through its own Capture, and the row already carries the word.
                 who = joined_rx.recv() => {
                     if let Some(who) = who {
                         // First, because everything else a face does
@@ -1684,7 +1592,6 @@ match event {
         tasks.abort_all();
         while tasks.join_next().await.is_some() {}
 
-        replay.take();
         match handle.shutdown().await {
             Ok(khor_acp::ShutdownOutcome::ProcessReaped(_)) => ending,
             Ok(khor_acp::ShutdownOutcome::DriverClosed) => Some("ACP driver closed without a process receipt".into()),
@@ -1753,10 +1660,6 @@ enum HostCompletion {
         generation: crate::agent_process::Operation,
         result: Result<String, String>,
     },
-    Replay {
-        generation: crate::agent_process::Operation,
-        result: Result<(), String>,
-    },
     Control {
         generation: crate::agent_process::Operation,
         who: u64,
@@ -1770,7 +1673,6 @@ impl HostCompletion {
     fn operation(&self) -> &crate::agent_process::Operation {
         match self {
             Self::Turn { generation, .. }
-            | Self::Replay { generation, .. }
             | Self::Control { generation, .. } => generation,
         }
     }
@@ -1784,9 +1686,6 @@ enum HostProgress {
     Fenced {
         operation: crate::agent_process::Operation,
         result: Result<khor_acp::EventPrefix, String>,
-    },
-    Published {
-        operation: crate::agent_process::Operation,
     },
 }
 struct PendingCompletion {
@@ -1871,187 +1770,6 @@ fn context_path(root: &std::path::Path, session: &str) -> PathBuf {
         "{}.json",
         blake3::hash(session.as_bytes()).to_hex()
     ))
-}
-
-/// History is buffered while the main loop continues answering interactions.
-/// A failed/oversized load never paints an apparently complete partial past.
-struct ReplayDelivery {
-    operation: crate::agent_process::Operation,
-    cancel: tokio::sync::watch::Sender<Option<tokio::time::Instant>>,
-}
-impl ReplayDelivery {
-    fn cancel(&self) {
-        // The first UI Stop fixes one deadline for every recipient and both
-        // terminal frames. Repeated Stop must not keep a drip reader alive.
-        self.cancel.send_if_modified(|deadline| {
-            if deadline.is_some() {
-                return false;
-            }
-            *deadline = Some(tokio::time::Instant::now() + std::time::Duration::from_secs(2));
-            true
-        });
-    }
-}
-struct Replay {
-    delivery: Option<ReplayDelivery>,
-    who: Vec<u64>,
-    notes: Vec<String>,
-    bytes: usize,
-    overflow: bool,
-}
-impl Replay {
-    fn start(
-        who: Vec<u64>,
-        handle: Arc<khor_acp::Handle>,
-        generation: crate::agent_process::Operation,
-        control: Arc<crate::agent_process::Control>,
-        tx: tokio::sync::mpsc::UnboundedSender<HostProgress>,
-        tasks: &mut tokio::task::JoinSet<()>,
-    ) -> Self {
-        tasks.spawn(async move {
-            let result = handle.replay().await;
-            finish_host_operation(
-                &handle,
-                &control,
-                &tx,
-                HostCompletion::Replay { generation, result },
-            )
-            .await;
-        });
-        Self {
-            delivery: None,
-            who,
-            notes: Vec::new(),
-            bytes: 0,
-            overflow: false,
-        }
-    }
-    fn publish(
-        &mut self,
-        operation: crate::agent_process::Operation,
-        fanout: Arc<Fanout>,
-        tx: tokio::sync::mpsc::UnboundedSender<HostProgress>,
-        tasks: &mut tokio::task::JoinSet<()>,
-    ) -> Result<(), String> {
-        // One bounded replay blob is encoded once and shared by every reader.
-        // Each independent producer keeps a cursor and awaits actual capacity;
-        // a burst of legal small history frames is not evidence of a slow GUI.
-        let frames: Arc<[Arc<[u8]>]> = std::mem::take(&mut self.notes)
-            .into_iter()
-            .map(|note| Fanout::encode(&GuiNote::History(note)))
-            .collect::<Result<Vec<_>, _>>()?
-            .into();
-        let end = Fanout::encode(&GuiNote::HistoryEnd)?;
-        let cancelled_note = Fanout::encode(&GuiNote::ControlResult {
-            token: "replay".into(),
-            operation: "replay".into(),
-            data: None,
-            error: Some("Session history delivery was cancelled".into()),
-        })?;
-        let (cancel, _) = tokio::sync::watch::channel(None::<tokio::time::Instant>);
-        let recipients = self.who.clone();
-        self.delivery = Some(ReplayDelivery {
-            operation: operation.clone(),
-            cancel: cancel.clone(),
-        });
-        tasks.spawn(async move {
-            futures::future::join_all(recipients.into_iter().map(|who| {
-                publish_history_to(
-                    who,
-                    fanout.clone(),
-                    frames.clone(),
-                    end.clone(),
-                    cancelled_note.clone(),
-                    cancel.subscribe(),
-                )
-            }))
-            .await;
-            let _ = tx.send(HostProgress::Published { operation });
-        });
-        Ok(())
-    }
-    fn push(&mut self, json: String) {
-        // Transient notices must never become history, even from a broken adapter.
-        if serde_json::from_str::<serde_json::Value>(&json)
-            .ok()
-            .is_some_and(|v| v["update"]["sessionUpdate"] == "notice")
-        {
-            return;
-        }
-        self.bytes = self.bytes.saturating_add(json.len());
-        if self.bytes > 32 * 1024 * 1024 {
-            self.overflow = true;
-            self.notes.clear();
-        }
-        if !self.overflow {
-            self.notes.push(json);
-        }
-    }
-}
-async fn publish_history_to(
-    who: u64,
-    fanout: Arc<Fanout>,
-    frames: Arc<[Arc<[u8]>]>,
-    end: Arc<[u8]>,
-    cancelled_note: Arc<[u8]>,
-    mut cancelled: tokio::sync::watch::Receiver<Option<tokio::time::Instant>>,
-) {
-    let mut cancel_deadline = None;
-    for frame in frames.iter() {
-        if let Some(deadline) = *cancelled.borrow() {
-            cancel_deadline = Some(deadline);
-            break;
-        }
-        tokio::select! {
-            biased;
-            request = cancelled.wait_for(|deadline| deadline.is_some()) => {
-                let Ok(request) = request else { fanout.packets.remove(who); return; };
-                cancel_deadline = *request;
-                break;
-            }
-            result = std::future::poll_fn(|cx| fanout.packets.poll_send_to(who, frame, cx)) => {
-                if let Err(error) = result {
-                    if error != packet_fanout::SendError::Closed { fanout.packets.remove(who); }
-                    return;
-                }
-            }
-        }
-    }
-    if cancel_deadline.is_none() {
-        // Cancellation also interrupts a normal HistoryEnd waiting for space,
-        // after every history frame has already been admitted.
-        tokio::select! {
-            biased;
-            request = cancelled.wait_for(|deadline| deadline.is_some()) => {
-                let Ok(request) = request else { fanout.packets.remove(who); return; };
-                cancel_deadline = *request;
-            }
-            result = std::future::poll_fn(|cx| fanout.packets.poll_send_to(who, &end, cx)) => {
-                if result.is_err() { fanout.packets.remove(who); }
-                return;
-            }
-        }
-    }
-    let deadline = cancel_deadline.expect("a cancellation request carries its deadline");
-    if tokio::time::Instant::now() >= deadline {
-        fanout.packets.remove(who);
-        return;
-    }
-    let terminal = async {
-        std::future::poll_fn(|cx| fanout.packets.poll_send_to(who, &cancelled_note, cx)).await?;
-        if tokio::time::Instant::now() >= deadline {
-            return Err(packet_fanout::SendError::Closed);
-        }
-        std::future::poll_fn(|cx| fanout.packets.poll_send_to(who, &end, cx)).await
-    };
-    // This limit belongs only to already-cancelled UI delivery. Ordinary
-    // complete replay frames keep their progress-based socket stall policy.
-    if !matches!(
-        tokio::time::timeout_at(deadline, terminal).await,
-        Ok(Ok(()))
-    ) {
-        fanout.packets.remove(who);
-    }
 }
 
 fn cancel_elicits(elicits: &mut Vec<(u64, khor_acp::Elicitation, GuiNote)>, fanout: &Fanout) {

@@ -3450,6 +3450,7 @@ mod handshake_tests {
             "khor-host/05",
             "unknown",
             "khor-gui/1",
+            "khor-gui/2",
         ] {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let addr = listener.local_addr().unwrap().to_string();
