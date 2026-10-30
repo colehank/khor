@@ -1,4 +1,6 @@
 use super::*;
+#[path = "gui_host_startup_tests.rs"]
+mod startup_tests;
 use std::{
     io::Read,
     process::{Child, Command, Stdio},
@@ -387,6 +389,20 @@ impl Drop for DripReader {
     }
 }
 
+// This fixture deliberately tests only the poll scheduler's historical
+// Closed-before-tail rule. Production uses the real EventReceiver; no adapter
+// can inject this synthetic sequence into the event store.
+async fn raw_host_input(
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<khor_acp::Event>,
+    ops: &mut tokio::sync::mpsc::UnboundedReceiver<(u64, GuiOp, bool)>,
+    prefer_ops: bool,
+    events_closed: bool,
+) -> HostInput {
+    std::future::poll_fn(|cx| {
+        poll_host_input(cx, |cx| events.poll_recv(cx), ops, prefer_ops, events_closed)
+    }).await
+}
+
 #[test]
 fn closed_does_not_strand_an_event_already_inside_the_completion_fence() {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -403,14 +419,14 @@ fn closed_does_not_strand_an_event_already_inside_the_completion_fence() {
             })
             .unwrap();
         assert!(matches!(
-            next_host_input(&mut events, &mut ops, false, false).await,
+            raw_host_input(&mut events, &mut ops, false, false).await,
             HostInput::Event(Some(khor_acp::Event::Closed(None)))
         ));
         // Both were accepted into the same finite completion snapshot. Closed
         // defers shutdown, but the already-captured tail still has to drain.
         let tail = tokio::time::timeout(
             Duration::from_millis(100),
-            next_host_input(
+            raw_host_input(
                 &mut events,
                 &mut ops,
                 false,
@@ -427,7 +443,7 @@ fn closed_does_not_strand_an_event_already_inside_the_completion_fence() {
         assert!(
             tokio::time::timeout(
                 Duration::from_millis(20),
-                next_host_input(
+                raw_host_input(
                     &mut events,
                     &mut ops,
                     false,

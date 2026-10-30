@@ -156,7 +156,7 @@ async fn refused(command: &str) -> Refusal {
     }
 }
 
-async fn next(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>) -> Event {
+async fn next(rx: &mut khor_acp::EventReceiver) -> Event {
     timeout(Duration::from_secs(10), rx.recv())
         .await
         .expect("an event within ten seconds")

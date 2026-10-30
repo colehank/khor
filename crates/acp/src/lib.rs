@@ -77,7 +77,10 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, Agent, Client, ConnectionTo, ErrorCode};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
+mod event_store;
+use event_store::EventFence;
+pub use event_store::{EventPrefix, EventReceiver};
 mod interaction;
 mod lifecycle;
 use lifecycle::{CloseGate, Opening};
@@ -257,6 +260,8 @@ pub enum Event {
     ElicitDone(String),
     /// The connection ended. `None` is a close the caller asked for;
     /// `Some` carries the error text of one it did not.
+    /// An aborted event stream can report its error before process cleanup.
+    /// Only [`Handle::shutdown`] confirms the driver's/provider's exit fact.
     Closed(Option<String>),
 }
 
@@ -265,6 +270,7 @@ pub enum Event {
 pub struct Elicitation {
     pub request: CreateElicitationRequest,
     answer: oneshot::Sender<CreateElicitationResponse>,
+    _store_credit: event_store::InteractionCredit,
 }
 impl Elicitation {
     pub fn validate(&self, value: &serde_json::Value) -> Result<CreateElicitationResponse, String> {
@@ -294,6 +300,7 @@ pub struct Environment {
 pub struct Ask {
     pub request: RequestPermissionRequest,
     answer: oneshot::Sender<RequestPermissionOutcome>,
+    _store_credit: event_store::InteractionCredit,
 }
 
 impl Ask {
@@ -344,8 +351,9 @@ impl Handle {
     pub fn opened_by(&self) -> OpenedBy { self.opened_by }
     /// Forward the finite batch of events already accepted before this call.
     /// Call after an RPC response before publishing its UI completion. This is
-    /// independent of close admission: a delivered response remains delivered.
-    pub async fn fence_events(&self) -> Result<(), String> {
+    /// independent of live close admission: a delivered response remains delivered.
+    /// The receiver uses this store-bound prefix to drain exactly those events.
+    pub async fn fence_events(&self) -> Result<EventPrefix, String> {
         self.event_fence.wait().await
     }
 
@@ -492,8 +500,9 @@ impl Handle {
     /// Replays the whole conversation so far: every replayed update
     /// arrives as [`Event::Note`]. The SDK dispatches notifications before the
     /// following response; callers must then await [`Handle::fence_events`]
-    /// before taking a finite snapshot of the public receiver. That fence also
-    /// crosses this crate's separate event-forwarding task.
+    /// before draining the returned finite prefix from the public receiver.
+    /// That fence confirms complete records in the owned FIFO; later traffic
+    /// never extends it, and a caller can consume without holding the whole base.
     ///
     /// Loading a session that is live on this very connection works
     /// (probed on the real adapter, 2026-08-17: a second load answers
@@ -599,7 +608,7 @@ impl Handle {
 pub async fn start(
     command: &str,
     cwd: PathBuf,
-) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
+) -> Result<(Handle, EventReceiver), Refusal> {
     start_with(command, cwd, None).await
 }
 
@@ -612,7 +621,7 @@ pub async fn start_resume(
     command: &str,
     cwd: PathBuf,
     session: &str,
-) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
+) -> Result<(Handle, EventReceiver), Refusal> {
     start_with(command, cwd, Some(session.to_owned())).await
 }
 
@@ -620,7 +629,7 @@ async fn start_with(
     command: &str,
     cwd: PathBuf,
     resume: Option<String>,
-) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
+) -> Result<(Handle, EventReceiver), Refusal> {
     start_configured(command, cwd, resume, Environment::default()).await
 }
 
@@ -780,7 +789,7 @@ pub async fn start_configured(
     cwd: PathBuf,
     resume: Option<String>,
     environment: Environment,
-) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
+) -> Result<(Handle, EventReceiver), Refusal> {
     let agent = AcpAgent::from_str(command).map_err(|e| Refusal::Wont(e.to_string()))?;
     start_transport(agent, None, cwd, resume, environment).await
 }
@@ -794,7 +803,7 @@ pub async fn start_configured_on(
     cwd: PathBuf,
     resume: Option<String>,
     environment: Environment,
-) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
+) -> Result<(Handle, EventReceiver), Refusal> {
     let cleanup = lifecycle.clone();
     match start_transport(transport, Some(lifecycle), cwd, resume, environment).await {
         Ok(opened) => Ok(opened),
@@ -817,81 +826,6 @@ pub async fn start_configured_on(
     }
 }
 
-struct EventFence {
-    requests: mpsc::UnboundedSender<oneshot::Sender<()>>,
-    completed: tokio::sync::watch::Receiver<Option<Result<(), String>>>,
-}
-impl EventFence {
-    async fn wait(&self) -> Result<(), String> {
-        let (ack, received) = oneshot::channel();
-        if self.requests.send(ack).is_ok() && received.await.is_ok() {
-            return Ok(());
-        }
-        let mut completed = self.completed.clone();
-        loop {
-            if let Some(result) = completed.borrow_and_update().clone() {
-                return result;
-            }
-            completed
-                .changed()
-                .await
-                .map_err(|_| "ACP event forwarder ended without confirmation".to_owned())?;
-        }
-    }
-}
-struct ForwarderCompletion(tokio::sync::watch::Sender<Option<Result<(), String>>>);
-impl Drop for ForwarderCompletion {
-    fn drop(&mut self) {
-        if self.0.borrow().is_none() {
-            self.0
-                .send_replace(Some(Err("ACP event forwarder was cancelled".into())));
-        }
-    }
-}
-fn start_event_forwarder(
-    mut source: mpsc::UnboundedReceiver<Event>,
-    target: mpsc::UnboundedSender<Event>,
-) -> EventFence {
-    let (requests, mut barriers) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
-    let (done, completed) = tokio::sync::watch::channel(None);
-    // Construct outside the future so dropping an unpolled task also confirms failure.
-    let completion = ForwarderCompletion(done);
-    tokio::spawn(async move {
-        let mut barriers_open = true;
-        let result = loop {
-            tokio::select! {
-                biased;
-                barrier = barriers.recv(), if barriers_open => {
-                    let Some(ack) = barrier else { barriers_open = false; continue; };
-                    // SDK 3.5 completes each notification handler before routing
-                    // the following response. Cross our second queue with one
-                    // finite snapshot; later traffic cannot extend this fence.
-                    let pending = source.len();
-                    let mut failure = None;
-                    for _ in 0..pending {
-                        match source.try_recv() {
-                            Ok(event) => {
-                                if target.send(event).is_err() { failure = Some("ACP event receiver closed".to_owned()); break; }
-                            }
-                            Err(_) => { failure = Some("ACP event source changed during its fence".to_owned()); break; }
-                        }
-                    }
-                    if let Some(error) = failure { break Err(error); }
-                    let _ = ack.send(());
-                }
-                event = source.recv() => {
-                    let Some(event) = event else { break Ok(()); };
-                    if target.send(event).is_err() { break Err("ACP event receiver closed".into()); }
-                }
-            }
-        };
-        completion.0.send_replace(Some(result));
-    });
-    EventFence {
-        requests,
-        completed,
-    }
-}
 #[cfg(test)]
 #[path = "event_fence_tests.rs"]
 mod event_fence_tests;
@@ -904,10 +838,13 @@ async fn start_transport(
     cwd: PathBuf,
     resume: Option<String>,
     environment: Environment,
-) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
-    let (events_tx, mut events_rx) = mpsc::unbounded_channel::<Event>();
+) -> Result<(Handle, EventReceiver), Refusal> {
+    let join_sdk_driver = lifecycle.is_none();
+    let (events, receiver, event_fence) = event_store::channel();
     type Opened = Result<(ConnectionTo<Agent>, SessionId, Facts, Settings, OpenedBy), Refusal>;
     let (ready_tx, mut ready_rx) = oneshot::channel::<Opened>();
+    let (refuse_tx, mut refuse_rx) = oneshot::channel::<Refusal>();
+    let refusals = Arc::new(std::sync::Mutex::new(Some(refuse_tx)));
     let (close_tx, close_rx) = oneshot::channel::<()>();
     let (result_tx, result_rx) = tokio::sync::watch::channel(None);
     let close = Arc::new(CloseGate::new(close_tx, result_rx, lifecycle));
@@ -921,130 +858,144 @@ async fn start_transport(
     let driver_close = close.clone();
     let driver_cleanup = Opening(Some(close.clone()));
 
-    let notes = events_tx.clone();
+    let notes = events.clone();
     #[cfg(all(test, unix))]
     let notes_pressure = startup_pressure.clone();
-    let asks = events_tx.clone();
-    let elicits = events_tx.clone();
-    let completions = events_tx.clone();
-    let closed = events_tx.clone();
+    let asks = events.clone();
+    let ask_refusal = refusals.clone();
+    let elicits = events.clone();
+    let elicit_refusal = refusals.clone();
+    let completions = events.clone();
+    let opening_events = events.clone();
+    let closed = events.clone();
+    let failed = events.clone();
     let home = cwd.clone();
     let retained_environment = environment.clone();
 
     tokio::spawn(async move {
         let _driver_cleanup = driver_cleanup;
         let mut ready_tx = Some(ready_tx);
-        let transport = Client
-            .builder()
+        let transport = Client.builder()
             .on_receive_notification(
-                async move |n: SessionNotification, _cx| {
+                async move |note: SessionNotification, _cx| {
                     #[cfg(all(test, unix))]
-                    if let Some(pressure) = &notes_pressure {
-                        pressure.note().await;
+                    if let Some(pressure) = &notes_pressure { pressure.note().await; }
+                    notes.note(&note).await.map_err(agent_client_protocol::util::internal_error)
+                }, agent_client_protocol::on_receive_notification!(),
+            )
+            .on_receive_notification(
+                async move |note:agent_client_protocol::schema::v1::CompleteElicitationNotification,_cx| {
+                    completions.elicitation_done(&note.elicitation_id.to_string()).await
+                        .map_err(agent_client_protocol::util::internal_error)
+                }, agent_client_protocol::on_receive_notification!(),
+            )
+            .on_receive_request(
+                async move |request:CreateElicitationRequest,responder,connection| {
+                    if !elicits.accepts_interactions() {
+                        refuse_startup_once(&elicit_refusal, "This agent requires interactive session creation. Complete its setup before opening a session.");
+                        return responder.respond(CreateElicitationResponse::new(ElicitationAction::Cancel));
                     }
-                    let _ = notes.send(Event::Note(n));
-                    Ok(())
-                },
-                agent_client_protocol::on_receive_notification!(),
-            )
-            .on_receive_notification(async move|n:agent_client_protocol::schema::v1::CompleteElicitationNotification,_cx|{let _=completions.send(Event::ElicitDone(n.elicitation_id.to_string()));Ok(())},agent_client_protocol::on_receive_notification!())
-            .on_receive_request(
-                async move |request:CreateElicitationRequest,responder,connection|{
+                    let credit = elicits.interaction_credit(&request).map_err(agent_client_protocol::util::internal_error)?;
                     let(tx,rx)=oneshot::channel();
-                    let _=elicits.send(Event::Elicit(Elicitation{request,answer:tx}));
+                    elicits.interaction(Event::Elicit(Elicitation { request, answer:tx, _store_credit:credit }))
+                        .map_err(agent_client_protocol::util::internal_error)?;
                     connection.spawn(async move {responder.respond(rx.await.unwrap_or_else(|_|CreateElicitationResponse::new(ElicitationAction::Cancel)))})
-                },agent_client_protocol::on_receive_request!(),
+                }, agent_client_protocol::on_receive_request!(),
             )
             .on_receive_request(
-                async move |request: RequestPermissionRequest, responder, connection| {
-                    // The wait lives in a spawned task: a person can take
-                    // minutes to answer, and the event loop must keep
-                    // moving `session/update`s meanwhile (module head).
-                    let (tx, rx) = oneshot::channel::<RequestPermissionOutcome>();
-                    let _ = asks.send(Event::Ask(Ask {
-                        request,
-                        answer: tx,
-                    }));
+                async move |request:RequestPermissionRequest,responder,connection| {
+                    if !asks.accepts_interactions() {
+                        refuse_startup_once(&ask_refusal, "The agent requested permission before a session was available");
+                        return responder.respond(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
+                    }
+                    let credit = asks.interaction_credit(&request).map_err(agent_client_protocol::util::internal_error)?;
+                    let(tx,rx)=oneshot::channel::<RequestPermissionOutcome>();
+                    asks.interaction(Event::Ask(Ask { request, answer:tx, _store_credit:credit }))
+                        .map_err(agent_client_protocol::util::internal_error)?;
+                    // A human answer remains outside the protocol event loop.
+                    // The question itself owns its memory credit until answer/drop.
                     connection.spawn(async move {
-                        // A dropped `Ask` answers `Cancelled`: the agent
-                        // gets a refusal, never a hang.
-                        let outcome = rx.await.unwrap_or(RequestPermissionOutcome::Cancelled);
+                        let outcome=rx.await.unwrap_or(RequestPermissionOutcome::Cancelled);
                         responder.respond(RequestPermissionResponse::new(outcome))
                     })
-                },
-                agent_client_protocol::on_receive_request!(),
+                }, agent_client_protocol::on_receive_request!(),
             )
-            .connect_with(agent, |connection: ConnectionTo<Agent>| async move {
-                let opened = open_one(&connection, resume, cwd,environment).await;
-                // The refusal has to leave through the ready channel,
-                // because the alternative is what this used to do: fail
-                // out of the closure, land the text on `Event::Closed`
-                // — a receiver the caller never got, since it only
-                // arrives with the Handle — and answer the caller with
-                // a sentence about a channel. Every way an agent can
-                // decline then read as "it ended", and the opener's own
-                // timeout became the only thing a person ever saw.
-                let refused = opened.as_ref().err().map(|r| r.said().to_owned());
-                if let Some(tx) = ready_tx.take() {
-                    let _ = tx.send(opened.map(|(session, facts, settings, opened_by)| {
-                        (connection.clone(), session, facts, settings, opened_by)
+            .connect_with(agent, |connection:ConnectionTo<Agent>| async move {
+                let mut opened=open_one(&connection,resume,cwd,environment).await;
+                if let Ok((session,..))=&opened {
+                    if let Err(error)=opening_events.accept_session(session.clone()) {
+                        opened=Err(Refusal::Wont(error));
+                    }
+                }
+                // Keep the precise protocol refusal on this bounded ready handoff.
+                let refused=opened.as_ref().err().map(|error|error.said().to_owned());
+                if let Some(tx)=ready_tx.take() {
+                    let _=tx.send(opened.map(|(session,facts,settings,opened_by)| {
+                        (connection.clone(),session,facts,settings,opened_by)
                     }));
                 }
-                if let Some(said) = refused {
-                    return Err(agent_client_protocol::util::internal_error(said));
-                }
-                // Park until the Handle goes away **or the agent's side
-                // of the pipe does**. The crate treats a clean incoming
-                // EOF as observable, never terminal (`connect_with`'s
-                // contract), so without the second arm a dead agent
-                // leaves this closure parked and the caller's loop
-                // waiting for a Closed that never comes — found live: a
-                // gui host whose agent died hung in its conversation
-                // loop until killed by hand. The EOF arm is an error on
-                // purpose: the caller did not ask for this ending, and
-                // Closed(None) is reserved for the one it did.
+                if let Some(error)=refused { return Err(agent_client_protocol::util::internal_error(error)); }
                 connection.incoming_closed().await;
                 Err::<(),_>(agent_client_protocol::util::internal_error("the agent closed the connection"))
             });
-        // Closing must cancel initialization as well as an already-open session.
-        let error =
-            tokio::select! {result=transport=>result.err().map(|e|e.to_string()),_=close_rx=>None};
-        let completion = driver_close.driver_closed().await;
-        let error = error.or_else(|| completion.as_ref().err().cloned());
+        let (cancelled, error) = tokio::select! {
+            biased;
+            _=close_rx=>(true,None),
+            error=failed.failed()=>(true,Some(error)),
+            result=transport=>(false,result.err().map(|error|error.to_string())),
+        };
+        let abort_io = cancelled && (error.is_some() || !closed.receiver_released());
+        let io_error = if abort_io {
+            closed.cancel(
+                error
+                    .clone()
+                    .unwrap_or_else(|| "ACP transport closing".into()),
+            );
+            closed.shutdown().await.err()
+        } else {
+            // Reserve the logical Closed position before awaiting actual process
+            // confirmation. It is not publishable until those facts are known.
+            closed.begin_close();
+            None
+        };
+        let mut completion = driver_close.driver_closed().await;
+        if let Some(error) = &io_error {
+            completion = Err(error.clone());
+        }
+        let error = error
+            .or(io_error)
+            .or_else(|| completion.as_ref().err().cloned());
+        if !abort_io {
+            closed.closed(error);
+        }
         result_tx.send_replace(Some(completion));
-        let _ = closed.send(Event::Closed(error));
     });
 
-    let mut opening_notes = Vec::new();
-    let (conn, session, facts, settings, opened_by) = loop {
-        tokio::select! {
-            biased;
-            result=&mut ready_rx=>break result.map_err(|_|Refusal::Wont("the agent ended before a session existed".into()))??,
-            event=events_rx.recv()=>match event{
-                Some(Event::Note(note))=>{if opening_notes.len()>=32768{return Err(Refusal::Wont("Too many updates before the session opened".into()));}opening_notes.push(Event::Note(note));},
-                Some(Event::Elicit(question))=>{drop(question);return Err(Refusal::Wont("This agent requires interactive session creation. Complete its setup before opening a session.".into()));},
-                Some(Event::Ask(ask))=>{drop(ask);return Err(Refusal::Wont("The agent requested permission before a session was available".into()));},
-                Some(Event::Closed(error))=>return Err(Refusal::Wont(error.unwrap_or_else(||"The agent disconnected".into()))),
-                None=>return Err(Refusal::Wont("The agent disconnected".into())),
-                _=>{}
-            }
+    let opened = tokio::select! {
+        biased;
+        result=&mut ready_rx=>match result {
+            Ok(opened)=>opened,
+            Err(_)=>Err(Refusal::Wont(events.opening_ended().await)),
+        },
+        refusal=&mut refuse_rx=>Err(refusal.unwrap_or_else(|_|Refusal::Wont("The agent disconnected".into()))),
+        error=events.opening_ended()=>Err(Refusal::Wont(error)),
+    };
+    let (conn, session, facts, settings, opened_by) = match opened {
+        Ok(opened) => opened,
+        Err(refusal) => {
+            return Err(refuse_and_close(&events, &close, join_sdk_driver, refusal).await)
         }
     };
-    let (forward, receiver) = mpsc::unbounded_channel();
-    for event in opening_notes {
-        let _ = forward.send(event);
+    if let Ok(refusal) = refuse_rx.try_recv() {
+        return Err(refuse_and_close(&events, &close, join_sdk_driver, refusal).await);
     }
-    while let Ok(event) = events_rx.try_recv() {
-        let _ = forward.send(event);
+    if let Err(error) = events.ready(session.clone()) {
+        return Err(refuse_and_close(&events, &close, join_sdk_driver, Refusal::Wont(error)).await);
     }
     #[cfg(all(test, unix))]
     if let Some(pressure) = &startup_pressure {
         pressure.opened();
     }
-    let _ = forward.send(Event::Ready {
-        session: session.clone(),
-    });
-    let event_fence = start_event_forwarder(events_rx, forward);
     Ok((
         Handle {
             conn,
@@ -1060,6 +1011,55 @@ async fn start_transport(
         receiver,
     ))
 }
+
+fn refuse_startup_once(
+    signal: &Arc<std::sync::Mutex<Option<oneshot::Sender<Refusal>>>>,
+    message: &str,
+) {
+    let sender = signal
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .take();
+    if let Some(sender) = sender {
+        let _ = sender.send(Refusal::Wont(message.to_owned()));
+    }
+}
+
+async fn refuse_and_close(
+    events: &event_store::Sender,
+    close: &CloseGate,
+    join_sdk_driver: bool,
+    mut refusal: Refusal,
+) -> Refusal {
+    close.request();
+    events.cancel("ACP opening was refused".into());
+    if let Err(error) = events.shutdown().await {
+        refusal = append_refusal(
+            refusal,
+            format!("ACP event spool cleanup was not confirmed: {error}"),
+        );
+    }
+    // Caller-owned process confirmation remains with start_configured_on's
+    // existing lifecycle wrapper. The SDK-owned path joins its driver here.
+    if join_sdk_driver {
+        if let Err(error) = close.completed().await {
+            refusal = append_refusal(
+                refusal,
+                format!("ACP driver cleanup was not confirmed: {error}"),
+            );
+        }
+    }
+    refusal
+}
+fn append_refusal(refusal: Refusal, context: String) -> Refusal {
+    let append = |said: String| format!("{said}\n{context}");
+    match refusal {
+        Refusal::Login(said) => Refusal::Login(append(said)),
+        Refusal::Version(said) => Refusal::Version(append(said)),
+        Refusal::Wont(said) => Refusal::Wont(append(said)),
+    }
+}
+
 
 fn client_capabilities() -> ClientCapabilities {
     serde_json::from_value(serde_json::json!({"session":{"configOptions":{"boolean":{}},"compaction":{},"notices":{}},"elicitation":{"form":{},"url":{}}})).expect("client capabilities")

@@ -1219,8 +1219,11 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                 progress = completion_rx.recv() => {
                     match progress {
                         Some(HostProgress::BootstrapFenced { result })=> {
-                            if let Err(why)=result { break Some(format!("ACP bootstrap event fence failed: {why}")); }
-                            if let Err(why)=bootstrap.fenced(events.len()) { break Some(why); }
+                            let remaining=match result.and_then(|prefix| events.remaining_through(&prefix)) {
+                                Ok(remaining)=>remaining,
+                                Err(why)=>break Some(format!("ACP bootstrap event fence failed: {why}")),
+                            };
+                            if let Err(why)=bootstrap.fenced(remaining) { break Some(why); }
                         },
                         Some(HostProgress::Resolved { completion, acknowledged }) => {
                             if active_operation.as_ref() != Some(completion.operation()) || pending_completion.is_some() {
@@ -1239,8 +1242,10 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                             let Some(pending) = pending_completion.as_mut().filter(|pending| pending.completion.operation() == &operation) else {
                                 break Some("ACP event fence belongs to an inactive operation".into());
                             };
-                            if let Err(why) = result { break Some(format!("ACP response was received but its event fence failed: {why}")); }
-                            pending.remaining = Some(events.len());
+                            pending.remaining = Some(match result.and_then(|prefix| events.remaining_through(&prefix)) {
+                                Ok(remaining)=>remaining,
+                                Err(why)=>break Some(format!("ACP response was received but its event fence failed: {why}")),
+                            });
                         }
                         Some(HostProgress::Published { operation }) => {
                             if replay.as_ref().and_then(|active| active.delivery.as_ref()).is_none_or(|delivery| delivery.operation != operation) {
@@ -1724,7 +1729,7 @@ match event {
 enum Bootstrap {
     AwaitReady,
     Fencing,
-    Draining(usize),
+    Draining(u64),
     Live,
 }
 impl Bootstrap {
@@ -1734,7 +1739,7 @@ impl Bootstrap {
         if !matches!(self,Self::AwaitReady) { return Err("ACP Ready belongs to an inactive opening".into()); }
         *self=Self::Fencing; Ok(())
     }
-    fn fenced(&mut self, remaining:usize) -> Result<(),String> {
+    fn fenced(&mut self, remaining:u64) -> Result<(),String> {
         if !matches!(self,Self::Fencing) { return Err("ACP event fence belongs to an inactive opening".into()); }
         *self=Self::Draining(remaining); Ok(())
     }
@@ -1771,14 +1776,14 @@ impl HostCompletion {
     }
 }
 enum HostProgress {
-    BootstrapFenced { result:Result<(),String> },
+    BootstrapFenced { result:Result<khor_acp::EventPrefix,String> },
     Resolved {
         completion: HostCompletion,
         acknowledged: bool,
     },
     Fenced {
         operation: crate::agent_process::Operation,
-        result: Result<(), String>,
+        result: Result<khor_acp::EventPrefix, String>,
     },
     Published {
         operation: crate::agent_process::Operation,
@@ -1786,7 +1791,7 @@ enum HostProgress {
 }
 struct PendingCompletion {
     completion: HostCompletion,
-    remaining: Option<usize>,
+    remaining: Option<u64>,
 }
 async fn finish_host_operation(
     handle: &khor_acp::Handle,
@@ -1825,32 +1830,40 @@ enum HostInput {
     Op(Option<(u64, GuiOp, bool)>),
 }
 
-fn pause_closed_events(closed: bool, remaining: Option<usize>) -> bool {
+fn pause_closed_events(closed: bool, remaining: Option<u64>) -> bool {
     // Closed can itself lie inside an already-captured finite batch. Drain
     // that accepted tail before pausing the receiver and publishing its end.
     closed && !remaining.is_some_and(|remaining| remaining > 0)
 }
 
+fn poll_host_input(
+    cx: &mut std::task::Context<'_>,
+    mut poll_events: impl FnMut(&mut std::task::Context<'_>) -> std::task::Poll<Option<khor_acp::Event>>,
+    ops: &mut tokio::sync::mpsc::UnboundedReceiver<(u64, GuiOp, bool)>,
+    prefer_ops: bool,
+    events_closed: bool,
+) -> std::task::Poll<HostInput> {
+    if prefer_ops {
+        if let std::task::Poll::Ready(op) = ops.poll_recv(cx) {
+            return std::task::Poll::Ready(HostInput::Op(op));
+        }
+    }
+    if !events_closed {
+        if let std::task::Poll::Ready(event) = poll_events(cx) {
+            return std::task::Poll::Ready(HostInput::Event(event));
+        }
+    }
+    ops.poll_recv(cx).map(HostInput::Op)
+}
 async fn next_host_input(
-    events: &mut tokio::sync::mpsc::UnboundedReceiver<khor_acp::Event>,
+    events: &mut khor_acp::EventReceiver,
     ops: &mut tokio::sync::mpsc::UnboundedReceiver<(u64, GuiOp, bool)>,
     prefer_ops: bool,
     events_closed: bool,
 ) -> HostInput {
     std::future::poll_fn(|cx| {
-        if prefer_ops {
-            if let std::task::Poll::Ready(op) = ops.poll_recv(cx) {
-                return std::task::Poll::Ready(HostInput::Op(op));
-            }
-        }
-        if !events_closed {
-            if let std::task::Poll::Ready(event) = events.poll_recv(cx) {
-                return std::task::Poll::Ready(HostInput::Event(event));
-            }
-        }
-        ops.poll_recv(cx).map(HostInput::Op)
-    })
-    .await
+        poll_host_input(cx, |cx| events.poll_recv(cx), ops, prefer_ops, events_closed)
+    }).await
 }
 
 fn context_path(root: &std::path::Path, session: &str) -> PathBuf {
