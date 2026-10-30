@@ -378,7 +378,13 @@ impl LiveKind {
         if leaf.is_empty() || kind.is_empty() {
             return None;
         }
-        if clean_leaf(leaf) != leaf || clean_leaf(kind) != kind {
+        // Observation IDs retain the complete tuple hash, not a vendor's
+        // short leaf. Path eligibility alone grants no execution authority;
+        // the saved reference/binding/Attempt still prove the full source.
+        let valid_leaf = if kind == khor_core::kind::OBSERVE {
+            leaf.len() == 64 && leaf.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        } else { clean_leaf(leaf) == leaf };
+        if !valid_leaf || clean_leaf(kind) != kind {
             return None;
         }
         Some(sessions_dir(&self.root).join(format!("{kind}-{leaf}")))

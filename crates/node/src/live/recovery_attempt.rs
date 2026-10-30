@@ -2020,6 +2020,10 @@ mod tests {
         record.save(&root.0).unwrap();
         let live = crate::live::LiveKind::new(root.0.clone(), home);
         let row = live.dir(&record.id).unwrap();
+        assert_eq!(row, crate::live::sessions_dir(&root.0).join(format!("observe-{}", record.id.0.strip_prefix("observe/").unwrap())), "retain the complete 64-hex logical identity without clean_leaf truncation");
+        assert!(live.dir(&SessionId(format!("observe/{}", "a".repeat(24)))).is_none());
+        assert!(live.dir(&SessionId(format!("observe/{}", "A".repeat(64)))).is_none());
+        assert!(live.dir(&SessionId(format!("tui/{}", "a".repeat(64)))).is_none(), "other registry kinds keep their existing short-leaf boundary");
         live.remove_readonly_observation(&record.id).unwrap();
         assert!(!row.exists(), "readonly removal must not create an empty alias row");
         record.save(&root.0).unwrap();
