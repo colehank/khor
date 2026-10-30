@@ -100,7 +100,7 @@ async function checkDisclosureMotion(page, trigger) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await content.evaluate((el) => getComputedStyle(el).animationName), "none", "reduced motion disables the height animation");
 }
-let browser, vite, currentPage;
+let browser, vite, currentPage, currentTrace;
 try {
   vite = spawn("node_modules/.bin/vite", ["--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
     cwd: gui, env: { ...process.env, KHOR_FACE_GATE: "1" }, stdio: ["ignore", "pipe", "pipe"],
@@ -115,6 +115,32 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: "reduce", hasTouch: width < 600, isMobile: width < 600 });
     const page = await context.newPage(), errors = [], requests = [], openedLeases = new Map();
     currentPage = page;
+    currentTrace = {requests: [], failed: [], http: [], count: 0};
+    const trace = currentTrace;
+    const relevant = new Set(['attachment_begin','chat_open','chat_capture','chat_poll','chat_wait','chat_leave','history_begin','history_page','history_cancel']);
+    page.on('request', request => {
+      const command = new URL(request.url()).pathname.split('/').at(-1);
+      if (!relevant.has(command)) return;
+      let args;
+      try { args = request.postDataJSON() ?? {}; } catch { args = {}; }
+      const summary = {seq: ++trace.count, command, at: Date.now()};
+      for (const key of ['id','lease','token','requestKey','cursor','newer']) {
+        const value = args[key];
+        if (value === null || typeof value === 'boolean') summary[key] = value;
+        else if (typeof value === 'string') summary[key] = value.slice(0,256);
+      }
+      trace.requests.push(summary);
+      if (trace.requests.length > 32) trace.requests.shift();
+    });
+    page.on('requestfailed', request => {
+      trace.failed.push({url: request.url().slice(0,512), error: request.failure()?.errorText?.slice(0,256)});
+      if (trace.failed.length > 16) trace.failed.shift();
+    });
+    page.on('response', response => {
+      if (response.status() < 400) return;
+      trace.http.push({url: response.url().slice(0,512), status: response.status()});
+      if (trace.http.length > 16) trace.http.shift();
+    });
     page.on("pageerror", (error) => { errors.push(error.message); console.error(error.message); });
     const reply = (value) => (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
     const row = (id, title) => ({ id, kind: "gui", title, word: "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "claude", group: "", face: null, hosted: true, can_control: true, attachable: false, last: null, via: null, via_face: null, home: "gate" });
@@ -336,10 +362,17 @@ try {
   if (currentPage && !currentPage.isClosed()) {
     await currentPage.screenshot({ path: join(out, "failure.png") }).catch(() => {});
     const state = await currentPage.evaluate(() => ({
-      focus: document.activeElement?.outerHTML,
-      tools: [...document.querySelectorAll("[data-chat-tool]")].map(el => ({ kind: el.getAttribute("data-tool-kind"), expanded: el.querySelector("[data-tool-toggle]")?.getAttribute("aria-expanded"), text: el.textContent })),
+      focus: document.activeElement?.outerHTML?.slice(0,1024),
+      body: document.body.innerText.slice(0,4096),
+      scroll: (() => {const el=document.querySelector('[data-chat-scroll]');return el?{top:el.scrollTop,height:el.scrollHeight,view:el.clientHeight,rect:el.getBoundingClientRect().toJSON()}:null;})(),
+      reader: {latestButton: document.querySelector('[data-chat-bottom]')?.textContent?.slice(0,256) ?? null,
+        captureError: document.querySelector('[data-chat-capture-error]')?.textContent?.slice(0,512) ?? null,
+        rows: [...document.querySelectorAll('[data-history-key]')].slice(0,16).map(el=>({key:el.getAttribute('data-history-key'),text:el.textContent?.slice(0,128)})),
+        buttons: [...document.querySelectorAll('[data-chat-column] button')].slice(0,32).map(el=>({text:el.textContent?.slice(0,128),disabled:el.disabled})),
+      },
+      tools: [...document.querySelectorAll("[data-chat-tool]")].slice(0,16).map(el => ({ kind: el.getAttribute("data-tool-kind"), expanded: el.querySelector("[data-tool-toggle]")?.getAttribute("aria-expanded"), text: el.textContent?.slice(0,512) })),
     })).catch(() => null);
-    writeFileSync(join(out, "failure.json"), JSON.stringify({ error: String(error), state }, null, 2));
+    writeFileSync(join(out, "failure.json"), JSON.stringify({ error: String(error), state, trace: currentTrace }, null, 2));
   }
   throw error;
 } finally {
