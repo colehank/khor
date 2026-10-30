@@ -491,7 +491,7 @@ pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
             if object.get("turn").and_then(|v|v.as_str()).is_some_and(|turn|!turn.is_empty() && turn.len()<=256)
                 && notification["update"]["sessionUpdate"] == "user_message_chunk"
             {
-                return vec![ContentEvent::Reference];
+                return vec![ContentEvent::LocalUserEcho];
             }
             vec![ContentEvent::Update(notification)]
         }
@@ -803,7 +803,7 @@ mod tests {
         let page=crate::adaptor::transcript_page::read_page(&mut file,"owned-journal",None,parse_record,&||false).unwrap();
         let users=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::Update(update) if update["update"]["sessionUpdate"]=="user_message_chunk")).count();
         assert_eq!(users,3,"OWNED_ECHO_DUPLICATION: bootstrap plus two different recorded turns must remain three user messages");
-        let echoes:Vec<_>=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::Reference)).collect();
+        let echoes:Vec<_>=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::LocalUserEcho)).collect();
         assert_eq!(echoes.len(),2,"every associated echo remains an inspectable raw record");
         let mut turns=Vec::new();
         for echo in echoes {

@@ -1248,6 +1248,112 @@ pub struct HistoryRecordChunk {
     pub next: Option<u64>,
 }
 
+/// A bounded pure body projection. Synthetic entry keys describe the
+/// scaffold only; callers retain the original file cursor/string ranges.
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct HistoryProjection {
+    pub record: HistoryRecordRef,
+    pub entries: Vec<HistoryEntry>,
+    pub complete: bool,
+}
+
+pub async fn history_projection(
+    root: &Path,
+    id: &str,
+    binding: &str,
+    request_key: &str,
+    cursor: &str,
+    start: u64,
+    end: u64,
+    scaffold: Option<String>,
+) -> Result<HistoryProjection, String> {
+    if scaffold
+        .as_ref()
+        .is_some_and(|scaffold| scaffold.len() > 64 * 1024)
+    {
+        return Err("history projection scaffold exceeds its byte budget".into());
+    }
+    let binding = content_binding(id, binding)?;
+    if cursor.len() > 4096 {
+        return Err("history cursor exceeds its byte budget".into());
+    }
+    let cursor: khor_node::adaptor::transcript_page::Cursor =
+        serde_json::from_str(cursor).map_err(|error| format!("invalid history cursor: {error}"))?;
+    let cursor = cursor.at_record_range(&binding.source_id(), start, end)?;
+    let encoded_cursor = serde_json::to_string(&cursor).map_err(|error| error.to_string())?;
+    if encoded_cursor.len() > 4096 {
+        return Err("joined history cursor exceeds its byte budget".into());
+    }
+    let record = HistoryRecordRef {
+        start,
+        end,
+        // This endpoint validates a byte selection, not JSONL boundaries.
+        // The source-backed lexer must establish complete syntax separately.
+        missing_start: true,
+        missing_end: true,
+        item: None,
+        cursor: encoded_cursor,
+    };
+    let reference = binding.reference().clone();
+    let request =
+        khor_node::session_content::remote::ClientRead::claim(root, binding, request_key)?;
+    request.check()?;
+    tokio::task::spawn_blocking(move || {
+        request.check()?;
+        let projection = if let Some(scaffold) = scaffold {
+            reference.body_projection(&scaffold)?
+        } else {
+            khor_node::session_content::BodyProjection {
+                updates: Vec::new(),
+                complete: false,
+            }
+        };
+        let response = body_projection_response(record, projection, &|| request.check().is_err())?;
+        request.check()?;
+        Ok::<_, String>((response, request))
+    })
+    .await
+    .map_err(|error| format!("history scaffold projection failed: {error}"))?
+    .map(|(response, _request)| response)
+}
+
+fn body_projection_response(
+    record: HistoryRecordRef,
+    projection: khor_node::session_content::BodyProjection,
+    cancelled: &impl Fn() -> bool,
+) -> Result<HistoryProjection, String> {
+    let mut response = HistoryProjection {
+        record,
+        entries: Vec::new(),
+        complete: projection.complete,
+    };
+    let mut bytes = 0;
+    for (index, update) in projection.updates.into_iter().enumerate() {
+        if cancelled() {
+            return Err("history request cancelled".into());
+        }
+        let entry = HistoryEntry {
+            key: format!("projection:{index}"),
+            frame: ChatFrame::Note { update },
+        };
+        let Ok(size) = encoded_size(&entry) else {
+            response.complete = false;
+            break;
+        };
+        if response.entries.len() == 128 || bytes + size > HISTORY_PAYLOAD_BYTES - 16 * 1024 {
+            response.complete = false;
+            break;
+        }
+        bytes += size;
+        response.entries.push(entry);
+    }
+    if encoded_size(&response)? > HISTORY_PAYLOAD_BYTES {
+        return Err("history scaffold response exceeds its byte budget".into());
+    }
+    Ok(response)
+}
+
 pub async fn history_record(
     root: &Path,
     id: &str,
@@ -1392,7 +1498,7 @@ fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
                     Some(ChatFrame::PromptRecorded { turn, token, start, end })
                 }
             },
-            ContentEvent::Reference=>None,
+            ContentEvent::Reference | ContentEvent::LocalUserEcho=>None,
         };
         let entry = frame.map(|frame|HistoryEntry {
             key: format!("{}:{}", event.position.start, event.position.item),
@@ -2179,3 +2285,7 @@ mod history_bridge_tests;
 #[cfg(test)]
 #[path = "chat/journal_recovery_tests.rs"]
 mod journal_recovery_tests;
+
+#[cfg(test)]
+#[path = "chat/history_projection_tests.rs"]
+mod history_projection_tests;

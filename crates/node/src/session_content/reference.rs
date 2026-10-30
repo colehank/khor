@@ -15,6 +15,42 @@ pub struct ContentReference {
     pub native_id: String,
 }
 impl ContentReference {
+    pub fn body_projection(&self, scaffold: &str) -> Result<super::BodyProjection, String> {
+        if scaffold.len() > 64 * 1024 {
+            return Err("history projection scaffold exceeds its byte budget".into());
+        }
+        let parser = self.parser()?;
+        // Vendor readers consume JSONL. Compact one validated scaffold before
+        // passing it to that exact reader; pretty caller whitespace is not a
+        // second transcript record, and malformed input cannot claim coverage.
+        let compact = {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(scaffold) else {
+                return Ok(super::BodyProjection { updates: Vec::new(), complete: false });
+            };
+            serde_json::to_string(&value).map_err(|error| error.to_string())?
+        };
+        let events = parser(&compact);
+        let mut updates = Vec::new();
+        let mut complete = !events.is_empty();
+        for event in events {
+            use super::ContentEvent;
+            match event {
+                ContentEvent::Native(utterance) => {
+                    if let Some(update) = crate::replayed_update(utterance) {
+                        updates.push(serde_json::json!({ "update": update }));
+                    } else { complete = false; }
+                }
+                ContentEvent::Update(update) => updates.push(update),
+                ContentEvent::LocalUserEcho | ContentEvent::Turn { .. } => {}
+                // A scaffold cannot elevate an origin, gap or arbitrary raw
+                // record into a trusted system fact on the viewing client.
+                ContentEvent::Reference
+                | ContentEvent::PromptOrigin { .. }
+                | ContentEvent::CaptureGap { .. } => complete = false,
+            }
+        }
+        Ok(super::BodyProjection { updates, complete })
+    }
     pub fn observed(reference: &ObservationRef) -> Self {
         Self {
             home: reference.home,
@@ -245,6 +281,38 @@ fn decode<T: serde::de::DeserializeOwned>(encoded: &str) -> Result<T, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn scaffold_projection_reuses_the_source_parser_without_promoting_system_facts() {
+        let reference = ContentReference::observed(&observed(9));
+        let prompt = r#"{"kind":"prompt","turn":"local","text":"marker","images":[],"files":[]}"#;
+        let projected = reference.body_projection(prompt).unwrap();
+        assert!(projected.complete);
+        assert_eq!(projected.updates.len(), 1);
+        assert_eq!(projected.updates[0]["update"]["content"]["text"], "marker");
+        let echo = r#"{"kind":"update","turn":"local","notification":{"sessionId":"native","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"marker"}}}}"#;
+        let projected = reference.body_projection(echo).unwrap();
+        assert!(projected.complete);
+        assert!(projected.updates.is_empty());
+        for source_only in [
+            "{",
+            r#"{"kind":"prompt_origin","turn":"local","token":"client","start":1,"end":2}"#,
+            r#"{"kind":"gap","opening":"resume","incomplete_record":false,"interrupted_turn":null}"#,
+        ] {
+            let projected = reference.body_projection(source_only).unwrap();
+            assert!(!projected.complete);
+            assert!(projected.updates.is_empty());
+        }
+        assert!(reference.body_projection(&"x".repeat(64 * 1024 + 1)).is_err());
+        let native = ContentReference { namespace: ObservationNamespace::Native,
+            agent: "claude".into(), ..reference };
+        let scaffold = serde_json::to_string_pretty(&serde_json::json!({"type":"user","message":{"role":"user","content":"native marker"}})).unwrap();
+        let projected = native.body_projection(&scaffold).unwrap();
+        assert!(projected.complete);
+        assert_eq!(projected.updates[0]["update"]["content"]["text"], "native marker");
+        assert!(!native.body_projection("{").unwrap().complete);
+        assert!(!native.body_projection("{}").unwrap().complete);
+        assert!(!native.body_projection(r#"{"type":"unknown"}"#).unwrap().complete);
+    }
     fn observed(owner: u8) -> ObservationRef {
         ObservationRef {
             owner: DeviceId([owner; 32]),
@@ -369,7 +437,9 @@ mod tests {
         };
         let mut writer = Journal::open(&tree.path(), identity, Opening::New).unwrap();
         writer.commit_base().unwrap();
-        writer.accept("turn", "canonical text", &[], &[], None).unwrap();
+        writer
+            .accept("turn", "canonical text", &[], &[], None)
+            .unwrap();
         let reference = ContentReference::observed(&observation);
         let binding = ReadBinding::new(
             SessionId("observe/view-with-no-file".into()),

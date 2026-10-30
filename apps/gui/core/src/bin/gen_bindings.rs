@@ -82,6 +82,7 @@ macro_rules! roots {
         $visit!(khor_gui_core::chat::ChatBatch);
         $visit!(khor_gui_core::chat::HistoryPage);
         $visit!(khor_gui_core::chat::HistoryRecordChunk);
+        $visit!(khor_gui_core::chat::HistoryProjection);
         $visit!(khor_gui_core::MachineLog);
         $visit!(khor_gui_core::files::DirListing);
         $visit!(khor_gui_core::recents::RecentRow);

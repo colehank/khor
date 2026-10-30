@@ -29,6 +29,25 @@ impl Cursor {
     pub(crate) fn record_range(&self) -> Range<u64> {
         self.position.start..self.position.end
     }
+    /// Join contiguous giant-record fragments without exposing cursor internals
+    /// to the face. This selects bytes, not a claim of valid record syntax.
+    pub fn at_record_range(&self, source: &str, start: u64, end: u64) -> Result<Self, String> {
+        check_cursor(source, Some(self))?;
+        if start >= end || start > self.position.start || end < self.position.end || end > self.len
+        {
+            return Err("invalid joined history record range".into());
+        }
+        Ok(Self {
+            position: Position {
+                start,
+                end,
+                item: 0,
+            },
+            pending: None,
+            waiting_for_append: false,
+            ..self.clone()
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -831,6 +850,26 @@ mod tests {
             .unwrap()
             .write_all(bytes)
             .unwrap();
+    }
+
+    #[test]
+    fn joined_record_range_keeps_source_snapshot_and_actual_read_validation() {
+        let fixture = Fixture::new("joined-record", b"0123456789\n");
+        let page = fixture.page(None);
+        let fragment = page.cursor_before(Position { start: 3, end: 5, item: 0 });
+        assert!(fragment.at_record_range("other-source", 0, 10).is_err());
+        assert!(fragment.at_record_range("source", 4, 10).is_err());
+        assert!(fragment.at_record_range("source", 0, 12).is_err());
+        let joined = fragment.at_record_range("source", 0, 10).unwrap();
+        let read = |cursor: &Cursor| read_record_chunk(&mut File::open(&fixture.path).unwrap(),
+            "source", cursor, 0, &|| false);
+        assert_eq!(read(&joined).unwrap().bytes, b"0123456789");
+        append(&fixture, b"appended\n");
+        assert_eq!(read(&joined).unwrap().bytes, b"0123456789");
+        let replacement = fixture.path.with_extension("replacement");
+        std::fs::write(&replacement, b"changed-file\n").unwrap();
+        std::fs::rename(replacement, &fixture.path).unwrap();
+        assert!(read(&joined).unwrap_err().contains("changed"));
     }
 
     #[test]

@@ -49,6 +49,20 @@ test('a thirty-two-hit batch resumes inside its record without dropped matches',
   assert.deepEqual(offsets, Array.from({ length: 70 }, (_, i) => i * 6));
   assert.equal(third.pageDone, true);
 });
+test('result bytes can stop before thirty-two hits without losing the rejected match', () => {
+  const scan = historyFindBatch(query('a'));
+  const before = '\\'.repeat(4000);
+  let result = scan.page({ ...page([text('1:0', 'a '.repeat(70))]), newer: before });
+  const found = [];
+  for (let batches = 0; ; batches++) {
+    assert.equal(batches < 70, true);
+    assert.equal(new TextEncoder().encode(JSON.stringify(result)).length <= 64 * 1024, true);
+    found.push(...result.hits.map(hit => hit.from));
+    if (result.pageDone) break;
+    result = scan.next();
+  }
+  assert.deepEqual(found, Array.from({ length: 70 }, (_, i) => i * 2));
+});
 test('tool updates and rich text use the existing display projection', () => {
   const entries = [note('1:0', { sessionUpdate: 'tool_call', toolCallId: 'call', title: 'Edit',
     content: [{ type: 'content', content: { type: 'text', text: 'old output' } }] }),
@@ -70,6 +84,7 @@ test('query and page budgets reject invalid work without losing a pending page',
   assert.throws(() => findQuery(query('\ud800')));
   const scan = historyFindBatch(query('a'));
   assert.throws(() => scan.page({ ...page([]), encoded_bytes: 512 * 1024 + 1 }));
+  assert.throws(() => scan.page(page([text('x'.repeat(300000), 'a')])));
   const accepted = scan.page(page([text('1:0', 'a'.repeat(40))]));
   assert.equal(accepted.hits.length, 32);
   assert.throws(() => scan.page(page([])));
@@ -101,6 +116,64 @@ test('tool input render/copy/search share text and oversized pretty input is rej
   assert.equal(new TextEncoder().encode(JSON.stringify(nested, null, 2)).length > 64 * 1024, true, 'fixture pretty body actually exceeds its budget');
   const answer = historyFindBatch(query('absent')).page(page([note('2:0', { sessionUpdate: 'tool_call', toolCallId: 'large', title: 'Call', rawInput: nested })]));
   assert.equal(answer.unsearchedRanges, 1);
+});
+test('pure projection releases the unused home admission once, including failed transport', async () => {
+  const calls = [];
+  const projected = { entries: [], complete: false, record: { cursor: 'joined' } };
+  const source = historySource('binding', {
+    begin: async () => 'projection-lease',
+    cancel: async key => { calls.push(['cancel', key]); },
+    project: async (...args) => { calls.push(['project', ...args]); return projected; },
+    page: async () => { throw new Error('projection must not scan a page'); },
+    record: async () => { throw new Error('projection must not read original bytes'); },
+  });
+  assert.equal(await source.project('fragment', 1, 100, '{}'), projected);
+  assert.deepEqual(calls.map(call => call[0]), ['project', 'cancel']);
+  assert.equal(calls[0][1], 'binding');
+  assert.equal(calls[0][2], 'projection-lease');
+  assert.deepEqual(await source.dispose(), { failures: 0, lastError: null });
+  const failed = [];
+  const failure = new Error('projection refused');
+  const other = historySource('binding', {
+    begin: async () => 'failed-projection', cancel: async key => { failed.push(key); },
+    project: async () => { throw failure; },
+    page: async () => { throw new Error('unexpected page'); }, record: async () => { throw new Error('unexpected raw'); },
+  });
+  await assert.rejects(other.project('fragment', 1, 100, null), error => error === failure);
+  assert.deepEqual(failed, ['failed-projection']);
+  await other.dispose();
+  const heldAck = deferred(), cancelling = deferred();
+  const controller = new AbortController();
+  let cancels = 0;
+  const held = historySource('binding', {
+    begin: async () => 'held-projection',
+    cancel: async () => { cancels++; cancelling.resolve(); await heldAck.promise; },
+    project: async () => projected,
+    page: async () => { throw new Error('unexpected page'); }, record: async () => { throw new Error('unexpected raw'); },
+  });
+  const heldJob = held.project('fragment', 1, 100, '{}', controller.signal);
+  await cancelling.promise;
+  controller.abort();
+  const disposed = held.dispose();
+  heldAck.resolve();
+  assert.equal(await heldJob, null, 'retirement during release ACK must reject an already-computed projection');
+  await disposed;
+  assert.equal(cancels, 1);
+  const entered = deferred(), heldWork = deferred();
+  let earlyCancels = 0;
+  const early = historySource('binding', {
+    begin: async () => 'early-projection', cancel: async () => { earlyCancels++; },
+    project: async () => { entered.resolve(); return heldWork.promise; },
+    page: async () => { throw new Error('unexpected page'); }, record: async () => { throw new Error('unexpected raw'); },
+  });
+  const earlyJob = early.project('fragment', 1, 100, '{}');
+  await entered.promise;
+  const earlyDisposed = early.dispose();
+  await new Promise(resolve => setImmediate(resolve));
+  heldWork.resolve(projected);
+  assert.equal(await earlyJob, null);
+  await earlyDisposed;
+  assert.equal(earlyCancels, 1, 'a completed early release must not be repeated when work answers');
 });
 const deferred = () => {
   let resolve;

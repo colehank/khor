@@ -163,7 +163,7 @@ export function checkMobileSources(gui) {
     // its own snapshot by design (`khor_node::Node::day_strips`). Measured
     // at 31 ms held on a scratch app, with key→echo max 35 ms in the same
     // window against a p95 of 12 ms.
-    "day_strips", "session_content", "history_begin", "history_cancel", "history_page", "history_record",
+    "day_strips", "session_content", "history_begin", "history_cancel", "history_page", "history_record", "history_projection",
     "dirs_begin", "dirs_wait", "dirs_leave",
   ];
   {

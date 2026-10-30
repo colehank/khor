@@ -7,6 +7,7 @@ export const FIND_HITS = 32;
 export const FIND_QUERY_BYTES = 256;
 export const FIND_SNIPPET_BYTES = 512;
 const PAGE_BYTES = 512 * 1024;
+const RESULT_BYTES = 64 * 1024;
 const utf8 = new TextEncoder();
 
 export type FindQuery = { text: string; caseSensitive: boolean };
@@ -76,6 +77,11 @@ export function literalMatcher(raw: FindQuery) {
   let serial = 0;
   const origins = new Array<number>(pattern.length);
   return {
+    checkpoint: () => ({ matched, position, serial, origins: origins.slice() }),
+    restore(saved: { matched: number; position: number; serial: number; origins: number[] }) {
+      matched = saved.matched; position = saved.position; serial = saved.serial;
+      for (let index = 0; index < origins.length; index++) origins[index] = saved.origins[index];
+    },
     feed(text: string, limit = FIND_HITS) {
       const ranges: { from: number; to: number }[] = [];
       let consumed = 0;
@@ -134,6 +140,7 @@ export function historyFindBatch(raw: FindQuery) {
     if (!current) throw new Error('history search has no pending page');
     const page = current;
     const hits: FindHit[] = [];
+    let hitBytes = 0;
     while (item < items.length && hits.length < FIND_HITS) {
       if (!projection) {
         projection = historyText(items[item]);
@@ -145,26 +152,40 @@ export function historyFindBatch(raw: FindQuery) {
         continue;
       }
       const text = texts[part];
-      const result = matcher.feed(text.slice(offset), FIND_HITS - hits.length);
-      offset += result.consumed;
+      const saved = matcher.checkpoint();
+      const result = matcher.feed(text.slice(offset), 1);
       const key = items[item].historyKey;
-      for (const range of result.ranges) hits.push({ before: page.newer,
+      const proposed = result.ranges.map(range => ({ before: page.newer,
         entry: key.slice(0, key.lastIndexOf(':')), part, ...range,
-        snippet: snippet(text, range.from, range.to) });
+        snippet: snippet(text, range.from, range.to) }));
+      const bytes = proposed.reduce((sum, hit) => sum + utf8.encode(JSON.stringify(hit)).length + 1, 0);
+      if (hitBytes + bytes > RESULT_BYTES - 16 * 1024) {
+        matcher.restore(saved);
+        break;
+      }
+      hitBytes += bytes;
+      hits.push(...proposed);
+      offset += result.consumed;
       if (offset === text.length) {
         part++; offset = 0; matcher = literalMatcher(query);
       }
     }
     const pageDone = item >= items.length;
     if (pageDone) { current = null; items = []; projection = null; }
-    return { kind: 'result', hits, pageDone, older: page.older,
+    const answer: FindWorkerOutput = { kind: 'result', hits, pageDone, older: page.older,
       unsearchedRanges: pageDone ? page.references.length + unsearchedInputs : 0 };
+    if (utf8.encode(JSON.stringify(answer)).length > RESULT_BYTES) throw new Error('history search result exceeds its byte budget');
+    return answer;
   }
   return {
     page(page: HistoryPage): FindWorkerOutput {
       if (current) throw new Error('history search page has not been consumed');
       if (page.entries.length > 128 || page.encoded_bytes > PAGE_BYTES || utf8.encode(JSON.stringify(page)).length > PAGE_BYTES)
         throw new Error('history search page exceeds the reader budget');
+      if (page.entries.some(entry => utf8.encode(entry.key).length > 128))
+        throw new Error('history search entry key exceeds its metadata budget');
+      if (utf8.encode(page.newer).length > 4096 || (page.older !== null && utf8.encode(page.older).length > 4096))
+        throw new Error('history search source cursor exceeds its metadata budget');
       current = page;
       items = paintHistory(page.entries);
       item = 0; part = 0; offset = 0; matcher = literalMatcher(query); projection = null; unsearchedInputs = 0;

@@ -963,6 +963,29 @@ async fn history_page(
     .await
 }
 
+#[tauri::command]
+async fn history_projection(
+    id: String,
+    binding: String,
+    request_key: String,
+    cursor: String,
+    start: u64,
+    end: u64,
+    scaffold: Option<String>,
+) -> Result<khor_gui_core::chat::HistoryProjection, String> {
+    khor_gui_core::chat::history_projection(
+        &Node::root_from_env(),
+        &id,
+        &binding,
+        &request_key,
+        &cursor,
+        start,
+        end,
+        scaffold,
+    )
+    .await
+}
+
 /// One machine's directory, for the files landing. Async because the
 /// machine may be far away (the same reason `pair` is).
 #[tauri::command]
@@ -5524,6 +5547,7 @@ pub fn run() {
             history_cancel,
             history_page,
             history_record,
+            history_projection,
             ls,
             pull,
             pull_temp,

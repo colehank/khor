@@ -49,7 +49,14 @@ pub enum ContentEvent {
     Turn { stop: String },
     CaptureGap { opening: String, interrupted: bool },
     PromptOrigin { turn: String, token: String, start: u64, end: u64 },
+    LocalUserEcho,
     Reference,
+}
+/// Body-only normalization of a caller-built bounded scaffold. These are
+/// ordinary SDK notes, never trusted journal boundaries or send receipts.
+pub struct BodyProjection {
+    pub updates: Vec<serde_json::Value>,
+    pub complete: bool,
 }
 impl From<Utterance> for ContentEvent {
     fn from(value: Utterance) -> Self {

@@ -75,6 +75,7 @@ import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
 import type { HistoryPage } from "./gen/bindings/HistoryPage";
+import type { HistoryProjection } from "./gen/bindings/HistoryProjection";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
 import type { Found } from "./gen/bindings/Found";
@@ -1443,6 +1444,9 @@ export const fetchHistoryRecord = (id: string, binding: string, requestKey: stri
   call<HistoryRecordChunk>("history_record", { id, binding, requestKey, cursor, from });
 export const fetchHistoryPage = (id: string, binding: string, requestKey: string, cursor: string | null = null, newer = false) =>
   call<HistoryPage>("history_page", { id, binding, cursor, newer, requestKey });
+export const fetchHistoryProjection = (id: string, binding: string, requestKey: string, cursor: string,
+  start: number, end: number, scaffold: string | null = null) =>
+  call<HistoryProjection>("history_projection", { id, binding, requestKey, cursor, start, end, scaffold });
 
 /** One machine's directory — order, cap and the answered-about path
     all come from the node; `""` asks for that machine's home. */
