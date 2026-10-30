@@ -208,7 +208,7 @@ export function historyFindBatch(raw: FindQuery) {
   let matcher = literalMatcher(query);
   let projection: ReturnType<typeof historyText> | null = null;
   let unsearchedInputs = 0;
-  let firstPage = true, atTail = false;
+  let firstPage = true, atTail = false, fence = '';
   let pending: PendingReplay | null = null, replay: HistoryReplay | null = null;
   function next(): Extract<FindWorkerOutput, { kind: 'result' }> {
     if (!current) throw new Error('history search has no pending page');
@@ -232,6 +232,8 @@ export function historyFindBatch(raw: FindQuery) {
       const proposed = result.ranges.map(range => ({ before: page.newer,
         entry, part, ...range,
         complete: projection!.complete && historyPartComplete(painted, painted.indexOf(items[item]), page, atTail), atTail,
+        ...(plainHistoryText(items[item]) ? {replay:{...replayStart(items[item],page),endBefore:page.newer,
+          last:items[item].historyEntries.at(-1)!,fence,completeStart:true}} : {}),
         snippet: findSnippet(text, range.from, range.to) }));
       const bytes = proposed.reduce((sum, hit) => sum + utf8.encode(JSON.stringify(hit)).length + 1, 0);
       if (hitBytes + bytes > RESULT_BYTES - 16 * 1024) {
@@ -262,6 +264,7 @@ export function historyFindBatch(raw: FindQuery) {
       if (utf8.encode(page.newer).length > 4096 || (page.older !== null && utf8.encode(page.older).length > 4096))
         throw new Error('history search source cursor exceeds its metadata budget');
       current = page;
+      if(firstPage)fence=page.newer;
       const out: HistoryPaintStep[]=[...context.facts];
       let previous: import('@/gen/bindings/HistoryRecordRef').HistoryRecordRef | null=null;
       for(const entry of page.entries)previous=appendHistoryEntry(out,entry,page.references,previous);
@@ -296,7 +299,7 @@ export function historyFindBatch(raw: FindQuery) {
       const firstLogical=logical.findIndex(plainHistoryText), first=logical[firstLogical], firstIndex=first ? painted.indexOf(first) : -1;
       if (first && !omitted.has(firstIndex) && !knownHead(first,firstLogical,page,logical)) {
         pending={...replayStart(first,page),endBefore:page.newer,
-          last:first.historyEntries.at(-1)!,completeStart:false,head:prefixFact(first,page)};
+          last:first.historyEntries.at(-1)!,fence,completeStart:false,head:prefixFact(first,page)};
         omitted.add(firstIndex);
       }
       items = painted.filter((_item,index)=>!omitted.has(index));

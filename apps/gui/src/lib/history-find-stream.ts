@@ -6,12 +6,15 @@ import { literalMatcher, findSnippet, type FindHit, type FindQuery } from './his
 
 /** These are source-validated cursors and exact opaque contribution keys,
  * scoped to this query's one Worker/historySource lifetime, never persisted. */
-export type HistoryReplay = { before: string; forward: boolean; first: string; endBefore: string; last: string; completeStart: boolean };
+export type HistoryReplay = { before: string; forward: boolean; first: string; endBefore: string; last: string; fence: string; completeStart: boolean };
 type IO = Pick<ReturnType<typeof historySource>, 'page'>;
 const utf8 = new TextEncoder();
+export class HistoryReplaySourceChanged extends Error {
+  constructor(){super('history replay source changed');}
+}
 export function checkedReplayPage(page: HistoryPage | null): HistoryPage {
   if (!page) throw new Error('history replay was cancelled');
-  if (page.reset) throw new Error('history replay source changed');
+  if (page.reset) throw new HistoryReplaySourceChanged();
   if (page.entries.length > 128 || page.references.length > 256 || page.encoded_bytes > 512 * 1024
     || utf8.encode(JSON.stringify(page)).length > 512 * 1024
     || page.entries.some(entry => utf8.encode(entry.key).length > 128)
@@ -82,13 +85,14 @@ function retire(out: HistoryPaintStep[]): HistoryPaintStep[] | null {
 export type ReplayCoverage = {complete: boolean; unsearched: number};
 const stopped: ReplayCoverage={complete:false,unsearched:0};
 type Fragment = {group: string; first: string; entry: string; pageBefore: string; text: string};
-export async function* historyReplayText(range: HistoryReplay, io: IO): AsyncGenerator<Fragment, ReplayCoverage> {
+export async function* historyReplayText(range: HistoryReplay, io: IO, whole = false): AsyncGenerator<Fragment, ReplayCoverage> {
   let page = checkedReplayPage(await io.page(range.before, range.forward));
   let out: HistoryPaintStep[] = [], previousRecord: HistoryRecordRef | null = null;
   let started = false, complete = range.completeStart;
-  let group = '', first = '';
+  let group = '', first = '', selected = '';
+  let reachedLast = false;
   while (true) {
-    const cutoff=page.entries.findIndex(entry=>entry.key===range.last);
+    const cutoff=whole ? -1 : page.entries.findIndex(entry=>entry.key===range.last);
     const entries=cutoff<0?page.entries:page.entries.slice(0,cutoff+1);
     const context=await historyPageContext({...page,entries},io,out);
     if(!context.complete)return {complete:false,unsearched:1};
@@ -96,19 +100,28 @@ export async function* historyReplayText(range: HistoryReplay, io: IO): AsyncGen
     for (const entry of entries) {
       if (entry.key === range.first) started = true;
       const record = entry.record ?? null;
-      if (started && page.references.some(reference => !record || historyReferenceBetween(reference,previousRecord,record))) complete = false;
+      if (started && !(entry.key===range.first && entry.starts_message)
+        && page.references.some(reference => !record || historyReferenceBetween(reference,previousRecord,record))) complete = false;
       previousRecord = appendHistoryEntry(out,entry,page.references,previousRecord);
       const last = out.at(-1);
+      if(started && entry.frame.kind==='capture_gap')complete=false;
+      if(whole && selected && (!last || !plain(last) || last.historyKey!==selected))
+        return {complete:complete && reachedLast,unsearched:0};
       if (started && last && plain(last)) {
+        if(!selected)selected=last.historyKey;
         if (last.historyKey !== group) {group=last.historyKey;first=entry.key;}
         if (last.text) yield {group,first,entry:entry.key,pageBefore:page.newer,text:last.text};
       } else if (started) group = '';
       const retained=retire(out);
       if(!retained)return {complete:false,unsearched:1};
       out=retained;
-      if (started && entry.key === range.last) return {complete,unsearched:0};
+      if(started && entry.key===range.last)reachedLast=true;
+      if(!whole && reachedLast)return {complete,unsearched:0};
     }
-    if (page.newer === range.endBefore || (page.has_more === false && page.entries.length === 0))
+    if(whole && page.newer===range.fence)return {
+      complete:complete && started && reachedLast
+        && !page.references.some(reference=>historyReferenceBetween(reference,previousRecord,null)),unsearched:0};
+    if ((!whole && page.newer === range.endBefore) || (page.has_more === false && page.entries.length === 0))
       throw new Error('history replay cutoff contribution is no longer present');
     const cursor = page.newer;
     page = checkedReplayPage(await io.page(cursor,true));

@@ -77,7 +77,7 @@ test('uses the actual rendered projection, not fields or encoded attachment byte
   assert.equal(hit.before, 'exclusive-source-fence');
   assert.deepEqual([hit.from, hit.to], [0, 7]);
 });
-test('clipped canonical message parts stay searchable but cannot claim complete copying', async () => {
+test('clipped canonical message parts reconstruct through their bounded source stream', async () => {
   const chunk=(key,value,start,end)=>({...text(key,value),starts_message:false,
     record:{start,end,item:0,missing_start:false,missing_end:false,cursor:`before-${start}`}});
   const entries=[chunk('first:0','hel',0,10),chunk('last:0','lo',10,20)];
@@ -91,8 +91,13 @@ test('clipped canonical message parts stay searchable but cannot claim complete 
   assert(hit,'the deferred logical body is searched through the shared painter');
   assert.equal(hit.complete,false,'query replay does not assert complete whole-part copying');
   let reads=0;
-  await assert.rejects(historyFindAction('copy',hit,{page:async()=>{reads++;return clipped;}}),error=>error.code==='incomplete');
-  assert.equal(reads,0,'a known incomplete group does not start IO then pretend a prefix is whole');
+  const restored=await historyFindAction('copy',hit,{page:async()=>{reads++;return clipped;}});
+  assert.deepEqual(restored,{text:'hello',from:0,complete:true},'only the fully consumed source-fenced body is published');
+  assert.equal(reads,1,'the body is reconstructed independently of the clipped UI window');
+  const large={...page([chunk('large-first','中'.repeat(11000),0,20),chunk('large-last','中'.repeat(11000),20,40)]),older:null};
+  const largeHit=historyFindBatch(query('中')).page(large).hits[0];
+  await assert.rejects(historyFindAction('copy',largeHit,{page:async()=>large}),error=>error.code==='too_large',
+    'streaming copy rejects a complete body over 64KiB rather than returning its prefix');
   const whole={...clipped,older:null};
   const completeHit=historyFindBatch(query('hello')).page(whole).hits[0];
   assert.equal(completeHit.complete,true);
@@ -107,6 +112,9 @@ test('clipped canonical message parts stay searchable but cannot claim complete 
     references:[{...entries[1].record,item:null}]};
   assert.equal(historyFindBatch(query('hello')).page(unknownTail).hits[0].complete,false,
     'an unprojected tail is not bypassed by a message-start fact');
+  const unknownHit=historyFindBatch(query('hello')).page(unknownTail).hits[0];
+  await assert.rejects(historyFindAction('copy',unknownHit,{page:async()=>unknownTail}),error=>error.code==='incomplete',
+    'reaching the source fence does not complete an unprojected raw tail');
 });
 test('page seam preserves the actual non-overlap matcher phase', async () => {
   const chunk=(key,value,start,end)=>({...text(key,value),starts_message:false,
@@ -139,6 +147,30 @@ test('page seam preserves the actual non-overlap matcher phase', async () => {
   const range=scan.takeReplay();assert(range);
   const result=await replayHits(range,query('aa'),io);
   assert.deepEqual(result.hits.filter(hit=>hit.entry!=='tool-call').map(hit=>[hit.from,hit.to]),[[0,2],[2,4],[4,6]]);
+  // The same production iterator is also consumed through the real Worker IO
+  // lane: pause at 32 hits, inspect/copy while paused, then resume its phase.
+  const threadOld={...page([chunk('thread-old','a'.repeat(70),0,70)]),older:null,newer:'thread-middle'};
+  const threadNew={...page([chunk('thread-new','a'.repeat(70),70,140)]),older:'thread-middle',newer:'thread-tail'};
+  const threadIO=replayPages(threadOld,threadNew);
+  let arrival=deferred(), lease=0;
+  const source=historySource('thread-phase-source',{
+    begin:async()=>`phase-${++lease}`,cancel:async()=>{},
+    page:async(_binding,_lease,cursor,forward)=>cursor===null ? threadNew : threadIO.page(cursor,forward),
+    record:async()=>{throw new Error('ordinary phase replay must not read raw records');},
+  });
+  const reader=historyFind(source,query('aa'),state=>{if(!state.busy && (state.hits.length || state.error || state.done))arrival.resolve(state);});
+  try{
+    reader.start();const first=await arrival.promise;
+    assert.equal(first.error,null);assert.equal(first.hits.length,32);assert.equal(first.scannedPages,2);
+    assert.deepEqual(await reader.inspect(first.hits[0],'copy'),{text:'a'.repeat(140),from:0,complete:true});
+    arrival=deferred();reader.next();const second=await arrival.promise;
+    arrival=deferred();reader.next();const third=await arrival.promise;
+    assert.deepEqual([first.hits.length,second.hits.length,third.hits.length],[32,32,6]);
+    assert.deepEqual([...first.hits,...second.hits,...third.hits].map(hit=>hit.from),Array.from({length:70},(_,index)=>index*2));
+    assert.equal(third.scannedPages,2,'replay and copy IO do not count the normal source pages again');
+    assert.equal(third.unsearchedRanges,0);assert.equal(third.done,true);
+  }finally{await reader.dispose();}
+
 });
 test('ordinary canonical page seams use the shared painter and query-sized carry' , async () => {
   const chunk=(key,value,start,end,extra={})=>({...text(key,value),starts_message:false,
@@ -157,6 +189,18 @@ test('ordinary canonical page seams use the shared painter and query-sized carry
   const context=await historyFindAction('context',hit,{page:async(cursor,forward)=>{reads.push([cursor,forward]);return replayPages(older,newer).page(cursor,forward);}});
   assert.equal(context.text,'hello');
   assert.deepEqual(reads,[['before-0',true],['middle-fence',true]]);
+  const copied=await historyFindAction('copy',hit,replayPages(older,newer));
+  assert.deepEqual(copied,{text:'hello',from:0,complete:true},'whole-part copy streams across pages without putting the group into the UI window');
+  const known=historyFindBatch(query('hel'));
+  known.page({...newer,entries:[]}); // The same captured source tail, not a UI-sized message cache.
+  const prefixPage={...older,entries:[{...chunk('known-first','he',0,5),starts_message:true},chunk('known-next','l',5,10)]};
+  const prefixHit=known.page(prefixPage).hits[0];assert.equal(prefixHit.complete,false);
+  assert.deepEqual(await historyFindAction('copy',prefixHit,replayPages(prefixPage,newer)),{text:'hello',from:0,complete:true},
+    'a known prefix also extends past its query cutoff to the real source-fenced body end');
+  await assert.rejects(historyFindAction('copy',hit,{page:async(cursor,forward)=>
+    cursor==='middle-fence' ? {...newer,reset:true} : replayPages(older,newer).page(cursor,forward)}),error=>error.code==='source_changed');
+  await assert.rejects(historyFindAction('copy',hit,{page:async(cursor,forward)=>
+    cursor==='middle-fence' ? null : replayPages(older,newer).page(cursor,forward)}),/cancelled/);
   for(const boundary of [
     {...newer,entries:[{...newer.entries[0],starts_message:true}]},
     {...newer,entries:[{key:'opaque-turn',starts_message:true,record:null,frame:{kind:'turn',stop:'EndTurn'}},...newer.entries]},
