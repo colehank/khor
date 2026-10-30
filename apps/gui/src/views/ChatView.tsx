@@ -47,7 +47,7 @@ import { useHistoryExport } from '@/hooks/use-history-export';
 import type { FindHit } from '@/lib/history-find-model';
 import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
 import { historyEntries, historyReferences } from '@/lib/history-window';
-import { paintHistory } from '@/lib/history-paint';
+import { paintHistory, retainHistoryIdentity, type HistoryItem } from '@/lib/history-paint';
 import { HistoryRecords } from '@/components/history/HistoryRecords';
 
 /** Live control/state waits stay responsive while idle polling backs off. */
@@ -79,11 +79,11 @@ type Item = (
       answer: string | null;
     }
   | { who: "sys"; text: string }
-  | { who: "seal" }) & { historyKey?: string };
+  | { who: "seal" }) & { historyKey?: string; historyEntries?: string[]; displayKey?: string };
 
 /** Canonical pages own all body content. Live paint holds only current
  * optimistic inputs and bounded control notices; unresolved permissions remain actionable. */
-type Painting = { past: Item[]; live: Item[] };
+type Painting = { past: HistoryItem[]; live: Item[] };
 const BLANK: Painting = { past: [], live: [] };
 function boundedLive(items: Item[]): Item[] {
   let transient = 0;
@@ -94,7 +94,7 @@ function boundedLive(items: Item[]): Item[] {
 }
 function acceptHistory(previous: Painting, entries: Parameters<typeof paintHistory>[0]): Painting {
   const recorded = new Set(entries.flatMap(entry => entry.frame.kind === 'prompt_recorded' ? [entry.frame.token] : []));
-  return { ...previous, past: paintHistory(entries),
+  return { ...previous, past: retainHistoryIdentity(previous.past, paintHistory(entries)),
     live: previous.live.filter(item => item.who !== 'user' || !item.token || !recorded.has(item.token)) };
 }
 
@@ -779,7 +779,7 @@ export function ChatView({
         setHistory(state); setLoaded(state.loaded);
         if (previousPages !== state.window.pages) {
           previousPages = state.window.pages;
-          setPaint(previous => acceptHistory(previous, historyEntries(state.window)));
+          setPaint(previous => acceptHistory(state.reset ? {...previous, past: []} : previous, historyEntries(state.window)));
           if (state.reset) {
             setFindingHistory(false); setMatchedEntry(null); historyMatch.current = null;
             historyAnchor.current = null;
@@ -1123,10 +1123,10 @@ export function ChatView({
     if (!match || history?.busy) return;
     if (history?.error) { historyMatch.current = null; return; }
     const element = scroller.current;
+    const item = paint.past.find(item => item.historyEntries.includes(match.entry));
     const node = [...(element?.querySelectorAll<HTMLElement>('[data-history-key]') ?? [])]
-      .find(candidate => candidate.dataset.historyKey?.startsWith(`${match.entry}:`));
+      .find(candidate => candidate.dataset.historyKey === (item?.displayKey ?? item?.historyKey));
     if (!node) return;
-    const item = paint.past.find(item => item.historyKey?.startsWith(`${match.entry}:`));
     if (item?.who === 'tool') setOpen(previous => new Set([...previous, item.id]));
     node.scrollIntoView({ block: 'center' });
     historyMatch.current = null;
@@ -1558,7 +1558,7 @@ export function ChatView({
             (() => {
               const { words, paths } = splitAttachments(item.text);
               return (
-                <div key={item.historyKey ?? i} className="flex flex-col items-end gap-in py-row">
+                <div key={item.displayKey ?? item.historyKey ?? i} className="flex flex-col items-end gap-in py-row">
                   {words && (
                     <Bubble align="end" variant="muted"><BubbleContent data-said className="text-read"><Markdown text={words} /></BubbleContent></Bubble>
                   )}
@@ -1575,7 +1575,7 @@ export function ChatView({
               );
             })()
           ) : item.who === "agent" || item.who === "thought" || item.who === "tool" || item.who === "compaction" || item.who === "resource" ? (
-            <AgentContent key={item.historyKey ?? (item.who === "tool" ? `${id}:${item.id}` : `${id}:${i}`)} item={item}
+            <AgentContent key={item.displayKey ?? item.historyKey ?? (item.who === "tool" ? `${id}:${item.id}` : `${id}:${i}`)} item={item}
               streaming={inTurn && i === items.length - 1} active={inTurn}
               open={item.who === "tool" && open.has(item.id)} onOpenFile={openFile}
               onOpenChange={(shown) => { if (item.who === "tool") setOpen((now) => {
@@ -1591,11 +1591,11 @@ export function ChatView({
               onAnswer={(option) => withChat(view => view.answer(item.ask, option))}
             />
           ) : (
-            <div key={item.historyKey ?? i} className="text-caption" style={{ color: "var(--state-errored)" }}>
+            <div key={item.displayKey ?? item.historyKey ?? i} className="text-caption" style={{ color: "var(--state-errored)" }}>
               {item.text}
             </div>
           );
-          return item.historyKey ? <div key={`${historyEpoch}:${item.historyKey}`} data-history-key={item.historyKey} className={matchedEntry && item.historyKey.startsWith(`${matchedEntry}:`) ? 'rounded-md bg-brand-wash' : undefined}>{content}</div> : content;
+          return item.historyKey ? <div key={`${historyEpoch}:${item.displayKey ?? item.historyKey}`} data-history-key={item.displayKey ?? item.historyKey} className={matchedEntry && item.historyEntries?.includes(matchedEntry) ? 'rounded-md bg-brand-wash' : undefined}>{content}</div> : content;
         })}
         {history && sourceBinding && <HistoryRecords key={`${id}:${sourceBinding}:${historyEpoch}`} references={historyReferences(history.window)} exporter={historyExport} showExportStatus={!findingHistory}
           read={(cursor, from, signal) => historyView.current?.record(cursor, from, signal) ?? Promise.resolve(null)} />}

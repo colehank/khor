@@ -27,10 +27,10 @@ export function canonicalChatFixture({ids, takeFrames, onOpen = () => {}, bindin
       // These five source facts are explicit in these scenarios. Original SDK
       // payloads stay untouched; real paintHistory performs all body folding.
       if (frame.kind === 'note' && BODY_NOTES.has(frame.update?.update?.sessionUpdate)) {
-        state.entries.push({key: `${state.entries.length}:0`, frame});
+        state.entries.push({key: `${state.entries.length}:0`, starts_message: false, frame});
         state.pending.push({kind: 'content_changed'});
       } else {
-        if (frame.kind === 'turn') state.entries.push({key: `${state.entries.length}:0`, frame});
+        if (frame.kind === 'turn') state.entries.push({key: `${state.entries.length}:0`, starts_message: true, frame});
         state.pending.push(frame);
       }
     }

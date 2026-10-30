@@ -3,6 +3,7 @@ import { applyAcpUpdate, type AcpItem, type AcpUpdate } from './acp-view';
 import { gui } from '@/gen/catalog';
 export type HistoryItem = (AcpItem | { who: 'sys'; text: string }) & {
   historyKey: string;
+  displayKey?: string;
   /** Contributions belong only to the currently retained bounded window. */
   historyEntries: string[];
 };
@@ -43,4 +44,23 @@ export function paintHistory(entries: HistoryEntry[]): HistoryItem[] {
     }
   }
   return out.filter((item): item is HistoryItem => item.who !== 'boundary');
+}
+
+/** Reuse disclosure owners only through retained record contributions. Each
+ * previous owner is assigned at most once; callers drop previous on reset. */
+export function retainHistoryIdentity(previous: HistoryItem[], next: HistoryItem[]): HistoryItem[] {
+  const owners = new Map<string, string>();
+  for (const item of previous)
+    for (const key of item.historyEntries)
+      owners.set(`${item.who}:${key}`, item.displayKey ?? item.historyKey);
+  const used = new Set<string>();
+  return next.map((item, index) => {
+    const inherited = item.historyEntries.map(key => owners.get(`${item.who}:${key}`))
+      .find((key): key is string => key !== undefined && !used.has(key));
+    let displayKey = inherited ?? item.historyKey;
+    let collision = 0;
+    while (used.has(displayKey)) displayKey = `${item.historyKey}:view:${index}:${collision++}`;
+    used.add(displayKey);
+    return {...item, displayKey};
+  });
 }

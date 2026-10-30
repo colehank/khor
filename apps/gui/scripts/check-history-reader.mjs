@@ -6,7 +6,7 @@ import ts from 'typescript';
 const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint', 'acp-view'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
 const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
-const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp } = module.exports;
+const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity } = module.exports;
 const note = (sessionUpdate, extra = {}) => ({ kind: 'note', update: { update: { sessionUpdate, ...extra } } });
 const entry = (key, text = key) => ({ key, starts_message: true, frame: note('agent_message_chunk', { content: { type: 'text', text } }) });
 const page = (key, { count = 1, bytes = 100, older = `before:${key}`, newer = `after:${key}`, more = false, reset = false, refs = [] } = {}) => ({ entries: Array.from({ length: count }, (_, i) => entry(`${key}:${i}`)), older, newer, has_more: more, reset, references: refs, encoded_bytes: bytes });
@@ -289,6 +289,18 @@ test('shared ACP projection respects optional message IDs without requiring them
   assert.deepEqual(read([update('hel','one'),update('lo','two')]).map(item => item.text), ['hel','lo']);
   assert.deepEqual(read([update('hel','one'),update('lo')]).map(item => item.text), ['hello'], 'omission is unknown, not an asserted new message');
   assert.deepEqual(read([update('hel'),update('lo','one'),update('!','two')]).map(item => item.text), ['hello','!'], 'a later reported ID still gives a real boundary');
+});
+test('retained contribution identity is bounded and assigned one to one', () => {
+  const chunk = (key, value) => ({...entry(key, value), starts_message:false});
+  const recent = retainHistoryIdentity([],paintHistory([chunk('20:0','middle'),chunk('30:0','tail')]));
+  const prepended = retainHistoryIdentity(recent,paintHistory([chunk('10:0','prefix'),chunk('20:0','middle'),chunk('30:0','tail')]));
+  assert.equal(prepended[0].displayKey,recent[0].displayKey,'older prefix retains existing disclosure owner');
+  assert.equal(prepended[0].text,'prefixmiddletail');
+  const split = retainHistoryIdentity(recent,paintHistory([entry('20:0','middle'),entry('30:0','tail')]));
+  assert.equal(new Set(split.map(item=>item.displayKey)).size,2,'one prior owner cannot be reused by two groups');
+  const reset = retainHistoryIdentity([],paintHistory([chunk('10:0','prefix'),chunk('20:0','middle'),chunk('30:0','tail')]));
+  assert.equal(reset[0].displayKey,reset[0].historyKey,'reset has no old owner map');
+  assert.notEqual(reset[0].displayKey,recent[0].displayKey);
 });
 test('prepend preserves paragraph keys and does not concatenate records', () => {
   const recent = [entry('20:0', 'second'), entry('30:0', 'third')], before = paintHistory(recent), after = paintHistory([entry('10:0', 'first'), ...recent]);
