@@ -236,7 +236,7 @@ const frames = [
   },
   {
     kind: "note",
-    update: { update: { sessionUpdate: "tool_call", title: "Read src/views/ChatView.tsx" } },
+    update: { update: { sessionUpdate: "tool_call", toolCallId: "read-layout-tool", kind: "read", status: "completed", title: "Read src/views/ChatView.tsx" } },
   },
   {
     kind: "note",
@@ -267,7 +267,7 @@ const row = (id, kind, title) => ({
   via_face: null,
   home: "gate",
 });
-const ROWS = [row("gui/read-gate", "gui", "read-gate-agent"), row("chat/read-gate", "chat", "read-gate-machine")];
+const ROWS = [row("gui/read-gate", "gui", "read-gate-agent"), row("wide/read-gate", "broadcast", "read-gate-machine")];
 
 /**
  * Everything measured off one painted conversation, in the page.
