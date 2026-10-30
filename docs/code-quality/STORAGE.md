@@ -27,3 +27,9 @@
 新资料统一在 `/Volumes/disk0/Khor/{worktrees,caches,evidence,archives,releases,maintenance}`；系统只用已登记的recovery入口，不在桌面/外盘根继续新建khor*目录。旧根目录khor*多为零体积兼容链接，不能当成多份数据相加。每个新大目录先明确owner、用途与回收点。
 
 当前已审只读preflight SHA256 `e70d4b2f4d574c518e6a0065b10cd6c6ecb7c45981d8d81d5c8b32e1820384c5`；内盘只保该小脚本恢复副本，不复制缓存本体。
+
+## 既有迁移与恢复资料
+
+2026-10-25的old→new映射、Git worktree移动、内盘恢复分支归位，以及2026-10-27/29历史归档事实，完整保留在[原存储记录](history/STORAGE-before-retention-20261031.md)。当前分支/目录数量核实际Git现场，不用旧数量推断完成。内盘迁移清单仍在 `/Users/zgh/khor-backups/disk0-20261025` 与 `working-20261025`；历史旧绝对路径经清单定位，不批量改写证据。
+
+工作副本的未提交、未跟踪及忽略内容必须单独核对，不因分支已合并就删除；也不能仅凭target目录名认定可清理。本次仅清单内已核归属/生成物/无持有的旧cache子目录，不删其外围源文件和日志。
