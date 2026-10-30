@@ -33,6 +33,12 @@ struct Control {
     packet: DocChunk,
     marker: PathBuf,
     release: PathBuf,
+    publication: Option<Publication>,
+}
+#[derive(Serialize, Deserialize)]
+struct Publication {
+    marker: PathBuf,
+    release: PathBuf,
 }
 #[derive(Serialize, Deserialize)]
 struct Proof {
@@ -41,37 +47,148 @@ struct Proof {
     root: PathBuf,
     phase: String,
 }
-static BARRIER: OnceLock<Mutex<Option<Control>>> = OnceLock::new();
+enum Phase {
+    Root(Control),
+    Publication {
+        root: PathBuf,
+        local: [u8; 32],
+        paths: Publication,
+    },
+}
+static BARRIER: OnceLock<Mutex<Option<Phase>>> = OnceLock::new();
 
 pub(crate) fn root_acquired(context: &Context) {
     let Some(barrier) = BARRIER.get() else { return };
     let control = {
         let mut slot = barrier.lock().unwrap();
-        if !slot.as_ref().is_some_and(|c| c.root == context.root) {
+        if !matches!(slot.as_ref(), Some(Phase::Root(c)) if c.root == context.root) {
             return;
         }
-        slot.take().unwrap()
+        let Some(Phase::Root(control)) = slot.take() else {
+            unreachable!()
+        };
+        control
     };
     publish(
         &control.marker,
         &Proof {
             pid: std::process::id(),
-            // The controller verifies this actual child PID and an unreaped Child
-            // handle before it allows any CLI input. This is not a persisted PID lease.
             parent: unsafe { libc::getppid() } as u32,
             root: context.root.clone(),
             phase: "devices-apply-root-acquired".into(),
         },
     );
+    if let Some(paths) = control.publication {
+        // Same owner, next physical stage: the RootGate must leave Context.apply
+        // before this source's later real Journal.save can reach the hook below.
+        *barrier.lock().unwrap() = Some(Phase::Publication {
+            root: context.root.clone(),
+            local: context.local,
+            paths,
+        });
+    } else {
+        wait_release(&control.release);
+    }
+}
+fn wait_release(path: &Path) {
     let until = Instant::now() + HOLD;
-    while !control.release.is_file() {
+    while !path.is_file() {
         assert!(
             Instant::now() < until,
-            "owned root barrier release deadline"
+            "owned stage barrier release deadline"
         );
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+#[derive(Serialize, Deserialize)]
+struct PublicationProof {
+    pid: u32,
+    parent: u32,
+    root: PathBuf,
+    phase: String,
+    root_free: bool,
+    metadata_held: bool,
+    needs_recovery: bool,
+    next_generation: u64,
+    next_bytes: usize,
+    next_blake3: String,
+    ordinary_wait_ms: u128,
+}
+pub(crate) fn publication_ready(
+    directory: &Path,
+    metadata_held: bool,
+    wait: Duration,
+    image: (&[u8], &[u8]),
+) {
+    let Some(barrier) = BARRIER.get() else { return };
+    let (root, local, paths) = {
+        let mut slot = barrier.lock().unwrap();
+        if !matches!(slot.as_ref(), Some(Phase::Publication { root, .. }) if root.join(".khor/doc-transfer-state") == directory)
+        {
+            return;
+        }
+        let Some(Phase::Publication { root, local, paths }) = slot.take() else {
+            unreachable!()
+        };
+        (root, local, paths)
+    };
+    assert!(
+        metadata_held,
+        "actual writer must still own its metadata Gate"
+    );
+    let next = directory.join("registry.next");
+    let metadata = fs::symlink_metadata(&next).unwrap();
+    assert!(metadata.is_file() && !metadata.file_type().is_symlink() && metadata.len() <= MAX_FILE);
+    let bytes = fs::read(&next).unwrap();
+    let (header, body) = image;
+    assert_eq!(header.len(), 56);
+    assert_eq!(&header[..8], b"khor-d01");
+    assert_eq!(bytes.len(), header.len() + body.len());
+    assert_eq!(&bytes[..56], header);
+    assert_eq!(
+        &bytes[56..],
+        body,
+        "proof is this actual State.save image, not a hand-written next file"
+    );
+    assert_eq!(
+        u64::from_be_bytes(header[16..24].try_into().unwrap()),
+        body.len() as u64
+    );
+    let mut checksum = blake3::Hasher::new();
+    checksum.update(&header[..24]);
+    checksum.update(body);
+    assert_eq!(&header[24..56], checksum.finalize().as_bytes());
+    // This is a successful zero-wait physical OS fence acquisition on the
+    // SAME source, not a promise inferred from the import's completion log.
+    let root_gate = crate::doc_transfer_state::RootPermit::try_acquire(&root)
+        .unwrap()
+        .attach()
+        .expect("Context.apply has released the real root fence");
+    drop(root_gate);
+    let needs_recovery = crate::doc_transfer_state::pairing::needs_recovery(&root, local).unwrap();
+    assert!(
+        needs_recovery,
+        "real next publication must exercise the conservative constructor branch"
+    );
+    publish(
+        &paths.marker,
+        &PublicationProof {
+            pid: std::process::id(),
+            parent: unsafe { libc::getppid() } as u32,
+            root,
+            phase: "journal-next-synced-before-rename".into(),
+            root_free: true,
+            metadata_held,
+            needs_recovery,
+            next_generation: u64::from_be_bytes(header[8..16].try_into().unwrap()),
+            next_bytes: bytes.len(),
+            next_blake3: blake3::hash(&bytes).to_hex().to_string(),
+            ordinary_wait_ms: wait.as_millis(),
+        },
+    );
+    wait_release(&paths.release);
+}
+
 fn publish(path: &Path, value: &impl Serialize) {
     let bytes = serde_json::to_vec(value).unwrap();
     assert!(bytes.len() as u64 <= MAX_FILE);
@@ -132,7 +249,7 @@ impl Drop for Fixture {
             let _ = fs::remove_dir_all(&self.root);
         } else {
             eprintln!(
-                "preserving owned query fixture: child not reaped: {}",
+                "preserving owned query fixture: parent cleanup not confirmed: {}",
                 self.root.display()
             );
         }
@@ -279,11 +396,15 @@ impl Query {
                     .open(&err)
                     .unwrap(),
             );
+        // Include process creation and any parent scheduling delay. This
+        // observation is used to exclude the actual ordinary admission budget.
+        let started = Instant::now();
+        let process = Owned::spawn(cmd, fixture);
         Self {
-            process: Owned::spawn(cmd, fixture),
+            process,
             out,
             err,
-            started: Instant::now(),
+            started,
         }
     }
     fn finish(mut self) -> (ExitStatus, String, String, u128) {
@@ -368,54 +489,83 @@ impl Query {
     }
 }
 
+struct PreparedFixture {
+    fixture: Fixture,
+    expected: Vec<String>,
+    baseline: Vec<String>,
+    target: Context,
+    source: Context,
+    packet: DocChunk,
+}
+impl PreparedFixture {
+    fn new() -> Self {
+        let fixture = Fixture::new();
+        let receiver = fixture.node("receiver");
+        let expected: Vec<_> = (0..10).map(|i| format!("tui/query-{i:02}")).collect();
+        for id in &expected {
+            let id = SessionId(id.clone());
+            receiver
+                .live
+                .register(&id, "tui", "private query row", None, None)
+                .unwrap();
+            receiver.roster_new(&id).unwrap();
+        }
+        let baseline = ids(&receiver);
+        for id in &expected {
+            assert!(baseline.contains(id), "baseline missing {id}");
+        }
+        let target = receiver.doc_context().unwrap();
+        let donor = fixture.node("donor-image");
+        let source = donor.doc_context().unwrap();
+        // A small real devices image, no Pair/RPC/endpoint or external source.
+        let mut loaded =
+            khor_sync::store::load_pile::<DeviceDoc>(&devices_dir(&source.root), source.writer)
+                .unwrap();
+        loaded
+            .doc
+            .upsert(
+                &khor_net::trust::id_hex(&source.local),
+                "donor-updated",
+                &[],
+            )
+            .unwrap();
+        loaded.store.flush(&loaded.doc).unwrap();
+        drop(loaded);
+        let have = target.version("devices").unwrap();
+        let packet = State::open(&source)
+            .unwrap()
+            .offer(&source, target.local, "devices", &have)
+            .unwrap()
+            .expect("real differing devices image");
+        assert!(
+            packet.bytes.len() < 64 * 1024 && packet.offset == 0,
+            "single bounded real devices image"
+        );
+        Self {
+            fixture,
+            expected,
+            baseline,
+            target,
+            source,
+            packet,
+        }
+    }
+}
+
 #[test]
 #[ignore = "one owned cross-process diagnostic; requires pinned private CLI via KHOR_QUERY_CLI"]
 fn ordinary_query_waits_for_devices_apply_and_preserves_ids() {
     let cli =
         PathBuf::from(std::env::var_os("KHOR_QUERY_CLI").expect("pinned private CLI required"));
     assert!(cli.is_absolute() && cli.is_file());
-    let fixture = Fixture::new();
-    let receiver = fixture.node("receiver");
-    let expected: Vec<_> = (0..10).map(|i| format!("tui/query-{i:02}")).collect();
-    for id in &expected {
-        let id = SessionId(id.clone());
-        receiver
-            .live
-            .register(&id, "tui", "private query row", None, None)
-            .unwrap();
-        receiver.roster_new(&id).unwrap();
-    }
-    let baseline = ids(&receiver);
-    for id in &expected {
-        assert!(baseline.contains(id), "baseline missing {id}");
-    }
-    let target = receiver.doc_context().unwrap();
-    let donor = fixture.node("donor-image");
-    let source = donor.doc_context().unwrap();
-    // A small real devices image, no Pair/RPC/endpoint or external source.
-    let mut loaded =
-        khor_sync::store::load_pile::<DeviceDoc>(&devices_dir(&source.root), source.writer)
-            .unwrap();
-    loaded
-        .doc
-        .upsert(
-            &khor_net::trust::id_hex(&source.local),
-            "donor-updated",
-            &[],
-        )
-        .unwrap();
-    loaded.store.flush(&loaded.doc).unwrap();
-    drop(loaded);
-    let have = target.version("devices").unwrap();
-    let packet = State::open(&source)
-        .unwrap()
-        .offer(&source, target.local, "devices", &have)
-        .unwrap()
-        .expect("real differing devices image");
-    assert!(
-        packet.bytes.len() < 64 * 1024 && packet.offset == 0,
-        "single bounded real devices image"
-    );
+    let PreparedFixture {
+        fixture,
+        expected,
+        baseline,
+        target,
+        source,
+        packet,
+    } = PreparedFixture::new();
     let control = Control {
         root: target.root.canonicalize().unwrap(),
         owner: std::process::id(),
@@ -423,6 +573,7 @@ fn ordinary_query_waits_for_devices_apply_and_preserves_ids() {
         packet,
         marker: fixture.root.join("root-held.json"),
         release: fixture.root.join("release.json"),
+        publication: None,
     };
     let control_path = fixture.root.join("control.json");
     publish(&control_path, &control);
@@ -522,6 +673,163 @@ fn ordinary_query_waits_for_devices_apply_and_preserves_ids() {
     );
 }
 
+#[test]
+#[ignore = "one owned metadata-publication phase diagnostic; requires pinned actual1507 CLI"]
+fn metadata_publication_separates_recovery_gate_from_root_admission() {
+    let cli =
+        PathBuf::from(std::env::var_os("KHOR_QUERY_CLI").expect("pinned actual1507 CLI required"));
+    assert!(cli.is_absolute() && cli.is_file());
+    let PreparedFixture {
+        fixture,
+        expected,
+        baseline,
+        target,
+        source,
+        packet,
+    } = PreparedFixture::new();
+    let marker = fixture.root.join("publication-held.json");
+    let released = fixture.root.join("publication-release.json");
+    let control = Control {
+        root: target.root.canonicalize().unwrap(),
+        owner: std::process::id(),
+        source: source.local,
+        packet,
+        marker: fixture.root.join("root-reached.json"),
+        release: fixture.root.join("unused-root-release.json"),
+        publication: Some(Publication {
+            marker: marker.clone(),
+            release: released.clone(),
+        }),
+    };
+    let control_path = fixture.root.join("control.json");
+    publish(&control_path, &control);
+    let mut cmd = Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--ignored",
+        "--exact",
+        WORKER,
+        "--nocapture",
+        "--test-threads=1",
+    ])
+    .env(WORKER_ENV, &control_path)
+    .stdin(Stdio::null());
+    let mut worker = Owned::spawn(cmd, &fixture);
+    let release = Release(released);
+    let born = birth(
+        worker.child.id(),
+        &fixture,
+        "worker-before",
+        &std::env::current_exe().unwrap(),
+    );
+    let until = Instant::now() + BY;
+    while !marker.is_file() {
+        assert!(
+            worker.child.try_wait().unwrap().is_none(),
+            "devices worker ended before real next publication"
+        );
+        assert!(
+            Instant::now() < until,
+            "real Journal.next publication checkpoint deadline"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let proof: PublicationProof = read(&marker);
+    assert_eq!(proof.pid, worker.child.id());
+    assert_eq!(proof.parent, std::process::id());
+    assert_eq!(proof.root, control.root);
+    assert_eq!(proof.phase, "journal-next-synced-before-rename");
+    assert!(proof.root_free && proof.metadata_held && proof.needs_recovery);
+    assert_eq!(
+        birth(
+            worker.child.id(),
+            &fixture,
+            "worker-held",
+            &std::env::current_exe().unwrap()
+        ),
+        born
+    );
+    assert!(worker.child.try_wait().unwrap().is_none());
+    let next = target.root.join(".khor/doc-transfer-state/registry.next");
+    assert!(fs::metadata(&next).unwrap().len() <= MAX_FILE);
+    let next_bytes = fs::read(&next).unwrap();
+    assert_eq!(next_bytes.len(), proof.next_bytes);
+    assert_eq!(
+        blake3::hash(&next_bytes).to_hex().to_string(),
+        proof.next_blake3
+    );
+    let root_free = crate::doc_transfer_state::RootPermit::try_acquire(&target.root)
+        .unwrap()
+        .attach()
+        .expect("parent independently acquires real root OS gate");
+    drop(root_free);
+    assert!(
+        crate::doc_transfer_state::pairing::needs_recovery(&target.root, target.local).unwrap()
+    );
+    let metadata = State::open(&target)
+        .err()
+        .expect("real metadata gate is held by publication worker");
+    assert_eq!(metadata.kind, crate::proto::DocTransferFailure::Busy);
+    let held = Query::start(&cli, &fixture, &target.root, "publication").finish();
+    // Under this known source-aligned branch, root admission is free and the
+    // ENTIRE CLI finished below its original root wait deadline. Not an mtime
+    // inference: the pinned next and metadata owner remain blocked throughout.
+    assert!(
+        !held.0.success(),
+        "diagnostic requires the actual publication-time failure"
+    );
+    assert!(
+        held.2.contains("document transfer state busy"),
+        "preserve original actual CLI error: {}",
+        held.2
+    );
+    assert!(
+        held.1.is_empty(),
+        "failure cannot be reported as successful empty rows"
+    );
+    assert!(
+        held.3 < proof.ordinary_wait_ms,
+        "cannot exclude a root deadline: {}ms",
+        held.3
+    );
+    assert!(
+        worker.child.try_wait().unwrap().is_none(),
+        "metadata owner must still be in the proved checkpoint"
+    );
+    assert_eq!(
+        fs::read(&next).unwrap(),
+        next_bytes,
+        "same real unpublished image remains held"
+    );
+    let root_free = crate::doc_transfer_state::RootPermit::try_acquire(&target.root)
+        .unwrap()
+        .attach()
+        .expect("root remains independently available after actual Busy");
+    drop(root_free);
+    drop(release);
+    assert!(
+        worker.wait(BY).success(),
+        "actual import finishes after publication release"
+    );
+    let after = Query::start(&cli, &fixture, &target.root, "released").finish();
+    assert!(after.0.success(), "released actual CLI: {}", after.2);
+    for id in &expected {
+        assert!(after.1.contains(id), "released query lost {id}");
+    }
+    let final_ids = ids(&Node::open_hosting(target.root.clone(), "receiver", false).unwrap());
+    for id in &baseline {
+        assert!(final_ids.contains(id), "original row disappeared: {id}");
+    }
+    fixture.children_done.store(true, Ordering::SeqCst);
+    eprintln!(
+        "[N-METADATA-QUERY] {}",
+        serde_json::json!({
+            "phase_proof":proof,"worker_birth_executable":born,"held_exit":held.0.code(),"held_ms":held.3,"held_stdout":held.1,"held_stderr":held.2,
+            "metadata_failure_kind":metadata.kind,"released_exit":after.0.code(),"released_ms":after.3,"released_stdout":after.1,"released_stderr":after.2,
+            "original_ids":expected,"baseline_ids":baseline,"final_ids":final_ids,"constructor_recovery_branch":true,"product_fixed":false
+        })
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "owned devices step helper only, not an independent parent case"]
 async fn owned_devices_step_worker() {
@@ -533,7 +841,7 @@ async fn owned_devices_step_worker() {
     let context = node.doc_context().unwrap();
     let packet = control.packet.clone();
     let remote = control.source;
-    *BARRIER.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(control);
+    *BARRIER.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(Phase::Root(control));
     let result = crate::link::documents::on_worker(context, move |context| {
         let mut state = State::open(context)?;
         state.receive(context, remote, &packet, true)

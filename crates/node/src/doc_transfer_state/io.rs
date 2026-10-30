@@ -512,6 +512,13 @@ impl Journal {
         file.sync_all().map_err(error)?;
         drop(file);
         check_file(&next)?;
+        #[cfg(all(test, unix))]
+        crate::link::documents::query_concurrency_tests::publication_ready(
+            &self.root,
+            METADATA_HELD.get(),
+            OPEN_WAIT,
+            (&header, body),
+        );
         fs::rename(&next, self.root.join("registry")).map_err(error)?;
         self.generation = generation;
         Ok(())
