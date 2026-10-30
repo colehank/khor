@@ -11,8 +11,8 @@
 | R2-003 | A/S | 导入与PTY归属 | 外部导入显示实际能力与可读历史；无原PTY时不伪造可交互画面、不自动启动第二writer。 | 能力/有界链已有定向证据；当前App待测。 |
 | R2-004 | N | 状态查询并发 | 当前CLI在真实root/meta锁竞争后成功查询，原ID保留；try/等待预算及锁序仍成立。 | 8父/2helper实际通过且6源整合；不外推原集群唯一根因。 |
 | R2-005 | A | 全部已接入ACP观看 | 按每个adapter实际能力提供正文/只读/控制入口；外部观察不接管。 | 源码能力矩阵与定向链通过；不是40个已安装agent实测。 |
-| R2-006 | H | 长历史 | 有界分页/渲染/缓存/传输；可取消并保持阅读锚点；搜索、复制或原文出口不把截断冒成完整。 | 基础11与新增出口6实际通过；raw消费/production browser/当前App待测。 |
-| R2-007 | S | 统一持久化恢复 | 同一会话身份恢复canonical正文；存活重挂、已退任务和离线明确；不重复load/writer；长合法base无丢失且启动内存受控。 | canonical分层证据已有；SDK/EventStore启动边界与完整恢复未完。 |
+| R2-006 | H | 长历史 | 有界分页/渲染/缓存/传输；可取消并保持阅读锚点；搜索、复制或原文出口不把截断冒成完整。 | 基础11/新增出口6实际通过，raw/notice已整合；production前6组到达，第7零内容高度取消待定位；实际系统出口待测。 |
+| R2-007 | S | 统一持久化恢复 | 同一会话身份恢复canonical正文；存活重挂、已退任务和离线明确；不重复load/writer；长合法base无丢失且启动内存受控。 | SDK正常帧饱和取消红绿已证明并整合；EventStore/ByteStreams长base与完整恢复未完。 |
 | R2-008 | C | 打开意图 | 同一路径/URL普通点击内部，Cmd点击系统；不作可达性预检或额外改写。 | 实现/定向检查已有；当前App点击与Cmd组合待测。 |
 | R2-009 | C | 软折行路径 | 同一生产终端入口长路径在宽/窄屏均可识别并命中，网址对照；不误把硬换行拼为同一路径。 | 实现/定向检查已有；当前App窄屏待测。 |
 | R2-010 | C | 回当前工作区 | 离开session cwd后左上动作回当前工作区，不在推荐列表追加同类项。 | 当前App待测。 |
@@ -35,8 +35,8 @@
 | R2-027 | E | Mac中文组词 | 真实系统IME组词不丢拼写；外部/迟到更新不覆盖composition与草稿，最后输入可保存。 | 定向逻辑/专用程序已准备；真实IME仍待。 |
 | R2-028 | M | Codex组合键配置 | 自定义Shift+Left保存后真实TerminalPane/PTy发送与常规键盘事件路径一致，独立草稿保持；不冒vendor具有选区能力。 | 真实隔离Codex/PTy完整press+keyup与常规键盘事件路径同，原oracle误判另保；手机入口待测。 |
 | R2-029 | Q | Markdown括号公式 | 文件预览同时支持\(…\)、\[…\]及原美元分隔符；代码/转义不误渲染。 | 同一数学链/定向检查已过；当前App文件预览待测。 |
-| R2-L01 | S | 取消retry deadline | 原ignored exact不改时限/断言；真实匹配CLI worker启动不早于due，fresh run不饿死，进程均reap。 | 仅测试诊断4f7已固定；当前Node producer/原exact未跑。 |
-| R2-L02 | S/B | 原生关闭交接 | 原late-close与close-reopen两失败case实际WK通过；旧owner退出、新owner保活、最终handle全空。 | 修复已签名编译；focused fixture/owned launcher准备通过，尚未App。 |
+| R2-L01 | S | 取消retry deadline | 原ignored exact不改时限/断言；真实匹配CLI worker启动不早于due，fresh run不饿死，进程均reap。 | 当前666 Node actual producer＋原exact实际1/0、fresh不饿死/旧retry不早于due；原040唯一原因未知。 |
+| R2-L02 | S/B | 原生关闭交接 | 原late-close与close-reopen两失败case实际WK通过；旧owner退出、新owner保活、最终handle全空。 | 666真实GUI原两case及正常CUA退出/全清理已通过并独审；首收尾超时仍未知，不扩原四case。 |
 | R2-L03 | E | 所有入口草稿退出 | workspace、session内文件与机器文件同一保护规则；保存失败可取消退出，最后一键保存后正常OS Quit。 | 共用owner已有定向证据；完整真实入口/退出组合待测。 |
 | R2-L04 | V | 原生构建来源 | 实际当前GUI/CLI来源完整、环境/ACL目录/生成文件规则守住反例；旧失败不回填。 | 既有实际native批通过；新当前App仍须用同工具真实产出。 |
 | R2-L05 | V | 正常退出与持久宿主 | 实际正常OS Quit后同私有host认证重连并读旧marker，随后显式清理自有fixture，无信号冒正常退出。 | focused真实App/重连/清理已通过并独审；不冒完整S恢复或E输入。 |
