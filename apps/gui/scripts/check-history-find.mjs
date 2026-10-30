@@ -40,6 +40,16 @@ const actionBuilt = await build({ entryPoints: [resolve('src/lib/history-find-ac
 const actionModule = { exports: {} };
 Function('module', 'exports', actionBuilt.outputFiles[0].text)(actionModule, actionModule.exports);
 const { historyFindAction } = actionModule.exports;
+const replayBuilt=await build({entryPoints:[resolve('src/lib/history-find-stream.ts')],bundle:true,write:false,format:'cjs',platform:'node'});
+const replayModule={exports:{}};
+Function('module','exports',replayBuilt.outputFiles[0].text)(replayModule,replayModule.exports);
+const {replayHistoryQuery,historyPageContext}=replayModule.exports;
+const replayHits=async(range,raw,io)=>{
+  const iterator=replayHistoryQuery(range,raw,io),hits=[];
+  try {while(true){const next=await iterator.next();if(next.done)return {hits,complete:next.value.complete,unsearched:next.value.unsearched};hits.push(next.value);}}
+  finally {await iterator.return({complete:false,unsearched:0});}
+};
+
 const exportBuilt = await build({ entryPoints: [resolve('src/lib/history-export.ts')], bundle: true,
   write: false, format: 'cjs', platform: 'node' });
 const exportModule = { exports: {} };
@@ -50,6 +60,12 @@ const note = (key, update) => ({ key, starts_message: true, record: null, frame:
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
 const page = (entries, references = []) => ({ entries, references, older: 'older-source-cursor', newer: 'exclusive-source-fence', has_more: false,
   reset: false, encoded_bytes: 100 });
+const replayPages=(older,newer)=>({page:async(cursor,forward=false)=>{
+  if(cursor===older.newer)return forward?newer:older;
+  if(older.entries.some(entry=>entry.record?.cursor===cursor))return older;
+  if(newer.entries.some(entry=>entry.record?.cursor===cursor))return newer;
+  throw new Error('unexpected fixed replay cursor');
+}});
 const checks = [];
 function test(name, run) { checks.push([name, run]); }
 test('uses the actual rendered projection, not fields or encoded attachment bytes', () => {
@@ -63,11 +79,17 @@ test('uses the actual rendered projection, not fields or encoded attachment byte
 });
 test('clipped canonical message parts stay searchable but cannot claim complete copying', async () => {
   const chunk=(key,value,start,end)=>({...text(key,value),starts_message:false,
-    record:{start,end,item:0,missing_start:false,missing_end:false,cursor:'same-source'}});
+    record:{start,end,item:0,missing_start:false,missing_end:false,cursor:`before-${start}`}});
   const entries=[chunk('first:0','hel',0,10),chunk('last:0','lo',10,20)];
-  const clipped=page(entries), hit=historyFindBatch(query('hello')).page(clipped).hits[0];
-  assert(hit,'within-page logical chunks are searched through the shared painter');
-  assert.equal(hit.complete,false,'older source context is not known');
+  const clipped=page(entries), scan=historyFindBatch(query('hello'));
+  assert.equal(scan.page(clipped).hits.length,0,'unknown head waits for its real non-overlap phase instead of emitting provisional hits');
+  const boundary={...page([{key:'turn-before',starts_message:true,record:null,frame:{kind:'turn',stop:'EndTurn'}}]),older:null};
+  scan.page(boundary);
+  const range=scan.takeReplay();
+  assert(range,'deferred source interval survives until a real boundary');
+  const hit=(await replayHits(range,query('hello'),{page:async()=>clipped})).hits[0];
+  assert(hit,'the deferred logical body is searched through the shared painter');
+  assert.equal(hit.complete,false,'query replay does not assert complete whole-part copying');
   let reads=0;
   await assert.rejects(historyFindAction('copy',hit,{page:async()=>{reads++;return clipped;}}),error=>error.code==='incomplete');
   assert.equal(reads,0,'a known incomplete group does not start IO then pretend a prefix is whole');
@@ -86,44 +108,75 @@ test('clipped canonical message parts stay searchable but cannot claim complete 
   assert.equal(historyFindBatch(query('hello')).page(unknownTail).hits[0].complete,false,
     'an unprojected tail is not bypassed by a message-start fact');
 });
-test('page seam preserves the actual non-overlap matcher phase', () => {
+test('page seam preserves the actual non-overlap matcher phase', async () => {
   const chunk=(key,value,start,end)=>({...text(key,value),starts_message:false,
-    record:{start,end,item:0,cursor:'same-phase-source',missing_start:false,missing_end:false}});
-  const scan=historyFindBatch(query('aa'));
-  assert.equal(scan.page({...page([chunk('new-phase','a',7,8)]),older:'phase-middle',newer:'phase-end'}).hits.length,0);
-  const result=scan.page({...page([chunk('old-phase','aaaaaaa',0,7)]),older:null,newer:'phase-middle'});
-  assert.deepEqual(result.hits.map(hit=>[hit.from,hit.to]),[[0,2],[2,4],[4,6],[6,8]],
-    'SEAM_NONOVERLAP_PHASE: old prefix determines the final 6..8 match');
+    record:{start,end,item:0,cursor:`before-${start}`,missing_start:false,missing_end:false}});
+  for(const [left,right] of [['aaaaaaa','a'],['a','aaaaaaa']]){
+    const older={...page([chunk('old-phase',left,0,left.length)]),older:null,newer:'phase-middle'};
+    const newer={...page([chunk('new-phase',right,left.length,8)]),older:'phase-middle',newer:'phase-end'};
+    const scan=historyFindBatch(query('aa'));
+    assert.equal(scan.page(newer).hits.length,0,'UNKNOWN_PREFIX_PHASE: no wrong provisional non-overlap hits');
+    assert.equal(scan.page(older).hits.length,0);
+    const range=scan.takeReplay();assert(range);
+    const result=await replayHits(range,query('aa'),replayPages(older,newer));
+    assert.deepEqual(result.hits.map(hit=>[hit.from,hit.to]),[[0,2],[2,4],[4,6],[6,8]],
+      'SEAM_NONOVERLAP_PHASE: only the actual message start determines non-overlap phase');
+  }
+  // A real earlier Call means its later update is not a new body boundary.
+  // Confirm it in the same source IO lane before publishing any phase-dependent hit.
+  const call={...note('tool-call',{sessionUpdate:'tool_call',toolCallId:'known-tool',title:'read',kind:'read',status:'in_progress'}),
+    starts_message:false,record:{start:0,end:1,item:0,cursor:'before-call',missing_start:false,missing_end:false}};
+  const older={...page([call,chunk('tool-prefix','a',1,2)]),older:null,newer:'tool-middle'};
+  const newer={...page([chunk('tool-first','aa',2,4),
+    {...note('tool-update',{sessionUpdate:'tool_call_update',toolCallId:'known-tool',status:'completed'}),starts_message:false,
+      record:{start:4,end:5,item:0,cursor:'before-update',missing_start:false,missing_end:false}},
+    chunk('tool-last','aaa',5,8)]),older:'tool-middle',newer:'tool-end'};
+  const io=replayPages(older,newer), scan=historyFindBatch(query('aa'));
+  const context=await historyPageContext(newer,io);
+  assert.equal(context.facts.length,1,'only an actual earlier Call establishes this fold identity');
+  assert.equal(scan.page(newer,context).hits.length,0,'a page-local orphan must not publish the wrong later phase');
+  scan.page(older,await historyPageContext(older,io));
+  const range=scan.takeReplay();assert(range);
+  const result=await replayHits(range,query('aa'),io);
+  assert.deepEqual(result.hits.filter(hit=>hit.entry!=='tool-call').map(hit=>[hit.from,hit.to]),[[0,2],[2,4],[4,6]]);
 });
-test('ordinary canonical page seams use the shared painter and query-sized carry', async () => {
+test('ordinary canonical page seams use the shared painter and query-sized carry' , async () => {
   const chunk=(key,value,start,end,extra={})=>({...text(key,value),starts_message:false,
-    record:{start,end,item:0,cursor:'same-snapshot',missing_start:false,missing_end:false},
+    record:{start,end,item:0,cursor:`before-${start}`,missing_start:false,missing_end:false},
     frame:{kind:'note',update:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:value},...extra}}}});
   const older={...page([chunk('opaque-old','hel',0,10)]),newer:'middle-fence',older:null};
   const newer={...page([chunk('opaque-new','lo',10,20)]),newer:'tail-fence',older:'middle-fence'};
   const scan=historyFindBatch(query('hello'));
   assert.equal(scan.page(newer).hits.length,0);
-  const hit=scan.page(older).hits[0];
+  assert.equal(scan.page(older).hits.length,0);
+  const range=scan.takeReplay();assert(range);
+  const hit=(await replayHits(range,query('hello'),replayPages(older,newer))).hits[0];
   assert(hit,'CROSS_PAGE_QUERY: a legitimate contiguous message cannot disappear at the page boundary');
-  assert.deepEqual([hit.entry,hit.from,hit.to,hit.continued],['opaque-old',0,5,true]);
+  assert.deepEqual([hit.entry,hit.from,hit.to],['opaque-old',0,5]);
   const reads=[];
-  const context=await historyFindAction('context',hit,{page:async(cursor,forward)=>{reads.push([cursor,forward]);return forward?newer:older;}});
+  const context=await historyFindAction('context',hit,{page:async(cursor,forward)=>{reads.push([cursor,forward]);return replayPages(older,newer).page(cursor,forward);}});
   assert.equal(context.text,'hello');
-  assert.deepEqual(reads,[['middle-fence',false],['middle-fence',true]]);
+  assert.deepEqual(reads,[['before-0',true],['middle-fence',true]]);
   for(const boundary of [
     {...newer,entries:[{...newer.entries[0],starts_message:true}]},
     {...newer,entries:[{key:'opaque-turn',starts_message:true,record:null,frame:{kind:'turn',stop:'EndTurn'}},...newer.entries]},
-    {...newer,entries:[chunk('opaque-new','lo',20,30)],references:[{start:10,end:20,item:null,cursor:'same-snapshot',missing_start:false,missing_end:false}]},
+    {...newer,entries:[chunk('opaque-new','lo',20,30)],references:[{start:10,end:20,item:null,cursor:'before-10',missing_start:false,missing_end:false}]},
     {...newer,entries:[chunk('opaque-new','lo',10,20,{messageId:'different'})]},
   ]) {
     const divided=historyFindBatch(query('hello'));
     divided.page(boundary);
-    assert.equal(divided.page({...older,entries:[chunk('opaque-old','hel',0,10,{messageId:'known'})]}).hits.length,0);
+    const left={...older,entries:[chunk('opaque-old','hel',0,10,{messageId:'known'})]};
+    assert.equal(divided.page(left).hits.length,0);
+    const replay=divided.takeReplay();
+    if(replay)assert.equal((await replayHits(replay,query('hello'),replayPages(left,boundary))).hits.length,0);
   }
   const fold=historyFindBatch(query('İ'.repeat(16)));
-  fold.page({...newer,entries:[chunk('fold-new','i\u0307'.repeat(12),10,20)]});
-  assert.equal(fold.page({...older,entries:[chunk('fold-old','i\u0307'.repeat(4),0,10)]}).hits.length,1,
-    'carry uses the actual matcher expansion budget, not raw query string length');
+  const foldNew={...newer,entries:[chunk('fold-new','i\u0307'.repeat(12),10,20)]};
+  const foldOld={...older,entries:[chunk('fold-old','i\u0307'.repeat(4),0,10)]};
+  fold.page(foldNew);fold.page(foldOld);
+  const foldRange=fold.takeReplay();assert(foldRange);
+  assert.equal((await replayHits(foldRange,query('İ'.repeat(16)),replayPages(foldOld,foldNew))).hits.length,1,
+    'the actual sequential matcher keeps Unicode expansion across source pages');
 });
 test('streams Unicode matching across chunks with exact original offsets', () => {
   const matcher = literalMatcher(query('中文😀x'));

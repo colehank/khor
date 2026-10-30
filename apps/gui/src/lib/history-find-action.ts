@@ -2,6 +2,7 @@ import type { historySource } from './history-source';
 import { historyText, historyPartComplete, type FindHit } from './history-find-model';
 import { paintHistory } from './history-paint';
 import { recordText } from './history-find-record';
+import { historyReplayText } from './history-find-stream';
 
 export type HistoryFindAction = 'context' | 'copy';
 export type HistoryActionAnswer = { text: string; from: number; complete: boolean };
@@ -20,7 +21,22 @@ export async function historyFindAction(action: HistoryFindAction, hit: FindHit,
   let stream: AsyncIterable<string>;
   let complete = true;
   let finish = async () => {};
-  if (hit.record) {
+  if (hit.replay) {
+    const fragments=historyReplayText(hit.replay,io);
+    finish=async()=>{await fragments.return({complete:false,unsearched:0});};
+    complete=false;
+    stream=(async function*(){
+      let group: string | null=null;
+      try {
+        while(true){
+          const next=await fragments.next();
+          if(next.done)return;
+          if(group!==null && group!==next.value.group)return;
+          group=next.value.group;yield*next.value.text;
+        }
+      } finally {await fragments.return({complete:false,unsearched:0});}
+    })();
+  } else if (hit.record) {
     const parts = recordText(hit.record, hit.before, io);
     finish = async () => { await parts.return(false); };
     while (true) {
@@ -42,32 +58,7 @@ export async function historyFindAction(action: HistoryFindAction, hit: FindHit,
     let body = historyText(items[index]);
     let text = body.texts[hit.part];
     if (text === undefined) throw new HistoryActionFailure('incomplete');
-    // A seam result is located in the older page, but its final characters
-    // are in the newer page. Re-read through the same source fence and painter;
-    // no message-body/ordering algorithm is duplicated in the action.
-    let pages = 1, pageBytes = utf8.encode(JSON.stringify(page)).length;
-    while (hit.continued && text.length < hit.to) {
-      const next = await io.page(page.newer, true);
-      if (!next) throw new Error('history text read was cancelled');
-      if (next.reset) throw new HistoryActionFailure('source_changed');
-      if (next.entries.length > 128 || next.encoded_bytes > 512 * 1024 || utf8.encode(JSON.stringify(next)).length > 512 * 1024)
-        throw new Error('history text page exceeds its byte budget');
-      const nextBytes = utf8.encode(JSON.stringify(next)).length;
-      if (++pages > 8 || page.entries.length + next.entries.length > 512
-        || pageBytes + nextBytes > 2 * 1024 * 1024
-        || page.encoded_bytes + next.encoded_bytes > 2 * 1024 * 1024 || next.newer === page.newer)
-        throw new HistoryActionFailure('incomplete');
-      pageBytes += nextBytes;
-      page = {...next, older: page.older, entries: [...page.entries, ...next.entries],
-        references: [...page.references, ...next.references], encoded_bytes: page.encoded_bytes + next.encoded_bytes};
-      items = paintHistory(page.entries, page.references);
-      index = items.findIndex(item => item.historyEntries.includes(hit.entry));
-      if (index < 0) throw new HistoryActionFailure('incomplete');
-      body = historyText(items[index]); text = body.texts[hit.part];
-      if (text === undefined) throw new HistoryActionFailure('incomplete');
-      if (!next.has_more && text.length < hit.to) throw new HistoryActionFailure('incomplete');
-    }
-    complete = !hit.continued && body.complete && historyPartComplete(items, index, page, hit.atTail === true);
+    complete = body.complete && historyPartComplete(items, index, page, hit.atTail === true);
     const selectedText = text;
     stream = (async function* () { yield* selectedText; })();
   }

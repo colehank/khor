@@ -1,7 +1,8 @@
 import type { HistoryPage } from '@/gen/bindings/HistoryPage';
 import type { HistoryItem } from './history-paint';
-import { paintHistory, historyReferenceBetween } from './history-paint';
+import { appendHistoryEntry, historyReferenceBetween, type HistoryPaintStep } from './history-paint';
 import { toolInputText, type AcpUpdate } from './acp-view';
+import type { HistoryReplay, HistoryContext } from './history-find-stream';
 
 export const FIND_HITS = 32;
 export const FIND_QUERY_BYTES = 256;
@@ -21,8 +22,7 @@ export type FindHit = {
   /** Complete available message context, not execution completion. */
   complete?: boolean;
   atTail?: boolean;
-  /** Match continues into the immediately newer canonical page. */
-  continued?: boolean;
+  replay?: HistoryReplay;
   record?: import('@/gen/bindings/HistoryRecordRef').HistoryRecordRef;
 };
 export type FindWorkerInput =
@@ -142,7 +142,7 @@ export function historyPartComplete(items: HistoryItem[], index: number, page: H
   return starts && ends;
 }
 
-function snippet(text: string, from: number, to: number): string {
+export function findSnippet(text: string, from: number, to: number): string {
   let start = Math.max(0, from - 80);
   let end = Math.min(text.length, to + 80);
   const low = (at: number) => text.charCodeAt(at) >= 0xdc00 && text.charCodeAt(at) <= 0xdfff;
@@ -160,52 +160,48 @@ function snippet(text: string, from: number, to: number): string {
   return answer;
 }
 
-type TextPrefix = { entries: HistoryPage['entries']; references: HistoryPage['references'] };
-/** Retain only the first projected text group's query-length prefix. The
- * shared painter decides grouping; this copies canonical text DTO facts only.
- * Source metadata remains bounded by one page, not a history-wide key map. */
-function textPrefix(page: HistoryPage, newer: TextPrefix | null, units: number): TextPrefix | null {
-  const entries = [...page.entries, ...(newer?.entries ?? [])];
-  const references = [...page.references, ...(newer?.references ?? [])];
-  const first = paintHistory(entries, references)[0];
-  if (!first || !['agent', 'user', 'thought'].includes(first.who) || !('text' in first)) return null;
-  const keys = new Set(first.historyEntries);
-  const kept: HistoryPage['entries'] = [];
-  let left = units;
-  for (const entry of entries) {
-    if (!keys.has(entry.key)) {
-      if (!kept.length && entry.frame.kind === 'turn') kept.push(entry);
-      continue;
-    }
-    if (entry.frame.kind !== 'note') return null;
-    const carried = entry.frame.update as { update?: AcpUpdate } | null;
-    const update = carried?.update;
-    if (!update || Array.isArray(update.content) || update.content?.type !== 'text' || typeof update.content.text !== 'string') return null;
-    let text = '';
-    for (const char of update.content.text) {
-      if (left <= 0) break;
-      text += char; left -= char.length;
-    }
-    kept.push({...entry, frame: {kind: 'note', update: {update: {
-      sessionUpdate: update.sessionUpdate, content: {type: 'text', text},
-      ...(typeof update.messageId === 'string' ? {messageId: update.messageId} : {}),
-    }}}});
-    if (left <= 0) break;
-  }
-  const lastRecord = kept.at(-1)?.record;
-  if (references.length && !lastRecord) return null;
-  const answer = {entries: kept, references: lastRecord
-    ? references.filter(reference => historyReferenceBetween(reference, undefined, lastRecord)) : []};
-  return kept.length <= 512 && utf8.encode(JSON.stringify(answer)).length <= PAGE_BYTES ? answer : null;
+/** A clipped leading group cannot be matched at a guessed non-overlap phase.
+ * Keep only its authenticated bounds until the earlier true start is known. */
+function plainHistoryText(item: HistoryItem): boolean {
+  return ['agent','user','thought'].includes(item.who) && 'text' in item;
+}
+function replayStart(item: HistoryItem, page: HistoryPage): Pick<HistoryReplay,'before'|'forward'|'first'> {
+  const record=page.entries[0]?.record;
+  return {before:record?.cursor ?? page.newer,forward:record!==null && record!==undefined,first:item.historyEntries[0]};
+}
+type PendingReplay = HistoryReplay & {head: HistoryPage['entries'][number] | null};
+function prefixFact(item: HistoryItem, page: HistoryPage): PendingReplay['head'] {
+  const entry=page.entries.find(entry=>entry.key===item.historyEntries[0]);
+  if(!entry || entry.frame.kind!=='note')return null;
+  const update=(entry.frame.update as {update?:AcpUpdate})?.update;
+  if(!update || Array.isArray(update.content) || update.content?.type!=='text')return null;
+  // This one-character canonical fact probes only the shared fold's identity
+  // decision. It is not a body copy or an independently implemented rule.
+  return {...entry,record:null,frame:{kind:'note',update:{update:{sessionUpdate:update.sessionUpdate,
+    content:{type:'text',text:'x'},...(typeof update.messageId==='string'?{messageId:update.messageId}:{})}}}};
+}
+function joinsPrefix(left: HistoryItem, head: PendingReplay['head']): boolean {
+  if(!head)return true; // Unknown fact is deferred, never assumed separate.
+  const probe: HistoryPaintStep[]=[{...left,text:'',historyEntries:left.historyEntries.slice(-1),historyRecords:[]} as HistoryItem];
+  appendHistoryEntry(probe,head);
+  return probe.length===1;
+}
+function replayBounds(pending: PendingReplay, completeStart: boolean): HistoryReplay {
+  const {head: _head,...range}=pending;return {...range,completeStart};
+}
+function knownHead(item: HistoryItem, index: number, page: HistoryPage, items: HistoryItem[]): boolean {
+  const at = page.entries.findIndex(entry => entry.key === item.historyEntries[0]);
+  const preceding=items.slice(0,index).some(prior=>prior.historyEntries.some(key=>{
+    const position=page.entries.findIndex(entry=>entry.key===key);return position>=0 && position<at;
+  }));
+  return preceding || page.older === null || page.entries[at]?.starts_message === true
+    || page.entries.slice(0,Math.max(0,at)).some(entry => entry.frame.kind === 'turn' || entry.frame.kind === 'capture_gap');
 }
 
-/** A worker holds one server-bounded page plus a query-length text prefix
- * with page-bounded metadata. Thirty-two hits resume within the same page. */
 export function historyFindBatch(raw: FindQuery) {
   const query = findQuery(raw);
-  const matcherContext = literalMatcher(query).contextUnits;
   let current: HistoryPage | null = null;
-  let items: HistoryItem[] = [];
+  let items: HistoryItem[] = [], painted: HistoryItem[] = [];
   let item = 0;
   let part = 0;
   let offset = 0;
@@ -213,8 +209,7 @@ export function historyFindBatch(raw: FindQuery) {
   let projection: ReturnType<typeof historyText> | null = null;
   let unsearchedInputs = 0;
   let firstPage = true, atTail = false;
-  let prefix: TextPrefix | null = null;
-  let seam: { text: string; entry: string; before: string; split: number; offset: number; matcher: ReturnType<typeof literalMatcher> } | null = null;
+  let pending: PendingReplay | null = null, replay: HistoryReplay | null = null;
   function next(): Extract<FindWorkerOutput, { kind: 'result' }> {
     if (!current) throw new Error('history search has no pending page');
     const page = current;
@@ -223,7 +218,7 @@ export function historyFindBatch(raw: FindQuery) {
     while (item < items.length && hits.length < FIND_HITS) {
       if (!projection) {
         projection = historyText(items[item]);
-        if (!projection.complete || !historyPartComplete(items, item, page, atTail)) unsearchedInputs++;
+        if (!projection.complete || (!plainHistoryText(items[item]) && !historyPartComplete(painted, painted.indexOf(items[item]), page, atTail))) unsearchedInputs++;
       }
       const texts = projection.texts;
       if (part >= texts.length) {
@@ -236,8 +231,8 @@ export function historyFindBatch(raw: FindQuery) {
       const entry = items[item].historyEntries[0];
       const proposed = result.ranges.map(range => ({ before: page.newer,
         entry, part, ...range,
-        complete: projection!.complete && historyPartComplete(items, item, page, atTail), atTail,
-        snippet: snippet(text, range.from, range.to) }));
+        complete: projection!.complete && historyPartComplete(painted, painted.indexOf(items[item]), page, atTail), atTail,
+        snippet: findSnippet(text, range.from, range.to) }));
       const bytes = proposed.reduce((sum, hit) => sum + utf8.encode(JSON.stringify(hit)).length + 1, 0);
       if (hitBytes + bytes > RESULT_BYTES - 16 * 1024) {
         matcher.restore(saved);
@@ -250,18 +245,7 @@ export function historyFindBatch(raw: FindQuery) {
         part++; offset = 0; matcher = literalMatcher(query);
       }
     }
-    while (item >= items.length && seam && hits.length < FIND_HITS) {
-      const saved = seam.matcher.checkpoint();
-      const result = seam.matcher.feed(seam.text.slice(seam.offset), 1);
-      const proposed = result.ranges.filter(range => range.from < seam!.split && range.to > seam!.split)
-        .map(range => ({before: seam!.before, entry: seam!.entry, part: 0, ...range,
-          continued: true, complete: false, atTail: false, snippet: snippet(seam!.text, range.from, range.to)}));
-      const bytes = proposed.reduce((sum, hit) => sum + utf8.encode(JSON.stringify(hit)).length + 1, 0);
-      if (hitBytes + bytes > RESULT_BYTES - 16 * 1024) { seam.matcher.restore(saved); break; }
-      hitBytes += bytes; hits.push(...proposed); seam.offset += result.consumed;
-      if (seam.offset >= seam.text.length) seam = null;
-    }
-    const pageDone = item >= items.length && !seam;
+    const pageDone = item >= items.length;
     if (pageDone) { current = null; items = []; projection = null; }
     const answer: Extract<FindWorkerOutput, { kind: 'result' }> = { kind: 'result', hits, pageDone, older: page.older,
       unsearchedRanges: pageDone ? page.references.length + unsearchedInputs : 0 };
@@ -269,8 +253,8 @@ export function historyFindBatch(raw: FindQuery) {
     return answer;
   }
   return {
-    page(page: HistoryPage): Extract<FindWorkerOutput, { kind: 'result' }> {
-      if (current) throw new Error('history search page has not been consumed');
+    page(page: HistoryPage, context: HistoryContext = {facts:[],complete:true}): Extract<FindWorkerOutput, { kind: 'result' }> {
+      if (current || replay) throw new Error('history search page has not been consumed');
       if (page.entries.length > 128 || page.encoded_bytes > PAGE_BYTES || utf8.encode(JSON.stringify(page)).length > PAGE_BYTES)
         throw new Error('history search page exceeds the reader budget');
       if (page.entries.some(entry => utf8.encode(entry.key).length > 128))
@@ -278,32 +262,53 @@ export function historyFindBatch(raw: FindQuery) {
       if (utf8.encode(page.newer).length > 4096 || (page.older !== null && utf8.encode(page.older).length > 4096))
         throw new Error('history search source cursor exceeds its metadata budget');
       current = page;
-      items = paintHistory(page.entries, page.references);
-      seam = null;
-      if (prefix && items.length) {
-        const left = items.at(-1)!;
-        const right = paintHistory(prefix.entries, prefix.references)[0];
-        if (right && 'text' in left && 'text' in right && ['agent','user','thought'].includes(left.who)) {
-          const joined = paintHistory([...page.entries, ...prefix.entries], [...page.references, ...prefix.references])
-            .find(item => item.historyEntries.includes(left.historyEntries.at(-1)!) && item.historyEntries.includes(right.historyEntries[0]));
-          if (joined && 'text' in joined && joined.text.length > left.text.length) {
-            let start = Math.max(0, left.text.length - matcherContext);
-            if (start > 0 && left.text.charCodeAt(start) >= 0xdc00 && left.text.charCodeAt(start) <= 0xdfff) start--;
-            const matcher = literalMatcher(query);
-            // Non-overlap phase depends on the whole already available left
-            // prefix. Advance the same matcher without allocating its hits;
-            // only the query-sized origin ring survives into the seam scan.
-            matcher.feed(left.text.slice(0, start), FIND_HITS, false);
-            seam = {text: joined.text, entry: left.historyEntries[0], before: page.newer,
-              split: left.text.length, offset: start, matcher};
+      const out: HistoryPaintStep[]=[...context.facts];
+      let previous: import('@/gen/bindings/HistoryRecordRef').HistoryRecordRef | null=null;
+      for(const entry of page.entries)previous=appendHistoryEntry(out,entry,page.references,previous);
+      painted=out.filter((item):item is HistoryItem=>item.who!=='boundary' && 'historyKey' in item);
+      if(!context.complete){
+        // Budget exhaustion is explicit partial coverage, not a guessed orphan
+        // boundary or a provisional hit with the wrong non-overlap phase.
+        pending=null;current=null;items=[];projection=null;
+        return {kind:'result',hits:[],pageDone:true,older:page.older,unsearchedRanges:page.references.length+1};
+      }
+      // A confirmed older tool/compaction is updated in place. Its page-local
+      // update is not a newly inserted chronological body boundary.
+      const logical=painted.filter(item=>!context.facts.some(fact=>
+        (fact.who==='tool' || fact.who==='compaction') && item.who===fact.who && 'id' in item && item.id===fact.id));
+      const omitted = new Set<number>();
+      if (pending) {
+        const last = logical.at(-1), index = last ? painted.indexOf(last) : -1;
+        if (last && plainHistoryText(last)) {
+          const lastAt=page.entries.findIndex(entry=>entry.key===last.historyEntries.at(-1));
+          const separated=page.entries.slice(lastAt+1).some(entry=>entry.frame.kind==='turn' || entry.frame.kind==='capture_gap');
+          if(separated || !joinsPrefix(last,pending.head)) {replay=replayBounds(pending,true);pending=null;}
+          else {
+            pending = {...pending,...replayStart(last,page),head:prefixFact(last,page)};
+            omitted.add(index);
+            if (knownHead(last,logical.length-1,page,logical)) {replay=replayBounds(pending,true);pending=null;}
           }
+        } else if (logical.length || page.older === null || page.references.length
+          || page.entries.some(entry=>entry.frame.kind==='turn' || entry.frame.kind==='capture_gap')) {
+          replay=replayBounds(pending,page.references.length===0);pending=null;
         }
       }
-      prefix = textPrefix(page, prefix, matcherContext);
+      const firstLogical=logical.findIndex(plainHistoryText), first=logical[firstLogical], firstIndex=first ? painted.indexOf(first) : -1;
+      if (first && !omitted.has(firstIndex) && !knownHead(first,firstLogical,page,logical)) {
+        pending={...replayStart(first,page),endBefore:page.newer,
+          last:first.historyEntries.at(-1)!,completeStart:false,head:prefixFact(first,page)};
+        omitted.add(firstIndex);
+      }
+      items = painted.filter((_item,index)=>!omitted.has(index));
       atTail = firstPage; firstPage = false;
       item = 0; part = 0; offset = 0; matcher = literalMatcher(query); projection = null; unsearchedInputs = 0;
       return next();
     },
     next,
+    hasReplay: () => replay !== null,
+    takeReplay() {
+      if (current) throw new Error('normal history page has not been consumed');
+      const result=replay;replay=null;return result;
+    },
   };
 }

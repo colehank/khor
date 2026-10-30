@@ -21,51 +21,56 @@ export function historyReferenceBetween(reference: HistoryRecordRef, left?: Hist
   return true;
 }
 
-export function paintHistory(entries: HistoryEntry[], references: HistoryRecordRef[] = []): HistoryItem[] {
-  const out: (HistoryItem | AcpItem | {
-    who: 'boundary';
-  })[] = [];
-  let previousRecord: HistoryRecordRef | null = null;
-  for (const entry of entries) {
-    const record = entry.record ?? null;
-    // A referenced raw record may contain text we have not projected. Never
-    // concatenate the visible fragments across it into an invented message.
-    if (references.length && (!record || (previousRecord && references.some(reference =>
-      historyReferenceBetween(reference, previousRecord, record)))))
-      out.push({who:'boundary'});
-    if (record) previousRecord = record;
-    const frame = entry.frame;
-    if (frame.kind === 'capture_gap') {
-      out.push({who: 'sys', text: gui.history_capture_gap(1), historyKey: `${entry.key}:capture`, historyEntries: [entry.key], historyRecords: [{entry: entry.key, record}]});
-      continue;
-    }
-    if (frame.kind === 'turn') { out.push({who: 'boundary'}); continue; }
-    if (frame.kind !== 'note')
-      continue;
-    const carried = frame.update as {
-      update?: AcpUpdate;
-    } | null;
-    const update = carried?.update;
-    if (!update || typeof update !== 'object')
-      continue;
-    // The reader distinguishes complete native messages/prompts from streamed
-    // ACP chunks. Record offsets alone cannot tell those two meanings apart.
-    if (entry.starts_message) out.push({ who: 'boundary' });
-    const before = out.slice();
-    const start = out.length;
-    const orphan = update.sessionUpdate === 'tool_call_update'
-      && !out.some(item => item.who === 'tool' && item.id === update.toolCallId);
-    applyAcpUpdate(out, orphan ? { ...update, sessionUpdate: 'tool_call', title: update.title ?? update.toolCallId } : update);
-    for (let index = 0; index < out.length; index += 1) {
-      if (out[index].who === 'boundary' || out[index] === before[index]) continue;
-      const prior = before[index] as HistoryItem | undefined;
-      out[index] = { ...out[index],
-        historyKey: prior?.historyKey ?? `${entry.key}:${index - start}`,
-        historyEntries: [...(prior?.historyEntries ?? []), entry.key],
-        historyRecords: [...(prior?.historyRecords ?? []), {entry: entry.key, record}],
-      } as HistoryItem;
-    }
+export type HistoryPaintStep = HistoryItem | AcpItem | { who: 'boundary' };
+/** The caller owns this temporary fold. Streaming readers use the exact same
+ * normalization and grouping step, then retire no-longer-needed contributions. */
+export function appendHistoryEntry(out: HistoryPaintStep[], entry: HistoryEntry,
+  references: HistoryRecordRef[] = [], previousRecord: HistoryRecordRef | null = null): HistoryRecordRef | null {
+  const record = entry.record ?? null;
+  // A referenced raw record may contain text we have not projected. Never
+  // concatenate the visible fragments across it into an invented message.
+  if (references.length && (!record || (previousRecord && references.some(reference =>
+    historyReferenceBetween(reference, previousRecord, record)))))
+    out.push({who:'boundary'});
+  const nextRecord = record ?? previousRecord;
+  const frame = entry.frame;
+  if (frame.kind === 'capture_gap') {
+    out.push({who: 'sys', text: gui.history_capture_gap(1), historyKey: `${entry.key}:capture`, historyEntries: [entry.key], historyRecords: [{entry: entry.key, record}]});
+    return nextRecord;
   }
+  if (frame.kind === 'turn') { out.push({who: 'boundary'}); return nextRecord; }
+  if (frame.kind !== 'note')
+    return nextRecord;
+  const carried = frame.update as {
+    update?: AcpUpdate;
+  } | null;
+  const update = carried?.update;
+  if (!update || typeof update !== 'object')
+    return nextRecord;
+  // The reader distinguishes complete native messages/prompts from streamed
+  // ACP chunks. Record offsets alone cannot tell those two meanings apart.
+  if (entry.starts_message) out.push({ who: 'boundary' });
+  const before = out.slice();
+  const start = out.length;
+  const orphan = update.sessionUpdate === 'tool_call_update'
+    && !out.some(item => item.who === 'tool' && item.id === update.toolCallId);
+  applyAcpUpdate(out, orphan ? { ...update, sessionUpdate: 'tool_call', title: update.title ?? update.toolCallId } : update);
+  for (let index = 0; index < out.length; index += 1) {
+    if (out[index].who === 'boundary' || out[index] === before[index]) continue;
+    const prior = before[index] as HistoryItem | undefined;
+    out[index] = { ...out[index],
+      historyKey: prior?.historyKey ?? `${entry.key}:${index - start}`,
+      historyEntries: [...(prior?.historyEntries ?? []), entry.key],
+      historyRecords: [...(prior?.historyRecords ?? []), {entry: entry.key, record}],
+    } as HistoryItem;
+  }
+  return nextRecord;
+}
+
+export function paintHistory(entries: HistoryEntry[], references: HistoryRecordRef[] = []): HistoryItem[] {
+  const out: HistoryPaintStep[] = [];
+  let previousRecord: HistoryRecordRef | null = null;
+  for (const entry of entries) previousRecord = appendHistoryEntry(out, entry, references, previousRecord);
   return out.filter((item): item is HistoryItem => item.who !== 'boundary');
 }
 

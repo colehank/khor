@@ -5,6 +5,7 @@ import { historyFindBatch, type FindHit, type FindQuery, type FindWorkerInput, t
 import { findRecord } from './history-find-record';
 import { historyFindAction, HistoryActionFailure } from './history-find-action';
 import { speak } from '@/gen/catalog';
+import { replayHistoryQuery, historyPageContext } from './history-find-stream';
 
 let batch: ReturnType<typeof historyFindBatch> | null = null;
 let query: FindQuery;
@@ -13,6 +14,7 @@ let normalDone = true;
 let references: HistoryRecordRef[] = [];
 let fragment: HistoryRecordRef | null = null;
 let raw: ReturnType<typeof findRecord> | null = null;
+let textReplay: ReturnType<typeof replayHistoryQuery> | null = null;
 let heldHit: FindHit | null = null;
 let running = false;
 let serial = 0;
@@ -40,13 +42,21 @@ async function next() {
     const answer = batch.next();
     normalDone = answer.pageDone;
     send({ ...answer, unsearchedRanges: answer.unsearchedRanges - (answer.pageDone ? page.references.length : 0),
-      pageDone: normalDone && !references.length && !raw && !(fragment && page.older === null) });
+      pageDone: normalDone && !references.length && !raw && !textReplay && !batch.hasReplay() && !(fragment && page.older === null) });
     return;
   }
   const hits: FindHit[] = [];
   let bytes = 0;
   let unsearchedRanges = 0;
   while (hits.length < 32) {
+    if (!textReplay && batch.hasReplay()) textReplay = replayHistoryQuery(batch.takeReplay()!,query,io);
+    if (textReplay) {
+      const result = heldHit ? {done:false as const,value:heldHit} : await textReplay.next();
+      if (result.done) {unsearchedRanges+=result.value.unsearched;textReplay=null;continue;}
+      const size=utf8.encode(JSON.stringify(result.value)).length+1;
+      if (bytes+size>48*1024) {heldHit=result.value;break;}
+      heldHit=null;bytes+=size;hits.push(result.value);continue;
+    }
     if (raw) {
       const result = heldHit ? { done: false as const, value: heldHit } : await raw.next();
       if (result.done) {
@@ -77,7 +87,7 @@ async function next() {
     if (ref.missing_end) { unsearchedRanges++; continue; }
     raw = findRecord(query, ref, page.newer, io);
   }
-  const pageDone = !references.length && !raw && !heldHit;
+  const pageDone = !references.length && !raw && !heldHit && !textReplay && !batch.hasReplay();
   if (pageDone && page.older === null && fragment) { fragment = null; unsearchedRanges++; }
   const answer: Extract<FindWorkerOutput, { kind: 'result' }> = {
     kind: 'result', hits, older: page.older, pageDone, unsearchedRanges,
@@ -115,17 +125,17 @@ self.onmessage = async (event: MessageEvent<FindWorkerInput>) => {
       return;
     }
     if (message.kind === 'page') {
-      if (raw || references.length || heldHit || !normalDone) throw new Error('previous search page has not been consumed');
+      if (raw || references.length || heldHit || textReplay || batch.hasReplay() || !normalDone) throw new Error('previous search page has not been consumed');
       page = message.page;
       if (page.references.length > 256 || utf8.encode(JSON.stringify(page)).length > 512 * 1024)
         throw new Error('history search page exceeds the reader budget');
       // Normal text still needs the raw-reference positions as barriers.
       // This worker accounts for raw projection coverage separately below.
-      const answer = batch.page(page);
+      const answer = batch.page(page,await historyPageContext(page,io));
       normalDone = answer.pageDone;
       references = [...page.references].sort((a, b) => b.start - a.start || (a.item ?? -1) - (b.item ?? -1));
       send({ ...answer, unsearchedRanges: answer.unsearchedRanges - (answer.pageDone ? page.references.length : 0),
-        pageDone: normalDone && !references.length && !(fragment && page.older === null) });
+        pageDone: normalDone && !references.length && !textReplay && !batch.hasReplay() && !(fragment && page.older === null) });
       return;
     }
     await next();
