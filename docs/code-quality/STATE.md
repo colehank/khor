@@ -6,12 +6,12 @@
 
 先读最新用户消息、本文件、自己的任务卡，核真实refs/diff/运行句柄后再动作。外盘作者dirty源优先，不按摘要覆盖。旧源/失败/运行语句保存在[此前状态](history/STATE-before-startup-sdk-20261030.md)及更早归档，不能把旧PID当live。内盘RESUME、current-runtime/current-worktree-refs和逐SHA文档镜像是掉盘恢复入口；逐文件镜像不假称全局原子。
 
-**Native/browser FREE，无实际App。** H Browser5 actual14557已terminal1/全owned与TMP净，第7组zero-height held104未见cancel，document held100已cancel；正在窄几何/时序诊断，当前没有B6授权/进程。N SDK绿批79152 terminal0/10.750s归槽，Root L02 App83173 terminal0/全净。Native沿jobs1/incremental0/offline/两盘≥5GiB/shared target；新native/browser固定源/独审/Root授槽后才启动，真实handle/进程是权威，禁止按khor-gui basename清用户持久宿主。
+**Native/browser/App全部FREE。** H B7 actual37853已terminal0/原7组全绿、源/env/tools/Chrome版本/owned/TMP净，prod8f/test410已整合Root84c81dd0。N SDK79152正常帧红绿闭包与L01/L02实际已归档；input继续EventStore源，H准备生产origin完整App平台验收，当前无实际CLI/store/App/native。新批仍先固定来源/独审/Root授槽，再按真实handle/进程核运行，不复用旧PID。
 
 | owner | 当前来源与下一职责 |
 | --- | --- |
-| Root | `khor-round2` / integrate/round2 **82b45cf369a02b265260ff2f10c37ab45e182f1b clean**，含H raw/notice及SDK七链。协调集成/源与证据/真实App，不成为第三条大产品实现线。最新严格App/CLI是**666200f7**，早于notice与SDK整合，不能冒最新整合产物。 |
-| round2_history | `khor-round2-history` / fix/round2-browser-shared **425d919f**，H后端/前端/共享出口固定。当前诊断zero-height取消边界，之后H实际App与S完整恢复按依赖交接；不并写input的ACP/Node启动叶。 |
+| Root | `khor-round2` / integrate/round2 **84c81dd0ff6aa04316531c4ef3e5b74cdb5b4315 clean**，含H raw/notice/内容高度修正与独立回归脚本、SDK七链。协调集成/源与证据/真实App，不成为第三条大产品实现线。最新严格App/CLI是**666200f7**，早于notice与SDK整合，不能冒最新整合产物。 |
+| round2_history | `khor-round2-history` / fix/round2-browser-shared **410c1f1b**（生产8f65423e），H后端/前端/共享出口固定。当前H七组收口完成，准备真实WK/原生平台验证；之后H实际App与S完整恢复按依赖交接；不并写input的ACP/Node启动叶。 |
 | round2_input | `khor-round2-input` / fix/round2-startup-bounds，最后fixed **e3268412** SDK绿组件，继续既定EventStore/spool/finite fence、ACP lib/lifecycle/event_fence及必要Node gui_host/journal启动交接；新dirty需保存。N旧95acd与pristine SDK链保。 |
 | round2_reviewer | 非作者只读。已核SDK红绿/120文件整合、L01/L02实际与H notice source；Browser5最终PIN也已核。偶有capacity报错可Root作非作者最小尾核，不擅改model/不冒未审。 |
 
@@ -80,3 +80,13 @@ B5 script **c6f3fffb…6b37** / wrapper **da0b1b84…bad4** / admission **0461eb
 ## 磁盘与旧验收副本
 
 5GiB门不降。9个已结束test exe及4个旧0478/ca83私有CLI/GUI副本均逐UID/regular/nlink/SHA/lsof→gzip→完整解压SHA核再归档，外盘共约3.40GB释放；恢复index在内盘round2/archived-test-executables-current99与archived-old-lab-binaries-1。旧plain路径已不存在，不能拿原收据假称仍可运行；ce69人工备份、Root99CLI、当前666二进制、用户/sharedtarget未动。新Khor开发/证据仍在既有分类目录，不散落根盘。
+
+## H最终浏览器闭环与平台准备（最新）
+
+B6实际trace7193已证父/root高度0、scroller.clientHeight24=padding12+12、原RO contentRect0，旧visibility/canFollow误resume，held105未cancel并续newer，明确产品红。8f65423e仅ChatView installHistory缓存实际内容高度（初测扣padding、同现RO更新），两判定共用，不改scroll/anchor坐标或增observer；Root8bae915d完整noEmit0/179gen不变。独立test410→Root84c81dd0，脚本df9db83e逐gitshow=实际执行。
+
+B7 actual37853真实0/7of7，result **fe3a6d879a470eb38a7069415440fc9978edf1469d12887b3a8de929a6c656d5**；fixedmap47651442同。document101/zeroheight105各exact Cancel→IO release/finally Drop→最终leases{}，无迟到续读/unmount0；raw受控job完整range/saved，source2205/UI623/179gen前后稳，strict无timeout/forced/remaining/footprint/TMP，25小件双盘SHA尾核通过。B1–6所有false保，不外推真实WK剪贴板/OS Save/share。最终源码bundle依赖82b45已verify。
+
+下一真实Mac平台准备 **plan6b111a7b444673091ae62d43e06f567a50a94a4e5d12ce8a48816309b8c3cf36**（history/search/mac-platform-preparation）：一次默认custom-protocol+devtools完整私有App＋当前CLI，真实原入口ws add/state hook/import在专用HOME/KHOR_HOME/KHOR_VENDOR_HOME种一份合成Claude历史，无模型/第二writer/手造binding；1201记录403053B、末大record184544B仅纯检查，尚未CLI/store/App。实际GUI列表/worker/native IO→原文OSSave fresh私有路径→原bytes核→CUA正常Quit，外240/内200。Clipboard Copy/Paste合并到既有真人Mac IME新鲜可用性场次，由用户正常动作确认synthetic；不读取旧clipboard、不写JXA/AppKit、新API或替换index。
+
+生产主文档URL应tauri://localhost/（DOM origin/secure等须实际记录），`khor-ui-assets:/assets/index-*`仅UI_REVISION标识。旧666明确no-default-features+devtools+devURL23846，只能证明localhost WK，不能外推生产Clipboard。Root下一构建应保默认custom-protocol+devtools、隔离identifier/资源/原strict来源；选对variant后一次实际当前产物，未授权ship。H完整S重开只读链也已存session-recovery/full-app-readonly-preparation（efc35f85），不写input启动叶，不用一个NoLoad场景冒崩溃/host死/远端离线全覆盖。
