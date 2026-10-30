@@ -4011,6 +4011,7 @@ async fn new_shell_run(
     id: String,
     expected_run: Option<String>,
     token: khor_gui_core::agents::RecoveryToken,
+    cwd: Option<String>,
 ) -> Result<khor_gui_core::agents::ShellRunResult, String> {
     khor_gui_core::agents::new_shell_run(
         &Node::root_from_env(),
@@ -4018,6 +4019,7 @@ async fn new_shell_run(
         &id,
         expected_run.as_deref(),
         token,
+        cwd.as_deref(),
     )
     .await
 }

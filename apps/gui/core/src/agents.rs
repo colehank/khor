@@ -123,11 +123,12 @@ pub async fn new_shell_run(
     id: &str,
     expected_run: Option<&str>,
     token: RecoveryToken,
+    cwd: Option<&str>,
 ) -> Result<ShellRunResult, String> {
     let node = Node::open(root.to_path_buf())?;
     let id = SessionId(id.to_owned());
     let result = node
-        .new_shell_run_on(home_id, &id, expected_run, token)
+        .new_shell_run_on(home_id, &id, expected_run, token, cwd)
         .await?;
     match &result {
         ShellRunResult::Opened {
@@ -136,7 +137,9 @@ pub async fn new_shell_run(
         } if fresh == &id || previous != &id => {
             return Err("new shell reply lost its previous session identity".to_owned());
         }
-        ShellRunResult::Pending { id: actual, .. } | ShellRunResult::Unknown { id: actual, .. }
+        ShellRunResult::DirectoryRequired { id: actual }
+        | ShellRunResult::Pending { id: actual, .. }
+        | ShellRunResult::Unknown { id: actual, .. }
             if actual != &id =>
         {
             return Err("new shell reply changed its source session identity".to_owned());

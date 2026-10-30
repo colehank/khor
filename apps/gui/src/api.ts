@@ -931,8 +931,8 @@ export const sessionRecovery = (home_id: string, id: string) =>
 export const recoverSession = (home_id: string, id: string, expected_run: string | null, token: RecoveryToken) =>
   call<RecoveryResult>("recover_session", { home_id, id, expected_run, token });
 /** expected_run is the old Shell SID, not a default filled by this facade. */
-export const newShellRun = (home_id: string, id: string, expected_run: string | null, token: RecoveryToken) =>
-  call<ShellRunResult>("new_shell_run", { home_id, id, expected_run, token });
+export const newShellRun = (home_id: string, id: string, expected_run: string | null, token: RecoveryToken, cwd: string | null = null) =>
+  call<ShellRunResult>("new_shell_run", { home_id, id, expected_run, token, cwd });
 
 /** 导入 (docs/SHELL.md 第八轮): what could be brought onto the session
     list — agents started elsewhere, tmux sessions, and the ACP

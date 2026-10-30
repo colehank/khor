@@ -1266,6 +1266,7 @@ pub fn answer(
             let home_id = arg("home_id")?;
             let id = arg("id")?;
             let expected_run = opt_str("expected_run")?;
+            let cwd = opt_str("cwd")?;
             let token: crate::agents::RecoveryToken = serde_json::from_value(
                 args.get("token")
                     .cloned()
@@ -1278,6 +1279,7 @@ pub fn answer(
                 &id,
                 expected_run.as_deref(),
                 token,
+                cwd.as_deref(),
             ))?)
         }
         // 安全 (docs/MORE.md). The lock is a local preference read
