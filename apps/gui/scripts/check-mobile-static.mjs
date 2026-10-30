@@ -150,6 +150,7 @@ export function checkMobileSources(gui) {
   const WAITS = [
     "term_open", "chat_open", "term_drop", "close_session", "usage", "agent_ask",
     "takeover", "takeover_term", "resume_session",
+    "session_recovery", "recover_session", "new_shell_run",
     // 2026-10-04: a turn carrying photos to a far machine held the main
     // thread for minutes — a write to its socket is quick only while the
     // road keeps up.

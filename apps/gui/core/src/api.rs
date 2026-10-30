@@ -1239,6 +1239,47 @@ pub fn answer(
             &arg("agent")?,
             &arg("session")?,
         )?),
+        "session_recovery" => to_json(&rt.block_on(crate::agents::session_recovery(
+            root,
+            &arg("home_id")?,
+            &arg("id")?,
+        ))?),
+        "recover_session" => {
+            let home_id = arg("home_id")?;
+            let id = arg("id")?;
+            let expected_run = opt_str("expected_run")?;
+            let token: crate::agents::RecoveryToken = serde_json::from_value(
+                args.get("token")
+                    .cloned()
+                    .ok_or_else(|| "missing arg: token".to_owned())?,
+            )
+            .map_err(|error| format!("invalid recovery token: {error}"))?;
+            to_json(&rt.block_on(crate::agents::recover_session(
+                root,
+                &home_id,
+                &id,
+                expected_run.as_deref(),
+                token,
+            ))?)
+        }
+        "new_shell_run" => {
+            let home_id = arg("home_id")?;
+            let id = arg("id")?;
+            let expected_run = opt_str("expected_run")?;
+            let token: crate::agents::RecoveryToken = serde_json::from_value(
+                args.get("token")
+                    .cloned()
+                    .ok_or_else(|| "missing arg: token".to_owned())?,
+            )
+            .map_err(|error| format!("invalid recovery token: {error}"))?;
+            to_json(&rt.block_on(crate::agents::new_shell_run(
+                root,
+                &home_id,
+                &id,
+                expected_run.as_deref(),
+                token,
+            ))?)
+        }
         // 安全 (docs/MORE.md). The lock is a local preference read
         // straight off the store, so none of these opens a node except
         // the reset, which needs this machine's name.

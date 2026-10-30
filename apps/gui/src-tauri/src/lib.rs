@@ -3980,6 +3980,48 @@ async fn resume_session(agent: String, session: String) -> Result<String, String
     .await
 }
 
+#[tauri::command(rename_all = "snake_case")]
+async fn session_recovery(
+    home_id: String,
+    id: String,
+) -> Result<khor_gui_core::agents::SessionRecovery, String> {
+    khor_gui_core::agents::session_recovery(&Node::root_from_env(), &home_id, &id).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn recover_session(
+    home_id: String,
+    id: String,
+    expected_run: Option<String>,
+    token: khor_gui_core::agents::RecoveryToken,
+) -> Result<khor_gui_core::agents::RecoveryResult, String> {
+    khor_gui_core::agents::recover_session(
+        &Node::root_from_env(),
+        &home_id,
+        &id,
+        expected_run.as_deref(),
+        token,
+    )
+    .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn new_shell_run(
+    home_id: String,
+    id: String,
+    expected_run: Option<String>,
+    token: khor_gui_core::agents::RecoveryToken,
+) -> Result<khor_gui_core::agents::ShellRunResult, String> {
+    khor_gui_core::agents::new_shell_run(
+        &Node::root_from_env(),
+        &home_id,
+        &id,
+        expected_run.as_deref(),
+        token,
+    )
+    .await
+}
+
 // ── 安全 (docs/MORE.md) ─────────────────────────────────────────────
 
 /// How this machine's faces are set to lock (`khor_gui_core::lock_state`).
@@ -5679,6 +5721,9 @@ pub fn run() {
             agent_seen,
             agent_ask,
             resume_session,
+            session_recovery,
+            recover_session,
+            new_shell_run,
             find,
             traffic_room,
             window_minimize,

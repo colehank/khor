@@ -53,6 +53,10 @@ import type { Merged } from "./gen/bindings/Merged";
 import type { CodeAt } from "./gen/bindings/CodeAt";
 import type { Preview } from "./gen/bindings/Preview";
 import type { SessionRow } from "./gen/bindings/SessionRow";
+import type { RecoveryToken } from "./gen/bindings/RecoveryToken";
+import type { SessionRecovery } from "./gen/bindings/SessionRecovery";
+import type { RecoveryResult } from "./gen/bindings/RecoveryResult";
+import type { ShellRunResult } from "./gen/bindings/ShellRunResult";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
 import type { DayRun } from "./gen/bindings/DayRun";
 import type { DayMark } from "./gen/bindings/DayMark";
@@ -147,6 +151,10 @@ export type {
   CodeAt,
   Preview,
   SessionRow,
+  RecoveryToken,
+  SessionRecovery,
+  RecoveryResult,
+  ShellRunResult,
   DeviceRow,
   DayRun,
   DayMark,
@@ -915,6 +923,16 @@ export const agentAsk = (name: string) => call<AgentSaid>("agent_ask", { name })
     which is why neither is passed. Answers the new row's id. */
 export const resumeSession = (agent: string, session: string) =>
   call<string>("resume_session", { agent, session });
+
+/** Read an offer on the exact execution device; this does not start a provider. */
+export const sessionRecovery = (home_id: string, id: string) =>
+  call<SessionRecovery>("session_recovery", { home_id, id });
+/** The action owner supplies one stable token; transport never mints a retry identity. */
+export const recoverSession = (home_id: string, id: string, expected_run: string | null, token: RecoveryToken) =>
+  call<RecoveryResult>("recover_session", { home_id, id, expected_run, token });
+/** expected_run is the old Shell SID, not a default filled by this facade. */
+export const newShellRun = (home_id: string, id: string, expected_run: string | null, token: RecoveryToken) =>
+  call<ShellRunResult>("new_shell_run", { home_id, id, expected_run, token });
 
 /** 导入 (docs/SHELL.md 第八轮): what could be brought onto the session
     list — agents started elsewhere, tmux sessions, and the ACP
