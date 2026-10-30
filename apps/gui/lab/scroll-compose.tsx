@@ -58,6 +58,7 @@ function Conversation({revision,epoch}:{revision:object;epoch:number}){
     // scheduling, cancellation and window admission; no fixture follow loop.
     const source=historySource('compose-progress',{
       begin:async()=>`fixed-lease-${++lease}`,cancel:async()=>{},
+      record:async()=>{throw new Error('unexpected record read in empty-page fixture');},
       page:async()=>{
         const value={entries:[],references:[],older:null,newer:`fixed-page-${++requests.current}`,has_more:false,reset:false,encoded_bytes:0};
         value.encoded_bytes=new TextEncoder().encode(JSON.stringify(value)).length+16;
