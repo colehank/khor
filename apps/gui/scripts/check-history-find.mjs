@@ -86,6 +86,15 @@ test('clipped canonical message parts stay searchable but cannot claim complete 
   assert.equal(historyFindBatch(query('hello')).page(unknownTail).hits[0].complete,false,
     'an unprojected tail is not bypassed by a message-start fact');
 });
+test('page seam preserves the actual non-overlap matcher phase', () => {
+  const chunk=(key,value,start,end)=>({...text(key,value),starts_message:false,
+    record:{start,end,item:0,cursor:'same-phase-source',missing_start:false,missing_end:false}});
+  const scan=historyFindBatch(query('aa'));
+  assert.equal(scan.page({...page([chunk('new-phase','a',7,8)]),older:'phase-middle',newer:'phase-end'}).hits.length,0);
+  const result=scan.page({...page([chunk('old-phase','aaaaaaa',0,7)]),older:null,newer:'phase-middle'});
+  assert.deepEqual(result.hits.map(hit=>[hit.from,hit.to]),[[0,2],[2,4],[4,6],[6,8]],
+    'SEAM_NONOVERLAP_PHASE: old prefix determines the final 6..8 match');
+});
 test('ordinary canonical page seams use the shared painter and query-sized carry', async () => {
   const chunk=(key,value,start,end,extra={})=>({...text(key,value),starts_message:false,
     record:{start,end,item:0,cursor:'same-snapshot',missing_start:false,missing_end:false},

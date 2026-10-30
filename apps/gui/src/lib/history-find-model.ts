@@ -95,7 +95,7 @@ export function literalMatcher(raw: FindQuery) {
       matched = saved.matched; position = saved.position; serial = saved.serial;
       for (let index = 0; index < origins.length; index++) origins[index] = saved.origins[index];
     },
-    feed(text: string, limit = FIND_HITS) {
+    feed(text: string, limit = FIND_HITS, collect = true) {
       const ranges: { from: number; to: number }[] = [];
       let consumed = 0;
       for (const char of text) {
@@ -108,11 +108,11 @@ export function literalMatcher(raw: FindQuery) {
           while (matched && unit !== pattern[matched]) matched = prefix[matched - 1];
           if (unit === pattern[matched]) matched++;
           if (matched === pattern.length) {
-            ranges.push({ from: origins[(serial - pattern.length) % pattern.length], to: position });
+            if (collect) ranges.push({ from: origins[(serial - pattern.length) % pattern.length], to: position });
             matched = 0; // Match the existing Find's non-overlapping steps.
           }
         }
-        if (ranges.length >= limit) break;
+        if (collect && ranges.length >= limit) break;
       }
       return { ranges, consumed };
     },
@@ -287,11 +287,13 @@ export function historyFindBatch(raw: FindQuery) {
           const joined = paintHistory([...page.entries, ...prefix.entries], [...page.references, ...prefix.references])
             .find(item => item.historyEntries.includes(left.historyEntries.at(-1)!) && item.historyEntries.includes(right.historyEntries[0]));
           if (joined && 'text' in joined && joined.text.length > left.text.length) {
-            const start = Math.max(0, left.text.length - matcherContext);
+            let start = Math.max(0, left.text.length - matcherContext);
+            if (start > 0 && left.text.charCodeAt(start) >= 0xdc00 && left.text.charCodeAt(start) <= 0xdfff) start--;
             const matcher = literalMatcher(query);
-            // Prime offsets without retaining old body in the matcher. Its
-            // query-sized origin ring is sufficient for the page seam.
-            matcher.restore({...matcher.checkpoint(), position: start});
+            // Non-overlap phase depends on the whole already available left
+            // prefix. Advance the same matcher without allocating its hits;
+            // only the query-sized origin ring survives into the seam scan.
+            matcher.feed(left.text.slice(0, start), FIND_HITS, false);
             seam = {text: joined.text, entry: left.historyEntries[0], before: page.newer,
               split: left.text.length, offset: start, matcher};
           }
