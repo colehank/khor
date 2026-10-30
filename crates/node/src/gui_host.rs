@@ -917,6 +917,9 @@ fn gui_host_main_with_timeouts(
     let mut reservation = resume.as_ref().map(|native_id| {
         let claim = std::env::var(RECOVERY_ENV).map_err(|_| "known-native opening has no preghost recovery claim".to_owned())?;
         let (id, identity) = live.decode_gui_target(&claim, native_id)?;
+        if std::env::var(VENDOR_ENV).ok().as_deref().is_some_and(|vendor| vendor != identity.agent) {
+            return Err("known opening claim names another configured agent".into());
+        }
         let reservation = JournalReservation::take(&root, identity)?;
         let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         reservation.check_binding(&dir)?;
@@ -2040,6 +2043,7 @@ fn gui_new_agent(cmd: &[String], vendor: Option<&str>) -> String {
     })
 }
 
+#[cfg(test)]
 fn gui_source_identity(
     live: &LiveKind,
     home: khor_core::DeviceId,
