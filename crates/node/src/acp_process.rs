@@ -90,6 +90,17 @@ fn command_of(command: &str) -> Result<Command, String> {
 }
 
 pub(crate) fn spawn(command: &str) -> Result<Transport, String> {
+    spawn_observed(command, |_, _| ()).map(|(transport, ())| transport)
+}
+
+/// Capture finite facts before the Session's supervisor starts. The same Control
+/// is borrowed here and then moved into Transport; the observation is not a
+/// second lifecycle owner or an exit receipt. Unknown facts remain the caller's
+/// value and never cause an implicit respawn.
+pub(crate) fn spawn_observed<T>(
+    command: &str,
+    observe: impl FnOnce(Option<u32>, &Arc<Control>) -> T,
+) -> Result<(Transport, T), String> {
     let command = command_of(command)?;
     let control = Arc::new(Control::default());
     let (
@@ -99,7 +110,14 @@ pub(crate) fn spawn(command: &str) -> Result<Transport, String> {
             stdout,
             mut stderr,
         },
-    ) = Session::spawn(command, control.clone()).map_err(|error| error.to_string())?;
+        observed,
+    ) = Session::spawn_with_profile_observed(
+        command,
+        control.clone(),
+        crate::agent_process::SpawnProfile::Contained,
+        |pid| observe(pid, &control),
+    )
+    .map_err(|error| error.to_string())?;
     #[cfg(unix)]
     let provider_pid = Some(session.pid());
     #[cfg(not(unix))]
@@ -157,13 +175,16 @@ pub(crate) fn spawn(command: &str) -> Result<Transport, String> {
         },
         completion,
     );
-    Ok(Transport {
-        streams: ByteStreams::new(writer, reader),
-        provider_pid,
-        lifecycle,
-        control,
-        stderr: tail,
-    })
+    Ok((
+        Transport {
+            streams: ByteStreams::new(writer, reader),
+            provider_pid,
+            lifecycle,
+            control,
+            stderr: tail,
+        },
+        observed,
+    ))
 }
 
 #[cfg(test)]

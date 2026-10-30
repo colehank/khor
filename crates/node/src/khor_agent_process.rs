@@ -183,9 +183,26 @@ impl Session {
         control: Arc<Control>,
         profile: SpawnProfile,
     ) -> io::Result<(Self, Pipes)> {
+        let (session, pipes, ()) =
+            Self::spawn_with_profile_observed(command, control, profile, |_| ())?;
+        Ok((session, pipes))
+    }
+    /// Observe only this owned child, once, before any supervisor can reap it.
+    /// The observer is synchronous and must not spawn, await or reenter process
+    /// ownership. Failure can be returned as T without losing the real Session.
+    pub(super) fn spawn_with_profile_observed<T>(
+        command: Command,
+        control: Arc<Control>,
+        profile: SpawnProfile,
+        observe: impl FnOnce(Option<u32>) -> T,
+    ) -> io::Result<(Self, Pipes, T)> {
         let (mut process, pipes) = platform::spawn_with_profile(command, profile)?;
         #[cfg(unix)]
         let pid = process.id();
+        #[cfg(unix)]
+        let observed = observe(Some(pid));
+        #[cfg(not(unix))]
+        let observed = observe(None);
         let requests = control.clone();
         let (exit_tx, exit_rx) = mpsc::sync_channel(1);
         let supervisor = std::thread::Builder::new()
@@ -239,6 +256,7 @@ impl Session {
                 pid,
             },
             pipes,
+            observed,
         ))
     }
     /// One process-reap receipt. Pending and polls after the first receipt are
