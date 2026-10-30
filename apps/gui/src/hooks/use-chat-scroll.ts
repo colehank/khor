@@ -8,7 +8,7 @@ const READER_SCROLL_IDLE_MS = 200;
  */
 export function useChatScroll(revision: unknown) {
   const scroller = useRef<HTMLDivElement>(null), column = useRef<HTMLDivElement>(null);
-  const following = useRef(true), anchor = useRef<Anchor | null>(null);
+  const following = useRef(true), readingLatest = useRef(true), anchor = useRef<Anchor | null>(null);
   const layoutFrame = useRef(0), readerUntil = useRef(0);
   const composerHadFocus = useRef(false);
   const position = useRef({ top: 0, height: 0, viewport: 0 });
@@ -29,6 +29,7 @@ export function useChatScroll(revision: unknown) {
     if (!el) return;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     following.current = near;
+    readingLatest.current = near;
     setAway(!near);
     if (near) { anchor.current = null; setFresh(false); }
     else remember();
@@ -120,14 +121,16 @@ export function useChatScroll(revision: unknown) {
     readerUntil.current = 0;
     releaseLayout();
     anchor.current = { node, top: node.getBoundingClientRect().top - el.getBoundingClientRect().top };
+    // Inspecting a disclosure pins its geometry. It does not say the reader
+    // left latest; only a real reader scroll or explicit history navigation does.
     following.current = false;
     setAway(el.scrollHeight > el.clientHeight);
   };
   const toBottom = () => {
     readerUntil.current = 0;
     releaseLayout();
-    following.current = true; anchor.current = null;
+    following.current = true; readingLatest.current = true; anchor.current = null;
     setAway(false); setFresh(false); sync();
   };
-  return { scroller, column, following, onScroll, captureDisclosure, toBottom, away, fresh };
+  return { scroller, column, following, readingLatest, onScroll, captureDisclosure, toBottom, away, fresh };
 }

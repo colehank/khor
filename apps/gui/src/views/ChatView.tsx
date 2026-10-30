@@ -652,7 +652,7 @@ export function ChatView({
   // back does — and a single flag would have to pick one of those to
   // lie about. Both are cleared by arriving at the bottom, which is the
   // only way this pair can go to zero (docs/UX.md 角标可归零).
-  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, following } = useChatScroll(paint);
+  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, following, readingLatest } = useChatScroll(paint);
   const box = useRef<HTMLTextAreaElement>(null);
   const coarse = useCoarse();
   // The box takes the keys the moment this pane opens, and any key
@@ -786,7 +786,7 @@ export function ChatView({
             setHistoryEpoch(epoch => epoch + 1); setOpen(new Set()); toBottom();
           }
         } else if (!state.busy) historyAnchor.current = null;
-      }, () => !document.hidden && contentHeight > 0 && following.current, {
+      }, () => !document.hidden && contentHeight > 0 && readingLatest.current, {
         schedule: (run, delay) => window.setTimeout(run, delay), cancel: timer => window.clearTimeout(timer),
       }, watch);
       historyView.current = view;
@@ -1113,7 +1113,7 @@ export function ChatView({
     historyAnchor.current = null;
   }, [paint]);
   const jumpHistoryMatch = (hit: FindHit) => {
-    following.current = false;
+    following.current = false; readingLatest.current = false;
     historyAnchor.current = null;
     historyMatch.current = hit; setMatchedEntry(hit.entry);
     void historyView.current?.at(hit.before);
@@ -1139,7 +1139,7 @@ export function ChatView({
       const node = [...element.querySelectorAll<HTMLElement>('[data-history-key]')]
         .find(candidate => candidate.getBoundingClientRect().bottom > top);
       if (node?.dataset.historyKey) historyAnchor.current = { key: node.dataset.historyKey, top: node.getBoundingClientRect().top - top };
-      following.current = false;
+      following.current = false; readingLatest.current = false;
     }
     void historyView.current?.older();
   };
