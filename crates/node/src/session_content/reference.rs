@@ -219,6 +219,10 @@ pub struct ReadBinding {
     version: u8,
     view: SessionId,
     reference: ContentReference,
+    /// Opaque selector for one published ACP base, never part of the provider's
+    /// native ID. Absence keeps pre-change bindings on legacy current/.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    journal_generation: Option<String>,
 }
 impl ReadBinding {
     pub fn new(view: SessionId, reference: ContentReference) -> Result<Self, String> {
@@ -226,9 +230,44 @@ impl ReadBinding {
             version: VERSION,
             view,
             reference,
+            journal_generation: None,
         };
         binding.validate()?;
         Ok(binding)
+    }
+    pub(crate) fn with_journal_generation(
+        mut self,
+        generation: Option<&str>,
+    ) -> Result<Self, String> {
+        self.journal_generation = generation.map(str::to_owned);
+        self.version = if generation.is_some() { 2 } else { VERSION };
+        self.validate()?;
+        Ok(self)
+    }
+    pub(crate) fn resolve_exact(
+        &self,
+        root: &std::path::Path,
+        home: DeviceId,
+    ) -> Result<Option<super::ContentSource>, super::Unavailable> {
+        self.validate()
+            .map_err(|_| super::Unavailable::Unreadable)?;
+        if self.reference.home != home {
+            return Err(super::Unavailable::RemoteNotConnected);
+        }
+        if self.reference.namespace == ObservationNamespace::Acp {
+            return super::journal::Source::find_generation(
+                root,
+                super::journal::Identity {
+                    home,
+                    agent: self.reference.agent.clone(),
+                    native_id: self.reference.native_id.clone(),
+                },
+                self.journal_generation.as_deref(),
+            )
+            .map(|source| source.map(super::ContentSource::Journal))
+            .map_err(|_| super::Unavailable::Unreadable);
+        }
+        self.reference.resolve(root, home)
     }
     pub fn decode(encoded: &str, view: &SessionId) -> Result<Self, String> {
         let binding: Self = decode(encoded)?;
@@ -252,12 +291,24 @@ impl ReadBinding {
         &self.view
     }
     pub fn source_id(&self) -> String {
+        if let Some(generation) = &self.journal_generation {
+            let bytes =
+                serde_json::to_vec(&(2u8, "content", &self.view, &self.reference, generation))
+                    .expect("validated content generation serializes");
+            return format!("content:2:{}", blake3::hash(&bytes).to_hex());
+        }
         let bytes = serde_json::to_vec(&(VERSION, "content", &self.view, &self.reference))
             .expect("validated content identity serializes");
         format!("content:1:{}", blake3::hash(&bytes).to_hex())
     }
     pub fn validate(&self) -> Result<(), String> {
-        version(self.version)?;
+        match (self.version, self.journal_generation.as_deref()) {
+            (VERSION, None) => {}
+            (2, Some(generation)) if self.reference.namespace == ObservationNamespace::Acp => {
+                super::journal::validate_generation(generation)?;
+            }
+            _ => return Err("unsupported or mismatched content binding generation".into()),
+        }
         identifier(&self.view.0)?;
         self.reference.validate()?;
         encode(self).map(|_| ())
@@ -459,6 +510,48 @@ mod tests {
         let mut native = ContentReference::observed(&observed(9));
         native.namespace = ObservationNamespace::Native;
         assert!(native.validate().unwrap_err().contains("provider"));
+    }
+
+    #[test]
+    fn journal_generation_is_an_exact_bounded_selector_not_a_native_identity_or_path() {
+        let view = SessionId("view".into());
+        let legacy =
+            ReadBinding::new(view.clone(), ContentReference::observed(&observed(9))).unwrap();
+        let encoded = legacy.encode().unwrap();
+        assert!(!encoded.contains("journal_generation"));
+        let selected = legacy
+            .clone()
+            .with_journal_generation(Some("0123456789abcdef0123456789abcdef"))
+            .unwrap();
+        assert_eq!(selected.reference(), legacy.reference());
+        assert_ne!(selected.source_id(), legacy.source_id());
+        assert!(selected.encode().unwrap().len() <= METADATA_BYTES);
+        assert_eq!(
+            ReadBinding::decode(&selected.encode().unwrap(), &view).unwrap(),
+            selected
+        );
+        assert_eq!(ReadBinding::decode(&encoded, &view).unwrap(), legacy);
+        for generation in [
+            "",
+            "../current",
+            "0123456789ABCDEF0123456789ABCDEF",
+            "0123456789abcdef0123456789abcdef/",
+        ] {
+            assert!(
+                legacy
+                    .clone()
+                    .with_journal_generation(Some(generation))
+                    .is_err()
+            );
+        }
+        let mut value: serde_json::Value =
+            serde_json::from_str(&selected.encode().unwrap()).unwrap();
+        value["version"] = 1.into();
+        assert!(ReadBinding::decode(&value.to_string(), &view).is_err());
+        value["version"] = 2.into();
+        value["reference"]["namespace"] = "native".into();
+        value["reference"]["agent"] = "codex".into();
+        assert!(ReadBinding::decode(&value.to_string(), &view).is_err());
     }
 
     #[test]

@@ -313,6 +313,12 @@ pub(crate) enum ContentSource {
     Journal(journal::Source),
 }
 impl ContentSource {
+    pub(crate) fn journal_generation(&self) -> Option<&str> {
+        match self {
+            Self::Native(_) => None,
+            Self::Journal(source) => source.generation(),
+        }
+    }
     pub fn observation_identity(&self) -> (khor_core::ObservationNamespace, &str, &str) {
         match self {
             Self::Native(source) => {
@@ -344,7 +350,7 @@ impl ContentSource {
             Self::Native(source) => source.availability(),
             Self::Journal(source) => match source.open() {
                 Ok(_) => Availability::Available {
-                    following: true,
+                    following: source.following(),
                     capture: Some(source.capture()),
                 },
                 Err(_) => Availability::Unavailable(Unavailable::Unreadable),

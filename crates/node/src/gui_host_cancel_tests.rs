@@ -379,6 +379,63 @@ fn failed_or_closed_bootstrap_does_not_publish_ready_or_keep_a_writer() {
 }
 
 #[test]
+fn an_unpublished_opening_cannot_report_or_exit_the_previous_gui_execution() {
+    let scratch = Scratch(std::env::temp_dir().join(format!(
+        "khor-gui-opening-publication-{}",
+        crate::link::fresh_hex().unwrap()
+    )));
+    let home = khor_core::DeviceId([7; 32]);
+    let live = LiveKind::new(scratch.0.clone(), home);
+    let identity = JournalIdentity {
+        home,
+        agent: "fixture".into(),
+        native_id: "opening-run".into(),
+    };
+    let id = crate::adaptor::id_for(&identity.native_id);
+    let old = live
+        .begin_gui_run(&id, "old", std::process::id(), &identity, None, false)
+        .unwrap();
+    live.report_run(&old, State::Done, Source::Reported)
+        .unwrap();
+    assert!(
+        live.check_gui_source(&identity).is_err(),
+        "a Done word alone does not retire an executing host"
+    );
+    live.record_exit_run(&old, 0).unwrap();
+    live.check_gui_source(&identity).unwrap();
+    let dir = live.dir_of(&id).unwrap();
+    let pair = || ["meta.json", "state.json"].map(|name| std::fs::read(dir.join(name)).unwrap());
+    let before = pair();
+    let mut failed = RunPublication::Opening(State::Idle);
+    failed
+        .report(&live, State::Blocked, Source::Reported)
+        .unwrap();
+    failed.record_exit(&live, 1).unwrap();
+    assert_eq!(pair(), before);
+
+    let mut opening = RunPublication::Opening(State::Idle);
+    opening
+        .report(&live, State::Blocked, Source::Reported)
+        .unwrap();
+    let key = live
+        .begin_gui_run(&id, "new", std::process::id(), &identity, None, true)
+        .unwrap();
+    opening.publish(&live, key).unwrap();
+    assert!(matches!(&opening, RunPublication::Live(_)));
+    assert!(
+        live.report_run(&old, State::Busy, Source::Reported)
+            .is_err()
+    );
+    let meta: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("meta.json")).unwrap()).unwrap();
+    assert_eq!(
+        meta["gui_run"]["state"]["word"],
+        serde_json::to_value(State::Blocked).unwrap()
+    );
+    opening.record_exit(&live, 0).unwrap();
+}
+
+#[test]
 fn an_initial_load_of_many_small_records_is_complete_in_canonical_history() {
     run_host_case("many-load");
 }
@@ -686,7 +743,7 @@ fn managed_host_case_worker() {
             assert_eq!(capture_chunks(&all), 2);
             assert!(before.events.len() <= crate::adaptor::transcript_page::EVENT_LIMIT);
             assert!(after.events.len() <= crate::adaptor::transcript_page::EVENT_LIMIT);
-            let records = first.binding.reference().resolve(&root, node.device()).unwrap().unwrap();
+            let records = first.binding.resolve_exact(&root, node.device()).unwrap().unwrap();
             let (mut file, _) = records.open().unwrap();
             let mut text = String::new();
             file.read_to_string(&mut text).unwrap();
@@ -842,12 +899,21 @@ fn managed_host_case_worker() {
             );
             std::fs::remove_file(scratch.join("journal-load.ready")).unwrap();
             let (host, mut conn, notes) = open_host(&root, &scratch, "journal-load");
-            let after = std::fs::read_to_string(&records).unwrap();
-            assert!(after.starts_with(&text));
+            assert_eq!(std::fs::read(&records).unwrap(), text.as_bytes(), "Load preserves the old published base byte for byte");
+            let token=[73;16];
+            write_frame(&mut conn,&GuiOp::Capture{token}).unwrap();
+            let loaded=await_capture(&notes,token);
+            assert_ne!(loaded.binding, first.binding, "a complete Load publishes a separate display generation");
+            let loaded_source=loaded.binding.resolve_exact(&root,node.device()).unwrap().unwrap();
+            let read_loaded=|| {
+                let(mut file,_)=loaded_source.open().unwrap();
+                let mut raw=String::new();file.read_to_string(&mut raw).unwrap();raw
+            };
+            let after = read_loaded();
             assert_eq!(
                 after.matches("journal snapshot base").count(),
                 1,
-                "startup load cannot duplicate the committed base"
+                "startup load is a full new base, not another append of the committed prefix"
             );
             assert!(after.contains("\"kind\":\"gap\""));
             assert!(
@@ -862,11 +928,11 @@ fn managed_host_case_worker() {
                 process_pid(&scratch, "journal-load"),
             );
             let (host, mut conn, notes) = open_host(&root, &scratch, "journal-resume");
-            assert!(
-                std::fs::read_to_string(&records)
-                    .unwrap()
-                    .contains("\"opening\":\"resume\"")
-            );
+            let resumed=read_loaded();
+            assert!(resumed.starts_with(&after));
+            assert!(resumed.contains("\"opening\":\"resume\""));
+            assert_eq!(resumed.matches("新运行早期").count(),1);
+            assert_eq!(std::fs::read(&records).unwrap(),text.as_bytes());
             close_host(
                 host,
                 &mut conn,
@@ -898,12 +964,21 @@ fn managed_host_case_worker() {
             );
             let received =
                 std::fs::read_to_string(scratch.join("journal-resume/received.jsonl")).unwrap();
-            assert!(received.contains("session/resume"));
-            assert!(!received.contains("session/load"));
+            let calls:Vec<serde_json::Value>=received.lines().map(|line|serde_json::from_str(line).unwrap()).collect();
+            assert_eq!(calls.iter().filter(|call|call["method"]=="session/resume").count(),1);
+            assert!(!calls.iter().any(|call|call["method"]=="session/load"||call["method"]=="session/new"));
             let page = node
                 .transcript_page(&id, None, false, &std::sync::atomic::AtomicBool::new(false))
                 .unwrap();
-            assert!(page.events.is_empty());
+            assert_eq!(page.events.iter().filter(|event| matches!(&event.payload,
+                crate::session_content::ContentEvent::Update{update:note,..}
+                if note["update"]["content"]["text"]=="新运行早期")).count(),1);
+            let source=crate::session_content::journal::Source::registered(
+                &root,node.device(),&id,LiveKind::new(root.clone(),node.device()).dir_of(&id).as_deref()
+            ).unwrap().unwrap();
+            let mut raw=String::new();source.open().unwrap().read_to_string(&mut raw).unwrap();
+            let rows:Vec<serde_json::Value>=raw.lines().map(|line|serde_json::from_str(line).unwrap()).collect();
+            assert_eq!(rows.iter().filter(|row|row["notification"]["update"]["content"]["text"]=="新运行早期").count(),1);
             close_host(
                 host,
                 &mut conn,

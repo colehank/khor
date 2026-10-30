@@ -493,11 +493,9 @@ impl LiveKind {
         let gate = RowGate::try_acquire(&dir)?;
         let previous = gate.read_meta_or_new()?;
         gate.check_native(&id, previous.as_ref(), native, legacy.as_ref())?;
-        if previous
-            .as_ref()
-            .and_then(|meta| meta.pid)
-            .is_some_and(crate::link::pid_running)
-        {
+        if previous.as_ref().is_some_and(|meta| {
+            !gui_slot_ended(meta) && meta.pid.is_some_and(crate::link::pid_running)
+        }) {
             return Err("GUI row still has a live execution".into());
         }
         Ok(())
@@ -555,6 +553,7 @@ impl LiveKind {
             if meta
                 .pid
                 .is_some_and(|old| old != pid && crate::link::pid_running(old))
+                && !gui_slot_ended(meta)
             {
                 return Err("GUI row still has a live execution".into());
             }
@@ -3252,6 +3251,16 @@ fn read_pair(dir: &Path) -> Result<(Meta, LiveState), String> {
         return Err("session metadata and state name different GUI executions".into());
     }
     Ok((meta, state))
+}
+
+/// This retires only the Khor execution slot, not the provider process. A failed
+/// cleanup can still publish exit=1; recovery admission must separately reject
+/// an Unknown provider even when this is true and the journal lock is free.
+/// Legacy state.json and a mismatched embedded execution cannot retire a slot.
+fn gui_slot_ended(meta: &Meta) -> bool {
+    meta.gui_run.as_ref().is_some_and(|run| {
+        run.state.gui_run.as_deref() == Some(run.id.as_str()) && run.state.exit.is_some()
+    })
 }
 
 fn check_run(meta: &Meta, key: &RunKey) -> Result<(), String> {

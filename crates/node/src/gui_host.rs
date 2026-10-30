@@ -889,6 +889,9 @@ fn gui_host_main_with_timeouts(
         let id = crate::adaptor::id_for(&handle.session().0);
         let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         let identity = gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, &handle.session().0)?;
+        // New learns its native ID only from the successful response. Check
+        // that exact source before even binding it to an existing logical row.
+        live.check_gui_source(&identity)?;
         let opening=match handle.opened_by() {
             khor_acp::OpenedBy::New=>JournalOpening::New,
             khor_acp::OpenedBy::Load=>JournalOpening::Load,
@@ -905,9 +908,9 @@ fn gui_host_main_with_timeouts(
         };
         journal.bind(&dir)?;
         let vendor = std::env::var(VENDOR_ENV).ok();
-        let run = live.begin_gui_run(
-            &id, &title, std::process::id(), &identity, vendor.as_deref(), resume.is_some(),
-        )?;
+        // Keep the previous published row during the finite opening prefix.
+        // A new execution becomes visible only after its display base commits.
+        let mut run = RunPublication::Opening(State::Idle);
         let context = context_path(&root, handle.session().0.as_ref());
         if !retained_environment.mcp_servers.is_empty()
             || !retained_environment.additional_directories.is_empty()
@@ -925,11 +928,7 @@ fn gui_host_main_with_timeouts(
                 &serde_json::to_vec(&retained_environment).map_err(|e| e.to_string())?,
             )?;
         }
-        if resume.is_none() {
-            if let Some(cwd) = crate::cwd::standing() {
-                live.learn_place(&id, &cwd)?;
-            }
-        }
+        let initial_place = if resume.is_none() { crate::cwd::standing() } else { None };
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         let cookie = crate::link::fresh_hex()?;
@@ -1028,9 +1027,9 @@ fn gui_host_main_with_timeouts(
         let loop_id = id.clone();
         let loop_fanout = fanout.clone();
         let loop_ready = ready.clone();
-        // block_on finishes and drops this future before final exit publication.
-        // Move only a borrow into it; the one RunKey stays with the outer owner.
-        let run_in_loop = &run;
+        // block_on drops this future before final exit publication. The outer
+        // owner retains the exact key, if the opening actually publishes one.
+        let run_in_loop = &mut run;
         let ending = rt.block_on(async move {
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
         // The pending asks, each with the very note it was announced
@@ -1091,6 +1090,15 @@ fn gui_host_main_with_timeouts(
             if bootstrap.is_drained() {
                 if journal.is_pending() {
                     if let Err(why)=journal.commit_base() { break Some(why); }
+                } else if let Err(why)=journal.sync_received_prefix() {
+                    break Some(why);
+                }
+                let key = match live.begin_gui_run(
+                    &id, &title, std::process::id(), &identity, vendor.as_deref(), resume.is_some(),
+                ) { Ok(key) => key, Err(why) => break Some(why) };
+                if let Err(why) = run_in_loop.publish(&live, key) { break Some(why); }
+                if let Some(cwd) = &initial_place {
+                    if let Err(why) = live.learn_place(&id, cwd) { break Some(why); }
                 }
                 if let Err(why)=std::fs::write(&loop_ready,&id.0) { break Some(why.to_string()); }
                 bootstrap=Bootstrap::Live;
@@ -1123,11 +1131,11 @@ let turn = Some(result);
                                 "Cancelled" => State::Idle,
                                 _ => State::Errored,
                             };
-                            let _ = live.report_run(run_in_loop, word, Source::Reported);
+                            let _ = run_in_loop.report(&live, word, Source::Reported);
                             fanout.send(&GuiNote::Turn(stop));
                         }
                         Some(Err(e)) => {
-                            let _ = live.report_run(run_in_loop, State::Errored, Source::Reported);
+                            let _ = run_in_loop.report(&live, State::Errored, Source::Reported);
                             fanout.send(&GuiNote::Turn(e));
                         }
                         None => {}
@@ -1209,9 +1217,9 @@ HostCompletion::Control { who, token, operation, result, .. } => {
 match event {
                     Some(khor_acp::Event::Note(n)) => {
                         if n.session_id!=*handle.session() { break Some("ACP update belongs to another session".into()); }
-                        if !bootstrap.is_running() || journal.is_pending() {
-                            if let Err(why)=journal.note(&n) { break Some(why); }
-                        }
+                        // Load is a full new base; Resume is not a replay.
+                        // Both still own every notification actually received.
+                        if let Err(why)=journal.note(&n) { break Some(why); }
                         let json = serde_json::to_string(&n).unwrap_or_default();
                         if matches!(n.update, SessionUpdate::AvailableCommandsUpdate(_)) {
                             commands = Some(json.clone());
@@ -1270,7 +1278,7 @@ match event {
                         let note = GuiNote::Ask { ask: n, title, options };
                         fanout.send(&note);
                         asks.push((n, ask, note));
-                        let _ = live.report_run(run_in_loop, State::Blocked, Source::Reported);
+                        let _ = run_in_loop.report(&live, State::Blocked, Source::Reported);
                     }
                     Some(khor_acp::Event::Elicit(request))=>{
                         let encoded=serde_json::to_value(&request.request).unwrap_or_default();
@@ -1278,13 +1286,13 @@ match event {
                         let ask=next_ask;next_ask+=1;
                         let note=GuiNote::Elicit{ask,request:encoded.to_string()};
                         fanout.send(&note);elicits.push((ask,request,note));
-                        let _=live.report_run(run_in_loop,State::Blocked,Source::Reported);
+                        let _=run_in_loop.report(&live,State::Blocked,Source::Reported);
                     }
                     Some(khor_acp::Event::ElicitDone(elicitation_id))=>{
                         if let Some(at)=elicits.iter().position(|(_,q,_)|serde_json::to_value(&q.request).is_ok_and(|v|v["mode"]=="url"&&v["elicitationId"]==elicitation_id)){
                             let(ask,q,_)=elicits.remove(at);let value=serde_json::json!({"action":"accept"});if let Ok(response)=q.validate(&value){let _=q.answer(response);}
                             fanout.send(&GuiNote::ElicitAnswered{ask,response:value.to_string()});
-                            let _=live.report_run(run_in_loop,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                            let _=run_in_loop.report(&live,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
                         }
                     }
                     Some(khor_acp::Event::Ready { session }) => {
@@ -1334,7 +1342,7 @@ match event {
                             let action=serde_json::to_value(&answer).unwrap_or_default()["action"].clone();
                             let accepted=request.answer(answer).is_ok();
                             fanout.send(&GuiNote::ElicitAnswered{ask,response:serde_json::json!({"action":if accepted{action}else{serde_json::json!("cancel")}}).to_string()});
-                            let _=live.report_run(run_in_loop,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                            let _=run_in_loop.report(&live,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
                         }else{fanout.send_to(who,&GuiNote::Refused{why:refused::SETTING_REFUSED.into()});}
                     }
                     Some((who,GuiOp::Control{token,operation,payload}))=>{
@@ -1368,7 +1376,7 @@ match event {
                                 journal_turn=Some(turn);
                                 delegated = Some(execution);
                                 cancellation_sent = None;
-                                let _ = live.report_run(run_in_loop, State::Busy, Source::Reported);
+                                let _ = run_in_loop.report(&live, State::Busy, Source::Reported);
                                 let handle = handle.clone();
                                 let tx = completion_tx.clone();
                                 let generation = active_operation.clone().unwrap(); let control = process_control.clone();
@@ -1412,7 +1420,7 @@ match event {
                         let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
                         if let Err(why)=journal.accept(&turn,&text,&images,&files,token.as_deref()) { break Some(why); }
                         journal_turn=Some(turn);
-                        let _ = live.report_run(run_in_loop, State::Busy, Source::Reported);
+                        let _ = run_in_loop.report(&live, State::Busy, Source::Reported);
                         let handle = handle.clone();
                         let tx = completion_tx.clone();
                         let generation = active_operation.clone().unwrap(); let control = process_control.clone();
@@ -1447,7 +1455,7 @@ match event {
                         if asks.is_empty() {
                             // 待批答才清 — and it clears to 忙碌: the
                             // turn the ask interrupted is still running.
-                            let _ = live.report_run(run_in_loop, State::Busy, Source::Reported);
+                            let _ = run_in_loop.report(&live, State::Busy, Source::Reported);
                         }
                     }
                     Some((who, GuiOp::Stop)) => {
@@ -1464,7 +1472,7 @@ match event {
                             }
                             for(ask,_,_)in asks.drain(..){fanout.send(&GuiNote::Answered{ask,option:None});}
                         } else if stopped_upload {
-                            let _ = live.report_run(run_in_loop, State::Idle, Source::Reported);
+                            let _ = run_in_loop.report(&live, State::Idle, Source::Reported);
                             fanout.send_to(who, &GuiNote::Turn("Cancelled".into()));
                         } else {
                             // Nothing to stop. A face that got here is
@@ -1610,7 +1618,7 @@ match event {
 
         // 0 for an ending nobody minded, 1 for a torn connection: the exit
         // code is how `record_exit` tells 完成-shaped endings from 失败.
-        let _ = live.record_exit_run(&run, if ending.is_none() { 0 } else { 1 });
+        let _ = run.record_exit(&live, if ending.is_none() { 0 } else { 1 });
         Ok(())
     })();
     process_lifecycle.request_shutdown();
@@ -1626,6 +1634,38 @@ match event {
                 .unwrap_or_default(),
             stderr.lock().unwrap_or_else(|p| p.into_inner()).len()
         )),
+    }
+}
+
+/// Before publication this owns only the latest opening word. Afterwards the
+/// GUI row's atomic Meta is the sole state owner; no second live snapshot is kept.
+enum RunPublication {
+    Opening(State),
+    Live(crate::live::RunKey),
+}
+impl RunPublication {
+    fn report(&mut self, live: &LiveKind, word: State, source: Source) -> Result<(), String> {
+        match self {
+            Self::Opening(current) => {
+                *current = word;
+                Ok(())
+            }
+            Self::Live(key) => live.report_run(key, word, source),
+        }
+    }
+    fn publish(&mut self, live: &LiveKind, key: crate::live::RunKey) -> Result<(), String> {
+        let Self::Opening(word) = self else {
+            return Err("GUI execution has already published".into());
+        };
+        let word = *word;
+        *self = Self::Live(key);
+        self.report(live, word, Source::Reported)
+    }
+    fn record_exit(&self, live: &LiveKind, code: i32) -> Result<(), String> {
+        match self {
+            Self::Opening(_) => Ok(()),
+            Self::Live(key) => live.record_exit_run(key, code),
+        }
     }
 }
 

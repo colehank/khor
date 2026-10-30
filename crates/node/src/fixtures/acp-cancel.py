@@ -95,6 +95,8 @@ try:
                     note('opening-' + str(n))
             answer(request_id, {'sessionId': 'synthetic-q037-session'})
         elif method == 'session/resume':
+            if mode == 'journal-resume':
+                note('新运行早期')
             answer(request_id, {})
         elif method == 'session/load':
             mark('load', {'id': request_id})

@@ -1,4 +1,4 @@
-//! One host writes a capture; readers consume only its published current directory.
+//! One host writes a capture; readers bind to one published display generation.
 use khor_core::DeviceId;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -59,6 +59,48 @@ pub(crate) struct Manifest {
     pub opening: Opening,
     pub gaps: u64,
     active_turn: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generation: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ActiveGeneration {
+    version: u8,
+    generation: String,
+}
+
+pub(super) fn validate_generation(generation: &str) -> Result<(), String> {
+    if generation.len() != 32
+        || !generation
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("invalid journal generation".into());
+    }
+    Ok(())
+}
+
+fn generation_directory(directory: &Path, generation: Option<&str>) -> Result<PathBuf, String> {
+    match generation {
+        Some(generation) => {
+            validate_generation(generation)?;
+            Ok(directory.join("generations").join(generation))
+        }
+        None => Ok(directory.join("current")),
+    }
+}
+
+fn active_generation(directory: &Path) -> Result<Option<String>, String> {
+    let Some(bytes) = super::read_metadata(&directory.join("active.json"))? else {
+        return Ok(None);
+    };
+    let active: ActiveGeneration = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if active.version != VERSION {
+        return Err("unsupported journal generation pointer".into());
+    }
+    validate_generation(&active.generation)?;
+    Ok(Some(active.generation))
 }
 
 #[derive(Serialize)]
@@ -102,6 +144,7 @@ pub(crate) struct Journal {
     manifest: Manifest,
     pending: bool,
     poisoned: bool,
+    base_prepared: bool,
     _lock: File,
 }
 
@@ -118,6 +161,7 @@ pub(crate) struct JournalReservation {
     directory: PathBuf,
     identity: Identity,
     lock: File,
+    generation: Option<String>,
 }
 impl JournalReservation {
     pub fn take(root: &Path, identity: Identity) -> Result<Self, String> {
@@ -136,17 +180,19 @@ impl JournalReservation {
             .map_err(|e| e.to_string())?;
         lock.try_lock()
             .map_err(|e| format!("journal already has a writer: {e}"))?;
-        let current = directory.join("current");
+        let generation = active_generation(&directory)?;
+        let current = generation_directory(&directory, generation.as_deref())?;
         match read_manifest(&current)? {
-            Some(manifest) if manifest.version == VERSION && manifest.identity == identity => {}
+            Some(manifest) if manifest.version == VERSION && manifest.identity == identity && manifest.generation == generation => {}
             Some(_) => return Err("journal manifest belongs to another source or version".into()),
-            None if current.exists() => return Err("committed journal manifest is missing".into()),
+            None if current.exists() || generation.is_some() => return Err("committed journal manifest is missing".into()),
             None => {}
         }
         Ok(Self {
             directory,
             identity,
             lock,
+            generation,
         })
     }
 
@@ -193,34 +239,78 @@ impl Journal {
         JournalReservation::take(root, identity)?.into_journal(opening)
     }
     fn from_reservation(reservation: JournalReservation, opening: Opening) -> Result<Self, String> {
-        let JournalReservation { directory, identity, lock } = reservation;
+        let JournalReservation {
+            directory,
+            identity,
+            lock,
+            generation,
+        } = reservation;
+        if active_generation(&directory)? != generation {
+            return Err("journal generation changed during its reservation".into());
+        }
         let pending = directory.join("pending");
         match fs::remove_dir_all(&pending) {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.to_string()),
         }
-        let current = directory.join("current");
-        let manifest = read_manifest(&current)?;
-        let mut journal = if let Some(manifest) = manifest {
-            if manifest.version != VERSION || manifest.identity != identity {
+        let current = generation_directory(&directory, generation.as_deref())?;
+        let previous = read_manifest(&current)?;
+        let mut journal = if let Some(manifest) = previous {
+            if manifest.version != VERSION
+                || manifest.identity != identity
+                || manifest.generation != generation
+            {
                 return Err("journal manifest belongs to another source or version".into());
             }
-            let file = private_options()
-                .append(true)
-                .open(current.join("records.jsonl"))
-                .map_err(|e| e.to_string())?;
-            Self {
-                directory,
-                file,
-                manifest,
-                pending: false,
-                poisoned: false,
-                _lock: lock,
+            if opening == Opening::Load {
+                // A Load replay is complete, not a suffix to compare by text.
+                let next_generation = crate::link::fresh_hex()?;
+                fs::create_dir(&pending).map_err(|e| e.to_string())?;
+                let file = private_options()
+                    .create_new(true)
+                    .open(pending.join("records.jsonl"))
+                    .map_err(|e| e.to_string())?;
+                let interrupted = manifest.active_turn;
+                let mut next = Self {
+                    directory,
+                    file,
+                    manifest: Manifest {
+                        version: VERSION,
+                        identity,
+                        opening,
+                        gaps: manifest.gaps.saturating_add(1),
+                        active_turn: None,
+                        generation: Some(next_generation),
+                    },
+                    pending: true,
+                    poisoned: false,
+                    base_prepared: false,
+                    _lock: lock,
+                };
+                next.append(&Record::<()>::Gap {
+                    opening,
+                    interrupted_turn: interrupted.as_deref(),
+                    incomplete_record: false,
+                })?;
+                next
+            } else {
+                let file = private_options()
+                    .append(true)
+                    .open(current.join("records.jsonl"))
+                    .map_err(|e| e.to_string())?;
+                Self {
+                    directory,
+                    file,
+                    manifest,
+                    pending: false,
+                    poisoned: false,
+                    base_prepared: false,
+                    _lock: lock,
+                }
             }
         } else {
-            // A published directory without its manifest is corrupt, not an empty capture.
-            if current.exists() {
+            if current.exists() || generation.is_some() {
                 return Err("committed journal manifest is missing".into());
             }
             fs::create_dir(&pending).map_err(|e| e.to_string())?;
@@ -237,21 +327,22 @@ impl Journal {
                     opening,
                     gaps: 0,
                     active_turn: None,
+                    generation: None,
                 },
                 pending: true,
                 poisoned: false,
+                base_prepared: false,
                 _lock: lock,
             }
         };
         if !journal.pending {
             let incomplete_record = journal.finish_partial_record()?;
             let interrupted = journal.manifest.active_turn.take();
-            let gap: Record<'_, ()> = Record::Gap {
+            journal.append(&Record::<()>::Gap {
                 opening,
                 interrupted_turn: interrupted.as_deref(),
                 incomplete_record,
-            };
-            journal.append(&gap)?;
+            })?;
             journal.manifest.gaps = journal.manifest.gaps.saturating_add(1);
             journal.persist()?;
         }
@@ -269,16 +360,25 @@ impl Journal {
             return Err("capture has not committed its opening".into());
         }
         // append flushes each complete record; observing it does not add a durability barrier.
-        let binding = ReadBinding::new(view, ContentReference {
-            home: self.manifest.identity.home,
-            namespace: khor_core::ObservationNamespace::Acp,
-            agent: self.manifest.identity.agent.clone(),
-            native_id: self.manifest.identity.native_id.clone(),
-        })?;
-        let mut published = File::open(self.directory.join("current/records.jsonl"))
-            .map_err(|error| error.to_string())?;
+        let binding = ReadBinding::new(
+            view,
+            ContentReference {
+                home: self.manifest.identity.home,
+                namespace: khor_core::ObservationNamespace::Acp,
+                agent: self.manifest.identity.agent.clone(),
+                native_id: self.manifest.identity.native_id.clone(),
+            },
+        )?
+        .with_journal_generation(self.manifest.generation.as_deref())?;
+        let mut published = File::open(
+            generation_directory(&self.directory, self.manifest.generation.as_deref())?
+                .join("records.jsonl"),
+        )
+        .map_err(|error| error.to_string())?;
         let cursor = crate::adaptor::transcript_page::capture_eof(
-            &self.file, &mut published, &binding.source_id(),
+            &self.file,
+            &mut published,
+            &binding.source_id(),
         )?;
         Ok(ReadBoundary { binding, cursor })
     }
@@ -303,6 +403,24 @@ impl Journal {
     }
 
     pub fn commit_base(&mut self) -> Result<(), String> {
+        self.prepare_base()?;
+        self.publish_base()
+    }
+
+    /// Resume adds real notifications to an existing base rather than creating
+    /// another replay. Make its finite accepted prefix durable before Ready.
+    pub(crate) fn sync_received_prefix(&mut self) -> Result<(), String> {
+        self.ensure_writable()?;
+        let result = self.file.sync_data().map_err(|error| error.to_string());
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
+    }
+
+    /// Bulk durability work happens before a caller enters its short attempt
+    /// publication gate. It does not change the current display-base pointer.
+    pub(crate) fn prepare_base(&mut self) -> Result<(), String> {
         if !self.pending {
             return Err("journal base is already committed".into());
         }
@@ -310,13 +428,55 @@ impl Journal {
         let result = (|| {
             self.file.sync_all().map_err(|e| e.to_string())?;
             self.persist()?;
-            sync_directory(&self.directory.join("pending"))?;
-            fs::rename(
-                self.directory.join("pending"),
-                self.directory.join("current"),
-            )
-            .map_err(|e| e.to_string())?;
+            File::open(self.directory.join("pending/manifest.json"))
+                .and_then(|file| file.sync_all())
+                .map_err(|e| e.to_string())?;
+            sync_directory(&self.directory.join("pending"))
+        })();
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        self.base_prepared = result.is_ok();
+        result
+    }
+
+    /// The caller must recheck its attempt epoch around this small publication
+    /// step. Once renamed, a completed base is retained even if pointer/row
+    /// publication later fails; it is never relabelled as an aborted part.
+    pub(crate) fn publish_base(&mut self) -> Result<(), String> {
+        if !self.pending {
+            return Err("journal base is already committed".into());
+        }
+        self.ensure_writable()?;
+        if !self.base_prepared {
+            return Err("journal base has not been prepared".into());
+        }
+        let target = generation_directory(&self.directory, self.manifest.generation.as_deref())?;
+        let result = (|| {
+            if target.exists() {
+                return Err("journal base target is already published".into());
+            }
+            if self.manifest.generation.is_some() {
+                fs::create_dir_all(self.directory.join("generations"))
+                    .map_err(|e| e.to_string())?;
+            }
+            fs::rename(self.directory.join("pending"), &target).map_err(|e| e.to_string())?;
             self.pending = false;
+            self.base_prepared = false;
+            sync_directory(target.parent().expect("published base has a parent"))?;
+            if let Some(generation) = &self.manifest.generation {
+                let active = ActiveGeneration {
+                    version: VERSION,
+                    generation: generation.clone(),
+                };
+                super::write_metadata(
+                    &self.directory.join("active.json"),
+                    &serde_json::to_vec(&active).map_err(|e| e.to_string())?,
+                )?;
+                File::open(self.directory.join("active.json"))
+                    .and_then(|file| file.sync_all())
+                    .map_err(|e| e.to_string())?;
+            }
             sync_directory(&self.directory)
         })();
         if result.is_err() {
@@ -387,6 +547,7 @@ impl Journal {
 
     fn append_range<T: Serialize>(&mut self, record: &T) -> Result<std::ops::Range<u64>, String> {
         self.ensure_writable()?;
+        self.base_prepared = false;
         let result = (|| {
             let start = self.file.seek(SeekFrom::End(0))?;
             let mut writer = BufWriter::with_capacity(64 * 1024, &mut self.file);
@@ -410,9 +571,11 @@ impl Journal {
         let result = (|| {
             self.file.sync_data().map_err(|e| e.to_string())?;
             let bytes = serde_json::to_vec(&self.manifest).map_err(|e| e.to_string())?;
-            let folder = self
-                .directory
-                .join(if self.pending { "pending" } else { "current" });
+            let folder = if self.pending {
+                self.directory.join("pending")
+            } else {
+                generation_directory(&self.directory, self.manifest.generation.as_deref())?
+            };
             super::write_metadata(&folder.join("manifest.json"), &bytes)
         })();
         if result.is_err() {
@@ -449,6 +612,7 @@ impl Journal {
 }
 
 pub(crate) struct Source {
+    directory: PathBuf,
     path: PathBuf,
     manifest: Manifest,
 }
@@ -458,7 +622,18 @@ impl Source {
     }
     pub fn find(root: &Path, identity: Identity) -> Result<Option<Self>, String> {
         identity.validate()?;
-        let current = identity.directory(root).join("current");
+        let directory = identity.directory(root);
+        let generation = active_generation(&directory)?;
+        Self::find_generation(root, identity, generation.as_deref())
+    }
+    pub(crate) fn find_generation(
+        root: &Path,
+        identity: Identity,
+        generation: Option<&str>,
+    ) -> Result<Option<Self>, String> {
+        identity.validate()?;
+        let directory = identity.directory(root);
+        let current = generation_directory(&directory, generation)?;
         let Some(manifest) = read_manifest(&current)? else {
             return if current.exists() {
                 Err("committed journal manifest is missing".into())
@@ -466,13 +641,24 @@ impl Source {
                 Ok(None)
             };
         };
-        if manifest.version != VERSION || manifest.identity != identity {
-            return Err("journal source identity changed".into());
+        if manifest.version != VERSION
+            || manifest.identity != identity
+            || manifest.generation.as_deref() != generation
+        {
+            return Err("journal source identity or generation changed".into());
         }
         Ok(Some(Self {
+            directory,
             path: current.join("records.jsonl"),
             manifest,
         }))
+    }
+    pub(crate) fn generation(&self) -> Option<&str> {
+        self.manifest.generation.as_deref()
+    }
+    pub(crate) fn following(&self) -> bool {
+        active_generation(&self.directory)
+            .is_ok_and(|active| active.as_deref() == self.generation())
     }
     pub fn registered(
         root: &Path,
@@ -499,6 +685,16 @@ impl Source {
         }
     }
     pub fn source_id(&self, id: &crate::SessionId) -> String {
+        if let Some(generation) = self.generation() {
+            return serde_json::to_string(&(
+                2u8,
+                "acp_journal",
+                id,
+                &self.manifest.identity,
+                generation,
+            ))
+            .expect("journal generation identity serializes");
+        }
         serde_json::to_string(&(VERSION, "acp_journal", id, &self.manifest.identity))
             .expect("journal identity serializes")
     }
@@ -836,6 +1032,163 @@ mod tests {
             Opening::Load
         );
         assert!(journal.commit_base().is_err());
+    }
+
+    #[test]
+    fn load_publishes_a_complete_new_base_without_redirecting_old_bindings() {
+        let f = Fixture::new();
+        let view = crate::SessionId("same-logical-view".into());
+        let mut first = Journal::open(&f.0, f.identity(), Opening::New).unwrap();
+        first.note(&serde_json::json!({"text":"X"})).unwrap();
+        first.commit_base().unwrap();
+        let old = first.capture(view.clone()).unwrap();
+        let old_records = f.records();
+        let old_manifest = fs::read(f.current().join("manifest.json")).unwrap();
+        drop(first);
+
+        let mut loaded = Journal::open(&f.0, f.identity(), Opening::Load).unwrap();
+        for text in ["X", "X", "Y"] {
+            loaded.note(&serde_json::json!({"text":text})).unwrap();
+        }
+        loaded.prepare_base().unwrap();
+        assert_eq!(f.records(), old_records);
+        assert_eq!(
+            fs::read(f.current().join("manifest.json")).unwrap(),
+            old_manifest
+        );
+        assert!(loaded.capture(view.clone()).is_err());
+        assert!(!f.identity().directory(&f.0).join("active.json").exists());
+        loaded.publish_base().unwrap();
+
+        let next = loaded.capture(view.clone()).unwrap();
+        assert_ne!(next.binding.source_id(), old.binding.source_id());
+        assert!(next.cursor.is_for_source(&next.binding.source_id()));
+        let old_source = old
+            .binding
+            .resolve_exact(&f.0, f.identity().home)
+            .unwrap()
+            .unwrap();
+        let new_source = next
+            .binding
+            .resolve_exact(&f.0, f.identity().home)
+            .unwrap()
+            .unwrap();
+        let read = |source: &super::super::ContentSource| {
+            let (mut file, _) = source.open().unwrap();
+            let mut text = String::new();
+            file.read_to_string(&mut text).unwrap();
+            text
+        };
+        assert_eq!(read(&old_source), old_records);
+        let raw = read(&new_source);
+        // These are three exact raw notifications, not three invented message
+        // boundaries or a text-based reconciliation of a replayed prefix.
+        let texts: Vec<String> = raw
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .filter(|record| record["kind"] == "update")
+            .map(|record| record["notification"]["text"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(texts, ["X", "X", "Y"]);
+        assert_eq!(f.records(), old_records);
+        assert_eq!(
+            fs::read(f.current().join("manifest.json")).unwrap(),
+            old_manifest
+        );
+        let current = Source::find(&f.0, f.identity()).unwrap().unwrap();
+        assert!(current.following());
+        assert!(current.generation().is_some());
+        assert!(
+            !Source::find_generation(&f.0, f.identity(), None)
+                .unwrap()
+                .unwrap()
+                .following()
+        );
+
+        // Resume has no replay base. Its actual early notes are appended to
+        // the selected generation without replacing or deduplicating them.
+        let selected = next.binding.source_id();
+        drop(loaded);
+        let mut resumed = Journal::open(&f.0, f.identity(), Opening::Resume).unwrap();
+        assert!(!resumed.is_pending());
+        resumed
+            .note(&serde_json::json!({"text":"received-during-resume"}))
+            .unwrap();
+        let resumed_capture = resumed.capture(view).unwrap();
+        assert_eq!(resumed_capture.binding.source_id(), selected);
+        assert!(read(&new_source).contains("received-during-resume"));
+        assert_eq!(read(&old_source), old_records);
+        let completed = read(&new_source);
+        drop(resumed);
+        let mut later = Journal::open(&f.0, f.identity(), Opening::Load).unwrap();
+        later.note(&serde_json::json!({"text":"Z"})).unwrap();
+        later.commit_base().unwrap();
+        let later_capture = later
+            .capture(resumed_capture.binding.view().clone())
+            .unwrap();
+        assert_ne!(later_capture.binding.source_id(), selected);
+        assert_eq!(
+            read(&new_source),
+            completed,
+            "a version-two binding also keeps its exact previous generation"
+        );
+        assert!(!current.following());
+        assert_eq!(read(&old_source), old_records);
+    }
+
+    #[test]
+    fn aborted_or_failed_load_keeps_the_previous_published_base_and_completed_generations() {
+        let f = Fixture::new();
+        let mut first = Journal::open(&f.0, f.identity(), Opening::New).unwrap();
+        first.note(&serde_json::json!({"text":"retained"})).unwrap();
+        first.commit_base().unwrap();
+        drop(first);
+        let before = f.records();
+        {
+            let mut aborted = Journal::open(&f.0, f.identity(), Opening::Load).unwrap();
+            aborted
+                .note(&serde_json::json!({"text":"never published"}))
+                .unwrap();
+            aborted.prepare_base().unwrap();
+            aborted
+                .note(&serde_json::json!({"text":"arrived after the prepared fence"}))
+                .unwrap();
+            assert!(
+                aborted
+                    .publish_base()
+                    .unwrap_err()
+                    .contains("not been prepared")
+            );
+            assert_eq!(f.records(), before);
+            aborted.prepare_base().unwrap();
+            aborted.abort_base().unwrap();
+        }
+        assert_eq!(f.records(), before);
+        let directory = f.identity().directory(&f.0);
+        assert!(!directory.join("active.json").exists());
+
+        let mut failed = Journal::open(&f.0, f.identity(), Opening::Load).unwrap();
+        failed
+            .note(&serde_json::json!({"text":"complete but not selected"}))
+            .unwrap();
+        failed.prepare_base().unwrap();
+        let generation = failed.manifest.generation.clone().unwrap();
+        // Atomic pointer publication is made to fail after the complete base
+        // rename. It must neither select a partial file nor delete old data.
+        fs::create_dir(directory.join("active.json")).unwrap();
+        assert!(failed.publish_base().is_err());
+        assert!(!failed.is_pending());
+        assert!(failed.capture(crate::SessionId("view".into())).is_err());
+        drop(failed);
+        assert_eq!(f.records(), before);
+        let retained = generation_directory(&directory, Some(&generation)).unwrap();
+        assert!(retained.join("manifest.json").is_file());
+        assert!(
+            fs::read_to_string(retained.join("records.jsonl"))
+                .unwrap()
+                .contains("complete but not selected")
+        );
+        assert!(!directory.join("pending").exists());
     }
 
     #[test]

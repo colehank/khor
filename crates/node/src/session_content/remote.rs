@@ -374,8 +374,7 @@ fn open_source(
     binding: &ReadBinding,
 ) -> Result<super::ContentSource, String> {
     binding
-        .reference()
-        .resolve(root, home)
+        .resolve_exact(root, home)
         .map_err(|reason| format!("content source unavailable: {reason:?}"))?
         .ok_or_else(|| "content source is no longer available".into())
 }
@@ -403,7 +402,7 @@ fn resolve_here(node: &crate::Node, locator: &ContentLocator) -> Result<Resoluti
                     agent: agent.into(),
                     native_id: native_id.into(),
                 },
-            )?;
+            )?.with_journal_generation(source.journal_generation())?;
             Ok(Resolution::Available {
                 binding,
                 following,
