@@ -961,8 +961,11 @@ impl<'a> Held<'a> {
         let high = self.document.as_ref().map_or(0, |doc| doc.high_water);
         if token.epoch < high { return Ok(Some(Reservation::Retired)); }
         if token.epoch > high && Some(token.epoch) != high.checked_add(1) { return Err("recovery epoch is not the next offer".into()); }
-        if token.epoch == high && self.document.as_ref().is_some_and(|doc| doc.action.is_some()) {
-            return self.replay(arguments, token);
+        if token.epoch == high {
+            if self.document.as_ref().is_some_and(|doc| doc.action.is_some()) { return self.replay(arguments, token); }
+            if self.document.as_ref().and_then(|doc| doc.latest.as_ref()).is_some_and(|execution| execution.token != *token) {
+                return Err("recovery token was reused with another nonce".into());
+            }
         }
         Ok(None)
     }
@@ -1625,6 +1628,7 @@ mod tests {
         assert!(held.reserve(args.clone(), token(3, 'b'), None).is_err());
         assert!(matches!(held.check_native_input(&args, &token(1, 'b')).unwrap(), InputDecision::Refused(_)));
         assert!(matches!(held.check_native_input(&args, &token(3, 'b')).unwrap(), InputDecision::Refused(_)));
+        assert!(matches!(held.check_join_input(&join_arguments(native.clone(), None).unwrap(), &token(1, 'b')).unwrap(), InputDecision::Refused(_)), "execution epoch with another nonce is typed before begin_join");
         assert_eq!(fs::read(held.gate.dir.join(NAME)).unwrap(), before);
 
         held.claim_host(&first, stamp(10, 1)).unwrap();
