@@ -3048,9 +3048,11 @@ export function TerminalPane({
     let alive = true;
     const idle = () => {
       const state = recoveryState.current;
+      // A retired, not-yet-started animation/open wait owns no IO. Actual
+      // accepted joins, sends and transfers still block disposal until settled.
+      const presented = recoveryRetired.current || (!state.joining && !state.opening && reopenRef.current !== null);
       return alive && !dropping.current && !recoveryJoining.current && !recoverySending.current &&
-        !state.joining && !state.opening && state.dropShare === null &&
-        state.dropNames === null && reopenRef.current !== null;
+        state.dropShare === null && state.dropNames === null && presented;
     };
     const owner: TerminalRecoveryOwner = { idle, retire: () => { recoveryRetired.current = true; }, rejoin: () => {
       if (recoveryRetired.current || !idle()) return false;
