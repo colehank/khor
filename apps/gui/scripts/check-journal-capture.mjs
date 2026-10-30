@@ -27,10 +27,9 @@ document.hidden=true;fire();assert.equal(calls.length,1);assert.equal(timers.siz
 document.hidden=false;fire();assert.equal(calls.length,2);const current=calls[1];
 control.receiveCapture(answer(first));assert.deepEqual(installed,[]);
 control.wake();control.receiveCapture(answer(current));assert.deepEqual(installed,[['canonical','trustedEOF']]);assert.equal(timers.size,0);assert.equal(wakes,1);
-control.capture();control.receiveCapture(answer(calls.at(-1),'replay_in_flight'));assert.equal(timers.size,1);
-fire();assert.equal(calls.length,4);control.receiveCapture(answer(calls.at(-1),'unavailable'));assert.equal(timers.size,0);
-control.capture();assert.equal(calls.length,5,'an unavailable source retains an explicit retry');
-control.receiveCapture(answer(calls.at(-1),'not_ready'));control.stop();fire();assert.equal(calls.length,5);assert.equal(timers.size,0);
+control.capture();control.receiveCapture(answer(calls.at(-1),'unavailable'));assert.equal(timers.size,0);
+control.capture();assert.equal(calls.length,4,'an unavailable source retains an explicit retry');
+control.receiveCapture(answer(calls.at(-1),'not_ready'));control.stop();fire();assert.equal(calls.length,4);assert.equal(timers.size,0);
 assert(errors.includes('read failed'));
 console.log('PASS production capture closures retry transient readiness once per timer, pause hidden IO, reject old tokens, preserve wake, expose explicit retry, and stop after the owner is retired');
 console.log('1/1 journal capture lifecycle check passed (controlled transport/clock; not host timing or browser evidence)');

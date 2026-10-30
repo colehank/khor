@@ -3,7 +3,7 @@ export function installAttachmentLeases() {
   const leases = new Map();
   let serial = 0;
   const kinds = new Map([
-    ...['open','poll','wait','say','answer','respond','control','set_mode','set_option','stop','replay','put','put_paths','leave'].map(name => [`chat_${name}`, 'chat']),
+    ...['open','poll','wait','say','answer','respond','control','set_mode','set_option','stop','capture','put','put_paths','leave'].map(name => [`chat_${name}`, 'chat']),
     ...['open','attach','stream','wait','key','resize','ready','forget','prompt','scroll','pane_history','drop','drop_items','drop_progress','drop_cancel','leave'].map(name => [`term_${name}`, 'terminal']),
   ]);
   window.__attachmentLeases = (command, args) => {
