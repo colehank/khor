@@ -10,11 +10,11 @@
 
 ## 当前现场与所有权
 
-**当前native槽空闲。** H retry2实际session92510 terminal0/205.967s，10phase全0、Core2＋command_tables4＝6实际通过、strict catalog/完整noEmit通过；result SHA09447d8a0fc6f01160e1a7f29d0c8045bada94ef17ca5d20736f4f9a9a824210，owners[]、TMP absent。首轮56136为26.809s编译失败E0624、0行为case，保留原false；仅原root参数接线修正后重试。browser FREE，无App/Codex。下一Native须固定源/独审/Root授唯一槽；jobs1/incremental0/offline、两盘≥5GiB、target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`。处理进程按真实PID/出生/私有路径，禁止按khor-gui basename清理用户持久宿主。
+**当前唯一native：Root666统一构建，实际exec19660/driver25657；已ps实核启动Vite25698，之后阶段以validation/native-current-666200f7/running.json与同handle为准。** 仅Root poll原handle，900总/300step/jobs1/offline/双盘5GiB。固定Root源码/179gen，先真实Vite再当前CLI与私有devURL GUI，两selected严格producer，无旧测试/gen/App。admission已独审并补runner pin2f4739b3。browser FREE，H可在作者同cb03源码跑必要7组，但未App。H92510实际Native6/catalog/noEmit通过并归槽，原首编译失败保留；不把旧running文件当live。处理进程按确切PID/出生/私有路径，不按khor-gui名称清理。
 
 | owner | 当前职责、源码与写权 |
 | --- | --- |
-| Root | 集成 `khor-round2` / integrate/round2 **4f7e732e70e02cdd59537fe657c3d44bbf2879dd** clean。包含cc744、L02叶、H五片＋转换事实、N十提交、H新增原生导出与搜索UI两提交。负责集成、运行槽、真实App、状态；不成为第三条大实现线。旧watch复用的固定验证目录仍cc744/clean（validate/round2-session-browser），不能冒与当前Root同源。 |
+| Root | 集成 `khor-round2` / integrate/round2 **666200f72116e50371fee293522d7d5431f2d95c** clean。包含cc744、L02叶、H五片＋转换事实、N十提交、H新增原生导出与搜索UI两提交。负责集成、运行槽、真实App、状态；不成为第三条大实现线。旧watch复用的固定验证目录仍cc744/clean（validate/round2-session-browser），不能冒与当前Root同源。 |
 | round2_history | `khor-round2-history` / fix/round2-browser-shared，fixed **44fa2fef→5daaad3d** 已Root整合为dd6498e7→511adbd9，22源逐SHA同、实际catalog已拷Root且完整noEmit0。继续raw右键有界完整record定位/复用同export owner及生产browser；未App。拥有Core/Tauri/api/gen、history-export/file_handoff、ChatView/Search/HistoryRecords UI。当前不写ACP/node gui_host/journal启动交接。 |
 | round2_input | N固定95acd已交付并Root集成。复用同input worktree，新 `fix/round2-startup-bounds@d18161fa`，负责已登记S startup：ACP lib/lifecycle/event_fence及私有buffer叶，node/gui_host与必要journal pending、两处gui_host_cancel_tests适配。pristine vendor84736111＋声明8ff41e2d已固定，继续EventStore/accepted-seq方案与完整SDK链饱和反例；未授Native。自己的R2-S-STARTUP卡，不改H的R2-S。 |
 | round2_reviewer | 非作者只读审查。N source/actual/整合尾核均过；H22源/实际6case/catalog/noEmit尾核通过；raw新片与真正App仍待。自己不启动native/browser。 |
@@ -78,3 +78,11 @@ H raw消费仍在作者树，实现同一export owner的fragment边界定位/右
 为下一当前App链接，4个旧0478/ca83私有CLI/GUI副本按独审原归档机制完整流式gzip/解压SHA核后归档，actual99738 terminal0/13.555s，释放1,456,243,600B。内盘round2/archived-old-lab-binaries-1/index.json保原路径/mode/mtime/SHA以恢复；ce69人工备份、Root99CLI、共享target与用户程序不动。旧收据不改，原plain已不存在，不复用旧路径假称仍可运行。外盘归档后7.908GB。
 
 L01实际单例严格runner已准备history/l01-current-preparation（134行，等待当前build/contract/admission）；仅复用匹配CLI＋一Node libtest producer＋原ignored exact，子进程env承载MCP path，编译env不变。L02 fixture pin/outer180/inner150与失败尾证据已补，待最终独审和新GUI来源。两者均未运行，不计绿。
+
+## 当前原文消费与最终验收索引
+
+H原记录raw入口cb03c482已精确七源整合为Root666200f7，candidate e3694a44逐SHA全同，独审/作者29pure+7actualWorker通过，Root完整noEmit0，179gen完全未变；source bundle依赖4f7已verify并镜像。单一ChatView export owner供Raw/Search复用，残缺ref依真实物理边界定位，损坏JSON不依赖解析成功。production browser仍待必要7组；Root已按稳定源码启动一次统一build与其并行，浏览器若产品红先停验收，不冒旧source产物为最新。
+
+SDK来源键经独审发现只覆盖vendor/本地排除包，故输入作者已安全迁third_party到vendor/agent-client-protocol，固定a154a46a，114原HEAD blob仍逐SHA等archive，8个behavior working源迁前后完全同，rootlock未动且未Cargo；无工具修改。旧847/8ff/第三方原proof及完整迁移前dirty快照保留，不能按摘要覆盖行为源。
+
+34项逐条的最小完成证据与真实操作顺序已集中到[验收总账](ROUND-2-ACCEPTANCE.md)。表是验收索引，不是完成声明；源码、pure/DOM、native、真WK、Mac IME、手机触屏范围不混。main/ship仍未授权。
