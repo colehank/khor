@@ -427,13 +427,13 @@ fn query_during_devices_apply_separates_constructor_from_listing() {
     }
     let reopened = Node::open_hosting(target.root.clone(), "receiver", false).unwrap();
     let final_ids = ids(&reopened);
-    for id in baseline {
-        assert!(final_ids.contains(&id), "query/sync lost original {id}");
+    for id in &baseline {
+        assert!(final_ids.contains(id), "query/sync lost original {id}");
     }
     fixture.children_done.store(true, Ordering::SeqCst);
     eprintln!(
         "[N-QUERY] {}",
-        serde_json::json!({"held_exit":held.0.code(),"held_stdout":held.1,"held_stderr":held.2,"held_ms":held.3,"released_exit":after.0.code(),"released_ms":after.3,"original_ids":expected,"root_failure_kind":root_error.kind,"metadata_failure_kind":metadata_error.kind,"phase":proof.phase,"receiver":target.root,"worker_pid":proof.pid,"worker_birth_executable":born,"constructor_contention":true,"full_network_sync":false})
+        serde_json::json!({"held_exit":held.0.code(),"held_stdout":held.1,"held_stderr":held.2,"held_ms":held.3,"released_exit":after.0.code(),"released_stdout":after.1,"released_stderr":after.2,"released_ms":after.3,"baseline_ids":baseline,"final_ids":final_ids,"original_ids":expected,"root_failure_kind":root_error.kind,"metadata_failure_kind":metadata_error.kind,"phase":proof.phase,"receiver":target.root,"worker_pid":proof.pid,"worker_birth_executable":born,"constructor_contention":true,"full_network_sync":false})
     );
 }
 
