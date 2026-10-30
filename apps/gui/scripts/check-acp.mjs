@@ -52,13 +52,11 @@ import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 //      has 128 entries and nothing todo-shaped; an earlier note in this
 //      repo said the plan would come from a `TodoWrite` tool, and there
 //      is no such tool.
-//  10. an image and a file paste into the composer **only when the
-//      agent said it takes each kind** — asserted against each other in
-//      one paste, because separate runs let each capability answer for
-//      the other. Both directions, because "no attach affordance"
-//      is a claim a page that never rendered satisfies for free — so
-//      the positive row has to find the very thing the negative row
-//      must not.
+//  10. one paste uploads both files to their session machine and sends
+//      both returned paths. The independent images capability gates only
+//      the small inline picture; embeds does not gate path attachments.
+//      Creating new embedded-text documents has no current UI entry and
+//      remains a baseline NEXT-ROUND gap, not coverage supplied by this gate.
 //  10b. a tool line says which call it was, and three different calls
 //      paint three different lines. The second half is the complaint —
 //      「大量 bash,不可展开也没有标题」— and a per-line check alone is
@@ -284,13 +282,14 @@ const probe = () => {
   });
   const title = document.querySelector("[data-chat-title]");
   const modeEl = document.querySelector("[data-lab-execution-badge]");
-  const shots = document.querySelectorAll("[data-chat-shot]").length;
-  const docs = document.querySelectorAll("[data-chat-doc]").length;
+  const pendingFiles = [...document.querySelectorAll("[data-chat-pending-file]")].map(el => ({
+    name: el.getAttribute("data-chat-pending-file"), placed: el.getAttribute("data-placed") === "true", path: el.getAttribute("title"),
+  }));
   const hasInput = !!document.querySelector("[data-chat-input]");
   return {
     lines, failedToken, paragraphs,
     facts: factsLine ? (factsLine.textContent ?? "").trim() : null,
-    plan: planRows, shots, docs, hasInput,
+    plan: planRows, pendingFiles, hasInput,
     mode: modeEl ? (modeEl.textContent ?? "").trim() : null,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
@@ -421,8 +420,21 @@ try {
       }
       r.fulfill({ contentType: "application/json", body: "null" });
     });
-    let served = false;
-    await routeCanonicalChat(page, {ids: ['gui/acp-gate'], takeFrames: () => {
+    let served = false, admittedLease;
+    const uploads = [];
+    await page.route(/\/chat_put\?/, async route => {
+      const query = new URL(route.request().url()).searchParams;
+      const name = query.get('name');
+      const bytes = route.request().postDataBuffer();
+      if (query.get('id') !== 'gui/acp-gate' || query.get('lease') !== admittedLease || !['shot.png','main.rs'].includes(name) || !bytes?.length) {
+        errs.push('invalid attachment fixture upload');
+        return route.fulfill({status: 400, body: 'invalid attachment fixture upload'});
+      }
+      const path = `/synthetic/khor-drop/${name}`;
+      await route.fulfill({contentType: 'application/json', body: JSON.stringify(path)});
+      uploads.push({name, path, bytes: bytes.length});
+    });
+    await routeCanonicalChat(page, {ids: ['gui/acp-gate'], onOpen: (_id, lease) => {admittedLease = lease;}, takeFrames: () => {
       if (served) return [];served = true;return feed;
     }});
     await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
@@ -459,6 +471,7 @@ try {
         box?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
       });
       await wait(600);
+      for (const name of ['shot.png','main.rs']) await page.locator(`[data-chat-pending-file="${name}"][data-placed="true"]`).waitFor();
     }
     const controls = await inspectControls(page);
     const out = {...await page.evaluate(probe), ...controls};
@@ -468,7 +481,7 @@ try {
       await wait(500);
     }
     await ctx.close();
-    return { ...out, errs, scheme, motion, sent };
+    return { ...out, errs, scheme, motion, sent, uploads };
   };
 
   const WANT = ["completed", "failed", "in_progress"];
@@ -671,75 +684,41 @@ try {
     }
   }
 
-  // ── batch 3b: the image gate ─────────────────────────────────────
-  //
-  // **A negative claim, so it needs a positive control first.** "no
-  // attach affordance" is satisfied by a page that never rendered, by a
-  // renamed selector, and by a typo — so the same probe is run against
-  // an agent that *does* take images, and that row has to find the
-  // thing the other row must not.
-  //
-  // The third row is the one the first two cannot reach: **before any
-  // handshake has landed**, the capability is unknown, and the code
-  // says an unknown capability is not a yes. Written after a red-proof
-  // run showed the difference between `!facts?.images` and
-  // `facts && !facts.images` changing nothing — because every fixture
-  // handed the face an agent frame first, so "unknown" never happened.
-  //
-  // **The two capabilities are asserted against each other**, not each
-  // on its own: a single paste carries one image and one file, and an
-  // agent that takes only pictures has to take the picture *and* leave
-  // the file. One combined gate would let each capability answer for
-  // the other, and the run would look identical.
-  for (const [label, agentFrame, wantPaste, wantDoc] of [
-    ["images only", { kind: "agent", name: "reg", replays: true, images: true, embeds: false, lists: false, needs_login: false }, true, false],
-    ["files only", { kind: "agent", name: "reg", replays: true, images: false, embeds: true, lists: false, needs_login: false }, false, true],
-    ["both", { kind: "agent", name: "reg", replays: true, images: true, embeds: true, lists: false, needs_login: false }, true, true],
-    ["neither", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, false, false],
-    ["not said yet", null, false, false],
+  // ── batch 3b: paths plus independent inline image gate ───────────
+  // The existing path-upload contract is independent of both capability
+  // bits. Five combinations still exercise actual paste/upload/chip/send;
+  // only images controls the additional inline image payload.
+  for (const [label, agentFrame, wantInline] of [
+    ["images only", { kind: "agent", name: "reg", replays: true, images: true, embeds: false, lists: false, needs_login: false }, true],
+    ["files only", { kind: "agent", name: "reg", replays: true, images: false, embeds: true, lists: false, needs_login: false }, false],
+    ["both", { kind: "agent", name: "reg", replays: true, images: true, embeds: true, lists: false, needs_login: false }, true],
+    ["neither", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, false],
+    ["not said yet", null, false],
   ]) {
     const m = await look({
-      scheme: "dark",
-      motion: "no-preference",
-      frames: agentFrame ? [agentFrame,] : [],
-      paste: true,
-      send: true,
+      scheme: "dark", motion: "no-preference", frames: agentFrame ? [agentFrame] : [], paste: true, send: true,
     });
     if (m.errs.length) fail(`images/${label}: the page threw — ${m.errs[0]}`);
     if (!m.hasInput) {
       fail(`images/${label}: probe dead — the composer never drew, so nothing below means anything`);
       continue;
     }
-    const okPic = m.shots > 0 === wantPaste;
-    const okDoc = m.docs > 0 === wantDoc;
-    if (!okPic || !okDoc) {
-      fail(
-        `attach/${label}: one paste of an image and a file attached ` +
-          `${m.shots} image(s) and ${m.docs} file(s); wanted ` +
-          `${wantPaste ? 1 : 0} and ${wantDoc ? 1 : 0}`,
-      );
-    } else {
-      // …and what was on screen is what went. A chip that never
-      // reaches the frame is the same bug as one that never drew,
-      // arriving later and harder to see.
-      const body = m.sent[0];
-      if (!body) {
-        fail(`attach/${label}: 发送 was pressed and no chat_say went out`);
-      } else {
-        const gotPic = (body.images ?? []).length;
-        const gotDoc = (body.files ?? []).length;
-        if (gotPic !== (wantPaste ? 1 : 0) || gotDoc !== (wantDoc ? 1 : 0)) {
-          fail(
-            `attach/${label}: the frame carried ${gotPic} image(s) and ${gotDoc} file(s), ` +
-              `while the screen showed ${m.shots} and ${m.docs}`,
-          );
-        } else {
-          console.log(
-            `attach · ${label}: ${m.shots} image(s), ${m.docs} file(s) — and the frame carried the same`,
-          );
-        }
-      }
+    const names = ['main.rs', 'shot.png'];
+    if (m.uploads.length !== 2 || JSON.stringify(m.uploads.map(file => file.name).sort()) !== JSON.stringify(names) || m.uploads.some(file => file.bytes <= 0))
+      fail(`attach/${label}: expected two completed nonempty uploads, got ${JSON.stringify(m.uploads)}`);
+    if (m.pendingFiles.length !== 2 || JSON.stringify(m.pendingFiles.map(file => file.name).sort()) !== JSON.stringify(names) || m.pendingFiles.some(file => !file.placed || !m.uploads.some(upload => upload.name === file.name && upload.path === file.path)))
+      fail(`attach/${label}: expected two placed chips naming actual returned paths, got ${JSON.stringify(m.pendingFiles)}`);
+    const body = m.sent[0];
+    if (m.sent.length !== 1 || !body) {
+      fail(`attach/${label}: one Send must produce exactly one chat_say, got ${m.sent.length}`);
+      continue;
     }
+    if (!body.text?.startsWith('看看这个') || m.uploads.some(file => !body.text.split('\n').includes(`@${file.path}`)))
+      fail(`attach/${label}: sent text did not retain both actual upload paths: ${JSON.stringify(body.text)}`);
+    const inline = body.images ?? [];
+    if (inline.length !== (wantInline ? 1 : 0) || (wantInline && (inline[0]?.[0] !== 'image/png' || !inline[0]?.[1])))
+      fail(`attach/${label}: inline image must independently follow images=${wantInline}: ${JSON.stringify(inline)}`);
+    else console.log(`attach · ${label}: two completed uploads / two placed chips / both returned paths sent / inline=${inline.length}`);
   }
 
   // ── batch 4: the wizard reaches what only the CLI could ──────────
