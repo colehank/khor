@@ -288,7 +288,7 @@ impl Journal {
                     base_prepared: false,
                     _lock: lock,
                 };
-                next.append(&Record::<()>::Gap {
+                next.append(&Record::<'_, ()>::Gap {
                     opening,
                     interrupted_turn: interrupted.as_deref(),
                     incomplete_record: false,
@@ -338,7 +338,7 @@ impl Journal {
         if !journal.pending {
             let incomplete_record = journal.finish_partial_record()?;
             let interrupted = journal.manifest.active_turn.take();
-            journal.append(&Record::<()>::Gap {
+            journal.append(&Record::<'_, ()>::Gap {
                 opening,
                 interrupted_turn: interrupted.as_deref(),
                 incomplete_record,
