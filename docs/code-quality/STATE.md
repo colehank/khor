@@ -14,7 +14,7 @@
 
 | owner | 当前职责、源码与写权 |
 | --- | --- |
-| Root | 集成 `khor-round2` / integrate/round2 **511adbd991dcf53eaea512f7ff9baee227b715b0** clean。包含cc744、L02叶、H五片＋转换事实、N十提交、H新增原生导出与搜索UI两提交。负责集成、运行槽、真实App、状态；不成为第三条大实现线。旧watch复用的固定验证目录仍cc744/clean（validate/round2-session-browser），不能冒与当前Root同源。 |
+| Root | 集成 `khor-round2` / integrate/round2 **4f7e732e70e02cdd59537fe657c3d44bbf2879dd** clean。包含cc744、L02叶、H五片＋转换事实、N十提交、H新增原生导出与搜索UI两提交。负责集成、运行槽、真实App、状态；不成为第三条大实现线。旧watch复用的固定验证目录仍cc744/clean（validate/round2-session-browser），不能冒与当前Root同源。 |
 | round2_history | `khor-round2-history` / fix/round2-browser-shared，fixed **44fa2fef→5daaad3d** 已Root整合为dd6498e7→511adbd9，22源逐SHA同、实际catalog已拷Root且完整noEmit0。继续raw右键有界完整record定位/复用同export owner及生产browser；未App。拥有Core/Tauri/api/gen、history-export/file_handoff、ChatView/Search/HistoryRecords UI。当前不写ACP/node gui_host/journal启动交接。 |
 | round2_input | N固定95acd已交付并Root集成。复用同input worktree，新 `fix/round2-startup-bounds@d18161fa`，负责已登记S startup：ACP lib/lifecycle/event_fence及私有buffer叶，node/gui_host与必要journal pending、两处gui_host_cancel_tests适配。pristine vendor84736111＋声明8ff41e2d已固定，继续EventStore/accepted-seq方案与完整SDK链饱和反例；未授Native。自己的R2-S-STARTUP卡，不改H的R2-S。 |
 | round2_reviewer | 非作者只读审查。N source/actual/整合尾核均过；H22源/实际6case/catalog/noEmit尾核通过；raw新片与真正App仍待。自己不启动native/browser。 |
@@ -68,3 +68,13 @@ Root94771固定99的Vite/当前CLI已真实通过；GUI链接触及5GiB门而停
 4. 每阶段保存source/bundle/diff、真实结果、独审/恢复镜像；34项逐条证明后才可完成目标。main/ship待用户指令。
 
 S启动追加已授权的必要SDK边界：locked agent-client-protocol3.5.0内部解码/通知无界队列需要受控本地patch。pristine vendor84736111（114文件逐SHA等原crate）与root声明8ff41e2d已分开固定，当前仅来源与接线，尚不是资源行为修复；rootCargo.lock未动，未运行Cargo。必须让同一帧的资源所有权跨完整ByteStreams/ConnectTo分发链，分别报告编码窗口、单帧解码与RSS，不把8MiB窗口冒充整体内存上限。
+
+## 统一App前检查点
+
+Root4f7e732e仅新增L01测试诊断：4次原worker返回值保留，drain/peer.finish后统一打印已有向量；全部原时限/调用顺序/断言不变，独审/rustfmt edition2024 check通过，尚未运行。复用下一当前匹配CLI后只需一次Node libtest producer＋原ignored exact，无ACP stub。N旧CLI/Node与Root有依赖差异，不冒当前同源。
+
+H raw消费仍在作者树，实现同一export owner的fragment边界定位/右键入口，不提前构建中间App。L02 app-l02-current已准备原两失败case、fixture before/after SHA pin、真实native结果/正常CUA退出与owned清理；contract/新GUI来源未齐，未App。原两失败日志离线仍被oracle拒绝，不能当native通过。
+
+为下一当前App链接，4个旧0478/ca83私有CLI/GUI副本按独审原归档机制完整流式gzip/解压SHA核后归档，actual99738 terminal0/13.555s，释放1,456,243,600B。内盘round2/archived-old-lab-binaries-1/index.json保原路径/mode/mtime/SHA以恢复；ce69人工备份、Root99CLI、共享target与用户程序不动。旧收据不改，原plain已不存在，不复用旧路径假称仍可运行。外盘归档后7.908GB。
+
+L01实际单例严格runner已准备history/l01-current-preparation（134行，等待当前build/contract/admission）；仅复用匹配CLI＋一Node libtest producer＋原ignored exact，子进程env承载MCP path，编译env不变。L02 fixture pin/outer180/inner150与失败尾证据已补，待最终独审和新GUI来源。两者均未运行，不计绿。
