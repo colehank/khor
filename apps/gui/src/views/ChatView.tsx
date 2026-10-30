@@ -47,7 +47,7 @@ import { useHistoryExport } from '@/hooks/use-history-export';
 import type { FindHit } from '@/lib/history-find-model';
 import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
 import { historyEntries, historyReferences } from '@/lib/history-window';
-import { paintHistory, retainHistoryIdentity, type HistoryItem } from '@/lib/history-paint';
+import { paintHistory, retainHistoryIdentity, latestHistoryBody, type HistoryItem } from '@/lib/history-paint';
 import { HistoryRecords } from '@/components/history/HistoryRecords';
 
 /** Live control/state waits stay responsive while idle polling backs off. */
@@ -1144,6 +1144,9 @@ export function ChatView({
     void historyView.current?.older();
   };
 
+  const latestBody = useMemo(() => history
+    ? latestHistoryBody(paint.past, historyEntries(history.window)) : null, [paint.past, history?.window]);
+
   // The paces, and one rule covering all of them: **a shorter pace has
   // to take effect at once, a longer one never does.** Waiting out a
   // whole gap to notice a turn started hands back the latency the fast
@@ -1576,7 +1579,7 @@ export function ChatView({
             })()
           ) : item.who === "agent" || item.who === "thought" || item.who === "tool" || item.who === "compaction" || item.who === "resource" ? (
             <AgentContent key={item.displayKey ?? item.historyKey ?? (item.who === "tool" ? `${id}:${item.id}` : `${id}:${i}`)} item={item}
-              streaming={inTurn && i === items.length - 1} active={inTurn}
+              streaming={inTurn && !still && history?.window.latest === true && item === latestBody} active={inTurn}
               open={item.who === "tool" && open.has(item.id)} onOpenFile={openFile}
               onOpenChange={(shown) => { if (item.who === "tool") setOpen((now) => {
                 const next = new Set(now); if (shown) next.add(item.id); else next.delete(item.id); return next;

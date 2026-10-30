@@ -7,6 +7,25 @@ const built = await build({ stdin: { contents: ['history-window', 'history-sourc
 const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
 const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity, historyReferenceBetween } = module.exports;
+// Read the production AgentContent prop itself: this counterexample must fail
+// on the old overall-tail rule rather than on a missing helper/export.
+const chatSource = ts.createSourceFile('ChatView.tsx', readFileSync(resolve('src/views/ChatView.tsx'),'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+let streamingExpression;
+function findStreaming(node) {
+  if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(chatSource) === 'AgentContent') {
+    const prop = node.attributes.properties.find(prop => ts.isJsxAttribute(prop) && prop.name.getText(chatSource) === 'streaming');
+    streamingExpression = prop?.initializer?.expression?.getText(chatSource);
+  }
+  ts.forEachChild(node, findStreaming);
+}
+findStreaming(chatSource);
+assert(streamingExpression, 'production AgentContent streaming prop exists');
+const streamAt = (painted, entries, controls, flags = {}) => {
+  const items = [...painted, ...controls], item = painted.at(-1), i = painted.length - 1;
+  const latestBody = module.exports.latestHistoryBody?.(painted, entries) ?? null;
+  return Function('inTurn','still','history','item','i','items','latestBody', `return (${streamingExpression});`)(
+    flags.inTurn ?? true, flags.still ?? false, {window:{latest:flags.latest ?? true}}, item, i, items, latestBody);
+};
 const note = (sessionUpdate, extra = {}) => ({ kind: 'note', update: { update: { sessionUpdate, ...extra } } });
 const entry = (key, text = key) => ({ key, starts_message: true, record: null, frame: note('agent_message_chunk', { content: { type: 'text', text } }) });
 const page = (key, { count = 1, bytes = 100, older = `before:${key}`, newer = `after:${key}`, more = false, reset = false, refs = [] } = {}) => ({ entries: Array.from({ length: count }, (_, i) => entry(`${key}:${i}`)), older, newer, has_more: more, reset, references: refs, encoded_bytes: bytes });
@@ -14,6 +33,25 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const checks = [];
 const test = (name, run) => checks.push([name, run]);
+test('canonical active body is independent of retained live permission and optimistic suffixes', () => {
+  const done = {key:'opaque-finished',starts_message:true,record:null,frame:{kind:'turn',stop:'EndTurn'}};
+  const thought = {...entry('opaque-current'), starts_message:false, frame:note('agent_thought_chunk',
+    {content:{type:'text',text:Array.from({length:15},(_,i)=>`流式思考 ${i}。`).join('\n\n')}})};
+  const entries = [done,thought], painted = paintHistory(entries);
+  const controls = [{who:'ask',ask:99,title:'Still awaiting permission',options:[['allow','Allow']],answer:null},
+    {who:'user',text:'Unconfirmed optimistic draft',token:'draft'}];
+  assert.equal(streamAt(painted,entries,controls),true,'ACTIVE_CANONICAL_BODY: retained controls cannot steal streaming from canonical thought');
+  assert.equal(controls.length,2,'both permission and optimistic suffix remain represented');
+  assert.equal(streamAt(painted,entries,controls,{inTurn:false}),false);
+  assert.equal(streamAt(painted,entries,controls,{still:true}),false);
+  assert.equal(streamAt(painted,entries,controls,{latest:false}),false);
+  assert.equal(module.exports.latestHistoryBody(painted,[...entries,done]),null,'ended old body must not reopen before next-turn content exists');
+  const gap={key:'opaque-gap',starts_message:true,record:null,frame:{kind:'capture_gap',opening:'unknown',interrupted:true}};
+  assert.equal(module.exports.latestHistoryBody(paintHistory([...entries,gap]),[...entries,gap]),null);
+  assert.equal(module.exports.latestHistoryBody(painted,[]),null,'missing contribution facts do not authorize old history activity');
+  assert.equal(module.exports.latestHistoryBody(painted,[{...thought,key:'different-source'}]),null);
+  assert.equal(module.exports.latestHistoryBody(painted,entries),painted[0]);
+});
 test('page eviction retains reload endpoints', () => {
   let w = receive(EMPTY, page('9'), 'tail');
   for (let i = 8; i >= 0; i--)

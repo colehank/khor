@@ -69,6 +69,25 @@ export function paintHistory(entries: HistoryEntry[], references: HistoryRecordR
   return out.filter((item): item is HistoryItem => item.who !== 'boundary');
 }
 
+/** Canonical body and live controls have separate owners. Only contributions
+ * after the latest recorded turn/gap can belong to a current streaming body.
+ * Callers still gate live/readonly/current-window eligibility independently. */
+export function latestHistoryBody(past: HistoryItem[], entries: HistoryEntry[]): HistoryItem | null {
+  let after = 0;
+  for (let index = entries.length - 1; index >= 0; index--) {
+    if (entries[index].frame.kind === 'turn' || entries[index].frame.kind === 'capture_gap') {
+      after = index + 1;
+      break;
+    }
+  }
+  const current = new Set(entries.slice(after).map(entry => entry.key));
+  for (let index = past.length - 1; index >= 0; index--) {
+    const item = past[index];
+    if (item.who !== 'sys' && item.historyEntries.some(key => current.has(key))) return item;
+  }
+  return null;
+}
+
 /** Reuse disclosure owners only through retained record contributions. Each
  * previous owner is assigned at most once; callers drop previous on reset. */
 export function retainHistoryIdentity(previous: HistoryItem[], next: HistoryItem[]): HistoryItem[] {
