@@ -46,7 +46,7 @@ const exportModule = { exports: {} };
 Function('module', 'exports', exportBuilt.outputFiles[0].text)(exportModule, exportModule.exports);
 const { exportHistoryRecord, exportHistoryToApp, completeHistoryRecord } = exportModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
-const note = (key, update) => ({ key, frame: { kind: 'note', update: { update } } });
+const note = (key, update) => ({ key, starts_message: true, record: null, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
 const page = (entries, references = []) => ({ entries, references, older: 'older-source-cursor', newer: 'exclusive-source-fence', has_more: false,
   reset: false, encoded_bytes: 100 });
@@ -60,6 +60,22 @@ test('uses the actual rendered projection, not fields or encoded attachment byte
   assert.equal(hit.entry, '1:0');
   assert.equal(hit.before, 'exclusive-source-fence');
   assert.deepEqual([hit.from, hit.to], [0, 7]);
+});
+test('clipped canonical message parts stay searchable but cannot claim complete copying', async () => {
+  const chunk=(key,value,start,end)=>({...text(key,value),starts_message:false,
+    record:{start,end,item:0,missing_start:false,missing_end:false,cursor:'same-source'}});
+  const entries=[chunk('first:0','hel',0,10),chunk('last:0','lo',10,20)];
+  const clipped=page(entries), hit=historyFindBatch(query('hello')).page(clipped).hits[0];
+  assert(hit,'within-page logical chunks are searched through the shared painter');
+  assert.equal(hit.complete,false,'older source context is not known');
+  let reads=0;
+  await assert.rejects(historyFindAction('copy',hit,{page:async()=>{reads++;return clipped;}}),error=>error.code==='incomplete');
+  assert.equal(reads,0,'a known incomplete group does not start IO then pretend a prefix is whole');
+  const whole={...clipped,older:null};
+  const completeHit=historyFindBatch(query('hello')).page(whole).hits[0];
+  assert.equal(completeHit.complete,true);
+  const copied=await historyFindAction('copy',completeHit,{page:async()=>whole});
+  assert.equal(copied.text,'hello');assert.equal(copied.complete,true);
 });
 test('streams Unicode matching across chunks with exact original offsets', () => {
   const matcher = literalMatcher(query('中文😀x'));

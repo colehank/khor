@@ -1,3 +1,4 @@
+import type { HistoryRecordRef } from '@/gen/bindings/HistoryRecordRef';
 import type { HistoryEntry } from '@/gen/bindings/HistoryEntry';
 import { applyAcpUpdate, type AcpItem, type AcpUpdate } from './acp-view';
 import { gui } from '@/gen/catalog';
@@ -6,15 +7,24 @@ export type HistoryItem = (AcpItem | { who: 'sys'; text: string }) & {
   displayKey?: string;
   /** Contributions belong only to the currently retained bounded window. */
   historyEntries: string[];
+  historyRecords: { entry: string; record: HistoryRecordRef | null }[];
 };
-export function paintHistory(entries: HistoryEntry[]): HistoryItem[] {
+export function paintHistory(entries: HistoryEntry[], references: HistoryRecordRef[] = []): HistoryItem[] {
   const out: (HistoryItem | AcpItem | {
     who: 'boundary';
   })[] = [];
+  let previousRecord: HistoryRecordRef | null = null;
   for (const entry of entries) {
+    const record = entry.record ?? null;
+    // A referenced raw record may contain text we have not projected. Never
+    // concatenate the visible fragments across it into an invented message.
+    if (references.length && (!record || (previousRecord && references.some(reference =>
+      reference.start >= previousRecord!.end && reference.end <= record.start))))
+      out.push({who:'boundary'});
+    if (record) previousRecord = record;
     const frame = entry.frame;
     if (frame.kind === 'capture_gap') {
-      out.push({who: 'sys', text: gui.history_capture_gap(1), historyKey: `${entry.key}:capture`, historyEntries: [entry.key]});
+      out.push({who: 'sys', text: gui.history_capture_gap(1), historyKey: `${entry.key}:capture`, historyEntries: [entry.key], historyRecords: [{entry: entry.key, record}]});
       continue;
     }
     if (frame.kind === 'turn') { out.push({who: 'boundary'}); continue; }
@@ -40,6 +50,7 @@ export function paintHistory(entries: HistoryEntry[]): HistoryItem[] {
       out[index] = { ...out[index],
         historyKey: prior?.historyKey ?? `${entry.key}:${index - start}`,
         historyEntries: [...(prior?.historyEntries ?? []), entry.key],
+        historyRecords: [...(prior?.historyRecords ?? []), {entry: entry.key, record}],
       } as HistoryItem;
     }
   }

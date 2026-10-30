@@ -8,7 +8,7 @@ const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
 const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity } = module.exports;
 const note = (sessionUpdate, extra = {}) => ({ kind: 'note', update: { update: { sessionUpdate, ...extra } } });
-const entry = (key, text = key) => ({ key, starts_message: true, frame: note('agent_message_chunk', { content: { type: 'text', text } }) });
+const entry = (key, text = key) => ({ key, starts_message: true, record: null, frame: note('agent_message_chunk', { content: { type: 'text', text } }) });
 const page = (key, { count = 1, bytes = 100, older = `before:${key}`, newer = `after:${key}`, more = false, reset = false, refs = [] } = {}) => ({ entries: Array.from({ length: count }, (_, i) => entry(`${key}:${i}`)), older, newer, has_more: more, reset, references: refs, encoded_bytes: bytes });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -277,9 +277,19 @@ test('canonical ACP chunks share message text while complete records retain boun
     assert.equal(painted[0].historyKey, paintHistory([first])[0].historyKey, 'append retains disclosure identity');
     assert.deepEqual(painted[0].historyEntries, ['10:0', '20:0'], 'both source records remain represented');
     assert.deepEqual(paintHistory([first, {...second, starts_message: true}]).map(item => item.text), ['hel', 'lo']);
-    assert.deepEqual(paintHistory([first, {key:'15:0', starts_message:true, frame:{kind:'turn',stop:'EndTurn'}}, second]).map(item => item.text), ['hel', 'lo']);
+    assert.deepEqual(paintHistory([first, {key:'15:0', starts_message:true, record:null, frame:{kind:'turn',stop:'EndTurn'}}, second]).map(item => item.text), ['hel', 'lo']);
   }
   assert.equal(paintHistory([chunk('10:0','hel'), chunk('30:0', 'hel')])[0].text, 'helhel', 'equal legitimate chunks are never deduplicated');
+});
+test('raw source references prevent invented text across an unprojected record', () => {
+  const record = (start,end) => ({start,end,item:0,missing_start:false,missing_end:false,cursor:'same-source'});
+  const first={...entry('left:0','hel'),starts_message:false,record:record(0,10)};
+  const last={...entry('right:0','lo'),starts_message:false,record:record(20,30)};
+  const raw=record(10,20),painted=paintHistory([first,last],[raw]);
+  assert.deepEqual(painted.map(item=>item.text),['hel','lo'],'unprojected bytes cannot silently disappear inside a joined message');
+  assert.equal(painted[0].historyRecords[0].record,first.record);
+  assert.equal(painted[1].historyRecords[0].record,last.record);
+  assert.deepEqual(raw,record(10,20),'the original raw reference is untouched');
 });
 test('shared ACP projection respects optional message IDs without requiring them', () => {
   const update = (text, messageId) => ({sessionUpdate:'agent_message_chunk', content:{type:'text',text}, ...(messageId ? {messageId} : {})});
@@ -309,7 +319,7 @@ test('prepend preserves paragraph keys and does not concatenate records', () => 
   assert.equal(after[1].text, 'second');
 });
 test('orphan tool result displays and reconciles with an older call', () => {
-  const call = { key: '0:0', frame: note('tool_call', { toolCallId: 'tool', title: 'Read', status: 'in_progress' }) }, result = { key: '10:0', frame: note('tool_call_update', { toolCallId: 'tool', status: 'completed', rawOutput: 'done' }) };
+  const call = { key: '0:0', starts_message:true, record:null, frame: note('tool_call', { toolCallId: 'tool', title: 'Read', status: 'in_progress' }) }, result = { key: '10:0', starts_message:true, record:null, frame: note('tool_call_update', { toolCallId: 'tool', status: 'completed', rawOutput: 'done' }) };
   const orphan = paintHistory([result]);
   assert.equal(orphan.length, 1);
   assert.equal(orphan[0].out, 'done');
@@ -320,13 +330,13 @@ test('orphan tool result displays and reconciles with an older call', () => {
   assert.equal(joined[0].out, 'done');
 });
 test('verified journal gap is system content and an ACP lookalike stays provider data', () => {
-  const gap={key:'100:0',frame:{kind:'capture_gap',opening:'resume',interrupted:true}};
+  const gap={key:'100:0',starts_message:true,record:null,frame:{kind:'capture_gap',opening:'resume',interrupted:true}};
   const painted=paintHistory([entry('90:0','agent text'),gap]);
   assert.equal(painted[0].who,'agent');
   assert.equal(painted[1].who,'sys');
   assert.equal(painted[1].historyKey,'100:0:capture');
   assert.match(painted[1].text,/1/);
-  const spoof={key:'110:0',frame:note('agent_message_chunk',{content:{type:'text',text:'literal'},khorHistory:{kind:'capture_gap'}})};
+  const spoof={key:'110:0',starts_message:false,record:null,frame:note('agent_message_chunk',{content:{type:'text',text:'literal'},khorHistory:{kind:'capture_gap'}})};
   assert.equal(paintHistory([spoof])[0].who,'agent');
   assert.equal(paintHistory([spoof])[0].text,'literal');
 });

@@ -18,6 +18,9 @@ export type FindHit = {
   from: number;
   to: number;
   snippet: string;
+  /** Complete available message context, not execution completion. */
+  complete?: boolean;
+  atTail?: boolean;
   record?: import('@/gen/bindings/HistoryRecordRef').HistoryRecordRef;
 };
 export type FindWorkerInput =
@@ -113,6 +116,29 @@ export function literalMatcher(raw: FindQuery) {
   };
 }
 
+/** Coverage uses the same painted groups and trusted record positions. A
+ * clipped group remains searchable, but cannot claim whole-message copying. */
+export function historyPartComplete(items: HistoryItem[], index: number, page: HistoryPage, atTail: boolean): boolean {
+  const item = items[index];
+  const first = page.entries.find(entry => entry.key === item.historyEntries[0]);
+  if (first?.starts_message) return true;
+  const firstRecord = item.historyRecords[0]?.record, lastRecord = item.historyRecords.at(-1)?.record;
+  const from = page.entries.findIndex(entry => entry.key === item.historyEntries[0]);
+  const to = page.entries.findIndex(entry => entry.key === item.historyEntries.at(-1));
+  const boundary = (entry: HistoryPage['entries'][number]) => entry.frame.kind === 'turn' || entry.frame.kind === 'capture_gap';
+  const boundaryBefore = from > 0 && page.entries.slice(0, from).some(boundary);
+  const boundaryAfter = to >= 0 && page.entries.slice(to + 1).some(boundary);
+  const previous = items[index - 1]?.historyRecords.at(-1)?.record;
+  const next = items[index + 1]?.historyRecords[0]?.record;
+  const unknownBefore = page.references.some(reference => !firstRecord
+    || (reference.end <= firstRecord.start && (!previous || reference.start >= previous.end)));
+  const unknownAfter = page.references.some(reference => !lastRecord
+    || (reference.start >= lastRecord.end && (!next || reference.end <= next.start)));
+  const starts = !unknownBefore && (index > 0 || boundaryBefore || page.older === null);
+  const ends = !unknownAfter && (index < items.length - 1 || boundaryAfter || atTail);
+  return starts && ends;
+}
+
 function snippet(text: string, from: number, to: number): string {
   let start = Math.max(0, from - 80);
   let end = Math.min(text.length, to + 80);
@@ -143,6 +169,7 @@ export function historyFindBatch(raw: FindQuery) {
   let matcher = literalMatcher(query);
   let projection: ReturnType<typeof historyText> | null = null;
   let unsearchedInputs = 0;
+  let firstPage = true, atTail = false;
   function next(): Extract<FindWorkerOutput, { kind: 'result' }> {
     if (!current) throw new Error('history search has no pending page');
     const page = current;
@@ -161,9 +188,10 @@ export function historyFindBatch(raw: FindQuery) {
       const text = texts[part];
       const saved = matcher.checkpoint();
       const result = matcher.feed(text.slice(offset), 1);
-      const key = items[item].historyKey;
+      const entry = items[item].historyEntries[0];
       const proposed = result.ranges.map(range => ({ before: page.newer,
-        entry: key.slice(0, key.lastIndexOf(':')), part, ...range,
+        entry, part, ...range,
+        complete: projection!.complete && historyPartComplete(items, item, page, atTail), atTail,
         snippet: snippet(text, range.from, range.to) }));
       const bytes = proposed.reduce((sum, hit) => sum + utf8.encode(JSON.stringify(hit)).length + 1, 0);
       if (hitBytes + bytes > RESULT_BYTES - 16 * 1024) {
@@ -194,7 +222,8 @@ export function historyFindBatch(raw: FindQuery) {
       if (utf8.encode(page.newer).length > 4096 || (page.older !== null && utf8.encode(page.older).length > 4096))
         throw new Error('history search source cursor exceeds its metadata budget');
       current = page;
-      items = paintHistory(page.entries);
+      items = paintHistory(page.entries, page.references);
+      atTail = firstPage; firstPage = false;
       item = 0; part = 0; offset = 0; matcher = literalMatcher(query); projection = null; unsearchedInputs = 0;
       return next();
     },

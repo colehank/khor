@@ -92,9 +92,9 @@ function boundedLive(items: Item[]): Item[] {
     return ++transient <= 32;
   }).reverse();
 }
-function acceptHistory(previous: Painting, entries: Parameters<typeof paintHistory>[0]): Painting {
+function acceptHistory(previous: Painting, entries: Parameters<typeof paintHistory>[0], references: Parameters<typeof paintHistory>[1] = []): Painting {
   const recorded = new Set(entries.flatMap(entry => entry.frame.kind === 'prompt_recorded' ? [entry.frame.token] : []));
-  return { ...previous, past: retainHistoryIdentity(previous.past, paintHistory(entries)),
+  return { ...previous, past: retainHistoryIdentity(previous.past, paintHistory(entries, references)),
     live: previous.live.filter(item => item.who !== 'user' || !item.token || !recorded.has(item.token)) };
 }
 
@@ -779,7 +779,7 @@ export function ChatView({
         setHistory(state); setLoaded(state.loaded);
         if (previousPages !== state.window.pages) {
           previousPages = state.window.pages;
-          setPaint(previous => acceptHistory(state.reset ? {...previous, past: []} : previous, historyEntries(state.window)));
+          setPaint(previous => acceptHistory(state.reset ? {...previous, past: []} : previous, historyEntries(state.window), historyReferences(state.window)));
           if (state.reset) {
             setFindingHistory(false); setMatchedEntry(null); historyMatch.current = null;
             historyAnchor.current = null;

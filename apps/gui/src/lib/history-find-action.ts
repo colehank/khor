@@ -1,5 +1,5 @@
 import type { historySource } from './history-source';
-import { historyText, type FindHit } from './history-find-model';
+import { historyText, historyPartComplete, type FindHit } from './history-find-model';
 import { paintHistory } from './history-paint';
 import { recordText } from './history-find-record';
 
@@ -16,6 +16,7 @@ const utf8 = new TextEncoder();
 export async function historyFindAction(action: HistoryFindAction, hit: FindHit, io: IO): Promise<HistoryActionAnswer> {
   if (![hit.from, hit.to, hit.part].every(Number.isSafeInteger) || hit.from < 0 || hit.to < hit.from || hit.part < 0)
     throw new Error('invalid history text selection');
+  if (action === 'copy' && hit.complete === false) throw new HistoryActionFailure('incomplete');
   let stream: AsyncIterable<string>;
   let complete = true;
   let finish = async () => {};
@@ -35,12 +36,13 @@ export async function historyFindAction(action: HistoryFindAction, hit: FindHit,
     if (page.reset) throw new HistoryActionFailure('source_changed');
     if (page.entries.length > 128 || page.encoded_bytes > 512 * 1024 || utf8.encode(JSON.stringify(page)).length > 512 * 1024)
       throw new Error('history text page exceeds its byte budget');
-    const item = paintHistory(page.entries).find(item => item.historyKey.slice(0, item.historyKey.lastIndexOf(':')) === hit.entry);
-    if (!item) throw new HistoryActionFailure('incomplete');
-    const body = historyText(item);
+    const items = paintHistory(page.entries, page.references);
+    const index = items.findIndex(item => item.historyEntries.includes(hit.entry));
+    if (index < 0) throw new HistoryActionFailure('incomplete');
+    const body = historyText(items[index]);
     const text = body.texts[hit.part];
     if (text === undefined) throw new HistoryActionFailure('incomplete');
-    complete = body.complete;
+    complete = body.complete && historyPartComplete(items, index, page, hit.atTail === true);
     stream = (async function* () { yield* text; })();
   }
   try {
