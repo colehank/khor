@@ -636,8 +636,10 @@ try {
       deviceScaleFactor: 1,
     });
     const page = await ctx.newPage();
-    const errs = [];
+    const errs = [], responses = [], consoleErrors = [];
     page.on("pageerror", (e) => errs.push(String(e)));
+    page.on("response", response => {if (response.status() >= 400 && responses.length < 16) responses.push({url: response.url().slice(0, 512), status: response.status()});});
+    page.on("console", message => {if (message.type() === "error" && consoleErrors.length < 16) consoleErrors.push(message.text().slice(0, 1000));});
     const json = (b) => (r) =>
       r.fulfill({ contentType: "application/json", body: JSON.stringify(b) });
     // The current lock reader fails closed: this isolated scenario explicitly
@@ -687,8 +689,9 @@ try {
             unknown: null,
             retracted: false,
             edited: false,
-            word: null,
-            delivery: null,
+            step: null, moved: 0, landed: [], why: null,
+            got: null, of: null, via: null, to: [], note: null,
+            pushed: false, command: null,
           },
         ],
       }),
@@ -703,6 +706,15 @@ try {
     await page.locator("[data-list] [data-row-open]").nth(nth).click();
     await wait(1200);
     const out = await page.evaluate(probe);
+    if (!out.drew || errs.length) {
+      const dom = await page.evaluate(() => ({
+        machine: !!document.querySelector('[data-machine-chat]'),
+        column: !!document.querySelector('[data-chat-column]'),
+        message: !!document.querySelector('[data-msg-text]'),
+        body: document.body.innerText.slice(0, 2000),
+      }));
+      console.error('READ_FIXTURE_DIAGNOSTIC', JSON.stringify({which, scheme, width, dom, responses, consoleErrors, errors: errs}));
+    }
     await ctx.close();
     return { ...out, errs, scheme, width, which };
   };
