@@ -118,6 +118,10 @@ try {
     page.on("pageerror", (error) => { errors.push(error.message); console.error(error.message); });
     const reply = (value) => (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
     const row = (id, title) => ({ id, kind: "gui", title, word: "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "claude", group: "", face: null, hosted: true, can_control: true, attachable: false, last: null, via: null, via_face: null, home: "gate" });
+    // This private rendering fixture has no app PIN; failed lock reads must
+    // never be used to make the production shell open.
+    await page.route("**/lock_state", reply({on: false, has_pin: false, timeout_min: 0,
+      timeouts: [0, 1, 5, 15, 60], pin_min: 6, system_door: false}));
     await page.route("**/sessions", reply([row("gui/elements-a", "Elements A"), row("gui/elements-b", "Elements B")]));
     await page.route("**/devices", reply([{ id: "e".repeat(64), name: "gate", me: true, face: null, pinned: false, vitals: null, hop: null, sponsor: null, watch: [], watched: null, seat: { left: 50, top: 50 }, hosts: true }]));
     for (const path of ["dir_pins", "web_pins", "recents"]) await page.route(`**/${path}`, reply([]));
