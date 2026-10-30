@@ -99,7 +99,7 @@ function transport() {
           {start:i * 1_000_000,end:(i + 1) * 1_000_000,item:0,cursor:`f:${tag}:${i}`,missing_start:false,missing_end:false}));
       const page = {entries, references, older: start ? `f:${tag}:${start}` : null, newer: `f:${tag}:${end}`, has_more: args.newer && end < 1300, reset: false, encoded_bytes: 0};
       page.encoded_bytes = encoder.encode(JSON.stringify(page)).length + 20;
-      if (!args.newer && ((wire.holdCopy && args.newer) || (wire.holdInitial && args.cursor === null))) {
+      if ((wire.holdCopy && args.newer) || (wire.holdInitial && !args.newer && args.cursor === null)) {
         wire.holdCopy = false; wire.holdInitial = false; wire.order.push('page-held'); wire.heldKey = args.requestKey; return new Promise(resolve => {wire.held = () => resolve(page);}).finally(() => {delete wire.leases[args.requestKey];});
       }
       // Node's claimed Request drops on completed page/record IO. Only
