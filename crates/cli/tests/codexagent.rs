@@ -12,6 +12,50 @@
 
 use std::io::Write as _;
 
+// RPC completion and the asynchronous event consumer are separate owners.
+// One test-local request confirms only its already-accepted finite prefix;
+// later traffic does not delay it and a closed/wrong receiver cannot ACK it.
+type PrefixRequest = (khor_acp::EventPrefix, tokio::sync::oneshot::Sender<Result<(), String>>);
+async fn next_fenced_event(
+    events: &mut khor_acp::EventReceiver,
+    requests: &mut tokio::sync::mpsc::Receiver<PrefixRequest>,
+    pending: &mut Option<PrefixRequest>,
+) -> Option<khor_acp::Event> {
+    loop {
+        if let Some((prefix, _)) = pending.as_ref() {
+            let completed = match events.remaining_through(prefix) {
+                Ok(0) => Some(Ok(())), Err(why) => Some(Err(why)), Ok(_) => None,
+            };
+            if let Some(result) = completed {
+                let (_, reply) = pending.take().unwrap();
+                let _ = reply.send(result);
+            }
+        }
+        tokio::select! {
+            Some(request) = requests.recv(), if pending.is_none() => { *pending = Some(request); },
+            event = events.recv() => {
+                if matches!(event.as_ref(), None | Some(khor_acp::Event::Closed(_))) {
+                    // Close admission before draining so a late sender learns
+                    // failure rather than leaving a reply queued without an owner.
+                    requests.close();
+                    if let Some((_, reply)) = pending.take() { let _ = reply.send(Err("event consumer closed before its prefix".into())); }
+                    while let Ok((_, reply)) = requests.try_recv() { let _ = reply.send(Err("event consumer closed before its prefix".into())); }
+                }
+                return event;
+            }
+        }
+    }
+}
+async fn consumed_prefix(handle: &khor_acp::Handle, requests: &tokio::sync::mpsc::Sender<PrefixRequest>) {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let prefix = handle.fence_events().await.expect("accepted turn prefix must be written");
+        let (reply, completed) = tokio::sync::oneshot::channel();
+        requests.send((prefix, reply)).await.expect("the original event pump must own this prefix");
+        completed.await.expect("the pump must answer its prefix request")
+            .expect("the pump must process the complete accepted prefix");
+    }).await.expect("the event consumer must process its finite prefix within five seconds");
+}
+
 /// The thread id the fake mints — a well-formed uuid because the row id
 /// and the rollout name both wear it.
 const SID: &str = "01a01e00-0000-7000-8000-000000000042";
@@ -167,8 +211,10 @@ for line in sys.stdin:
     let closed = std::sync::Arc::new(std::sync::Mutex::new(None::<Option<String>>));
     let n2 = notes.clone();
     let c2 = closed.clone();
+    let (drain, mut drain_requests) = tokio::sync::mpsc::channel::<PrefixRequest>(1);
     let pump = tokio::spawn(async move {
-        while let Some(e) = events.recv().await {
+        let mut pending = None;
+        while let Some(e) = next_fenced_event(&mut events, &mut drain_requests, &mut pending).await {
             match e {
                 khor_acp::Event::Note(n) => {
                     n2.lock().unwrap().push(serde_json::to_string(&n).unwrap());
@@ -241,6 +287,7 @@ for line in sys.stdin:
     let params: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("cwd/fake.turn")).unwrap()).unwrap();
     assert_eq!(params["effort"], "high");
+    consumed_prefix(&handle, &drain).await;
     let said = notes.lock().unwrap().join("\n");
     assert!(
         said.contains("usage_update") && said.contains("4200") && !said.contains("990000"),
@@ -313,6 +360,7 @@ for line in sys.stdin:
     // ask, and the answer lands on codex's own JSON-RPC id as accept.
     let stop = handle.prompt("please ask-permission").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
+    consumed_prefix(&handle, &drain).await;
     let said = notes.lock().unwrap().join("\n");
     assert!(
         said.contains("verdict:accept"),
@@ -344,6 +392,7 @@ for line in sys.stdin:
     );
     let stop = handle.prompt("after the stop").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
+    consumed_prefix(&handle, &drain).await;
     let said = notes.lock().unwrap().join("\n");
     assert!(
         said.contains("echo: after the stop"),
@@ -453,8 +502,10 @@ for line in sys.stdin:
     assert!(said.contains("user_message_chunk"),"the restored past must retain its normalized user-message shape");
     let notes3 = std::sync::Arc::new(std::sync::Mutex::new(past));
     let n3 = notes3.clone();
+    let (drain3, mut drain_requests3) = tokio::sync::mpsc::channel::<PrefixRequest>(1);
     let pump3 = tokio::spawn(async move {
-        while let Some(e) = events3.recv().await {
+        let mut pending = None;
+        while let Some(e) = next_fenced_event(&mut events3, &mut drain_requests3, &mut pending).await {
             match e {
                 khor_acp::Event::Note(n) => {
                     n3.lock().unwrap().push(serde_json::to_string(&n).unwrap());
@@ -466,6 +517,7 @@ for line in sys.stdin:
     });
     let stop = handle3.prompt("hello resumed").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
+    consumed_prefix(&handle3, &drain3).await;
     let said = notes3.lock().unwrap().join("\n");
     assert!(
         said.contains("echo: hello resumed"),
