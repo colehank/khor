@@ -149,3 +149,12 @@ Root已组合Store与Node/ACP15叶+H共享到 **2552334ab1d55e227f4dacb90127f2e1
 CARGO_BIN_EXE编译时指原target路径，runner明确逐次核其actualrow/proof/privatecopy相同SHA，不假称环境变量能覆盖它；B gui_session实际只收A经V私有stub的canonical pin，受控模式不能隐Cargo。B借Aproof只在require时重建三项明确phase路径env，再finally恢复，不把它当B依赖rlib复用凭据。
 
 H同源actualbindings/catalog来源/noEmit优先。C额外经khor-web/build.rs嵌dist，当前 **assets:null明确禁止C实际命令**，须H/Root当前255真实Vite资产逐SHA回执后repin；A/B无web/dist依赖。agents新Capture helper唯一个caller仍ignored真实第三方用例；无既有hermetic共用case，默认stub不真实写获批文件，不能假替换/删原assert。Root接受仅编译与人工第三方runtime边界，不新fakepeer/不跑真实模型。预计A20–50s/B70–150s/C90–200s仅排期范围，不是硬保证；每批硬300s，首次联编失败原样保后最小收口。私有copies粗估A25–60MB/B0.65–1.0GiB/C1.0–1.6GiB另加未知编译输出，不能当max；driver不删缓存。已交非作者准入，尚未授本批执行。
+
+
+#### A实际编译与行为续批（Root255）
+
+原A exec **44970 terminal2/14.876s**：actual fullmetadata0/compile0，两selected分别no-prior V/require/unique actualrow/privatecopy真实成功；首behavior还未spawn，runner误传str给guard而触发str.parent。原false不回填，不当产品业务红。原stub **5b0394c37c5dcf3e56f48bfb0be93e55c218b42519eb998fcdaaf33095acfa98**/14,889,944B；conversation **a1225d6cfa2e6acb7cdec21546b8d46bd47660977cec94b011d711fbf6f605cf**/27,187,552B。
+
+经独审窄续runner a2e95d41/contract7da4df0e，仅Path(binary)入口修正+复用已证明producer/原path+copySHA/原producer环境require后finally恢复，未重编。exec **63174 terminal0/2.5998s**，context/MCP+PromptElicit、finite initialLoad、unsupportedLoad三exact各1passed/0failed/0ignored；source/env同、owned/group/footprint净、TMP absent。actual回执 **7c825028b0b43b12c6fb589b259e522ad35615fe35c2df91383b4ed9e56cc6e2**、result **7eb9b9587703dc8555bf78708e0fbffd2fe0d7eeabb4778a459ab1ce52b13478**；内盘replay-retirement-2552334a-acp-actual含41原小件+两完整gzip解压SHA同、原exe保，mirror **290ef8168cada2f8e0a7f667a9ce62715adf1e9af4bcebcc93b98faa9bebaa82**。Root确认非作者尾核已过，只收A三行为，不冒Store/当前App/全S。
+
+旧B0de/f71准入失效不可执行。新node-source-2 runner **3d01a0b8987d4106b3136cbbb13ffc3cea396c3c98d866d91ea4fbc242c0f3b5**/contract **8e3ba459b8b7c4a9347a52c83fc842103c5c29adb23f989718a958ea5f58d996**/source回执c9a13482：同Path修正+显式pin原44970 producer false(两成功stage)和63174 successful A3/sourceframe，原stub私有copy三方同，require仅核原producer环境而非错用续runtime。B原13父7helper/三selected/no-prior/300/强门不变，仅静态准备/交审；H新gen/noEmit/Vite已优先领槽，B尚未获执行授权。C仍assets:null阻断，等H当前255实际资产后独立repin；agents只编译不跑真实vendor已Root接受。
