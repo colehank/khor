@@ -61,7 +61,7 @@ export async function historyPageContext(page: HistoryPage, io: IO,
   return {facts,complete:true};
 }
 
-const plain = (item: HistoryPaintStep): item is HistoryItem & {text: string} =>
+const plain = (item: HistoryPaintStep): item is Extract<HistoryItem, {who: 'agent' | 'user' | 'thought'}> =>
   ['agent','user','thought'].includes(item.who) && 'text' in item;
 
 /** A streaming consumer retires text after each exact shared projection step.
