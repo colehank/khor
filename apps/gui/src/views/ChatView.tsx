@@ -426,11 +426,8 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
     return true;
   }
   if (frame.kind === "answered") {
-    // The answer lands on the ask it settles, wherever that sits — the
-    // host may have re-sent the ask to this face long after it was
-    // raised (`gui_host` — a face that arrives mid-ask). Searching only
-    // the live half is not a shortcut: a replay carries no asks, so an
-    // ask is never in the past.
+    // Ask state belongs to the live control stream, including a pending
+    // question repeated on attachment. Canonical history carries its body.
     const at = out.findIndex((i) => i.who === "ask" && i.ask === frame.ask);
     const seat = at < 0 ? null : out[at];
     if (seat && seat.who === "ask") {
@@ -866,7 +863,7 @@ export function ChatView({
         installHistory(frame.result.binding, frame.result.cursor);
         if (wakeVersion > captureVersion) historyView.current?.wake();
       } else {
-        captureTransient = frame.result.reason === 'not_ready' || frame.result.reason === 'replay_in_flight';
+        captureTransient = frame.result.reason === 'not_ready';
         setCaptureWhy(gui.history_read_failed);
         if (captureTransient) retryCapture();
       }
@@ -1070,9 +1067,6 @@ export function ChatView({
       .then((fresh) => {
         if (stopped) return;
         setOpenedAt(null);
-        // Only a fresh attachment asks for history: the host answers
-        // every replay it is asked for, and a second mount of a living
-        // chat (dev double-mount) already holds the replayed frames.
         draftOwner ??= chatDraftOwner(id);
         if (fresh) {
           unconfirmedChatDrafts(id, draftOwner, {reader: reading, except: true});
@@ -1530,16 +1524,6 @@ export function ChatView({
             {title}
           </div>
         )}
-        {/* **Why this conversation starts empty, when it does.** An
-            empty column reads as "nobody has said anything yet", and
-            for an agent that cannot replay its own past that reading is
-            wrong in the one direction that matters: there may be a
-            great deal above, and this window simply cannot see it.
-
-            Only while the column is actually empty. Once anything has
-            been said here the line has nothing left to explain, and a
-            standing notice about a limitation nobody is hitting is the
-            kind of chrome this app's copy rules exist to keep out. */}
         <AgentPlan key={id} entries={plan} />
         {openedAt !== null && items.length === 0 && (
           <Waiting

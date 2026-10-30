@@ -434,6 +434,7 @@ fn op_event(connection: usize, op: &GuiOp) -> serde_json::Value {
         GuiOp::Part(bytes) => ("Part", bytes.len()),
         GuiOp::Parts => ("Parts", 0),
         GuiOp::Stop => ("Stop", 0),
+        GuiOp::Capture { .. } => ("Capture", 0),
         GuiOp::Say(text) => ("Say", text.len()),
         GuiOp::SayWith {
             text,
@@ -448,7 +449,6 @@ fn op_event(connection: usize, op: &GuiOp) -> serde_json::Value {
         ),
         GuiOp::Answer { .. } => ("Answer", 0),
         GuiOp::Close => ("Close", 0),
-        GuiOp::Replay => ("Replay", 0),
         GuiOp::SetMode(_) => ("SetMode", 0),
         GuiOp::SetOption { .. } => ("SetOption", 0),
         GuiOp::Delegate { .. } => ("Delegate", 0),

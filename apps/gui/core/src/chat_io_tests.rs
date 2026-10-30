@@ -299,7 +299,6 @@ fn capture_failures_are_typed_and_live_body_updates_are_only_bounded_wake_signal
     }
     for (failure,expected) in [
         (khor_node::gui_host::CaptureFailure::NotReady,"not_ready"),
-        (khor_node::gui_host::CaptureFailure::ReplayInFlight,"replay_in_flight"),
         (khor_node::gui_host::CaptureFailure::Unavailable,"unavailable"),
     ] {
         let frame=frame_of(GuiNote::Captured {token:[3;16],result:Err(failure)});
@@ -430,11 +429,11 @@ fn controls_keep_fifo_order_and_complete_only_after_their_frames_are_written() {
     .unwrap();
     let stop =
         submit_control(Path::new("."), &attached.id, &attached.lease, Control::Stop).unwrap();
-    let replay = submit_control(
+    let capture = submit_control(
         Path::new("."),
         &attached.id,
         &attached.lease,
-        Control::Replay,
+        Control::Capture([7; 16]),
     )
     .unwrap();
     assert!(
@@ -446,11 +445,11 @@ fn controls_keep_fifo_order_and_complete_only_after_their_frames_are_written() {
     ));
     assert!(matches!(
         read_frame::<GuiOp>(&mut attached.peer).unwrap(),
-        GuiOp::Replay
+        GuiOp::Capture { token } if token == [7; 16]
     ));
     mode.wait().unwrap();
     stop.wait().unwrap();
-    replay.wait().unwrap();
+    capture.wait().unwrap();
 }
 
 #[test]

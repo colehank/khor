@@ -774,10 +774,6 @@ pub fn answer(
             )?;
             Ok("null".to_owned())
         }
-        "chat_replay" => {
-            crate::chat::chat_replay(root, &arg("id")?, &arg("lease")?)?;
-            Ok("null".to_owned())
-        }
         "chat_capture" => {
             crate::chat::chat_capture(root, &arg("id")?, &arg("lease")?, &arg("token")?)?;
             Ok("null".to_owned())

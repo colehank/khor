@@ -46,14 +46,6 @@ pub enum ChatFrame {
         #[ts(type = "unknown")]
         update: serde_json::Value,
     },
-    /// One replayed update — this chat asked for history and this is
-    /// part of the answer, older than every `Note`.
-    History {
-        #[ts(type = "unknown")]
-        update: serde_json::Value,
-    },
-    /// The history is complete (possibly empty — no past to paint).
-    HistoryEnd,
     /// The agent asked permission; answer with [`chat_answer`].
     Ask {
         #[ts(type = "number")]
@@ -78,11 +70,8 @@ pub enum ChatFrame {
     /// What the agent on the other end can do — told once, when this
     /// face attaches (`khor_node::gui_host::GuiNote::Agent`).
     ///
-    /// `replays` is the one a face must act on: an agent that does not
-    /// replay answers a history request with an empty bracket, which is
-    /// **the same bracket** a brand-new conversation answers with. A
-    /// pane that only watched the answer would paint "nothing was said
-    /// here" for an agent whose past simply cannot be fetched.
+    /// `replays` reports the agent's load capability. Canonical content
+    /// availability is resolved separately, including for NoLoad agents.
     Agent {
         name: Option<String>,
         replays: bool,
@@ -158,7 +147,7 @@ pub enum CapturedContent {
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
-pub enum CaptureUnavailable { NotReady, ReplayInFlight, Unavailable }
+pub enum CaptureUnavailable { NotReady, Unavailable }
 
 /// What a poll answers: the frames since the cursor, the next cursor,
 /// and whether the conversation has ended — `gone` covers both the
@@ -172,7 +161,7 @@ pub struct ChatBatch {
     pub gone: bool,
     /// Frames older than this cursor are gone, so what arrived here is
     /// not the whole of what was missed. A face that sees this must ask
-    /// for history rather than trust its own paint — see [`FRAME_CAP`].
+    /// for a fresh capture rather than trust its old control cursor.
     pub lost: bool,
     /// A turn with attachments on its way to the host: bytes sent so far
     /// and in all (`chat_say_with`, which sends a big turn in slices);
@@ -189,25 +178,9 @@ pub struct ChatBatch {
     pub stall: Option<crate::miss::Miss>,
 }
 
-/// How many frames one attachment keeps.
-///
-/// **It has to be bounded, and bounding it has to be honest.** A
-/// streaming agent emits a frame per chunk; a conversation left open all
-/// day is an unbounded list nobody empties. But the list is also what a
-/// *second* pane on the same conversation rebuilds its paint from
-/// (`chat_open` answers `false` and that face polls from zero), so
-/// dropping the front is dropping somebody's past.
-///
-/// Hence the pair: the oldest go, and the batch says `lost` to any
-/// reader whose cursor was among them. The recovery is the one that
-/// already exists — ask for history, exactly as a fresh attachment does
-/// — so a trimmed list costs a replay and never a wrong picture.
-///
-/// Twenty thousand at roughly a couple of hundred bytes a frame is a
-/// few megabytes, and reaching it unseen would take a face polling
-/// slower than two thousand frames a second. That is not a promise it
-/// cannot happen; it is why the `lost` path is written rather than
-/// assumed unreachable.
+/// How many live control frames one attachment keeps. Body content lives
+/// in the canonical history source. A trimmed cursor reports `lost`, so
+/// the view captures a new boundary and rebuilds through its bounded reader.
 const FRAME_CAP_DEFAULT: usize = 20_000;
 
 /// How many frames one attachment keeps, `KHOR_CHAT_FRAME_CAP` if it is
@@ -373,14 +346,11 @@ fn frame_of(note: GuiNote) -> ChatFrame {
                 },
                 Err(reason) => CapturedContent::Unavailable { reason: match reason {
                     khor_node::gui_host::CaptureFailure::NotReady => CaptureUnavailable::NotReady,
-                    khor_node::gui_host::CaptureFailure::ReplayInFlight => CaptureUnavailable::ReplayInFlight,
                     khor_node::gui_host::CaptureFailure::Unavailable => CaptureUnavailable::Unavailable,
                 } },
             };
             ChatFrame::Captured { token: token.iter().map(|byte|format!("{byte:02x}")).collect(), result }
         },
-        GuiNote::History(s) => ChatFrame::History { update: parse(s) },
-        GuiNote::HistoryEnd => ChatFrame::HistoryEnd,
         GuiNote::Ask {
             ask,
             title,
@@ -439,7 +409,6 @@ fn frame_of(note: GuiNote) -> ChatFrame {
 }
 
 /// Claims one view lease, sharing the live resource or opening a new one.
-/// Only the caller that opens a new resource asks the host for replay.
 /// The registry lock is released before any network connection is attempted.
 pub fn chat_open(root: &Path, id: &str, lease: &str) -> Result<bool, String> {
     khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
@@ -528,8 +497,7 @@ fn open_chat_with(
             };
             let Ok(again) = conn.try_clone() else { break };
             *reader.stall.lock().unwrap() = None;
-            // The write half first, so the history a face asks for on
-            // seeing `lost` goes down the new attachment.
+            // Publish the new writer before `lost` wakes views to capture.
             if reader.conn.replace(conn).is_err() {
                 break;
             }
@@ -836,7 +804,6 @@ pub enum Control {
         value: serde_json::Value,
     },
     Stop,
-    Replay,
     Capture([u8; 16]),
 }
 
@@ -1004,7 +971,6 @@ pub fn submit_control(
             GuiOp::SetOption { id: option, value }
         }
         Control::Stop => GuiOp::Stop,
-        Control::Replay => GuiOp::Replay,
         Control::Capture(token) => GuiOp::Capture { token },
     };
     let chat = chat_of(root, id, lease)?;
@@ -1088,9 +1054,6 @@ pub fn chat_set_option(
 /// Ends the running turn, not the session; never waits for a whole turn's queue.
 pub fn chat_stop(root: &Path, id: &str, lease: &str) -> Result<(), String> {
     submit_control(root, id, lease, Control::Stop)?.wait()
-}
-pub fn chat_replay(root: &Path, id: &str, lease: &str) -> Result<(), String> {
-    submit_control(root, id, lease, Control::Replay)?.wait()
 }
 
 pub fn capture_token(token: &str) -> Result<[u8; 16], String> {
@@ -1748,63 +1711,22 @@ mod frame_cap_tests {
 }
 
 #[cfg(test)]
-mod old_host_tests {
+mod host_frame_tests {
     use super::*;
-    use serde::Serialize;
-
-    /// **The host's note as the binary before the redesign wrote it**
-    /// (`khor_node::gui_host::GuiNote` at ee144e3), spelled out here so
-    /// the wire stays held when the live enum moves. The owner's running
-    /// sessions are hosted by that binary (`khor-gui _host`), and the new
-    /// face attaches to them: every frame below is one such a host sends.
-    #[derive(Serialize)]
-    #[allow(dead_code)]
-    enum OldNote {
-        Note(String),
-        Ask {
-            ask: u64,
-            title: String,
-            options: Vec<(String, String)>,
-        },
-        Turn(String),
-        Gone,
-        History(String),
-        HistoryEnd,
-        Turning,
-        Answered {
-            ask: u64,
-            option: Option<String>,
-        },
-        Agent {
-            name: Option<String>,
-            replays: bool,
-            images: bool,
-            embeds: bool,
-            lists: bool,
-            needs_login: bool,
-        },
-        Refused {
-            why: String,
-        },
-        Settings(String),
-    }
 
     /// Through the real codec, as bytes: length-prefixed MessagePack.
-    fn over_the_wire(old: &OldNote) -> ChatFrame {
+    fn over_the_wire(frame: &GuiNote) -> ChatFrame {
         let mut bytes = Vec::new();
-        write_frame(&mut bytes, old).expect("encode");
+        write_frame(&mut bytes, frame).expect("encode");
         let note: GuiNote =
-            read_frame(&mut bytes.as_slice()).expect("the new reader takes the old frame");
+            read_frame(&mut bytes.as_slice()).expect("decode the current host frame");
         frame_of(note)
     }
 
-    /// **An old host's frames parse**: its settings carry no `model` (the
-    /// redesign added it), it sends no stored usage on attach, and its
-    /// handshake and settings frames are the old shapes. Each arrives as
-    /// the frame the face expects, with nothing invented.
+    /// Current host frames keep protocol facts and controls through the codec.
     #[test]
-    fn an_old_hosts_frames_parse() {
-        let agent = over_the_wire(&OldNote::Agent {
+    fn host_frames_keep_protocol_content() {
+        let agent = over_the_wire(&GuiNote::Agent {
             name: Some("claude".into()),
             replays: true,
             images: true,
@@ -1824,8 +1746,8 @@ mod old_host_tests {
             "{agent:?}"
         );
 
-        // The old `settings_json`: modes and options, nothing else.
-        let old_settings = serde_json::json!({
+        // Modes and options need no selected model in this protocol payload.
+        let settings = serde_json::json!({
             "modes": {
                 "currentModeId": "default",
                 "availableModes": [
@@ -1837,12 +1759,12 @@ mod old_host_tests {
             "options": []
         })
         .to_string();
-        match over_the_wire(&OldNote::Settings(old_settings)) {
+        match over_the_wire(&GuiNote::Settings(settings)) {
             ChatFrame::Settings { settings } => {
                 assert_eq!(settings["modes"]["currentModeId"], "default");
                 assert!(
                     settings.get("model").is_none(),
-                    "an old host names no model: {settings}"
+                    "no model is invented: {settings}"
                 );
             }
             other => panic!("not a settings frame: {other:?}"),
@@ -1854,27 +1776,19 @@ mod old_host_tests {
         })
         .to_string();
         assert!(matches!(
-            over_the_wire(&OldNote::Note(said.clone())),
+            over_the_wire(&GuiNote::Note(said)),
             ChatFrame::ContentChanged
         ));
         assert!(matches!(
-            over_the_wire(&OldNote::History(said)),
-            ChatFrame::History { .. }
-        ));
-        assert!(matches!(
-            over_the_wire(&OldNote::HistoryEnd),
-            ChatFrame::HistoryEnd
-        ));
-        assert!(matches!(
-            over_the_wire(&OldNote::Turning),
+            over_the_wire(&GuiNote::Turning),
             ChatFrame::Turning
         ));
         assert!(matches!(
-            over_the_wire(&OldNote::Turn("end_turn".into())),
+            over_the_wire(&GuiNote::Turn("end_turn".into())),
             ChatFrame::Turn { .. }
         ));
         assert!(matches!(
-            over_the_wire(&OldNote::Ask {
+            over_the_wire(&GuiNote::Ask {
                 ask: 1,
                 title: "Run".into(),
                 options: vec![("y".into(), "Yes".into())]
@@ -1882,19 +1796,19 @@ mod old_host_tests {
             ChatFrame::Ask { ask: 1, .. }
         ));
         assert!(matches!(
-            over_the_wire(&OldNote::Answered {
+            over_the_wire(&GuiNote::Answered {
                 ask: 1,
                 option: Some("y".into())
             }),
             ChatFrame::Answered { ask: 1, .. }
         ));
         assert!(matches!(
-            over_the_wire(&OldNote::Refused {
+            over_the_wire(&GuiNote::Refused {
                 why: "no-turn".into()
             }),
             ChatFrame::Refused { .. }
         ));
-        assert!(matches!(over_the_wire(&OldNote::Gone), ChatFrame::Gone));
+        assert!(matches!(over_the_wire(&GuiNote::Gone), ChatFrame::Gone));
     }
 }
 

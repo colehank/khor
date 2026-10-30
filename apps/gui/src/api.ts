@@ -1432,7 +1432,6 @@ export const chatPutPaths = (id: string, lease: string, paths: string[], into: s
   call<string[]>("chat_put_paths", { id, lease, paths, into });
 export const chatAnswer = (id: string, lease: string, ask: number, option: string | null) =>
   call<null>("chat_answer", { id, lease, ask, option });
-export const chatReplay = (id: string, lease: string) => call<null>("chat_replay", { id, lease });
 export const chatCapture = (id: string, lease: string, token: string) => call<null>("chat_capture", { id, lease, token });
 export const chatLeave = (id: string, lease: string) => call<null>("chat_leave", { id, lease });
 export const fetchSessionContent = (id: string, locator: string) =>
@@ -2120,7 +2119,6 @@ export function chatAttachment(id: string) {
       owner.run(lease => chatControl(id, lease, token, operation, payload)),
     setMode: (mode: string) => owner.run(lease => chatSetMode(id, lease, mode)),
     setOption: (option: string, value: string | boolean) => owner.run(lease => chatSetOption(id, lease, option, value)),
-    replay: () => owner.run(lease => chatReplay(id, lease)),
     capture: (token: string) => owner.run(lease => chatCapture(id, lease, token)),
     stop: () => owner.run(lease => chatStop(id, lease)),
     put: (file: File, into: string | null) => owner.run(lease => chatPut(id, lease, file, into)),
