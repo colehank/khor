@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {recoveryActionCases, exerciseRecoveryActions} from './recovery-actions-ui.mjs';
 
 // User-visible capabilities retained from the retired History/HistoryEnd suite.
 export const chatRecoveryCases = [
@@ -11,7 +12,7 @@ export const chatRecoveryCases = [
 // Transport facts only: real ChatView, Capture, source, reader and paint execute.
 export function installRecoveryTransport() {
   const empty = {frames: [], next: 0, gone: false, lost: false, sending: 0, sending_of: 0, stall: null};
-  const entry = (binding, index, text) => ({key: `${binding}:${index}:0`, frame: {kind: 'note', update: {update: {
+  const entry = (binding, index, text) => ({key: `${binding}:${index}:0`, starts_message:false, record:null, frame: {kind: 'note', update: {update: {
     sessionUpdate: 'agent_message_chunk', content: {type: 'text', text},
   }}}});
   const sources = new Map([['canonical-1', ['Complete known history.']]]);
@@ -92,7 +93,7 @@ export function installRecoveryTransport() {
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {unregisterListener: () => {}};
 }
 
-export async function exerciseChatRecovery(scenario, page, polls) {
+export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const until = async (check, what) => {
     const end = Date.now() + 8000;
@@ -138,7 +139,9 @@ export async function exerciseChatRecovery(scenario, page, polls) {
   const control = error => ({kind: 'control_result', token: 'fixture-control', operation: 'set_mode', data: null, error});
 
   await capture();await check(['Complete known history.']);
-  if (scenario === 'failed-empty' || scenario === 'failed-partial' || scenario === 'empty-error') {
+  if (recoveryActionCases.includes(scenario)) {
+    await exerciseRecoveryActions(scenario,page,{calls,capture,check,preparePeer});
+  } else if (scenario === 'failed-empty' || scenario === 'failed-partial' || scenario === 'empty-error') {
     if (scenario !== 'failed-empty') await page.evaluate(() => window.__chatWire.append('Uncommitted fragment.'));
     const before = (await calls('history_page')).length;
     await page.evaluate(scenario => {window.__chatWire.failNext = scenario === 'empty-error' ? '' : 'fixture read failure';}, scenario);
@@ -202,10 +205,16 @@ export async function exerciseChatRecovery(scenario, page, polls) {
 
   assert.equal((await calls('chat_replay')).length, 0, 'no retired Replay API is invoked');
   assert.deepEqual(await page.evaluate(() => window.__chatWire.unknown), []);
+  const leaveBefore=await page.evaluate(()=>({chat:window.__chatWire.calls.filter(c=>c.cmd==='chat_leave').length,terminal:window.__recoveryWire.calls.filter(c=>c.cmd==='term_leave').length,hasTerminal:!!document.querySelector('[data-kept-terminal][data-active] [data-terminal]')}));
   await page.evaluate(() => window.__chatReact.close());
   await until(async () => (await calls('chat_leave')).length >= 1, 'actual component leaves its view');
+  await until(()=>page.evaluate(before=>before.hasTerminal?window.__recoveryWire.calls.filter(c=>c.cmd==='term_leave').length>before.terminal:window.__chatWire.calls.filter(c=>c.cmd==='chat_leave').length>before.chat,leaveBefore),'current production view leaves its own admitted resource');
+  await page.evaluate(()=>{const wire=window.__recoveryWire;for(let i=0;i<wire.offers.length;i++)if(!wire.offers[i].done)wire.releaseOffer(i,wire.offers[i].answer);});
+  const actionsBefore=await page.evaluate(()=>window.__recoveryWire.calls.filter(c=>c.cmd==='recover_session'||c.cmd==='new_shell_run').length);
   const before = (await polls()).length;
   await page.clock.runFor(60000);await wait(20);
+  assert.equal(await page.evaluate(()=>window.__recoveryWire.calls.filter(c=>c.cmd==='recover_session'||c.cmd==='new_shell_run').length),actionsBefore,'late read-only offers cannot revive execution after unmount');
+  assert(await page.evaluate(()=>window.__recoveryWire.actions.every(io=>io.done)&&window.__recoveryWire.drops.every(io=>io.done)&&window.__recoveryWire.waits.every(io=>io.done)),'all controlled action/transfer/wait IO ended in its actual reply or leave');
   assert.equal((await polls()).length, before, 'retired component does not resume polling');
   assert.deepEqual(await page.evaluate(() => window.__chatWire.leases()), [], 'all actual fixture read owners ended');
 }
