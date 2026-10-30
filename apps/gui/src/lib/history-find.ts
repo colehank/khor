@@ -80,7 +80,7 @@ export function historyFind(source: Source, query: FindQuery, changed: (state: H
       const controller = new AbortController();
       if (pending) { fail('history search requested concurrent IO'); return; }
       pending = controller;
-      const work = answer.kind === 'read_page' ? source.page(answer.before, false, controller.signal) : answer.kind === 'read'
+      const work = answer.kind === 'read_page' ? source.page(answer.before, answer.newer ?? false, controller.signal) : answer.kind === 'read'
         ? source.record(answer.cursor, answer.from, controller.signal)
         : source.project(answer.cursor, answer.start, answer.end, answer.scaffold, controller.signal);
       void work.then(result => {

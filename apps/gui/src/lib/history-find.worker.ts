@@ -29,7 +29,7 @@ const request = (ask: Omit<Extract<FindWorkerOutput, { kind: 'read' }>, 'id'>
 });
 type IO = Pick<ReturnType<typeof historySource>, 'record' | 'project' | 'page'>;
 const io: IO = {
-  page: async before => await request({ kind: 'read_page', before: before! }) as Awaited<ReturnType<IO['page']>>,
+  page: async (before, newer = false) => await request({ kind: 'read_page', before: before!, newer }) as Awaited<ReturnType<IO['page']>>,
   record: async (cursor, from) => await request({ kind: 'read', cursor, from }) as Awaited<ReturnType<IO['record']>>,
   project: async (cursor, start, end, scaffold) => await request({ kind: 'project', cursor, start, end, scaffold }) as Awaited<ReturnType<IO['project']>>,
 };

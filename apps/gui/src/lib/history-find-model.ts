@@ -30,7 +30,7 @@ export type FindWorkerInput =
   | { kind: 'io'; id: number; result?: unknown; error?: string }
   | { kind: 'action'; id: number; action: import('./history-find-action').HistoryFindAction; hit: FindHit };
 export type FindWorkerOutput =
-  | { kind: 'read_page'; id: number; before: string }
+  | { kind: 'read_page'; id: number; before: string; newer?: boolean }
   | { kind: 'action_result'; id: number; answer: import('./history-find-action').HistoryActionAnswer }
   | { kind: 'action_error'; id: number; code: 'too_large' | 'incomplete' | 'source_changed' | 'read_failed'; error?: string }
   | { kind: 'read'; id: number; cursor: string; from: number }
