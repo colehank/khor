@@ -1853,9 +1853,8 @@ async fn open_page(
             // navigation for its URL takes the process down with it.
             let now = wired.as_ref().map(|(_, at)| at.as_str());
             if now != Some(target.as_str()) {
-                request_page_navigation(window.app_handle(), &tab, going_to.clone());
                 page_went(&label, target.as_str());
-                live.navigate(target).map_err(|e| e.to_string())?;
+                navigate_page(&live, &tab, target).await?;
             }
             live.set_position(LogicalPosition::new(at.x, top))
                 .map_err(|e| e.to_string())?;
@@ -2496,7 +2495,7 @@ fn tell_page_navigation(app: &tauri::AppHandle, change: Option<page_navigation::
     }
 }
 
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_os = "macos")))]
 fn request_page_navigation(app: &tauri::AppHandle, tab: &str, target: String) {
     let change = page_navigation::with_pages(|pages| {
         let key = pages.key_for_tab(tab)?;
@@ -2504,6 +2503,66 @@ fn request_page_navigation(app: &tauri::AppHandle, tab: &str, target: String) {
     })
     .flatten();
     tell_page_navigation(app, change);
+}
+
+#[cfg(desktop)]
+async fn navigate_page(view: &tauri::Webview, tab: &str, target: tauri::Url) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = tab;
+        page_fail::navigate(view, target.to_string()).await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        use tauri::Manager;
+        request_page_navigation(view.app_handle(), tab, target.to_string());
+        view.navigate(target).map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(desktop)]
+fn control_page_navigation(view: &tauri::Webview, tab: &str, way: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = tab;
+        page_fail::step(view, way)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        use tauri::Manager;
+        let app = view.app_handle();
+        match way {
+            "back" => view
+                .eval("history.back()")
+                .map_err(|error| error.to_string()),
+            "forward" => view
+                .eval("history.forward()")
+                .map_err(|error| error.to_string()),
+            "reload" => {
+                let target = page_exits().lock().ok().and_then(|pages| {
+                    pages
+                        .get(&page_label(tab))
+                        .map(|(_, target)| target.clone())
+                });
+                if let Some(target) = target {
+                    request_page_navigation(app, tab, target);
+                }
+                view.reload().map_err(|error| error.to_string())
+            }
+            "stop" => {
+                view.eval("window.stop()")
+                    .map_err(|error| error.to_string())?;
+                let change = page_navigation::with_pages(|pages| {
+                    let key = pages.key_for_tab(tab)?;
+                    pages.cancelled(key)
+                })
+                .flatten();
+                tell_page_navigation(app, change);
+                Ok(())
+            }
+            other => Err(format!("no such native navigation control: {other}")),
+        }
+    }
 }
 
 /// The current lifecycle snapshot belongs to the native page owner.
@@ -2575,65 +2634,33 @@ fn tell_page_steps(view: &tauri::Webview, tab: &str) {
 /// queried natively by page_steps; the existing step verbs stay unchanged.
 #[cfg(desktop)]
 #[tauri::command]
-fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
+async fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
     use tauri::Manager;
     let Some(view) = app.get_webview(&page_label(&tab)) else {
         return Ok(());
     };
     match way.as_str() {
-        "back" => view.eval("history.back()").map_err(|e| e.to_string()),
-        "forward" => view.eval("history.forward()").map_err(|e| e.to_string()),
-        "reload" => {
-            let target = page_exits().lock().ok().and_then(|pages| {
-                pages
-                    .get(&page_label(&tab))
-                    .map(|(_, target)| target.clone())
-            });
-            if let Some(target) = target {
-                request_page_navigation(&app, &tab, target);
-            }
-            view.reload().map_err(|e| e.to_string())
-        }
-        // The pill's × while a page loads (UX-33): the page's own stop
-        // (wry has no verb for it; the load ends as a cancelled one).
-        "stop" => {
-            view.eval("window.stop()").map_err(|e| e.to_string())?;
-            let change = page_navigation::with_pages(|pages| {
-                let key = pages.key_for_tab(&tab)?;
-                pages.cancelled(key)
-            })
-            .flatten();
-            tell_page_navigation(&app, change);
-            Ok(())
-        }
+        "back" | "forward" | "reload" | "stop" => control_page_navigation(&view, &tab, &way),
         // 重试 (UX-22): where the last load failed to go, again — a
         // reload would load the page still there. A Mac that heard no
         // failure, or a platform that hears none, reloads.
         "retry" => {
             #[cfg(target_os = "macos")]
-            if let Some(url) =
-                page_fail::take_failed(&tab).and_then(|u| u.parse::<tauri::Url>().ok())
-            {
-                request_page_navigation(&app, &tab, url.to_string());
-                return view.navigate(url).map_err(|e| e.to_string());
+            let target = page_fail::take_failed(&tab);
+            #[cfg(not(target_os = "macos"))]
+            let target = page_navigation::retry_target(&tab);
+            if let Some(url) = target.and_then(|url| url.parse::<tauri::Url>().ok()) {
+                navigate_page(&view, &tab, url).await
+            } else {
+                control_page_navigation(&view, &tab, "reload")
             }
-            let target = page_exits().lock().ok().and_then(|pages| {
-                pages
-                    .get(&page_label(&tab))
-                    .map(|(_, target)| target.clone())
-            });
-            if let Some(target) = target {
-                request_page_navigation(&app, &tab, target);
-            }
-            view.reload().map_err(|e| e.to_string())
         }
         // 「仍然访问」 (UX-42 §14): the certificate the failed load was
         // shown, passed for its host for this run, and the address again.
         "pass" => {
             #[cfg(target_os = "macos")]
             if let Some(url) = page_trust::pass(&tab).and_then(|u| u.parse::<tauri::Url>().ok()) {
-                request_page_navigation(&app, &tab, url.to_string());
-                return view.navigate(url).map_err(|e| e.to_string());
+                return navigate_page(&view, &tab, url).await;
             }
             Ok(())
         }
@@ -3405,9 +3432,10 @@ fn page_ground(tab: String, y: f64) -> Result<(), String> {
 
 #[cfg(not(desktop))]
 #[tauri::command]
-fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
+async fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
     #[cfg(target_os = "ios")]
-    let _ = app.run_on_main_thread(move || phone_page::step(&tab, &way));
+    app.run_on_main_thread(move || phone_page::step(&tab, &way))
+        .map_err(|error| error.to_string())?;
     #[cfg(not(target_os = "ios"))]
     let _ = (app, tab, way);
     Ok(())
