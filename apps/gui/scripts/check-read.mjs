@@ -640,6 +640,10 @@ try {
     page.on("pageerror", (e) => errs.push(String(e)));
     const json = (b) => (r) =>
       r.fulfill({ contentType: "application/json", body: JSON.stringify(b) });
+    // The current lock reader fails closed: this isolated scenario explicitly
+    // says its private fixture has no PIN/lock, rather than relying on a failed read.
+    await page.route("**/lock_state", json({on: false, has_pin: false, timeout_min: 0,
+      timeouts: [0, 1, 5, 15, 60], pin_min: 6, system_door: false}));
     await page.route("**/sessions", json(ROWS));
     await page.route(
       "**/devices",
