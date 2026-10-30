@@ -8,7 +8,7 @@ export type AcpTool = {
 };
 export type AcpCompaction = {who:"compaction";id:string;status:string;summary:string;error:string|null};
 export type AcpResource = {who:"resource";kind:string;name:string;uri?:string;data?:string;mime?:string};
-export type AcpItem = AcpCompaction | AcpResource | { who: "user" | "agent" | "thought"; text: string } | (AcpTool & { who: "tool" });
+export type AcpItem = AcpCompaction | AcpResource | { who: "user" | "agent" | "thought"; text: string; messageId?: string } | (AcpTool & { who: "tool" });
 
 // Count the JSON data's actual two-space display before materializing it.
 // Transport values are plain JSON; non-JSON/cyclic input cannot claim a
@@ -78,6 +78,7 @@ export function toolInputText(raw: unknown, maxBytes = Infinity): {
   return { text: JSON.stringify(raw, null, 2), command: false, complete: true };
 }
 export type AcpUpdate = {
+  messageId?: string;
   compactionId?:string;summary?:{type?:string;text?:string}[]|null;error?:string|null;
   sessionUpdate?: string; toolCallId?: string; title?: string | null; kind?: string; status?: string;
   rawInput?: unknown; rawOutput?: unknown; locations?: { path?: string; line?: number }[];
@@ -123,8 +124,11 @@ export function applyAcpUpdate<T extends { who: string }>(out: (AcpItem | T)[], 
       return true;
     }
     const last = out[out.length - 1];
-    if (last?.who === who && "text" in last && typeof last.text === "string") out[out.length - 1] = { ...last, text: last.text + text };
-    else out.push({ who, text });
+    const messageId = typeof u.messageId === "string" ? u.messageId : undefined;
+    const priorId = last && "messageId" in last ? last.messageId : undefined;
+    if (last?.who === who && "text" in last && typeof last.text === "string" && priorId === messageId)
+      out[out.length - 1] = { ...last, text: last.text + text };
+    else out.push({ who, text, ...(messageId === undefined ? {} : { messageId }) });
     return true;
   }
   if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return false;

@@ -3,12 +3,12 @@ import { build } from 'esbuild';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
+const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint', 'acp-view'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
 const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
-const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory } = module.exports;
+const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp } = module.exports;
 const note = (sessionUpdate, extra = {}) => ({ kind: 'note', update: { update: { sessionUpdate, ...extra } } });
-const entry = (key, text = key) => ({ key, frame: note('agent_message_chunk', { content: { type: 'text', text } }) });
+const entry = (key, text = key) => ({ key, starts_message: true, frame: note('agent_message_chunk', { content: { type: 'text', text } }) });
 const page = (key, { count = 1, bytes = 100, older = `before:${key}`, newer = `after:${key}`, more = false, reset = false, refs = [] } = {}) => ({ entries: Array.from({ length: count }, (_, i) => entry(`${key}:${i}`)), older, newer, has_more: more, reset, references: refs, encoded_bytes: bytes });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -265,6 +265,28 @@ test('switching raw reference then failing cannot reuse the previous offset', as
   assert.equal(state.selected.cursor, 'failed');
   assert.equal(state.next, null);
   assert.equal(state.busy, false);
+});
+test('canonical ACP chunks share message text while complete records retain boundaries', () => {
+  const chunk = (key, text, who = 'agent_message_chunk') => ({...entry(key, text), starts_message: false,
+    frame: note(who, {content: {type: 'text', text}})});
+  for (const who of ['agent_message_chunk', 'agent_thought_chunk']) {
+    const first = chunk('10:0', 'hel', who), second = chunk('20:0', 'lo', who);
+    const painted = paintHistory([first, second]);
+    assert.equal(painted.length, 1, 'CANONICAL_CHUNK_GROUPING: two legitimate chunks are one message');
+    assert.equal(painted[0].text, 'hello');
+    assert.equal(painted[0].historyKey, paintHistory([first])[0].historyKey, 'append retains disclosure identity');
+    assert.deepEqual(painted[0].historyEntries, ['10:0', '20:0'], 'both source records remain represented');
+    assert.deepEqual(paintHistory([first, {...second, starts_message: true}]).map(item => item.text), ['hel', 'lo']);
+    assert.deepEqual(paintHistory([first, {key:'15:0', starts_message:true, frame:{kind:'turn',stop:'EndTurn'}}, second]).map(item => item.text), ['hel', 'lo']);
+  }
+  assert.equal(paintHistory([chunk('10:0','hel'), chunk('30:0', 'hel')])[0].text, 'helhel', 'equal legitimate chunks are never deduplicated');
+});
+test('shared ACP projection respects optional message IDs without requiring them', () => {
+  const update = (text, messageId) => ({sessionUpdate:'agent_message_chunk', content:{type:'text',text}, ...(messageId ? {messageId} : {})});
+  const read = values => projectAcp(values.map(JSON.stringify)).items;
+  assert.deepEqual(read([update('hel'),update('lo')]).map(item => item.text), ['hello']);
+  assert.deepEqual(read([update('hel','one'),update('lo','one')]).map(item => item.text), ['hello']);
+  assert.deepEqual(read([update('hel','one'),update('lo','two')]).map(item => item.text), ['hel','lo']);
 });
 test('prepend preserves paragraph keys and does not concatenate records', () => {
   const recent = [entry('20:0', 'second'), entry('30:0', 'third')], before = paintHistory(recent), after = paintHistory([entry('10:0', 'first'), ...recent]);
