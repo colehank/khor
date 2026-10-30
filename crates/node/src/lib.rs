@@ -4785,6 +4785,15 @@ impl Node {
         {
             return Err(msg::takeover_writer_busy(session));
         }
+        // clean_leaf is a row spelling, not the provider's full identity. A
+        // conflicting bound conversation must fail before even the ghost is
+        // spawned. The ghost rechecks this at publication; pre-provider
+        // exclusive JournalReservation is the following recovery slice.
+        self.live.check_gui_source(&session_content::journal::Identity {
+            home: self.device(),
+            agent: agent.to_owned(),
+            native_id: session.to_owned(),
+        })?;
         gui_host::spawn_gui_host_reopen(self.root(), Some(cwd), title, cmd, Some(agent), session)
     }
 
@@ -5230,13 +5239,17 @@ impl Node {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
+        // Retire the ended GUI execution explicitly before a PTY host may
+        // publish its PID. set_pid cannot implicitly clear a GUI generation.
+        // A failed spawn remains a dead row, with its old history preserved.
+        self.live.reseat(id, khor_core::kind::TUI, &title, None)?;
         host::spawn_host_at(&cwd, &dir, id, &resume, (80, 24))?;
         // **A form khor holds is on the list, whatever it was before**
         // (docs/SHELL.md 第八轮): a conversation khor opened was never in
         // the roster — it did not need to be — and turning it into a
         // terminal makes it a `tui` row, which does.
         self.roster_new(id)?;
-        self.live.reseat(id, khor_core::kind::TUI, &title, None)
+        Ok(())
     }
 
     /// Stands a host up for a discovered tmux session so a terminal can

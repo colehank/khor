@@ -869,6 +869,30 @@ fn gui_host_main_with_timeouts(
         })?;
 
     let result = (|| -> Result<(), String> {
+        // Keep the full provider identity; the row's clean_leaf is only a
+        // retained spelling, never authority to replace another conversation.
+        let id = crate::adaptor::id_for(&handle.session().0);
+        let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let vendor = std::env::var(VENDOR_ENV).ok();
+        let registered_agent = vendor.clone().or_else(|| {
+            std::fs::read(dir.join("meta.json")).ok()
+                .and_then(|bytes| serde_json::from_slice::<crate::live::Meta>(&bytes).ok())
+                .and_then(|meta| meta.gui_native.map(|native| native.agent).or(meta.category))
+        }).unwrap_or_else(|| {
+            let launch = serde_json::to_vec(&cmd).expect("launcher identity serializes");
+            format!("launcher:{}", blake3::hash(&launch).to_hex())
+        });
+        let identity = JournalIdentity {
+            home: khor_core::DeviceId(*key.public().as_bytes()),
+            agent: registered_agent,
+            native_id: handle.session().0.to_string(),
+        };
+        // This first slice fences row reports and rejects a full-native
+        // collision before Meta or binding publication. Pre-provider admission
+        // and canonical/run transaction handoff follow in the next slice.
+        let run = live.begin_gui_run(
+            &id, &title, std::process::id(), &identity, vendor.as_deref(), resume.is_some(),
+        )?;
         let context = context_path(&root, handle.session().0.as_ref());
         if !retained_environment.mcp_servers.is_empty()
             || !retained_environment.additional_directories.is_empty()
@@ -886,55 +910,17 @@ fn gui_host_main_with_timeouts(
                 &serde_json::to_vec(&retained_environment).map_err(|e| e.to_string())?,
             )?;
         }
-        // The vendor's uuid is the id — the whole merge story hangs on this
-        // line (module head).
-        let id = crate::adaptor::id_for(&handle.session().0);
-        if resume.is_some() {
-            // The takeover re-seats a row that already exists (and clears
-            // the ending the takeover itself just caused).
-            live.reopen(&id, khor_core::kind::GUI, &title, std::process::id())?;
-        } else {
-            // The vendor the opener declared, if it did: the wizard's own
-            // 智能体 field is the user saying whose session this is, which
-            // is not the guess the argv ruling forbids.
-            let vendor = std::env::var(VENDOR_ENV).ok();
-            live.register(
-                &id,
-                khor_core::kind::GUI,
-                &title,
-                Some(std::process::id()),
-                vendor.as_deref(),
-            )?;
-            // **This process was started standing in it** — the opener
-            // spawned the ghost with `current_dir`, so the answer is right
-            // here and needs no argument passed down
-            // (`khor_core::Session::place`).
+        if resume.is_none() {
             if let Some(cwd) = crate::cwd::standing() {
                 live.learn_place(&id, &cwd)?;
             }
-            // Register wrote the spawn's 忙碌; a fresh GUI session is a
-            // prompt nobody has typed into yet.
-            live.report(&id, State::Idle, Source::Reported)?;
         }
-        let dir = live
-            .dir_of(&id)
-            .ok_or_else(|| msg::not_a_session_id(&id.0))?;
-        let registered_agent = std::env::var(VENDOR_ENV).ok().or_else(|| {
-            std::fs::read(dir.join("meta.json")).ok()
-                .and_then(|bytes|serde_json::from_slice::<crate::live::Meta>(&bytes).ok())
-                .and_then(|meta|meta.category)
-        }).unwrap_or_else(|| {
-            let launch=serde_json::to_vec(&cmd).expect("launcher identity serializes");
-            format!("launcher:{}",blake3::hash(&launch).to_hex())
-        });
         let opening=match handle.opened_by() {
             khor_acp::OpenedBy::New=>JournalOpening::New,
             khor_acp::OpenedBy::Load=>JournalOpening::Load,
             khor_acp::OpenedBy::Resume=>JournalOpening::Resume,
         };
-        let mut journal=Journal::open(&root,JournalIdentity {
-            home:khor_core::DeviceId(*key.public().as_bytes()), agent:registered_agent, native_id:handle.session().0.to_string(),
-        },opening)?;
+        let mut journal=Journal::open(&root, identity, opening)?;
         journal.bind(&dir)?;
 
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
@@ -1127,11 +1113,11 @@ let turn = Some(result);
                                 "Cancelled" => State::Idle,
                                 _ => State::Errored,
                             };
-                            let _ = live.report(&id, word, Source::Reported);
+                            let _ = live.report_run(&run, word, Source::Reported);
                             fanout.send(&GuiNote::Turn(stop));
                         }
                         Some(Err(e)) => {
-                            let _ = live.report(&id, State::Errored, Source::Reported);
+                            let _ = live.report_run(&run, State::Errored, Source::Reported);
                             fanout.send(&GuiNote::Turn(e));
                         }
                         None => {}
@@ -1274,7 +1260,7 @@ match event {
                         let note = GuiNote::Ask { ask: n, title, options };
                         fanout.send(&note);
                         asks.push((n, ask, note));
-                        let _ = live.report(&id, State::Blocked, Source::Reported);
+                        let _ = live.report_run(&run, State::Blocked, Source::Reported);
                     }
                     Some(khor_acp::Event::Elicit(request))=>{
                         let encoded=serde_json::to_value(&request.request).unwrap_or_default();
@@ -1282,13 +1268,13 @@ match event {
                         let ask=next_ask;next_ask+=1;
                         let note=GuiNote::Elicit{ask,request:encoded.to_string()};
                         fanout.send(&note);elicits.push((ask,request,note));
-                        let _=live.report(&id,State::Blocked,Source::Reported);
+                        let _=live.report_run(&run,State::Blocked,Source::Reported);
                     }
                     Some(khor_acp::Event::ElicitDone(elicitation_id))=>{
                         if let Some(at)=elicits.iter().position(|(_,q,_)|serde_json::to_value(&q.request).is_ok_and(|v|v["mode"]=="url"&&v["elicitationId"]==elicitation_id)){
                             let(ask,q,_)=elicits.remove(at);let value=serde_json::json!({"action":"accept"});if let Ok(response)=q.validate(&value){let _=q.answer(response);}
                             fanout.send(&GuiNote::ElicitAnswered{ask,response:value.to_string()});
-                            let _=live.report(&id,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                            let _=live.report_run(&run,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
                         }
                     }
                     Some(khor_acp::Event::Ready { session }) => {
@@ -1338,7 +1324,7 @@ match event {
                             let action=serde_json::to_value(&answer).unwrap_or_default()["action"].clone();
                             let accepted=request.answer(answer).is_ok();
                             fanout.send(&GuiNote::ElicitAnswered{ask,response:serde_json::json!({"action":if accepted{action}else{serde_json::json!("cancel")}}).to_string()});
-                            let _=live.report(&id,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                            let _=live.report_run(&run,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
                         }else{fanout.send_to(who,&GuiNote::Refused{why:refused::SETTING_REFUSED.into()});}
                     }
                     Some((who,GuiOp::Control{token,operation,payload}))=>{
@@ -1372,7 +1358,7 @@ match event {
                                 journal_turn=Some(turn);
                                 delegated = Some(execution);
                                 cancellation_sent = None;
-                                let _ = live.report(&id, State::Busy, Source::Reported);
+                                let _ = live.report_run(&run, State::Busy, Source::Reported);
                                 let handle = handle.clone();
                                 let tx = completion_tx.clone();
                                 let generation = active_operation.clone().unwrap(); let control = process_control.clone();
@@ -1416,7 +1402,7 @@ match event {
                         let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
                         if let Err(why)=journal.accept(&turn,&text,&images,&files,token.as_deref()) { break Some(why); }
                         journal_turn=Some(turn);
-                        let _ = live.report(&id, State::Busy, Source::Reported);
+                        let _ = live.report_run(&run, State::Busy, Source::Reported);
                         let handle = handle.clone();
                         let tx = completion_tx.clone();
                         let generation = active_operation.clone().unwrap(); let control = process_control.clone();
@@ -1451,7 +1437,7 @@ match event {
                         if asks.is_empty() {
                             // 待批答才清 — and it clears to 忙碌: the
                             // turn the ask interrupted is still running.
-                            let _ = live.report(&id, State::Busy, Source::Reported);
+                            let _ = live.report_run(&run, State::Busy, Source::Reported);
                         }
                     }
                     Some((who, GuiOp::Stop)) => {
@@ -1468,7 +1454,7 @@ match event {
                             }
                             for(ask,_,_)in asks.drain(..){fanout.send(&GuiNote::Answered{ask,option:None});}
                         } else if stopped_upload {
-                            let _ = live.report(&id, State::Idle, Source::Reported);
+                            let _ = live.report_run(&run, State::Idle, Source::Reported);
                             fanout.send_to(who, &GuiNote::Turn("Cancelled".into()));
                         } else {
                             // Nothing to stop. A face that got here is
@@ -1614,7 +1600,7 @@ match event {
 
         // 0 for an ending nobody minded, 1 for a torn connection: the exit
         // code is how `record_exit` tells 完成-shaped endings from 失败.
-        let _ = live.record_exit(&id, if ending.is_none() { 0 } else { 1 });
+        let _ = live.record_exit_run(&run, if ending.is_none() { 0 } else { 1 });
         Ok(())
     })();
     process_lifecycle.request_shutdown();

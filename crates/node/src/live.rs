@@ -6,10 +6,10 @@
 //! device can derive these rows, so they travel as peer reports.
 //!
 //! Registry: one dir per session under `.khor/sessions/<kind>-<leaf>`,
-//! holding `meta.json` (what it is) and `state.json` (how it is). Hooks
-//! and the wrapper are separate processes writing the same files, so
-//! every write is a whole file via tmp+rename: a race costs a moment of
-//! staleness, never a torn read.
+//! holding `meta.json` and the legacy `state.json`. A generation-owned
+//! GUI keeps its sole live state inside its Meta snapshot; old files stay
+//! readable for rows without that owner. Short row locks serialize writers,
+//! while GUI readers need only one atomic whole-file snapshot, never a lock.
 //!
 //! Word discipline (docs/SESSION.md 六词映射): processes report only the
 //! live words — busy, blocked, done, errored, idle. `failed` is never
@@ -17,6 +17,8 @@
 //! recorded), so no hook can paint a live process as failed.
 
 use std::fs;
+use std::io::Read;
+use std::time::{Duration, Instant};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -36,6 +38,12 @@ pub struct Meta {
     pub title: String,
     pub pid: Option<u32>,
     pub started_ms: i64,
+    /// Exact source and execution identity for a Khor-owned GUI host. Legacy
+    /// rows remain readable; a later GUI opening establishes these facts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) gui_native: Option<crate::session_content::journal::Identity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) gui_run: Option<GuiRun>,
     /// Whose session this is (`khor_core::Session::category`), when
     /// anyone can say. A registry entry written before this field existed
     /// reads as `None`, which is the same thing it means for a fresh one:
@@ -73,6 +81,33 @@ pub struct Meta {
     /// nobody could place — the same thing it means for a fresh one.
     #[serde(default)]
     pub place: Option<String>,
+}
+
+/// A GUI execution, distinct from both the retained row and provider conversation.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GuiRun {
+    id: String,
+    started_ms: i64,
+    /// The single live state owner for this GUI generation. Legacy state.json
+    /// remains untouched; no GUI reader consults that older projection.
+    state: LiveState,
+}
+
+/// Only the host that received this key may report for that GUI execution.
+pub(crate) struct RunKey {
+    session: SessionId,
+    directory: PathBuf,
+    run_id: String,
+    native: crate::session_content::journal::Identity,
+}
+impl std::fmt::Debug for RunKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunKey")
+            .field("session", &self.session)
+            .field("run", &self.run_id)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A recorded working directory as the row carries it: **the directory
@@ -208,6 +243,8 @@ impl Source {
 /// How it is, as last written by its process (wrapper or hooks).
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct LiveState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) gui_run: Option<String>,
     pub word: State,
     pub at_ms: i64,
     pub exit: Option<i32>,
@@ -380,27 +417,27 @@ impl LiveKind {
         category: Option<&str>,
     ) -> Result<(), String> {
         let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
+        let gate = RowGate::try_acquire(&dir)?;
         if dir.join("meta.json").exists() {
             return Err(msg::session_already_exists(&id.0));
         }
-        fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
         let meta = Meta {
             kind: kind.to_owned(),
             title: title.to_owned(),
             pid,
             started_ms: now_ms(),
+            gui_native: None,
+            gui_run: None,
             category: category.map(str::to_owned),
             id: id.0.clone(),
             vendor_leaf: None,
             place: None,
         };
-        write_whole(
-            &dir.join("meta.json"),
-            &serde_json::to_vec(&meta).map_err(|e| e.to_string())?,
-        )?;
+        gate.write_meta(&meta)?;
         // Whoever registers a session is starting it, so this opening
         // 忙碌 is a fact about a spawn and not a reading of anything.
-        self.write_state(&dir, State::Busy, None, Source::Reported)
+        gate.write_state(State::Busy, None, Source::Reported, None)
     }
 
     /// Registers if absent; either way the session exists afterwards.
@@ -434,6 +471,216 @@ impl LiveKind {
         self.reseat(id, kind, title, Some(pid))
     }
 
+    /// A source check, not an execution reservation. Known-native callers use
+    /// it before spawning their ghost; begin_gui_run checks again at publish.
+    pub(crate) fn check_gui_source(
+        &self,
+        native: &crate::session_content::journal::Identity,
+    ) -> Result<(), String> {
+        let id = crate::adaptor::id_for(&native.native_id);
+        if native.home != self.device
+            || native.agent.is_empty()
+            || native.native_id.is_empty()
+            || serde_json::to_vec(native).map_err(|e| e.to_string())?.len() > 4096
+        {
+            return Err("GUI source needs its exact home, agent and native identity".into());
+        }
+        let dir = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        if !dir.exists() {
+            return Ok(());
+        }
+        let legacy = self.legacy_gui_source(&id)?;
+        let gate = RowGate::try_acquire(&dir)?;
+        let previous = gate.read_meta_or_new()?;
+        gate.check_native(&id, previous.as_ref(), native, legacy.as_ref())?;
+        if previous
+            .as_ref()
+            .and_then(|meta| meta.pid)
+            .is_some_and(crate::link::pid_running)
+        {
+            return Err("GUI row still has a live execution".into());
+        }
+        Ok(())
+    }
+
+    /// Publish one GUI execution without changing its logical SID or full
+    /// provider identity. The later reservation slice moves upstream admission
+    /// before provider spawn; this row transaction only owns publication.
+    pub(crate) fn begin_gui_run(
+        &self,
+        id: &SessionId,
+        title: &str,
+        pid: u32,
+        native: &crate::session_content::journal::Identity,
+        category: Option<&str>,
+        resume: bool,
+    ) -> Result<RunKey, String> {
+        if native.home != self.device
+            || crate::adaptor::id_for(&native.native_id) != *id
+            || native.agent.is_empty()
+            || native.native_id.is_empty()
+            || serde_json::to_vec(native).map_err(|e| e.to_string())?.len() > 4096
+        {
+            return Err("GUI execution needs its exact home, agent and native identity".into());
+        }
+        let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        // Old external TUI rows can have no journal yet. Resolve their actual
+        // unique native transcript outside the short row gate, never by merely
+        // accepting another full ID with the same clean_leaf.
+        let legacy = if resume {
+            self.legacy_gui_source(id)?
+        } else {
+            None
+        };
+        let run_id = crate::link::fresh_hex()?;
+        let run = GuiRun {
+            id: run_id.clone(),
+            started_ms: now_ms(),
+            state: LiveState {
+                gui_run: Some(run_id),
+                word: State::Idle,
+                at_ms: now_ms(),
+                exit: None,
+                source: Some(Source::Reported),
+            },
+        };
+        fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
+        let gate = RowGate::acquire(&dir)?;
+        let previous = gate.read_meta_or_new()?;
+        if previous.is_some() && !resume {
+            return Err(msg::session_already_exists(&id.0));
+        }
+        gate.check_native(id, previous.as_ref(), native, legacy.as_ref())?;
+        if let Some(meta) = &previous {
+            if meta
+                .pid
+                .is_some_and(|old| old != pid && crate::link::pid_running(old))
+            {
+                return Err("GUI row still has a live execution".into());
+            }
+        }
+        let fresh = previous.is_none();
+        let mut meta = previous.unwrap_or(Meta {
+            kind: khor_core::kind::GUI.into(),
+            title: title.into(),
+            pid: None,
+            started_ms: run.started_ms,
+            category: category.map(str::to_owned),
+            id: id.0.clone(),
+            vendor_leaf: None,
+            place: None,
+            gui_native: None,
+            gui_run: None,
+        });
+        meta.kind = khor_core::kind::GUI.into();
+        meta.title = title.into();
+        meta.pid = Some(pid);
+        meta.gui_native = Some(native.clone());
+        meta.gui_run = Some(run.clone());
+        // A fresh row keeps the legacy file shape for stored data, but this
+        // generation's only live state is published inside its atomic Meta.
+        // Reopening never rewrites the old state.json.
+        if fresh {
+            gate.write_state(State::Idle, None, Source::Reported, None)?;
+        }
+        gate.write_meta(&meta)?;
+        gate.sync_meta()?;
+        Ok(RunKey {
+            session: id.clone(),
+            directory: dir,
+            run_id: run.id,
+            native: native.clone(),
+        })
+    }
+
+    fn legacy_gui_source(
+        &self,
+        id: &SessionId,
+    ) -> Result<Option<(Option<String>, crate::session_content::journal::Identity)>, String> {
+        let Some(dir) = self.dir(id) else {
+            return Ok(None);
+        };
+        let meta = match fs::read(dir.join("meta.json")) {
+            Ok(bytes) => {
+                serde_json::from_slice::<Meta>(&bytes).map_err(msg::session_meta_garbled)?
+            }
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(why) => return Err(msg::cant_read_session_meta(why)),
+        };
+        if meta.gui_native.is_some() || dir.join("journal.json").exists() {
+            return Ok(None);
+        }
+        let Some(provider) = crate::session_content::Provider::of(meta.category.as_deref()) else {
+            return Ok(None);
+        };
+        let leaf = id.0.split_once('/').map(|(_, leaf)| leaf).unwrap_or("");
+        let source =
+            crate::session_content::NativeTranscript::resolve(&self.root, provider, leaf, None)
+                .map_err(|_| "legacy GUI source is unreadable or ambiguous".to_owned())?;
+        let Some(source) = source else {
+            return Ok(None);
+        };
+        let source = crate::session_content::ContentSource::Native(source);
+        let (_, agent, native_id) = source.observation_identity();
+        Ok(Some((
+            meta.category,
+            crate::session_content::journal::Identity {
+                home: self.device,
+                agent: agent.into(),
+                native_id: native_id.into(),
+            },
+        )))
+    }
+
+    pub(crate) fn report_run(
+        &self,
+        key: &RunKey,
+        word: State,
+        source: Source,
+    ) -> Result<(), String> {
+        if word == State::Failed {
+            return Err(msg::failed_is_not_reportable().into());
+        }
+        self.with_run(key, |gate, meta, state| {
+            if state.exit.is_some() || !pid_says_alive(meta) {
+                return Err(msg::session_over(&key.session.0));
+            }
+            gate.write_state(word, None, source, Some(&key.run_id))
+        })
+    }
+
+    pub(crate) fn record_exit_run(&self, key: &RunKey, code: i32) -> Result<(), String> {
+        self.with_run(key, |gate, _, state| {
+            if state.exit.is_some() {
+                return Ok(());
+            }
+            gate.write_state(
+                state.word,
+                Some(code),
+                state.source.unwrap_or(Source::Reported),
+                Some(&key.run_id),
+            )
+        })
+    }
+
+    fn with_run<T>(
+        &self,
+        key: &RunKey,
+        write: impl FnOnce(&RowGate, &Meta, &LiveState) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let gate = self.run_gate(key)?;
+        let (meta, state) = gate.read_pair()?;
+        check_run(&meta, key)?;
+        write(&gate, &meta, &state)
+    }
+
+    fn run_gate(&self, key: &RunKey) -> Result<RowGate, String> {
+        let dir = self.existing_dir(&key.session)?;
+        if dir != key.directory {
+            return Err("GUI run key belongs to another row".into());
+        }
+        RowGate::acquire(&dir)
+    }
     /// [`Self::reopen`] without claiming the pid — for the re-seating
     /// where the **new process registers itself** (a terminal host calls
     /// `set_pid` on the way up). Passing a pid here anyway would either
@@ -448,27 +695,35 @@ impl LiveKind {
     ) -> Result<(), String> {
         let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
-        let mut meta = read_meta(&dir).unwrap_or(Meta {
+        let gate = RowGate::acquire(&dir)?;
+        let mut meta = gate.read_meta_or_new()?.unwrap_or(Meta {
             kind: kind.to_owned(),
             title: title.to_owned(),
             pid: None,
             started_ms: now_ms(),
+            gui_native: None,
+            gui_run: None,
             category: None,
             id: id.0.clone(),
             vendor_leaf: None,
             place: None,
         });
+        if meta.gui_run.is_some() {
+            if kind == khor_core::kind::GUI || meta.pid.is_none_or(crate::link::pid_running) {
+                return Err("GUI execution requires its current run key".into());
+            }
+            meta.gui_run = None;
+        }
         meta.kind = kind.to_owned();
         meta.title = title.to_owned();
         if let Some(pid) = pid {
             meta.pid = Some(pid);
         }
         meta.id = id.0.clone();
-        write_whole(
-            &dir.join("meta.json"),
-            &serde_json::to_vec(&meta).map_err(|e| e.to_string())?,
-        )?;
-        self.write_state(&dir, State::Idle, None, Source::Reported)
+        // The old GUI Meta remains a complete snapshot until the new legacy
+        // state is ready; only then is its run key invalidated by publication.
+        gate.write_state(State::Idle, None, Source::Reported, None)?;
+        gate.write_meta(&meta)
     }
 
     /// Fills in the vendor's session leaf. Write-once, like
@@ -481,15 +736,13 @@ impl LiveKind {
             return Ok(());
         }
         let dir = self.existing_dir(id)?;
-        let mut meta = read_meta(&dir)?;
+        let gate = RowGate::try_acquire(&dir)?;
+        let mut meta = gate.read_meta()?;
         if meta.vendor_leaf.is_some() {
             return Ok(());
         }
         meta.vendor_leaf = Some(leaf.to_owned());
-        write_whole(
-            &dir.join("meta.json"),
-            &serde_json::to_vec(&meta).map_err(|e| e.to_string())?,
-        )
+        gate.write_meta(&meta)
     }
 
     /// The vendor's session running in this row's host **now**, as the
@@ -502,15 +755,13 @@ impl LiveKind {
             return Ok(());
         }
         let dir = self.existing_dir(id)?;
-        let mut meta = read_meta(&dir)?;
+        let gate = RowGate::try_acquire(&dir)?;
+        let mut meta = gate.read_meta()?;
         if meta.vendor_leaf.as_deref() == Some(leaf) {
             return Ok(());
         }
         meta.vendor_leaf = Some(leaf.to_owned());
-        write_whole(
-            &dir.join("meta.json"),
-            &serde_json::to_vec(&meta).map_err(|e| e.to_string())?,
-        )
+        gate.write_meta(&meta)
     }
 
     /// Writes down where khor started this session. Write-once, like
@@ -524,15 +775,13 @@ impl LiveKind {
     /// guess.
     pub fn learn_place(&self, id: &SessionId, cwd: &std::path::Path) -> Result<(), String> {
         let dir = self.existing_dir(id)?;
-        let mut meta = read_meta(&dir)?;
+        let gate = RowGate::try_acquire(&dir)?;
+        let mut meta = gate.read_meta()?;
         if meta.place.is_some() {
             return Ok(());
         }
         meta.place = Some(cwd.display().to_string());
-        write_whole(
-            &dir.join("meta.json"),
-            &serde_json::to_vec(&meta).map_err(|e| e.to_string())?,
-        )
+        gate.write_meta(&meta)
     }
 
     /// **Every place khor itself started a session in**, for the
@@ -562,27 +811,28 @@ impl LiveKind {
             return Ok(());
         };
         let dir = self.existing_dir(id)?;
-        let mut meta = read_meta(&dir)?;
+        let gate = RowGate::try_acquire(&dir)?;
+        let mut meta = gate.read_meta()?;
         if meta.category.is_some() {
             return Ok(());
         }
         meta.category = Some(category.to_owned());
-        write_whole(
-            &dir.join("meta.json"),
-            &serde_json::to_vec(&meta).map_err(|e| e.to_string())?,
-        )
+        gate.write_meta(&meta)
     }
 
     /// Replaces the recorded pid — the wrapper registers before it knows
     /// the child's pid so hooks firing at startup find the session.
     pub fn set_pid(&self, id: &SessionId, pid: u32) -> Result<(), String> {
         let dir = self.existing_dir(id)?;
-        let mut meta = read_meta(&dir)?;
+        let gate = RowGate::acquire(&dir)?;
+        let mut meta = gate.read_meta()?;
+        if meta.kind == khor_core::kind::GUI || meta.gui_run.is_some() {
+            // PID publication is not an implicit GUI-to-terminal transition.
+            // The explicit takeover must first retire that GUI run via reseat.
+            return Err("GUI execution requires its current run key".into());
+        }
         meta.pid = Some(pid);
-        write_whole(
-            &dir.join("meta.json"),
-            &serde_json::to_vec(&meta).map_err(|e| e.to_string())?,
-        )
+        gate.write_meta(&meta)
     }
 
     /// A process reporting how it is. Only live words pass: failed is
@@ -598,11 +848,15 @@ impl LiveKind {
             return Err(msg::failed_is_not_reportable().into());
         }
         let dir = self.existing_dir(id)?;
-        let (meta, state) = read_pair(&dir)?;
+        let gate = RowGate::try_acquire(&dir)?;
+        let (meta, state) = gate.read_pair()?;
+        if meta.gui_run.is_some() {
+            return Err("GUI execution requires its current run key".into());
+        }
         if state.exit.is_some() || !pid_says_alive(&meta) {
             return Err(msg::session_over(&id.0));
         }
-        self.write_state(&dir, word, None, source)
+        gate.write_state(word, None, source, None)
     }
 
     /// The ending, recorded by whoever waited (the wrapper) or by an end
@@ -614,12 +868,16 @@ impl LiveKind {
     /// past.
     pub fn record_exit(&self, id: &SessionId, code: i32) -> Result<(), String> {
         let dir = self.existing_dir(id)?;
-        let (_, state) = read_pair(&dir)?;
+        let gate = RowGate::acquire(&dir)?;
+        let (meta, state) = gate.read_pair()?;
+        if meta.gui_run.is_some() {
+            return Err("GUI execution requires its current run key".into());
+        }
         if state.exit.is_some() {
             return Ok(());
         }
         let source = state.source.unwrap_or(Source::Reported);
-        self.write_state(&dir, state.word, Some(code), source)
+        gate.write_state(state.word, Some(code), source, None)
     }
 
     /// The row's current stamp — what "looked at now" covers.
@@ -2591,6 +2849,7 @@ impl LiveKind {
         Ok(dir)
     }
 
+    #[cfg(test)]
     fn write_state(
         &self,
         dir: &Path,
@@ -2598,16 +2857,11 @@ impl LiveKind {
         exit: Option<i32>,
         source: Source,
     ) -> Result<(), String> {
-        let state = LiveState {
-            word,
-            at_ms: now_ms(),
-            exit,
-            source: Some(source),
-        };
-        write_whole(
-            &dir.join("state.json"),
-            &serde_json::to_vec(&state).map_err(|e| e.to_string())?,
-        )
+        let gate = RowGate::acquire(dir)?;
+        if gate.read_meta()?.gui_run.is_some() {
+            return Err("GUI execution requires its current run key".into());
+        }
+        gate.write_state(word, exit, source, None)
     }
 }
 
@@ -2984,10 +3238,215 @@ fn read_meta(dir: &Path) -> Result<Meta, String> {
 }
 
 fn read_pair(dir: &Path) -> Result<(Meta, LiveState), String> {
+    // GUI state and generation are one atomically replaced Meta snapshot. A
+    // list never acquires a row lock, waits, or drops a row due to contention.
     let meta = read_meta(dir)?;
-    let text = fs::read_to_string(dir.join("state.json")).map_err(msg::cant_read_session_state)?;
-    let state = serde_json::from_str(&text).map_err(msg::session_state_garbled)?;
+    let state = if let Some(run) = &meta.gui_run {
+        run.state.clone()
+    } else {
+        let text =
+            fs::read_to_string(dir.join("state.json")).map_err(msg::cant_read_session_state)?;
+        serde_json::from_str(&text).map_err(msg::session_state_garbled)?
+    };
+    if meta.gui_run.as_ref().map(|run| run.id.as_str()) != state.gui_run.as_deref() {
+        return Err("session metadata and state name different GUI executions".into());
+    }
     Ok((meta, state))
+}
+
+fn check_run(meta: &Meta, key: &RunKey) -> Result<(), String> {
+    if meta.id != key.session.0
+        || meta.gui_native.as_ref() != Some(&key.native)
+        || meta.gui_run.as_ref().map(|run| &run.id) != Some(&key.run_id)
+    {
+        return Err("GUI execution has been superseded".into());
+    }
+    Ok(())
+}
+
+/// One short cross-process row transaction. No caller keeps this over a spawn,
+/// network request or await. Held helpers never reacquire their own file lock.
+struct RowGate {
+    dir: PathBuf,
+    _file: fs::File,
+}
+impl RowGate {
+    fn acquire(dir: &Path) -> Result<Self, String> {
+        Self::acquire_with_wait(dir, true)
+    }
+    fn try_acquire(dir: &Path) -> Result<Self, String> {
+        Self::acquire_with_wait(dir, false)
+    }
+    fn acquire_with_wait(dir: &Path, wait: bool) -> Result<Self, String> {
+        let metadata = fs::symlink_metadata(dir).map_err(|e| e.to_string())?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err("session row is not a directory".into());
+        }
+        let mut options = fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        }
+        let file = options
+            .open(dir.join("row.lock"))
+            .map_err(|e| e.to_string())?;
+        let metadata = file.metadata().map_err(|e| e.to_string())?;
+        if !metadata.is_file() || metadata.len() != 0 {
+            return Err("session row lock is not an empty regular file".into());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.nlink() != 1 || metadata.uid() != unsafe { libc::geteuid() } {
+                return Err("session row lock has another owner or link".into());
+            }
+        }
+        let mut waiting_until: Option<Instant> = None;
+        loop {
+            if waiting_until.is_some_and(|until| Instant::now() >= until) {
+                return Err("session row is busy".into());
+            }
+            match file.try_lock() {
+                Ok(()) => {
+                    return Ok(Self {
+                        dir: dir.into(),
+                        _file: file,
+                    });
+                }
+                Err(fs::TryLockError::WouldBlock) => {
+                    if !wait {
+                        return Err("session row is busy".into());
+                    }
+                    // Like ordinary Node admission, only actual contention
+                    // spends the one-second wait allowance.
+                    let until = *waiting_until
+                        .get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
+                    let left = until.saturating_duration_since(Instant::now());
+                    if left.is_zero() {
+                        return Err("session row is busy".into());
+                    }
+                    std::thread::sleep(left.min(Duration::from_millis(2)));
+                }
+                Err(fs::TryLockError::Error(why)) => return Err(why.to_string()),
+            }
+        }
+    }
+
+    fn read_meta(&self) -> Result<Meta, String> {
+        read_meta(&self.dir)
+    }
+    fn read_meta_or_new(&self) -> Result<Option<Meta>, String> {
+        match fs::read(self.dir.join("meta.json")) {
+            Ok(bytes) => serde_json::from_slice(&bytes)
+                .map(Some)
+                .map_err(msg::session_meta_garbled),
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(why) => Err(msg::cant_read_session_meta(why)),
+        }
+    }
+    fn read_pair(&self) -> Result<(Meta, LiveState), String> {
+        read_pair(&self.dir)
+    }
+    fn write_meta(&self, meta: &Meta) -> Result<(), String> {
+        write_whole(
+            &self.dir.join("meta.json"),
+            &serde_json::to_vec(meta).map_err(|e| e.to_string())?,
+        )
+    }
+    fn write_state(
+        &self,
+        word: State,
+        exit: Option<i32>,
+        source: Source,
+        run: Option<&str>,
+    ) -> Result<(), String> {
+        let state = LiveState {
+            gui_run: run.map(str::to_owned),
+            word,
+            at_ms: now_ms(),
+            exit,
+            source: Some(source),
+        };
+        if let Some(run) = run {
+            let mut meta = self.read_meta()?;
+            let owned = meta
+                .gui_run
+                .as_mut()
+                .filter(|owned| owned.id == run)
+                .ok_or_else(|| "GUI execution has been superseded".to_owned())?;
+            owned.state = state;
+            self.write_meta(&meta)
+        } else {
+            write_whole(
+                &self.dir.join("state.json"),
+                &serde_json::to_vec(&state).map_err(|e| e.to_string())?,
+            )
+        }
+    }
+    fn sync_meta(&self) -> Result<(), String> {
+        fs::File::open(self.dir.join("meta.json"))
+            .and_then(|file| file.sync_all())
+            .map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        fs::File::open(&self.dir)
+            .and_then(|file| file.sync_all())
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    fn native_binding(&self) -> Result<Option<crate::session_content::journal::Identity>, String> {
+        let file = match fs::File::open(self.dir.join("journal.json")) {
+            Ok(file) => file,
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(why) => return Err(why.to_string()),
+        };
+        let mut bytes = Vec::new();
+        file.take(4097)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        if bytes.len() > 4096 {
+            return Err("session journal identity exceeds its byte budget".into());
+        }
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| e.to_string())
+    }
+    fn check_native(
+        &self,
+        id: &SessionId,
+        meta: Option<&Meta>,
+        native: &crate::session_content::journal::Identity,
+        legacy: Option<&(Option<String>, crate::session_content::journal::Identity)>,
+    ) -> Result<(), String> {
+        let binding = self.native_binding()?;
+        if binding.as_ref().is_some_and(|bound| bound != native) {
+            return Err("session already names another full native identity".into());
+        }
+        if let Some(meta) = meta {
+            if !meta.id.is_empty() && meta.id != id.0 {
+                return Err("session metadata belongs to another identity".into());
+            }
+            if meta
+                .gui_native
+                .as_ref()
+                .is_some_and(|bound| bound != native)
+            {
+                return Err("GUI row already names another full native identity".into());
+            }
+            if meta.gui_native.is_none()
+                && binding.is_none()
+                && !legacy.is_some_and(|(category, bound)| {
+                    meta.category.as_deref() == category.as_deref() && bound == native
+                })
+            {
+                return Err("GUI recovery has no exact existing native binding".into());
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Whole-file write via tmp+rename: concurrent readers (serve deriving
@@ -3137,6 +3596,245 @@ mod tests {
     fn sid(s: &str) -> SessionId {
         SessionId(s.to_owned())
     }
+
+    fn gui_source(native_id: &str) -> crate::session_content::journal::Identity {
+        crate::session_content::journal::Identity {
+            home: DeviceId([9; 32]),
+            agent: "fixture".into(),
+            native_id: native_id.into(),
+        }
+    }
+
+    #[test]
+    fn gui_run_rejects_old_and_unqualified_reports_without_changing_the_new_pair() {
+        let root = tmp("gui-run-stale");
+        let live = kind_at(&root);
+        let native = gui_source("gui-generation");
+        let id = crate::adaptor::id_for(&native.native_id);
+        let a = live
+            .begin_gui_run(&id, "first", std::process::id(), &native, None, false)
+            .unwrap();
+        let birth = read_meta(&a.directory).unwrap().started_ms;
+        live.report_run(&a, State::Busy, Source::Reported).unwrap();
+        let b = live
+            .begin_gui_run(&id, "second", std::process::id(), &native, None, true)
+            .unwrap();
+        assert_ne!(a.run_id, b.run_id);
+        assert_eq!(
+            read_meta(&b.directory).unwrap().started_ms,
+            birth,
+            "logical birth is retained"
+        );
+        live.report_run(&b, State::Blocked, Source::Reported)
+            .unwrap();
+        let pair =
+            || ["meta.json", "state.json"].map(|name| fs::read(b.directory.join(name)).unwrap());
+        let before = pair();
+        assert!(
+            live.report_run(&a, State::Done, Source::Reported)
+                .unwrap_err()
+                .contains("superseded")
+        );
+        assert!(
+            live.record_exit_run(&a, 0)
+                .unwrap_err()
+                .contains("superseded")
+        );
+        assert!(live.report(&id, State::Done, Source::Screen).is_err());
+        assert!(live.record_exit(&id, 7).is_err());
+        assert_eq!(pair(), before);
+        live.record_exit_run(&b, 0).unwrap();
+        live.record_exit_run(&b, 9).unwrap();
+        assert_eq!(
+            read_pair(&b.directory).unwrap().1.exit,
+            Some(0),
+            "first current-run exit wins"
+        );
+    }
+
+    #[test]
+    fn gui_run_check_and_write_keep_the_row_gate_until_publication() {
+        use std::sync::mpsc;
+        let root = tmp("gui-run-held");
+        let live = kind_at(&root);
+        let native = gui_source("gui-held-generation");
+        let id = crate::adaptor::id_for(&native.native_id);
+        let a = live
+            .begin_gui_run(&id, "first", std::process::id(), &native, None, false)
+            .unwrap();
+        let (tx, rx) = mpsc::channel();
+        let next_live = live.clone();
+        let next_native = native.clone();
+        let next_id = id.clone();
+        let worker = live.with_run(&a, |gate, _, _| {
+            // This is the same checked-write helper used by both report_run
+            // and record_exit_run, paused after their ownership check.
+            let lock_was_held = RowGate::try_acquire(&a.directory).is_err();
+            let (started, ready) = mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                started.send(()).unwrap();
+                let result = next_live.begin_gui_run(
+                    &next_id,
+                    "next",
+                    std::process::id(),
+                    &next_native,
+                    None,
+                    true,
+                );
+                tx.send(result).unwrap();
+            });
+            let started = ready.recv_timeout(Duration::from_millis(100));
+            let before_release = rx.recv_timeout(Duration::from_millis(20));
+            let written = gate.write_state(State::Done, None, Source::Reported, Some(&a.run_id));
+            // Join only after with_run has released its guard.
+            Ok((worker, lock_was_held, started, before_release, written))
+        });
+        let (worker, lock_was_held, started, before_release, written) = worker.unwrap();
+        let after_release = rx.recv_timeout(Duration::from_secs(1));
+        let joined = worker.join();
+        assert!(lock_was_held);
+        started.unwrap();
+        assert!(matches!(
+            before_release,
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        written.unwrap();
+        joined.unwrap();
+        let b = after_release.unwrap().unwrap();
+        assert_eq!(read_pair(&b.directory).unwrap().1.word, State::Idle);
+        assert!(live.record_exit_run(&a, 0).is_err());
+    }
+
+    #[test]
+    fn gui_full_native_collision_refuses_before_meta_or_binding_changes() {
+        let root = tmp("gui-run-native");
+        let live = kind_at(&root);
+        let a = gui_source("abcdefghijklmnopqrstuvwx-one");
+        let b = gui_source("abcdefghijklmnopqrstuvwx-two");
+        let id = crate::adaptor::id_for(&a.native_id);
+        assert_eq!(
+            id,
+            crate::adaptor::id_for(&b.native_id),
+            "the fixture really collides after 24 characters"
+        );
+        let run = live
+            .begin_gui_run(&id, "first", std::process::id(), &a, Some("fixture"), false)
+            .unwrap();
+        let before = fs::read(run.directory.join("meta.json")).unwrap();
+        let state = fs::read(run.directory.join("state.json")).unwrap();
+        assert!(
+            live.begin_gui_run(&id, "wrong", std::process::id(), &b, Some("fixture"), true)
+                .unwrap_err()
+                .contains("full native identity")
+        );
+        assert!(
+            live.check_gui_source(&b)
+                .unwrap_err()
+                .contains("full native identity")
+        );
+        assert_eq!(fs::read(run.directory.join("meta.json")).unwrap(), before);
+        assert_eq!(fs::read(run.directory.join("state.json")).unwrap(), state);
+        assert!(!run.directory.join("journal.json").exists());
+        // A pre-existing full canonical binding is also authoritative when a
+        // legacy row has no GuiRun or gui_native field yet.
+        let other = kind_at(&root.join("legacy"));
+        other.register(&id, "gui", "legacy", None, None).unwrap();
+        let dir = other.dir_of(&id).unwrap();
+        fs::write(dir.join("journal.json"), serde_json::to_vec(&a).unwrap()).unwrap();
+        let before = fs::read(dir.join("meta.json")).unwrap();
+        assert!(
+            other
+                .begin_gui_run(&id, "wrong", std::process::id(), &b, None, true)
+                .unwrap_err()
+                .contains("full native identity")
+        );
+        assert_eq!(fs::read(dir.join("meta.json")).unwrap(), before);
+        assert_eq!(
+            fs::read(dir.join("journal.json")).unwrap(),
+            serde_json::to_vec(&a).unwrap()
+        );
+    }
+
+    #[test]
+    fn gui_row_metadata_learning_preserves_the_current_execution() {
+        let root = tmp("gui-run-learn");
+        let live = kind_at(&root);
+        let native = gui_source("gui-learn-generation");
+        let id = crate::adaptor::id_for(&native.native_id);
+        let run = live
+            .begin_gui_run(&id, "first", std::process::id(), &native, None, false)
+            .unwrap();
+        live.learn_category(&id, Some("fixture")).unwrap();
+        live.learn_place(&id, &root).unwrap();
+        live.learn_vendor_leaf(&id, "before").unwrap();
+        live.follow_vendor_leaf(&id, "after").unwrap();
+        let meta = read_meta(&run.directory).unwrap();
+        assert_eq!(
+            meta.gui_run.as_ref().map(|value| &value.id),
+            Some(&run.run_id)
+        );
+        assert_eq!(meta.gui_native.as_ref(), Some(&native));
+        assert_eq!(meta.vendor_leaf.as_deref(), Some("after"));
+        assert!(live.set_pid(&id, std::process::id()).is_err());
+        assert!(
+            live.reseat(&id, "tui", "unowned replacement", None)
+                .is_err()
+        );
+        live.report_run(&run, State::Done, Source::Reported)
+            .unwrap();
+    }
+
+    #[test]
+    fn busy_writer_does_not_hide_or_delay_a_complete_gui_snapshot() {
+        let root = tmp("gui-run-read-busy");
+        let live = kind_at(&root);
+        let native = gui_source("gui-read-generation");
+        let id = crate::adaptor::id_for(&native.native_id);
+        let run = live
+            .begin_gui_run(&id, "readable", std::process::id(), &native, None, false)
+            .unwrap();
+        live.report_run(&run, State::Blocked, Source::Reported)
+            .unwrap();
+        let before =
+            ["meta.json", "state.json"].map(|name| fs::read(run.directory.join(name)).unwrap());
+        let gate = RowGate::acquire(&run.directory).unwrap();
+        let at = Instant::now();
+        let (meta, state) = read_pair(&run.directory).unwrap();
+        assert_eq!(meta.gui_run.unwrap().id, run.run_id);
+        assert_eq!(state.word, State::Blocked);
+        let rows = live.rows(|_| 0);
+        let row = rows
+            .iter()
+            .find(|row| row.id == id)
+            .expect("busy writer cannot hide the GUI row");
+        assert_eq!(
+            row.state.as_ref().map(|stamp| stamp.state),
+            Some(State::Blocked)
+        );
+        assert!(
+            at.elapsed() < Duration::from_millis(250),
+            "a GUI list read never waits for a writer"
+        );
+        drop(gate);
+        assert_eq!(
+            ["meta.json", "state.json"].map(|name| fs::read(run.directory.join(name)).unwrap()),
+            before
+        );
+        // A pre-run legacy row still reads its original state without creating
+        // a row coordination file or changing any semantic data.
+        let legacy = sid("shell/legacy");
+        live.register(&legacy, "shell", "legacy", None, None)
+            .unwrap();
+        let dir = live.dir_of(&legacy).unwrap();
+        fs::remove_file(dir.join("row.lock")).unwrap();
+        assert!(read_pair(&dir).is_ok());
+        assert!(!dir.join("row.lock").exists());
+    }
+
+
+
+
+
 
     /// A pid that is certainly dead: spawn `true`, reap it.
     fn dead_pid() -> u32 {
