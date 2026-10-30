@@ -411,7 +411,9 @@ fn frame_of(note: GuiNote) -> ChatFrame {
 /// Claims one view lease, sharing the live resource or opening a new one.
 /// The registry lock is released before any network connection is attempted.
 pub fn chat_open(root: &Path, id: &str, lease: &str) -> Result<bool, String> {
-    khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
+    // A qualified recovered observation retains its logical SID. Fresh resources
+    // are admitted only by attach's local input-owner or execution-home Reach;
+    // an existing shared resource was admitted by that same path already.
     open_chat_with(root, id, lease, || attach(root, id))
 }
 
@@ -564,11 +566,12 @@ fn attach(
 }
 
 fn chat_of(root: &Path, id: &str, lease: &str) -> Result<Arc<Chat>, String> {
-    khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
+    // A pending lease is not a control capability; the registry requires the
+    // exact view to have passed attach and published a live resource.
     chats().control(root, id, lease)
 }
 fn chat_reader(root: &Path, id: &str, lease: &str) -> Result<Arc<Chat>, String> {
-    khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
+    // Read only an already admitted attachment; do not re-open Node per poll.
     chats().read(root, id, lease)
 }
 

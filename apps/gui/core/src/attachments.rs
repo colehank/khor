@@ -21,7 +21,11 @@ pub enum AttachmentKind {
 }
 
 pub fn attachment_begin(root: &Path, id: &str, kind: AttachmentKind) -> Result<String, String> {
-    khor_node::session_content::refuse_control(&khor_core::SessionId(id.to_owned()))?;
+    // Chat may reserve a bounded pending lease for a published observe SID;
+    // chat_open's actual attach is the authority boundary, not this reservation.
+    if matches!(kind, AttachmentKind::Terminal) {
+        khor_node::session_content::refuse_control(&khor_core::SessionId(id.to_owned()))?;
+    }
     crate::chat::expire_views();
     crate::term::expire_views();
     match kind {
