@@ -1158,8 +1158,8 @@ impl Node {
             hosts,
         };
         {
-            let recovered = permit.attach().map_err(String::from)?;
-            node.recover_pairing_before_bootstrap(&recovered)?;
+            let mut recovered = permit.attach().map_err(String::from)?;
+            node.recover_pairing_before_bootstrap(&mut recovered)?;
             node.register_self()?;
             // After the row exists: the first machine's root certifies the
             // machine the table now holds (docs/CONNECT.md 身份).

@@ -228,22 +228,56 @@ impl RootPermit {
             }
         }
     }
+    fn wait_for_lock(&mut self) -> Result<(), Error> {
+        // Waiting while holding metadata would reverse the worker's order.
+        // None belongs to control/transfer: it always remains a single try.
+        if METADATA_HELD.get() {
+            return Err(Error::busy());
+        }
+        let left = self
+            .wait_remaining
+            .filter(|left| !left.is_zero())
+            .ok_or_else(Error::busy)?;
+        let started = Instant::now();
+        std::thread::sleep(left.min(Duration::from_millis(5)));
+        let left = left.saturating_sub(started.elapsed());
+        self.wait_remaining = Some(left);
+        if left.is_zero() {
+            return Err(Error::busy());
+        }
+        Ok(())
+    }
     pub(crate) fn attach(self) -> Result<RootGate, Error> {
         let mut owned = RootGate {
             permit: self,
             file: None,
         };
-        // A caller that acquired metadata after ordinary admission may not
-        // wait in the opposite lock order. Control/transfer try permits never
-        // carry a wait budget, including devices apply under its State lease.
-        if owned
+        owned.acquire_file(true)?;
+        Ok(owned)
+    }
+}
+impl Drop for RootPermit {
+    fn drop(&mut self) {
+        roots().owners.retain(|owner| owner.id != self.id);
+        root_changed();
+    }
+}
+/// One local reservation owns bootstrap, including its metadata-lock handoff.
+pub(crate) struct RootGate {
+    permit: RootPermit,
+    file: Option<File>,
+}
+impl RootGate {
+    fn acquire_file(&mut self, wait: bool) -> Result<(), Error> {
+        debug_assert!(self.file.is_none());
+        if self
             .permit
             .wait_remaining
-            .is_some_and(|left| METADATA_HELD.get() || left.is_zero())
+            .is_some_and(|left| left.is_zero() || (wait && METADATA_HELD.get()))
         {
             return Err(Error::busy());
         }
-        let directory = owned.permit.root.join(".khor/trust-mutation");
+        let directory = self.permit.root.join(".khor/trust-mutation");
         private_dir(&directory)?;
         for (count, entry) in fs::read_dir(&directory).map_err(error)?.enumerate() {
             let entry = entry.map_err(error)?;
@@ -256,49 +290,54 @@ impl RootPermit {
         if file.metadata().map_err(error)?.len() != 0 {
             return Err("unexpected trust mutation gate bytes".into());
         }
-        // Start spending the remaining allowance only when this exact OS
-        // lease is contended. Filesystem validation above is not lock waiting.
-        let mut waiting_until: Option<Instant> = None;
         loop {
-            if waiting_until.is_some_and(|until| Instant::now() >= until) {
-                return Err(Error::busy());
-            }
             match file.try_lock() {
                 Ok(()) => {
-                    if let Some(until) = waiting_until {
-                        owned.permit.wait_remaining =
-                            Some(until.saturating_duration_since(Instant::now()));
-                    }
-                    break;
+                    self.file = Some(file);
+                    return Ok(());
                 }
-                Err(fs::TryLockError::WouldBlock) => {
-                    let allowance = owned.permit.wait_remaining.ok_or_else(Error::busy)?;
-                    let until = *waiting_until.get_or_insert_with(|| Instant::now() + allowance);
-                    let remaining = until.saturating_duration_since(Instant::now());
-                    if remaining.is_zero() {
-                        return Err(Error::busy());
-                    }
-                    // Retry only this exact OS lease, never Node construction,
-                    // metadata, trust recovery or publication side effects.
-                    std::thread::sleep(remaining.min(Duration::from_millis(5)));
-                }
+                Err(fs::TryLockError::WouldBlock) if wait => self.permit.wait_for_lock()?,
+                Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
                 Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
             }
         }
-        owned.file = Some(file);
-        Ok(owned)
     }
-}
-impl Drop for RootPermit {
-    fn drop(&mut self) {
-        roots().owners.retain(|owner| owner.id != self.id);
-        root_changed();
+    pub(super) fn bootstrap_metadata(&mut self, root: &Path) -> Result<Gate, Error> {
+        if self.permit.root != root || self.file.is_none() {
+            return Err("bootstrap metadata needs its held root fence".into());
+        }
+        if METADATA_HELD.get() {
+            return Err(Error::busy());
+        }
+        // The same owner keeps local admission and the cumulative allowance.
+        // Never sleep for metadata while holding the physical root fence.
+        self.file.take();
+        let directory = root.join(".khor/doc-transfer-state");
+        loop {
+            let metadata = match gate(&directory) {
+                Ok(metadata) => metadata,
+                Err(why) if why.kind == crate::proto::DocTransferFailure::Busy => {
+                    self.permit.wait_for_lock()?;
+                    continue;
+                }
+                Err(why) => return Err(why),
+            };
+            // Workers use metadata -> root try0 too. Only the two leases
+            // together admit journal loading or any recovery side effects.
+            match self.acquire_file(false) {
+                Ok(()) => return Ok(metadata),
+                Err(why) if why.kind == crate::proto::DocTransferFailure::Busy => {
+                    drop(metadata);
+                    // Charge this contention even if the next root try finds
+                    // it free, so alternating owners cannot spin for free.
+                    self.permit.wait_for_lock()?;
+                    self.acquire_file(true)?;
+                    self.file.take();
+                }
+                Err(why) => return Err(why),
+            }
+        }
     }
-}
-/// The OS lease attaches once to the same local reservation used by bootstrap.
-pub(crate) struct RootGate {
-    permit: RootPermit,
-    file: Option<File>,
 }
 impl Drop for RootGate {
     fn drop(&mut self) {
@@ -1086,6 +1125,28 @@ mod tests {
             crate::proto::DocTransferFailure::Busy
         );
         drop(root_gate(&fixture.0).unwrap());
+
+        let mut joint = root_gate(&fixture.0).unwrap();
+        let other = fixture.0.join("different-root");
+        assert!(joint.bootstrap_metadata(&other).is_err());
+        assert!(!other.exists(), "mismatched root created metadata");
+        let metadata = joint.bootstrap_metadata(&fixture.0).unwrap();
+        assert!(METADATA_HELD.get());
+        let same_file = open(&fixture.0.join(".khor/trust-mutation/gate"), false).unwrap();
+        assert!(matches!(
+            same_file.try_lock(),
+            Err(fs::TryLockError::WouldBlock)
+        ));
+        drop(metadata);
+        assert!(!METADATA_HELD.get());
+        assert!(matches!(
+            same_file.try_lock(),
+            Err(fs::TryLockError::WouldBlock)
+        ));
+        drop(joint);
+        same_file
+            .try_lock()
+            .expect("joint owner released the OS fence");
     }
 
     #[test]

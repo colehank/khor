@@ -1159,12 +1159,12 @@ impl Node {
         root_mutation_at(self.root(), self.my_id())
     }
 
-    // Keep this lease through self-registration and bootstrap. A later ordinary
-    // Doc journal publication must not cause a second recovery decision after
-    // the critical intents have been reconciled under this same root fence.
+    // Metadata admission may hand off the physical root fence before recovery.
+    // Once both locks are held, keep root through self-registration/bootstrap:
+    // a later Doc publication must not trigger a second recovery decision.
     pub(crate) fn recover_pairing_before_bootstrap(
         &self,
-        _guard: &crate::doc_transfer_state::RootMutationGuard,
+        guard: &mut crate::doc_transfer_state::RootMutationGuard,
     ) -> Result<(), String> {
         use crate::doc_transfer_state::{Context, State, pairing};
         if pairing::needs_recovery(self.root(), self.my_id()).map_err(String::from)? {
@@ -1173,13 +1173,16 @@ impl Node {
                 writer: self.writer_peer(),
                 local: self.my_id(),
             };
-            State::open(&context)
-                .map_err(String::from)?
-                .recover_pairing(
-                    &PairTrust::new(context.clone(), self.name().into()),
-                    &context,
-                )
-                .map_err(String::from)?;
+            if let Some(mut state) =
+                State::open_for_bootstrap(&context, guard).map_err(String::from)?
+            {
+                state
+                    .recover_pairing(
+                        &PairTrust::new(context.clone(), self.name().into()),
+                        &context,
+                    )
+                    .map_err(String::from)?;
+            }
         }
         Ok(())
     }
