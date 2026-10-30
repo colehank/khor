@@ -19,7 +19,7 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
   const [offer, setOffer] = useState<{ revision: string; value: SessionRecovery } | null>(null);
   const [intent, setIntent] = useState<RecoveryIntent | null>(null);
   const [intentReady, setIntentReady] = useState(false);
-  const [outcome, setOutcome] = useState<{ revision: string; value: Outcome } | null>(null);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [problem, setProblem] = useState<RecoveryProblem | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,18 +65,18 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
   }, []);
 
   const act = async (cwd: string | null = null) => {
-    const live = owner.current, requested = revision, generation = live.generation;
+    const live = owner.current, generation = live.generation;
     if (live.busy || !live.alive || !intentReady) return;
     live.busy = true;
     setBusy(true); setFault(null); setProblem(null);
     try {
       let payload = await readRecoveryIntent(home, id);
-      if (!live.alive || requested !== live.revision || generation !== live.generation) return;
+      if (!live.alive || generation !== live.generation) return;
       if (payload) {
         if (payload.id !== id || payload.home !== home || (cwd !== null && payload.cwd !== cwd)) throw new RecoveryIntentError("occupied");
       } else {
         const current = await refresh();
-        if (!current || !live.alive || requested !== live.revision || generation !== live.generation) return;
+        if (!current || !live.alive || generation !== live.generation) return;
         if (!current.next_attempt_epoch || current.execution === "offline" || current.action === "none") {
           setProblem("unavailable"); return;
         }
@@ -89,7 +89,7 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
       // Native readwrite transaction serializes this target's slot. If it
       // cannot commit, nothing is dispatched. A stale surface never dispatches.
       await rememberRecoveryIntent(payload);
-      if (!live.alive || requested !== live.revision || generation !== live.generation) return;
+      if (!live.alive || generation !== live.generation) return;
       setIntent(payload);
       live.reading++; // no pre-action offer may overwrite the result's run
       const result: Outcome = payload.operation === "new_shell"
@@ -97,19 +97,22 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
         : await recoverSession(home, id, payload.expected_run, payload.token);
       // Pending/Unknown (and transport errors below) retain the exact payload.
       // Clear a final reply even after view retirement, but never navigate then.
+      // Row status is not action ownership: this recovery itself may change
+      // ended/can_control before the reply arrives. Target+mount own delivery;
+      // expected_run and the actual result remain Node's execution authority.
       if (result.kind !== "pending" && result.kind !== "unknown") await settleRecoveryIntent(payload);
-      if (!live.alive || requested !== live.revision || generation !== live.generation) return;
-      setOutcome({ revision: requested, value: result });
+      if (!live.alive || generation !== live.generation) return;
+      setOutcome(result);
       await loadIntent();
-      if (!live.alive || requested !== live.revision || generation !== live.generation) return;
+      if (!live.alive || generation !== live.generation) return;
       if (result.kind === "opened") opened.current({ id: result.id, previous: "previous" in result ? result.previous : null });
       else if (result.kind === "join") opened.current({ id: result.id, previous: null });
       void refresh();
     } catch (error) {
-      if (live.alive && generation === live.generation && requested === live.revision) { setProblem(problemOf(error)); setFault(problemOf(error) ? null : String(error)); void loadIntent(); }
+      if (live.alive && generation === live.generation) { setProblem(problemOf(error)); setFault(problemOf(error) ? null : String(error)); void loadIntent(); }
     } finally {
       if (generation === live.generation) { live.busy = false; if (live.alive) setBusy(false); }
     }
   };
-  return { offer: offer?.revision === revision ? offer.value : null, intent, intentReady, outcome: outcome?.revision === revision ? outcome.value : null, fault, problem, busy, refresh: async () => { await Promise.all([refresh(), loadIntent()]); }, act };
+  return { offer: offer?.revision === revision ? offer.value : null, intent, intentReady, outcome, fault, problem, busy, refresh: async () => { await Promise.all([refresh(), loadIntent()]); }, act };
 }
