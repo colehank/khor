@@ -1,7 +1,7 @@
 import type { HistoryPage } from '@/gen/bindings/HistoryPage';
 import type { HistoryItem } from './history-paint';
 import { paintHistory, historyReferenceBetween } from './history-paint';
-import { toolInputText } from './acp-view';
+import { toolInputText, type AcpUpdate } from './acp-view';
 
 export const FIND_HITS = 32;
 export const FIND_QUERY_BYTES = 256;
@@ -21,6 +21,8 @@ export type FindHit = {
   /** Complete available message context, not execution completion. */
   complete?: boolean;
   atTail?: boolean;
+  /** Match continues into the immediately newer canonical page. */
+  continued?: boolean;
   record?: import('@/gen/bindings/HistoryRecordRef').HistoryRecordRef;
 };
 export type FindWorkerInput =
@@ -87,6 +89,7 @@ export function literalMatcher(raw: FindQuery) {
   let serial = 0;
   const origins = new Array<number>(pattern.length);
   return {
+    contextUnits: pattern.length * 2,
     checkpoint: () => ({ matched, position, serial, origins: origins.slice() }),
     restore(saved: { matched: number; position: number; serial: number; origins: number[] }) {
       matched = saved.matched; position = saved.position; serial = saved.serial;
@@ -157,10 +160,50 @@ function snippet(text: string, from: number, to: number): string {
   return answer;
 }
 
-/** A worker holds at most one server-bounded page. Thirty-two hits stop
- * inside that page; Next resumes the same item rather than losing its tail. */
+type TextPrefix = { entries: HistoryPage['entries']; references: HistoryPage['references'] };
+/** Retain only the first projected text group's query-length prefix. The
+ * shared painter decides grouping; this copies canonical text DTO facts only.
+ * Source metadata remains bounded by one page, not a history-wide key map. */
+function textPrefix(page: HistoryPage, newer: TextPrefix | null, units: number): TextPrefix | null {
+  const entries = [...page.entries, ...(newer?.entries ?? [])];
+  const references = [...page.references, ...(newer?.references ?? [])];
+  const first = paintHistory(entries, references)[0];
+  if (!first || !['agent', 'user', 'thought'].includes(first.who) || !('text' in first)) return null;
+  const keys = new Set(first.historyEntries);
+  const kept: HistoryPage['entries'] = [];
+  let left = units;
+  for (const entry of entries) {
+    if (!keys.has(entry.key)) {
+      if (!kept.length && entry.frame.kind === 'turn') kept.push(entry);
+      continue;
+    }
+    if (entry.frame.kind !== 'note') return null;
+    const carried = entry.frame.update as { update?: AcpUpdate } | null;
+    const update = carried?.update;
+    if (!update || Array.isArray(update.content) || update.content?.type !== 'text' || typeof update.content.text !== 'string') return null;
+    let text = '';
+    for (const char of update.content.text) {
+      if (left <= 0) break;
+      text += char; left -= char.length;
+    }
+    kept.push({...entry, frame: {kind: 'note', update: {update: {
+      sessionUpdate: update.sessionUpdate, content: {type: 'text', text},
+      ...(typeof update.messageId === 'string' ? {messageId: update.messageId} : {}),
+    }}}});
+    if (left <= 0) break;
+  }
+  const lastRecord = kept.at(-1)?.record;
+  if (references.length && !lastRecord) return null;
+  const answer = {entries: kept, references: lastRecord
+    ? references.filter(reference => historyReferenceBetween(reference, undefined, lastRecord)) : []};
+  return kept.length <= 512 && utf8.encode(JSON.stringify(answer)).length <= PAGE_BYTES ? answer : null;
+}
+
+/** A worker holds one server-bounded page plus a query-length text prefix
+ * with page-bounded metadata. Thirty-two hits resume within the same page. */
 export function historyFindBatch(raw: FindQuery) {
   const query = findQuery(raw);
+  const matcherContext = literalMatcher(query).contextUnits;
   let current: HistoryPage | null = null;
   let items: HistoryItem[] = [];
   let item = 0;
@@ -170,6 +213,8 @@ export function historyFindBatch(raw: FindQuery) {
   let projection: ReturnType<typeof historyText> | null = null;
   let unsearchedInputs = 0;
   let firstPage = true, atTail = false;
+  let prefix: TextPrefix | null = null;
+  let seam: { text: string; entry: string; before: string; split: number; offset: number; matcher: ReturnType<typeof literalMatcher> } | null = null;
   function next(): Extract<FindWorkerOutput, { kind: 'result' }> {
     if (!current) throw new Error('history search has no pending page');
     const page = current;
@@ -205,7 +250,18 @@ export function historyFindBatch(raw: FindQuery) {
         part++; offset = 0; matcher = literalMatcher(query);
       }
     }
-    const pageDone = item >= items.length;
+    while (item >= items.length && seam && hits.length < FIND_HITS) {
+      const saved = seam.matcher.checkpoint();
+      const result = seam.matcher.feed(seam.text.slice(seam.offset), 1);
+      const proposed = result.ranges.filter(range => range.from < seam!.split && range.to > seam!.split)
+        .map(range => ({before: seam!.before, entry: seam!.entry, part: 0, ...range,
+          continued: true, complete: false, atTail: false, snippet: snippet(seam!.text, range.from, range.to)}));
+      const bytes = proposed.reduce((sum, hit) => sum + utf8.encode(JSON.stringify(hit)).length + 1, 0);
+      if (hitBytes + bytes > RESULT_BYTES - 16 * 1024) { seam.matcher.restore(saved); break; }
+      hitBytes += bytes; hits.push(...proposed); seam.offset += result.consumed;
+      if (seam.offset >= seam.text.length) seam = null;
+    }
+    const pageDone = item >= items.length && !seam;
     if (pageDone) { current = null; items = []; projection = null; }
     const answer: Extract<FindWorkerOutput, { kind: 'result' }> = { kind: 'result', hits, pageDone, older: page.older,
       unsearchedRanges: pageDone ? page.references.length + unsearchedInputs : 0 };
@@ -223,6 +279,25 @@ export function historyFindBatch(raw: FindQuery) {
         throw new Error('history search source cursor exceeds its metadata budget');
       current = page;
       items = paintHistory(page.entries, page.references);
+      seam = null;
+      if (prefix && items.length) {
+        const left = items.at(-1)!;
+        const right = paintHistory(prefix.entries, prefix.references)[0];
+        if (right && 'text' in left && 'text' in right && ['agent','user','thought'].includes(left.who)) {
+          const joined = paintHistory([...page.entries, ...prefix.entries], [...page.references, ...prefix.references])
+            .find(item => item.historyEntries.includes(left.historyEntries.at(-1)!) && item.historyEntries.includes(right.historyEntries[0]));
+          if (joined && 'text' in joined && joined.text.length > left.text.length) {
+            const start = Math.max(0, left.text.length - matcherContext);
+            const matcher = literalMatcher(query);
+            // Prime offsets without retaining old body in the matcher. Its
+            // query-sized origin ring is sufficient for the page seam.
+            matcher.restore({...matcher.checkpoint(), position: start});
+            seam = {text: joined.text, entry: left.historyEntries[0], before: page.newer,
+              split: left.text.length, offset: start, matcher};
+          }
+        }
+      }
+      prefix = textPrefix(page, prefix, matcherContext);
       atTail = firstPage; firstPage = false;
       item = 0; part = 0; offset = 0; matcher = literalMatcher(query); projection = null; unsearchedInputs = 0;
       return next();

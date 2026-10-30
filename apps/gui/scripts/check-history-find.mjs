@@ -86,6 +86,36 @@ test('clipped canonical message parts stay searchable but cannot claim complete 
   assert.equal(historyFindBatch(query('hello')).page(unknownTail).hits[0].complete,false,
     'an unprojected tail is not bypassed by a message-start fact');
 });
+test('ordinary canonical page seams use the shared painter and query-sized carry', async () => {
+  const chunk=(key,value,start,end,extra={})=>({...text(key,value),starts_message:false,
+    record:{start,end,item:0,cursor:'same-snapshot',missing_start:false,missing_end:false},
+    frame:{kind:'note',update:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:value},...extra}}}});
+  const older={...page([chunk('opaque-old','hel',0,10)]),newer:'middle-fence',older:null};
+  const newer={...page([chunk('opaque-new','lo',10,20)]),newer:'tail-fence',older:'middle-fence'};
+  const scan=historyFindBatch(query('hello'));
+  assert.equal(scan.page(newer).hits.length,0);
+  const hit=scan.page(older).hits[0];
+  assert(hit,'CROSS_PAGE_QUERY: a legitimate contiguous message cannot disappear at the page boundary');
+  assert.deepEqual([hit.entry,hit.from,hit.to,hit.continued],['opaque-old',0,5,true]);
+  const reads=[];
+  const context=await historyFindAction('context',hit,{page:async(cursor,forward)=>{reads.push([cursor,forward]);return forward?newer:older;}});
+  assert.equal(context.text,'hello');
+  assert.deepEqual(reads,[['middle-fence',false],['middle-fence',true]]);
+  for(const boundary of [
+    {...newer,entries:[{...newer.entries[0],starts_message:true}]},
+    {...newer,entries:[{key:'opaque-turn',starts_message:true,record:null,frame:{kind:'turn',stop:'EndTurn'}},...newer.entries]},
+    {...newer,entries:[chunk('opaque-new','lo',20,30)],references:[{start:10,end:20,item:null,cursor:'same-snapshot',missing_start:false,missing_end:false}]},
+    {...newer,entries:[chunk('opaque-new','lo',10,20,{messageId:'different'})]},
+  ]) {
+    const divided=historyFindBatch(query('hello'));
+    divided.page(boundary);
+    assert.equal(divided.page({...older,entries:[chunk('opaque-old','hel',0,10,{messageId:'known'})]}).hits.length,0);
+  }
+  const fold=historyFindBatch(query('İ'.repeat(16)));
+  fold.page({...newer,entries:[chunk('fold-new','i\u0307'.repeat(12),10,20)]});
+  assert.equal(fold.page({...older,entries:[chunk('fold-old','i\u0307'.repeat(4),0,10)]}).hits.length,1,
+    'carry uses the actual matcher expansion budget, not raw query string length');
+});
 test('streams Unicode matching across chunks with exact original offsets', () => {
   const matcher = literalMatcher(query('中文😀x'));
   assert.deepEqual(matcher.feed('head中').ranges, []);
