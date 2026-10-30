@@ -98,6 +98,79 @@ function acceptHistory(previous: Painting, entries: Parameters<typeof paintHisto
     live: previous.live.filter(item => item.who !== 'user' || !item.token || !recorded.has(item.token)) };
 }
 
+type HistoryTextPoint = { tail: number; sampleFrom: number; sample: string; top: number; entries: string[] };
+function historyTextLength(root: HTMLElement): number {
+  const nodes = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let size = 0;
+  while (nodes.nextNode()) size += (nodes.currentNode as Text).length;
+  return size;
+}
+function historyTextSlice(root: HTMLElement, from: number, to: number): string {
+  const nodes = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let offset = 0, text = '';
+  while (nodes.nextNode() && offset < to) {
+    const node = nodes.currentNode as Text;
+    if (offset + node.length > from) text += node.data.slice(Math.max(0, from - offset), to - offset);
+    offset += node.length;
+  }
+  return text;
+}
+function historyTextRect(root: HTMLElement, at: number): DOMRect | null {
+  const nodes = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let offset = 0;
+  while (nodes.nextNode()) {
+    const node = nodes.currentNode as Text;
+    if (at < offset + node.length) {
+      const range = root.ownerDocument.createRange();
+      range.setStart(node, at - offset); range.setEnd(node, at - offset + 1);
+      return range.getClientRects()[0] ?? null;
+    }
+    offset += node.length;
+  }
+  return null;
+}
+/** A bounded rendered-text point, scoped to the same retained source suffix.
+ * The short sample rejects changed Markdown text; it never identifies a message. */
+function captureHistoryTextPoint(root: HTMLElement, viewport: HTMLElement, entries: string[]): HistoryTextPoint | null {
+  const doc = root.ownerDocument as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  const bounds = root.getBoundingClientRect(), view = viewport.getBoundingClientRect();
+  const top = Math.max(bounds.top, view.top), bottom = Math.min(bounds.bottom, view.bottom);
+  const x = (Math.max(bounds.left, view.left) + Math.min(bounds.right, view.right)) / 2;
+  const line = parseFloat(getComputedStyle(root).lineHeight);
+  const y = Math.min(bottom, top + (Number.isFinite(line) ? line / 2 : (bottom - top) / 2));
+  const position = doc.caretPositionFromPoint?.(x, y);
+  const caret = position ? doc.createRange() : doc.caretRangeFromPoint?.(x, y);
+  if (!caret) return null;
+  if (position) { caret.setStart(position.offsetNode, position.offset); caret.collapse(true); }
+  if (!root.contains(caret.startContainer) || caret.startContainer.nodeType !== Node.TEXT_NODE) return null;
+  const nodes = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let at = 0;
+  while (nodes.nextNode()) {
+    const node = nodes.currentNode as Text;
+    if (node === caret.startContainer) { at += caret.startOffset; break; }
+    at += node.length;
+  }
+  const length = historyTextLength(root);
+  at = Math.min(at, length - 1);
+  const rect = at >= 0 ? historyTextRect(root, at) : null;
+  if (!rect || !rect.height) return null;
+  const from = Math.max(0, at - 24), to = Math.min(length, at + 24);
+  return { tail: length - at, sampleFrom: from - at,
+    sample: historyTextSlice(root, from, to), top: rect.top - view.top, entries: entries.slice() };
+}
+function restoreHistoryTextPoint(root: HTMLElement, viewport: HTMLElement, point: HistoryTextPoint, entries: string[]): boolean {
+  if (entries.length < point.entries.length || point.entries.some((key, index) => key !== entries[entries.length - point.entries.length + index])) return false;
+  const at = historyTextLength(root) - point.tail;
+  if (at < 0 || historyTextSlice(root, at + point.sampleFrom, at + point.sampleFrom + point.sample.length) !== point.sample) return false;
+  const rect = historyTextRect(root, at);
+  if (!rect || !rect.height) return false;
+  viewport.scrollTop += rect.top - viewport.getBoundingClientRect().top - point.top;
+  return true;
+}
+
 /** One `ToolCallContent`, the protocol's three-tag union. */
 type ToolContent = {
   type?: string;
@@ -547,7 +620,7 @@ export function ChatView({
   const [matchedEntry, setMatchedEntry] = useState<string | null>(null);
   const [captureWhy, setCaptureWhy] = useState<string | null>(null);
   const captureNow = useRef<(() => void) | null>(null);
-  const historyAnchor = useRef<{ key: string; top: number } | null>(null);
+  const historyAnchor = useRef<{ key: string; top: number; point: HistoryTextPoint | null } | null>(null);
   const [loaded, setLoaded] = useState(false);
   /** The agent's own commands, as of the last frame that carried a set. */
   const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
@@ -652,7 +725,7 @@ export function ChatView({
   // back does — and a single flag would have to pick one of those to
   // lie about. Both are cleared by arriving at the bottom, which is the
   // only way this pair can go to zero (docs/UX.md 角标可归零).
-  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, following, readingLatest } = useChatScroll(paint);
+  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, acceptRestoredPosition, following, readingLatest } = useChatScroll(paint);
   const box = useRef<HTMLTextAreaElement>(null);
   const coarse = useCoarse();
   // The box takes the keys the moment this pane opens, and any key
@@ -1107,11 +1180,13 @@ export function ChatView({
     const node = [...element.querySelectorAll<HTMLElement>('[data-history-key]')]
       .find(candidate => candidate.dataset.historyKey === anchor.key);
     if (node) {
-      element.scrollTop += node.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.top;
-      onScroll();
+      const item = paint.past.find(item => (item.displayKey ?? item.historyKey) === anchor.key);
+      if (!anchor.point || !item || !restoreHistoryTextPoint(node, element, anchor.point, item.historyEntries))
+        element.scrollTop += node.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.top;
+      acceptRestoredPosition();
     }
     historyAnchor.current = null;
-  }, [paint]);
+  }, [paint, acceptRestoredPosition]);
   const jumpHistoryMatch = (hit: FindHit) => {
     following.current = false; readingLatest.current = false;
     historyAnchor.current = null;
@@ -1138,7 +1213,11 @@ export function ChatView({
       const top = element.getBoundingClientRect().top;
       const node = [...element.querySelectorAll<HTMLElement>('[data-history-key]')]
         .find(candidate => candidate.getBoundingClientRect().bottom > top);
-      if (node?.dataset.historyKey) historyAnchor.current = { key: node.dataset.historyKey, top: node.getBoundingClientRect().top - top };
+      if (node?.dataset.historyKey) {
+        const item = paint.past.find(item => (item.displayKey ?? item.historyKey) === node.dataset.historyKey);
+        historyAnchor.current = { key: node.dataset.historyKey, top: node.getBoundingClientRect().top - top,
+          point: item ? captureHistoryTextPoint(node, element, item.historyEntries) : null };
+      }
       following.current = false; readingLatest.current = false;
     }
     void historyView.current?.older();

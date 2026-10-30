@@ -97,6 +97,16 @@ export function useChatScroll(revision: unknown) {
     if (!following.current) setFresh(true);
   }, [revision, sync]);
 
+  /** Accept an explicit history restoration without treating its scroll event
+   * as reader input or changing the reader's existing latest/history intent. */
+  const acceptRestoredPosition = useCallback(() => {
+    const el = scroller.current;
+    if (!el) return;
+    readerUntil.current = 0;
+    releaseLayout();
+    remember();
+    position.current = { top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight };
+  }, [releaseLayout, remember]);
   const onScroll = () => {
     const el = scroller.current;
     if (!el || el.clientHeight === 0 || acceptReaderScroll()) return;
@@ -132,5 +142,5 @@ export function useChatScroll(revision: unknown) {
     following.current = true; readingLatest.current = true; anchor.current = null;
     setAway(false); setFresh(false); sync();
   };
-  return { scroller, column, following, readingLatest, onScroll, captureDisclosure, toBottom, away, fresh };
+  return { scroller, column, following, readingLatest, onScroll, captureDisclosure, toBottom, acceptRestoredPosition, away, fresh };
 }
