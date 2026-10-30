@@ -12,8 +12,8 @@
 
 Root `integrate/round2@29887a47e86e0c706b501afbb8587ee1a1928a1b` clean；main未动。两作者＋独立reviewer，Root只协调和有限集成，不开第三实现线。所有运行槽 **FREE**，不恢复旧poll；作者源码许可不等于运行许可。
 
-- H：`khor-round2-history` / `fix/round2-chunk-grouping`，唯一TS历史/搜索/复制/锚点owner。来源starts_message、Core真实record和必要测试已独审整合；Node窗口已交还input。保既有分页、传输、缓存、取消预算，跨页query/whole-part copy已整合并完成完整Find32；真实文字点cap淘汰基线夹具cc85258e已独审整合，下一步只跑--range-cap-only实际红，产品Range暂不先改。不能用卡片边缘代文字点。
-- input：`khor-round2-input` / `fix/round2-recovery-contract@b1ccf4aa`，唯一Node/ACP恢复owner。InitialNew不可序列化authority、spawn前监督observer、真实New seed/Journal/epoch接线、parent Ready durable验证及partial-Meta失败清理均已整合到005b249d，并通过actual54318原8父＋2helper。当前5源known-native preghost/parent冻结参数/同epoch cleanup接线仍WIP，未编译，不冒公开offer/action或完整CLI恢复。公共Core/TS恢复与Shell尚待精确交接；SessionRow.home展示名不能冒execution DeviceId。不得全系统扫描或用Meta.exit/锁空冒provider退出。
+- H：`khor-round2-history` / `fix/round2-chunk-grouping`，唯一TS历史/搜索/复制/锚点owner。来源starts_message、Core真实record和必要测试已独审整合；Node窗口已交还input。保既有分页、传输、缓存、取消预算，跨页query/whole-part copy已整合并完成完整Find32；真实文字点cap淘汰基线夹具cc85258e已独审整合，actual55767已得--range-cap-only业务红（无timeout/forced），产品Range暂不先改。不能用卡片边缘代文字点。
+- input：`khor-round2-input` / `fix/round2-recovery-contract@b1ccf4aa`，唯一Node/ACP恢复owner。InitialNew不可序列化authority、spawn前监督observer、真实New seed/Journal/epoch接线、parent Ready durable验证及partial-Meta失败清理均已整合到005b249d，并通过actual54318原8父＋2helper。5源known-native preghost/parent冻结参数/同epoch cleanup已固定2f850029 source-only、交独审，未编译，不冒公开offer/action或完整CLI恢复。公共Core/TS恢复与Shell尚待精确交接；SessionRow.home展示名不能冒execution DeviceId。不得全系统扫描或用Meta.exit/锁空冒provider退出。
 - reviewer：非作者只读核源码、预算、并发、真实证据及Clean Code；idle用followup_task唤醒。不自行运行。
 
 ## 已确认的新结果
@@ -46,7 +46,7 @@ ACP剩余探针已独立裁决为旧测量位置：main e7与当前Trace逐字�
 ## 当前关键路径与队列
 
 1. input New生产链已实际通过；继续已授known-native所有既有正常CLI caller、实际ghost/observer/同key Load/Resume/cleanup接线逐片独审。公开恢复offer/action、当前epoch/idempotent token、Pending/Unknown不重启、精确execution-home路由与Shell新SID关系仍须完成；不能把New8项当完整S。新发现generic close删除row/可能未reap独立SDK provider为独立旧问题，仅NEXT，不扩本slice；不得宣称所有关闭入口已安全。
-2. H shared append→unknown-head deferred replay→bounded query ring/ToolUpdate dependency facts→wholeplain-copy64KiB已整合并通过完整Reader28/Find32。原f16/8a有限phase、c0f append ceiling失败均保，0a/5b真实修正。当前既定R2-006锚点缺口：512-entry窗prepend会淘汰新尾，旧整组suffix/distance-from-end无法保仍在的文字点；cc85258e真实Range夹具已整合29887a47，先只跑cap-only红，再最小contribution entry/offset证明修复，不加新RPC/全历史map。ACP仅旧visual probe单脚本迁移并行，不改产品CSS/palette。
+2. H shared append→unknown-head deferred replay→bounded query ring/ToolUpdate dependency facts→wholeplain-copy64KiB已整合并通过完整Reader28/Find32。原f16/8a有限phase、c0f append ceiling失败均保，0a/5b真实修正。当前既定R2-006锚点缺口：512-entry窗prepend会淘汰新尾，旧整组suffix/distance-from-end无法保仍在的文字点；cc85258e真实Range夹具已整合29887a47，cap-only实际55767 terminal1/6.564s业务红，真实entry200同sample/offset49仍保，文字top0→10240；source2334/env/tools/gen稳，fixture/owned/TMP清理闭。result `376b723615a4588ee2c93fe3d7a0efa6d4b7d8794fb3277a355bc7bc9da678c3`，正在独审；只原cap例，不冒原7或另两Range已跑。接下来最小contribution entry/offset证明修复，不加新RPC/全历史map。ACP仅旧visual probe单脚本迁移并行，不改产品CSS/palette。
 3. Node/Core公开接口稳定后一次真正生成/catalog，再完整noEmit/Vite及受影响consumer。现179gen/278assets仍旧255→16ee lineage；新增HistoryEntry.starts_message/record尚未实际再生成，不能冒当前完整types绿。
 4. C/Core受影响定向原生后，最后同源CLI/GUI生产构建。旧GUI48383 Cargo0但来源门拒hash旧资产的false保留；最终仅精确Tauri OUT核身份/SHA/lsof可逆retain，再真实cold。旧合同过期不直接重跑，禁止mtime/fakeprior/弱化V。无当前合格整包GUI。
 5. 完整S实际同host正常Quit重挂、host死/重启/断线/显式恢复/新Shell；E真实Mac IME、路径拖选、全入口草稿、保存失败取消/最后一键正常OS Quit；长历史系统Save/Copy；W/C/G/Q/B桌面组合；手机真实viewport/连续候选/键行/滑删均尚需完成。私有fixture，不触用户真实会话，不真实模型/API。真人前重新确认方便，旧回答不算新可用性。
