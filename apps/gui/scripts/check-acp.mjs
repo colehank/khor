@@ -881,32 +881,44 @@ try {
     await wait(300);
     await page.locator(`[role="menu"] [data-new-item="${door}"]`).click();
     await wait(400);
-    if (attachId !== null) {
-      await page.locator("[data-new-session-add-agent]").click();
-      await wait(400);
+    let newAgentChoices = 0;
+    if (door === "new") {
+      await page.locator('[data-new-session-launch]').getByRole('combobox').click();
+      const choices = page.getByRole('listbox');
+      await choices.waitFor();
+      newAgentChoices = await choices.locator('[data-choice-option^="agent:"]').count();
+      if (attachId !== null) {
+        await choices.locator('[data-choice-option="manage"]').click();
+        await page.locator('[data-launch-manage]').getByRole('button', {name: words.launch_attach_agent, exact: true}).click();
+        await page.locator('[data-launch-catalog-rows] > div').first().waitFor();
+        await wait(400);
+      } else if (pick) {
+        await choices.locator(`[data-choice-option="agent:${pick}"]`).click();
+        await wait(400);
+      } else await page.keyboard.press('Escape');
     }
     const panel = attachId !== null
-      ? await page.evaluate(() => {
-          const rows = [...document.querySelectorAll("[data-registry-row]")].map((el) => ({
-            id: el.getAttribute("data-registry-row"),
-            startable: el.getAttribute("data-registry-startable") === "true",
-            attach: !!el.querySelector("[data-registry-attach]"),
-            byhand: !!el.querySelector("[data-registry-byhand]"),
-            attached: !!el.querySelector("[data-registry-attached]"),
-            argv: (el.querySelector("[data-registry-argv]")?.textContent ?? "").trim(),
-          }));
-          const t = document.querySelector("[data-registry-taken]");
-          return { rows, taken: (t?.textContent ?? "").trim() };
-        })
+      ? await page.evaluate(labels => {
+          const rows = [...document.querySelectorAll('[data-launch-catalog-rows] > div')].map(el => {
+            const lines = el.querySelector(':scope > div');
+            return {
+              name: (lines?.children[0]?.textContent ?? '').trim(),
+              detail: (lines?.children[1]?.textContent ?? '').trim(),
+              attach: [...el.querySelectorAll('button')].some(button => button.textContent?.trim() === labels.attach),
+              byhand: [...el.querySelectorAll(':scope > span')].some(span => span.textContent?.trim() === labels.byhand),
+              attached: [...el.querySelectorAll(':scope > span')].some(span => span.textContent?.trim() === labels.attached),
+            };
+          });
+          const t = document.querySelector('[data-launch-catalog] > span');
+          return { rows, taken: (t?.textContent ?? '').trim() };
+        }, {attach: words.new_session_attach, byhand: words.new_session_byhand, attached: words.new_session_attached})
       : null;
     if (attachId !== null && attachId !== "") {
-      await page.locator(`[data-registry-attach="${attachId}"]`).click();
+      const target = known.find(entry => entry.id === attachId);
+      assert(target, 'the intended registry ID has a distinct visible fixture name');
+      await page.locator('[data-launch-catalog-rows] > div').filter({has: page.getByText(target.name, {exact: true})})
+        .getByRole('button', {name: words.new_session_attach, exact: true}).click();
       await wait(600);
-    }
-    if (pick && door === "new") {
-      // An agent is a tile among the kinds on the new tab's page (UX-45).
-      await page.locator(`[data-new-session-tile="agent:${pick}"]`).click();
-      await wait(400);
     }
     // **Two poll ticks (POLL_MS is 2000).** The claim is that nothing
     // on a timer asks, and a window shorter than the timer measures
@@ -922,7 +934,7 @@ try {
       await page.locator(`[data-import-row="acp:${registered[0].name}:${resumeId}"]`).click();
       await wait(900);
     }
-    const out = await page.evaluate((door) => {
+    const out = await page.evaluate(({door, newAgentChoices}) => {
       const box = document.querySelector("[data-agent-seen]");
       return {
         // Null and "" are different: no section at all versus a section
@@ -941,7 +953,7 @@ try {
         // The positive control for every negative claim below: the
         // dialog is open and painting agents at all.
         buttons: door === "new"
-          ? document.querySelectorAll('[data-new-session-tile^="agent:"]').length
+          ? newAgentChoices
           : document.querySelectorAll("[data-agent-seen]").length,
         askButton: !!document.querySelector("[data-agent-ask]"),
         // **Where things actually landed**, asked of the engine. `box`
@@ -970,7 +982,7 @@ try {
           return { width: Math.round(r.width), over: Math.round(worst), who };
         })(),
       };
-    }, door);
+    }, {door, newAgentChoices});
     await ctx.close();
     return { ...out, errs, calls, before, sent, panel };
   };
@@ -1118,39 +1130,37 @@ try {
     if (rows.length !== KNOWN_FIXTURE.length) {
       fail(`${say}: probe dead — the snapshot has ${KNOWN_FIXTURE.length} entries and ${rows.length} drew`);
     } else {
-      // The positive half first: without it, "no button on the binary
-      // ones" is a claim a blank panel satisfies.
-      const startable = rows.filter((r) => r.startable);
-      const byhand = rows.filter((r) => !r.startable);
-      if (startable.filter((r) => r.attach || r.attached).length !== startable.length) {
-        fail(`${say}: a startable entry grew neither 接进来 nor 已接入 — ${JSON.stringify(startable)}`);
+      // Expected classification is solely the fixture's public registry
+      // contract. Probe values remain actual rendered name/detail/actions;
+      // no retired data attribute or fixture-derived "argv" enters the probe.
+      const startable = KNOWN_FIXTURE.filter(entry => entry.argv !== null);
+      const byhand = KNOWN_FIXTURE.filter(entry => entry.argv === null);
+      for (const expected of KNOWN_FIXTURE) {
+        const drawn = rows.filter(row => row.name === expected.name);
+        if (drawn.length !== 1) {
+          fail(`${say}: ${expected.id} must draw its own distinct name exactly once: ${JSON.stringify(drawn)}`);
+          continue;
+        }
+        const row = drawn[0];
+        if (expected.argv !== null) {
+          if (!row.attach && !row.attached)
+            fail(`${say}: ${expected.id} grew neither 接进来 nor 已接入 — ${JSON.stringify(row)}`);
+          if (!row.detail.startsWith('npx ') || row.detail !== expected.argv)
+            fail(`${say}: ${expected.id} does not paint its exact start command: ${JSON.stringify(row.detail)}`);
+          if (row.byhand) fail(`${say}: ${expected.id} has a start command but claims 自己装`);
+        } else {
+          if (row.detail !== expected.about)
+            fail(`${say}: ${expected.id} has no command: wanted its description, got ${JSON.stringify(row.detail)}`);
+          if (row.attach || row.attached)
+            fail(`${say}: ${expected.id} ships a binary without a start command yet offers attachment — ${JSON.stringify(row)}`);
+          if (!row.byhand) fail(`${say}: ${expected.id} has no command and does not say 自己装`);
+        }
       }
-      // gemini is already registered in the fixture, so it must read
-      // as attached rather than offering to attach twice.
-      const gem = rows.find((r) => r.id === "gemini");
-      if (!gem?.attached || gem?.attach) {
+      // Already registered must not offer another attach, independently of
+      // the startable/by-hand count and command checks above.
+      const gem = rows.find(row => row.name === 'Gemini CLI');
+      if (!gem?.attached || gem?.attach)
         fail(`${say}: an already-registered entry must read 已接入 and offer no second attach — ${JSON.stringify(gem)}`);
-      }
-      // **「khor 起得来」without the command is a claim taken on
-      // trust.** Asserted as the painted argv, and as its absence on
-      // the ones khor has no command for — where printing one would
-      // be khor inventing it.
-      for (const r of startable) {
-        if (!r.argv.startsWith("npx ")) {
-          fail(`${say}: ${r.id} claims khor can start it and shows ${JSON.stringify(r.argv)} as the command`);
-        }
-      }
-      for (const r of byhand) {
-        if (r.argv) {
-          fail(`${say}: ${r.id} ships a binary and khor printed a command for it: ${JSON.stringify(r.argv)}`);
-        }
-        if (r.attach) {
-          fail(`${say}: ${r.id} ships a binary and khor has no command for it, yet it grew 接进来`);
-        }
-        if (!r.byhand) {
-          fail(`${say}: ${r.id} has no command and said nothing — 「自己装」 and 「接不了」 are different sentences`);
-        }
-      }
       console.log(`${say}: ${startable.length} startable, ${byhand.length} by hand — ${w.panel.taken}`);
     }
     // A table that ages says when it is from.
