@@ -115,6 +115,9 @@ const DELTA_L = 3;
  * updates to calls by id, and an id that is unique per call is the only
  * reason two calls to the same tool do not fold into one line. */
 const frames = [
+  // This default visual scenario is an active turn; Note bodies alone do
+  // not assert the live Turning control fact used by the actual component.
+  { kind: "turning" },
   {
     kind: "note",
     update: {
