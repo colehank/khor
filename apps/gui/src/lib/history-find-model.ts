@@ -18,12 +18,16 @@ export type FindHit = {
   from: number;
   to: number;
   snippet: string;
+  record?: import('@/gen/bindings/HistoryRecordRef').HistoryRecordRef;
 };
 export type FindWorkerInput =
   | { kind: 'query'; query: FindQuery }
   | { kind: 'page'; page: HistoryPage }
-  | { kind: 'next' };
+  | { kind: 'next' }
+  | { kind: 'io'; id: number; result?: unknown; error?: string };
 export type FindWorkerOutput =
+  | { kind: 'read'; id: number; cursor: string; from: number }
+  | { kind: 'project'; id: number; cursor: string; start: number; end: number; scaffold: string | null }
   | { kind: 'result'; hits: FindHit[]; pageDone: boolean; older: string | null; unsearchedRanges: number }
   | { kind: 'error'; error: string };
 
@@ -48,7 +52,6 @@ export function historyText(item: HistoryItem): { texts: string[]; complete: boo
     const input = !diffs.length && !patches.length && item.raw !== null ? toolInputText(item.raw, 64 * 1024) : null;
     return { texts: [
     item.title,
-    ...item.where,
     ...(input?.text ? [input.text] : []),
     ...(item.out ? [item.out] : []),
     ...diffs.flatMap(diff => [diff.path, ...(diff.old ? [diff.old] : []), diff.next]),
@@ -136,7 +139,7 @@ export function historyFindBatch(raw: FindQuery) {
   let matcher = literalMatcher(query);
   let projection: ReturnType<typeof historyText> | null = null;
   let unsearchedInputs = 0;
-  function next(): FindWorkerOutput {
+  function next(): Extract<FindWorkerOutput, { kind: 'result' }> {
     if (!current) throw new Error('history search has no pending page');
     const page = current;
     const hits: FindHit[] = [];
@@ -172,13 +175,13 @@ export function historyFindBatch(raw: FindQuery) {
     }
     const pageDone = item >= items.length;
     if (pageDone) { current = null; items = []; projection = null; }
-    const answer: FindWorkerOutput = { kind: 'result', hits, pageDone, older: page.older,
+    const answer: Extract<FindWorkerOutput, { kind: 'result' }> = { kind: 'result', hits, pageDone, older: page.older,
       unsearchedRanges: pageDone ? page.references.length + unsearchedInputs : 0 };
     if (utf8.encode(JSON.stringify(answer)).length > RESULT_BYTES) throw new Error('history search result exceeds its byte budget');
     return answer;
   }
   return {
-    page(page: HistoryPage): FindWorkerOutput {
+    page(page: HistoryPage): Extract<FindWorkerOutput, { kind: 'result' }> {
       if (current) throw new Error('history search page has not been consumed');
       if (page.entries.length > 128 || page.encoded_bytes > PAGE_BYTES || utf8.encode(JSON.stringify(page)).length > PAGE_BYTES)
         throw new Error('history search page exceeds the reader budget');

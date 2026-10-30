@@ -18,6 +18,11 @@ const scaffoldBuilt = await build({ entryPoints: [resolve('src/lib/history-recor
 const scaffoldModule = { exports: {} };
 Function('module', 'exports', scaffoldBuilt.outputFiles[0].text)(scaffoldModule, scaffoldModule.exports);
 const { recordScaffold, decodeRecordString } = scaffoldModule.exports;
+const recordBuilt = await build({ entryPoints: [resolve('src/lib/history-find-record.ts')], bundle: true,
+  write: false, format: 'cjs', platform: 'node' });
+const recordModule = { exports: {} };
+Function('module', 'exports', recordBuilt.outputFiles[0].text)(recordModule, recordModule.exports);
+const { findRecord } = recordModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
 const note = (key, update) => ({ key, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
@@ -206,7 +211,7 @@ test('giant record preparation streams prefixes and exact raw ranges despite fie
   assert.equal(prepared.strings.length, 3);
   const originals = prepared.strings.map(range => JSON.parse(new TextDecoder().decode(bytes.subarray(range.start - 17, range.end - 17))));
   assert.deepEqual(originals, [file, binary, body]);
-  assert.equal(prepared.strings.every(range => Object.keys(range).sort().join(',') === 'end,marker,start'), true);
+  assert.equal(prepared.strings.every(range => Object.keys(range).sort().join(',') === 'end,marker,prefix,start'), true);
   assert.throws(() => parser.push(new Uint8Array(), 17 + bytes.length), /retired/);
 });
 test('the record lexer validates escape and grammar boundaries and fails budgets explicitly', () => {
@@ -275,6 +280,66 @@ test('the second pass shares that lexer and pauses a decoded match without buffe
   assert.equal(new TextDecoder().decode(bytes.subarray(unicode.start - 100, unicode.end - 100)), String.raw`\ud83d\ude03`);
   const notString = decodeRecordString(0, () => true);
   assert.throws(() => notString.push(new TextEncoder().encode('{}'), 0), /not a JSON string/);
+});
+test('giant projected templates stream original strings, escaped pretty input and cross-block matches', async () => {
+  const content = 'head中😀' + 'x'.repeat(170000) + 'NEEDLE' + '\n'.repeat(2000) + 'tail';
+  const raw = JSON.stringify({ hidden: 'NEEDLE'.repeat(12000), body: content, second: 'NEXT' });
+  const bytes = new TextEncoder().encode(raw), start = 123;
+  const ref = { start, end: start + bytes.length, cursor: 'original', item: null, missing_start: false, missing_end: false };
+  const reads = [];
+  const io = {
+    record: async (cursor, from) => {
+      assert.equal(cursor, 'joined'); reads.push(from);
+      const data = bytes.subarray(from - start, Math.min(from - start + 65536, bytes.length));
+      return { offset: from, data: Buffer.from(data).toString('base64'), next: from + data.length < ref.end ? from + data.length : null };
+    },
+    project: async (_cursor, first, end, scaffold) => {
+      assert.deepEqual([first, end], [ref.start, ref.end]);
+      const value = scaffold ? JSON.parse(scaffold) : null;
+      return { record: { ...ref, cursor: 'joined' }, complete: true,
+        entries: value ? [text('projection:0', value.body + '\n' + value.second)] : [] };
+    },
+  };
+  const scan = findRecord(query('needle'), ref, 'before', io);
+  const first = await scan.next();
+  assert.equal(first.done, false); assert.equal(first.value.from, content.indexOf('NEEDLE'));
+  assert.equal(first.value.record.cursor, 'joined'); assert.equal(first.value.snippet.includes('NEEDLE'), true);
+  assert.deepEqual(await scan.next(), { done: true, value: true });
+  assert.equal(reads.length >= Math.ceil(bytes.length / 65536) + 1, true, 'normalization and body reads both use bounded original chunks');
+  const crossing = findRecord(query('tail\nnext'), ref, 'before', io);
+  assert.equal((await crossing.next()).value.from, content.length - 4);
+  await crossing.return();
+  const prettyIO = { ...io, project: async (_cursor, _first, _end, scaffold) => ({ record: { ...ref, cursor: 'joined' }, complete: true,
+    entries: scaffold ? [note('projection:0', { sessionUpdate: 'tool_call', toolCallId: 'c', title: 'Call', rawInput: { text: JSON.parse(scaffold).body } })] : [] }) };
+  const escaped = findRecord(query(String.raw`NEEDLE\n\n`), ref, 'before', prettyIO);
+  assert.equal((await escaped.next()).done, false, 'pretty raw input searches its actual escaped displayed spelling');
+  await escaped.return();
+  const absent = findRecord(query('hidden'), ref, 'before', io);
+  assert.deepEqual(await absent.next(), { done: true, value: true }, 'JSON keys never become searchable body text');
+});
+test('repeated cached raw ranges still yield the worker task queue within one scan budget', async () => {
+  const bytes = new TextEncoder().encode(JSON.stringify({ body: 'x'.repeat(12000) }));
+  const ref = { start: 0, end: bytes.length, cursor: 'cached', item: null, missing_start: false, missing_end: false };
+  let taskRan = false, reads = 0;
+  const timer = setTimeout(() => { taskRan = true; }, 0);
+  const io = {
+    record: async () => { reads++; return { offset: 0, data: Buffer.from(bytes).toString('base64'), next: null }; },
+    project: async (_cursor, _start, _end, scaffold) => ({ record: ref, complete: true,
+      entries: scaffold ? [text('projection:0', Array.from({ length: 64 }, () => JSON.parse(scaffold).body).join('\n'))] : [] }),
+  };
+  try {
+    assert.deepEqual(await findRecord(query('absent'), ref, 'before', io).next(), { done: true, value: true });
+    assert.equal(reads, 1, 'all repeated body visits deliberately reuse the same original chunk');
+    assert.equal(taskRan, true, 'cached-range scans must service cancellation tasks before finishing');
+  } finally { clearTimeout(timer); }
+});
+test('giant searches expose source errors and incomplete structure, with no full text fallback', async () => {
+  const ref = { start: 0, end: 2, cursor: 'raw', item: null, missing_start: false, missing_end: false };
+  const io = { project: async (_c, _s, _e, scaffold) => ({ record: ref, complete: false, entries: [] }),
+    record: async () => ({ offset: 0, data: Buffer.from('{]').toString('base64'), next: null }) };
+  assert.deepEqual(await findRecord(query('x'), ref, 'before', io).next(), { done: true, value: false });
+  await assert.rejects(findRecord(query('x'), ref, 'before', { ...io, record: async () => { throw new Error('source changed'); } }).next(), /source changed/);
+  await assert.rejects(findRecord(query('x'), ref, 'before', { ...io, record: async () => ({ offset: 1, data: 'e30=', next: null }) }).next(), /range or byte/);
 });
 const deferred = () => {
   let resolve;
@@ -357,6 +422,91 @@ test('actual worker resumes a source page and disposal cancels its old read with
     await reader.dispose();
   }
 });
+test('actual worker joins fragmented source ranges and resumes giant hits through owned RPC leases', async () => {
+  const body = '中😀' + ('needle ' + 'x'.repeat(3000)).repeat(70);
+  const bytes = new TextEncoder().encode(JSON.stringify({ hidden: 'needle'.repeat(5000), body }));
+  const middle = Math.floor(bytes.length / 2);
+  const ref = { start: 0, end: bytes.length, item: null, cursor: 'joined', missing_start: false, missing_end: false };
+  const calls = [], cancelled = [];
+  let leases = 0, arrived = deferred(), last;
+  const source = historySource('giant-binding', {
+    begin: async () => `giant${++leases}`, cancel: async key => { cancelled.push(key); },
+    page: async (_id, _key, before) => before === null
+      ? { ...page([], [{ ...ref, start: middle, cursor: 'right-fragment', missing_start: true }]), older: 'left-page' }
+      : { ...page([], [{ ...ref, end: middle, cursor: 'left-fragment', missing_end: true }]), older: null },
+    project: async (_id, key, cursor, start, end, scaffold) => {
+      calls.push(['project', key, cursor, start, end]);
+      assert.deepEqual([start, end], [0, bytes.length]);
+      return { record: ref, complete: true, entries: scaffold ? [text('projection:7', JSON.parse(scaffold).body)] : [] };
+    },
+    record: async (_id, _key, cursor, from) => {
+      assert.equal(cursor, 'joined'); calls.push(['record', from]);
+      const data = bytes.subarray(from, from + 65536);
+      return { offset: from, data: Buffer.from(data).toString('base64'), next: from + data.length < bytes.length ? from + data.length : null };
+    },
+  });
+  const reader = historyFind(source, query('needle'), state => {
+    last = state; if (!state.busy && (state.hits.length || state.done || state.error)) arrived.resolve(state);
+  });
+  try {
+    reader.start();
+    const first = await arrived.promise;
+    assert.equal(first.error, null); assert.equal(first.hits.length, 32);
+    assert.equal(first.scannedPages, 2); assert.equal(first.hits[0].entry, '0:7');
+    arrived = deferred(); reader.next(); const second = await arrived.promise;
+    arrived = deferred(); reader.next(); const third = await arrived.promise;
+    assert.deepEqual([first.hits.length, second.hits.length, third.hits.length], [32, 32, 6]);
+    assert.deepEqual([...first.hits, ...second.hits, ...third.hits].map(hit => hit.from), Array.from({ length: 70 }, (_, i) => 3 + i * 3007));
+    assert.equal(third.done, true); assert.equal(third.complete, true);
+    assert.equal(calls.filter(call => call[0] === 'project').length, 2);
+    for (const call of calls.filter(call => call[0] === 'project')) assert.equal(cancelled.filter(key => key === call[1]).length, 1);
+    const cleanup = await reader.dispose(); assert.equal(cleanup.failures, 0);
+    const count = calls.length; await reader.next(); assert.equal(calls.length, count);
+  } finally { await reader.dispose(); }
+});
+test('a changed raw source clears already displayed giant search hits', async () => {
+  const bytes = new TextEncoder().encode(JSON.stringify({ body: 'needle '.repeat(32) + 'x'.repeat(150000) + 'needle' }));
+  const ref = { start: 0, end: bytes.length, cursor: 'changed-record', item: null, missing_start: false, missing_end: false };
+  let changed = false, arrived = deferred();
+  const source = historySource('changing-raw', {
+    begin: async () => crypto.randomUUID(), cancel: async () => {},
+    page: async () => ({ ...page([], [ref]), older: null }),
+    project: async (_id, _key, _cursor, _start, _end, scaffold) => ({ record: ref, complete: true,
+      entries: scaffold ? [text('projection:0', JSON.parse(scaffold).body)] : [] }),
+    record: async (_id, _key, _cursor, from) => {
+      if (changed) throw new Error('source changed while reading');
+      const data = bytes.subarray(from, from + 65536);
+      return { offset: from, data: Buffer.from(data).toString('base64'), next: from + data.length < bytes.length ? from + data.length : null };
+    },
+  });
+  const reader = historyFind(source, query('needle'), state => { if (state.hits.length || state.error) arrived.resolve(state); });
+  try {
+    reader.start(); assert.equal((await arrived.promise).hits.length, 32);
+    changed = true; arrived = deferred(); reader.next();
+    const failed = await arrived.promise;
+    assert.match(failed.error, /source changed/); assert.deepEqual(failed.hits, []); assert.equal(failed.complete, false);
+  } finally { await reader.dispose(); }
+});
+test('actual giant worker disposal cancels a held raw read without posting late matches', async () => {
+  const entered = deferred(), held = deferred(), cancelled = [], states = [];
+  const ref = { start: 0, end: 200000, item: null, cursor: 'raw', missing_start: false, missing_end: false };
+  let lease = 0;
+  const source = historySource('giant-cancel', {
+    begin: async () => `cancel${++lease}`, cancel: async key => { cancelled.push(key); },
+    page: async () => ({ ...page([], [ref]), older: null }),
+    project: async () => ({ record: ref, entries: [], complete: false }),
+    record: async (_id, key) => { entered.resolve(key); return held.promise; },
+  });
+  const reader = historyFind(source, query('needle'), state => states.push(state));
+  try {
+    reader.start(); const key = await entered.promise;
+    const closing = reader.dispose(); const count = states.length;
+    held.resolve({ offset: 0, data: Buffer.from('"needle"').toString('base64'), next: null });
+    await closing;
+    assert.equal(cancelled.filter(value => value === key).length, 1);
+    assert.equal(states.length, count);
+  } finally { held.resolve(null); await reader.dispose(); }
+});
 test('source replacement stops the real worker and never presents the new page as old matches', async () => {
   const arrived = deferred();
   const source = historySource('binding', {
@@ -396,4 +546,4 @@ try {
   globalThis.Worker = OriginalWorker;
 }
 assert.equal(ownedWorkers.size, 0);
-console.log(`${checks.length} source-backed history find checks passed; actual worker threads, no browser/raw-record projection claim`);
+console.log(`${checks.length} source-backed history find checks passed; actual worker threads, no browser/native-normalization claim`);

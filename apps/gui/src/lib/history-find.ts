@@ -11,7 +11,7 @@ export type HistoryFindState = {
   unsearchedRanges: number;
   error: string | null;
 };
-type Source = Pick<ReturnType<typeof historySource>, 'page' | 'dispose'>;
+type Source = Pick<ReturnType<typeof historySource>, 'page' | 'record' | 'project' | 'dispose'>;
 /** The UI only forwards bounded RPC replies. Projection and matching run
  * in a dedicated worker; this source owns separate cancellable read leases. */
 export function historyFind(source: Source, query: FindQuery, changed: (state: HistoryFindState) => void) {
@@ -30,7 +30,7 @@ export function historyFind(source: Source, query: FindQuery, changed: (state: H
     if (closed) return;
     pending?.abort();
     worker.terminate();
-    state = { ...state, busy: false, error: String(error) };
+    state = { ...state, hits: [], complete: false, busy: false, error: String(error) };
     publish();
     void source.dispose();
   };
@@ -60,6 +60,24 @@ export function historyFind(source: Source, query: FindQuery, changed: (state: H
     if (closed) return;
     const answer = event.data;
     if (answer.kind === 'error') { fail(answer.error); return; }
+    if (answer.kind === 'read' || answer.kind === 'project') {
+      const controller = new AbortController();
+      if (pending) { fail('history search requested concurrent IO'); return; }
+      pending = controller;
+      const work = answer.kind === 'read'
+        ? source.record(answer.cursor, answer.from, controller.signal)
+        : source.project(answer.cursor, answer.start, answer.end, answer.scaffold, controller.signal);
+      void work.then(result => {
+        if (closed || pending !== controller) return;
+        pending = null;
+        post({ kind: 'io', id: answer.id, result });
+      }, error => {
+        if (closed || pending !== controller) return;
+        pending = null;
+        post({ kind: 'io', id: answer.id, error: String(error) });
+      });
+      return;
+    }
     if (answer.pageDone && answer.older !== null && answer.older === requestedBefore) {
       fail('history search source cursor did not advance');
       return;

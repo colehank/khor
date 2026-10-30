@@ -55,7 +55,7 @@ pub enum ContentEvent {
 /// Body-only normalization of a caller-built bounded scaffold. These are
 /// ordinary SDK notes, never trusted journal boundaries or send receipts.
 pub struct BodyProjection {
-    pub updates: Vec<serde_json::Value>,
+    pub updates: Vec<(usize, serde_json::Value)>,
     pub complete: bool,
 }
 impl From<Utterance> for ContentEvent {

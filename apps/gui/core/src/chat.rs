@@ -1329,7 +1329,7 @@ fn body_projection_response(
         complete: projection.complete,
     };
     let mut bytes = 0;
-    for (index, update) in projection.updates.into_iter().enumerate() {
+    for (index, update) in projection.updates {
         if cancelled() {
             return Err("history request cancelled".into());
         }

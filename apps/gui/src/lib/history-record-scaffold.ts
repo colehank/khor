@@ -7,7 +7,7 @@ const PREFIX_BYTES = 256;
 const STRING_RANGES = 128;
 const encoder = new TextEncoder();
 
-export type RecordStringRange = { marker: string; start: number; end: number };
+export type RecordStringRange = { marker: string; start: number; end: number; prefix: string };
 export type RecordScaffold = { json: string; strings: RecordStringRange[] };
 type Frame = { kind: 'object'; state: 'keyOrEnd' | 'key' | 'colon' | 'value' | 'commaOrEnd' }
   | { kind: 'array'; state: 'valueOrEnd' | 'value' | 'commaOrEnd' };
@@ -92,8 +92,8 @@ function prepareRecord(start: number, seed: string, onText?: ConsumeText, string
     if (value.high !== null) throw new Error('unpaired Unicode surrogate in history record');
     if (value.large) {
       if (strings.length === STRING_RANGES) throw new Error('history record has too many long string ranges');
-      const marker = `\ue000${seed}:${strings.length}\ue001`;
-      strings.push({ marker, start: value.start, end: offset + 1 });
+      const marker = `\ue000${seed}:${strings.length}\"\\\n\ue001`;
+      strings.push({ marker, start: value.start, end: offset + 1, prefix: value.prefix });
       append(JSON.stringify(value.prefix + marker));
     } else append(JSON.stringify(value.short));
     if (value.key) {

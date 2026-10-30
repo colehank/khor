@@ -10,9 +10,10 @@ fn scaffold_body_response_cannot_promote_frame_types_or_silently_lose_expansion(
     let update = serde_json::json!({"update":{"sessionUpdate":"agent_message_chunk",
         "content":{"type":"text","text":"marker"}},"kind":"capture_gap"});
     let response = body_projection_response(record(), khor_node::session_content::BodyProjection {
-        updates: vec![update; 129], complete: true,
+        updates: (10..139).map(|index| (index, update.clone())).collect(), complete: true,
     }, &|| false).unwrap();
     assert_eq!(response.entries.len(), 128);
+    assert_eq!(response.entries[127].key, "projection:137");
     assert!(!response.complete);
     assert_eq!(response.record.cursor, "same-file-snapshot");
     let encoded = serde_json::to_value(&response).unwrap();
@@ -25,13 +26,13 @@ fn scaffold_body_payload_and_cancellation_stay_bounded() {
     let update = serde_json::json!({"update":{"sessionUpdate":"agent_message_chunk",
         "content":{"type":"text","text":"x".repeat(30000)}}});
     let response = body_projection_response(record(), khor_node::session_content::BodyProjection {
-        updates: vec![update.clone(); 128], complete: true,
+        updates: (0..128).map(|index| (index, update.clone())).collect(), complete: true,
     }, &|| false).unwrap();
     assert!(!response.complete);
     assert!(response.entries.len() < 128);
     assert!(encoded_size(&response).unwrap() <= HISTORY_PAYLOAD_BYTES);
     let error = body_projection_response(record(), khor_node::session_content::BodyProjection {
-        updates: vec![update], complete: true,
+        updates: vec![(7, update)], complete: true,
     }, &|| true).err().unwrap();
     assert!(error.contains("cancelled"));
 }

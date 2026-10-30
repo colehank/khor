@@ -32,15 +32,15 @@ impl ContentReference {
         let events = parser(&compact);
         let mut updates = Vec::new();
         let mut complete = !events.is_empty();
-        for event in events {
+        for (index, event) in events.into_iter().enumerate() {
             use super::ContentEvent;
             match event {
                 ContentEvent::Native(utterance) => {
                     if let Some(update) = crate::replayed_update(utterance) {
-                        updates.push(serde_json::json!({ "update": update }));
+                        updates.push((index, serde_json::json!({ "update": update })));
                     } else { complete = false; }
                 }
-                ContentEvent::Update(update) => updates.push(update),
+                ContentEvent::Update(update) => updates.push((index, update)),
                 ContentEvent::LocalUserEcho | ContentEvent::Turn { .. } => {}
                 // A scaffold cannot elevate an origin, gap or arbitrary raw
                 // record into a trusted system fact on the viewing client.
@@ -288,7 +288,7 @@ mod tests {
         let projected = reference.body_projection(prompt).unwrap();
         assert!(projected.complete);
         assert_eq!(projected.updates.len(), 1);
-        assert_eq!(projected.updates[0]["update"]["content"]["text"], "marker");
+        assert_eq!(projected.updates[0].1["update"]["content"]["text"], "marker");
         let echo = r#"{"kind":"update","turn":"local","notification":{"sessionId":"native","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"marker"}}}}"#;
         let projected = reference.body_projection(echo).unwrap();
         assert!(projected.complete);
@@ -308,7 +308,7 @@ mod tests {
         let scaffold = serde_json::to_string_pretty(&serde_json::json!({"type":"user","message":{"role":"user","content":"native marker"}})).unwrap();
         let projected = native.body_projection(&scaffold).unwrap();
         assert!(projected.complete);
-        assert_eq!(projected.updates[0]["update"]["content"]["text"], "native marker");
+        assert_eq!(projected.updates[0].1["update"]["content"]["text"], "native marker");
         assert!(!native.body_projection("{").unwrap().complete);
         assert!(!native.body_projection("{}").unwrap().complete);
         assert!(!native.body_projection(r#"{"type":"unknown"}"#).unwrap().complete);
