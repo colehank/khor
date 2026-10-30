@@ -64,6 +64,19 @@ fn a_long_load_commits_the_complete_base_before_host_ready() {
         std::fs::write(evidence.join("worker.stderr"), &stderr).unwrap();
     }
     assert!(status.success(), "{stdout}\n{stderr}");
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|line| line.starts_with("test result:"))
+            .count(),
+        1,
+        "owned helper must have exactly one real test summary: {stdout}"
+    );
+    assert!(
+        stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"),
+        "owned helper did not actually run its one test: {stdout}"
+    );
+    println!("[S_LONG_LOAD_WORKER]\n{stdout}\n[S_LONG_LOAD_WORKER_END]");
 }
 
 fn rss_kib() -> u64 {
@@ -210,10 +223,65 @@ for line in sys.stdin:
     write_frame(&mut conn, &GuiOp::Capture { token }).unwrap();
     let fence = await_capture(&notes, token);
     let page = capture_page(&node, &fence, false);
-    assert!(page.events.iter().any(|event| matches!(&event.payload,
-        crate::session_content::ContentEvent::Update(note)
-            if note["update"]["content"]["text"].as_str().is_some_and(|text| text.starts_with("1024:"))
-    )), "the current canonical reader cannot reach the last accepted row");
+    // A 64KiB payload plus its JSON envelope is deliberately above the inline
+    // record budget. Exercise the real explicit-reference path, not a smaller
+    // fixture or a raised window threshold.
+    let reference = page
+        .references
+        .iter()
+        .max_by_key(|reference| reference.range.end)
+        .expect("the tail should be an explicit raw record reference");
+    assert!(!reference.missing_start && !reference.missing_end);
+    assert_eq!(reference.range.end, bytes);
+    assert!(reference.range.end - reference.range.start <= 128 * 1024);
+    let cursor = page.cursor_before(crate::adaptor::transcript_page::Position {
+        start: reference.range.start,
+        end: reference.range.end,
+        item: 0,
+    });
+    let raw = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let mut raw = Vec::new();
+            let mut next = Some(reference.range.start);
+            while let Some(from) = next {
+                let key = node.content_begin(&fence.binding).await.unwrap();
+                let request = crate::session_content::remote::ClientRead::claim(
+                    node.root(),
+                    fence.binding.clone(),
+                    &key,
+                )
+                .unwrap();
+                let chunk = node
+                    .content_record(&request, cursor.clone(), from)
+                    .await
+                    .unwrap();
+                assert_eq!(chunk.offset, from);
+                assert!(!chunk.bytes.is_empty() && chunk.bytes.len() <= 64 * 1024);
+                assert_eq!(from, reference.range.start + raw.len() as u64);
+                raw.extend_from_slice(&chunk.bytes);
+                assert!(raw.len() as u64 <= reference.range.end - reference.range.start);
+                next = chunk.next;
+                if let Some(next) = next {
+                    assert_eq!(next, from + chunk.bytes.len() as u64);
+                }
+            }
+            assert_eq!(
+                raw.len() as u64,
+                reference.range.end - reference.range.start
+            );
+            raw
+        });
+    let tail: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+    let text = tail["notification"]["update"]["content"]["text"]
+        .as_str()
+        .unwrap();
+    let (sequence, payload) = text.split_once(':').unwrap();
+    assert_eq!(sequence, "1024");
+    assert_eq!(payload.len(), PAYLOAD);
+    assert!(payload.bytes().all(|byte| byte == b'x'));
     close_host(host, &mut conn, &notes, pid);
     drop(conn);
     drop(notes);
