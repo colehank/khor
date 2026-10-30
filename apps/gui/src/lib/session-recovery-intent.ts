@@ -35,7 +35,7 @@ export function decodeRecoveryIntent(raw: string | null): RecoveryIntent | null 
   let v: unknown;
   try { v = JSON.parse(raw); } catch { throw new RecoveryIntentError("invalid"); }
   if (!object(v) || !keys(v, ["home", "id", "operation", "expected_run", "token", "cwd"]) ||
-      typeof v.home !== "string" || !/^[0-9a-f]{64}$/.test(v.home) || !text(v.id, 512) ||
+      typeof v.home !== "string" || !/^[0-9a-f]{64}$/.test(v.home) || !text(v.id, 4096) ||
       (v.operation !== "native" && v.operation !== "new_shell") || !nullable(v.expected_run, 1024) ||
       !nullable(v.cwd, 4096) || !object(v.token) || !keys(v.token, ["epoch", "nonce"]) ||
       typeof v.token.epoch !== "string" || !/^(0|[1-9][0-9]{0,19})$/.test(v.token.epoch) ||
@@ -65,7 +65,7 @@ function open(): Promise<IDBDatabase> {
   });
 }
 function target(home: string, id: string): [string, string] {
-  if (!/^[0-9a-f]{64}$/.test(home) || !text(id, 512)) throw new RecoveryIntentError("invalid");
+  if (!/^[0-9a-f]{64}$/.test(home) || !text(id, 4096)) throw new RecoveryIntentError("invalid");
   return [home, id];
 }
 /** One unresolved payload per compound target key. Native readwrite transactions

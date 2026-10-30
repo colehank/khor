@@ -1748,6 +1748,7 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+recovery-waiting-owner = "Rejoining the new execution device after the previous view’s connection or transfer settles"
 recovery-conflict = "This session has another unresolved request; check the original request"
 recovery-capacity = "This device has reached its pending recovery limit; check existing requests first"
 recovery-title = "Session recovery"
@@ -1756,7 +1757,7 @@ recovery-join = "Rejoin"
 recovery-new-shell = "New shell"
 recovery-resume = "Recover session"
 recovery-check = "Check and recover"
-recovery-recheck = "Recheck capabilities"
+recovery-recheck = "Recheck and recover"
 recovery-unsupported = "Recovery was previously unsupported; you can explicitly recheck"
 recovery-live = "Running"
 recovery-ended = "Ended"

@@ -1,5 +1,5 @@
 import type { SessionReading } from "@/hooks/use-session-attention";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 
 import { programOf, shortDir } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
@@ -22,7 +22,7 @@ import { ChatView } from "@/views/ChatView";
 import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
 import { RecoveryActions } from "@/views/RecoveryActions";
-import { tabAct, useTabActs } from "@/lib/tab-acts";
+import type { TerminalRecoveryOwner } from "@/views/TerminalPane";
 
 function ObservedSession({ row, onReading }: { row: SessionRow; onReading?: SessionReading }) {
   const [answer, setAnswer] = useState<{key: string; content: SessionContent} | null>(null);
@@ -271,6 +271,15 @@ export function closeWarning(
 export const isTerminal = (r: SessionRow) => r.can_control && r.kind !== "observe" && r.kind !== "broadcast" && r.kind !== "gui" && (r.mux || r.attachable);
 export const isObserved = (r: SessionRow) => r.kind === "observe" || (!r.can_control && (r.kind === "tui" || r.kind === "gui" || (r.kind === "shell" && !r.ended)));
 
+type KeptTerminal = {
+  id: string; machine: string | null; mux: boolean;
+  home: string | null; generation: number; recovery: TerminalRecoveryOwner | null;
+};
+const terminalSeat = (row: SessionRow, generation = 0): KeptTerminal => ({
+  id: row.id, machine: row.source ? row.home : null, mux: row.mux,
+  home: row.execution_home, generation, recovery: null,
+});
+
 export function DetailPane({
   row,
   narrow,
@@ -326,7 +335,6 @@ export function DetailPane({
   // recovery must reopen the outer content lookup as well as the control pipe.
   const [rejoined, setRejoined] = useState({ id: "", generation: 0 });
   const [terminalRejoin, setTerminalRejoin] = useState<{ id: string; home: string | null } | null>(null);
-  const actsRevision = useTabActs();
   const [created, setCreated] = useState<{ id: string; home: string | null; previous: string } | null>(null);
   const viewKey = row ? JSON.stringify([row.id, row.execution_home, rejoined.id === row.id ? rejoined.generation : 0]) : "";
   // Warm the terminal's chunk once the pane has drawn (`loadTerminal`).
@@ -344,29 +352,44 @@ export function DetailPane({
   // screen when its host ends** (T-15): the row turning into 失败 no
   // longer swaps the pane for the row's facts — the terminal stays, with
   // its own 这个终端结束了.
-  const [kept, setKept] = useState<{ id: string; machine: string | null; mux: boolean }[]>([]);
+  const [kept, setKept] = useState<KeptTerminal[]>([]);
   useEffect(() => {
-    if (!row || !isTerminal(row)) return;
-    const machine = row.source ? row.home : null;
-    setKept((k) => (k.some((t) => t.id === row.id) ? k : [...k, { id: row.id, machine, mux: row.mux }]));
-  }, [row]);
+    if (!row) return;
+    setKept(old => {
+      const seat = old.find(value => value.id === row.id);
+      if (!isTerminal(row)) {
+        return seat && seat.home !== row.execution_home && (!seat.recovery || seat.recovery.idle())
+          ? old.filter(value => value !== seat) : old;
+      }
+      if (!seat) return [...old, terminalSeat(row)];
+      if (seat.home === row.execution_home || (seat.recovery && !seat.recovery.idle())) return old;
+      return old.map(value => value === seat ? terminalSeat(row, seat.generation + 1) : value);
+    });
+  }, [row, kept]);
+  // Home replacement first removes interactivity and prevents new drops. The
+  // old seat stays mounted until its own existing transfer/join has settled.
+  useLayoutEffect(() => {
+    if (!row) return;
+    kept.find(seat => seat.id === row.id && seat.home !== row.execution_home)?.recovery?.retire();
+  }, [row?.id, row?.execution_home, kept]);
   useEffect(() => {
     if (!openIds) return;
     setKept((k) => (k.every((t) => openIds.includes(t.id)) ? k : k.filter((t) => openIds.includes(t.id))));
   }, [openIds]);
   const keptHere = (openIds ? kept : kept.filter((t) => t.id === row?.id)).filter(tab => {
     const current = row?.id === tab.id ? row : sessions?.find(item => item.id === tab.id);
-    return !current || isTerminal(current) || !!current.ended;
+    return !current || isTerminal(current) || !!current.ended || (tab.recovery !== null && !tab.recovery.idle());
   });
-  const terminalShown = row !== null && (isTerminal(row) || keptHere.some((t) => t.id === row.id));
+  const waitingForSeat = row !== null && isTerminal(row) && keptHere.some(t => t.id === row.id && t.home !== row.execution_home);
+  const terminalShown = row !== null && !waitingForSeat && (isTerminal(row) || (!!row.ended && keptHere.some((t) => t.id === row.id && t.home === row.execution_home)));
   useEffect(() => {
     if (!terminalRejoin) return;
     if (!active || row?.id !== terminalRejoin.id || row.execution_home !== terminalRejoin.home || !terminalShown) { setTerminalRejoin(null); return; }
-    const act = tabAct(terminalRejoin.id);
-    // A transfer may currently own this seat with Stop. Wait for the existing
-    // Reload owner, rather than invoking Stop or remounting other kept tabs.
-    if (act?.kind === "reload") { setTerminalRejoin(null); act.run(); }
-  }, [terminalRejoin, row?.id, row?.execution_home, active, terminalShown, actsRevision]);
+    const seat = keptHere.find(value => value.id === terminalRejoin.id && value.home === terminalRejoin.home);
+    // This exact mounted seat rechecks its live drop/opening/joining state.
+    // No global id-only act, automatic Stop or same-home unmount is involved.
+    if (seat?.recovery?.rejoin()) setTerminalRejoin(null);
+  }, [terminalRejoin, row?.id, row?.execution_home, active, terminalShown, kept]);
   /** Whether this pane is the narrow session page's content, with its
       tabs in the bar under it (`components/SessionBar`, 2026-10-02): no
       head then — the bar's tab is this session's face, name and switch,
@@ -599,7 +622,10 @@ export function DetailPane({
       />}
       <div data-detail-row className="flex min-h-0 min-w-0 flex-1 flex-row">
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {terminalShown ? null : row && row.kind === "broadcast" ? (
+      {waitingForSeat && row ? (
+        row.kind === "gui" || row.kind === "tui" ? <ObservedSession key={viewKey} row={row} onReading={onReading} />
+          : <div role="status" className="grid min-h-0 flex-1 place-items-center p-row text-callout text-muted-foreground">{gui.recovery_waiting_owner}</div>
+      ) : terminalShown ? null : row && row.kind === "broadcast" ? (
         // A machine's conversation — the stream `khor log` prints,
         // with the composer `tell` fills — or the broadcast, the khor's
         // own (STORE-BRIEF phase 3). Keyed so switching machines drops
@@ -683,23 +709,29 @@ export function DetailPane({
       {/* The shown one first in the document, so whatever finds "the
           terminal" by `[data-terminal]` finds the one on screen. */}
       {(row && isTerminal(row) && !keptHere.some((t) => t.id === row.id)
-        ? [...keptHere, { id: row.id, machine: row.source ? row.home : null, mux: row.mux }]
+        ? [...keptHere, terminalSeat(row)]
         : keptHere
       )
         .slice()
         .sort((a, b) => Number(b.id === row?.id) - Number(a.id === row?.id))
         .map((t) => {
-        const on = terminalShown && t.id === row?.id;
+        const on = terminalShown && t.id === row?.id && t.home === row.execution_home;
         return (
           <div
-            key={t.id}
+            key={JSON.stringify([t.id, t.home, t.generation])}
             data-kept-terminal={t.id}
             data-active={on || undefined}
             className={on ? "contents" : "pointer-events-none invisible absolute inset-0 flex flex-col"}
             aria-hidden={on ? undefined : true}
           >
             <Suspense fallback={null}>
-              <TerminalPane onReading={onReading} id={t.id} machine={t.machine} mux={t.mux} active={on} doing={on ? row?.doing : undefined} />
+              <TerminalPane onReading={onReading} id={t.id} machine={t.machine} mux={t.mux} active={on} doing={on ? row?.doing : undefined}
+                onRecoveryRejoin={recovery => setKept(old => {
+                  const seat = old.find(value => value.id === t.id);
+                  if (!seat) return recovery ? [...old, { ...t, recovery }] : old;
+                  if (seat.home !== t.home || seat.generation !== t.generation || seat.recovery === recovery) return old;
+                  return old.map(value => value === seat ? { ...seat, recovery } : value);
+                })} />
             </Suspense>
           </div>
         );

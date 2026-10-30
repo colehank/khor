@@ -1222,6 +1222,13 @@ export async function reopenTerminal(id: string): Promise<boolean> {
   return true;
 }
 
+/** This mounted seat's capability; no global tab ID can prove its home. */
+export type TerminalRecoveryOwner = {
+  idle: () => boolean;
+  rejoin: () => boolean;
+  retire: () => void;
+};
+
 export function TerminalPane({
   id,
   machine,
@@ -1229,8 +1236,10 @@ export function TerminalPane({
   doing,
   mux = false,
   onReading,
+  onRecoveryRejoin,
 }: {
   id: string;
+  onRecoveryRejoin?: (owner: TerminalRecoveryOwner | null) => void;
   onReading?: SessionReading;
   /** The row's process sits in a tmux pane (`SessionRow.mux`): Claude
       Code in the person's own tmux, reached through khor's grouped
@@ -3012,6 +3021,26 @@ export function TerminalPane({
   const activeRef = useRef(active);
   activeRef.current = active;
   const dropping = useRef(false);
+  const recoveryRetired = useRef(false);
+  const recoverySink = useRef(onRecoveryRejoin);
+  recoverySink.current = onRecoveryRejoin;
+  const recoveryState = useRef({ joining, opening, dropShare, dropNames });
+  recoveryState.current = { joining, opening, dropShare, dropNames };
+  useEffect(() => {
+    let alive = true, used = false;
+    const idle = () => {
+      const state = recoveryState.current;
+      return alive && !dropping.current && !state.joining && !state.opening &&
+        state.dropShare === null && state.dropNames === null && reopenRef.current !== null;
+    };
+    recoverySink.current?.({ idle, retire: () => { recoveryRetired.current = true; }, rejoin: () => {
+      if (used || recoveryRetired.current || !idle()) return false;
+      used = true;
+      void reopenRef.current?.();
+      return true;
+    } });
+    return () => { alive = false; recoverySink.current?.(null); };
+  }, [id, attempt, joining, opening, dropShare, dropNames]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
@@ -3070,7 +3099,7 @@ export function TerminalPane({
       into: string | null = null,
       onLanded?: () => void,
     ): Promise<boolean> => {
-      if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return false;
+      if (recoveryRetired.current || (Array.isArray(paths) && paths.length === 0) || dropping.current) return false;
       const attachment = attachmentRef.current;
       if (!attachment || attachment.id !== id) return false;
       // A fresh send supersedes the previous failed attempt. Its
