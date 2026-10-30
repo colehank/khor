@@ -2426,6 +2426,8 @@ export function TerminalPane({
       const reply = !preencoded && isReply(d);
       const focusReport = !preencoded && isFocusReport(d);
       if (replaying > 0 && (reply || focusReport)) return;
+      // A retired execution-home seat may finish protocol IO, not new input.
+      if (recoveryRetired.current && !reply) return;
       // The field let go for a touch or a selection (item 54) is not the
       // person leaving the terminal: the program is not told.
       if (focusReport && selectionHolds()) return;
