@@ -1179,6 +1179,8 @@ pub struct HistoryPage {
 pub struct HistoryEntry {
     /// True for a complete recorded message; false for a streamed ACP chunk.
     pub starts_message: bool,
+    /// Exact parser-produced record provenance; scaffold projections have none.
+    pub record: Option<HistoryRecordRef>,
     pub key: String,
     pub frame: ChatFrame,
 }
@@ -1317,6 +1319,9 @@ fn body_projection_response(
         let entry = HistoryEntry {
             key: format!("projection:{index}"),
             starts_message,
+            // A checked byte selection and caller-built scaffold do not prove
+            // physical JSONL boundaries; the raw lexer must establish those.
+            record: None,
             frame: ChatFrame::Note { update },
         };
         let Ok(size) = encoded_size(&entry) else {
@@ -1484,11 +1489,22 @@ fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
             },
             ContentEvent::Reference | ContentEvent::LocalUserEcho=>None,
         };
-        let entry = frame.map(|frame|HistoryEntry {
-            key: format!("{}:{}", event.position.start, event.position.item),
-            starts_message,
-            frame,
-        });
+        let entry = if let Some(frame) = frame {
+            Some(HistoryEntry {
+                key: format!("{}:{}", event.position.start, event.position.item),
+                starts_message,
+                record: Some(HistoryRecordRef {
+                    start: event.position.start,
+                    end: event.position.end,
+                    missing_start: false,
+                    missing_end: false,
+                    item: Some(event.position.item),
+                    cursor: serde_json::to_string(&page.cursor_before(event.position.clone()))
+                        .map_err(|error| error.to_string())?,
+                }),
+                frame,
+            })
+        } else { None };
         let bytes = entry.as_ref().and_then(|entry|encoded_size(entry).ok()).unwrap_or(HISTORY_PAYLOAD_BYTES + 1);
         if bytes > HISTORY_FRAME_BYTES {
             expanded_references.push(HistoryRecordRef {
@@ -2143,6 +2159,13 @@ mod bounded_history_response_tests {
         assert_eq!(second.entries.len(), 1);
         assert!(!second.has_more);
         assert!(first.entries.iter().chain(&second.entries).all(|entry|entry.starts_message), "native utterances retain complete-message boundaries");
+        for (entry, (start, end)) in first.entries.iter().chain(&second.entries).zip([(0,2),(2,4),(4,6)]) {
+            let record=entry.record.as_ref().expect("real parser output retains its record");
+            assert_eq!((record.start,record.end,record.item),(start,end,Some(0)));
+            assert!(!record.missing_start && !record.missing_end);
+            let cursor:khor_node::adaptor::transcript_page::Cursor=serde_json::from_str(&record.cursor).unwrap();
+            assert!(cursor.at_record_range("session",start,end).is_ok());
+        }
     }
 
     #[test]
@@ -2194,6 +2217,11 @@ mod bounded_history_response_tests {
         assert_eq!(response.entries.len(),3);
         assert!(matches!(&response.entries[0].frame,ChatFrame::Note {update} if update["update"]["content"][0]["newText"]=="new"));
         assert!(!response.entries[0].starts_message);
+        for (entry, (start,end)) in response.entries.iter().zip([(0,5),(5,10),(10,14)]) {
+            let record=entry.record.as_ref().expect("journal events keep their actual own range");
+            assert_eq!((record.start,record.end,record.item),(start,end,Some(0)));
+            assert!(!record.missing_start && !record.missing_end);
+        }
         assert!(matches!(&response.entries[1].frame,ChatFrame::Turn {stop} if stop=="MaxTokens"));
         assert!(matches!(&response.entries[2].frame,ChatFrame::CaptureGap {opening,interrupted:true} if opening=="resume"));
         assert_eq!(response.references.len(),1);

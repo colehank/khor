@@ -18,6 +18,8 @@ fn scaffold_body_response_cannot_promote_frame_types_or_silently_lose_expansion(
     assert_eq!(response.record.cursor, "same-file-snapshot");
     let encoded = serde_json::to_value(&response).unwrap();
     assert!(encoded["entries"].as_array().unwrap().iter().all(|entry| entry["frame"]["kind"] == "note"));
+    assert!(response.entries.iter().all(|entry|entry.record.is_none()),
+        "caller scaffold content cannot manufacture a trustworthy original record");
     assert!(encoded_size(&response).unwrap() <= HISTORY_PAYLOAD_BYTES);
 }
 
@@ -66,6 +68,9 @@ fn scaffold_projection_preserves_reader_message_boundaries_without_promoting_pay
     }, &|| false).unwrap();
     assert!(!response.entries[0].starts_message, "an SDK field cannot replace read provenance");
     assert!(response.entries[1].starts_message);
+    assert!(response.entries.iter().all(|entry|entry.record.is_none()));
+    assert_eq!((response.record.start,response.record.end),(1,10),
+        "the outer checked selection is preserved separately, without promoting it into each projected entry");
     for entry in &response.entries {
         assert!(matches!(&entry.frame,ChatFrame::Note {update:body} if body==&update));
     }
