@@ -12,10 +12,6 @@ import { takeHandOff, askOpenPath, askOpenUrl } from "@/lib/composer-handoff";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
-  beginHistoryRequest,
-  cancelHistoryRequest,
-  fetchHistoryPage,
-  fetchHistoryRecord,
   inApp,
   rejoinNow,
   type ChatFrame,
@@ -23,7 +19,7 @@ import {
 } from "@/api";
 import { AgentContent } from "@/components/ai-elements/content";
 import { Bubble, BubbleContent } from "@/components/ui/ai/bubble";
-import { IconBack } from "@/components/icons";
+import { IconBack, IconSearch } from "@/components/icons";
 import { AgentConfirmation, AgentPlan, ToolDot, type AgentToolData, type AgentPlanEntry } from "@/components/ai-elements/agent";
 import { Markdown } from "@/components/Markdown";
 import { Waiting } from "@/components/RegionState";
@@ -45,32 +41,15 @@ import { lasting, word } from "@/words";
 import { imeKey } from "@/lib/ime";
 import { applyAcpUpdate } from "@/lib/acp-view";
 
-import { historySource } from '@/lib/history-source';
+import { historyApi } from '@/lib/history-api';
+import { HistorySearch } from '@/components/history/HistorySearch';
+import type { FindHit } from '@/lib/history-find-model';
 import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
 import { historyEntries, historyReferences } from '@/lib/history-window';
 import { paintHistory } from '@/lib/history-paint';
 import { HistoryRecords } from '@/components/history/HistoryRecords';
 
-/**
- * How often to ask for frames, while a turn runs and while none does.
- *
- * **The cadence is the whole of the latency.** The registry's reader
- * thread already holds a frame the instant it arrives and `chat_poll`
- * answers with whatever is there (`khor_gui_core::chat` module head),
- * so nothing is ever lost between polls — the wait only decides how
- * long a frame sits in Rust before a screen asks for it. Measured
- * before this change, at 400ms: median 195–248 ms from the agent
- * emitting a chunk to it being painted, which is half the gap, the
- * signature of arrivals landing uniformly inside it.
- *
- * 50 is not a guess: `TerminalPane` has polled at 50 on both transports
- * for as long as terminals have worked here, and a poll with nothing to
- * say costs a lock and an empty slice.
- *
- * The idle pace is *slower* than the 400 it replaces. A conversation
- * with no turn running produces nothing to see, and the pane that is
- * paying for the fast pace is the one with something happening in it.
- */
+/** Live control/state waits stay responsive while idle polling backs off. */
 const LIVE_MS = 50;
 const IDLE_MS = 500;
 /** How long one pushed wait is held open with nothing new (`chatWait`):
@@ -561,6 +540,12 @@ export function ChatView({
   const [history, setHistory] = useState<HistoryReaderState | null>(null);
   const historyView = useRef<ReturnType<typeof historyReader> | null>(null);
   const [historyEpoch, setHistoryEpoch] = useState(0);
+  const [historyBinding, setHistoryBinding] = useState<{ id: string; binding: string } | null>(null);
+  const sourceBinding = historyBinding?.id === id && (!still || historyBinding.binding === binding) ? historyBinding.binding : null;
+  const [findingHistory, setFindingHistory] = useState(false);
+  const stopHistorySearch = useRef<(() => void) | null>(null);
+  const historyMatch = useRef<FindHit | null>(null);
+  const [matchedEntry, setMatchedEntry] = useState<string | null>(null);
   const [captureWhy, setCaptureWhy] = useState<string | null>(null);
   const captureNow = useRef<(() => void) | null>(null);
   const historyAnchor = useRef<{ key: string; top: number } | null>(null);
@@ -762,6 +747,7 @@ export function ChatView({
     reader.current = reading;
     setPaint(BLANK);
     setCaptureWhy(null);
+    setHistoryBinding(null); setFindingHistory(false); setMatchedEntry(null); historyMatch.current = null;
     setLoaded(false);
     setInteractions([]);setProtocol(null);setNotice(null);setControlError(null);setSettings(null);setUsage(null);
     let cursor = 0;
@@ -780,12 +766,8 @@ export function ChatView({
       setPaint(previous => ({...previous, past: []})); setHistory(null); setLoaded(false); setGone(false); setOpenWhy(null);
       if (still) { setTitle(null); setPlan([]); }
       setOpen(new Set()); toBottom();
-      const source = historySource(id, {
-        begin: () => beginHistoryRequest(id, readBinding),
-        cancel: key => cancelHistoryRequest(id, readBinding, key),
-        page: (view, key, cursor, newer) => fetchHistoryPage(view, readBinding, key, cursor, newer),
-        record: (view, key, cursor, from) => fetchHistoryRecord(view, readBinding, key, cursor, from),
-      });
+      setHistoryBinding({ id, binding: readBinding });
+      const source = historyApi(id, readBinding);
       let previousPages: HistoryReaderState['window']['pages'] | null = null;
       const view = historyReader(source, state => {
         if (stopped || disposed) return;
@@ -794,6 +776,7 @@ export function ChatView({
           previousPages = state.window.pages;
           setPaint(previous => acceptHistory(previous, historyEntries(state.window)));
           if (state.reset) {
+            setFindingHistory(false); setMatchedEntry(null); historyMatch.current = null;
             historyAnchor.current = null;
             setHistoryEpoch(epoch => epoch + 1); setOpen(new Set()); toBottom();
           }
@@ -803,7 +786,10 @@ export function ChatView({
       }, watch);
       historyView.current = view;
       const visibility = () => {
-        if (document.hidden || !scroller.current?.clientHeight) view.pause();
+        if (document.hidden || !scroller.current?.clientHeight) {
+          stopHistorySearch.current?.(); setFindingHistory(false);
+          view.pause();
+        }
         else view.resume();
       };
       const observer = new ResizeObserver(visibility);
@@ -1119,6 +1105,26 @@ export function ChatView({
     }
     historyAnchor.current = null;
   }, [paint]);
+  const jumpHistoryMatch = (hit: FindHit) => {
+    following.current = false;
+    historyAnchor.current = null;
+    historyMatch.current = hit; setMatchedEntry(hit.entry);
+    void historyView.current?.at(hit.before);
+  };
+  useLayoutEffect(() => {
+    const match = historyMatch.current;
+    if (!match || history?.busy) return;
+    if (history?.error) { historyMatch.current = null; return; }
+    const element = scroller.current;
+    const node = [...(element?.querySelectorAll<HTMLElement>('[data-history-key]') ?? [])]
+      .find(candidate => candidate.dataset.historyKey?.startsWith(`${match.entry}:`));
+    if (!node) return;
+    const item = paint.past.find(item => item.historyKey?.startsWith(`${match.entry}:`));
+    if (item?.who === 'tool') setOpen(previous => new Set([...previous, item.id]));
+    node.scrollIntoView({ block: 'center' });
+    historyMatch.current = null;
+  }, [paint, history?.busy, history?.error]);
+
   const loadOlderHistory = () => {
     const element = scroller.current;
     if (element) {
@@ -1403,6 +1409,12 @@ export function ChatView({
     <div
       ref={dropBox}
       data-chat-drop={dropping || undefined}
+      onKeyDownCapture={event => {
+        if (sourceBinding && !imeKey(event) && !event.altKey && !event.shiftKey && (/Mac|iPhone|iPad/.test(navigator.userAgent) ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) && event.key.toLowerCase() === 'f') {
+          event.preventDefault(); event.stopPropagation(); setFindingHistory(true);
+          dropBox.current?.querySelector<HTMLInputElement>('[data-history-search] input')?.focus();
+        }
+      }}
       className="flex min-h-0 flex-1 flex-col"
       // **Files dropped on the conversation go along with the next line**
       // (round CHAT): in a browser the drop carries `File`s; in the app
@@ -1433,6 +1445,8 @@ export function ChatView({
         />
       )}
       <div className="relative flex min-h-0 flex-1 flex-col">
+      {sourceBinding && <HistorySearch key={`${id}:${sourceBinding}:${historyEpoch}`} id={id} binding={sourceBinding}
+        stop={stopHistorySearch} open={findingHistory} onClose={() => { setFindingHistory(false); setMatchedEntry(null); }} onJump={jumpHistoryMatch} />}
       <div
         ref={scroller}
         data-chat-scroll
@@ -1489,7 +1503,6 @@ export function ChatView({
             do, and because a face that cannot read a field is the
             reason attaching one of them would otherwise need code. */}
         {history && <div className="space-y-in py-row" data-history-controls>
-          <p className="text-caption text-muted-foreground">{gui.history_loaded_only}</p>
           {history?.window.older && <Button size="sm" disabled={history.busy} onClick={loadOlderHistory}>{gui.history_older}</Button>}
           {history?.reset && <p role="status" className="text-caption text-muted-foreground">{gui.history_changed}</p>}
           {history?.error != null && <div role="alert" className="text-caption text-destructive">
@@ -1585,7 +1598,7 @@ export function ChatView({
               {item.text}
             </div>
           );
-          return item.historyKey ? <div key={`${historyEpoch}:${item.historyKey}`} data-history-key={item.historyKey}>{content}</div> : content;
+          return item.historyKey ? <div key={`${historyEpoch}:${item.historyKey}`} data-history-key={item.historyKey} className={matchedEntry && item.historyKey.startsWith(`${matchedEntry}:`) ? 'rounded-md bg-brand-wash' : undefined}>{content}</div> : content;
         })}
         {history && <HistoryRecords key={`${id}:${historyEpoch}`} references={historyReferences(history.window)}
           read={(cursor, from, signal) => historyView.current?.record(cursor, from, signal) ?? Promise.resolve(null)} />}
@@ -1667,6 +1680,7 @@ export function ChatView({
             <span data-chat-readonly className="min-w-0 flex-1 text-muted-foreground">
               {ended ? gui.chat_over : gone ? (openWhy ?? gui.chat_no_record) : gui.chat_readonly}
             </span>
+            {sourceBinding && <Button data-history-find-open size="icon" variant="ghost" aria-label={gui.history_find} onClick={() => setFindingHistory(true)}><IconSearch /></Button>}
             {gone && openWhy && !ended && (
               <Button data-chat-retry size="sm" onClick={() => setAttempt((n) => n + 1)}>
                 {gui.region_retry}
@@ -1861,6 +1875,7 @@ export function ChatView({
               seatYields={!inTurn && !!text.trim()}
               trail={
                 <>
+                  {sourceBinding && <Button data-history-find-open size="icon" variant="ghost" aria-label={gui.history_find} onClick={() => setFindingHistory(true)}><IconSearch /></Button>}
                   {!unifiedSession && modeSeat}
                   {!unifiedSession && <WhoSeat who={who} tip={!coarse} />}
                   {/* Send only while there is something to send and the

@@ -35,6 +35,16 @@ const recordTextBuilt = await build({ entryPoints: [resolve('src/lib/history-rec
 const recordTextModule = { exports: {} };
 Function('module', 'exports', recordTextBuilt.outputFiles[0].text)(recordTextModule, recordTextModule.exports);
 const { limitedToolOutput } = recordTextModule.exports;
+const actionBuilt = await build({ entryPoints: [resolve('src/lib/history-find-action.ts')], bundle: true,
+  write: false, format: 'cjs', platform: 'node' });
+const actionModule = { exports: {} };
+Function('module', 'exports', actionBuilt.outputFiles[0].text)(actionModule, actionModule.exports);
+const { historyFindAction } = actionModule.exports;
+const exportBuilt = await build({ entryPoints: [resolve('src/lib/history-export.ts')], bundle: true,
+  write: false, format: 'cjs', platform: 'node' });
+const exportModule = { exports: {} };
+Function('module', 'exports', exportBuilt.outputFiles[0].text)(exportModule, exportModule.exports);
+const { exportHistoryRecord, exportHistoryToApp } = exportModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
 const note = (key, update) => ({ key, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
@@ -392,6 +402,80 @@ test('normalizer output policy trims Unicode whitespace and searches only its vi
   assert.deepEqual(await findRecord(query('HIDDEN_TAIL_NEEDLE'), ref, 'before', io).next(), { done: true, value: true });
   assert.equal((await findRecord(query('visible cut'), ref, 'before', io).next()).done, false, 'the existing marked cut suffix is visible text');
 });
+test('context and full-part copy share the normalized source stream, with an explicit copy limit', async () => {
+  const body = 'start ' + '中😀'.repeat(25000) + ' NEEDLE tail';
+  const bytes = new TextEncoder().encode(JSON.stringify({ body }));
+  const ref = { start: 0, end: bytes.length, cursor: 'copy-source', item: null, missing_start: false, missing_end: false };
+  const io = {
+    page: async () => { throw new Error('giant copy must use its exact original reference'); },
+    record: async (_cursor, from) => {
+      const data = bytes.subarray(from, from + 65536);
+      return { offset: from, data: Buffer.from(data).toString('base64'), next: from + data.length < bytes.length ? from + data.length : null };
+    },
+    project: async (_cursor, _start, _end, scaffold) => ({ record: ref, transforms: [], complete: true,
+      entries: scaffold ? [text('projection:0', JSON.parse(scaffold).body)] : [] }),
+  };
+  const at = body.indexOf('NEEDLE');
+  const hit = { before: 'before', entry: '0:0', part: 0, from: at, to: at + 6, snippet: '', record: ref };
+  const context = await historyFindAction('context', hit, io);
+  assert.equal(context.complete, false); assert.equal(context.text.includes('NEEDLE'), true);
+  assert.equal(context.text.slice(hit.from - context.from, hit.to - context.from), 'NEEDLE');
+  assert.equal(new TextEncoder().encode(context.text).length < 2048, true);
+  await assert.rejects(historyFindAction('copy', hit, io), error => error.message === 'too_large');
+});
+test('original-record export preserves bytes across UTF-8 boundaries and aborts partial targets', async () => {
+  const bytes = new TextEncoder().encode('中😀'.repeat(30000));
+  const reference = { cursor: 'export-source', start: 100, end: bytes.length + 100 };
+  const writes = [];
+  let closed = 0, aborted = 0, reads = 0;
+  const source = { record: async (cursor, from) => {
+    reads++; assert.equal(cursor, 'export-source');
+    const data = bytes.subarray(from - 100, from - 100 + 65536);
+    return { offset: from, data: Buffer.from(data).toString('base64'), next: from + data.length < reference.end ? from + data.length : null };
+  } };
+  const target = { write: async data => writes.push(Buffer.from(data)), close: async () => { closed++; }, abort: async () => { aborted++; } };
+  await exportHistoryRecord(source, reference, target, new AbortController().signal);
+  assert.equal(Buffer.concat(writes).equals(Buffer.from(bytes)), true); assert.equal(closed, 1); assert.equal(aborted, 0);
+  assert.equal(writes.every(chunk => chunk.length <= 65536), true);
+  const stop = new AbortController(); reads = 0; writes.length = 0;
+  await assert.rejects(exportHistoryRecord(source, reference, { ...target, write: async data => { writes.push(Buffer.from(data)); stop.abort(); } }, stop.signal), /cancelled/);
+  assert.equal(reads, 1); assert.equal(closed, 1); assert.equal(aborted, 1);
+  await assert.rejects(exportHistoryRecord({ record: async () => ({ offset: 100, data: 'eA==', next: null }) }, reference, target, new AbortController().signal), /continuation/);
+  assert.equal(aborted, 2);
+});
+test('native export owns late start ACKs and cancellation through the OS presenter', async () => {
+  const ready = { moved: 12, total: 12, ready: true, cancelled: false, error: null };
+  const ref = { start: 100, end: 112 };
+  const start = deferred(), cleanup = deferred();
+  const calls = [];
+  const stop = new AbortController();
+  let settled = false;
+  const pending = exportHistoryToApp({
+    start: () => { calls.push('start'); return start.promise; },
+    state: async () => { throw new Error('a retired job must not poll'); },
+    cancel: () => { calls.push('cancel'); return cleanup.promise; },
+    save: async () => { calls.push('save'); return true; },
+  }, ref, stop.signal).finally(() => { settled = true; });
+  const rejected = assert.rejects(pending, /cancelled/);
+  stop.abort(); start.resolve(ready);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, ['start', 'cancel']);
+  assert.equal(settled, false, 'leaving waits for real cleanup of its late job');
+  cleanup.resolve(); await rejected;
+  const presentation = deferred(), reached = deferred();
+  const duringSave = new AbortController(); let cancels = 0;
+  const showing = exportHistoryToApp({ start: async () => ready,
+    state: async () => { throw new Error('completed job must not poll'); },
+    cancel: async () => { cancels++; },
+    save: () => { reached.resolve(); return presentation.promise; },
+  }, ref, duringSave.signal);
+  const showingRejected = assert.rejects(showing, /cancelled/);
+  await reached.promise; duringSave.abort(); presentation.resolve(true); await showingRejected;
+  assert.equal(cancels, 1, 'abort and finally share one cancellation');
+  assert.equal(await exportHistoryToApp({ start: async () => ready, state: async () => ready,
+    cancel: async () => { throw new Error('successful presentation must not cancel'); }, save: async () => false,
+  }, ref, new AbortController().signal), false, 'dismissed Save panel is not reported as a completed export');
+});
 test('repeated cached raw ranges still yield the worker task queue within one scan budget', async () => {
   const bytes = new TextEncoder().encode(JSON.stringify({ body: 'x'.repeat(12000) }));
   const ref = { start: 0, end: bytes.length, cursor: 'cached', item: null, missing_start: false, missing_end: false };
@@ -581,6 +665,32 @@ test('actual giant worker disposal cancels a held raw read without posting late 
     assert.equal(cancelled.filter(value => value === key).length, 1);
     assert.equal(states.length, count);
   } finally { held.resolve(null); await reader.dispose(); }
+});
+test('actual worker context and copy re-read the source independently of the rendered cache', async () => {
+  let changed = false, arrived = deferred(), last;
+  const reads = [];
+  const body = 'source context NEEDLE 原文';
+  const source = historySource('action-binding', {
+    begin: async () => crypto.randomUUID(), cancel: async () => {},
+    page: async (_id, _key, cursor) => {
+      reads.push(cursor);
+      assert.equal(cursor === null || cursor === 'exclusive-source-fence', true);
+      return { ...page([text('17:0', body)]), older: null, reset: changed };
+    },
+    record: async () => { throw new Error('normal source part does not require raw expansion'); },
+  });
+  const reader = historyFind(source, query('needle'), state => { last = state; if (state.hits.length || state.error) arrived.resolve(state); });
+  try {
+    reader.start(); const first = await arrived.promise, hit = first.hits[0];
+    assert.equal((await reader.inspect(hit, 'context')).text, body);
+    const copy = await reader.inspect(hit, 'copy');
+    assert.equal(copy.text, body); assert.equal(copy.complete, true);
+    assert.deepEqual(reads, [null, 'exclusive-source-fence', 'exclusive-source-fence']);
+    changed = true;
+    await assert.rejects(reader.inspect(hit, 'context'), /source_changed/);
+    assert.deepEqual(last.hits, []);
+    await assert.rejects(reader.inspect(hit, 'copy'), /no longer active/);
+  } finally { await reader.dispose(); }
 });
 test('source replacement stops the real worker and never presents the new page as old matches', async () => {
   const arrived = deferred();

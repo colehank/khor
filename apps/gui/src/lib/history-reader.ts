@@ -39,7 +39,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
           schedule();
       }, Math.min(5000, 700 * 2 ** Math.min(failures, 3)));
   };
-  async function load(direction: HistoryDirection, before?: string | null) {
+  async function load(direction: HistoryDirection, before?: string | null, positioned = false) {
     if (closed)
       return;
     if (pending && direction !== 'tail')
@@ -61,7 +61,8 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
       failures = 0;
       initialBefore = null;
       catchingUp = direction === 'newer' && page.has_more;
-      state = { ...state, window: receiveHistoryPage(state.window, page, direction), loaded: true,
+      const nextWindow = receiveHistoryPage(state.window, page, direction);
+      state = { ...state, window: positioned && !page.reset ? { ...nextWindow, latest: false } : nextWindow, loaded: true,
         reset: page.reset, error: null };
     }
     catch (error) {
@@ -87,6 +88,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
       if (canFollow()) return load('tail', before);
       schedule();
     },
+    at: (before: string) => load('tail', before, true),
     older: () => load('older'),
     newer: () => load('newer'),
     latest: () => load('tail', null),

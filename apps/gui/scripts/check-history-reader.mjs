@@ -162,6 +162,23 @@ test('away pauses follow; latest rejects a late prior response', async () => {
   assert(f.calls.some(call => call[0] === 'cancel'));
   await f.reader.dispose();
 });
+test('a search jump reads its exact source fence and stays there until latest is requested', async () => {
+  const f = fixture();
+  void f.reader.start(); await flush();
+  f.responses[0].resolve(page('tail')); await flush();
+  void f.reader.at('search-fence'); await flush();
+  assert.deepEqual(f.calls.filter(call => call[0] === 'page').at(-1), ['page', 'search-fence', false]);
+  f.responses[1].resolve(page('match', {newer: 'search-fence'})); await flush();
+  assert.equal(f.changes.at(-1).window.latest, false);
+  assert.deepEqual(historyEntries(f.changes.at(-1).window).map(row => row.key), ['match:0']);
+  f.reader.wake(); f.tick(); f.reader.resume(); await flush();
+  assert.equal(f.responses.length, 2, 'a new append must not move a selected result');
+  void f.reader.latest(); await flush();
+  assert.deepEqual(f.calls.filter(call => call[0] === 'page').at(-1), ['page', null, false]);
+  f.responses[2].resolve(page('current')); await flush();
+  assert.equal(f.changes.at(-1).window.latest, true);
+  await f.reader.dispose();
+});
 test('automatic follow catches up through multiple bounded batches', async () => {
   const f = fixture();
   void f.reader.start();

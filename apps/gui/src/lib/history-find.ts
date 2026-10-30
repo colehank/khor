@@ -1,3 +1,5 @@
+import { speaking } from '@/gen/catalog';
+import type { HistoryFindAction, HistoryActionAnswer } from './history-find-action';
 import type { historySource } from './history-source';
 import type { FindHit, FindQuery, FindWorkerInput, FindWorkerOutput } from './history-find-model';
 
@@ -24,11 +26,14 @@ export function historyFind(source: Source, query: FindQuery, changed: (state: H
   let pageDone = true;
   let requestedBefore: string | null = null;
   let pending: AbortController | null = null;
+  let actionId = 0;
+  let action: { id: number; resolve: (value: HistoryActionAnswer) => void; reject: (error: Error) => void } | null = null;
   const publish = () => { if (!closed) changed(state); };
   const post = (message: FindWorkerInput) => worker.postMessage(message);
   const fail = (error: unknown) => {
     if (closed) return;
     pending?.abort();
+    action?.reject(new Error(String(error))); action = null;
     worker.terminate();
     state = { ...state, hits: [], complete: false, busy: false, error: String(error) };
     publish();
@@ -60,11 +65,22 @@ export function historyFind(source: Source, query: FindQuery, changed: (state: H
     if (closed) return;
     const answer = event.data;
     if (answer.kind === 'error') { fail(answer.error); return; }
-    if (answer.kind === 'read' || answer.kind === 'project') {
+    if (answer.kind === 'action_result' || answer.kind === 'action_error') {
+      if (!action || action.id !== answer.id) return;
+      const job = action; action = null;
+      state = { ...state, busy: false }; publish();
+      if (answer.kind === 'action_result') job.resolve(answer.answer);
+      else {
+        const error = new Error(answer.code); job.reject(error);
+        if (answer.code === 'source_changed' || answer.code === 'read_failed') fail(answer.error ?? answer.code);
+      }
+      return;
+    }
+    if (answer.kind === 'read' || answer.kind === 'project' || answer.kind === 'read_page') {
       const controller = new AbortController();
       if (pending) { fail('history search requested concurrent IO'); return; }
       pending = controller;
-      const work = answer.kind === 'read'
+      const work = answer.kind === 'read_page' ? source.page(answer.before, false, controller.signal) : answer.kind === 'read'
         ? source.record(answer.cursor, answer.from, controller.signal)
         : source.project(answer.cursor, answer.start, answer.end, answer.scaffold, controller.signal);
       void work.then(result => {
@@ -95,7 +111,7 @@ export function historyFind(source: Source, query: FindQuery, changed: (state: H
     }
   };
   worker.onerror = event => fail(event.message);
-  post({ kind: 'query', query });
+  post({ kind: 'query', query, language: speaking() });
   return {
     start: () => {
       if (started || closed || state.error || state.reset) return;
@@ -108,8 +124,18 @@ export function historyFind(source: Source, query: FindQuery, changed: (state: H
       if (pageDone) void load();
       else post({ kind: 'next' });
     },
+    inspect(hit: FindHit, kind: HistoryFindAction): Promise<HistoryActionAnswer> {
+      if (closed || state.busy || state.error || state.reset || !state.hits.includes(hit))
+        return Promise.reject(new Error('history search result is no longer active'));
+      state = { ...state, busy: true }; publish();
+      const id = ++actionId;
+      const promise = new Promise<HistoryActionAnswer>((resolve, reject) => { action = { id, resolve, reject }; });
+      post({ kind: 'action', id, action: kind, hit });
+      return promise;
+    },
     async dispose() {
       closed = true;
+      action?.reject(new Error('history search action cancelled')); action = null;
       pending?.abort();
       worker.terminate();
       return source.dispose();

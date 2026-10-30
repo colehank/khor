@@ -3,6 +3,8 @@ import type { HistoryRecordRef } from '@/gen/bindings/HistoryRecordRef';
 import type { historySource } from './history-source';
 import { historyFindBatch, type FindHit, type FindQuery, type FindWorkerInput, type FindWorkerOutput } from './history-find-model';
 import { findRecord } from './history-find-record';
+import { historyFindAction, HistoryActionFailure } from './history-find-action';
+import { speak } from '@/gen/catalog';
 
 let batch: ReturnType<typeof historyFindBatch> | null = null;
 let query: FindQuery;
@@ -18,14 +20,16 @@ let waiting: { id: number; resolve: (value: unknown) => void; reject: (error: Er
 const utf8 = new TextEncoder();
 const send = (value: FindWorkerOutput) => self.postMessage(value);
 const request = (ask: Omit<Extract<FindWorkerOutput, { kind: 'read' }>, 'id'>
-  | Omit<Extract<FindWorkerOutput, { kind: 'project' }>, 'id'>) => new Promise<unknown>((resolve, reject) => {
+  | Omit<Extract<FindWorkerOutput, { kind: 'project' }>, 'id'>
+  | Omit<Extract<FindWorkerOutput, { kind: 'read_page' }>, 'id'>) => new Promise<unknown>((resolve, reject) => {
   if (waiting) throw new Error('history search already has pending IO');
   const id = ++serial;
   waiting = { id, resolve, reject };
   send({ ...ask, id });
 });
-type IO = Pick<ReturnType<typeof historySource>, 'record' | 'project'>;
+type IO = Pick<ReturnType<typeof historySource>, 'record' | 'project' | 'page'>;
 const io: IO = {
+  page: async before => await request({ kind: 'read_page', before: before! }) as Awaited<ReturnType<IO['page']>>,
   record: async (cursor, from) => await request({ kind: 'read', cursor, from }) as Awaited<ReturnType<IO['record']>>,
   project: async (cursor, start, end, scaffold) => await request({ kind: 'project', cursor, start, end, scaffold }) as Awaited<ReturnType<IO['project']>>,
 };
@@ -93,15 +97,26 @@ self.onmessage = async (event: MessageEvent<FindWorkerInput>) => {
     if (running) throw new Error('history search already has pending work');
     running = true;
     if (message.kind === 'query') {
+      speak(message.language);
       query = message.query;
       batch = historyFindBatch(query);
       return;
     }
     if (!batch) throw new Error('history search query is missing');
+    if (message.kind === 'action') {
+      try {
+        const answer = await historyFindAction(message.action, message.hit, io);
+        if (utf8.encode(JSON.stringify(answer)).length > 512 * 1024) throw new HistoryActionFailure('too_large');
+        send({ kind: 'action_result', id: message.id, answer });
+      } catch (error) {
+        send({ kind: 'action_error', id: message.id, code: error instanceof HistoryActionFailure ? error.code : 'read_failed', error: String(error) });
+      }
+      return;
+    }
     if (message.kind === 'page') {
       if (raw || references.length || heldHit || !normalDone) throw new Error('previous search page has not been consumed');
       page = message.page;
-      if (page.references.length > 128 || utf8.encode(JSON.stringify(page)).length > 512 * 1024)
+      if (page.references.length > 256 || utf8.encode(JSON.stringify(page)).length > 512 * 1024)
         throw new Error('history search page exceeds the reader budget');
       const answer = batch.page({ ...page, references: [] });
       normalDone = answer.pageDone;

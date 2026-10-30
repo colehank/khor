@@ -78,9 +78,10 @@ function recordReader(io: IO, ref: HistoryRecordRef) {
 
 /** A single record search is resumable at each hit. No complete raw JSON,
  * decoded body, or unbounded hit list is assembled in the worker. */
-export async function* findRecord(
-  query: FindQuery, ref: HistoryRecordRef, before: string, io: IO,
-): AsyncGenerator<FindHit, boolean> {
+export type RecordTextPart = { entry: string; part: number; before: string; record: HistoryRecordRef; complete: boolean; text: AsyncIterable<string> };
+export async function* recordText(
+  ref: HistoryRecordRef, before: string, io: IO,
+): AsyncGenerator<RecordTextPart, boolean> {
   if (!Number.isSafeInteger(ref.start) || !Number.isSafeInteger(ref.end) || ref.start < 0 || ref.end <= ref.start
     || utf8.encode(ref.cursor).length > 4096 || utf8.encode(before).length > 4096)
     throw new Error('invalid history search record range');
@@ -134,15 +135,6 @@ export async function* findRecord(
     for (const [part, text] of body.texts.entries()) {
       const template = segments(text, scaffold.strings);
       if (!template) { complete = false; continue; }
-      const matcher = literalMatcher(query);
-      let context = '';
-      const match = (char: string) => {
-        context = (context + char).slice(-160);
-        if (/^[\uDC00-\uDFFF]/.test(context)) context = context.slice(1);
-        const result = matcher.feed(char, 1).ranges[0];
-        return result ? { before, entry: `${ref.start}:${item.historyKey.split(':')[1]}`, part, ...result,
-          snippet: context, record } satisfies FindHit : null;
-      };
       const characters = async function* () {
         for (const segment of template) {
           if ('text' in segment) { yield* segment.text; continue; }
@@ -155,13 +147,37 @@ export async function* findRecord(
       const visible = output?.kind === 'tool_output'
         ? await limitedToolOutput(characters(), output.max_bytes, output.suffix) : null;
       const consume = async function* () { if (visible !== null) yield* visible; else yield* characters(); };
-      for await (const char of consume()) {
-        const pause = account(utf8.encode(char).length);
-        if (pause) await pause;
-        const hit = match(char);
-        if (hit) yield hit;
-      }
+      const textStream = async function* () {
+        for await (const char of consume()) {
+          const pause = account(utf8.encode(char).length);
+          if (pause) await pause;
+          yield char;
+        }
+      };
+      yield { before, entry: `${ref.start}:${item.historyKey.split(':')[1]}`, part, record,
+        complete: projected.complete && body.complete, text: textStream() };
     }
   }
   return complete;
+}
+
+/** Matching and copying consume exactly the same selected, normalized body. */
+export async function* findRecord(query: FindQuery, ref: HistoryRecordRef, before: string, io: IO): AsyncGenerator<FindHit, boolean> {
+  const bodies = recordText(ref, before, io);
+  try {
+    while (true) {
+      const next = await bodies.next();
+      if (next.done) return next.value;
+      const body = next.value;
+      const matcher = literalMatcher(query);
+      let context = '';
+      for await (const char of body.text) {
+        context = (context + char).slice(-160);
+        if (/^[\uDC00-\uDFFF]/.test(context)) context = context.slice(1);
+        const result = matcher.feed(char, 1).ranges[0];
+        if (result) yield { before: body.before, entry: body.entry, part: body.part, ...result,
+          snippet: context, record: body.record };
+      }
+    }
+  } finally { await bodies.return(false); }
 }
