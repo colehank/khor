@@ -771,6 +771,12 @@ export function ChatView({
       setHistoryBinding({ id, binding: readBinding });
       const source = historyApi(id, readBinding);
       let previousPages: HistoryReaderState['window']['pages'] | null = null;
+      const element = scroller.current;
+      const style = element ? getComputedStyle(element) : null;
+      // Padding remains even when flex has no space for readable content.
+      // Keep this content-box fact separate from scroll/anchor coordinates.
+      let contentHeight = element && style
+        ? Math.max(0, element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) : 0;
       const view = historyReader(source, state => {
         if (stopped || disposed) return;
         setHistory(state); setLoaded(state.loaded);
@@ -783,20 +789,24 @@ export function ChatView({
             setHistoryEpoch(epoch => epoch + 1); setOpen(new Set()); toBottom();
           }
         } else if (!state.busy) historyAnchor.current = null;
-      }, () => !document.hidden && (scroller.current?.clientHeight ?? 0) > 0 && following.current, {
+      }, () => !document.hidden && contentHeight > 0 && following.current, {
         schedule: (run, delay) => window.setTimeout(run, delay), cancel: timer => window.clearTimeout(timer),
       }, watch);
       historyView.current = view;
       const visibility = () => {
-        if (document.hidden || !scroller.current?.clientHeight) {
+        if (document.hidden || contentHeight <= 0) {
           stopHistorySearch.current?.(); setFindingHistory(false);
           historyExport.stop();
           view.pause();
         }
         else view.resume();
       };
-      const observer = new ResizeObserver(visibility);
-      if (scroller.current) observer.observe(scroller.current);
+      const observer = new ResizeObserver(entries => {
+        const entry = entries.find(entry => entry.target === element);
+        if (entry) contentHeight = entry.contentRect.height;
+        visibility();
+      });
+      if (element) observer.observe(element);
       document.addEventListener('visibilitychange', visibility);
       void view.start(before);
       historyCleanup = () => {
