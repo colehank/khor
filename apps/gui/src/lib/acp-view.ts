@@ -126,8 +126,11 @@ export function applyAcpUpdate<T extends { who: string }>(out: (AcpItem | T)[], 
     const last = out[out.length - 1];
     const messageId = typeof u.messageId === "string" ? u.messageId : undefined;
     const priorId = last && "messageId" in last ? last.messageId : undefined;
-    if (last?.who === who && "text" in last && typeof last.text === "string" && priorId === messageId)
-      out[out.length - 1] = { ...last, text: last.text + text };
+    // Omission reports no new identity; only two different explicit IDs
+    // establish a message boundary. Remember a newly reported ID thereafter.
+    if (last?.who === who && "text" in last && typeof last.text === "string"
+      && (priorId === undefined || messageId === undefined || priorId === messageId))
+      out[out.length - 1] = { ...last, text: last.text + text, ...(messageId === undefined ? {} : { messageId }) };
     else out.push({ who, text, ...(messageId === undefined ? {} : { messageId }) });
     return true;
   }

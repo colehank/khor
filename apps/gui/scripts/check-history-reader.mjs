@@ -287,6 +287,8 @@ test('shared ACP projection respects optional message IDs without requiring them
   assert.deepEqual(read([update('hel'),update('lo')]).map(item => item.text), ['hello']);
   assert.deepEqual(read([update('hel','one'),update('lo','one')]).map(item => item.text), ['hello']);
   assert.deepEqual(read([update('hel','one'),update('lo','two')]).map(item => item.text), ['hel','lo']);
+  assert.deepEqual(read([update('hel','one'),update('lo')]).map(item => item.text), ['hello'], 'omission is unknown, not an asserted new message');
+  assert.deepEqual(read([update('hel'),update('lo','one'),update('!','two')]).map(item => item.text), ['hello','!'], 'a later reported ID still gives a real boundary');
 });
 test('prepend preserves paragraph keys and does not concatenate records', () => {
   const recent = [entry('20:0', 'second'), entry('30:0', 'third')], before = paintHistory(recent), after = paintHistory([entry('10:0', 'first'), ...recent]);
