@@ -194,6 +194,8 @@ impl Context {
             if pairing::needs_recovery(&self.root, self.local)? {
                 return Err(Error::busy());
             }
+            #[cfg(all(test, unix))]
+            crate::link::documents::query_concurrency_tests::root_acquired(self);
             Some(guard)
         } else {
             None
