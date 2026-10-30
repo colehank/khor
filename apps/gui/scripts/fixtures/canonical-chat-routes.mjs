@@ -54,7 +54,7 @@ export function canonicalChatFixture({ids, takeFrames, onOpen = () => {}, bindin
       if (command === 'chat_open') {
         const owner = views.get(args.lease);
         if (!owner || owner.id !== args.id || owner.claimed || owner.closed) throw new Error('fixture claim is not pending');
-        owner.claimed = true;onOpen(args.id);return {value: true};
+        owner.claimed = true;onOpen(args.id, args.lease);return {value: true};
       }
       if (command === 'chat_leave') {
         const owner = views.get(args.lease);

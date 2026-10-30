@@ -113,7 +113,7 @@ try {
   browser = await chromium.launch({ channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? "chrome") || undefined, headless: process.env.AI_ELEMENTS_HEADED !== "1" });
   for (const [name, width, scheme] of [["desktop-light", 1280, "light"], ["desktop-dark", 1280, "dark"], ["mobile-light", 390, "light"], ["mobile-dark", 390, "dark"]]) {
     const context = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: "reduce", hasTouch: width < 600, isMobile: width < 600 });
-    const page = await context.newPage(), errors = [], requests = [];
+    const page = await context.newPage(), errors = [], requests = [], openedLeases = new Map();
     currentPage = page;
     page.on("pageerror", (error) => { errors.push(error.message); console.error(error.message); });
     const reply = (value) => (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
@@ -132,7 +132,7 @@ try {
     await page.route("**/tabs_list", reply({ tabs: [], active: "" }));
     let queue = [{kind: "turning"}, thought("先检查工作区。")], otherQueue = [];
     await routeCanonicalChat(page, {ids: ['gui/elements-a', 'gui/elements-b'],
-      onOpen: () => {if (reviewPending) {queue = reviewFrames();reviewPending = false;}},
+      onOpen: (id, lease) => {openedLeases.set(id, lease);if (reviewPending) {queue = reviewFrames();reviewPending = false;}},
       takeFrames: id => {
         const frames = id === 'gui/elements-a' ? queue : otherQueue;
         if (id === 'gui/elements-a') queue = [];else otherQueue = [];
@@ -226,7 +226,9 @@ try {
     await page.locator('[data-ask-pending][data-ask-phase="waiting"]').waitFor();
     await sleep(350);
     assert.equal(requests.length, 2, "one retry, no double submit");
-    assert.deepEqual(requests[1], { id: "gui/elements-a", ask: 31, option: "allow-once" });
+    const leaseA = openedLeases.get("gui/elements-a");
+    assert.match(leaseA, /^[a-f0-9]{32}$/, "the actual chat_open admitted A's lease before its answers");
+    for (const request of requests) assert.deepEqual(request, { id: "gui/elements-a", lease: leaseA, ask: 31, option: "allow-once" });
     queue.push({ kind: "answered", ask: 31, option: "deny" });
     await page.waitForFunction(() => document.querySelector("[data-ask-answer]")?.textContent === "拒绝读取，保留当前工作区不变");
     assert.equal(await page.locator("[data-ask-option]").count(), 0, "authoritative reply settles confirmation");
@@ -319,7 +321,10 @@ try {
     await page.locator('[data-ask-option="different"]').click();
     otherQueue.push({ kind: "answered", ask: 31, option: "different" });
     await page.waitForFunction(() => document.querySelector("[data-ask-answer]")?.textContent === "另一会话的选项");
-    assert.deepEqual(requests.at(-1), { id: "gui/elements-b", ask: 31, option: "different" }, "answer state belongs to its session");
+    const leaseB = openedLeases.get("gui/elements-b");
+    assert.match(leaseB, /^[a-f0-9]{32}$/, "the actual chat_open admitted B's lease before its answer");
+    assert.notEqual(leaseB, leaseA, "the two actual open claims have distinct leases");
+    assert.deepEqual(requests.at(-1), { id: "gui/elements-b", lease: leaseB, ask: 31, option: "different" }, "answer state belongs to its session and admitted view");
     assert.deepEqual(errors, []);
     results.push({ name, reasoning: "stream / manual override / keyboard", tool: "update / expand / output bound / no empty disclosure", diff: "real changes / independent line numbers / context model", scroll: "manual disclosure anchor / history anchor / animated tail following", plan: "live update preserves choice", permission: "submitting / waiting / retry / exact IDs / no duplicate / authoritative reply", overflow, errors });
     await context.close();
