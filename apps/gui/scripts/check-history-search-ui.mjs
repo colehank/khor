@@ -33,10 +33,10 @@ function transport() {
   const bytes = encoder.encode(JSON.stringify({kind: 'prompt', turn: 'fixture', text: 'x'.repeat(70000) + 'giantNeedle中文🙂' + 'z'.repeat(50000), images: [], files: []}) + '\n');
   const broken = encoder.encode('{invalid:' + 'q'.repeat(70000) + '\n');
   const ref = (bad = false, tag = 'A') => ({start: bad ? 1_281_000_000 : 1_280_000_000, end: (bad ? 1_281_000_000 : 1_280_000_000) + (bad ? broken.length : bytes.length), cursor: `${bad ? 'raw-bad' : 'raw-good'}:${tag}`, missing_start: false, missing_end: false, item: null});
-  const wire = window.__historyWire = {calls: [], unknown: [], leases: {}, jobs: {}, held: null, heldKey: null, mode: null, trace: [], holdCopy: false, holdInitial: false,
+  const wire = window.__historyWire = {calls: [], unknown: [], leases: {}, jobs: {}, held: null, heldKey: null, heldCursor: null, mode: null, trace: [], holdCopy: false, holdInitial: false,
     clipboard: {text: '', writes: 0, rejected: 0, activation: false}, order: [], holdOlder: false,
     anchorText: Array.from({length:350},(_,i)=>`Retained contribution word${i} carries the same visible paragraph text.`).join(' '),
-    release: () => { const held = wire.held; wire.held = null; wire.heldKey = null; held?.(); },
+    release: () => { const held = wire.held; wire.held = null; wire.heldKey = null; wire.heldCursor = null; held?.(); },
     hidden: value => {Object.defineProperty(document, 'hidden', {configurable: true, value});document.dispatchEvent(new Event('visibilitychange'));},
   };
   const geometry = node => {
@@ -139,8 +139,8 @@ function transport() {
           {start:i * 1_000_000,end:(i + 1) * 1_000_000,item:0,cursor:`f:${tag}:${i}`,missing_start:false,missing_end:false}));
       const page = {entries, references, older: start ? `f:${tag}:${start}` : null, newer: `f:${tag}:${end}`, has_more: args.newer && end < 1300, reset: false, encoded_bytes: 0};
       page.encoded_bytes = encoder.encode(JSON.stringify(page)).length + 20;
-      if ((wire.holdCopy && args.newer) || (wire.holdInitial && !args.newer && args.cursor === null)) {
-        wire.holdCopy = false; wire.holdInitial = false; wire.order.push('page-held'); wire.heldKey = args.requestKey; return new Promise(resolve => {wire.held = () => resolve(page);}).finally(() => {delete wire.leases[args.requestKey];});
+      if ((wire.holdCopy && args.binding === 'bind-A' && args.newer && entries.some(entry=>entry.key==='50000000:0')) || (wire.holdInitial && !args.newer && args.cursor === null)) {
+        wire.holdCopy = false; wire.holdInitial = false; wire.order.push('page-held'); wire.heldKey = args.requestKey; wire.heldCursor = args.cursor; return new Promise(resolve => {wire.held = () => resolve(page);}).finally(() => {delete wire.leases[args.requestKey];});
       }
       // Node's claimed Request drops on completed page/record IO. Only
       // held IO and pure projection's pending home lease need cancel.
@@ -237,11 +237,18 @@ try {
   await field.fill('needleOld');
   assert.equal(await page.getByText(words.history_exported, {exact: true}).count(), 0, 'a new local intent clears an old idle export result');
   await submit();await page.locator('[data-history-find-hit]').first().waitFor();
-  await page.evaluate(() => {window.__historyWire.clipboard.text = 'OWNER_BARRIER';window.__historyWire.holdCopy = true;});
+  await until(()=>page.locator('[data-history-find-hit]').first().isEnabled(),'the selected source search is idle before the copy gesture');
+  const gesture=await page.evaluate(() => {const wire=window.__historyWire;
+    wire.clipboard.text='OWNER_BARRIER';wire.holdCopy=true;
+    return {writes:wire.clipboard.writes,orderStart:wire.order.length};
+  });
   await page.locator('[data-history-find-hit]').first().click({button: 'right'});
   await page.getByRole('menuitem', {name: words.history_copy, exact: true}).click();
   await until(() => page.evaluate(() => !!window.__historyWire.held), 'copy action held on the original source');
-  assert(await page.evaluate(() => window.__historyWire.order.lastIndexOf('clipboard-write') < window.__historyWire.order.lastIndexOf('page-held')), 'clipboard operation is submitted before its body IO completes');
+  assert(await page.evaluate(({writes,orderStart})=>{
+    const wire=window.__historyWire,write=wire.order.lastIndexOf('clipboard-write'),held=wire.order.lastIndexOf('page-held');
+    return wire.clipboard.writes===writes+1 && wire.clipboard.activation===true && write>=orderStart && write<held;
+  },gesture),'this activated copy gesture submits exactly one clipboard operation before its own target body IO is held');
   await page.evaluate(() => window.__probe.change('bind-B'));
   await until(() => page.evaluate(() => window.__historyWire.calls.some(call => call.cmd === 'history_page' && call.args.binding === 'bind-B')), 'new source reader');
   await page.evaluate(() => window.__historyWire.release());
@@ -421,7 +428,7 @@ try {
   if (page) await page.screenshot({path: join(evidence, 'failure.png')}).catch(() => {});
   throw error;
 } finally {
-  const stats = page ? await page.evaluate(() => ({calls: window.__historyWire?.calls, unknown: window.__historyWire?.unknown, leases: window.__historyWire?.leases, jobs: window.__historyWire?.jobs, clipboard: window.__historyWire?.clipboard, trace: window.__historyWire?.trace})).catch(() => null) : null;
+  const stats = page ? await page.evaluate(() => ({calls: window.__historyWire?.calls, unknown: window.__historyWire?.unknown, leases: window.__historyWire?.leases, jobs: window.__historyWire?.jobs, clipboard: window.__historyWire?.clipboard, order:window.__historyWire?.order.slice(-32),heldKey:window.__historyWire?.heldKey,heldCursor:window.__historyWire?.heldCursor,trace: window.__historyWire?.trace})).catch(() => null) : null;
   const cleanup = await Promise.allSettled([browser?.close(), server?.close()]);rmSync(fixture, {recursive: true, force: true});
   const after = fingerprint();writeFileSync(join(evidence, 'source-after.json'), JSON.stringify(after, null, 2));
   writeFileSync(join(evidence, 'report.json'), JSON.stringify({results, errors, stats, cleanup: cleanup.map(row => row.status), stable: JSON.stringify(before) === JSON.stringify(after), fixtureRemoved: !readdirSync(gui).includes(fixture.split('/').at(-1)), scope: 'production UI/worker; API and clipboard sink only; not actual WK/OS Save or device touch',selection:{rangeOnly,rangeCapOnly}}, null, 2));
