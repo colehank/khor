@@ -955,6 +955,42 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_admission_does_not_charge_nonwaiting_constructor_work() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let fixture = Fixture::new();
+        private_trust_root(&fixture.0);
+        let directory = fixture.0.join(".khor/trust-mutation");
+        private_dir(&directory).unwrap();
+        let path = directory.join("gate");
+        // Physical lock proof, not a warmed constructor or a Node retry.
+        let free = open(&path, true).unwrap();
+        free.try_lock().expect("new private OS gate is unowned");
+        drop(free);
+        let admitted = RootPermit::acquire(&fixture.0).unwrap();
+        let started = Instant::now();
+        // Deliberately model slow CPU/filesystem initialization between the
+        // actual admission and attach. Nobody contends or waits for any lock.
+        std::thread::sleep(OPEN_WAIT + Duration::from_millis(50));
+        assert!(started.elapsed() >= OPEN_WAIT);
+        assert!(!METADATA_HELD.get());
+        let free = open(&path, false).unwrap();
+        free.try_lock()
+            .expect("the same physical gate remains unowned");
+        drop(free);
+        let attached = admitted.attach();
+        eprintln!(
+            "[N-NONWAIT] physical_gate_free=true metadata_held=false delay_ms={} attached={}",
+            started.elapsed().as_millis(),
+            attached.is_ok()
+        );
+        assert!(
+            attached.is_ok(),
+            "nonwaiting constructor work consumed the lock waiting allowance: {:?}",
+            attached.err()
+        );
+    }
+
+    #[test]
     fn ordinary_attach_keeps_its_deadline_and_control_never_waits() {
         let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let fixture = Fixture::new();
