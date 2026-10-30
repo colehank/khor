@@ -136,3 +136,16 @@ Root增授的gui_refused只kind_of移旧两臂/显式Captured，其他两窗拒�
 当前仅15源Rustfmt语法解析/私有Python AST/diff-check0，**无Cargo/typecheck/实际gen/native/App结果**。已交非作者最终source审，H共享47fe/fixtures ee341/Core7d是另一作者片，Root将集中整合同源后真实producer/针对实际受影响测试，不手写gen或临时旧wire兼容。整S/第二轮继续active，34项不据source完成缩范围。
 
 4dd9最终非作者15源尾审已通过：源码git-show/当前/快照与回执cac462ed、迁移表0754f41c逐SHA同，clean，无确定源码阻断。Node新五场景/私有Python与agents Capture helper实际逐源核过；这只提升source审状态，仍无联编/运行结果。组件handoff位于source-4dd9db6c/component-handoff.json；H共享/Core负例单作者片与Root集中producer是下一必要步骤，不把此结论写成新Store/整S实际绿。
+
+
+### Root255退役组合下一定向验收计划（仅准备）
+
+Root已组合Store与Node/ACP15叶+H共享到 **2552334ab1d55e227f4dacb90127f2e1b930f60f clean**；新源不能套旧27d实际绿。本作者原4dd9/27d分支及所有原false/actual均保。graph先查显示旧511ad索引未覆盖相关targets，随后仅按实际Root源码定位exact与依赖。
+
+计划目录 `history/startup-source-d181/replay-retirement-native-2552334a`：runner **0de78602412d831aa3298672f1c4ecf7e76a8bf1b8fdcfb6793c7889be887396**，source回执 **7cbf02c07a4b1c4deb011688bd5b3a56243f4eca22cc544b74eca2d08f289e14**（2331源frame），计划回执 **383b35d45b7b0e9dbf99891e3439ff8b6f00f5301292f71747ca4128ff9e24e8**；内盘replay-retirement-native-2552334a-plan镜像 **a664cba6c712ad5672cfc4aa8e8c00f3cb6e6832e5f8e8741af30144b78acc19**。仅AST/实际fn与target存在/计数静态检查，**无metadata/Cargo/native/gen/App**。
+
+三批各需独立Root正式槽、各总300s/单命令仅收紧剩余、双盘5GiB/jobs1/incr0/offline/原owned/TMP/source-env/V严格门。每selected先各自no-prior prepare，再对同一package实际CargoJSON逐verify/require/唯一row/privatecopy；不借fresh waiver。A contract **e0c205e92ccf86a08a006fa92f925ca9935de24d7c85cb3fa2ac43415b827186**：actualstub+conversation同次producer，3exact（initialLoad完整prefix/context+PromptElicit/unsupportedLoad）。B contract **f71d3ca0533340a89e08bbda125073f539c3f7fc7f6073667311642a3ebdc10f**：Node lib/gui_greeting/gui_session同次producer，13父+7owned helper；含迁移5/journal/noLoad/PTY1、greeting2、真实双view/ownCapture/noLoad3。C contract **d6b2a2bd8e184b232ba83ac1028a7aefa10c0951a4948e2bc0cd025cb79ca458**：actualkhor+4integration targets，同源两shim+两窗拒绝3exact。总19父/7helper，不重无变化Store13/64MiB。
+
+CARGO_BIN_EXE编译时指原target路径，runner明确逐次核其actualrow/proof/privatecopy相同SHA，不假称环境变量能覆盖它；B gui_session实际只收A经V私有stub的canonical pin，受控模式不能隐Cargo。B借Aproof只在require时重建三项明确phase路径env，再finally恢复，不把它当B依赖rlib复用凭据。
+
+H同源actualbindings/catalog来源/noEmit优先。C额外经khor-web/build.rs嵌dist，当前 **assets:null明确禁止C实际命令**，须H/Root当前255真实Vite资产逐SHA回执后repin；A/B无web/dist依赖。agents新Capture helper唯一个caller仍ignored真实第三方用例；无既有hermetic共用case，默认stub不真实写获批文件，不能假替换/删原assert。Root接受仅编译与人工第三方runtime边界，不新fakepeer/不跑真实模型。预计A20–50s/B70–150s/C90–200s仅排期范围，不是硬保证；每批硬300s，首次联编失败原样保后最小收口。私有copies粗估A25–60MB/B0.65–1.0GiB/C1.0–1.6GiB另加未知编译输出，不能当max；driver不删缓存。已交非作者准入，尚未授本批执行。
