@@ -15,6 +15,10 @@ mod io;
 
 pub(crate) struct Transport {
     pub streams: ByteStreams<io::Writer, io::Reader>,
+    /// Actual child returned by the owned Session, not an inferred descendant.
+    /// Persistent recovery must also verify OS birth before treating this PID
+    /// as a later owner; a PID by itself is not an exit or liveness receipt.
+    pub provider_pid: u32,
     pub lifecycle: khor_acp::TransportLifecycle,
     pub control: Arc<Control>,
     pub stderr: Arc<Mutex<VecDeque<u8>>>,
@@ -95,6 +99,7 @@ pub(crate) fn spawn(command: &str) -> Result<Transport, String> {
             mut stderr,
         },
     ) = Session::spawn(command, control.clone()).map_err(|error| error.to_string())?;
+    let provider_pid = session.pid();
     let mut building = Building {
         session: Some(session),
         control: control.clone(),
@@ -150,6 +155,7 @@ pub(crate) fn spawn(command: &str) -> Result<Transport, String> {
     );
     Ok(Transport {
         streams: ByteStreams::new(writer, reader),
+        provider_pid,
         lifecycle,
         control,
         stderr: tail,

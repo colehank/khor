@@ -1138,6 +1138,11 @@ async fn open_one(
                     OpenedBy::Resume,
                 ));
             }
+            if !caps.load_session {
+                return Err(Refusal::Wont(
+                    "The agent does not support loading or resuming this session".into(),
+                ));
+            }
             let mut request = LoadSessionRequest::new(sid.clone(), cwd);
             request.mcp_servers = environment.mcp_servers;
             request.additional_directories = environment.additional_directories;

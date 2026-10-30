@@ -111,18 +111,16 @@ pub(crate) struct ReadBoundary {
     pub cursor: crate::adaptor::transcript_page::Cursor,
 }
 
-impl Journal {
-    pub fn bind(&self, directory: &Path) -> Result<(), String> {
-        if let Some(bytes) = super::read_metadata(&directory.join("journal.json"))? {
-            let identity: Identity = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-            if identity != self.manifest.identity {
-                return Err("session already names another journal source".into());
-            }
-        }
-        let bytes = serde_json::to_vec(&self.manifest.identity).map_err(|e| e.to_string())?;
-        super::write_metadata(&directory.join("journal.json"), &bytes)
-    }
-    pub fn open(root: &Path, identity: Identity, opening: Opening) -> Result<Self, String> {
+/// Exclusive admission for one exact native conversation. Taking this owner
+/// does not append a Gap, remove pending data, re-seat a row or publish a base.
+/// The known-native caller must hold it before spawning its ACP provider.
+pub(crate) struct JournalReservation {
+    directory: PathBuf,
+    identity: Identity,
+    lock: File,
+}
+impl JournalReservation {
+    pub fn take(root: &Path, identity: Identity) -> Result<Self, String> {
         identity.validate()?;
         let directory = identity.directory(root);
         fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
@@ -138,6 +136,64 @@ impl Journal {
             .map_err(|e| e.to_string())?;
         lock.try_lock()
             .map_err(|e| format!("journal already has a writer: {e}"))?;
+        let current = directory.join("current");
+        match read_manifest(&current)? {
+            Some(manifest) if manifest.version == VERSION && manifest.identity == identity => {}
+            Some(_) => return Err("journal manifest belongs to another source or version".into()),
+            None if current.exists() => return Err("committed journal manifest is missing".into()),
+            None => {}
+        }
+        Ok(Self {
+            directory,
+            identity,
+            lock,
+        })
+    }
+
+    pub fn identity(&self) -> &Identity {
+        &self.identity
+    }
+
+    pub fn check_binding(&self, directory: &Path) -> Result<(), String> {
+        check_binding(directory, &self.identity)
+    }
+
+    /// Move the very same physical File owner into the journal. No unlock,
+    /// duplicated handle, close/reopen window or second reservation occurs.
+    pub fn into_journal(self, opening: Opening) -> Result<Journal, String> {
+        Journal::from_reservation(self, opening)
+    }
+}
+
+pub(crate) fn bound_identity(directory: &Path) -> Result<Option<Identity>, String> {
+    let Some(bytes) = super::read_metadata(&directory.join("journal.json"))? else {
+        return Ok(None);
+    };
+    let identity: Identity = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    identity.validate()?;
+    Ok(Some(identity))
+}
+
+fn check_binding(directory: &Path, expected: &Identity) -> Result<(), String> {
+    if let Some(identity) = bound_identity(directory)? {
+        if &identity != expected {
+            return Err("session already names another journal source".into());
+        }
+    }
+    Ok(())
+}
+
+impl Journal {
+    pub fn bind(&self, directory: &Path) -> Result<(), String> {
+        check_binding(directory, &self.manifest.identity)?;
+        let bytes = serde_json::to_vec(&self.manifest.identity).map_err(|e| e.to_string())?;
+        super::write_metadata(&directory.join("journal.json"), &bytes)
+    }
+    pub fn open(root: &Path, identity: Identity, opening: Opening) -> Result<Self, String> {
+        JournalReservation::take(root, identity)?.into_journal(opening)
+    }
+    fn from_reservation(reservation: JournalReservation, opening: Opening) -> Result<Self, String> {
+        let JournalReservation { directory, identity, lock } = reservation;
         let pending = directory.join("pending");
         match fs::remove_dir_all(&pending) {
             Ok(()) => {}
@@ -655,6 +711,79 @@ mod tests {
         }
     }
 
+    #[test]
+    fn native_reservation_keeps_the_same_exclusive_file_owner_through_journal_open() {
+        let f = Fixture::new();
+        let reservation = JournalReservation::take(&f.0, f.identity()).unwrap();
+        #[cfg(unix)]
+        let descriptor = {
+            use std::os::fd::AsRawFd;
+            reservation.lock.as_raw_fd()
+        };
+        assert!(JournalReservation::take(&f.0, f.identity()).is_err());
+        assert!(!f.identity().directory(&f.0).join("pending").exists());
+        let journal = reservation.into_journal(Opening::New).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            assert_eq!(journal._lock.as_raw_fd(), descriptor);
+        }
+        assert!(JournalReservation::take(&f.0, f.identity()).is_err());
+        drop(journal);
+        assert!(JournalReservation::take(&f.0, f.identity()).is_ok());
+    }
+
+    #[test]
+    fn dropping_a_preinit_reservation_keeps_old_records_and_pending_data_unchanged() {
+        let f = Fixture::new();
+        let mut journal = Journal::open(&f.0, f.identity(), Opening::New).unwrap();
+        journal
+            .note(&serde_json::json!({"text":"retained"}))
+            .unwrap();
+        journal.commit_base().unwrap();
+        drop(journal);
+        let directory = f.identity().directory(&f.0);
+        fs::create_dir(directory.join("pending")).unwrap();
+        fs::write(
+            directory.join("pending/unpublished"),
+            b"previous interrupted attempt",
+        )
+        .unwrap();
+        let names = [
+            "current/records.jsonl",
+            "current/manifest.json",
+            "pending/unpublished",
+        ];
+        let before = names.map(|name| fs::read(directory.join(name)).unwrap());
+        let row = f.0.join("row");
+        fs::create_dir(&row).unwrap();
+        let mut another = f.identity();
+        another.agent = "another-agent".into();
+        fs::write(
+            row.join("journal.json"),
+            serde_json::to_vec(&another).unwrap(),
+        )
+        .unwrap();
+        let reservation = JournalReservation::take(&f.0, f.identity()).unwrap();
+        assert!(
+            reservation
+                .check_binding(&row)
+                .unwrap_err()
+                .contains("another journal source")
+        );
+        // This models dropping before ACP initialization succeeds, not a claim
+        // that a real provider process was exercised by this unit fixture.
+        drop(reservation);
+        assert_eq!(
+            names.map(|name| fs::read(directory.join(name)).unwrap()),
+            before
+        );
+        assert_eq!(
+            fs::read(row.join("journal.json")).unwrap(),
+            serde_json::to_vec(&another).unwrap()
+        );
+        assert!(JournalReservation::take(&f.0, f.identity()).is_ok());
+    }
     #[test]
     fn capture_requires_a_committed_current_file_and_preserves_canonical_identity() {
         let f = Fixture::new();

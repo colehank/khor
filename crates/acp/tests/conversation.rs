@@ -339,8 +339,38 @@ async fn an_agent_that_cannot_replay_says_so_before_anyone_asks() {
     );
     // A supported restore is a separate opening, never a live reload.
     handle.shutdown().await.unwrap();
-    assert!(khor_acp::start_resume(&cmd,std::env::temp_dir(),"unsupported-past").await.is_err(),
-        "an unadvertised initial restore must not become an empty conversation");
+    struct SetupLog(std::path::PathBuf);
+    impl Drop for SetupLog {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let path = std::env::temp_dir().join(format!(
+        "khor-acp-unsupported-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&path).unwrap();
+    let log = SetupLog(path);
+    let method_log = log.0.join("setup-methods");
+    // Child Command environment only: parallel tests keep their own policy.
+    let restore = serde_json::json!({"command":STUB,"env":{
+        "KHOR_STUB_REPLAYS":"0","KHOR_STUB_SETUP_LOG":method_log.to_str().expect("private setup log path is UTF-8")
+    }}).to_string();
+    assert!(
+        khor_acp::start_resume(&restore, std::env::temp_dir(), "unsupported-past")
+            .await
+            .is_err(),
+        "an unadvertised initial restore must not become an empty conversation"
+    );
+    assert_eq!(
+        std::fs::read_to_string(method_log).unwrap(),
+        "initialize\n",
+        "an unsupported restore must not send Load, Resume or New on the actual wire"
+    );
 }
 
 /// **A version this client cannot speak is refused at the handshake.**

@@ -63,7 +63,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::host::{Hello, HostFile, Welcome, host_file_path, read_frame, write_frame};
 use crate::live::{LiveKind, Source};
-use crate::session_content::journal::{Identity as JournalIdentity, Journal, Opening as JournalOpening, Outcome as JournalOutcome};
+use crate::session_content::journal::{Identity as JournalIdentity, Journal, JournalReservation, Opening as JournalOpening, Outcome as JournalOutcome};
 
 /// What a connected face may do to the conversation.
 #[derive(Serialize, Deserialize)]
@@ -823,6 +823,21 @@ fn gui_host_main_with_timeouts(
         environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::self_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
     }
     let retained_environment = environment.clone();
+    // A known native conversation owns the journal's physical writer lock
+    // before any upstream process exists. This is not an inherited-FD handoff:
+    // the ghost acquires it and later moves that same File into its Journal.
+    let reservation = resume.as_ref().map(|native_id| {
+        let identity = gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, native_id)?;
+        let reservation = JournalReservation::take(&root, identity)?;
+        let id = crate::adaptor::id_for(native_id);
+        let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        reservation.check_binding(&dir)?;
+        live.check_gui_source(reservation.identity())?;
+        Ok::<_, String>(reservation)
+    }).transpose().map_err(|why| {
+        let _ = std::fs::write(refusal_path(&ready), &why);
+        why
+    })?;
     let transport = crate::acp_process::spawn(&command).map_err(|why| {
         let why = refusal_words(&khor_acp::Refusal::Wont(why));
         let _ = std::fs::write(refusal_path(&ready), &why);
@@ -873,23 +888,23 @@ fn gui_host_main_with_timeouts(
         // retained spelling, never authority to replace another conversation.
         let id = crate::adaptor::id_for(&handle.session().0);
         let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
-        let vendor = std::env::var(VENDOR_ENV).ok();
-        let registered_agent = vendor.clone().or_else(|| {
-            std::fs::read(dir.join("meta.json")).ok()
-                .and_then(|bytes| serde_json::from_slice::<crate::live::Meta>(&bytes).ok())
-                .and_then(|meta| meta.gui_native.map(|native| native.agent).or(meta.category))
-        }).unwrap_or_else(|| {
-            let launch = serde_json::to_vec(&cmd).expect("launcher identity serializes");
-            format!("launcher:{}", blake3::hash(&launch).to_hex())
-        });
-        let identity = JournalIdentity {
-            home: khor_core::DeviceId(*key.public().as_bytes()),
-            agent: registered_agent,
-            native_id: handle.session().0.to_string(),
+        let identity = gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, &handle.session().0)?;
+        let opening=match handle.opened_by() {
+            khor_acp::OpenedBy::New=>JournalOpening::New,
+            khor_acp::OpenedBy::Load=>JournalOpening::Load,
+            khor_acp::OpenedBy::Resume=>JournalOpening::Resume,
         };
-        // This first slice fences row reports and rejects a full-native
-        // collision before Meta or binding publication. Pre-provider admission
-        // and canonical/run transaction handoff follow in the next slice.
+        let mut journal = match reservation {
+            Some(reservation) => {
+                if reservation.identity() != &identity {
+                    return Err("ACP opened another identity than its reservation".into());
+                }
+                reservation.into_journal(opening)?
+            }
+            None => Journal::open(&root, identity.clone(), opening)?,
+        };
+        journal.bind(&dir)?;
+        let vendor = std::env::var(VENDOR_ENV).ok();
         let run = live.begin_gui_run(
             &id, &title, std::process::id(), &identity, vendor.as_deref(), resume.is_some(),
         )?;
@@ -915,14 +930,6 @@ fn gui_host_main_with_timeouts(
                 live.learn_place(&id, &cwd)?;
             }
         }
-        let opening=match handle.opened_by() {
-            khor_acp::OpenedBy::New=>JournalOpening::New,
-            khor_acp::OpenedBy::Load=>JournalOpening::Load,
-            khor_acp::OpenedBy::Resume=>JournalOpening::Resume,
-        };
-        let mut journal=Journal::open(&root, identity, opening)?;
-        journal.bind(&dir)?;
-
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         let cookie = crate::link::fresh_hex()?;
@@ -1752,6 +1759,50 @@ async fn next_host_input(
     std::future::poll_fn(|cx| {
         poll_host_input(cx, |cx| events.poll_recv(cx), ops, prefer_ops, events_closed)
     }).await
+}
+
+fn gui_source_identity(
+    live: &LiveKind,
+    home: khor_core::DeviceId,
+    cmd: &[String],
+    native_id: &str,
+) -> Result<JournalIdentity, String> {
+    let id = crate::adaptor::id_for(native_id);
+    let dir = live
+        .dir_of(&id)
+        .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+    let bound = crate::session_content::journal::bound_identity(&dir)?;
+    let meta = match std::fs::read(dir.join("meta.json")) {
+        Ok(bytes) => {
+            Some(serde_json::from_slice::<crate::live::Meta>(&bytes).map_err(|e| e.to_string())?)
+        }
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => None,
+        Err(why) => return Err(why.to_string()),
+    };
+    let vendor = std::env::var(VENDOR_ENV).ok();
+    let recorded = bound.or_else(|| meta.as_ref().and_then(|meta| meta.gui_native.clone()));
+    if let Some(recorded) = recorded {
+        if recorded.home != home
+            || recorded.native_id != native_id
+            || vendor
+                .as_ref()
+                .is_some_and(|agent| agent != &recorded.agent)
+        {
+            return Err("GUI row already names another full native identity".into());
+        }
+        return Ok(recorded);
+    }
+    let agent = vendor
+        .or_else(|| meta.and_then(|meta| meta.category))
+        .unwrap_or_else(|| {
+            let launch = serde_json::to_vec(cmd).expect("launcher identity serializes");
+            format!("launcher:{}", blake3::hash(&launch).to_hex())
+        });
+    Ok(JournalIdentity {
+        home,
+        agent,
+        native_id: native_id.into(),
+    })
 }
 
 fn context_path(root: &std::path::Path, session: &str) -> PathBuf {
