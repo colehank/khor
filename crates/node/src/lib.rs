@@ -2699,10 +2699,24 @@ impl Node {
                 });
             }
         }
-        let mut have: std::collections::BTreeSet<String> =
-            views.iter().map(|v| v.session.id.0.clone()).collect();
         let mut reported = self.cached_peer_rows();
         reported.sort_by_key(|(_, age, _)| *age);
+        // A home report can replace the retained local read-only projection.
+        // Use this same report snapshot for replacement and insertion, never
+        // drop a row based on a second independently read cache. It only picks
+        // a route; attach still authenticates at the actual execution home.
+        views.retain(|view| {
+            let row = &view.session;
+            let Some(reference) = row.observation.as_ref() else { return true; };
+            row.kind.0 != khor_core::kind::OBSERVE || !reported.iter().any(|(_, _, remote)| {
+                remote.id == row.id && remote.home == reference.home
+                    && remote.kind.0 == khor_core::kind::GUI
+                    && remote.category.as_deref() == Some(reference.agent.as_str())
+                    && session_content::Observation::id(reference.home, reference.namespace, &reference.agent, &reference.native_id) == remote.id
+            })
+        });
+        let mut have: std::collections::BTreeSet<String> =
+            views.iter().map(|v| v.session.id.0.clone()).collect();
         for (name, age, mut row) in reported {
             if have.insert(row.id.0.clone()) {
                 // Read decisions are local facts already. A peer's stale report
@@ -2800,6 +2814,9 @@ impl Node {
             return Ok(false);
         }
         if id.0.starts_with("observe/") {
+            if self.live.published_observation(id)?.is_some() {
+                return Err("A published GUI execution is not a removable read-only observation".into());
+            }
             session_content::Observation::remove(&self.root, id)?;
             loaded.doc.take_off(&id.0)?;
             let mut store = loaded.store;
@@ -5304,7 +5321,7 @@ impl Node {
     /// **None on a machine that hosts nothing**: no session's host lives
     /// on it, so nothing there is an address to attach to.
     pub fn session_dir(&self, id: &SessionId) -> Option<PathBuf> {
-        if session_content::refuse_control(id).is_err() || !self.hosts {
+        if !self.hosts || (id.0.starts_with("observe/") && self.live.published_observation(id).ok().flatten().is_none()) {
             return None;
         }
         self.live.dir_of(id).filter(|d| d.exists())
@@ -5622,17 +5639,17 @@ impl Node {
         register: bool,
     ) -> Result<Option<session_content::ContentSource>, session_content::Unavailable> {
         use session_content::{ContentSource, NativeTranscript, ObservationBinding, Provider, Unavailable};
+        let directory=self.live.dir_of(id);
+        if let Some(journal)=session_content::journal::Source::registered(&self.root,self.device(),id,directory.as_deref())
+            .map_err(|_|Unavailable::Unreadable)? {
+            return Ok(Some(ContentSource::Journal(journal)));
+        }
         if id.0.starts_with("observe/") {
             let record = session_content::Observation::read(&self.root, id)
                 .map_err(|_| Unavailable::Unreadable)?
                 .ok_or(Unavailable::NoSource)?;
             return session_content::ContentReference::observed(&record.reference)
                 .resolve(&self.root,self.device());
-        }
-        let directory=self.live.dir_of(id);
-        if let Some(journal)=session_content::journal::Source::registered(&self.root,self.device(),id,directory.as_deref())
-            .map_err(|_|Unavailable::Unreadable)? {
-            return Ok(Some(ContentSource::Journal(journal)));
         }
         let Some(leaf) = id.0.strip_prefix("tui/") else {
             return Ok(None);

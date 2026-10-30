@@ -157,6 +157,14 @@ impl KindSurface for ObservationKind {
     fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
         Ok(Observation::all(node.root())?
             .into_iter()
+            .filter(|record| {
+                // A local published GUI projection owns the same logical row;
+                // the retained observation metadata itself is never deleted.
+                if record.reference.home == node.device() {
+                    return node.live.published_observation(&record.id).ok().flatten().is_none();
+                }
+                true
+            })
             .map(|record| record.session())
             .collect())
     }
@@ -173,6 +181,9 @@ impl KindSurface for ObservationKind {
             .min(i64::MAX as u64) as i64)
     }
     fn close(&self, node: &Node, id: &SessionId) -> Result<(), String> {
+        if node.live.published_observation(id)?.is_some() {
+            return Err("A published GUI execution is not a removable read-only observation".into());
+        }
         Observation::remove(node.root(), id)
     }
 }

@@ -731,8 +731,12 @@ impl Source {
             return Ok(None);
         };
         let identity: Identity = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-        if identity.home != home || crate::adaptor::id_for(&identity.native_id) != *id {
+        if identity.home != home || !crate::live::matches_logical_source(id, &identity) {
             return Err("journal registration belongs to another session or home".into());
+        }
+        crate::live::check_observed_target(root, id, &identity)?;
+        if id.0.starts_with("observe/") && crate::live::LiveKind::new(root.to_path_buf(), home).published_observation(id)?.is_none() {
+            return Ok(None);
         }
         Self::find(root, identity)
     }

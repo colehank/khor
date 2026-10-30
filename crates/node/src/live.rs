@@ -41,13 +41,13 @@ fn native_aliases(native: &crate::session_content::journal::Identity) -> [Sessio
         crate::session_content::Observation::id(native.home, ObservationNamespace::Native, &native.agent, &native.native_id),
         crate::session_content::Observation::id(native.home, ObservationNamespace::Acp, &native.agent, &native.native_id)]
 }
-fn matches_logical_source(id: &SessionId, native: &crate::session_content::journal::Identity) -> bool {
+pub(crate) fn matches_logical_source(id: &SessionId, native: &crate::session_content::journal::Identity) -> bool {
     native_aliases(native).iter().any(|candidate| candidate == id)
 }
 /// A tuple hash is not authority by itself: an observed target must also have
 /// its actual validated reference. Actions persist that existing metadata only
 /// after the execution home has qualified its real local source.
-fn check_observed_target(root: &Path, id: &SessionId, native: &crate::session_content::journal::Identity) -> Result<(), String> {
+pub(crate) fn check_observed_target(root: &Path, id: &SessionId, native: &crate::session_content::journal::Identity) -> Result<(), String> {
     if *id == crate::adaptor::id_for(&native.native_id) { return Ok(()); }
     let record = crate::session_content::Observation::read(root, id)?.ok_or("observed recovery reference is missing")?;
     let source = &record.reference;
@@ -1080,8 +1080,29 @@ impl LiveKind {
             .any(|row| row.id == *id && row.kind.0 == khor_core::kind::SHELL && row.term && row.mux)
     }
 
+    /// Only retained observation IDs need the extra publication boundary. None
+    /// is still the old read-only observation; Some(false) is published history
+    /// without a current controllable execution, never permission to restart.
+    pub(crate) fn published_observation(&self, id: &SessionId) -> Result<Option<bool>, String> {
+        if !id.0.starts_with("observe/") { return Ok(None); }
+        let directory = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let meta = match fs::read(directory.join("meta.json")) {
+            Ok(bytes) => serde_json::from_slice::<Meta>(&bytes).map_err(|error| error.to_string())?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
+        let Some(native) = meta.gui_native.as_ref() else { return Ok(None); };
+        let Some(run) = meta.gui_run.as_ref() else { return Ok(None); };
+        if meta.kind != khor_core::kind::GUI || meta.id != id.0 || native.home != self.device || run.state.gui_run.as_deref() != Some(run.id.as_str()) { return Ok(None); }
+        check_observed_target(&self.root, id, native)?;
+        if crate::session_content::journal::bound_identity(&directory)?.as_ref() != Some(native) { return Ok(None); }
+        Ok(recovery_attempt::published_run(&directory, id, native, &run.id, meta.pid)?.map(|active| active && run.state.exit.is_none()))
+    }
+
     pub(crate) fn require_input_owner(&self, id: &SessionId) -> Result<(), String> {
-        crate::session_content::refuse_control(id)?;
+        if id.0.starts_with("observe/") {
+            if self.published_observation(id)? != Some(true) { return Err("This observation has no published current GUI execution".into()); }
+        } else { crate::session_content::refuse_control(id)?; }
         let current = self.seated(&|_| 0, &|_| false);
         if current.input_owners.contains(id) {
             return Ok(());
@@ -1636,7 +1657,9 @@ impl LiveKind {
         watermark: impl Fn(&str) -> i64,
         listed: impl Fn(&str) -> bool,
     ) -> Vec<Session> {
-        self.seated(&watermark, &listed).rows
+        self.seated(&watermark, &listed).rows.into_iter().filter(|row| {
+            !row.id.0.starts_with("observe/") || self.published_observation(&row.id).ok().flatten().is_some()
+        }).collect()
     }
 
     /// The agent row whose form `id` is wearing, if it wears one — the
@@ -2731,6 +2754,7 @@ impl LiveKind {
                 row.term
             } else {
                 self.owns_agent_endpoint(&row.id, procs)
+                    && (!row.id.0.starts_with("observe/") || self.published_observation(&row.id).ok().flatten() == Some(true))
             };
         }
         let input_owners = out
@@ -3508,6 +3532,7 @@ impl LiveKind {
         title: &str,
         category: Option<&str>,
         word: State,
+        place: Option<&Path>,
         ready: &Path,
     ) -> Result<RunKey, String> {
         if recovery.control.is_none() || !journal.owns_lease(&recovery.journal) {
@@ -3525,7 +3550,7 @@ impl LiveKind {
         })?;
         held.publish_run(&recovery.key, |gate, run_id| {
             let key = self.begin_gui_run_held(gate, &id, title, std::process::id(), &native,
-                category, true, None, run_id, word, None)?;
+                category, true, None, run_id, word, place)?;
             fs::write(ready, &id.0).map_err(|error| error.to_string())?;
             Ok(key)
         })

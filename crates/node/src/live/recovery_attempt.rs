@@ -1452,6 +1452,19 @@ impl<'a> Held<'a> {
     }
 }
 
+/// A read-only publication projection, not provider ownership or an endpoint
+/// authorization. The actual attach still authenticates GUI2 and its lease.
+pub(super) fn published_run(directory: &Path, id: &SessionId, native: &Identity, run: &str, host_pid: Option<u32>) -> Result<Option<bool>, String> {
+    let Some(document) = read(directory)? else { return Ok(None); };
+    let Some(execution) = &document.latest else { return Ok(None); };
+    if &execution.arguments.id != id || &execution.arguments.native != native || execution.run_id != run
+        || execution.phase != Phase::RunPublished
+        || !matches!(&execution.result, Some(Recorded::Opened { id: result_id, run_id }) if result_id == id && run_id == run)
+        || execution.host.as_ref().map(|host| host.pid).or(execution.unverified_host_pid) != host_pid
+    { return Ok(None); }
+    Ok(Some(document.cleanup_barrier.is_none() && matches!(execution.provider, Provider::Owned { .. })))
+}
+
 /// Read-only projection of a previous observation; no row lock/file creation,
 /// provider probe or launch. The action must still re-Initialize and guard.
 /// Offer only classifies durable facts; it does not probe processes, acquire
@@ -1737,6 +1750,8 @@ mod tests {
             })
         })
         .unwrap();
+        assert_eq!(published_run(&held.gate.dir, &args.id, &native, &first.run_id, Some(10)).unwrap(), Some(true));
+        assert_eq!(published_run(&held.gate.dir, &args.id, &native, &first.run_id, Some(11)).unwrap(), None);
         let result = Recorded::Opened {
             id: args.id.clone(),
             run_id: first.run_id.clone(),
@@ -1746,6 +1761,7 @@ mod tests {
         );
 
         held.cleanup_unknown(&first).unwrap();
+        assert_eq!(published_run(&held.gate.dir, &args.id, &native, &first.run_id, Some(10)).unwrap(), Some(false));
         let mut meta = held.gate.read_meta().unwrap();
         meta.gui_run.as_mut().unwrap().state.exit = Some(1);
         held.gate.write_meta(&meta).unwrap();
@@ -2275,6 +2291,9 @@ mod tests {
                         },
                     )
                     .unwrap();
+                    assert_eq!(published_run(&row, &args.id, &native, &authority.key.run_id, Some(std::process::id())).unwrap(), Some(false), "published history with unknown birth is not current input authority");
+                    assert_eq!(published_run(&row, &args.id, &native, &"f".repeat(32), Some(std::process::id())).unwrap(), None);
+                    assert_eq!(published_run(&row, &args.id, &native, &authority.key.run_id, Some(std::process::id() + 1)).unwrap(), None);
                     assert_eq!(held.ready_run(&native, std::process::id(), None).unwrap(), authority.key.run_id);
                     assert!(held.ready_run(&native, std::process::id() + 1, None).is_err());
                     let recovery = Arguments::native(

@@ -1073,7 +1073,7 @@ fn gui_host_main_with_timeouts(
                 &serde_json::to_vec(&retained_environment).map_err(|e| e.to_string())?,
             )?;
         }
-        let initial_place = if resume.is_none() { crate::cwd::standing() } else { None };
+        let initial_place = Some(cwd.clone());
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         let cookie = crate::link::fresh_hex()?;
@@ -1249,7 +1249,7 @@ fn gui_host_main_with_timeouts(
                         RunPublication::Opening(word) => *word,
                         RunPublication::Live(_) => break Some("GUI recovery published twice".into()),
                     };
-                    match live.publish_gui_recovery(recovery, journal, &title, vendor.as_deref(), word, &loop_ready) {
+                    match live.publish_gui_recovery(recovery, journal, &title, vendor.as_deref(), word, initial_place.as_deref(), &loop_ready) {
                         Ok(key) => key, Err(why) => break Some(why),
                     }
                 } else {
