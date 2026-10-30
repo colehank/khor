@@ -288,11 +288,12 @@ impl Journal {
                     base_prepared: false,
                     _lock: lock,
                 };
-                next.append(&Record::<'_, ()>::Gap {
+                let gap: Record<'_, ()> = Record::Gap {
                     opening,
                     interrupted_turn: interrupted.as_deref(),
                     incomplete_record: false,
-                })?;
+                };
+                next.append(&gap)?;
                 next
             } else {
                 let file = private_options()
@@ -338,11 +339,12 @@ impl Journal {
         if !journal.pending {
             let incomplete_record = journal.finish_partial_record()?;
             let interrupted = journal.manifest.active_turn.take();
-            journal.append(&Record::<'_, ()>::Gap {
+            let gap: Record<'_, ()> = Record::Gap {
                 opening,
                 interrupted_turn: interrupted.as_deref(),
                 incomplete_record,
-            })?;
+            };
+            journal.append(&gap)?;
             journal.manifest.gaps = journal.manifest.gaps.saturating_add(1);
             journal.persist()?;
         }
