@@ -157,7 +157,7 @@ fn decide(recorded: &ProcessStamp, leader: Leader, group: Group) -> Foreground {
 fn same_birth(a: &ProcessStamp, b: &ProcessStamp) -> bool {
     a.pid == b.pid && same_context(a, b) && a.start == b.start
 }
-fn same_context(a: &ProcessStamp, b: &ProcessStamp) -> bool {
+pub(super) fn same_context(a: &ProcessStamp, b: &ProcessStamp) -> bool {
     if a.boot != b.boot {
         return false;
     }

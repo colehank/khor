@@ -5,6 +5,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 const VERSION: u8 = 1;
@@ -103,6 +104,28 @@ fn active_generation(directory: &Path) -> Result<Option<String>, String> {
     Ok(Some(active.generation))
 }
 
+fn published_manifest(
+    directory: &Path,
+    identity: &Identity,
+    generation: Option<&str>,
+) -> Result<Option<Manifest>, String> {
+    let current = generation_directory(directory, generation)?;
+    match read_manifest(&current)? {
+        Some(manifest)
+            if manifest.version == VERSION
+                && &manifest.identity == identity
+                && manifest.generation.as_deref() == generation =>
+        {
+            Ok(Some(manifest))
+        }
+        Some(_) => Err("journal manifest belongs to another source or version".into()),
+        None if current.exists() || generation.is_some() => {
+            Err("committed journal manifest is missing".into())
+        }
+        None => Ok(None),
+    }
+}
+
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Record<'a, T: Serialize> {
@@ -145,8 +168,12 @@ pub(crate) struct Journal {
     pending: bool,
     poisoned: bool,
     base_prepared: bool,
+    lease: Arc<()>,
     _lock: File,
 }
+
+/// Identity of this one Journal owner across moves, not another File or lock.
+pub(crate) struct JournalLease(Arc<()>);
 
 #[derive(Debug)]
 pub(crate) struct ReadBoundary {
@@ -162,6 +189,7 @@ pub(crate) struct JournalReservation {
     identity: Identity,
     lock: File,
     generation: Option<String>,
+    lease: Arc<()>,
 }
 impl JournalReservation {
     pub fn take(root: &Path, identity: Identity) -> Result<Self, String> {
@@ -181,23 +209,31 @@ impl JournalReservation {
         lock.try_lock()
             .map_err(|e| format!("journal already has a writer: {e}"))?;
         let generation = active_generation(&directory)?;
-        let current = generation_directory(&directory, generation.as_deref())?;
-        match read_manifest(&current)? {
-            Some(manifest) if manifest.version == VERSION && manifest.identity == identity && manifest.generation == generation => {}
-            Some(_) => return Err("journal manifest belongs to another source or version".into()),
-            None if current.exists() || generation.is_some() => return Err("committed journal manifest is missing".into()),
-            None => {}
-        }
+        published_manifest(&directory, &identity, generation.as_deref())?;
         Ok(Self {
             directory,
             identity,
             lock,
             generation,
+            lease: Arc::new(()),
         })
     }
 
     pub fn identity(&self) -> &Identity {
         &self.identity
+    }
+
+    pub(crate) fn lease(&self) -> JournalLease {
+        JournalLease(self.lease.clone())
+    }
+    pub(crate) fn has_published_base(&self) -> Result<bool, String> {
+        if active_generation(&self.directory)? != self.generation {
+            return Err("journal generation changed during its reservation".into());
+        }
+        Ok(
+            published_manifest(&self.directory, &self.identity, self.generation.as_deref())?
+                .is_some(),
+        )
     }
 
     pub fn check_binding(&self, directory: &Path) -> Result<(), String> {
@@ -230,6 +266,12 @@ fn check_binding(directory: &Path, expected: &Identity) -> Result<(), String> {
 }
 
 impl Journal {
+    pub(crate) fn identity(&self) -> &Identity {
+        &self.manifest.identity
+    }
+    pub(crate) fn owns_lease(&self, lease: &JournalLease) -> bool {
+        !self.poisoned && Arc::ptr_eq(&self.lease, &lease.0)
+    }
     pub fn bind(&self, directory: &Path) -> Result<(), String> {
         check_binding(directory, &self.manifest.identity)?;
         let bytes = serde_json::to_vec(&self.manifest.identity).map_err(|e| e.to_string())?;
@@ -244,9 +286,15 @@ impl Journal {
             identity,
             lock,
             generation,
+            lease,
         } = reservation;
         if active_generation(&directory)? != generation {
             return Err("journal generation changed during its reservation".into());
+        }
+        let current = generation_directory(&directory, generation.as_deref())?;
+        let previous = published_manifest(&directory, &identity, generation.as_deref())?;
+        if opening == Opening::New && previous.is_some() {
+            return Err("ACP New returned an already published native identity".into());
         }
         let pending = directory.join("pending");
         match fs::remove_dir_all(&pending) {
@@ -254,15 +302,7 @@ impl Journal {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.to_string()),
         }
-        let current = generation_directory(&directory, generation.as_deref())?;
-        let previous = read_manifest(&current)?;
         let mut journal = if let Some(manifest) = previous {
-            if manifest.version != VERSION
-                || manifest.identity != identity
-                || manifest.generation != generation
-            {
-                return Err("journal manifest belongs to another source or version".into());
-            }
             if opening == Opening::Load {
                 // A Load replay is complete, not a suffix to compare by text.
                 let next_generation = crate::link::fresh_hex()?;
@@ -286,6 +326,7 @@ impl Journal {
                     pending: true,
                     poisoned: false,
                     base_prepared: false,
+                    lease,
                     _lock: lock,
                 };
                 let gap: Record<'_, ()> = Record::Gap {
@@ -307,13 +348,11 @@ impl Journal {
                     pending: false,
                     poisoned: false,
                     base_prepared: false,
+                    lease,
                     _lock: lock,
                 }
             }
         } else {
-            if current.exists() || generation.is_some() {
-                return Err("committed journal manifest is missing".into());
-            }
             fs::create_dir(&pending).map_err(|e| e.to_string())?;
             let file = private_options()
                 .create_new(true)
@@ -333,6 +372,7 @@ impl Journal {
                 pending: true,
                 poisoned: false,
                 base_prepared: false,
+                lease,
                 _lock: lock,
             }
         };

@@ -3,12 +3,17 @@
 //! the already-held row gate; the runtime adapter must supply actual facts.
 use super::RowGate;
 use crate::{SessionId, session_content::journal::Identity};
+use crate::{
+    agent_process::Control,
+    session_content::journal::{Journal, JournalLease, JournalReservation},
+};
 use khor_core::DeviceId;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{Read, Write},
     path::Path,
+    sync::{Arc, Weak},
 };
 
 const VERSION: u8 = 1;
@@ -30,8 +35,14 @@ pub(super) struct Arguments {
 #[serde(rename_all = "snake_case")]
 enum Operation {
     RecoverNative,
+    InitialNew,
 }
 impl Arguments {
+    pub(super) fn initial_new(native: Identity, launch: &[u8]) -> Result<Self, String> {
+        let mut value = Self::native(native, None, launch)?;
+        value.operation = Operation::InitialNew;
+        Ok(value)
+    }
     pub(super) fn native(
         native: Identity,
         expected_run: Option<String>,
@@ -143,9 +154,24 @@ impl ProcessStamp {
 enum Provider {
     NotStarted,
     Starting,
-    Owned { process: ProcessStamp },
-    Exited { pid: u32, code: Option<i32> },
-    Unknown { last: Option<ProcessStamp> },
+    Owned {
+        process: ProcessStamp,
+    },
+    Exited {
+        pid: u32,
+        code: Option<i32>,
+    },
+    Unknown {
+        last: Option<ProcessStamp>,
+        actual_pid: Option<u32>,
+        reason: UnknownReason,
+    },
+}
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum UnknownReason {
+    BirthUnavailable,
+    CleanupUnconfirmed,
 }
 impl Provider {
     fn known_clean(&self) -> bool {
@@ -156,8 +182,9 @@ impl Provider {
             Self::Owned { process } => process.validate(),
             Self::Unknown {
                 last: Some(process),
+                ..
             } => process.validate(),
-            Self::Exited { pid, .. } if *pid == 0 || *pid > i32::MAX as u32 => {
+            Self::Exited { pid, .. } if *pid <= 1 || *pid > i32::MAX as u32 => {
                 Err("invalid reaped provider PID".into())
             }
             _ => Ok(()),
@@ -200,6 +227,8 @@ struct Latest {
     run_id: String,
     phase: Phase,
     host: Option<ProcessStamp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unverified_host_pid: Option<u32>,
     provider: Provider,
     generation: Option<String>,
     result: Option<Recorded>,
@@ -223,16 +252,31 @@ impl Document {
         if let Some(host) = &v.host {
             host.validate()?;
         }
+        if let Some(pid) = v.unverified_host_pid {
+            // This is the caller's raw self PID, never a Unix probe target.
+            if pid <= 1 || v.host.is_some() || v.arguments.operation != Operation::InitialNew {
+                return Err("invalid unverified initial host fact".into());
+            }
+        }
+        let host_recorded = v.host.is_some() || v.unverified_host_pid.is_some();
         v.provider.validate()?;
-        if let Provider::Owned { process }
-        | Provider::Unknown {
-            last: Some(process),
+        if let Provider::Unknown {
+            last, actual_pid, ..
         } = &v.provider
         {
-            if process.group != process.pid
-                || v.host
+            if actual_pid.is_some_and(|pid| pid <= 1 || pid > i32::MAX as u32)
+                || last
                     .as_ref()
-                    .is_none_or(|host| process.parent != host.pid || process.boot != host.boot)
+                    .is_some_and(|process| Some(process.pid) != *actual_pid)
+            {
+                return Err("unknown provider has inconsistent recorded PID facts".into());
+            }
+        }
+        if let Provider::Owned { process } = &v.provider {
+            if process.group != process.pid
+                || v.host.as_ref().is_none_or(|host| {
+                    process.parent != host.pid || !super::proc_identity::same_context(host, process)
+                })
             {
                 return Err("recorded provider has another foreground owner".into());
             }
@@ -244,18 +288,20 @@ impl Document {
             (Phase::RunPublished, Some(Recorded::Opened { id, run_id }))
                 if id == &v.arguments.id
                     && run_id == &v.run_id
-                    && v.host.is_some()
+                    && host_recorded
                     && !matches!(v.provider, Provider::NotStarted | Provider::Starting) => {}
             (Phase::Refused, Some(Recorded::Refused { .. }))
                 if v.provider.known_clean()
-                    && (v.host.is_some() || matches!(v.provider, Provider::NotStarted)) => {}
+                    && (host_recorded || matches!(v.provider, Provider::NotStarted)) => {}
             (Phase::Reserved, None)
-                if v.host.is_none()
+                if v.arguments.operation == Operation::RecoverNative
+                    && v.host.is_none()
+                    && v.unverified_host_pid.is_none()
                     && v.generation.is_none()
                     && matches!(v.provider, Provider::NotStarted) => {}
-            (Phase::Starting, None) if v.host.is_some() && v.generation.is_none() => {}
+            (Phase::Starting, None) if host_recorded && v.generation.is_none() => {}
             (Phase::PublishingBase | Phase::BasePublished | Phase::PublishingRun, None)
-                if v.host.is_some()
+                if host_recorded
                     && !matches!(v.provider, Provider::NotStarted | Provider::Starting) => {}
             _ => return Err("recovery phase and recorded result disagree".into()),
         }
@@ -271,6 +317,26 @@ pub(super) struct AttemptKey {
     token: Token,
     arguments: Arguments,
     run_id: String,
+}
+
+/// Only the successful in-process New adapter may provide these facts. The
+/// reservation is still the sole File owner and has not appended/bound a base.
+pub(super) struct NewInvocation<'a> {
+    pub(super) reservation: &'a JournalReservation,
+    pub(super) control: &'a Arc<Control>,
+    pub(super) actual_pid: Option<u32>,
+    pub(super) host: Option<ProcessStamp>,
+    pub(super) provider: Option<ProcessStamp>,
+}
+
+/// Nonserializable, non-Clone permission for this one live New invocation.
+/// Reloading its data key cannot recover the Journal/transport authority.
+pub(super) struct InitialNewAuthority {
+    key: AttemptKey,
+    journal: JournalLease,
+    control: Weak<Control>,
+    actual_pid: Option<u32>,
+    issuing_pid: u32,
 }
 pub(super) enum Reservation {
     Start(AttemptKey),
@@ -299,6 +365,157 @@ impl<'a> Held<'a> {
             failed: false,
         })
     }
+
+    /// Necessary New exception: its native ID did not exist before the real
+    /// New response. This seeds one observed invocation, never a recovery claim.
+    pub(super) fn seed_initial_new(
+        &mut self,
+        arguments: Arguments,
+        invocation: NewInvocation<'_>,
+    ) -> Result<InitialNewAuthority, String> {
+        self.ensure()?;
+        arguments.validate()?;
+        if arguments.operation != Operation::InitialNew
+            || arguments.expected_run.is_some()
+            || self.document.is_some()
+            || self.gate.read_meta_or_new()?.is_some()
+        {
+            return Err("initial New cannot replace an existing row or recovery attempt".into());
+        }
+        if invocation.reservation.identity() != &arguments.native
+            || invocation.reservation.has_published_base()?
+        {
+            return Err("initial New requires its first exact native journal reservation".into());
+        }
+        invocation.reservation.check_binding(&self.gate.dir)?;
+        let issuing_pid = std::process::id();
+        if issuing_pid <= 1
+            || invocation
+                .actual_pid
+                .is_some_and(|pid| pid <= 1 || pid > i32::MAX as u32)
+        {
+            return Err("invalid initial process facts".into());
+        }
+        if let Some(host) = &invocation.host {
+            host.validate()?;
+            if host.pid != issuing_pid {
+                return Err("initial host identity is not this invocation".into());
+            }
+        }
+        if let Some(provider) = &invocation.provider {
+            provider.validate()?;
+            if Some(provider.pid) != invocation.actual_pid
+                || provider.parent != issuing_pid
+                || provider.group != provider.pid
+            {
+                return Err("initial provider identity differs from its actual transport".into());
+            }
+        }
+        let provider = match (&invocation.host, &invocation.provider) {
+            (Some(host), Some(provider)) if super::proc_identity::same_context(host, provider) => {
+                Provider::Owned {
+                    process: provider.clone(),
+                }
+            }
+            (Some(_), Some(_)) => {
+                return Err("initial process facts belong to different kernel contexts".into());
+            }
+            _ => Provider::Unknown {
+                last: invocation.provider.clone(),
+                actual_pid: invocation.actual_pid,
+                reason: UnknownReason::BirthUnavailable,
+            },
+        };
+        let token = Token::new(1, crate::link::fresh_hex()?)?;
+        let run_id = crate::link::fresh_hex()?;
+        let key = AttemptKey {
+            token: token.clone(),
+            arguments: arguments.clone(),
+            run_id: run_id.clone(),
+        };
+        let authority = InitialNewAuthority {
+            key,
+            journal: invocation.reservation.lease(),
+            control: Arc::downgrade(invocation.control),
+            actual_pid: invocation.actual_pid,
+            issuing_pid,
+        };
+        let unverified_host_pid = if invocation.host.is_none() {
+            Some(issuing_pid)
+        } else {
+            None
+        };
+        self.store(Document {
+            version: VERSION,
+            high_water: 1,
+            latest: Latest {
+                token,
+                arguments,
+                run_id,
+                phase: Phase::Starting,
+                host: invocation.host,
+                unverified_host_pid,
+                provider,
+                generation: None,
+                result: None,
+            },
+        })?;
+        Ok(authority)
+    }
+
+    pub(super) fn publish_initial_base<T>(
+        &mut self,
+        authority: &InitialNewAuthority,
+        journal: &mut Journal,
+        control: &Arc<Control>,
+        publish: impl FnOnce(&RowGate, &mut Journal) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.check_initial(authority, journal, control, Phase::Starting)?;
+        self.base_step(&authority.key, None, |gate| publish(gate, journal))
+    }
+    pub(super) fn publish_initial_run<T>(
+        &mut self,
+        authority: &InitialNewAuthority,
+        journal: &mut Journal,
+        control: &Arc<Control>,
+        publish: impl FnOnce(&RowGate, &mut Journal, &str) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.check_initial(authority, journal, control, Phase::BasePublished)?;
+        self.run_step(&authority.key, |gate, run| publish(gate, journal, run))
+    }
+    fn check_initial(
+        &self,
+        authority: &InitialNewAuthority,
+        journal: &Journal,
+        control: &Arc<Control>,
+        phase: Phase,
+    ) -> Result<(), String> {
+        let value = self.current(&authority.key)?;
+        let same_transport = authority
+            .control
+            .upgrade()
+            .is_some_and(|owner| Arc::ptr_eq(&owner, control));
+        let current_owner = match &value.provider {
+            Provider::Owned { process } => Some(process.pid) == authority.actual_pid,
+            Provider::Unknown {
+                actual_pid,
+                reason: UnknownReason::BirthUnavailable,
+                ..
+            } => *actual_pid == authority.actual_pid,
+            _ => false,
+        };
+        if value.phase != phase
+            || value.arguments.operation != Operation::InitialNew
+            || authority.issuing_pid != std::process::id()
+            || !same_transport
+            || !current_owner
+            || journal.identity() != &value.arguments.native
+            || !journal.owns_lease(&authority.journal)
+        {
+            return Err("initial New no longer owns this journal and live invocation".into());
+        }
+        Ok(())
+    }
     pub(super) fn reserve(
         &mut self,
         arguments: Arguments,
@@ -308,12 +525,14 @@ impl<'a> Held<'a> {
         self.ensure()?;
         arguments.validate()?;
         token.validate()?;
+        if arguments.operation != Operation::RecoverNative {
+            return Err("initial New cannot enter preghost recovery reservation".into());
+        }
         if self.document.as_ref().is_some_and(|doc| {
             let origin = &doc.latest.arguments;
             origin.home != arguments.home
                 || origin.id != arguments.id
                 || origin.native != arguments.native
-                || origin.operation != arguments.operation
         }) {
             return Err("recovery attempt belongs to another home or native row".into());
         }
@@ -332,6 +551,9 @@ impl<'a> Held<'a> {
             }
             return Ok(match &latest.result {
                 Some(result) => Reservation::Recorded(result.clone()),
+                None if matches!(latest.provider, Provider::Unknown { .. }) => {
+                    Reservation::UnknownOwner
+                }
                 None => Reservation::Unfinished {
                     phase: latest.phase,
                     host: latest.host.clone(),
@@ -378,6 +600,7 @@ impl<'a> Held<'a> {
                 run_id,
                 phase: Phase::Reserved,
                 host: None,
+                unverified_host_pid: None,
                 provider: Provider::NotStarted,
                 generation: None,
                 result: None,
@@ -419,9 +642,10 @@ impl<'a> Held<'a> {
             if v.phase != Phase::Starting
                 || !matches!(v.provider, Provider::Starting)
                 || provider.group != provider.pid
-                || v.host
-                    .as_ref()
-                    .is_none_or(|host| provider.parent != host.pid || provider.boot != host.boot)
+                || v.host.as_ref().is_none_or(|host| {
+                    provider.parent != host.pid
+                        || !super::proc_identity::same_context(host, &provider)
+                })
             {
                 return Err("provider does not belong to this starting foreground owner".into());
             }
@@ -436,6 +660,14 @@ impl<'a> Held<'a> {
         publish: impl FnOnce(&RowGate) -> Result<T, String>,
     ) -> Result<T, String> {
         self.check_live(key, Phase::Starting)?;
+        self.base_step(key, generation, publish)
+    }
+    fn base_step<T>(
+        &mut self,
+        key: &AttemptKey,
+        generation: Option<&str>,
+        publish: impl FnOnce(&RowGate) -> Result<T, String>,
+    ) -> Result<T, String> {
         if let Some(generation) = generation {
             hex(generation, 32)?;
         }
@@ -461,6 +693,13 @@ impl<'a> Held<'a> {
         publish: impl FnOnce(&RowGate, &str) -> Result<T, String>,
     ) -> Result<T, String> {
         self.check_live(key, Phase::BasePublished)?;
+        self.run_step(key, publish)
+    }
+    fn run_step<T>(
+        &mut self,
+        key: &AttemptKey,
+        publish: impl FnOnce(&RowGate, &str) -> Result<T, String>,
+    ) -> Result<T, String> {
         self.change(key, |v| {
             v.phase = Phase::PublishingRun;
             Ok(())
@@ -482,7 +721,7 @@ impl<'a> Held<'a> {
         pid: u32,
         receipt: &khor_acp::ProcessExit,
     ) -> Result<(), String> {
-        if pid == 0 || pid > i32::MAX as u32 {
+        if pid <= 1 || pid > i32::MAX as u32 {
             return Err("invalid reaped provider PID".into());
         }
         self.change(key, |v| {
@@ -493,8 +732,13 @@ impl<'a> Held<'a> {
                 Provider::Starting => {}
                 Provider::Unknown {
                     last: Some(process),
+                    ..
                 } if process.pid == pid => {}
-                Provider::Unknown { last: None } => {}
+                Provider::Unknown {
+                    last: None,
+                    actual_pid,
+                    ..
+                } if actual_pid.is_none_or(|actual| actual == pid) => {}
                 Provider::Exited { pid: old, code } if *old == pid && *code == receipt.code => {
                     return Ok(());
                 }
@@ -509,13 +753,19 @@ impl<'a> Held<'a> {
     }
     pub(super) fn cleanup_unknown(&mut self, key: &AttemptKey) -> Result<(), String> {
         self.change(key, |v| {
-            let last = match &v.provider {
-                Provider::Owned { process } => Some(process.clone()),
-                Provider::Unknown { last } => last.clone(),
-                Provider::Starting => None,
+            let (last, actual_pid) = match &v.provider {
+                Provider::Owned { process } => (Some(process.clone()), Some(process.pid)),
+                Provider::Unknown {
+                    last, actual_pid, ..
+                } => (last.clone(), *actual_pid),
+                Provider::Starting => (None, None),
                 _ => return Err("cleanup uncertainty cannot erase a known clean boundary".into()),
             };
-            v.provider = Provider::Unknown { last };
+            v.provider = Provider::Unknown {
+                last,
+                actual_pid,
+                reason: UnknownReason::CleanupUnconfirmed,
+            };
             Ok(())
         })
     }
@@ -531,7 +781,10 @@ impl<'a> Held<'a> {
     }
     fn check_live(&self, key: &AttemptKey, phase: Phase) -> Result<(), String> {
         let value = self.current(key)?;
-        if value.phase != phase || !matches!(value.provider, Provider::Owned { .. }) {
+        if value.arguments.operation != Operation::RecoverNative
+            || value.phase != phase
+            || !matches!(value.provider, Provider::Owned { .. })
+        {
             return Err("recovery publication has no current provider owner".into());
         }
         Ok(())
@@ -893,6 +1146,7 @@ mod tests {
         fs::write(held.gate.dir.join(NAME), saved).unwrap();
         drop(held);
         assert!(Held::load(&mut gate).is_ok());
+        drop(gate);
 
         // Publication failure/response loss stays an uncertain accepted
         // prefix. Intent is already durable when a side effect is attempted.
@@ -963,5 +1217,209 @@ mod tests {
                 ..
             }
         ));
+        drop(held);
+        drop(gate);
+        initial_new_cases();
+    }
+
+    fn initial_new_cases() {
+        use crate::session_content::journal::Opening;
+        for revoke in [false, true] {
+            let root = Scratch::new();
+            let row = root.0.join("row");
+            fs::create_dir(&row).unwrap();
+            let native = Identity {
+                home: DeviceId([7; 32]),
+                agent: "fixture".into(),
+                native_id: "first-new-id".into(),
+            };
+            // Actual journal locks, synthetic controller/birth inputs. This is
+            // not evidence that a provider or SDK New was exercised.
+            let reservation = JournalReservation::take(&root.0, native.clone()).unwrap();
+            let mut other_native = native.clone();
+            other_native.native_id = "another-id".into();
+            let mut other = Journal::open(&root.0, other_native, Opening::New).unwrap();
+            let control = Arc::new(Control::default());
+            let wrong_control = Arc::new(Control::default());
+            let args = Arguments::initial_new(native.clone(), b"effective-new-context").unwrap();
+            let actual_pid = if revoke { None } else { Some(20) };
+            let authority = {
+                let mut gate = RowGate::acquire(&row).unwrap();
+                let mut held = Held::load(&mut gate).unwrap();
+                held.seed_initial_new(
+                    args.clone(),
+                    NewInvocation {
+                        reservation: &reservation,
+                        control: &control,
+                        actual_pid,
+                        host: None,
+                        provider: None,
+                    },
+                )
+                .unwrap()
+            };
+            // Journal initialization/large preparation stays outside RowGate.
+            let mut journal = reservation.into_journal(Opening::New).unwrap();
+            assert!(journal.owns_lease(&authority.journal));
+            journal.bind(&row).unwrap();
+            journal
+                .note(&serde_json::json!({"text":"accepted new prefix"}))
+                .unwrap();
+            journal.prepare_base().unwrap();
+            {
+                let mut gate = RowGate::acquire(&row).unwrap();
+                let mut held = Held::load(&mut gate).unwrap();
+                let decoded: AttemptKey =
+                    serde_json::from_slice(&serde_json::to_vec(&authority.key).unwrap()).unwrap();
+                let mut writes = 0;
+                assert!(
+                    held.publish_base(&decoded, None, |_| {
+                        writes += 1;
+                        Ok(())
+                    })
+                    .is_err(),
+                    "a data key cannot recreate initial New authority"
+                );
+                assert!(
+                    held.publish_initial_base(&authority, &mut other, &control, |_, _| {
+                        writes += 1;
+                        Ok(())
+                    })
+                    .is_err()
+                );
+                assert!(
+                    held.publish_initial_base(&authority, &mut journal, &wrong_control, |_, _| {
+                        writes += 1;
+                        Ok(())
+                    })
+                    .is_err()
+                );
+                assert_eq!(writes, 0);
+                held.publish_initial_base(&authority, &mut journal, &control, |_, journal| {
+                    journal.publish_base()
+                })
+                .unwrap();
+                if revoke {
+                    held.cleanup_unknown(&authority.key).unwrap();
+                    assert!(
+                        held.publish_initial_run(&authority, &mut journal, &control, |_, _, _| {
+                            writes += 1;
+                            Ok(())
+                        })
+                        .is_err()
+                    );
+                    assert_eq!(
+                        writes, 0,
+                        "cleanupUnknown revokes the still-in-memory authority"
+                    );
+                } else {
+                    held.publish_initial_run(
+                        &authority,
+                        &mut journal,
+                        &control,
+                        |gate, _, run_id| {
+                            gate.write_meta(&crate::live::Meta {
+                                kind: khor_core::kind::GUI.into(),
+                                title: "model new".into(),
+                                pid: Some(std::process::id()),
+                                started_ms: 1,
+                                gui_native: Some(native.clone()),
+                                category: None,
+                                id: args.id.0.clone(),
+                                vendor_leaf: None,
+                                place: None,
+                                gui_run: Some(GuiRun {
+                                    id: run_id.into(),
+                                    started_ms: 1,
+                                    state: LiveState {
+                                        gui_run: Some(run_id.into()),
+                                        word: State::Idle,
+                                        at_ms: 1,
+                                        exit: Some(1),
+                                        source: Some(Source::Reported),
+                                    },
+                                }),
+                            })
+                        },
+                    )
+                    .unwrap();
+                    let recovery = Arguments::native(
+                        native.clone(),
+                        Some(authority.key.run_id.clone()),
+                        b"explicit-recovery",
+                    )
+                    .unwrap();
+                    assert!(
+                        matches!(
+                            held.reserve(recovery.clone(), token(2, 'b'), None).unwrap(),
+                            Reservation::UnknownOwner
+                        ),
+                        "new works now but its missing birth does not become future recovery proof"
+                    );
+                    held.confirmed_exit(
+                        &authority.key,
+                        20,
+                        &khor_acp::ProcessExit { code: Some(0) },
+                    )
+                    .unwrap();
+                    let next = start(held.reserve(recovery, token(2, 'b'), None).unwrap());
+                    assert_eq!(
+                        next.token.epoch, 2,
+                        "InitialNew high-water continues into explicit recovery"
+                    );
+                    assert!(
+                        held.publish_initial_run(&authority, &mut journal, &control, |_, _, _| {
+                            writes += 1;
+                            Ok(())
+                        })
+                        .is_err()
+                    );
+                    assert_eq!(writes, 0);
+                }
+            }
+            let before = fs::read(native.directory(&root.0).join("current/records.jsonl")).unwrap();
+            drop(journal);
+            let pending = native.directory(&root.0).join("pending");
+            fs::create_dir(&pending).unwrap();
+            fs::write(pending.join("old-part"), b"do not erase on New collision").unwrap();
+            let existing = JournalReservation::take(&root.0, native.clone()).unwrap();
+            {
+                let mut gate = RowGate::acquire(&row).unwrap();
+                let mut held = Held::load(&mut gate).unwrap();
+                let bytes = fs::read(row.join(NAME)).unwrap();
+                assert!(
+                    held.seed_initial_new(
+                        args,
+                        NewInvocation {
+                            reservation: &existing,
+                            control: &control,
+                            actual_pid,
+                            host: None,
+                            provider: None
+                        }
+                    )
+                    .is_err()
+                );
+                assert_eq!(
+                    fs::read(row.join(NAME)).unwrap(),
+                    bytes,
+                    "New cannot reset a prior/pending high-water"
+                );
+            }
+            assert!(existing.into_journal(Opening::New).is_err());
+            assert_eq!(
+                fs::read(native.directory(&root.0).join("current/records.jsonl")).unwrap(),
+                before
+            );
+            assert_eq!(
+                fs::read(pending.join("old-part")).unwrap(),
+                b"do not erase on New collision"
+            );
+            let reopened = Journal::open(&root.0, native, Opening::Resume).unwrap();
+            assert!(
+                !reopened.owns_lease(&authority.journal),
+                "the same native ID does not recreate the old Journal lease"
+            );
+        }
     }
 }
