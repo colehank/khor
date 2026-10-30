@@ -181,10 +181,7 @@ impl KindSurface for ObservationKind {
             .min(i64::MAX as u64) as i64)
     }
     fn close(&self, node: &Node, id: &SessionId) -> Result<(), String> {
-        if node.live.published_observation(id)?.is_some() {
-            return Err("A published GUI execution is not a removable read-only observation".into());
-        }
-        Observation::remove(node.root(), id)
+        node.live.remove_readonly_observation(id)
     }
 }
 

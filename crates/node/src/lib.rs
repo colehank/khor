@@ -2814,10 +2814,7 @@ impl Node {
             return Ok(false);
         }
         if id.0.starts_with("observe/") {
-            if self.live.published_observation(id)?.is_some() {
-                return Err("A published GUI execution is not a removable read-only observation".into());
-            }
-            session_content::Observation::remove(&self.root, id)?;
+            self.live.remove_readonly_observation(id)?;
             loaded.doc.take_off(&id.0)?;
             let mut store = loaded.store;
             store.flush(&loaded.doc)?;

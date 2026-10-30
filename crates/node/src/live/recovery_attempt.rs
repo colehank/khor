@@ -1452,6 +1452,8 @@ impl<'a> Held<'a> {
     }
 }
 
+pub(super) fn has_document(directory: &Path) -> Result<bool, String> { read(directory).map(|document| document.is_some()) }
+
 /// A read-only publication projection, not provider ownership or an endpoint
 /// authorization. The actual attach still authenticates GUI2 and its lease.
 pub(super) fn published_run(directory: &Path, id: &SessionId, native: &Identity, run: &str, host_pid: Option<u32>) -> Result<Option<bool>, String> {
@@ -1956,6 +1958,26 @@ mod tests {
         let mut new = Arguments::initial_new(native, b"same frozen launch").unwrap();
         new.id = ids[1].clone();
         assert!(new.validate().is_err(), "InitialNew keeps its original id_for layout");
+        // The real deletion door shares the physical lease and keeps accepted
+        // attempts, even before any GUI Meta/RunPublished exists.
+        let root = Scratch::new();
+        let record = crate::session_content::Observation::new(home, home, khor_core::ObservationNamespace::Acp,
+            "fixture".into(), "deletion-source".into(), "retained reference".into(), None, None);
+        record.save(&root.0).unwrap();
+        let live = crate::live::LiveKind::new(root.0.clone(), home);
+        let row = live.dir(&record.id).unwrap();
+        live.remove_readonly_observation(&record.id).unwrap();
+        assert!(!row.exists(), "readonly removal must not create an empty alias row");
+        record.save(&root.0).unwrap();
+        let before = serde_json::to_vec(&crate::session_content::Observation::read(&root.0, &record.id).unwrap()).unwrap();
+        fs::create_dir_all(&row).unwrap();
+        let mut gate = RowGate::acquire(&row).unwrap();
+        let identity = Identity { home, agent: record.reference.agent.clone(), native_id: record.reference.native_id.clone() };
+        let args = Arguments::native_at(record.id.clone(), identity, None, b"frozen source").unwrap();
+        assert!(matches!(Held::load(&mut gate).unwrap().reserve(args, Token::new(1, "a".repeat(32)).unwrap(), None).unwrap(), Reservation::Start(_)));
+        drop(gate);
+        assert!(live.remove_readonly_observation(&record.id).is_err());
+        assert_eq!(before, serde_json::to_vec(&crate::session_content::Observation::read(&root.0, &record.id).unwrap()).unwrap());
     }
 
     fn joins_do_not_retire_execution() {

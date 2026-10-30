@@ -1099,6 +1099,27 @@ impl LiveKind {
         Ok(recovery_attempt::published_run(&directory, id, native, &run.id, meta.pid)?.map(|active| active && run.state.exit.is_none()))
     }
 
+    /// Deletion and publication share the exact physical source lease. A
+    /// reserved/unknown/history row also retains its reference, not just a
+    /// snapshot which happened to be Published at the time it was read.
+    pub(crate) fn remove_readonly_observation(&self, id: &SessionId) -> Result<(), String> {
+        let Some(record) = crate::session_content::Observation::read(&self.root, id)? else { return Ok(()); };
+        let native = crate::session_content::journal::Identity {
+            home: record.reference.home, agent: record.reference.agent, native_id: record.reference.native_id,
+        };
+        let _physical = crate::session_content::journal::JournalReservation::take(&self.root, native)?;
+        let directory = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        // Never create an empty alias row merely to remove a readonly record.
+        if directory.exists() {
+            let gate = RowGate::try_acquire(&directory)?;
+            if gate.read_meta_or_new()?.is_some() || recovery_attempt::has_document(&directory)? {
+                return Err("An execution or accepted attempt retains this observation reference".into());
+            }
+            return crate::session_content::Observation::remove(&self.root, id);
+        }
+        crate::session_content::Observation::remove(&self.root, id)
+    }
+
     pub(crate) fn require_input_owner(&self, id: &SessionId) -> Result<(), String> {
         if id.0.starts_with("observe/") {
             if self.published_observation(id)? != Some(true) { return Err("This observation has no published current GUI execution".into()); }
