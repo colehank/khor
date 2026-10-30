@@ -88,7 +88,7 @@ pub unsafe fn details(error: *mut AnyObject) -> Option<crate::page_navigation::F
 }
 
 #[cfg(target_os = "macos")]
-pub use mac::{forget, take_failed, watch};
+pub use mac::{forget, navigate, step, take_failed, watch};
 
 #[cfg(target_os = "macos")]
 mod mac {
@@ -227,18 +227,94 @@ mod mac {
             let _: () = msg_send![view, setNavigationDelegate: delegate];
         }
         tell(Some(opened));
-        let target = NSString::from_str(target);
+        unsafe { load_on_main(view, key, target) }
+    }
+
+    // Request invalidation and the actual returned WKNavigation are one
+    // synchronous main-thread operation for every explicit control path.
+    fn issue(
+        key: ViewKey,
+        target: String,
+        action: impl FnOnce() -> Option<Retained<AnyObject>>,
+    ) -> bool {
+        let Some((ticket, requested)) =
+            with_pages(|pages| pages.prepare_request(key, target)).flatten()
+        else {
+            return false;
+        };
+        let navigation = action();
+        if let Some(navigation) = navigation {
+            with_pages(|pages| {
+                pages.expect(
+                    key,
+                    &requested.state.revision,
+                    Retained::as_ptr(&navigation) as usize,
+                )
+            });
+            tell(Some(requested));
+            true
+        } else {
+            with_pages(|pages| pages.no_navigation(ticket));
+            false
+        }
+    }
+
+    unsafe fn load_on_main(view: *mut AnyObject, key: ViewKey, target: &str) -> Result<(), String> {
+        let text = NSString::from_str(target);
         let url: Option<Retained<AnyObject>> =
-            unsafe { msg_send![class!(NSURL), URLWithString: &*target] };
+            unsafe { msg_send![class!(NSURL), URLWithString: &*text] };
         let url = url.ok_or("page target unavailable")?;
         let request: Retained<AnyObject> =
             unsafe { msg_send![class!(NSURLRequest), requestWithURL: &*url] };
-        let navigation: *mut AnyObject = unsafe { msg_send![view, loadRequest: &*request] };
-        if navigation.is_null() {
-            return Err("page navigation did not start".into());
+        if issue(key, target.to_owned(), || unsafe {
+            msg_send![view, loadRequest: &*request]
+        }) {
+            Ok(())
+        } else {
+            Err("page navigation did not start".into())
         }
-        with_pages(|pages| pages.expect(key, navigation as usize));
-        Ok(())
+    }
+
+    pub fn navigate(made: &tauri::Webview, target: String) -> Result<(), String> {
+        made.with_webview(move |native| {
+            let view = native.inner() as *mut AnyObject;
+            if let Some(key) = with_pages(|pages| pages.key(view as usize)).flatten() {
+                let _ = unsafe { load_on_main(view, key, &target) };
+            }
+        })
+        .map_err(|error| error.to_string())
+    }
+
+    pub fn step(made: &tauri::Webview, way: &str) -> Result<(), String> {
+        let way = way.to_owned();
+        made.with_webview(move |native| {
+            let view = native.inner() as *mut AnyObject;
+            let Some(key) = with_pages(|pages| pages.key(view as usize)).flatten() else {
+                return;
+            };
+            if way == "stop" {
+                unsafe {
+                    let _: () = msg_send![view, stopLoading];
+                }
+                tell(with_pages(|pages| pages.cancelled(key)).flatten());
+                return;
+            }
+            // History targets may be same-document or unavailable; do not
+            // label the old URL as a newly requested destination.
+            let target = if way == "back" || way == "forward" {
+                String::new()
+            } else {
+                unsafe { url_of(view) }
+            };
+            issue(key, target, || unsafe {
+                match way.as_str() {
+                    "back" => msg_send![view, goBack],
+                    "forward" => msg_send![view, goForward],
+                    _ => msg_send![view, reload],
+                }
+            });
+        })
+        .map_err(|error| error.to_string())
     }
 
     fn retire_on_main(tab: &str, key: ViewKey) {

@@ -1137,25 +1137,43 @@ unsafe fn frame_of(face: *mut AnyObject, at: PageBox) -> NSRect {
     )
 }
 
-unsafe fn load(view: &AnyObject, url: &str) {
-    tell_navigation(
+fn issue_navigation(
+    key: crate::page_navigation::ViewKey,
+    target: String,
+    action: impl FnOnce() -> Option<Retained<AnyObject>>,
+) {
+    let Some((ticket, requested)) =
+        crate::page_navigation::with_pages(|pages| pages.prepare_request(key, target)).flatten()
+    else {
+        return;
+    };
+    if let Some(navigation) = action() {
         crate::page_navigation::with_pages(|pages| {
-            pages
-                .key(view as *const AnyObject as usize)
-                .and_then(|key| pages.request(key, url.to_owned()))
-        })
-        .flatten(),
-    );
+            pages.expect(
+                key,
+                &requested.state.revision,
+                Retained::as_ptr(&navigation) as usize,
+            )
+        });
+        tell_navigation(Some(requested));
+    } else {
+        crate::page_navigation::with_pages(|pages| pages.no_navigation(ticket));
+    }
+}
+
+unsafe fn load(view: &AnyObject, url: &str) {
     let text = NSString::from_str(url);
     let u: Option<Retained<AnyObject>> = unsafe { msg_send![class!(NSURL), URLWithString: &*text] };
-    let Some(u) = u else { return };
+    let Some(u) = u else {
+        return;
+    };
     let req: Retained<AnyObject> = unsafe { msg_send![class!(NSURLRequest), requestWithURL: &*u] };
-    let navigation: Option<Retained<AnyObject>> = unsafe { msg_send![view, loadRequest: &*req] };
-    if let Some(navigation) = navigation {
-        crate::page_navigation::with_pages(|pages| {
-            if let Some(key) = pages.key(view as *const AnyObject as usize) {
-                pages.expect(key, Retained::as_ptr(&navigation) as usize);
-            }
+    if let Some(key) =
+        crate::page_navigation::with_pages(|pages| pages.key(view as *const AnyObject as usize))
+            .flatten()
+    {
+        issue_navigation(key, url.to_owned(), || unsafe {
+            msg_send![view, loadRequest: &*req]
         });
     }
 }
@@ -1527,34 +1545,42 @@ pub fn steps(tab: &str) -> Option<crate::page_history::PageSteps> {
 
 pub fn step(tab: &str, way: &str) {
     PAGES.with(|pages| {
-        if let Some(page) = pages.borrow().get(tab) {
+        let pages = pages.borrow();
+        if let Some(page) = pages.get(tab) {
             unsafe {
-                let _: Option<Retained<AnyObject>> = match way {
-                    "back" => msg_send![&*page.view, goBack],
-                    "forward" => msg_send![&*page.view, goForward],
-                    // 重试 (UX-22): the address asked for, again — a
-                    // failed load leaves the view on the page before it.
+                match way {
+                    "stop" => {
+                        let _: () = msg_send![&*page.view, stopLoading];
+                        tell_navigation(
+                            crate::page_navigation::with_pages(|pages| {
+                                pages.cancelled(page.navigation)
+                            })
+                            .flatten(),
+                        );
+                    }
                     "retry" => {
                         let target = crate::page_navigation::retry_target(tab)
                             .unwrap_or_else(|| page.url.clone());
                         load(&page.view, &target);
-                        None
                     }
-                    // 「仍然访问」 (UX-42 §14): the certificate passed
-                    // for its host for this run, and the address again.
                     "pass" => {
-                        if let Some(url) = crate::page_trust::pass(tab) {
-                            load(&page.view, &url);
+                        if let Some(target) = crate::page_trust::pass(tab) {
+                            load(&page.view, &target);
                         }
-                        None
                     }
-                    // The pill's × while a page loads (UX-33).
-                    "stop" => {
-                        let _: () = msg_send![&*page.view, stopLoading];
-                        None
+                    _ => {
+                        let target = if way == "back" || way == "forward" {
+                            String::new()
+                        } else {
+                            navigation_url(Retained::as_ptr(&page.view) as *mut AnyObject)
+                        };
+                        issue_navigation(page.navigation, target, || match way {
+                            "back" => msg_send![&*page.view, goBack],
+                            "forward" => msg_send![&*page.view, goForward],
+                            _ => msg_send![&*page.view, reload],
+                        });
                     }
-                    _ => msg_send![&*page.view, reload],
-                };
+                }
             }
         }
     });

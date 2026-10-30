@@ -47,12 +47,21 @@ pub(crate) fn route_error(url: String) -> Failure {
     }
 }
 
+#[derive(Clone)]
 struct Page {
     key: ViewKey,
     face: String,
     native_navigation: Option<usize>,
     failed_target: Option<String>,
     state: PageNavigationState,
+}
+
+/// Synchronous SDK control attempt only; no handle, observer, queue or
+/// second registry. A nil SDK result restores the prior page facts.
+pub(crate) struct PreparedRequest {
+    key: ViewKey,
+    revision: String,
+    previous: Page,
 }
 
 /// The one page lifecycle registry. Platform adapters own native handles,
@@ -243,17 +252,61 @@ impl Pages {
     /// Bind the navigation returned by an explicit loadRequest before the
     /// runloop can deliver callbacks for the replaced request. Internal
     /// links are instead issued synchronously by their didStart callback.
-    pub(crate) fn expect(&mut self, key: ViewKey, navigation: usize) {
+    pub(crate) fn expect(&mut self, key: ViewKey, request_revision: &str, navigation: usize) {
         if navigation == 0 {
             return;
         }
-        if let Some(page) = self
-            .views
-            .get_mut(&key.address)
-            .filter(|page| page.key == key && page.state.phase == PageNavigationPhase::Opening)
-        {
+        if let Some(page) = self.views.get_mut(&key.address).filter(|page| {
+            page.key == key
+                && page.state.phase == PageNavigationPhase::Opening
+                && page.state.revision == request_revision
+        }) {
             page.native_navigation = Some(navigation);
         }
+    }
+
+    pub(crate) fn prepare_request(
+        &mut self,
+        key: ViewKey,
+        target: String,
+    ) -> Option<(PreparedRequest, Changed)> {
+        let previous = self
+            .views
+            .get(&key.address)
+            .filter(|page| page.key == key)?
+            .clone();
+        let changed = self.request(key, target)?;
+        Some((
+            PreparedRequest {
+                key,
+                revision: changed.state.revision.clone(),
+                previous,
+            },
+            changed,
+        ))
+    }
+
+    /// No SDK navigation (e.g. a same-document/history no-op) does not
+    /// fabricate a load, success or cancellation. Newer accepted facts win.
+    pub(crate) fn no_navigation(&mut self, request: PreparedRequest) -> bool {
+        let Some(current) = self.views.get(&request.key.address) else {
+            return false;
+        };
+        if current.key != request.key
+            || current.state.revision != request.revision
+            || current.state.phase != PageNavigationPhase::Opening
+            || current.native_navigation.is_some()
+        {
+            return false;
+        }
+        let Some(serial) = self.serial.checked_add(1) else {
+            return false;
+        };
+        let mut previous = request.previous;
+        previous.state.revision = serial.to_string();
+        self.views.insert(request.key.address, previous);
+        self.serial = serial;
+        true
     }
 
     /// Invoke synchronously in the native didStart callback. If an adapter
@@ -583,8 +636,8 @@ mod tests {
         let mut pages = Pages::default();
         let key = attach(&mut pages, 1);
         pages.started(key, 10, "https://first.test".into()).unwrap();
-        pages.request(key, "https://second.test".into()).unwrap();
-        pages.expect(key, 11);
+        let requested = pages.request(key, "https://second.test".into()).unwrap();
+        pages.expect(key, &requested.state.revision, 11);
         let pending = pages.snapshot("tab").unwrap();
         assert!(
             pages
@@ -715,6 +768,30 @@ mod tests {
         assert_eq!(cancelled.phase, PageNavigationPhase::Cancelled);
         assert_eq!(cancelled.estimate, Some(0.4));
         assert!(cancelled.error.is_none());
+        assert!(
+            pages
+                .finished(key, 10, "https://first.test".into())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn nil_sdk_navigation_preserves_the_real_load_and_cannot_restore_over_a_new_request() {
+        let mut pages = Pages::default();
+        let key = attach(&mut pages, 1);
+        pages.started(key, 10, "https://first.test".into()).unwrap();
+        pages.progressed(key, 0.4);
+        let before = pages.snapshot("tab").unwrap();
+        let (ticket, _) = pages.prepare_request(key, String::new()).unwrap();
+        assert!(pages.no_navigation(ticket));
+        let restored = pages.snapshot("tab").unwrap();
+        assert_eq!(restored.navigation, before.navigation);
+        assert_eq!(restored.phase, before.phase);
+        assert_eq!(restored.estimate, before.estimate);
+        let (stale, _) = pages.prepare_request(key, String::new()).unwrap();
+        let requested = pages.request(key, "https://new.test".into()).unwrap();
+        assert!(!pages.no_navigation(stale));
+        pages.expect(key, &requested.state.revision, 11);
         assert!(
             pages
                 .finished(key, 10, "https://first.test".into())
