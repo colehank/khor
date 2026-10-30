@@ -13,6 +13,11 @@ const projectionBuilt = await build({ entryPoints: [resolve('src/lib/acp-view.ts
 const projectionModule = { exports: {} };
 Function('module', 'exports', projectionBuilt.outputFiles[0].text)(projectionModule, projectionModule.exports);
 const { toolInputText } = projectionModule.exports;
+const scaffoldBuilt = await build({ entryPoints: [resolve('src/lib/history-record-scaffold.ts')], bundle: true,
+  write: false, format: 'cjs', platform: 'node' });
+const scaffoldModule = { exports: {} };
+Function('module', 'exports', scaffoldBuilt.outputFiles[0].text)(scaffoldModule, scaffoldModule.exports);
+const { recordScaffold, decodeRecordString } = scaffoldModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
 const note = (key, update) => ({ key, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
@@ -174,6 +179,102 @@ test('pure projection releases the unused home admission once, including failed 
   assert.equal(await earlyJob, null);
   await earlyDisposed;
   assert.equal(earlyCancels, 1, 'a completed early release must not be repeated when work answers');
+});
+test('giant record preparation streams prefixes and exact raw ranges despite field order and split Unicode', () => {
+  const body = '<system-reminder>' + '中😀'.repeat(25000) + 'NEEDLE';
+  const binary = 'A'.repeat(180000);
+  const file = '\t路径\n'.repeat(13000);
+  // Discriminators follow the large values. The scanner preserves structure,
+  // not a guessed provider/field order, and retains no complete large string.
+  const raw = JSON.stringify({ files: [['a.txt', file]], images: [['image/png', binary]],
+    text: body, turn: 'local-turn', kind: 'prompt' }) + '\n';
+  const bytes = new TextEncoder().encode(raw);
+  const parser = recordScaffold(17, 'fixture');
+  const widths = [1, 2, 3, 7, 4093, 65536];
+  for (let at = 0, step = 0; at < bytes.length; step++) {
+    const end = Math.min(bytes.length, at + widths[step % widths.length]);
+    parser.push(bytes.subarray(at, end), 17 + at); at = end;
+  }
+  const prepared = parser.finish(17 + bytes.length);
+  assert.equal(new TextEncoder().encode(prepared.json).length <= 64 * 1024, true);
+  assert.equal(prepared.json.length < 2000, true);
+  const skeleton = JSON.parse(prepared.json);
+  assert.equal(skeleton.kind, 'prompt');
+  assert.equal(skeleton.turn, 'local-turn');
+  assert.equal(skeleton.text.startsWith('<system-reminder>'), true);
+  assert.equal(prepared.json.includes('NEEDLE'), false);
+  assert.equal(prepared.strings.length, 3);
+  const originals = prepared.strings.map(range => JSON.parse(new TextDecoder().decode(bytes.subarray(range.start - 17, range.end - 17))));
+  assert.deepEqual(originals, [file, binary, body]);
+  assert.equal(prepared.strings.every(range => Object.keys(range).sort().join(',') === 'end,marker,start'), true);
+  assert.throws(() => parser.push(new Uint8Array(), 17 + bytes.length), /retired/);
+});
+test('the record lexer validates escape and grammar boundaries and fails budgets explicitly', () => {
+  for (const raw of [String.raw`{"value":"中😀\ud83d\ude03\n\t\\\"","n":-1.25e+2,"other":[true,false,null,{},[]]}`,
+    ' {"duplicate":1,"duplicate":2} ', '"plain"', '[0,-0,1e2]']) {
+    const bytes = new TextEncoder().encode(raw), parser = recordScaffold(0, 'small');
+    for (let at = 0; at < bytes.length; at++) parser.push(bytes.subarray(at, at + 1), at);
+    assert.deepEqual(JSON.parse(parser.finish(bytes.length).json), JSON.parse(raw));
+  }
+  for (const raw of ['[1,]', '{"a":1,}', '{"a" 1}', '{"a":01}', 'true false', String.raw`"\x"`, String.raw`"\ud800"`, '{']) {
+    const bytes = new TextEncoder().encode(raw), parser = recordScaffold(0, 'bad');
+    assert.throws(() => { parser.push(bytes, 0); parser.finish(bytes.length); });
+  }
+  const incomplete = recordScaffold(0, 'utf8');
+  const bytes = Uint8Array.from([0x22, 0xe4, 0xb8]);
+  incomplete.push(bytes, 0);
+  assert.throws(() => incomplete.finish(bytes.length));
+  const discontinuous = recordScaffold(1, 'gap');
+  assert.throws(() => discontinuous.push(new Uint8Array([0x7b]), 2), /contiguous/);
+  const oversized = recordScaffold(0, 'chunk');
+  assert.throws(() => oversized.push(new Uint8Array(65537), 0), /chunk.*budget/);
+  const many = new TextEncoder().encode(JSON.stringify(Array.from({ length: 129 }, () => 'x'.repeat(1025))));
+  const limited = recordScaffold(0, 'ranges');
+  assert.throws(() => { for (let at = 0; at < many.length; at += 65536) limited.push(many.subarray(at, at + 65536), at); limited.finish(many.length); }, /too many/);
+  const structure = new TextEncoder().encode(JSON.stringify(Object.fromEntries(Array.from({ length: 8000 }, (_, i) => [`key${i}`, 0]))));
+  const metadata = recordScaffold(0, 'structure');
+  assert.throws(() => { for (let at = 0; at < structure.length; at += 65536) metadata.push(structure.subarray(at, at + 65536), at); metadata.finish(structure.length); }, /scaffold budget/);
+  const key = new TextEncoder().encode(JSON.stringify({ ['\u0000'.repeat(12000)]: 1 }));
+  const keys = recordScaffold(0, 'keys');
+  const stringify = JSON.stringify;
+  let constructed = 0;
+  JSON.stringify = (...args) => { constructed++; return stringify(...args); };
+  try {
+    assert.throws(() => { for (let at = 0; at < key.length; at += 65536) keys.push(key.subarray(at, at + 65536), at); }, /key.*scaffold budget/);
+    assert.equal(constructed, 0, 'escaped key budget must fail before constructing its JSON string');
+  } finally { JSON.stringify = stringify; }
+});
+test('the second pass shares that lexer and pauses a decoded match without buffering its remaining body', () => {
+  const raw = String.raw`"前\ud83d\ude03\nNEEDLE中😀tail"`;
+  const bytes = new TextEncoder().encode(raw);
+  const emitted = [];
+  let pause = true;
+  const decoder = decodeRecordString(100, (char, from, to, start, end) => {
+    emitted.push({ char, from, to, start, end });
+    if (pause && char === 'N') { pause = false; return false; }
+    return true;
+  });
+  decoder.push(bytes, 100);
+  assert.equal(decoder.pending(), true);
+  assert.equal(emitted.map(atom => atom.char).join(''), '前😃\nN');
+  assert.throws(() => decoder.push(new Uint8Array(), 100 + bytes.length), /not been consumed/);
+  // The illegal extra push retires that reader. Re-run a legitimate pause
+  // to prove resume separately, without accepting a poisoned decoder.
+  const matching = literalMatcher(query('😃\nneedle'));
+  const matches = [];
+  const second = decodeRecordString(100, (char, _from, _to, start, end) => {
+    for (const range of matching.feed(char, 1).ranges) matches.push({ ...range, lastRawStart: start, lastRawEnd: end });
+    return false;
+  });
+  second.push(bytes, 100);
+  while (second.pending()) second.resume();
+  second.finish(100 + bytes.length);
+  assert.equal(matches.length, 1);
+  assert.deepEqual([matches[0].from, matches[0].to], [1, 10]);
+  const unicode = emitted.find(atom => atom.char === '😃');
+  assert.equal(new TextDecoder().decode(bytes.subarray(unicode.start - 100, unicode.end - 100)), String.raw`\ud83d\ude03`);
+  const notString = decodeRecordString(0, () => true);
+  assert.throws(() => notString.push(new TextEncoder().encode('{}'), 0), /not a JSON string/);
 });
 const deferred = () => {
   let resolve;
