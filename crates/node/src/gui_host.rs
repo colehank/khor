@@ -550,6 +550,7 @@ pub fn spawn_gui_host_reopen(
 /// How `_ghost` learns it resumes: env, not argv — the argv convention
 /// stays what every existing binary parses (`VIEWER_ENV`'s precedent).
 const RESUME_ENV: &str = "KHOR_GHOST_RESUME";
+const RECOVERY_ENV: &str = "KHOR_GHOST_RECOVERY";
 
 /// Whose session this is, when the **opener** knows — the wizard's own
 /// 智能体 field, which is the user saying it, not khor guessing from an
@@ -600,6 +601,8 @@ fn spawn_ghost_context(
         crate::link::fresh_hex()?
     ));
     let mut c = ghost_command(root, &exe)?;
+    // A fresh New must never inherit another invocation's claim.
+    c.env_remove(RECOVERY_ENV);
     match environment {
         Some(context) => {
             c.env(
@@ -672,13 +675,39 @@ fn spawn_ghost_context(
     let key = khor_net::identity::load_or_create(&root.join(".khor/identity.key"))
         .map_err(|error| error.to_string())?;
     let live = LiveKind::new(root.to_path_buf(), khor_core::DeviceId(*key.public().as_bytes()));
-    let expected_agent = if resume.is_none() {
-        Some(gui_new_agent(cmd, vendor))
-    } else {
-        vendor.map(str::to_owned)
-    };
+    let mut expected_agent = Some(gui_new_agent(cmd, vendor));
+    let claim = if let Some(native_id) = resume {
+        if agent { return Err("known-native recovery cannot inject a new scheduler context".into()); }
+        let native = gui_source_identity_as(&live, khor_core::DeviceId(*key.public().as_bytes()), cmd, native_id, vendor)?;
+        expected_agent = Some(native.agent.clone());
+        let context = match environment {
+            Some(context) => context.clone(),
+            None => match std::fs::read_to_string(context_path(root, native_id)) {
+                Ok(context) => serde_json::from_str(&context).map_err(|error| format!("Invalid session context: {error}"))?,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => khor_acp::Environment::default(),
+                Err(error) => return Err(error.to_string()),
+            },
+        };
+        let standing = cwd.map(std::path::Path::to_path_buf).or_else(crate::cwd::standing)
+            .ok_or("known session directory is unavailable")?;
+        let standing = std::fs::canonicalize(standing).map_err(|error| error.to_string())?;
+        let launch = serde_json::to_vec(&(&standing, title, cmd, &context)).map_err(|error| error.to_string())?;
+        // Freeze exactly the context/cwd hashed into this claim. The child must
+        // not reread a newer saved context and silently change the operation.
+        c.current_dir(&standing);
+        c.env("KHOR_GHOST_CONTEXT", serde_json::to_string(&context).map_err(|error| error.to_string())?);
+        let claim = live.prepare_gui_recovery(native, &launch)?;
+        c.env(RECOVERY_ENV, &claim);
+        Some(claim)
+    } else { None };
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    let child = c.spawn().map_err(msg::host_wont_start)?;
+    let child = c.spawn().map_err(|error| {
+        let why = msg::host_wont_start(error);
+        match claim.as_deref().map(|claim| live.gui_ghost_spawn_failed(claim)).transpose() {
+            Ok(_) => why,
+            Err(failed) => format!("{why}; recovery reservation is uncertain: {failed}"),
+        }
+    })?;
     let ghost_pid = child.id();
     drop(child);
     let mut ready_issue = None;
@@ -688,7 +717,7 @@ fn spawn_ghost_context(
         if let Ok(id) = std::fs::read_to_string(&ready) {
             let id = SessionId(id.trim().to_owned());
             if !id.0.is_empty() {
-                match live.confirm_gui_ready(&id, ghost_pid, resume, expected_agent.as_deref(), None) {
+                match live.confirm_gui_ready(&id, ghost_pid, resume, expected_agent.as_deref(), claim.as_deref()) {
                     Ok(()) => {
                         let _ = std::fs::remove_file(&ready);
                         return Ok(id);
@@ -793,6 +822,27 @@ impl Default for HostTimeouts {
     }
 }
 
+fn gui_environment(root: &std::path::Path, resume: Option<&str>) -> Result<khor_acp::Environment, String> {
+    let saved_context = resume
+        .and_then(|sid| std::fs::read_to_string(context_path(&root, sid)).ok());
+    let mut environment: khor_acp::Environment = std::env::var("KHOR_GHOST_CONTEXT")
+        .ok()
+        .or(saved_context)
+        .map(|s| serde_json::from_str(&s))
+        .transpose()
+        .map_err(|e| format!("Invalid session context: {e}"))?
+        .unwrap_or_default();
+    if std::env::var(crate::cagent::AGENT_ENV).is_ok() {
+        environment.mcp_servers.retain(|s| {
+            serde_json::to_value(s)
+                .ok()
+                .is_none_or(|v| v["name"] != "khor")
+        });
+        environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::self_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
+    }
+    Ok(environment)
+}
+
 /// The detached process `_ghost` runs. Blocks until the conversation is
 /// over, then reports the ending like any host: a recorded exit, even
 /// if nobody is watching.
@@ -827,24 +877,7 @@ fn gui_host_main_with_timeouts(
     // has pinned the process elsewhere (第十四轮 第 4 条).
     let cwd = crate::cwd::standing().unwrap_or_else(std::env::temp_dir);
     let resume = std::env::var(RESUME_ENV).ok();
-    let saved_context = resume
-        .as_ref()
-        .and_then(|sid| std::fs::read_to_string(context_path(&root, sid)).ok());
-    let mut environment: khor_acp::Environment = std::env::var("KHOR_GHOST_CONTEXT")
-        .ok()
-        .or(saved_context)
-        .map(|s| serde_json::from_str(&s))
-        .transpose()
-        .map_err(|e| format!("Invalid session context: {e}"))?
-        .unwrap_or_default();
-    if std::env::var(crate::cagent::AGENT_ENV).is_ok() {
-        environment.mcp_servers.retain(|s| {
-            serde_json::to_value(s)
-                .ok()
-                .is_none_or(|v| v["name"] != "khor")
-        });
-        environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::self_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
-    }
+    let environment = gui_environment(&root, resume.as_deref())?;
     let retained_environment = environment.clone();
     let launch = serde_json::to_vec(&(&cwd, &title, &cmd, &retained_environment))
         .map_err(|error| error.to_string())?;
@@ -863,17 +896,46 @@ fn gui_host_main_with_timeouts(
         let _ = std::fs::write(refusal_path(&ready), &why);
         why
     })?;
-    let (transport, birth) = crate::acp_process::spawn_observed(&command, |pid, _control| {
+    let mut recovery = if resume.is_some() {
+        let claim = std::env::var(RECOVERY_ENV).map_err(|_| "known-native opening has no preghost recovery claim".to_owned())?;
+        Some(live.claim_gui_recovery(
+            reservation.as_ref().ok_or("known-native opening has no Journal reservation")?,
+            &launch, &claim,
+        ).map_err(|why| {
+            let failure = live.gui_ghost_spawn_failed(&claim);
+            let why = match failure { Ok(()) => why, Err(error) => format!("{why}; claim remains fenced: {error}") };
+            let _ = std::fs::write(refusal_path(&ready), &why);
+            why
+        })?)
+    } else { None };
+    let (transport, birth) = match crate::acp_process::spawn_observed(&command, |pid, _control| {
         crate::live::observe_gui_birth(pid)
-    }).map_err(|why| {
-        let why = refusal_words(&khor_acp::Refusal::Wont(why));
-        let _ = std::fs::write(refusal_path(&ready), &why);
-        why
-    })?;
+    }) {
+        Ok(spawned) => spawned,
+        Err(error) => {
+            let why = refusal_words(&khor_acp::Refusal::Wont(error));
+            let settled = recovery.as_ref().map(|owner| live.settle_gui_recovery(owner, Err(()), 1)).transpose();
+            let why = match &settled { Ok(_) => why, Err(failed) => format!("{why}; cleanup publication is uncertain: {failed}") };
+            let _ = std::fs::write(refusal_path(&ready), &why);
+            if settled.is_err() && reservation.as_ref().is_some_and(|value| value.holds_file()) {
+                hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take());
+            }
+            return Err(why);
+        }
+    };
     let provider_pid = transport.provider_pid;
     let process_lifecycle = transport.lifecycle.clone();
     let process_control = transport.control.clone();
     let stderr = transport.stderr.clone();
+    let mut birth = Some(birth);
+    if let Some(owner) = recovery.as_mut() {
+        if let Err(why) = live.attach_gui_recovery(owner, &process_control, provider_pid, birth.take().expect("one observation")) {
+            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), why);
+            let _ = std::fs::write(refusal_path(&ready), &why);
+            if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
+            return Err(why);
+        }
+    }
     let opened = rt.block_on(async {
         tokio::time::timeout(
             timeouts.handshake,
@@ -892,31 +954,21 @@ fn gui_host_main_with_timeouts(
             ))
         })
     });
-    if opened.is_err() {
-        process_lifecycle.request_shutdown();
-        if let Err(why) = rt.block_on(process_lifecycle.confirmed_exit()) {
-            let why = format!("ACP initialization failed; process cleanup is unconfirmed: {why}");
+    let (handle, mut events) = match opened {
+        Ok(opened) => opened,
+        Err(refusal) => {
+            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), refusal_words(&refusal));
             let _ = std::fs::write(refusal_path(&ready), &why);
+            if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
             return Err(why);
         }
-    }
-    let (handle, mut events) = opened
-        // The opener is waiting on a file, and this is the only moment
-        // that knows why there will never be one. Written before
-        // returning, so the wait ends at the refusal rather than at its
-        // own timeout thirty seconds later.
-        .map_err(|r| {
-            let why = refusal_words(&r);
-            let _ = std::fs::write(refusal_path(&ready), &why);
-            why
-        })?;
+    };
 
     // These owners outlive every local setup error and the async loop. In
     // particular, a successful handshake never drops its Journal before the
     // outer same-Transport cleanup has been confirmed or marked Unknown.
     let mut retained_journal: Option<Journal> = None;
     let mut initial: Option<crate::live::GuiInitial> = None;
-    let mut birth = Some(birth);
     let mut new_collision = false;
     let result = (|| -> Result<(), String> {
         // Keep the full provider identity; the row's clean_leaf is only a
@@ -955,9 +1007,6 @@ fn gui_host_main_with_timeouts(
         retained_journal = Some(admission.open_journal(opening)?);
         new_collision = false;
         let journal = retained_journal.as_mut().expect("journal retained until process cleanup");
-        if !is_new {
-            journal.bind(&dir)?;
-        }
         let vendor = std::env::var(VENDOR_ENV).ok();
         // Keep the previous published row during the finite opening prefix.
         // A new execution becomes visible only after its display base commits.
@@ -1082,6 +1131,7 @@ fn gui_host_main_with_timeouts(
         // owner retains the exact key, if the opening actually publishes one.
         let run_in_loop = &mut run;
         let initial_in_loop = initial.as_ref();
+        let recovery_in_loop = recovery.as_ref();
         let ending = rt.block_on(async move {
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
         // The pending asks, each with the very note it was announced
@@ -1149,25 +1199,18 @@ fn gui_host_main_with_timeouts(
                         initial, journal, &title, vendor.as_deref(), word,
                         initial_place.as_deref(), &loop_ready,
                     ) { Ok(key) => key, Err(why) => break Some(why) }
-                } else {
-                    // Known-native preghost/epoch admission is the next small
-                    // production wiring slice; it never uses the New authority.
-                    if journal.is_pending() {
-                        if let Err(why)=journal.commit_base() { break Some(why); }
-                    } else if let Err(why)=journal.sync_received_prefix() {
-                        break Some(why);
+                } else if let Some(recovery) = recovery_in_loop {
+                    let word = match &*run_in_loop {
+                        RunPublication::Opening(word) => *word,
+                        RunPublication::Live(_) => break Some("GUI recovery published twice".into()),
+                    };
+                    match live.publish_gui_recovery(recovery, journal, &title, vendor.as_deref(), word, &loop_ready) {
+                        Ok(key) => key, Err(why) => break Some(why),
                     }
-                    match live.begin_gui_run(
-                        &id, &title, std::process::id(), &identity, vendor.as_deref(), resume.is_some(),
-                    ) { Ok(key) => key, Err(why) => break Some(why) }
+                } else {
+                    break Some("GUI opening has no current publication authority".into());
                 };
                 if let Err(why) = run_in_loop.publish(&live, key) { break Some(why); }
-                if initial_in_loop.is_none() {
-                    if let Some(cwd) = &initial_place {
-                        if let Err(why) = live.learn_place(&id, cwd) { break Some(why); }
-                    }
-                    if let Err(why)=std::fs::write(&loop_ready,&id.0) { break Some(why.to_string()); }
-                }
                 bootstrap=Bootstrap::Live;
             }
             if pending_completion.as_ref().is_some_and(|pending| pending.remaining == Some(0)) {
@@ -1692,6 +1735,8 @@ match event {
     let retired = rt.block_on(process_lifecycle.confirmed_exit());
     let settled = if let Some(initial) = &initial {
         live.settle_gui_new(initial, retired.as_ref().map_err(|_| ()), if result.is_ok() { 0 } else { 1 })
+    } else if let Some(recovery) = &recovery {
+        live.settle_gui_recovery(recovery, retired.as_ref().map_err(|_| ()), if result.is_ok() { 0 } else { 1 })
     } else if retired.is_err() && new_collision {
         // Only the exact actual-New agent/native reservation can quarantine
         // its old bound row. A same short SID or missing reservation is never
@@ -1713,7 +1758,7 @@ match event {
         // its exact resource rather than returning and silently unlocking it.
         let _ = std::fs::write(refusal_path(&ready), &why);
         eprintln!("{why}");
-        hold_uncertain_gui_owner(reservation.take(), retained_journal.take(), initial.take());
+        hold_uncertain_gui_owner(reservation.take(), retained_journal.take(), initial.take(), recovery.take());
     }
     // Release only after actual cleanup or a durable Unknown. A failed write
     // plus unconfirmed cleanup parks the existing ghost above, without retry.
@@ -1736,6 +1781,21 @@ match event {
     }
 }
 
+fn retire_failed_opening(
+    rt: &tokio::runtime::Runtime,
+    live: &LiveKind,
+    process: &khor_acp::TransportLifecycle,
+    recovery: Option<&crate::live::GuiRecovery>,
+    mut why: String,
+) -> (String, bool) {
+    process.request_shutdown();
+    let retired = rt.block_on(process.confirmed_exit());
+    let settled = recovery.map(|owner| live.settle_gui_recovery(owner, retired.as_ref().map_err(|_| ()), 1)).transpose();
+    if let Err(error) = &retired { why = format!("{why}; ACP cleanup is unconfirmed: {error}"); }
+    if let Err(error) = &settled { why = format!("{why}; durable cleanup is unconfirmed: {error}"); }
+    (why, retired.is_err() && settled.is_err())
+}
+
 /// No listener or GuiOp::Close is promised on this pre-publication failure.
 /// Retaining this existing ghost is fail-closed only for its current lifetime:
 /// explicit OS termination/crash releases the File, and a failed durable write
@@ -1745,6 +1805,7 @@ fn hold_uncertain_gui_owner(
     _reservation: Option<JournalReservation>,
     _journal: Option<Journal>,
     _initial: Option<crate::live::GuiInitial>,
+    _recovery: Option<crate::live::GuiRecovery>,
 ) -> ! {
     loop {
         std::thread::park();
@@ -1937,6 +1998,17 @@ fn gui_source_identity(
     cmd: &[String],
     native_id: &str,
 ) -> Result<JournalIdentity, String> {
+    let vendor = std::env::var(VENDOR_ENV).ok();
+    gui_source_identity_as(live, home, cmd, native_id, vendor.as_deref())
+}
+
+fn gui_source_identity_as(
+    live: &LiveKind,
+    home: khor_core::DeviceId,
+    cmd: &[String],
+    native_id: &str,
+    vendor: Option<&str>,
+) -> Result<JournalIdentity, String> {
     let id = crate::adaptor::id_for(native_id);
     let dir = live
         .dir_of(&id)
@@ -1949,20 +2021,17 @@ fn gui_source_identity(
         Err(why) if why.kind() == std::io::ErrorKind::NotFound => None,
         Err(why) => return Err(why.to_string()),
     };
-    let vendor = std::env::var(VENDOR_ENV).ok();
     let recorded = bound.or_else(|| meta.as_ref().and_then(|meta| meta.gui_native.clone()));
     if let Some(recorded) = recorded {
         if recorded.home != home
             || recorded.native_id != native_id
-            || vendor
-                .as_ref()
-                .is_some_and(|agent| agent != &recorded.agent)
+            || vendor.is_some_and(|agent| agent != recorded.agent)
         {
             return Err("GUI row already names another full native identity".into());
         }
         return Ok(recorded);
     }
-    let agent = vendor
+    let agent = vendor.map(str::to_owned)
         .or_else(|| meta.and_then(|meta| meta.category))
         .unwrap_or_else(|| {
             let launch = serde_json::to_vec(cmd).expect("launcher identity serializes");

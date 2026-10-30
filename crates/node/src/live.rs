@@ -3320,6 +3320,17 @@ pub(crate) fn observe_gui_birth(actual_pid: Option<u32>) -> GuiBirth {
     GuiBirth { host, provider }
 }
 
+/// Child-only runtime permission reconstructed from one durable preghost claim,
+/// its actual current host, and the very same physical Journal admission.
+pub(crate) struct GuiRecovery {
+    directory: PathBuf,
+    key: recovery_attempt::AttemptKey,
+    host: recovery_attempt::ProcessStamp,
+    journal: crate::session_content::journal::JournalLease,
+    control: Option<Arc<crate::agent_process::Control>>,
+    actual_pid: Option<u32>,
+}
+
 /// The successful New invocation retains the same Journal and Control owners
 /// through publication and the outer, actual process cleanup result.
 pub(crate) struct GuiInitial {
@@ -3328,6 +3339,159 @@ pub(crate) struct GuiInitial {
     control: Arc<crate::agent_process::Control>,
 }
 impl LiveKind {
+    pub(crate) fn prepare_gui_recovery(
+        &self,
+        native: crate::session_content::journal::Identity,
+        launch: &[u8],
+    ) -> Result<String, String> {
+        self.check_gui_source(&native)?;
+        let id = crate::adaptor::id_for(&native.native_id);
+        let directory = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        fs::create_dir_all(&directory).map_err(msg::cant_make_session_dir)?;
+        // Preflight the complete manifest and existing binding before even
+        // spawning a ghost. The child still acquires and retains its own exact
+        // File before provider spawn; the epoch fences this cross-process gap.
+        let admission = crate::session_content::journal::JournalReservation::take(&self.root, native.clone())?;
+        admission.check_binding(&directory)?;
+        // Capture only the registered target under the short gate; all OS
+        // facts are read after dropping it, never across a spawn or await.
+        let registered = {
+            let mut gate = RowGate::acquire(&directory)?;
+            recovery_attempt::Held::load(&mut gate)?.registered_foreground(&native)?
+        };
+        if let Some(registered) = registered {
+            let host_absent = if registered.slot_ended { None } else {
+                match proc_identity::foreground(&registered.host) {
+                    proc_identity::Foreground::Absent(proof) => Some(proof),
+                    proc_identity::Foreground::Present => return Err("the previous Khor execution is still active".into()),
+                    proc_identity::Foreground::Unknown => return Err("the previous Khor execution owner is unknown".into()),
+                }
+            };
+            match proc_identity::foreground(&registered.process) {
+                proc_identity::Foreground::Absent(proof) => {
+                    let mut gate = RowGate::acquire(&directory)?;
+                    recovery_attempt::Held::load(&mut gate)?.foreground_absent(&registered, &proof, host_absent.as_ref())?;
+                }
+                proc_identity::Foreground::Present => return Err("registered provider foreground is still present".into()),
+                proc_identity::Foreground::Unknown => return Err("registered provider foreground is unknown".into()),
+            }
+        }
+        let legacy = self.legacy_gui_source(&id)?;
+        let mut gate = RowGate::acquire(&directory)?;
+        let meta = gate.read_meta_or_new()?;
+        gate.check_native(&id, meta.as_ref(), &native, legacy.as_ref())?;
+        if meta.as_ref().is_some_and(|meta| !gui_slot_ended(meta) && meta.pid.is_some_and(crate::link::pid_running)) {
+            return Err("GUI row still has a live execution".into());
+        }
+        let expected = meta.and_then(|meta| meta.gui_run.map(|run| run.id));
+        let arguments = recovery_attempt::Arguments::native(native, expected, launch)?;
+        let token = recovery_attempt::Token::new(recovery_attempt::next_epoch(&directory)?, crate::link::fresh_hex()?)?;
+        match recovery_attempt::Held::load(&mut gate)?.reserve(arguments, token, legacy.as_ref())? {
+            recovery_attempt::Reservation::Start(key) => {
+                let encoded = serde_json::to_string(&key).map_err(|error| error.to_string())?;
+                if encoded.len() > 16 * 1024 { return Err("GUI claim exceeds its byte budget".into()); }
+                Ok(encoded)
+            }
+            _ => Err("GUI recovery has no new exclusive execution authority".into()),
+        }
+    }
+
+    pub(crate) fn gui_ghost_spawn_failed(&self, encoded: &str) -> Result<(), String> {
+        if encoded.len() > 16 * 1024 { return Err("GUI claim exceeds its byte budget".into()); }
+        let key: recovery_attempt::AttemptKey = serde_json::from_str(encoded).map_err(|error| error.to_string())?;
+        let (home, id) = key.scope();
+        if home != self.device { return Err("GUI claim belongs to another home".into()); }
+        let directory = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let mut gate = RowGate::acquire(&directory)?;
+        recovery_attempt::Held::load(&mut gate)?.spawn_failed(&key)
+    }
+
+    pub(crate) fn claim_gui_recovery(
+        &self,
+        reservation: &crate::session_content::journal::JournalReservation,
+        launch: &[u8],
+        encoded: &str,
+    ) -> Result<GuiRecovery, String> {
+        if encoded.len() > 16 * 1024 { return Err("GUI claim exceeds its byte budget".into()); }
+        let key: recovery_attempt::AttemptKey = serde_json::from_str(encoded).map_err(|error| error.to_string())?;
+        let native = reservation.identity();
+        self.check_gui_source(native)?;
+        let id = crate::adaptor::id_for(&native.native_id);
+        let directory = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        reservation.check_binding(&directory)?;
+        let host = proc_identity::current_host().map_err(|_| "actual recovery host birth is unknown".to_owned())?;
+        let mut gate = RowGate::acquire(&directory)?;
+        let meta = gate.read_meta_or_new()?;
+        let expected = meta.and_then(|meta| meta.gui_run.map(|run| run.id));
+        let arguments = recovery_attempt::Arguments::native(native.clone(), expected, launch)?;
+        let mut held = recovery_attempt::Held::load(&mut gate)?;
+        held.check_claim(&key, &arguments)?;
+        held.claim_host(&key, host.clone())?;
+        held.starting_provider(&key)?;
+        Ok(GuiRecovery { directory, key, host, journal: reservation.lease(), control: None, actual_pid: None })
+    }
+
+    pub(crate) fn attach_gui_recovery(
+        &self,
+        recovery: &mut GuiRecovery,
+        control: &Arc<crate::agent_process::Control>,
+        actual_pid: Option<u32>,
+        birth: GuiBirth,
+    ) -> Result<(), String> {
+        recovery.control = Some(control.clone());
+        recovery.actual_pid = actual_pid;
+        if birth.host.as_ref() != Some(&recovery.host) {
+            return Err("provider observation has another actual recovery host".into());
+        }
+        let provider = birth.provider.ok_or("actual provider birth is unknown")?;
+        if Some(provider.pid) != actual_pid { return Err("provider observation differs from its real Session".into()); }
+        let mut gate = RowGate::acquire(&recovery.directory)?;
+        recovery_attempt::Held::load(&mut gate)?.owned_provider(&recovery.key, provider)
+    }
+
+    pub(crate) fn publish_gui_recovery(
+        &self,
+        recovery: &GuiRecovery,
+        journal: &mut crate::session_content::journal::Journal,
+        title: &str,
+        category: Option<&str>,
+        word: State,
+        ready: &Path,
+    ) -> Result<RunKey, String> {
+        if recovery.control.is_none() || !journal.owns_lease(&recovery.journal) {
+            return Err("recovery lost its actual transport or Journal owner".into());
+        }
+        if journal.is_pending() { journal.prepare_base()?; } else { journal.sync_received_prefix()?; }
+        let native = journal.identity().clone();
+        let id = crate::adaptor::id_for(&native.native_id);
+        let generation = journal.generation().map(str::to_owned);
+        let mut gate = RowGate::acquire(&recovery.directory)?;
+        let mut held = recovery_attempt::Held::load(&mut gate)?;
+        held.publish_base(&recovery.key, generation.as_deref(), |gate| {
+            if journal.is_pending() { journal.publish_base()?; }
+            journal.bind(&gate.dir)
+        })?;
+        held.publish_run(&recovery.key, |gate, run_id| {
+            let key = self.begin_gui_run_held(gate, &id, title, std::process::id(), &native,
+                category, true, None, run_id, word, None)?;
+            fs::write(ready, &id.0).map_err(|error| error.to_string())?;
+            Ok(key)
+        })
+    }
+
+    pub(crate) fn settle_gui_recovery(
+        &self,
+        recovery: &GuiRecovery,
+        receipt: Result<&khor_acp::ProcessExit, ()>,
+        slot_code: i32,
+    ) -> Result<(), String> {
+        let mut gate = RowGate::acquire(&recovery.directory)?;
+        recovery_attempt::Held::load(&mut gate)?.settle_recovery(
+            &recovery.key, &recovery.host, recovery.actual_pid, receipt,
+            |gate, id, native, run, pid| retire_gui_slot_held(gate, id, native, run, pid, slot_code),
+        )
+    }
+
     pub(crate) fn seed_gui_new(
         &self,
         reservation: &crate::session_content::journal::JournalReservation,

@@ -130,6 +130,11 @@ fn open_host_with_timeouts(
     let (conn, notes) = attach_host(root, scratch, mode);
     (host, conn, notes)
 }
+fn fixture_command(scratch: &std::path::Path, mode: &str) -> String {
+    let python = std::env::var("KHOR_ACP_TEST_PYTHON").unwrap_or_else(|_| "python3".into());
+    serde_json::json!({"command":python,"args":[scratch.join("agent.py"),mode,scratch.join(mode)]}).to_string()
+}
+
 fn launch_host(
     root: &std::path::Path,
     scratch: &std::path::Path,
@@ -137,11 +142,23 @@ fn launch_host(
     timeouts: HostTimeouts,
 ) -> std::thread::JoinHandle<Result<(), String>> {
     let ready = scratch.join(format!("{mode}.ready"));
-    let marker = scratch.join(mode);
-    let python = std::env::var("KHOR_ACP_TEST_PYTHON").unwrap_or_else(|_| "python3".into());
-    let command =
-        serde_json::json!({"command":python,"args":[scratch.join("agent.py"),mode,marker]})
-            .to_string();
+    let command = fixture_command(scratch, mode);
+    if let Ok(native_id) = std::env::var(RESUME_ENV) {
+        // The isolated owned worker uses the same production preghost owner,
+        // actual context/cwd and claim validation as the normal opener. No
+        // synthetic token, fake provider receipt or admission bypass.
+        let key = khor_net::identity::load_or_create(&root.join(".khor/identity.key")).unwrap();
+        let live = LiveKind::new(root.to_owned(), khor_core::DeviceId(*key.public().as_bytes()));
+        let cmd = vec![command.clone()];
+        let native = gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, &native_id).unwrap();
+        let context = gui_environment(root, Some(&native_id)).unwrap();
+        let cwd = crate::cwd::standing().unwrap_or_else(std::env::temp_dir);
+        let launch = serde_json::to_vec(&(&cwd, "ACP cancellation fixture", &cmd, &context)).unwrap();
+        let claim = live.prepare_gui_recovery(native, &launch).unwrap();
+        unsafe { std::env::set_var(RECOVERY_ENV, claim); }
+    } else {
+        unsafe { std::env::remove_var(RECOVERY_ENV); }
+    }
     let host = {
         let root = root.to_owned();
         let ready = ready.clone();
@@ -163,8 +180,25 @@ fn attach_host(
     mode: &str,
 ) -> (TcpStream, mpsc::Receiver<GuiNote>) {
     let ready = scratch.join(format!("{mode}.ready"));
-    let id = khor_core::SessionId(await_file(&ready).trim().to_owned());
-    let live = LiveKind::new(root.to_owned(), khor_core::DeviceId([1; 32]));
+    let until = Instant::now() + Duration::from_secs(5);
+    let key = khor_net::identity::load_or_create(&root.join(".khor/identity.key")).unwrap();
+    let live = LiveKind::new(root.to_owned(), khor_core::DeviceId(*key.public().as_bytes()));
+    let native = std::env::var(RESUME_ENV).ok();
+    let vendor = std::env::var(VENDOR_ENV).ok();
+    let agent = if native.is_none() {
+        Some(gui_new_agent(&[fixture_command(scratch, mode)], vendor.as_deref()))
+    } else { vendor };
+    let claim = native.as_ref().and_then(|_| std::env::var(RECOVERY_ENV).ok());
+    let id = loop {
+        if let Ok(id) = std::fs::read_to_string(&ready) {
+            let id = SessionId(id.trim().to_owned());
+            if !id.0.is_empty() && live.confirm_gui_ready(&id, std::process::id(), native.as_deref(), agent.as_deref(), claim.as_deref()).is_ok() {
+                break id;
+            }
+        }
+        assert!(Instant::now() < until, "fixture did not durably publish Ready within the original5s bound");
+        std::thread::sleep(Duration::from_millis(5));
+    };
     let file = crate::host::read_host_file(&live.dir_of(&id).unwrap()).unwrap();
     let mut conn = TcpStream::connect(("127.0.0.1", file.port)).unwrap();
     conn.set_write_timeout(Some(Duration::from_secs(2)))
@@ -1000,6 +1034,7 @@ fn managed_host_case_worker() {
                 let id = crate::adaptor::id_for("synthetic-q037-session");
                 let node = crate::Node::open(root.clone()).unwrap();
                 let live = LiveKind::new(root.clone(), node.device());
+                let expected_identity = gui_new_source_identity(node.device(), std::slice::from_ref(&command), "synthetic-q037-session");
                 let handle = {
                     let root = root.clone();
                     let ready = ready.clone();
@@ -1052,10 +1087,11 @@ fn managed_host_case_worker() {
                 assert!(!ready.exists());
                 assert!(refusal_path(&ready).exists());
                 assert_reaped(process_pid(&scratch, mode));
-                let identity: JournalIdentity = serde_json::from_slice(
-                    &std::fs::read(live.dir_of(&id).unwrap().join("journal.json")).unwrap(),
-                )
-                .unwrap();
+                assert!(
+                    !live.dir_of(&id).unwrap().join("journal.json").exists(),
+                    "an aborted unpublished New cannot publish a semantic binding"
+                );
+                let identity = expected_identity;
                 assert!(!identity.directory(&root).join("current").exists());
                 assert!(!identity.directory(&root).join("pending").exists());
                 let journal = Journal::open(&root, identity, JournalOpening::New).unwrap();

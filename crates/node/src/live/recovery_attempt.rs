@@ -161,6 +161,10 @@ enum Provider {
         pid: u32,
         code: Option<i32>,
     },
+    /// Finite same-context evidence, not a fabricated ProcessExit receipt.
+    ForegroundAbsent {
+        process: ProcessStamp,
+    },
     Unknown {
         last: Option<ProcessStamp>,
         actual_pid: Option<u32>,
@@ -174,12 +178,12 @@ enum UnknownReason {
     CleanupUnconfirmed,
 }
 impl Provider {
-    fn known_clean(&self) -> bool {
-        matches!(self, Self::NotStarted | Self::Exited { .. })
+    fn no_foreground_owner(&self) -> bool {
+        matches!(self, Self::NotStarted | Self::Exited { .. } | Self::ForegroundAbsent { .. })
     }
     fn validate(&self) -> Result<(), String> {
         match self {
-            Self::Owned { process } => process.validate(),
+            Self::Owned { process } | Self::ForegroundAbsent { process } => process.validate(),
             Self::Unknown {
                 last: Some(process),
                 ..
@@ -286,7 +290,7 @@ impl Document {
                 return Err("unknown provider has inconsistent recorded PID facts".into());
             }
         }
-        if let Provider::Owned { process } = &v.provider {
+        if let Provider::Owned { process } | Provider::ForegroundAbsent { process } = &v.provider {
             if process.group != process.pid
                 || v.host.as_ref().is_none_or(|host| {
                     process.parent != host.pid || !super::proc_identity::same_context(host, process)
@@ -305,7 +309,7 @@ impl Document {
                     && host_recorded
                     && !matches!(v.provider, Provider::NotStarted | Provider::Starting) => {}
             (Phase::Refused, Some(Recorded::Refused { .. }))
-                if v.provider.known_clean()
+                if v.provider.no_foreground_owner()
                     && (host_recorded || matches!(v.provider, Provider::NotStarted)) => {}
             (Phase::Reserved, None)
                 if v.arguments.operation == Operation::RecoverNative
@@ -331,6 +335,12 @@ pub(super) struct AttemptKey {
     token: Token,
     arguments: Arguments,
     run_id: String,
+}
+
+impl AttemptKey {
+    pub(super) fn scope(&self) -> (DeviceId, &SessionId) {
+        (self.arguments.home, &self.arguments.id)
+    }
 }
 
 /// Only the successful in-process New adapter may provide these facts. The
@@ -362,6 +372,15 @@ pub(super) enum Reservation {
     },
     Retired,
     UnknownOwner,
+}
+
+/// A bounded snapshot to probe outside RowGate; applying its nonserial proof
+/// reloads and checks the exact same key and recorded foreground afterwards.
+pub(super) struct RegisteredForeground {
+    key: AttemptKey,
+    pub(super) process: ProcessStamp,
+    pub(super) host: ProcessStamp,
+    pub(super) slot_ended: bool,
 }
 
 /// The only durable writer is the caller's existing short row transaction.
@@ -534,6 +553,72 @@ impl<'a> Held<'a> {
         }
         Ok(())
     }
+    pub(super) fn registered_foreground(&self, native: &Identity) -> Result<Option<RegisteredForeground>, String> {
+        self.ensure()?;
+        if self.has_cleanup_barrier() { return Ok(None); }
+        let Some(latest) = self.document.as_ref().and_then(|doc| doc.latest.as_ref()) else {
+            return Ok(None);
+        };
+        if &latest.arguments.native != native {
+            return Err("registered execution belongs to another full native source".into());
+        }
+        let Provider::Owned { process } = &latest.provider else { return Ok(None); };
+        Ok(Some(RegisteredForeground {
+            key: AttemptKey { token: latest.token.clone(), arguments: latest.arguments.clone(), run_id: latest.run_id.clone() },
+            process: process.clone(),
+            host: latest.host.clone().ok_or("registered foreground has no actual host")?,
+            slot_ended: self.slot_ended(latest)?,
+        }))
+    }
+
+    fn slot_ended(&self, latest: &Latest) -> Result<bool, String> {
+        let Some(meta) = self.gate.read_meta_or_new()? else { return Ok(false); };
+        Ok(latest.phase == Phase::RunPublished && meta.kind == khor_core::kind::GUI
+            && meta.id == latest.arguments.id.0
+            && meta.gui_native.as_ref() == Some(&latest.arguments.native)
+            && meta.pid == latest.host.as_ref().map(|host| host.pid).or(latest.unverified_host_pid)
+            && meta.gui_run.as_ref().is_some_and(|run| run.id == latest.run_id
+                && run.state.gui_run.as_ref() == Some(&run.id) && run.state.exit.is_some()))
+    }
+
+    pub(super) fn foreground_absent(
+        &mut self,
+        registered: &RegisteredForeground,
+        proof: &super::proc_identity::AbsentForeground,
+        host_absent: Option<&super::proc_identity::AbsentForeground>,
+    ) -> Result<(), String> {
+        let current = self.current(&registered.key)?;
+        if current.host.as_ref() != Some(&registered.host)
+            || (!self.slot_ended(current)? && !host_absent.is_some_and(|proof| proof.is_for(&registered.host)))
+        {
+            return Err("the previous Khor execution is still active or unknown".into());
+        }
+        if self.has_cleanup_barrier() || !proof.is_for(&registered.process) {
+            return Err("foreground absence does not match this registered owner".into());
+        }
+        self.change(&registered.key, |latest| {
+            if !matches!(&latest.provider, Provider::Owned { process } if process == &registered.process) {
+                return Err("registered foreground changed during its read-only probe".into());
+            }
+            latest.provider = Provider::ForegroundAbsent { process: registered.process.clone() };
+            Ok(())
+        })
+    }
+
+    pub(super) fn check_claim(
+        &self,
+        key: &AttemptKey,
+        arguments: &Arguments,
+    ) -> Result<(), String> {
+        let latest = self.current(key)?;
+        if self.has_cleanup_barrier() || &latest.arguments != arguments
+            || latest.phase != Phase::Reserved || !matches!(latest.provider, Provider::NotStarted)
+        {
+            return Err("recovery ghost does not own these exact reserved arguments".into());
+        }
+        Ok(())
+    }
+
     fn has_cleanup_barrier(&self) -> bool {
         self.document.as_ref().is_some_and(|doc| doc.cleanup_barrier.is_some())
     }
@@ -627,6 +712,12 @@ impl<'a> Held<'a> {
             (Some(pid), Ok(receipt)) => self.confirmed_exit(&authority.key, pid, receipt),
             _ => self.cleanup_unknown(&authority.key),
         };
+        let provider = provider.and_then(|()| {
+            let latest = self.current(&authority.key)?;
+            if latest.result.is_none() && latest.provider.no_foreground_owner() {
+                self.refuse(&authority.key, Reason::SetupFailed)
+            } else { Ok(()) }
+        });
         // The key/Control/epoch were validated under this still-held gate.
         // Even if the attempt file is unwritable, exact same-run Meta cleanup
         // is independently safe and must not be skipped by that first error.
@@ -691,10 +782,11 @@ impl<'a> Held<'a> {
             return Err("recovery epoch is not the next offer".into());
         }
         // Meta.exit, a dead host, a free journal or absent leader are not a
-        // substitute for this attempt's actual foreground cleanup receipt.
+        // substitute for its actual owned-foreground receipt or complete,
+        // same-context registered foreground absence proof.
         if self.document.as_ref().is_some_and(|doc| {
             let Some(latest) = &doc.latest else { return true; };
-            !matches!(latest.provider, Provider::Exited { .. })
+            !matches!(latest.provider, Provider::Exited { .. } | Provider::ForegroundAbsent { .. })
                 && !(latest.phase == Phase::Refused
                     && matches!(latest.provider, Provider::NotStarted))
         }) {
@@ -710,7 +802,14 @@ impl<'a> Held<'a> {
         if current != arguments.expected_run.as_deref() {
             return Err("recovery offer names another GUI execution".into());
         }
-        if self.document.is_none() && current.is_some() {
+        if self.document.as_ref().and_then(|doc| doc.latest.as_ref()).is_some_and(|latest| {
+            current.is_some_and(|current| current != latest.run_id
+                && Some(current) != latest.arguments.expected_run.as_deref())
+        }) {
+            return Ok(Reservation::UnknownOwner);
+        }
+        if self.document.is_none() && (current.is_some()
+            || meta.as_ref().is_some_and(|meta| meta.kind == khor_core::kind::GUI)) {
             return Ok(Reservation::UnknownOwner);
         }
         let run_id = crate::link::fresh_hex()?;
@@ -737,6 +836,14 @@ impl<'a> Held<'a> {
         })?;
         Ok(Reservation::Start(key))
     }
+    pub(super) fn spawn_failed(&mut self, key: &AttemptKey) -> Result<(), String> {
+        let latest = self.current(key)?;
+        if latest.phase != Phase::Reserved || latest.host.is_some() || !matches!(latest.provider, Provider::NotStarted) {
+            return Err("failed spawn cannot retire an already claimed ghost".into());
+        }
+        self.refuse(key, Reason::SetupFailed)
+    }
+
     pub(super) fn claim_host(
         &mut self,
         key: &AttemptKey,
@@ -782,6 +889,38 @@ impl<'a> Held<'a> {
             Ok(())
         })
     }
+    pub(super) fn settle_recovery(
+        &mut self,
+        key: &AttemptKey,
+        host: &ProcessStamp,
+        actual_pid: Option<u32>,
+        receipt: Result<&khor_acp::ProcessExit, ()>,
+        retire_slot: impl FnOnce(&RowGate, &SessionId, &Identity, &str, u32) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let latest = self.current(key)?;
+        if latest.arguments.operation != Operation::RecoverNative || latest.host.as_ref() != Some(host)
+            || host.pid != std::process::id()
+        {
+            return Err("recovery cleanup belongs to another actual host".into());
+        }
+        let provider = match (actual_pid, receipt) {
+            (Some(pid), Ok(receipt)) => self.confirmed_exit(key, pid, receipt),
+            _ => self.cleanup_unknown(key),
+        };
+        let provider = provider.and_then(|()| {
+            let latest = self.current(key)?;
+            if latest.result.is_none() && latest.provider.no_foreground_owner() {
+                self.refuse(key, Reason::SetupFailed)
+            } else { Ok(()) }
+        });
+        let slot = retire_slot(self.gate, &key.arguments.id, &key.arguments.native, &key.run_id, host.pid);
+        match (provider, slot) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(why), Ok(())) | (Ok(()), Err(why)) => Err(why),
+            (Err(provider), Err(slot)) => Err(format!("{provider}; Khor slot cleanup: {slot}")),
+        }
+    }
+
     pub(super) fn publish_base<T>(
         &mut self,
         key: &AttemptKey,
@@ -855,7 +994,7 @@ impl<'a> Held<'a> {
         }
         self.change(key, |v| {
             match &v.provider {
-                Provider::Owned { process } if process.pid == pid => {}
+                Provider::Owned { process } | Provider::ForegroundAbsent { process } if process.pid == pid => {}
                 // Birth capture can fail after a real spawn. The same actual
                 // transport can still publish its own confirmed reap receipt.
                 Provider::Starting => {}
@@ -900,7 +1039,7 @@ impl<'a> Held<'a> {
     }
     pub(super) fn refuse(&mut self, key: &AttemptKey, reason: Reason) -> Result<(), String> {
         self.change(key, |v| {
-            if v.result.is_some() || !v.provider.known_clean() {
+            if v.result.is_some() || !v.provider.no_foreground_owner() {
                 return Err("refusal has no confirmed clean provider boundary".into());
             }
             v.phase = Phase::Refused;
@@ -1129,6 +1268,8 @@ mod tests {
         let one = token(1, 'a');
         let mut held = Held::load(&mut gate).unwrap();
         let first = start(held.reserve(args.clone(), one.clone(), None).unwrap());
+        held.check_claim(&first, &args).unwrap();
+        assert!(held.check_claim(&first, &Arguments::native(native.clone(), None, b"wrong context").unwrap()).is_err());
         let before = fs::read(held.gate.dir.join(NAME)).unwrap();
         assert!(before.len() <= BYTES);
         assert!(matches!(
@@ -1160,6 +1301,7 @@ mod tests {
         assert_eq!(fs::read(held.gate.dir.join(NAME)).unwrap(), before);
 
         held.claim_host(&first, stamp(10, 1)).unwrap();
+        assert!(held.check_claim(&first, &args).is_err(), "a second ghost cannot reuse a claimed token");
         assert!(held.claim_host(&first, stamp(11, 1)).is_err());
         held.starting_provider(&first).unwrap();
         assert!(

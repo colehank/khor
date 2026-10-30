@@ -403,6 +403,10 @@ impl Journal {
         Ok(journal)
     }
 
+    pub(crate) fn generation(&self) -> Option<&str> {
+        self.manifest.generation.as_deref()
+    }
+
     pub fn is_pending(&self) -> bool {
         self.pending
     }
