@@ -1,67 +1,60 @@
 # 第二轮当前状态
 
-更新：2026-10-30。目标 **完成第二轮 active**，范围 **29条反馈＋5遗留＝34项**。用户已授权实施；本轮 **main合并/ship未授权**。main `/Users/zgh/Desktop/working/khor` 保持 `e7c335c8`；集成 `/Volumes/disk0/Khor/worktrees/current/khor-round2` / `integrate/round2` / **5c726b0a79e9a1454dc3bbf5435a3cfa7ee19173**，tracked clean。
+更新：2026-10-30。目标 **完成第二轮 active**；范围 **29条反馈＋5项遗留＝34项**。当前用户已授权实施，没有授权本轮 main 合并或 ship。main 仍是 `/Users/zgh/Desktop/working/khor@e7c335c8dd81de091bd12b92cd704a63f25d03f3`。
 
-## 恢复与授权
+## 权威入口与恢复
 
-先读最新用户消息、本文、[执行计划](ROUND-2-EXECUTION.md)、当前任务卡，再核refs/diff/agent/实际进程。旧阶段完整记录在[本次归档](history/STATE-through-watch-m025-20261030.md)，其中运行语句均为历史，不能直接复用PID或重开producer。
+本文只记当前状态。此前阶段（包括失败的构建/脚本及旧运行语句）保存在 [最新历史](history/STATE-before-current-cc744-20261030T022419Z.md) 和 [早期归档](history/STATE-through-watch-m025-20261030.md)，旧 PID 不可复用。执行规则见 [ROUND-2-EXECUTION](ROUND-2-EXECUTION.md)、[PLAN](PLAN.md)、[ENGINEERING](ENGINEERING.md)。具体要求与失败证据在各包任务卡。
 
-内盘恢复入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/RESUME.md`；当前运行表 **current-runtime.json**、refs表 **current-worktree-refs.json**、逐SHA文档镜像 **current-code-quality-docs-manifest.json**。实际handle/result优先于旧摘要；不得覆盖外盘更新的dirty源。
+内盘恢复入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/RESUME.md`；同目录 current-runtime.json、current-worktree-refs.json 和 current-code-quality-docs-manifest.json。先核现场再恢复，不按摘要覆盖作者 dirty 源。
 
-- 用户已澄清R2-028：Codex输入区缺少组合键配置，归M026自定义键行；不是待诊断的Mac物理拦截，不重复问入口。E仍负责真实Mac文件中文IME和最后一键→OS Quit。
-- 用户明确未上线、不考虑旧端兼容；不为旧host新增v2/fallback/矩阵。当前协议须一致、错误显式、不重发；已有用户数据不破坏。
-- 新独立问题只登记下一轮；现34项继续做完。Clean Code按领域命名、单状态/资源owner、纯规则与效果边界、清晰失败/取消及删除旧路审查；不是机械删掉平台/协议必要注释。
+用户决定：不做旧端兼容；保护已有用户数据。R2-028 是 Codex 输入区缺组合键配置，归 M026，不重复询问入口。新增独立问题只登记下一轮，原34项继续完成。Clean Code 按命名、规则一处、状态/资源 owner、效果边界和明确失败审查，不以零注释或格式化量作为成果。
 
-## 运行与写权
+## 现场与责任
 
-**Cargo/native与browser均FREE，无App/Codex。** S green3实际exec78796已terminal(false)/137.563s：真实GUI Cargo0，但严格来源拒绝fresh khor_acp无匹配producer；剩6/gen仍未执行，未发布，source/env/owned/TMP净。前38＋inner1已实际绿且独立列出。停止逐包补来源的循环；H先完整归档、只读定位全量不匹配链，一次给出完整方案，不自动重开Cargo。B shared可在此已终态后进入source接线窗口，由H唯一写公共源。新producer先固定来源/独审/授唯一槽/登记真实handle；jobs1、incremental0、offline、双盘≥5GiB，target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`。旧23837 Lab保留，处理前核实际身份，不按旧PID结束。
+当前 native/Cargo、browser 槽均空闲，无本轮测试 App/Codex。Root exec15482 已终态通过；N exec24467 已终态失败并清理，不能按旧 RUNNING 重启。后续实际调用必须按单槽授予，jobs1/incremental0/offline、两盘可用≥5GiB，target 继续是 `/Volumes/disk0/Khor/caches/rust/khor-quality-target`。不得按 basename 结束用户 khor-gui：持久宿主可能同名。
 
-| owner | 工作副本与当前边界 |
+| owner | 当前职责与工作副本 |
 | --- | --- |
-| Root | 集成5c726b0a；W watch/publicAPI/consumer收口与验证已完成到分层checkpoint。原watch ref `fix/round2-watch-ui@26fdebe7`保留；同worktree已复用为Root固定验证 `validate/round2-session-browser@cc744307`，从Root5c组装S Capture/WIP＋B已审source，tracked clean。B4 DOM/native deck坐标窄delta已组装并独审解除阻断，未Cargo/gen；不与作者并写，不新增目录。Root继续集成/实际验收/恢复。 |
-| round2_history | 同 `khor-round2-history`，S20已固定WIP `d83d9b73`，旧38＋inner1实际绿/剩6与gen未过。当前同worktree `fix/round2-browser-shared`，B共享基础e5fb与final29ff均source-only已审；H正常record后台worker4源固定531a/8项Node与workerthreads实际通过、UI/giant未完成；现窄抽tool输入正文单helper，下一巨record投影准备最小DTO。B差异独立提交，不把S未验部分冒完成。shared Core API/lib/gen、src/api/catalog、native_io/Tauri胶水由其单owner，B不得并写。 |
-| round2_input | B private最终df92/前端27220/异步错误d5与shared29ff/04c已fixed独审，40纯门/完整22源与3.35MB内盘镜像保留，Rust12/平台仍未验。现同 `khor-round2-input` / `fix/round2-state-concurrency@5c726b0a` 做N只读查询＋实际同步RootGate跨进程固定夹具准备；仅cfgtest checkpoint授权，未native或生产修改。 |
-| round2_reviewer | 固定源/收据只读独审，不启动native/browser。S candidate3待尾核；B后片按既定边界审，不扩新专项。 |
+| Root | 协调、集成、真实验收、中央状态。`khor-round2` / integrate/round2 **cc7443070c7cc5a6cc3b76541ffded5763798d8a** tracked clean。固定验证复用 `khor-round2-watch` / validate/round2-session-browser，同 HEAD/源；旧 watch ref26fdebe7保留。不成为第三条大实现线。 |
+| round2_history | `khor-round2-history` / fix/round2-browser-shared，最新 H 固定 **c37dcac42e47281ad6e6ca0c19bc1b685f161ff8**；其后的 native 工具转换 helper/facts 正在写，先核 diff。负责 H、后续 S；共享 Core API/lib/gen、src/api/catalog、native glue 单 owner。新 H 未混入 cc744。 |
+| round2_input | `khor-round2-input` / fix/round2-state-concurrency **150715f207dec7dcfd759feb2edad4dca2f31842**。N 根锁1秒共同截止修复的 IO 单测绿，但真实 CLI 并发仍 Busy；当前仅准备同 fixture 的第二阶段 cfgtest 定位。N 实际通过后接 S startup 字节/队列，尚未实施后者。 |
+| round2_reviewer | 非作者只读审查源码与原证据，不自行启动 native/browser。H direct giant candidate2 已审；待 N 固定阶段夹具，并核 Root 整合尾。 |
 
-## 已实现与剩余
+## 当前集成与证据
 
-| 包 | 已有证据 | 尚缺 |
+**cc744 已实际整合 S Capture/canonical hydration 与 B 导航/主题/几何源码。** B22逐字等作者df92、共享8等29ff；S20中的18源同d83，仅两public API文件因B新增不同，不能称全S frame相同。
+
+证据根：`/Volumes/disk0/Khor/evidence/round2/integration/session-browser-cc744`。
+
+- Core 导航合同2：native-1 实际通过。
+- command tables4：native-2 实际通过；同真实 Cargo 产生 bindings generator。
+- 真 bindings/catalog：native-3 实际生成发布；175 bindings管理项＋catalog＋lock＝177文件。原 tsc -b 写出自身缓存导致 source guard false，原结果保留；该文件经身份/SHA核对后可逆保留，原源码已精确恢复。
+- TypeScript **noEmit**、Vite：native-4 实际通过，产出277文件/15,208,767B；GUI libtest Cargo0。GUI选择器 kind 原误填lib，按实际metadata只修 request.kind，同原完整Cargo日志通过未改strict verifier；原false及修正均保留。
+- GUI 导航12＋native IO2：gui-tests-final exec15482 实际14通过，源/gen/assets/env稳定，无超时、强清或残留。**不是一次20项完整suite，不代表 App/WK/手机已验。**
+- combined-receipt.json SHA **293ad498a4ab54a701b4dfcc58d4c4e24ff1c6eb19107e95d15b59384aa63d3f**；内盘 mirror `round2/session-browser-cc744-actual` 共215件/6,363,307B，manifest SHA **517f9d403472fc2cee83f5d439a96ad166f124031a8da2d17c9fb679e5ba5e42**。五次原false保留，不重跑已绿构建。
+- Root 与固定验证 tracked 源逐SHA相同，gen177/assets277同真实producer。Root dist从只读snapshot复制的权限已改回目录0755/文件0644，279节点仅权限变、内容不变，readonly snapshot未动。
+
+## 各包真实缺口
+
+| 包 | 已有实现/证据 | 尚未完成 |
 | --- | --- | --- |
-| E 输入/草稿 | accepted buffer单owner、同步草稿登记、迟到读取/merge/mine拒收、composition fresh intent、单physical stat/text及1followup；refresh18/accepted20/sync9/merge9等已有源映射，WDOM又证dirty保留、Undo回clean后读最新disk | 真实Mac中文IME、最后一键→正常OS Quit。focused E实际ce69产物和私有file-only脚本已准备，当前3分钟可用性问题未答，未开App。 |
-| W 工作区 | 布局/独立commit/preview-pin/dirty Undo、固定HEAD完整分支分页；watch runtime/API/五DTO/前端单owner已Root5ddc集成。实际Mac kernel分层、HTTP0/Core/tables7、CLI exact1含38far sources/control、组件DOM6组4＋2，见下方 | 真App/手机最终组合（含机器头像/branch头部）。通用MachineFiles/FilesPane非选中工作区浏览链为独立后续，不自动扩本轮全局retrofit。 |
-| M | M026键行pure9f+fb4/UI2423→Roote409，实际catalog/模型12/旧keys33×9/Chrome9/type绿；M025 `072ba190→aaf91`正式公共跟手engine，16源同author，Root engine18/types0 | M025真实手机触屏、M026系统软键盘；真实Codex两路径原raw含keyup一致及当前独立draft已实际取得/离线1独审核，原suitefalse保留，Codex未选择；不以Chrome冒真机。 |
-| A 外部观看 | 身份能力/来源＋A3有界capture；A4双真实Node和Core/GUI gen、DetailPane reader5实际DOM | 全能力矩阵、最终原生组合；不等于S liveGUI恢复已完成。 |
-| H 长历史 | 有界IO/页/记录/缓存/取消和大历史定向证据 | 全source搜索/复制、最终原生组合；loaded DOM不能冒完整源。 |
-| S 连续性 | view lease `94131dc8→9112f1b7`、Registry9＋43、三lib检查/实际gen、真实ChatView5；Node Capture ac535+b14分源5实际绿，无ACP load/resume，原半关闭cleanup失败保留 | Core/GUI canonical hydration实际闭包、startup字节/队列有界、完整宿主丢失/重启；L01原040 retry deadline与L02原page_steps竞态独立未解。 |
-| B 浏览器 | B5已Root5c集成：实际Node3、回调7及types过；B1–4私有导航owner/前端32纯规则绿，H单writer接四DTO/两label/native glue | 真实typedgen/native/WK进度、主题初始底色、错误实证、手机几何/真实swipe。非WK Wry只知终结，新增Settled清pending而不伪造成功100；CLI200不是WK根因。 |
-| C/G/Q | 内容点击/Cmd分流、软折行路径/返回cwd；共用渐隐材质；括号公式转换均source/定向门过 | 原生/深浅材质/触屏/文件渲染组合。 |
-| D/N | D当前材料限定调查/最小实际卡死采集步骤已落R2-D，原根因仍unknown；Busy多入口已定位 | D真实现场仍缺，H绿不能关闭；N一固定私有并发夹具待input B固定后接。 |
-| V | **L04/L05 done**（真实来源/严格产物/正常CmdQ及宿主认证replay范围） | 不代替E/S/整轮验收。 |
+| E 输入/草稿 | accepted buffer单owner、composition/迟到读取/退出草稿保护及定向门；focused ce69真实GUI/CLI产物已准备 | 真实 Mac 中文 IME、最后一键→正常 OS Quit。最新3分钟可用性问题未答，不能自行启动限时实例。`khor-round2-validation@ce69` 的167 gen保持原样。 |
+| W 工作区 | 已验布局/独立commit preview-pin/完整当前分支分页；Root5ddc实际watch Core7、CLI exact1含38far source/control、DOM6分4＋2批 | 最终 App/手机组合。通用非选中MachineFiles/FilesPane实时浏览属后续独立项，不扩本轮。 |
+| M 手势/键行 | 公共跟手引擎＋生产DOM5；可配置键行模型/目录/UI；真实 TerminalPane→Khor PTY→独立Codex两路径完整press+keyup一致、独立draft证据和offline1独审核 | 真实手机触屏/软键盘。原Codex suite因oracle失败保留；已证相同编码，不声称该Codex支持ShiftLeft选区，未发送消息/模型请求。 |
+| A 全ACP观看 | 身份/能力政策、A3有界capture，A4真实Node/Core/DetailPane DOM；源码能力矩阵40项（22自动/18手动）已落盘 | 最终原生组合。40项是源码矩阵，不是安装并实际跑过40个agent；只读观察不夺控制权。 |
+| H 长历史 | 有界页/传输/渲染；后台Worker全源搜索，c37 direct giant两遍range候选20项/6真实Worker、缓存复扫取消红→绿已审 | 原生 parser/normalizer 和 Claude/Codex既有工具正文转换共享helper/facts、actualgen、搜索/复制UI及原生组合。不能用loaded DOM或coveragefalse替代既有支持完成。 |
+| S 连续性 | view lease、无load重挂canonical journal；旧 hydration-green-1 **38顶层＋inner1**实际绿。上述cc744补齐剩余typed/native6，旧38按原源映射保留 | startup 32768条仅count而无byte界/两段unbounded队列；完整host死亡/重启、GUI/Shell身份与控制恢复；L01原retry deadline、L02原page_steps关闭/重开竞态各自未销账。 |
+| B 浏览器 | source df92/shared29ff；40纯规则，cc744实际Core2/GUI导航12/nativeIO2、真typedgen | 真WK进度/主题初始底色/访问错误实证、手机原生甲板几何与真实swipe删除。CLI200不证明WK原因；非WK Settled不伪造成功100/导航ID。 |
+| C/G/Q | 点击内部/Cmd系统、折行路径与返回cwd；统一渐隐材质；括号公式沿原数学链，均实现/定向验证 | 原生内容打开、三种外观/深浅/滚动、触屏/文件渲染组合。 |
+| D 卡死 | 已限定调查当前材料，R2-D有最小实际卡死采集步骤 | 原冻结无stack/IPC现场，唯一根因unknown，仍未解决；不能用H性能改善关闭。 |
+| N 并发 | 真实旧RootGate诊断43bf已复现；当前1507真实CLI/Node编译0、5项IO单测过 | exec24467真实并发query仍Busy。第二源路径：root释放后，Journal.next未rename触发needs_recovery→State.open→metadata Busy；仍需实际阶段夹具，不能仅凭mtime宣布根因。 |
+| V 工具遗留 | L04/L05已有真实来源与正常退出/持久host契约证据，done | 不替代E/S/整轮验收；工具修正停止扩新专项。 |
 
-## 最新固定证据
+## 下一动作与边界
 
-- W Root5ddc：`integration/watch-source-1.json`及`watch-generated-5ddc/receipt.json`；36源等author26fd，885 Rust/Toml/lock等actual shared producer，bindings169＋catalog4b4b，不手写gen；旧DirWatch已从managed集移除并可逆保留旧产物。
-- `workspace/watch/shared-1/result.json`：exec67436=0/154.478s、13phase0、DTO1/HTTP2/tables4共7actual、2174 source/env稳定/provenance/cleanup；CLI/Vite/DOM属于后续，不混数。
-- `workspace/watch/cli-current-5ddc-1/result.json`：exec84078=0/182.225s、6phase0、actualCLI/test来源；exact1/51.26s含38far watch sources、held wait下begin/leave/ordinary ls。200ms受控RTT下新增文件276.160ms，回树状态0B/286.75µs；不是任意网络SLA。
-- `workspace/watch/dom-final-5ddc/receipt.json` SHA **2c7bdc03e49809833949f5fd53c83950463a07a54d38834084c4a98df10a1d0c**：生产组件Chrome DOM6，分v4四组＋v5两组。2182 source/171gen两批逐dict同；v1/2 setup、v3 dirty期待不符既定defer、v4 Store无本机fixture原失败均保留，不回填一次final6。独审/94件双盘镜像通过；不是WK/App/IME。
-- `integration/m025-aaf9-receipt.json`：`072ba190→aaf91`，16源逐字等，Root engine18/types0；author另有原Lab971对应/导航迁移纯门逐源证据，不把迁移断言冒未变旧断言。
-- focused E固定 `khor-round2-validation@ce69`，2167源与actual native-editor-ce69相同；GUI SHA06e3809c…9d7、CLI531221ce…039。contract1591744a、launch b5385bfb、launcher d4edc12a、observer d50ddf13详原归档/E证据。其167旧gen不可用当前W171替换；只准备，没有IME/Quit通过。
-
-## 下一步
-
-1. H完成B共享源与input固定叶整合；S20 d83独立source checkpoint，保存38＋inner1既有来源。严格producer全量差异交reviewer一次查清，停止逐包试错；S剩6＋B必要新测试/gen合一批同源验证。
-2. Root已补M026正式TerminalPane→实际Khor PTY→独立Codex：原raw含keyup等价/独立draft实证，原oracle失败不回填；离线1和独审尾核通过。系统软键盘/真机仍待验。M025 Chrome5通过不替真手机。
-3. H全文搜索/复制、S startup/L01/L02、D/N逐原卡完成；共享源稳定后一次当前版原生组合，E真人验收按当前可用性启动。不要把构建/测试工具又扩成新专项。
-4. 阶段完成即source/证据/恢复落盘；本轮34项保持，main/ship待用户最终指令。
-
-B5 Root整合5c726b0a：三源逐字等2ba5，Roottypes0；actualNode3沿author源/guard-Cargo-derived producer及83.581s原收据，不声称5c整树新native。S echo已按A3当前闭包授最小可信localturn投影关联，原bootstrap/外部/同文不同turn保留，不删除原record；先actual old5/target3红1，再candidate4正向/其余43闭包。
-
-M025正式DOM实际证据：mobile/session-follow-dom-5c-1/receipt.json，5组同Root5c/同fixture一次全过、27小件含截图已内盘逐SHA镜像；Root原source/engine18/type0与本DOM不互替。
-
-M026私有clone准备已用于实际受验链；最终限定结果见R2-M及下条derived证据。旧准备阶段不再代表未运行。
-
-M026最终限定证据：mobile/codex-input-real-pty-4/derived-analysis.json与analyze.py，实际exec71277原false/4.859s保留；标准/键帽完整press+keyup相同、current abcdeX/pqrstY、focus已过、无消息提交/模型请求、strictclean。offline1＋独审通过；37小件镜像m026-codex-pty-4。不是完整green suite/选区支持/真机。
-
-固定验证checkpoint：Root复用旧watch目录，从5c干净cherry十个独立源提交至cc744307，含S ac535/b14/d83与B0b/09/e5/4eb/d5/272/29ff，全无冲突；只是source组装，未Cargo/gen/type。原Root5c/main e7c均clean。B4坐标df92已接为cc744；B22源全等author df92、共享8源全等29ff，S20仅两public API文件因B新增不同（不得冒全frame相同）。H新worker在作者树继续，不与此验证树并写。
-
-B最终source checkpoint：作者df92收据e32cd021…fe8320/22源、projection11+hook10+failure10+viewport9=40纯；真实Pages Rust12/Core2/typedgen/WK仍待。Root固定cc744/clean源收据在integration/session-browser-cc744/source-receipt.json。恢复bundle round2-cc744-source.bundle已verify，SHA见同名json，包含cc744/df92/04c三个实际refs，H4源虽在author ref中但不在Root固定native cohort。
+1. N只在同一次真实Journal.save已flush未rename处加cfgtest阶段证明：root可进入、metadata仍held、next有效，复用实际1507 CLI，不重编CLI或重跑已绿5IO。固定source/合同→独审→Root授一次Node单case槽；先证失败阶段，再最小产品修复，不能盲目加重试/旁路。
+2. H继续原cagent/codex最小转换helper/facts，复用唯一现有normalizer/paint；稳定后一次完整必要Node/Core/gen闭包，不逐包反复试错。H新DTO不可手写假gen。
+3. N真绿后作者槽承接S启动字节/队列，已做readonly备查在`history/startup-readonly-cc744`。bounded第二队列不能在consumer返回前await预装而死锁；不得静默丢长历史或伪Ready。
+4. 源稳定后构建当前私有App，做既定交叉组合/平台验收及L01/L02；E按新鲜可用性回复启动。新增独立问题只写NEXT-ROUND。
+5. 阶段检查点同步refs、源bundle/真实diff、证据与内盘SHA镜像；不覆盖他人任务卡、不stage all。完整34项逐条证明后才可完成目标；main/ship仍待用户指令。
