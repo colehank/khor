@@ -210,46 +210,43 @@ const probe = () => {
       fg.g * a + bg.g * (1 - a),
     )}, ${Math.round(fg.b * a + bg.b * (1 - a))})`;
   };
+  const opacityOf = el => {
+    let opacity=1;
+    for(let node=el;node;node=node.parentElement)opacity*=Number(getComputedStyle(node).opacity);
+    return opacity;
+  };
+  const inkOf = el => {
+    if(!el)return null;
+    const color=rgba(getComputedStyle(el).color);
+    return color?flatten({...color,a:color.a*opacityOf(el)},groundOf(el)):null;
+  };
+  const svgMark = svg => {
+    if(!svg)return null;
+    const style=getComputedStyle(svg),box=svg.getBoundingClientRect(),opacity=opacityOf(svg);
+    const parts=[...svg.querySelectorAll('path,circle,polyline,line,rect,ellipse')].map(shape=>{
+      const css=getComputedStyle(shape);let length=0;
+      try{length=shape.getTotalLength();}catch{}
+      const stroke=rgba(css.stroke),fill=rgba(css.fill);
+      return {tag:shape.tagName.toLowerCase(),d:shape.getAttribute('d'),points:shape.getAttribute('points'),
+        radius:shape.getAttribute('r'),length,
+        painted:length>0 && opacityOf(shape)>0.05 && ((stroke?.a>0.05 && parseFloat(css.strokeWidth)>0) || fill?.a>0.05)};
+    });
+    return {visible:box.width>0 && box.height>0 && box.bottom>0 && box.top<innerHeight && box.right>0 && box.left<innerWidth
+        && style.display!=='none' && style.visibility!=='hidden' && opacity>0.05 && parts.some(part=>part.painted),
+      width:box.width,height:box.height,ink:inkOf(svg),parts,
+      shape:JSON.stringify(parts.map(({tag,d,points,radius})=>({tag,d,points,radius}))),
+      animated:svg.getAnimations().some(animation=>animation.playState==='running' && Number(animation.effect?.getTiming().duration)>0)};
+  };
   const lines = [...document.querySelectorAll("[data-chat-tool]")].map((el) => {
-    const text = el.querySelector("[data-word-text]") ?? el;
-    const fg = rgba(getComputedStyle(text).color);
+    const line=el.querySelector('[data-slot="trace-line"]'), title=line?.querySelector('[data-slot="trace-title"]');
     return {
-      status: el.getAttribute("data-tool-status"),
-      kind: el.getAttribute("data-tool-kind"),
-      word: el.getAttribute("data-word"),
-      openable: el.getAttribute("data-tool-open"),
-      title: (el.querySelector("[data-word-text]")?.textContent ?? "").trim(),
+      status: el.getAttribute("data-tool-status"), kind: el.getAttribute("data-tool-kind"),
+      openable: el.getAttribute("data-tool-open"), title: (title?.textContent ?? "").trim(),
       body: !!el.querySelector("[data-tool-body]"),
-      // The mark, as a **still image**: what a reader sees with the
-      // breath switched off — its composited colour, and whether it is
-      // filled at all. Both, because a mark can be told from another by
-      // being a different weight of grey *or* by being a ring instead
-      // of a disc, and the design uses each of them somewhere.
-      dot: (() => {
-        const d = el.querySelector("[data-tool-dot]");
-        if (!d) return null;
-        const cs = getComputedStyle(d);
-        const fill = rgba(cs.backgroundColor);
-        const filled = !!fill && fill.a > 0.05;
-        // The ring is a `box-shadow`; its colour is the first `rgb(...)`
-        // in the resolved value.
-        const ringHit = /rgba?\([^)]*\)/.exec(cs.boxShadow || "");
-        const ring = ringHit ? rgba(ringHit[0]) : null;
-        const ground = groundOf(el);
-        const showing = filled ? fill : ring;
-        return {
-          state: d.getAttribute("data-dot-state"),
-          filled,
-          ink: showing ? flatten(showing, ground) : null,
-          size: `${cs.width}x${cs.height}`,
-          animated: cs.animationName !== "none" && cs.animationName !== "",
-        };
-      })(),
-      diff: !!el.querySelector("[data-tool-diff]"),
-      out: (el.querySelector("[data-tool-out]")?.textContent ?? "").trim(),
-      raw: getComputedStyle(text).color,
-      ink: fg ? flatten(fg, groundOf(el)) : null,
-      title: (el.textContent ?? "").trim(),
+      // Only the activity carrier, never the edit/search/execute kind icon.
+      activity:svgMark(line?.querySelector('[data-slot="trace-icon"] svg.lucide-loader-circle')),
+      diff: !!el.querySelector("[data-tool-diff]"), out: (el.querySelector("[data-tool-out]")?.textContent ?? "").trim(),
+      raw: title?getComputedStyle(title).color:null, ink:inkOf(title),
     };
   });
   // **Resolved by the engine, not parsed here.** Reading the custom
@@ -262,7 +259,7 @@ const probe = () => {
   // `rgb(...)` the line under test comes back as.
   const anchor = document.querySelector("[data-chat-tool]") ?? document.body;
   const swatch = document.createElement("span");
-  swatch.style.cssText = "position:absolute;left:-9999px;color:var(--state-failed)";
+  swatch.style.cssText = "position:absolute;left:-9999px;color:var(--destructive)";
   anchor.appendChild(swatch);
   const fgT = rgba(getComputedStyle(swatch).color);
   const failedToken = fgT ? flatten(fgT, groundOf(anchor)) : null;
@@ -273,11 +270,11 @@ const probe = () => {
   const factsLine = document.querySelector("[data-chat-facts]");
   const planEls = [...document.querySelectorAll("[data-plan-entry]")];
   const planRows = planEls.map((el) => {
-    const fg = rgba(getComputedStyle(el).color);
+    const title=el.querySelector('[data-slot="trace-title"]');
     return {
-      status: el.getAttribute("data-plan-status"),
-      text: (el.textContent ?? "").trim(),
-      ink: fg ? flatten(fg, groundOf(el)) : null,
+      status: el.getAttribute("data-plan-status"), text: (title?.textContent ?? "").trim(),
+      ink:inkOf(title), opacity:opacityOf(el),
+      mark:svgMark(el.querySelector('[data-slot="trace-icon"] svg')),
     };
   });
   const title = document.querySelector("[data-chat-title]");
@@ -306,6 +303,20 @@ const lstar = (rgb) => {
   const lin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
   const Y = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
   return Y > 216 / 24389 ? 116 * Math.cbrt(Y) - 16 : Y * 24389 / 27;
+};
+
+/** CIE76 on browser-composited RGB: hue as well as weight can carry error. */
+const inkDistance=(a,b)=>{
+  const lab=rgb=>{
+    const match=String(rgb).match(/rgba?\(([^)]+)\)/);if(!match)return null;
+    const values=match[1].split(',').slice(0,3).map(value=>Number(value.trim())/255);
+    const [r,g,b]=values.map(value=>value<=0.04045?value/12.92:((value+0.055)/1.055)**2.4);
+    const f=value=>value>216/24389?Math.cbrt(value):(24389/27*value+16)/116;
+    const x=f((0.4124564*r+0.3575761*g+0.1804375*b)/0.95047);
+    const y=f(0.2126729*r+0.7151522*g+0.0721750*b),z=f((0.0193339*r+0.1191920*g+0.9503041*b)/1.08883);
+    return [116*y-16,500*(x-y),200*(y-z)];
+  };
+  const left=lab(a),right=lab(b);return left&&right?Math.hypot(...left.map((value,index)=>value-right[index])):null;
 };
 
 let vite = null;
@@ -1299,103 +1310,42 @@ try {
         console.log(`${say}: opened — diff ${oEdit.diff}, output ${oShell.out.length} chars`);
       }
 
-      // 2) three inks a person can tell apart.
-      const L = m.lines.map((l) => ({ status: l.status, ink: l.ink, l: lstar(l.ink) }));
-      if (L.some((x) => x.l === null)) {
-        fail(`${say}: probe dead — an ink did not parse as rgb: ${L.map((x) => x.ink).join(" / ")}`);
+      // 2) Actual state carriers: error ink, and the unique running
+      // activity shape. Kind icons do not earn a status distinction.
+      const L=m.lines.map(line=>({status:line.status,ink:line.ink,l:lstar(line.ink)}));
+      if(L.some(line=>line.l===null)){
+        fail(`${say}: probe dead — a TraceTitle ink did not resolve: ${L.map(line=>line.ink).join(' / ')}`);
         continue;
       }
-      console.log(
-        `${say}: ` + L.map((x) => `${x.status} L*${x.l.toFixed(1)}`).join("  ") +
-          (motion === "reduce" ? "" : `  (busy wears data-word=${m.lines[2].word})`),
-      );
-      for (const [a, b] of [[0, 1], [0, 2], [1, 2]]) {
-        const d = Math.abs(L[a].l - L[b].l);
-        if (d < DELTA_L) {
-          fail(
-            `${say}: ${L[a].status} and ${L[b].status} are ΔL* ${d.toFixed(2)} apart, under ${DELTA_L} — ` +
-              `two states drawn the same way is the state not being drawn`,
-          );
+      for(const line of m.lines){
+        const busy=line.status==='in_progress',activity=line.activity;
+        if(busy){
+          if(!activity?.visible || !activity.parts.some(part=>part.painted && part.length>0))
+            fail(`${say}: running has no visible nonzero activity SVG`);
+          if(activity && activity.animated!==(motion!=='reduce'))
+            fail(`${say}: running activity motion=${activity.animated} under ${motion}`);
+        }else if(activity){
+          fail(`${say}: settled ${line.status} still carries a running activity shape`);
         }
       }
-
-      // 2b) the running mark is legible **as a still image**.
-      //
-      // The obvious design is one filled dot in three hues, and it has
-      // a hole this repo has already paid for: 忙碌's indigo sits at
-      // grey's exact loudness on purpose (ΔL* 1.03), so with the breath
-      // off, running and completed would be the same dot. And the
-      // breath is off for anyone who asked for less motion — the reader
-      // least able to spare a distinction.
-      //
-      // **So this claim is made with motion out of the picture, in both
-      // passes.** A gate that only checked the animated pass would be
-      // testing the half that is not at risk.
-      const dots = m.lines.map((l) => l.dot);
-      if (dots.some((d) => d === null)) {
-        fail(`${say}: a tool line has no status mark — ${dots.filter((d) => !d).length} of ${dots.length}`);
-      } else {
-        // The live probe that earns the comparison below: the marks are
-        // really on screen and really have a box, so "they differ" is
-        // about two drawn things rather than two absences.
-        for (const d of dots) {
-          if (d.size === "0px x 0px" || d.size === "auto x auto") {
-            fail(`${say}: a status mark measured ${d.size} — nothing is being drawn`);
-          }
-        }
-        // **Two marks are told apart by weight or by shape**, and the
-        // check must say which — a plain "these two strings differ"
-        // passes for three hues at one lightness, which is precisely
-        // the design this shape exists to avoid. Measured: with a
-        // filled dot in 忙碌's indigo against a filled dot in grey, the
-        // string check was green and the two dots were ΔL* 1.0 apart.
-        const dl = dots.map((d) => lstar(d.ink));
-        if (dl.some((x) => x === null)) {
-          fail(`${say}: probe dead — a mark's colour did not parse: ${dots.map((d) => d.ink).join(" / ")}`);
-        } else {
-          for (const [a, b] of [[0, 1], [0, 2], [1, 2]]) {
-            const shape = dots[a].filled !== dots[b].filled;
-            const weight = Math.abs(dl[a] - dl[b]);
-            if (!shape && weight < DELTA_L) {
-              fail(
-                `${say}: ${dots[a].state} and ${dots[b].state} are both ` +
-                  `${dots[a].filled ? "filled" : "hollow"} and ΔL* ${weight.toFixed(2)} apart ` +
-                  `(under ${DELTA_L}) — with the breath off they are one state`,
-              );
-            }
-          }
-          console.log(
-            `${say}: marks ` +
-              dots
-                .map((d, i) => `${d.state}${d.filled ? "●" : "○"}L*${dl[i].toFixed(0)}${d.animated ? "~" : ""}`)
-                .join(" "),
-          );
-        }
-        // And the motion, where it is allowed: the running mark is the
-        // one that moves, and it is the *only* one — a settled mark
-        // that breathed would say a finished call is still going.
-        for (const d of dots) {
-          const shouldMove = motion !== "reduce" && d.state === "running";
-          if (d.animated !== shouldMove) {
-            fail(
-              `${say}: the ${d.state} mark ${d.animated ? "breathes" : "is still"} under motion:${motion}`,
-            );
-          }
-        }
+      for(const [a,b] of [[0,1],[0,2],[1,2]]){
+        const shape=!!m.lines[a].activity?.visible!==!!m.lines[b].activity?.visible;
+        const distance=inkDistance(m.lines[a].ink,m.lines[b].ink);
+        if(!shape && (distance===null || distance<DELTA_L))
+          fail(`${say}: ${L[a].status}/${L[b].status} have neither a visible activity-shape difference nor ΔE>=${DELTA_L} (got ${distance})`);
       }
+      console.log(`${say}: `+L.map((line,index)=>`${line.status} L*${line.l.toFixed(1)}${m.lines[index].activity?.visible?' activity':''}`).join('  '));
 
       // 3) failure wears the word's own ink.
       const failedLine = m.lines.find((l) => l.status === "failed");
       if (failedLine) {
         const want = lstar(m.failedToken);
-        const gotL = lstar(failedLine.ink);
-        if (want === null) {
-          fail(`${say}: probe dead — --state-failed did not resolve to rgb (${m.failedToken})`);
-        } else if (Math.abs(want - gotL) > 0.5) {
-          fail(
-            `${say}: the failed tool is drawn L*${gotL.toFixed(1)} but 失败 is L*${want.toFixed(1)} — ` +
-              `a seventh colour was invented for a word that already exists`,
-          );
+        const gotL = lstar(failedLine.ink), distance=inkDistance(failedLine.ink,m.failedToken);
+        if (want === null || distance===null) {
+          fail(`${say}: probe dead — --destructive did not resolve to rgb (${m.failedToken})`);
+        } else if (distance > 0.5) {
+          fail(`${say}: failed TraceTitle differs from the painted destructive ink by ΔE${distance.toFixed(2)} ` +
+            `(L*${gotL.toFixed(1)} versus ${want.toFixed(1)})`);
         }
       }
 
@@ -1438,39 +1388,27 @@ try {
             );
           }
         }
-        const pl = m.plan.map((r) => lstar(r.ink));
-        if (pl.some((x) => x === null)) {
-          fail(`${say}: probe dead — a plan ink did not parse as rgb`);
-        } else {
-          console.log(
-            `${say}: plan ` + m.plan.map((r, i) => `${r.status} L*${pl[i].toFixed(1)}`).join("  "),
-          );
-          // **Both pairs against the present, not just one.** The
-          // first version of this asserted only done-vs-doing, and the
-          // run printed `in_progress L*90.8  pending L*90.8` — a plan
-          // whose not-yet-started steps were drawn exactly like the one
-          // being worked, which is the single thing a plan is read for.
-          // The assertion was true and too narrow to see it.
-          for (const i of [0, 2]) {
-            const d = Math.abs(pl[i] - pl[1]);
-            if (d < DELTA_L) {
-              fail(
-                `${say}: the step being worked and a ${m.plan[i].status} one are ` +
-                  `ΔL* ${d.toFixed(2)} apart, under ${DELTA_L} — a plan that does not ` +
-                  `say which line is now is not a plan`,
-              );
-            }
-          }
-          // And the two that are *not* the present stay together: three
-          // weights for three statuses would spend contrast on a
-          // distinction the order already carries.
-          if (Math.abs(pl[0] - pl[2]) > 0.5) {
-            fail(
-              `${say}: done and not-yet are ΔL* ${Math.abs(pl[0] - pl[2]).toFixed(2)} apart; ` +
-                `neither is the present and they should share a weight`,
-            );
-          }
+        const pl=m.plan.map(row=>lstar(row.ink));
+        if(pl.some(value=>value===null))fail(`${say}: probe dead — effective Plan ink did not parse`);
+        const marks=m.plan.map(row=>row.mark);
+        if(marks.some(mark=>!mark?.visible))fail(`${say}: a Plan status has no visible nonzero SVG`);
+        else{
+          const [done,doing,pending]=marks;
+          const circles=mark=>mark.parts.filter(part=>part.tag==='circle' && part.painted);
+          if(!done.parts.some(part=>part.tag==='path' && part.painted) || circles(done).length!==1)
+            fail(`${say}: completed Plan must draw its circle and check stroke`);
+          if(circles(doing).length!==2 || new Set(circles(doing).map(part=>part.radius)).size!==2)
+            fail(`${say}: in-progress Plan must draw the distinct inner-dot and outer-circle geometry`);
+          if(circles(pending).length!==1 || pending.parts.some(part=>part.tag==='path' && part.painted))
+            fail(`${say}: pending Plan must draw the single empty circle`);
+          if(new Set(marks.map(mark=>mark.shape)).size!==3)
+            fail(`${say}: the three Plan statuses have collapsed to the same drawn shape`);
         }
+        if(Math.abs(m.plan[2].opacity-0.6)>0.01 || Math.abs(m.plan[0].opacity-1)>0.01 || Math.abs(m.plan[1].opacity-1)>0.01)
+          fail(`${say}: Plan pending opacity must compose at .6, with completed/current at1: ${m.plan.map(row=>row.opacity)}`);
+        if(pl.every(value=>value!==null) && Math.abs(pl[2]-pl[1])<DELTA_L)
+          fail(`${say}: pending/current Plan effective inks are ΔL*${Math.abs(pl[2]-pl[1]).toFixed(2)} apart`);
+        console.log(`${say}: plan `+m.plan.map((row,index)=>`${row.status} L*${pl[index]?.toFixed(1)} opacity${row.opacity}`).join('  '));
       }
 
       // 7) the agent's own title, which claude never sends and other
@@ -1479,16 +1417,11 @@ try {
         fail(`${say}: session_info_update carried a title and the face drew ${JSON.stringify(m.title)}`);
       }
 
-      // 4) with motion off, the running line is still marked as running.
-      if (motion === "reduce") {
-        const run = L.find((x) => x.status === "in_progress");
-        const done = L.find((x) => x.status === "completed");
-        if (run && done && Math.abs(run.l - done.l) < DELTA_L) {
-          fail(
-            `${say}: with motion off, running and settled are ΔL* ${Math.abs(run.l - done.l).toFixed(2)} apart — ` +
-              `the breath was carrying the fact, which app.css says it never may`,
-          );
-        }
+      // 4) Reduced motion removes movement, never the running fact.
+      if(motion==='reduce'){
+        const running=m.lines.find(line=>line.status==='in_progress');
+        if(!running?.activity?.visible || running.activity.animated)
+          fail(`${say}: reduced-motion running must retain a visible static activity shape`);
       }
     }
   }
