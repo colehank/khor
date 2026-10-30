@@ -18,9 +18,9 @@
 
 | owner | 工作副本与当前边界 |
 | --- | --- |
-| Root | 集成5c726b0a；W watch/publicAPI/consumer收口与验证已完成到分层checkpoint。watch副本 `khor-round2-watch` / `fix/round2-watch-ui@26fdebe7` clean保留，不与作者并写。Root继续集成/实际验收/恢复。 |
-| round2_history | 同 `khor-round2-history`，S20已固定WIP `d83d9b73`，旧38＋inner1实际绿/剩6与gen未过。当前同worktree `fix/round2-browser-shared`从该ref接B公共源，B差异独立提交，不把S未验部分冒完成。shared Core API/lib/gen、src/api/catalog、native_io/Tauri胶水由其单owner，B不得并写。 |
-| round2_input | 复用 `khor-round2-input` / `fix/round2-browser` / 基线aaf91，B5已fixed2ba5并actualNode3/回调7/types通过且Root集成；现做B1–4私有native叶/前端source，shared窗口排S当前批之后。M025固定 `072ba190`已交接/Root集成，不继续写W。新基线gen应actual W169＋catalog4b4b，不能沿用M旧165。 |
+| Root | 集成5c726b0a；W watch/publicAPI/consumer收口与验证已完成到分层checkpoint。原watch ref `fix/round2-watch-ui@26fdebe7`保留；同worktree已复用为Root固定验证 `validate/round2-session-browser@cc744307`，从Root5c组装S Capture/WIP＋B已审source，tracked clean。B4 DOM/native deck坐标窄delta已组装并独审解除阻断，未Cargo/gen；不与作者并写，不新增目录。Root继续集成/实际验收/恢复。 |
+| round2_history | 同 `khor-round2-history`，S20已固定WIP `d83d9b73`，旧38＋inner1实际绿/剩6与gen未过。当前同worktree `fix/round2-browser-shared`，B共享基础e5fb与final29ff均source-only已审；H正常record后台worker4源固定531a/8项Node与workerthreads实际通过、UI/giant未完成；现窄抽tool输入正文单helper，下一巨record投影准备最小DTO。B差异独立提交，不把S未验部分冒完成。shared Core API/lib/gen、src/api/catalog、native_io/Tauri胶水由其单owner，B不得并写。 |
+| round2_input | B private最终df92/前端27220/异步错误d5与shared29ff/04c已fixed独审，40纯门/完整22源与3.35MB内盘镜像保留，Rust12/平台仍未验。现同 `khor-round2-input` / `fix/round2-state-concurrency@5c726b0a` 做N只读查询＋实际同步RootGate跨进程固定夹具准备；仅cfgtest checkpoint授权，未native或生产修改。 |
 | round2_reviewer | 固定源/收据只读独审，不启动native/browser。S candidate3待尾核；B后片按既定边界审，不扩新专项。 |
 
 ## 已实现与剩余
@@ -61,3 +61,7 @@ M025正式DOM实际证据：mobile/session-follow-dom-5c-1/receipt.json，5组�
 M026私有clone准备已用于实际受验链；最终限定结果见R2-M及下条derived证据。旧准备阶段不再代表未运行。
 
 M026最终限定证据：mobile/codex-input-real-pty-4/derived-analysis.json与analyze.py，实际exec71277原false/4.859s保留；标准/键帽完整press+keyup相同、current abcdeX/pqrstY、focus已过、无消息提交/模型请求、strictclean。offline1＋独审通过；37小件镜像m026-codex-pty-4。不是完整green suite/选区支持/真机。
+
+固定验证checkpoint：Root复用旧watch目录，从5c干净cherry十个独立源提交至cc744307，含S ac535/b14/d83与B0b/09/e5/4eb/d5/272/29ff，全无冲突；只是source组装，未Cargo/gen/type。原Root5c/main e7c均clean。B4坐标df92已接为cc744；B22源全等author df92、共享8源全等29ff，S20仅两public API文件因B新增不同（不得冒全frame相同）。H新worker在作者树继续，不与此验证树并写。
+
+B最终source checkpoint：作者df92收据e32cd021…fe8320/22源、projection11+hook10+failure10+viewport9=40纯；真实Pages Rust12/Core2/typedgen/WK仍待。Root固定cc744/clean源收据在integration/session-browser-cc744/source-receipt.json。恢复bundle round2-cc744-source.bundle已verify，SHA见同名json，包含cc744/df92/04c三个实际refs，H4源虽在author ref中但不在Root固定native cohort。
