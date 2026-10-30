@@ -12,13 +12,13 @@
 
 ## 现场与责任
 
-当前 native/Cargo、browser 槽均空闲，无本轮测试 App/Codex。Root exec15482 已终态通过；N exec24467 已终态失败并清理，不能按旧 RUNNING 重启。后续实际调用必须按单槽授予，jobs1/incremental0/offline、两盘可用≥5GiB，target 继续是 `/Volumes/disk0/Khor/caches/rust/khor-quality-target`。不得按 basename 结束用户 khor-gui：持久宿主可能同名。
+**当前唯一native：H strict11+真bindings/noEmit，实际session94683 / driver19497（signature Cargo19594已0退出，后续phase看running.json），固定f908＋11源60d65f / runner957065，600总界；仅owner poll同handle。** browser FREE，无本轮App/Codex。N metadata session2449已实terminal2/73.869s：Node编译0，父在新root Node::open_hosting初始化先Busy，helper/CLI尚未启动；阶段机制未验。严格owned/source/env/TMP净，已归槽。旧PID不可复用，下一候选仍须独审后Root授唯一槽。jobs1/incremental0/offline、双盘≥5GiB与既定target不变。
 
 | owner | 当前职责与工作副本 |
 | --- | --- |
-| Root | 协调、集成、真实验收、中央状态。`khor-round2` / integrate/round2 **cc7443070c7cc5a6cc3b76541ffded5763798d8a** tracked clean。固定验证复用 `khor-round2-watch` / validate/round2-session-browser，同 HEAD/源；旧 watch ref26fdebe7保留。不成为第三条大实现线。 |
-| round2_history | `khor-round2-history` / fix/round2-browser-shared，最新 H 固定 **c37dcac42e47281ad6e6ca0c19bc1b685f161ff8**；其后的 native 工具转换 helper/facts 正在写，先核 diff。负责 H、后续 S；共享 Core API/lib/gen、src/api/catalog、native glue 单 owner。新 H 未混入 cc744。 |
-| round2_input | `khor-round2-input` / fix/round2-state-concurrency **150715f207dec7dcfd759feb2edad4dca2f31842**。N 根锁1秒共同截止修复的 IO 单测绿，但真实 CLI 并发仍 Busy；当前仅准备同 fixture 的第二阶段 cfgtest 定位。N 实际通过后接 S startup 字节/队列，尚未实施后者。 |
+| Root | 协调、集成、真实验收、中央状态。`khor-round2` / integrate/round2 **75ff54231aabf6be257f35eb86849fe2b0304c64** tracked clean（cc744＋L02窄叶＋H五个已审源码片段）。固定验证复用 `khor-round2-watch` / validate/round2-session-browser，HEAD仍cc744，不冒与新Root源码相同；旧 watch ref26fdebe7保留。不成为第三条大实现线。 |
+| round2_history | `khor-round2-history` / fix/round2-browser-shared，H五片固定c37已Root集成；作者已cherry同L02叶为 **f90823b17fc30ee0d6a2188622efdec09fae4fd9**。其后工具转换11源候选60d65f已独审、pure22/6Worker，仍dirty固定source，先核diff。负责 H、后续 S；共享 Core API/lib/gen、src/api/catalog、native glue 单 owner。新 H 未混入 cc744。 |
+| round2_input | `khor-round2-input` / fix/round2-state-concurrency **7482cfd15340dfa8f32f48a4a6c724ea6c31244e**。1507根锁修复IO5绿但真实CLI并发仍Busy；7482 metadata阶段诊断又在初始Node构造早fail，正只读查预算起点/owner，不能用预热或重试绕开。N 实际通过后接 S startup 字节/队列，尚未实施后者。 |
 | round2_reviewer | 非作者只读审查源码与原证据，不自行启动 native/browser。H direct giant candidate2 已审；待 N 固定阶段夹具，并核 Root 整合尾。 |
 
 ## 当前集成与证据
@@ -33,7 +33,21 @@
 - TypeScript **noEmit**、Vite：native-4 实际通过，产出277文件/15,208,767B；GUI libtest Cargo0。GUI选择器 kind 原误填lib，按实际metadata只修 request.kind，同原完整Cargo日志通过未改strict verifier；原false及修正均保留。
 - GUI 导航12＋native IO2：gui-tests-final exec15482 实际14通过，源/gen/assets/env稳定，无超时、强清或残留。**不是一次20项完整suite，不代表 App/WK/手机已验。**
 - combined-receipt.json SHA **293ad498a4ab54a701b4dfcc58d4c4e24ff1c6eb19107e95d15b59384aa63d3f**；内盘 mirror `round2/session-browser-cc744-actual` 共215件/6,363,307B，manifest SHA **517f9d403472fc2cee83f5d439a96ad166f124031a8da2d17c9fb679e5ba5e42**。五次原false保留，不重跑已绿构建。
-- Root 与固定验证 tracked 源逐SHA相同，gen177/assets277同真实producer。Root dist从只读snapshot复制的权限已改回目录0755/文件0644，279节点仅权限变、内容不变，readonly snapshot未动。
+- cc744整合时 Root 与固定验证 tracked 源逐SHA相同；后续7def仅改下述函数，未将cc744原生通过冒为新叶通过。gen177/assets277未改，均同真实producer。Root dist从只读snapshot复制的权限已改回目录0755/文件0644，279节点仅权限变、内容不变，readonly snapshot未动。
+
+### L02 后续窄叶（仅源码检查点）
+
+Root **7defb045** 仅修改 `page_steps` desktop：同一个主线程任务内查找view和读取真实native history，避免查询派发前页面先关闭。None只来自实际不存在；实际查询、调度、oneshot错误仍Err。初版分离ViewKey复核有代次窗口，独审后弃用；两版原patch都保留。当前版独审无源码阻断、rustfmt0，**未编译/未实际App验收，不关闭L02**。H已让出函数并准备纳其GUI libcheck，无额外Cargo。
+
+源/原Q035两失败raw指针：`history/l02-page-query/candidate-2.json`；内盘源码包 `round2-l02-7defb045.bundle` 已verify，依赖cc744。L01只读预查 `history/l01-readonly-cc744/findings.md`（SHA d5ebedb2…5d1219）：当前四相关源等原040版本；原早于due强断言失败，但旧日志无run/time向量，不先猜根因。
+
+H唯一实际批94683当前已通过metadata、Core+GUI --lib签名check（含L02叶真实编译）、Node4 exact各1pass/0fail。Core3/tables4/gen/noEmit仍在同一批进行，未按预期回填通过；只owner poll同handle，Root不启动第二producer。N源码下一最小反例针对累计锁等待额度与非等待初始化耗时，保持1秒累计等待/try0和原positive FD/IDs，不预热或重试构造绕开早Busy。
+
+### H 五片已整合（源码，未完成原生/界面验收）
+
+531a6ee→3caa3ebe→4b3fbf86→a5c390b3→c37dcac已无冲突逐枚集成为e442dcea→8ea11a07→b6d7a82a→cdbedc4c→75ff5423。20文件中19逐SHA同c37，Tauri lib.rs逐SHA同含同一L02叶的作者f908，无其他整合差异。Root当前gen仍为cc744的177文件，**没有手写H新DTO、没有新native/pure或完整UI验收**。
+
+整合收据`integration/history-fixed-five/source-receipt.json` SHA5e1c287a…687e8；内盘`round2-history-five-75ff5423.bundle`已verify、依赖7def。作者11源工具转换候选未混入，拟下一唯一批：Node4/Core3/tables4共11＋Core/GUI lib签名check＋实际bindings＋完整noEmit；不Catalog/CLI/App/旧38重复。catalog九源若逐SHA同cc744 actual producer可复用真实产物并保原ignored文件，不重生成或手写。
 
 ## 各包真实缺口
 
