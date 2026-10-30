@@ -1255,7 +1255,15 @@ pub struct HistoryRecordChunk {
 pub struct HistoryProjection {
     pub record: HistoryRecordRef,
     pub entries: Vec<HistoryEntry>,
+    pub transforms: Vec<HistoryTextTransform>,
     pub complete: bool,
+}
+#[derive(Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export)]
+pub enum HistoryTextTransform {
+    JsonString { pointer: String, parsed: bool },
+    ToolOutput { item: usize, max_bytes: usize, suffix: String },
 }
 
 pub async fn history_projection(
@@ -1306,6 +1314,7 @@ pub async fn history_projection(
         } else {
             khor_node::session_content::BodyProjection {
                 updates: Vec::new(),
+                transforms: Vec::new(),
                 complete: false,
             }
         };
@@ -1326,9 +1335,16 @@ fn body_projection_response(
     let mut response = HistoryProjection {
         record,
         entries: Vec::new(),
+        transforms: projection.transforms.into_iter().map(|transform| match transform {
+            khor_node::session_content::BodyTransform::JsonString { pointer, parsed } => HistoryTextTransform::JsonString { pointer, parsed },
+            khor_node::session_content::BodyTransform::ToolOutput { item, max_bytes, suffix } => HistoryTextTransform::ToolOutput { item, max_bytes, suffix },
+        }).collect(),
         complete: projection.complete,
     };
-    let mut bytes = 0;
+    if response.transforms.len() > 128 || encoded_size(&response.transforms)? > 16 * 1024 {
+        return Err("history projection facts exceed their metadata budget".into());
+    }
+    let mut bytes = encoded_size(&response)?;
     for (index, update) in projection.updates {
         if cancelled() {
             return Err("history request cancelled".into());
@@ -1341,11 +1357,11 @@ fn body_projection_response(
             response.complete = false;
             break;
         };
-        if response.entries.len() == 128 || bytes + size > HISTORY_PAYLOAD_BYTES - 16 * 1024 {
+        if response.entries.len() == 128 || bytes + size + 1 > HISTORY_PAYLOAD_BYTES - 1 {
             response.complete = false;
             break;
         }
-        bytes += size;
+        bytes += size + 1;
         response.entries.push(entry);
     }
     if encoded_size(&response)? > HISTORY_PAYLOAD_BYTES {

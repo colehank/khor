@@ -7,7 +7,7 @@ const PREFIX_BYTES = 256;
 const STRING_RANGES = 128;
 const encoder = new TextEncoder();
 
-export type RecordStringRange = { marker: string; start: number; end: number; prefix: string };
+export type RecordStringRange = { marker: string; start: number; end: number; prefix: string; container?: { start: number; end: number } };
 export type RecordScaffold = { json: string; strings: RecordStringRange[] };
 type Frame = { kind: 'object'; state: 'keyOrEnd' | 'key' | 'colon' | 'value' | 'commaOrEnd' }
   | { kind: 'array'; state: 'valueOrEnd' | 'value' | 'commaOrEnd' };

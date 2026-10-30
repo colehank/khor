@@ -910,6 +910,24 @@ pub fn replayed(u: crate::adaptor::claude::Utterance) -> Option<SessionUpdate> {
     }
 }
 
+/// A scaffold carries markers in place of long strings. Applying trim or
+/// clipping to those short markers would change the eventual visible body.
+/// The viewing worker instead applies this exact replay policy after decoding.
+pub(crate) struct ToolTextPolicy {
+    pub max_bytes: usize,
+    pub suffix: String,
+}
+const TOOL_TEXT_BYTES: usize = 16 * 1024;
+fn tool_text_suffix() -> String { format!("\n… {}", msg::tool_output_cut()) }
+pub(crate) fn replayed_scaffold(u: crate::adaptor::claude::Utterance)
+    -> (Option<SessionUpdate>, Option<ToolTextPolicy>)
+{
+    if let crate::adaptor::claude::Utterance::ToolDone(block) = u {
+        let update = settled_with_text(&block, raw_result_text(&block));
+        (update, Some(ToolTextPolicy { max_bytes: TOOL_TEXT_BYTES, suffix: tool_text_suffix() }))
+    } else { (replayed(u), None) }
+}
+
 /// The flags that turn this session into **the network's scheduler**
 /// (docs/AGENT.md), when the opener asked for one.
 ///
@@ -1000,6 +1018,9 @@ fn said(block: &serde_json::Value) -> Option<SessionUpdate> {
 /// line is a person talking, and this face paints the user's own words
 /// first-hand, so nothing else here becomes an update.
 fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
+    settled_with_text(block, result_text(block))
+}
+fn settled_with_text(block: &serde_json::Value, text: Option<String>) -> Option<SessionUpdate> {
     if block.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
         return None;
     }
@@ -1023,7 +1044,7 @@ fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
     // list of blocks the rest, so both are read. A tool that returned
     // nothing gets no content rather than an empty block: an empty
     // panel that opens onto nothing is worse than no panel.
-    if let Some(text) = result_text(block) {
+    if let Some(text) = text {
         fields = fields.content(vec![ToolCallContent::Content(Content::new(
             ContentBlock::Text(TextContent::new(text)),
         ))]);
@@ -1034,6 +1055,18 @@ fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
     )))
 }
 
+/// Shared content joining; scaffold projection postpones only the display policy.
+fn raw_result_text(block: &serde_json::Value) -> Option<String> {
+    Some(match block.get("content")? {
+        serde_json::Value::String(t) => t.clone(),
+        serde_json::Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    })
+}
 /// The text a `tool_result` block carries, in either of the two shapes
 /// claude writes it in.
 ///
@@ -1043,30 +1076,21 @@ fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
 /// bottom of. The cut is marked so a reader knows there was more; an
 /// unmarked truncation is a lie about what the tool returned.
 fn result_text(block: &serde_json::Value) -> Option<String> {
-    const MAX: usize = 16 * 1024;
-    let raw = match block.get("content")? {
-        serde_json::Value::String(t) => t.clone(),
-        serde_json::Value::Array(blocks) => blocks
-            .iter()
-            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => return None,
-    };
+    let raw = raw_result_text(block)?;
     let raw = raw.trim();
     if raw.is_empty() {
         return None;
     }
-    if raw.len() <= MAX {
+    if raw.len() <= TOOL_TEXT_BYTES {
         return Some(raw.to_owned());
     }
     // On a char boundary: `raw` is UTF-8 and slicing mid-codepoint
     // panics, which for a Chinese-heavy transcript is not a rare case.
-    let mut cut = MAX;
+    let mut cut = TOOL_TEXT_BYTES;
     while cut > 0 && !raw.is_char_boundary(cut) {
         cut -= 1;
     }
-    Some(format!("{}\n… {}", &raw[..cut], msg::tool_output_cut()))
+    Some(format!("{}{}", &raw[..cut], tool_text_suffix()))
 }
 
 /// The tokens sitting in the context after a claude `usage` object.

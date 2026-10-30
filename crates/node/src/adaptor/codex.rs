@@ -442,20 +442,8 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                 }
                 Some("response_item") => {
                     let p = &v["payload"];
-                    if matches!(
-                        p["type"].as_str(),
-                        Some("custom_tool_call") | Some("function_call") | Some("local_shell_call")
-                    ) && let Some(name) = p["name"].as_str()
-                    {
-                        let input = p
-                            .get("arguments")
-                            .filter(|a| !a.is_null())
-                            .or_else(|| p.get("input"));
-                        let input = input
-                            .and_then(|a| a.as_str())
-                            .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok())
-                            .or_else(|| input.cloned())
-                            .unwrap_or(serde_json::Value::Null);
+                    if let Some(name) = tool_call_name(p) {
+                        let input = decoded_tool_input(p);
                         // Shaped as claude's `tool_use` block so
                         // that both vendors' pasts go through the
                         // one translation (`cagent::said`). codex
@@ -476,6 +464,36 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
         }
     }
     out
+}
+
+/// Both normal replay and bounded scaffold preparation select the same
+/// recorded input. A null arguments field deliberately falls back to input.
+fn tool_call_name(payload: &serde_json::Value) -> Option<&str> {
+    matches!(payload["type"].as_str(), Some("custom_tool_call" | "function_call" | "local_shell_call"))
+        .then(|| payload["name"].as_str()).flatten()
+}
+fn tool_input_field(payload: &serde_json::Value) -> Option<(&'static str, &serde_json::Value)> {
+    payload.get("arguments").filter(|value| !value.is_null()).map(|value| ("arguments", value))
+        .or_else(|| payload.get("input").map(|value| ("input", value)))
+}
+fn decoded_tool_input(payload: &serde_json::Value) -> serde_json::Value {
+    decoded_tool_input_state(payload).0
+}
+fn decoded_tool_input_state(payload: &serde_json::Value) -> (serde_json::Value, bool) {
+    let input = tool_input_field(payload).map(|(_, value)| value);
+    if let Some(decoded) = input.and_then(|value| value.as_str())
+        .and_then(|text| serde_json::from_str(text).ok()) { return (decoded, true); }
+    (input.cloned().unwrap_or(serde_json::Value::Null), false)
+}
+/// A long encoded input must first prepare its inner JSON with the same
+/// bounded lexer. This is a field-selection fact, not a second vendor parser.
+pub(crate) fn scaffold_json_input(value: &serde_json::Value) -> Option<(String, bool)> {
+    let payload = &value["payload"];
+    if value["type"].as_str() != Some("response_item") { return None; }
+    tool_call_name(payload)?;
+    let (field, input) = tool_input_field(payload)?;
+    input.as_str()?;
+    Some((format!("/payload/{field}"), decoded_tool_input_state(payload).1))
 }
 
 /// This vendor's name, which is also the category its rows carry — and,

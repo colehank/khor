@@ -3,6 +3,13 @@ import { build } from 'esbuild';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Worker as NodeWorker } from 'node:worker_threads';
+import { readFile } from 'node:fs/promises';
+const args = process.argv.slice(2);
+const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
+const savedRecord = args.includes('--record-source') ? args[args.indexOf('--record-source') + 1] : null;
+const savedPlugin = savedRecord ? [{ name: 'exact-saved-record-source', setup(build) {
+  build.onLoad({ filter: /history-find-record\.ts$/ }, async () => ({ contents: await readFile(savedRecord, 'utf8'), loader: 'ts', resolveDir: resolve('src/lib') }));
+} }] : [];
 const built = await build({ entryPoints: [resolve('src/lib/history-find-model.ts')], bundle: true,
   write: false, format: 'cjs', platform: 'node' });
 const module = { exports: {} };
@@ -18,11 +25,16 @@ const scaffoldBuilt = await build({ entryPoints: [resolve('src/lib/history-recor
 const scaffoldModule = { exports: {} };
 Function('module', 'exports', scaffoldBuilt.outputFiles[0].text)(scaffoldModule, scaffoldModule.exports);
 const { recordScaffold, decodeRecordString } = scaffoldModule.exports;
-const recordBuilt = await build({ entryPoints: [resolve('src/lib/history-find-record.ts')], bundle: true,
+const recordBuilt = await build({ entryPoints: [resolve('src/lib/history-find-record.ts')], plugins: savedPlugin, bundle: true,
   write: false, format: 'cjs', platform: 'node' });
 const recordModule = { exports: {} };
 Function('module', 'exports', recordBuilt.outputFiles[0].text)(recordModule, recordModule.exports);
 const { findRecord } = recordModule.exports;
+const recordTextBuilt = await build({ entryPoints: [resolve('src/lib/history-record-text.ts')], bundle: true,
+  write: false, format: 'cjs', platform: 'node' });
+const recordTextModule = { exports: {} };
+Function('module', 'exports', recordTextBuilt.outputFiles[0].text)(recordTextModule, recordTextModule.exports);
+const { limitedToolOutput } = recordTextModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
 const note = (key, update) => ({ key, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
@@ -296,7 +308,7 @@ test('giant projected templates stream original strings, escaped pretty input an
     project: async (_cursor, first, end, scaffold) => {
       assert.deepEqual([first, end], [ref.start, ref.end]);
       const value = scaffold ? JSON.parse(scaffold) : null;
-      return { record: { ...ref, cursor: 'joined' }, complete: true,
+      return { record: { ...ref, cursor: 'joined' }, transforms: [], complete: true,
         entries: value ? [text('projection:0', value.body + '\n' + value.second)] : [] };
     },
   };
@@ -309,13 +321,76 @@ test('giant projected templates stream original strings, escaped pretty input an
   const crossing = findRecord(query('tail\nnext'), ref, 'before', io);
   assert.equal((await crossing.next()).value.from, content.length - 4);
   await crossing.return();
-  const prettyIO = { ...io, project: async (_cursor, _first, _end, scaffold) => ({ record: { ...ref, cursor: 'joined' }, complete: true,
+  const prettyIO = { ...io, project: async (_cursor, _first, _end, scaffold) => ({ record: { ...ref, cursor: 'joined' }, transforms: [], complete: true,
     entries: scaffold ? [note('projection:0', { sessionUpdate: 'tool_call', toolCallId: 'c', title: 'Call', rawInput: { text: JSON.parse(scaffold).body } })] : [] }) };
   const escaped = findRecord(query(String.raw`NEEDLE\n\n`), ref, 'before', prettyIO);
   assert.equal((await escaped.next()).done, false, 'pretty raw input searches its actual escaped displayed spelling');
   await escaped.return();
   const absent = findRecord(query('hidden'), ref, 'before', io);
   assert.deepEqual(await absent.next(), { done: true, value: true }, 'JSON keys never become searchable body text');
+});
+test('normalizer facts decode one encoded tool input and preserve invalid-input fallback', async () => {
+  const command = 'echo ' + '中😀'.repeat(22000) + ' COMMAND_NEEDLE';
+  const argumentsText = JSON.stringify({ hidden: 'HIDDEN_NEEDLE'.repeat(10000), command });
+  const make = (argumentsText, failInner = false) => {
+    const bytes = new TextEncoder().encode(JSON.stringify({ payload: { arguments: argumentsText } }));
+    const ref = { start: 0, end: bytes.length, cursor: 'encoded-tool-input', item: null, missing_start: false, missing_end: false };
+    let projections = 0;
+    return { ref, io: {
+      record: async (_cursor, from) => {
+        if (failInner && projections === 1) throw new Error('source changed during encoded preparation');
+        const data = bytes.subarray(from, from + 65536);
+        return { offset: from, data: Buffer.from(data).toString('base64'), next: from + data.length < bytes.length ? from + data.length : null };
+      },
+      project: async (_cursor, _start, _end, scaffold) => {
+        if (!scaffold) return { record: ref, entries: [], transforms: [], complete: false };
+        projections++;
+        let input = JSON.parse(scaffold).payload.arguments, parsed = false;
+        try { input = JSON.parse(input); parsed = true; } catch { /* actual normalizer's string fallback */ }
+        return { record: ref, complete: true, transforms: [{ kind: 'json_string', pointer: '/payload/arguments', parsed }],
+          entries: [note('projection:0', { sessionUpdate: 'tool_call', toolCallId: 'c', title: 'Tool', rawInput: input })] };
+      },
+    }, projections: () => projections };
+  };
+  const found = make(argumentsText);
+  const scan = findRecord(query('command_needle'), found.ref, 'before', found.io);
+  const hit = await scan.next();
+  assert.equal(hit.done, false); assert.equal(hit.value.from, command.indexOf('COMMAND_NEEDLE'));
+  assert.deepEqual(await scan.next(), { done: true, value: true });
+  assert.equal(found.projections(), 2, 'selected string is prepared then passed back through the same normalizer');
+  const hidden = make(argumentsText);
+  assert.deepEqual(await findRecord(query('HIDDEN_NEEDLE'), hidden.ref, 'before', hidden.io).next(), { done: true, value: true },
+    'a command-only displayed input must not search another encoded JSON field');
+  const fallback = make('not JSON ' + 'x'.repeat(150000) + ' FALLBACK_NEEDLE');
+  const raw = findRecord(query('fallback_needle'), fallback.ref, 'before', fallback.io);
+  assert.equal((await raw.next()).done, false);
+  assert.deepEqual(await raw.next(), { done: true, value: true });
+  assert.equal(fallback.projections(), 1, 'invalid inner syntax retains the exact original string fallback');
+  const changed = make(argumentsText, true);
+  await assert.rejects(findRecord(query('needle'), changed.ref, 'before', changed.io).next(), /source changed during encoded/);
+});
+test('normalizer output policy trims Unicode whitespace and searches only its visible UTF-8 prefix', async () => {
+  const stream = async function* (text) { yield* text; };
+  assert.equal(await limitedToolOutput(stream('1234567\u3000 \tZ'), 8, ' CUT'), '1234567 CUT', 'a later short whitespace must not jump over the first UTF-8 cut boundary');
+  assert.equal(await limitedToolOutput(stream('\uFEFFhead \u0085'), 16, ' CUT'), '\uFEFFhead', 'Rust trim keeps BOM and removes NEL');
+  const output = ' \u0085' + '中😀'.repeat(12000) + ' HIDDEN_TAIL_NEEDLE  ';
+  const bytes = new TextEncoder().encode(JSON.stringify({ content: output }));
+  assert.equal(bytes.length > 65536, true, 'the output actually exceeds the inline record boundary');
+  const ref = { start: 0, end: bytes.length, cursor: 'bounded-tool-output', item: null, missing_start: false, missing_end: false };
+  const io = {
+    record: async (_cursor, from) => {
+      const data = bytes.subarray(from, from + 65536);
+      return { offset: from, data: Buffer.from(data).toString('base64'), next: from + data.length < bytes.length ? from + data.length : null };
+    },
+    project: async (_cursor, _start, _end, scaffold) => ({ record: ref, complete: true,
+      transforms: [{ kind: 'tool_output', item: 7, max_bytes: 16384, suffix: '\n… visible cut' }],
+      entries: scaffold ? [note('projection:7', { sessionUpdate: 'tool_call_update', toolCallId: 'call',
+        content: [{ type: 'content', content: { type: 'text', text: JSON.parse(scaffold).content } }] })] : [] }),
+  };
+  const head = findRecord(query('中😀'), ref, 'before', io);
+  assert.equal((await head.next()).value.from, 0, 'Rust White_Space trim includes NEL'); await head.return();
+  assert.deepEqual(await findRecord(query('HIDDEN_TAIL_NEEDLE'), ref, 'before', io).next(), { done: true, value: true });
+  assert.equal((await findRecord(query('visible cut'), ref, 'before', io).next()).done, false, 'the existing marked cut suffix is visible text');
 });
 test('repeated cached raw ranges still yield the worker task queue within one scan budget', async () => {
   const bytes = new TextEncoder().encode(JSON.stringify({ body: 'x'.repeat(12000) }));
@@ -324,7 +399,7 @@ test('repeated cached raw ranges still yield the worker task queue within one sc
   const timer = setTimeout(() => { taskRan = true; }, 0);
   const io = {
     record: async () => { reads++; return { offset: 0, data: Buffer.from(bytes).toString('base64'), next: null }; },
-    project: async (_cursor, _start, _end, scaffold) => ({ record: ref, complete: true,
+    project: async (_cursor, _start, _end, scaffold) => ({ record: ref, transforms: [], complete: true,
       entries: scaffold ? [text('projection:0', Array.from({ length: 64 }, () => JSON.parse(scaffold).body).join('\n'))] : [] }),
   };
   try {
@@ -335,7 +410,7 @@ test('repeated cached raw ranges still yield the worker task queue within one sc
 });
 test('giant searches expose source errors and incomplete structure, with no full text fallback', async () => {
   const ref = { start: 0, end: 2, cursor: 'raw', item: null, missing_start: false, missing_end: false };
-  const io = { project: async (_c, _s, _e, scaffold) => ({ record: ref, complete: false, entries: [] }),
+  const io = { project: async (_c, _s, _e, scaffold) => ({ record: ref, transforms: [], complete: false, entries: [] }),
     record: async () => ({ offset: 0, data: Buffer.from('{]').toString('base64'), next: null }) };
   assert.deepEqual(await findRecord(query('x'), ref, 'before', io).next(), { done: true, value: false });
   await assert.rejects(findRecord(query('x'), ref, 'before', { ...io, record: async () => { throw new Error('source changed'); } }).next(), /source changed/);
@@ -437,7 +512,7 @@ test('actual worker joins fragmented source ranges and resumes giant hits throug
     project: async (_id, key, cursor, start, end, scaffold) => {
       calls.push(['project', key, cursor, start, end]);
       assert.deepEqual([start, end], [0, bytes.length]);
-      return { record: ref, complete: true, entries: scaffold ? [text('projection:7', JSON.parse(scaffold).body)] : [] };
+      return { record: ref, transforms: [], complete: true, entries: scaffold ? [text('projection:7', JSON.parse(scaffold).body)] : [] };
     },
     record: async (_id, _key, cursor, from) => {
       assert.equal(cursor, 'joined'); calls.push(['record', from]);
@@ -471,7 +546,7 @@ test('a changed raw source clears already displayed giant search hits', async ()
   const source = historySource('changing-raw', {
     begin: async () => crypto.randomUUID(), cancel: async () => {},
     page: async () => ({ ...page([], [ref]), older: null }),
-    project: async (_id, _key, _cursor, _start, _end, scaffold) => ({ record: ref, complete: true,
+    project: async (_id, _key, _cursor, _start, _end, scaffold) => ({ record: ref, transforms: [], complete: true,
       entries: scaffold ? [text('projection:0', JSON.parse(scaffold).body)] : [] }),
     record: async (_id, _key, _cursor, from) => {
       if (changed) throw new Error('source changed while reading');
@@ -494,7 +569,7 @@ test('actual giant worker disposal cancels a held raw read without posting late 
   const source = historySource('giant-cancel', {
     begin: async () => `cancel${++lease}`, cancel: async key => { cancelled.push(key); },
     page: async () => ({ ...page([], [ref]), older: null }),
-    project: async () => ({ record: ref, entries: [], complete: false }),
+    project: async () => ({ record: ref, entries: [], transforms: [], complete: false }),
     record: async (_id, key) => { entered.resolve(key); return held.promise; },
   });
   const reader = historyFind(source, query('needle'), state => states.push(state));
@@ -535,9 +610,11 @@ test('source replacement stops the real worker and never presents the new page a
     assert.equal(last.busy, false);
   } finally { await stopped.dispose(); }
 });
+const selectedChecks = only ? checks.filter(([name]) => name === only) : checks;
+assert.equal(selectedChecks.length > 0, true, 'the selected history search fixture must exist');
 try {
   await Promise.race([
-    (async () => { for (const [name, run] of checks) { await run(); console.log('PASS', name); } })(),
+    (async () => { for (const [name, run] of selectedChecks) { await run(); console.log('PASS', name); } })(),
     new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('history find fixture exceeded 10s')), 10_000); timer.unref(); }),
   ]);
 } finally {
@@ -546,4 +623,4 @@ try {
   globalThis.Worker = OriginalWorker;
 }
 assert.equal(ownedWorkers.size, 0);
-console.log(`${checks.length} source-backed history find checks passed; actual worker threads, no browser/native-normalization claim`);
+console.log(`${selectedChecks.length} source-backed history find checks passed; actual worker threads, no browser/native-normalization claim`);

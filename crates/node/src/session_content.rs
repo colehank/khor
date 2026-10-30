@@ -56,7 +56,13 @@ pub enum ContentEvent {
 /// ordinary SDK notes, never trusted journal boundaries or send receipts.
 pub struct BodyProjection {
     pub updates: Vec<(usize, serde_json::Value)>,
+    pub transforms: Vec<BodyTransform>,
     pub complete: bool,
+}
+/// Only the two existing replay transformations. No caller-defined rules.
+pub enum BodyTransform {
+    JsonString { pointer: String, parsed: bool },
+    ToolOutput { item: usize, max_bytes: usize, suffix: String },
 }
 impl From<Utterance> for ContentEvent {
     fn from(value: Utterance) -> Self {

@@ -3,7 +3,10 @@ import type { HistoryRecordRef } from '@/gen/bindings/HistoryRecordRef';
 import type { historySource } from './history-source';
 import { historyText, literalMatcher, type FindHit, type FindQuery } from './history-find-model';
 import { paintHistory } from './history-paint';
-import { decodeRecordString, recordScaffold, type RecordStringRange } from './history-record-scaffold';
+import { recordString, prepareEncodedInput, limitedToolOutput } from './history-record-text';
+import type { HistoryProjection } from '@/gen/bindings/HistoryProjection';
+import type { HistoryTextTransform } from '@/gen/bindings/HistoryTextTransform';
+import { recordScaffold, type RecordStringRange } from './history-record-scaffold';
 
 type IO = Pick<ReturnType<typeof historySource>, 'record' | 'project'>;
 type Segment = { text: string } | { range: RecordStringRange; escaped: boolean };
@@ -95,13 +98,32 @@ export async function* findRecord(
   }
   let scaffold: ReturnType<typeof lexer.finish>;
   try { scaffold = lexer.finish(ref.end); } catch { return false; }
-  const projected = await io.project(record.cursor, ref.start, ref.end, scaffold.json);
-  if (!projected) throw new Error('history search projection was cancelled');
-  if (projected.record.start !== ref.start || projected.record.end !== ref.end
-    || projected.record.cursor !== record.cursor
-    || projected.entries.length > 128 || utf8.encode(JSON.stringify(projected)).length > 512 * 1024
-    || projected.entries.some((entry: HistoryEntry) => entry.frame.kind !== 'note' || !/^projection:\d+$/.test(entry.key)))
-    throw new Error('invalid history search body projection');
+  const project = async (json: string) => {
+    const answer = await io.project(record.cursor, ref.start, ref.end, json);
+    if (!answer) throw new Error('history search projection was cancelled');
+    if (answer.record.start !== ref.start || answer.record.end !== ref.end || answer.record.cursor !== record.cursor
+      || answer.entries.length > 128 || utf8.encode(JSON.stringify(answer)).length > 512 * 1024
+      || answer.entries.some((entry: HistoryEntry) => entry.frame.kind !== 'note' || !/^projection:\d+$/.test(entry.key))
+      || answer.transforms.length > 128 || utf8.encode(JSON.stringify(answer.transforms)).length > 16 * 1024)
+      throw new Error('invalid history search body projection');
+    return answer as HistoryProjection;
+  };
+  let projected = await project(scaffold.json);
+  const encoded = projected.transforms.filter((fact: HistoryTextTransform) => fact.kind === 'json_string');
+  if (encoded.length > 1) throw new Error('history projection exceeds its encoded input budget');
+  if (encoded[0]?.kind === 'json_string' && !encoded[0].parsed) {
+    const prepared = await prepareEncodedInput(scaffold, encoded[0].pointer, read, account);
+    if (!prepared.complete) return false;
+    if (prepared.scaffold !== scaffold) {
+      const normalized = await project(prepared.scaffold.json);
+      // The original parser decides whether an encoded value is accepted
+      // (including numeric range rules). Its fallback keeps the original text.
+      if (normalized.transforms.some((fact: HistoryTextTransform) => fact.kind === 'json_string' && fact.pointer === encoded[0].pointer && fact.parsed)) {
+        scaffold = prepared.scaffold;
+        projected = normalized;
+      }
+    }
+  }
   let complete = projected.complete;
   const entries = ref.item === null ? projected.entries
     : projected.entries.filter((entry: HistoryEntry) => entry.key === `projection:${ref.item}`);
@@ -121,41 +143,23 @@ export async function* findRecord(
         return result ? { before, entry: `${ref.start}:${item.historyKey.split(':')[1]}`, part, ...result,
           snippet: context, record } satisfies FindHit : null;
       };
-      for (const segment of template) {
-        if ('text' in segment) {
-          for (const char of segment.text) {
-            const pause = account(utf8.encode(char).length);
-            if (pause) await pause;
-            const hit = match(char);
-            if (hit) yield hit;
-          }
-          continue;
+      const characters = async function* () {
+        for (const segment of template) {
+          if ('text' in segment) { yield* segment.text; continue; }
+          for await (const char of recordString(segment.range, read, account))
+            yield* segment.escaped ? JSON.stringify(char).slice(1, -1) : char;
         }
-        // A decoded character can expand to an escaped JSON spelling in a
-        // pretty input block. Each is at most six characters, not a new parser.
-        let pending = '';
-        const decoder = decodeRecordString(segment.range.start, char => {
-          pending = segment.escaped ? JSON.stringify(char).slice(1, -1) : char;
-          return false;
-        });
-        const emit = async function* () {
-          for (const char of pending) {
-            const pause = account(utf8.encode(char).length);
-            if (pause) await pause;
-            const hit = match(char); if (hit) yield hit;
-          }
-          pending = '';
-        };
-        for (let from = segment.range.start; from < segment.range.end;) {
-          const bytes = await read(from, segment.range.end);
-          decoder.push(bytes, from);
-          while (decoder.pending()) {
-            yield* emit();
-            decoder.resume();
-          }
-          from += bytes.length;
-        }
-        decoder.finish(segment.range.end);
+      };
+      const output = body.outputPart === part ? projected.transforms.find((fact: HistoryTextTransform) => fact.kind === 'tool_output'
+        && fact.item === Number(item.historyKey.split(':')[1])) : undefined;
+      const visible = output?.kind === 'tool_output'
+        ? await limitedToolOutput(characters(), output.max_bytes, output.suffix) : null;
+      const consume = async function* () { if (visible !== null) yield* visible; else yield* characters(); };
+      for await (const char of consume()) {
+        const pause = account(utf8.encode(char).length);
+        if (pause) await pause;
+        const hit = match(char);
+        if (hit) yield hit;
       }
     }
   }

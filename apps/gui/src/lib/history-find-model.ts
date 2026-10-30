@@ -42,7 +42,7 @@ export function findQuery(query: FindQuery): FindQuery {
 
 /** Search and message copying consume projected items, never JSON keys,
  * encoded attachments, or a mounted DOM subtree. Projection remains paintHistory's. */
-export function historyText(item: HistoryItem): { texts: string[]; complete: boolean } {
+export function historyText(item: HistoryItem): { texts: string[]; complete: boolean; outputPart?: number } {
   if ('text' in item) return { texts: [item.text], complete: true };
   if (item.who === 'compaction') return { texts: [item.summary, ...(item.error ? [item.error] : [])], complete: true };
   if (item.who === 'resource') return { texts: [item.name, ...(item.uri ? [item.uri] : [])], complete: true };
@@ -56,7 +56,7 @@ export function historyText(item: HistoryItem): { texts: string[]; complete: boo
     ...(item.out ? [item.out] : []),
     ...diffs.flatMap(diff => [diff.path, ...(diff.old ? [diff.old] : []), diff.next]),
     ...patches.flatMap(patch => [patch.path, patch.text]),
-    ], complete: input?.complete !== false };
+    ], complete: input?.complete !== false, ...(item.out ? { outputPart: 1 + (input?.text ? 1 : 0) } : {}) };
   }
   return { texts: [], complete: true };
 }
