@@ -80,7 +80,7 @@ export function historyFind(source: Source, query: FindQuery, changed: (state: H
   post({ kind: 'query', query });
   return {
     start: () => {
-      if (started || closed) return;
+      if (started || closed || state.error || state.reset) return;
       started = true;
       return load();
     },

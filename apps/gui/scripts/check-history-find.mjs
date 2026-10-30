@@ -8,6 +8,11 @@ const built = await build({ entryPoints: [resolve('src/lib/history-find-model.ts
 const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
 const { historyFindBatch, literalMatcher, findQuery, FIND_SNIPPET_BYTES } = module.exports;
+const projectionBuilt = await build({ entryPoints: [resolve('src/lib/acp-view.ts')], bundle: true,
+  write: false, format: 'cjs', platform: 'node' });
+const projectionModule = { exports: {} };
+Function('module', 'exports', projectionBuilt.outputFiles[0].text)(projectionModule, projectionModule.exports);
+const { toolInputText } = projectionModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
 const note = (key, update) => ({ key, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
@@ -31,6 +36,7 @@ test('streams Unicode matching across chunks with exact original offsets', () =>
   assert.deepEqual(matcher.feed('Xtail').ranges, [{ from: 4, to: 9 }]);
   const expanded = literalMatcher(query('i'));
   assert.deepEqual(expanded.feed('İ').ranges, [{ from: 0, to: 1 }]);
+  assert.deepEqual(literalMatcher(query('ΟΣ')).feed('ος').ranges, [{ from: 0, to: 2 }]);
   assert.equal(historyFindBatch(query('VISIBLE', true)).page(page([text('1:0', 'visible')])).hits.length, 0);
 });
 test('a thirty-two-hit batch resumes inside its record without dropped matches', () => {
@@ -68,6 +74,33 @@ test('query and page budgets reject invalid work without losing a pending page',
   assert.equal(accepted.hits.length, 32);
   assert.throws(() => scan.page(page([])));
   assert.equal(scan.next().hits.length, 8);
+});
+test('tool input render/copy/search share text and oversized pretty input is rejected before constructing it', () => {
+  const raw = { path: '中文', values: [null, true, '😀\n\u0000', { value: 42 }] };
+  const rendered = toolInputText(raw);
+  assert.equal(rendered.text, JSON.stringify(raw, null, 2));
+  const bytes = new TextEncoder().encode(rendered.text).length;
+  assert.deepEqual(toolInputText(raw, bytes), rendered);
+  assert.equal(toolInputText(raw, bytes - 1).complete, false);
+  assert.deepEqual(toolInputText({ command: 'echo NEEDLE' }, 64 * 1024), { text: 'echo NEEDLE', command: true, complete: true });
+  const tool = note('1:0', { sessionUpdate: 'tool_call', toolCallId: 'call', title: 'Run', rawInput: { command: 'echo NEEDLE' } });
+  assert.equal(historyFindBatch(query('needle')).page(page([tool])).hits.length, 1);
+  const stringify = JSON.stringify;
+  let constructed = 0;
+  JSON.stringify = (...args) => { constructed++; return stringify(...args); };
+  try {
+    const oversized = toolInputText({ body: 'x'.repeat(70 * 1024) }, 64 * 1024);
+    assert.equal(oversized.complete, false);
+    assert.equal(oversized.text, undefined);
+    assert.equal(constructed, 0);
+  } finally { JSON.stringify = stringify; }
+  const deep = { value: 'x'.repeat(30000) };
+  let nested = deep;
+  for (let i = 0; i < 90; i++) nested = { nested, pad: ' '.repeat(150) };
+  assert.equal(new TextEncoder().encode(JSON.stringify(nested)).length < 64 * 1024, true, 'fixture compact input remains inline-sized');
+  assert.equal(new TextEncoder().encode(JSON.stringify(nested, null, 2)).length > 64 * 1024, true, 'fixture pretty body actually exceeds its budget');
+  const answer = historyFindBatch(query('absent')).page(page([note('2:0', { sessionUpdate: 'tool_call', toolCallId: 'large', title: 'Call', rawInput: nested })]));
+  assert.equal(answer.unsearchedRanges, 1);
 });
 const deferred = () => {
   let resolve;
@@ -165,6 +198,18 @@ test('source replacement stops the real worker and never presents the new page a
     assert.equal(reset.complete, false);
     assert.deepEqual(reset.hits, []);
   } finally { await reader.dispose(); }
+  const invalid = deferred();
+  let last;
+  const stopped = historyFind(historySource('binding', {
+    begin: async () => { throw new Error('invalid query must never begin IO'); },
+    cancel: async () => {}, page: async () => { throw new Error('unexpected page IO'); },
+    record: async () => { throw new Error('unexpected raw IO'); },
+  }), query('x'.repeat(257)), state => { last = state; if (state.error) invalid.resolve(); });
+  try {
+    await invalid.promise;
+    await stopped.start();
+    assert.equal(last.busy, false);
+  } finally { await stopped.dispose(); }
 });
 try {
   await Promise.race([

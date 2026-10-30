@@ -9,7 +9,7 @@ import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigg
 import { CircleCheckIcon, CircleDotIcon, CircleIcon, FilePenLineIcon, FileTextIcon, LoaderCircleIcon, RouteIcon, SearchIcon, TerminalIcon, WrenchIcon } from "./icons";
 import { gui } from "@/gen/catalog";
 import { word } from "@/words";
-import type { AcpTool } from "@/lib/acp-view";
+import { toolInputText, type AcpTool } from "@/lib/acp-view";
 
 const AgentDiff = lazy(() => import("./diff").then((module) => ({ default: module.AgentDiff })));
 const AgentPatch = lazy(() => import("./diff").then((module) => ({ default: module.AgentPatch })));
@@ -61,8 +61,7 @@ export function AgentTool({ tool, active = true, open, onOpenChange, onOpenFile 
     <TraceIcon><Icon /></TraceIcon><TraceTitle title={tool.title}>{tool.title}</TraceTitle>
     {live && <TraceIcon><LoaderCircleIcon className="motion-safe:animate-spin" /></TraceIcon>}
   </TraceLine>;
-  const raw = tool.raw && typeof tool.raw === "object" ? tool.raw as Record<string, unknown> : {};
-  const command = typeof raw.command === "string" ? raw.command : null;
+  const input = !diffs.length && !patches.length && tool.raw !== null ? toolInputText(tool.raw) : null;
   const wrote = tool.kind === "edit" && tool.status === "completed" ? [tool.diff?.path, ...tool.where].find((path): path is string => !!path && path.startsWith("/")) : null;
   return (
     <Trace data-chat-tool data-tool-id={tool.id} data-tool-status={tool.status} data-tool-kind={tool.kind} data-tool-open={more ? (open ? "yes" : "no") : undefined}>
@@ -73,8 +72,8 @@ export function AgentTool({ tool, active = true, open, onOpenChange, onOpenFile 
             {diffs.map((diff, i) => <Suspense key={`${diff.path}:${i}`} fallback={<div data-diff-loading className="h-16 rounded-md bg-muted" aria-hidden />}><AgentDiff diff={diff} wrote={tool.kind === "edit" && tool.status === "completed" && diff.path.startsWith("/") ? diff.path : wrote ?? null} onOpenFile={onOpenFile} /></Suspense>)}
             {patches.map((patch, i) => <Suspense key={`${patch.path}:${i}`} fallback={<div data-diff-loading className="h-16 rounded-md bg-muted" aria-hidden />}><AgentPatch path={patch.path} text={patch.text} onOpenFile={tool.status === "completed" && patch.path.startsWith("/") ? onOpenFile : undefined} /></Suspense>)}
             {diffs.length === 0 && patches.length === 0 && tool.raw !== null && <CodeBlock size="sm">
-              <CodeBlockHeader><CodeBlockTitle>{command ? gui.key_group_commands : gui.chat_tool_input}</CodeBlockTitle><CodeBlockActions><CodeBlockCopyButton value={command ?? JSON.stringify(tool.raw, null, 2)} aria-label={gui.copy_text} /></CodeBlockActions></CodeBlockHeader>
-              <CodeBlockContent data-tool-raw className="max-h-64">{command ?? JSON.stringify(tool.raw, null, 2)}</CodeBlockContent>
+              <CodeBlockHeader><CodeBlockTitle>{input?.command ? gui.key_group_commands : gui.chat_tool_input}</CodeBlockTitle><CodeBlockActions><CodeBlockCopyButton value={input?.text ?? ''} aria-label={gui.copy_text} /></CodeBlockActions></CodeBlockHeader>
+              <CodeBlockContent data-tool-raw className="max-h-64">{input?.text ?? ''}</CodeBlockContent>
             </CodeBlock>}
             {tool.out !== null && <CodeBlock size="sm" variant={failed ? "destructive" : "default"}>
               <CodeBlockHeader><CodeBlockTitle>{failed ? word("failed") : gui.usage_axis_output}</CodeBlockTitle><CodeBlockActions><CodeBlockCopyButton value={tool.out} aria-label={gui.copy_text} /></CodeBlockActions></CodeBlockHeader>

@@ -1,6 +1,7 @@
 import type { HistoryPage } from '@/gen/bindings/HistoryPage';
 import type { HistoryItem } from './history-paint';
 import { paintHistory } from './history-paint';
+import { toolInputText } from './acp-view';
 
 export const FIND_HITS = 32;
 export const FIND_QUERY_BYTES = 256;
@@ -36,25 +37,33 @@ export function findQuery(query: FindQuery): FindQuery {
 
 /** Search and message copying consume projected items, never JSON keys,
  * encoded attachments, or a mounted DOM subtree. Projection remains paintHistory's. */
-export function historyText(item: HistoryItem): string[] {
-  if ('text' in item) return [item.text];
-  if (item.who === 'compaction') return [item.summary, ...(item.error ? [item.error] : [])];
-  if (item.who === 'resource') return [item.name, ...(item.uri ? [item.uri] : [])];
-  if (item.who === 'tool') return [
+export function historyText(item: HistoryItem): { texts: string[]; complete: boolean } {
+  if ('text' in item) return { texts: [item.text], complete: true };
+  if (item.who === 'compaction') return { texts: [item.summary, ...(item.error ? [item.error] : [])], complete: true };
+  if (item.who === 'resource') return { texts: [item.name, ...(item.uri ? [item.uri] : [])], complete: true };
+  if (item.who === 'tool') {
+    const diffs = item.diffs ?? (item.diff ? [item.diff] : []);
+    const patches = item.patches ?? [];
+    const input = !diffs.length && !patches.length && item.raw !== null ? toolInputText(item.raw, 64 * 1024) : null;
+    return { texts: [
     item.title,
     ...item.where,
+    ...(input?.text ? [input.text] : []),
     ...(item.out ? [item.out] : []),
-    ...(item.diffs ?? (item.diff ? [item.diff] : [])).flatMap(diff => [diff.path, ...(diff.old ? [diff.old] : []), diff.next]),
-    ...(item.patches ?? []).flatMap(patch => [patch.path, patch.text]),
-  ];
-  return [];
+    ...diffs.flatMap(diff => [diff.path, ...(diff.old ? [diff.old] : []), diff.next]),
+    ...patches.flatMap(patch => [patch.path, patch.text]),
+    ], complete: input?.complete !== false };
+  }
+  return { texts: [], complete: true };
 }
 
 /** The streaming form also works across decoded raw-string chunks. Only
  * query-length origin offsets are retained, including lowercase expansions. */
 export function literalMatcher(raw: FindQuery) {
   const query = findQuery(raw);
-  const fold = (char: string) => query.caseSensitive ? char : char.toLowerCase();
+  // Default (non-locale) lowercasing, with the two sigma forms treated as
+  // one letter across chunk boundaries. This is not Unicode normalization.
+  const fold = (char: string) => query.caseSensitive ? char : char.toLowerCase().replace(/ς/g, 'σ');
   const pattern = [...query.text].flatMap(char => [...fold(char)]);
   const prefix = new Array<number>(pattern.length).fill(0);
   for (let i = 1, matched = 0; i < pattern.length; i++) {
@@ -119,14 +128,20 @@ export function historyFindBatch(raw: FindQuery) {
   let part = 0;
   let offset = 0;
   let matcher = literalMatcher(query);
+  let projection: ReturnType<typeof historyText> | null = null;
+  let unsearchedInputs = 0;
   function next(): FindWorkerOutput {
     if (!current) throw new Error('history search has no pending page');
     const page = current;
     const hits: FindHit[] = [];
     while (item < items.length && hits.length < FIND_HITS) {
-      const texts = historyText(items[item]);
+      if (!projection) {
+        projection = historyText(items[item]);
+        if (!projection.complete) unsearchedInputs++;
+      }
+      const texts = projection.texts;
       if (part >= texts.length) {
-        item++; part = 0; offset = 0; matcher = literalMatcher(query);
+        item++; part = 0; offset = 0; matcher = literalMatcher(query); projection = null;
         continue;
       }
       const text = texts[part];
@@ -141,9 +156,9 @@ export function historyFindBatch(raw: FindQuery) {
       }
     }
     const pageDone = item >= items.length;
-    if (pageDone) { current = null; items = []; }
+    if (pageDone) { current = null; items = []; projection = null; }
     return { kind: 'result', hits, pageDone, older: page.older,
-      unsearchedRanges: pageDone ? page.references.length : 0 };
+      unsearchedRanges: pageDone ? page.references.length + unsearchedInputs : 0 };
   }
   return {
     page(page: HistoryPage): FindWorkerOutput {
@@ -152,7 +167,7 @@ export function historyFindBatch(raw: FindQuery) {
         throw new Error('history search page exceeds the reader budget');
       current = page;
       items = paintHistory(page.entries);
-      item = 0; part = 0; offset = 0; matcher = literalMatcher(query);
+      item = 0; part = 0; offset = 0; matcher = literalMatcher(query); projection = null; unsearchedInputs = 0;
       return next();
     },
     next,
