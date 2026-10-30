@@ -620,7 +620,7 @@ export function ChatView({
   const [matchedEntry, setMatchedEntry] = useState<string | null>(null);
   const [captureWhy, setCaptureWhy] = useState<string | null>(null);
   const captureNow = useRef<(() => void) | null>(null);
-  const historyAnchor = useRef<{ key: string; top: number; point: HistoryTextPoint | null } | null>(null);
+  const historyAnchor = useRef<{ key: string; top: number; ticket: number; point: HistoryTextPoint | null } | null>(null);
   const [loaded, setLoaded] = useState(false);
   /** The agent's own commands, as of the last frame that carried a set. */
   const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
@@ -725,7 +725,7 @@ export function ChatView({
   // back does — and a single flag would have to pick one of those to
   // lie about. Both are cleared by arriving at the bottom, which is the
   // only way this pair can go to zero (docs/UX.md 角标可归零).
-  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, acceptRestoredPosition, following, readingLatest } = useChatScroll(paint);
+  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, capturePositionTicket, acceptRestoredPosition, following, readingLatest } = useChatScroll(paint);
   const box = useRef<HTMLTextAreaElement>(null);
   const coarse = useCoarse();
   // The box takes the keys the moment this pane opens, and any key
@@ -1180,10 +1180,11 @@ export function ChatView({
     const node = [...element.querySelectorAll<HTMLElement>('[data-history-key]')]
       .find(candidate => candidate.dataset.historyKey === anchor.key);
     if (node) {
-      const item = paint.past.find(item => (item.displayKey ?? item.historyKey) === anchor.key);
-      if (!anchor.point || !item || !restoreHistoryTextPoint(node, element, anchor.point, item.historyEntries))
-        element.scrollTop += node.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.top;
-      acceptRestoredPosition();
+      acceptRestoredPosition(anchor.ticket, () => {
+        const item = paint.past.find(item => (item.displayKey ?? item.historyKey) === anchor.key);
+        if (!anchor.point || !item || !restoreHistoryTextPoint(node, element, anchor.point, item.historyEntries))
+          element.scrollTop += node.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.top;
+      });
     }
     historyAnchor.current = null;
   }, [paint, acceptRestoredPosition]);
@@ -1216,7 +1217,7 @@ export function ChatView({
       if (node?.dataset.historyKey) {
         const item = paint.past.find(item => (item.displayKey ?? item.historyKey) === node.dataset.historyKey);
         historyAnchor.current = { key: node.dataset.historyKey, top: node.getBoundingClientRect().top - top,
-          point: item ? captureHistoryTextPoint(node, element, item.historyEntries) : null };
+          ticket: capturePositionTicket(), point: item ? captureHistoryTextPoint(node, element, item.historyEntries) : null };
       }
       following.current = false; readingLatest.current = false;
     }

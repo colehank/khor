@@ -9,7 +9,7 @@ const READER_SCROLL_IDLE_MS = 200;
 export function useChatScroll(revision: unknown) {
   const scroller = useRef<HTMLDivElement>(null), column = useRef<HTMLDivElement>(null);
   const following = useRef(true), readingLatest = useRef(true), anchor = useRef<Anchor | null>(null);
-  const layoutFrame = useRef(0), readerUntil = useRef(0);
+  const layoutFrame = useRef(0), readerUntil = useRef(0), positionRevision = useRef(0);
   const composerHadFocus = useRef(false);
   const position = useRef({ top: 0, height: 0, viewport: 0 });
   const [away, setAway] = useState(false), [fresh, setFresh] = useState(false);
@@ -27,6 +27,7 @@ export function useChatScroll(revision: unknown) {
   const readPosition = useCallback(() => {
     const el = scroller.current;
     if (!el) return;
+    positionRevision.current++;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     following.current = near;
     readingLatest.current = near;
@@ -74,6 +75,7 @@ export function useChatScroll(revision: unknown) {
       if (event instanceof KeyboardEvent && (!/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End| )$/.test(event.key)
         || (event.target instanceof Element && event.target.closest("input, textarea, [contenteditable]")))) return;
       if (event instanceof PointerEvent && event.type === "pointermove" && event.buttons === 0) return;
+      positionRevision.current++;
       readerUntil.current = performance.now() + READER_SCROLL_IDLE_MS;
       releaseLayout();
     };
@@ -97,15 +99,18 @@ export function useChatScroll(revision: unknown) {
     if (!following.current) setFresh(true);
   }, [revision, sync]);
 
-  /** Accept an explicit history restoration without treating its scroll event
-   * as reader input or changing the reader's existing latest/history intent. */
-  const acceptRestoredPosition = useCallback(() => {
+  const capturePositionTicket = useCallback(() => positionRevision.current, []);
+  /** A late page may restore only the position it captured. The guard runs
+   * before moving anything or retiring reader ownership; newer input wins. */
+  const acceptRestoredPosition = useCallback((ticket: number, restore: () => void) => {
     const el = scroller.current;
-    if (!el) return;
+    if (!el || ticket !== positionRevision.current) return false;
     readerUntil.current = 0;
     releaseLayout();
+    restore();
     remember();
     position.current = { top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight };
+    return true;
   }, [releaseLayout, remember]);
   const onScroll = () => {
     const el = scroller.current;
@@ -128,6 +133,7 @@ export function useChatScroll(revision: unknown) {
     const node = button.matches("[data-diff-expand]")
       ? button.closest("[data-chat-tool]")?.querySelector("[data-tool-toggle]") ?? button
       : button;
+    positionRevision.current++;
     readerUntil.current = 0;
     releaseLayout();
     anchor.current = { node, top: node.getBoundingClientRect().top - el.getBoundingClientRect().top };
@@ -137,10 +143,11 @@ export function useChatScroll(revision: unknown) {
     setAway(el.scrollHeight > el.clientHeight);
   };
   const toBottom = () => {
+    positionRevision.current++;
     readerUntil.current = 0;
     releaseLayout();
     following.current = true; readingLatest.current = true; anchor.current = null;
     setAway(false); setFresh(false); sync();
   };
-  return { scroller, column, following, readingLatest, onScroll, captureDisclosure, toBottom, acceptRestoredPosition, away, fresh };
+  return { scroller, column, following, readingLatest, onScroll, captureDisclosure, toBottom, capturePositionTicket, acceptRestoredPosition, away, fresh };
 }
