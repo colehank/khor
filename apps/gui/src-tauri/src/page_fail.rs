@@ -275,14 +275,18 @@ mod mac {
         }
     }
 
-    pub fn navigate(made: &tauri::Webview, target: String) -> Result<(), String> {
+    pub async fn navigate(made: &tauri::Webview, target: String) -> Result<(), String> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
         made.with_webview(move |native| {
             let view = native.inner() as *mut AnyObject;
-            if let Some(key) = with_pages(|pages| pages.key(view as usize)).flatten() {
-                let _ = unsafe { load_on_main(view, key, &target) };
-            }
+            let result = with_pages(|pages| pages.key(view as usize))
+                .flatten()
+                .ok_or_else(|| "page navigation owner unavailable".to_owned())
+                .and_then(|key| unsafe { load_on_main(view, key, &target) });
+            let _ = tx.send(result);
         })
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+        rx.await.map_err(|error| error.to_string())?
     }
 
     pub fn step(made: &tauri::Webview, way: &str) -> Result<(), String> {
