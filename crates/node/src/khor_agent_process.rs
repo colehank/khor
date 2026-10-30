@@ -171,7 +171,7 @@ pub(super) struct Session {
     control: Arc<Control>,
     supervisor: Option<JoinHandle<io::Result<ExitStatus>>>,
     exit: Option<mpsc::Receiver<io::Result<ExitStatus>>>,
-    #[cfg(all(test, unix))]
+    #[cfg(unix)]
     pid: u32,
 }
 impl Session {
@@ -184,7 +184,7 @@ impl Session {
         profile: SpawnProfile,
     ) -> io::Result<(Self, Pipes)> {
         let (mut process, pipes) = platform::spawn_with_profile(command, profile)?;
-        #[cfg(all(test, unix))]
+        #[cfg(unix)]
         let pid = process.id();
         let requests = control.clone();
         let (exit_tx, exit_rx) = mpsc::sync_channel(1);
@@ -235,7 +235,7 @@ impl Session {
                 control,
                 supervisor: Some(supervisor),
                 exit: Some(exit_rx),
-                #[cfg(all(test, unix))]
+                #[cfg(unix)]
                 pid,
             },
             pipes,
@@ -259,7 +259,7 @@ impl Session {
             }
         }
     }
-    #[cfg(all(test, unix))]
+    #[cfg(unix)]
     pub(super) fn pid(&self) -> u32 {
         self.pid
     }
