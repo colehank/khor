@@ -100,6 +100,11 @@ pub enum ShellRunResult {
         id: SessionId,
         previous: SessionId,
     },
+    /// The recorded cwd is unavailable; selecting another directory is a new
+    /// explicit intent, never a mutation of an already accepted action token.
+    DirectoryRequired {
+        id: SessionId,
+    },
     Pending {
         id: SessionId,
         attempt_epoch: String,
