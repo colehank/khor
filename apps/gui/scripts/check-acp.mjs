@@ -71,6 +71,7 @@ import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 //      nothing behind it grows no control at all. Then it is actually
 //      opened and the diff and the output are read back — a title that
 //      claims to open is not the same as one that does.
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -211,13 +212,6 @@ const probe = () => {
       fg.g * a + bg.g * (1 - a),
     )}, ${Math.round(fg.b * a + bg.b * (1 - a))})`;
   };
-  /** What a control says it is set to: a popup button's drawn value
-      (its `<select>` carries the anchor, and the select's own text is
-      every option's), anything else its own words. */
-  const faceOf = (el) => {
-    const drawn = el.tagName === "SELECT" ? el.closest("[data-popup-button]")?.querySelector("[data-popup-value]") : null;
-    return ((drawn ?? el).textContent ?? "").trim();
-  };
   const lines = [...document.querySelectorAll("[data-chat-tool]")].map((el) => {
     const text = el.querySelector("[data-word-text]") ?? el;
     const fg = rgba(getComputedStyle(text).color);
@@ -278,17 +272,6 @@ const probe = () => {
   // The positive control for claim 0: something this fixture certainly
   // paints, found by a different selector than the one under test.
   const paragraphs = document.querySelectorAll("[data-chat-column] p").length;
-  const u = document.querySelector("[data-chat-usage]");
-  const usage = u && {
-    used: Number(u.getAttribute("data-usage-used")),
-    size: Number(u.getAttribute("data-usage-size")),
-    // The share is the dial's: its number and the seat's name for a
-    // screen reader (the composer capsule, 2026-10-02).
-    share: `${(u.textContent ?? "").trim()} ${u.getAttribute("aria-label") ?? ""}`,
-    // **No cost anywhere in the composer** (the owner, 2026-10-02:
-    // 「右边不写美元」): whatever of the cost the page prints.
-    cost: /\$|USD|0\.39/.test(document.body.innerText) ? document.body.innerText.match(/.{0,12}(\$|USD|0\.39).{0,12}/)?.[0] ?? "?" : "",
-  };
   const factsLine = document.querySelector("[data-chat-facts]");
   const planEls = [...document.querySelectorAll("[data-plan-entry]")];
   const planRows = planEls.map((el) => {
@@ -300,42 +283,19 @@ const probe = () => {
     };
   });
   const title = document.querySelector("[data-chat-title]");
-  const modeEl = document.querySelector("[data-chat-mode]");
+  const modeEl = document.querySelector("[data-lab-execution-badge]");
   const shots = document.querySelectorAll("[data-chat-shot]").length;
   const docs = document.querySelectorAll("[data-chat-doc]").length;
   const hasInput = !!document.querySelector("[data-chat-input]");
   return {
-    lines, failedToken, paragraphs, usage,
+    lines, failedToken, paragraphs,
     facts: factsLine ? (factsLine.textContent ?? "").trim() : null,
     plan: planRows, shots, docs, hasInput,
     mode: modeEl ? (modeEl.textContent ?? "").trim() : null,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
     input: !!document.querySelector("[data-chat-input]"),
-    who: !!document.querySelector("[data-chat-who]"),
     text: document.body.innerText,
-    // The settings row: the mode menu's face and every option control,
-    // each with what it says it is set to.
-    //
-    // **A choice is a popup button since 2026-09-28** (components/
-    // PopupButton): the anchor sits on its native `<select>`, whose own
-    // text is *every* option's — so what the control says it is set to
-    // is read off the drawn face (`data-popup-value`), which a select
-    // holding the right value and drawing the wrong word would fail.
-    modeMenu: (() => {
-      const el = document.querySelector("[data-chat-mode-menu]");
-      return el
-        ? { text: faceOf(el), id: el.getAttribute("data-mode-id"), tag: el.tagName.toLowerCase(), popup: el.getAttribute("aria-haspopup") }
-        : null;
-    })(),
-    options: [...document.querySelectorAll("[data-chat-option]")].map((el) => ({
-      id: el.getAttribute("data-chat-option"),
-      text: faceOf(el),
-      on: el.getAttribute("aria-checked"),
-      value: el.getAttribute("data-value"),
-      tag: el.tagName.toLowerCase(),
-      popup: el.getAttribute("aria-haspopup"),
-    })),
   };
 };
 
@@ -367,7 +327,58 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
 
-  const look = async ({ scheme, motion, frames: override, paste = false, openTools = false, send = false, openAdd = false }) => {
+  // Read current production controls through the same actions a person takes.
+  // This replaces retired composer metadata; no values come from the fixture feed.
+  const inspectControls = async (page) => {
+    await page.locator('[data-lab-session-settings]').click();
+    const menu = page.locator('[data-lab-preferences]');
+    await menu.waitFor();
+    const root = await menu.evaluate((element) => {
+      const facts = Object.fromEntries([...element.querySelectorAll('.composer-lab-fact')].map(row =>
+        [...row.children].map(child => (child.textContent ?? '').trim())));
+      const agent = [...element.querySelectorAll('[data-slot="dropdown-menu-label"]')]
+        .map(row => (row.textContent ?? '').trim()).find(text => text.endsWith('· 会话设置'));
+      return {facts, agentIdentity: agent?.replace(/\s*· 会话设置$/, '') ?? null,
+        controls: [...element.querySelectorAll('[data-lab-option]')].map(row => ({
+          id: row.getAttribute('data-lab-option'), role: row.getAttribute('role'),
+          on: row.getAttribute('aria-checked'), tag: row.tagName.toLowerCase(),
+          summary: (row.querySelector('.composer-lab-menu-value')?.textContent ?? '').trim(),
+          text: (row.textContent ?? '').trim(),
+        })),
+      };
+    });
+    const cost = await page.evaluate(() => document.body.innerText.match(/.{0,12}(\$|USD|0\.39).{0,12}/)?.[0] ?? '');
+    const options = [];
+    let modeMenu = null;
+    for (const control of root.controls) {
+      if (control.role === 'menuitemcheckbox') {
+        options.push(control);
+        continue;
+      }
+      await menu.locator(`[data-lab-option="${control.id}"]`).click();
+      const selected = menu.locator('[role="menuitemradio"][data-state="checked"]');
+      await selected.waitFor();
+      const value = await selected.evaluate(row => ({
+        id: row.getAttribute('data-option-value'),
+        name: [...row.querySelectorAll(':scope > span')].map(child => (child.textContent ?? '').trim()).find(Boolean) ?? '',
+      }));
+      assert.equal(control.summary, value.name, `${control.id}: drawn summary matches the selected choice`);
+      const choice = {...control, text: value.name, value: value.id, menuRole: await menu.getAttribute('role')};
+      if (control.id === 'execution-permission') modeMenu = {...choice, id: value.id};
+      else options.push(choice);
+      await menu.locator('[data-session-menu-back]').click();
+    }
+    await menu.getByRole('menuitem', {name: '模型详情', exact: true}).click();
+    const modelReported = await menu.locator('[data-lab-model-id]').textContent();
+    await page.keyboard.press('Escape');
+    await menu.waitFor({state: 'hidden'});
+    return {modeMenu, options, permission: modeMenu?.text ?? root.facts['执行权限'] ?? null,
+      agentIdentity: root.agentIdentity, modelReported,
+      usage: root.facts['上下文'] === undefined ? null : {share: root.facts['上下文'], cost},
+    };
+  };
+
+  const look = async ({ scheme, motion, frames: override, paste = false, openTools = false, send = false }) => {
     const feed = override ?? frames;
     const ctx = await browser.newContext({
       viewport: { width: WIDE, height: 900 },
@@ -449,14 +460,8 @@ try {
       });
       await wait(600);
     }
-    if (openAdd) {
-      // The agent's own settings live in the ＋ menu since the redesign
-      // (the composer capsule, 2026-10-02): opened for real, so what is
-      // read is what a person sees there.
-      await page.locator("[data-chat-add]").click();
-      await wait(400);
-    }
-    const out = await page.evaluate(probe);
+    const controls = await inspectControls(page);
+    const out = {...await page.evaluate(probe), ...controls};
     if (send) {
       await page.locator("[data-chat-input]").fill("看看这个");
       await page.locator("[data-chat-send]").click();
@@ -501,10 +506,9 @@ try {
 
   // ── the mode marker ──────────────────────────────────────────────
   //
-  // **The load-bearing row is `default → nothing`.** A marker that is
-  // always there is not a marker, and a negative claim like that is
-  // satisfied for free by a page that never painted — so the rows
-  // around it have to find the very element it must not.
+  // Default reports no nondefault permission. The current header exposes
+  // the other words as actual configuration facts (or selected choices);
+  // positive neighboring rows keep the default negative from passing for free.
   for (const [id, want] of [
     ["plan", words.chat_mode_plan],
     ["acceptEdits", words.chat_mode_accept_edits],
@@ -526,15 +530,15 @@ try {
       continue;
     }
     if (want === null) {
-      if (m.mode !== null) {
-        fail(`mode/${id}: the ordinary mode drew ${JSON.stringify(m.mode)} — a marker that is always there is not one`);
+      if (m.permission !== null || m.mode !== null) {
+        fail(`mode/${id}: the ordinary mode drew ${JSON.stringify(m.permission ?? m.mode)} — a marker that is always there is not one`);
       } else {
         console.log(`mode · ${id}: silent, as it must be`);
       }
-    } else if (m.mode !== want) {
-      fail(`mode/${id}: drew ${JSON.stringify(m.mode)}, wanted ${JSON.stringify(want)}`);
+    } else if (m.permission !== want) {
+      fail(`mode/${id}: drew ${JSON.stringify(m.permission)}, wanted ${JSON.stringify(want)}`);
     } else {
-      console.log(`mode · ${id}: ${m.mode}`);
+      console.log(`mode · ${id}: ${m.permission}`);
     }
   }
 
@@ -576,7 +580,6 @@ try {
           },
         },
       ],
-      openAdd: true,
     });
     if (m.errs.length) fail(`settings: the page threw — ${m.errs[0]}`);
     if (!m.column) {
@@ -589,14 +592,11 @@ try {
       } else {
         console.log(`settings · mode menu: ${m.modeMenu.text}`);
       }
-      // **A choice among values opens a menu** — the composer's own glass
-      // menu since the redesign (2026-10-02: the mode is a seat in the
-      // capsule, a listed select is a submenu of ＋), where it was a
-      // native `<select>` (components/PopupButton, 2026-09-28). What is
-      // held is that each is a control announcing the menu it opens.
+      // Each values control must actually open its choice page in the
+      // current single configuration menu, not only print a setting name.
       for (const [what, got] of [["the mode menu", m.modeMenu], ["the model select", m.options.find((o) => o.id === "model")]]) {
-        if (got && got.popup !== "menu") {
-          fail(`settings: ${what} is a <${got.tag}> announcing ${JSON.stringify(got.popup)} — a choice among values opens a menu`);
+        if (got && got.menuRole !== "menu") {
+          fail(`settings: ${what} did not open its current choice page in a menu (${JSON.stringify(got.menuRole)})`);
         }
       }
       if (m.mode !== null) {
@@ -662,11 +662,12 @@ try {
         if (!m.text.includes(said)) fail(`optional model: ${JSON.stringify(said)} is not on the page`);
       }
       if (!m.modeMenu || m.modeMenu.id !== "default") {
-        fail(`optional model: the mode seat wears ${JSON.stringify(m.modeMenu)}, wanted the current mode (default)`);
+        fail(`optional model: the mode seat wears ${JSON.stringify(m.modeMenu)}, wanted the selected execution permission (default)`);
       }
       if (m.usage) fail(`optional model: a context dial was drawn with no reading from the host (${JSON.stringify(m.usage)})`);
-      if (!m.who) fail("optional model: the composer's who seat is missing — with no reading it is the agent's mark");
-      if (!m.errs.length) console.log("optional model · current payload draws: words, mode seat on default, no dial, no model");
+      if (!/claude/i.test(m.agentIdentity ?? "")) fail(`optional model: reported agent identity is missing (${JSON.stringify(m.agentIdentity)})`);
+      if (m.modelReported !== "宿主未报告模型") fail(`optional model: an unreported model was invented (${JSON.stringify(m.modelReported)})`);
+      if (!m.errs.length) console.log("optional model · current payload draws: words, selected default, reported identity, no usage/model");
     }
   }
 
@@ -832,8 +833,14 @@ try {
     const errs = [];
     page.on("pageerror", (e) => errs.push(String(e)));
     const json = (b) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(b) });
+    await page.route("**/lock_state", json({on: false, has_pin: false, timeout_min: 0,
+      timeouts: [0, 1, 5, 15, 60], pin_min: 6, system_door: false}));
     await page.route("**/sessions", json([]));
-    await page.route("**/devices", json([]));
+    const fixtureHome = "a".repeat(64);
+    await page.route("**/devices", json([{id: fixtureHome, name: "alpha", me: true,
+      face: null, pinned: false, vitals: null, hop: null, sponsor: null, watch: [], watched: null,
+      seat: {left: 50, top: 50}, hosts: true}]));
+    const savedAnswer = seen.said === "unasked" ? seen : {...seen, home: fixtureHome};
     await page.route("**/hooks_state", json({ installed: false }));
     await page.route("**/quota", json({ quota: null, trouble: null }));
     await page.route("**/dir_pins", json([]));
@@ -846,11 +853,11 @@ try {
     const sent = { register: [], resume: [] };
     await page.route("**/agent_seen", (r) => {
       calls.seen += 1;
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(seen) });
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(savedAnswer) });
     });
     await page.route("**/agent_ask", (r) => {
       calls.ask += 1;
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(seen) });
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(savedAnswer) });
     });
     await page.route("**/register_known_agent", (r) => {
       try {
@@ -873,6 +880,7 @@ try {
           at_ms: r.updated_at ? Date.parse(r.updated_at) : 0,
           category: null,
           agent: registered[0].name,
+          command: null,
         }))
       : [];
     await page.route("**/import_candidates", json(offered));
@@ -1406,15 +1414,11 @@ try {
       if (!m.usage) {
         fail(`${say}: usage_update carried a reading and nothing drew it`);
       } else {
-        if (m.usage.used !== 320_000 || m.usage.size !== 1_000_000) {
-          fail(`${say}: the reading arrived as ${m.usage.used}/${m.usage.size}, not 320000/1000000`);
-        }
-        // 32% — asserted as the *printed* string, because the bug this
-        // is about is arithmetic reaching a person, not a number
-        // reaching a variable. A face that divided the wrong way would
-        // hold the right two numbers in the DOM and print 313%.
-        if (!m.usage.share.includes("32")) {
-          fail(`${say}: 320000 of 1000000 printed as "${m.usage.share}" — 32 is nowhere in it`);
+        // The current header exposes the actual visible percentage, not the
+        // retired composer's hidden raw-count attributes. Keep the original
+        // 320000/1000000 SDK input and independently require its visible 32%.
+        if (m.usage.share !== "32%") {
+          fail(`${say}: 320000 of 1000000 printed as "${m.usage.share}", wanted exactly 32%`);
         }
         // ⚠️ This asserted the cost was printed (0.39) until the redesign;
         // the owner decided the composer writes no dollars (2026-10-02),
