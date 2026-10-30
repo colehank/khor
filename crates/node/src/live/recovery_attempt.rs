@@ -552,8 +552,12 @@ impl<'a> Held<'a> {
         let native = reservation.identity();
         let meta = self.gate.read_meta_or_new()?;
         let bound = crate::session_content::journal::bound_identity(&self.gate.dir)?;
-        if bound.as_ref().is_none_or(|bound| bound != native)
-            && meta.as_ref().and_then(|meta| meta.gui_native.as_ref()) != Some(native)
+        let recorded = meta.as_ref().and_then(|meta| meta.gui_native.as_ref());
+        if bound.as_ref().is_some_and(|bound| bound != native)
+            || recorded.is_some_and(|recorded| recorded != native)
+            || meta.as_ref().is_some_and(|meta| !meta.id.is_empty()
+                && meta.id != crate::adaptor::id_for(&native.native_id).0)
+            || (bound.as_ref() != Some(native) && recorded != Some(native))
         {
             return Err("unconfirmed New is not proven to be this row's exact source".into());
         }
@@ -1337,6 +1341,23 @@ mod tests {
             let reservation = JournalReservation::take(&root.0, native.clone()).unwrap();
             let mut gate = RowGate::acquire(&row).unwrap();
             let mut held = Held::load(&mut gate).unwrap();
+            let mut conflict = native.clone();
+            conflict.agent = "another-agent".into();
+            let mut meta = crate::live::Meta {
+                kind: khor_core::kind::GUI.into(), title: "collision fixture".into(),
+                pid: None, started_ms: 1, gui_native: Some(conflict), gui_run: None,
+                category: None, id: crate::adaptor::id_for(&native.native_id).0,
+                vendor_leaf: None, place: None,
+            };
+            held.gate.write_meta(&meta).unwrap();
+            assert!(held.quarantine_new(&reservation).is_err());
+            assert!(!row.join(NAME).exists(), "matching binding cannot override conflicting Meta source");
+            meta.gui_native = Some(native.clone());
+            meta.id = "tui/another-row".into();
+            held.gate.write_meta(&meta).unwrap();
+            assert!(held.quarantine_new(&reservation).is_err());
+            assert!(!row.join(NAME).exists(), "matching native cannot override conflicting logical row");
+            fs::remove_file(row.join("meta.json")).unwrap();
             held.quarantine_new(&reservation).unwrap();
             let document = read(&row).unwrap().unwrap();
             assert_eq!(document.high_water, 0);
