@@ -86,6 +86,10 @@ macro_rules! roots {
         $visit!(khor_gui_core::files::DirListing);
         $visit!(khor_gui_core::recents::RecentRow);
         $visit!(khor_gui_core::web::WebBorrow);
+        $visit!(khor_gui_core::web::PageNavigationPhase);
+        $visit!(khor_gui_core::web::PageNavigationCause);
+        $visit!(khor_gui_core::web::PageNavigationError);
+        $visit!(khor_gui_core::web::PageNavigationState);
         $visit!(khor_gui_core::tabs::TabsOpen);
         $visit!(khor_gui_core::tabs::TabRow);
         $visit!(khor_gui_core::term::TermStart);

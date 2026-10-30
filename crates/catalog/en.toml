@@ -2984,6 +2984,8 @@ web-opened-here = "Opened"
 # A page that could not be opened (UX-22): one line in the pill/caption, 「Retry」 (region_retry) beside it.
 # The reason is WebKit's error code, sorted; anything else is the system's own sentence.
 page-failed = "Can't open the page: {0}"
+page-fail-connect = "Could not connect to the server"
+page-fail-lost = "Connection was lost"
 page-fail-host = "Server not found"
 page-fail-refused = "Connection refused"
 page-fail-timeout = "Request timed out"

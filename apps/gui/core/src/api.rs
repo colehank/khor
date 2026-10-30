@@ -1118,6 +1118,10 @@ pub fn answer(
                 to_json(&rt.block_on(crate::web::borrow_web(root, &machine))?)
             }
         }
+        "page_state" => {
+            let _tab = arg("tab")?;
+            to_json(&Option::<crate::web::PageNavigationState>::None)
+        }
         // `page_deck` is the iPhone's native deck over its page (UX-13);
         // here there is neither, so it is answered like the other moves.
         "move_page" | "hide_page" | "close_page" | "show_page" | "page_step" | "page_deck"

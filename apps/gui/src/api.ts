@@ -83,6 +83,10 @@ import { CONFIG_TOLD, LOCK_TOLD, tellOthers } from "./lib/other-windows";
 import type { HistoryRow } from "./gen/bindings/HistoryRow";
 import type { SearchHit } from "./gen/bindings/SearchHit";
 import type { RecentRow } from "./gen/bindings/RecentRow";
+import type { PageNavigationState } from "./gen/bindings/PageNavigationState";
+import type { PageNavigationPhase } from "./gen/bindings/PageNavigationPhase";
+import type { PageNavigationError } from "./gen/bindings/PageNavigationError";
+import type { PageNavigationCause } from "./gen/bindings/PageNavigationCause";
 import type { WebBorrow } from "./gen/bindings/WebBorrow";
 import type { TermStart } from "./gen/bindings/TermStart";
 import type { EndedPage } from "./gen/bindings/EndedPage";
@@ -173,6 +177,10 @@ export type {
   SearchHit,
   RecentRow,
   WebBorrow,
+  PageNavigationState,
+  PageNavigationPhase,
+  PageNavigationError,
+  PageNavigationCause,
   AgentRow,
   KnownAgent,
   AgentSaid,
@@ -1644,6 +1652,10 @@ export const showPage = (tab: string) =>
 /** Current native history, also read when a retained tab is shown again. */
 export const pageSteps = (tab: string) =>
   onWebFace ? Promise.resolve(null) : call<{back:boolean;forward:boolean}|null>("page_steps", { tab });
+
+/** Current native navigation, including a retained view's latest snapshot. */
+export const pageState = (tab: string) =>
+  onWebFace ? Promise.resolve(null) : call<PageNavigationState | null>("page_state", { tab });
 
 /** Back, forward, reload, retry, stop and certificate continuation. */
 export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retry" | "stop" | "pass") =>

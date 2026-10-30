@@ -5,6 +5,7 @@
 mod menu_overlay;
 mod native_io;
 mod page_history;
+mod page_navigation;
 
 #[cfg(desktop)]
 mod window_surface;
@@ -234,7 +235,14 @@ async fn dirs_wait(
     cursor: Option<String>,
     wait_ms: u32,
 ) -> Result<khor_gui_core::files::DirWatchBatch, String> {
-    khor_gui_core::files::dirs_wait(&Node::root_from_env(), &machine_id, &id, cursor.as_deref(), wait_ms.min(20_000)).await
+    khor_gui_core::files::dirs_wait(
+        &Node::root_from_env(),
+        &machine_id,
+        &id,
+        cursor.as_deref(),
+        wait_ms.min(20_000),
+    )
+    .await
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -382,8 +390,13 @@ async fn git_history(
     limit: u32,
 ) -> Result<khor_gui_core::git::GitHistoryPage, String> {
     khor_gui_core::git::history(
-        &Node::root_from_env(), &machine, &dir, cursor.as_deref(), limit,
-    ).await
+        &Node::root_from_env(),
+        &machine,
+        &dir,
+        cursor.as_deref(),
+        limit,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1840,6 +1853,7 @@ async fn open_page(
             // navigation for its URL takes the process down with it.
             let now = wired.as_ref().map(|(_, at)| at.as_str());
             if now != Some(target.as_str()) {
+                request_page_navigation(window.app_handle(), &tab, going_to.clone());
                 page_went(&label, target.as_str());
                 live.navigate(target).map_err(|e| e.to_string())?;
             }
@@ -1856,6 +1870,14 @@ async fn open_page(
             tell_page_steps(&live, &tab);
             return Ok(borrow);
         }
+        #[cfg(target_os = "macos")]
+        page_fail::forget(&tab);
+        #[cfg(not(target_os = "macos"))]
+        page_navigation::with_pages(|pages| {
+            if let Some(key) = pages.key_for_tab(&tab) {
+                pages.detach(key);
+            }
+        });
         let _ = live.close();
     }
 
@@ -1863,6 +1885,22 @@ async fn open_page(
     // is somebody else's site; broadcasting khor's own events into it
     // would be handing a stranger the app's internal traffic.
     let face = window.label().to_string();
+    #[cfg(not(target_os = "macos"))]
+    let fallback_key = {
+        let (key, opening) = page_navigation::with_pages(|pages| {
+            pages.attach_wry(
+                face.clone(),
+                tab.clone(),
+                going_to.clone(),
+                machine.clone(),
+                !direct,
+            )
+        })
+        .flatten()
+        .ok_or("native page identity exhausted")?;
+        tell_page_navigation(window.app_handle(), Some(opening));
+        key
+    };
     let (t_tab, l_tab) = (tab.clone(), tab.clone());
     let (t_face, l_face) = (face.clone(), face.clone());
     // **The shim rides on the builder, beside the proxy, on purpose.**
@@ -1876,7 +1914,12 @@ async fn open_page(
     // Read `page_shim.js` before touching this. It takes two WebKit APIs
     // away from the page and **cannot take the third**, and the third is
     // still leaking every hostname the page prefetches.
-    let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(target));
+    #[cfg(target_os = "macos")]
+    let initial = "about:blank".parse().map_err(|e| format!("{e}"))?;
+    #[cfg(not(target_os = "macos"))]
+    let initial = target;
+    let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(initial))
+        .background_color(ground(chosen_dark(desktop_is_dark)));
     if let Some(proxy) = proxy {
         // The two ride together or not at all — see `direct` above.
         builder = builder
@@ -1895,15 +1938,15 @@ async fn open_page(
             // reach (`khor_node::tunnel::PAGE_FAILED_TITLE`, UX-22): a
             // failed load, not a title.
             if title == khor_node::tunnel::PAGE_FAILED_TITLE {
-                let at = view.url().map(|u| u.to_string()).unwrap_or_default();
-                let _ = view.app_handle().emit_to(
-                    t_face.clone(),
-                    "page:fail",
-                    PageWord {
-                        tab: t_tab.clone(),
-                        text: format!("route|khor||{at}"),
-                    },
-                );
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let failed_url = view.url().map(|url| url.to_string()).unwrap_or_default();
+                    let change = page_navigation::with_pages(|pages| {
+                        pages.wry_failed(fallback_key, page_navigation::route_error(failed_url))
+                    })
+                    .flatten();
+                    tell_page_navigation(view.app_handle(), change);
+                }
                 return;
             }
             let _ = view.app_handle().emit_to(
@@ -1916,19 +1959,23 @@ async fn open_page(
             );
         })
         .on_page_load(move |view, payload| {
-            let word = match payload.event() {
-                tauri::webview::PageLoadEvent::Started => "started",
-                tauri::webview::PageLoadEvent::Finished => "finished",
-            };
+            if payload.url().as_str() == "about:blank" {
+                return;
+            }
             let app = view.app_handle();
-            let _ = app.emit_to(
-                l_face.clone(),
-                "page:load",
-                PageWord {
-                    tab: l_tab.clone(),
-                    text: word.to_owned(),
-                },
-            );
+            #[cfg(not(target_os = "macos"))]
+            {
+                let change = page_navigation::with_pages(|pages| match payload.event() {
+                    tauri::webview::PageLoadEvent::Started => {
+                        pages.wry_started(fallback_key, payload.url().to_string())
+                    }
+                    tauri::webview::PageLoadEvent::Finished => {
+                        pages.wry_finished(fallback_key, payload.url().to_string())
+                    }
+                })
+                .flatten();
+                tell_page_navigation(app, change);
+            }
             // **On arrival, not on departure.** This used to fire for
             // both halves of a load, so every navigation reported the
             // tab's place twice — and the first of the two is a place the
@@ -2035,16 +2082,6 @@ async fn open_page(
                 if let Ok(mut m) = page_downloads().lock() {
                     m.push((url.to_string(), destination.clone()));
                 }
-                // The navigation that became a download ends no load: the
-                // light goes out here.
-                let _ = fetched.emit_to(
-                    d_face.clone(),
-                    "page:load",
-                    PageWord {
-                        tab: d_tab.clone(),
-                        text: "finished".into(),
-                    },
-                );
                 tell(format!("started|{name}"));
             }
             tauri::webview::DownloadEvent::Finished { url, success, .. } => {
@@ -2077,15 +2114,41 @@ async fn open_page(
             LogicalPosition::new(at.x, top),
             LogicalSize::new(at.w, at.h),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| {
+            #[cfg(not(target_os = "macos"))]
+            page_navigation::with_pages(|pages| pages.detach(fallback_key));
+            error.to_string()
+        })?;
     if !page_is_wanted(&tab) {
-        made.hide().map_err(|e| e.to_string())?;
+        if let Err(error) = made.hide() {
+            #[cfg(not(target_os = "macos"))]
+            page_navigation::with_pages(|pages| pages.detach(fallback_key));
+            let _ = made.close();
+            return Err(error.to_string());
+        }
+    }
+    // Publish the requested exit before native callbacks can report redirects.
+    if let Ok(mut pages) = page_exits().lock() {
+        pages.insert(label.clone(), (machine.clone(), going_to.clone()));
     }
     // A load that fails says so (UX-22, `page_fail`).
     #[cfg(target_os = "macos")]
-    page_fail::watch(&made, face.clone(), tab.clone());
-    if let Ok(mut m) = page_exits().lock() {
-        m.insert(label, (machine, going_to));
+    if let Err(error) = page_fail::watch(
+        &made,
+        face.clone(),
+        tab.clone(),
+        going_to.clone(),
+        machine.clone(),
+        !direct,
+    )
+    .await
+    {
+        page_fail::forget(&tab);
+        if let Ok(mut pages) = page_exits().lock() {
+            pages.remove(&label);
+        }
+        let _ = made.close();
+        return Err(error);
     }
     Ok(borrow)
 }
@@ -2413,6 +2476,40 @@ fn repaint_the_ground(app: &tauri::AppHandle) {
     if let Some(view) = app.get_webview("main") {
         let _ = view.set_background_color(Some(window_surface::background(dark)));
     }
+    let page_labels = page_exits()
+        .lock()
+        .map(|pages| pages.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    for label in page_labels {
+        if let Some(view) = app.get_webview(&label) {
+            let _ = view.set_background_color(Some(ground(dark)));
+        }
+    }
+}
+
+/// Send immutable lifecycle changes only to the containing Khor face.
+#[cfg(desktop)]
+fn tell_page_navigation(app: &tauri::AppHandle, change: Option<page_navigation::Changed>) {
+    use tauri::Emitter;
+    if let Some(change) = change {
+        let _ = app.emit_to(change.face, "page:navigation", change.state);
+    }
+}
+
+#[cfg(desktop)]
+fn request_page_navigation(app: &tauri::AppHandle, tab: &str, target: String) {
+    let change = page_navigation::with_pages(|pages| {
+        let key = pages.key_for_tab(tab)?;
+        pages.request(key, target)
+    })
+    .flatten();
+    tell_page_navigation(app, change);
+}
+
+/// The current lifecycle snapshot belongs to the native page owner.
+#[tauri::command]
+fn page_state(tab: String) -> Option<khor_gui_core::web::PageNavigationState> {
+    page_navigation::snapshot(&tab)
 }
 
 /// A snapshot of the actual native session history. Null means that this
@@ -2486,10 +2583,29 @@ fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), Stri
     match way.as_str() {
         "back" => view.eval("history.back()").map_err(|e| e.to_string()),
         "forward" => view.eval("history.forward()").map_err(|e| e.to_string()),
-        "reload" => view.reload().map_err(|e| e.to_string()),
+        "reload" => {
+            let target = page_exits().lock().ok().and_then(|pages| {
+                pages
+                    .get(&page_label(&tab))
+                    .map(|(_, target)| target.clone())
+            });
+            if let Some(target) = target {
+                request_page_navigation(&app, &tab, target);
+            }
+            view.reload().map_err(|e| e.to_string())
+        }
         // The pill's × while a page loads (UX-33): the page's own stop
         // (wry has no verb for it; the load ends as a cancelled one).
-        "stop" => view.eval("window.stop()").map_err(|e| e.to_string()),
+        "stop" => {
+            view.eval("window.stop()").map_err(|e| e.to_string())?;
+            let change = page_navigation::with_pages(|pages| {
+                let key = pages.key_for_tab(&tab)?;
+                pages.cancelled(key)
+            })
+            .flatten();
+            tell_page_navigation(&app, change);
+            Ok(())
+        }
         // 重试 (UX-22): where the last load failed to go, again — a
         // reload would load the page still there. A Mac that heard no
         // failure, or a platform that hears none, reloads.
@@ -2498,7 +2614,16 @@ fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), Stri
             if let Some(url) =
                 page_fail::take_failed(&tab).and_then(|u| u.parse::<tauri::Url>().ok())
             {
+                request_page_navigation(&app, &tab, url.to_string());
                 return view.navigate(url).map_err(|e| e.to_string());
+            }
+            let target = page_exits().lock().ok().and_then(|pages| {
+                pages
+                    .get(&page_label(&tab))
+                    .map(|(_, target)| target.clone())
+            });
+            if let Some(target) = target {
+                request_page_navigation(&app, &tab, target);
             }
             view.reload().map_err(|e| e.to_string())
         }
@@ -2507,6 +2632,7 @@ fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), Stri
         "pass" => {
             #[cfg(target_os = "macos")]
             if let Some(url) = page_trust::pass(&tab).and_then(|u| u.parse::<tauri::Url>().ok()) {
+                request_page_navigation(&app, &tab, url.to_string());
                 return view.navigate(url).map_err(|e| e.to_string());
             }
             Ok(())
@@ -2534,6 +2660,12 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
         page_fail::forget(&tab);
         page_trust::forget(&tab);
     }
+    #[cfg(not(target_os = "macos"))]
+    page_navigation::with_pages(|pages| {
+        if let Some(key) = pages.key_for_tab(&tab) {
+            pages.detach(key);
+        }
+    });
     if let Ok(mut m) = page_exits().lock() {
         m.remove(&label);
     }
@@ -3982,6 +4114,7 @@ fn wear_on_the_windows(theme: &str) {
             }
         }
     }
+    phone_page::repaint_ground();
 }
 
 /// **The face's own scroll view never bounces** (the owner, 2026-10-05,
@@ -5394,6 +5527,7 @@ pub fn run() {
             show_page,
             page_step,
             page_steps,
+            page_state,
             page_deck,
             page_sheet,
             page_ground,

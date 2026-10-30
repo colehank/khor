@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use khor_node::Node;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// The script every borrowed page runs before its own scripts do.
@@ -40,6 +40,57 @@ pub struct WebBorrow {
     pub session: String,
     /// `127.0.0.1:<port>`, the proxy a webview sets as its `proxy_url`.
     pub addr: String,
+}
+
+/// The lifecycle reported by the platform's current page navigation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum PageNavigationPhase {
+    Opening,
+    Started,
+    Committed,
+    Finished,
+    /// The platform reported an end without confirming success.
+    Settled,
+    Failed,
+    Cancelled,
+}
+
+/// An original platform error cause. Native integer codes remain strings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PageNavigationCause {
+    pub domain: String,
+    pub code: String,
+    pub description: String,
+    pub url: String,
+}
+
+/// A bounded original error chain, including at most four total causes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PageNavigationError {
+    pub domain: String,
+    pub code: String,
+    pub description: String,
+    pub url: String,
+    pub underlying: Vec<PageNavigationCause>,
+    pub truncated: bool,
+}
+
+/// A snapshot of one view's current navigation. Decimal identities preserve
+/// native counter precision; an absent estimate means no platform estimate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PageNavigationState {
+    pub tab: String,
+    pub view: String,
+    pub navigation: String,
+    pub revision: String,
+    pub phase: PageNavigationPhase,
+    pub estimate: Option<f64>,
+    pub requested_url: String,
+    pub url: String,
+    pub exit: String,
+    pub proxied: bool,
+    pub error: Option<PageNavigationError>,
 }
 
 /// Opens a borrow of `machine`'s network and answers where its proxy
@@ -458,5 +509,48 @@ mod loopback_tests {
             .await
             .unwrap_err();
         assert!(said.contains(&port.to_string()), "{said}");
+    }
+}
+
+#[cfg(test)]
+mod navigation_contract_tests {
+    use super::{PageNavigationPhase, PageNavigationState};
+
+    #[test]
+    fn native_identity_and_error_codes_survive_the_json_boundary() {
+        let value = serde_json::json!({
+            "tab":"tab", "view":"18446744073709551615", "navigation":"9007199254740993",
+            "revision":"9007199254740994", "phase":"failed", "estimate":null,
+            "requested_url":"https://requested.example", "url":"https://actual.example",
+            "exit":"home", "proxied":true,
+            "error":{"domain":"NSURLErrorDomain","code":"-9223372036854775808",
+                "description":"连接中断", "url":"https://failed.example",
+                "underlying":[], "truncated":false}
+        });
+        let state: PageNavigationState = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(state.phase, PageNavigationPhase::Failed);
+        assert_eq!(serde_json::to_value(state).unwrap(), value);
+        assert_eq!(
+            serde_json::to_value(PageNavigationPhase::Settled).unwrap(),
+            "settled"
+        );
+    }
+
+    #[test]
+    fn the_http_skin_has_no_native_page_snapshot_or_node_work() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // This path must not be opened or created just to report native absence.
+        let root = std::path::Path::new("/does-not-exist/khor-native-page-state");
+        assert_eq!(
+            crate::api::answer(&rt, root, "page_state", &serde_json::json!({"tab":"tab"})).unwrap(),
+            "null"
+        );
+        for invalid in [
+            serde_json::json!({}),
+            serde_json::json!({"tab":42}),
+            serde_json::json!({"tab":null}),
+        ] {
+            assert!(crate::api::answer(&rt, root, "page_state", &invalid).is_err());
+        }
     }
 }
