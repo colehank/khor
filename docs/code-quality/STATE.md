@@ -4,13 +4,13 @@
 
 ## 当前源码、分工与运行
 
-Root `integrate/round2@864c4500f25302deb6d86553cc84ddf69f568f9e` clean。两作者＋独立reviewer；Root只集成/验证/协调，不开第三实现线。
+Root `integrate/round2@326a83298608f374d1c2cc01ec8125bc469c08ce` clean。两作者＋独立reviewer；Root只集成/验证/协调，不开第三实现线。
 
 - input独占Node/ACP恢复：known2f已Root整合e313并实际验证；当前在author tree补真实Initialize capability持久事实与caller-stable token窄片，其后同一owner串行做公开home路由/native动作/新Shell。已授权Node lib/live/recovery_attempt/gui_host/必要session_recovery.rs、ACP accessor，后继link/ipc/proto/shell_start/Meta关系；不写Core/TS。能力不提前改旧Meta，绑定同epoch/full native/agent/effective launch；offer不探provider。后继同一≤16KiB文档须区分current execution owner与latest action/result各一份，Join不撤live生产者key，同token结束后仍不重新spawn。generic close旧问题仅NEXT。
 - H独占Core/API/GUI消费：ac953共享serde DTO、e122贡献锚点、e211当前turn夹具均已独审整合。现在并行接Core facade/API/Tauri/TS/DetailPane与私有Recovery动作hook，不新wizard、不改model配置；core recovery.rs及SessionId仅加现ts-rs10元数据（依赖原有，不改锁/版本），GUI只映射home.hex避免平行enum。另一个极小原H测试夹具修正（见下）独立提交，不混产品。Node接口未固定前不真实gen/compile，生成文件不手写。
 - reviewer非作者只读审源码/真实结果/Clean Code，无自主runtime；idle用followup_task。源码授权不等于构建授权。
 
-当前browser槽仅Root **actual38247**（完整ACP，head864）运行；Native/App/maintenance FREE。以内部 `current-runtime.json` 与实际tool handle为准，不能因观察超时重启，不poll历史terminal句柄。
+当前Native/browser/App/maintenance槽均 **FREE**；最近browser actual38247完整ACP已terminal0/独审，旧句柄不重poll。以内部 `current-runtime.json` 与实际tool handle为准，不能因观察超时重启，不poll历史terminal句柄。
 
 ## 已确认结果与明确限制
 
@@ -22,7 +22,7 @@ Root `integrate/round2@864c4500f25302deb6d86553cc84ddf69f568f9e` clean。两作�
 | 当前完整Find | Root864 actual55298，完整32PASS/exit0/3.278s含真实Worker，result `fef9c1516c0ec94a777cf3a125ca7ec7a8603397d2806663aae11194bacc68cd`，已独审；2335源/env/tools/owned/TMP净。共享spans retirement未改变搜索/copy内容；不是DOM/WK/types证明。 |
 | 文字Range红基线 | Root298 actual55767 terminal1/6.564s，真实512-entry窗prepend128淘汰尾部，同entry200/offset49/sample仍在，文字top0→10240；result376b7236…78c3，已独审业务红、非timeout/forced，清理净。e122修复已整合，但当前尚无浏览器Range绿。 |
 | 当前完整H消费者尝试 | Root864 actual59083 terminal1/7.848s；前4组搜旧DOM/源copy/giant拒截断/raw export过，原第5组held-copy顺序断言失败，未到Range。result `dae945ff8a231b354767b0a8f0e02f7b61c45ef151318cc98586549bf6a47b08`，log22acde4c…57e8e，已独审；2335源/env/gen/tools/strict清理全净。持有的是空tail poll lease72/f:A1300，而Copy lease73/f:A20已完成，any-newer测试flag被无关IO消费，不能据此归产品顺序错。 |
-| ACP完整18947/9255 | 两次原false保。9255在b7完整跑121.040s，result `963806b5e50c6c1560e0e9e0edca98d7b1f599aff6bf1f903697c1b061b8753d`，严格清理/源稳且独审。真实lucide SVG selector正确；default fixture仅Notes无Turning→ChatView inTurn=false，Loader正确不渲染，不是产品CSS缺口。e211只补合法turning事实，原SDKpayload/4主题动静/所有现assert与nonvisual保；38247当前一次重验中，不预称绿。 |
+| ACP完整18947/9255 | 两次原false保。9255在b7完整跑121.040s，result `963806b5e50c6c1560e0e9e0edca98d7b1f599aff6bf1f903697c1b061b8753d`，严格清理/源稳且独审。真实lucide SVG selector正确；default fixture仅Notes无Turning→ChatView inTurn=false，Loader正确不渲染，不是产品CSS缺口。e211只补合法turning事实，原SDKpayload/4主题动静/所有现assert与nonvisual保；38247在864实际完整通过：terminal0/120.284s，result `0cf68f0cf2b694b5afa188ba54823da76009d9801966a247001312df540626c8` / loga5a924f7…7fba，4theme×motion/附件/模式配置/目录导入/registry/idle/press均实际到达，2335源/env/tools/gen及strict清理净，已独审。后326仅8个TS derive元数据，不重复该未变消费闭包；不冒WK/Native/fulltypes。 |
 
 上述原件在 `/Volumes/disk0/Khor/evidence/round2`；内部recovery只紧凑元数据/当前源码，不镜像大日志、截图或程序。旧R1 actual57370五exact、disclosure92761 short/long真实IO/暂停恢复、AI63835四场景、Store95235真实67,174,400B、Node60432/ACP63174/Recovery98901/Read62914各自原范围保持；无关通过未因新TS全重跑。旧失败75482/22391/36944/AI多次false/74275/18947/9255均不回填，详情可追前检查点和原证据。
 
@@ -39,4 +39,4 @@ Root `integrate/round2@864c4500f25302deb6d86553cc84ddf69f568f9e` clean。两作�
 
 定向清理已释放外104.715GiB、内4.004+1.775GiB；当前外约112GiB、系统13GiB/recovery2.2GiB，发布缓存117GiB/quality40GiB。源码/会话/正式发布与保护target未删，部分khor*只是兼容链接。每批严格外20/内10GiB保留量＋显式峰值，e70 preflight原件随批保存；原5GiB只紧急停止线。同quality target/jobs1/incremental0/offline，私有程序批末退役、不gzip和双盘大payload，日志截图外盘唯一。quality50GiB/recovery5GiB先复核再开下一批，不扩空间治理（见STORAGE）。
 
-先本页/PLAN/STORAGE，再实际Git/dirty/runtime；作者任务卡dirty不得全局stage，不按摘要覆盖。当前小bundle链各经gitverify0并双盘；最新b7相对298 bundle `fd8855d68e4d562953f084dcf05e35dc563056dc054d235c9d15582bd627f8a3`/11973B，后续864源码也须镜像小bundle。内部 `/Users/zgh/Library/Caches/khor-code-quality/recovery` 的RESUME/refs/docs/runtime按逐文件事实同步，不称全局原子。历史binary/source SHA仅历史，退役payload不冒仍在。
+先本页/PLAN/STORAGE，再实际Git/dirty/runtime；作者任务卡dirty不得全局stage，不按摘要覆盖。当前小bundle链各经gitverify0并双盘；最新b7相对298 bundle `fd8855d68e4d562953f084dcf05e35dc563056dc054d235c9d15582bd627f8a3`/11973B，后326相对b7的source bundle `5d74efbafea607fb71a8ef1d44a38ed5c4c449bfbc454d1550e073c9a1fe920b`/6510B已verify0双盘。两作者当前dirty bytes逐文件保current-author-source/manifest，非整体原子，不覆盖后来源。内部 `/Users/zgh/Library/Caches/khor-code-quality/recovery` 的RESUME/refs/docs/runtime按逐文件事实同步，不称全局原子。历史binary/source SHA仅历史，退役payload不冒仍在。

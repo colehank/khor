@@ -43,7 +43,7 @@
 
 ## 实际执行顺序
 
-当前Root864c4500。Known生产组件actual14117原8父＋2helper真过并独审；当前Find32独立真过，Reader实际28过、caller误计29原false保并独审裁定。Range保留字点红基线真复现，e122修复已源审整合；完整H actual59083前4组过、第5held-copy被无关tail poll抢flag而停，尚未到Range。ACP9255 default缺Turning事实已判夹具，e211补帧后actual38247完整重验中；公开恢复Core/Node/GUI与Shell并行接线，真实平台未完。Source/实际/scope均以STATE为准。
+当前Root326a8329。Known生产组件actual14117原8父＋2helper真过并独审；当前Find32独立真过，Reader实际28过、caller误计29原false保并独审裁定。Range保留字点红基线真复现，e122修复已源审整合；完整H actual59083前4组过、第5held-copy被无关tail poll抢flag而停，尚未到Range。ACP9255 default缺Turning事实已判夹具，e211补帧后actual38247完整suite已通过且独审（当前Rust/Core/平台不外推）；公开恢复Core/Node/GUI与Shell并行接线，真实平台未完。Source/实际/scope均以STATE为准。
 
 1. H完成真实来源驱动的chunk分组及必要raw/copy/分页消费；S按短row gate与RunKey→provider前reservation→Load/Resume事务→明确恢复/新Shell接线串行关闭既定缺口。两作者分配不重叠源码窗口，固定小片经非作者审后整合。
 2. 接口稳定后一次实际生成/catalog、noEmit/Vite、受影响consumer；再C/Core定向原生，最后同源CLI/GUI生产构建。旧16ee合同不能直接当337当前准入；未受影响的既有Store/A/B与关闭用例不因无关改动全重跑。
