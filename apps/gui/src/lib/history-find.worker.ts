@@ -39,7 +39,8 @@ async function next() {
   if (!normalDone) {
     const answer = batch.next();
     normalDone = answer.pageDone;
-    send({ ...answer, pageDone: normalDone && !references.length && !raw && !(fragment && page.older === null) });
+    send({ ...answer, unsearchedRanges: answer.unsearchedRanges - (answer.pageDone ? page.references.length : 0),
+      pageDone: normalDone && !references.length && !raw && !(fragment && page.older === null) });
     return;
   }
   const hits: FindHit[] = [];
@@ -118,10 +119,13 @@ self.onmessage = async (event: MessageEvent<FindWorkerInput>) => {
       page = message.page;
       if (page.references.length > 256 || utf8.encode(JSON.stringify(page)).length > 512 * 1024)
         throw new Error('history search page exceeds the reader budget');
-      const answer = batch.page({ ...page, references: [] });
+      // Normal text still needs the raw-reference positions as barriers.
+      // This worker accounts for raw projection coverage separately below.
+      const answer = batch.page(page);
       normalDone = answer.pageDone;
       references = [...page.references].sort((a, b) => b.start - a.start || (a.item ?? -1) - (b.item ?? -1));
-      send({ ...answer, pageDone: normalDone && !references.length && !(fragment && page.older === null) });
+      send({ ...answer, unsearchedRanges: answer.unsearchedRanges - (answer.pageDone ? page.references.length : 0),
+        pageDone: normalDone && !references.length && !(fragment && page.older === null) });
       return;
     }
     await next();

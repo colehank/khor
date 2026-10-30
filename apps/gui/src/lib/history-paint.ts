@@ -9,6 +9,18 @@ export type HistoryItem = (AcpItem | { who: 'sys'; text: string }) & {
   historyEntries: string[];
   historyRecords: { entry: string; record: HistoryRecordRef | null }[];
 };
+/** Ordering comes from checked physical ranges plus the parser item slot.
+ * An overlapping or whole-record reference without a comparable slot is unknown. */
+export function historyReferenceBetween(reference: HistoryRecordRef, left?: HistoryRecordRef | null, right?: HistoryRecordRef | null): boolean {
+  const same = (a: HistoryRecordRef, b: HistoryRecordRef) => a.start === b.start && a.end === b.end
+    && typeof a.item === 'number' && a.item === b.item;
+  const before = (a: HistoryRecordRef, b: HistoryRecordRef) => a.end <= b.start
+    || (a.start === b.start && a.end === b.end && typeof a.item === 'number' && typeof b.item === 'number' && a.item < b.item);
+  if (left && (before(reference, left) || same(reference, left))) return false;
+  if (right && (before(right, reference) || same(right, reference))) return false;
+  return true;
+}
+
 export function paintHistory(entries: HistoryEntry[], references: HistoryRecordRef[] = []): HistoryItem[] {
   const out: (HistoryItem | AcpItem | {
     who: 'boundary';
@@ -19,7 +31,7 @@ export function paintHistory(entries: HistoryEntry[], references: HistoryRecordR
     // A referenced raw record may contain text we have not projected. Never
     // concatenate the visible fragments across it into an invented message.
     if (references.length && (!record || (previousRecord && references.some(reference =>
-      reference.start >= previousRecord!.end && reference.end <= record.start))))
+      historyReferenceBetween(reference, previousRecord, record)))))
       out.push({who:'boundary'});
     if (record) previousRecord = record;
     const frame = entry.frame;

@@ -76,6 +76,15 @@ test('clipped canonical message parts stay searchable but cannot claim complete 
   assert.equal(completeHit.complete,true);
   const copied=await historyFindAction('copy',completeHit,{page:async()=>whole});
   assert.equal(copied.text,'hello');assert.equal(copied.complete,true);
+  const mixed = [{...entries[0],starts_message:true},entries[1]];
+  const secondPage = historyFindBatch(query('hello'));
+  secondPage.page(page([]));
+  assert.equal(secondPage.page(page(mixed)).hits[0].complete,false,
+    'a complete first record cannot certify a following streamed suffix at an unknown tail');
+  const unknownTail = {...page([{...text('native:0','hello'),record:entries[0].record}]),
+    references:[{...entries[1].record,item:null}]};
+  assert.equal(historyFindBatch(query('hello')).page(unknownTail).hits[0].complete,false,
+    'an unprojected tail is not bypassed by a message-start fact');
 });
 test('streams Unicode matching across chunks with exact original offsets', () => {
   const matcher = literalMatcher(query('中文😀x'));

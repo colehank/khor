@@ -1,6 +1,6 @@
 import type { HistoryPage } from '@/gen/bindings/HistoryPage';
 import type { HistoryItem } from './history-paint';
-import { paintHistory } from './history-paint';
+import { paintHistory, historyReferenceBetween } from './history-paint';
 import { toolInputText } from './acp-view';
 
 export const FIND_HITS = 32;
@@ -121,7 +121,6 @@ export function literalMatcher(raw: FindQuery) {
 export function historyPartComplete(items: HistoryItem[], index: number, page: HistoryPage, atTail: boolean): boolean {
   const item = items[index];
   const first = page.entries.find(entry => entry.key === item.historyEntries[0]);
-  if (first?.starts_message) return true;
   const firstRecord = item.historyRecords[0]?.record, lastRecord = item.historyRecords.at(-1)?.record;
   const from = page.entries.findIndex(entry => entry.key === item.historyEntries[0]);
   const to = page.entries.findIndex(entry => entry.key === item.historyEntries.at(-1));
@@ -131,11 +130,12 @@ export function historyPartComplete(items: HistoryItem[], index: number, page: H
   const previous = items[index - 1]?.historyRecords.at(-1)?.record;
   const next = items[index + 1]?.historyRecords[0]?.record;
   const unknownBefore = page.references.some(reference => !firstRecord
-    || (reference.end <= firstRecord.start && (!previous || reference.start >= previous.end)));
+    || historyReferenceBetween(reference, previous, firstRecord));
   const unknownAfter = page.references.some(reference => !lastRecord
-    || (reference.start >= lastRecord.end && (!next || reference.end <= next.start)));
-  const starts = !unknownBefore && (index > 0 || boundaryBefore || page.older === null);
-  const ends = !unknownAfter && (index < items.length - 1 || boundaryAfter || atTail);
+    || historyReferenceBetween(reference, lastRecord, next));
+  const starts = first?.starts_message || (!unknownBefore && (index > 0 || boundaryBefore || page.older === null));
+  const singleComplete = first?.starts_message && item.historyEntries.length === 1;
+  const ends = !unknownAfter && (singleComplete || index < items.length - 1 || boundaryAfter || atTail);
   return starts && ends;
 }
 
@@ -178,7 +178,7 @@ export function historyFindBatch(raw: FindQuery) {
     while (item < items.length && hits.length < FIND_HITS) {
       if (!projection) {
         projection = historyText(items[item]);
-        if (!projection.complete) unsearchedInputs++;
+        if (!projection.complete || !historyPartComplete(items, item, page, atTail)) unsearchedInputs++;
       }
       const texts = projection.texts;
       if (part >= texts.length) {

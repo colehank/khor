@@ -6,7 +6,7 @@ import ts from 'typescript';
 const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint', 'acp-view'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
 const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
-const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity } = module.exports;
+const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity, historyReferenceBetween } = module.exports;
 const note = (sessionUpdate, extra = {}) => ({ kind: 'note', update: { update: { sessionUpdate, ...extra } } });
 const entry = (key, text = key) => ({ key, starts_message: true, record: null, frame: note('agent_message_chunk', { content: { type: 'text', text } }) });
 const page = (key, { count = 1, bytes = 100, older = `before:${key}`, newer = `after:${key}`, more = false, reset = false, refs = [] } = {}) => ({ entries: Array.from({ length: count }, (_, i) => entry(`${key}:${i}`)), older, newer, has_more: more, reset, references: refs, encoded_bytes: bytes });
@@ -290,6 +290,11 @@ test('raw source references prevent invented text across an unprojected record',
   assert.equal(painted[0].historyRecords[0].record,first.record);
   assert.equal(painted[1].historyRecords[0].record,last.record);
   assert.deepEqual(raw,record(10,20),'the original raw reference is untouched');
+  const slot = item => ({...record(0,30),item});
+  assert(historyReferenceBetween(slot(1),slot(0),slot(2)), 'a missing middle parser item is a source gap too');
+  assert(!historyReferenceBetween(slot(0),slot(1),slot(2)), 'an earlier sibling is not a gap between later items');
+  assert(historyReferenceBetween(slot(null),slot(1),slot(2)), 'a whole/unknown overlapping record remains unknown');
+  assert.deepEqual(paintHistory([{...first,record:slot(0)},{...last,record:slot(2)}],[slot(1)]).map(item=>item.text),['hel','lo']);
 });
 test('shared ACP projection respects optional message IDs without requiring them', () => {
   const update = (text, messageId) => ({sessionUpdate:'agent_message_chunk', content:{type:'text',text}, ...(messageId ? {messageId} : {})});
