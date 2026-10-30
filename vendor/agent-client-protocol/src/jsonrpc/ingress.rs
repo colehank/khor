@@ -1,5 +1,7 @@
 //! Per-physical-input ownership, retained through adapters until dispatch/drop.
+use futures::task::AtomicWaker;
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 
 /// Encoded ingress ownership for one physical transport; not a process RSS limit.
 #[derive(Debug)]
@@ -48,6 +50,7 @@ impl IngressStats {
 #[derive(Debug)]
 struct Book {
     state: Mutex<IngressStats>,
+    available: AtomicWaker,
 }
 impl Book {
     fn state(&self) -> std::sync::MutexGuard<'_, IngressStats> {
@@ -76,6 +79,7 @@ impl IngressBudget {
                     window_frames: frames,
                     ..IngressStats::default()
                 }),
+                available: AtomicWaker::new(),
             }),
         })
     }
@@ -90,30 +94,56 @@ impl IngressBudget {
         Line(self.book.clone())
     }
     pub(super) async fn admit(&self, bytes: usize) -> Result<FrameAdmission, crate::Error> {
-        // Baseline meter: intentionally no capacity wait yet. The full-path
-        // saturation regression must demonstrate this unbounded behavior first.
-        let mut state = self.book.state();
-        let charged_bytes = state
-            .charged_bytes
-            .checked_add(bytes)
-            .ok_or_else(|| crate::util::internal_error("ingress byte accounting overflow"))?;
-        let charged_frames = state
-            .charged_frames
-            .checked_add(1)
-            .ok_or_else(|| crate::util::internal_error("ingress frame accounting overflow"))?;
-        state.charged_bytes = charged_bytes;
-        state.charged_frames = charged_frames;
-        state.peak_charged_bytes = state.peak_charged_bytes.max(state.charged_bytes);
-        state.peak_charged_frames = state.peak_charged_frames.max(state.charged_frames);
-        if bytes > state.window_bytes {
-            state.largest_oversize_bytes = state.largest_oversize_bytes.max(bytes);
-        }
-        drop(state);
-        Ok(FrameAdmission(Arc::new(Receipt {
-            book: self.book.clone(),
-            bytes,
-            decoded: false,
-        })))
+        futures::future::poll_fn(|cx| {
+            // One physical producer owns this waker. Register before checking
+            // capacity so a last-credit drop cannot race us into a lost sleep.
+            self.book.available.register(cx.waker());
+            let mut state = self.book.state();
+            if state.closed {
+                drop(state);
+                drop(self.book.available.take());
+                return Poll::Ready(Err(crate::util::internal_error("ingress is closed")));
+            }
+            let fits = state.charged_frames < state.window_frames
+                && if bytes > state.window_bytes {
+                    // Preserve legal giant single frames at their full size,
+                    // exclusively; the window never becomes a history-size cap.
+                    state.charged_frames == 0
+                } else {
+                    state
+                        .charged_bytes
+                        .checked_add(bytes)
+                        .is_some_and(|total| total <= state.window_bytes)
+                };
+            if !fits {
+                state.waiting = true;
+                return Poll::Pending;
+            }
+            state.waiting = false;
+            let charged_bytes = state
+                .charged_bytes
+                .checked_add(bytes)
+                .ok_or_else(|| crate::util::internal_error("ingress byte accounting overflow"))?;
+            let charged_frames = state
+                .charged_frames
+                .checked_add(1)
+                .ok_or_else(|| crate::util::internal_error("ingress frame accounting overflow"))?;
+            state.charged_bytes = charged_bytes;
+            state.charged_frames = charged_frames;
+            state.peak_charged_bytes = state.peak_charged_bytes.max(charged_bytes);
+            state.peak_charged_frames = state.peak_charged_frames.max(charged_frames);
+            if bytes > state.window_bytes {
+                state.largest_oversize_bytes = state.largest_oversize_bytes.max(bytes);
+            }
+            drop(state);
+            drop(self.book.available.take());
+            Poll::Ready(Ok(FrameAdmission(Arc::new(Receipt {
+                book: self.book.clone(),
+                bytes,
+                decoded: false,
+            }))))
+        })
+        .await
     }
 }
 impl Drop for IngressBudget {
@@ -121,6 +151,8 @@ impl Drop for IngressBudget {
         let mut state = self.book.state();
         state.closed = true;
         state.waiting = false;
+        drop(state);
+        self.book.available.wake();
     }
 }
 impl IngressObserver {
@@ -165,5 +197,7 @@ impl Drop for Receipt {
         if self.decoded {
             state.decoded_frame_bytes -= self.bytes;
         }
+        drop(state);
+        self.book.available.wake();
     }
 }

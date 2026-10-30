@@ -66,3 +66,22 @@ whole-frame admission lifetime through adapters and has the focused pressure,
 cancellation and event-fence evidence. Remove the root path mapping and
 workspace exclusion together; do not drop the bound solely because a later
 Khor queue is bounded.
+
+## Admission implementation checkpoint
+
+The baseline meter's real saturation test retained 25,240,210 encoded bytes
+in 384 normal-sized frames while the first Khor notification handler was
+paused. It failed the unchanged 8 MiB / 256-frame assertion only after actual
+child exit, driver closure and all retained credits returning to zero.
+That result is a reproduced defect, not a completed resource bound.
+
+The subsequent private admission change parks the one physical producer before
+parsing when either byte or frame capacity is exhausted. A last shared frame
+credit wakes that producer after releasing the accounting mutex; registration
+precedes the capacity check. Successful admission clears the parked waker, and
+physical-owner drop retires its waiter. A legal single frame larger than the
+window waits for exclusive ownership and is charged at its actual size.
+
+The same end-to-end saturation/cancellation test must now pass; that execution
+is pending at this source checkpoint. Khor's separate startup EventStore,
+ByteStreams long-load handoff and canonical publication remain pending.
