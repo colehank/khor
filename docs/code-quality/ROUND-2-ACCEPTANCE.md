@@ -11,8 +11,8 @@
 | R2-003 | A/S | 导入与PTY归属 | 外部导入显示实际能力与可读历史；无原PTY时不伪造可交互画面、不自动启动第二writer。 | 能力/有界链已有定向证据；当前App待测。 |
 | R2-004 | N | 状态查询并发 | 当前CLI在真实root/meta锁竞争后成功查询，原ID保留；try/等待预算及锁序仍成立。 | 8父/2helper实际通过且6源整合；不外推原集群唯一根因。 |
 | R2-005 | A | 全部已接入ACP观看 | 按每个adapter实际能力提供正文/只读/控制入口；外部观察不接管。 | 源码能力矩阵与定向链通过；不是40个已安装agent实测。 |
-| R2-006 | H | 长历史 | 有界分页/渲染/缓存/传输；可取消并保持阅读锚点；搜索、复制或原文出口不把截断冒成完整。 | 基础读取/出口与既有browser已通过；真实chunk分组、读取意图及最新思考定位已修；当前28项reader、完整32项Find worker及原AI4四组实际通过；跨页query/wholeplain-copy已实现，当前DOM消费和512-entry淘汰下真实文字点仍待；真实生产WK/系统出口待测。 |
-| R2-007 | S | 统一持久化恢复 | 同一会话身份恢复canonical正文；存活重挂、已退任务和离线明确；不重复load/writer；长合法base无丢失且启动内存受控。 | Store真实67,174,400B payload及有界启动已通过；运行代次拒写5exact已实际通过；前置reservation、Load新display base与Resume实际Note的8项组件验证已通过；真实New/Attempt生产链原8父＋2helper已actual54318通过；known-native、公开显式恢复/新Shell关系尚实施中，完整App恢复未完。 |
+| R2-006 | H | 长历史 | 有界分页/渲染/缓存/传输；可取消并保持阅读锚点；搜索、复制或原文出口不把截断冒成完整。 | 基础读取/出口与既有browser已通过；真实chunk分组、读取意图及最新思考定位已修；当前28项reader、完整32项Find worker在864实际通过，Reader真实28过但caller误计29的原false保留；跨页query/wholeplain-copy已实现，完整DOM消费在held-copy夹具隔离停下，真实文字点尚未跑到；真实生产WK/系统出口待测。 |
+| R2-007 | S | 统一持久化恢复 | 同一会话身份恢复canonical正文；存活重挂、已退任务和离线明确；不重复load/writer；长合法base无丢失且启动内存受控。 | Store真实67,174,400B payload及有界启动已通过；运行代次拒写5exact已实际通过；前置reservation、Load新display base与Resume实际Note的8项组件验证已通过；真实New/Attempt及known-native生产组件原8父＋2helper已54318/14117通过；公开显式恢复/新Shell关系尚实施中，完整App恢复未完。 |
 | R2-008 | C | 打开意图 | 同一路径/URL普通点击内部，Cmd点击系统；不作可达性预检或额外改写。 | 实现/定向检查已有；当前App点击与Cmd组合待测。 |
 | R2-009 | C | 软折行路径 | 同一生产终端入口长路径在宽/窄屏均可识别并命中，网址对照；不误把硬换行拼为同一路径。 | 实现/定向检查已有；当前App窄屏待测。 |
 | R2-010 | C | 回当前工作区 | 离开session cwd后左上动作回当前工作区，不在推荐列表追加同类项。 | 当前App待测。 |
@@ -43,7 +43,7 @@
 
 ## 实际执行顺序
 
-当前Root29887a47；Reader28在8d、完整Find32在04f实际全绿且独审，跨页query/whole-copy生产链已整合，cap-eviction真实Range仅夹具source准入、待先红后绿；原AI4/disclosure已过，ACP最后旧视觉probe迁移中。New生产恢复组件8父＋2helper在005b actual54318通过，known-native/公开offer/action与新Shell仍实施。完整App/真实WK/IME/手机未完；source、实际运行与scope严格分层。
+当前Root864c4500。Known生产组件actual14117原8父＋2helper真过并独审；当前Find32独立真过，Reader实际28过、caller误计29原false保并独审裁定。Range保留字点红基线真复现，e122修复已源审整合；完整H actual59083前4组过、第5held-copy被无关tail poll抢flag而停，尚未到Range。ACP9255 default缺Turning事实已判夹具，e211补帧后actual38247完整重验中；公开恢复Core/Node/GUI与Shell并行接线，真实平台未完。Source/实际/scope均以STATE为准。
 
 1. H完成真实来源驱动的chunk分组及必要raw/copy/分页消费；S按短row gate与RunKey→provider前reservation→Load/Resume事务→明确恢复/新Shell接线串行关闭既定缺口。两作者分配不重叠源码窗口，固定小片经非作者审后整合。
 2. 接口稳定后一次实际生成/catalog、noEmit/Vite、受影响consumer；再C/Core定向原生，最后同源CLI/GUI生产构建。旧16ee合同不能直接当337当前准入；未受影响的既有Store/A/B与关闭用例不因无关改动全重跑。

@@ -1,57 +1,42 @@
 # 第二轮当前状态
 
-更新2026-10-31。目标 **完成第二轮 active：29反馈＋5遗留＝34项**；尚在实现，不能以单个回归通过代替完整完成。本轮无main合并/ship授权，main仍 `e7c335c8dd81de091bd12b92cd704a63f25d03f3`。逐项标准读[验收总账](ROUND-2-ACCEPTANCE.md)，执行读PLAN/ROUND-2-EXECUTION/ENGINEERING及[STORAGE](STORAGE.md)。前态完整保在[上一检查点](history/STATE-before-29887a47-checkpoint-20261031.md)，失败不回填。
+更新2026-10-31。目标 **完成第二轮 active：29反馈＋5遗留＝34项**，尚未完成。无本轮main合并/ship授权，main仍e7c335c8 clean。逐项以[验收总账](ROUND-2-ACCEPTANCE.md)为准；规则读PLAN/ROUND-2-EXECUTION/ENGINEERING/STORAGE。旧状态和原失败完整保在[前检查点](history/STATE-before-864c4500-checkpoint-20261031.md)，不要按旧ref恢复新源码。
 
-## 存储与执行约束
+## 当前源码、分工与运行
 
-用户指出两盘长期仅剩5GB，已完成定向清理：外盘24项旧构建cache实际释放104.7152GiB；系统盘248个inactive编译payload释放4.0037GiB、3195个逐SHA相同的旧证据副本改引用唯一外盘原件再增1.7753GiB。当前外盘约112GiB、系统约13GiB，内盘recovery约2.2GiB。完整清单及结果在 `/Volumes/disk0/Khor/maintenance/storage-20261030`；源码、会话、worktree、main/quality/catalog保护target和正式发布保留。根目录部分khor*是兼容链接，不能当多份数据相加。
+Root `integrate/round2@864c4500f25302deb6d86553cc84ddf69f568f9e` clean。两作者＋独立reviewer；Root只集成/验证/协调，不开第三实现线。
 
-后续每批先核 **外20GiB／内10GiB保留量＋显式预计峰值**，再独立核源码/运行准入；原helper5GiB只是紧急停止线。同一quality-target，jobs1/incremental0/offline。私有程序一批一份、结束核身份后淘汰，禁止重复gzip/zip和双盘大payload；完整日志/截图外盘唯一，内盘只当前源码恢复与紧凑索引。quality50GiB/recovery5GiB为复核线，不自动删用户数据。无需再扩大空间治理。
+- input独占Node/ACP恢复：known2f已Root整合e313并实际验证；当前在author tree补真实Initialize capability持久事实与caller-stable token窄片，其后同一owner串行做公开home路由/native动作/新Shell。已授权Node lib/live/recovery_attempt/gui_host/必要session_recovery.rs、ACP accessor，后继link/ipc/proto/shell_start/Meta关系；不写Core/TS。能力不提前改旧Meta，绑定同epoch/full native/agent/effective launch；offer不探provider。后继同一≤16KiB文档须区分current execution owner与latest action/result各一份，Join不撤live生产者key，同token结束后仍不重新spawn。generic close旧问题仅NEXT。
+- H独占Core/API/GUI消费：ac953共享serde DTO、e122贡献锚点、e211当前turn夹具均已独审整合。现在并行接Core facade/API/Tauri/TS/DetailPane与私有Recovery动作hook，不新wizard、不改model配置；core recovery.rs及SessionId仅加现ts-rs10元数据（依赖原有，不改锁/版本），GUI只映射home.hex避免平行enum。另一个极小原H测试夹具修正（见下）独立提交，不混产品。Node接口未固定前不真实gen/compile，生成文件不手写。
+- reviewer非作者只读审源码/真实结果/Clean Code，无自主runtime；idle用followup_task。源码授权不等于构建授权。
 
-## 当前源码与所有权
+当前browser槽仅Root **actual38247**（完整ACP，head864）运行；Native/App/maintenance FREE。以内部 `current-runtime.json` 与实际tool handle为准，不能因观察超时重启，不poll历史terminal句柄。
 
-Root `integrate/round2@29887a47e86e0c706b501afbb8587ee1a1928a1b` clean；main未动。两作者＋独立reviewer，Root只协调和有限集成，不开第三实现线。所有运行槽 **FREE**，不恢复旧poll；作者源码许可不等于运行许可。
+## 已确认结果与明确限制
 
-- H：`khor-round2-history` / `fix/round2-chunk-grouping`，唯一TS历史/搜索/复制/锚点owner。来源starts_message、Core真实record和必要测试已独审整合；Node窗口已交还input。保既有分页、传输、缓存、取消预算，跨页query/whole-part copy已整合并完成完整Find32；真实文字点cap淘汰基线夹具cc85258e已独审整合，actual55767已得--range-cap-only业务红（无timeout/forced），产品Range暂不先改。不能用卡片边缘代文字点。
-- input：`khor-round2-input` / `fix/round2-recovery-contract@b1ccf4aa`，唯一Node/ACP恢复owner。InitialNew不可序列化authority、spawn前监督observer、真实New seed/Journal/epoch接线、parent Ready durable验证及partial-Meta失败清理均已整合到005b249d，并通过actual54318原8父＋2helper。5源known-native preghost/parent冻结参数/同epoch cleanup已固定2f850029 source-only、交独审，未编译，不冒公开offer/action或完整CLI恢复。公共Core/TS恢复与Shell尚待精确交接；SessionRow.home展示名不能冒execution DeviceId。不得全系统扫描或用Meta.exit/锁空冒provider退出。
-- reviewer：非作者只读核源码、预算、并发、真实证据及Clean Code；idle用followup_task唤醒。不自行运行。
-
-## 已确认的新结果
-
-| 范围 | 实际结果与限制 |
+| 范围 | 实际证据 |
 | --- | --- |
-| R1 GUI运行代次/原子快照 | Root4dc3cc7d，57370 terminal0/86.304s；原5exact各1passed/0failed/0ignored，真实Node libtest no-prior V通过。source/env稳、owned空、TMPabsent、单私有binary已退役。result `616c96d389a924e78d3c2c513b2f3b569f752d38158c7f363ad50008922c613f`。证明旧代拒写/row gate/完整快照，不冒完整恢复事务或App。前次36944 E0382编译false保留，b443借用修复后实际通过。 |
-| 恢复事务组件8项 | Rootf1bde774，57551 terminal0/89.491s；8exact父各1passed/0failed/0ignored，两个原隔离Python helper也各1/0/0。fullmeta/compile及8case共10stage全0；实际Node libtest no-prior V，2333源前后同、env稳、owned空、TMPabsent、单私有程序退役无gzip，已独审。result `6739b540384f28b511dc4beece80093e5a909d97e7900429767f06db9edac0c4`。验证reservation同fd独占、Load新base/旧binding保留、失败不换旧base、未发布运行不写旧代、Attempt纯模型与实际Resume新Note；OS叶未probe、Attempt尚未生产接线，不冒完整S。 |
-| 当前reader | Root8d353cc5，原脚本28/28，exit0/0.485s；result `949d123346ad27d2d388b18a2e614d4cff16c2cd2e4e315bcd55beb2bd1c4c44`，独审。后继04f仅Find/copy closure变化，Reader未重复跑。 |
-| 当前完整Find worker | Root04f976ab，完整原脚本加既定回归32/32，exit0/3.318s；result `628f644e724ac82ae934861ed94897a9c1361da41a2cdeeb617efe45ff50860a`，独审。真实Worker跨页延迟定位、取消/reset、源切换、copy-held IO均实跑；固定查询tail contribution key＋record.end截断复制，搜索后append不混入。2334源/env/tools稳，清理闭合。后e9/1bd/cc只browser夹具source准入，尚无当前DOM/Range green。 |
-| 当前disclosure读取意图 | Rootf1，92761 terminal0/10.767s，原Chrome short/long两场景passed/errors[]；真实Source/Reader IO及消费marker由1→展开2→回底3，long真实wheel后请求/消费皆暂停，再回底恢复。own8files/fullsource/env/tools/gen稳，owned空/TMPabsent，已独审。result `96909cf6f96b2169c5674a4c7de077d3cc4139ec69d31367df79ccbf545bc668`，report `1eb7fd3ee61414d20fd1f94b6aac292da7b59aca086c65fb400b027ccf63f9cc`。不冒文字Range/WK/IME/真机；无需重跑。 |
-| 原AI4消费者 | Rootdf0d，63835 terminal0/53.708s，desktop-light/dark、mobile-light/dark全部errors[]；原60断言、队列、点击/默认展开及4场景不变。result `f6c28d80b5dc059d0d7773c17fa072f035204cf1a3b29b7b794762925f9edbe0`，report `c5afceebec9f0f29ee64e8cce5aebb3fbced701dfc67e6cab3ddcad0349a1c75`。source/env/tools/gen稳、owned空、TMPabsent，已独审。真实Chromium受控transport，不冒WK/当前Rust生产者/系统Copy/真手机。 |
+| known-native生产接线组件 | Roote313 / actual14117 terminal0 /92.501s，full locked/offline metadata＋同次no-prior Node libtest V＋原8exact父各1/0/0＋2真Python SDK helper。result `ebc0052d64963266ee37af3b7f16fc7d88695cb6e4aa2ecbe4eaa96a662e1206`，已独审；2334源/env稳，owner/footprint空、TMPabsent，单私有binary核最终SHA/lsof后退役无gzip。原实际target SHA `250ca852161e71c1dc7730367c2cb1b792298e824416f794e7d800f0f13cb4f8` /288677480B。证明受控New/Load/Resume、production prepare/Ready validator与失败结算；不冒真实CLI parent、公有token/remote/Core/App/Shell、所有OS事实Known或generic close。 |
+| 新建New生产链 | 005b actual54318 terminal0/92.141s，原8父＋2helper全过，result6a9938c7…51fa。是前一实际来源，原target9feb已历史，不能冒当前250c来源。 |
+| 当前Reader | Root864 actual75722真实脚本exit0、28PASS（新贡献assert加在原case内），2335源/env/tools/owned/TMP净。Root caller误期待29使原组合result `15ee848b00ca25b425d0afe17c27fd166cffae72fbcdc588b8f969190d18e729` false保留；adjudication `07e68de04f2f1d3c4e4dedefbed6ce398fdc94a5c68f4723ee022895af97d335` 独审确认真实28已过，不改原false、不重复跑Reader。import准备错误也保且未启动Node。 |
+| 当前完整Find | Root864 actual55298，完整32PASS/exit0/3.278s含真实Worker，result `fef9c1516c0ec94a777cf3a125ca7ec7a8603397d2806663aae11194bacc68cd`，已独审；2335源/env/tools/owned/TMP净。共享spans retirement未改变搜索/copy内容；不是DOM/WK/types证明。 |
+| 文字Range红基线 | Root298 actual55767 terminal1/6.564s，真实512-entry窗prepend128淘汰尾部，同entry200/offset49/sample仍在，文字top0→10240；result376b7236…78c3，已独审业务红、非timeout/forced，清理净。e122修复已整合，但当前尚无浏览器Range绿。 |
+| 当前完整H消费者尝试 | Root864 actual59083 terminal1/7.848s；前4组搜旧DOM/源copy/giant拒截断/raw export过，原第5组held-copy顺序断言失败，未到Range。result `dae945ff8a231b354767b0a8f0e02f7b61c45ef151318cc98586549bf6a47b08`，log22acde4c…57e8e，已独审；2335源/env/gen/tools/strict清理全净。持有的是空tail poll lease72/f:A1300，而Copy lease73/f:A20已完成，any-newer测试flag被无关IO消费，不能据此归产品顺序错。 |
+| ACP完整18947/9255 | 两次原false保。9255在b7完整跑121.040s，result `963806b5e50c6c1560e0e9e0edca98d7b1f599aff6bf1f903697c1b061b8753d`，严格清理/源稳且独审。真实lucide SVG selector正确；default fixture仅Notes无Turning→ChatView inTurn=false，Loader正确不渲染，不是产品CSS缺口。e211只补合法turning事实，原SDKpayload/4主题动静/所有现assert与nonvisual保；38247当前一次重验中，不预称绿。 |
 
-最新New生产接线实际54318：Root005b249d，92.141s，full locked/offline metadata＋实际no-prior Node libtest＋8exact父＋2隔离Python SDK helper全0，各测试1/0/0。result `6a9938c7146aeb286a680ed986f6ab185df226379978e56ea0579b27645851fa`，独审；2333源/env稳定，owner空/TMPabsent，私有binary已退役，原target最新实际SHA `9febc77a4be1f6ae314e96fd35bb86240c114e97111d97e0e9fdcb5192490f7b`。旧7ffa已是历史，不能再称current。实际执行New GUI启动/seed/Journal、Load/Resume helpers，R7含seed与partial-Meta/attempt.part故障；不证明CLI parent、known-native完整恢复、Core/App或每项OS事实Known。
+上述原件在 `/Volumes/disk0/Khor/evidence/round2`；内部recovery只紧凑元数据/当前源码，不镜像大日志、截图或程序。旧R1 actual57370五exact、disclosure92761 short/long真实IO/暂停恢复、AI63835四场景、Store95235真实67,174,400B、Node60432/ACP63174/Recovery98901/Read62914各自原范围保持；无关通过未因新TS全重跑。旧失败75482/22391/36944/AI多次false/74275/18947/9255均不回填，详情可追前检查点和原证据。
 
-最新增量源码bundle（verify0并双盘）：fe9相对f1 `5b319cd3e43fd7e320a7ba3d5cd35c06bc03c616d636e6157e0f33d47c7d493f`/7947B；005相对fe9 `de218c7316d5555b544ee7b3af20c930a630487e4afac5b5990e53dce81d22b0`/13883B；616相对005 `cebe21cbf6d81b4781ac3e345a2f72559d8bdbcf871f7b1922996e6fbabdc6b1`/22379B。后者含跨页query/whole-copy生产closure和e9/1bd元数据夹具，最新cc Range fixture已在Git；不以source准入冒运行证明。内盘Reader/Find仅result＋外盘log/source索引，不再复制全日志。
+## 眼前闭环与后续顺序
 
-最新f1源增量bundle `4177059d190a42ddb2c2ed2f8a677812371595f00169428b958f06547f2a90c8`，18951B，prerequisite aa323，verify0并双盘，见 `evidence/round2/integration/recovery-history-f1bde774`；此前aa323的四片源bundle `2f099967331e5717ccb0497622374a34dc83fba5a297aabbadd1a80f83c74e1d`（24898B）亦已验证保。最新8组件紧凑内盘10文件约838KB，无binary/log镜像。
+1. H第5组夹具窄修：仅A/newer且DTO含固定目标source contribution key50000000:0才holdCopy，空tail不消耗flag；不得按clipboard事件arm自证。保原激活/顺序/退休不交付，并限定本次writes+1与本次order起点以免旧copy假过；finally保≤32条order尾/heldKey/heldcursor。独立单script/source审后Root跑当前完整原7+Range prefix/late-input/cap，不重红基线、不重未变pure闭包。e122已保≤512贡献spans、实际DOM48字sample/entry-offset、Worker retire和newer-input ticket；复杂Markdown不可证明时诚实fallback，不冒exact保证。
+2. S3三async Node接口已冻结给H并行source消费：`session_recovery_on(home_hex,&SessionId)->SessionRecovery`；`recover_session_on(home_hex,&SessionId,expected_run:Option<&str>,RecoveryToken)->RecoveryResult`；`new_shell_run_on`同参数→ShellRunResult，Shell要求Some(oldSID)。真实DeviceId peer/resident和本机复核，无显示名/本地回退，offer无写无probe，actions非0RTT。公开稳定token/typed Join/Pending/Unknown/Refused及Shell新SID/default shell/空command/previous-root仍在实现；没有接口完成声明。
+3. H真实入口是DetailPane（SessionContent/MobileSessionContent是文件/浏览器附栏）；复用现onSession/reload/rejoin路径，同SID Opened/Join要重解canonical/control而不是捏新GUI ID，新Shell才开新SID。history先显示，offer迟到按home/id/run拒，动作显式、Pending/Unknown不自动重启。
+4. Node/Core接口固定后**一次**实际gen/catalog/noEmit/Vite；现179gen/278dist仍16ee旧来源，新HistoryEntry字段和Core恢复DTO未真实生成。之后受影响C/Core原生及同源CLI/GUI生产构建。旧GUI48383资产来源门false保，最终仅精确Tauri OUT核SHA/devino/lsof可逆retain后真实cold，不mtime/fakeprior/放宽V（详R2-V）。
+5. 完整S的真实host正常Quit重挂/死后显式恢复/断线/新Shell；E真实Mac IME/路径拖选/全入口草稿/保存失败取消/最后键→正常OSQuit；长历史系统Save/Copy；桌面W/C/G/Q/B组合和真手机viewport/候选/键行/滑删仍未完。私有fixture，不动真实用户会话/模型API；真人前重新确认方便，旧回答已失效。
+6. 旧卡死R2-001和原网址WK连接拒绝R2-016未证修复；不能以其它绿替代，若最后仍无法证明须用户明确接受延期。新独立问题只NEXT，保34项不缩目标。此前3–5工作日是粗估，不再说仅剩验收。
 
-上述紧凑结果已内盘保，原始日志及截图仅外盘。增量源码bundle `e92fde7765f00cd517cc2289a4549b568bb17724fd9b033f68a02ff431a13c69`，15776B，prerequisite c4aa，真实verify0并双盘，位于 `evidence/round2/integration/r1-history-df0d3157`。证据来源不能跨版本冒用。
+## 存储与恢复
 
-本次前两次native8编译false保留：75482在aa323为两Gap构造E0109/E0107，22391在dc469仅两E0109，均0test/0artifact/0V且完整清理。63ad改为带类型局部变量后57551实际编译及8项通过；parse不是编译证明。
+定向清理已释放外104.715GiB、内4.004+1.775GiB；当前外约112GiB、系统13GiB/recovery2.2GiB，发布缓存117GiB/quality40GiB。源码/会话/正式发布与保护target未删，部分khor*只是兼容链接。每批严格外20/内10GiB保留量＋显式峰值，e70 preflight原件随批保存；原5GiB只紧急停止线。同quality target/jobs1/incremental0/offline，私有程序批末退役、不gzip和双盘大payload，日志截图外盘唯一。quality50GiB/recovery5GiB先复核再开下一批，不扩空间治理（见STORAGE）。
 
-AI此前13652/76618/73389/71253/57537各false原样保留。实际关闭了三处相关边界：合法SDK chunk误拆、manual disclosure停止canonical读取、pending Ask尾部误收起最新思考。读取意图readingLatest与几何following分别归同一scroll owner；最新canonical body按真实Turn/Gap边界定位。两次导航来自原脚本显式reload，不推断为HMR故障。
-
-旧成功仍按各自范围复用：Store95235真实67,174,400B payload、有界启动；Node60432 13父/7辅助；ACP63174三exact；Recovery98901的13受控transport界面；Read62914完整。完整ACP原74275 false保。迁移已整合后18947实际完整跑完exit1/120.147s，result `c8c25d6fbfeadd130d9d736f9299c61b370a804f20662b6d4071c6d103b5b7a1`：五附件能力组合、目录四state/registry/import/geometry/idle/press均实际通过；后续四theme×motion的旧工具/计划视觉探针失败，完整suite仍非绿。source/env/gen/tools稳、fixture净、owned空/TMPabsent，已独审。无关Store/A/B及旧H不因新TS变化重复跑。
-
-ACP剩余探针已独立裁决为旧测量位置：main e7与当前Trace逐字相同、AgentTool/Plan状态呈现块相同；旧探针退回外层Trace颜色且找未被AgentTool使用的ToolDot，忽略内层TraceLine/活动SVG和Plan形状/opacity。H在当前shared step固定后只迁测试：真实状态载体的可见非零形状/有效墨/动静状态区别保强，不能用kind图标差或仅data-status当视觉通过；四theme×motion/title/output/diff/defaultopen等保留，不改产品CSS/palette、不删区分要求。若迁后真缺口再NEXT，不预称产品绿。
-
-## 当前关键路径与队列
-
-1. input New生产链已实际通过；继续已授known-native所有既有正常CLI caller、实际ghost/observer/同key Load/Resume/cleanup接线逐片独审。公开恢复offer/action、当前epoch/idempotent token、Pending/Unknown不重启、精确execution-home路由与Shell新SID关系仍须完成；不能把New8项当完整S。新发现generic close删除row/可能未reap独立SDK provider为独立旧问题，仅NEXT，不扩本slice；不得宣称所有关闭入口已安全。
-2. H shared append→unknown-head deferred replay→bounded query ring/ToolUpdate dependency facts→wholeplain-copy64KiB已整合并通过完整Reader28/Find32。原f16/8a有限phase、c0f append ceiling失败均保，0a/5b真实修正。当前既定R2-006锚点缺口：512-entry窗prepend会淘汰新尾，旧整组suffix/distance-from-end无法保仍在的文字点；cc85258e真实Range夹具已整合29887a47，cap-only实际55767 terminal1/6.564s业务红，真实entry200同sample/offset49仍保，文字top0→10240；source2334/env/tools/gen稳，fixture/owned/TMP清理闭。result `376b723615a4588ee2c93fe3d7a0efa6d4b7d8794fb3277a355bc7bc9da678c3`，正在独审；只原cap例，不冒原7或另两Range已跑。接下来最小contribution entry/offset证明修复，不加新RPC/全历史map。ACP仅旧visual probe单脚本迁移并行，不改产品CSS/palette。
-3. Node/Core公开接口稳定后一次真正生成/catalog，再完整noEmit/Vite及受影响consumer。现179gen/278assets仍旧255→16ee lineage；新增HistoryEntry.starts_message/record尚未实际再生成，不能冒当前完整types绿。
-4. C/Core受影响定向原生后，最后同源CLI/GUI生产构建。旧GUI48383 Cargo0但来源门拒hash旧资产的false保留；最终仅精确Tauri OUT核身份/SHA/lsof可逆retain，再真实cold。旧合同过期不直接重跑，禁止mtime/fakeprior/弱化V。无当前合格整包GUI。
-5. 完整S实际同host正常Quit重挂、host死/重启/断线/显式恢复/新Shell；E真实Mac IME、路径拖选、全入口草稿、保存失败取消/最后一键正常OS Quit；长历史系统Save/Copy；W/C/G/Q/B桌面组合；手机真实viewport/连续候选/键行/滑删均尚需完成。私有fixture，不触用户真实会话，不真实模型/API。真人前重新确认方便，旧回答不算新可用性。
-6. R2-001旧卡死、R2-016原网址连接拒绝尚未实证修复；不能被其它绿例替代。新独立问题只NEXT。34项对应证据＋非作者Clean Code＋必要平台验收齐备才完成；此前剩余粗估3–5工作日，真人等待另计，不再说仅剩验收。
-
-## 压缩恢复
-
-先本页/PLAN/STORAGE，再核实际Git、dirty及current-runtime.json；源码/证据不一致保现场，不按摘要覆盖。作者卡未提交内容分别保留，不全局stage。内盘 `/Users/zgh/Library/Caches/khor-code-quality/recovery` 只同步当前docs/refs/runtime、未合并源码bundle/patch和紧凑索引；历史mirror是当时事实，退役的binary/gzip不能再当存在。所有维护与先前运行均已terminal，不重开旧句柄。
+先本页/PLAN/STORAGE，再实际Git/dirty/runtime；作者任务卡dirty不得全局stage，不按摘要覆盖。当前小bundle链各经gitverify0并双盘；最新b7相对298 bundle `fd8855d68e4d562953f084dcf05e35dc563056dc054d235c9d15582bd627f8a3`/11973B，后续864源码也须镜像小bundle。内部 `/Users/zgh/Library/Caches/khor-code-quality/recovery` 的RESUME/refs/docs/runtime按逐文件事实同步，不称全局原子。历史binary/source SHA仅历史，退役payload不冒仍在。
