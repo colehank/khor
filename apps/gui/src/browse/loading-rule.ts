@@ -1,30 +1,10 @@
-// When a browsing tab counts as still loading (docs/SHELL.md 第十二轮:
-// 「浏览器这, 如果页面在加载, 左侧的侧边栏应该有状态动效」).
-//
-// **A file with no imports, and that is the point.** The rule has one
-// part that cannot be measured through the product: a load that starts
-// and never finishes has to stop breathing after half a minute, and no
-// gate in this repo can produce that — the events come from the app's
-// own child webview (`page:load`), and every gate drives the face in
-// Chrome. So the rule lives here as plain functions over plain data with
-// the clock handed in, `use-loading.ts` wires it to React and to the
-// app's events, and `check-tabs.mjs` runs *this* with a clock of its own.
-//
-// What is therefore still 未量: that the app really emits `page:load`
-// with these two words, and that the hook subscribes. Those are read as
-// source, one line each, and nothing measures them running.
+// Presentation-only deadlines for Khor's own errands. Native navigation
+// snapshots below have explicit outcomes; a deadline never means success.
+import type { PageNavigationState } from "@/gen/bindings/PageNavigationState";
 
-/**
- * How long a row may breathe with nothing more heard about it.
- *
- * **A page can load forever** — a socket that stays open, a site that
- * answers headers and then stalls — and a row that breathes forever is
- * a row that has stopped meaning anything. Half a minute is long enough
- * that a slow site finishes inside it and short enough that nobody sits
- * watching a lie. Running out is not an error and says nothing about the
- * page: the title does not change, nothing is reported, the row simply
- * goes quiet (第十二轮 第 2 条:「灭了不改标题、不报错」).
- */
+/** Stop a silent Khor errand's status after 30 seconds. This is only a
+ * presentation deadline: it does not finish a native navigation or invent
+ * an error, title, or progress estimate for a page. */
 export const CEILING_MS = 30_000;
 
 /** Which tabs are loading, each with the moment it began. */
@@ -76,4 +56,31 @@ export function alive(loads: Loads, now: number): Loads {
   const next = new Map(loads);
   for (const [id] of dead) next.delete(id);
   return next;
+}
+
+// Native snapshots are issued by the view/navigation owner. Delivery and
+// initial snapshot queries may cross, so acceptance is by issued identity,
+// never by matching URL or by an arrival-time loading heuristic.
+export type NativeLoads = ReadonlyMap<string, PageNavigationState>;
+const decimal = (value: string): bigint | null => /^[1-9][0-9]{0,19}$/.test(value) ? BigInt(value) : null;
+const terminal = (phase: PageNavigationState["phase"]): boolean => phase === "finished" || phase === "failed" || phase === "cancelled" || phase === "settled";
+
+export function nativeReceived(loads: NativeLoads, state: PageNavigationState): NativeLoads {
+  const revision = decimal(state.revision), view = decimal(state.view);
+  if (revision === null || view === null || (state.navigation !== "" && decimal(state.navigation) === null)) return loads;
+  const was = loads.get(state.tab);
+  if (was) {
+    if (revision <= BigInt(was.revision) || view < BigInt(was.view)) return loads;
+    if (state.view === was.view && state.navigation !== "" && was.navigation !== "") {
+      if (BigInt(state.navigation) < BigInt(was.navigation)) return loads;
+      if (state.navigation === was.navigation && terminal(was.phase)) return loads;
+    }
+  }
+  if (state.estimate !== null && (!Number.isFinite(state.estimate) || state.estimate < 0 || state.estimate > 1)) return loads;
+  if (state.phase === "finished" ? state.estimate !== 1 : state.estimate === 1) return loads;
+  const next = new Map(loads); next.set(state.tab, state); return next;
+}
+
+export function nativeBusy(state: PageNavigationState | undefined | null): boolean {
+  return state?.phase === "opening" || state?.phase === "started" || state?.phase === "committed";
 }

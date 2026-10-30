@@ -1,6 +1,8 @@
 /** Native page history and reload, shared by the main and session decks. */
 import {useEffect,useState} from 'react';
 import {pageStep,pageSteps,onPageWord,inApp} from '@/api';
+import {listenNativeEvent} from '@/lib/native-events';
+import type {PageNavigationState} from '@/gen/bindings/PageNavigationState';
 import {GlassItem} from '@/components/Glass';
 import {IconArrow,IconReload} from '@/components/icons';
 import {gui} from '@/gen/catalog';
@@ -22,7 +24,7 @@ export function usePageSteps(tab:string,enabled=true):PageSteps {
       if(!/^[01]{2}$/.test(text))return;
       ++version;accept({back:text[0]==='1',forward:text[1]==='1'});
     },refresh);
-    const load=onPageWord('page:load',tab,text=>{if(text==='finished')refresh();});
+    const load=inApp?listenNativeEvent<PageNavigationState>('page:navigation',state=>{if(state.tab===tab&&(state.phase==='finished'||state.phase==='settled'))refresh();}):()=>{};
     const went=onPageWord('page:went',tab,refresh);
     const visible=()=>{if(document.visibilityState==='visible')refresh();};
     document.addEventListener('visibilitychange',visible);

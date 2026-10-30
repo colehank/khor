@@ -254,7 +254,7 @@ export function BrowseLanding({
       第十二轮). Kept by the landing rather than by the body, because the
       body is only ever mounted for the tab in front and a tab loading
       behind one has to breathe too. */
-  const load = useLoading();
+  const load = useLoading(tabs.tabs.map(tab => tab.id), tabs.current.id);
   const pageIcons = usePageIcons();
   const iconOf = (t: {path: string}) => pageIcons.iconOf(t.path);
   // An element, never a call — see `BrowseKind.Body`.
@@ -416,14 +416,12 @@ export function BrowseLanding({
   const [folded, setFolded] = useState(false);
   /** The strip pressed holds the deck through the flick (`UnfoldHold`). */
   const hold = useRef(new UnfoldHold());
-  /** **The deck's light is the row's** (UX-22): one rule, held across a
-      load's hops and bounded by the ceiling (`use-loading`). ⚠️ 墓碑: its
-      own state, set on every `page:load` and with no ceiling — a load
-      that started and never finished pulsed forever. */
   const pageLoading = load.busy(tabs.current.id);
+  const pageShare = load.share(tabs.current.id);
+  const pageState = load.state(tabs.current.id);
   /** **Why the page could not be opened** (UX-22), until the next load
       starts: said in the pill (narrow) or the caption (wide), with 重试. */
-  const [failed, setFailed] = useState<PageFail | null>(null);
+  const failed: PageFail | null = pageState?.phase === "failed" ? pageFail(pageState.error) : null;
   /** **What the page's download did** (UX-42 §16): never silent — said
       where the caption stands until the next load or the next word. */
   const [said, setSaid] = useState<PageSaid | null>(null);
@@ -445,7 +443,6 @@ export function BrowseLanding({
   };
   useEffect(() => {
     setFolded(false);
-    setFailed(null);
     setSaid(null);
     setInk("dark");
     const id = tabs.current.id;
@@ -467,31 +464,21 @@ export function BrowseLanding({
       }
     });
     const offGround = onPageWord("page:ground", id, (t) => setInk(inkOver(t)));
-    const offLoad = onPageWord("page:load", id, (t) => {
-      // A page starting to load is a page at its top: the deck unfolds
-      // (measured on the simulator: a new address typed into a folded
-      // tab arrived folded, its first scroll word lost to the editing).
-      if (t === "started") {
-        setFailed(null);
-        setSaid(null);
-        setFolded(false);
-      }
-    });
-    const offFail = onPageWord("page:fail", id, (t) => setFailed(pageFail(t)));
     const offDown = onPageWord("page:download", id, (t) => setSaid(pageDownload(t)));
-    // Arrived somewhere: whatever failed before is over (UX-38 §1; a load
-    // quicker than the phone's poll used to leave the word standing).
-    const offWent = onPageWord("page:went", id, () => setFailed(null));
     return () => {
       offScroll();
       offGround();
-      offLoad();
-      offFail();
       offDown();
-      offWent();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs.current.id]);
+  useEffect(() => {
+    if (!pageState) return;
+    if (pageState.phase === "opening" || pageState.phase === "started") {
+      setSaid(null); setFolded(false);
+    }
+  }, [pageState?.view, pageState?.navigation, pageState?.phase, pageState?.error]);
+
   /** Whether this tab has somewhere to be: its ← → and reload are drawn
       then, and the editor is not needed to start. */
   const somewhere = !!(machine && tabs.current.device && tabs.current.path);
@@ -500,7 +487,7 @@ export function BrowseLanding({
       failed to go. */
   const failedWord = failed && (
     <span data-page-failed className="flex min-w-0 items-center gap-in">
-      <span data-page-failed-word title={failed.url || undefined} className="min-w-0 truncate text-caption text-muted-foreground">
+      <span data-page-failed-word title={failed.detail || failed.url || undefined} className="min-w-0 truncate text-caption text-muted-foreground">
         {/* The phone's pill has room for the reason and 重试, not the
             whole sentence (measured: 「打不开：连接被拒绝」 is cut to
             「打不开：…」 there). */}
@@ -514,7 +501,6 @@ export function BrowseLanding({
         data-page-retry
         data-page-pass={failed.pass ? "" : undefined}
         onClick={() => {
-          setFailed(null);
           void pageStep(tabs.current.id, failed.pass ? "pass" : "retry").catch(() => {});
         }}
         className="grid min-h-touch flex-none place-items-center px-in text-caption font-label text-brand-strong"
@@ -587,7 +573,7 @@ export function BrowseLanding({
     if (deck) ro.observe(deck);
     return () => ro.disconnect();
   }, [native, nativeTab]);
-  const nativeKey = `${folded}|${ink}|${pageLoading}|${failed?.reason ?? ""}|${said?.text ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}|${laid}`;
+  const nativeKey = `${folded}|${ink}|${pageLoading}|${pageShare ?? ""}|${failed?.reason ?? ""}|${said?.text ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}|${laid}`;
   useEffect(() => {
     if (!nativeDeckHere || !narrow) return;
     if (!native) {
@@ -782,7 +768,10 @@ export function BrowseLanding({
       act: load.busy(t.id)
         ? { kind: "stop" as const, label: gui.page_stop, onPress: () => void pageStep(t.id, "stop").catch(() => {}) }
         : { kind: "reload" as const, label: gui.page_reload, onPress: () => void pageStep(t.id, "reload").catch(() => {}) },
-      loading: load.busy(t.id),
+      // Native pages supply an actual share; Khor errands keep the row
+      // busy without manufacturing a looping page-progress line.
+      loading: false,
+      share: load.share(t.id),
     };
   });
 
@@ -888,7 +877,8 @@ export function BrowseLanding({
           hold.current.asked();
           setFolded(false);
         }}
-        loading={pageLoading}
+        loading={pageLoading || pageShare !== undefined}
+        loadingShare={pageShare ?? null}
       >
         <section data-browse-landing={kind.kind} data-browse-bare={bare ? "page" : undefined} className="flex h-full min-h-0 flex-col">
           <div data-nav-clear={bare ? true : undefined} className="min-h-0 flex-1 overflow-hidden">

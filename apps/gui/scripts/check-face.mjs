@@ -33839,16 +33839,16 @@ try {
         const { gui } = await import("/src/gen/catalog.ts");
         const at = "https://nowhere.example/";
         return {
-          host: pageFail(`-1003|NSURLErrorDomain|A server with the specified hostname could not be found.|${at}`),
-          refused: pageFail(`-1004|NSURLErrorDomain|Could not connect to the server.|${at}`),
-          timeout: pageFail(`-1001|NSURLErrorDomain|The request timed out.|${at}`),
-          tls: pageFail(`-1200|NSURLErrorDomain|An SSL error has occurred and a secure connection to the server cannot be made.|${at}`),
-          cert: pageFail(`-1202|NSURLErrorDomain|The certificate for this server is invalid.|${at}`),
-          expired: pageFail(`-1201|NSURLErrorDomain|The certificate for this server has expired.|${at}`),
-          route: pageFail(`route|khor||${at}`),
-          proxy: pageFail(`310|kCFErrorDomainCFNetwork|There was a problem communicating with the secure web proxy server (HTTPS).|${at}`),
-          other: pageFail(`-1100|NSURLErrorDomain|The requested URL was not found on this server.|${at}`),
-          want: { host: gui.page_fail_host, refused: gui.page_fail_refused, timeout: gui.page_fail_timeout, tls: gui.page_fail_tls, route: gui.page_fail_route, proxy: gui.page_fail_route, cert: gui.page_fail_cert, expired: gui.page_fail_cert },
+          host: pageFail({ code: "-1003", domain: "NSURLErrorDomain", description: "A server with the specified hostname could not be found.", url: at, underlying: [], truncated: false }),
+          refused: pageFail({ code: "-1004", domain: "NSURLErrorDomain", description: "Could not connect to the server.", url: at, underlying: [], truncated: false }),
+          timeout: pageFail({ code: "-1001", domain: "NSURLErrorDomain", description: "The request timed out.", url: at, underlying: [], truncated: false }),
+          tls: pageFail({ code: "-1200", domain: "NSURLErrorDomain", description: "An SSL error has occurred and a secure connection to the server cannot be made.", url: at, underlying: [], truncated: false }),
+          cert: pageFail({ code: "-1202", domain: "NSURLErrorDomain", description: "The certificate for this server is invalid.", url: at, underlying: [], truncated: false }),
+          expired: pageFail({ code: "-1201", domain: "NSURLErrorDomain", description: "The certificate for this server has expired.", url: at, underlying: [], truncated: false }),
+          route: pageFail({ code: "route", domain: "khor", description: "", url: at, underlying: [], truncated: false }),
+          proxy: pageFail({ code: "310", domain: "kCFErrorDomainCFNetwork", description: "There was a problem communicating with the secure web proxy server (HTTPS).", url: at, underlying: [], truncated: false }),
+          other: pageFail({ code: "-1100", domain: "NSURLErrorDomain", description: "The requested URL was not found on this server.", url: at, underlying: [], truncated: false }),
+          want: { host: gui.page_fail_host, refused: gui.page_fail_connect, timeout: gui.page_fail_timeout, tls: gui.page_fail_tls, route: gui.page_fail_route, proxy: gui.page_fail_route, cert: gui.page_fail_cert, expired: gui.page_fail_cert },
         };
       });
       console.log(`bar t · failure words ${shown(words)}`);

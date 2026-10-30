@@ -1,59 +1,36 @@
-/**
- * **What a page that could not be opened says** (UX-22, the owner
- * 2026-10-05: a page that fails to load said nothing). The app hears
- * WebKit's failure (`page:fail`, `src-tauri/src/page_fail.rs`) as
- * `code|domain|description|url`; this sorts the code into the catalog's
- * few reasons — the ones a person can do something about — and keeps the
- * system's own sentence for anything else. Pure, so the face gate reads
- * it directly.
- */
+/** Short, actionable wording projected from the original bounded NSError.
+ * The domain/code/description/URL remain available in the native snapshot;
+ * a configured proxy alone is never evidence of a route failure. */
 import { gui } from "@/gen/catalog";
+import type { PageNavigationError } from "@/gen/bindings/PageNavigationError";
 
-/** `pass`: a certificate a person may pass for this host for this run
-    (「仍然访问」, UX-42 §14) — the button stands where 重试 does. */
-export type PageFail = { reason: string; url: string; pass?: boolean };
-
-/** NSURLErrorServerCertificate…: untrusted, expired, unknown root, not yet
-    valid. Kept in step with the app's `page_trust::passable`. */
+export type PageFail = { reason: string; url: string; pass?: boolean; detail: string };
+/** Keep aligned with native page_trust's certificate override policy. */
 const PASSABLE = [-1201, -1202, -1203, -1204];
-
-/** NSURLErrorDomain's codes, by what a person can do about them. */
 const REASONS: [number[], () => string][] = [
-  // NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed
   [[-1003, -1006], () => gui.page_fail_host],
-  // NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost
-  [[-1004, -1005], () => gui.page_fail_refused],
-  // NSURLErrorTimedOut
+  [[-1004], () => gui.page_fail_connect],
+  [[-1005], () => gui.page_fail_lost],
   [[-1001], () => gui.page_fail_timeout],
-  // NSURLErrorNotConnectedToInternet, NSURLErrorInternationalRoamingOff,
-  // NSURLErrorDataNotAllowed
   [[-1009, -1018, -1020], () => gui.page_fail_offline],
-  // NSURLErrorSecureConnectionFailed … NSURLErrorClientCertificateRequired
   [[-1200, -1201, -1202, -1203, -1204, -1205, -1206], () => gui.page_fail_tls],
-  // NSURLErrorAppTransportSecurityRequiresSecureConnection,
-  // NSURLErrorUnsupportedURL
   [[-1022, -1002], () => gui.page_fail_blocked],
 ];
 
-/** The word for one `page:fail`; `null` for one that cannot be read. */
-export function pageFail(text: string): PageFail | null {
-  const [code, domain, said, ...rest] = text.split("|");
-  if (code === undefined || domain === undefined) return null;
+export function pageFail(error: PageNavigationError | null): PageFail | null {
+  if (!error) return null;
+  const { domain, code, description, url } = error;
   const n = Number(code);
-  const url = rest.join("|");
-  // khor's own proxy: the machine lent could not reach the address
-  // (`khor_node::tunnel::PAGE_FAILED_TITLE`, a plain page), or WebKit's
-  // word for the same refusal of a CONNECT (CFNetwork 310, an https page).
-  if (domain === "khor" || (domain === "kCFErrorDomainCFNetwork" && n === 310)) return { reason: gui.page_fail_route, url };
+  const detail = [error, ...error.underlying].map(cause => `${cause.domain} ${cause.code}: ${cause.description}${cause.url ? `\n${cause.url}` : ""}`).join("\n");
+  const result = (reason: string, pass?: boolean): PageFail => ({ reason, url, detail, ...(pass ? { pass } : {}) });
+  // An explicit proxy failure document or CFNetwork proxy-connection
+  // failure is evidence; NSURLErrorNetworkConnectionLost alone is not.
+  if ((domain === "khor" && code === "route") || (domain === "kCFErrorDomainCFNetwork" && n === 310)) return result(gui.page_fail_route);
   if (domain === "NSURLErrorDomain") {
-    if (PASSABLE.includes(n)) return { reason: gui.page_fail_cert, url, pass: true };
-    const hit = REASONS.find(([codes]) => codes.includes(n));
-    if (hit) return { reason: hit[1](), url };
+    if (PASSABLE.includes(n)) return result(gui.page_fail_cert, true);
+    const reason = REASONS.find(([codes]) => codes.includes(n));
+    if (reason) return result(reason[1]());
   }
-  // WebKit's own refusals: the content cannot be shown, or the plug-in
-  // or the policy stopped it.
-  if (domain === "WebKitErrorDomain" && (n === 100 || n === 101 || n === 103 || n === 104)) {
-    return { reason: gui.page_fail_blocked, url };
-  }
-  return { reason: (said ?? "").trim() || `${domain} ${code}`, url };
+  if (domain === "WebKitErrorDomain" && [100, 101, 103, 104].includes(n)) return result(gui.page_fail_blocked);
+  return result(description.trim() || `${domain} ${code}`);
 }

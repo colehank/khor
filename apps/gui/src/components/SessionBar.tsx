@@ -153,6 +153,7 @@ export function SessionScreen({
   folded: foldedAsked,
   onUnfold,
   loading = false,
+  loadingShare,
   editor,
   editorAbove,
   onEditCancel,
@@ -223,6 +224,9 @@ export function SessionScreen({
   onUnfold?: () => void;
   /** The page is loading: the folded strip's hairline. */
   loading?: boolean;
+  /** Number: actual page estimate; null: static unknown page progress.
+      Omitted preserves other kinds' existing busy indicator. */
+  loadingShare?: number | null;
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
@@ -454,13 +458,14 @@ export function SessionScreen({
                   it again from its first frame. */}
               <span
                 data-deck-strip-loading={loading || undefined}
+                data-deck-strip-progress={loading && typeof loadingShare === "number" ? loadingShare : undefined}
                 aria-hidden="true"
                 className={cn(
                   "absolute inset-x-0 bottom-0 h-px transition-opacity duration-[var(--dur-420)]",
                   !loading && "opacity-0",
                 )}
               >
-                <span className="block h-full animate-pulse bg-brand-strong" />
+                <span className={cn("block h-full origin-left", loadingShare === null ? "bg-fill-strong" : "bg-brand-strong", loadingShare === undefined && "animate-pulse")} style={typeof loadingShare === "number" ? {transform: `scaleX(${loadingShare})`} : undefined} />
               </span>
             </button>
           </div>
@@ -519,7 +524,7 @@ export function SessionScreen({
                 )}
                 <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
               </div>
-              <PillSlot loading={loading} seat={setProgress} />
+              <PillSlot loading={loading} share={loadingShare} seat={setProgress} />
             </div>
           )}
           {editor ? (
@@ -599,11 +604,11 @@ const SAMPLE_MS = 250;
  * slot held its day at rest, the 24 hours flattened along the pill's
  * foot. No pill draws a day now; it is 最近's first row.
  */
-export function PillSlot({ loading = false, seat }: { loading?: boolean; seat: (el: HTMLElement | null) => void }) {
+export function PillSlot({ loading = false, share, seat }: { loading?: boolean; share?: number | null; seat: (el: HTMLElement | null) => void }) {
   return (
     <div data-pill-slot className="flex min-w-0 flex-col">
       <span ref={seat} data-pill-progress-seat className="contents" />
-      {loading && <PillProgress />}
+      {loading && <PillProgress share={share} />}
     </div>
   );
 }
@@ -612,7 +617,8 @@ export function PillSlot({ loading = false, seat }: { loading?: boolean; seat: (
     while its tab reloads; the screen draws one for `loading`. With a
     `share` (item 60, a drop landing) it stands filled that far, 0 to 1,
     instead of running. */
-export function PillProgress({ share }: { share?: number } = {}) {
+export function PillProgress({ share }: { share?: number | null } = {}) {
+  if (share === null) return <span data-pill-pending aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-progress-h bg-fill-strong" />;
   return (
     <span data-pill-progress={share ?? ""} aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-progress-h overflow-hidden">
       <span

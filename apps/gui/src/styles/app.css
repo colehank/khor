@@ -2527,14 +2527,16 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   visibility: hidden;
 }
 
-/* **One slot under the pill** (UX-31): while the tab reloads the slot is
-   the progress line — a 2-pt run along the pill's own bottom edge, left
-   to right, Safari's — and the status strip a session hangs there is not
-   drawn until the run ends: progress and status never share the slot.
-   The run is a sweep from the left, over and over until the load ends;
-   under reduced motion the line simply stands. */
-[data-pill-slot]:has([data-pill-progress]) [data-pill-status] {
+/* A numeric share is real progress; browsers use the issued navigation
+   estimate. Other work without a measurable share keeps its original busy
+   indicator. Progress and the session status occupy this one slot. */
+[data-pill-slot]:has([data-pill-progress], [data-pill-pending]) [data-pill-status] {
   display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-pill-progress]:not([data-pill-progress=""]) > span {
+    transition: transform var(--dur-180) var(--ease-move);
+  }
 }
 [data-pill-progress=""] > span {
   animation: pill-progress 1.4s var(--ease-move) infinite;
@@ -2550,6 +2552,7 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 @media (prefers-reduced-motion: reduce) {
   [data-pill-progress] > span {
     animation: none;
+    transition: none;
   }
 }
 

@@ -51,6 +51,22 @@ function present(tab: string, valid: () => boolean, work: () => Promise<unknown>
 /** What the open action is doing or has done, said in place. */
 type Opening = { url: string; state: "opening" | "opened" | "failed"; word: string };
 
+/** The native viewport stops above its actual deck, instead of merely
+ * padding the document's scroll view beneath native browser chrome. */
+export function pageBox(rect: Pick<DOMRect, "left" | "top" | "bottom" | "width">, deckTop: number | null, view: number) {
+  return { x: rect.left, y: rect.top, w: rect.width, h: Math.max(0, Math.min(rect.bottom, deckTop ?? rect.bottom) - rect.top), view };
+}
+
+function hostBox(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  const candidates = [
+    element.closest('[data-session-screen]')?.querySelector('[data-session-bar][data-native-deck]'),
+    element.closest('.mobile-content-page')?.querySelector('[data-content-deck]'),
+  ];
+  const tops = candidates.filter((node): node is Element => !!node).map(node => node.getBoundingClientRect()).filter(rect => rect.height > 0 && rect.width > 0).map(rect => rect.top);
+  return pageBox(rect, tops.length ? Math.min(...tops) : null, window.innerHeight);
+}
+
 export function BrowserPane({
   tab,
   retentionOwner,
@@ -163,11 +179,10 @@ export function BrowserPane({
   const boxOf = useCallback(() => {
     const el = host.current;
     if (!el) return null;
-    const r = el.getBoundingClientRect();
     // `view` is this viewport's own height, and it is not decoration:
     // the app measures the window differently (`PageBox.view`), and this
     // is the only side that knows the true one.
-    return { x: r.left, y: r.top, w: r.width, h: r.height, view: window.innerHeight };
+    return hostBox(el);
   }, []);
 
   /** Recompute presentation from the current owner and UI, never from the
@@ -195,8 +210,7 @@ export function BrowserPane({
       if (b.width <= 0 || b.height <= 0) continue;
       covered = b.bottom > r.top && b.top < r.bottom && b.right > r.left && b.left < r.right;
     }
-    const native = el.closest('[data-session-screen]')?.querySelector('[data-session-bar][data-native-deck]');
-    const at = {x:r.left, y:r.top, w:r.width, h:(native ? native.getBoundingClientRect().bottom : r.bottom)-r.top, view:window.innerHeight};
+    const at = hostBox(el);
     covered ||= at.w <= 0 || at.h < 24;
     const visible = !covered;
     if (el.dataset.nativePageVisible !== String(visible)) el.dataset.nativePageVisible = String(visible);

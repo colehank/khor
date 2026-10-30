@@ -202,13 +202,13 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
 // nothing more (第十二轮 第 2 条:「超过 30 秒没等到 finished 也要灭」) —
 // and the events that start it come from the app's own child webview,
 // which no gate here has: every one of them drives the face in Chrome.
-// So the rule is a module with no imports and the clock handed in
+// The Khor-errand rule has no runtime imports and takes its clock as input
 // (`src/browse/loading-rule.ts`), and this drives it with a clock of its
 // own. The live section further down measures what the running face does
 // with it.
 //
-// **What stays 未量**: that the app emits `page:load` with these two
-// words and that the hook subscribes to it. Source, one line each.
+// This section checks Khor errands only. Native page:navigation snapshots
+// and true WK progress are covered separately, not by this Chrome mesh.
 {
   const rule = await import(new URL("../src/browse/loading-rule.ts", import.meta.url));
   const T = 1_000_000;
@@ -1150,7 +1150,7 @@ try {
     //  rather than a second kind of spinner.
     //
     //  **What this face can see, and what it cannot.** The app hears the
-    //  page itself (`page:load`); a browser cannot be handed a borrowed
+    //  page itself (typed `page:navigation`); a browser cannot be handed a borrowed
     //  webview, so here the row breathes while *khor's* errand for that
     //  tab is out — opening the borrow, then asking the site for its icon
     //  through it (`BrowserPane`'s `onBusy`, `use-loading`). A site that
