@@ -9,3 +9,10 @@
 ## 非WK导航事件关联能力
 
 Wry0.55.1 Windows/GTK暴露的Started/Finished没有真实导航身份，且Finished不能证明成功。当前B只保有view/logical stream观察，Settled不显示成功100；旧A终结事件仍可能落入逻辑B。此SDK能力限制已明确，不以URL/FIFO猜配对。下一轮若需要与WK同等精度，再单独评估实际平台SDK适配并真机验收。
+
+
+## 初始Load期间的交互暴露
+
+2026-10-30，在退役无现产品caller的旧Replay API时，经当前ACP opening调用链和原私有extended fixture核到既有独立限制：`start_with` 等待初始session/load后才把Handle/EventReceiver交给消费者；若加载期间的agent请求Elicit并等待用户响应，UI尚不能消费该问题。当前是源码确认的能力缺口，未用真实vendor复现，不推断为此前GUI卡死或数据丢失的唯一根因。
+
+按“新独立问题只记下一轮”，本轮不为它新增opening API或第二套重放；现有Prompt/Control环境、MCP和互动能力的真实断言继续迁保，不能以移除旧Handle.replay就宣称初始Load互动已支持。后续用专用ACP peer在Load内提问并等待回答，确定事件流与ready future的最小分离；保持同一writer/同一Load、完整canonical前不Ready、Stop/Close有界及真实进程退出事实，再决定产品适配。
