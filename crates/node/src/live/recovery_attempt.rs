@@ -324,6 +324,10 @@ impl LatestAction {
 }
 /// None means a never-accepted next token; a retired token cannot become work.
 pub(super) enum ActionReplay { Recorded(ActionResult), Retired }
+/// Only pure admission validation after a successful document load. Disk,
+/// provider and publication failures remain the outer Err, never this refusal.
+pub(super) enum InputDecision<T> { Continue(T), Refused(String) }
+
 /// Permission only for the invocation which durably chose Join. It cannot be
 /// serialized/cloned or reconstructed by a duplicate/reconnected request.
 pub(super) struct JoinCheck { token: Token, arguments: Arguments }
@@ -931,6 +935,23 @@ impl<'a> Held<'a> {
             return Err("recovery epoch is not the next offer".into());
         }
         Ok(None)
+    }
+
+    pub(super) fn check_native_input(&self, arguments: &Arguments, token: &Token) -> Result<InputDecision<Option<Reservation>>, String> {
+        self.ensure()?;
+        // replay is immutable and performs no IO: after ensure, every Err in
+        // this call is a pure argument/origin/epoch/nonce mismatch.
+        Ok(match self.replay(arguments, token) { Ok(value) => InputDecision::Continue(value), Err(reason) => InputDecision::Refused(reason) })
+    }
+    pub(super) fn check_join_input(&self, arguments: &Arguments, token: &Token) -> Result<InputDecision<Option<Reservation>>, String> {
+        self.ensure()?;
+        Ok(match self.replay_join(arguments, token) { Ok(value) => InputDecision::Continue(value), Err(reason) => InputDecision::Refused(reason) })
+    }
+    pub(super) fn check_shell_input(&self, arguments: &ActionArguments, token: &Token) -> Result<InputDecision<Option<ActionReplay>>, String> {
+        self.ensure()?;
+        // A cleanup barrier is an unknown owner, not invalid caller input.
+        if self.has_cleanup_barrier() { return Err("source cleanup is unconfirmed".into()); }
+        Ok(match self.action_replay(arguments, token) { Ok(value) => InputDecision::Continue(value), Err(reason) => InputDecision::Refused(reason) })
     }
 
     /// Replays only an explicitly accepted Join before any launcher lookup.
@@ -1602,6 +1623,8 @@ mod tests {
         assert!(held.reserve(elsewhere, token(2, 'b'), None).is_err());
         assert!(held.reserve(args.clone(), token(1, 'b'), None).is_err());
         assert!(held.reserve(args.clone(), token(3, 'b'), None).is_err());
+        assert!(matches!(held.check_native_input(&args, &token(1, 'b')).unwrap(), InputDecision::Refused(_)));
+        assert!(matches!(held.check_native_input(&args, &token(3, 'b')).unwrap(), InputDecision::Refused(_)));
         assert_eq!(fs::read(held.gate.dir.join(NAME)).unwrap(), before);
 
         held.claim_host(&first, stamp(10, 1)).unwrap();
@@ -1910,6 +1933,9 @@ mod tests {
         assert!(matches!(held.action_replay(&args, &one).unwrap(), Some(ActionReplay::Recorded(ActionResult::ShellOpened { id })) if id == second));
         let changed = ActionArguments::shell(DeviceId([7; 32]), previous.clone(), previous.0, b"different-cwd").unwrap();
         assert!(held.action_replay(&changed, &one).is_err());
+        let before_refusal = fs::read(held.gate.dir.join(NAME)).unwrap();
+        assert!(matches!(held.check_shell_input(&changed, &one).unwrap(), InputDecision::Refused(_)));
+        assert_eq!(before_refusal, fs::read(held.gate.dir.join(NAME)).unwrap(), "typed input refusal made no durable transition");
         assert!(held.finish_shell(&args, &one, ActionResult::ShellOpened { id: SessionId("shell/fresh-C".into()) }).is_err());
         assert!(fs::metadata(held.gate.dir.join(NAME)).unwrap().len() <= BYTES as u64);
         let chosen = ActionArguments::shell(DeviceId([7; 32]), SessionId("shell/previous".into()), "shell/previous".into(), b"explicit-new-directory").unwrap();

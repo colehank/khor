@@ -97,9 +97,12 @@ impl LiveKind {
             let meta = gate.read_meta_or_new()?;
             gate.check_native(&id, meta.as_ref(), &native, legacy.as_ref())?;
             let current = meta.as_ref().and_then(|meta| meta.gui_run.as_ref()).map(|run| run.id.as_str());
-            let previous = recovery_attempt::Held::load(&mut gate)?.replay(&arguments, &token)?;
+            let previous = match recovery_attempt::Held::load(&mut gate)?.check_native_input(&arguments, &token)? {
+                recovery_attempt::InputDecision::Continue(previous) => previous,
+                recovery_attempt::InputDecision::Refused(reason) => return Ok(NativePreparation::Reply(RecoveryResult::Refused { reason })),
+            };
             if previous.is_none() && current != expected_run {
-                return Err("recovery offer names another GUI execution".into());
+                return Ok(NativePreparation::Reply(RecoveryResult::Refused { reason: "recovery offer names another GUI execution".into() }));
             }
             previous
         };
@@ -159,6 +162,7 @@ struct NativeLaunch {
     encoded: Vec<u8>,
 }
 impl crate::Node {
+    pub(crate) fn check_recovery_token(value: &RecoveryToken) -> Result<(), String> { action_token(value).map(|_| ()) }
     fn recovery_row(&self, id: &SessionId) -> Result<(std::path::PathBuf, super::Meta), String> {
         let directory = self.live.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         let meta: super::Meta = serde_json::from_slice(&fs::read(directory.join("meta.json")).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
@@ -229,12 +233,13 @@ impl crate::Node {
 
     pub(crate) async fn recover_session_here(&self, home: khor_core::DeviceId, id: &SessionId, expected_run: Option<&str>, supplied: RecoveryToken) -> Result<RecoveryResult, String> {
         if home != self.device() { return Ok(RecoveryResult::Unavailable { reason: "execution-home-mismatch".into() }); }
-        action_token(&supplied)?;
+        if let Err(reason) = Self::check_recovery_token(&supplied) { return Ok(RecoveryResult::Refused { reason }); }
         self.refuse_unless_hosting()?;
         let (directory, meta) = self.recovery_row(id)?;
         if meta.kind != khor_core::kind::GUI { return Ok(RecoveryResult::Refused { reason: "not-a-native-GUI-execution".into() }); }
         let Some(native) = self.recovery_native(id, &directory, &meta)? else { return Ok(RecoveryResult::Unavailable { reason: "native-identity-unknown".into() }); };
         let expected = expected_run.map(str::to_owned);
+        if let Err(reason) = recovery_attempt::join_arguments(native.clone(), expected.clone()) { return Ok(RecoveryResult::Refused { reason }); }
         let join_live = self.live.clone(); let join_id = id.clone(); let join_native = native.clone();
         let join_expected = expected.clone(); let join_token = supplied.clone();
         if let Some(reply) = tokio::task::spawn_blocking(move || join_live.join_recovery_if_live(&join_id, join_native, join_expected, &join_token)).await.map_err(|error| error.to_string())?? { return Ok(reply); }
@@ -251,7 +256,11 @@ impl crate::Node {
                 let mut gate = RowGate::acquire(&directory)?;
                 let meta = gate.read_meta_or_new()?;
                 gate.check_native(&id, meta.as_ref(), &launch.native, legacy.as_ref())?;
-                if let Some(previous) = recovery_attempt::Held::load(&mut gate)?.replay(&arguments, &token)? {
+                let previous = match recovery_attempt::Held::load(&mut gate)?.check_native_input(&arguments, &token)? {
+                    recovery_attempt::InputDecision::Continue(previous) => previous,
+                    recovery_attempt::InputDecision::Refused(reason) => return Ok(RecoveryResult::Refused { reason }),
+                };
+                if let Some(previous) = previous {
                     return match native_preparation(previous, &id, &supplied.epoch)? { NativePreparation::Reply(reply) => Ok(reply), NativePreparation::Spawn(_) => Err("replayed action unexpectedly acquired new authority".into()) };
                 }
                 if meta.as_ref().and_then(|meta| meta.gui_run.as_ref()).map(|run| &run.id) != expected.as_ref() { return Ok(RecoveryResult::Refused { reason: "expected-execution-changed".into() }); }
@@ -286,7 +295,11 @@ impl LiveKind {
             let meta = gate.read_meta_or_new()?.ok_or("GUI row disappeared")?;
             gate.check_native(id, Some(&meta), &native, legacy.as_ref())?;
             let mut held = recovery_attempt::Held::load(&mut gate)?;
-            if let Some(previous) = held.replay_join(&arguments, &token)? {
+            let previous = match held.check_join_input(&arguments, &token)? {
+                recovery_attempt::InputDecision::Continue(previous) => previous,
+                recovery_attempt::InputDecision::Refused(reason) => return Ok(Some(RecoveryResult::Refused { reason })),
+            };
+            if let Some(previous) = previous {
                 return match native_preparation(previous, id, &supplied.epoch)? { NativePreparation::Reply(reply) => Ok(Some(reply)), NativePreparation::Spawn(_) => Err("Join replay issued a spawn".into()) };
             }
             if held.is_execution_token(&token) { return Ok(None); }
@@ -347,7 +360,7 @@ impl crate::Node {
         use khor_core::recovery::ShellRunResult;
         if home != self.device() { return Ok(ShellRunResult::Unavailable { reason: "execution-home-mismatch".into() }); }
         self.refuse_unless_hosting()?;
-        let token = action_token(&supplied)?;
+        let token = match action_token(&supplied) { Ok(token) => token, Err(reason) => return Ok(ShellRunResult::Refused { reason }) };
         if expected_run != Some(id.0.as_str()) { return Ok(ShellRunResult::Refused { reason: "expected-previous-SID-is-required".into() }); }
         if cwd.is_some_and(|raw| raw.trim().is_empty()) { return Ok(ShellRunResult::Refused { reason: "selected-directory-is-empty".into() }); }
         let (directory, meta) = self.recovery_row(id)?;
@@ -363,6 +376,11 @@ impl crate::Node {
         let arguments = recovery_attempt::ActionArguments::shell(home, id.clone(), id.0.clone(), &encoded)?;
         {
             let mut gate = RowGate::acquire(&directory)?;
+            match recovery_attempt::Held::load(&mut gate)?.check_shell_input(&arguments, &token)? {
+                recovery_attempt::InputDecision::Refused(reason) => return Ok(ShellRunResult::Refused { reason }),
+                recovery_attempt::InputDecision::Continue(Some(previous)) => return Ok(shell_replay(previous, id, &supplied.epoch)),
+                recovery_attempt::InputDecision::Continue(None) => {},
+            }
             let previous = recovery_attempt::Held::load(&mut gate)?.reserve_shell(arguments.clone(), token.clone(), |gate| {
                 let (current, state) = super::read_pair(&directory)?;
                 if current.kind != khor_core::kind::SHELL || current.id != id.0 || current.pid != meta.pid || current.started_ms != meta.started_ms || current.place != meta.place || current.title != meta.title || current.shell_run != meta.shell_run || super::ending_of(&gate.dir, &current, &state).is_none() {

@@ -5621,7 +5621,8 @@ impl Node {
     }
 
     pub async fn recover_session_on(&self, home_hex: &str, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken) -> Result<khor_core::recovery::RecoveryResult, String> {
-        let home = Self::recovery_home(home_hex)?;
+        let home = match Self::recovery_home(home_hex) { Ok(home) => home, Err(reason) => return Ok(khor_core::recovery::RecoveryResult::Refused { reason }) };
+        if let Err(reason) = Self::check_recovery_token(&token) { return Ok(khor_core::recovery::RecoveryResult::Refused { reason }); }
         if let Some(reply) = self.via_serve(ipc::Op::RecoverSession { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token: token.clone() }).await {
             return match reply { Ok(ipc::Reply::RecoverSession { value }) => Self::recovered_reply(id, value), Ok(ipc::Reply::Refused { why }) => Err(why), Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))), Err(error) => Ok(khor_core::recovery::RecoveryResult::Unknown { id: id.clone(), attempt_epoch: token.epoch.clone(), reason: format!("resident-outcome-unknown: {error}") }) };
         }
@@ -5644,7 +5645,8 @@ impl Node {
     }
 
     pub async fn new_shell_run_on(&self, home_hex: &str, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken, cwd: Option<&str>) -> Result<khor_core::recovery::ShellRunResult, String> {
-        let home = Self::recovery_home(home_hex)?;
+        let home = match Self::recovery_home(home_hex) { Ok(home) => home, Err(reason) => return Ok(khor_core::recovery::ShellRunResult::Refused { reason }) };
+        if let Err(reason) = Self::check_recovery_token(&token) { return Ok(khor_core::recovery::ShellRunResult::Refused { reason }); }
         if let Some(reply) = self.via_serve(ipc::Op::NewShellRun { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token: token.clone(), cwd: cwd.map(str::to_owned) }).await {
             return match reply { Ok(ipc::Reply::NewShellRun { value }) => Self::shell_run_reply(id, value), Ok(ipc::Reply::Refused { why }) => Err(why), Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))), Err(error) => Ok(khor_core::recovery::ShellRunResult::Unknown { id: id.clone(), attempt_epoch: token.epoch.clone(), reason: format!("resident-outcome-unknown: {error}") }) };
         }
