@@ -702,7 +702,14 @@ fn spawn_ghost_prepared(
     let mut expected_agent = Some(gui_new_agent(cmd, vendor));
     let claim = if let Some(native_id) = resume {
         if agent { return Err("known-native recovery cannot inject a new scheduler context".into()); }
-        let native = gui_source_identity_as(&live, khor_core::DeviceId(*key.public().as_bytes()), cmd, native_id, vendor)?;
+        let native = match prepared_claim {
+            Some(claim) => {
+                let (_, native) = live.decode_gui_target(claim, native_id)?;
+                if vendor.is_some_and(|vendor| vendor != native.agent) { return Err("prepared claim names another configured agent".into()); }
+                native
+            }
+            None => gui_source_identity_as(&live, khor_core::DeviceId(*key.public().as_bytes()), cmd, native_id, vendor)?,
+        };
         expected_agent = Some(native.agent.clone());
         let context = match environment {
             Some(context) => context.clone(),
@@ -908,12 +915,11 @@ fn gui_host_main_with_timeouts(
     // before any upstream process exists. This is not an inherited-FD handoff:
     // the ghost acquires it and later moves that same File into its Journal.
     let mut reservation = resume.as_ref().map(|native_id| {
-        let identity = gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, native_id)?;
+        let claim = std::env::var(RECOVERY_ENV).map_err(|_| "known-native opening has no preghost recovery claim".to_owned())?;
+        let (id, identity) = live.decode_gui_target(&claim, native_id)?;
         let reservation = JournalReservation::take(&root, identity)?;
-        let id = crate::adaptor::id_for(native_id);
         let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         reservation.check_binding(&dir)?;
-        live.check_gui_source(reservation.identity())?;
         Ok::<_, String>(reservation)
     }).transpose().map_err(|why| {
         let _ = std::fs::write(refusal_path(&ready), &why);
@@ -1006,21 +1012,23 @@ fn gui_host_main_with_timeouts(
     let result = (|| -> Result<(), String> {
         // Keep the full provider identity; the row's clean_leaf is only a
         // retained spelling, never authority to replace another conversation.
-        let id = crate::adaptor::id_for(&handle.session().0);
-        let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         let is_new = handle.opened_by() == khor_acp::OpenedBy::New;
+        let id = recovery.as_ref().map(|owner| owner.logical_id().clone()).unwrap_or_else(|| crate::adaptor::id_for(&handle.session().0));
+        let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         let identity = if is_new {
             // A New response cannot inherit an unrelated old row's agent.
             gui_new_source_identity(khor_core::DeviceId(*key.public().as_bytes()), &cmd, &handle.session().0)
         } else {
-            gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, &handle.session().0)?
+            let identity = reservation.as_ref().ok_or("known opening lost its physical Journal")?.identity().clone();
+            if identity.native_id != handle.session().0.as_ref() { return Err("known opening returned another native session".into()); }
+            identity
         };
         if is_new {
             reservation = Some(JournalReservation::take(&root, identity.clone())?);
             new_collision = true;
         }
         // Check the complete source before binding or appending anything.
-        live.check_gui_source(&identity)?;
+        if is_new { live.check_gui_source(&identity)?; }
         let opening=match handle.opened_by() {
             khor_acp::OpenedBy::New=>JournalOpening::New,
             khor_acp::OpenedBy::Load=>JournalOpening::Load,

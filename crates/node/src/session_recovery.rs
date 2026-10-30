@@ -115,29 +115,7 @@ impl LiveKind {
         // File before provider spawn; the epoch fences this cross-process gap.
         let admission = crate::session_content::journal::JournalReservation::take(&self.root, native.clone())?;
         admission.check_binding(&directory)?;
-        // Capture only the registered target under the short gate; all OS
-        // facts are read after dropping it, never across a spawn or await.
-        let registered = {
-            let mut gate = RowGate::acquire(&directory)?;
-            recovery_attempt::Held::load(&mut gate)?.registered_foreground(&native)?
-        };
-        if let Some(registered) = registered {
-            let host_absent = if registered.slot_ended { None } else {
-                match proc_identity::foreground(&registered.host) {
-                    proc_identity::Foreground::Absent(proof) => Some(proof),
-                    proc_identity::Foreground::Present => return Err("the previous Khor execution is still active".into()),
-                    proc_identity::Foreground::Unknown => return Err("the previous Khor execution owner is unknown".into()),
-                }
-            };
-            match proc_identity::foreground(&registered.process) {
-                proc_identity::Foreground::Absent(proof) => {
-                    let mut gate = RowGate::acquire(&directory)?;
-                    recovery_attempt::Held::load(&mut gate)?.foreground_absent(&registered, &proof, host_absent.as_ref())?;
-                }
-                proc_identity::Foreground::Present => return Err("registered provider foreground is still present".into()),
-                proc_identity::Foreground::Unknown => return Err("registered provider foreground is unknown".into()),
-            }
-        }
+        self.fence_native_aliases(&admission, None)?;
         let value = {
             let mut gate = RowGate::acquire(&directory)?;
             let meta = gate.read_meta_or_new()?;

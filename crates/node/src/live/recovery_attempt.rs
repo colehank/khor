@@ -48,9 +48,12 @@ impl Arguments {
         expected_run: Option<String>,
         launch: &[u8],
     ) -> Result<Self, String> {
+        Self::native_at(crate::adaptor::id_for(&native.native_id), native, expected_run, launch)
+    }
+    pub(super) fn native_at(id: SessionId, native: Identity, expected_run: Option<String>, launch: &[u8]) -> Result<Self, String> {
         let value = Self {
             home: native.home,
-            id: crate::adaptor::id_for(&native.native_id),
+            id,
             expected_run,
             native,
             operation: Operation::RecoverNative,
@@ -61,7 +64,8 @@ impl Arguments {
     }
     fn validate(&self) -> Result<(), String> {
         if self.home != self.native.home
-            || self.id != crate::adaptor::id_for(&self.native.native_id)
+            || !super::matches_logical_source(&self.id, &self.native)
+            || (self.operation == Operation::InitialNew && self.id != crate::adaptor::id_for(&self.native.native_id))
             || self.native.agent.is_empty()
             || self.native.native_id.is_empty()
             || serde_json::to_vec(&self.native)
@@ -459,6 +463,10 @@ impl AttemptKey {
     pub(super) fn scope(&self) -> (DeviceId, &SessionId) {
         (self.arguments.home, &self.arguments.id)
     }
+    pub(super) fn target(&self) -> Result<(&SessionId, &Identity), String> {
+        self.arguments.validate()?; self.token.validate()?; hex(&self.run_id, 32)?;
+        Ok((&self.arguments.id, &self.arguments.native))
+    }
 }
 
 /// Only the successful in-process New adapter may provide these facts. The
@@ -496,6 +504,14 @@ pub(super) enum Reservation {
 
 /// A bounded snapshot to probe outside RowGate; applying its nonserial proof
 /// reloads and checks the exact same key and recorded foreground afterwards.
+pub(super) enum AliasAdmission {
+    DifferentSource,
+    Clear,
+    OwnUnclaimed,
+    Probe(RegisteredForeground),
+    Unknown,
+}
+
 pub(super) struct RegisteredForeground {
     key: AttemptKey,
     pub(super) process: ProcessStamp,
@@ -675,6 +691,43 @@ impl<'a> Held<'a> {
         }
         Ok(())
     }
+    pub(super) fn alias_admission(&self, id: &SessionId, native: &Identity, own: Option<&AttemptKey>) -> Result<AliasAdmission, String> {
+        self.ensure()?;
+        let binding = self.gate.native_binding()?;
+        let meta = self.gate.read_meta_or_new()?;
+        let execution = self.document.as_ref().and_then(|doc| doc.latest.as_ref());
+        if meta.as_ref().is_some_and(|meta| !meta.id.is_empty() && meta.id != id.0)
+            || execution.is_some_and(|execution| &execution.arguments.id != id)
+        { return Err("native alias metadata has another logical identity".into()); }
+        let mut identities = binding.iter().chain(meta.as_ref().and_then(|meta| meta.gui_native.as_ref()))
+            .chain(execution.map(|execution| &execution.arguments.native))
+            .chain(self.document.as_ref().and_then(|doc| doc.cleanup_barrier.as_ref()));
+        let first = identities.next();
+        if identities.any(|other| Some(other) != first) { return Err("native alias binding, Meta and execution disagree".into()); }
+        match first {
+            Some(other) if other != native => return Ok(AliasAdmission::DifferentSource),
+            None => return Ok(if meta.is_none() && self.document.is_none() { AliasAdmission::Clear } else { AliasAdmission::Unknown }),
+            _ => {}
+        }
+        if self.has_cleanup_barrier() { return Ok(AliasAdmission::Unknown); }
+        let Some(execution) = execution else { return Ok(AliasAdmission::Unknown); };
+        if let Some(own) = own {
+            if self.current(own).is_ok() && execution.phase == Phase::Reserved && execution.host.is_none() && matches!(execution.provider, Provider::NotStarted) {
+                return Ok(AliasAdmission::OwnUnclaimed);
+            }
+        }
+        let current_run = meta.as_ref().and_then(|meta| meta.gui_run.as_ref()).map(|run| run.id.as_str());
+        if current_run.is_some_and(|run| run != execution.run_id && Some(run) != execution.arguments.expected_run.as_deref()) {
+            return Ok(AliasAdmission::Unknown);
+        }
+        Ok(match execution.provider {
+            Provider::Exited { .. } | Provider::ForegroundAbsent { .. } => AliasAdmission::Clear,
+            Provider::NotStarted if execution.phase == Phase::Refused => AliasAdmission::Clear,
+            Provider::Owned { .. } => AliasAdmission::Probe(self.registered_foreground(native)?.ok_or("registered alias lost its exact foreground")?),
+            _ => AliasAdmission::Unknown,
+        })
+    }
+
     pub(super) fn registered_foreground(&self, native: &Identity) -> Result<Option<RegisteredForeground>, String> {
         self.ensure()?;
         if self.has_cleanup_barrier() { return Ok(None); }
@@ -768,35 +821,33 @@ impl<'a> Held<'a> {
     /// A colliding real New was refused and its actual cleanup is unconfirmed.
     /// This is not a new provider claim: preserve every old attempt/result and
     /// only quarantine an exactly bound source while its File is still held.
-    pub(super) fn quarantine_new(
-        &mut self,
-        reservation: &JournalReservation,
-    ) -> Result<(), String> {
+    #[cfg(test)]
+    fn quarantine_new(&mut self, reservation: &JournalReservation) -> Result<(), String> {
+        self.quarantine_new_at(&crate::adaptor::id_for(&reservation.identity().native_id), reservation)
+    }
+    pub(super) fn quarantine_matches(&self, id: &SessionId, native: &Identity) -> Result<bool, String> {
         self.ensure()?;
-        if !reservation.holds_file() {
-            return Err("New quarantine no longer holds its exact journal File".into());
-        }
-        let native = reservation.identity();
         let meta = self.gate.read_meta_or_new()?;
         let bound = crate::session_content::journal::bound_identity(&self.gate.dir)?;
         let recorded = meta.as_ref().and_then(|meta| meta.gui_native.as_ref());
-        if bound.as_ref().is_some_and(|bound| bound != native)
-            || recorded.is_some_and(|recorded| recorded != native)
-            || meta.as_ref().is_some_and(|meta| !meta.id.is_empty()
-                && meta.id != crate::adaptor::id_for(&native.native_id).0)
-            || (bound.as_ref() != Some(native) && recorded != Some(native))
-        {
-            return Err("unconfirmed New is not proven to be this row's exact source".into());
+        if bound.as_ref().zip(recorded).is_some_and(|(bound, recorded)| bound != recorded) {
+            return Err("New quarantine alias binding and Meta disagree".into());
         }
+        if bound.as_ref().is_some_and(|bound| bound != native) || recorded.is_some_and(|recorded| recorded != native) { return Ok(false); }
+        if meta.as_ref().is_some_and(|meta| !meta.id.is_empty() && meta.id != id.0) { return Err("New quarantine alias has another logical identity".into()); }
+        if bound.as_ref() != Some(native) && recorded != Some(native) { return Ok(false); }
+        if self.document.as_ref().is_some_and(|doc| doc.latest.as_ref().is_some_and(|latest| &latest.arguments.native != native) || doc.cleanup_barrier.as_ref().is_some_and(|barrier| barrier != native)) {
+            return Err("New quarantine alias attempt names another source".into());
+        }
+        Ok(true)
+    }
+    pub(super) fn quarantine_new_at(&mut self, id: &SessionId, reservation: &JournalReservation) -> Result<(), String> {
+        self.ensure()?;
+        if !reservation.holds_file() { return Err("New quarantine no longer holds its exact journal File".into()); }
+        let native = reservation.identity();
+        if !self.quarantine_matches(id, native)? { return Err("unconfirmed New is not proven to be this row's exact source".into()); }
         reservation.check_binding(&self.gate.dir)?;
-        let mut next = self.document.clone().unwrap_or(Document {
-            version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None,
-        });
-        if next.latest.as_ref().is_some_and(|latest| &latest.arguments.native != native)
-            || next.cleanup_barrier.as_ref().is_some_and(|barrier| barrier != native)
-        {
-            return Err("unconfirmed New cannot quarantine another source".into());
-        }
+        let mut next = self.document.clone().unwrap_or(Document { version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None });
         next.cleanup_barrier = Some(native.clone());
         self.store(next)
     }
@@ -1600,6 +1651,10 @@ mod tests {
         assert!(held.check_claim(&first, &Arguments::native(native.clone(), None, b"wrong context").unwrap()).is_err());
         let before = fs::read(held.gate.dir.join(NAME)).unwrap();
         assert!(before.len() <= BYTES);
+        assert!(matches!(held.alias_admission(&args.id, &native, None).unwrap(), AliasAdmission::Unknown));
+        assert!(matches!(held.alias_admission(&args.id, &native, Some(&first)).unwrap(), AliasAdmission::OwnUnclaimed));
+        let mut foreign = native.clone(); foreign.agent = "other-agent".into();
+        assert!(matches!(held.alias_admission(&args.id, &foreign, None).unwrap(), AliasAdmission::DifferentSource));
         assert!(matches!(
             held.reserve(args.clone(), one.clone(), None).unwrap(),
             Reservation::Unfinished {
@@ -1643,6 +1698,7 @@ mod tests {
         let advertised = khor_acp::RecoveryCapabilities { load: true, resume: false };
         assert!(held.record_support(&first, advertised).is_err());
         held.owned_provider(&first, stamp(20, 10)).unwrap();
+        assert!(matches!(held.alias_admission(&args.id, &native, None).unwrap(), AliasAdmission::Probe(_)), "injected stamp only asks the production adapter for proof; it does not clear ownership");
         held.record_support(&first, advertised).unwrap();
         held.record_support(&first, advertised).unwrap();
         let supported = fs::read(held.gate.dir.join(NAME)).unwrap();
@@ -1874,6 +1930,16 @@ mod tests {
             assert_eq!(serde_json::to_value(request).unwrap(), serde_json::to_value(decoded).unwrap());
         }
         assert!(Request::SessionRecovery { home, id }.is_reading());
+        let native = Identity { home, agent: "fixture".into(), native_id: "full-qualified-native".into() };
+        let ids = super::super::native_aliases(&native);
+        assert_eq!(ids[0], crate::adaptor::id_for(&native.native_id));
+        for target in &ids {
+            assert_eq!(Arguments::native_at(target.clone(), native.clone(), None, b"same frozen launch").unwrap().id, *target);
+        }
+        assert!(Arguments::native_at(SessionId("observe/not-the-source-hash".into()), native.clone(), None, b"same frozen launch").is_err());
+        let mut new = Arguments::initial_new(native, b"same frozen launch").unwrap();
+        new.id = ids[1].clone();
+        assert!(new.validate().is_err(), "InitialNew keeps its original id_for layout");
     }
 
     fn joins_do_not_retire_execution() {

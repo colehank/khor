@@ -33,6 +33,30 @@ mod recovery_attempt;
 mod session_recovery;
 mod proc_identity;
 
+/// The complete existing layouts for one native conversation. These are
+/// deterministic candidates, not an index or permission to execute any of them.
+fn native_aliases(native: &crate::session_content::journal::Identity) -> [SessionId; 3] {
+    use khor_core::ObservationNamespace;
+    [crate::adaptor::id_for(&native.native_id),
+        crate::session_content::Observation::id(native.home, ObservationNamespace::Native, &native.agent, &native.native_id),
+        crate::session_content::Observation::id(native.home, ObservationNamespace::Acp, &native.agent, &native.native_id)]
+}
+fn matches_logical_source(id: &SessionId, native: &crate::session_content::journal::Identity) -> bool {
+    native_aliases(native).iter().any(|candidate| candidate == id)
+}
+/// A tuple hash is not authority by itself: an observed target must also have
+/// its actual validated reference. Actions persist that existing metadata only
+/// after the execution home has qualified its real local source.
+fn check_observed_target(root: &Path, id: &SessionId, native: &crate::session_content::journal::Identity) -> Result<(), String> {
+    if *id == crate::adaptor::id_for(&native.native_id) { return Ok(()); }
+    let record = crate::session_content::Observation::read(root, id)?.ok_or("observed recovery reference is missing")?;
+    let source = &record.reference;
+    if source.home != native.home || source.agent != native.agent || source.native_id != native.native_id || !matches_logical_source(id, native) {
+        return Err("observed recovery reference belongs to another native source".into());
+    }
+    Ok(())
+}
+
 /// What a live session is. `pid` is the process whose death means the
 /// session is over — None for observed sessions registered by hooks,
 /// where no reliable pid exists (the hook's parent is a transient shell,
@@ -493,7 +517,10 @@ impl LiveKind {
         &self,
         native: &crate::session_content::journal::Identity,
     ) -> Result<(), String> {
-        let id = crate::adaptor::id_for(&native.native_id);
+        self.check_gui_source_at(&crate::adaptor::id_for(&native.native_id), native)
+    }
+    fn check_gui_source_at(&self, id: &SessionId, native: &crate::session_content::journal::Identity) -> Result<(), String> {
+        check_observed_target(&self.root, id, native)?;
         if native.home != self.device
             || native.agent.is_empty()
             || native.native_id.is_empty()
@@ -531,13 +558,14 @@ impl LiveKind {
         resume: bool,
     ) -> Result<RunKey, String> {
         if native.home != self.device
-            || crate::adaptor::id_for(&native.native_id) != *id
+            || !matches_logical_source(id, native)
             || native.agent.is_empty()
             || native.native_id.is_empty()
             || serde_json::to_vec(native).map_err(|e| e.to_string())?.len() > 4096
         {
             return Err("GUI execution needs its exact home, agent and native identity".into());
         }
+        check_observed_target(&self.root, id, native)?;
         let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         // Old external TUI rows can have no journal yet. Resolve their actual
         // unique native transcript outside the short row gate, never by merely
@@ -573,10 +601,11 @@ impl LiveKind {
     ) -> Result<RunKey, String> {
         let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         if gate.dir != dir || native.home != self.device
-            || crate::adaptor::id_for(&native.native_id) != *id
+            || !matches_logical_source(id, native)
         {
             return Err("GUI publication has another row gate or source".into());
         }
+        check_observed_target(&self.root, id, native)?;
         recovery_attempt::check_unquarantined(&dir)?;
         let run = GuiRun {
             id: run_id.to_owned(),
@@ -3353,7 +3382,57 @@ pub(crate) struct GuiInitial {
     authority: recovery_attempt::InitialNewAuthority,
     control: Arc<crate::agent_process::Control>,
 }
+impl GuiRecovery {
+    pub(crate) fn logical_id(&self) -> &SessionId { self.key.scope().1 }
+}
 impl LiveKind {
+    /// Decoded credential data selects the physical native File; it is not
+    /// spawn authority until claim_gui_recovery validates the durable owner.
+    pub(crate) fn decode_gui_target(&self, encoded: &str, native_id: &str) -> Result<(SessionId, crate::session_content::journal::Identity), String> {
+        if encoded.len() > 16 * 1024 { return Err("GUI claim exceeds its byte budget".into()); }
+        let key: recovery_attempt::AttemptKey = serde_json::from_str(encoded).map_err(|error| error.to_string())?;
+        let (id, native) = key.target()?;
+        if native.home != self.device || native.native_id != native_id { return Err("GUI claim names another home or native source".into()); }
+        Ok((id.clone(), native.clone()))
+    }
+    /// The caller retains the same physical native Journal file throughout
+    /// this finite alias fence and target Reserved publication. Only one short
+    /// row gate exists at a time, never during OS reads or Journal acquisition.
+    fn fence_native_aliases(&self, reservation: &crate::session_content::journal::JournalReservation, own: Option<&recovery_attempt::AttemptKey>) -> Result<(), String> {
+        let native = reservation.identity();
+        if !reservation.holds_file() { return Err("native alias fence lost its physical Journal file".into()); }
+        if native.home != self.device { return Err("native alias fence reached another execution home".into()); }
+        for id in native_aliases(native) {
+            let directory = self.dir(&id).ok_or("native alias has no valid logical path")?;
+            if !directory.exists() { continue; }
+            let decision = {
+                let mut gate = RowGate::acquire(&directory)?;
+                recovery_attempt::Held::load(&mut gate)?.alias_admission(&id, native, own)?
+            };
+            match decision {
+                recovery_attempt::AliasAdmission::DifferentSource => continue,
+                recovery_attempt::AliasAdmission::Clear | recovery_attempt::AliasAdmission::OwnUnclaimed => {
+                    check_observed_target(&self.root, &id, native)?;
+                }
+                recovery_attempt::AliasAdmission::Unknown => return Err("native conversation has an unknown, reserved or unretired alias owner".into()),
+                recovery_attempt::AliasAdmission::Probe(registered) => {
+                    check_observed_target(&self.root, &id, native)?;
+                    let host_absent = if registered.slot_ended { None } else { match proc_identity::foreground(&registered.host) {
+                        proc_identity::Foreground::Absent(proof) => Some(proof),
+                        _ => return Err("native alias still has an active or unknown Khor host".into()),
+                    }};
+                    let provider_absent = match proc_identity::foreground(&registered.process) {
+                        proc_identity::Foreground::Absent(proof) => proof,
+                        _ => return Err("native alias still has an active or unknown provider".into()),
+                    };
+                    let mut gate = RowGate::acquire(&directory)?;
+                    recovery_attempt::Held::load(&mut gate)?.foreground_absent(&registered, &provider_absent, host_absent.as_ref())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn gui_ghost_spawn_failed(&self, encoded: &str) -> Result<(), String> {
         if encoded.len() > 16 * 1024 { return Err("GUI claim exceeds its byte budget".into()); }
         let key: recovery_attempt::AttemptKey = serde_json::from_str(encoded).map_err(|error| error.to_string())?;
@@ -3373,15 +3452,18 @@ impl LiveKind {
         if encoded.len() > 16 * 1024 { return Err("GUI claim exceeds its byte budget".into()); }
         let key: recovery_attempt::AttemptKey = serde_json::from_str(encoded).map_err(|error| error.to_string())?;
         let native = reservation.identity();
-        self.check_gui_source(native)?;
-        let id = crate::adaptor::id_for(&native.native_id);
+        let (id, claimed_native) = key.target()?;
+        if claimed_native != native { return Err("GUI claim and physical Journal name another native source".into()); }
+        let id = id.clone();
+        self.fence_native_aliases(reservation, Some(&key))?;
+        self.check_gui_source_at(&id, native)?;
         let directory = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         reservation.check_binding(&directory)?;
         let host = proc_identity::current_host().map_err(|_| "actual recovery host birth is unknown".to_owned())?;
         let mut gate = RowGate::acquire(&directory)?;
         let meta = gate.read_meta_or_new()?;
         let expected = meta.and_then(|meta| meta.gui_run.map(|run| run.id));
-        let arguments = recovery_attempt::Arguments::native(native.clone(), expected, launch)?;
+        let arguments = recovery_attempt::Arguments::native_at(id.clone(), native.clone(), expected, launch)?;
         let mut held = recovery_attempt::Held::load(&mut gate)?;
         held.check_claim(&key, &arguments)?;
         held.claim_host(&key, host.clone())?;
@@ -3433,7 +3515,7 @@ impl LiveKind {
         }
         if journal.is_pending() { journal.prepare_base()?; } else { journal.sync_received_prefix()?; }
         let native = journal.identity().clone();
-        let id = crate::adaptor::id_for(&native.native_id);
+        let id = recovery.key.scope().1.clone();
         let generation = journal.generation().map(str::to_owned);
         let mut gate = RowGate::acquire(&recovery.directory)?;
         let mut held = recovery_attempt::Held::load(&mut gate)?;
@@ -3472,6 +3554,7 @@ impl LiveKind {
         support: Option<khor_acp::RecoveryCapabilities>,
     ) -> Result<GuiInitial, String> {
         let native = reservation.identity();
+        self.fence_native_aliases(reservation, None)?;
         self.check_gui_source(native)?;
         let id = crate::adaptor::id_for(&native.native_id);
         let directory = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
@@ -3534,7 +3617,7 @@ impl LiveKind {
         let native = meta.gui_native.as_ref().ok_or("GUI Ready has no exact native source")?;
         if meta.id != id.0 || meta.kind != khor_core::kind::GUI
             || native.home != self.device || meta.pid != Some(ghost_pid)
-            || crate::adaptor::id_for(&native.native_id) != *id
+            || !matches_logical_source(id, native)
             || native_id.is_some_and(|expected| expected != native.native_id)
             || agent.is_some_and(|expected| expected != native.agent)
         {
@@ -3557,18 +3640,22 @@ impl LiveKind {
         Ok(())
     }
 
-    pub(crate) fn quarantine_gui_new(
-        &self,
-        reservation: &crate::session_content::journal::JournalReservation,
-    ) -> Result<(), String> {
+    pub(crate) fn quarantine_gui_new(&self, reservation: &crate::session_content::journal::JournalReservation) -> Result<(), String> {
+        if !reservation.holds_file() { return Err("New quarantine lost its exact Journal lease".into()); }
         let native = reservation.identity();
-        if native.home != self.device {
-            return Err("unconfirmed New belongs to another home".into());
+        if native.home != self.device { return Err("New quarantine belongs to another execution home".into()); }
+        for id in native_aliases(native) {
+            let directory = self.dir(&id).ok_or("invalid native alias")?;
+            if !directory.exists() { continue; }
+            let mut gate = RowGate::acquire(&directory)?;
+            let mut held = recovery_attempt::Held::load(&mut gate)?;
+            if held.quarantine_matches(&id, native)? {
+                // Once an exact old alias is selected, publication failure is
+                // not permission to try elsewhere/drop the physical lease.
+                return held.quarantine_new_at(&id, reservation);
+            }
         }
-        let id = crate::adaptor::id_for(&native.native_id);
-        let directory = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
-        let mut gate = RowGate::acquire(&directory)?;
-        recovery_attempt::Held::load(&mut gate)?.quarantine_new(reservation)
+        Err("unconfirmed New has no proven old native alias".into())
     }
 
     pub(crate) fn settle_gui_new(
