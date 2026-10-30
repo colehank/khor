@@ -1177,6 +1177,8 @@ pub struct HistoryPage {
 #[derive(Serialize, TS)]
 #[ts(export)]
 pub struct HistoryEntry {
+    /// True for a complete recorded message; false for a streamed ACP chunk.
+    pub starts_message: bool,
     pub key: String,
     pub frame: ChatFrame,
 }
@@ -1308,12 +1310,13 @@ fn body_projection_response(
         return Err("history projection facts exceed their metadata budget".into());
     }
     let mut bytes = encoded_size(&response)?;
-    for (index, update) in projection.updates {
+    for (index, update, starts_message) in projection.updates {
         if cancelled() {
             return Err("history request cancelled".into());
         }
         let entry = HistoryEntry {
             key: format!("projection:{index}"),
+            starts_message,
             frame: ChatFrame::Note { update },
         };
         let Ok(size) = encoded_size(&entry) else {
@@ -1453,12 +1456,14 @@ fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
             return Err("history request cancelled".to_owned());
         }
         use khor_node::session_content::ContentEvent;
-        let frame = match event.payload.into() {
+        let payload = event.payload.into();
+        let starts_message = !matches!(&payload, ContentEvent::Update { starts_message: false, .. });
+        let frame = match payload {
             ContentEvent::Native(utterance) => {
                 let Some(update)=khor_node::replayed_update(utterance) else { continue; };
                 Some(ChatFrame::Note { update:serde_json::json!({"sessionId":id,"update":update}) })
             },
-            ContentEvent::Update(update)=>Some(ChatFrame::Note { update }),
+            ContentEvent::Update { update, .. }=>Some(ChatFrame::Note { update }),
             ContentEvent::Turn { stop }=>Some(ChatFrame::Turn { stop }),
             ContentEvent::CaptureGap { opening, interrupted }=>Some(ChatFrame::CaptureGap { opening, interrupted }),
             ContentEvent::PromptOrigin { turn, token, start, end } => {
@@ -1481,6 +1486,7 @@ fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
         };
         let entry = frame.map(|frame|HistoryEntry {
             key: format!("{}:{}", event.position.start, event.position.item),
+            starts_message,
             frame,
         });
         let bytes = entry.as_ref().and_then(|entry|encoded_size(entry).ok()).unwrap_or(HISTORY_PAYLOAD_BYTES + 1);
@@ -2136,6 +2142,7 @@ mod bounded_history_response_tests {
         assert_eq!(second.entries[0].key, "4:0");
         assert_eq!(second.entries.len(), 1);
         assert!(!second.has_more);
+        assert!(first.entries.iter().chain(&second.entries).all(|entry|entry.starts_message), "native utterances retain complete-message boundaries");
     }
 
     #[test]
@@ -2174,7 +2181,7 @@ mod bounded_history_response_tests {
         use khor_node::session_content::ContentEvent;
         fn parse(line:&str)->Vec<ContentEvent> {
             vec![match line.trim() {
-                "rich"=>ContentEvent::Update(serde_json::json!({"sessionId":"opaque-native","update":{"sessionUpdate":"tool_call","toolCallId":"tool","content":[{"type":"diff","path":"a.txt","oldText":"old","newText":"new"}]}})),
+                "rich"=>ContentEvent::Update { update:serde_json::json!({"sessionId":"opaque-native","update":{"sessionUpdate":"tool_call","toolCallId":"tool","content":[{"type":"diff","path":"a.txt","oldText":"old","newText":"new"}]}}), starts_message:false },
                 "stop"=>ContentEvent::Turn {stop:"MaxTokens".into()},
                 "gap"=>ContentEvent::CaptureGap {opening:"resume".into(),interrupted:true},
                 _=>ContentEvent::Reference,
@@ -2186,6 +2193,7 @@ mod bounded_history_response_tests {
         let response=history_page_response("alias",page,false,&||false).unwrap();
         assert_eq!(response.entries.len(),3);
         assert!(matches!(&response.entries[0].frame,ChatFrame::Note {update} if update["update"]["content"][0]["newText"]=="new"));
+        assert!(!response.entries[0].starts_message);
         assert!(matches!(&response.entries[1].frame,ChatFrame::Turn {stop} if stop=="MaxTokens"));
         assert!(matches!(&response.entries[2].frame,ChatFrame::CaptureGap {opening,interrupted:true} if opening=="resume"));
         assert_eq!(response.references.len(),1);

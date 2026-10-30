@@ -530,7 +530,7 @@ fn capture_answers_its_own_view_and_contains_the_completed_turn() {
     let fence=receive_capture(&mut asker,token);
     let page=canonical_page(&root,&fence);
     assert!(page.events.iter().any(|event|matches!(&event.payload,
-        khor_node::session_content::ContentEvent::Update(note)
+        khor_node::session_content::ContentEvent::Update { update: note, .. }
             if note.to_string().contains("picked:go"))),
         "canonical history must contain the answered, completed turn");
     // The bystander proved its read path on the turn above; the same

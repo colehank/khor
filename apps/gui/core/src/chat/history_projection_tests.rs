@@ -10,7 +10,7 @@ fn scaffold_body_response_cannot_promote_frame_types_or_silently_lose_expansion(
     let update = serde_json::json!({"update":{"sessionUpdate":"agent_message_chunk",
         "content":{"type":"text","text":"marker"}},"kind":"capture_gap"});
     let response = body_projection_response(record(), khor_node::session_content::BodyProjection {
-        updates: (10..139).map(|index| (index, update.clone())).collect(), transforms: Vec::new(), complete: true,
+        updates: (10..139).map(|index| (index, update.clone(), false)).collect(), transforms: Vec::new(), complete: true,
     }, &|| false).unwrap();
     assert_eq!(response.entries.len(), 128);
     assert_eq!(response.entries[127].key, "projection:137");
@@ -26,13 +26,13 @@ fn scaffold_body_payload_and_cancellation_stay_bounded() {
     let update = serde_json::json!({"update":{"sessionUpdate":"agent_message_chunk",
         "content":{"type":"text","text":"x".repeat(30000)}}});
     let response = body_projection_response(record(), khor_node::session_content::BodyProjection {
-        updates: (0..128).map(|index| (index, update.clone())).collect(), transforms: Vec::new(), complete: true,
+        updates: (0..128).map(|index| (index, update.clone(), false)).collect(), transforms: Vec::new(), complete: true,
     }, &|| false).unwrap();
     assert!(!response.complete);
     assert!(response.entries.len() < 128);
     assert!(encoded_size(&response).unwrap() <= HISTORY_PAYLOAD_BYTES);
     let error = body_projection_response(record(), khor_node::session_content::BodyProjection {
-        updates: vec![(7, update)], transforms: Vec::new(), complete: true,
+        updates: vec![(7, update, false)], transforms: Vec::new(), complete: true,
     }, &|| true).err().unwrap();
     assert!(error.contains("cancelled"));
 }
@@ -54,4 +54,20 @@ fn projection_facts_have_only_the_two_existing_typed_rules_and_a_metadata_budget
         }], complete: true,
     }, &|| false).err().unwrap();
     assert!(error.contains("metadata budget"));
+}
+
+#[test]
+fn scaffold_projection_preserves_reader_message_boundaries_without_promoting_payload_claims() {
+    let update = serde_json::json!({"starts_message":true,"update":{"sessionUpdate":"agent_message_chunk",
+        "messageId":"same-message","content":{"type":"text","text":"body"}}});
+    let response = body_projection_response(record(), khor_node::session_content::BodyProjection {
+        updates: vec![(0, update.clone(), false), (1, update.clone(), true)],
+        transforms: Vec::new(), complete: true,
+    }, &|| false).unwrap();
+    assert!(!response.entries[0].starts_message, "an SDK field cannot replace read provenance");
+    assert!(response.entries[1].starts_message);
+    for entry in &response.entries {
+        assert!(matches!(&entry.frame,ChatFrame::Note {update:body} if body==&update));
+    }
+    assert!(response.complete && encoded_size(&response).unwrap() <= HISTORY_PAYLOAD_BYTES);
 }

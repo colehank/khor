@@ -45,7 +45,8 @@ pub struct Capture {
 
 pub enum ContentEvent {
     Native(Utterance),
-    Update(serde_json::Value),
+    /// Display provenance from the validated record kind, never an SDK claim.
+    Update { update: serde_json::Value, starts_message: bool },
     Turn { stop: String },
     CaptureGap { opening: String, interrupted: bool },
     PromptOrigin { turn: String, token: String, start: u64, end: u64 },
@@ -55,7 +56,8 @@ pub enum ContentEvent {
 /// Body-only normalization of a caller-built bounded scaffold. These are
 /// ordinary SDK notes, never trusted journal boundaries or send receipts.
 pub struct BodyProjection {
-    pub updates: Vec<(usize, serde_json::Value)>,
+    /// Original item index, ordinary SDK notification, and message-start fact.
+    pub updates: Vec<(usize, serde_json::Value, bool)>,
     pub transforms: Vec<BodyTransform>,
     pub complete: bool,
 }

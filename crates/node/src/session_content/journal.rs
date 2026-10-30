@@ -493,7 +493,7 @@ pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
             {
                 return vec![ContentEvent::LocalUserEcho];
             }
-            vec![ContentEvent::Update(notification)]
+            vec![ContentEvent::Update { update: notification, starts_message: false }]
         }
         Some("prompt") => {
             let Some(text) = object.get("text").and_then(|v| v.as_str()) else {
@@ -505,9 +505,10 @@ pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
             {
                 return vec![ContentEvent::Reference];
             }
-            let mut updates = vec![ContentEvent::Update(
-                serde_json::json!({"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":text}}}),
-            )];
+            let mut updates = vec![ContentEvent::Update {
+                update: serde_json::json!({"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":text}}}),
+                starts_message: true,
+            }];
             if let Some(images) = object.get("images").and_then(|v| v.as_array()) {
                 for image in images {
                     let (Some(mime), Some(data)) = (
@@ -516,7 +517,7 @@ pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
                     ) else {
                         return vec![ContentEvent::Reference];
                     };
-                    updates.push(ContentEvent::Update(serde_json::json!({"update":{"sessionUpdate":"user_message_chunk","content":{"type":"image","mimeType":mime,"data":data}}})));
+                    updates.push(ContentEvent::Update { update: serde_json::json!({"update":{"sessionUpdate":"user_message_chunk","content":{"type":"image","mimeType":mime,"data":data}}}), starts_message: false });
                 }
             }
             if let Some(files) = object.get("files").and_then(|v| v.as_array()) {
@@ -527,7 +528,7 @@ pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
                     ) else {
                         return vec![ContentEvent::Reference];
                     };
-                    updates.push(ContentEvent::Update(serde_json::json!({"update":{"sessionUpdate":"user_message_chunk","content":{"type":"resource","resource":{"uri":format!("file://{name}"),"text":text}}}})));
+                    updates.push(ContentEvent::Update { update: serde_json::json!({"update":{"sessionUpdate":"user_message_chunk","content":{"type":"resource","resource":{"uri":format!("file://{name}"),"text":text}}}}), starts_message: false });
                 }
             }
             updates
@@ -801,7 +802,7 @@ mod tests {
         let bytes=std::fs::read(f.current().join("records.jsonl")).unwrap();
         let mut file=std::fs::File::open(f.current().join("records.jsonl")).unwrap();
         let page=crate::adaptor::transcript_page::read_page(&mut file,"owned-journal",None,parse_record,&||false).unwrap();
-        let users=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::Update(update) if update["update"]["sessionUpdate"]=="user_message_chunk")).count();
+        let users=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::Update { update, .. } if update["update"]["sessionUpdate"]=="user_message_chunk")).count();
         assert_eq!(users,3,"OWNED_ECHO_DUPLICATION: bootstrap plus two different recorded turns must remain three user messages");
         let echoes:Vec<_>=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::LocalUserEcho)).collect();
         assert_eq!(echoes.len(),2,"every associated echo remains an inspectable raw record");
@@ -905,14 +906,22 @@ mod tests {
         let events = parse_record(&prompt.to_string());
         assert_eq!(events.len(), 3);
         assert!(
-            matches!(&events[0],ContentEvent::Update(update) if update["update"]["content"]["text"]=="words")
+            matches!(&events[0],ContentEvent::Update { update, .. } if update["update"]["content"]["text"]=="words")
         );
         assert!(
-            matches!(&events[1],ContentEvent::Update(update) if update["update"]["content"]["data"]=="pixels")
+            matches!(&events[1],ContentEvent::Update { update, .. } if update["update"]["content"]["data"]=="pixels")
         );
         assert!(
-            matches!(&events[2],ContentEvent::Update(update) if update["update"]["content"]["resource"]["text"]=="body")
+            matches!(&events[2],ContentEvent::Update { update, .. } if update["update"]["content"]["resource"]["text"]=="body")
         );
+        assert!(matches!(&events[0],ContentEvent::Update { starts_message:true, .. }));
+        assert!(events[1..].iter().all(|event|matches!(event,ContentEvent::Update { starts_message:false, .. })),
+            "attachments belong to the same recorded prompt");
+        let chunk = serde_json::json!({"kind":"update","notification":{"sessionId":"s","update":{
+            "sessionUpdate":"agent_message_chunk","messageId":"provider-message",
+            "content":{"type":"text","text":"same text"}}}});
+        assert!(matches!(&parse_record(&chunk.to_string())[0],ContentEvent::Update { update, starts_message:false }
+            if update==&chunk["notification"]),"SDK messageId and original payload stay intact");
         let turn = r#"{"kind":"turn","turn":"turn","outcome":"ended","detail":"MaxTokens"}"#;
         assert!(matches!(&parse_record(turn)[0],ContentEvent::Turn {stop} if stop=="MaxTokens"));
         for damaged in [

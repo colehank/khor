@@ -536,7 +536,7 @@ fn capture_page(
 
 fn capture_chunks(page: &crate::adaptor::transcript_page::Page<crate::session_content::ContentEvent>) -> usize {
     page.events.iter().filter(|event| matches!(&event.payload,
-        crate::session_content::ContentEvent::Update(note)
+        crate::session_content::ContentEvent::Update { update: note, .. }
             if note["update"]["content"]["text"] == "capture identical chunk"
     )).count()
 }
@@ -783,7 +783,7 @@ fn managed_host_case_worker() {
                 .unwrap();
             assert!(
                 observed.events.iter().any(|event| match &event.payload {
-                    crate::session_content::ContentEvent::Update(notification) =>
+                    crate::session_content::ContentEvent::Update { update: notification, .. } =>
                         notification["update"]["content"][0]["newText"] == "new",
                     _ => false,
                 }),
@@ -1249,7 +1249,7 @@ fn managed_host_case_worker() {
             let page = capture_page(&node, &capture, false);
             assert!(
                 page.events.iter().any(|event| matches!(&event.payload,
-                crate::session_content::ContentEvent::Update(note)
+                crate::session_content::ContentEvent::Update { update: note, .. }
                     if note.to_string().contains("synthetic final note after cancel"))),
                 "the confirmed cancelled tail must remain in canonical history"
             );
@@ -1323,7 +1323,7 @@ fn managed_host_case_worker() {
                                 .checked_sub(page.events.len())
                                 .expect("history duplicated rows");
                             for (index, event) in page.events.iter().enumerate() {
-                                let crate::session_content::ContentEvent::Update(note) =
+                                let crate::session_content::ContentEvent::Update { update: note, .. } =
                                     &event.payload
                                 else {
                                     panic!("unexpected non-history record")

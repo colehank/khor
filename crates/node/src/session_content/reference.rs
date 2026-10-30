@@ -49,10 +49,10 @@ impl ContentReference {
                         });
                     }
                     if let Some(update) = update {
-                        updates.push((index, serde_json::json!({ "update": update })));
+                        updates.push((index, serde_json::json!({ "update": update }), true));
                     } else { complete = false; }
                 }
-                ContentEvent::Update(update) => updates.push((index, update)),
+                ContentEvent::Update { update, starts_message } => updates.push((index, update, starts_message)),
                 ContentEvent::LocalUserEcho | ContentEvent::Turn { .. } => {}
                 // A scaffold cannot elevate an origin, gap or arbitrary raw
                 // record into a trusted system fact on the viewing client.
@@ -301,6 +301,12 @@ mod tests {
         assert!(projected.complete);
         assert_eq!(projected.updates.len(), 1);
         assert_eq!(projected.updates[0].1["update"]["content"]["text"], "marker");
+        assert!(projected.updates[0].2, "the validated prompt starts a complete message");
+        let chunk = r#"{"kind":"update","notification":{"sessionId":"native","update":{"sessionUpdate":"agent_message_chunk","messageId":"same-message","content":{"type":"text","text":"marker"}}}}"#;
+        let streamed = reference.body_projection(chunk).unwrap();
+        assert!(streamed.complete);
+        assert!(!streamed.updates[0].2, "an SDK chunk does not invent a complete message boundary");
+        assert_eq!(streamed.updates[0].1["update"]["messageId"], "same-message");
         let echo = r#"{"kind":"update","turn":"local","notification":{"sessionId":"native","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"marker"}}}}"#;
         let projected = reference.body_projection(echo).unwrap();
         assert!(projected.complete);
@@ -321,6 +327,7 @@ mod tests {
         let projected = native.body_projection(&scaffold).unwrap();
         assert!(projected.complete);
         assert_eq!(projected.updates[0].1["update"]["content"]["text"], "native marker");
+        assert!(projected.updates[0].2, "a native utterance remains a complete message");
         assert!(!native.body_projection("{").unwrap().complete);
         assert!(!native.body_projection("{}").unwrap().complete);
         assert!(!native.body_projection(r#"{"type":"unknown"}"#).unwrap().complete);
@@ -516,7 +523,7 @@ mod tests {
         .unwrap();
         assert!(page.events.iter().any(|event| matches!(
             &event.payload,
-            ContentEvent::Update(update) if update["update"]["content"]["text"] == "canonical text"
+            ContentEvent::Update { update, .. } if update["update"]["content"]["text"] == "canonical text"
         )));
         assert!(reference.resolve(&tree.path(), DeviceId([1; 32])).is_err());
     }

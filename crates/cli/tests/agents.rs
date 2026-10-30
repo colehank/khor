@@ -509,7 +509,7 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
         node.content_page(&request,Some(capture.cursor.clone()),false).await.unwrap()
     });
     let captured=page.events.iter().filter(|event|matches!(&event.payload,
-        khor_node::session_content::ContentEvent::Update(_))).count()+page.references.len();
+        khor_node::session_content::ContentEvent::Update { .. })).count()+page.references.len();
     println!("captured={captured} (supports_initial_load={replays})");
     assert!(captured>0,"the real completed turn must remain in canonical history even without agent Load support");
 

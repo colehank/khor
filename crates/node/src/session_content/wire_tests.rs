@@ -446,10 +446,10 @@ async fn canonical_content_routes_without_metadata_owner_and_cancels_through_bus
         acp_page
             .events
             .iter()
-            .any(|event| matches!(&event.payload,ContentEvent::Update(value) if value==&captured))
+            .any(|event| matches!(&event.payload,ContentEvent::Update { update: value, .. } if value==&captured))
     );
     assert!(acp_page.events.iter().any(|event|matches!(&event.payload,ContentEvent::CaptureGap {opening,interrupted:true} if opening=="resume")));
-    assert!(acp_page.events.iter().any(|event|matches!(&event.payload,ContentEvent::Update(value) if value["update"]["content"]["text"]=="accepted without echo")));
+    assert!(acp_page.events.iter().any(|event|matches!(&event.payload,ContentEvent::Update { update: value, .. } if value["update"]["content"]["text"]=="accepted without echo")));
 
     // A paired request cannot borrow another binding's acknowledged ticket.
     let key = a.content_begin(&binding).await.unwrap();
