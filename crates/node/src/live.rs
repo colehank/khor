@@ -3383,6 +3383,45 @@ impl LiveKind {
         })
     }
 
+    pub(crate) fn confirm_gui_ready(
+        &self,
+        id: &SessionId,
+        ghost_pid: u32,
+        native_id: Option<&str>,
+        agent: Option<&str>,
+        claim: Option<&str>,
+    ) -> Result<(), String> {
+        let directory = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        // Never spend a fresh one-second row wait on every poll. The opener
+        // retries only inside its original absolute startup deadline.
+        let mut gate = RowGate::try_acquire(&directory)?;
+        let meta = gate.read_meta()?;
+        let native = meta.gui_native.as_ref().ok_or("GUI Ready has no exact native source")?;
+        if meta.id != id.0 || meta.kind != khor_core::kind::GUI
+            || native.home != self.device || meta.pid != Some(ghost_pid)
+            || crate::adaptor::id_for(&native.native_id) != *id
+            || native_id.is_some_and(|expected| expected != native.native_id)
+            || agent.is_some_and(|expected| expected != native.agent)
+        {
+            return Err("GUI Ready belongs to another home, source or spawned ghost".into());
+        }
+        let run = meta.gui_run.as_ref().ok_or("GUI Ready has no current run")?;
+        if run.state.exit.is_some() || run.state.gui_run.as_ref() != Some(&run.id) {
+            return Err("GUI Ready names an ended or inconsistent execution".into());
+        }
+        let expected = claim.map(|claim| {
+            if claim.len() > 16 * 1024 {
+                return Err("GUI recovery claim exceeds its byte budget".to_owned());
+            }
+            serde_json::from_str::<recovery_attempt::AttemptKey>(claim).map_err(|error| error.to_string())
+        }).transpose()?;
+        let held = recovery_attempt::Held::load(&mut gate)?;
+        if held.ready_run(native, ghost_pid, expected.as_ref())? != run.id {
+            return Err("GUI Ready result and current Meta run disagree".into());
+        }
+        Ok(())
+    }
+
     pub(crate) fn quarantine_gui_new(
         &self,
         reservation: &crate::session_content::journal::JournalReservation,
@@ -3401,12 +3440,40 @@ impl LiveKind {
         &self,
         initial: &GuiInitial,
         receipt: Result<&khor_acp::ProcessExit, ()>,
+        slot_code: i32,
     ) -> Result<(), String> {
         let mut gate = RowGate::acquire(&initial.directory)?;
         recovery_attempt::Held::load(&mut gate)?.settle_initial(
             &initial.authority, &initial.control, receipt,
+            |gate, id, native, run_id, host_pid| {
+                retire_gui_slot_held(gate, id, native, run_id, host_pid, slot_code)
+            },
         )
     }
+}
+
+/// Partial publication may have committed Meta before returning its RunKey.
+/// Only that exact execution may be retired here; an old/new run is untouched.
+/// This Khor-slot ending is never a provider exit receipt.
+fn retire_gui_slot_held(
+    gate: &RowGate,
+    id: &SessionId,
+    native: &crate::session_content::journal::Identity,
+    run_id: &str,
+    host_pid: u32,
+    code: i32,
+) -> Result<(), String> {
+    let Some(meta) = gate.read_meta_or_new()? else { return Ok(()); };
+    let Some(run) = &meta.gui_run else { return Ok(()); };
+    if meta.id != id.0 || meta.gui_native.as_ref() != Some(native)
+        || meta.pid != Some(host_pid) || run.id != run_id
+        || run.state.gui_run.as_deref() != Some(run_id) || run.state.exit.is_some()
+    {
+        return Ok(());
+    }
+    gate.write_state(run.state.word, Some(code),
+        run.state.source.unwrap_or(Source::Reported), Some(run_id))?;
+    gate.sync_meta()
 }
 
 /// One short cross-process row transaction. No caller keeps this over a spawn,

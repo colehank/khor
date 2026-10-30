@@ -669,13 +669,35 @@ fn spawn_ghost_context(
             Ok(())
         });
     }
-    c.spawn().map_err(msg::host_wont_start)?;
+    let key = khor_net::identity::load_or_create(&root.join(".khor/identity.key"))
+        .map_err(|error| error.to_string())?;
+    let live = LiveKind::new(root.to_path_buf(), khor_core::DeviceId(*key.public().as_bytes()));
+    let expected_agent = if resume.is_none() {
+        Some(gui_new_agent(cmd, vendor))
+    } else {
+        vendor.map(str::to_owned)
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let child = c.spawn().map_err(msg::host_wont_start)?;
+    let ghost_pid = child.id();
+    drop(child);
+    let mut ready_issue = None;
     // Longer than host.rs's wait on purpose: before the marker can
     // exist an agent process has to boot and answer two requests.
-    for _ in 0..600 {
+    while std::time::Instant::now() < deadline {
         if let Ok(id) = std::fs::read_to_string(&ready) {
-            let _ = std::fs::remove_file(&ready);
-            return Ok(SessionId(id.trim().to_owned()));
+            let id = SessionId(id.trim().to_owned());
+            if !id.0.is_empty() {
+                match live.confirm_gui_ready(&id, ghost_pid, resume, expected_agent.as_deref(), None) {
+                    Ok(()) => {
+                        let _ = std::fs::remove_file(&ready);
+                        return Ok(id);
+                    }
+                    // Publishing/busy/error is never permission to return
+                    // Opened. Keep the marker and only the original deadline.
+                    Err(why) => ready_issue = Some(why),
+                }
+            }
         }
         // The ghost's own account of why there is no session. Without
         // it the only thing this loop can say is that thirty seconds
@@ -688,9 +710,10 @@ fn spawn_ghost_context(
             let _ = std::fs::remove_file(refusal_path(&ready));
             return Err(why);
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(deadline.saturating_duration_since(std::time::Instant::now())
+            .min(std::time::Duration::from_millis(50)));
     }
-    Err(msg::ghost_never_ready().into())
+    Err(ready_issue.unwrap_or_else(|| msg::ghost_never_ready().into()))
 }
 
 /// Where the ghost writes why it will never be ready. Beside the marker
@@ -1668,7 +1691,7 @@ match event {
     process_lifecycle.request_shutdown();
     let retired = rt.block_on(process_lifecycle.confirmed_exit());
     let settled = if let Some(initial) = &initial {
-        live.settle_gui_new(initial, retired.as_ref().map_err(|_| ()))
+        live.settle_gui_new(initial, retired.as_ref().map_err(|_| ()), if result.is_ok() { 0 } else { 1 })
     } else if retired.is_err() && new_collision {
         // Only the exact actual-New agent/native reservation can quarantine
         // its old bound row. A same short SID or missing reservation is never
@@ -1897,11 +1920,15 @@ fn gui_new_source_identity(
     cmd: &[String],
     native_id: &str,
 ) -> JournalIdentity {
-    let agent = std::env::var(VENDOR_ENV).unwrap_or_else(|_| {
+    let vendor = std::env::var(VENDOR_ENV).ok();
+    JournalIdentity { home, agent: gui_new_agent(cmd, vendor.as_deref()), native_id: native_id.to_owned() }
+}
+
+fn gui_new_agent(cmd: &[String], vendor: Option<&str>) -> String {
+    vendor.map(str::to_owned).unwrap_or_else(|| {
         let launch = serde_json::to_vec(cmd).expect("launcher identity serializes");
         format!("launcher:{}", blake3::hash(&launch).to_hex())
-    });
-    JournalIdentity { home, agent, native_id: native_id.to_owned() }
+    })
 }
 
 fn gui_source_identity(

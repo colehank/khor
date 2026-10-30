@@ -574,11 +574,48 @@ impl<'a> Held<'a> {
         self.store(next)
     }
 
+    /// Parent-side marker revalidation runs after taking this same short gate.
+    /// The marker itself may have become visible before RunPublished was stored.
+    pub(super) fn ready_run(
+        &self,
+        native: &Identity,
+        ghost_pid: u32,
+        expected: Option<&AttemptKey>,
+    ) -> Result<&str, String> {
+        self.ensure()?;
+        if self.has_cleanup_barrier() {
+            return Err("GUI Ready has an unconfirmed cleanup barrier".into());
+        }
+        let latest = self.document.as_ref().and_then(|doc| doc.latest.as_ref())
+            .ok_or("GUI Ready has no durable execution result")?;
+        if let Some(key) = expected {
+            self.current(key)?;
+        } else if latest.arguments.operation != Operation::InitialNew {
+            return Err("known-native Ready requires its exact recovery token".into());
+        }
+        let same_host = latest.host.as_ref().map(|host| host.pid)
+            .or(latest.unverified_host_pid) == Some(ghost_pid);
+        let actual_owner = matches!(latest.provider, Provider::Owned { .. })
+            || (latest.arguments.operation == Operation::InitialNew
+                && matches!(latest.provider, Provider::Unknown {
+                    reason: UnknownReason::BirthUnavailable, ..
+                }));
+        if &latest.arguments.native != native || !same_host || !actual_owner
+            || latest.phase != Phase::RunPublished
+            || !matches!(&latest.result, Some(Recorded::Opened { id, run_id })
+                if id == &latest.arguments.id && run_id == &latest.run_id)
+        {
+            return Err("GUI Ready is not this ghost's durable published execution".into());
+        }
+        Ok(&latest.run_id)
+    }
+
     pub(super) fn settle_initial(
         &mut self,
         authority: &InitialNewAuthority,
         control: &Arc<Control>,
         receipt: Result<&khor_acp::ProcessExit, ()>,
+        retire_slot: impl FnOnce(&RowGate, &SessionId, &Identity, &str, u32) -> Result<(), String>,
     ) -> Result<(), String> {
         self.current(&authority.key)?;
         if authority.issuing_pid != std::process::id()
@@ -589,7 +626,12 @@ impl<'a> Held<'a> {
         match (authority.actual_pid, receipt) {
             (Some(pid), Ok(receipt)) => self.confirmed_exit(&authority.key, pid, receipt),
             _ => self.cleanup_unknown(&authority.key),
-        }
+        }?;
+        // This retires only the matching Khor slot, independently of whether
+        // the provider was actually reaped or remained Unknown. A run key may
+        // not have reached the outer loop after partial publication failure.
+        retire_slot(self.gate, &authority.key.arguments.id, &authority.key.arguments.native,
+            &authority.key.run_id, authority.issuing_pid)
     }
 
     pub(super) fn reserve(
@@ -1317,6 +1359,76 @@ mod tests {
         drop(held);
         drop(gate);
         initial_new_cases();
+        partial_new_settlement();
+    }
+
+    fn partial_new_settlement() {
+        use crate::session_content::journal::Opening;
+        let root = Scratch::new();
+        let row = root.0.join("row");
+        fs::create_dir(&row).unwrap();
+        let native = Identity {
+            home: DeviceId([7; 32]), agent: "fixture".into(), native_id: "partial-new".into(),
+        };
+        let reservation = JournalReservation::take(&root.0, native.clone()).unwrap();
+        let control = Arc::new(Control::default());
+        let authority = {
+            let mut gate = RowGate::acquire(&row).unwrap();
+            Held::load(&mut gate).unwrap().seed_initial_new(
+                Arguments::initial_new(native.clone(), b"actual-args-model").unwrap(),
+                NewInvocation { reservation: &reservation, control: &control,
+                    actual_pid: Some(20), host: None, provider: None },
+            ).unwrap()
+        };
+        let mut journal = reservation.into_journal(Opening::New).unwrap();
+        journal.note(&serde_json::json!({"text":"complete retained base"})).unwrap();
+        journal.prepare_base().unwrap();
+        let mut gate = RowGate::acquire(&row).unwrap();
+        let mut held = Held::load(&mut gate).unwrap();
+        held.publish_initial_base(&authority, &mut journal, &control, |gate, journal| {
+            journal.publish_base()?;
+            journal.bind(&gate.dir)
+        }).unwrap();
+        let original = fs::read(native.directory(&root.0).join("current/records.jsonl")).unwrap();
+        let failed: Result<(), String> = held.publish_initial_run(
+            &authority, &mut journal, &control, |gate, _, run_id| {
+                gate.write_meta(&crate::live::Meta {
+                    kind: khor_core::kind::GUI.into(), title: "partial publication".into(),
+                    pid: Some(std::process::id()), started_ms: 1, gui_native: Some(native.clone()),
+                    gui_run: Some(GuiRun { id: run_id.into(), started_ms: 1, state: LiveState {
+                        gui_run: Some(run_id.into()), word: State::Idle, at_ms: 1,
+                        exit: None, source: Some(Source::Reported),
+                    }}), category: None, id: crate::adaptor::id_for(&native.native_id).0,
+                    vendor_leaf: None, place: None,
+                })?;
+                Err("failure after Meta before Ready/result publication".into())
+            },
+        );
+        assert!(failed.is_err());
+        assert!(held.ready_run(&native, std::process::id(), None).is_err());
+        held.settle_initial(&authority, &control, Err(()), |gate, id, native, run, pid| {
+            crate::live::retire_gui_slot_held(gate, id, native, run, pid, 1)
+        }).unwrap();
+        let meta = held.gate.read_meta().unwrap();
+        assert_eq!(meta.gui_run.as_ref().unwrap().state.exit, Some(1));
+        let doc = read(&row).unwrap().unwrap();
+        let latest = doc.latest.unwrap();
+        assert_eq!(latest.phase, Phase::PublishingRun);
+        assert!(latest.result.is_none());
+        assert!(matches!(latest.provider, Provider::Unknown { reason: UnknownReason::CleanupUnconfirmed, .. }));
+        assert_eq!(original, fs::read(native.directory(&root.0).join("current/records.jsonl")).unwrap());
+        assert!(held.ready_run(&native, std::process::id(), None).is_err());
+        let mut newer = meta;
+        let run = newer.gui_run.as_mut().unwrap();
+        run.id = "d".repeat(32);
+        run.state.gui_run = Some(run.id.clone());
+        run.state.exit = None;
+        held.gate.write_meta(&newer).unwrap();
+        let before = fs::read(row.join("meta.json")).unwrap();
+        held.settle_initial(&authority, &control, Err(()), |gate, id, native, run, pid| {
+            crate::live::retire_gui_slot_held(gate, id, native, run, pid, 1)
+        }).unwrap();
+        assert_eq!(before, fs::read(row.join("meta.json")).unwrap(), "old attempt cannot retire a newer Khor slot");
     }
 
     fn initial_new_cases() {
@@ -1442,9 +1554,10 @@ mod tests {
                     journal.publish_base()
                 })
                 .unwrap();
+                assert!(held.ready_run(&native, std::process::id(), None).is_err());
                 if revoke {
-                    assert!(held.settle_initial(&authority, &wrong_control, Err(())).is_err());
-                    held.settle_initial(&authority, &control, Err(())).unwrap();
+                    assert!(held.settle_initial(&authority, &wrong_control, Err(()), |_, _, _, _, _| Ok(())).is_err());
+                    held.settle_initial(&authority, &control, Err(()), |_, _, _, _, _| Ok(())).unwrap();
                     assert!(
                         held.publish_initial_run(&authority, &mut journal, &control, |_, _, _| {
                             writes += 1;
@@ -1487,6 +1600,8 @@ mod tests {
                         },
                     )
                     .unwrap();
+                    assert_eq!(held.ready_run(&native, std::process::id(), None).unwrap(), authority.key.run_id);
+                    assert!(held.ready_run(&native, std::process::id() + 1, None).is_err());
                     let recovery = Arguments::native(
                         native.clone(),
                         Some(authority.key.run_id.clone()),
@@ -1504,6 +1619,7 @@ mod tests {
                         &authority,
                         &control,
                         Ok(&khor_acp::ProcessExit { code: Some(0) }),
+                        |_, _, _, _, _| Ok(()),
                     )
                     .unwrap();
                     let next = start(held.reserve(recovery, token(2, 'b'), None).unwrap());
