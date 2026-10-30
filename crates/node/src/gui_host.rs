@@ -930,21 +930,23 @@ fn gui_host_main_with_timeouts(
     let mut birth = Some(birth);
     if let Some(owner) = recovery.as_mut() {
         if let Err(why) = live.attach_gui_recovery(owner, &process_control, provider_pid, birth.take().expect("one observation")) {
-            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), why);
+            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), None, why);
             let _ = std::fs::write(refusal_path(&ready), &why);
             if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
             return Err(why);
         }
     }
+    let initialization = khor_acp::InitializeFacts::default();
     let opened = rt.block_on(async {
         tokio::time::timeout(
             timeouts.handshake,
-            khor_acp::start_configured_on(
+            khor_acp::start_configured_on_with_facts(
                 transport.streams,
                 transport.lifecycle,
                 cwd.clone(),
                 resume.clone(),
                 environment,
+                initialization.clone(),
             ),
         )
         .await
@@ -954,10 +956,18 @@ fn gui_host_main_with_timeouts(
             ))
         })
     });
+    if let (Some(owner), Some(support)) = (recovery.as_ref(), initialization.recovery()) {
+        if let Err(why) = live.record_gui_recovery_support(owner, support) {
+            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), Some(&initialization), why);
+            let _ = std::fs::write(refusal_path(&ready), &why);
+            if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
+            return Err(why);
+        }
+    }
     let (handle, mut events) = match opened {
         Ok(opened) => opened,
         Err(refusal) => {
-            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), refusal_words(&refusal));
+            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), Some(&initialization), refusal_words(&refusal));
             let _ = std::fs::write(refusal_path(&ready), &why);
             if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
             return Err(why);
@@ -998,6 +1008,7 @@ fn gui_host_main_with_timeouts(
                 reservation.as_ref().ok_or("New has no exact journal reservation")?,
                 &launch, &process_control, provider_pid,
                 birth.take().ok_or("initial process observation was already consumed")?,
+                initialization.recovery(),
             )?);
         }
         let admission = reservation.as_mut().ok_or("ACP opening has no physical journal reservation")?;
@@ -1786,14 +1797,20 @@ fn retire_failed_opening(
     live: &LiveKind,
     process: &khor_acp::TransportLifecycle,
     recovery: Option<&crate::live::GuiRecovery>,
+    initialization: Option<&khor_acp::InitializeFacts>,
     mut why: String,
 ) -> (String, bool) {
     process.request_shutdown();
     let retired = rt.block_on(process.confirmed_exit());
+    let facts = match (recovery, initialization.and_then(khor_acp::InitializeFacts::recovery)) {
+        (Some(owner), Some(support)) => live.record_gui_recovery_support(owner, support),
+        _ => Ok(()),
+    };
     let settled = recovery.map(|owner| live.settle_gui_recovery(owner, retired.as_ref().map_err(|_| ()), 1)).transpose();
     if let Err(error) = &retired { why = format!("{why}; ACP cleanup is unconfirmed: {error}"); }
     if let Err(error) = &settled { why = format!("{why}; durable cleanup is unconfirmed: {error}"); }
-    (why, retired.is_err() && settled.is_err())
+    if let Err(error) = &facts { why = format!("{why}; Initialize fact publication is unconfirmed: {error}"); }
+    (why, retired.is_err() && (settled.is_err() || facts.is_err()))
 }
 
 /// No listener or GuiOp::Close is promised on this pre-publication failure.

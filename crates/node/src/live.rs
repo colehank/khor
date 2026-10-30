@@ -29,6 +29,8 @@ use khor_core::{DeviceId, Kind, Millis, Session, SessionId, State, StateStamp};
 use crate::adaptor::Discovery;
 
 mod recovery_attempt;
+#[path = "session_recovery.rs"]
+mod session_recovery;
 mod proc_identity;
 
 /// What a live session is. `pid` is the process whose death means the
@@ -3339,63 +3341,6 @@ pub(crate) struct GuiInitial {
     control: Arc<crate::agent_process::Control>,
 }
 impl LiveKind {
-    pub(crate) fn prepare_gui_recovery(
-        &self,
-        native: crate::session_content::journal::Identity,
-        launch: &[u8],
-    ) -> Result<String, String> {
-        self.check_gui_source(&native)?;
-        let id = crate::adaptor::id_for(&native.native_id);
-        let directory = self.dir(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
-        fs::create_dir_all(&directory).map_err(msg::cant_make_session_dir)?;
-        // Preflight the complete manifest and existing binding before even
-        // spawning a ghost. The child still acquires and retains its own exact
-        // File before provider spawn; the epoch fences this cross-process gap.
-        let admission = crate::session_content::journal::JournalReservation::take(&self.root, native.clone())?;
-        admission.check_binding(&directory)?;
-        // Capture only the registered target under the short gate; all OS
-        // facts are read after dropping it, never across a spawn or await.
-        let registered = {
-            let mut gate = RowGate::acquire(&directory)?;
-            recovery_attempt::Held::load(&mut gate)?.registered_foreground(&native)?
-        };
-        if let Some(registered) = registered {
-            let host_absent = if registered.slot_ended { None } else {
-                match proc_identity::foreground(&registered.host) {
-                    proc_identity::Foreground::Absent(proof) => Some(proof),
-                    proc_identity::Foreground::Present => return Err("the previous Khor execution is still active".into()),
-                    proc_identity::Foreground::Unknown => return Err("the previous Khor execution owner is unknown".into()),
-                }
-            };
-            match proc_identity::foreground(&registered.process) {
-                proc_identity::Foreground::Absent(proof) => {
-                    let mut gate = RowGate::acquire(&directory)?;
-                    recovery_attempt::Held::load(&mut gate)?.foreground_absent(&registered, &proof, host_absent.as_ref())?;
-                }
-                proc_identity::Foreground::Present => return Err("registered provider foreground is still present".into()),
-                proc_identity::Foreground::Unknown => return Err("registered provider foreground is unknown".into()),
-            }
-        }
-        let legacy = self.legacy_gui_source(&id)?;
-        let mut gate = RowGate::acquire(&directory)?;
-        let meta = gate.read_meta_or_new()?;
-        gate.check_native(&id, meta.as_ref(), &native, legacy.as_ref())?;
-        if meta.as_ref().is_some_and(|meta| !gui_slot_ended(meta) && meta.pid.is_some_and(crate::link::pid_running)) {
-            return Err("GUI row still has a live execution".into());
-        }
-        let expected = meta.and_then(|meta| meta.gui_run.map(|run| run.id));
-        let arguments = recovery_attempt::Arguments::native(native, expected, launch)?;
-        let token = recovery_attempt::Token::new(recovery_attempt::next_epoch(&directory)?, crate::link::fresh_hex()?)?;
-        match recovery_attempt::Held::load(&mut gate)?.reserve(arguments, token, legacy.as_ref())? {
-            recovery_attempt::Reservation::Start(key) => {
-                let encoded = serde_json::to_string(&key).map_err(|error| error.to_string())?;
-                if encoded.len() > 16 * 1024 { return Err("GUI claim exceeds its byte budget".into()); }
-                Ok(encoded)
-            }
-            _ => Err("GUI recovery has no new exclusive execution authority".into()),
-        }
-    }
-
     pub(crate) fn gui_ghost_spawn_failed(&self, encoded: &str) -> Result<(), String> {
         if encoded.len() > 16 * 1024 { return Err("GUI claim exceeds its byte budget".into()); }
         let key: recovery_attempt::AttemptKey = serde_json::from_str(encoded).map_err(|error| error.to_string())?;
@@ -3449,6 +3394,18 @@ impl LiveKind {
         recovery_attempt::Held::load(&mut gate)?.owned_provider(&recovery.key, provider)
     }
 
+    pub(crate) fn record_gui_recovery_support(
+        &self,
+        recovery: &GuiRecovery,
+        support: khor_acp::RecoveryCapabilities,
+    ) -> Result<(), String> {
+        if recovery.control.is_none() || recovery.actual_pid.is_none() {
+            return Err("Initialize facts lost their actual transport owner".into());
+        }
+        let mut gate = RowGate::acquire(&recovery.directory)?;
+        recovery_attempt::Held::load(&mut gate)?.record_support(&recovery.key, support)
+    }
+
     pub(crate) fn publish_gui_recovery(
         &self,
         recovery: &GuiRecovery,
@@ -3499,6 +3456,7 @@ impl LiveKind {
         control: &Arc<crate::agent_process::Control>,
         actual_pid: Option<u32>,
         birth: GuiBirth,
+        support: Option<khor_acp::RecoveryCapabilities>,
     ) -> Result<GuiInitial, String> {
         let native = reservation.identity();
         self.check_gui_source(native)?;
@@ -3509,7 +3467,7 @@ impl LiveKind {
         let authority = recovery_attempt::Held::load(&mut gate)?.seed_initial_new(
             recovery_attempt::Arguments::initial_new(native.clone(), launch)?,
             recovery_attempt::NewInvocation {
-                reservation, control, actual_pid, host: birth.host, provider: birth.provider,
+                reservation, control, actual_pid, host: birth.host, provider: birth.provider, support,
             },
         )?;
         Ok(GuiInitial { directory, authority, control: control.clone() })

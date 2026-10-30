@@ -144,6 +144,29 @@ pub struct Facts {
     pub needs_login: bool,
 }
 
+/// Only the two lifecycle capabilities actually advertised by Initialize v1.
+/// This is a Rust fact accessor, not another protocol or a vendor-name guess.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecoveryCapabilities {
+    pub load: bool,
+    pub resume: bool,
+}
+
+/// One bounded observation shared with the owner of this single startup. It is
+/// also readable after a refused opening, without changing the refusal type.
+#[derive(Clone, Default)]
+pub struct InitializeFacts(Arc<std::sync::OnceLock<RecoveryCapabilities>>);
+impl InitializeFacts {
+    pub fn recovery(&self) -> Option<RecoveryCapabilities> {
+        self.0.get().copied()
+    }
+    fn initialized(&self, value: RecoveryCapabilities) -> Result<(), Refusal> {
+        self.0.set(value).map_err(|_| Refusal::Wont(
+            "Initialization facts cannot be reused for another startup".into(),
+        ))
+    }
+}
+
 /// Why no session exists.
 ///
 /// Three kinds because a person does three different things about them,
@@ -771,8 +794,21 @@ pub async fn start_configured_on(
     resume: Option<String>,
     environment: Environment,
 ) -> Result<(Handle, EventReceiver), Refusal> {
+    start_configured_on_with_facts(transport, lifecycle, cwd, resume, environment, InitializeFacts::default()).await
+}
+
+/// Caller-owned facts are filled only by this startup's real Initialize v1
+/// response. Missing/version-refused/unfinished initialization stays unknown.
+pub async fn start_configured_on_with_facts(
+    transport: impl agent_client_protocol::ConnectTo<Client>,
+    lifecycle: TransportLifecycle,
+    cwd: PathBuf,
+    resume: Option<String>,
+    environment: Environment,
+    initialization: InitializeFacts,
+) -> Result<(Handle, EventReceiver), Refusal> {
     let cleanup = lifecycle.clone();
-    match start_transport(transport, Some(lifecycle), cwd, resume, environment).await {
+    match start_transport_with_facts(transport, Some(lifecycle), cwd, resume, environment, initialization).await {
         Ok(opened) => Ok(opened),
         Err(refusal) => {
             cleanup.request_shutdown();
@@ -805,6 +841,17 @@ async fn start_transport(
     cwd: PathBuf,
     resume: Option<String>,
     environment: Environment,
+) -> Result<(Handle, EventReceiver), Refusal> {
+    start_transport_with_facts(agent, lifecycle, cwd, resume, environment, InitializeFacts::default()).await
+}
+
+async fn start_transport_with_facts(
+    agent: impl agent_client_protocol::ConnectTo<Client>,
+    lifecycle: Option<TransportLifecycle>,
+    cwd: PathBuf,
+    resume: Option<String>,
+    environment: Environment,
+    initialization: InitializeFacts,
 ) -> Result<(Handle, EventReceiver), Refusal> {
     let join_sdk_driver = lifecycle.is_none();
     let (events, receiver, event_fence) = event_store::channel();
@@ -886,7 +933,7 @@ async fn start_transport(
                 }, agent_client_protocol::on_receive_request!(),
             )
             .connect_with(agent, |connection:ConnectionTo<Agent>| async move {
-                let mut opened=open_one(&connection,resume,cwd,environment).await;
+                let mut opened=open_one(&connection,resume,cwd,environment,&initialization).await;
                 if let Ok((session,..))=&opened {
                     if let Err(error)=opening_events.accept_session(session.clone()) {
                         opened=Err(Refusal::Wont(error));
@@ -1039,6 +1086,7 @@ async fn open_one(
     resume: Option<String>,
     cwd: PathBuf,
     environment: Environment,
+    initialization: &InitializeFacts,
 ) -> Result<(SessionId, Facts, Settings, OpenedBy), Refusal> {
     if environment
         .additional_directories
@@ -1066,6 +1114,10 @@ async fn open_one(
     }
     let protocol = serde_json::json!({"capabilities":hello.agent_capabilities,"authMethods":hello.auth_methods,"agentInfo":hello.agent_info});
     let caps = &hello.agent_capabilities;
+    initialization.initialized(RecoveryCapabilities {
+        load: caps.load_session,
+        resume: caps.session_capabilities.resume.is_some(),
+    })?;
     if !environment.additional_directories.is_empty()
         && caps.session_capabilities.additional_directories.is_none()
     {

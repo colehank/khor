@@ -223,6 +223,26 @@ pub(super) enum Reason {
     Cancelled,
 }
 
+/// The actual Initialize v1 observation for this exact attempt's native source
+/// and effective launch digest. It is not permission to spawn or skip guards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct InitializedSupport {
+    load: bool,
+    resume: bool,
+}
+impl From<khor_acp::RecoveryCapabilities> for InitializedSupport {
+    fn from(value: khor_acp::RecoveryCapabilities) -> Self {
+        Self { load: value.load, resume: value.resume }
+    }
+}
+impl InitializedSupport {
+    fn projection(self) -> khor_core::recovery::RecoverySupport {
+        use khor_core::recovery::RecoverySupport;
+        if self.resume { RecoverySupport::Resume } else if self.load { RecoverySupport::Load } else { RecoverySupport::Unsupported }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Latest {
@@ -236,6 +256,8 @@ struct Latest {
     provider: Provider,
     generation: Option<String>,
     result: Option<Recorded>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    support: Option<InitializedSupport>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -277,6 +299,9 @@ impl Document {
             }
         }
         let host_recorded = v.host.is_some() || v.unverified_host_pid.is_some();
+        if v.support.is_some() && (!host_recorded || matches!(v.provider, Provider::NotStarted | Provider::Starting)) {
+            return Err("Initialize facts have no started execution owner".into());
+        }
         v.provider.validate()?;
         if let Provider::Unknown {
             last, actual_pid, ..
@@ -351,6 +376,7 @@ pub(super) struct NewInvocation<'a> {
     pub(super) actual_pid: Option<u32>,
     pub(super) host: Option<ProcessStamp>,
     pub(super) provider: Option<ProcessStamp>,
+    pub(super) support: Option<khor_acp::RecoveryCapabilities>,
 }
 
 /// Nonserializable, non-Clone permission for this one live New invocation.
@@ -492,6 +518,7 @@ impl<'a> Held<'a> {
                 provider,
                 generation: None,
                 result: None,
+                support: invocation.support.map(InitializedSupport::from),
             }),
         })?;
         Ok(authority)
@@ -601,6 +628,26 @@ impl<'a> Held<'a> {
                 return Err("registered foreground changed during its read-only probe".into());
             }
             latest.provider = Provider::ForegroundAbsent { process: registered.process.clone() };
+            Ok(())
+        })
+    }
+
+    pub(super) fn record_support(
+        &mut self,
+        key: &AttemptKey,
+        support: khor_acp::RecoveryCapabilities,
+    ) -> Result<(), String> {
+        let support = InitializedSupport::from(support);
+        self.change(key, |latest| {
+            if latest.host.is_none() && latest.unverified_host_pid.is_none()
+                || matches!(latest.provider, Provider::NotStarted | Provider::Starting)
+            {
+                return Err("Initialize facts have no actual started provider owner".into());
+            }
+            if latest.support.is_some_and(|previous| previous != support) {
+                return Err("Initialize facts changed within one startup".into());
+            }
+            latest.support = Some(support);
             Ok(())
         })
     }
@@ -730,17 +777,16 @@ impl<'a> Held<'a> {
         }
     }
 
-    pub(super) fn reserve(
-        &mut self,
-        arguments: Arguments,
-        token: Token,
-        legacy: Option<&(Option<String>, Identity)>,
-    ) -> Result<Reservation, String> {
+    pub(super) fn replay(
+        &self,
+        arguments: &Arguments,
+        token: &Token,
+    ) -> Result<Option<Reservation>, String> {
         self.ensure()?;
         arguments.validate()?;
         token.validate()?;
         if self.has_cleanup_barrier() {
-            return Ok(Reservation::UnknownOwner);
+            return Ok(Some(Reservation::UnknownOwner));
         }
         if arguments.operation != Operation::RecoverNative {
             return Err("initial New cannot enter preghost recovery reservation".into());
@@ -756,7 +802,7 @@ impl<'a> Held<'a> {
         }
         let high_water = self.document.as_ref().map_or(0, |doc| doc.high_water);
         if token.epoch < high_water {
-            return Ok(Reservation::Retired);
+            return Ok(Some(Reservation::Retired));
         }
         if token.epoch == high_water {
             let latest = &self
@@ -764,10 +810,10 @@ impl<'a> Held<'a> {
                 .as_ref()
                 .ok_or("missing latest recovery attempt")?
                 .latest.as_ref().ok_or("recovery row is quarantined without an attempt")?;
-            if token != latest.token || arguments != latest.arguments {
+            if token != &latest.token || arguments != &latest.arguments {
                 return Err("recovery token was reused with different arguments".into());
             }
-            return Ok(match &latest.result {
+            return Ok(Some(match &latest.result {
                 Some(result) => Reservation::Recorded(result.clone()),
                 None if matches!(latest.provider, Provider::Unknown { .. }) => {
                     Reservation::UnknownOwner
@@ -776,10 +822,22 @@ impl<'a> Held<'a> {
                     phase: latest.phase,
                     host: latest.host.clone(),
                 },
-            });
+            }));
         }
         if Some(token.epoch) != high_water.checked_add(1) {
             return Err("recovery epoch is not the next offer".into());
+        }
+        Ok(None)
+    }
+
+    pub(super) fn reserve(
+        &mut self,
+        arguments: Arguments,
+        token: Token,
+        legacy: Option<&(Option<String>, Identity)>,
+    ) -> Result<Reservation, String> {
+        if let Some(previous) = self.replay(&arguments, &token)? {
+            return Ok(previous);
         }
         // Meta.exit, a dead host, a free journal or absent leader are not a
         // substitute for its actual owned-foreground receipt or complete,
@@ -832,6 +890,7 @@ impl<'a> Held<'a> {
                 provider: Provider::NotStarted,
                 generation: None,
                 result: None,
+                support: None,
             }),
         })?;
         Ok(Reservation::Start(key))
@@ -1109,6 +1168,24 @@ impl<'a> Held<'a> {
     }
 }
 
+/// Read-only projection of a previous observation; no row lock/file creation,
+/// provider probe or launch. The action must still re-Initialize and guard.
+pub(super) fn matching_support(
+    directory: &Path,
+    native: &Identity,
+    launch: &[u8],
+) -> Result<khor_core::recovery::RecoverySupport, String> {
+    use khor_core::recovery::RecoverySupport;
+    let document = read(directory)?;
+    let Some(latest) = document.as_ref().and_then(|doc| doc.latest.as_ref()) else { return Ok(RecoverySupport::Unknown); };
+    if &latest.arguments.native != native
+        || latest.arguments.launch_digest != blake3::hash(launch).to_hex().to_string()
+    {
+        return Ok(RecoverySupport::Unknown);
+    }
+    Ok(latest.support.map_or(RecoverySupport::Unknown, InitializedSupport::projection))
+}
+
 pub(super) fn check_unquarantined(directory: &Path) -> Result<(), String> {
     if read(directory)?.as_ref().is_some_and(|doc| doc.cleanup_barrier.is_some()) {
         Err("native source has an unconfirmed New cleanup".into())
@@ -1250,6 +1327,16 @@ mod tests {
     }
     #[test]
     fn bounded_attempt_tokens_keep_arguments_results_and_unknown_owners_fenced() {
+        let supplied = khor_core::recovery::RecoveryToken { epoch: "1".into(), nonce: "a".repeat(32) };
+        assert_eq!(super::super::session_recovery::action_token(&supplied).unwrap().epoch, 1);
+        for epoch in ["", "0", "01", "+1", "-1", "1.0", "18446744073709551616"] {
+            assert!(super::super::session_recovery::action_token(&khor_core::recovery::RecoveryToken {
+                epoch: epoch.into(), nonce: "a".repeat(32),
+            }).is_err());
+        }
+        assert!(super::super::session_recovery::action_token(&khor_core::recovery::RecoveryToken {
+            epoch: "1".into(), nonce: "A".repeat(32),
+        }).is_err());
         let scratch = Scratch::new();
         assert_eq!(next_epoch(&scratch.0).unwrap(), 1);
         assert_eq!(
@@ -1309,7 +1396,18 @@ mod tests {
             "a replayed claim cannot issue another spawn"
         );
         assert!(held.owned_provider(&first, stamp(20, 99)).is_err());
+        let advertised = khor_acp::RecoveryCapabilities { load: true, resume: false };
+        assert!(held.record_support(&first, advertised).is_err());
         held.owned_provider(&first, stamp(20, 10)).unwrap();
+        held.record_support(&first, advertised).unwrap();
+        held.record_support(&first, advertised).unwrap();
+        let supported = fs::read(held.gate.dir.join(NAME)).unwrap();
+        assert!(held.record_support(&first, khor_acp::RecoveryCapabilities { load: false, resume: true }).is_err());
+        assert_eq!(supported, fs::read(held.gate.dir.join(NAME)).unwrap());
+        assert_eq!(matching_support(&held.gate.dir, &native, b"effective-launch-and-context").unwrap(), khor_core::recovery::RecoverySupport::Load);
+        assert_eq!(matching_support(&held.gate.dir, &native, b"changed AgentSpec launch").unwrap(), khor_core::recovery::RecoverySupport::Unknown);
+        let mut another_agent = native.clone(); another_agent.agent = "another-agent".into();
+        assert_eq!(matching_support(&held.gate.dir, &another_agent, b"effective-launch-and-context").unwrap(), khor_core::recovery::RecoverySupport::Unknown);
         held.publish_base(&first, Some(&"c".repeat(32)), |_| Ok(()))
             .unwrap();
         held.publish_run(&first, |gate, run_id| {
@@ -1475,6 +1573,9 @@ mod tests {
         ));
         held.confirmed_exit(&key, 20, &receipt).unwrap();
         let next = start(held.reserve(args.clone(), token(2, 'b'), None).unwrap());
+        let fresh = fs::read(held.gate.dir.join(NAME)).unwrap();
+        assert!(held.record_support(&key, khor_acp::RecoveryCapabilities { load: true, resume: true }).is_err());
+        assert_eq!(fresh, fs::read(held.gate.dir.join(NAME)).unwrap());
         held.claim_host(&next, stamp(30, 1)).unwrap();
         held.starting_provider(&next).unwrap();
         held.owned_provider(&next, stamp(40, 30)).unwrap();
@@ -1529,7 +1630,7 @@ mod tests {
             Held::load(&mut gate).unwrap().seed_initial_new(
                 Arguments::initial_new(native.clone(), b"actual-args-model").unwrap(),
                 NewInvocation { reservation: &reservation, control: &control,
-                    actual_pid: Some(20), host: None, provider: None },
+                    actual_pid: Some(20), host: None, provider: None, support: None },
             ).unwrap()
         };
         let mut journal = reservation.into_journal(Opening::New).unwrap();
@@ -1673,6 +1774,7 @@ mod tests {
                         actual_pid,
                         host: None,
                         provider: None,
+                        support: None,
                     },
                 )
                 .unwrap()
@@ -1819,7 +1921,8 @@ mod tests {
                             control: &control,
                             actual_pid,
                             host: None,
-                            provider: None
+                            provider: None,
+                            support: None,
                         }
                     )
                     .is_err()

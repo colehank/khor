@@ -793,6 +793,9 @@ fn managed_host_case_worker() {
             close_host(host, &mut b, &notes_b, process_pid(&scratch, "journal-no-load"));
             let received = std::fs::read_to_string(scratch.join("journal-no-load/received.jsonl")).unwrap();
             let calls: Vec<serde_json::Value> = received.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+            let row = LiveKind::new(root.clone(), node.device()).dir_of(first.binding.view()).unwrap();
+            let attempt: serde_json::Value = serde_json::from_slice(&std::fs::read(row.join("recovery-attempt.json")).unwrap()).unwrap();
+            assert_eq!(attempt["latest"]["support"], serde_json::json!({"load":false,"resume":false}));
             assert_eq!(calls.iter().filter(|call| call["method"] == "session/new").count(), 1);
             assert!(!calls.iter().any(|call| call["method"] == "session/load" || call["method"] == "session/resume"));
         }
@@ -986,6 +989,9 @@ fn managed_host_case_worker() {
                     .to_owned(),
             );
             let node = crate::Node::open(root.clone()).unwrap();
+            let row = LiveKind::new(root.clone(), node.device()).dir_of(&id).unwrap();
+            let attempt: serde_json::Value = serde_json::from_slice(&std::fs::read(row.join("recovery-attempt.json")).unwrap()).unwrap();
+            assert_eq!(attempt["latest"]["support"], serde_json::json!({"load":false,"resume":true}));
             assert_eq!(
                 node.session_content(&id, None).unwrap(),
                 crate::session_content::Availability::Available {
