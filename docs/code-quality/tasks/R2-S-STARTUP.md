@@ -171,3 +171,17 @@ B exec **60432 terminal0/175.605934s**，16stage全0：meta/stub/Nodeproducer＋
 H actual gen lineage255（Rust原字节同）、当前16ee noEmit0/Vite0 receipt087f4263给C真179gen/278assets/2331frame。C **cli-source-2-16eec79e** runner16f9437c/contract7e869a2e/sourcee08e01d2/admissione82e05e8已非作者准入，normal khor+四integration各no-prior V/原path+copySHA；仅两private fake-peer shim+gui_refused3exact，agents compile-only保人工第三方runtime边界。**C尚未执行**；Root当前先生产default GUI/CLI build，不能自开native。E同源devURL文件输入验收只准备，非S本批实际结果。
 
 B4归档非作者恢复闭包亦已通过。仅校正文案量纲：**439960128B为4文件logical总和；原df实际增439934976B，差25152B**；原JSON分别保logical总数与before/after字节，记录正确，不改原receipt/index/result，不重跑或重读已可变target。
+
+
+#### 原5GiB门中止生产后精确空间交接（均已非作者FS尾核）
+
+Root production16ee exec61197真实terminal1/190.34s：CLI actual/V/copy成功、GUI在链接被外盘5GiB硬门中止，原false/严格source-env-gen-assets/remaining[]/TMPabsent保。以下是Root逐项明确授权的可恢复归档，不是放宽Native门，不碰用户main/release/current16ee私有CLI。
+
+1. 旧666 CLI＋ce69 CLI/GUI三个已终态nlink1 privatecopy：各UID501/regular/nlink1/SHA与原historical selected证明/lsof0核同；外盘完整gzip再decode同、双盘durable恢复index后unlink。logical1086306024B、外gzip330474867B，现场df5462495232→6193848320B（实增731353088B）；validation/archive-retired-nlink1-privatecopies index **fa06ffcee304ecd5e7660ee3abfb1441a88dfd45ecbf51502cd704565ba4c819** / result **ce9dae41082d9e23d4048609e4e148689815af99a9821186c4afdb3087ee153d**。旧ce69二进制不能再直接运行，必须按索引恢复；当前E只新16ee模板待实际devURL variant，不借旧备份冒新版。
+2. 旧production84两个private名字初核nlink4/5而非1，前置即停0gzip/0unlink；H固定完整9alias报告b04a6f6b，Root再精确授权两完整inode组（CLI4/GUI5，已终态App2–5）。全组9项identity/hash/open/终态核同，一gzip/组完整decode+双盘index后逐alias按remaining nlink4/5→…→1核ino/SHA再删，逐步durable进度。唯一inode logical743790720B而非9名累加；外gzip229619667B，df6193836032→6685360128B（实增491524096B）。validation/archive-production84-privatecopies index **79b81351e4be31a00bdcfce946f4970694ab3770785db9e77360fff7b8a0eff8** / result **454c480fe5fc0fde01dda1dc1ac2f69320a8fb55a3e7f92562b1fa89665a5a44**。旧App false/原结果不改，无任意多link豁免；gzip外盘一份，小件双盘，未称全部大件双盘。
+3. B三已完成target testexe（非stub）：Root原selectedSHA/nlink1/lsof0/原61197 CLI+GUI两raw2910实际路径无引用，已有内盘完整gzip再核→双盘index→仅3target精确删。logical425070184B，df6685306880→7110332416B（实增425025536B）。node-source-3-16eec79e/target-test-archive index **40916cd76766b0af1795a0c27a010518d219ad5642431c9dc6b89ba1afb5a844** / result **7c1b8e324873e3891b74096b9e68a48f34c1c00c8110fa7fec9a1962007871a9**；未动normalstub/currentCLI/其它target，原B证明/结果不改。
+4. 原95235 Store两private（ACP23465768＋Node287135800B）只读清单a37452bf后Root明确授；原49镜像8d8ef24两完整gzip/identity/nlink1/lsof0再核，双盘indexfsync后仅这两private unlink，不新写外盘gzip、不额外动target。logical310601568B，df7148982272→7459610624B（实增310628352B），内盘5917409280B。event-store-native-source-3/privatecopy-archive-95235 index **f8d4181b3863e77ca55f293b73adbd3cc5832fceef8cea6f53600a0a52ff0a4c** / result **8ae9ae50470ba5421c50a4426cbd7069c51f34fb9adb770319e552a90fb49cc8**。Store Node旧target路径已在历史编译中被B同名输出替代并经上项授权删；本项只归档其独立private，不伪称原target当前仍在。
+
+全部四组FS索引/进度/结果/恢复gzip闭包已独审通过；精确时点df与logical分列，不将背景变化归成确定净bytes。Root明确停止更多空间/666GUI/库盘点，已停；旧666GUI nlink3保持原状，无全target清理。最后FS终态直接交H，其browser13 actual98901已全部通过且严格净；Native现归Root GUI-only exec48383（metadataGUI+新GUI，不重CLI/gen），作者不poll其handle、不C/E并行。
+
+C仍已准入未执行（16f9437c/7e869a2e、H087f资产），等Root GUI-only实际terminal后明确授。E文件输入只准备 validation/app-16ee-editor-preparation（receipt87db5ab3），原launcher d4edc12a/observerd50ddf13不变，outer只镜像basename695bb4ee；无contract.json不可运行，实际devURL23846变体/CLI/V/source/gen/config及新鲜用户时段待Root，默认custom-protocol GUI不能冒该observer已接。
