@@ -118,3 +118,19 @@ Root清理已独审的旧666专用缓存后，正式授source3：driver `2e78be1
 actual-receipt **97b82bea3d3e3a500798c990c9b20549246860330b91176007a00fef1f016388**、result **0dc562015ba52afeb7523c1d6af52156de554e5ce3863d8d7ea6c148a1904872**，位于event-store-native-source-3。actual ACPcopy **3a2aac9a4d0c29bfa012ab63ba595a5a9fdaaa1c874ca05aff7ab78c5d62cb38** / Nodecopy **cafaa586341c472689cc70934502d0483b82bb61100d9b5e7c10a8c4f6277e23**；49小件与两完整gzip镜像内盘startup-event-store-27d64344-actual1，mirror-manifest **8d8ef24a830363a0afc4bcfdf76a8dadad063568e47b9f9401295a04ed3500f7**。压缩前UID501/regular/nlink1/无打开句柄/源SHA、压缩后流式解压SHA均核，原私有exe未删。
 
 仍保边界：无当前GUI/App/发布/全平台证明；管理认证复用仅本批编译，未单独auth peer行为。Node依赖ACP非test编译有一个仅测试用stats getter dead-code warning，后续必要清理可cfg(test)，此刻保27d已验源不改；不是业务失败。旧Replay死API仍待退役（不再造spool），当前互动/Stop/Close/历史完整等语义迁移和H恢复、当前App组合均需继续，不据本片绿标整S完成。已交非作者实际尾审，未重跑或弱化原断言。
+
+### Replay退役source4dd9（尚无联编/运行结果）
+
+Root接受Store27d实际组件后授同worktree新 `fix/round2-replay-node`；旧27d/source/native原字节保。固定 **4dd9db6c4caf6f567c7ab7940e7b483d0957ce88** parent27d，15授权叶/treeclean。源回执 **cac462edf6f8c13fe0a45e8ae56215bf6b96b4fd3a9ad87f3c32aded398d0598**，完整 `MIGRATION.md` **0754f41c2a56545d63539e140ba7965e2c16bf06716f521af4a31497cd11c664**，位于history/startup-source-d181/replay-retirement-node/source-4dd9db6c；内盘replay-retirement-node-4dd9db6c-source逐SHA同。此前WIP1/2/3全源/patch恢复副本亦保。
+
+source移除GuiOpReplay/GuiNoteHistory+End/CaptureFailureReplayInFlight、replay_wanted/Replay/ReplayDelivery/32MiBcollector/publication/Handle.replay与仅供其用的Handle cwd/environment副本；Facts.replays/Agent.replays、初始LoadResume/OpenedBy、Store有限prefix、canonical唯一writer、真实turn/control/Stop/Close全部保。无第二spool/compat/API占位。stats只测试getter加cfg(test)，不据此把旧27d实际证据改成新SHA重跑。
+
+GUI_GREETING升 `/2` 是退役能力/帧集合break门，PTY HOST_VERSION5/ring.replay未动。**此前“枚举按index重排导致读错”归因撤回**：实际proto::encode→rmp_serde::to_vec，locked rmp-serde1.3.1 encode.rs写variant名字、忽略u32 index；结构payload字段才positional。保GUI1/unknown/PTY负例、覆盖GUI2正例/future3；host.rs只PTY负例新增GUI2，Core同义负例由H7d单writer。
+
+测试逐项语义迁保见MIGRATION表：ACPNew真实MCP/context通过Prompt Elicit保持答复/close；旧初始Load内Elicit无法在open返回前向UI暴露的独立缺口由Root登记NEXT-ROUND，不新增openingAPI。initialLoad finiteprefix/两历史chunk与NoLoad实际restore拒绝；两个CLIshim原ID/权限/Stop后继续/EOF/drop强断言保，fresh无历史有限prefix，原第三owner在旧owner结束后初次Load规范化past+user_message_chunk先于新prompt。NodeGUI两view真实Prompt有效/无效/迟到Elicit答复与广播、单view token Capture/真实canonical page/另view300ms已证明通路后无泄露；NoLoad诚实new空capture。journal双Capture含重挂同binding/字节不变，原再次Load只一base、raw换文件拒绝保。
+
+Node原cooperative/flood/slowGUI/timeout等当前case保；五旧Replay场景迁真实当前负载：large live-flood Stop实际SDKcancel/最终Note-beforeCancelled/同进程下一turn与canonical尾、Close5s reap；30MiB真liveNote的raw drip保持64KiB/80ms/5MiB/>2s/15s读探测与另一view的4s/3s cooperativeStop/下一turn+继续读；16384条初次Load经实际Capture/H所有older页无跳无重、原5s基础marker+12s全历史数据timeout及字节预算、Load1/New0；pendingControl中Capture不reload、原4s control完成/同进程。只退掉死API专属HistoryEnd/已ACK UI取消不发SDKcancel/repeated publisher2s grace判据，Root已明确认可，未将其伪装成现live-turn。
+
+Root增授的gui_refused只kind_of移旧两臂/显式Captured，其他两窗拒绝/fixture/时限不动；gui_session私有stub locator必须canonical absolute regular可执行/无symlink，受控test-evidence模式缺KHOR_ACP_STUB即拒，不能在实际阶段隐式Cargo或猜exe父路径。普通本地便利分支独立，不称来源证明。CLIagents当前Capture/H helper仅source迁移，保持原真实写入/拒绝/close断言，未运行ignored real model。
+
+当前仅15源Rustfmt语法解析/私有Python AST/diff-check0，**无Cargo/typecheck/实际gen/native/App结果**。已交非作者最终source审，H共享47fe/fixtures ee341/Core7d是另一作者片，Root将集中整合同源后真实producer/针对实际受影响测试，不手写gen或临时旧wire兼容。整S/第二轮继续active，34项不据source完成缩范围。
