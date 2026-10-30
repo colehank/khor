@@ -6,7 +6,7 @@ import { literalMatcher, findSnippet, type FindHit, type FindQuery } from './his
 
 /** These are source-validated cursors and exact opaque contribution keys,
  * scoped to this query's one Worker/historySource lifetime, never persisted. */
-export type HistoryReplay = { before: string; forward: boolean; first: string; endBefore: string; last: string; fence: string; completeStart: boolean };
+export type HistoryReplay = { before: string; forward: boolean; first: string; endBefore: string; last: string; ceiling: {entry:string|null;end:number|null;unknown:boolean}; completeStart: boolean };
 type IO = Pick<ReturnType<typeof historySource>, 'page'>;
 const utf8 = new TextEncoder();
 export class HistoryReplaySourceChanged extends Error {
@@ -86,14 +86,21 @@ export type ReplayCoverage = {complete: boolean; unsearched: number};
 const stopped: ReplayCoverage={complete:false,unsearched:0};
 type Fragment = {group: string; first: string; entry: string; pageBefore: string; text: string};
 export async function* historyReplayText(range: HistoryReplay, io: IO, whole = false): AsyncGenerator<Fragment, ReplayCoverage> {
+  if(whole && range.ceiling.entry===null && range.ceiling.end===null)return {complete:false,unsearched:0};
   let page = checkedReplayPage(await io.page(range.before, range.forward));
   let out: HistoryPaintStep[] = [], previousRecord: HistoryRecordRef | null = null;
   let started = false, complete = range.completeStart;
   let group = '', first = '', selected = '';
   let reachedLast = false;
   while (true) {
-    const cutoff=whole ? -1 : page.entries.findIndex(entry=>entry.key===range.last);
-    const entries=cutoff<0?page.entries:page.entries.slice(0,cutoff+1);
+    // Append changes the opaque cursor version. Use captured contribution and
+    // record facts to exclude later entries even from dependency preparation.
+    const cutoff=page.entries.findIndex(entry=>entry.key===(whole?range.ceiling.entry:range.last));
+    const physicalStop=whole && range.ceiling.end!==null
+      ? page.entries.findIndex(entry=>entry.record && entry.record.end>range.ceiling.end!) : -1;
+    const stop=physicalStop<0 ? (cutoff<0?page.entries.length:cutoff+1)
+      : Math.min(physicalStop,cutoff<0?page.entries.length:cutoff+1);
+    const entries=page.entries.slice(0,stop);
     const context=await historyPageContext({...page,entries},io,out);
     if(!context.complete)return {complete:false,unsearched:1};
     out=[...context.facts,...out];
@@ -117,10 +124,12 @@ export async function* historyReplayText(range: HistoryReplay, io: IO, whole = f
       out=retained;
       if(started && entry.key===range.last)reachedLast=true;
       if(!whole && reachedLast)return {complete,unsearched:0};
+      if(whole && entry.key===range.ceiling.entry)
+        return {complete:complete && started && reachedLast && !range.ceiling.unknown,unsearched:0};
     }
-    if(whole && page.newer===range.fence)return {
-      complete:complete && started && reachedLast
-        && !page.references.some(reference=>historyReferenceBetween(reference,previousRecord,null)),unsearched:0};
+    if(whole && (physicalStop>=0 || (range.ceiling.entry===null && range.ceiling.end!==null
+      && page.references.some(reference=>reference.end>=range.ceiling.end!))))
+      return {complete:false,unsearched:0};
     if ((!whole && page.newer === range.endBefore) || (page.has_more === false && page.entries.length === 0))
       throw new Error('history replay cutoff contribution is no longer present');
     const cursor = page.newer;

@@ -191,11 +191,16 @@ test('ordinary canonical page seams use the shared painter and query-sized carry
   assert.deepEqual(reads,[['before-0',true],['middle-fence',true]]);
   const copied=await historyFindAction('copy',hit,replayPages(older,newer));
   assert.deepEqual(copied,{text:'hello',from:0,complete:true},'whole-part copy streams across pages without putting the group into the UI window');
+  const appended={...newer,newer:'opaque-new-version-after-append',entries:[...newer.entries,
+    chunk('after-query-append',' MUST_NOT_COPY',20,30),{...chunk('after-query-boundary','later',30,40),starts_message:true}]};
+  assert.deepEqual(await historyFindAction('copy',hit,replayPages(older,appended)),{text:'hello',from:0,complete:true},
+    'APPEND_SNAPSHOT_CEILING: a changed opaque cursor must not extend the captured body into later same-group chunks');
   const known=historyFindBatch(query('hel'));
-  known.page({...newer,entries:[]}); // The same captured source tail, not a UI-sized message cache.
+  const capturedTail={...chunk('snapshot-tail','later independent body',30,40),starts_message:true};
+  known.page({...newer,entries:[capturedTail]}); // Capture a real contribution, not a guessed EOF cursor.
   const prefixPage={...older,entries:[{...chunk('known-first','he',0,5),starts_message:true},chunk('known-next','l',5,10)]};
   const prefixHit=known.page(prefixPage).hits[0];assert.equal(prefixHit.complete,false);
-  assert.deepEqual(await historyFindAction('copy',prefixHit,replayPages(prefixPage,newer)),{text:'hello',from:0,complete:true},
+  assert.deepEqual(await historyFindAction('copy',prefixHit,replayPages(prefixPage,{...newer,entries:[...newer.entries,capturedTail]})),{text:'hello',from:0,complete:true},
     'a known prefix also extends past its query cutoff to the real source-fenced body end');
   await assert.rejects(historyFindAction('copy',hit,{page:async(cursor,forward)=>
     cursor==='middle-fence' ? {...newer,reset:true} : replayPages(older,newer).page(cursor,forward)}),error=>error.code==='source_changed');
