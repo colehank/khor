@@ -99,6 +99,12 @@ export async function* recordText(
   }
   let scaffold: ReturnType<typeof lexer.finish>;
   try { scaffold = lexer.finish(ref.end); } catch { return false; }
+  // Only retain known physical boundaries supplied by the source (or its
+  // contiguous-fragment join). Valid JSON alone never proves a JSONL boundary.
+  if (!ref.missing_start && !ref.missing_end) {
+    record.missing_start = false;
+    record.missing_end = false;
+  }
   const project = async (json: string) => {
     const answer = await io.project(record.cursor, ref.start, ref.end, json);
     if (!answer) throw new Error('history search projection was cancelled');

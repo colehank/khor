@@ -4,12 +4,16 @@ import type { HistoryRecordChunk } from '@/gen/bindings/HistoryRecordChunk';
 import { Button } from '@/components/ui/button';
 import { gui } from '@/gen/catalog';
 import { decodeRecordSection } from '@/lib/history-record';
+import type { HistoryExportControl } from '@/hooks/use-history-export';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuTrigger } from '@/components/ui/context-menu';
 type ReadRecord = (cursor: string, from: number, signal?: AbortSignal) => Promise<HistoryRecordChunk | null>;
 /** Only one raw section is retained. Next advances a streaming UTF-8 decoder;
  * reopening a reference starts a fresh stream rather than concatenating a file. */
-export function HistoryRecords({ references, read }: {
+export function HistoryRecords({ references, read, exporter, showExportStatus }: {
   references: HistoryRecordRef[];
   read: ReadRecord;
+  exporter: HistoryExportControl;
+  showExportStatus: boolean;
 }) {
   const [selected, setSelected] = useState<HistoryRecordRef | null>(null);
   const [text, setText] = useState('');
@@ -48,12 +52,19 @@ export function HistoryRecords({ references, read }: {
       <p className="text-caption text-muted-foreground">{gui.history_record_note}</p>
       <div className="flex flex-wrap gap-in">
         {references.map((reference, index) => (
-          <Button key={`${reference.start}:${reference.item ?? 'raw'}`} size="sm" variant="secondary"
+          <ContextMenu key={`${reference.start}:${reference.item ?? 'raw'}`}>
+          <ContextMenuTrigger asChild><Button size="sm" variant="secondary"
             onClick={() => void load(reference, reference.start, true)}>
             {gui.history_record} · {index + 1}
-          </Button>
+          </Button></ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem disabled={exporter.busy || !exporter.available} onSelect={() => { exporter.run(reference); }}>{gui.history_export}</ContextMenuItem>
+            {!exporter.available && <ContextMenuLabel>{gui.history_export_unavailable}</ContextMenuLabel>}
+          </ContextMenuContent>
+          </ContextMenu>
         ))}
       </div>
+      {showExportStatus && exporter.notice && <p role="status" className="text-caption">{exporter.notice}</p>}
       {selected && (
         <div className="space-y-in">
           <div className="flex flex-wrap items-center gap-in">

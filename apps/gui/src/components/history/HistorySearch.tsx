@@ -4,43 +4,38 @@ import { historyApi } from '@/lib/history-api';
 import { historyFind, type HistoryFindState } from '@/lib/history-find';
 import { findQuery, type FindHit } from '@/lib/history-find-model';
 import type { HistoryActionAnswer } from '@/lib/history-find-action';
-import { exportHistoryRecord, exportHistoryToApp } from '@/lib/history-export';
-import { inApp, startHistoryExport, fileHandoffState, fileHandoffCancel, fileHandoffSave } from '@/api';
+import type { HistoryExportControl } from '@/hooks/use-history-export';
 import { imeKey } from '@/lib/ime';
 import { Button } from '@/components/ui/button';
 import { SideFind } from '@/components/SideFind';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuTrigger } from '@/components/ui/context-menu';
 
-type Picker = (options: { suggestedName: string }) => Promise<FileSystemFileHandle>;
-const picker = () => (window as Window & { showSaveFilePicker?: Picker }).showSaveFilePicker?.bind(window);
-
 /** A source/query owns one worker and its read leases. Results are one
  * bounded batch; closing, changing query or changing source retires them. */
-export function HistorySearch({ id, binding, open, stop, onClose, onJump }: {
-  id: string; binding: string; open: boolean; stop: { current: (() => void) | null }; onClose: () => void; onJump: (hit: FindHit) => void;
+export function HistorySearch({ id, binding, open, stop, exporter, onClose, onJump }: {
+  exporter: HistoryExportControl; id: string; binding: string; open: boolean; stop: { current: (() => void) | null }; onClose: () => void; onJump: (hit: FindHit) => void;
 }) {
   const language = speaking();
   const root = useRef<HTMLDivElement>(null);
   const current = useRef<ReturnType<typeof historyFind> | null>(null);
-  const exporting = useRef<{ source: ReturnType<typeof historyApi> | null; stop: AbortController } | null>(null);
+  const exporting = useRef<ReturnType<HistoryExportControl['run']>>(null);
   const [query, setQuery] = useState('');
   const [matchCase, setMatchCase] = useState(false);
   const [state, setState] = useState<HistoryFindState | null>(null);
   const [excerpt, setExcerpt] = useState<{ hit: FindHit; answer: HistoryActionAnswer } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [exportBusy, setExportBusy] = useState(false);
   const copying = useRef<ReturnType<typeof historyFind> | null>(null);
   const [copyBusy, setCopyBusy] = useState(false);
   const retire = () => {
     const owner = current.current; current.current = null; copying.current = null;
     if (owner) void owner.dispose().then(result => { if (result.failures) console.warn('History search cleanup failed', result); });
     const transfer = exporting.current; exporting.current = null;
-    if (transfer) { transfer.stop.abort(); if (transfer.source) void transfer.source.dispose(); }
+    transfer?.cancel();
   };
   useLayoutEffect(() => {
     if (!open) return;
     stop.current = retire;
-    setState(null); setExcerpt(null); setNotice(null); setExportBusy(false); setCopyBusy(false);
+    setState(null); setExcerpt(null); setNotice(null); setCopyBusy(false);
     const before = document.activeElement as HTMLElement | null;
     root.current?.querySelector<HTMLInputElement>('input')?.focus();
     return () => {
@@ -49,7 +44,7 @@ export function HistorySearch({ id, binding, open, stop, onClose, onJump }: {
       if (before?.isConnected) before.focus({ preventScroll: true });
     };
   }, [id, binding, open, language]);
-  const clear = () => { retire(); setState(null); setExcerpt(null); setNotice(null); setExportBusy(false); copying.current = null; setCopyBusy(false); };
+  const clear = () => { retire(); setState(null); setExcerpt(null); setNotice(null); copying.current = null; setCopyBusy(false); };
   const begin = () => {
     clear();
     try {
@@ -92,37 +87,16 @@ export function HistorySearch({ id, binding, open, stop, onClose, onJump }: {
     } catch (error) { void body.catch(() => {}); if (current.current === owner) failure(error, 'copy'); }
     finally { if (copying.current === owner) { copying.current = null; setCopyBusy(false); } }
   };
-  const exportRecord = async (hit: FindHit) => {
-    const choose = picker();
-    if ((!inApp && !choose) || !hit.record || exporting.current) return;
-    const reference = hit.record;
-    const transfer = { source: inApp ? null : historyApi(id, binding), stop: new AbortController() };
-    exporting.current = transfer; setExportBusy(true); setNotice(null);
-    try {
-      let saved = true;
-      if (inApp) {
-        const token = crypto.randomUUID();
-        saved = await exportHistoryToApp({
-          start: () => startHistoryExport(token, id, binding, reference.cursor, reference.start, reference.end),
-          state: () => fileHandoffState(token), cancel: () => fileHandoffCancel(token), save: () => fileHandoffSave(token),
-        }, reference, transfer.stop.signal);
-      } else {
-        const handle = await choose!({ suggestedName: 'history-record.jsonl' });
-        if (transfer.stop.signal.aborted) return;
-        const writer = await handle.createWritable();
-        await exportHistoryRecord(transfer.source!, reference, writer, transfer.stop.signal);
-      }
-      if (exporting.current === transfer && saved) setNotice(gui.history_exported);
-    } catch (error) {
-      if (exporting.current === transfer && !(error instanceof DOMException && error.name === 'AbortError')) failure(error, 'export');
-    } finally {
-      await transfer.source?.dispose();
-      if (exporting.current === transfer) { exporting.current = null; setExportBusy(false); }
-    }
+  const exportRecord = (hit: FindHit) => {
+    if (!hit.record) return;
+    const operation = exporter.run(hit.record);
+    if (operation) exporting.current = operation;
   };
   if (!open) return null;
-  const busy = state?.busy || exportBusy || copyBusy;
-  return <div ref={root} data-history-search className="flex max-h-[50%] min-h-0 flex-none flex-col gap-in px-row py-in" onKeyDown={event => {
+  const busy = state?.busy || exporter.busy || copyBusy;
+  return <div ref={root} data-history-search className="flex max-h-[50%] min-h-0 flex-none flex-col gap-in px-row py-in" onKeyDownCapture={event => {
+    if ((event.key === 'Enter' || event.key === 'Escape') && imeKey(event)) event.stopPropagation();
+  }} onKeyDown={event => {
     if (event.key === 'Escape' && !imeKey(event)) { event.preventDefault(); event.stopPropagation(); clear(); onClose(); }
   }}>
     <SideFind className="px-0" label={gui.history_find_placeholder} query={query}
@@ -135,7 +109,7 @@ export function HistorySearch({ id, binding, open, stop, onClose, onJump }: {
       </div>} />
     <div className="min-h-0 flex-1 space-y-in overflow-y-auto text-caption">
       <p className="text-muted-foreground">{gui.history_find_scope}</p>
-      {busy && <p role="status">{gui.history_searching}</p>}
+      {state?.busy && <p role="status">{gui.history_searching}</p>}
       {state?.error && <p role="alert" className="text-destructive">{gui.history_action_failed}</p>}
       {state?.reset && <p role="status">{gui.history_find_changed}</p>}
       {state && !state.busy && !state.hits.length && state.done && <p role="status">{gui.search_none}</p>}
@@ -147,14 +121,14 @@ export function HistorySearch({ id, binding, open, stop, onClose, onJump }: {
         <ContextMenuContent>
           <ContextMenuItem disabled={!!busy} onSelect={() => void copy(hit)}>{gui.history_copy}</ContextMenuItem>
           {hit.record && <>
-            <ContextMenuItem disabled={!!busy || (!inApp && !picker())} onSelect={() => void exportRecord(hit)}>{gui.history_export}</ContextMenuItem>
-            {!inApp && !picker() && <ContextMenuLabel>{gui.history_export_unavailable}</ContextMenuLabel>}
+            <ContextMenuItem disabled={!!busy || !exporter.available} onSelect={() => void exportRecord(hit)}>{gui.history_export}</ContextMenuItem>
+            {!exporter.available && <ContextMenuLabel>{gui.history_export_unavailable}</ContextMenuLabel>}
           </>}
         </ContextMenuContent>
       </ContextMenu>)}
       {state && !state.done && !state.error && !state.reset && <Button size="sm" disabled={!!busy} onClick={() => { setExcerpt(null); setNotice(null); current.current?.next(); }}>{gui.history_find_more}</Button>}
       {!!state?.unsearchedRanges && <p role="status" className="text-muted-foreground">{gui.history_find_partial}</p>}
-      {notice && <p role="status">{notice}</p>}
+      {(notice || exporter.notice) && <p role="status">{notice ?? exporter.notice}</p>}
       {excerpt && <section data-history-find-context className="space-y-in">
         <p className="text-muted-foreground">{gui.history_match_excerpt}</p>
         <pre data-selectable className="overflow-auto whitespace-pre-wrap break-all">{excerpt.answer.text.slice(0, excerpt.hit.from - excerpt.answer.from)}<mark className="bg-brand-wash text-brand-ink">{excerpt.answer.text.slice(excerpt.hit.from - excerpt.answer.from, excerpt.hit.to - excerpt.answer.from)}</mark>{excerpt.answer.text.slice(excerpt.hit.to - excerpt.answer.from)}</pre>

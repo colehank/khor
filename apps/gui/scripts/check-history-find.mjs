@@ -44,7 +44,7 @@ const exportBuilt = await build({ entryPoints: [resolve('src/lib/history-export.
   write: false, format: 'cjs', platform: 'node' });
 const exportModule = { exports: {} };
 Function('module', 'exports', exportBuilt.outputFiles[0].text)(exportModule, exportModule.exports);
-const { exportHistoryRecord, exportHistoryToApp } = exportModule.exports;
+const { exportHistoryRecord, exportHistoryToApp, completeHistoryRecord } = exportModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
 const note = (key, update) => ({ key, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
@@ -442,6 +442,50 @@ test('original-record export preserves bytes across UTF-8 boundaries and aborts 
   assert.equal(reads, 1); assert.equal(closed, 1); assert.equal(aborted, 1);
   await assert.rejects(exportHistoryRecord({ record: async () => ({ offset: 100, data: 'eA==', next: null }) }, reference, target, new AbortController().signal), /continuation/);
   assert.equal(aborted, 2);
+});
+test('raw export finds both physical boundaries without parsing or retaining all fragments', async () => {
+  const ref = (start, end, missing_start, missing_end, cursor) => ({ start, end, missing_start, missing_end, cursor, item: null });
+  const basis = ref(100, 200, true, true, 'basis');
+  const calls = [];
+  const io = { page: async (cursor, newer) => {
+    calls.push([cursor, newer]);
+    const piece = !newer ? cursor === 'basis' ? ref(50, 100, true, true, 'left') : ref(0, 50, false, true, 'start')
+      : cursor === 'basis' ? ref(100, 200, true, true, 'basis') : ref(200, 300, true, false, 'end');
+    return {...page([], [piece]), newer: cursor === 'basis' ? 'next' : 'end', has_more: cursor === 'basis'};
+  }, project: async (cursor, start, end, scaffold) => {
+    assert.deepEqual([cursor, start, end, scaffold], ['basis', 0, 300, null]);
+    return { record: ref(0, 300, true, true, 'joined') };
+  } };
+  const result = await completeHistoryRecord(io, basis, new AbortController().signal);
+  assert.deepEqual(calls, [['basis', false], ['left', false], ['basis', true], ['next', true]]);
+  assert.deepEqual([result.start, result.end, result.cursor, result.missing_start, result.missing_end], [0, 300, 'joined', false, false]);
+  const malformedButWhole = ref(0, 11, false, false, 'invalid-json');
+  assert.equal(await completeHistoryRecord({page: () => { throw new Error('do not parse a known original'); }, project: () => { throw new Error('no body projection'); }}, malformedButWhole, new AbortController().signal), malformedButWhole);
+});
+test('raw export rejects reset, unfinished records and cancellation instead of guessing a complete boundary', async () => {
+  const basis = {start: 100, end: 200, cursor: 'basis', missing_start: true, missing_end: true, item: null};
+  const unused = () => { throw new Error('invalid source must not be projected'); };
+  await assert.rejects(completeHistoryRecord({page: async () => ({...page([]), reset: true}), project: unused}, basis, new AbortController().signal), /source changed/);
+  await assert.rejects(completeHistoryRecord({page: async () => ({...page([], [{...basis, start: 200, end: 300, missing_start: false}]), has_more: false}), project: unused}, {...basis, missing_start: false}, new AbortController().signal), /incomplete/);
+  const waiting = deferred(), entered = deferred(), stop = new AbortController(); let reads = 0;
+  const work = completeHistoryRecord({page: async () => { reads++; entered.resolve(); return waiting.promise; }, project: unused}, basis, stop.signal);
+  const rejected = assert.rejects(work, /cancelled/);
+  await entered.promise; stop.abort(); waiting.resolve(page([])); await rejected;
+  assert.equal(reads, 1);
+});
+test('valid JSON retains only source-proven physical record boundaries', async () => {
+  const bytes = new TextEncoder().encode(JSON.stringify({body: 'needle' + 'x'.repeat(70000)}) + '\n');
+  const basis = {start: 0, end: bytes.length, cursor: 'basis', missing_start: false, missing_end: false, item: null};
+  const io = {record: async (_cursor, from) => {const data = bytes.subarray(from, from + 65536);return {offset: from, data: Buffer.from(data).toString('base64'), next: from + data.length < bytes.length ? from + data.length : null};},
+    project: async (_cursor, _start, _end, scaffold) => ({record: {...basis, cursor: 'joined', missing_start: true, missing_end: true}, transforms: [], complete: true, entries: scaffold ? [text('projection:0', JSON.parse(scaffold).body)] : []}),
+  };
+  for (const known of [true, false]) {
+    const scanner = findRecord(query('needle'), {...basis, missing_start: !known, missing_end: !known}, 'before', io);
+    const result = await scanner.next();
+    assert.equal(result.done, false);
+    assert.deepEqual([result.value.record.missing_start, result.value.record.missing_end], [!known, !known]);
+    await scanner.return();
+  }
 });
 test('native export owns late start ACKs and cancellation through the OS presenter', async () => {
   const ready = { moved: 12, total: 12, ready: true, cancelled: false, error: null };

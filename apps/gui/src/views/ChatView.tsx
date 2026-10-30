@@ -43,6 +43,7 @@ import { applyAcpUpdate } from "@/lib/acp-view";
 
 import { historyApi } from '@/lib/history-api';
 import { HistorySearch } from '@/components/history/HistorySearch';
+import { useHistoryExport } from '@/hooks/use-history-export';
 import type { FindHit } from '@/lib/history-find-model';
 import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
 import { historyEntries, historyReferences } from '@/lib/history-window';
@@ -542,6 +543,7 @@ export function ChatView({
   const [historyEpoch, setHistoryEpoch] = useState(0);
   const [historyBinding, setHistoryBinding] = useState<{ id: string; binding: string } | null>(null);
   const sourceBinding = historyBinding?.id === id && (!still || historyBinding.binding === binding) ? historyBinding.binding : null;
+  const historyExport = useHistoryExport(id, sourceBinding);
   const [findingHistory, setFindingHistory] = useState(false);
   const stopHistorySearch = useRef<(() => void) | null>(null);
   const historyMatch = useRef<FindHit | null>(null);
@@ -788,6 +790,7 @@ export function ChatView({
       const visibility = () => {
         if (document.hidden || !scroller.current?.clientHeight) {
           stopHistorySearch.current?.(); setFindingHistory(false);
+          historyExport.stop();
           view.pause();
         }
         else view.resume();
@@ -1446,7 +1449,7 @@ export function ChatView({
       )}
       <div className="relative flex min-h-0 flex-1 flex-col">
       {sourceBinding && <HistorySearch key={`${id}:${sourceBinding}:${historyEpoch}`} id={id} binding={sourceBinding}
-        stop={stopHistorySearch} open={findingHistory} onClose={() => { setFindingHistory(false); setMatchedEntry(null); }} onJump={jumpHistoryMatch} />}
+        stop={stopHistorySearch} exporter={historyExport} open={findingHistory} onClose={() => { setFindingHistory(false); setMatchedEntry(null); }} onJump={jumpHistoryMatch} />}
       <div
         ref={scroller}
         data-chat-scroll
@@ -1600,7 +1603,7 @@ export function ChatView({
           );
           return item.historyKey ? <div key={`${historyEpoch}:${item.historyKey}`} data-history-key={item.historyKey} className={matchedEntry && item.historyKey.startsWith(`${matchedEntry}:`) ? 'rounded-md bg-brand-wash' : undefined}>{content}</div> : content;
         })}
-        {history && <HistoryRecords key={`${id}:${historyEpoch}`} references={historyReferences(history.window)}
+        {history && sourceBinding && <HistoryRecords key={`${id}:${sourceBinding}:${historyEpoch}`} references={historyReferences(history.window)} exporter={historyExport} showExportStatus={!findingHistory}
           read={(cursor, from, signal) => historyView.current?.record(cursor, from, signal) ?? Promise.resolve(null)} />}
         {history && !history.window.latest && <Button size="sm" disabled={history.busy}
           onClick={() => void historyView.current?.newer()}>{gui.history_newer}</Button>}
