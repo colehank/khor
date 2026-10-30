@@ -21,10 +21,16 @@ pub struct FileHandoff {
     pub error: Option<String>,
 }
 struct Entry {
-    machine: String,
-    path: String,
+    source: Source,
     job: Arc<Job>,
+    stopped: tokio::sync::Notify,
+    commit: Mutex<()>,
     started: Instant,
+}
+#[derive(PartialEq, Eq)]
+enum Source {
+    File { machine: String, path: String },
+    History(crate::history_export::Selection),
 }
 fn entries() -> &'static Mutex<HashMap<(PathBuf, String), Arc<Entry>>> {
     static ALL: OnceLock<Mutex<HashMap<(PathBuf, String), Arc<Entry>>>> = OnceLock::new();
@@ -68,23 +74,53 @@ fn snapshot(job: &Job) -> FileHandoff {
     }
 }
 pub fn start(root: &Path, id: &str, machine: &str, path: &str) -> Result<FileHandoff, String> {
+    start_source(
+        root,
+        id,
+        Source::File {
+            machine: machine.into(),
+            path: path.into(),
+        },
+    )
+}
+pub(crate) fn start_history(
+    root: &Path,
+    id: &str,
+    selection: crate::history_export::Selection,
+) -> Result<FileHandoff, String> {
+    start_source(root, id, Source::History(selection))
+}
+fn start_source(root: &Path, id: &str, source: Source) -> Result<FileHandoff, String> {
     valid(id)?;
     let key = (root.to_path_buf(), id.to_owned());
     let mut all = entries().lock().map_err(|e| e.to_string())?;
     all.retain(|_, e| {
         e.started.elapsed() < Duration::from_secs(600)
-            || matches!(e.job.state(),Ok(s) if !s.done&&!e.job.is_stopped())
+            || matches!(e.job.state(),Ok(s) if !s.done && (matches!(e.source, Source::History(_)) || !e.job.is_stopped()))
     });
     if let Some(e) = all.get(&key) {
-        if e.machine != machine || e.path != path {
+        if e.source != source {
             return Err("file handoff id belongs to another file".into());
         }
         return Ok(snapshot(&e.job));
     }
+    if matches!(source, Source::History(_))
+        && all
+            .values()
+            .filter(|entry| {
+                matches!(entry.source, Source::History(_))
+                    && matches!(entry.job.state(), Ok(state) if !state.done)
+            })
+            .count()
+            >= 32
+    {
+        return Err("too many active history exports".into());
+    }
     let e = Arc::new(Entry {
-        machine: machine.into(),
-        path: path.into(),
+        source,
         job: Arc::new(Job::default()),
+        stopped: tokio::sync::Notify::new(),
+        commit: Mutex::new(()),
         started: Instant::now(),
     });
     all.insert(key, e.clone());
@@ -98,13 +134,23 @@ pub fn start(root: &Path, id: &str, machine: &str, path: &str) -> Result<FileHan
             .build()
             .map_err(|e| e.to_string())
             .and_then(|rt| {
-                rt.block_on(prepare(
-                    &root,
-                    &worker.machine,
-                    &worker.path,
-                    &token,
-                    &worker.job,
-                ))
+                rt.block_on(async {
+                    match &worker.source {
+                        Source::File { machine, path } => {
+                            prepare(&root, machine, path, &token, &worker.job).await
+                        }
+                        Source::History(selection) => {
+                            crate::history_export::prepare(
+                                &root,
+                                selection,
+                                &token,
+                                &worker.job,
+                                &worker.stopped,
+                            )
+                            .await
+                        }
+                    }
+                })
             });
         worker.job.finish(result.map(|p| p.display().to_string()));
     });
@@ -114,10 +160,13 @@ pub fn state(root: &Path, id: &str) -> Result<FileHandoff, String> {
     Ok(snapshot(&entry(root, id)?.job))
 }
 pub fn cancel(root: &Path, id: &str) -> Result<(), String> {
-    entry(root, id)?
+    let entry = entry(root, id)?;
+    let _commit = entry.commit.lock().map_err(|error| error.to_string())?;
+    entry
         .job
         .stopped
         .store(true, std::sync::atomic::Ordering::Relaxed);
+    entry.stopped.notify_one();
     Ok(())
 }
 /// Only a completed, app-owned job can ask the native adapter to open a
@@ -139,7 +188,16 @@ pub fn ready_path(root: &Path, id: &str) -> Result<PathBuf, String> {
     }
     Ok(path)
 }
-fn cache_root(root: &Path) -> PathBuf {
+pub(crate) fn save_ready(
+    root: &Path,
+    id: &str,
+    source: &Path,
+    destination: &Path,
+) -> Result<(), String> {
+    let entry = entry(root, id)?;
+    crate::history_export::copy_to(source, destination, &entry.job, &entry.commit, id)
+}
+pub(crate) fn cache_root(root: &Path) -> PathBuf {
     let key = blake3::hash(root.as_os_str().to_string_lossy().as_bytes())
         .to_hex()
         .to_string();
@@ -227,7 +285,7 @@ async fn prepare(
 /// Cache is disposable, never a receive folder. Age and size are soft
 /// bounds: a file just handed to another app stays alive for an hour,
 /// even if that single original exceeds the budget.
-fn prune_cache(root: &Path, current: &Path) {
+pub(crate) fn prune_cache(root: &Path, current: &Path) {
     fn size(path: &Path) -> u64 {
         let Ok(entries) = std::fs::read_dir(path) else {
             return 0;

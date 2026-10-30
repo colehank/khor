@@ -608,6 +608,9 @@ pub fn answer(
         "history_record" => to_json(&rt.block_on(crate::chat::history_record(
             root,&arg("id")?,&arg("binding")?,&arg("cursor")?,num("from")?,&arg("requestKey")?,
         ))?),
+        "history_export_start" => to_json(&crate::history_export::start(
+            root, &arg("transfer")?, &arg("id")?, &arg("binding")?, &arg("cursor")?, num("start")?, num("end")?,
+        )?),
         "history_projection" => to_json(&rt.block_on(crate::chat::history_projection(
             root,
             &arg("id")?,

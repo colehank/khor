@@ -227,6 +227,10 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "presents the native original-file activity sheet; HTTP faces have no app-owned native presenter",
     ),
     (
+        "file_handoff_save",
+        "presents the native Save panel or original-file activity sheet for a completed app-owned handoff; HTTP faces use their browser file picker",
+    ),
+    (
         "page_steps",
         "reads the app-owned native WebView's actual back/forward history; HTTP faces have no native page handle and pageSteps returns null there",
     ),

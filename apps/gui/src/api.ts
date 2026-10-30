@@ -1447,6 +1447,8 @@ export const fetchHistoryPage = (id: string, binding: string, requestKey: string
 export const fetchHistoryProjection = (id: string, binding: string, requestKey: string, cursor: string,
   start: number, end: number, scaffold: string | null = null) =>
   call<HistoryProjection>("history_projection", { id, binding, requestKey, cursor, start, end, scaffold });
+export const startHistoryExport = (transfer: string, id: string, binding: string, cursor: string, start: number, end: number) =>
+  call<FileHandoff>("history_export_start", { transfer, id, binding, cursor, start, end });
 
 /** One machine's directory — order, cap and the answered-about path
     all come from the node; `""` asks for that machine's home. */
@@ -1474,6 +1476,7 @@ export const fileHandoffStart = (id:string,machine:string,path:string) => call<F
 export const fileHandoffState = (id:string) => call<FileHandoff>("file_handoff_state",{id});
 export const fileHandoffCancel = (id:string) => call<null>("file_handoff_cancel",{id});
 export const fileHandoffOpen = (id:string) => call<boolean>("file_handoff_open",{id});
+export const fileHandoffSave = (id: string) => call<boolean>("file_handoff_save", { id });
 export const filePreviewSupported = () => inApp ? call<boolean>("file_preview_supported") : Promise.resolve(false);
 export const filePreviewOpen = (id:string) => call<boolean>("file_preview_open",{id});
 

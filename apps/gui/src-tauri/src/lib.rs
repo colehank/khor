@@ -1008,6 +1008,59 @@ fn file_handoff_start(
     khor_gui_core::file_handoff::start(&Node::root_from_env(), &id, &machine, &path)
 }
 #[tauri::command]
+fn history_export_start(
+    transfer: String,
+    id: String,
+    binding: String,
+    cursor: String,
+    start: u64,
+    end: u64,
+) -> Result<khor_gui_core::file_handoff::FileHandoff, String> {
+    khor_gui_core::history_export::start(
+        &Node::root_from_env(),
+        &transfer,
+        &id,
+        &binding,
+        &cursor,
+        start,
+        end,
+    )
+}
+/// A completed app-owned original uses the existing OS file panel/share sheet.
+#[tauri::command]
+async fn file_handoff_save(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+    id: String,
+) -> Result<bool, String> {
+    if webview.label() != "main" {
+        return Err("file saving is only available in the app".into());
+    }
+    #[cfg(desktop)]
+    return tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        // Validate the completed job before presenting an OS panel. The same
+        // owner is rechecked after the panel in case the view was cancelled.
+        khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
+        let Some(file) = app
+            .dialog()
+            .file()
+            .set_file_name("history-record.jsonl")
+            .blocking_save_file()
+        else {
+            return Ok(false);
+        };
+        let path = file.into_path().map_err(|error| error.to_string())?;
+        khor_gui_core::history_export::save(&Node::root_from_env(), &id, &path)?;
+        Ok(true)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    #[cfg(not(desktop))]
+    file_handoff_open(app, webview, id).await
+}
+
+#[tauri::command]
 fn file_handoff_state(id: String) -> Result<khor_gui_core::file_handoff::FileHandoff, String> {
     khor_gui_core::file_handoff::state(&Node::root_from_env(), &id)
 }
@@ -5552,6 +5605,8 @@ pub fn run() {
             pull,
             pull_temp,
             file_handoff_start,
+            history_export_start,
+            file_handoff_save,
             file_handoff_state,
             file_handoff_cancel,
             file_handoff_supported,

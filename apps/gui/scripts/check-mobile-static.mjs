@@ -143,7 +143,7 @@ export function checkMobileSources(gui) {
     // that memory. The ssh config's Host names: one local file, read only.
     "add_start", "promote_start", "add_read", "ssh_config_hosts",
     // Handoff workers own the filesystem and network work; these only register/read/cancel jobs.
-    "file_handoff_start", "file_handoff_state", "file_handoff_cancel",
+    "file_handoff_start", "file_handoff_state", "file_handoff_cancel", "history_export_start",
   ]);
   // The ones that waited on the main thread on 2026-10-02, named so the
   // red says which: each must be `async`.
@@ -165,6 +165,7 @@ export function checkMobileSources(gui) {
     // window against a p95 of 12 ms.
     "day_strips", "session_content", "history_begin", "history_cancel", "history_page", "history_record", "history_projection",
     "dirs_begin", "dirs_wait", "dirs_leave",
+    "file_handoff_save", // native Save/activity panel and disk copy are asynchronous
   ];
   {
     const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(async\s+)?fn\s+([a-z_0-9]+)/g;

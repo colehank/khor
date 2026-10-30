@@ -19,6 +19,7 @@ mod connection;
 pub mod console;
 pub mod console_complete;
 pub mod file_handoff;
+pub mod history_export;
 pub mod files;
 pub mod git;
 pub mod import;
