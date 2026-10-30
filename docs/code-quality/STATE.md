@@ -7,10 +7,10 @@
 Root `integrate/round2@6aa2afde9ccf6f5720cb91377fdf2ebf5a63d581` clean。两作者＋独立reviewer；Root负责集成/实际验证/协调，不开第三产品实现线。作者在责任域内可最小适配必要调用点，跨域/共享语义改变先协调；新独立问题仅NEXT，不扩大本轮34项。
 
 - input独占Node/ACP/必要只读Store；最后生产no-Meta/Ref abad＋154→Root309/cc92，64观察ID路径a92→Root946，均独审。原Resume fixture能力事实期望e6fd→Root6aa已独审并实际85431通过：wire始终load=true/resume=true，getter正确，原新增{false,true}期望混淆能力与选择；peer/getter/Resume1 Load0 New0/partial origin/Close/reap均未改。input现只读准备既定真实S App/CLI入口/场次计划，不新增产品实现。generic close独立旧问题仅NEXT。
-- H独占GUI/Core/shared DTO。生产4baf链已独审整合；Recovery17三测试片743→Root801独审并实际通过；单TS Extract收窄c0→Root4392独审/运行JS字节同，actual fulltypes/Vite通过。H已完成并独审Core709c窄driver，Root actual44421当前独占运行既定Core3exact＋tables4/两integration仅compile，不改产品或运行；7selected包含3自动bin，仅两实际运行程序私有copy，原guard/原V/唯一槽不改。
+- H独占GUI/Core/shared DTO。生产4baf链已独审整合；Recovery17三测试片743→Root801独审并实际通过；单TS Extract收窄c0→Root4392独审/运行JS字节同，actual fulltypes/Vite通过。H已完成Core709c且actual44421实际通过并独审；现仅source-only准备既定CLI三exact/五selected窄driver，不改产品或运行；7selected包含3自动bin，仅两实际运行程序私有copy，原guard/原V/唯一槽不改。
 - reviewer只读源审与真实尾核，无自主runtime。三方责任卡dirty保留，不全局stage。
 
-当前 **Native RUNNING：actual44421 Core定向批**，Root源冻结6aa；browser/App/maintenance均FREE。最新Node actual85431已终态绿（详情下）；browser13057/fulltypes48300已终态绿且独审；旧句柄不poll。真实状态与后继运行以内部 `current-runtime.json`/实际tool handle优先，不因观察超时重启。没有当前统一App产物/全范围验收通过声明。
+当前Native/browser/App/maintenance均 **FREE**，Core44421已终态绿且独审；下一个CLI准备f308尚readyfalse/未运行。最新Node actual85431已终态绿（详情下）；browser13057/fulltypes48300已终态绿且独审；旧句柄不poll。真实状态与后继运行以内部 `current-runtime.json`/实际tool handle优先，不因观察超时重启。没有当前统一App产物/全范围验收通过声明。
 
 ## 最新实际验证
 
@@ -19,6 +19,7 @@ Root `integrate/round2@6aa2afde9ccf6f5720cb91377fdf2ebf5a63d581` clean。两作�
 | 真实当前生成 | Rootcc92 actual28762：metadata、catalog build/stage、bindings build/stage/pub六phase0；两原no-prior prepare/verify/require成功，prior=[]/reusefalse、actual CargoJSON selected实同。186bindings stage/pub全dict同，含catalog/manifest共188gen。整体false因后继fulltypes单TS2345，不能改绿；result `5b69534015cc74d0042df7016f66b7889c64e2d52b9ca53e2687ba84e35147ce`。2339源/env/tools稳定，owner空/TMP absent/清理空，独审。 |
 | 当前fulltypes/Vite | Root4392 actual48300 terminal0/14.370s，复用上述真实生成，仅exact3test＋1type-only源差，19prior pins/两V/六phase/旧false逐SHA核对；types→Vite全0。2340源稳定、188gen/278dist逐dict实同，清理净，独审。result `4e2ea0c661cbce6a03eb37cf112f56dd37eb74658a0185487eacebfbd700f879`；frontend receipt `a4314eb0b854049e7ba94bffebc4549ef32b8104eedfae1ad550c1ccb393fb42`。generation cc92与frontend4392分列，不冒新Rust producer或App。946仅两Node路径改变，GUI/types/assets源字节不变，不重gen。 |
 | 当前Recovery17 | Root4392 actual13057 terminal0；原13完整assert保＋4明确S3组，exact17全ok/finished、errors/console/network0。真实DetailPane/hook/同context-origin IDB与Terminal mounted owner；同target5次payload不变、peer同payload/different-target并行、cwd null epoch4→chosen epoch5新nonce、同SID重绑、busy drop/ABA/另一kept原实例全部到断言。2340源/188gen/env/browsertools/fixtures稳定、owned/TMP全净，独审。result `ea117908f1f6808e87864035a8066f5befce8b4fa6582f7232e67a34f6d1a0dd` /report `7084ee576fef2b53ee10c26c8fc57c59296aa9a07b6df4f0e8b8a2dd0629a5ed`。仅controlled Chrome真实组件与外部IO sink，不证Node peer/provider/OS/WK/App。 |
+| 当前Core44421 | Root6aa actual44421 terminal0/117.342s；单Cargo七selected各原no-prior V有效、actual同次CargoJSON；FIFO/codec/typedCaptureWake各1/0/0＋tables4/0/0共7，terminal/upload/bridge/face_samples/gen_bindings五项仅compile不copy。两执行copy a608/22ad最终SHA/lsof严格退役、source2340/env/TMP[]absent净，批末188gen278dist/a431与exact三Node源差复核通过。result `d5aef0a9c406929bfe3329a36e903ca6046c8ee77036f2e9aa4054c0ecc7fbf6`，已独审；不冒五项行为/实际App。 |
 | 当前Node完整组件85431 | Root6aa actual85431 terminal0/88.068s，fullmetadata＋实际当前Node libtest原V＋8父各1/0/0＋2真SDK Python helper各1/0/0全部过。R7新观察64/公开只读offer/原token/fence模型与Resume实际后续断言全到；2340源/env稳，TMPentries[]/absent、两helper闭合、单privatecopy630f5612…d297按最终SHA/lsof退役，无gzip。result `7eab991c9f20594a6030f82f46f4ace104f491bf0346569ad407a06f0d4dc8ae`，已独审。不证明真实peer/CLI parent/App/所有OS事实Known。 |
 | Node能力期望红14794 | Root946 actual14794 terminal2/86.825s；metadata/compile0、原no-prior V真过，run1–7各唯一1/0/0＋journal真Python helper1/0/0；R7观察64/原token/fence/只读offer/正资格模型分支实际通过，不把注入退出当OS。最后run8 resume helper在能力事实assert真实失败：wire load/resume都true，原新增期望load=false。没有后续Resume/capture/close通过声明。result `76b47012f8483bf5f45b06123605c1a6314909f3992addbee904d5d3550de078`；源/env稳、真实group无剩余，privatecopy04d69已核SHA/lsof退役；panic留一自有eventstore目录及part在TMP原件，不称全净。独审已核。 |
 | Node观察路径红89125 | Root4392 actual89125 terminal2/97.875s：compile/V及run1–4过，R7在2022真实observe64 ID被旧dir24cap拒而None panic，后run6–8/helpers未跑。产品a92只observe64lowerhex保原完整映射，其他kind原限制/全部原assert保；已独审并在14794实际闭合。result `09d7704fa4eeda29e0941f973ceffa87e034b04556702644a02fc3469e3836f3`原false保。 |
@@ -37,8 +38,8 @@ UI真实IDB只保存caller payload：(home,id)每target一条、总32、每条8K
 
 下一步顺序：
 1. Node原8exact＋2helper已85431当前完整通过且独审，不重跑；保89125/14794原false与旧part原件，不手改getter或弱化Resume优先级。
-2. Core709c原V/guard窄driver已独审，当前actual44421，唯一槽/300秒。单Cargo七selected（Corelib+tables+terminal/upload+3bin），实际只Core3exact＋tables4；其余5只compile/不copy。只2执行程序privatecopy末批退役；批末再核ignored gen/dist，真实frontend188gen278dist与current三Node源差明确。不重gen或已绿UI。
-3. C原hermetic shim/gui_refused；实际同源CLI/默认custom-protocol GUI生产产物。Tauri旧48383资产门false保；只允许精确OUT核身份/SHA/lsof可逆retain后真实cold，不fakeprior/mtime/弱V。当前GUI/Core代码源审与Chrome不是实际App编译/运行结论。
+2. Core44421当前既定范围已全绿且独审，不重Core。
+3. C原hermetic shim/gui_refused三exact：C f308准备driver/current合同已固定待末审，readyfalse/未运行；五selected，khor是实际CARGO_BIN_EXE runtime依赖不copy，agents仅compile，三直接执行integration复制并批末退役，原V/300秒与批末ignored输入门。通过后实际同源CLI/默认custom-protocol GUI生产产物。Tauri旧48383资产门false保；只允许精确OUT核身份/SHA/lsof可逆retain后真实cold，不fakeprior/mtime/弱V。当前GUI/Core代码源审与Chrome不是实际App编译/运行结论。
 4. 完整S私有真实App：同host正常OSQuit重挂、确认已退后显式Load/Resume/unsupported、精确home offline不回本机、新Shell B!=A/previous-root/空command/同token单B/目录新意图；真实public方法/CLI parent不由model/fixture替代。只私有fixture/控制协议，无真实用户会话/模型API；generic close独立旧问题NEXT，不宣所有close已安全。
 5. 当前App桌面W/C/G/Q/B组合，真实WK进度/主题首帧/原URL拒绝；长历史真实系统Save/Copy；Mac IME/路径拖选/所有文件入口草稿/保存失败取消/最后键→正常OSQuit；真手机同页viewport、候选跟手与键行/滑删。准备好对应当前实例后重新确认真人方便，旧回答无效。devicectl只读inventory：iPhone15ProMax/iOS27paired+developer，但tunnel unavailable/DDI false；未下载/安装/启动，不把SDK当唯一原因。
 6. 34项逐项完成审计＋非作者Clean Code审查。R2-001旧卡死/R2-016原网址仍未证修复；不能以别的绿替代，若无法闭合须用户明确接受延期。目标仍不只是验收；先前粗估Lab6–10小时/完整3–5工作日，非完成承诺。
