@@ -1,0 +1,102 @@
+# R2-S-STARTUP：启动事件的字节界与FIFO交接
+
+Owner round2_input，独审round2_reviewer，集成/唯一native/browser/App槽Root。原R2-S仍归history，不编辑该卡。属于原R2-002/003/007已登记startup bytes/queue缺口，不是新专项。用户已授权第二轮，无main/ship。
+
+## 接手现场
+
+N原branch fix/round2-state-concurrency@95acd426保留；其10提交已Root无冲突整合至d18161fa73ea2eb96f6bd3fda146a013944747b6、6源逐SHA相同。input作者树原clean，新fix/round2-startup-bounds从d181创建，没有reset/覆盖dirty。无本作者native/browser/App。Root准备其私有App；本片仅source，actualnative另授。旧N immutable证据不变。
+
+先读中央STATE/PLAN及R2-S、debug-issue；图谱minimal/semantic无本链匹配，图索引main e7c，精准fallback核当前d181。只读前案history/startup-readonly-cc744/findings.md SHA99829a1a063865f24328ee00afbfc8876d2c0d8941034ba6cd03369b1d0e02a9仍提供事实起点，不把cc744与当前gui_host全源混同。
+
+## 当前事实
+
+- acp start_transport先unbounded Event channel，再opening_notes Vec32768（只计条数）→第二unbounded forward/receiver，完整预装后才返回Handle/receiver。上游handler已解析的Note不受该Vec条数限制。
+- SDK通知handler会await自有callback后处理响应；SDK另有自己的outgoing/task等通道，单条frame/已解码对象暂存不能被本片宣成8MiB硬RSS。
+- Ready=session已打开；gui_host后创建绑定canonical Journal，Ready→fence→有限drain→commit_base→host ready文件是不同事实。没有完整持久化不能提前发布full。
+- 原EventFence4096先等ack再消费、later traffic不能无限延长、EOF尾/closed target错误和runtime cancellation均是必要合同；bounded预装await不能引入无consumer死锁。
+
+## 已授权写权
+
+crates/acp/src/lib.rs、lifecycle.rs、event_fence_tests.rs及必要private事件缓冲/测试叶；node/gui_host.rs及仅必要session_content/journal.rs startup pending交接。Root已明确H不并写。Core/Tauri/API/export/gen/Node其它adapters不归本片。gui_host_cancel_tests两处rawreceiver调用点如需配套需精确增授，已报Root，尚未写。Management独立login通道不消费start_transport返回值，不顺带改。
+
+## 具体候选合同（尚未产品实现）
+
+一个per-transport EventStore owner替代两段unbounded与opening Vec；编码payload window8MiB/256条覆盖排队及I/O在途，控制问题另有限16项/单项128KiB。SDK已解码incoming Note、一个当前dequeue解码对象的额外暂存单独说明，不伪造进程总RSS上限。先计序列化byte/count再进首自有queue；大于窗口单条走独占spill，窗口不是总history cap。
+
+内存外FIFO写owned临时part，8MiB目标segment（巨单条可独立segment），只留head/tail/accepted/read seq常量级metadata，至多writer/reader两个FD；已完整消费segment即删除。长load不设32MiB/条目总history截断；能否继续只受真实磁盘/文件系统资源，写入失败必须显式refuse/取消并保旧canonical，不截断冒full、不自动第二次New/Load。具体磁盘资源防护/cleanup由同owner实现，不引新service。
+
+本地EventReceiver封装recv/try_recv/len；不再把未界定payload复制进第二unbounded。Open结果通过原oneshot，close/failure/fence通过独立有限控制lane，receiver可消费前不await preload。FIFO保持原Note顺序，Ready只SDK事实。Opened后核真实native session归属，按现Journal.note写pending，完整有限prefix持久化后才commit/hostready。
+
+Fence应包含本store身份+accepted seq有限前缀；GUI按remaining_through(prefix)扣数，后续事件不扩这次base/turn结束。Ack不是canonical持久化证明，4096先ack后drain仍可用（超memory窗口的数据可在spool）。
+
+取消CloseGate立即原子通知/停止接纳，writer每64KiB检查，part关闭删除、permit释放、owned工作完成后保现provider.confirmed_exit/reap；Ready/Close/失败不能等待payload容量。任何I/O/身份/cleanup错误如实拒绝，不能伪DriverClosed=已reap。
+
+## 首有限验证计划（尚未native）
+
+先同fake ACP load在响应前发超过memory窗口的有序notes，显式barrier阻塞打开/数据交接，取真实自有retained encoded byte/count highwater；取消时先释放/关闭自己的barrier，确认关闭/cleanup不困数据queue。baseline实际retention超window为业务红，编译/setup不算。其后同规则饱和/取消转绿，合法64MiB（超过32MiB）base按批FIFO完整交接且不false Ready、无第二Load；再必要EventFence4096及现EOF/runtime合同。没有扩agent生态/全协议矩阵，实际native先固定源/精确case与resource预算→独审→Root授唯一槽。
+
+## 当前状态
+
+source/design only，尚未产品改动/编译/测试运行/新gen/服务；方案已报Root，先确认精确owner/预算与必要测试胶水，再按小片落实。
+
+## SDK前置队列实读发现（先报Root，未改源）
+
+实际registry3.5.0链并非全由callback背压：ByteStreams BufReader.lines无显式单行上限；Lines transport actor解析完整JSON frame后unbounded_send入Channel，独立protocol actor在notification handler.await期间仍可能累积已解析Frame。自有EventStore本身8MiB不能据此宣整个startup内存有界。SDKoutgoing/task等别的无界通道亦不能混称已解决。
+
+具体source SHA与摘录链落history/startup-source-d181/source.json、sdk-ingress-findings.md（源码只读，无registry/vendor改动）。最小候选是在physical ingress入队前按byte/count取credit、整frame dispatch/drop后还；必须覆盖batch/unknownresponse/malformed，不只Note callback ack，不造第二parser/ID truth。genericConnectTo默认中继还可能丢特定Driver metadata，已向Root补报透明frame ownership credit方案与其需额外依赖写权的边界。Root尚未裁定该额外patch落地；当前作者tree仍d181 clean，无产品改动/native。
+
+## 受控SDK与baseline meter检查点（2026-10-30）
+
+Root已明确授权精确locked SDK3.5.0受控补丁，含jsonrpc/transport/incoming、private ingress、acp_agent/lib及role/acp与mcp active_session必要透明消费适配；schema/derive未动。实际archive checksum9bbe69c878aef64a3d92041e256e75acdb1bf2ea8e55ef3313e69dbb2f5bd75a，114原文件2,228,415B与registry逐SHA一致。84736111纯原样vendor、8ff41e2d纯声明；a154a46a按Root要求迁入vendor/agent-client-protocol，复用既有vendored_sources来源键，HEAD114原blob不变，行为始终另存。原third_party证据不改，完整dirty备份及内部恢复镜像已保存。根Cargo.lock未手改，实际path source转换待唯一槽真实Cargo。
+
+当前baseline代码只增加整帧encoded ownership计量，尚不等待容量，不宣完成有界：raw complete line先计量，admit到decode期间同credit，透明Admitted随既有Channel/中继/clone直到整frame处理或drop释放；v2初始化和MCP现消费点保guard作用域。默认8MiB/256只是反例的预期合同，单巨帧真实bytes与line/decode瞬时项分列；SDK其它outgoing/task通道未据此声称全部有界。
+
+唯一新压力case使用真实AcpAgent子进程与默认ConnectTo到Lines/protocol，首Khor通知callback测试barrier阻塞；AcpAgent源码本身直接使用Lines，不经过ByteStreams，后续gui_host自身owned ByteStreams链仍需实际交接验证。正常64KiB帧累积到至少两倍window后请求现CloseGate，先核同PID/birth/executable、实际child消失、DriverClosed、所有credit归零、Ready未发布、Load1/New0，再以window断言取得预计业务红。RSS是实际ps样本，不是内核峰值或8MiB硬RSS保证。当前未编译/未执行/未Cargo或metadata。只new leaf rustfmt与diff-check通过（早先edition格式失败保日志后已修正），未将source检查冒native结果。
+
+后续先固定meter/单expected-business-red准入及真实lock转换细则，由Root安排唯一槽；拿到业务红后才落SDK容量等待/waker和Khor FIFO EventStore。现EventStore、EventReceiver、GUI canonical handoff仍未实现。两gui_host_cancel_tests的receiver调用点必要适配已获Root写权；其余H共享路径不写。
+
+### 3781b5b4 meter source fixed / actual-red尚未运行
+
+固定11叶3781b5b4adf7491487fe247e97e12d03bf710bc8；source-receipt9c415dbd40c5c533a14b681905b984345383ebe6facc06de2f27e8b754b2d1c9，位于history/startup-source-d181/meter-source。完整11源/patch/receipt已内盘startup-meter-3781b5b4逐SHA镜像。reviewer已源码窄审无确定阻断；不代表native/ByteStreams/有界实现完成。
+
+Root要求测试producer也沿既有native_provenance严格门：原guardonly ed8/85d准入候选未执行，原字节保ingress-red-source/superseded-guard-only；现v2 driver ad9fd0710486cd0c715131496e5db7999ad555a3f7855d6b096c0dd90b17d6db / contract b4c00483179d9d46dd42518234b1e7d75dedf2f4451b788cfcf973e8869e7ab5，AST0且内盘v2镜像同，已交独审尾核，尚未运行。唯一允许源码转换是实际Cargo no-deps metadata将SDK3.5.0同一lock entry去registry source/checksum；完整parsedTOML其它记录和全source须不变，异常留实物停。之后真实full locked/offline metadata必须有resolve，现prepare exactACP libtest/no prior/apply-refresh→actualCargoJSON→verify/require→同actualrow私有copy→sole expected-business-red；300总/双盘5GiB/原owned严格门不变。driver不手写/commit/restore锁，不把预计失败冒Root当前验收绿。
+
+### 首native预备真实早停与retry2（压力case尚未运行）
+
+Root正式授批后实际session15877 terminal2，driver47219/Cargo47258。首no-deps metadata实际0，但不触发resolve/锁更新，source delta为空；合同准确以AssertionError(set())早停，0.440223s。未进入fullmetadata/prepare/compile/pressure，不算预期业务红。3781 source/env全同、rootlock原registry、strict group消失/remaining空/private footprint空/TMP空并已删除。actual-failure-receipt52d4d9ef5e11bc1ded309e036faef4718862b32c1410f143e314f8746a15d452，原actual与内部attempt1镜像保持。
+
+Root允许仅第一实际invocation去掉--no-deps，使Cargo真实fullresolve生成path lock；retry2目录history/startup-source-d181/ingress-red-source-2，driver逐字同ad9fd071，contract647abeafdc5dba4360001f4ddf57eb9ac1ca3476958c7f91df579231dc608c64（补原failed事实，其余V/guard/case不变），AST0/内部retry2镜像同。reviewer命令差异尾核通过，候Root唯一槽；尚未运行。
+
+## SDK入口实际红→绿检查点（未完成整S）
+
+retry2 source47991实际metadata101：因首full未带hostfilter请求未缓存Android包而offline拒绝，未compile/test。actual Cargo仍只写出SDK3.5.0同entry source/checksum两行删除；只读整TOML/全source证明其它package/dependency/源码都同，receipt64e0fed5d97ba66f85203c3eb0297762200f51ef137e7b8bc56edfd48a34f56b；实际锁8df88cbc923b5ec3dca734ff1efcef6d6a2b1b0ae93b63cdee224c5921aa7e6e。该实际锁独立fixed9c342a9f，不手写/回滚，不冒该metadata成功。后续仅Root已验host-filtered locked fullmetadata，不再迁锁。
+
+retry3 source9c34/exec17068实际fullmetadata0→SDKcompile101/E0004：TransportFrame::to_json借用match少Admitted臂，未pressure。原唯一diagnostic/false/cleanup/sourceenv均保。0298b20d仅加借用frame.to_json递归一行，不改变wire/guard。fixture参数改直接pin实际Python.framework runtime（普通Python工具self ps发现bin launcher会reexec；非ACP case），原exact身份断言不削。
+
+**实际基线业务红**：source0298/driverc046/contractefa396，exec90088 terminal0/11.071351s：hostmetadata0→原native_provenance no-prior prepare/actualCargoJSON verify/require→ACPcompile0→唯一exact业务101/0pass1fail。峰25,240,210 encoded B/384frames，normal line最大65,730B/oversize0；真实RSS样本3712→40928KiB（非kernel峰/硬上限）。该window断言在真实child身份/出生/父/组/实际exe、DriverClosed、childgone、全部credit0、Readyfalse、Load1/New0之后才执行。receipt e2088a68ba84de452ae517b05217285da7e542af218905b5ece3e55eefd03e94；内盘24项/私有testexe低级gzip并解压SHA核同，manifest ad7622a11d58c9ec8d39e4f10790c0460081af6d7cff257820f60f13262ad597。reviewer已实际尾核通过。
+
+**SDK capacity源与同case绿**：fixed e3268412f672799071915bda8d6c5656f73b5fea仅private ingress/KHOR两叶。单physical producer的AtomicWaker先register→同Mutex核bytes/count，饱和Pending；last receipt减账解锁后wake，owner闭合解锁wake，成功解锁后take清waker；合法giant仅frames0独占/真实bytes计费，仍非总historycap。原exact fixture731dea98逐字未改。source/准入均独审通过。driver b5e28244d519a235f9e72a8c4fe20e9d73c2fddc0371d961fae0ca1324f3c841 / contract2633960cd4a3875a567f710577acf916b539c2076010881ba5db52a47cec423d。
+
+actual exec79152 terminal0/10.750296s：完整hostmetadata/V no-prior/compile0、唯一原case0/1pass0fail。峰8,347,600B/127frames≤8MiB/256；待解析complete line65,730B单列（不冒已被encodedcharged覆盖），RSS样本3760→19360KiB；原actualchild65884身份/closed/gone/credit0/Readyfalse/Load1New0全过。strict group/remaining/footprint均空/TMP[]已删/source-env同；native正式归Root。actual-receipt f7044dd36fdd561415cc4b795c692f5947e582366f0c9fc570514c1783ce9e5c；copy83b28a57f14eb5c97c5b8e745e122b98bc68302c4550dc557838bacd0f6ea636；Vreceipt3d822aff3fb68235d656eb865dddda297cce9c00e92762e32338224e96ab28ff。内盘24项manifest9199f46c134e10974acfde26b038ccf91f8462a275fc5727bfce7f4764893121，exe gzip解压同SHA。
+
+仍未完成：本次只实证AcpAgent/ConnectTo/Lines正常帧的byte饱和/取消。tiny-count边界、giant分支、Node真实ByteStreams长base、Khor EventStore/spool/有限fence/完整canonical前不HostReady还待后续同S闭包。单未解码partial-line无硬上限，既有SDK其它outgoing/task通道不据此称全部有界。原三个预备/compilefalse不回填，原业务红保持，不把小片绿称S/第二轮全部完成。
+
+### SDK稳定交接与EventStore独立WIP
+
+SDK七链handoff component-handoff.json e3b5156c4612b064cd8d743d65c337fbaf31109207aeacddcae77ebf5ad8df8e包含d181..e326完整7refs/120最终路径逐git-show与current全同、实际red/green全source与tools/proof映射；patch280335c012fb4689a8892130e0dccdc32f89888b1edd8e4728962b13e12503d8及完整licensedsource已内盘startup-sdk-e3268412-handoff镜像。Root已整合该稳定片为82b45cf3（120文件全等，非整S完成），不修改作者接续dirty。
+
+后续当前仅untracked crates/acp/src/event_store.rs，未mod/未产品消费/未编译或native。已写单IO worker的磁盘FIFO/常量writer+reader2FD（含rotation）/8MiB分段+合法giant/完整record前缀/已读分段删除；内存预算先count原serde再分配编码queue，8MiB/256包含encoding/queue/write，giant独占真bytes；互动credit16/max128KiB按answer/drop生命周期。actor/decoder单结果/recv/fence/opening/GUI glue还未写，不能据private primitive称已接入。root当前e326保持。
+
+最新468行完整dirty source3b83c2ee6451dc20f3375c2da8ef82a6120d6b070e9aa55a1e50e057d9fdcbd8、CONTINUE.md e569b950bfc038ad866084afdc6a0ac958c46b72a6acc0fccef8d2b99f875656、recoveryb26362124178b2467fd095a856e8aefa77019a29380e3635fcc616808196f823位于history/startup-source-d181/event-store-wip-2；内盘startup-event-store-wip-2逐SHA镜像同，rustfmt叶检查0，无native准入。
+
+接线关键待保：CloseGate.driver_closed内部会request，不能将每次request无条件当数据abort。driver select明确close分支cancel并join IO；正常EOF保accepted有限尾再terminal。cancel必须同mutex/Condvar同步并唤醒容量/数据/IO休眠/fence与completion，不能只靠I/O64KiB检查；runtime keeper guard外建保证unpolled/drop取消worker。单IOjob、单read-request布尔、单decodedoutput不可改成无界请求/结果中继。后续只同原S闭包继续，无并行H共享source/no native自启。
+
+### EventStore完整source检查点231e1f69（尚未编译）
+
+固定 `231e1f69e4fa354283714d12763c7437bd5d8934`，父为已验SDK `e3268412`，10叶与source-receipt `0f349d81cfb5ac8d89d39c077e42c5e3085fa588a77068969892f21c5245f3aa` 逐git-show SHA一致。完整源、patch、验证边界位于 `history/startup-source-d181/event-store-source`，内盘 `recovery/round2/startup-event-store-231e1f69-source` 同字节；此前WIP5回执 `16f3b62505b33aed56d679eb73a7342a0cb6909186845ea29dbefba81362191b` 保历史，不覆盖原SDK红绿。
+
+已接线但只source：单EventStore owner持单blocking I/O job、单read-request布尔与单decode结果；8MiB/256计encoding/queue/write，合法单巨帧完整计费且独占；8MiB段盘FIFO、writer/reader常数FD/标量head-tail、分64KiB取消检查。receiver recv/try_recv/poll_recv不作磁盘重组或decode。question自己持16项/每项128KiB credit到answer/drop，不因出队提前归还；管理认证的共享question构造亦复用同Store，未造None/免记账分支。打开前取消/失败abort+join；live正常结束保accepted有限尾，Closing冻结末seq后等实际driver/provider事实再确认Closed；abort Closed只是stream error，不冒reap，退出仍Handle.shutdown/provider唯一确认。Node按store-bound finite prefix计剩余，不再采mutable len。
+
+源用例：原fence4断言语义迁实际Store，新增closing事实门/Closed末seq和opening拒Ready2；Store私有4（sticky failure、等待receiver/idle job取消、delivered question持credit、合法9MiB完整记录），budget1（byte/count/giant/close唤醒/control额度），disk1（真实create_new rotation碰撞/poison/part清理），合ACP12。原SDK pressure源码731dea98未改，拟另精确回归1。Node原raw Closed-before-tail仅抽共享私有poll闭包，原100ms/20ms断言不改，明确只是调度算法证据；新1025×64KiB长Load parent/helper用真实owned ByteStreams→Store→canonical Journal，分producer checkpoint核HostReady尚未发布，最终逐条计序/内容/无重复、actual Capture尾页可读、Load1/New0、正常Close/reap/part清理。RSS仅实际进程样本，非kernel peak/8MiB RSS硬限。保原failed-bootstrap parent/helper组合。
+
+拟实际批：host-filtered locked fullmetadata→原V no-prior ACP/Node libtest各actualCargoJSON/verify/require→私有SHA copy；ACP6+6+1、Node3 parent＋2owned helper，共16parent/2helper（非18独立场景）。300总、双盘5GiB、jobs1/incr0/offline、strict owned/TMP/source/env，no CLI/Core/gen/App。当前只rustfmt私有叶/fixture与diff-check0，尚无此SHA Cargo或实际用例结果；native仍候Root正式单槽授权。Replay退役未写，H清单待跨owner实施，不能把旧32MiB Replay链冒已消除。
