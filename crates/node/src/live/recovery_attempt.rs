@@ -102,14 +102,21 @@ pub(super) struct ProcessStamp {
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "os", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum ProcessStart {
-    Mac { seconds: u64, microseconds: u32 },
-    Linux { ticks: u64 },
+    Mac {
+        seconds: u64,
+        microseconds: u32,
+    },
+    Linux {
+        ticks: u64,
+        namespace_device: u64,
+        namespace_inode: u64,
+    },
 }
 impl ProcessStamp {
-    fn validate(&self) -> Result<(), String> {
-        if self.pid == 0
+    pub(super) fn validate(&self) -> Result<(), String> {
+        if self.pid <= 1
             || self.pid > i32::MAX as u32
-            || self.group == 0
+            || self.group <= 1
             || self.group > i32::MAX as u32
             || self.parent > i32::MAX as u32
         {
@@ -121,7 +128,11 @@ impl ProcessStamp {
                 seconds,
                 microseconds,
             } if seconds > 0 && microseconds < 1_000_000 => Ok(()),
-            ProcessStart::Linux { ticks } if ticks > 0 => Ok(()),
+            ProcessStart::Linux {
+                ticks,
+                namespace_inode,
+                ..
+            } if ticks > 0 && namespace_inode > 0 => Ok(()),
             _ => Err("invalid recorded process birth".into()),
         }
     }

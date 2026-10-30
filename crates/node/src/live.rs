@@ -29,6 +29,7 @@ use khor_core::{DeviceId, Kind, Millis, Session, SessionId, State, StateStamp};
 use crate::adaptor::Discovery;
 
 mod recovery_attempt;
+mod proc_identity;
 
 /// What a live session is. `pid` is the process whose death means the
 /// session is over — None for observed sessions registered by hooks,
