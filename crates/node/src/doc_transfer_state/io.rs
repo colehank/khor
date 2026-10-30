@@ -258,7 +258,7 @@ impl RootPermit {
         }
         // Start spending the remaining allowance only when this exact OS
         // lease is contended. Filesystem validation above is not lock waiting.
-        let mut waiting_until = None;
+        let mut waiting_until: Option<Instant> = None;
         loop {
             if waiting_until.is_some_and(|until| Instant::now() >= until) {
                 return Err(Error::busy());
