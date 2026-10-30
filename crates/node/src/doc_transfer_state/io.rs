@@ -81,6 +81,7 @@ impl RootAdmission {
         Ok(RootPermit {
             id,
             root: root.into(),
+            wait_until: None,
             _thread: PhantomData,
         })
     }
@@ -154,6 +155,9 @@ impl Drop for RootWaiter {
 pub(crate) struct RootPermit {
     id: u64,
     root: PathBuf,
+    // Only ordinary construction can wait for the OS trust fence. The same
+    // deadline starts before local admission; attach must not reset its budget.
+    wait_until: Option<Instant>,
     _thread: PhantomData<Rc<()>>,
 }
 impl RootPermit {
@@ -173,7 +177,8 @@ impl RootPermit {
             if Instant::now() >= until {
                 return Err(Error::busy());
             }
-            if let Some(permit) = admission.ordinary(root, &mut waiter)? {
+            if let Some(mut permit) = admission.ordinary(root, &mut waiter)? {
+                permit.wait_until = Some(until);
                 return Ok(permit);
             }
             let remaining = until.saturating_duration_since(Instant::now());
@@ -203,7 +208,11 @@ impl RootPermit {
                     return Err(Error::busy());
                 }
                 let ready = admission.ordinary(root, &mut waiter)?;
-                if let Some(permit) = ready {
+                if let Some(mut permit) = ready {
+                    permit.wait_until = Some(
+                        Instant::now()
+                            + until.saturating_duration_since(tokio::time::Instant::now()),
+                    );
                     return Ok(permit);
                 }
             }
@@ -217,6 +226,12 @@ impl RootPermit {
             permit: self,
             file: None,
         };
+        // A caller that acquired metadata after ordinary admission may not
+        // wait in the opposite lock order. Control/transfer try permits never
+        // carry a wait budget, including devices apply under its State lease.
+        if owned.permit.wait_until.is_some() && METADATA_HELD.get() {
+            return Err(Error::busy());
+        }
         let directory = owned.permit.root.join(".khor/trust-mutation");
         private_dir(&directory)?;
         for (count, entry) in fs::read_dir(&directory).map_err(error)?.enumerate() {
@@ -230,10 +245,29 @@ impl RootPermit {
         if file.metadata().map_err(error)?.len() != 0 {
             return Err("unexpected trust mutation gate bytes".into());
         }
-        match file.try_lock() {
-            Ok(()) => (),
-            Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
-            Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+        loop {
+            match file.try_lock() {
+                Ok(()) => break,
+                Err(fs::TryLockError::WouldBlock) => {
+                    let remaining = owned
+                        .permit
+                        .wait_until
+                        .map(|until| until.saturating_duration_since(Instant::now()))
+                        .filter(|remaining| !remaining.is_zero())
+                        .ok_or_else(Error::busy)?;
+                    // Retry only this exact OS lease, never Node construction,
+                    // metadata, trust recovery or publication side effects.
+                    std::thread::sleep(remaining.min(Duration::from_millis(5)));
+                    if owned
+                        .permit
+                        .wait_until
+                        .is_none_or(|until| Instant::now() >= until)
+                    {
+                        return Err(Error::busy());
+                    }
+                }
+                Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+            }
         }
         owned.file = Some(file);
         Ok(owned)
@@ -907,6 +941,66 @@ mod tests {
             "a late free root extended the admission deadline"
         );
         assert!(!expired.0.join(".khor/identity.key").exists());
+    }
+
+    #[test]
+    fn ordinary_attach_keeps_its_deadline_and_control_never_waits() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let fixture = Fixture::new();
+        private_trust_root(&fixture.0);
+        drop(root_gate(&fixture.0).unwrap());
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(fixture.0.join(".khor/trust-mutation/gate"))
+            .unwrap();
+        file.try_lock().unwrap();
+
+        let mut expired = RootPermit::acquire(&fixture.0).unwrap();
+        assert!(
+            expired.wait_until.is_some(),
+            "ordinary admission must retain its deadline"
+        );
+        // The previously spent local-admission budget may not be restarted by
+        // attach. Injecting an expired monotonic deadline avoids a sleep guess.
+        expired.wait_until = Some(Instant::now());
+        let started = Instant::now();
+        let error = expired
+            .attach()
+            .err()
+            .expect("held OS fence with exhausted budget");
+        assert_eq!(error.kind, crate::proto::DocTransferFailure::Busy);
+        assert!(
+            started.elapsed() < OPEN_WAIT,
+            "attach reset the admission budget"
+        );
+
+        let control = RootPermit::try_acquire(&fixture.0).unwrap();
+        assert!(control.wait_until.is_none());
+        let started = Instant::now();
+        assert_eq!(
+            control.attach().err().unwrap().kind,
+            crate::proto::DocTransferFailure::Busy
+        );
+        assert!(
+            started.elapsed() < OPEN_WAIT,
+            "control waited for the OS gate"
+        );
+
+        let ordinary = RootPermit::acquire(&fixture.0).unwrap();
+        let metadata = gate(&fixture.0.join("metadata")).unwrap();
+        let started = Instant::now();
+        assert_eq!(
+            ordinary.attach().err().unwrap().kind,
+            crate::proto::DocTransferFailure::Busy
+        );
+        assert!(
+            started.elapsed() < OPEN_WAIT,
+            "metadata -> root waited after admission"
+        );
+        drop(metadata);
+        drop(file);
+        drop(root_gate(&fixture.0).unwrap());
     }
 
     #[test]
