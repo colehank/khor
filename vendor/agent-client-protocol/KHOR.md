@@ -37,8 +37,14 @@ at a fabricated 32 MiB history threshold.
 
 ## Current checkpoint and validation
 
-This package-declaration checkpoint adds the local dependency mapping and
-workspace exclusion only. Resource behavior implementation and validation are
+The original package-declaration checkpoint added only the local dependency
+mapping and workspace exclusion. Before any resource behavior was committed,
+the tree moved from `third_party/agent-client-protocol` to
+`vendor/agent-client-protocol`. This deliberately uses Khor's existing
+`vendored_sources` input-key rule: an excluded dependency's whole source tree
+must participate in cross-run producer/prior keys, not just a full-run snapshot.
+All 114 original file blobs are unchanged in the migration checkpoint; local
+behavior work remains separate. Resource behavior implementation and validation are
 subsequent commits. The root `Cargo.lock` is deliberately not hand-edited; its
 source change requires a separately authorized real Cargo lock generation. No
 new Cargo command, metadata generation or native test has run for this copy.
