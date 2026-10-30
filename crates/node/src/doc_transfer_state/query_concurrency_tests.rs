@@ -203,7 +203,7 @@ impl Drop for Release {
         }
     }
 }
-fn birth(pid: u32, fixture: &Fixture, label: &str) -> String {
+fn birth(pid: u32, fixture: &Fixture, label: &str, expected_exe: &Path) -> String {
     let path = fixture.root.join(format!("{label}.identity"));
     let mut cmd = Command::new("/bin/ps");
     cmd.args(["-ww", "-p", &pid.to_string(), "-o", "lstart=,comm="])
@@ -220,9 +220,8 @@ fn birth(pid: u32, fixture: &Fixture, label: &str) -> String {
     assert!(Owned::spawn(cmd, fixture).wait(BY).success());
     let identity = output(&path).trim().to_owned();
     assert!(!identity.is_empty() && identity.len() <= 4096);
-    let exe = std::env::current_exe().unwrap();
     assert!(
-        identity.ends_with(exe.to_str().unwrap()),
+        identity.ends_with(expected_exe.to_str().unwrap()),
         "owned actual executable identity: {identity}"
     );
     identity
@@ -239,59 +238,139 @@ fn output(path: &Path) -> String {
     assert!(metadata.len() <= MAX_FILE);
     fs::read_to_string(path).unwrap()
 }
-fn query(
-    cli: &Path,
-    fixture: &Fixture,
-    root: &Path,
-    stage: &str,
-) -> (ExitStatus, String, String, u128) {
-    let out = fixture.root.join(format!("{stage}.stdout"));
-    let err = fixture.root.join(format!("{stage}.stderr"));
-    let mut cmd = Command::new(cli);
-    cmd.args(["sessions", "--all"])
-        .env("KHOR_HOME", root)
-        .env("KHOR_NAME", "receiver")
-        .env("HOME", root)
-        .env("XDG_CONFIG_HOME", root.join(".config"))
-        .env("KHOR_NO_MDNS", "1")
-        .env("KHOR_WEB_PORT", "0")
-        .env("KHOR_TMUX_SOCKET", "query-sync-private-unused")
-        .env("TMUX_TMPDIR", fixture.root.join("tmux-unused"))
-        .env_remove("KHOR_SESSION")
-        .env_remove("KHOR_RELAY")
-        .env_remove("TMUX")
-        .env_remove("TMUX_PANE")
-        .stdin(Stdio::null())
-        .stdout(
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&out)
-                .unwrap(),
+struct Query {
+    process: Owned,
+    out: PathBuf,
+    err: PathBuf,
+    started: Instant,
+}
+impl Query {
+    fn start(cli: &Path, fixture: &Fixture, root: &Path, stage: &str) -> Self {
+        let out = fixture.root.join(format!("{stage}.stdout"));
+        let err = fixture.root.join(format!("{stage}.stderr"));
+        let mut cmd = Command::new(cli);
+        cmd.args(["sessions", "--all"])
+            .env("KHOR_HOME", root)
+            .env("KHOR_NAME", "receiver")
+            .env("HOME", root)
+            .env("XDG_CONFIG_HOME", root.join(".config"))
+            .env("KHOR_NO_MDNS", "1")
+            .env("KHOR_WEB_PORT", "0")
+            .env("KHOR_TMUX_SOCKET", "query-sync-private-unused")
+            .env("TMUX_TMPDIR", fixture.root.join("tmux-unused"))
+            .env_remove("KHOR_SESSION")
+            .env_remove("KHOR_RELAY")
+            .env_remove("TMUX")
+            .env_remove("TMUX_PANE")
+            .stdin(Stdio::null())
+            .stdout(
+                OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&out)
+                    .unwrap(),
+            )
+            .stderr(
+                OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&err)
+                    .unwrap(),
+            );
+        Self {
+            process: Owned::spawn(cmd, fixture),
+            out,
+            err,
+            started: Instant::now(),
+        }
+    }
+    fn finish(mut self) -> (ExitStatus, String, String, u128) {
+        let status = self.process.wait(BY);
+        (
+            status,
+            output(&self.out),
+            output(&self.err),
+            self.started.elapsed().as_millis(),
         )
-        .stderr(
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&err)
-                .unwrap(),
-        );
-    let started = Instant::now();
-    let mut child = Owned::spawn(cmd, fixture);
-    let status = child.wait(BY);
-    (
-        status,
-        output(&out),
-        output(&err),
-        started.elapsed().as_millis(),
-    )
+    }
+    fn entered_gate(&mut self, cli: &Path, fixture: &Fixture, root: &Path) -> String {
+        let pid = self.process.child.id();
+        let born = birth(pid, fixture, "query-before", cli);
+        let gate = root.join(".khor/trust-mutation/gate");
+        let until = Instant::now() + BY;
+        for index in 0..64 {
+            if let Some(status) = self.process.child.try_wait().unwrap() {
+                self.process.done = true;
+                panic!(
+                    "query exited before release: {status}, stderr={}",
+                    output(&self.err)
+                );
+            }
+            assert!(
+                Instant::now() < until,
+                "query must open the exact root gate before release"
+            );
+            let out = fixture.root.join(format!("gate-fd-{index}.stdout"));
+            let err = fixture.root.join(format!("gate-fd-{index}.stderr"));
+            let mut cmd = Command::new("/usr/sbin/lsof");
+            cmd.args(["-nP", "-a", "-p", &pid.to_string(), "-Fn", "--"])
+                .arg(&gate)
+                .stdin(Stdio::null())
+                .stdout(
+                    OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .mode(0o600)
+                        .open(&out)
+                        .unwrap(),
+                )
+                .stderr(
+                    OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .mode(0o600)
+                        .open(&err)
+                        .unwrap(),
+                );
+            let status = Owned::spawn(cmd, fixture).wait(BY);
+            let descriptors = output(&out);
+            let why = output(&err);
+            if status.success()
+                && descriptors
+                    .lines()
+                    .any(|line| line == format!("n{}", gate.display()))
+            {
+                assert_eq!(
+                    birth(pid, fixture, "query-held", cli),
+                    born,
+                    "query PID/executable changed"
+                );
+                assert!(
+                    self.process.child.try_wait().unwrap().is_none(),
+                    "query ended before the proven release boundary"
+                );
+                return descriptors;
+            }
+            assert_eq!(
+                status.code(),
+                Some(1),
+                "unexpected gate probe failure: {why}"
+            );
+            assert!(
+                why.is_empty(),
+                "gate observation error must not masquerade as pending: {why}"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("bounded root-gate descriptor probes exhausted");
+    }
 }
 
 #[test]
 #[ignore = "one owned cross-process diagnostic; requires pinned private CLI via KHOR_QUERY_CLI"]
-fn query_during_devices_apply_separates_constructor_from_listing() {
+fn ordinary_query_waits_for_devices_apply_and_preserves_ids() {
     let cli =
         PathBuf::from(std::env::var_os("KHOR_QUERY_CLI").expect("pinned private CLI required"));
     assert!(cli.is_absolute() && cli.is_file());
@@ -361,7 +440,12 @@ fn query_during_devices_apply_separates_constructor_from_listing() {
     // This guard is installed before any assertion after spawn. Failure also
     // releases the actual production lock before scoped child cleanup.
     let release = Release(control.release.clone());
-    let born = birth(worker.child.id(), &fixture, "worker-before");
+    let born = birth(
+        worker.child.id(),
+        &fixture,
+        "worker-before",
+        &std::env::current_exe().unwrap(),
+    );
     let until = Instant::now() + BY;
     while !control.marker.is_file() {
         assert!(
@@ -384,45 +468,46 @@ fn query_during_devices_apply_separates_constructor_from_listing() {
         "owned worker PID must still be unreaped and live"
     );
     assert_eq!(
-        birth(worker.child.id(), &fixture, "worker-held"),
+        birth(
+            worker.child.id(),
+            &fixture,
+            "worker-held",
+            &std::env::current_exe().unwrap()
+        ),
         born,
         "worker birth/executable must remain pinned before CLI input"
     );
-    let held = query(&cli, &fixture, &target.root, "held");
+    // Start this ONE query while the real root fence is held. A real FD
+    // observation, not a fixed sleep, determines when releasing is valid.
+    let mut waiting = Query::start(&cli, &fixture, &target.root, "waiting");
+    let gate_descriptors = waiting.entered_gate(&cli, &fixture, &target.root);
     // These are real typed primitives, NOT a text->Busy conversion. They are
     // diagnostics of the constructor's OS gate and metadata gate separately.
-    let root_error = crate::doc_transfer_state::RootPermit::acquire(&target.root)
+    let root_error = crate::doc_transfer_state::RootPermit::try_acquire(&target.root)
         .unwrap()
         .attach()
         .err()
-        .expect("cross-process root gate held");
+        .expect("control is still zero-wait at the held cross-process root gate");
     let metadata_error = State::open(&target)
         .err()
         .expect("cross-process metadata gate held");
     assert_eq!(root_error.kind, crate::proto::DocTransferFailure::Busy);
     assert_eq!(metadata_error.kind, crate::proto::DocTransferFailure::Busy);
+    drop(release);
+    let held = waiting.finish();
     assert!(
-        !held.0.success(),
-        "held actual CLI unexpectedly succeeded: {}",
-        held.1
-    );
-    assert!(
-        held.2.contains("document transfer state busy"),
-        "preserve actual CLI failure: {}",
+        held.0.success(),
+        "ordinary query must wait rather than fail Busy: {}",
         held.2
     );
-    assert!(
-        held.1.is_empty(),
-        "failed constructor must not claim an empty successful list"
-    );
-    drop(release);
     assert!(
         worker.wait(BY).success(),
         "actual devices import must finish after release"
     );
-    let after = query(&cli, &fixture, &target.root, "released");
+    let after = Query::start(&cli, &fixture, &target.root, "released").finish();
     assert!(after.0.success(), "released CLI: {}", after.2);
     for id in &expected {
+        assert!(held.1.contains(id), "waiting query lost {id}");
         assert!(after.1.contains(id), "released CLI lost {id}");
     }
     let reopened = Node::open_hosting(target.root.clone(), "receiver", false).unwrap();
@@ -433,7 +518,7 @@ fn query_during_devices_apply_separates_constructor_from_listing() {
     fixture.children_done.store(true, Ordering::SeqCst);
     eprintln!(
         "[N-QUERY] {}",
-        serde_json::json!({"held_exit":held.0.code(),"held_stdout":held.1,"held_stderr":held.2,"held_ms":held.3,"released_exit":after.0.code(),"released_stdout":after.1,"released_stderr":after.2,"released_ms":after.3,"baseline_ids":baseline,"final_ids":final_ids,"original_ids":expected,"root_failure_kind":root_error.kind,"metadata_failure_kind":metadata_error.kind,"phase":proof.phase,"receiver":target.root,"worker_pid":proof.pid,"worker_birth_executable":born,"constructor_contention":true,"full_network_sync":false})
+        serde_json::json!({"held_exit":held.0.code(),"held_stdout":held.1,"held_stderr":held.2,"held_ms":held.3,"released_exit":after.0.code(),"released_stdout":after.1,"released_stderr":after.2,"released_ms":after.3,"baseline_ids":baseline,"final_ids":final_ids,"original_ids":expected,"root_failure_kind":root_error.kind,"metadata_failure_kind":metadata_error.kind,"phase":proof.phase,"receiver":target.root,"worker_pid":proof.pid,"worker_birth_executable":born,"query_gate_descriptors":gate_descriptors,"constructor_contention":true,"full_network_sync":false})
     );
 }
 

@@ -229,7 +229,11 @@ impl RootPermit {
         // A caller that acquired metadata after ordinary admission may not
         // wait in the opposite lock order. Control/transfer try permits never
         // carry a wait budget, including devices apply under its State lease.
-        if owned.permit.wait_until.is_some() && METADATA_HELD.get() {
+        if owned
+            .permit
+            .wait_until
+            .is_some_and(|until| METADATA_HELD.get() || Instant::now() >= until)
+        {
             return Err(Error::busy());
         }
         let directory = owned.permit.root.join(".khor/trust-mutation");
@@ -246,6 +250,13 @@ impl RootPermit {
             return Err("unexpected trust mutation gate bytes".into());
         }
         loop {
+            if owned
+                .permit
+                .wait_until
+                .is_some_and(|until| Instant::now() >= until)
+            {
+                return Err(Error::busy());
+            }
             match file.try_lock() {
                 Ok(()) => break,
                 Err(fs::TryLockError::WouldBlock) => {
@@ -258,13 +269,6 @@ impl RootPermit {
                     // Retry only this exact OS lease, never Node construction,
                     // metadata, trust recovery or publication side effects.
                     std::thread::sleep(remaining.min(Duration::from_millis(5)));
-                    if owned
-                        .permit
-                        .wait_until
-                        .is_none_or(|until| Instant::now() >= until)
-                    {
-                        return Err(Error::busy());
-                    }
                 }
                 Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
             }
@@ -1000,6 +1004,19 @@ mod tests {
         );
         drop(metadata);
         drop(file);
+
+        // Expiry is checked before EVERY try, including a now-free gate; a
+        // late release cannot resurrect a constructor's exhausted admission.
+        let mut expired_free = RootPermit::acquire(&fixture.0).unwrap();
+        expired_free.wait_until = Some(Instant::now());
+        assert_eq!(
+            expired_free
+                .attach()
+                .err()
+                .expect("expired even when free")
+                .kind,
+            crate::proto::DocTransferFailure::Busy
+        );
         drop(root_gate(&fixture.0).unwrap());
     }
 
