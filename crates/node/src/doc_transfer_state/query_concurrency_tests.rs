@@ -417,9 +417,11 @@ impl Query {
         )
     }
     fn entered_gate(&mut self, cli: &Path, fixture: &Fixture, root: &Path) -> String {
+        self.entered_file(cli, fixture, &root.join(".khor/trust-mutation/gate"))
+    }
+    fn entered_file(&mut self, cli: &Path, fixture: &Fixture, gate: &Path) -> String {
         let pid = self.process.child.id();
         let born = birth(pid, fixture, "query-before", cli);
-        let gate = root.join(".khor/trust-mutation/gate");
         let until = Instant::now() + BY;
         for index in 0..64 {
             if let Some(status) = self.process.child.try_wait().unwrap() {
@@ -431,7 +433,8 @@ impl Query {
             }
             assert!(
                 Instant::now() < until,
-                "query must open the exact root gate before release"
+                "query must open the exact gate before release: {}",
+                gate.display()
             );
             let out = fixture.root.join(format!("gate-fd-{index}.stdout"));
             let err = fixture.root.join(format!("gate-fd-{index}.stderr"));
@@ -485,7 +488,10 @@ impl Query {
             );
             std::thread::sleep(Duration::from_millis(5));
         }
-        panic!("bounded root-gate descriptor probes exhausted");
+        panic!(
+            "bounded exact-gate descriptor probes exhausted: {}",
+            gate.display()
+        );
     }
 }
 
@@ -826,6 +832,145 @@ fn metadata_publication_separates_recovery_gate_from_root_admission() {
             "phase_proof":proof,"worker_birth_executable":born,"held_exit":held.0.code(),"held_ms":held.3,"held_stdout":held.1,"held_stderr":held.2,
             "metadata_failure_kind":metadata.kind,"released_exit":after.0.code(),"released_ms":after.3,"released_stdout":after.1,"released_stderr":after.2,
             "original_ids":expected,"baseline_ids":baseline,"final_ids":final_ids,"constructor_recovery_branch":true,"product_fixed":false
+        })
+    );
+}
+
+#[test]
+#[ignore = "one owned metadata-publication waiting positive; requires pinned current CLI"]
+fn ordinary_query_waits_for_metadata_publication_and_preserves_ids() {
+    let cli =
+        PathBuf::from(std::env::var_os("KHOR_QUERY_CLI").expect("pinned current CLI required"));
+    assert!(cli.is_absolute() && cli.is_file());
+    let PreparedFixture {
+        fixture,
+        expected,
+        baseline,
+        target,
+        source,
+        packet,
+    } = PreparedFixture::new();
+    let marker = fixture.root.join("publication-held.json");
+    let released = fixture.root.join("publication-release.json");
+    let control = Control {
+        root: target.root.canonicalize().unwrap(),
+        owner: std::process::id(),
+        source: source.local,
+        packet,
+        marker: fixture.root.join("root-reached.json"),
+        release: fixture.root.join("unused-root-release.json"),
+        publication: Some(Publication {
+            marker: marker.clone(),
+            release: released.clone(),
+        }),
+    };
+    let control_path = fixture.root.join("control.json");
+    publish(&control_path, &control);
+    let mut cmd = Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--ignored",
+        "--exact",
+        WORKER,
+        "--nocapture",
+        "--test-threads=1",
+    ])
+    .env(WORKER_ENV, &control_path)
+    .stdin(Stdio::null());
+    let mut worker = Owned::spawn(cmd, &fixture);
+    let release = Release(released);
+    let born = birth(
+        worker.child.id(),
+        &fixture,
+        "worker-before",
+        &std::env::current_exe().unwrap(),
+    );
+    let until = Instant::now() + BY;
+    while !marker.is_file() {
+        assert!(
+            worker.child.try_wait().unwrap().is_none(),
+            "devices worker ended before real next publication"
+        );
+        assert!(
+            Instant::now() < until,
+            "real Journal.next publication checkpoint deadline"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let proof: PublicationProof = read(&marker);
+    assert_eq!(proof.pid, worker.child.id());
+    assert_eq!(proof.parent, std::process::id());
+    assert_eq!(proof.root, control.root);
+    assert_eq!(proof.phase, "journal-next-synced-before-rename");
+    assert!(proof.root_free && proof.metadata_held && proof.needs_recovery);
+    assert_eq!(
+        birth(
+            worker.child.id(),
+            &fixture,
+            "worker-held",
+            &std::env::current_exe().unwrap()
+        ),
+        born
+    );
+    assert!(worker.child.try_wait().unwrap().is_none());
+    let next = target.root.join(".khor/doc-transfer-state/registry.next");
+    assert!(fs::metadata(&next).unwrap().len() <= MAX_FILE);
+    let next_bytes = fs::read(&next).unwrap();
+    assert_eq!(next_bytes.len(), proof.next_bytes);
+    assert_eq!(
+        blake3::hash(&next_bytes).to_hex().to_string(),
+        proof.next_blake3
+    );
+    let root_free = crate::doc_transfer_state::RootPermit::try_acquire(&target.root)
+        .unwrap()
+        .attach()
+        .expect("parent independently acquires real root OS gate");
+    drop(root_free);
+    assert!(
+        crate::doc_transfer_state::pairing::needs_recovery(&target.root, target.local).unwrap()
+    );
+    let metadata = State::open(&target)
+        .err()
+        .expect("real metadata gate is held by publication worker");
+    assert_eq!(metadata.kind, crate::proto::DocTransferFailure::Busy);
+    let mut waiting = Query::start(&cli, &fixture, &target.root, "publication");
+    let gate_descriptors = waiting.entered_file(
+        &cli,
+        &fixture,
+        &target.root.join(".khor/doc-transfer-state/gate"),
+    );
+    assert!(worker.child.try_wait().unwrap().is_none());
+    assert_eq!(fs::read(&next).unwrap(), next_bytes);
+    // The actual waiting CLI must have released its root fence before waiting
+    // for this metadata owner. This independent physical try proves handoff.
+    let root_free = crate::doc_transfer_state::RootPermit::try_acquire(&target.root)
+        .unwrap()
+        .attach()
+        .expect("waiting CLI released root before metadata wait");
+    drop(root_free);
+    drop(release);
+    let held = waiting.finish();
+    assert!(held.0.success(), "metadata waiting CLI: {}", held.2);
+    assert!(
+        worker.wait(BY).success(),
+        "actual import finishes after publication release"
+    );
+    let after = Query::start(&cli, &fixture, &target.root, "released").finish();
+    assert!(after.0.success(), "released actual CLI: {}", after.2);
+    for id in &expected {
+        assert!(held.1.contains(id), "metadata waiting query lost {id}");
+        assert!(after.1.contains(id), "released query lost {id}");
+    }
+    let final_ids = ids(&Node::open_hosting(target.root.clone(), "receiver", false).unwrap());
+    for id in &baseline {
+        assert!(final_ids.contains(id), "original row disappeared: {id}");
+    }
+    fixture.children_done.store(true, Ordering::SeqCst);
+    eprintln!(
+        "[N-METADATA-WAIT] {}",
+        serde_json::json!({
+            "phase_proof":proof,"worker_birth_executable":born,"held_exit":held.0.code(),"held_ms":held.3,"held_stdout":held.1,"held_stderr":held.2,
+            "metadata_failure_kind":metadata.kind,"released_exit":after.0.code(),"released_ms":after.3,"released_stdout":after.1,"released_stderr":after.2,
+            "original_ids":expected,"baseline_ids":baseline,"final_ids":final_ids,"constructor_recovery_branch":true,"query_metadata_descriptors":gate_descriptors,"current_cli_positive":true
         })
     );
 }

@@ -314,14 +314,7 @@ impl RootGate {
         self.file.take();
         let directory = root.join(".khor/doc-transfer-state");
         loop {
-            let metadata = match gate(&directory) {
-                Ok(metadata) => metadata,
-                Err(why) if why.kind == crate::proto::DocTransferFailure::Busy => {
-                    self.permit.wait_for_lock()?;
-                    continue;
-                }
-                Err(why) => return Err(why),
-            };
+            let metadata = gate_with_wait(&directory, Some(&mut self.permit))?;
             // Workers use metadata -> root try0 too. Only the two leases
             // together admit journal loading or any recovery side effects.
             match self.acquire_file(false) {
@@ -428,20 +421,33 @@ pub(super) fn peek(root: &Path) -> Result<Option<Vec<u8>>, String> {
 }
 
 pub(super) fn gate(root: &Path) -> Result<Gate, Error> {
-    let local = match LOCAL.try_lock() {
-        Ok(guard) => guard,
-        Err(TryLockError::Poisoned(error)) => error.into_inner(),
-        Err(TryLockError::WouldBlock) => return Err(Error::busy()),
+    gate_with_wait(root, None)
+}
+fn gate_with_wait(root: &Path, mut permit: Option<&mut RootPermit>) -> Result<Gate, Error> {
+    let local = loop {
+        match LOCAL.try_lock() {
+            Ok(guard) => break guard,
+            Err(TryLockError::Poisoned(error)) => break error.into_inner(),
+            Err(TryLockError::WouldBlock) => permit
+                .as_deref_mut()
+                .ok_or_else(Error::busy)?
+                .wait_for_lock()?,
+        }
     };
     private_dir(root)?;
     let file = open(root.join("gate").as_path(), true)?;
     if file.metadata().map_err(error)?.len() != 0 {
         return Err("unexpected transfer metadata gate bytes".to_owned().into());
     }
-    match file.try_lock() {
-        Ok(()) => {}
-        Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
-        Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+    loop {
+        match file.try_lock() {
+            Ok(()) => break,
+            Err(fs::TryLockError::WouldBlock) => permit
+                .as_deref_mut()
+                .ok_or_else(Error::busy)?
+                .wait_for_lock()?,
+            Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+        }
     }
     METADATA_HELD.set(true);
     Ok(Gate {
