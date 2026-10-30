@@ -76,6 +76,10 @@ macro_rules! roots {
         $visit!(khor_gui_core::subscriptions::SubscriptionCandidate);
         $visit!(khor_gui_core::agents::KnownAgent);
         $visit!(khor_gui_core::agents::AgentSaid);
+        $visit!(khor_gui_core::agents::RecoveryToken);
+        $visit!(khor_gui_core::agents::SessionRecovery);
+        $visit!(khor_gui_core::agents::RecoveryResult);
+        $visit!(khor_gui_core::agents::ShellRunResult);
         $visit!(khor_node::Usage);
         $visit!(khor_core::Load);
         $visit!(khor_gui_core::QuotaAnswer);

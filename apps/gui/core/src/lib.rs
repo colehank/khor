@@ -169,6 +169,9 @@ pub struct SessionRow {
     /// machine's rows carry it; a reported row's is `None` and its line
     /// stays as it was.
     pub ended: Option<RowEnding>,
+    /// Stable authoritative execution device hex. Missing authority remains
+    /// read-only; the human-facing home label is never an action route.
+    pub execution_home: Option<String>,
 }
 
 /// [`SessionRow::ended`].
@@ -1104,6 +1107,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 .flatten()
                 .map(RowEnding::from);
             SessionRow {
+                execution_home: Some(v.session.home.hex()),
                 content_locator: khor_node::session_content::ContentLocator::of(&v.session)
                     .and_then(|locator| locator.encode()).ok(),
                 observation_owner: v
