@@ -938,37 +938,11 @@ fn read_once<D: Doc>(
         broken = base.broken;
         kept = base.names;
     }
-    let mut imported = 0;
-
-    for p in blocks(dir)? {
-        if file_name(&p).is_some_and(|n| kept.contains(&n)) {
-            continue;
-        }
-        imported += 1;
-        match fs::read(&p) {
-            Ok(bytes) => match doc.merge_report(&bytes) {
-                Err(_) => broken.push(p),
-                Ok(report) => {
-                    remember_pending(&mut pending, &report);
-                    if let Some(n) = file_name(&p) {
-                        grew |= ledger.insert(&n);
-                        held.insert(n);
-                    }
-                }
-            },
-            // Only a missing file is a compaction; anything else is a
-            // block this reader genuinely could not read, and those are
-            // what `broken` is for.
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => vanished = true,
-            Err(_) => broken.push(p),
-        }
-    }
-    {
-        let mut reads = READS.lock().unwrap_or_else(|p| p.into_inner());
-        let r = reads.entry(dir.to_path_buf()).or_default();
-        r.0 += 1;
-        r.1 += imported;
-    }
+    let imported = read_blocks(dir, &doc, &kept)?;
+    vanished |= imported.vanished;
+    broken.extend(imported.broken);
+    for name in imported.names { grew |= ledger.insert(&name); held.insert(name); }
+    pending.extend(imported.pending);
     let on_disk = doc.version();
     let mut store = BlockStore {
         dir: dir.to_path_buf(),
@@ -1010,6 +984,53 @@ fn read_once<D: Doc>(
         },
         vanished,
     ))
+}
+
+/// One parser/import pass shared by mutable store opens and strictly read-only
+/// recovery offers. File ownership, cache and ledger writes stay with callers.
+struct ImportedBlocks {
+    names: std::collections::BTreeSet<String>,
+    broken: Vec<PathBuf>,
+    pending: BTreeMap<u64, i32>,
+    vanished: bool,
+}
+fn read_blocks<D: Doc>(dir: &Path, doc: &D, kept: &std::collections::BTreeSet<String>) -> Result<ImportedBlocks, String> {
+    let mut result = ImportedBlocks { names: Default::default(), broken: Vec::new(), pending: BTreeMap::new(), vanished: false };
+    let mut imported = 0;
+    for path in blocks(dir)? {
+        if file_name(&path).is_some_and(|name| kept.contains(&name)) { continue; }
+        imported += 1;
+        match fs::read(&path) {
+            Ok(bytes) => match doc.merge_report(&bytes) {
+                Err(_) => result.broken.push(path),
+                Ok(report) => {
+                    remember_pending(&mut result.pending, &report);
+                    if let Some(name) = file_name(&path) { result.names.insert(name); }
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => result.vanished = true,
+            Err(_) => result.broken.push(path),
+        }
+    }
+    let mut reads = READS.lock().unwrap_or_else(|p| p.into_inner());
+    let count = reads.entry(dir.to_path_buf()).or_default(); count.0 += 1; count.1 += imported;
+    Ok(result)
+}
+
+/// Read an immutable configuration snapshot without a pen/pile lease, creating
+/// files, reseeding, updating a ledger or keeping a cache. A moving/incomplete
+/// document is a failed read; the caller may preserve its old display snapshot.
+pub fn read_snapshot<D: Doc>(dir: &Path, peer: u64) -> Result<D, String> {
+    let before = fingerprint(dir)?;
+    let epoch = read_epoch(dir);
+    let doc = D::open(peer)?;
+    let imported = read_blocks(dir, &doc, &Default::default())?;
+    let version = doc.version();
+    if imported.vanished || !imported.broken.is_empty()
+        || imported.pending.iter().any(|(writer, end)| version.get(writer).copied().unwrap_or(0) < *end)
+        || fingerprint(dir)? != before || read_epoch(dir) != epoch
+    { return Err("configuration changed or is incomplete during read-only snapshot".into()); }
+    Ok(doc)
 }
 
 fn remember_pending(pending: &mut BTreeMap<u64, i32>, report: &MergeReport) {

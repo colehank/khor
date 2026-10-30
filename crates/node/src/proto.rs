@@ -16,6 +16,10 @@ pub const SLICE: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
+    SessionRecovery { home: khor_core::DeviceId, id: crate::SessionId },
+    RecoverSession { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken },
+    NewShellRun { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, cwd: Option<String> },
+
     /// Bounded independent observation reads; never opens an agent host.
     ContentRead { action: crate::session_content::remote::Action },
     /// Recoverable authenticated pairing. Every body is a canonical blob chunk.
@@ -957,6 +961,10 @@ pub enum DocumentInventory {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
+    SessionRecovery { value: khor_core::recovery::SessionRecovery },
+    RecoverSession { value: khor_core::recovery::RecoveryResult },
+    NewShellRun { value: khor_core::recovery::ShellRunResult },
+
     ContentRead { reply: crate::session_content::remote::Reply },
     /// One bounded recoverable pairing step. No full document or roster inline.
     Paired {
@@ -1400,6 +1408,7 @@ impl Request {
                 | Request::DocTransfer { .. }
                 | Request::Fetch { .. }
                 | Request::Sessions
+                | Request::SessionRecovery { .. }
                 | Request::Usage
                 | Request::Vitals
                 | Request::Ls { .. }
@@ -1553,7 +1562,9 @@ impl Request {
                         ..
                     },
             } => Duration::from_secs(40),
-            Request::Open { .. }
+            Request::RecoverSession { .. }
+            | Request::NewShellRun { .. }
+            | Request::Open { .. }
             | Request::OpenAgent { .. }
             | Request::OpenOnce { .. }
             | Request::OpenAgentOnce { .. }

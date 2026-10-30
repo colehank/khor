@@ -42,6 +42,10 @@ pub(crate) fn validate_reply(reply: &Reply, bytes: usize) -> Result<(), String> 
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Op {
+    SessionRecovery { home: khor_core::DeviceId, id: crate::SessionId },
+    RecoverSession { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken },
+    NewShellRun { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, cwd: Option<String> },
+
     ContentRead { action: crate::session_content::remote::Action },
     Pair {
         ticket: String,
@@ -553,6 +557,10 @@ impl Op {
     fn table(&self) -> (&'static str, std::time::Duration) {
         match self {
             Op::ContentRead { .. } => ("ContentRead", DEADLINE_FAR),
+            Op::SessionRecovery { .. } => ("SessionRecovery", DEADLINE_FAR),
+            Op::RecoverSession { .. } => ("RecoverSession", DEADLINE_FAR),
+            Op::NewShellRun { .. } => ("NewShellRun", DEADLINE_FAR),
+
             Op::RecognitionOn { .. } => ("RecognitionOn", DEADLINE_FAR),
             Op::SubscriptionsOn { .. } => ("SubscriptionsOn", DEADLINE_FAR),
             Op::Hops => ("Hops", DEADLINE_LOCAL),
@@ -622,6 +630,10 @@ impl Op {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Reply {
+    SessionRecovery { value: khor_core::recovery::SessionRecovery },
+    RecoverSession { value: khor_core::recovery::RecoveryResult },
+    NewShellRun { value: khor_core::recovery::ShellRunResult },
+
     ContentRead { reply: crate::session_content::remote::Reply },
     Paired {
         name: String,

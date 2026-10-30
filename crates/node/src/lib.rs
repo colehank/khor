@@ -387,6 +387,10 @@ pub enum AvatarChangeOrigin {
     Gui,
 }
 
+// One already-observed launch environment; a readonly offer may inspect it but
+// must not run the login-shell probe to populate it.
+static USER_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 pub struct Node {
     root: PathBuf,
     /// The identity key; also what the endpoint binds with. One live
@@ -2314,8 +2318,7 @@ impl Node {
         // (the override's name lives at `PATH_ENV`, because the host
         // spawner hands it down to `_host` rather than making that
         // process ask the login shell all over again)
-        static PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-        PATH.get_or_init(|| {
+        USER_PATH.get_or_init(|| {
             let here = std::env::var("PATH").unwrap_or_default();
             if let Ok(told) = std::env::var(PATH_ENV)
                 && !told.trim().is_empty()
@@ -2329,6 +2332,10 @@ impl Node {
             // being avoided is the one this whole function is about.
             merge_paths(&asked_shell().path, &here)
         })
+    }
+
+    pub(crate) fn observed_user_path() -> Option<&'static str> {
+        USER_PATH.get().map(String::as_str)
     }
 
     /// The locale variables to put on a spawned child, **empty when

@@ -594,6 +594,30 @@ fn spawn_ghost_context(
     agent: bool,
     environment: Option<&khor_acp::Environment>,
 ) -> Result<SessionId, String> {
+    spawn_ghost_prepared(root, cwd, title, cmd, resume, vendor, agent, environment, None)
+}
+
+/// Explicit stable recovery already owns this exact durable token. Do not pass
+/// through the CLI convenience path which chooses a fresh token for a new ask.
+pub(crate) fn spawn_gui_host_claimed(
+    root: &std::path::Path, cwd: &std::path::Path, title: &str, cmd: &[String],
+    native: &JournalIdentity, context: &khor_acp::Environment, claim: &str,
+) -> Result<SessionId, String> {
+    spawn_ghost_prepared(root, Some(cwd), title, cmd, Some(&native.native_id), Some(&native.agent), false, Some(context), Some(claim))
+}
+
+fn spawn_ghost_prepared(
+    root: &std::path::Path,
+    cwd: Option<&std::path::Path>,
+    title: &str,
+    cmd: &[String],
+    resume: Option<&str>,
+    vendor: Option<&str>,
+    agent: bool,
+    environment: Option<&khor_acp::Environment>,
+    prepared_claim: Option<&str>,
+) -> Result<SessionId, String> {
+    if prepared_claim.is_some() && resume.is_none() { return Err("a recovery claim cannot start a New session".into()); }
     let exe = crate::self_exe()?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
@@ -682,11 +706,7 @@ fn spawn_ghost_context(
         expected_agent = Some(native.agent.clone());
         let context = match environment {
             Some(context) => context.clone(),
-            None => match std::fs::read_to_string(context_path(root, native_id)) {
-                Ok(context) => serde_json::from_str(&context).map_err(|error| format!("Invalid session context: {error}"))?,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => khor_acp::Environment::default(),
-                Err(error) => return Err(error.to_string()),
-            },
+            None => saved_environment(root, native_id)?,
         };
         let standing = cwd.map(std::path::Path::to_path_buf).or_else(crate::cwd::standing)
             .ok_or("known session directory is unavailable")?;
@@ -696,7 +716,10 @@ fn spawn_ghost_context(
         // not reread a newer saved context and silently change the operation.
         c.current_dir(&standing);
         c.env("KHOR_GHOST_CONTEXT", serde_json::to_string(&context).map_err(|error| error.to_string())?);
-        let claim = live.prepare_gui_recovery(native, &launch)?;
+        let claim = match prepared_claim {
+            Some(claim) => claim.to_owned(),
+            None => live.prepare_gui_recovery(native, &launch)?,
+        };
         c.env(RECOVERY_ENV, &claim);
         Some(claim)
     } else { None };
@@ -2061,6 +2084,13 @@ fn gui_source_identity_as(
     })
 }
 
+pub(crate) fn saved_environment(root: &std::path::Path, native_id: &str) -> Result<khor_acp::Environment, String> {
+    match std::fs::read_to_string(context_path(root, native_id)) {
+        Ok(context) => serde_json::from_str(&context).map_err(|error| format!("Invalid session context: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(khor_acp::Environment::default()),
+        Err(error) => Err(error.to_string()),
+    }
+}
 fn context_path(root: &std::path::Path, session: &str) -> PathBuf {
     root.join(".khor/acp-context").join(format!(
         "{}.json",

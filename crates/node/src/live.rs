@@ -49,6 +49,9 @@ pub struct Meta {
     pub(crate) gui_native: Option<crate::session_content::journal::Identity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) gui_run: Option<GuiRun>,
+    /// Fresh shell ancestry is metadata, never an argv replay instruction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) shell_run: Option<ShellRun>,
     /// Whose session this is (`khor_core::Session::category`), when
     /// anyone can say. A registry entry written before this field existed
     /// reads as `None`, which is the same thing it means for a fresh one:
@@ -86,6 +89,13 @@ pub struct Meta {
     /// nobody could place — the same thing it means for a fresh one.
     #[serde(default)]
     pub place: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ShellRun {
+    pub(crate) previous: SessionId,
+    pub(crate) root: SessionId,
 }
 
 /// A GUI execution, distinct from both the retained row and provider conversation.
@@ -428,6 +438,7 @@ impl LiveKind {
             return Err(msg::session_already_exists(&id.0));
         }
         let meta = Meta {
+            shell_run: None,
             kind: kind.to_owned(),
             title: title.to_owned(),
             pid,
@@ -594,6 +605,7 @@ impl LiveKind {
         }
         let fresh = previous.is_none();
         let mut meta = previous.unwrap_or(Meta {
+            shell_run: None,
             kind: khor_core::kind::GUI.into(),
             title: title.into(),
             pid: None,
@@ -733,6 +745,7 @@ impl LiveKind {
         fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
         let gate = RowGate::acquire(&dir)?;
         let mut meta = gate.read_meta_or_new()?.unwrap_or(Meta {
+            shell_run: None,
             kind: kind.to_owned(),
             title: title.to_owned(),
             pid: None,

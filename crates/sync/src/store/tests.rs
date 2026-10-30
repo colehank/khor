@@ -901,6 +901,20 @@ fn an_old_pile_is_reseeded_under_one_name() {
     use crate::store::{Doc, EPOCH, load, load_pile};
     let dir = tmpdir("reseed");
     let all = old_pile(&dir, 40, "row");
+    // Recovery offers must not turn a read into migration, pen or ledger IO.
+    let absent = dir.join("no-such-pile");
+    assert!(crate::store::read_snapshot::<DeviceDoc>(&absent, 0x76).unwrap().all().is_empty());
+    assert!(!absent.exists());
+    let files = || -> std::collections::BTreeMap<_, _> {
+        fs::read_dir(&dir).unwrap().map(|entry| {
+            let entry = entry.unwrap(); (entry.file_name(), fs::read(entry.path()).unwrap())
+        }).collect()
+    };
+    let before = files();
+    let read_only = crate::store::read_snapshot::<DeviceDoc>(&dir, 0x76).unwrap();
+    assert_eq!(format!("{:?}", read_only.all()), format!("{:?}", all.all()));
+    assert_eq!(read_only.version().len(), 40, "old epoch was read, not reseeded");
+    assert_eq!(before, files(), "readonly snapshot leaves every byte/name unchanged");
     // Read the old way once: the ledger and a pen exist, as on a real disk.
     drop(load::<DeviceDoc>(&dir, 0x77).unwrap());
     assert!(dir.join(".merged").exists() && dir.join(".pen-0").exists());
