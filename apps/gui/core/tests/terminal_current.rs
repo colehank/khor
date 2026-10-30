@@ -132,7 +132,7 @@ fn until(fixture: &Fixture, needle: &str) -> Vec<u8> {
 
 #[test]
 fn core_rejects_noncurrent_welcomes_without_registering_an_attachment() {
-    for greeting in ["", "khor-host/4", "khor-host/6", "khor-gui/1"] {
+    for greeting in ["", "khor-host/4", "khor-host/6", "khor-gui/1", "khor-gui/2"] {
         let mut fixture = Fixture::new(greeting, |stream| {
             assert_eq!(
                 stream.read(&mut [0u8; 1]).unwrap(),
