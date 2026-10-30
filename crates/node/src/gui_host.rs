@@ -1021,6 +1021,9 @@ fn gui_host_main_with_timeouts(
         let loop_id = id.clone();
         let loop_fanout = fanout.clone();
         let loop_ready = ready.clone();
+        // block_on finishes and drops this future before final exit publication.
+        // Move only a borrow into it; the one RunKey stays with the outer owner.
+        let run_in_loop = &run;
         let ending = rt.block_on(async move {
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
         // The pending asks, each with the very note it was announced
@@ -1113,11 +1116,11 @@ let turn = Some(result);
                                 "Cancelled" => State::Idle,
                                 _ => State::Errored,
                             };
-                            let _ = live.report_run(&run, word, Source::Reported);
+                            let _ = live.report_run(run_in_loop, word, Source::Reported);
                             fanout.send(&GuiNote::Turn(stop));
                         }
                         Some(Err(e)) => {
-                            let _ = live.report_run(&run, State::Errored, Source::Reported);
+                            let _ = live.report_run(run_in_loop, State::Errored, Source::Reported);
                             fanout.send(&GuiNote::Turn(e));
                         }
                         None => {}
@@ -1260,7 +1263,7 @@ match event {
                         let note = GuiNote::Ask { ask: n, title, options };
                         fanout.send(&note);
                         asks.push((n, ask, note));
-                        let _ = live.report_run(&run, State::Blocked, Source::Reported);
+                        let _ = live.report_run(run_in_loop, State::Blocked, Source::Reported);
                     }
                     Some(khor_acp::Event::Elicit(request))=>{
                         let encoded=serde_json::to_value(&request.request).unwrap_or_default();
@@ -1268,13 +1271,13 @@ match event {
                         let ask=next_ask;next_ask+=1;
                         let note=GuiNote::Elicit{ask,request:encoded.to_string()};
                         fanout.send(&note);elicits.push((ask,request,note));
-                        let _=live.report_run(&run,State::Blocked,Source::Reported);
+                        let _=live.report_run(run_in_loop,State::Blocked,Source::Reported);
                     }
                     Some(khor_acp::Event::ElicitDone(elicitation_id))=>{
                         if let Some(at)=elicits.iter().position(|(_,q,_)|serde_json::to_value(&q.request).is_ok_and(|v|v["mode"]=="url"&&v["elicitationId"]==elicitation_id)){
                             let(ask,q,_)=elicits.remove(at);let value=serde_json::json!({"action":"accept"});if let Ok(response)=q.validate(&value){let _=q.answer(response);}
                             fanout.send(&GuiNote::ElicitAnswered{ask,response:value.to_string()});
-                            let _=live.report_run(&run,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                            let _=live.report_run(run_in_loop,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
                         }
                     }
                     Some(khor_acp::Event::Ready { session }) => {
@@ -1324,7 +1327,7 @@ match event {
                             let action=serde_json::to_value(&answer).unwrap_or_default()["action"].clone();
                             let accepted=request.answer(answer).is_ok();
                             fanout.send(&GuiNote::ElicitAnswered{ask,response:serde_json::json!({"action":if accepted{action}else{serde_json::json!("cancel")}}).to_string()});
-                            let _=live.report_run(&run,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                            let _=live.report_run(run_in_loop,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
                         }else{fanout.send_to(who,&GuiNote::Refused{why:refused::SETTING_REFUSED.into()});}
                     }
                     Some((who,GuiOp::Control{token,operation,payload}))=>{
@@ -1358,7 +1361,7 @@ match event {
                                 journal_turn=Some(turn);
                                 delegated = Some(execution);
                                 cancellation_sent = None;
-                                let _ = live.report_run(&run, State::Busy, Source::Reported);
+                                let _ = live.report_run(run_in_loop, State::Busy, Source::Reported);
                                 let handle = handle.clone();
                                 let tx = completion_tx.clone();
                                 let generation = active_operation.clone().unwrap(); let control = process_control.clone();
@@ -1402,7 +1405,7 @@ match event {
                         let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
                         if let Err(why)=journal.accept(&turn,&text,&images,&files,token.as_deref()) { break Some(why); }
                         journal_turn=Some(turn);
-                        let _ = live.report_run(&run, State::Busy, Source::Reported);
+                        let _ = live.report_run(run_in_loop, State::Busy, Source::Reported);
                         let handle = handle.clone();
                         let tx = completion_tx.clone();
                         let generation = active_operation.clone().unwrap(); let control = process_control.clone();
@@ -1437,7 +1440,7 @@ match event {
                         if asks.is_empty() {
                             // 待批答才清 — and it clears to 忙碌: the
                             // turn the ask interrupted is still running.
-                            let _ = live.report_run(&run, State::Busy, Source::Reported);
+                            let _ = live.report_run(run_in_loop, State::Busy, Source::Reported);
                         }
                     }
                     Some((who, GuiOp::Stop)) => {
@@ -1454,7 +1457,7 @@ match event {
                             }
                             for(ask,_,_)in asks.drain(..){fanout.send(&GuiNote::Answered{ask,option:None});}
                         } else if stopped_upload {
-                            let _ = live.report_run(&run, State::Idle, Source::Reported);
+                            let _ = live.report_run(run_in_loop, State::Idle, Source::Reported);
                             fanout.send_to(who, &GuiNote::Turn("Cancelled".into()));
                         } else {
                             // Nothing to stop. A face that got here is
