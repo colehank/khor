@@ -130,7 +130,15 @@ test('tool updates and rich text use the existing display projection', () => {
   assert.equal(historyFindBatch(query('newText')).page(page(entries)).hits.length, 0);
 });
 test('retains bounded UTF-8 snippets and explicitly reports unresolved raw ranges', () => {
-  const answer = historyFindBatch(query('needle')).page(page([text('1:0', '😀'.repeat(90) + 'needle' + '中'.repeat(90))], [{ cursor: 'raw' }]));
+  const value = '😀'.repeat(90) + 'needle' + '中'.repeat(90);
+  // Explicit physical fixture facts: one malformed line, followed by one
+  // complete native message. Ranges come from bytes, never from entry keys.
+  const malformed = new TextEncoder().encode('not-json\n');
+  const native = new TextEncoder().encode(JSON.stringify({type:'assistant',message:{role:'assistant',content:[{type:'text',text:value}]}})+'\n');
+  const record = {cursor:'exclusive-source-fence',start:malformed.length,end:malformed.length+native.length,
+    item:0,missing_start:false,missing_end:false};
+  const unresolved = {cursor:record.cursor,start:0,end:malformed.length,item:null,missing_start:false,missing_end:false};
+  const answer = historyFindBatch(query('needle')).page(page([{...text('1:0',value),record}], [unresolved]));
   assert.equal(new TextEncoder().encode(answer.hits[0].snippet).length <= FIND_SNIPPET_BYTES, true);
   assert.equal(answer.hits[0].snippet.includes('\ufffd'), false);
   assert.equal(answer.unsearchedRanges, 1);
