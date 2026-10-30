@@ -32,4 +32,45 @@ check('the same production host measurement uses whichever visible deck is highe
  el.closest=selector=>({querySelector:()=>({getBoundingClientRect:()=>selector==='[data-session-screen]'?rect(700,844):rect(0,0,0)})});
  assert.equal(hostBox(el).h,620,'a hidden retained local deck has no geometry');
 });
-console.log(`${passed} native page viewport geometry checks passed`);
+// Compose the actual JS deck-bounds producer with the native pure CGRect
+// expression. CGRect constructors are data-only fixtures, not UIKit paint.
+const drawingSource=fs.readFileSync(new URL('../src/lib/native-deck.ts',import.meta.url),'utf8');
+const drawingAst=ts.createSourceFile('deck.ts',drawingSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+let bounds;
+function visitDrawing(node){
+ if(ts.isReturnStatement(node)&&node.expression&&ts.isObjectLiteralExpression(node.expression)){
+  const names=new Map(node.expression.properties.filter(ts.isPropertyAssignment).map(p=>[p.name.getText(drawingAst),p.initializer.getText(drawingAst)]));
+  if(['x','y','w','h','inset'].every(key=>names.has(key))){assert.equal(bounds,undefined);bounds=Object.fromEntries(['x','y','w','h','inset'].map(key=>[key,names.get(key)]));}
+ }
+ ts.forEachChild(node,visitDrawing);
+}visitDrawing(drawingAst);assert(bounds,'real readDeck serializes the actual deck bounds');
+const nativeSource=fs.readFileSync(new URL('../src-tauri/src/phone_page.rs',import.meta.url),'utf8');
+const expression=/fn deck_frame\(origin: NSPoint, geometry: NSRect\) -> NSRect \{([\s\S]*?)\n\}/.exec(nativeSource)?.[1].trim();assert(expression);
+const create=/initWithFrame: (deck_frame\(origin, geometry\))/.exec(nativeSource)?.[1];
+const move=/setFrame: (deck_frame\(origin, k\.geometry\))/.exec(nativeSource)?.[1];assert(create);assert(move,'create and move use the same DOM-frame mapping');
+assert(nativeSource.includes('page.viewport_origin = parent_frame.origin;'),'placement updates the coordinate origin rather than deriving deck top from clipped WK height');
+const native=vm.createContext({NSPoint:{new:(x,y)=>({x,y})},NSRect:{new:(origin,size)=>({origin,size})}});
+vm.runInContext(`function deck_frame(origin,geometry){return ${expression.replaceAll('NSRect::new','NSRect.new').replaceAll('NSPoint::new','NSPoint.new')};}globalThis.frame=deck_frame;`,native);
+const produce=o=>{const value=vm.runInNewContext(`({${Object.entries(bounds).map(([k,v])=>`${k}:${v}`).join(',')}})`,{o});return{...value};};
+if(process.argv.includes('--legacy-deck')){
+ const old=execFileSync('git',['show','4eb36d47:apps/gui/src-tauri/src/phone_page.rs'],{encoding:'utf8'});
+ const oldArgs=/initWithFrame: rect\((pf\.origin\.x, pf\.origin\.y \+ pf\.size\.height - dr\.h, pf\.size\.width, dr\.h)\)/.exec(old)?.[1];assert(oldArgs);
+ const dr=produce(rect(660,844)),body=pageBox(rect(80,844),660,844),pf={origin:{x:0,y:body.y},size:{width:body.w,height:body.h}};
+ const frame=vm.runInNewContext(`rect(${oldArgs})`,{pf,dr,rect:(x,y,w,h)=>({x,y,w,h})});
+ assert.equal(frame.y,660,'the clipped native page bottom is deck.top; the old native formula must not lift the deck by its height');
+ process.exit(0);
+}
+for(const [name,bodyRect,deckRect,surface] of [
+ ['portrait/safe-area',rect(80,844,358,16),rect(660,844),{x:3,y:22}],
+ ['folded',rect(80,844),rect(780,844),{x:0,y:0}],
+ ['keyboard',rect(44,420),rect(320,420),{x:0,y:-12}],
+])check(`DOM viewport and native deck create/move compose without overlap: ${name}`,()=>{
+ const body=pageBox(bodyRect,deckRect.top,844),drawing=produce(deckRect);assert.equal(drawing.inset,0);
+ const geometry={origin:{x:drawing.x,y:drawing.y},size:{width:drawing.w,height:drawing.h}};
+ const created=vm.runInNewContext(create,{deck_frame:native.frame,origin:surface,geometry});
+ assert.equal(created.origin.y,surface.y+body.y+body.h);assert.equal(created.origin.y+created.size.height,surface.y+deckRect.bottom);assert.equal(created.size.width,deckRect.width);
+ const movedOrigin={x:surface.x+7,y:surface.y+9};
+ const moved=vm.runInNewContext(move,{deck_frame:native.frame,origin:movedOrigin,k:{geometry}});
+ assert.equal(moved.origin.y,movedOrigin.y+body.y+body.h);assert.equal(moved.origin.x,movedOrigin.x+deckRect.left);assert.equal(moved.size.width,drawing.w);
+});
+console.log(`${passed} native page viewport/deck composition checks passed; controlled CGRect arithmetic, no WK`);

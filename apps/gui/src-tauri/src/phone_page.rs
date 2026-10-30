@@ -67,6 +67,8 @@ struct Page {
     told_url: String,
     told_title: String,
     navigation: crate::page_navigation::ViewKey,
+    /// Parent coordinate origin observed with this page's placement.
+    viewport_origin: NSPoint,
     /// Whether the page could step back and forward when the face was
     /// last told (`page:steps`, round UX-3: the deck greys ← and draws →
     /// only where there is somewhere to go).
@@ -1282,11 +1284,14 @@ pub fn open(
     start_polling(app);
     let _ = APP.set(app.clone());
     unsafe {
+        let parent_frame: NSRect = msg_send![face, frame];
+        let viewport_origin = parent_frame.origin;
         let rect = frame_of(face, at);
         let reused = PAGES.with(|pages| {
             let mut pages = pages.borrow_mut();
             if let Some(page) = pages.get_mut(tab) {
                 if page.exit == exit {
+                    page.viewport_origin = viewport_origin;
                     if page.url != url {
                         page.url = url.to_owned();
                         load(&page.view, url);
@@ -1397,6 +1402,7 @@ pub fn open(
                     told_url: url.to_owned(),
                     told_title: String::new(),
                     navigation,
+                    viewport_origin,
                     told_steps: None,
                     sheet_scrolls: vec![scroll.clone()],
                     scroll,
@@ -1418,8 +1424,10 @@ pub fn open(
 
 pub fn place(face: *mut AnyObject, tab: &str, at: PageBox) {
     PAGES.with(|pages| {
-        if let Some(page) = pages.borrow().get(tab) {
+        if let Some(page) = pages.borrow_mut().get_mut(tab) {
             unsafe {
+                let parent_frame: NSRect = msg_send![face, frame];
+                page.viewport_origin = parent_frame.origin;
                 let rect = frame_of(face, at);
                 let _: () = msg_send![&*page.view, setFrame: rect];
             }
@@ -1784,6 +1792,9 @@ pub struct DeckShadow {
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeckDrawing {
+    x: f64,
+    y: f64,
+    w: f64,
     h: f64,
     inset: f64,
     dark: bool,
@@ -1803,7 +1814,7 @@ pub struct DeckDrawing {
 
 struct Deck {
     view: Retained<AnyObject>,
-    h: f64,
+    geometry: NSRect,
     /// The pill, in the deck's points: where a sideways swipe changes tab.
     pill: Option<(f64, f64, f64, f64)>,
 }
@@ -1931,6 +1942,15 @@ unsafe fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(w.max(0.0), h.max(0.0)))
 }
 
+/// The DOM chrome frame is independent of the clipped document viewport.
+/// Both initial creation and later moves use this same coordinate mapping.
+fn deck_frame(origin: NSPoint, geometry: NSRect) -> NSRect {
+    NSRect::new(
+        NSPoint::new(origin.x + geometry.origin.x, origin.y + geometry.origin.y),
+        geometry.size,
+    )
+}
+
 /// Draws (or, with `None`, puts away) `tab`'s deck over its page.
 pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
     // Whatever was drawn before goes; a reading is the whole deck.
@@ -1952,12 +1972,16 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
             t.len() - 1
         })
     });
-    let page = PAGES.with(|p| p.borrow().get(tab).map(|p| p.view.clone()));
-    let Some(page) = page else { return };
+    let page = PAGES.with(|p| {
+        p.borrow()
+            .get(tab)
+            .map(|p| (p.view.clone(), p.viewport_origin))
+    });
+    let Some((page, origin)) = page else { return };
     unsafe {
-        let pf: NSRect = msg_send![&*page, frame];
+        let geometry = rect(dr.x, dr.y, dr.w, dr.h);
         let a: Allocated<AnyObject> = msg_send![class!(UIView), alloc];
-        let view: Retained<AnyObject> = msg_send![a, initWithFrame: rect(pf.origin.x, pf.origin.y + pf.size.height - dr.h, pf.size.width, dr.h)];
+        let view: Retained<AnyObject> = msg_send![a, initWithFrame: deck_frame(origin, geometry)];
         let _: () = msg_send![&*view, setTag: tag as isize];
         // 1 light, 2 dark: the glass and the system font follow khor's
         // theme, not the phone's.
@@ -2090,7 +2114,7 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
                 tab.to_owned(),
                 Deck {
                     view,
-                    h: dr.h,
+                    geometry,
                     pill,
                 },
             );
@@ -2262,11 +2286,7 @@ fn inset(tab: &str, bottom: f64) {
 
 /// The deck follows its page: moved with it, hidden with it, gone with it.
 fn deck_follows(tab: &str) {
-    let frame = PAGES.with(|p| {
-        p.borrow()
-            .get(tab)
-            .map(|p| unsafe { msg_send![&*p.view, frame] })
-    });
+    let origin = PAGES.with(|pages| pages.borrow().get(tab).map(|page| page.viewport_origin));
     let hidden = PAGES.with(|p| {
         p.borrow()
             .get(tab)
@@ -2276,9 +2296,8 @@ fn deck_follows(tab: &str) {
         let d = d.borrow();
         let Some(k) = d.get(tab) else { return };
         unsafe {
-            if let Some(pf) = frame {
-                let pf: NSRect = pf;
-                let _: () = msg_send![&*k.view, setFrame: rect(pf.origin.x, pf.origin.y + pf.size.height - k.h, pf.size.width, k.h)];
+            if let Some(origin) = origin {
+                let _: () = msg_send![&*k.view, setFrame: deck_frame(origin, k.geometry)];
             }
             if let Some(h) = hidden {
                 let h: bool = h;

@@ -50,7 +50,10 @@ export type DeckRim = { angle: number; stops: { color: string; at: number }[] };
 export type DeckShadow = { y: number; blur: number; spread: number; color: string };
 
 export type DeckDrawing = {
-  /** The deck's band, from its top to the screen's foot (safe area in). */
+  /** Actual DOM deck bounds in the same viewport coordinates as PageBox. */
+  x: number;
+  y: number;
+  w: number;
   h: number;
   /** The page's bottom inset: the deck row, or the strip, and the safe area. */
   inset: number;
@@ -484,6 +487,9 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
   const pill = bar.querySelector<HTMLElement>("[data-deck-pill]");
   if (pill && shown(pill)) hits.push({ ...rel(pill.getBoundingClientRect(), o), seat: -1, swipe: true });
   return {
+    x: o.left,
+    y: o.top,
+    w: o.width,
     h: o.height,
     // BrowserPane clips the native frame above this deck. A second
     // contentInset would shorten/pad the document twice.
