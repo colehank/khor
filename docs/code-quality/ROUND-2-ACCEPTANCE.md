@@ -43,7 +43,7 @@
 
 ## 实际执行顺序
 
-当前Rootf1bde774；28项纯reader、完整30项Find worker与原AI4桌面/窄屏深浅4组在df0d实际通过并独审，后继Range anchor/ACP迁移已整合、消费待验；R1运行代次5exact在Root4dc实际全绿，恢复组件8父＋2受控Python helper在f1实际通过。尚在实现而非仅剩验收：跨页query/whole-part copy、真实文字点和恢复事务仍需完成。旧Read62914完整通过，完整ACP74275仍false；Recovery98901的13项只证明受控transport生产界面。来源、原失败及准入以STATE为准。
+当前Rootf1bde774；28项纯reader、完整30项Find worker与原AI4桌面/窄屏深浅4组在df0d实际通过并独审，后继Range anchor已整合、实际仍待；disclosure short/long实际IO已过，ACP附件/目录迁移实际通过，旧工具/计划视觉探针待最后迁移；R1运行代次5exact在Root4dc实际全绿，恢复组件8父＋2受控Python helper在f1实际通过。尚在实现而非仅剩验收：跨页query/whole-part copy、真实文字点和恢复事务仍需完成。旧Read62914完整通过，完整ACP74275仍false；Recovery98901的13项只证明受控transport生产界面。来源、原失败及准入以STATE为准。
 
 1. H完成真实来源驱动的chunk分组及必要raw/copy/分页消费；S按短row gate与RunKey→provider前reservation→Load/Resume事务→明确恢复/新Shell接线串行关闭既定缺口。两作者分配不重叠源码窗口，固定小片经非作者审后整合。
 2. 接口稳定后一次实际生成/catalog、noEmit/Vite、受影响consumer；再C/Core定向原生，最后同源CLI/GUI生产构建。旧16ee合同不能直接当337当前准入；未受影响的既有Store/A/B与关闭用例不因无关改动全重跑。

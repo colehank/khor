@@ -24,6 +24,7 @@ Root `integrate/round2@f1bde7741d87be13f5543f808e71e81327a912b2` clean；main未
 | 恢复事务组件8项 | Rootf1bde774，57551 terminal0/89.491s；8exact父各1passed/0failed/0ignored，两个原隔离Python helper也各1/0/0。fullmeta/compile及8case共10stage全0；实际Node libtest no-prior V，2333源前后同、env稳、owned空、TMPabsent、单私有程序退役无gzip，已独审。result `6739b540384f28b511dc4beece80093e5a909d97e7900429767f06db9edac0c4`。验证reservation同fd独占、Load新base/旧binding保留、失败不换旧base、未发布运行不写旧代、Attempt纯模型与实际Resume新Note；OS叶未probe、Attempt尚未生产接线，不冒完整S。 |
 | 当前reader | Rootdf0d，原脚本28/28，exit0/0.211s；result `d0a2a8a6fff75e8fffad2573162e7e0aa1b40dd690cf3a0b7def07043e65c560`。 |
 | 当前完整Find worker | Rootdf0d，原脚本30项全通过，exit0/2.946s；result `0d48dc4ba59eb2bc4146234d32eed5d1d761b7a2b1d4a5bafb18c75c21f933c9`。读取/giant/cancel/换源/context/copy组均实际；不是未实现的跨page完整功能。旧8f65 raw fixture失败保留，c478只补真实物理来源事实，未放宽断言。 |
+| 当前disclosure读取意图 | Rootf1，92761 terminal0/10.767s，原Chrome short/long两场景passed/errors[]；真实Source/Reader IO及消费marker由1→展开2→回底3，long真实wheel后请求/消费皆暂停，再回底恢复。own8files/fullsource/env/tools/gen稳，owned空/TMPabsent，已独审。result `96909cf6f96b2169c5674a4c7de077d3cc4139ec69d31367df79ccbf545bc668`，report `1eb7fd3ee61414d20fd1f94b6aac292da7b59aca086c65fb400b027ccf63f9cc`。不冒文字Range/WK/IME/真机；无需重跑。 |
 | 原AI4消费者 | Rootdf0d，63835 terminal0/53.708s，desktop-light/dark、mobile-light/dark全部errors[]；原60断言、队列、点击/默认展开及4场景不变。result `f6c28d80b5dc059d0d7773c17fa072f035204cf1a3b29b7b794762925f9edbe0`，report `c5afceebec9f0f29ee64e8cce5aebb3fbced701dfc67e6cab3ddcad0349a1c75`。source/env/tools/gen稳、owned空、TMPabsent，已独审。真实Chromium受控transport，不冒WK/当前Rust生产者/系统Copy/真手机。 |
 
 最新f1源增量bundle `4177059d190a42ddb2c2ed2f8a677812371595f00169428b958f06547f2a90c8`，18951B，prerequisite aa323，verify0并双盘，见 `evidence/round2/integration/recovery-history-f1bde774`；此前aa323的四片源bundle `2f099967331e5717ccb0497622374a34dc83fba5a297aabbadd1a80f83c74e1d`（24898B）亦已验证保。最新8组件紧凑内盘10文件约838KB，无binary/log镜像。
@@ -34,11 +35,13 @@ Root `integrate/round2@f1bde7741d87be13f5543f808e71e81327a912b2` clean；main未
 
 AI此前13652/76618/73389/71253/57537各false原样保留。实际关闭了三处相关边界：合法SDK chunk误拆、manual disclosure停止canonical读取、pending Ask尾部误收起最新思考。读取意图readingLatest与几何following分别归同一scroll owner；最新canonical body按真实Turn/Gap边界定位。两次导航来自原脚本显式reload，不推断为HMR故障。
 
-旧成功仍按各自范围复用：Store95235真实67,174,400B payload、有界启动；Node60432 13父/7辅助；ACP63174三exact；Recovery98901的13受控transport界面；Read62914完整。完整ACP74275仍false，已审附件/registry现有入口测试迁移待整合与实际全脚本，不称已绿。无关Store/A/B及旧H不因新TS变化重复跑。
+旧成功仍按各自范围复用：Store95235真实67,174,400B payload、有界启动；Node60432 13父/7辅助；ACP63174三exact；Recovery98901的13受控transport界面；Read62914完整。完整ACP原74275 false保。迁移已整合后18947实际完整跑完exit1/120.147s，result `c8c25d6fbfeadd130d9d736f9299c61b370a804f20662b6d4071c6d103b5b7a1`：五附件能力组合、目录四state/registry/import/geometry/idle/press均实际通过；后续四theme×motion的旧工具/计划视觉探针失败，完整suite仍非绿。source/env/gen/tools稳、fixture净、owned空/TMPabsent，已独审。无关Store/A/B及旧H不因新TS变化重复跑。
+
+ACP剩余探针已独立裁决为旧测量位置：main e7与当前Trace逐字相同、AgentTool/Plan状态呈现块相同；旧探针退回外层Trace颜色且找未被AgentTool使用的ToolDot，忽略内层TraceLine/活动SVG和Plan形状/opacity。H在当前shared step固定后只迁测试：真实状态载体的可见非零形状/有效墨/动静状态区别保强，不能用kind图标差或仅data-status当视觉通过；四theme×motion/title/output/diff/defaultopen等保留，不改产品CSS/palette、不删区分要求。若迁后真缺口再NEXT，不预称产品绿。
 
 ## 当前关键路径与队列
 
-1. input四个已审小片与OS事实叶已顺序整合，8组件实际通过；继续InitialNew seed/Attempt每phase真实接线逐片独审。明确恢复offer/action、当前epoch/idempotent token、Pending/Unknown不重启、完整Load新代/Resume实际Note、Shell新SID与旧记录关系仍须接完。RunKey五测试不代表这些已完成。
+1. input四个已审小片与OS事实叶已顺序整合，8组件实际通过；继续InitialNew seed/Attempt每phase真实接线逐片独审。birth采样入口已授最小 `Session::spawn_with_profile_observed<T>(..., FnOnce(Option<u32>)->T)`：platform spawn后、supervisor启动前同步一次，旧spawn/profile委托default observer，ACP wrapper返回Transport与该次结果，原supervisor循环/kill/wait逐字不动。Requests锁保护的后置observe方案已否决，因为exited()错误→Process Drop/reap可绕过terminating；不得恢复该不完整方案。明确恢复offer/action、当前epoch/idempotent token、Pending/Unknown不重启、完整Load新代/Resume实际Note、Shell新SID与旧记录关系仍须接完。RunKey五测试不代表这些已完成。
 2. H已审scroll-compose/真实文字Range anchor＋迟到owner拒收、ACP测试迁移已整合（5ff/1f29/c571/923/237/8d），这些后继浏览器消费仍待实际。跨页query f16ab4bf有非重叠相位阻断，8a3只关闭有限left-prefix反例，整体仍未Root整合；为保原语义，未知头组需找到真实start后沿既有newer API到固定fence有界顺序重走一次，不提前发错误hit，不重复算coverage，无新RPC/完整组map。共享增量paint→query/whole-part流式copy/覆盖结算仍实现中。真实DOM Range多帧及ResizeObserver最终位置待测，卡片bottom不替代文字点。
 3. Node/Core公开接口稳定后一次真正生成/catalog，再完整noEmit/Vite及受影响consumer。现179gen/278assets仍旧255→16ee lineage；新增HistoryEntry.starts_message/record尚未实际再生成，不能冒当前完整types绿。
 4. C/Core受影响定向原生后，最后同源CLI/GUI生产构建。旧GUI48383 Cargo0但来源门拒hash旧资产的false保留；最终仅精确Tauri OUT核身份/SHA/lsof可逆retain，再真实cold。旧合同过期不直接重跑，禁止mtime/fakeprior/弱化V。无当前合格整包GUI。
