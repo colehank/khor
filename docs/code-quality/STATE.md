@@ -4,13 +4,13 @@
 
 ## 当前源码、分工与运行
 
-Root `integrate/round2@326a83298608f374d1c2cc01ec8125bc469c08ce` clean。两作者＋独立reviewer；Root只集成/验证/协调，不开第三实现线。
+Root `integrate/round2@74076e485a8b048dbc13243f79b1a60483b84706` clean。两作者＋独立reviewer；Root只集成/验证/协调，不开第三实现线。
 
-- input独占Node/ACP恢复：known2f已Root整合e313并实际验证；当前在author tree补真实Initialize capability持久事实与caller-stable token窄片，其后同一owner串行做公开home路由/native动作/新Shell。已授权Node lib/live/recovery_attempt/gui_host/必要session_recovery.rs、ACP accessor，后继link/ipc/proto/shell_start/Meta关系；不写Core/TS。能力不提前改旧Meta，绑定同epoch/full native/agent/effective launch；offer不探provider。后继同一≤16KiB文档须区分current execution owner与latest action/result各一份，Join不撤live生产者key，同token结束后仍不重新spawn。generic close旧问题仅NEXT。
-- H独占Core/API/GUI消费：ac953共享serde DTO、e122贡献锚点、e211当前turn夹具均已独审整合。现在并行接Core facade/API/Tauri/TS/DetailPane与私有Recovery动作hook，不新wizard、不改model配置；core recovery.rs及SessionId仅加现ts-rs10元数据（依赖原有，不改锁/版本），GUI只映射home.hex避免平行enum。另一个极小原H测试夹具修正（见下）独立提交，不混产品。Node接口未固定前不真实gen/compile，生成文件不手写。
+- input独占Node/ACP恢复：known2f已Root整合e313并实际验证；5da capability/private stable-token与ad30 execution/action分离已独审并整合c820/4bf（只有源码，未编译/运行）。当前author继续公开home路由/native动作/新Shell。已授权Node lib/live/recovery_attempt/gui_host/必要session_recovery.rs、ACP accessor，后继link/ipc/proto/shell_start/Meta关系；不写Core/TS。能力不提前改旧Meta，绑定同epoch/full native/agent/effective launch；offer不探provider。后继同一≤16KiB文档须区分current execution owner与latest action/result各一份，Join不撤live生产者key，同token结束后仍不重新spawn。generic close旧问题仅NEXT。
+- H独占Core/API/GUI消费：ac953共享serde DTO、e122贡献锚点、e211当前turn夹具均已独审整合。d549薄Core facade已独审整合74076（尚依赖未接齐Node接口，无编译证明）；继续API/Tauri/TS/DetailPane与私有Recovery动作hook，不新wizard、不改model配置；core recovery.rs及SessionId仅加现ts-rs10元数据（依赖原有，不改锁/版本），GUI只映射home.hex避免平行enum。另一个极小原H测试夹具修正（见下）独立提交，不混产品。Node接口未固定前不真实gen/compile，生成文件不手写。
 - reviewer非作者只读审源码/真实结果/Clean Code，无自主runtime；idle用followup_task。源码授权不等于构建授权。
 
-当前Native/browser/App/maintenance槽均 **FREE**；最近browser actual38247完整ACP已terminal0/独审，旧句柄不重poll。以内部 `current-runtime.json` 与实际tool handle为准，不能因观察超时重启，不poll历史terminal句柄。
+当前Native/browser/App/maintenance槽均 **FREE**；最近browser actual28700完整H已terminal0/独审，38247 ACP完整绿亦保。旧句柄不重poll。以内部 `current-runtime.json` 与实际tool handle为准，不能因观察超时重启，不poll历史terminal句柄。
 
 ## 已确认结果与明确限制
 
@@ -26,14 +26,18 @@ Root `integrate/round2@326a83298608f374d1c2cc01ec8125bc469c08ce` clean。两作�
 
 上述原件在 `/Volumes/disk0/Khor/evidence/round2`；内部recovery只紧凑元数据/当前源码，不镜像大日志、截图或程序。旧R1 actual57370五exact、disclosure92761 short/long真实IO/暂停恢复、AI63835四场景、Store95235真实67,174,400B、Node60432/ACP63174/Recovery98901/Read62914各自原范围保持；无关通过未因新TS全重跑。旧失败75482/22391/36944/AI多次false/74275/18947/9255均不回填，详情可追前检查点和原证据。
 
+当前完整H已实际闭合：Roote9 actual28700 terminal0/16.253s，默认原7＋全部Range子场景的8组全过，result `925385c43a3324e79d9e36ddc4cb36716b5218182e7d14cc1f210d77a0be86f0` /report `d6ac8e8688accde4fd602e80a058324022597629e6ba122b579f10b9dfca7a31` /loga4b33f79…2a39c，独审。prefix重排、真实wheel新B胜旧A、512窗尾淘汰后同字点≤2px/原RO+六doubleRAF+120ms全到；当前gesture Clipboard次数/激活/顺序与A→B退休原要求实过，终态OWNER_BARRIER/writes3/rejected2、held null/leases{}。2335源/env/gen/tools与strict清理净，13compact metadata无大镜像。仅受控Chrome生产UI/Worker与API/clipboard内存sink，不冒WK/OSSave/OSClipboard/当前Rustgen/fulltypes；后续只改Core/Node/胶水，不重复未变Reader/Find/ACP/H。
+
 ## 眼前闭环与后续顺序
 
-1. H第5组夹具窄修：仅A/newer且DTO含固定目标source contribution key50000000:0才holdCopy，空tail不消耗flag；不得按clipboard事件arm自证。保原激活/顺序/退休不交付，并限定本次writes+1与本次order起点以免旧copy假过；finally保≤32条order尾/heldKey/heldcursor。独立单script/source审后Root跑当前完整原7+Range prefix/late-input/cap，不重红基线、不重未变pure闭包。e122已保≤512贡献spans、实际DOM48字sample/entry-offset、Worker retire和newer-input ticket；复杂Markdown不可证明时诚实fallback，不冒exact保证。
-2. S3三async Node接口已冻结给H并行source消费：`session_recovery_on(home_hex,&SessionId)->SessionRecovery`；`recover_session_on(home_hex,&SessionId,expected_run:Option<&str>,RecoveryToken)->RecoveryResult`；`new_shell_run_on`同参数→ShellRunResult，Shell要求Some(oldSID)。真实DeviceId peer/resident和本机复核，无显示名/本地回退，offer无写无probe，actions非0RTT。公开稳定token/typed Join/Pending/Unknown/Refused及Shell新SID/default shell/空command/previous-root仍在实现；没有接口完成声明。
+1. H第5组夹具900b已独审整合e9并被上述28700实际通过，不再阻塞；原59083 false保。e122源码与原cap业务红保留因果链，复杂Markdown无法证明source映射时仍诚实fallback，不冒所有情况exact保证。下一步重点是公开S3接线，不扩大新问题。
+2. S3三async Node接口已冻结给H并行source消费：`session_recovery_on(home_hex,&SessionId)->SessionRecovery`；`recover_session_on(home_hex,&SessionId,expected_run:Option<&str>,RecoveryToken)->RecoveryResult`；`new_shell_run_on`同参数再加尾`cwd:Option<&str>`→ShellRunResult，Shell要求Some(oldSID)。先前freeze漏cwd已按原DESIGN-v2目录选择要求纠正，不退成纯拒绝：None仅旧cwd、Some用户明确选新目录（空白不回退home）、raw/effectivecwd绑定token，不改旧A Meta.cwd。共享DirectoryRequired{id:oldSID}返回无spawn且同token持久结果；用户确认目录属于新intent，重新offer epoch/newnonce。74a6纯DTO已独审，Facade/API/Tauri/TS透传修正待集成。真实DeviceId peer/resident和本机复核，无显示名/本地回退，offer无写无probe，actions非0RTT。公开稳定token/typed Join/Pending/Unknown/Refused与Shell新SID/default shell/空command/previous-root仍在实现；prior Unsupported也有显式重新检查（新Init再guard），未知不背景probe；没有接口完成声明。offer现有agent()/devices()会走可能reseed的Store load，已授crates/sync/src/store.rs复用既有读体导出只读read_snapshot，无Lease/create/reseed/cache/flush，稳定性不足Err不内部loop，仅必要现测试，不扩同步治理或重跑64MiB。这是原zero-write offer的必要调用链适配。
 3. H真实入口是DetailPane（SessionContent/MobileSessionContent是文件/浏览器附栏）；复用现onSession/reload/rejoin路径，同SID Opened/Join要重解canonical/control而不是捏新GUI ID，新Shell才开新SID。history先显示，offer迟到按home/id/run拒，动作显式、Pending/Unknown不自动重启。
 4. Node/Core接口固定后**一次**实际gen/catalog/noEmit/Vite；现179gen/278dist仍16ee旧来源，新HistoryEntry字段和Core恢复DTO未真实生成。之后受影响C/Core原生及同源CLI/GUI生产构建。旧GUI48383资产来源门false保，最终仅精确Tauri OUT核SHA/devino/lsof可逆retain后真实cold，不mtime/fakeprior/放宽V（详R2-V）。
 5. 完整S的真实host正常Quit重挂/死后显式恢复/断线/新Shell；E真实Mac IME/路径拖选/全入口草稿/保存失败取消/最后键→正常OSQuit；长历史系统Save/Copy；桌面W/C/G/Q/B组合和真手机viewport/候选/键行/滑删仍未完。私有fixture，不动真实用户会话/模型API；真人前重新确认方便，旧回答已失效。
-6. 旧卡死R2-001和原网址WK连接拒绝R2-016未证修复；不能以其它绿替代，若最后仍无法证明须用户明确接受延期。新独立问题只NEXT，保34项不缩目标。此前3–5工作日是粗估，不再说仅剩验收。
+6. 旧卡死R2-001和原网址WK连接拒绝R2-016未证修复；不能以其它绿替代，若最后仍无法证明须用户明确接受延期。新独立问题只NEXT，保34项不缩目标。用户本次询问后当前估计仍3–5工作日完成完整目标，下一可测Lab6–10小时；真人与手机环境等待另计，仍有实现工作。
+
+只读真机准备核查：devicectl 2026-10-31 inventory exit0，iPhone15ProMax/iOS27.0 build24A5390f已paired、developer mode enabled，但tunnel unavailable/DDI false；本机Xcode26.6/17F113。未安装/启动App、未下载SDK/DDI，不能把SDK当唯一原因。原件platform/device-readiness-20261031/211411-*；真正验收前准备当前包并重新确认用户方便。
 
 ## 存储与恢复
 
