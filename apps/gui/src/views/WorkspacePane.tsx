@@ -1147,15 +1147,10 @@ export function WorkspacePane({
         // strip's right end is the way to its source (`fileTail`).
         edit: !isDiff && key === file ? readFirst.item : null,
         menu: tabMenu(key),
-        // **The third seat** (UX-33): ✓ save while something is typed in
-        // it, ↻ read from the disk again when clean. A tab not in front is
-        // brought to the front first — the save is made by the view that
-        // holds the buffer (`wantSave`), the read by the mounted view.
-        // **The file saves itself now** (save-a): ✓ is the extra
-        // confirmation — while something is typed and not yet written it
-        // writes at once; for a moment after it lands (or after ⌘S on a
-        // file with nothing to write) it is 已保存, a state and not a
-        // button; then the clean file's ↻ again (UX-33's 「和来源对齐」).
+        // Save confirms the pending draft; its landed state is briefly ink.
+        // A tab not in front is brought forward before saving (`wantSave`).
+        // Clean files follow the existing watcher; explicit reread stays in
+        // the workspace menu rather than a permanent strip button.
         act: isDiff
           ? undefined
           : drafts.has(key)
@@ -1172,14 +1167,7 @@ export function WorkspacePane({
               }
             : roadOf(machine, key).confirmed
               ? { kind: "saved" as const, label: gui.file_saved, onPress: () => {} }
-              : {
-                kind: "reload" as const,
-                label: gui.file_reread,
-                onPress: () => {
-                  setFile(key);
-                  setReadAt((n) => n + 1);
-                },
-              },
+              : undefined,
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
