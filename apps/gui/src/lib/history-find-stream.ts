@@ -3,11 +3,13 @@ import type { HistoryRecordRef } from '@/gen/bindings/HistoryRecordRef';
 import type { historySource } from './history-source';
 import { appendHistoryEntry, historyReferenceBetween, type HistoryItem, type HistoryPaintStep } from './history-paint';
 import { literalMatcher, findSnippet, type FindHit, type FindQuery } from './history-find-model';
+import { recordStartsMessage } from './history-find-record';
 
 /** These are source-validated cursors and exact opaque contribution keys,
  * scoped to this query's one Worker/historySource lifetime, never persisted. */
 export type HistoryReplay = { before: string; forward: boolean; first: string; endBefore: string; last: string; ceiling: {entry:string|null;end:number|null;unknown:boolean}; completeStart: boolean };
 type IO = Pick<ReturnType<typeof historySource>, 'page'>;
+type ReplayIO = IO & Pick<ReturnType<typeof historySource>, 'record' | 'project'>;
 const utf8 = new TextEncoder();
 export class HistoryReplaySourceChanged extends Error {
   constructor(){super('history replay source changed');}
@@ -85,7 +87,7 @@ function retire(out: HistoryPaintStep[]): HistoryPaintStep[] | null {
 export type ReplayCoverage = {complete: boolean; unsearched: number};
 const stopped: ReplayCoverage={complete:false,unsearched:0};
 type Fragment = {group: string; first: string; entry: string; pageBefore: string; text: string};
-export async function* historyReplayText(range: HistoryReplay, io: IO, whole = false): AsyncGenerator<Fragment, ReplayCoverage> {
+export async function* historyReplayText(range: HistoryReplay, io: ReplayIO, whole = false): AsyncGenerator<Fragment, ReplayCoverage> {
   if(whole && range.ceiling.entry===null && range.ceiling.end===null)return {complete:false,unsearched:0};
   let page = checkedReplayPage(await io.page(range.before, range.forward));
   let out: HistoryPaintStep[] = [], previousRecord: HistoryRecordRef | null = null;
@@ -107,8 +109,22 @@ export async function* historyReplayText(range: HistoryReplay, io: IO, whole = f
     for (const entry of entries) {
       if (entry.key === range.first) started = true;
       const record = entry.record ?? null;
-      if (started && !(entry.key===range.first && entry.starts_message)
-        && page.references.some(reference => !record || historyReferenceBetween(reference,previousRecord,record))) complete = false;
+      if (started && !(entry.key===range.first && entry.starts_message)) {
+        const gaps = page.references.filter(reference => !record || historyReferenceBetween(reference,previousRecord,record));
+        if (gaps.length) {
+          // A following raw record is not automatically a continuation or a
+          // boundary. Only its actual projection may prove a new message. Do
+          // not read past the captured physical ceiling to obtain that proof.
+          const first = gaps.reduce((left,right) => right.start < left.start
+            || (right.start === left.start && (right.item ?? -1) < (left.item ?? -1)) ? right : left);
+          if (whole && selected && complete && reachedLast && previousRecord && record
+            && first.start >= previousRecord.end && first.end <= record.start
+            && range.ceiling.end !== null && first.end <= range.ceiling.end
+            && await recordStartsMessage(first,page.newer,io))
+            return {complete:true,unsearched:0};
+          complete = false;
+        }
+      }
       previousRecord = appendHistoryEntry(out,entry,page.references,previousRecord);
       const last = out.at(-1);
       if(started && entry.frame.kind==='capture_gap')complete=false;
@@ -138,7 +154,7 @@ export async function* historyReplayText(range: HistoryReplay, io: IO, whole = f
   }
 }
 
-export async function* replayHistoryQuery(range: HistoryReplay, query: FindQuery, io: IO): AsyncGenerator<FindHit, ReplayCoverage> {
+export async function* replayHistoryQuery(range: HistoryReplay, query: FindQuery, io: ReplayIO): AsyncGenerator<FindHit, ReplayCoverage> {
   const fragments = historyReplayText(range,io);
   let group = '', tail = '', matcher = literalMatcher(query);
   let locations: {from:number;to:number;entry:string;before:string}[]=[];

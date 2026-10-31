@@ -79,9 +79,7 @@ function recordReader(io: IO, ref: HistoryRecordRef) {
 /** A single record search is resumable at each hit. No complete raw JSON,
  * decoded body, or unbounded hit list is assembled in the worker. */
 export type RecordTextPart = { entry: string; part: number; before: string; record: HistoryRecordRef; complete: boolean; text: AsyncIterable<string> };
-export async function* recordText(
-  ref: HistoryRecordRef, before: string, io: IO,
-): AsyncGenerator<RecordTextPart, boolean> {
+async function projectRecord(ref: HistoryRecordRef, before: string, io: IO) {
   if (!Number.isSafeInteger(ref.start) || !Number.isSafeInteger(ref.end) || ref.start < 0 || ref.end <= ref.start
     || utf8.encode(ref.cursor).length > 4096 || utf8.encode(before).length > 4096)
     throw new Error('invalid history search record range');
@@ -94,11 +92,11 @@ export async function* recordText(
   const lexer = recordScaffold(ref.start, crypto.randomUUID());
   for (let from = ref.start; from < ref.end;) {
     const bytes = await read(from, ref.end);
-    try { lexer.push(bytes, from); } catch { return false; }
+    try { lexer.push(bytes, from); } catch { return null; }
     from += bytes.length;
   }
   let scaffold: ReturnType<typeof lexer.finish>;
-  try { scaffold = lexer.finish(ref.end); } catch { return false; }
+  try { scaffold = lexer.finish(ref.end); } catch { return null; }
   // Only retain known physical boundaries supplied by the source (or its
   // contiguous-fragment join). Valid JSON alone never proves a JSONL boundary.
   if (!ref.missing_start && !ref.missing_end) {
@@ -120,7 +118,7 @@ export async function* recordText(
   if (encoded.length > 1) throw new Error('history projection exceeds its encoded input budget');
   if (encoded[0]?.kind === 'json_string' && !encoded[0].parsed) {
     const prepared = await prepareEncodedInput(scaffold, encoded[0].pointer, read, account);
-    if (!prepared.complete) return false;
+    if (!prepared.complete) return null;
     if (prepared.scaffold !== scaffold) {
       const normalized = await project(prepared.scaffold.json);
       // The original parser decides whether an encoded value is accepted
@@ -131,6 +129,26 @@ export async function* recordText(
       }
     }
   }
+  return { record, read, account, scaffold, projected };
+}
+
+/** A complete physical record can prove the next body starts here without
+ * decoding its text. Unknown/partial records cannot end a selected message. */
+export async function recordStartsMessage(ref: HistoryRecordRef, before: string, io: IO): Promise<boolean> {
+  if (ref.missing_start || ref.missing_end) return false;
+  const prepared = await projectRecord(ref, before, io);
+  if (!prepared || !prepared.projected.complete) return false;
+  const entries = ref.item === null ? prepared.projected.entries
+    : prepared.projected.entries.filter(entry => entry.key === `projection:${ref.item}`);
+  return entries[0]?.starts_message === true;
+}
+
+export async function* recordText(
+  ref: HistoryRecordRef, before: string, io: IO,
+): AsyncGenerator<RecordTextPart, boolean> {
+  const prepared = await projectRecord(ref, before, io);
+  if (!prepared) return false;
+  const { record, read, account, scaffold, projected } = prepared;
   let complete = projected.complete;
   const entries = ref.item === null ? projected.entries
     : projected.entries.filter((entry: HistoryEntry) => entry.key === `projection:${ref.item}`);

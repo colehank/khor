@@ -116,6 +116,37 @@ test('clipped canonical message parts reconstruct through their bounded source s
   await assert.rejects(historyFindAction('copy',unknownHit,{page:async()=>unknownTail}),error=>error.code==='incomplete',
     'reaching the source fence does not complete an unprojected raw tail');
 });
+test('whole-part copy proves a following raw message boundary instead of copying an incomplete prefix', async () => {
+  const body='H_MAC_ROW_1199', bytes=new TextEncoder().encode(JSON.stringify({body:'RAW_NEXT_'.repeat(8192)}));
+  const ref={start:100,end:100+bytes.length,item:0,cursor:'before-raw-next',missing_start:false,missing_end:false};
+  const small={...text('small-message',body),record:{start:0,end:100,item:0,cursor:'before-small',missing_start:false,missing_end:false}};
+  const later={...text('later-message','AFTER'),record:{start:ref.end,end:ref.end+100,item:0,cursor:'before-later',missing_start:false,missing_end:false}};
+  const source=rawRef=>({...page([small,later],[rawRef]),older:null});
+  const hit=historyFindBatch(query(body)).page(source(ref)).hits[0];
+  assert(hit.replay,'the actual normal-page hit uses whole-part replay');
+  const io=(startsMessage=true,rawRef=ref)=>({
+    page:async()=>source(rawRef),
+    record:async(_cursor,from)=>{
+      const chunk=bytes.subarray(from-ref.start,Math.min(bytes.length,from-ref.start+64*1024));
+      return {offset:from,data:Buffer.from(chunk).toString('base64'),next:from+chunk.length<ref.end?from+chunk.length:null};
+    },
+    // Fixed producer facts: the same scaffold selects either a complete
+    // native message or an SDK continuation, without a second normalizer.
+    project:async(_cursor,start,end,scaffold)=>({record:{...ref,start,end},transforms:[],complete:scaffold!==null,
+      entries:scaffold===null?[]:[{...text('projection:0',JSON.parse(scaffold).body),starts_message:startsMessage}]}),
+  });
+  assert.deepEqual(await historyFindAction('copy',hit,io()),{text:body,from:0,complete:true},
+    'RAW_NEXT_MESSAGE_BOUNDARY: a real next native start completes the preceding 14-byte message');
+  await assert.rejects(historyFindAction('copy',hit,io(false)),error=>error.code==='incomplete',
+    'an unproven SDK continuation must not certify the prefix as a whole body');
+  await assert.rejects(historyFindAction('copy',hit,io(true,{...ref,missing_start:true})),error=>error.code==='incomplete');
+  await assert.rejects(historyFindAction('copy',hit,io(true,{...ref,missing_end:true})),error=>error.code==='incomplete');
+  await assert.rejects(historyFindAction('copy',hit,{...io(),record:async()=>null}),/cancelled/);
+  await assert.rejects(historyFindAction('copy',hit,{...io(),page:async()=>({...source(ref),reset:true})}),error=>error.code==='source_changed');
+  const changed=io();changed.project=async()=>({record:{...ref,start:ref.start+1},entries:[],transforms:[],complete:false});
+  await assert.rejects(historyFindAction('copy',hit,changed),/changed its requested range/);
+
+});
 test('page seam preserves the actual non-overlap matcher phase', async () => {
   const chunk=(key,value,start,end)=>({...text(key,value),starts_message:false,
     record:{start,end,item:0,cursor:`before-${start}`,missing_start:false,missing_end:false}});
