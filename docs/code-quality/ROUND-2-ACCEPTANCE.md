@@ -1,6 +1,6 @@
 # 第二轮验收总账
 
-本页是34项的验收索引，不是完成声明。最新源码/所有权/运行槽见[STATE](STATE.md)，用户决定见[原反馈](ROUND-2.md)及专项文档。编表基线为4f7e732e，最新冻结HEAD见STATE；没有当前统一App的实际通过证据。源码实现、pure/DOM、Rust定向测试、真实WK、真人IME与手机触屏各自证明自己的范围。
+本页是34项的验收索引，不是完成声明。最新源码/所有权/运行槽见[STATE](STATE.md)，用户决定见[原反馈](ROUND-2.md)及专项文档。编表基线为4f7e732e，当前Root d4b835ba与normal三产物actual56763来源合格；实际行为按各行限定范围及STATE最新段，不能由构建推导全项通过。源码实现、pure/DOM、Rust定向测试、真实WK、真人IME与手机触屏各自证明自己的范围。
 
 ## 逐项最小完成证据
 
@@ -28,7 +28,7 @@
 | R2-020 | W | 独立commit标签 | 当前分支完整历史按需加载，左栏原位返回文件；单击预览/双击固定，各commit独立，标题正文/展开/阅读位置保持。 | 17f实际80153：当前分支71提交按40+31加载；70双击固定、69及00单击预览各自独立，70保留；完整标题正文、文件默认展开/收起及无多余返回均观察。该组件后续源码未变，复用此实际证据。 |
 | R2-021 | W | 菜单单滚动 | 长变更列表只一根滚动条，跳转保持焦点和阅读位置。 | 17f实际80153：39变更文件的真实jump菜单仅一根内部滚动条；跳至35后后续AX与截图保持下方阅读位置。组件后续源码未变，复用此实际证据。 |
 | R2-022 | G/W | diff固定标题 | 标题与标签栏一体，无细分割线；滚动时正文自然隐去，标题不被穿透。 | 874实际91690：39文件diff下深浅及三材质代表组合可读，标签与固定标题无分割线；后续材质变化保持file06/07。首次dark→light位置file05→06原因未知，不冒精确像素稳定；目录建议材质/其他sticky入口另待。 |
-| R2-023 | W/E | 实时更新与草稿 | 树、当前文件和Git外部变化及时更新；组词/脏草稿不被覆盖，迟到结果按身份拒收。 | watch分层Core/CLI/DOM已过；当前App实际文件变化待测。 |
+| R2-023 | W/E | 实时更新与草稿 | 树、当前文件和Git外部变化及时更新；组词/脏草稿不被覆盖，迟到结果按身份拒收。 | 当前d4b actual5794真实同打开文件V2自动刷新、expanded tree空目录建删、private branch+path-only commit自动刷新；0555真实os13保exactdraft，外写V3保稿，0755后原CAS冲突→显式Save mine→22B原文落盘。normalQuit/source-env/ALL-TMP净且独审，其他dirty/index保；不冒IME/远端FS。 |
 | R2-024 | G | 共用固定区域材质 | 统一连续渐隐；最上正文完全隐藏，窗口底按不透明/半透明/毛玻璃独立变化，阅读位置稳定。 | 874实际91690已验39文件diff共用固定标题及六外观组合；后续材质/Light→Dark阅读锚点保。目录建议、表格/会话分组与手机仍待，不把diff代表场冒全覆盖。 |
 | R2-025 | M | 候选连续跟手 | 三入口方向一致，连续拖动/循环/回中暂停/松手吸附符合参考Lab，触屏不提前直跳。 | 生产DOM/共用引擎已过；真手机手感待测。 |
 | R2-026 | M | 自定义键行 | 编辑、保存/重开组合键及序列；焦点/修饰键/隔离试按正确，使用既有键行外观。 | pure/UI/真实PTY已有证据；手机软键盘待测。 |
@@ -38,7 +38,7 @@
 | R2-L01 | S | 取消retry deadline | 原ignored exact不改时限/断言；真实匹配CLI worker启动不早于due，fresh run不饿死，进程均reap。 | 当前666 Node actual producer＋原exact实际1/0、fresh不饿死/旧retry不早于due；原040唯一原因未知。 |
 | R2-L02 | S/B | 原生关闭交接 | 原late-close与close-reopen两失败case实际WK通过；旧owner退出、新owner保活、最终handle全空。 | 666真实GUI原两case及正常CUA退出/全清理已通过并独审；首收尾超时仍未知，不扩原四case。 |
 | R2-L03 | E | 所有入口草稿退出 | workspace、session内文件与机器文件同一保护规则；保存失败可取消退出，最后一键保存后正常OS Quit。 | 共用owner已有定向证据；当前0f606真实Workspace88179（含SettingsCancel）、Session81735、Machine33349各自Savefailure/Cancel/恢复权限/最后字符立即Quit已通过并独审，正常退出及TMP净；仅Root ASCII，真实系统IME/真人交互另列R2-027。 |
-| R2-L04 | V | 原生构建来源 | 实际当前GUI/CLI来源完整、环境/ACL目录/生成文件规则守住反例；旧失败不回填。 | 当前fb01 normal3producer20610原V及来源独审通过，当前App B/C/W均用该产物；iOS89221只sim lib check0，不冒exe/App运行，原strictcleanup false与0B冷留存分列。 |
+| R2-L04 | V | 原生构建来源 | 实际当前GUI/CLI来源完整、环境/ACL目录/生成文件规则守住反例；旧失败不回填。 | 当前d4b normal3producer56763五phase0/285.445s原V与来源独审通过，actual85579 fulltypes/Vite/188gen278assets同；GUI73da/CLI9deb/bridgee60c。G68689和W5794当前App正常Quit/ALL-TMP净；iOS89221仅既有sim lib check0，不冒当前physical App，原strictcleanup false与0B冷留存分列。 |
 | R2-L05 | V | 正常退出与持久宿主 | 实际正常OS Quit后同私有host认证重连并读旧marker，随后显式清理自有fixture，无信号冒正常退出。 | focused真实App/重连/清理已通过并独审；不冒完整S恢复或E输入。 |
 
 ## 实际执行顺序
@@ -53,3 +53,11 @@
 6. 逐项精确证据与最终完成审计。R2-001/016若仍无原现场/当前复现则保未证修复，只有用户明确接受延期才调整范围。新独立问题仅NEXT-ROUND。
 
 每包仍须有非作者Clean Code审查：领域名称、唯一状态owner、IO与纯规则边界、取消/失败清理、迟到结果身份、删除被替代分支，以及只解释必要原因的注释。不得以零注释、格式化数量或新增测试数量当完成目标。
+
+
+## 2026-10-31 14:05 最新有限闭环
+
+- G目录建议：原50409 Light三材质与3807 Dark三材质宽窗事实保留；3807在904窄窗候选不可见是真红。单PathField共享overlay几何修复d4b835ba后，actual68689新当前App真实1720→904三候选完整可读、EditorS过滤/窄窗点击补全child/回1720重新对齐/Return/外点闭合，正常CmdQ0/source-env/ALL-TMP净，非作者尾核通过。result7eaecd66…5eca7/UIobs45c687ea…67d7。只闭该窄建议问题，不冒其它sticky或手机。
+- W023上述actual5794 result37f22150…c75e8/UIobsd18dfe0a…8f87f已独审真实尾核。Root最初typeText漏下划线原因未分类，之后正常native Paste建立exactaccepted draft才测外写保护；不以该场证明中文/按键输入可靠。
+- C009 actual49137：已创建真实非login sh/uniqueSID760939224e72f59b，原guard正向观察host84929/child84930；blankline正常exit0/原两PID组无/旧rows保，App正常CmdQ0/ALL-TMP净。但wrappedfile row普通点击和OSC8普通/Cmd未见打开目标，未建立正向hover控制，故链接业务未闭合，需区分CUA坐标事件与产品处理，不先猜唯一因果。result20e5ca5f…d9fc5/UIobsfa4f5cfb…03b46。
+- R001按原限定调查要求可交付“调查完成、原卡死唯一因果未知/未证修复”；R016当前真实WK路径/失败分类已有证据，历史唯一因果仍未知。不得新增必须用户接受unknown的审批前置，亦不得冒已修或无限扩调查。
