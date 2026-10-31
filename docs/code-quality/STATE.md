@@ -4,7 +4,9 @@
 
 ## 当前源码、协作与运行
 
-最新874c状态：独审的W019 `ed18413c`→Root `b9298367`移除clean常驻reload；独审的actualChild owner `5a8d2596`→Root `874c7c68`预先建私有waiter、线程内Command→Child→wait，channel只传PID/ioError，未知结果保Unknown不重启。仅三源变化；下方17f表是历史基线，**9014三程序及原严格proof属于17f，不能对新874c盲require或冒当前程序**。当前188gen按精确12delta复用，874c fullnoEmit＋新Vite actual21839终态0/15.931s并独审；Node唯一waiter exact actual15850正在编译（唯一native槽），不重8＋2或已过H/Find/ACP。新的normalCLI/bridge/defaultGUI三producer尚未执行，等fresh frontend pin与独立exactOUT留存准入。无App，human fresh availability pending。
+最新874c状态：W019移除clean常驻reload与exact Child waiter修复均已独审并整合，Root874c clean。当前fulltypes＋Vite actual21839终态0；新waiter exact actual15850终态0/93.596s（1父/0helper），真实正常与receiver离开均reap。normal CLI/bridge/default GUI三producer actual38590终态0/333.899s，五phase全0、真实no-prior与bundle/来源均独审、source2340/env/gen188/assets278稳定、cleanup[]/TMP absent。三canonical仅外盘各一份，新GUI cd42b929…fa827，CLI7ace6db8…d610，bridge4378e065…183f；9014旧程序属于17f，不能冒当前程序。所有槽FREE；下方旧表/运行语句为历史，最新实际以本段及内部current-runtime.json为准。human fresh availability pending。
+
+最新公开Unsupported actual33238终态2/9.473s：第一次Refused后真实host/provider/PID与group全部消失且bridge仍活，原5s门已过，僵尸修复实际caller第一段成立。第二次显式recheck在confirm_refused line491的已采样provider executable资格assert停止：记录为`(Python)`，实际receipt Exited0；当前Initialize3/New1/Load0/Resume0/Prompt1，未到最终4与第二次重放，不宣整场通过，也未判为产品新故障。原false、cleanup EPERM及一why保留；remaining[]/source与parentenv稳定。input与非作者reviewer只读核对采样身份，不自动重跑、不放宽信号资格/5s退出门。
 
 Root `integrate/round2@874c7c685e408a0ac4ea0122541375431af3350e` clean。两作者＋独立reviewer；Root负责集成/实际验证/协调，不开第三产品实现线。作者在责任域内可最小适配必要调用点，跨域/共享语义改变先协调；新独立问题仅NEXT，不扩大本轮34项。
 
@@ -115,3 +117,10 @@ Root流式生成唯一native Claude fixture 67,110,120B/53,262records/SHA771284e
 H＋非作者契约核：原R2-H/CONTINUITY锚点是同实例跨页/淘汰及切换取消，没有跨session/App重开bookmark承诺；ObservedSession卸载→ChatView installHistory清空→reader.start(undefined)从tail解释A-B-A位置重置。跨mount轻量阅读bookmark只入NEXT，不扩新持久cache/paint专项。已核focused前台读取继续可操作；原paint观察保unknown，不投机改码。
 
 当前874c前端21839 result54b52d0136672b2ace1bcb0cc5e7692c4cd8c809b58346b66f0e741c6e139d7a/receipt3b6d6598321015d995e819857fdc1aeb20b218f7b55405301028eb7761fade6c：fulltypes0/Vite0、188gen原dict同/278新dist实同/source2340/env/tool/helper稳、无forced/owner/TMP净；独审。只证明当前前端与已解释生成复用，不冒新Rust或App通过。
+
+
+## 2026-10-31 当前构建收口及进度估计
+
+38590实际三producer原result `de6af8996aaa292e8707f084937d2c94770c34f29f79ea37399b862e8db0422a`；当前GUI OUT新inode36356585，283file逐SHA同proof。前置exact旧OUT 283file/6,603,040B仅同盘rename，新旧inode不同，retention receipt `20b1549eb8ac720386b8dbcbc983e98ba943904a085cc44e48421ab8c2db2344`。所有原V与guard未弱化；新Mac adapter actualpins已非作者核对，尚未App。当前公开Unsupported33238原scene `930687cbf9541576adf089c26af15c9ffa459cc9a0406927489cf78f15c7c2df`保false。Shell首个有限A/B场已source准备，offline仍待，不复跑已证Load/Resume业务。后继依次是Unsupported最小收口、Shell/精确remote-home离线、当前真实Mac三文件owner/IME/路径选择与退出、手机、34项最终审计。新独立问题仍仅NEXT。
+
+向用户报告：实现收尾、整轮未完成；按已知剩余验收与必要修复估计2–3工作日，真实手机连接恢复/真人可用性影响全量结束，非完成承诺。实际df系统13GiB、外108GiB；继续保留内10/外20GiB加显式峰值、单target/唯一重型槽，不新增完整二进制副本或内部payload。
