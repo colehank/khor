@@ -4,9 +4,13 @@
 
 ## 当前源码、协作与运行
 
-最新874c状态：W019移除clean常驻reload与exact Child waiter修复均已独审并整合，Root874c clean。当前fulltypes＋Vite actual21839终态0；新waiter exact actual15850终态0/93.596s（1父/0helper），真实正常与receiver离开均reap。normal CLI/bridge/default GUI三producer actual38590终态0/333.899s，五phase全0、真实no-prior与bundle/来源均独审、source2340/env/gen188/assets278稳定、cleanup[]/TMP absent。三canonical仅外盘各一份，新GUI cd42b929…fa827，CLI7ace6db8…d610，bridge4378e065…183f；9014旧程序属于17f，不能冒当前程序。所有槽FREE；下方旧表/运行语句为历史，最新实际以本段及内部current-runtime.json为准。human fresh availability pending。
+最新Root `integrate/round2@0f606225ff669a5394ec68bd2fca7b4019a05841` clean。L03实际业务红44266已独立核实：已接纳失败草稿、OS13保存错误后原生CmdQ仍退出。H05e058a0两叶源审通过→Root0f606225精准整合：显式Quit菜单走main show/focus/close与原草稿门；原CloseRequested提前关闭aux的块延后main Destroyed，Cancel保Settings/code/overlay；无main时只逐窗guarded close，无强exit/新状态/RPC/通用关闭重构。尚未编译/真实修复绿，原44266保红。当前新同源normal三producer actual37775正在build-cli（唯一native槽，metadata已过），旧874c程序/proof不冒当前Root；TS/DTO/生成器未改，原188gen278dist/3b6前端只按exact2Rust叶差复用，不重未变矩阵。
 
-最新公开Unsupported actual33238终态2/9.473s：第一次Refused后真实host/provider/PID与group全部消失且bridge仍活，原5s门已过，僵尸修复实际caller第一段成立。第二次显式recheck在confirm_refused line491的已采样provider executable资格assert停止：记录为`(Python)`，实际receipt Exited0；当前Initialize3/New1/Load0/Resume0/Prompt1，未到最终4与第二次重放，不宣整场通过，也未判为产品新故障。原false、cleanup EPERM及一why保留；remaining[]/source与parentenv稳定。input与非作者reviewer只读核对采样身份，不自动重跑、不放宽信号资格/5s退出门。
+此前874c当前生成/前端21839、waiter15850、三producer38590已实际过且独审；只支持各自当时来源与范围。所有实际运行现均终态，槽FREE。最新Offline27250在同ticket pair Bootstrap pending HTTP400前置停止，未seed，不当离线产品回归；input按实际durable ticket/nonce语义source准备唯一completion continuation，原60s总界，不新ticket/nonce/通用重试。其前94947真实Offline/Unknown与原meta无新行的部分证据保；完整return仍待。
+
+最新公开Unsupported完整actual4303终态0/6.260s：当前874c/normal38590，初次New、提交原文、实际旧provider退出、第一次不支持恢复Refused、同payload重放、fresh epoch/nonce显式重查Refused、第二次同payload重放与旧Meta/binding/raw不变均已到。两次实际host/provider及ANY同PID/组在原5s内全消失，bridge期间仍活；最终Initialize4/New1/Load0/Resume0/Prompt1，noforced/cleanup[]/remaining[]/TMP absent，source与parentenv稳定。原result `2e464e00d861bdf6751a06c094a52c36a464d0516d67898a84ccec431c7a5d43`，scene `78fd7f4ea17e47dea857c4225326cdd383b2e8c472ca70cbd1111f2b501f8d10`；非作者实际尾核已通过。只证该真实Core/CLI私有fake-peer场，不冒Shell/offline/App。
+
+33238旧false保留：第一次Refused实际退出已过，显式重查在历史sample `(Python)`路径资格止；实际received Initialize4，旧method-counts3是早prefix。source2只在只读Exited资格把无路径ps展示记Unknown/signalfalse，保绝对路径冲突拒绝、host/parent/group/token/run/sameTransport收据、原ANY PID/group含Z的5s门；positive signal门逐字未改。原why/EPERM/false保持，不据丢失路径文本猜exec变化。
 
 Root `integrate/round2@874c7c685e408a0ac4ea0122541375431af3350e` clean。两作者＋独立reviewer；Root负责集成/实际验证/协调，不开第三产品实现线。作者在责任域内可最小适配必要调用点，跨域/共享语义改变先协调；新独立问题仅NEXT，不扩大本轮34项。
 
@@ -124,3 +128,31 @@ H＋非作者契约核：原R2-H/CONTINUITY锚点是同实例跨页/淘汰及切
 38590实际三producer原result `de6af8996aaa292e8707f084937d2c94770c34f29f79ea37399b862e8db0422a`；当前GUI OUT新inode36356585，283file逐SHA同proof。前置exact旧OUT 283file/6,603,040B仅同盘rename，新旧inode不同，retention receipt `20b1549eb8ac720386b8dbcbc983e98ba943904a085cc44e48421ab8c2db2344`。所有原V与guard未弱化；新Mac adapter actualpins已非作者核对，尚未App。当前公开Unsupported33238原scene `930687cbf9541576adf089c26af15c9ffa459cc9a0406927489cf78f15c7c2df`保false。Shell首个有限A/B场已source准备，offline仍待，不复跑已证Load/Resume业务。后继依次是Unsupported最小收口、Shell/精确remote-home离线、当前真实Mac三文件owner/IME/路径选择与退出、手机、34项最终审计。新独立问题仍仅NEXT。
 
 向用户报告：实现收尾、整轮未完成；按已知剩余验收与必要修复估计2–3工作日，真实手机连接恢复/真人可用性影响全量结束，非完成承诺。实际df系统13GiB、外108GiB；继续保留内10/外20GiB加显式峰值、单target/唯一重型槽，不新增完整二进制副本或内部payload。
+
+
+## 当前Shell、桌面与文件owner验收
+
+Shell source2 actual9775终态0/8.756s，原aggregate `c68daa86a1e776a5868abd0a866710cdbbf509450c5d1803660852e0fd536c3e`、scene `2aafdb74c91923b644d4301caf6d175738311941ecc6abbc06f647f924e1b267`，非作者尾核通过。真实devices.me.name/id与执行home精确相同；原A Ready后命令仅一次，目录缺失DirectoryRequired且重放无spawn；用户新cwd/fresh token仅开B，默认/bin/sh/空startup、previous/rootA，live与ended重放均同B；原A五语义文件及marker保持，两真实PTY host/child在原5s全部退出。noforced/cleanup[]/remaining[]/TMP absent、source/env同。旧12290空machine HTTP400原false保，无A；不据缺失responsebody虚构错误文案。source2仅真实设备路由及有界HTTPError正文留证，不改产品。
+
+当前874c GUI actual91690正常CUACmdQ终态0，result `915ac449b7c573586bdac3d7fae643a6715b8807d8c758e9b42639d3f805689c`，非作者盘尾核通过。Root实际确认W019 clean文件无常驻ReadAgain、More重读仍有；真实39file diff在初始match-system暗色实色、Light实色/半透明/毛玻璃及Dark毛玻璃/半透明六状态可读，后续材质和Light→Dark保持file06/07锚点。初暗wheel file05→初Light file06位置差因果未知，无精确像素稳定声明。未验目录菜单/C/E/B/真人IME/手机，不把这场算全部G完成。
+
+WorkspaceRoot70472原结果false/unproven：正常ASCII marker真实保存，parent0500前置后q/CmdQ间未观察已接纳q，原89129 exit0、盘无q；不能推出已证产品末键丢失。退出后的CUA getAX自动重开同bundle90081(defaultenv)，原guard正确发现privatefootprint并失败；Root还原精确privateparent0755，再核90081实际birth/fullpath后正常CUACmdQ关闭，89129/90081现均无PID。原false/临时目录净保。后续**所有CUA AX/screenshot及动作都可能ensure-launch**：预期退出后先外部查实际PID/birth，dead则不能再做CUA观察，不只约束getApp。H确认Save生产链确为父目录.khor-save临时文件→sync→rename，0500合理但本身不证明UI发起写；root-2先实际见草稿/dirty/error再Quit。真人runner原件保，RootASCII不替IME。
+
+Offline当前actual94947是唯一live运行（source2，两个实际私有配对home，无App/build/其它重型）；原300s、31/60s网络和5s退出门不改，不能按观察超时重启。host死亡但provider仍活仍是本轮未验项，不从resident离线推断通过。下一步以实际handle/结果为准。
+
+
+## L03当前真实红与Offline终态（优先于旧live语句）
+
+Offline94947已终态2/39.490s，实际两home配对互见、onlineJoin/replay、executionresident退后原host/provider仍活、exacthome Offline/None及原token Unknown真实到。line163是owner集合增加而非本机row出现：reader meta仍[]；新reader bridge三个后代的用途未明，不能叫新provider或直接宽松noSpawn断言。实际peer Init2/New1其余0；Meta/Attempt末hash/恢复后samepayload尚未走。原false/forcedtrue/EPERM/remoteeventstore part保，remaining[]/sourceenv稳；input＋reviewer源因调查，不自动重跑。当前无live运行。
+
+**当前L03明确产品行为红44266**：current874 defaultGUI实际PID94027/birth10:40:43，Root先AX观察CodeMirror完整R2-WORKSPACE-FAILED-DRAFT及Save按钮；CmdS实际显示.khor-save-草稿 保存失败.md.94027-2 Permission denied(oserror13)。随后仅CmdQ，外部ps证明94027退出，盘仍normalmarker原字节、失败草稿未写；没有postquit CUA/自动重启干扰。原runtime仅正常退出所以terminal0/清理绿，不可冒业务通过；独立business-red.json明确R2-L03失败，原runtime原件不回填。精确private parent已还原0755，TMP absent/owned无。H已授权既定L03最小nativeQuit/draftbridge诊断与修复；修后再3fileowner实际验，不以纯UI测试替代真实CmdQ。仍无main/ship授权。
+
+
+## 最新0f606225、空间与后继
+
+44266根因已源实核：muda macOS Predefined Quit直接NSApplication terminate→LoopDestroyed，绕过tauri close-requested与前端草稿门；原日志无ExitRequested所以仅补该event不够。新两叶只修实际绕过及aux提前close调用点；后继实际先workspace Savefailure/SettingsCancel/末键Save+normalQuit，再Session/Machine原入口，不用pureUI绿盖真实红。旧state中Root874/无实现等语句为历史。
+
+当前代码source小bundle native-quit-0f606225相对874已gitverify0/实际双盘，SHA 5b203c6917daf57b1942ae19fb4412264a7ba5af63b5674043288eab0edd268b，1422B。内盘仅源/紧凑记录，无binary mirror。exact旧17f9014三canonical与oldApp两个hardlink按UID/dev/inode/fullSHA/lsof/所有运行槽FREE后退役，3个唯一payload1,095,612,648B；实际外盘free增加1,095,593,984B。当前874三canonical/新App及用户发布/source/data/原日志proof未动，旧原result SHA未改；receipt maintenance/storage-20261030/retired-round2-9014-20261031.json。df当前系统13GiB、外109GiB；quality约41.27GiB/recovery2.22GiB，仍按20/10GiB保留+显式峰值，单target，不新增大副本/压缩镜像。
+
+
+当前actual37775：production-current-quit-prepared-1，原900total/300phase/8GiB外+2GiB内峰值及20/10GiB保留freshpreflight通过；noApp/gen/types。独立source准备已审，OUT283/6,602,979B经Root全memberattrs/SHA/lsof1及actualownerfree复核后单次同盘rename，retention ba288244642fca295dca0f7edd4365fa7b1e71aef8cfb15eecc73e0c397a11b2；合同c9fbf408…a76e1/producer9021bf16…8145fa/admissionef55d2d6…1a55c。第一次仅因stale App27250 RUNNING记录在mutation前assert停，原OUT/dest/false合同不动，已存独立准备失败；实际27250终态2确认后鲜验成功，不重复留存。当前source_absent是留存时事实，成功GUI后会有新OUT。
