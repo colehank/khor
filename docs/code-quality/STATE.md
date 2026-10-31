@@ -10,7 +10,7 @@ Root `integrate/round2@17f6afb08a6ef207663cabd106012d23424fc434` clean。两作�
 - H独占GUI/Core/shared DTO。生产4baf链已独审整合；Recovery17三测试片743→Root801独审并实际通过；单TS Extract收窄c0→Root4392独审/运行JS字节同，actual fulltypes/Vite通过。H已完成Core709c且actual44421实际通过并独审；CLI f308/current三exact已59004绿并独审；已完成production7e2666＋独立exactOUT前置；实际9014成功且独审，H当前无生产改动/自主runtime，不改产品或运行；7selected包含3自动bin，仅两实际运行程序私有copy，原guard/原V/唯一槽不改。
 - reviewer只读源审与真实尾核，无自主runtime。三方责任卡dirty保留，不全局stage。
 
-当前Native/browser/maintenance均 **FREE**；App槽 **FREE（70988已终态，无活跃运行）**。当前CLI59004/Core44421/Node85431/UI13057/fulltypes48300各自已终态绿且独审；最终同源production三producer已9014实际全绿且独审；未App/业务runtime。最新Node actual85431已终态绿（详情下）；browser13057/fulltypes48300已终态绿且独审；旧句柄不poll。真实状态与后继运行以内部 `current-runtime.json`/实际tool handle优先，不因观察超时重启。已有当前同源GUI/CLI/bridge产物；尚无全范围真实App验收通过声明。
+当前Native/browser/maintenance均 **FREE**；App槽 **FREE（80153桌面与57013协议场均已终态，无活跃运行）**。当前CLI59004/Core44421/Node85431/UI13057/fulltypes48300各自已终态绿且独审；最终同源production三producer已9014实际全绿且独审；未App/业务runtime。最新Node actual85431已终态绿（详情下）；browser13057/fulltypes48300已终态绿且独审；旧句柄不poll。真实状态与后继运行以内部 `current-runtime.json`/实际tool handle优先，不因观察超时重启。已有当前同源GUI/CLI/bridge产物；尚无全范围真实App验收通过声明。
 
 ## 最新实际验证
 
@@ -75,3 +75,17 @@ Source6 actual70988 terminal2/10.478s，原result `3d457f8640646cf737bb32c999246
 后继input准备既定Resume/Unsupported，其后Shell/offline；H准备三真实文件入口的私有Node/App种子。仅Root运行，未邀请真人/未开App。
 
 最终集成非作者Clean Code实审已交：[R2-CLEAN-CODE-17f6](reviews/R2-CLEAN-CODE-17f6.md)，SHAe2fe5dfe…74790fb；映射全部34项到当前源码接缝和既有逐片证据，未发现新的生产准入阻断。ready诊断生命周期与既定generic-close边界留NEXT，平台未知保持未验，不因此宣34项完成。未重复构建或回归。
+
+## 当前真实桌面80153
+
+默认GUI6d8a＋adjacentCLI a4的same-device hardlink私有`.app`，原9014两proof在producer env逐项require并finally还原；实际seed单workspace/只读Claude native alias/device，HOME保持真实、KHOR_HOME/TMP私有。Root CUA绑定exact App PID7238/birth08:52:21。实际normal CmdQ→80153 terminal0，原owned guard noforced/notimeout/groupabsent/remaining[]/footprint[]、source/env稳定。原result `55858feefa17f37407fb4ff950c8e0131fe811c621aca7eb77a9e5bb923c178d`。
+
+真实Cua结果（非作者盘尾核，不冒其亲眼观察）：当前分支71提交40＋31分页，commit70双击固定、69/00单击预览独立；完整提交标题正文、文件默认展开及手动收起；39变动文件菜单仅一个内部滚动条，跳file35后保持末端位置；当前Markdown预览四种公式正确。readonly1201条导入正文实际可打开，超长原文分段；真实Export original record→macOS Save panel→184,613B文件逐字等完整selected raw，原source SHA未改。当前WK实际打开原`https://lan.cibol.khor.cloud/guest`并显示CIBOL访客页，dark首帧黑、进度结束；localhost有效闭端口56757实际Can't connect＋Retry。仅上述有限事实：无完整进度event单调trace、无light/材质/手机/IME/三入口保存失败/Copy声明；原拒绝根因未因此证明。port1受限端口在观察窗pending因果未知，不混成成功。默认web5467被占，App记录bind失败未接管；后续私有实例选显式空闲KHOR_WEB_PORT。
+
+证据在`platform/mac-current-acceptance-data-1/runtime`：ui observations c988c21c…bdab65，verified-os-save b0b4e9a…e432f；正常退出后唯一完整handoff job exact两file经UID/nlink/inode/SHA/lsof复核可逆retain、旧result保原TMP列表，现TMP absent，retained-handoff fe9c7ccb…3aa9。非作者独立盘尾核通过。human新鲜可用性已异步询问，尚未答；不提前开计时场。
+
+## Resume实际57013与最小后续
+
+Source2 actual57013 terminal2/11.257s，仅journal-resume到24 HTTP，Unsupported未运行。原scene result af47e8b8…e8a2f/aggregate false保；error AssertionError、failurecleanup EPERM，remaining[]，自有why与eventstore part留原件，不称清理绿。真实Resume＋同token回放、Init3/New1/Load0/Resume1/Prompt1已到；原raw490B前缀保、早Note实际一次。独立定位唯一失败source line402：要求old whole-page dict相同，而同file合法append后新返回的3record.cursor和page.newer仅更新len490→900/modified，原frame/key/starts/physicalrange/missingflags全同、resetfalse。
+
+Root裁定保原opaque binding/cursor请求逐字不改、旧record完整语义与页reset/边界/原文前缀不增删；新返回opaque cursor允许记录当前文件版本，不解析篡改。不改产品/时限、不弱化payload。input准备source3窄修＋明确失败context，待独审后仅既定两场重验；Load独立generation原whole-page-equal不改。当前无live runtime；H准备首场workspace IME的最小旧profile重用启动器，不新build/框架。
