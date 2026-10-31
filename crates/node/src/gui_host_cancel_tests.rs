@@ -23,6 +23,73 @@ impl Drop for Worker {
 }
 
 #[test]
+fn a_ghost_waiter_reaps_even_when_the_pid_receiver_leaves() {
+    let scratch = Scratch(std::env::temp_dir().join(format!(
+        "khor-ghost-wait-{}",
+        crate::link::fresh_hex().unwrap()
+    )));
+    std::fs::create_dir(&scratch.0).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut normal = Command::new("/bin/sh");
+    normal
+        .args(["-c", "exit 7"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let pid = match spawn_ghost_with_waiter(normal, deadline) {
+        Ok(pid) => pid,
+        Err(_) => panic!("the actual ghost waiter did not report its child"),
+    };
+    while crate::link::pid_alive(pid) {
+        assert!(
+            Instant::now() < deadline,
+            "the waiter left its child unreaped"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    // Abandoning the PID response is the caller-timeout/drop path. The
+    // production lifetime body still owns and waits the same actual child.
+    let pid_file = scratch.0.join("abandoned-pid");
+    let mut abandoned = Command::new("/bin/sh");
+    abandoned
+        .args([
+            "-c",
+            "printf '%s' \"$$\" > \"$1\"; exit 7",
+            "ghost-wait-test",
+        ])
+        .arg(&pid_file)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let (spawned, received) = mpsc::sync_channel(1);
+    drop(received);
+    let (done, finished) = mpsc::sync_channel(1);
+    let waiter = std::thread::spawn(move || {
+        ghost_child_lifetime(abandoned, spawned);
+        let _ = done.send(());
+    });
+    finished
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .expect("abandoned caller prevented the exact child wait");
+    waiter.join().unwrap();
+    let pid: u32 = std::fs::read_to_string(pid_file).unwrap().parse().unwrap();
+    // pid_alive only probes: using pid_running here would itself waitpid and
+    // hide the very missing reaper this regression is intended to catch.
+    assert!(
+        !crate::link::pid_alive(pid),
+        "abandoned response left a zombie"
+    );
+
+    match spawn_ghost_with_waiter(Command::new(scratch.0.join("missing-executable")), deadline) {
+        Err(GhostSpawnError::BeforeSpawn(why)) => {
+            assert_eq!(why.kind(), std::io::ErrorKind::NotFound)
+        }
+        _ => panic!("a definite command-spawn failure lost its classification"),
+    }
+}
+
+#[test]
 fn an_uncooperative_acp_has_a_bounded_stop_and_can_be_reopened() {
     let scratch = Scratch(std::env::temp_dir().join(format!(
         "khor-acp-stop-{}",

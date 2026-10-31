@@ -573,6 +573,59 @@ fn ghost_command(
     Ok(command)
 }
 
+enum GhostSpawnError {
+    BeforeSpawn(std::io::Error),
+    Unconfirmed(String),
+}
+
+/// The thread exists before any OS child. It owns Command -> Child -> wait;
+/// only the one spawn result crosses back, never the Child's ownership.
+fn ghost_child_lifetime(
+    mut command: std::process::Command,
+    spawned: std::sync::mpsc::SyncSender<std::io::Result<u32>>,
+) {
+    match command.spawn() {
+        Ok(mut child) => {
+            let _ = spawned.send(Ok(child.id()));
+            // A caller timeout/drop does not abandon this actual child.
+            if let Err(why) = child.wait() {
+                // Existing pid_running may have reaped a published host first.
+                // This is ghost cleanup, never a provider exit receipt.
+                #[cfg(unix)]
+                if why.raw_os_error() == Some(libc::ECHILD) {
+                    return;
+                }
+                eprintln!("GUI ghost wait failed: {why}");
+            }
+        }
+        Err(why) => {
+            let _ = spawned.send(Err(why));
+        }
+    }
+}
+
+fn spawn_ghost_with_waiter(
+    command: std::process::Command,
+    deadline: std::time::Instant,
+) -> Result<u32, GhostSpawnError> {
+    let (spawned, received) = std::sync::mpsc::sync_channel(1);
+    let waiter = std::thread::Builder::new()
+        .name("khor-gui-child".into())
+        .spawn(move || ghost_child_lifetime(command, spawned))
+        .map_err(GhostSpawnError::BeforeSpawn)?;
+    // Detach only the thread handle. The thread retains its Child until wait.
+    drop(waiter);
+    match received.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+        Ok(Ok(pid)) => Ok(pid),
+        Ok(Err(why)) => Err(GhostSpawnError::BeforeSpawn(why)),
+        // The thread may have spawned, or still be spawning. Do not publish a
+        // definite failure or allow a duplicate from a missing PID response.
+        Err(why) => Err(GhostSpawnError::Unconfirmed(format!(
+            "GUI ghost spawn outcome is unconfirmed: {why}"
+        ))),
+    }
+}
+
 fn spawn_ghost(
     root: &std::path::Path,
     cwd: Option<&std::path::Path>,
@@ -731,15 +784,23 @@ fn spawn_ghost_prepared(
         Some(claim)
     } else { None };
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    let child = c.spawn().map_err(|error| {
-        let why = msg::host_wont_start(error);
-        match claim.as_deref().map(|claim| live.gui_ghost_spawn_failed(claim)).transpose() {
-            Ok(_) => why,
-            Err(failed) => format!("{why}; recovery reservation is uncertain: {failed}"),
+    let ghost_pid = match spawn_ghost_with_waiter(c, deadline) {
+        Ok(pid) => pid,
+        Err(GhostSpawnError::BeforeSpawn(error)) => {
+            let why = msg::host_wont_start(error);
+            return Err(
+                match claim
+                    .as_deref()
+                    .map(|claim| live.gui_ghost_spawn_failed(claim))
+                    .transpose()
+                {
+                    Ok(_) => why,
+                    Err(failed) => format!("{why}; recovery reservation is uncertain: {failed}"),
+                },
+            );
         }
-    })?;
-    let ghost_pid = child.id();
-    drop(child);
+        Err(GhostSpawnError::Unconfirmed(why)) => return Err(why),
+    };
     let mut ready_issue = None;
     // Longer than host.rs's wait on purpose: before the marker can
     // exist an agent process has to boot and answer two requests.
