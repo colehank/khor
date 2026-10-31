@@ -10,7 +10,7 @@ Root `integrate/round2@17f6afb08a6ef207663cabd106012d23424fc434` clean。两作�
 - H独占GUI/Core/shared DTO。生产4baf链已独审整合；Recovery17三测试片743→Root801独审并实际通过；单TS Extract收窄c0→Root4392独审/运行JS字节同，actual fulltypes/Vite通过。H已完成Core709c且actual44421实际通过并独审；CLI f308/current三exact已59004绿并独审；已完成production7e2666＋独立exactOUT前置；实际9014成功且独审，H当前无生产改动/自主runtime，不改产品或运行；7selected包含3自动bin，仅两实际运行程序私有copy，原guard/原V/唯一槽不改。
 - reviewer只读源审与真实尾核，无自主runtime。三方责任卡dirty保留，不全局stage。
 
-当前Native/browser/App/maintenance均 **FREE**。当前CLI59004/Core44421/Node85431/UI13057/fulltypes48300各自已终态绿且独审；最终同源production三producer已9014实际全绿且独审；未App/业务runtime。最新Node actual85431已终态绿（详情下）；browser13057/fulltypes48300已终态绿且独审；旧句柄不poll。真实状态与后继运行以内部 `current-runtime.json`/实际tool handle优先，不因观察超时重启。没有当前统一App产物/全范围验收通过声明。
+当前Native/browser/maintenance均 **FREE**；App槽 **FREE（70988已终态，无活跃运行）**。当前CLI59004/Core44421/Node85431/UI13057/fulltypes48300各自已终态绿且独审；最终同源production三producer已9014实际全绿且独审；未App/业务runtime。最新Node actual85431已终态绿（详情下）；browser13057/fulltypes48300已终态绿且独审；旧句柄不poll。真实状态与后继运行以内部 `current-runtime.json`/实际tool handle优先，不因观察超时重启。已有当前同源GUI/CLI/bridge产物；尚无全范围真实App验收通过声明。
 
 ## 最新实际验证
 
@@ -59,3 +59,17 @@ UI真实IDB只保存caller payload：(home,id)每target一条、总32、每条8K
 最新source小bundle cli-consumer-prefix17f相对6aa SHA 38081ad0100628bd25b9b87f7321d2ed7ec6ff5b54a666df40dec0775f948f91 已gitverify0实际双盘；后继source/head以实际Root为准。当前Core bridge6aa虽产品代码相同，旧native proof全source帧与17f不同，不能currentRoot硬require；在最终production三producer中真实重建current bridge再做S public runtime，禁止回滚/假prior/弱V。
 
 当前存储实际：生产后外约109GiB/系统13GiB；3最终程序共1,095,612,648B仅外盘各一canonical copy，保留到紧邻private S/App验收完成再严格退役。原RetainedOUT8,717,907B只一份。内部仍compact资料，不复制三程序或gzip。
+
+## 2026-10-31 进度核对补记
+
+首个公开Load真实场actual89017终态2：真实注册、New、Join及重放、chat_open、send_committed与MaxTokens已发生；脚本错误等待只属于历史投影的prompt_recorded，未到Capture/Load断言。原false及清理EPERM、一自有eventstore目录/part保留；最终remaining=[]，不能宣完整清理绿。Source6仅修消费通道并加强原文来源断言，已独审；准入合同0053e7d2…982e80已准备，actual-load-1仍不存在，未运行。此前Source4因macOS Python启动器/解释器路径差异在启动校验失败，未创建测试会话，原件保。
+
+Mac验收私有数据已准备：三文件入口、中文/括号与美元公式、长路径、71次提交及M/U文件；尚未私有Node种子/打开App/请求真人验收。当前实际系统余13GiB、外盘109GiB；无新增构建或大型副本。完整34项仍未完成，下一步实际public恢复、真实App/Mac/手机及最终逐项审计。
+
+## 公开Load实际70988及独立核对
+
+Source6 actual70988 terminal2/10.478s，原result `3d457f8640646cf737bb32c999246a4dd7ccb398aeb2f298f4a37a35bb1c3893` 保持false。业务error=null/cleanup_errors[]/remaining[]/forcedfalse，source/env稳定。28真实Core HTTP已实际到：CLI New→live Join/同payload重放不setup、same-token SendCommitted及MaxTokens、原文PromptOrigin/token/turn/range/accept-before-dispatch、重复delta2；仅已证明归属的provider退出及host消失/持久Exited后公开Load同SID/native新run，Init仅+1/Load1/New仍1/Resume0，重放无新进程；新v2 generation/base与旧v1 binding逐dict读取同、1138B旧原文SHA同。两个provider最终均Exited/host消失，register0/seed0/bridge-15。input及非作者reviewer独立核对一致。仅证明私有fake-peer实际CLI/Core公开Load场，不替代Resume/Unsupported/Shell/跨home/offline/App。
+
+原整场false仅两exact49B自有`.why`诊断残留，均agent closed connection；源码成功删ready后EOF再次写why解释其来源，不是Load失败或进程残留。Root另作postrun收口：鲜ps原owner全无、exact UID501/nlink1/regular/dev/inode/size/SHA及lsof空复核后同盘可逆移入本actual/diagnostics，身份/SHA不变，TMP空后rmdir。独立receipt `31a4c0209c963417574cde4d2bd738178ac7ac03d206b5c7e26b5307f3d9a9cd`；原result与tmp_entries不改、不回填green。不为包装绿重复业务场/重构产品。该诊断生命周期差异记录后继，不扩大本轮。
+
+后继input准备既定Resume/Unsupported，其后Shell/offline；H准备三真实文件入口的私有Node/App种子。仅Root运行，未邀请真人/未开App。

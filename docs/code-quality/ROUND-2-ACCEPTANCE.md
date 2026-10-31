@@ -12,7 +12,7 @@
 | R2-004 | N | 状态查询并发 | 当前CLI在真实root/meta锁竞争后成功查询，原ID保留；try/等待预算及锁序仍成立。 | 8父/2helper实际通过且6源整合；不外推原集群唯一根因。 |
 | R2-005 | A | 全部已接入ACP观看 | 按每个adapter实际能力提供正文/只读/控制入口；外部观察不接管。 | 源码能力矩阵与定向链通过；不是40个已安装agent实测。 |
 | R2-006 | H | 长历史 | 有界分页/渲染/缓存/传输；可取消并保持阅读锚点；搜索、复制或原文出口不把截断冒成完整。 | 基础读取/出口与既有browser已通过；真实chunk分组、读取意图及最新思考定位已修；当前28项reader、完整32项Find worker在864实际通过，Reader真实28过但caller误计29的原false保留；跨页query/wholeplain-copy已实现，完整DOM消费者actual28700原7＋全部Range真过；真实WK/系统出口仍待；真实生产WK/系统出口待测。 |
-| R2-007 | S | 统一持久化恢复 | 同一会话身份恢复canonical正文；存活重挂、已退任务和离线明确；不重复load/writer；长合法base无丢失且启动内存受控。 | Store真实67,174,400B payload及有界启动已通过；运行代次拒写5exact已实际通过；前置reservation、Load新display base与Resume实际Note的8项组件验证已通过；真实New/Attempt及known-native生产组件原8父＋2helper已54318/14117通过；公开显式恢复/新Shell源码与当前Recovery17组件已接并通过受控UI验证；真实Node当前85431原8父＋2helper完整通过并独审，完整App/远端恢复未完。 |
+| R2-007 | S | 统一持久化恢复 | 同一会话身份恢复canonical正文；存活重挂、已退任务和离线明确；不重复load/writer；长合法base无丢失且启动内存受控。 | Store真实67,174,400B payload及有界启动已通过；运行代次拒写5exact已实际通过；前置reservation、Load新display base与Resume实际Note的8项组件验证已通过；真实New/Attempt及known-native生产组件原8父＋2helper已54318/14117通过；公开显式恢复/新Shell源码与当前Recovery17组件已接并通过受控UI验证；真实Node当前85431原8父＋2helper完整通过并独审，真实CLI/Core公开Load70988业务断言全到且双审：Join与重放无重复writer、退出后同SID新run、Load1/New不增、旧binding仍读；整场false仅两个自有诊断，另据31a4c020收口，不回填。Resume/Shell/完整App/远端恢复未完。 |
 | R2-008 | C | 打开意图 | 同一路径/URL普通点击内部，Cmd点击系统；不作可达性预检或额外改写。 | 实现/定向检查已有；当前App点击与Cmd组合待测。 |
 | R2-009 | C | 软折行路径 | 同一生产终端入口长路径在宽/窄屏均可识别并命中，网址对照；不误把硬换行拼为同一路径。 | 实现/定向检查已有；当前App窄屏待测。 |
 | R2-010 | C | 回当前工作区 | 离开session cwd后左上动作回当前工作区，不在推荐列表追加同类项。 | 当前App待测。 |
