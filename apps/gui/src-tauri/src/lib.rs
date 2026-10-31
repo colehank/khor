@@ -5411,13 +5411,15 @@ pub fn run() {
             if window.label() == "main" {
                 use tauri::Manager;
                 match event {
+                    // Only after the draft owner permits the main window
+                    // to be destroyed: a cancelled close keeps the auxiliaries.
                     // **The overlay window has to be closed by hand.** It
                     // has a level of its own rather than a parent
                     // (`menu_overlay::desktop::hang` says why), and tauri leaves an
                     // app running while any window is open — so without
                     // this, closing khor's window would leave the process
                     // alive with nothing on screen.
-                    tauri::WindowEvent::CloseRequested { .. } => {
+                    tauri::WindowEvent::Destroyed => {
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                         eprintln!("[{stamp}] khor app: the main window was closed");
                         menu_overlay::desktop::close(window.app_handle());
