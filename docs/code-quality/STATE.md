@@ -10,7 +10,7 @@ Root `integrate/round2@17f6afb08a6ef207663cabd106012d23424fc434` clean。两作�
 - H独占GUI/Core/shared DTO。生产4baf链已独审整合；Recovery17三测试片743→Root801独审并实际通过；单TS Extract收窄c0→Root4392独审/运行JS字节同，actual fulltypes/Vite通过。H已完成Core709c且actual44421实际通过并独审；CLI f308/current三exact已59004绿并独审；已完成production7e2666＋独立exactOUT前置；实际9014成功且独审，H当前无生产改动/自主runtime，不改产品或运行；7selected包含3自动bin，仅两实际运行程序私有copy，原guard/原V/唯一槽不改。
 - reviewer只读源审与真实尾核，无自主runtime。三方责任卡dirty保留，不全局stage。
 
-当前Native/browser/maintenance均 **FREE**；App槽 **FREE（80153桌面与57013协议场均已终态，无活跃运行）**。当前CLI59004/Core44421/Node85431/UI13057/fulltypes48300各自已终态绿且独审；最终同源production三producer已9014实际全绿且独审；未App/业务runtime。最新Node actual85431已终态绿（详情下）；browser13057/fulltypes48300已终态绿且独审；旧句柄不poll。真实状态与后继运行以内部 `current-runtime.json`/实际tool handle优先，不因观察超时重启。已有当前同源GUI/CLI/bridge产物；尚无全范围真实App验收通过声明。
+当前Native/browser/maintenance均 **FREE**；App槽 **FREE（80153桌面、57844与80962协议场均已终态，无活跃运行）**。当前CLI59004/Core44421/Node85431/UI13057/fulltypes48300各自已终态绿且独审；最终同源production三producer已9014实际全绿且独审；未App/业务runtime。最新Node actual85431已终态绿（详情下）；browser13057/fulltypes48300已终态绿且独审；旧句柄不poll。真实状态与后继运行以内部 `current-runtime.json`/实际tool handle优先，不因观察超时重启。已有当前同源GUI/CLI/bridge产物；尚无全范围真实App验收通过声明。
 
 ## 最新实际验证
 
@@ -89,3 +89,11 @@ Source6 actual70988 terminal2/10.478s，原result `3d457f8640646cf737bb32c999246
 Source2 actual57013 terminal2/11.257s，仅journal-resume到24 HTTP，Unsupported未运行。原scene result af47e8b8…e8a2f/aggregate false保；error AssertionError、failurecleanup EPERM，remaining[]，自有why与eventstore part留原件，不称清理绿。真实Resume＋同token回放、Init3/New1/Load0/Resume1/Prompt1已到；原raw490B前缀保、早Note实际一次。独立定位唯一失败source line402：要求old whole-page dict相同，而同file合法append后新返回的3record.cursor和page.newer仅更新len490→900/modified，原frame/key/starts/physicalrange/missingflags全同、resetfalse。
 
 Root裁定保原opaque binding/cursor请求逐字不改、旧record完整语义与页reset/边界/原文前缀不增删；新返回opaque cursor允许记录当前文件版本，不解析篡改。不改产品/时限、不弱化payload。input准备source3窄修＋明确失败context，待独审后仅既定两场重验；Load独立generation原whole-page-equal不改。当前无live runtime；H准备首场workspace IME的最小旧profile重用启动器，不新build/框架。
+
+## 最新协议收口：57844有限Resume完成；80962退出失败待定位
+
+Source3 actual57844 terminal2/9.651s，原scene b62c463d…cdb8e false保。全部有限Resume业务已到且非作者独核：Init3/New1/Load0/Resume1/Prompt1、同token回放无新启动、同SID新run、原opaque请求不变、3旧record完整语义/位置与490B原文前缀保、早Note原始与投影各一次，最终新provider登记Exited/host消失及bridge退出均到。仅retain诊断literal门失败：旧seed52B `ACP cancellation grace expired; retiring the process` 来自gui_host1340真实bounded cancellation收尾，新49B正常EOF；非新readiness失败。Root对两exact文件鲜ownerabsence/identity/SHA/lsof后可逆保留，postrun receipt `55107af4ffba4ba04d06f2874819a3d3797bf5f79f0e506ceb267cb2d24b81b2`，TMP现absent。原forced_cleanup=true字段及false不改；不为诊断包装重跑已证Resume业务。
+
+ONLY尚未运行Unsupported的独立source1已窄审，实际80962 terminal2/9.335s。原scene `a584aac386ee023fafa4377745871fe7486488d41d3528b324bb46f768b993bc`、aggregate false。12HTTP到第一次recover_session→Refused setup-failed；phase/capsfalse/providerExited/实际parent与birth资格assert已过，但原5s OS host/provider/group absence门失败（unsupported-first actual exits），未到same-token回放/新intent recheck。failurecleanup EPERM、终末remaining[]；原why49B保。input＋reviewer正定位child回收链和最短有界现场；不忽略zombie、不放宽时限、不自动重跑，尚未判唯一根因。
+
+H获授权仅其既有worktree的WorkspacePane.tsx移除clean常驻reload act，保dirty save/confirmed与More菜单刷新、watch；这是既定W019实际布局缺口，不改Root17f、不触shared TabStrip/FileView或立即重build。Root17f仍clean，原人验编辑owner可继续，fresh availability仍pending。首场workspace专用editor runner0ac32b41…b228已双审，复用已核App与数据、新输出、原guard300、freshTMP/显式空闲KHOR_WEB_PORT；未启动。另既定R2-006授权H仅source准备64MiB native流式夹具，未生成/导入，原1201样本保持。
