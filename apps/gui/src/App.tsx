@@ -690,9 +690,10 @@ export default function App() {
       Files and Notes' folders): opening a workspace turns the list column
       into its file tree, under a head 「‹ 工作区名」 that returns to the
       list; the content holds only the file. Kept per seat — another
-      landing and back finds the tree — and not across a cold start, which
-      lands on the list (UX-14 §7). */
-  const [wsTree, setWsTree] = useState(false);
+      landing and back finds the tree. A wide cold start restores the
+      chosen workspace and its tree together; the narrow face restores
+      no workspace, so it stays on the list (UX-14 §7). */
+  const [wsTree, setWsTree] = useState(() => place.ws != null);
   // …and the browser landing's own tabs. **A second strip, not a
   // second mechanism** (浏览器接壳批): both browsing landings are the
   // same shell with a different kind, and the two stores are kept apart
