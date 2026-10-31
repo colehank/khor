@@ -136,7 +136,14 @@ impl LiveKind {
             record.persist_recovery(&self.root, &admission)?;
         }
         self.check_gui_source_at(id, &native)?;
-        self.fence_native_aliases(&admission, None)?;
+        match self.native_alias_fence(&admission, None)? {
+            super::NativeAliasFence::Clear => {}
+            super::NativeAliasFence::OwnershipBlocked(reason) => {
+                return Ok(NativePreparation::Reply(RecoveryResult::Unknown {
+                    id: id.clone(), attempt_epoch: supplied.epoch.clone(), reason: reason.into(),
+                }));
+            }
+        }
         let value = {
             let mut gate = RowGate::acquire(&directory)?;
             let meta = gate.read_meta_or_new()?;

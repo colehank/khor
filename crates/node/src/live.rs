@@ -33,6 +33,13 @@ mod recovery_attempt;
 mod session_recovery;
 mod proc_identity;
 
+/// The existing finite-alias fence can refuse known unresolved ownership
+/// without conflating it with a failed identity read or filesystem operation.
+enum NativeAliasFence {
+    Clear,
+    OwnershipBlocked(&'static str),
+}
+
 /// The complete existing layouts for one native conversation. These are
 /// deterministic candidates, not an index or permission to execute any of them.
 fn native_aliases(native: &crate::session_content::journal::Identity) -> [SessionId; 3] {
@@ -3450,6 +3457,13 @@ impl LiveKind {
     /// this finite alias fence and target Reserved publication. Only one short
     /// row gate exists at a time, never during OS reads or Journal acquisition.
     fn fence_native_aliases(&self, reservation: &crate::session_content::journal::JournalReservation, own: Option<&recovery_attempt::AttemptKey>) -> Result<(), String> {
+        match self.native_alias_fence(reservation, own)? {
+            NativeAliasFence::Clear => Ok(()),
+            NativeAliasFence::OwnershipBlocked(reason) => Err(reason.into()),
+        }
+    }
+
+    fn native_alias_fence(&self, reservation: &crate::session_content::journal::JournalReservation, own: Option<&recovery_attempt::AttemptKey>) -> Result<NativeAliasFence, String> {
         let native = reservation.identity();
         if !reservation.holds_file() { return Err("native alias fence lost its physical Journal file".into()); }
         if native.home != self.device { return Err("native alias fence reached another execution home".into()); }
@@ -3465,23 +3479,23 @@ impl LiveKind {
                 recovery_attempt::AliasAdmission::Clear | recovery_attempt::AliasAdmission::OwnUnclaimed => {
                     check_observed_target(&self.root, &id, native)?;
                 }
-                recovery_attempt::AliasAdmission::Unknown => return Err("native conversation has an unknown, reserved or unretired alias owner".into()),
+                recovery_attempt::AliasAdmission::Unknown => return Ok(NativeAliasFence::OwnershipBlocked("native conversation has an unknown, reserved or unretired alias owner")),
                 recovery_attempt::AliasAdmission::Probe(registered) => {
                     check_observed_target(&self.root, &id, native)?;
                     let host_absent = if registered.slot_ended { None } else { match proc_identity::foreground(&registered.host) {
                         proc_identity::Foreground::Absent(proof) => Some(proof),
-                        _ => return Err("native alias still has an active or unknown Khor host".into()),
+                        _ => return Ok(NativeAliasFence::OwnershipBlocked("native alias still has an active or unknown Khor host")),
                     }};
                     let provider_absent = match proc_identity::foreground(&registered.process) {
                         proc_identity::Foreground::Absent(proof) => proof,
-                        _ => return Err("native alias still has an active or unknown provider".into()),
+                        _ => return Ok(NativeAliasFence::OwnershipBlocked("native alias still has an active or unknown provider")),
                     };
                     let mut gate = RowGate::acquire(&directory)?;
                     recovery_attempt::Held::load(&mut gate)?.foreground_absent(&registered, &provider_absent, host_absent.as_ref())?;
                 }
             }
         }
-        Ok(())
+        Ok(NativeAliasFence::Clear)
     }
 
     pub(crate) fn gui_ghost_spawn_failed(&self, encoded: &str) -> Result<(), String> {

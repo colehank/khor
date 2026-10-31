@@ -182,6 +182,11 @@ enum UnknownReason {
     CleanupUnconfirmed,
 }
 impl Provider {
+    /// A recorded Owned stamp still needs the original finite foreground
+    /// check. Only actual retirement facts can offer a replacement read-only.
+    fn replacement_confirmed(&self) -> bool {
+        matches!(self, Self::Exited { .. } | Self::ForegroundAbsent { .. })
+    }
     fn no_foreground_owner(&self) -> bool {
         matches!(self, Self::NotStarted | Self::Exited { .. } | Self::ForegroundAbsent { .. })
     }
@@ -724,7 +729,7 @@ impl<'a> Held<'a> {
             return Ok(AliasAdmission::Unknown);
         }
         Ok(match execution.provider {
-            Provider::Exited { .. } | Provider::ForegroundAbsent { .. } => AliasAdmission::Clear,
+            ref provider if provider.replacement_confirmed() => AliasAdmission::Clear,
             Provider::NotStarted if execution.phase == Phase::Refused => AliasAdmission::Clear,
             Provider::Owned { .. } => AliasAdmission::Probe(self.registered_foreground(native)?.ok_or("registered alias lost its exact foreground")?),
             _ => AliasAdmission::Unknown,
@@ -1130,7 +1135,7 @@ impl<'a> Held<'a> {
         // same-context registered foreground absence proof.
         if self.document.as_ref().is_some_and(|doc| {
             let Some(latest) = &doc.latest else { return true; };
-            !matches!(latest.provider, Provider::Exited { .. } | Provider::ForegroundAbsent { .. })
+            !latest.provider.replacement_confirmed()
                 && !(latest.phase == Phase::Refused
                     && matches!(latest.provider, Provider::NotStarted))
         }) {
@@ -1477,7 +1482,7 @@ pub(super) fn published_run(directory: &Path, id: &SessionId, native: &Identity,
 pub(super) fn offer_action_allowed(directory: &Path) -> Result<bool, String> {
     let Some(document) = read(directory)? else { return Ok(false); };
     if document.cleanup_barrier.is_some() { return Ok(false); }
-    Ok(document.latest.as_ref().is_some_and(|execution| !matches!(execution.provider, Provider::Unknown { .. } | Provider::Starting | Provider::NotStarted)))
+    Ok(document.latest.as_ref().is_some_and(|execution| execution.provider.replacement_confirmed()))
 }
 
 /// Read-only finite-alias fact, never a lease or external-writer probe.
@@ -1760,6 +1765,9 @@ mod tests {
         assert!(held.record_support(&first, advertised).is_err());
         held.owned_provider(&first, stamp(20, 10)).unwrap();
         assert!(matches!(held.alias_admission(&args.id, &native, None).unwrap(), AliasAdmission::Probe(_)), "injected stamp only asks the production adapter for proof; it does not clear ownership");
+        let owned_bytes = fs::read(held.gate.dir.join(NAME)).unwrap();
+        assert!(!offer_action_allowed(&held.gate.dir).unwrap(), "Owned is not a read-only replacement fact");
+        assert_eq!(fs::read(held.gate.dir.join(NAME)).unwrap(), owned_bytes);
         held.record_support(&first, advertised).unwrap();
         held.record_support(&first, advertised).unwrap();
         let supported = fs::read(held.gate.dir.join(NAME)).unwrap();
@@ -1846,6 +1854,20 @@ mod tests {
         let receipt = khor_acp::ProcessExit { code: Some(0) };
         assert!(held.confirmed_exit(&first, 21, &receipt).is_err());
         held.confirmed_exit(&first, 20, &receipt).unwrap();
+        let exited = held.document.clone().unwrap();
+        let exited_bytes = fs::read(held.gate.dir.join(NAME)).unwrap();
+        assert!(offer_action_allowed(&held.gate.dir).unwrap());
+        assert_eq!(fs::read(held.gate.dir.join(NAME)).unwrap(), exited_bytes);
+        // Stored-fact projection only: this injected model does not claim an
+        // actual OS absence proof or replace the production stamp/key checks.
+        let mut absent = exited.clone();
+        absent.latest.as_mut().unwrap().provider = Provider::ForegroundAbsent { process: stamp(20, 10) };
+        held.store(absent).unwrap();
+        let absent_bytes = fs::read(held.gate.dir.join(NAME)).unwrap();
+        assert!(offer_action_allowed(&held.gate.dir).unwrap());
+        assert!(matches!(held.alias_admission(&args.id, &native, None).unwrap(), AliasAdmission::Clear));
+        assert_eq!(fs::read(held.gate.dir.join(NAME)).unwrap(), absent_bytes);
+        held.store(exited).unwrap();
         let second = start(held.reserve(args_two.clone(), token(2, 'b'), None).unwrap());
         assert!(matches!(
             held.reserve(args, one, None).unwrap(),
