@@ -73,7 +73,7 @@ export function PathField({
   menuLayout?: "adaptive" | "overlay";
   onKeyDown?: ComponentProps<"input">["onKeyDown"];
 }) {
-  const seat = useRef<HTMLDivElement>(null);
+  const seat = useRef<HTMLDivElement>(null), menu = useRef<HTMLDivElement>(null);
   const [menuRoom, setMenuRoom] = useState<{key: string; height: number}>();
   const menuKey = machine + "\0" + value;
   const cache = useRef(new Map<string, Promise<DirListing | null>>());
@@ -234,6 +234,44 @@ export function PathField({
     };
   }, [open, menuKey, placement, menuLayout]);
 
+  useLayoutEffect(() => {
+    const root = seat.current, popup = menu.current;
+    // Forms own their inline/dialog room; only toolbar overlays need to
+    // escape a field squeezed by its neighbouring buttons.
+    if (!open || !root || !popup || menuLayout !== "overlay" || placement !== "below" || root.closest('[data-slot="dialog-content"]')) return;
+    const pane = root.closest<HTMLElement>('[data-session-content-pane]');
+    const viewport = window.visualViewport;
+    const sync = () => {
+      const anchor = root.getBoundingClientRect(), bounds = pane?.getBoundingClientRect();
+      const left = Math.max(bounds?.left ?? 0, viewport?.offsetLeft ?? 0);
+      const right = Math.min(bounds?.right ?? window.innerWidth, (viewport?.offsetLeft ?? 0) + (viewport?.width ?? window.innerWidth));
+      const bottom = Math.min(bounds?.bottom ?? window.innerHeight, (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight));
+      const width = Math.max(0, right - left);
+      popup.style.width = "max-content";
+      popup.style.minWidth = `${Math.min(anchor.width, width)}px`;
+      popup.style.maxWidth = `${width}px`;
+      const menuWidth = popup.getBoundingClientRect().width;
+      popup.style.left = `${Math.max(left, Math.min(anchor.left, right - menuWidth)) - anchor.left}px`;
+      popup.style.maxHeight = `${Math.max(0, bottom - anchor.bottom - (parseFloat(getComputedStyle(popup).marginTop) || 0))}px`;
+    };
+    sync();
+    const resize = new ResizeObserver(sync);
+    resize.observe(root); resize.observe(popup);
+    if (pane) resize.observe(pane);
+    window.addEventListener('resize', sync);
+    document.addEventListener('scroll', sync, true);
+    viewport?.addEventListener('resize', sync);
+    viewport?.addEventListener('scroll', sync);
+    return () => {
+      resize.disconnect();
+      window.removeEventListener('resize', sync);
+      document.removeEventListener('scroll', sync, true);
+      viewport?.removeEventListener('resize', sync);
+      viewport?.removeEventListener('scroll', sync);
+      for (const property of ['width', 'min-width', 'max-width', 'left', 'max-height']) popup.style.removeProperty(property);
+    };
+  }, [open, menuKey, menuLayout, placement]);
+
   const take = (name: string) => {
     if (!fresh) return;
     const base =
@@ -295,7 +333,7 @@ export function PathField({
           sheet, held by its foot, grows upward to fit it. */}
       {open && (
         <div id={list} role="listbox" data-path-suggestions>
-          <OmniMenu key={machine+"\0"+value}
+          <OmniMenu menuRef={menu} key={machine+"\0"+value}
             style={menuRoom?.key === menuKey ? {maxHeight: menuRoom.height} : undefined}
             rows={{
               groups: [
