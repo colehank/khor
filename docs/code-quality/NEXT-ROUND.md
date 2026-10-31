@@ -31,3 +31,7 @@ Wry0.55.1 Windows/GTK暴露的Started/Finished没有真实导航身份，且Fini
 2026-10-31，公开Load实际70988已完成New/Join/退出/Load/旧历史验证，但两个成功发布的自有ghost在ACP断开后留下`khor-gui-ready-<parent>-<nonce>.why`。源码`gui_host.rs`成功路径删除ready；结束路径以`!ready.exists()`判定尚未就绪，因而成功后也会写启动失败诊断。两文件各49B，内容为agent closed connection；真实provider/host均已退出，不是Load失败/进程泄漏证据。原actual result false保持；两exact诊断另经所有者消失、identity/SHA/lsof门可逆保留，postrun收口receipt31a4c020…9a9cd。
 
 下一轮应明确区分已发布与未发布的启动握手状态，限定`.why`给仍在等待的启动者，确认Ready前拒绝仍可见、Ready后错误由既有持久状态与事件渠道呈现；不以临时文件存在性推断状态。本轮只记录，不追加产品改造或新测试矩阵。
+
+## 跨会话的轻量阅读书签
+
+2026-10-31实际64MiB原生历史场：HEAD搜索定位后切到别的会话再返回，会重建ObservedSession/ChatView/reader并从tail读取。原R2-H/CONTINUITY约定为同实例跨页锚点与切换取消，未约定跨mount/App重开书签；按收口规则只记下一轮，不在本轮增持久窗口/完整历史缓存。未来如实现，只保存每个view/home的有界轻量来源身份+锚点，由当前history source重新验证并按可用范围恢复；不得保存全正文。原黑截图与AXtail不同尚无唯一因果；focused raise/实际指针/滚轮场正文可读，不凭该观察做paint架构改造。诊断LONG-HISTORY-RETURN-DIAGNOSIS在当前evidence/platform准备目录。

@@ -4,7 +4,9 @@
 
 ## 当前源码、协作与运行
 
-Root `integrate/round2@17f6afb08a6ef207663cabd106012d23424fc434` clean。两作者＋独立reviewer；Root负责集成/实际验证/协调，不开第三产品实现线。作者在责任域内可最小适配必要调用点，跨域/共享语义改变先协调；新独立问题仅NEXT，不扩大本轮34项。
+最新874c状态：独审的W019 `ed18413c`→Root `b9298367`移除clean常驻reload；独审的actualChild owner `5a8d2596`→Root `874c7c68`预先建私有waiter、线程内Command→Child→wait，channel只传PID/ioError，未知结果保Unknown不重启。仅三源变化；下方17f表是历史基线，**9014三程序及原严格proof属于17f，不能对新874c盲require或冒当前程序**。当前188gen按精确12delta复用，874c fullnoEmit＋新Vite actual21839终态0/15.931s并独审；Node唯一waiter exact actual15850正在编译（唯一native槽），不重8＋2或已过H/Find/ACP。新的normalCLI/bridge/defaultGUI三producer尚未执行，等fresh frontend pin与独立exactOUT留存准入。无App，human fresh availability pending。
+
+Root `integrate/round2@874c7c685e408a0ac4ea0122541375431af3350e` clean。两作者＋独立reviewer；Root负责集成/实际验证/协调，不开第三产品实现线。作者在责任域内可最小适配必要调用点，跨域/共享语义改变先协调；新独立问题仅NEXT，不扩大本轮34项。
 
 - input独占Node/ACP/必要只读Store；最后生产no-Meta/Ref abad＋154→Root309/cc92，64观察ID路径a92→Root946，均独审。原Resume fixture能力事实期望e6fd→Root6aa已独审并实际85431通过：wire始终load=true/resume=true，getter正确，原新增{false,true}期望混淆能力与选择；peer/getter/Resume1 Load0 New0/partial origin/Close/reap均未改。必要CLI consumer 886→Root407只补4显式diagnostic tag；d2a→Root17f仅两测试fence同步，原parent全文（assert/fixture/timeout/ignored）inverse逐字保，已独审并59004实际通过。input已交既定真实S public/CLI/App最短计划，不新增产品实现。generic close独立旧问题仅NEXT。
 - H独占GUI/Core/shared DTO。生产4baf链已独审整合；Recovery17三测试片743→Root801独审并实际通过；单TS Extract收窄c0→Root4392独审/运行JS字节同，actual fulltypes/Vite通过。H已完成Core709c且actual44421实际通过并独审；CLI f308/current三exact已59004绿并独审；已完成production7e2666＋独立exactOUT前置；实际9014成功且独审，H当前无生产改动/自主runtime，不改产品或运行；7selected包含3自动bin，仅两实际运行程序私有copy，原guard/原V/唯一槽不改。
@@ -97,3 +99,19 @@ Source3 actual57844 terminal2/9.651s，原scene b62c463d…cdb8e false保。全�
 ONLY尚未运行Unsupported的独立source1已窄审，实际80962 terminal2/9.335s。原scene `a584aac386ee023fafa4377745871fe7486488d41d3528b324bb46f768b993bc`、aggregate false。12HTTP到第一次recover_session→Refused setup-failed；phase/capsfalse/providerExited/实际parent与birth资格assert已过，但原5s OS host/provider/group absence门失败（unsupported-first actual exits），未到same-token回放/新intent recheck。failurecleanup EPERM、终末remaining[]；原why49B保。input＋reviewer正定位child回收链和最短有界现场；不忽略zombie、不放宽时限、不自动重跑，尚未判唯一根因。
 
 H获授权仅其既有worktree的WorkspacePane.tsx移除clean常驻reload act，保dirty save/confirmed与More菜单刷新、watch；这是既定W019实际布局缺口，不改Root17f、不触shared TabStrip/FileView或立即重build。Root17f仍clean，原人验编辑owner可继续，fresh availability仍pending。首场workspace专用editor runner0ac32b41…b228已双审，复用已核App与数据、新输出、原guard300、freshTMP/显式空闲KHOR_WEB_PORT；未启动。另既定R2-006授权H仅source准备64MiB native流式夹具，未生成/导入，原1201样本保持。
+
+## 85368现场与874c准备
+
+在不改变原5s门、只读检查任何相同PID/PGID且不收编未采样PID后，actual85368终态2/10.227s的资格与超时快照均显示host38947 PPID38859(同一live owned bridge)/PGID38947/UID501/birth09:32:30/STAT Z；provider38948已Exited0且无ps行。两样本跨5s，源码dropChild→Refused未pubMeta→specific waitpid无新host可查的机制已实证闭合。原false/EPERM/why保；此前98492在fastgone provider未采样的额外consumer门失败并未拿STAT，不能倒填。读消失不等于信号授权：fastgone仅真实private nonce/run/hoststamp/sameTransportExited，未知providerbirth不补造；信号仍原positive-owned门。
+
+当前修复2叶均独审，source bundle相对17f仅3,680B：`fae5e7b3459b1de564e6a191ef1959439237f39cc79de67def823e668a4c4b71`，实际双盘gitverify0。新focused Node仅1exact/0helper，真实/bin/sh正常与PIDreceiver离开都须reap，缺程序须明确BeforeSpawn；原guard300/V/target唯一/末copy退役。actual15850无App/模型，当前运行不能按旧状态另开build/OUTmove。
+
+## 实际64MiB原生历史与返回绘制
+
+Root流式生成唯一native Claude fixture 67,110,120B/53,262records/SHA771284e2…d097，真实CLI hook/import取得alias observe/197c…3654，cwd独立LongHistory；此前Root误按24字符猜candidate的准备校验失败已单记，改为读取实际候选并核完整nativeRef后导入，非产品失败。只有外盘一份大JSONL，内部不镜像payload。
+
+默认17f GUI actual96355 normalCuaQuit0，result c2f9a339…cd40，UI0a4190cb…65ca0：打开真实尾页(Cua click+AX585ms)、clear取消Reading(440ms)、搜索未加载HEAD得一结果并实际定位(点击461ms)；全搜索完成时刻未采样，不把90.625s下次观察上界冒耗时。切回tail符合当前跨mount重置；后截图paint不足原因未知，不报H全绿/整个App卡死。focused17256再次normal0，result7060bd07…00578/UI26b4a132…33367：实际WindowRaise、指针A-B-A与滚轮后正文完整可读，第二次HEAD观察上界36.434s仍非完成耗时；再Raise恢复完整两行而AX未变，不能凭旧截图断言数据丢失或唯一WK原因。两场source/env稳、所有owned/footprint空、TMPabsent，原67MiB源hash仍同；非作者盘尾核通过。parentRSS182432/189504KiB只是单点，不冒WebContent/峰值内存。
+
+H＋非作者契约核：原R2-H/CONTINUITY锚点是同实例跨页/淘汰及切换取消，没有跨session/App重开bookmark承诺；ObservedSession卸载→ChatView installHistory清空→reader.start(undefined)从tail解释A-B-A位置重置。跨mount轻量阅读bookmark只入NEXT，不扩新持久cache/paint专项。已核focused前台读取继续可操作；原paint观察保unknown，不投机改码。
+
+当前874c前端21839 result54b52d0136672b2ace1bcb0cc5e7692c4cd8c809b58346b66f0e741c6e139d7a/receipt3b6d6598321015d995e819857fdc1aeb20b218f7b55405301028eb7761fade6c：fulltypes0/Vite0、188gen原dict同/278新dist实同/source2340/env/tool/helper稳、无forced/owner/TMP净；独审。只证明当前前端与已解释生成复用，不冒新Rust或App通过。
