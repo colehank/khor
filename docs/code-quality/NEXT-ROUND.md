@@ -25,3 +25,9 @@ Wry0.55.1 Windows/GTK暴露的Started/Finished没有真实导航身份，且Fini
 ## 构建失效范围与无关测试源
 
 现有native source_frame包含整个受控源码集，修改仅测试fixture也会使旧生产proof的全frame检查失效。本轮按原helper守规则，先收完消费脚本再做最终构建，不修改旧proof或放宽require。下一轮可按真实生产输入/生成声明与测试目标分别研究失效范围，仍纳入实际使用的Git元数据/环境/依赖；不能仅按扩展名排除，也不能把当前未实现的精确失效当已有能力。
+
+## 已发布GUI宿主退出后的ready诊断生命周期
+
+2026-10-31，公开Load实际70988已完成New/Join/退出/Load/旧历史验证，但两个成功发布的自有ghost在ACP断开后留下`khor-gui-ready-<parent>-<nonce>.why`。源码`gui_host.rs`成功路径删除ready；结束路径以`!ready.exists()`判定尚未就绪，因而成功后也会写启动失败诊断。两文件各49B，内容为agent closed connection；真实provider/host均已退出，不是Load失败/进程泄漏证据。原actual result false保持；两exact诊断另经所有者消失、identity/SHA/lsof门可逆保留，postrun收口receipt31a4c020…9a9cd。
+
+下一轮应明确区分已发布与未发布的启动握手状态，限定`.why`给仍在等待的启动者，确认Ready前拒绝仍可见、Ready后错误由既有持久状态与事件渠道呈现；不以临时文件存在性推断状态。本轮只记录，不追加产品改造或新测试矩阵。
