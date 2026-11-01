@@ -10,8 +10,8 @@
 
 最新闭合：a228三normal producer 55538真实尾核通过；原88916 Processes真实Mac红，经77782→91894同几何Chrome反例后，最终同源App93241也真实通过原Showall200/scroll1＋0.35代表。两settled帧标签清晰、自然渐隐/无divider，正常CmdQ/ALL/TMP净；不再重列当前Mac G待验，也不重目录菜单/diff/全主题矩阵。以下是真正剩余：
 1. **真人 Mac 中文 IME／Shift选择及组合输入保存** 仍未验，主要归 R2-027；三文件 owner 的 ASCII Save失败／Cancel／最后字符正常Quit已闭，不重列为缺失。用户当前不方便，不复用旧方便答复启动计时实例，不反复询问。
-2. **真实手机原范围**：R2-017网站可用视口及 fixed/sticky底栏、R2-018左滑两动作、R2-019窄工作区布局、R2-024手机固定区、R2-025三入口连续候选、R2-026／028软键盘与自定义键行。须实际合格设备／App，不能由桌面、coarse DOM、iOS-sim check或设备库冒通过。它们可沿现有路线组合，不新增物理双机、每glyph或40厂商全安装矩阵。
-3. 手机产物前置仍未闭：physical16142首次 cold300只到SDK／metadata0，Cargo剩余294.868s超时，整体303.356s false，无GUI库；原unknown TMP与部分cache保。后续仅离线库producer的共享600预算已独审，App／Node交互300不变；还不等于库完成、Xcode链接、独立Lab签名、安装或设备交互。Root fresh资源和单槽准入后再执行，不为清理或预算绿重跑原业务。
+2. **真实手机原范围**：同一浏览器路线一次同页同态对照 R2-017网站可用视口及 fixed/sticky底栏，顺带观察原R2-014加载终态／R2-015当前主题初始底色；另保R2-018左滑两动作、R2-019窄工作区布局、R2-024手机固定区、R2-025三入口连续候选、R2-026／028软键盘与自定义键行。须实际合格设备／App，不能由桌面、coarse DOM、iOS-sim check或设备库冒通过。它们可沿现有路线组合，不新增物理双机、每glyph或40厂商全安装矩阵。
+本地手机产物前置现已 qualified：3007实际device库三phase0，97965原overallfalse仅已知SwiftPM0B TMP，后经精确coldretain ad8a另证；57058实际Xcode0/BUILD SUCCEEDED，但原guardforced导致5d62整体false。80494先完成三MachO架构/平台及strict signature/display共8actual0后因证书CLI参数停为7824false；78507只补两项只读证书/entitlements-profile，0/9.691s/ALL-TMP净，精确复用前8项。现a228独立Lab App的来源、arm64IOS、签名证书、team/ID/entitlements及profile已核；17节点前后完全不变。**这不是原strict构建批次变绿，也未install/launch/probe手机**，不再为追整体green重build或重读已过8项。真正剩余仅上述真人IME与phone原范围。
 
 R2-001可交付“限定调查完成、原卡死唯一因果未知／未证修复”；R2-016可交付“当前真实WK路径和错误分类已证、原历史拒绝唯一因果未知”。这符合原要求，**没有额外用户接受unknown的审批前置**，也不借此无限调查。
 
@@ -34,8 +34,8 @@ R2-001可交付“限定调查完成、原卡死唯一因果未知／未证修�
 | R2-011 | 原拖选主例已闭 | 80119真实长路径／URL中段至末端松手保Selected与编辑态，真正外点退出。原整个场末timeout仍false；单个已到行为可独立列证，不冒IME。 |
 | R2-012 | 原退出搜索主例已闭 | 80119首次blank click／Escape关闭目录搜索并恢复files，输入／候选内部归属有定向门。该场末timeout未回填。 |
 | R2-013 | 桌面宽窄菜单已闭 | Light50409／Dark3807宽三材质；904原红后PathField修复，68689实际宽→窄→宽、候选点击／Return／外点正常Quit。只需复用，不因Processes改动重测菜单矩阵。 |
-| R2-014 | 当前导航进度主例已闭 | 原native/pure身份规则＋B60137同一pending→真实CIBOL完成后bar消失，失败／Retry不伪成功。无需新增连续微秒trace。手机范围沿原手机组合，不把桌面当真机。 |
-| R2-015 | 桌面主题底色主例已闭 | Dark80153及Light/Translucent90 B60137，首帧／pending／真实closedport失败与Retry，保网站自有底。手机原生组合仍待。 |
+| R2-014 | 当前导航进度主例已闭 | 原native/pure身份规则＋B60137同一pending→真实CIBOL完成后bar消失，失败／Retry不伪成功。无需新增连续微秒trace。手机在同一R017路线顺带观察加载终态，不加独立trace/新场景，不把桌面当真机。 |
+| R2-015 | 桌面主题底色主例已闭 | Dark80153及Light/Translucent90 B60137，首帧／pending／真实closedport失败与Retry，保网站自有底。手机同一R017路线顺带观察当前主题初始底色，不新增深浅/材质矩阵，仍待实际。 |
 | R2-016 | 当前行为已证；历史因果未知 | 80153实际WK原lan访客页可用、真实closedport失败Retry；不是HTTP200代替WK，不宣历史唯一原因已修，不增加用户批准门。 |
 | R2-017 | **待真实手机** | 同页／同登录状态的网页frame与甲板几何、fixed/sticky底栏可见可点；源修／桌面都不能销账。 |
 | R2-018 | 桌面规则闭；**手机左滑待验** | B60137 Pin/Delete及Unpin/Delete实际专用row删除，另一原URL／页和网站数据保。无需重桌面；待真实触屏两动作。 |
@@ -53,7 +53,7 @@ R2-001可交付“限定调查完成、原卡死唯一因果未知／未证修�
 | R2-L01 | 原exact有限闭合 | [S卡](tasks/R2-S.md)与原666 actual：旧retry不早于due、fresh不饿死、reap完成。原040唯一原因未知不改写；不扩四case或全SDK。 |
 | R2-L02 | 原两WK关闭交接闭 | 原666真实late-close／close-reopen、旧owner退新owner活、最终handle全空；0f606以后Quit草稿修独审另证，不把两者互相冒代。 |
 | R2-L03 | 三实际文件入口已闭；IME另列 | Workspace88179含SettingsCancel、Session81735、Machine33349各自可见接纳稿→Save os13→Quit阻止→Cancel保稿→恢复权限→q保存+r立即Quit，disk exact且ALL/TMP净。无需再重复三owner ASCII。 |
-| R2-L04 | 来源机制已闭；**当前a228产物已尾核，手机产物未完成** | 历史V反例／严格生成来源门、f23 normal86710已过；a228 frontend4570与normal55538实际通过并独审。physical16142原false，后续builder600仅准备，不冒App/sign/install。 |
+| R2-L04 | 来源机制已闭；当前a228桌面及本地手机产物qualified；**设备未验** | 历史V反例／严格生成来源门、f23 normal86710已过；a228 frontend4570与normal55538实际通过并独审。physical16142原false保；3007库/57058Xcode/80494＋78507独立读验形成当前本地signed App qualification，原wholefalse分列，不冒install或phone交互。 |
 | R2-L05 | 原正常Quit持久宿主闭 | [V卡](tasks/R2-V.md) focused App正常Quit后同shell/host认证，139B旧marker，无Input/Ready，再显式清fixture；完整S A/B另证，不重复原拖放/退出场。 |
 
 ## Clean Code：复用独审与当前增量
@@ -99,11 +99,14 @@ R2-001可交付“限定调查完成、原卡死唯一因果未知／未证修�
 | G最终Mac实际 | [93241独审](/Volumes/disk0/Khor/evidence/round2/review/a228-93241-G-native-readonly-review.json)，result91e6205b/UI48e75459 | 原两硬链stage59892成功，同一App36364898/GUI365cfdc9，原22748出生身份、正常CmdQ/source/env/ALL/TMP净；Root真CUA与保存双settled图支持原88916表头代表绿。非reviewer现场操作，不重矩阵。 |
 | 当前前端/留存/入口 | [4570及留存独审](/Volumes/disk0/Khor/evidence/round2/review/a228-4570-frontend-retention-App-source-review.json)，SHAe9194f8d…7d4e；receipt6a4200fb | 当前2340源/188gen/278新assets、fulltypes/Vite0、日志/环境/ALL/TMP；原OUT283/6603311B精确留存809b7044/合同a831。source_absent仅rename时事实。该前端/留存收据本身未推55538绿；55538后到终态由下一行独立尾核。 |
 | 当前normal3实际 | [55538独审](/Volumes/disk0/Khor/evidence/round2/review/a228-55538-normal3-App-pins-readonly-review.json)，result a5129794 | 五phase0/274.749s，三normal各no-prior/currentV；CLI09cdf574/bridgee60c7614/GUI365cfdc9，原bundle26及新OUT283完整来源、2340源/188gen278assets稳、ALL/TMP净；stage/scene实际JSON与22producer环境绑同，未执行App。 |
-| 当前source准备 | [前端/normal源独审](/Volumes/disk0/Khor/evidence/round2/review/a228-frontend-normal3-source-review.json)，SHA826d9492…691a | 正常三producer算法与原预算不变；App原stage2ec38227、Processesd37c37c4仅有限来源/namespace差异。actual新role/proof/环境绑定后Root另授。 |
-| iOS-sim与physical库 | `mobile/ios-simulator-check-prepared-3/compile-and-cold-retention.json` SHA503dbc81；`mobile/physical-library-f23-prepared-2/result.json` SHAbd3d8539 | sim Cargo check业务0但原overallfalse/TMP冷保；physical原cold300未完成，不混库/App/签名/触屏。 |
+| 当前source准备 | [前端/normal源独审](/Volumes/disk0/Khor/evidence/round2/review/a228-frontend-normal3-source-review.json)，SHA826d9492…691a | 正常三producer算法与原预算不变；App原stage2ec38227、Processesd37c37c4仅有限来源/namespace差异。actual绑定和93241 Mac结果已由上方独立收据收口，不重该source准备门。 |
+| 当前本地physical App qualified | [78507尾核](/Volumes/disk0/Khor/evidence/round2/mobile/physical-current-a228-preparation-1/followup-1/verification-2/independent-actual-tail-review.json)；result6e2dda0f／App-verified bcecee37 | 两新codesign只读phase0/9.691s，前8actual80494逐SHA复用；17节点、真实debug dylib→唯一b926库来源链、2340源/188gen278assets冻结，leaf9308/entitlements/profile实际核同，ALL/TMP净。未安装或启动，所有旧false保。 |
+| iOS-sim与physical库 | `mobile/ios-simulator-check-prepared-3/compile-and-cold-retention.json` SHA503dbc81；`mobile/physical-library-f23-prepared-2/result.json` SHAbd3d8539 | sim Cargo check业务0但原overallfalse/TMP冷保；physical原cold300未完成的旧false保；后继库与App本地qualification看前一行，触屏仍未验。 |
 
-后续库准备 `mobile/physical-library-g-followup-prepared-3` 为reviewer作者，已由input非作者独审3ee3e970通过。driver `97703e4520570f01025fe38189356c9eaa5111c67732808173e3c43d946417f7` 未变；Root仅JSON绑定当前a228/actual4570，inputs `4c096cc4d768bc9032666e64098322c0bd3d0330451f5231db8b68a7236ff0ee`、contract `4a5b0ad63dd245835a764f7fa7d82dda2cc2ad6ce639e2eb37b295a979afc6bc`，完整source/gen/assets dict与真实前端相等，**readyfalse/authnull**。只构建库共享600含前后核验、每phase取剩余，原helper复原300；可复用先前partialcache，不能宣称新测fullcold600或原cold300通过。Root在当前native/G App后自行freshdu＋8<=50GiB、外10/内2峰值＋20/10保留量与唯一槽准入，reviewer不执行。
+后续库源3 `mobile/physical-library-g-followup-prepared-3` 为reviewer作者，input非作者独审3ee3e970；driver97703e45原预算仅独立库共享600，App/Node300不改。Root实际3007三phase0/124.732s，device.a 1083289296B/SHA b926ba26，input f575尾核及Root62成员精确冷retain ad8a分列；原97965整体false未改。实际使用先前partialcache，不能称新测fullcold600或原cold300通过。后续App沿唯一已有stage/DerivedData，无第二1GB库copy/重Rust构建：81494 Manual与Xcode-managed profile冲突保c92false；Automatic本地匹配后57058 Xcode0但原ALL服务forced保5d62false，无服务白名单或清理门放宽。
 
 本索引只收敛原范围与已证复用，不按任意百分比评价进度。Root实际结果到来时仍须分开记录“构建来源”“真实业务”“退出/诊断收口”和“未验平台”；不存在以新报告覆盖旧false、以准备代执行或以内部审查代真人的捷径。
 
-手机App计划 `mobile/physical-current-a228-preparation-1` 已作非作者source-only核查（[小收据](/Volumes/disk0/Khor/evidence/round2/review/physical-a228-App-plan-source-review.json)）：29小输入/唯一App target/main.mm/现Info用途及私有identity清楚，无ShellScript/remoteSwiftPackage或隐式Cargo。库/.a/App/签名实际字段仍空，readyfalse；外3/内2是待actual.a大小再核的显式提案，非已测峰值。没有因此新增设备或签名治理专项，也未把profile元数据冒实际签名或设备可用。
+手机App计划 `mobile/physical-current-a228-preparation-1` 最初source-only核查（[小收据](/Volumes/disk0/Khor/evidence/round2/review/physical-a228-App-plan-source-review.json)）及当时null/readyfalse是历史准备事实；现在由78507的实际只读qualification收口。原29小输入/唯一App target/main.mm/当前Info用途与私有identity没有扩展，local Automatic不带allowProvisioning更新/下载，App为 `io.github.colehank.khor.quality.round2physical`，显示名 `Khor Round 2 Physical Lab`。实际public leaf SHA1 `9308048ABD9F37512C6ED0CB4D5E94857AFC8DD5`、DER SHA256 `1b729aea4b3eb6788901ae6fc51f4d70eacc436467e0822f7d0918a187d80fcb`、embedded profile SHA256 `1d51869a29bb1fee8662f7af6799011493da8e3749c13545a949c2226a285164`；team/entitlements相符。没有私钥导出/重签/设备操作，profile含设备并不证明当前可连接、解锁或已安装。
+
+最终有限结论：在当前a228已改边界与现有逐片/增量独审范围内，**无进一步独立源码阻断**。本地desktop与physical App qualification和原strict批次false已分别交付；完整34项仍不能标全done，真正未验的是用户真人MacIME及真实phone原范围。R001/016保持限定调查unknown，不加额外用户批准门，不新增矩阵或重跑已闭业务。

@@ -38,7 +38,7 @@
 | R2-L01 | S | 取消retry deadline | 原ignored exact不改时限/断言；真实匹配CLI worker启动不早于due，fresh run不饿死，进程均reap。 | 当前666 Node actual producer＋原exact实际1/0、fresh不饿死/旧retry不早于due；原040唯一原因未知。 |
 | R2-L02 | S/B | 原生关闭交接 | 原late-close与close-reopen两失败case实际WK通过；旧owner退出、新owner保活、最终handle全空。 | 666真实GUI原两case及正常CUA退出/全清理已通过并独审；首收尾超时仍未知，不扩原四case。 |
 | R2-L03 | E | 所有入口草稿退出 | workspace、session内文件与机器文件同一保护规则；保存失败可取消退出，最后一键保存后正常OS Quit。 | 共用owner已有定向证据；当前0f606真实Workspace88179（含SettingsCancel）、Session81735、Machine33349各自Savefailure/Cancel/恢复权限/最后字符立即Quit已通过并独审，正常退出及TMP净；仅Root ASCII，真实系统IME/真人交互另列R2-027。 |
-| R2-L04 | V | 原生构建来源 | 实际当前GUI/CLI来源完整、环境/ACL目录/生成文件规则守住反例；旧失败不回填。 | f23当前normal3 actual86710五phase0/339.578s、前端35387 fulltypes/Vite/188gen278assets已真实通过且独审；最终a228 G/comment后normal3 55538五phase0/274.749s，原V/ALL/source-env-assets均净，独审06fb51de；原stage59892换唯一App两link后93241实际表格复验通过。iOS16142原300冷库未完成，无compilererror，原false/未知TMP保；后续builder源3独审共享600仅库且readyfalse，仍不冒physical App或设备通过。 |
+| R2-L04 | V | 原生构建来源 | 实际当前GUI/CLI来源完整、环境/ACL目录/生成文件规则守住反例；旧失败不回填。 | f23当前normal3 actual86710五phase0/339.578s、前端35387 fulltypes/Vite/188gen278assets已真实通过且独审；最终a228 G/comment后normal3 55538五phase0/274.749s，原V/ALL/source-env-assets均净，独审06fb51de；原stage59892换唯一App两link后93241实际表格复验通过。iOS16142原300冷库未完成，无compilererror，原false/未知TMP保；库3007原compile0/knownTMP冷留存另证；App57058 Xcode0但原strictforcedfalse保，80494原8读验＋78507 focused两后验组成当前本地qualification，仍不冒安装/真机通过。 |
 | R2-L05 | V | 正常退出与持久宿主 | 实际正常OS Quit后同私有host认证重连并读旧marker，随后显式清理自有fixture，无信号冒正常退出。 | focused真实App/重连/清理已通过并独审；不冒完整S恢复或E输入。 |
 
 ## 实际执行顺序
@@ -91,3 +91,9 @@
 ## 2026-11-01 当前iOS库来源与诊断分列
 
 actual3007的SDK/metadata/Cargo build三phase全0，124.732s，source/env/SDK/gen/assets稳，actual aarch64-apple-ios staticlib1083289296B/SHA b926ba26已生成且非作者尾核f5754aee通过。原overall97965e98仍false，仅严格TMP含SwiftPM 0B locks/keepfiles；随后独审＋fresh62成员/194ALL/lsof的单次可逆cold留存ad8a9e3e另证tmp现无，原false不回填、不重compile。当前target约41.843GiB<50。后续App链接/本地签名与真实手机仍待，不能以库通过销账。
+
+## 2026-11-01 当前手机App本地资格闭合
+
+78507 focused0/9.691s，leaf9308048A、entitlements与profile1d518均匹配；复用80494原8项实际（3ownMachO arm64IOS、strictsignature/teamID），App17节点全SHA/attrs前后不变/ALLTMP净。真实debug.dylib→唯一newarchive来源链已核。App-verified bcecee37/result6e2dda0f，非作者尾核0c5f70ba。旧979/c92/5d62/7824所有false不改，手机包本地qualified不等于设备安装/启动或触屏通过。
+
+剩原真人IME与手机原范围见[短清单](ROUND-2-HUMAN-ACCEPTANCE.md)，含同一路线R014/R015；不增加新主题矩阵。未收到新的用户可用性，不启动限时人验，整轮仍未完成。

@@ -1,66 +1,62 @@
 # 第二轮当前状态
 
-更新时间：2026-11-01T12:34:52.346848+08:00。这是当前协调入口；历史过程归档见末尾。目标 **完成第二轮，29反馈＋5遗留＝34项，active，未完成**。用户授权实施与Lab，**没有本轮main合并或ship授权**。新独立问题只登记NEXT；已启动的原范围做完。工程与协作准则读[PLAN](PLAN.md)、[ENGINEERING](ENGINEERING.md)、[ROUND-2-EXECUTION](ROUND-2-EXECUTION.md)；逐项需求/验收读[ROUND-2](ROUND-2.md)、[ROUND-2-ACCEPTANCE](ROUND-2-ACCEPTANCE.md)。不要把历史的待开工/已发布语句当当前授权。
+更新时间：2026-11-01T13:53:06.252953+08:00。目标**完成第二轮，29反馈＋5遗留＝34项，尚未完成**。当前等待真人验收；目标工具状态是最终权威。用户授权本轮实施与Lab，**未授权本轮main合并或ship**。新独立问题只记NEXT，原范围已启动的缺口做完。
 
-## 立即恢复：版本、所有者与活进程
+## 立即恢复
 
-- Root工作树 `/Volumes/disk0/Khor/worktrees/current/khor-round2`，`integrate/round2@a228baef4540ac4fe03c40879d4cb50f89da69c4`，当前clean。main仍e7c335c8未改。f23后的四小提交为TerminalPane过期注释清理7ad4454e、Processes绘制回归1ca20968及readiness c5e76f36、最小正文label避让a228baef；不涉及Rust后端。
-- 协调工作树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-plan`，plan/code-quality；仅Root写STATE/总账。任务卡及独审文档属于各作者，禁止全局stage/stash/reset。
-- **当前所有实际槽FREE**。device库exec3007已终态2：实际3compile phase0/124.732s/errornull/194ALLgone/source稳，唯一originaloverallfalse仅SwiftPM TMP非空。非作者compile尾核f5754aee通过；Root双审后fresh精确62成员/lsof/ALL单次coldretain至diagnostics/swiftpm-tmp（ad8a9e3e），原97965e98 false字节保。当前库aarch64-apple-ios .a1083289296B/b926ba26可作后继App输入，不是App/签名/设备通过。App/browser槽FREE。16142原cold300 false/未知TMP仍保留。
-- Root是唯一Cargo/Native/App实际运行者。input现仅为最终a228手机App准备最小stage/link/sign coordinator，device库pins空/readyfalse，不运行构建或改Root源码。G作者树 **khor-round2-history** 的GUI叶已交接；其中27个Rust后端较旧，**不得在其中运行/更改后端**。
-- reviewer已独审f23 producer、Copy/boot及两C009场与G最小修/注释；已只读尾核91894实际绿通过c83f7d1f。后续物理库builder源3已作者reviewer/input非作者独审，仍ready=false且head/frontend留空，等最终源与真实前端绑定，不在f23盲重跑。H此前usage-limit errored，其尾审已由input/reviewer接替。
-- 所有旧CUA绑定都dead：aaCopy2/copyFinal/sAppA/sAppB/sCold/endedApp/c009f23/c009Geometry/gTable等，**不可再观察或调用**，否则可能自动重启App。下一App先外部查实际PID/出生时间/完整exe，再getApp同CurrentG路径。compact后先cua.rewriteDocumentation。
+- Root `/Volumes/disk0/Khor/worktrees/current/khor-round2`，`integrate/round2@a228baef4540ac4fe03c40879d4cb50f89da69c4`，源码clean。main仍e7c335c8。
+- 协调树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-plan`，plan/code-quality。Root只写STATE/总账/本次真人指南；原作者任务卡保持原owner，禁止全局stage/stash/reset。12份pending卡精确内盘备份见central-docs-pending-latest.json（1100940B），不是转移卡owner。
+- **所有实际槽FREE，无编译、App或浏览器验收在跑**。最近exec78507只读补验终态0；此前80494/57058/81494/3007也均终态，不能重启旧handle。详情以 `/Users/zgh/Library/Caches/khor-code-quality/recovery/current-runtime.json` 为准。
+- 所有旧CUA绑定（包括gFinalA228等）已dead，不可观察，否则可能重新启动App。新真人实例须先用户新的可用性，再核实际PID/出生/完整exe，再绑定；compact后先cua.rewriteDocumentation。
+- input/reviewer本轮来源准备与非作者尾核均已交接，无进一步独立源码阻断；H此前usage-limit错误不再承担尾核。Root是唯一实际Cargo/Native/App运行者。
 
-## 当前合格程序（a228）与历史f23来源
+执行标准见[PLAN](PLAN.md)、[ENGINEERING](ENGINEERING.md)、[ROUND-2-EXECUTION](ROUND-2-EXECUTION.md)。完整范围与实际证明见[34项总账](ROUND-2-ACCEPTANCE.md)、[结案审查索引](ROUND-2-CLOSEOUT-REVIEW.md)及各包卡；旧卡早期pending不覆盖后继实际。
 
-- **最终前端actual4570**：fullnoEmit＋freshVite两phase0/17.562s，2340源/188gen/278assets，source/env/tools/helpers稳、ALL净/TMP空；receipt `6a4200fbfe42cc1b5ff046ebf2824e5a062b9838d7e3b8330aa66c36da7e40bb`，目录 `integration/frontend-current-a228baef-prepared-1`。最终normal3 actual55538已五phase0/274.749s且独审06fb51de。
-- 前端actual35387：fullnoEmit＋freshVite0/15.5458s；receipt `b02797d911c4a0d4ef482c90378f5c635743fa4b34ae85ed623cd4df98b7ece0`，2340源/188gen/278assets；input尾审4fe8b9c7。目录 `evidence/round2/integration/frontend-current-f23a167b-prepared-1`。没有生成器/Cargo重复运行。
-- **最终normal3 actual55538**：五phase0/274.749s，原no-prior/current V/source-env-gen-assets/ALLTMP净，result `a51297945d0077a9942c2f1b2ce9d488c57a08c39c461a5b748615f619254fda`。canonical GUI365cfdc9148cce141430deedfe06fd437f7f1316ce45616b122757a39a3d3d4f、CLI09cdf574d9c1a2c93225309929f30d4b911252d0e388ae8f5d1dfb487b4d83d6、bridge原e60c；proof gui ddbe17d5/cli9e7b8d01/bridgec2cdaf02，独审06fb51de。目录 `history/session-recovery/production-current-a228-prepared-1`。
-- normal CLI/bridge/GUI actual86710：五phase0/339.578s，原no-prior/current V/source-env-gen-assets/ALLTMP净，result `091df6d970b223d7364cbede2451e51ca8522cce3ea4d54932499922d258c448`，input尾审94a6d82a。目录 `evidence/round2/history/session-recovery/production-current-f23-prepared-1`。
-- immutable canonical GUI bf58434fdc74bc7508691714ea6c4787f2aec394ccd020689d21a854cab7cbec；CLI327a17f6b1fad16219de797c2b9f8aaf1bfac4298b71321f267e7b9e236bec30；bridgee60c7614aab939409594713694a1c99fea537422e95743737efa5c1b540d6776。真实proof分别gui/cli/bridge-provenance.json。原始22项producer环境在mac-copy-f23-preparation-1/producer-environment.json，不与13项App runtime环境混用。
-- 唯一测试App固定在 `evidence/round2/platform/mac-current-acceptance-data-1/runtime/KhorCurrentGLab.app`，原目录inode36364898；已由mac-current-a228-preparation-1原stage脚本单次只换两hardlink至a228 canonical（actual59892，stageab6b2e4c），plist/qualityID **io.github.colehank.khor.quality.round2productiong** 不改。不复制/rename第二App，不再次stage同一版本。
-- 本次GUI原OUT36397755/283件6603309B已fresh核identity/全部成员/SHA/UID/nlink/lsof/owner后单次可逆留存，retention合同43b4c999，见production-current-f23-prepared-1；新GUI OUT是另一次真实生成。**不要重复move旧OUT或把retention时source_absent冒当前不存在**。
+## 当前合格Mac程序与真实桌面验收
 
-## 已闭合且不受影响的主要证据（按范围复用，不重矩阵）
+- 最终前端actual4570：fullnoEmit＋freshVite两phase0/17.562s，2340源/188gen/278assets；receipt `6a4200fbfe42cc1b5ff046ebf2824e5a062b9838d7e3b8330aa66c36da7e40bb`，目录 `evidence/round2/integration/frontend-current-a228baef-prepared-1`。独审e9194f8d；原19生成pins与27精确source增量保持，不重复生成。
+- 最终normal3 actual55538：五phase0/274.749s，原no-prior/current V/source-env-gen-assets/ALLTMP全过；result `a51297945d0077a9942c2f1b2ce9d488c57a08c39c461a5b748615f619254fda`，目录 `history/session-recovery/production-current-a228-prepared-1`。独审06fb51de。
+- 当前canonical：GUI `365cfdc9148cce141430deedfe06fd437f7f1316ce45616b122757a39a3d3d4f`；CLI `09cdf574d9c1a2c93225309929f30d4b911252d0e388ae8f5d1dfb487b4d83d6`；bridge `e60c7614aab939409594713694a1c99fea537422e95743737efa5c1b540d6776`。proof各在同目录，GUI ddbe17d5/CLI9e7b8d01/bridgec2cdaf02。
+- 唯一Mac Lab固定 `evidence/round2/platform/mac-current-acceptance-data-1/runtime/KhorCurrentGLab.app`，目录inode36364898，quality ID `io.github.colehank.khor.quality.round2productiong`。原stage脚本2ec38227/actual59892仅换两hardlink，plist不改；当前GUI/CLI与a228 canonical同inode。不要复制第二App或再次stage同版。
+- G最后原缺口已闭：88916真实Processes ghost→77782同几何绘制红→91894原unit15/15及paint绿；最小修a228只将held+flush Processes正文透明区推到居中label下沿，原header.bottom渐变终点不变。最终Mac actual93241，Showall200/scroll1＋.35两settled帧PID/Status/Command清楚、正文自然淡出、无divider，正常CmdQ0/ALLTMP/source-env净。result91e6205b/UI48e75459/独审b2024571。不重菜单、diff、主题或其它已绿矩阵。
+- TerminalPane两处过期链接注释已纯//独立7ad4454e清理（2+/6-），必要平台原因保留；未改图片行为，不为注释重行为测试。
 
-- S：真实Node host死亡/provider仍活81606＋原R7各exact1/0/0已独审，Unknown/None、不重复初始化、原Meta/binding/raw/history保；Load70988/Resume57844/Unsupported4303/Shell9775/Offline63373的有限真实业务与旧false分列在总账/任务卡，不重跑。
-- 完整App恢复A42497：FIRST真实GUI→durable计划仅AppA90205 SIGKILL9原非0→AppB91587先读FIRST再SECOND，sameSID/run/host/provider及无重复setup全到。B17620：旧roles全退后cold93799先读旧body再真实菜单Check and recover一次，sameSID/fullnative/newrun/Resume1/Load0/New不增/prefix与earlyNote全到。两场最终正常CmdQ/ALL净/source-env稳/无force；原overallfalse分别1462bfe1/3e0aafa8仅3已知why，独审11f1aa14。Root已精确cold retain各scene/tmp→diagnostics，receipt7f450784，原result不改，不重业务。
-- Shell历史：87058只读两旧SID ended0/attachablefalse/can_controlfalse、90x41/1100B screen；62253真实冷App两screen可见，normalQuit/ALLTMP净。setup缺real_home/peer字段的前两失败均未启动role，原件精确保；不是产品失败。AX辅助Terminal input不代表可交互，row word Idle不作为进程仍活证据。
-- H：长历史67MiB/53262记录分页、head搜索/取消/原文184613B完整系统Export已真验；原parent RSS单点不是WebContent峰值，不新增峰值矩阵。小消息读取边界AA先旧源红再Find33绿。
-- Copy：实际28765小14B菜单Copy→系统Paste/Save exact016ac216；giant保38B原sentinel但提示泛化。最小两叶39a190→Rootf23修复已原DOM先59580红再29753全部8组绿/独审4d6192f7。**17415 f23实际giant按钮显示明确too_large原文、原38B sentinel真实Paste/Save保持378d917d，normalQuit/ALLTMP净**；UI fc9eeef5/resulted77b6ed；review047c3586。不重小14B或Copy调查。旧69036过夜中断300timeout/forced原false保，ALLTMP净，不称产品崩溃。
-- Boot纯回归69866：原有 regular exact `live::proc_identity::tests::exact_birth_namespace_and_group_facts_do_not_conflate_pid_reuse_with_an_owner` 真1/0/0、无helper；一次当前no-prior libtest compile/current V，98.324s，全批0/ALLTMP净/privatecopy已退，resultdce41e5f/独审047c3586。只模型判定，不冒实际OS重启。
-- C008 GUI四intent11244＋14739已真过。C009既有42114 ordinary wrappedfile/OSC8，加新62032的dir普通/PlainURL普通+Cmd/fileCmd/dirCmd（Finder＋inside文件fullURL）/OSC8Cmd全部真到。newSID3690e9a8，UI0e5b0999/result794cdabd。29379实际1080→904→1544，选区不导航、904四行末→fullfile marker、1544两行首→同fullfile marker；145处两个printf硬行no-open，随后软行正控立即打开。newSID3ab1d6f5/UI7247bf6e/result254d72af。各已观察原App-host-child、blankline sh0+reap、App normalQuit/ALLTMP净，baseline保；独审2a615088。硬行负例未提交partialpath，不新增每glyph/appmouse/remote矩阵。
-- G目录菜单：Light/Dark三材质宽窗、原Dark904红经PathField d4b修复后68689真实闭。W0235794外写文件/目录/branch/commit实时＋os13保exactdraft/外写V3保稿/CAS Save mine已真实独审；W冷树/右内容/Back14739、commit独立tabs/71历史/39jump菜单/阅读位置80153、四公式80153、退出草稿三入口88179/81735/33349均按源码未变复用。B真实WK加载/失败Retry/背景/桌面PinDelete60137及旧Dark证据复用。具体边界读总账，不泛称手机已验。
+## 当前手机验收包：本地qualified，未安装或运行手机
 
-## 当前剩余：原范围，不缩小成功标准
+成品唯一位置：
+`/Volumes/disk0/Khor/evidence/round2/mobile/physical-current-a228-preparation-1/derived-data/Build/Products/debug-iphoneos/KhorRound2PhysicalLab.app`
 
-- **G桌面原缺口已闭**：88916真实Processes ghost→77782同几何绘制红→91894原unit15/15与paint绿；最小修a228已整合。最终55538真实产物经原stage59892只换唯一App两link后，93241实际PID22748/birth13:01:31 Showall200、scroll1＋.35，两settled截图列标题清楚无旧glyph、正文渐隐/无divider；正常CmdQ0、无timeout/force、ALL/footprint净/TMP空/source-env稳。UI48e75459/result91e6205b，独审b2024571。不重菜单、diff或整主题矩阵。TerminalPane两处过期注释已独立7ad4454e纯//清理并独审，无行为变化。
-1. **手机App前置待执行**：exec3007已真实构建当前a228离线device库，3phase0/124.732s，非作者f5754aee尾核通过；原overallfalse仅TMP，另经独审f5b3f8a1/freshgate的62成员0B诊断单次保留ad8a9e3e后tmp现无。库1083289296B/b926ba26，target末44927807488B（约41.843GiB）<50；仍不冒App/link/sign/install/真机。源3单次共享600与原ALL/4096/jobs1/offline/50GiB/资源门已非作者独审3ee3e970；当前真实前端receipt6a4200fb、source2340/gen188/assets278已绑定，Root fresh target38.3327GiB＋8<50及外10/内2峰＋20/10保留通过才准入。原16142 cold300 false/未知TMP/部分cache保。库后手机App计划在 `mobile/physical-current-a228-preparation-1`：只29小输入/当前Info保权限、一次newdevice.a、单privateDerivedData与本地既有profile/identity，原App builder300、ALL不减；待库结果后Root绑定/核容量与执行。不复制旧库/UI/DerivedData、不联网provision/不探测或安装手机。
-2. **真人Mac中文IME/Shift选择、真实iPhone原范围仍未验**。用户明确当前不方便，不复用旧“方便”答复开限时实例，不重复询问；其它工作照做。手机验网页同页viewport/底栏、左滑两动作、W窄布局、G固定区、三入口连续候选、软键盘和自定义组合键行；模拟/pure/桌面不冒真机，不加物理双机/全厂商矩阵。
-3. **34项末审索引已完成，最终平台未闭**：`ROUND-2-CLOSEOUT-REVIEW.md` 非作者核34唯一行、每包具体CleanCode边界及原证据复用，当前SHA ec8a1444。真实当前平台结果继续逐行更新验收账。R001旧卡死/R016原拒绝唯一因果缺现场，按原限定调查如实unknown/未证修复，可交付限定调查结果；不加用户批准unknown前置、不无限扩调查。main/ship未授权。
+- 私有显示名 **Khor Round 2 Physical Lab**；ID `io.github.colehank.khor.quality.round2physical`。App全17节点419051183B，snapshot `bf3f2aed005b5851863569e2dd70f16018c2820c0ba7a11cf9865739162749f7`。不要改签名App、另copy库/App/DerivedData或再build追strict绿色。
+- currentdevice库actual3007真实SDK/metadata/Cargo3phase0/124.732s，source2340/gen188/assets278、SDK26.5/std58/tools均核；.a1083289296B，SHA `b926ba26eec1c42824817a646c892e4ac1e2f23185401b720f38f50254b0da4c`。独审f5754aee。原overall97965e98 false仅SwiftPM 0B TMP，另经双审/fresh62成员/194ALL/lsof单次可逆coldretain ad8a9e3e，原false不回填。首次cold16142原300超时bd3d仍保，不能说新全冷成功。
+- 首次App81494是managed profile被误设Manual，Xcode65/原c92aa4c9 false保；已纠正为只匹配现本地profile的Automatic，无allowProvisioningUpdates/注册/下载。run11此前只是unsignedsim项目结构参考，不是物理签名先例。
+- followup57058实际Xcode0、3Link/3CodeSign/BUILD SUCCEEDED，但原guard收自有构建服务导致forced，原wholefalse `5d62c7b6eb8d34a1444d1ae8b5144b4286a172bc05d6a83ccfe32d72b27fe761` 保，23ALLgone。不能称原strict build批通过。两次原Xcode TMP各仅1个0B文件，freshlsof均1双空，read-only recordb30e6c18，原处保诊断未删除。
+- actual80494前8项读取均0：3own MachO（主stub/debug.dylib/__preview.dylib）均arm64＋IOS非sim，codesign deep strict0和team/ID0；其后Root optional参数空格错误令certificate1，原7824e012 false保。App/源未变/ALLTMP净，独审6516bdaa。
+- **最终actual78507 focused补验0/9.691s**：只执行正确`--extract-certificates=<prefix>`公开leaf及entitlements两phase，复用80494原8项精确日志和sameApp/source链。leaf SHA1 `9308048ABD9F37512C6ED0CB4D5E94857AFC8DD5`，DER SHA2561b729aea，嵌入profile1d51869a，team QR8DMW493W、私有ID及get-task-allow均匹配；App全树前后不变，ALL/TMP净/无force。result `6e2dda0f3348b823185474b50ded6746c36f13a4ad1d0491c0f8667448bcc962`；`App-verified.json` SHA `bcecee378da5937d2bea392d317a1a09856b3b662bcc31a712baecad501a1283`；非作者实际尾核 `0c5f70ba5ac86863a3b92da74e36a3a6dc6c585c82884a9740f44c7860912f6d`。目录 `mobile/physical-current-a228-preparation-1/followup-1/verification-2`。
+- 真正Rust在418183104B debug.dylib，原最终map是主stub map；当前来源链78250fec核actual clang动态链接、main.mm→object/filelist、6个-L的18候选仅newlibapp.a=b926、主stub对同debug引用。不要求错误的archive-in-stub-map，不造map/不重build。
+- 此本地资格**不等于**安装/设备资格、真机WK、触屏、软键盘通过；未运行安装/配对/设备probe/真机App。后续必须新可用性与真实连接资格，不用SDK版本猜手机失败原因，不自动provision或改keychain。
 
-## 存储、恢复与执行约束
+## 已闭原证据：按源码边界复用
 
-- 读[STORAGE](STORAGE.md)。唯一target `/Volumes/disk0/Khor/caches/rust/khor-quality-target`；jobs1/incr0/offline。每重批fresh外20GiB/内10GiB保留＋声明峰值，5GiB只是紧急线。内盘约13GiB/外盘约108GiB，当前源库producer有连续原guard，不能跑并行重批或放大deadline。
-- 已完成simcache精确退役45169，外实际释放7233753088B/约6.74GiB，原sim证据及0B冷现场保。不要执行无-p cargo clean（会清整target）；不要扫未知目录/用户数据/旧证据，不新增target或完整binary gzip/内盘镜像。
-- App realHOME=/Users/zgh，私有KHOR_HOME data1；每批13项runtime env、新空TMP与fresh port；producer22 raw env只用于原V有限事务并finally恢复。Shell是非login /bin/sh，无ENV/BASH_ENV/ZDOTDIR。程序不写真用户历史、不调用真实agent/model/API。
-- 所有原失败、timeout/forced/业务红保留；adapter/setup/清理失败与产品行为分列。独审后仅精确已知诊断可单独保留，不能回填原false、白名单unknown TMP或删ALL身份。
-- 新源码bundle `sticky-processes-a228baef.bundle`相对f23，外内各6734B/verify0/SHA c978be262e2fa63c2318a602fb3c00a5d5ffc119be797450b11187848549afdf；前f23/AA/d4b/fb01链保，内部latest-source-bundle.json是当前索引。只小源码/metadata入内盘。
-- 内盘恢复入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/{STATE.md,RESUME.md,current-runtime.json,latest-source-bundle.json}`。disk0断开先读RESUME，不创建假/Volumes/disk0目录，不以摘要覆盖外盘未提交内容。Root Git对象在共享repo，原G作者未提交需按真实diff恢复。
+- S完整App A42497：计划仅AppSIGKILL后新App先读FIRST再SECOND，sameSID/run/host/provider；B17620全roles退后cold先读旧body，再实际菜单recover一次，sameSID/newrun/Resume1/Load0/New不增。原overallfalse仅3已知why，独审11f1aa14，精确冷留存7f450784另证，原false不回填。
+- S Node hostAbsent/providerPresent拒重复81606/R7 exact、公开Load70988/Resume57844/Unsupported4303/Shell9775/Offline63373等有限原组合已独审。Boot69866是一个regular identity exact1/0/0，不冒真实OS重启。87058只读两旧Shell ended/无控制资格，62253冷App可见旧1100B屏，不伪造外部PTY。
+- H原生67MiB/53262记录分页、未加载HEAD搜索与取消96355/17256，80153巨条184613B完整Export/系统Save；28765小14B系统Copy、17415 giant明确too_large＋原38B sentinel真实Paste保持均独审047c3586。无WebContent峰值测量，不新增峰值门或跨mount bookmark承诺。
+- C GUI四intent11244/14739、终端42114/62032/29379有限主例闭：普通内部/Cmd系统exact目标，真实1080→904→1544软行同fullfile，硬行不误拼且软行正控、选区不导航；独审2a615088。不新增每glyph/全厂商/remote矩阵或网络可达预检。
+- W/G/B/Q等80153/91690/68689/5794/14739/60137与退出88179/81735/33349按任务卡复用：布局/71提交/39jump/数学四分隔符/宽窄目录菜单/实时外写及CAS/真实WK进度失败主题/三文件ASCII最后字退出均已有实际，不冒真人IME或手机。
+- [结案审查](ROUND-2-CLOSEOUT-REVIEW.md)逐行34项、每包具体CleanCode接缝与原证据，最新非作者SHA f4b8a0c1c79218d2e2738fcbbd67e68804707bc93a13d1e0769a68b3fdef8d5a。R001旧卡死/R016旧拒绝唯一因果仍unknown/未证修复，按原限定调查交付，不加用户接受unknown审批、不无限扩调查。已知F1/F2与bookmark等仍NEXT。
 
-## 历史只读入口
+## 唯一剩余：原真人平台验收
 
-此前累积STATE完整字节已归档 `/Volumes/disk0/Khor/evidence/round2/integration/state-checkpoints/STATE-before-20261101T123452.md`，SHA `8d07f1bb2c8d8f846563ec3e110d1796712383d20ef33f25a644e0eb187d052f`。旧计划commit99628260也保当时版本。档案中的旧pending/live/head以本页与实际handle为准，不能重复move/stage/发布/kill。详细日志/截图/原始收据在 `/Volumes/disk0/Khor/evidence/round2`、维护记录在 `/Volumes/disk0/Khor/maintenance`；本页只恢复当前目标与行动。
+见[可执行清单](ROUND-2-HUMAN-ACCEPTANCE.md)。
 
+1. 真人Mac系统中文IME：逐字/选词/删除/中英切换，保存/外部或迟到更新/切窗切标签/选区撤销与落盘；先工作区再会话文件。逻辑/合成/ASCII证据不能销账。
+2. 真实iPhone原范围：同页同态WK网页视口/底栏与加载终态/当前主题初始底色，左滑置顶删除、W窄布局、G固定区、三入口连续候选、自定义组合键行与软键盘。沿原一组路线组合，不增加主题/全厂商/双机矩阵。
 
-### 当前库冷构建终态
+用户最后明确暂不方便，连续至少三次goal turn未有新的可用性；此前原方便回复已过期。现在无进一步独立源码/本地构建阻断，不能用反复跑已绿项制造进度。Root将在完成当前记录后按目标blocked审计标记等待真人验收。当前原E源入口也已准备：platform/mac-ime-current-a228-preparation-1，workspace/session两独立原300场，当前55538实际pins已固定但readyfalse/实际port及env待新可用性；独审889b49d2，未创建fixture/App/计时，不补新框架或重开R028。**不得宣布整轮完成**；不反复询问、不先开限时实例。新用户回复方便后，再准备确切版本/入口/专用测试正文并开始，允许按Mac/手机分组。
 
-16142原result bd3d85392a678ce11870147d267f6ecb4ec80525e3b34f8763579432a65e89ae；原1256身份/登记组全部gone，source稳；Cargo已生成多项真实artifact但未到GUI库，日志无compiler error。target由37971677184增至40898142208B（约38.09GiB，仍<50），外盘105GiB/内盘13GiB。未知TMP因严格门原处保留，cleanupfalse；不删除/重命名或回填原result。下一在G旧源paint红后最小候选，库任务下次应在当前源最终收口后按构建实际预算另行独审与Root明示准入，不自动同源重跑、不冒原300已过。
+## 存储与恢复
 
-### 最新当前库准入
-
-Root为exec3007仅JSON ready/auth绑定，driver97703e45不改，合同f34232d9/input4c096cc4；库builder600并非App交互时限，原16142不改。已装SDK iphoneos26.5与std/当前source-gen-assets逐SHA冻结。当前库result97965e98原false保；library-facts8d4eabd7证明实际3phase0/当前staticlib；source/gen/assets/SDK工具稳，194ALL无。后续精确coldretain ad8a9e3e另证TMP现无，不回填原green。库只在现有唯一quality target内。
-
-### 当前库后续App输入交接
-
-当前newdevice.a `/Volumes/disk0/Khor/caches/rust/khor-quality-target/aarch64-apple-ios/debug/libkhor_gui.a`，1083289296B、SHAb926ba26eec1c42824817a646c892e4ac1e2f23185401b720f38f50254b0da4c；facts原CargoJSON/actual head a228、receipt6a4200fb与source2340/gen188/assets278绑定。原compile结果97965e98始终false，仅已知SwiftPM TMP，post-retention resultad8a9e3e为独立真实状态。input正在同一App计划目录准备最小stage/Xcode coordinator，未运行/未复制库/未签名；原App builder300、唯一deriveddata、现本地manualprofile、无下载/provision/install/设备probe。
+- 读[STORAGE](STORAGE.md)。唯一quality target，jobs1/incr0/offline；外20GiB/内10GiB保留＋fresh峰值，5GiB仅紧急线，target50GiB复核。当前系统约13GiB、外约101GiB可用，最近target约41.73GiB。无活跃重批，不新增cache根或大payload内盘镜像。
+- 已完成simcache45169退役；当前版本切换后仅f23/bin三份旧可重建program fresh SHA/UID/nlink1/lsof后精确退役1095907400逻辑B，receipt `2bc1e3d1e7cee7c91d523cea5fe40f5818195e187079fdc52da670c1b05549b9`。所有旧source/日志/结果/失败保留，当前a228三程序逐SHA未变；f23过去stage‘old_canonical_retained’是当时事实，现旧payload不再可执行，不能重新索取或重建追绿。
+- 产品源码小bundle `sticky-processes-a228baef.bundle` 外/内各6734B，SHA c978be262e2fa63c2318a602fb3c00a5d5ffc119be797450b11187848549afdf，相对f23，前f23/AA/d4b/fb01链保。恢复索引latest-source-bundle.json。内盘只小源码、STATE/refs/runtime与资格索引，不复制App/.a/binary/logpayload。当前acceptance源码小包82文件2679297B（含29小型原项目资源），manifest51ce2a06；索引current-acceptance-source.json，历史ready/auth不是新执行授权。
+- 内盘入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/{STATE.md,RESUME.md,current-runtime.json,current-delivery.json,latest-source-bundle.json,central-docs-pending-latest.json}`。disk0缺失先读RESUME，不建假挂载目录、不按摘要覆盖未提交。
+- 前版STATE完整字节存 `/Volumes/disk0/Khor/evidence/round2/integration/state-checkpoints/STATE-before-mobile-qualified-20261101T135306.md`，SHA `e2b51b6e911c639831bd5ed1f9c164679dc2118d7a91fbd6093d8afa1d60542f`。更早历史仍见原STATE-before-20261101T123452.md与plan commits。旧live/版本/授权必须由本页与真实handle覆盖，不重复move/stage/发布/kill。
