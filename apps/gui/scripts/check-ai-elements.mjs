@@ -137,7 +137,7 @@ try {
   assert(ready, `Vite did not start (exit ${vite.exitCode}): ${log}\n${viteStdoutTail}`);
   browser = await chromium.launch({ channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? "chrome") || undefined, headless: process.env.AI_ELEMENTS_HEADED !== "1" });
   for (const [name, width, scheme] of [["desktop-light", 1280, "light"], ["desktop-dark", 1280, "dark"], ["mobile-light", 390, "light"], ["mobile-dark", 390, "dark"]]) {
-    const context = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: "reduce", hasTouch: width < 600, isMobile: width < 600 });
+    const context = await browser.newContext({ viewport: { width, height: 844 }, locale: "zh-CN", colorScheme: scheme, reducedMotion: "reduce", hasTouch: width < 600, isMobile: width < 600 });
     const page = await context.newPage(), errors = [], requests = [], openedLeases = new Map();
     currentPage = page;
     currentTrace = {requests: [], failed: [], http: [], count: 0, commandCounts: {}, opened: [], openCount: 0, navigation: [], viteConsole: []};
