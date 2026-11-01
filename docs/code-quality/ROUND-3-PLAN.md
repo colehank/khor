@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | R3-01 终端内容打开 | 有效链接／路径单击在 Khor 打开，Cmd/Ctrl 单击交给客户端默认应用；含启用鼠标模式的 TUI | URL、文件、OSC8、软折行，拖选／右键／非链接程序鼠标无回归，一次点击只执行一次 |
 | R3-02 会话关系药丸 | 正常会话无独立恢复文字；连接、恢复、失败与结束来自可信事实，使用已确认的药丸模板 | 健康 Shell、断连重接、失败重试、确认结束后新开、自有对话安全自动续接、未知归属／未决 intent；动作收回后原药丸呼吸，工具槽位稳定 |
-| R3-03 共享工作区导航 | 独立工作区两行头部与会话原导航页下方共用分支／文件历史行；每个提交可在所属内容标签组打开 | 保留原 session 贯通标签栏和导航甲板；文件／历史切换不丢阅读和编辑状态；搜索、新建、非 Git、长分支正常 |
+| R3-03 共享工作区导航 | 独立工作区两行头部与会话原导航页下方共用分支／文件历史行；Session所有内容在所属标签内原位跳转，仅New增加标签 | 保留原 session 贯通标签栏和导航甲板；文件／历史切换不丢阅读和编辑状态；搜索、新建、非 Git、长分支正常 |
 | R3-04 预览标签一致性 | 文件／提交临时标签标题斜体，无预览空心圆；双击或编辑固定后正体 | 预览替换、固定标签不降级、草稿和阅读位置保留；单／双行及宽窄一致，不误删脏／未读标记 |
 
 原始决定、Lab 参考和证据见 [NEXT-ROUND.md](NEXT-ROUND.md) 对应条目。R3-03 尺寸采用最新统一规则：nav-glyph + text-body；独立工作区历史对齐搜索，会话导航历史对齐原甲板 X。模板负责视觉与交互约定，真实状态和数据从 main 的正式接口接入。
@@ -52,7 +52,7 @@ NEXT 的日志轮转、非 WK 导航身份、初始 Load 互动、构建缓存�
 
 ## 当前检查点
 
-- 代码：`integrate/round3@47407b3bef5958e90c96f8deece9f4e468822630`，工作树干净（私有Lab临时目录忽略）；main27a9ce5c与真实GUI/host未动。四项实现提交dee0caab、d6114c10、722120b2、f57cae56；最后24aae387保存组合事件验证与交接。
+- 代码：`integrate/round3@1450609dc8bc36d5d080e859c92e986227781fcd`，工作树干净（私有Lab临时目录忽略）；main27a9ce5c与真实GUI/host未动。四项实现提交dee0caab、d6114c10、722120b2、f57cae56；最后24aae387保存组合事件验证与交接。
 - 交接：实施树 `docs/code-quality/ROUND-3-REVIEW.md`；各任务卡、设计门和证据引用随代码提交。Root作者自审，未冒称独立智能体审查；目前仅Root运行，旧三个子智能体completed/errored，无子智能体活动。
 - 通过：GUI unit/types实际0；内容模型及bounded history检查0；Rust --lib tabs30/30、Shell qualification/ownership均0；Chrome恢复18/18、工作区/预览/编辑/实际viewport窄屏5/5、真实xterm DOM10/10；相应source hashes前后一致。证据总目录 `/Volumes/disk0/Khor/evidence/round3`。
 - 未验：真实Mac Codex TUI、系统应用最终打开、原生GUI状态与iPhone手势/键盘。WebKit runtime缺失，未下载、未宣称通过。没有发布或原生新构建，不能拿正在运行的旧app验本轮代码。
@@ -67,3 +67,5 @@ NEXT 的日志轮转、非 WK 导航身份、初始 Load 互动、构建缓存�
 - 用户已允许并完成单击保留与返回位置修正，代码HEAD d7e2445074a5914a25fdcc729e1b815eb0b962e3。Session预览Map及替换分支已移除，文件/提交单击保留、同目标去重，独立工作区单击预览/双击保留不变；返回位于选择器之后、内容药丸之前。session-single-click:model先红后绿，types/unit0，UI5/5、layout5/5，源hash不变。原Lab PID8946/exec88030/port23836仍在，刷新原URL即可。main未动，无merge/ship授权，无新增构建。
 
 - Session提交页返回已提交 47407b3bef5958e90c96f8deece9f4e468822630：桌面复用原导航甲板，选择器→返回→内容药丸；回到该提交的工作区且保留提交实体/阅读与收起状态，手机返回同目标。session-commit-back的red复现无按钮，geometry五组Chrome及types/unit均0。只有原Lab8946/exec88030在运行，刷新原URL，main/ship未授权。
+
+- 最终用户确认已实现并提交 1450609dc8bc36d5d080e859c92e986227781fcd：Session标签承载浏览过程，所有文件/提交/网页/地址栏/popup在原标签跳转；只有显式New增加另一枚标签，首次无标签初始化一枚。统一navigate，废止按目标新增/跨标签去重的旧选择；关闭回调不补新标签，文件行提示/草稿及提交阅读按目的地隔离。session-in-tab/model-final、unit、types-verified0，verified/report.json真实组件六组通过，源hash前后一致。原Lab8946/exec88030不变，刷新原地址；main/运行app未动，无merge/ship授权。此规则覆盖上方历史单击保留实体方案。

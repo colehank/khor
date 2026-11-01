@@ -1,11 +1,11 @@
 {
-  "updated_at": "2026-11-01T13:20:54.377610+00:00",
-  "status": "session_commit_back_complete_awaiting_acceptance",
+  "updated_at": "2026-11-01T13:41:21.520046+00:00",
+  "status": "in_tab_navigation_complete_awaiting_user_acceptance",
   "executor": "root_only_serial",
   "main": "27a9ce5c1e006548f045d7159fdbab68884b13d4",
   "implementation_worktree": "/Volumes/disk0/Khor/worktrees/current/khor-round3",
   "implementation_branch": "integrate/round3",
-  "implementation_head": "47407b3bef5958e90c96f8deece9f4e468822630",
+  "implementation_head": "1450609dc8bc36d5d080e859c92e986227781fcd",
   "completed": {
     "R3-01": "dee0caab",
     "R3-02": "d6114c10",
@@ -14,7 +14,8 @@
     "verification": "24aae387",
     "review_corrections": "4fede1787acd9bcb80a45d299ff95f3571400856",
     "session_single_click": "d7e2445074a5914a25fdcc729e1b815eb0b962e3",
-    "session_commit_back": "47407b3bef5958e90c96f8deece9f4e468822630"
+    "session_commit_back": "47407b3bef5958e90c96f8deece9f4e468822630",
+    "in_tab_navigation": "1450609dc8bc36d5d080e859c92e986227781fcd"
   },
   "authorized": {
     "start": true,
@@ -44,26 +45,29 @@
     "review_workspace": 5,
     "single_click_ui": 5,
     "back_alignment_layout": 5,
-    "session_commit_back_ui": 5
+    "session_commit_back_ui": 5,
+    "in_tab_ui": 6
   },
   "unverified": [
     "Real Mac TUI and system app handoff",
     "Native GUI lifecycle and iPhone gestures/keyboard",
     "WebKit runtime absent"
   ],
-  "next_action": "User acceptance of refreshed original Lab; no merge/ship",
+  "next_action": "User reviews current-tab navigation in original Lab; no merge/ship",
   "sha256": {
-    "ROUND-3-PLAN.md": "c4037c7124201ddbaa1a6241230f47155e080b8a6f44951f6b29e7c2e6cb09d3",
-    "STATE.md": "11d2d06d1346d525f242aa536b4b0cfc798e98f471c1a1e20d7974b31f7a9232",
+    "ROUND-3-PLAN.md": "6208f9b19fd1638dcd84812efe62f4874108b4541f0e615137dbb3e0347a2cbf",
+    "STATE.md": "d576d324f72a2f635d63fe13fe06b8ac073e58668ea92edac5552ec2aab75d05",
     "NEXT-ROUND.md": "403a0c2db6831997c74fd5c2530c9ad2f848e789a02a7729d5bc7ec76311ed9d",
-    "round3-implementation.bundle": "3b10f5687615f0897daee544d1a432525d3c56de1235a1ce14e21cfd39ac1f59"
+    "round3-implementation.bundle": "42bf04df37440fde0ca7dc3e16d34d04367ef0a79da476e0b5f20bddfab278af"
   },
   "user_review": [
-    "first document consumes new tab",
-    "session single click keeps file/commit; no session preview owner",
-    "standalone preview/double-click remains",
+    "session tab owns browsing; all file/commit/page/address/popup destinations point the current tab",
+    "only explicit New adds sibling; first entry initializes one",
+    "no automatic cross-tab address dedup/focus",
+    "destination-owned drafts and commit reading/collapse retained",
+    "Back only browses without resetting tab",
     "source selector then Back then content pill",
     "browser no workspace Back",
-    "original shared sticky material"
+    "standalone workspace previews unchanged"
   ]
 }

@@ -1,6 +1,6 @@
 # 当前状态与历史发布记录
 
-2026-11-01最新：第三轮四项实现及作者自审完成，等待用户体验验收。Root单独执行；唯一实施树 `/Volumes/disk0/Khor/worktrees/current/khor-round3`，分支 `integrate/round3`，HEAD `47407b3bef5958e90c96f8deece9f4e468822630`。main仍为27a9ce5c，当前GUI PID91072/出生15:19:04未动；没有第三轮合并或ship授权。入口 [ROUND-3-PLAN.md](ROUND-3-PLAN.md)，机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。
+2026-11-01最新：第三轮四项实现及作者自审完成，等待用户体验验收。Root单独执行；唯一实施树 `/Volumes/disk0/Khor/worktrees/current/khor-round3`，分支 `integrate/round3`，HEAD `1450609dc8bc36d5d080e859c92e986227781fcd`。main仍为27a9ce5c，当前GUI PID91072/出生15:19:04未动；没有第三轮合并或ship授权。入口 [ROUND-3-PLAN.md](ROUND-3-PLAN.md)，机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。
 
 2026-11-01。用户已明确授权“先直接commit到main并ship”。**main已合并推送，Mac与三节点已更新；TestFlight 0.1.14（61）已实际上传成功，本次SHIP完成。** Apple处理可用性、手机安装与真人交互尚未查询／验收，不宣布34项整轮完成。原真人Mac IME、iPhone交互均转为发布后未验。
 
@@ -56,3 +56,5 @@
 - 用户已允许并完成单击保留与返回位置修正，代码HEAD d7e2445074a5914a25fdcc729e1b815eb0b962e3。Session预览Map及替换分支已移除，文件/提交单击保留、同目标去重，独立工作区单击预览/双击保留不变；返回位于选择器之后、内容药丸之前。session-single-click:model先红后绿，types/unit0，UI5/5、layout5/5，源hash不变。原Lab PID8946/exec88030/port23836仍在，刷新原URL即可。main未动，无merge/ship授权，无新增构建。
 
 - Session提交页返回已提交 47407b3bef5958e90c96f8deece9f4e468822630：桌面复用原导航甲板，选择器→返回→内容药丸；回到该提交的工作区且保留提交实体/阅读与收起状态，手机返回同目标。session-commit-back的red复现无按钮，geometry五组Chrome及types/unit均0。只有原Lab8946/exec88030在运行，刷新原URL，main/ship未授权。
+
+- 最终用户确认已实现并提交 1450609dc8bc36d5d080e859c92e986227781fcd：Session标签承载浏览过程，所有文件/提交/网页/地址栏/popup在原标签跳转；只有显式New增加另一枚标签，首次无标签初始化一枚。统一navigate，废止按目标新增/跨标签去重的旧选择；关闭回调不补新标签，文件行提示/草稿及提交阅读按目的地隔离。session-in-tab/model-final、unit、types-verified0，verified/report.json真实组件六组通过，源hash前后一致。原Lab8946/exec88030不变，刷新原地址；main/运行app未动，无merge/ship授权。此规则覆盖上方历史单击保留实体方案。
