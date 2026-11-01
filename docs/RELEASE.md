@@ -10,7 +10,7 @@
 4. 每个产物带源SHA、前端收据、大小/SHA256、run/attempt。原生程序检查实际嵌入的前端，CLI再检查目标Pi完整字节。聚合manifest只有所有平台成功、身份相同才生成。
 5. 需要分发Apple版本时手工运行候选并选signed，配置完环境才能成功；缺凭据直接失败，不产出“已签名”假成功。使用同一候选的Distribute an existing candidate，无本机编译或集群部署步骤。
 
-GitHub runner镜像仍会更新；收据记录实际镜像版本。Rust目标目录不跨运行缓存，避免几十GB原生产物累计和旧源错配；缓存仅包下载，只有main保存。前端保留7天，候选14天，分发收据90天；需长期分发的包发布到Release。过期候选要重新构建，不能拼接其它run的部分文件。已有上游成功job由Actions“Re-run failed jobs”保留；上传失败不需要重编Rust。
+GitHub runner镜像仍会更新；收据记录实际镜像版本。Rust目标目录不跨运行缓存，避免几十GB原生产物累计和旧源错配；Rust包缓存仅main保存，npm与Bun使用各自的下载缓存。前端保留7天，候选14天，分发收据90天；需长期分发的包发布到Release。过期候选要重新构建，不能拼接其它run的部分文件。已有上游成功job由Actions“Re-run failed jobs”保留；上传失败不需要重编Rust。
 
 ## 分发与权限
 
