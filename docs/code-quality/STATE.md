@@ -1,6 +1,6 @@
 # 当前状态与历史发布记录
 
-2026-11-01最新：第三轮四项实现及作者自审完成，等待用户体验验收。Root单独执行；唯一实施树 `/Volumes/disk0/Khor/worktrees/current/khor-round3`，分支 `integrate/round3`，HEAD `24aae387965e860536858f50c18a985ef51cd29e`。main仍为27a9ce5c，当前GUI PID91072/出生15:19:04未动；没有第三轮合并或ship授权。入口 [ROUND-3-PLAN.md](ROUND-3-PLAN.md)，机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。
+2026-11-01最新：第三轮四项实现及作者自审完成，等待用户体验验收。Root单独执行；唯一实施树 `/Volumes/disk0/Khor/worktrees/current/khor-round3`，分支 `integrate/round3`，HEAD `4fede1787acd9bcb80a45d299ff95f3571400856`。main仍为27a9ce5c，当前GUI PID91072/出生15:19:04未动；没有第三轮合并或ship授权。入口 [ROUND-3-PLAN.md](ROUND-3-PLAN.md)，机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。
 
 2026-11-01。用户已明确授权“先直接commit到main并ship”。**main已合并推送，Mac与三节点已更新；TestFlight 0.1.14（61）已实际上传成功，本次SHIP完成。** Apple处理可用性、手机安装与真人交互尚未查询／验收，不宣布34项整轮完成。原真人Mac IME、iPhone交互均转为发布后未验。
 
@@ -50,3 +50,5 @@
 
 - 2026-11-01 最新权威检查点：R3-03已提交722120b2（原session甲板共享Git导航、bounded history、真实commit内容标签、单一preview owner及草稿保留）。Rust --lib tabs30/30、types-final、model-final、unit、history、Chrome ui-extended3四组均实际0；source hashes前后不变。原生Mac/iPhone待验，Chrome触摸模拟不等同真机。首轮Rust命令漏--lib导致额外集成测试目标构建，已停止自己的Cargo(exit130)；之后只库内定向，内盘16GiB/外盘91GiB。所有R3-03槽结束。
 - R3-04正在做：最新提交722120b2，当前只有scripts/check-workspace-content-ui.mjs的斜体/无空心圆回归断言未提交；红测exec1107。下一动作核红后修改共用TabStrip/TabSheetRows和移动甲板title样式。无其它实现并行、无agent、main/运行实例不变，无merge/ship授权。
+
+- 用户首轮验收修正已完成并提交4fede178：首次打开内容原位转换、编辑器首行避开甲板、浏览器移除工作区返回、Lab补齐正式app滚动监听。review-fixes布局5项与完整交互5组均通过，model/types/unit实际0。原95583 Lab已按PID/出生/cwd核实后关闭，新的唯一Lab为PID8946（Sun Nov  1 21:02:48 2026），exec88030，http://127.0.0.1:23836/.workspace-content-check-zlzg3G/index.html。main/用户GUI未动，无原生构建；最新资源内盘13GiB/外盘91GiB。原Lab链接和上方旧PID仅是旧时点，以JSON为准。

@@ -52,7 +52,7 @@ NEXT 的日志轮转、非 WK 导航身份、初始 Load 互动、构建缓存�
 
 ## 当前检查点
 
-- 代码：`integrate/round3@24aae387965e860536858f50c18a985ef51cd29e`，工作树干净（私有Lab临时目录忽略）；main27a9ce5c与真实GUI/host未动。四项实现提交dee0caab、d6114c10、722120b2、f57cae56；最后24aae387保存组合事件验证与交接。
+- 代码：`integrate/round3@4fede1787acd9bcb80a45d299ff95f3571400856`，工作树干净（私有Lab临时目录忽略）；main27a9ce5c与真实GUI/host未动。四项实现提交dee0caab、d6114c10、722120b2、f57cae56；最后24aae387保存组合事件验证与交接。
 - 交接：实施树 `docs/code-quality/ROUND-3-REVIEW.md`；各任务卡、设计门和证据引用随代码提交。Root作者自审，未冒称独立智能体审查；目前仅Root运行，旧三个子智能体completed/errored，无子智能体活动。
 - 通过：GUI unit/types实际0；内容模型及bounded history检查0；Rust --lib tabs30/30、Shell qualification/ownership均0；Chrome恢复18/18、工作区/预览/编辑/实际viewport窄屏5/5、真实xterm DOM10/10；相应source hashes前后一致。证据总目录 `/Volumes/disk0/Khor/evidence/round3`。
 - 未验：真实Mac Codex TUI、系统应用最终打开、原生GUI状态与iPhone手势/键盘。WebKit runtime缺失，未下载、未宣称通过。没有发布或原生新构建，不能拿正在运行的旧app验本轮代码。
@@ -61,3 +61,5 @@ NEXT 的日志轮转、非 WK 导航身份、初始 Load 互动、构建缓存�
 - 内盘恢复：本计划、NEXT、STATE、checkpoint镜像；`round3-implementation.bundle`只包含main之后的本轮提交（不是完整仓库），SHA存于JSON。旧inflight压缩包是旧中间状态，禁止覆盖当前代码；需要恢复先比较原文件。
 - 资源：内盘16GiB/外盘91GiB快照。误用全test目标与npm pretest的额外构建已停止；本次新建的2.7GiB target已清，现无本轮target目录；共用缓存不动。以后只显式unit/types与--lib定向，原生构建前另查空间。
 - 下一动作：用户体验验收与反馈；不自行合并/ship，不复做已完成项，不扩大候选范围。
+
+- 用户首轮验收修正已完成并提交4fede178：首次打开内容原位转换、编辑器首行避开甲板、浏览器移除工作区返回、Lab补齐正式app滚动监听。review-fixes布局5项与完整交互5组均通过，model/types/unit实际0。原95583 Lab已按PID/出生/cwd核实后关闭，新的唯一Lab为PID8946（Sun Nov  1 21:02:48 2026），exec88030，http://127.0.0.1:23836/.workspace-content-check-zlzg3G/index.html。main/用户GUI未动，无原生构建；最新资源内盘13GiB/外盘91GiB。原Lab链接和上方旧PID仅是旧时点，以JSON为准。
