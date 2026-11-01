@@ -83,6 +83,17 @@ class ArtifactReceiptTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsigned"):
             apple.upload_ios(self.root)
 
+    def test_unsigned_archive_does_not_require_or_mutate_a_developer_team(self):
+        with patch.dict(apple.os.environ, {"APPLE_DEVELOPMENT_TEAM": ""}), patch.object(
+            apple, "build_number", return_value="1004.1"
+        ), patch.object(apple, "run") as run:
+            apple.archive_ios(False)
+            command = run.call_args.args[0]
+            self.assertIn("--no-sign", command)
+            self.assertIn("--archive-only", command)
+            self.assertEqual(run.call_args.kwargs["env"]["APPLE_DEVELOPMENT_TEAM"], "0000000000")
+            self.assertEqual(apple.os.environ["APPLE_DEVELOPMENT_TEAM"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

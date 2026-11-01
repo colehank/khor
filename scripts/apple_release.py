@@ -98,7 +98,10 @@ def archive_ios(signed):
     config = {"build": {"beforeBuildCommand": ""}, "bundle": {"iOS": {"bundleVersion": build_number()}}}
     command = ["npm", "run", "tauri", "--", "ios", "build", "--ci", "--target", "aarch64", "--archive-only", "--config", json.dumps(config)]
     if not signed:
-        run([*command, "--no-sign"], cwd=GUI)
+        # Tauri validates a nonempty team before applying --no-sign. This inert
+        # value belongs only to the unsigned child process, never distribution.
+        run([*command, "--no-sign"], cwd=GUI,
+            env={**os.environ, "APPLE_DEVELOPMENT_TEAM": "0000000000"})
         return
     project = APPLE / "khor-gui.xcodeproj/project.pbxproj"
     original = project.read_bytes()
