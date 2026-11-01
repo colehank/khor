@@ -32,13 +32,15 @@ export function CommitPage({
   edgeToEdge = false,
   presentation = "page",
   state,
+  title,
 }: {
   machine: string;
   /** The repository, on that machine. */
   root: string;
   /** The row that was pressed: the head is drawn from it at once, before
       the files arrive. */
-  commit: GitCommit | GitCommitSummary;
+  commit: GitCommit | GitCommitSummary | {id:string};
+  title?: string;
   onBack: () => void;
   /** The main workspace owns the full phone viewport; inset sheets do not. */
   edgeToEdge?: boolean;
@@ -74,7 +76,7 @@ export function CommitPage({
     };
   }, [machine, root, commit.id]);
   const metadata = shown?.commit.id === commit.id ? shown.commit : "body" in commit ? commit : null;
-  const subject = metadata?.subject ?? commit.subject;
+  const subject = metadata?.subject ?? ('subject' in commit ? commit.subject : title || commit.id.slice(0,7));
   const body = metadata === null ? "" : bodyOf(metadata);
   const scroller = useRef<HTMLDivElement>(null);
   const selectedFile = useRef<string | null>(null);
@@ -127,7 +129,7 @@ export function CommitPage({
             </p>
           )}
           <span data-commit-by className="text-callout text-muted-foreground">
-            {metadata === null ? gui.commit_authored_one(commit.author) : authorLine(metadata)} · {ago(metadata?.when_ms ?? commit.when_ms)} · <span className="font-mono">{commit.id}</span>
+            {metadata ? <>{authorLine(metadata)} · {ago(metadata.when_ms)} · </> : 'author' in commit ? <>{gui.commit_authored_one(commit.author)} · {ago(commit.when_ms)} · </> : null}<span className="font-mono">{commit.id}</span>
           </span>
         </header>
         {refused !== null ? (

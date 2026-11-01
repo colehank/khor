@@ -12,8 +12,8 @@ globalThis.__hooks={
  useEffect(fn,deps){const h=rendering,i=h.index++,old=h.slots[i];if(!old||!deps||deps.some((d,j)=>d!==old.deps?.[j]))h.effects.push(()=>{old?.cleanup?.();h.slots[i]={deps,cleanup:fn()};});},
 };
 function mount(run){const h={slots:[],effects:[],index:0,value:null,queued:false,closed:false,schedule(){if(h.queued||h.closed)return;h.queued=true;queueMicrotask(()=>{h.queued=false;h.render();});},render(){if(h.closed)return;h.index=0;h.effects=[];rendering=h;h.value=run();rendering=undefined;for(const fn of h.effects)fn();},close(){h.closed=true;for(const s of h.slots)s?.cleanup?.();}};h.render();return h;}
-const bundle=await build({stdin:{contents:'export * from "./src/hooks/use-session-content.ts";export * from "./src/hooks/use-content-navigation.ts";export * from "./src/hooks/use-repository-history.ts";',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'boundaries',setup(b){b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onResolve({filter:/^@\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='react'?'export const {useState,useEffect,useRef,useCallback}=globalThis.__hooks;':['fetchTabs','openTab','focusTab','closeTab','goTab','pinTab','reorderTabs','fetchPageIcons'].map(n=>`export const ${n}=(...a)=>globalThis.__api.${n}(...a);`).join(''),loader:'js'}));}}]});
-const {useSessionContent,useContentNavigation,useRepositoryHistory}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const bundle=await build({stdin:{contents:'export * from "./src/lib/content-commit.ts";export * from "./src/hooks/use-session-content.ts";export * from "./src/hooks/use-content-navigation.ts";export * from "./src/hooks/use-repository-history.ts";',resolveDir:gui,loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'boundaries',setup(b){b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));b.onResolve({filter:/^@\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='react'?'export const {useState,useEffect,useRef,useCallback}=globalThis.__hooks;':['fetchTabs','openTab','focusTab','closeTab','goTab','pinTab','reorderTabs','fetchPageIcons'].map(n=>`export const ${n}=(...a)=>globalThis.__api.${n}(...a);`).join(''),loader:'js'}));}}]});
+const {commitAddress,readCommitAddress,useSessionContent,useContentNavigation,useRepositoryHistory}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 const tick=()=>new Promise(r=>setImmediate(r));const until=async fn=>{for(let i=0;i<150;i++){if(await fn())return;await tick();}throw Error('Unsettled model');};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 let node={tabs:[],active:''},clock=0,next=0,gate,focusFailure=false,openAckFailure=false,pointGate;const calls=[],snapshot=()=>structuredClone(node);
@@ -273,3 +273,46 @@ assert.equal(historyRoute.value.historyOpen,false);assert.equal(historyRoute.val
 historyRoute.value.setHistoryOpen(true);await tick();historyMachine='three';historyRoute.render();await tick();assert.equal(historyRoute.value.historyOpen,false,'machine switch forgets the old list');
 historyRoute.close();otherHistoryRoute.close();
 console.log('repository history: detail-to-list Back, separate seats, root and machine changes passed');
+
+// Workspace selections share one preview slot without consuming their starting tab.
+node={tabs:[],active:''};
+const workspace=mount(()=>useSessionContent(false));await until(()=>workspace.value.ready);
+const source=workspace.value.newTab('Workspace','machine');await until(()=>workspace.value.tabs.length>0&&!workspace.value.tabs[0].id.startsWith('opening:'));
+assert.equal(typeof workspace.value.openWorkspaceDocument,'function','workspace selection needs an independent document preview');
+const first=workspace.value.openWorkspaceDocument({session:'Workspace',source:source.id,device:'machine',address:'/repo/a.md',view:'file'});
+const second=workspace.value.openWorkspaceDocument({session:'Workspace',source:source.id,device:'machine',address:'/repo/b.md',view:'file'});
+assert.equal(workspace.value.handle(first),workspace.value.handle(second),'rapid single clicks reuse the same preview before acknowledgements');
+await until(()=>node.tabs.some(t=>t.url==='/repo/b.md'));
+assert.equal(workspace.value.tabs.filter(t=>t.view==='workspace').length,1,'the source deck remains an actual tab');
+assert.equal(workspace.value.isPreview(second),true);
+workspace.value.keepDocument(second.id);await tick();
+const third=workspace.value.openWorkspaceDocument({session:'Workspace',source:source.id,device:'machine',address:JSON.stringify(['/repo','a'.repeat(40)]),view:'commit',title:'Commit subject'});
+await until(()=>node.tabs.some(t=>t.view==='commit'&&t.title==='Commit subject'));
+assert.notEqual(workspace.value.handle(second),workspace.value.handle(third),'a kept file is not reused for a commit');
+assert.equal(node.tabs.find(t=>t.url==='/repo/b.md').pinned,false,'keeping a preview is not the persistent nonclosable pin');
+workspace.value.openWorkspaceDocument({session:'Workspace',source:source.id,device:'machine',address:'/repo/b.md',view:'file'});await tick();
+assert.equal(workspace.value.isPreview(second),false,'opening a kept destination does not demote it');
+workspace.value.openWorkspaceDocument({session:'Other',device:'machine',address:'/other/a',view:'file'});await tick();
+assert.equal(workspace.value.isPreview(third),true,'other sessions have their own preview');
+await until(()=>node.tabs.some(t=>t.session==='Other'));
+await workspace.value.point(third.id,'machine','/repo','workspace');await tick();
+assert.equal(workspace.value.isPreview(workspace.value.tabs.find(t=>t.url==='/repo')),false,'returning to a source clears preview ownership');
+openAckFailure=true;
+workspace.value.openWorkspaceDocument({session:'RetryCommit',device:'machine',address:JSON.stringify(['/repo','c'.repeat(40)]),view:'commit',title:'Lost acknowledgement'});
+await until(()=>workspace.value.error!==null);
+const retryCommit=workspace.value.tabs.find(t=>t.session==='RetryCommit'&&t.id.startsWith('opening:'));
+assert(retryCommit);await workspace.value.focus(retryCommit.id);
+assert.equal(node.tabs.filter(t=>t.session==='RetryCommit').length,1);
+assert.equal(node.tabs.find(t=>t.session==='RetryCommit').title,'Lost acknowledgement','lost acknowledgement retries still preserve commit title');
+workspace.close();
+const reloadedWorkspace=mount(()=>useSessionContent(false));await until(()=>reloadedWorkspace.value.ready);
+assert(reloadedWorkspace.value.tabs.some(t=>t.view==='commit'&&t.title==='Lost acknowledgement'),'commit identity survives a reload');
+assert(reloadedWorkspace.value.tabs.every(t=>!reloadedWorkspace.value.isPreview(t)),'transient preview slots reopen as kept documents');
+reloadedWorkspace.close();
+console.log('workspace document previews: source retention, rapid replacement, keep, separate sessions and commit reload passed');
+
+const revision={root:'/repo/中文 [draft] \"notes\"',id:'a'.repeat(40)};
+assert.deepEqual(readCommitAddress(commitAddress(revision)),revision);
+for(const address of ['[]','["/repo","HEAD"]','["/repo",7]','["/repo","'+revision.id+'", "extra"]','not-json'])assert.equal(readCommitAddress(address),null);
+assert.deepEqual(readCommitAddress(commitAddress({root:'',id:'b'.repeat(64)})),{root:'',id:'b'.repeat(64)});
+console.log('commit addresses: canonical identity, home, SHA256 and invalid persisted targets passed');

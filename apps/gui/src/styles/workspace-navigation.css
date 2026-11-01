@@ -1,0 +1,17 @@
+[data-workspace-navigation] {
+  --ctl-glyph: var(--nav-glyph);
+  display: flex; flex: none; align-items: center; gap: var(--gap-in);
+  padding-inline: var(--tree-inset) var(--page-inset);
+  font-size: var(--text-body); line-height: var(--lh-body);
+}
+[data-workspace-navigation][data-seat="session"] { padding-inline-end: var(--gap-row); }
+[data-workspace-branch-icon] { width: var(--tree-slot); display: grid; place-items: center; flex: none; color: var(--muted-foreground); }
+[data-workspace-branch-icon] svg { width: var(--ctl-glyph); height: var(--ctl-glyph); }
+[data-workspace-branch] { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+[data-workspace-navigation] > .glass {
+  display: grid; grid-template-columns: calc(var(--glass-item-w) + 2 * var(--glass-pad)) var(--glass-btn);
+  align-items: center; justify-items: center; column-gap: var(--gap-in);
+  margin-inline: calc(-1 * var(--glass-pad)); padding-inline: var(--glass-pad); flex: none;
+}
+[data-workspace-navigation] > .glass > button { width: var(--strip-item); height: var(--strip-item-h); }
+:root[data-narrow] [data-workspace-navigation] { min-height: var(--list-head); padding-bottom: 0; }

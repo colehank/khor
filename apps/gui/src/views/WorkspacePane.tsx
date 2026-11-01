@@ -1,3 +1,4 @@
+import { WorkspaceGitNavigation } from '@/components/WorkspaceGitNavigation';
 import { useFileHandoff } from "@/hooks/use-file-handoff";
 import { sessionInWorkspace } from "@/lib/session-cwd";
 import type { EditorHistorySlot } from "@/lib/code/history";
@@ -16,7 +17,6 @@ import {
   type GitStatus,
   type SessionRow,
 } from "@/api";
-import { MachineAvatar } from "@/components/Avatar";
 import { WorkspaceHistory } from "@/views/workspace/WorkspaceHistory";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
@@ -64,7 +64,7 @@ import {
 import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { band } from "@/lib/scroll-edge";
-import { ago, basename } from "@/words";
+import { basename } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { SessionsList } from "@/views/SessionsList";
 import { FilesPane } from "@/views/FilesPane";
@@ -1323,18 +1323,8 @@ export function WorkspacePane({
         ]} />
     </div>
   );
-  const workspaceMetadata = <div ref={band} data-band data-ws-sidebar-heading className="flex min-w-0 flex-none flex-col gap-in px-page pb-in">
-    <div data-ws-location className="flex min-w-0 items-start gap-xxs text-callout text-muted-foreground">
-      <span title={machine} aria-label={machine} className="flex h-lh flex-none items-center"><MachineAvatar face={machineFace} className="size-[1em]" /></span>
-      <span aria-hidden="true">:</span><span data-selectable className="min-w-0 flex-1 [overflow-wrap:anywhere]">{root}</span>
-    </div>
-    {(headCommit !== null || branch !== "") && <button type="button" data-commit-line data-history-return={historyOpen || undefined}
-      className="workspace-commit-line flex min-w-0 items-center gap-in text-left text-caption text-muted-foreground hover:text-foreground"
-      onClick={() => setHistoryOpen(was => !was)}>
-      {historyOpen ? <><span className="flex size-[var(--tree-slot)] flex-none items-center justify-center"><IconBack className="size-affordance" /></span><span className="min-w-0 flex-1 truncate">返回文件</span><span className="max-w-[40%] truncate">{branch}</span></>
-        : <><span className="flex size-[var(--tree-slot)] flex-none items-center justify-center"><IconBranch className="size-affordance" /></span><span className="max-w-[40%] truncate">{branch}</span><span className="min-w-0 flex-1 truncate">{headCommit?.subject}</span></>}
-      {headCommit && <span className="flex-none">{ago(headCommit.when_ms)}</span>}
-    </button>}
+  const workspaceMetadata = <div ref={band} data-band data-ws-sidebar-heading>
+    <WorkspaceGitNavigation branch={branch} repo={git !== null || headCommit !== null} history={historyOpen} onHistory={setHistoryOpen}/>
   </div>;
 
 
@@ -1853,7 +1843,7 @@ export function Hits({
   /** A row was pressed: open that file, and on a line hit go to that
       line — the road a path in a conversation already takes (ruling
       35). */
-  onOpen: (path: string, line: number | null) => void;
+  onOpen: (path: string, line: number | null, keep?:boolean) => void;
 }) {
   const actions = useFileObjectActions(here, dir);
   const short = (p: string) => (p.startsWith(`${dir}/`) ? p.slice(dir.length + 1) : p);
@@ -1877,6 +1867,7 @@ export function Hits({
           type="button"
           data-hit-name={path}
           onClick={() => onOpen(path, null)}
+          onDoubleClick={() => onOpen(path,null,true)}
           className="flex min-h-[var(--tree-row)] w-full items-center gap-2 ps-(--tree-inset) pe-(--page-inset) text-left text-callout hover:bg-muted/50"
         >
           <FileKindIcon
@@ -1893,6 +1884,7 @@ export function Hits({
           type="button"
           data-hit-line={`${short(hit.path)}:${hit.line}`}
           onClick={() => onOpen(hit.path, hit.line)}
+          onDoubleClick={() => onOpen(hit.path,hit.line,true)}
           className="flex min-h-[var(--tree-row)] w-full flex-col justify-center gap-0.5 px-(--page-inset) py-1 text-left hover:bg-muted/50"
         >
           {/* 「显示 `path:line` 与那一行文字」 — where it is above what

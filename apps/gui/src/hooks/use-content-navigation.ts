@@ -1,3 +1,4 @@
+import { readCommitAddress } from '@/lib/content-commit';
 /** The last viewing position belongs to the viewer, independently of the
  * node's open document collection. Wide and narrow layouts use this state. */
 import { useEffect, useRef, useState } from 'react';
@@ -183,7 +184,7 @@ export function useContentNavigation(content: SessionContent): ContentNavigation
       .find(p=>p.scene==='picker');
     const fallback:ContentPlace={...emptyContentPlace(),key,
       ...(tab.view==='page'?{source:'browser',exit:tab.device}:
-        {scope:{device:tab.device,root:tab.view==='file'?directoryOf(tab.url):tab.url}})};
+        {scope:{device:tab.device,root:tab.view==='commit'?readCommitAddress(tab.url)?.root||'':tab.view==='file'?directoryOf(tab.url):tab.url}})};
     const picker:ContentPlace={...(source||fallback),scene:'picker',key};
     const device=picker.source==='workspace'?picker.scope?.device||tab.device:picker.exit||tab.device;
     const root=picker.source==='workspace'?picker.scope?.root||'':'';

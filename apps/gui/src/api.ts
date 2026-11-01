@@ -1,3 +1,4 @@
+import type { ContentView } from '@/lib/content';
 import type { AttachmentKind } from "./gen/bindings/AttachmentKind";
 import { attachmentView } from "./lib/attachment-view";
 import type { SessionContent } from "./gen/bindings/SessionContent";
@@ -412,11 +413,11 @@ export const fetchTabs = (kind: string) => call<TabsOpen>("tabs_list", { kind })
     **The id is minted by the node**, because the terminal opens tabs
     too and two minters is two id shapes. `request` identifies a retry of
     one opening operation; distinct starting tabs never deduplicate by URL. */
-export const openTab = (kind: string, device: string, url: string, session?: string, after?: string, view?: "workspace" | "file" | "page", request?: string) =>
+export const openTab = (kind: string, device: string, url: string, session?: string, after?: string, view?: ContentView, request?: string) =>
   call<string>("tabs_open", { kind, device, url, ...(session ? { session } : {}), ...(after ? { after } : {}), ...(view ? { view } : {}), ...(request ? { request } : {}) });
 /** Points an open tab somewhere and names it. Refused by name for a tab
     that is not there, rather than quietly adding one. */
-export const goTab = (kind: string, id: string, device: string, url: string, title: string, view?: "workspace" | "file" | "page") =>
+export const goTab = (kind: string, id: string, device: string, url: string, title: string, view?: ContentView) =>
   call<TabsOpen>("tabs_go", { kind, id, device, url, title, ...(view ? { view } : {}) });
 export const focusTab = (kind: string, id: string) =>
   call<TabsOpen>("tabs_focus", { kind, id });

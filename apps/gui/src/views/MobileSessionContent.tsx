@@ -1,3 +1,5 @@
+import { readCommitAddress } from '@/lib/content-commit';
+import type { GitCommitSummary } from '@/gen/bindings/GitCommitSummary';
 /** The mobile session's current content owns one bottom deck. The
  * terminal's measured deck room is retained behind the sheet. */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
@@ -9,7 +11,7 @@ import { PAGES } from '@/views/PagesKind';
 import {ContentToolbar} from '@/components/ContentToolbar';
 import { ContentScope } from '@/components/ContentScope';
 import { DeckBand, TabSheetRows } from '@/components/SessionBar';
-import { SessionFace, fileKind, pageKind, newTabKind } from '@/components/SessionFace';
+import { SessionFace, fileKind, pageKind, newTabKind, historyKind } from '@/components/SessionFace';
 import { GlassCircle, GlassCapsule, GlassItem } from '@/components/Glass';
 import { IconBack, IconClose, IconPlus, IconSearch } from '@/components/icons';
 import { Input } from '@/components/ui/input';
@@ -32,14 +34,14 @@ const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
 const leaf = (path: string) => path.replace(/[\\/]$/, '').split(/[\\/]/).pop() || path;
 export function contentContext(tab:ContentTab,row:SessionRow|undefined,devices:DeviceRow[]) {
   if(contentView(tab)==='page')return tab.url.replace(/^https?:\/\//,'').replace(/\/$/,'');
-  const root=sessionCwdOnScreen(row),dir=contentView(tab)==='file'?directoryOf(tab.url):tab.url;
+  const root=sessionCwdOnScreen(row),dir=contentView(tab)==='commit'?readCommitAddress(tab.url)?.root||'':contentView(tab)==='file'?directoryOf(tab.url):tab.url;
   const folder=root&&(dir===root||dir.startsWith(root+'/')||dir.startsWith(root+'\\'))?leaf(root)+dir.slice(root.length):dir;
   return [devices.find(d=>d.id===tab.device)?.name,folder].filter(Boolean).join(' · ');
 }
 /** One content identity for the desktop strip and mobile tab overview. */
 export function contentTabFace(tab:ContentTab,devices:DeviceRow[],iconOf:(url:string)=>string|undefined):TabFace {
   return {id:tab.id,label:contentView(tab)==='workspace'?gui.content_new:contentName(tab),path:tab.url,face:contentView(tab)==='workspace'?null:devices.find(d=>d.id===tab.device)?.face||null,
-    mark:contentView(tab)==='workspace'?newTabKind():contentView(tab)==='file'?fileKind(tab.url):pageKind(iconOf(tab.url))};
+    mark:contentView(tab)==='workspace'?newTabKind():contentView(tab)==='file'?fileKind(tab.url):contentView(tab)==='commit'?historyKind():pageKind(iconOf(tab.url))};
 }
 export type DeckOwner={face:TabFace;content:SessionContent;navigation:ContentNavigation;onClose:()=>void};
 export function ContentOwnerIdentity({face,title,children,editing=false}: {face:TabFace;title?:string;children?:ReactNode;editing?:boolean}) {
@@ -50,7 +52,7 @@ export function ContentDocumentBand({session,face,content,navigation,title,onTit
   const tabs=content.allTabs.filter(t=>t.session===session);
   const active=navigation.get(session).key;
   const targets=contentTabTargets(tabs,content.handle);
-  const faces=[...targets].map(([key,t])=>({...face,session:undefined,face:contentView(t)==='workspace'?null:face.face,hideFace:false,mark:contentView(t)==='workspace'?newTabKind():contentView(t)==='file'?fileKind(t.url):pageKind(content.pageIcon(t.url)),id:key,label:contentView(t)==='workspace'?gui.content_new:contentName(t)}));
+  const faces=[...targets].map(([key,t])=>({...face,session:undefined,face:contentView(t)==='workspace'?null:face.face,hideFace:false,mark:contentView(t)==='workspace'?newTabKind():contentView(t)==='file'?fileKind(t.url):contentView(t)==='commit'?historyKind():pageKind(content.pageIcon(t.url)),id:key,label:contentView(t)==='workspace'?gui.content_new:contentName(t)}));
   return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} onOverview={()=>navigation.overview(session)} renderFace={(item,role)=>item.mark?.key==='new-tab'||role==='cur'&&navigation.get(session).scene==='picker'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
 }
 export function MobileContentDeck({session,navigation,onClose,children,editing=false,onEditEnd,leading,actions}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void;leading?:ReactNode;actions?:ReactNode}) {
@@ -75,10 +77,12 @@ export function ContentSearch({label,value,onChange,onEditing,onEnter,onDismiss}
   return <div ref={region} className="content-search-field"><IconSearch/><Input ref={input} autoFocus type="search" aria-label={label} placeholder={label} value={value} onFocus={()=>onEditing(true)} onBlur={()=>onEditing(false)} onChange={e=>onChange(e.target.value)} onKeyDown={e=>{if(imeKey(e))return;if(e.key==='Enter')onEnter?.();if(e.key==='Escape'){e.preventDefault();e.stopPropagation();input.current?.blur();onDismiss?.();}}}/>{value&&<button data-content-search-clear aria-label={gui.search_clear} onPointerDown={e=>e.preventDefault()} onClick={()=>{onChange('');input.current?.focus();}}><IconClose/></button>}</div>;
 }
 /** One location toolbar for both sizes; the content below keeps its own scroll. */
-export function ContentPicker({row,devices,navigation,onOpen,onFilesMoved,onFilesGone,face,content,onClose,desktop=false,active=true}: DeckOwner & {
+export function ContentPicker({row,devices,navigation,onOpen,onWorkspaceFile,onOpenCommit,onFilesMoved,onFilesGone,face,content,onClose,desktop=false,active=true}: DeckOwner & {
  active?:boolean;desktop?:boolean;row:SessionRow;devices:DeviceRow[];
  onFilesMoved?:(device:DeviceRow,from:string,to:string)=>void;onFilesGone?:(device:DeviceRow,path:string)=>void;
  onOpen:(device:DeviceRow,path:string,view:'file'|'page',line?:number|null)=>void;
+ onWorkspaceFile:(device:DeviceRow,path:string,line:number|null,keep:boolean)=>void;
+ onOpenCommit:(device:DeviceRow,root:string,commit:GitCommitSummary,keep:boolean)=>void;
 }) {
  const state=navigation.get(row.id),session=row.id;
  const home=devices.find(d=>d.name===row.home),device=state.scope?devices.find(d=>d.id===state.scope!.device):home;
@@ -87,6 +91,8 @@ export function ContentPicker({row,devices,navigation,onOpen,onFilesMoved,onFile
  const canReturnWorkspace=!!home&&(state.source==='browser'||!!state.scope&&(state.scope.device!==home.id||state.scope.root!==sessionCwdOnScreen(row)));
  const exit=devices.find(d=>d.id===state.exit)||device;
  const fieldKey='picker:'+session+':'+(state.key||'legacy'),field=navigation.editor(fieldKey),editing=!!field.editing||field.exitPrompt!==undefined;
+ const [history,setHistory]=useState(false),[historyQuery,setHistoryQuery]=useState('');
+ useEffect(()=>{setHistory(false);setHistoryQuery('');},[device?.id,root]);
  const [searching,setSearching]=useState(false),[make,setMake]=useState<{kind:'file'|'dir';at:number}>(),[error,setError]=useState<string|null>(null);
  const pending=useRef<'file'|'dir'|null>(null);
  const [listSeat,setListSeat]=useState<HTMLDivElement|null>(null);
@@ -96,15 +102,15 @@ export function ContentPicker({row,devices,navigation,onOpen,onFilesMoved,onFile
  const directory=(d:DeviceRow,path:string)=>{stopSearch();navigation.update(session,{scope:{device:d.id,root:path},query:''});endEdit();};
  const open=(d:DeviceRow,path:string,view:'file'|'page',line?:number|null)=>{stopSearch();endEdit();onOpen(d,path,view,line);};
  const source=(source:ContentSource)=>{stopSearch();endEdit();navigation.update(session,{source});};
- const setQuery=(query:string)=>navigation.update(session,{query});
+ const setQuery=(query:string)=>history?setHistoryQuery(query):navigation.update(session,{query});
  const stopSearch=()=>{(document.activeElement as HTMLElement|null)?.blur();setSearching(false);setQuery('');};
  const returnWorkspace=()=>{stopSearch();endEdit();navigation.update(session,{scope:null,source:'workspace',query:''});};
  const scope=<ContentScope value={state.source} onChange={source} inPill={!desktop} segmented={desktop}/>;
- const newAction=<DropdownMenu><DropdownMenuTrigger asChild><GlassItem data-content-directory-new aria-label={gui.new_item}><IconPlus/></GlassItem></DropdownMenuTrigger><DropdownMenuContent side={desktop?'bottom':'top'} align="end" onCloseAutoFocus={e=>{const kind=pending.current;if(!kind)return;e.preventDefault();pending.current=null;setQuery('');setSearching(false);setMake({kind,at:Date.now()});}}><DropdownMenuItem onSelect={()=>{pending.current='file';}}>{gui.file_new}</DropdownMenuItem><DropdownMenuItem onSelect={()=>{pending.current='dir';}}>{gui.dir_new}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
+ const newAction=<DropdownMenu><DropdownMenuTrigger asChild><GlassItem data-content-directory-new aria-label={gui.new_item}><IconPlus/></GlassItem></DropdownMenuTrigger><DropdownMenuContent side={desktop?'bottom':'top'} align="end" onCloseAutoFocus={e=>{const kind=pending.current;if(!kind)return;e.preventDefault();pending.current=null;setQuery('');setSearching(false);setHistory(false);setMake({kind,at:Date.now()});}}><DropdownMenuItem onSelect={()=>{pending.current='file';}}>{gui.file_new}</DropdownMenuItem><DropdownMenuItem onSelect={()=>{pending.current='dir';}}>{gui.dir_new}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
  const directoryActions=state.source==='workspace'&&<GlassCapsule role="group" aria-label={gui.content_workspace_actions}><GlassItem data-content-directory-search aria-label={searching?gui.search_clear:gui.tree_search} onClick={()=>{if(searching)stopSearch();else{edit(false);setSearching(true);}}}>{searching?<IconClose/>:<IconSearch/>}</GlassItem>{newAction}</GlassCapsule>;
  const address=exit&&<PageField suggestAddresses={false} tab={fieldKey} machine={exit} devices={devices} at={state.address} onDraft={address=>navigation.update(session,{address})} first={home?.id} machinePrompt={field.exitPrompt} steps={false} autoFocus={!desktop&&editing} inPill listSeat={desktop?undefined:listSeat} onLeave={()=>edit(false)} onEditingChange={edit} onMachine={d=>{navigation.update(session,{exit:d.id});if(field.exitPrompt!==undefined)open(d,navigation.get(session).address,'page');}} onGo={(url,d)=>{navigation.update(session,{exit:d.id,address:url});open(d,url,'page');}}/>;
  const location=state.source==='browser'?address:editDevice&&<ContentPathField key={editDevice.id+root} device={editDevice} devices={devices} path={device?root:''} mobile={!desktop} onDirectory={directory} onFile={(d,path)=>open(d,path,'file')} onLeave={endEdit}/>;
- const search=<div data-content-directory-search-field><ContentSearch label={gui.tree_search} value={state.query} onChange={setQuery} onEditing={()=>{}} onDismiss={stopSearch}/></div>;
+ const search=<div data-content-directory-search-field><ContentSearch label={history?gui.git_history_search_page:gui.tree_search} value={history?historyQuery:state.query} onChange={setQuery} onEditing={()=>{}} onDismiss={stopSearch}/></div>;
  const fieldBody=searching?search:location;
  const close=()=>{stopSearch();if(!navigation.closePicker(session))onClose();};
  const revisit=(id:string,url:string)=>{const d=devices.find(d=>d.id===id);if(d)open(d,url,'page');else{navigation.update(session,{source:'browser',address:url});navigation.edit(fieldKey,{editing:true,exitPrompt:(field.exitPrompt??0)+1});}};
@@ -113,7 +119,7 @@ export function ContentPicker({row,devices,navigation,onOpen,onFilesMoved,onFile
    {desktop&&<ContentToolbar kind="picker" onBack={canReturnWorkspace?returnWorkspace:undefined} source={state.source} onSource={source} actions={directoryActions} pinned={content.allTabs.find(t=>content.handle(t)===state.key)?.pinned} onClose={close}>{state.source==='workspace'&&!editing&&!searching?<button data-content-location-edit className="content-location-rest" onClick={()=>edit(true)}><span className="content-location-face">{device&&<TabAvatar f={{id:device.id,label:device.shown,path:root,face:device.face}} bare="size-tab-face" seat="tab"/>}</span><span>{root||'~/'}</span></button>:fieldBody}</ContentToolbar>}
    {!desktop&&canReturnWorkspace&&<div className="flex shrink-0 px-row py-in"><GlassCircle data-content-workspace-return aria-label={gui.back} tip={sessionCwdOnScreen(row)||undefined} onClick={returnWorkspace}><IconBack/></GlassCircle></div>}
    {error&&<p role="alert" className="session-content-error">{error}</p>}
-   <div className="mobile-content-workspace" hidden={state.source!=='workspace'}>{device?<SideWorkspace active={active&&state.source==='workspace'} hideFind key={device.id+' '+root} machine={device.name} here={device.me} root={root||'~'} query={state.query} onQuery={setQuery} makeRequest={make} onContentMoved={(from,to)=>onFilesMoved?.(device,from,to)} onContentGone={path=>onFilesGone?.(device,path)} onOpenContent={(path,line)=>open(device,path,'file',line)}/>:<div className="session-content-unknown">{gui.content_machine_gone}</div>}</div>
+   <div className="mobile-content-workspace" hidden={state.source!=='workspace'}>{device?<SideWorkspace active={active&&state.source==='workspace'} hideFind key={device.id+' '+root} machine={device.name} here={device.me} root={root||'~'} historyView={history} onHistoryView={setHistory} query={history?historyQuery:state.query} onQuery={setQuery} makeRequest={make} onContentMoved={(from,to)=>onFilesMoved?.(device,from,to)} onContentGone={path=>onFilesGone?.(device,path)} onOpenCommit={(commit,keep)=>onOpenCommit(device,root||'~',commit,keep)} onOpenContent={(path,line,keep)=>onWorkspaceFile(device,path,line,!!keep)}/>:<div className="session-content-unknown">{gui.content_machine_gone}</div>}</div>
    <div className="mobile-content-browser" hidden={state.source!=='browser'}><div className="mobile-content-places"><NewTabPage kind={PAGES} places={places} devices={devices} narrow onOpen={revisit} onForget={p=>void forget(p.device,p.place)}/></div></div>
    {!desktop&&<div ref={setListSeat} className="mobile-content-page-list"/>}
    {!desktop&&<MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose} editing={editing} onEditEnd={endEdit} leading={searching?<GlassCircle aria-label={gui.back} onClick={stopSearch}><IconBack/></GlassCircle>:<div className="glass content-source-capsule">{scope}</div>} actions={searching?undefined:directoryActions}>{editing||searching?fieldBody:<div className="mobile-file-identity"><ContentDocumentBand session={session} face={face} content={content} navigation={navigation} title={gui.content_new} onTitle={()=>edit(true)}/></div>}</MobileContentDeck>}

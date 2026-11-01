@@ -94,7 +94,7 @@ pub struct Tab {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub session: String,
     /// Session content's renderer, independent of its address. Missing on
-    /// existing browsing tabs; workspace/file/page on kind `content`.
+    /// existing browsing tabs; workspace/file/page/commit on kind `content`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<String>,
     /// An opening request may be retried after losing its acknowledgement.
@@ -471,7 +471,7 @@ pub fn go(
 
 fn checked_view(kind: &str, view: Option<&str>) -> Result<Option<String>, String> {
     match view {
-        Some("workspace" | "file" | "page") if kind == "content" => Ok(view.map(str::to_owned)),
+        Some("workspace" | "file" | "page" | "commit") if kind == "content" => Ok(view.map(str::to_owned)),
         None => Ok(None),
         _ => Err("invalid content view".to_string()),
     }
@@ -1340,6 +1340,39 @@ mod tests {
         )
         .unwrap();
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn commit_content_keeps_its_session_and_address_on_disk() {
+        let r = root("commit-content");
+        let address = r#"["/repo/subdir","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]"#;
+        let id = open_with_view(
+            &r.0,
+            "content",
+            "device-a",
+            address,
+            "session-a",
+            "",
+            Some("commit"),
+        )
+        .unwrap();
+        go_with_view(
+            &r.0,
+            "content",
+            &id,
+            "device-a",
+            address,
+            "Commit subject",
+            Some("commit"),
+        )
+        .unwrap();
+        let saved = list(&r.0, "content");
+        let tab = saved.tabs.iter().find(|tab| tab.id == id).unwrap();
+        assert_eq!(tab.view.as_deref(), Some("commit"));
+        assert_eq!(tab.url, address);
+        assert_eq!(tab.title, "Commit subject");
+        assert_eq!(tab.session, "session-a");
+        assert!(!tab.pinned);
     }
 
     #[test]
