@@ -29,6 +29,12 @@ const sourceFiles = ['src/views/FileView.tsx', 'src/lib/save-road.ts', 'scripts/
 const fingerprint = () => Object.fromEntries(sourceFiles.map(file => [file, hash(readFileSync(join(gui, file)))]));
 const sources = fingerprint(), results = [];
 let server, browser;
+let stage = 'starting';
+const recordStage = value => {
+  stage = value;
+  writeFileSync(join(evidence, 'report.json'), JSON.stringify({sources, results, stage, finished: false}, null, 2));
+  console.log('STAGE', stage);
+};
 writeFileSync(join(fixture, 'index.html'), '<div id="root"></div><script type="module" src="./probe.tsx"></script>');
 writeFileSync(join(fixture, 'probe.tsx'), `
 import React,{useRef,useState} from 'react';
@@ -56,8 +62,10 @@ createRoot(document.getElementById('root')).render(<Probe/>);
 `);
 
 async function run(engine, name) {
+  recordStage(`${name} launching browser`);
   browser = await engine.launch(name === 'chrome' ? {channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? 'chrome') || undefined, headless: true} : {headless: true});
   for (const scenario of scenarios) {
+    recordStage(`${name} ${scenario} opening page`);
     const page = await browser.newPage({viewport: {width: 1300, height: 760}});
     page.setDefaultTimeout(12000);
     page.setDefaultNavigationTimeout(60000);
@@ -103,6 +111,7 @@ async function run(engine, name) {
     };
     const readText = who => pane(who).locator('[data-code-view]').evaluate(node => node.__view.state.doc.toString());
     try {
+      recordStage(`${name} ${scenario} navigating`);
       await page.goto(`http://127.0.0.1:${server.config.server.port}/${fixture.split('/').pop()}/index.html`);
       await editor('one').waitFor({timeout: 45000});
       if (scenario === 'two-editors') { await page.evaluate(() => window.__overwrite.second()); await editor('two').waitFor(); }
@@ -183,11 +192,14 @@ async function run(engine, name) {
       results.push({engine: name, scenario, ok: false, error: error.message, disk, writes, errors, consoleErrors, editorState}); console.error('FAIL', name, scenario, error.message);
       await page.screenshot({path: join(evidence, `${name}-${scenario}.png`)}).catch(() => {});
     } finally {
+      recordStage(`${name} ${scenario} closing page`);
       if (heldRead) await heldRead().catch(() => {});
       await page.close();
     }
   }
+  recordStage(`${name} closing browser`);
   await browser.close(); browser = null;
+  recordStage(`${name} browser closed`);
 }
 try {
   process.env.KHOR_FACE_GATE = '1';

@@ -146,7 +146,15 @@ jobs:
         run: |
           failed=0
           for gate in lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui native-events native-helpers chat-recovery workspace-content-ui terminal-links-ui notification-ui; do
-            if ! npm run "$gate"; then failed=1; fi
+            echo "::group::$gate"
+            if timeout --kill-after=10s 8m npm run "$gate"; then
+              echo "$gate passed"
+            else
+              result=$?
+              echo "::error::$gate failed (exit $result)"
+              failed=1
+            fi
+            echo '::endgroup::'
           done
           exit "$failed"
         env:
