@@ -7,7 +7,7 @@
 1. PR运行 Quality；main产品修改运行 Release candidates（其中复用Quality）。手工可选择分支运行候选构建。默认不签名、不上传Apple、不更新用户机器。
 2. 流水线先生成一次frontend，生成的类型和dist一起上传；Quality与各原生平台并行消费同一份，最终候选等待全部检查成功，不在每个平台重新生成前端。Rust 1.95.0、Node 22.19.0、Bun 1.3.14和Xcode26.5固定，依赖使用锁文件。
 3. CLI保留Linux x86_64/arm64与Mac Intel/Apple Silicon；Linux用glibc2.31构建，并检查CLI和Pi的实际ABI。Mac同时产生App归档，iOS产生xcarchive。Android/Windows安装包未纳入本轮。
-4. 每个产物带源SHA、前端收据、大小/SHA256、run/attempt。原生程序检查实际嵌入的前端，CLI再检查目标Pi完整字节。聚合manifest只有所有平台成功、身份相同才生成。
+4. 每个产物带源SHA、前端收据、大小/SHA256、run/attempt。原生程序检查实际嵌入的前端，CLI与Mac App再检查目标Pi完整字节。聚合manifest只有所有平台成功、身份相同才生成。
 5. 需要分发Apple版本时手工运行候选并选signed，配置完环境才能成功；缺凭据直接失败，不产出“已签名”假成功。使用同一候选的Distribute an existing candidate，无本机编译或集群部署步骤。
 
 GitHub runner镜像仍会更新；收据记录实际镜像版本。Rust目标目录不跨运行缓存，避免几十GB原生产物累计和旧源错配；Rust包缓存仅main保存，npm与Bun使用各自的下载缓存。前端保留7天，候选14天，分发收据90天；需长期分发的包发布到Release。过期候选要重新构建，不能拼接其它run的部分文件。已有上游成功job由Actions“Re-run failed jobs”保留；上传失败不需要重编Rust。
