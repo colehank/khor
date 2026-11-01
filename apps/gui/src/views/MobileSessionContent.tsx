@@ -44,16 +44,16 @@ export function contentTabFace(tab:ContentTab,devices:DeviceRow[],iconOf:(url:st
     mark:contentView(tab)==='workspace'?newTabKind():contentView(tab)==='file'?fileKind(tab.url):contentView(tab)==='commit'?historyKind():pageKind(iconOf(tab.url))};
 }
 export type DeckOwner={face:TabFace;content:SessionContent;navigation:ContentNavigation;onClose:()=>void};
-export function ContentOwnerIdentity({face,title,children,editing=false}: {face:TabFace;title?:string;children?:ReactNode;editing?:boolean}) {
-  return <span className="content-owner-identity" data-content-editing={editing||undefined}><span className="content-owner-face">{face.session&&<SessionFace face={face.face} {...face.session} size="tab"/>}</span><span className="content-owner-name">{face.label}</span><span className="content-owner-slash">/</span>{children||<span className="content-owner-title">{title}</span>}</span>;
+export function ContentOwnerIdentity({face,title,children,editing=false,preview=false}: {face:TabFace;title?:string;children?:ReactNode;editing?:boolean;preview?:boolean}) {
+  return <span className="content-owner-identity" data-content-editing={editing||undefined}><span className="content-owner-face">{face.session&&<SessionFace face={face.face} {...face.session} size="tab"/>}</span><span className="content-owner-name">{face.label}</span><span className="content-owner-slash">/</span>{children||<span className={preview?"content-owner-title italic":"content-owner-title"}>{title}</span>}</span>;
 }
 /** The nested pill uses the terminal band's exact threshold, flick and cancellation. */
 export function ContentDocumentBand({session,face,content,navigation,title,onTitle}: Omit<DeckOwner,'onClose'> & {session:string;title:string;onTitle:()=>void}) {
   const tabs=content.allTabs.filter(t=>t.session===session);
   const active=navigation.get(session).key;
   const targets=contentTabTargets(tabs,content.handle);
-  const faces=[...targets].map(([key,t])=>({...face,session:undefined,face:contentView(t)==='workspace'?null:face.face,hideFace:false,mark:contentView(t)==='workspace'?newTabKind():contentView(t)==='file'?fileKind(t.url):contentView(t)==='commit'?historyKind():pageKind(content.pageIcon(t.url)),id:key,label:contentView(t)==='workspace'?gui.content_new:contentName(t)}));
-  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} onOverview={()=>navigation.overview(session)} renderFace={(item,role)=>item.mark?.key==='new-tab'||role==='cur'&&navigation.get(session).scene==='picker'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
+  const faces=[...targets].map(([key,t])=>({...face,session:undefined,face:contentView(t)==='workspace'?null:face.face,hideFace:false,preview:content.isPreview(t),mark:contentView(t)==='workspace'?newTabKind():contentView(t)==='file'?fileKind(t.url):contentView(t)==='commit'?historyKind():pageKind(content.pageIcon(t.url)),id:key,label:contentView(t)==='workspace'?gui.content_new:contentName(t)}));
+  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} onOverview={()=>navigation.overview(session)} renderFace={(item,role)=>item.mark?.key==='new-tab'||role==='cur'&&navigation.get(session).scene==='picker'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity preview={item.preview} face={face} title={role==='cur'?title:item.label}/>}/>;
 }
 export function MobileContentDeck({session,navigation,onClose,children,editing=false,onEditEnd,leading,actions}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void;leading?:ReactNode;actions?:ReactNode}) {
   return <div className="mobile-content-deck" data-content-deck data-content-editing={editing||undefined}>
@@ -68,7 +68,7 @@ function ContentFileIdentity({session,face,content,navigation,title,devices,tab}
 }
 export function contentFileDeck(props: DeckOwner & {session:string;title:string;devices:DeviceRow[];tab:ContentTab}) {
  const {face,title}=props;
- return {identity:<div className="mobile-file-identity"><ContentFileIdentity {...props}/></div>,folded:<span className="mobile-fold-identity"><ContentOwnerIdentity face={face} title={title}/></span>};
+ return {identity:<div className="mobile-file-identity"><ContentFileIdentity {...props}/></div>,folded:<span className="mobile-fold-identity"><ContentOwnerIdentity preview={props.content.isPreview(props.tab)} face={face} title={title}/></span>};
 }
 /** Search has one clear button inside and an independent end-editing control outside. */
 export function ContentSearch({label,value,onChange,onEditing,onEnter,onDismiss}: {label:string;value:string;onChange:(value:string)=>void;onEditing:(editing:boolean)=>void;onEnter?:()=>void;onDismiss?:()=>void}) {
@@ -143,7 +143,7 @@ export function ContentOverview({session,row,devices,content,navigation,onPick,f
   const state=navigation.get(session),q=state.filter.toLocaleLowerCase();
   const [searching,setSearching]=useState(false);
   const tabs=content.allTabs.filter(t=>t.session===session&&(contentName(t)+' '+t.url+' '+contentContext(t,row,devices)).toLocaleLowerCase().includes(q));
-  const tabFaces=tabs.map(t=>({...contentTabFace(t,devices,content.pageIcon),...(contentView(t)==='workspace'?{label:gui.content_new}:{})}));
+  const tabFaces=tabs.map(t=>({...contentTabFace(t,devices,content.pageIcon),preview:content.isPreview(t),...(contentView(t)==='workspace'?{label:gui.content_new}:{})}));
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===(state.recent||state.key));
   return <div className="mobile-content-overview">
     <div className="mobile-content-overview-list">

@@ -1151,3 +1151,7 @@ Lab 的鼠标／触摸补充检查覆盖深浅主题、320／390 窄屏、两行
 - 自动保存只合并同一编辑线的待写文本；内容摘要重复不代表请求代次回退。丢弃后旧失败请求不能重新安排写入；已提交成功的真实磁盘结果仍须更新缓存。
 
 门：`scroll-lifecycle`、`save-road`。真实 App 另验 iOS 系统键盘、惯性上翻中尺寸变化、窄屏提交菜单及连续跳转；浏览器模拟与系统键盘结果分别记录。
+
+### Preview document titles (round 3)
+
+Temporary file/commit tabs use italic titles, without an extra hollow preview ring; kept titles return to normal. The subtitle, dirty and unread marks remain independent. Shared TabStrip one/two-line titles, tab chooser rows and the original mobile document deck follow the same preview owner. Verified by `WORKSPACE_PREVIEW_REQUIRE=1 WORKSPACE_CONTENT_DIR=<evidence> npm run workspace-content-ui` (baseline normal title reproduced before the style fix).

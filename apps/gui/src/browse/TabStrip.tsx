@@ -241,11 +241,6 @@ export function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "
   return <MachineAvatar face={f.face} className={bare} />;
 }
 
-/** A preview tab's mark: a hollow ring at caption size, before the name. */
-function PreviewMark() {
-  return <span data-tab-preview aria-hidden className="size-1.5 flex-none rounded-full border border-current opacity-70" />;
-}
-
 /**
  * A name cut **in the middle** when it has to be (docs/SHELL.md 第三轮 第
  * 1 条:「名字从中间省略」): the head truncates, the tail keeps its last
@@ -979,7 +974,7 @@ export function TabStrip({
                     arrangement the list rows keep, and for the same
                     reason (`EditableName`'s head). */}
                 {notices ? null : f.rename ? (
-                  <span className={cn("flex min-w-0 flex-1 flex-col justify-center", grouped ? "session-tab-floor:hidden" : "@max-tab-face/tab:hidden")}>
+                  <span className={cn("flex min-w-0 flex-1 flex-col justify-center", grouped ? "session-tab-floor:hidden" : "@max-tab-face/tab:hidden",f.preview&&"italic")}>
                     <EditableName
                       kind={f.rename.kind}
                       id={f.rename.id}
@@ -1006,12 +1001,8 @@ export function TabStrip({
                   // fits inside the band because the band is the
                   // finger's floor (44) and two lines of 12/10 are 32.
                   <span data-tab-label className="flex min-w-0 flex-1 flex-col justify-center">
-                    <span data-tab-name className="flex min-w-0 items-center gap-1 text-body leading-tight">
-                      {/* **The preview's mark** (the audit fix plan F4.7;
-                          W17): a small ring before the name, in place
-                          of the slope — the one italic in the app. */}
+                    <span data-tab-name className={cn("flex min-w-0 items-center gap-1 text-body leading-tight",f.preview&&"italic")}>
                       {f.rang && <BellMark />}
-                      {f.preview && <PreviewMark />}
                       {f.interaction?.drop ? <MidName text={f.interaction?.drop.name} even /> : <MidName text={f.label} />}
                     </span>
                     {/* **Both lines start on one edge**, which is the
@@ -1030,10 +1021,9 @@ export function TabStrip({
                   <span
                     data-tab-label
                     data-tab-name
-                    className={cn("flex min-w-0 flex-1 items-center gap-1 text-tab", grouped ? "session-tab-floor:hidden" : "@max-tab-face/tab:hidden")}
+                    className={cn("flex min-w-0 flex-1 items-center gap-1 text-tab", grouped ? "session-tab-floor:hidden" : "@max-tab-face/tab:hidden",f.preview&&"italic")}
                   >
                     {f.rang && <BellMark />}
-                    {f.preview && <PreviewMark />}
                     {f.interaction?.drop ? <MidName text={f.interaction?.drop.name} even /> : <MidName text={f.label} />}
                   </span>
                 )}
@@ -1111,7 +1101,7 @@ export function TabStrip({
                     onClose(f.id);
                   }}
                 >
-                  <IconClose className="size-affordance" />
+                  {f.dirty ? <span data-tab-dirty role="img" aria-label={gui.watch_unsaved} className="size-2 rounded-full bg-current"/> : <IconClose className="size-affordance" />}
                 </button>}
               {/* **Progress under the pill itself** (UX-33 §2): a 2-pt line
                   along this pill's bottom edge while it reloads, Safari's
@@ -1355,7 +1345,7 @@ export function TabSwitcher({
               mark: f.session ? sessionKind(f.session.kind, f.session.category) : f.mark,
               halo: f.session?.word ?? undefined,
               title: (
-                <span data-tab-label data-tab-name className="block truncate">
+                <span data-tab-label data-tab-name className={cn("block truncate",f.preview&&"italic")}>
                   {f.title ?? f.label}
                 </span>
               ),
