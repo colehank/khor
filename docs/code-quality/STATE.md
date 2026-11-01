@@ -1,6 +1,6 @@
 # 当前状态与历史发布记录
 
-2026-11-01最新：第三轮四项实现及作者自审完成，等待用户体验验收。Root单独执行；唯一实施树 `/Volumes/disk0/Khor/worktrees/current/khor-round3`，分支 `integrate/round3`，HEAD `ae398aa788096c32ce28507562b7e16547995826`。main仍为27a9ce5c，当前GUI PID91072/出生15:19:04未动；没有第三轮合并或ship授权。入口 [ROUND-3-PLAN.md](ROUND-3-PLAN.md)，机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。
+2026-11-01最新：第三轮四项实现及作者自审完成，用户已确认当前Lab无问题；待明确合并main／ship指令，真机未验。Root单独执行；唯一实施树 `/Volumes/disk0/Khor/worktrees/current/khor-round3`，分支 `integrate/round3`，HEAD `ae398aa788096c32ce28507562b7e16547995826`。main仍为27a9ce5c，当前GUI PID91072/出生15:19:04未动；没有第三轮合并或ship授权。入口 [ROUND-3-PLAN.md](ROUND-3-PLAN.md)，机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。
 
 2026-11-01。用户已明确授权“先直接commit到main并ship”。**main已合并推送，Mac与三节点已更新；TestFlight 0.1.14（61）已实际上传成功，本次SHIP完成。** Apple处理可用性、手机安装与真人交互尚未查询／验收，不宣布34项整轮完成。原真人Mac IME、iPhone交互均转为发布后未验。
 

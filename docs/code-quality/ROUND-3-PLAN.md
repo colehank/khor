@@ -1,6 +1,6 @@
 # 第三轮目标与串行执行计划
 
-状态：用户已允许开始；Root单独串行完成四项实现、自审与组合检查。当前等待用户体验验收，未授权合并main或ship。
+状态：用户已允许开始；Root单独串行完成四项实现、自审与组合检查。用户已确认当前Lab无问题；本轮开发与反馈修正完成，待明确合并main／ship指令，原生及真机未验项保留。
 
 ## 目标与范围
 
@@ -56,11 +56,11 @@ NEXT 的日志轮转、非 WK 导航身份、初始 Load 互动、构建缓存�
 - 交接：实施树 `docs/code-quality/ROUND-3-REVIEW.md`；各任务卡、设计门和证据引用随代码提交。Root作者自审，未冒称独立智能体审查；目前仅Root运行，旧三个子智能体completed/errored，无子智能体活动。
 - 通过：GUI unit/types实际0；内容模型及bounded history检查0；Rust --lib tabs30/30、Shell qualification/ownership均0；Chrome恢复18/18、工作区/预览/编辑/实际viewport窄屏5/5、真实xterm DOM10/10；相应source hashes前后一致。证据总目录 `/Volumes/disk0/Khor/evidence/round3`。
 - 未验：真实Mac Codex TUI、系统应用最终打开、原生GUI状态与iPhone手势/键盘。WebKit runtime缺失，未下载、未宣称通过。没有发布或原生新构建，不能拿正在运行的旧app验本轮代码。
-- Lab：http://127.0.0.1:23834/.workspace-content-check-xCSgjH/index.html；独立工作区加`?workspace=1&theme=light`，默认session原导航，手机参考加`?mobile=1`并收窄窗口。正式前端组件、受控示例IO，未读取/更改用户会话。
-- 唯一保留服务：exec94699，PID95583，出生2026-11-01 20:38:48，node scripts/check-workspace-content-ui.mjs，127.0.0.1:23834。其它本轮构建/测试均结束。恢复时先核PID/出生/cwd，不凭摘要kill；可发SIGINT停止这个专用Lab，让脚本清理自己生成的目录。
+- Lab：http://127.0.0.1:23836/.workspace-content-check-zlzg3G/index.html；独立工作区加`?workspace=1&theme=light`，默认session原导航，手机参考加`?mobile=1`并收窄窗口。正式前端组件、受控示例IO，未读取/更改用户会话。
+- 唯一保留服务：exec88030，PID8946，出生2026-11-01 21:02:48，node scripts/check-workspace-content-ui.mjs，127.0.0.1:23836。其它本轮构建/测试均结束。恢复时先核PID/出生/cwd，不凭摘要kill；可发SIGINT停止这个专用Lab，让脚本清理自己生成的目录。
 - 内盘恢复：本计划、NEXT、STATE、checkpoint镜像；`round3-implementation.bundle`只包含main之后的本轮提交（不是完整仓库），SHA存于JSON。旧inflight压缩包是旧中间状态，禁止覆盖当前代码；需要恢复先比较原文件。
 - 资源：内盘16GiB/外盘91GiB快照。误用全test目标与npm pretest的额外构建已停止；本次新建的2.7GiB target已清，现无本轮target目录；共用缓存不动。以后只显式unit/types与--lib定向，原生构建前另查空间。
-- 下一动作：用户体验验收与反馈；不自行合并/ship，不复做已完成项，不扩大候选范围。
+- 下一动作：用户已确认Lab无问题；待明确合并main／ship指令，保留原生及真机未验项，不扩大本轮。
 
 - 用户首轮验收修正已完成并提交4fede178：首次打开内容原位转换、编辑器首行避开甲板、浏览器移除工作区返回、Lab补齐正式app滚动监听。review-fixes布局5项与完整交互5组均通过，model/types/unit实际0。原95583 Lab已按PID/出生/cwd核实后关闭，新的唯一Lab为PID8946（Sun Nov  1 21:02:48 2026），exec88030，http://127.0.0.1:23836/.workspace-content-check-zlzg3G/index.html。main/用户GUI未动，无原生构建；最新资源内盘13GiB/外盘91GiB。原Lab链接和上方旧PID仅是旧时点，以JSON为准。
 
@@ -71,3 +71,5 @@ NEXT 的日志轮转、非 WK 导航身份、初始 Load 互动、构建缓存�
 - 最终用户确认已实现并提交 1450609dc8bc36d5d080e859c92e986227781fcd：Session标签承载浏览过程，所有文件/提交/网页/地址栏/popup在原标签跳转；只有显式New增加另一枚标签，首次无标签初始化一枚。统一navigate，废止按目标新增/跨标签去重的旧选择；关闭回调不补新标签，文件行提示/草稿及提交阅读按目的地隔离。session-in-tab/model-final、unit、types-verified0，verified/report.json真实组件六组通过，源hash前后一致。原Lab8946/exec88030不变，刷新原地址；main/运行app未动，无merge/ship授权。此规则覆盖上方历史单击保留实体方案。
 
 - 返回导航的标签身份已提交 ae398aa788096c32ce28507562b7e16547995826：每个标签按自己保存的scene显示名称／图标，picker显示“新会话标签页”，打开内容后显示对应文件／提交／网页身份。顶部条、手机药丸和总览共用身份计算；不重置保留的目的地、不清草稿或阅读状态。picker-identity/pass-3/report.json六组真实Chrome组件通过，types/unit均0；原red与两次测试文案／定位器错误保留。原Lab8946/exec88030不变，main及用户App未动，无merge/ship授权。
+
+- 用户已确认“ok 没问题了”：当前Lab及反馈修正验收通过，本轮四项实现／作者自审／自动检查已完成。正式main、ship和真实Mac／iPhone验收仍未执行，不能把本轮Lab通过写成真机或发布通过。
