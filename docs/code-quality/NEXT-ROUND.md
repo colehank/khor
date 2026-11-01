@@ -35,3 +35,16 @@ Wry0.55.1 Windows/GTK暴露的Started/Finished没有真实导航身份，且Fini
 ## 跨会话的轻量阅读书签
 
 2026-10-31实际64MiB原生历史场：HEAD搜索定位后切到别的会话再返回，会重建ObservedSession/ChatView/reader并从tail读取。原R2-H/CONTINUITY约定为同实例跨页锚点与切换取消，未约定跨mount/App重开书签；按收口规则只记下一轮，不在本轮增持久窗口/完整历史缓存。未来如实现，只保存每个view/home的有界轻量来源身份+锚点，由当前history source重新验证并按可用范围恢复；不得保存全正文。原黑截图与AXtail不同尚无唯一因果；focused raise/实际指针/滚轮场正文可读，不凭该观察做paint架构改造。诊断LONG-HISTORY-RETURN-DIAGNOSIS在当前evidence/platform准备目录。
+
+
+## 正式发布发现的检查入口登记缺口
+
+2026-11-01 main eca实际types／unit均0，额外`npm --prefix apps/gui run gates`报告35个check脚本未被npm入口或静态import可达，另chat-recovery已有入口但50-gates文档未列。原`gates.log`与失败结果保留。此为检查发现机制的真实缺口，不冒这35项被unit执行，也不是本次已审功能行为失败。下一轮统一命名入口、组合脚本与文档，并核实际可达性；不把旧发布记录改成所有门绿。
+
+## 安装脚本成功分支末尾的空日志状态
+
+2026-11-01单次onset实际退出1，日志已确认serve up；三节点实际listener/exe SHA与新UI另证均已采用。只读源码定位：serve.sh成功分支最后一条`[ -n "$said" ] && printf...|sed...`在无新日志时返回1，成为远端sh／SSH状态，本地set-e提前退出，缺最终done。下一轮让成功就绪与附加日志显示各自表达结果；本次不修脚本、不重复安装，不回填原onset1。
+
+## lecun既有会话读取busy的调查记录
+
+2026-11-01升级前后同一CLI `sessions --all`均返回1／`document transfer state busy`；实际5467服务已采用新SHA/UI，未观察到_khor持久host进程身份丢失。hinton/turing各2ID升级前后相同。lecun此读取结果保持未知，不宣称新增回归或会话验证通过；后续沿既有doc transfer／CLI read路径单独调查，不扩大本次发布。
